@@ -35,11 +35,11 @@ const SUM = '0x1161';
 // ── the order directives reach the engine ──────────────────────────────────
 await test('#2 alone, a page sends each kind in the order it was made: a struct before the struct that uses it', () => {
   const s = new S.Session();
-  s.setTypedef('point', 'typedef struct point { int x; int y; } point;');
-  s.setTypedef('line', 'typedef struct line { struct point a; struct point b; } line;');
+  s.setTypedef('point', 'struct point { int x; int y; } point;');
+  s.setTypedef('line', 'struct line { struct point a; struct point b; } line;');
   assert.deepEqual(s.globalAssertions().slice(0, 2), [
-    'typedef typedef struct point { int x; int y; } point;',
-    'typedef typedef struct line { struct point a; struct point b; } line;',
+    'typedef struct point { int x; int y; } point;',
+    'typedef struct line { struct point a; struct point b; } line;',
   ]);
 });
 await test('#2 alone, the later of two raw directives comes last (raw:10 after raw:2)', () => {
@@ -57,8 +57,8 @@ await test('#2 alone, a rename that frees a name comes before the rename that ta
 await test('#2 shared, pages that applied the same registers in other orders send one list, in birth order', () => {
   const a = new R.Replica('ana00000');
   const ops = [
-    a.set('typedef:point', 'typedef struct point { int x; int y; } point;'),
-    a.set('typedef:line', 'typedef struct line { struct point a; struct point b; } line;'),
+    a.set('typedef:point', 'struct point { int x; int y; } point;'),
+    a.set('typedef:line', 'struct line { struct point a; struct point b; } line;'),
     a.set(`var:${SUM}:v1:name`, 'i'),
     a.set(`var:${SUM}:acc:name`, 'v1'),
   ];
@@ -71,14 +71,14 @@ await test('#2 shared, pages that applied the same registers in other orders sen
     return s;
   });
   assert.deepEqual(pages[1].allAssertions((x) => x), pages[0].allAssertions((x) => x));
-  assert.deepEqual(pages[0].assertionsFor(SUM), ['typedef typedef struct point { int x; int y; } point;',
-    'typedef typedef struct line { struct point a; struct point b; } line;', 'name v1 i', 'name acc v1']);
+  assert.deepEqual(pages[0].assertionsFor(SUM), ['typedef struct point { int x; int y; } point;',
+    'typedef struct line { struct point a; struct point b; } line;', 'name v1 i', 'name acc v1']);
 });
 await test('#2 shared, a later edit keeps a record\'s place, and a newcomer learns the same birth from a snapshot', () => {
   const a = new R.Replica('ana00000');
-  a.set('typedef:point', 'typedef struct point { int x; } point;');
-  a.set('typedef:line', 'typedef struct line { struct point a; } line;');
-  a.set('typedef:point', 'typedef struct point { int x; int y; } point;');
+  a.set('typedef:point', 'struct point { int x; } point;');
+  a.set('typedef:line', 'struct line { struct point a; } line;');
+  a.set('typedef:point', 'struct point { int x; int y; } point;');
   const late = new R.Replica('zed00000');
   for (const op of a.snapshot()) late.receive(op);
   assert.deepEqual(late.birth('typedef:point'), a.birth('typedef:point'));
@@ -89,8 +89,8 @@ await test('#2 shared, a later edit keeps a record\'s place, and a newcomer lear
 });
 await test('#2 leaving keeps the session\'s order for the page on its own (and in what it saves)', () => {
   const r = new R.Replica('ana00000');
-  r.set('typedef:point', 'typedef struct point { int x; } point;');
-  r.set('typedef:line', 'typedef struct line { struct point a; } line;');
+  r.set('typedef:point', 'struct point { int x; } point;');
+  r.set('typedef:line', 'struct line { struct point a; } line;');
   const s = new S.Session();
   R.applyRegisters(s, r, ['typedef:line', 'typedef:point']);
   s.orderOf = R.birthOrder(s, r);
@@ -428,7 +428,8 @@ const SDP = 'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0
   'c=IN IP4 0.0.0.0\r\na=candidate:1 1 udp 2113937151 127.0.0.1 40000 typ host\r\na=ice-ufrag:abcd\r\na=ice-pwd:' + 'x'.repeat(24) +
   '\r\na=fingerprint:sha-256 ' + Array(32).fill('AB').join(':') + '\r\na=setup:actpass\r\na=mid:0\r\na=sctp-port:5000\r\n';
 class FakePC {
-  constructor() { this.iceGatheringState = 'complete'; this.localDescription = null; this.listeners = new Map(); }
+  static made = [];
+  constructor() { this.iceGatheringState = 'complete'; this.localDescription = null; this.listeners = new Map(); FakePC.made.push(this); }
   createDataChannel(label) { return { label, readyState: 'connecting', addEventListener() {}, close() {} }; }
   async createOffer() { return { type: 'offer', sdp: SDP }; }
   async createAnswer() { return { type: 'answer', sdp: SDP.replace('actpass', 'active') }; }
@@ -466,6 +467,7 @@ await test('#29 a guest that gets an ack too late says so, and goes on with WebR
   ch.close();
   assert.ok(res.sdp, 'it made a WebRTC answer');
   assert.deepEqual(said, ['no']);
+  assert.match(FakePC.made.at(-1).localDescription.sdp, /a=setup:passive\r\n/, '#28 and the answer it uses is passive');
   res.cancel?.();
 });
 

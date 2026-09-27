@@ -5,10 +5,12 @@
 // Ben receives the program and that a rename on one page shows on the other.
 // The browsers run with raw host candidates (--disable-features=
 // WebRtcHideLocalIpsWithMdns): Chrome's default hides them behind mDNS names,
-// which need multicast, and CI runners do not reliably have it. When ICE
-// cannot connect at all here it prints SKIPPED and exits 0; any other failure
-// exits 1. `--late N` applies the reply N seconds after Ben made it (a
-// measurement to run by hand, not in CI).
+// which need multicast, and CI runners do not reliably have it. First a probe
+// connects two plain RTCPeerConnections inside one page: when that gathers no
+// candidate or cannot connect, the machine cannot do WebRTC and the test prints
+// SKIPPED and exits 0. After that, any failure, a page that could not connect
+// included, exits 1. `--late N` applies the reply N seconds after Ben made it
+// (a measurement to run by hand, not in CI).
 //   integrations/web/build.sh && node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
 import assert from 'node:assert/strict';
 import { findChrome, launchChrome, openPage } from './cdp-client.mjs';
@@ -35,8 +37,36 @@ const guard = setTimeout(() => {
 
 const ready = (p) => p.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { timeout: 60000 });
 const idle = (p) => p.waitFor(`document.getElementById('cancelbtn').disabled`, { timeout: 60000 });
-const dialog = (p) => p.evaluate(`document.getElementById('d2collab')?.textContent || ''`);
 const started = Date.now();
+
+/** Can this machine connect two peer connections at all (in one page, host candidates only)? */
+const PROBE = async () => {
+  const a = new RTCPeerConnection();
+  const b = new RTCPeerConnection();
+  const gather = (pc) => new Promise((done) => {
+    if (pc.iceGatheringState === 'complete') done();
+    pc.addEventListener('icegatheringstatechange', () => pc.iceGatheringState === 'complete' && done());
+    setTimeout(done, 3000);
+  });
+  try {
+    const ch = a.createDataChannel('probe');
+    await a.setLocalDescription(await a.createOffer());
+    await gather(a);
+    if (!/a=candidate:/.test(a.localDescription.sdp)) return 'no ICE candidate was gathered';
+    await b.setRemoteDescription(a.localDescription);
+    await b.setLocalDescription(await b.createAnswer());
+    await gather(b);
+    await a.setRemoteDescription(b.localDescription);
+    const open = await new Promise((done) => {
+      ch.onopen = () => done(true);
+      setTimeout(() => done(false), 10000);
+    });
+    return open ? null : `two peer connections in one page did not connect (ICE ${a.iceConnectionState})`;
+  } finally {
+    a.close();
+    b.close();
+  }
+};
 const step = (what) => { if (process.env.COLLAB_VERBOSE) console.log(`${((Date.now() - started) / 1000).toFixed(1)} s  ${what}`); };
 let skipped = null;
 
@@ -45,6 +75,8 @@ try {
   for (const p of [ana, ben]) await p.viewport(1280, 860);
   await ana.navigate(`${server.base}/decompile2/`);
   await ready(ana);
+  skipped = await ana.call(PROBE);
+  if (skipped) throw Object.assign(new Error(skipped), { skip: true });
   await ana.click('#examplebtn');
   await ana.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { timeout: 60000 });
   await idle(ana);
@@ -78,15 +110,8 @@ try {
   }, reply);
   const applied = Date.now();
   step('Ana applied the reply');
-  try {
-    await ben.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf'`, { what: 'Ben receives the program', timeout: 30000 });
-  } catch (e) {
-    const text = await ana.evaluate(`document.querySelector('#d2collab [data-status]')?.textContent || ''`);
-    if (/Could not connect directly/.test(text) || /Could not connect directly/.test(await dialog(ben))) {
-      skipped = 'ICE could not connect two Chrome processes on this machine';
-    } else throw e;
-  }
-  if (!skipped) {
+  await ben.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf'`, { what: 'Ben receives the program', timeout: 30000 });
+  {
     const openMs = Date.now() - applied;
     await ben.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { timeout: 60000 });
     await idle(ben);
@@ -110,6 +135,8 @@ try {
     const lateText = late ? `, reply applied ${Math.round((applied - t0) / 1000)} s after it was made` : '';
     console.log(`DECOMPILE2 COLLAB RTC OK — two Chrome processes over WebRTC, links carried by hand${lateText}: Ben received the program ${openMs} ms after the reply was applied; renames went both ways`);
   }
+} catch (e) {
+  if (!e.skip) throw e;
 } finally {
   clearTimeout(guard);
   for (const c of chromes) c.close();

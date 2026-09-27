@@ -160,6 +160,10 @@ node integrations/web/test/decompile2-bytes.mjs
 node integrations/web/test/decompile2-learn.mjs
 node integrations/web/test/decompile2-groups.mjs
 node integrations/web/test/decompile2-collab.mjs
+node integrations/web/test/decompile2-collab-cases.mjs
+
+# G2. Exported sessions replayed by the native CLI (skips without decompiler/target/release/kuna).
+node integrations/web/test/decompile2-replay.mjs
 
 # H. The study view's commands through the real Worker (inspect, read, --assert).
 node integrations/web/test/decompile2-worker.mjs
@@ -169,6 +173,7 @@ node integrations/web/test/decompile2-browser.mjs
 
 # J. Live sessions: tabs of one Chrome, then two Chrome processes over WebRTC.
 node integrations/web/test/decompile2-collab-browser.mjs [--shots DIR]
+node integrations/web/test/decompile2-collab-page.mjs [--only TEXT]
 node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
 ```
 
@@ -190,7 +195,8 @@ node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
 - **`worker.mjs`** runs the shipped module Worker and RPC client through Node's worker
   threads, proving inventory-first/lazy-address behavior, terminate-and-recreate
   cancellation, session rehydration, and transfer of a complete project ZIP without its
-  intermediate artifact object.
+  intermediate artifact object, and that the build id a client asks for is the SHA-256
+  of the exact wasm served, again after a restart.
 - **`worker-errors.mjs`** simulates a content blocker stopping the Worker before its
   initialization reply, and pins the actionable error plus terminal behavior for later
   requests.
@@ -212,11 +218,21 @@ node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
   what the native `kuna_wasm` prints; regenerate them with
   `node integrations/web/test/make-inspect-fixtures.mjs`.
 - **`decompile2-collab.mjs`** pins live sessions without a browser: register
-  convergence over the full key set, the ops another page may not send, sessions as
-  registers and back in one canonical order, undo that leaves what someone changed
-  since, messages, codes and the cut-down SDP, the STUN/TURN setting (off by default),
-  and whole groups over in-memory links (introductions, the program sent and checked,
-  8 people and no more, another build refused).
+  convergence over the full key set (birth clocks too), the ops another page may not
+  send, sessions as registers and back, the directive order (as made when alone, by birth
+  when shared), undo that leaves what someone changed since, messages, codes and the
+  cut-down SDP, the STUN/TURN setting (off by default), and whole groups over in-memory
+  links (introductions, the program sent and checked, 8 people and no more, another
+  build refused).
+- **`decompile2-collab-cases.mjs`** holds one case per defect a review found in the
+  protocol and the registers (each fails on the code before its fix): joiners sending
+  their registers, undo depth, reverts, per-field apply, a global's halves, the counter
+  bound, UTF-8 batch sizes, the live-register cap, resync after dropped edits, route
+  pruning, names and programs that cannot travel, the same-browser knock, the passive
+  answer.
+- **`decompile2-replay.mjs`** exports sessions made alone and shared and replays each
+  `.kuna` through the native CLI: a type used by a later type, the later of two
+  prototypes, and a rename chain all apply.
 - **`decompile2-worker.mjs`** runs `inspect`, `read` and `--assert` through the shipped
   Worker (a rename applies, a size-changing retype and an unknown symbol are rejected with
   a body, a `bytes` overlay shows in `read`, a function rename reaches `list`, a qualified
@@ -235,9 +251,14 @@ to Rust, and checks that no other page links to `/decompile2/`. It fails on any 
 **`decompile2-collab-browser.mjs`** (a live session in tabs of one Chrome: joining,
 shared edits, the shared decompiler effort, pointers at two widths, following, pings, a
 third page over WebRTC through the reply-link hand-off, stale replies, undo, junk
-messages, leaving) and
-**`decompile2-collab-rtc.mjs`** (two Chrome processes over WebRTC; SKIPPED when ICE
-cannot connect on the machine; `--late 60` opens the reply a minute late). Plain
+messages, leaving),
+**`decompile2-collab-page.mjs`** (the page's side of the review's defects, one case
+each: cancelled edits, joins after a re-index or a failed join, a newcomer's own changes
+kept apart, following into a loading function, Undo and Cancel during someone else's
+re-decompile, focus, the two-tab demo, connection errors) and
+**`decompile2-collab-rtc.mjs`** (two Chrome processes over WebRTC; SKIPPED only when
+two peer connections in one page cannot connect on the machine; `--late 60` opens the
+reply a minute late). Plain
 `--headless --virtual-time-budget=… --dump-dom` does not work for these pages: the dump
 happens while the status still reads `loading decompiler…`.
 

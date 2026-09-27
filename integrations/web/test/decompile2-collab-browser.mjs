@@ -6,11 +6,11 @@
 // re-decompiles everyone; Ana's pointer lands on the same line of C in Ben's
 // window at 1440 and 1024 px, in C code and side by side, and hides when Ben
 // opens another function; an Alt+click pings, and Go there opens it; a third
-// page joins over WebRTC through the reply-link hand-off (a fourth tab opens
-// the reply link and hands it to Ana's tab) and is introduced to Ben by the
-// group; Undo leaves what someone else changed since; malformed messages are
-// dropped and the page stays usable; leaving shows on the others' pages. Any
-// uncaught page exception fails the run.
+// person, in a second Chrome process, joins over WebRTC through the reply-link
+// hand-off (a tab of Ana's browser opens the reply link and hands it to Ana's
+// tab) and is introduced to Ben by the group; Undo leaves what someone else
+// changed since; malformed messages are dropped and the page stays usable;
+// leaving shows on the others' pages. Any uncaught page exception fails the run.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 //   integrations/web/build.sh && node integrations/web/test/decompile2-collab-browser.mjs [--shots DIR]
@@ -19,7 +19,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { findChrome, launchChrome, openPage, openTab } from './cdp-client.mjs';
 import { requireDist, serveStatic } from './worker-harness.mjs';
-import { decodeCode, encodeCode } from '../decompile2/collab/wire.js';
+import { decodeCode } from '../decompile2/collab/wire.js';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
@@ -33,13 +33,22 @@ const shots = shotsAt > 0 ? process.argv[shotsAt + 1] : null;
 if (shots) mkdirSync(shots, { recursive: true });
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const server = await serveStatic();
-const chrome = await launchChrome(chromePath, { flags: ['--disable-features=WebRtcHideLocalIpsWithMdns'] });
-const guard = setTimeout(() => { console.error(`DECOMPILE2 COLLAB BROWSER FAIL — timed out after: ${done.join('; ')}`); chrome.close(); process.exit(1); }, 540000);
+const flags = ['--disable-features=WebRtcHideLocalIpsWithMdns'];
+const chrome = await launchChrome(chromePath, { flags });
+let chrome2 = null;
+const guard = setTimeout(() => {
+  console.error(`DECOMPILE2 COLLAB BROWSER FAIL — timed out after: ${done.join('; ')}`);
+  chrome.close();
+  chrome2?.close();
+  process.exit(1);
+}, 540000);
 const done = [];
 const pages = [];
 
-async function tab(name, width = 1280) {
-  const page = pages.length ? await openTab(chrome.port) : await openPage(chrome.port);
+/** A tab in the first browser, or (`other`) the first page of a second browser: another person's computer. */
+async function tab(name, width = 1280, { other = false } = {}) {
+  if (other) chrome2 ||= await launchChrome(chromePath, { flags });
+  const page = other ? await openPage(chrome2.port) : pages.length ? await openTab(chrome.port) : await openPage(chrome.port);
   page.label = name;
   await page.viewport(width, 860);
   pages.push(page);
@@ -272,13 +281,10 @@ try {
   await shot(ben, 'session');
   await ok('Alt+click (and p) pings; Go there opens the pinged line');
 
-  // ── a third page, over WebRTC, through the reply-link hand-off ─────────────
+  // ── a third person, in another browser, over WebRTC and the reply-link hand-off ──
   const link2 = await inviteLink(ana);
-  const inv = await decodeCode(link2.split('#join=')[1], 'invite');
-  const { ok: _ok, v, k, b, ...fields } = inv;
-  const rtcOnly = `${link2.split('#join=')[0]}#join=${await encodeCode('invite', fields)}`;
-  const cy = await tab('Cy');
-  await cy.navigate(rtcOnly);
+  const cy = await tab('Cy', 1280, { other: true });
+  await cy.navigate(link2);
   await nameAndGo(cy, 'Cy');
   await cy.waitFor(`document.querySelector('#d2collab [data-copytext]')?.value.includes('#reply=')`, { what: 'Cy\'s reply link', timeout: 20000 });
   assert.match(await text(cy, '#d2collab'), /Send this reply link back to Ana/);
@@ -409,5 +415,6 @@ try {
   clearTimeout(guard);
   for (const p of pages) p.close();
   chrome.close();
+  chrome2?.close();
   await server.close();
 }

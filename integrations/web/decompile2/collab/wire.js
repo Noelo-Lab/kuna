@@ -8,7 +8,7 @@ import { validSdp } from './sdp.js';
 
 export const PROTOCOL = 1;
 export const MAX_PEERS = 8;
-export const MAX_FILE = 64 << 20;
+const MAX_FILE = 64 << 20;
 export const MAX_MESSAGE = 240 << 10;
 export const COLORS = ['#e8404e', '#5fb3e8', '#e6ae5c', '#8cc58e', '#b39ddb', '#f28fb3', '#6cc3c3', '#c8a27a'];
 const VIEWS = ['c', 'split', 'asm', 'bytes', 'stack', 'src'];

@@ -8,7 +8,7 @@ import { Session, stripComment, shellQuote, cliCommand, isGlobalRaw } from '../d
 import {
   validateIdent, validateCType, cDeclare, parseSignature, buildPrototype, typeSize, knownTypes, normalizeType,
 } from '../decompile2/ctype.js';
-import { SessionStore, fnv1a32, hashBytes } from '../decompile2/persist.js';
+import { SessionStore, fnv1a32, hashBytes, legacyKey } from '../decompile2/persist.js';
 
 const checks = [];
 const MAIN = '0x1198';
@@ -352,7 +352,8 @@ assert.equal(fnv1a32(new TextEncoder().encode('foobar')), 'bf9cf968');
 if (globalThis.crypto?.subtle) {
   assert.match(await hashBytes(new TextEncoder().encode('abc')), /^sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad$/);
 }
-assert.match(await hashBytes(new TextEncoder().encode('abc'), null), /^fnv:[0-9a-f]{16}-3$/, 'no WebCrypto: FNV fallback');
+assert.equal(await hashBytes(new TextEncoder().encode('abc'), null), 'sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 'no WebCrypto: the same SHA-256, computed in JS');
+assert.match(legacyKey(new TextEncoder().encode('abc')), /^fnv:[0-9a-f]{16}-3$/, 'the key earlier versions used without WebCrypto, to find what they stored');
 {
   const mem = new Map();
   let quota = Infinity;

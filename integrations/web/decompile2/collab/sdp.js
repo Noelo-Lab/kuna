@@ -12,7 +12,7 @@ const MID = /^[A-Za-z0-9_-]{1,32}$/;
 const CAND = /^([0-9A-Fa-f.:]{2,45}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.local) (\d{1,5}) ([hspr])([ut]) (\d{1,10})(?: (active|passive|so))?$/;
 const TYPES = { h: 'host', s: 'srflx', p: 'prflx', r: 'relay' };
 const PROTOS = { u: 'udp', t: 'tcp' };
-export const MAX_CANDIDATES = 16;
+const MAX_CANDIDATES = 16;
 
 /** The fields of `sdp` a peer needs, `{u, p, f, c[, m]}`, or null. */
 export function compactSdp(sdp) {

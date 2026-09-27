@@ -1,5 +1,6 @@
 // worker.mjs — exercise the shipped module Worker and its RPC client in Node.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -193,11 +194,31 @@ try {
   assert.ok(backToC.functions.length > 0);
   assert.doesNotMatch((await client.decompile('main')).functions[0].code, /let mut/, 'C session renders C');
 
+  const hashing = new KunaWorkerClient({
+    workerUrl: pathToFileURL(join(dist, 'kuna-worker.js')),
+    wasmUrl: `${base}/kuna_wasm.wasm`,
+    specRoot: `${base}/specs`,
+    workerFactory: (url) => new BrowserWorker(url),
+    hashWasm: true,
+  });
+  try {
+    await hashing.ready();
+    const wasm = createHash('sha256').update(await readFile(join(dist, 'kuna_wasm.wasm'))).digest('hex');
+    assert.equal(hashing.build, wasm, 'the build id is the SHA-256 of the wasm the Worker compiled');
+    assert.equal(client.build, null, 'a page that does not ask for it pays nothing');
+    hashing.cancel('a new Worker');
+    await hashing.ready();
+    assert.equal(hashing.build, wasm, 'and a respawned Worker reports it again');
+  } finally {
+    hashing.close();
+  }
+
   console.log(
     `WORKER OK — ${inventory.functions.length} functions inventoried, ` +
     `one address decompiled lazily (${inventoryMs} ms inventory + ${bodyMs} ms body), ` +
     'cancellation restarted the Worker, the host event loop stayed live, ' +
-    `${project.bytes.length} ZIP bytes transferred, the session language reached the engine`,
+    `${project.bytes.length} ZIP bytes transferred, the session language reached the engine, ` +
+    'the build id is the hash of the compiled wasm',
   );
 } finally {
   client.close();

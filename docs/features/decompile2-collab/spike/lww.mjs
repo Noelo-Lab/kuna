@@ -11,6 +11,12 @@
 // with no control characters (a newline would split a directive in an
 // exported .kuna file) and never a form that makes the engine read a file
 // (`@FILE`, `bytes ADDR @FILE`). DOM-free; the spike's tests drive it.
+//
+// This is the spike, kept as the proposal measured it. The page's own copy,
+// integrations/web/decompile2/collab/replica.js, has moved on: its `validOp`
+// also bounds the clock counter, carries each register's birth clock, and
+// takes its text limits and rules from session.js. Read that one for what a
+// page accepts.
 
 const newer = (a, b) => a[0] !== b[0] ? a[0] > b[0] : a[1] > b[1];
 

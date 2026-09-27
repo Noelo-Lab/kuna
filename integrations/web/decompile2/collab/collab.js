@@ -59,7 +59,7 @@ export function iceServersFrom(prefs) {
 }
 
 /** Does a change to register `key` change the directives of the function at `fn`? */
-export function touchesFunction(key, fn) {
+function touchesFunction(key, fn) {
   const p = key.split(':');
   if (p[0] === 'var' || p[0] === 'comment' || p[0] === 'rawf') return p[1] === fn;
   return p[0] !== 'setting';

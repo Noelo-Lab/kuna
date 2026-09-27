@@ -15,11 +15,12 @@
 // field by field. Ops from other pages pass `validOp` first: a key of a known
 // shape, a value of its kind's shape (the same text rules as the page's own
 // dialogs, from session.js), and a clock within bounds. DOM-free.
+import { addrHex } from '../addr.js';
 import { TEXT_LIMITS, UNDO_MAX, directiveTextProblem, declarationProblem } from '../session.js';
 
 export const MODES = ['auto', 'fast', 'reliable', 'aggressive'];
-export const MAX_COUNTER = 2 ** 48;
-export const COUNTER_WINDOW = 2 ** 24;
+const MAX_COUNTER = 2 ** 48;
+const COUNTER_WINDOW = 2 ** 24;
 
 /** Whether clock `a` is later than clock `b`. */
 export const newer = (a, b) => (a[0] !== b[0] ? a[0] > b[0] : a[1] > b[1]);
@@ -50,7 +51,7 @@ const clockOk = (c) => Array.isArray(c) && c.length === 2 && Number.isSafeIntege
   typeof c[1] === 'string' && /^[a-z0-9]{1,16}$/.test(c[1]);
 
 /** Whether `value` may be written to `key` (the check every op from another page passes). */
-export function validValue(key, value) {
+function validValue(key, value) {
   if (typeof key !== 'string' || key.length > 300) return false;
   const kind = KINDS.find(([re]) => re.test(key));
   return !!kind && (value === null || (typeof value === 'string' && kind[1](value)));
@@ -143,8 +144,6 @@ export class Replica {
   }
 }
 
-const hexOf = (big) => '0x' + big.toString(16);
-
 /**
  * Give this page's own raw directives (`raw:<n>`) their shared name
  * (`raw:<me>:<n>`), so a page that joins again later under another id does
@@ -191,7 +190,7 @@ export function registersOf(session) {
       default: break;
     }
   }
-  for (const [addr, value] of session.bytes) out.set(`byte:${hexOf(addr)}`, value.toString(16).padStart(2, '0'));
+  for (const [addr, value] of session.bytes) out.set(`byte:${addrHex(addr)}`, value.toString(16).padStart(2, '0'));
   return out;
 }
 

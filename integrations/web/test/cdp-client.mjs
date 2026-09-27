@@ -118,10 +118,11 @@ export async function openPage(port, { onException, targetId = null } = {}) {
     throw new Error(`timed out waiting for: ${what}`);
   }
 
+  /** Go to `url` and wait for its load event (a change of the #fragment alone loads nothing, so it returns at once). */
   async function navigate(url) {
     const loaded = new Promise((done) => on('Page.loadEventFired', done));
-    await send('Page.navigate', { url });
-    await loaded;
+    const res = await send('Page.navigate', { url });
+    if (res.loaderId || res.errorText) await loaded;
   }
 
   async function center(selector) {
@@ -178,7 +179,11 @@ export async function openPage(port, { onException, targetId = null } = {}) {
     return Buffer.from(data, 'base64');
   }
 
-  return { send, on, evaluate, call, waitFor, navigate, click, hover, key, type, viewport, screenshot, exceptions, close: () => ws.close() };
+  const closeTab = async () => {
+    ws.close();
+    await fetch(`http://127.0.0.1:${port}/json/close/${page.id}`).catch(() => {});
+  };
+  return { send, on, evaluate, call, waitFor, navigate, click, hover, key, type, viewport, screenshot, exceptions, close: () => ws.close(), closeTab };
 }
 
 /** Open another tab in the same browser (same profile: tabs share storage and BroadcastChannel). */

@@ -615,7 +615,8 @@ changed, and records every `assertions[]` row against the record that produced i
 *Your changes* marks it applied (✓) or rejected (✗, with the engine's reason, also
 toasted). A
 rejected directive stays in the session; a request that fails or is cancelled restores
-the snapshot. The engine refuses a retype that changes a local's storage size (`Storage
+the snapshot (working alone; in a live session the change stays, see *Working
+together*). The engine refuses a retype that changes a local's storage size (`Storage
 is 8 bytes, the stated type is 4`), so the retype dialog warns before sending one, sizing
 `long` by the target's data model (4 bytes on Windows). A directive the engine cannot
 parse fails the whole request (`error: --assert "<directive>": …`, exit 1): the page
@@ -643,10 +644,11 @@ hash, time, and the replay command `kuna decompile <binary> <function> --assert
 Import reads the same format; an unqualified function-scoped line binds to the open
 function, and a directive the page does not model is kept verbatim. The session is also
 saved in `localStorage` per binary — `kuna.d2.session.<hash>`, the SHA-256 of the bytes
-(two FNV-1a passes outside a secure context), at most 20 binaries (`kuna.d2.index`,
-least recently used evicted; a full or throwing store never breaks the page) — and loading
-the same file again restores it: a toast, and a "Restored N changes from last time.
-Discard them" banner in *Your changes*.
+(computed in JS outside a secure context, where WebCrypto is missing; what an earlier
+version stored there under its FNV-1a key is found and moved to the SHA-256 key), at most
+20 binaries (`kuna.d2.index`, least recently used evicted; a full or throwing store never
+breaks the page) — and loading the same file again restores it: a toast, and a "Restored
+N changes from last time. Discard them" banner in *Your changes*.
 
 **Patching.** The Bytes view is the function's bytes: instruction bytes from the engine,
 the gaps from the page's own copy of the file through `sections[].file_offset`, patched
@@ -724,37 +726,65 @@ different variable in Fast); *Show code as* stays each person's own, and the ⋯
 "changes it for everyone" next to the effort. Each write carries a Lamport clock
 `[counter, page]` and the larger wins everywhere, so a rename and a retype of one local
 made at the same moment both survive, and pages that have seen the same writes hold the
-same session in whatever order the writes arrived. Directives go to the engine in one
-canonical order (by kind, then key) on every page, shared or not. A page's own edits
-are compared with the registers after each change and sent as register ops; the others'
-are applied through the page's remote path, which re-decompiles the open function only
-when they touch it (once per burst, 300 ms after the last, when no request is running),
-adds no undo step and restores nothing on failure. When someone's change replaces yours,
-a toast says so ("Ben renamed total to count after you"). *Your changes* becomes
-*Changes*, each row in its author's colour. **Undo** takes back only this page's own
-last change, and leaves any field someone else changed since ("Ben changed that after
-you, so it was not undone").
+same session in whatever order the writes arrived.
+
+*Order.* Order matters to the engine: a type must come before the types that use it, and
+of two rename steps (`v1` → `i`, then `acc` → `v1`) the first must replay first. Working
+alone, the directives keep the order they were made in, grouped by kind (a changed
+record keeps its place), and the exported file replays in that order. In a session,
+each kind is ordered by each register's **birth clock**, the smallest clock any page has
+written it with. It is merged as a grow-only minimum and sent with every op, so every
+page sends the engine the same list, and a later edit of a type does not move it
+behind the types that use it. Leaving a session keeps the order the session had.
+
+*Edits.* A page's own edits are compared with the registers after each change and sent
+as register ops; the others' are applied together, once per frame, through the page's
+remote path. That path re-decompiles the open function only when they touch it (once per
+burst, 300 ms after the last, when no request is running) and adds no undo step. A
+shared change is never taken back behind someone's back: when this page's request for
+it fails or is cancelled, the change stays (the others already have it), the page says
+so, and Undo takes it back; the engine refusing a directive marks it ✗ as when working
+alone. When someone's change replaces yours, a toast says so ("Ben renamed total to count
+after you"). *Your changes* becomes *Changes*, each row in its author's colour. **Undo**
+takes back this page's own changes, one per step, newest first (up to 100 steps), and
+leaves any field someone else changed since ("Ben changed that after you, so it was not
+undone"); a global's type and name are one step, undone together.
 
 *Joining.* On every link the pages exchange a hello (protocol version, build id,
-program SHA-256, name, colour); a different protocol or build — the build id is the
-SHA-256 of `kuna_wasm.wasm` — is refused with "Ben's page is a different version of
-Kuna; reload both". The page that invited sends the newcomer a welcome (the session, the
-people in it, the program's name, size and hash), then its registers. A newcomer without
-the program receives it (64 KiB chunks, paced by the channel's `bufferedAmount`, at most
-64 MiB), checks its SHA-256 and opens it without a prompt, opening the function the
-inviter is on; one who already has the same program open is not sent it again, and what
-it had changed joins the session (the session's value wins where both changed a field).
-Changes a newcomer had stored for that program from before are not merged: a toast
-offers to save them as a `.kuna` file.
+program SHA-256, name, colour); a different protocol or build is refused with "Ben's page
+is a different version of Kuna; reload both". The build id is the SHA-256 of the wasm
+bytes this page's engine compiled: the Worker hashes exactly what it compiles, and again
+after each restart, and a page whose engine changes during a session leaves it. The page
+that invited sends the newcomer a welcome (the session, the people in it, the program's
+name, size and hash), and then the two send each other their registers. That happens on
+every join, so a page that joins again merges what it changed while its link was down
+(the newer clock wins each field). A newcomer without the program receives it (64 KiB
+chunks, paced by the channel's `bufferedAmount`, at most 64 MiB), checks its SHA-256 and
+opens it without a prompt, opening the function the inviter is on. A newcomer who already
+has the same program open is not sent it again, and what it had changed joins the
+session (the session's value wins where both changed a field). A join that gets no
+welcome within 20 seconds, or whose inviter leaves first, says so and can be tried again
+with a new link.
+
+*Where a session is stored.* The inviter, and a newcomer who had the program open, keep
+the session as their own (`kuna.d2.session.<hash>`). A newcomer who receives the program
+while having changes of their own stored for it keeps the two apart: the session is
+saved under `kuna.d2.shared.<hash>` (at most 5 programs, least recently used evicted,
+indexed in `kuna.d2.shared.index`) and never over the newcomer's own. The session dialog offers
+*Save them as a file* (a `.kuna` qualified with their own function names). On leaving,
+their own changes come back, and a toast offers to keep the session's changes instead. A
+newcomer with nothing stored keeps the session as their own. Two tabs of one browser
+share their storage, so joining a tab of the same browser sets nothing apart.
 
 *Groups.* Up to 8 people, each page linked to every other. A newcomer needs one invite
 from anyone in the session; the pages gossip who is linked to whom, and for each pair not
 yet linked, the page with the smaller id makes an offer that a page linked to both
-relays, with the answer, so the group introduces the newcomer to everyone. Edits are
-forwarded to pages that had not seen them, so a pair that cannot link directly still
-converges. The ninth person is told "This session is full (8 people)". Leaving (the
-session dialog, or closing the tab) tells the others; a page that loses a link tries
-again through the others, and one that joins again merges what it changed meanwhile.
+relays, with the answer, so the group introduces the newcomer to everyone. A page
+forwards an edit only to the people it knows are not linked to its author, so a pair that
+cannot link directly still converges, and a full mesh sends each edit once per link. The
+ninth person is told "This session is full (8 people)". Leaving (the session dialog, or
+closing the tab) tells the others; a page that loses a link tries again through the
+others, and someone no longer reachable through anyone leaves the roster.
 
 *Presence.* The top bar shows the others as initials in their colours; the tooltip says
 where each one is ("Ben: sum_to, Assembly") and a click follows them until you click or
@@ -773,13 +803,23 @@ there**.
 type, each field in its expected shape and a size cap (`wire.js` `readMessage`), then a
 rate limit per page (edits 20 a second, pings 1, pointers 30); what fails is dropped and
 the link goes on. Each register op passes `validOp`: a key of a known shape, a value of
-its kind's shape, no control characters (a newline would start a second directive in an
-exported `.kuna` file) and never a form that makes the engine read a file (`@FILE`,
-`bytes ADDR @FILE`, an `@` in a type). A page's own change that others would refuse
-stays on that page, and it says so. The others cannot grow the session past 100,000
-registers. Remote directives go through the same refusal path as the page's own, and
-names are escaped wherever they are shown. Between browsers the pages talk only to each
-other, over DTLS; the invite and reply codes never reach a server.
+its kind's shape, and a clock whose counter is at most 2^48 and not more than 2^24 ahead
+of the page's own (so one bad clock cannot push every page's counter past what the others
+accept). The value rules are the page's own dialogs' rules, from one function in
+`session.js`: a length cap per kind, no control characters (a newline or a line
+separator would start a second directive in an exported `.kuna` file), no `#` that
+starts a comment, and never a form that makes the engine read a file (`@FILE`, `bytes
+ADDR @FILE`, an `@` in a type). A page's own change that others would refuse stays on
+that page, and it says so; each later value is checked again. A session holds at most
+100,000 live registers (deletions do not count): a page neither sends nor accepts more.
+When the rate limit drops edits, the page asks their sender for its registers (at most
+every 5 seconds), so nothing dropped stays missing. Messages are measured in UTF-8
+bytes against the channel's limit and sent at a steady pace. A name loses control
+characters and is cut to 40 characters, and a program that cannot travel (over 64 MiB)
+is refused before any connection is made, with the reason. Remote directives go through
+the same refusal path as the page's own, and names are escaped wherever they are shown.
+Between browsers the pages talk only to each other, over DTLS; the invite and reply codes
+never reach a server.
 
 **Older engines.** What the engine can do is read off each `list` document: the
 study-view engine's carries `sections` and `target`, and the same build answers
@@ -818,7 +858,8 @@ formats and architectures**:
    Worker and rehydrates the session, and project export transfers a structurally complete
    ZIP rather than the four-artifact JSON object. The Pages build runs this test.
    It also loads a session with `language: 'rust'` and asserts Rust comes back (the
-   Worker used to drop the language).
+   Worker used to drop the language), and checks that a client asking for the build id
+   gets the SHA-256 of the exact wasm served, again after a restart.
 4. **The study view.** Five build-free suites import the page's modules from the source
    tree: **`test/decompile2-render.mjs`** (the shared highlighter's `scan` — `highlight*`
    output pinned byte for byte — token-stream rendering and the per-line fallback,
@@ -840,12 +881,25 @@ formats and architectures**:
    relies on (exit code plus the quoted directive); it skips with a message on a wasm
    without `inspect`. **`test/decompile2-collab.mjs`** (build-free) covers live sessions:
    2000 random rounds of registers over the full key set, the mode included, converge to
-   one map and one directive list; 27 hostile ops are refused; a session reads back as
-   registers and the registers as the same directives in the canonical order; undo skips
-   what someone changed since; messages, invite and reply codes and the cut-down SDP
-   refuse what is not theirs; the STUN/TURN setting is off by default; and whole groups
-   over in-memory links introduce newcomers, send the program, converge, stop at 8,
-   refuse another build and converge through a third page when two cannot link.
+   one map (birth clocks too) and, in birth order, one directive list; 27 hostile ops are
+   refused; a session reads back as registers and the registers as the same directives;
+   a session keeps the order its directives were made in alone and the birth order
+   shared; undo skips what someone changed since; messages, invite and reply codes and
+   the cut-down SDP refuse what is not theirs; the STUN/TURN setting is off by default;
+   and whole groups over in-memory links introduce newcomers, send the program,
+   converge, stop at 8, refuse another build and converge through a third page when two
+   cannot link. **`test/decompile2-collab-cases.mjs`** (build-free) holds one case per
+   defect a review found in the protocol and the registers, each failing on the code
+   before its fix: a joiner's own registers reaching the group, undo two deep, a
+   deliberate revert keeping the step before it, a global's halves, per-field apply, a
+   refused value retried, a join whose inviter leaves first, routes pruned when someone
+   leaves, the counter bound, UTF-8 batch sizes, names and programs that cannot travel,
+   the live-register cap on both sides and the resync after dropped edits, a very large
+   snapshot, the same-browser knock answered late, and the passive answer.
+   **`test/decompile2-replay.mjs`** exports sessions (made alone, and shared with the
+   birth order) and replays each file through the native CLI (`kuna decompile … --assert
+   @file`): a type used by a later type, two prototypes of one function (the later
+   wins) and a rename chain all apply; it skips without `decompiler/target/release/kuna`.
 5. **`test/decompile2-browser.mjs`** — the real page in headless Chrome over the DevTools
    protocol (Node's built-in `WebSocket`, no `puppeteer`; skips when there is no Chrome or
    the Node has no `WebSocket`): it checks the welcome screen's drop zone, loads the
@@ -876,11 +930,22 @@ formats and architectures**:
    without overflow at 1024 and 820 px, undo leaving what someone changed since,
    malformed and hostile messages from a same-origin tab dropped, and leaving
    (`--shots DIR` saves screenshots).
+   **`test/decompile2-collab-page.mjs`** drives the page's side of a session through the
+   same defects, one case each in fresh tabs (a second Chrome stands in for another
+   computer; the Worker's answers can be delayed so a request is caught in flight): a
+   cancelled or superseded edit keeping everyone's changes, a join after a re-index, a
+   newcomer's own stored changes kept apart and back after leaving, following into a
+   function that is still loading, a new invite after a failed join, Undo and Cancel
+   during someone else's re-decompile, opening a program while a join waits, the restored
+   banner, roster focus, two tabs without a false warning, a connection that cannot be
+   made, and a name with a line separator.
    **`test/decompile2-collab-rtc.mjs`** runs two Chrome processes over real WebRTC with
-   the links carried by the script, raw host candidates
+   the links carried by the script and raw host candidates
    (`--disable-features=WebRtcHideLocalIpsWithMdns`, since runners lack the multicast
-   `.local` names need) and prints SKIPPED when ICE cannot connect; `--late 60` applies the
-   reply a minute after it was made. CI runs both after the smoke test.
+   `.local` names need). It first connects two peer connections inside one page, and
+   prints SKIPPED only when that gathers no candidate or cannot connect; after that any
+   failure fails the test. `--late 60` applies the reply a minute after it was made. CI
+   runs these after the smoke test.
    The filter's DOM half was verified the same way during development (raw CDP): 16
    checks on `sample.elf` — row hiding is `display:none` and not the `.fn` flex rule,
    header and stub-divider counts, the invalid-regex report, `/`-to-focus, `Escape`,
