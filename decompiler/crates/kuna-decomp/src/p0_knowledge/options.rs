@@ -434,6 +434,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "castternary",
     // (kuna) a call's result takes the return type its callee's recovery stated.
     "callrettype",
+    // (kuna) leave out a 64-bit widening C's usual arithmetic conversions perform.
+    "castwiden",
     "ptrdepthcap",
     "codescalar",
     "boolbyte",

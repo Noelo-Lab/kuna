@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-bec7620080ad",
+  "probe_id": "a-41dead850113",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -30,7 +30,7 @@
     "stdout_matches": [
       "char v3 \\[264\\];",
       "v3\\[v4\\] = \\(char\\)v4 \\* ",
-      "sub_119f\\(&v3\\[\\(long\\)argc \\+ 0x14\\],&v3\\[1\\]\\)"
+      "sub_119f\\(&v3\\[argc \\+ 0x14L\\],&v3\\[1\\]\\)"
     ],
     "stdout_absent": [
       "char v\\d+ \\[20\\];",

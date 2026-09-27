@@ -1,0 +1,117 @@
+{
+ "instrument": "docs/features/castwiden/semhunks.py over docs/features/castwiden/semrun.py output (kuna decompile-all --json --option structdefs on; castwiden off vs the default, one build 07d37d9ba)",
+ "rule": "each changed line is parsed as C on both sides (casts found by castcount's grammar with the file's own type vocabulary); the trees must be equal once casts are set aside (GROUPING otherwise); no cast may be added (ADDED), removed from anything but an 8-byte integer cast (SCOPE), removed under a shift, comparison or unary op (FORBIDDEN), or removed from both operands of one op (BOTH_LOST); every removed cast is typed from the function's declarations, struct definitions and signatures: under + - * / % & | ^ the op must keep its type, or at 64 bits inside a chain of + - * & | ^ the chain must end with the same type; a destination must be the cast's type or an 8-byte integer (NARROW otherwise); anything whose type the text does not state is UNVERIFIED and listed",
+ "corpora": {
+  "castbench": {
+   "binaries": 45,
+   "casts_all_functions": {
+    "off": 87818,
+    "default": 84606
+   },
+   "stats": {
+    "functions same": 19073,
+    "functions changed": 1157,
+    "lines changed": 2910,
+    "removed arith:-": 128,
+    "verified arith": 2737,
+    "suffix": 2386,
+    "removed arith:+": 783,
+    "removed store": 68,
+    "verified store": 68,
+    "removed arith:*": 1702,
+    "removed arith:&": 97,
+    "removed assign:&=": 5,
+    "verified assign": 366,
+    "removed assign": 334,
+    "removed arith:%": 17,
+    "same operand text, one cast kept": 1,
+    "removed assign:+=": 25,
+    "removed call-arg": 38,
+    "verified call-arg": 38,
+    "removed arith:/": 7,
+    "removed arith:^": 3,
+    "removed assign:-=": 2
+   },
+   "flags": {},
+   "listed": [],
+   "what": "castbench.py's full corpus: coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find; O0/O2/O2-noinline",
+   "rebased_onto_243177605": "re-run on the rebased build 4f5c99de7: the same 1,157 functions and 2,910 lines, 0 flagged"
+  },
+  "corpus8": {
+   "binaries": 8,
+   "casts_all_functions": {
+    "off": 31141,
+    "default": 28943
+   },
+   "stats": {
+    "functions same": 4117,
+    "functions changed": 561,
+    "lines changed": 1899,
+    "removed arith:/": 7,
+    "verified arith": 1811,
+    "suffix": 1557,
+    "removed call-arg": 108,
+    "verified call-arg": 108,
+    "removed arith:-": 24,
+    "removed arith:*": 1057,
+    "removed arith:+": 663,
+    "removed arith:%": 7,
+    "removed assign": 267,
+    "verified assign": 267,
+    "removed arith:&": 43,
+    "removed arith:|": 10,
+    "same operand text, one cast kept": 1,
+    "removed store": 2,
+    "verified store": 2
+   },
+   "flags": {},
+   "listed": [],
+   "what": "bzip2 O0, bash O2, kmod O2, dpkg-divert O2, chage O0, crontab O2, dash O2-noinline, crond O0"
+  },
+  "extra11": {
+   "binaries": 11,
+   "casts_all_functions": {
+    "off": 33837,
+    "default": 32030
+   },
+   "stats": {
+    "functions same": 3766,
+    "functions changed": 623,
+    "lines changed": 1613,
+    "removed arith:+": 428,
+    "verified arith": 1554,
+    "suffix": 1273,
+    "removed arith:-": 98,
+    "removed arith:*": 918,
+    "removed store": 84,
+    "verified store": 84,
+    "removed call-arg": 109,
+    "verified call-arg": 109,
+    "removed arith:%": 36,
+    "removed assign": 53,
+    "verified assign": 61,
+    "removed arith:/": 42,
+    "removed assign:+=": 6,
+    "removed assign:&=": 1,
+    "removed arith:&": 24,
+    "same operand text, one cast kept": 1,
+    "removed assign:-=": 1,
+    "removed arith:^": 6,
+    "removed arith:|": 2
+   },
+   "flags": {},
+   "listed": [],
+   "what": "e2fsck O0, example64 O0, ip O2, xmlwf O2, sftp-server O2, mirai O2, last O2, minigzip O2, minipig.exe O2 (PE32), mydoom.exe O2 (PE32), init O2-noinline"
+  }
+ },
+ "control": {
+  "what": "the same classifier on the review corpus printed by this PR's first head d395e6aa2 (no struct definitions): it flags the two known lost-parentheses hunks (mirai), the one shared-widening hunk and three regrouped chains (e2fsck), all fixed here",
+  "flags": {
+   "GROUPING": 2,
+   "BOTH_LOST": 1,
+   "NARROW": 3,
+   "SCOPE": 84,
+   "UNVERIFIED": 78
+  }
+ }
+}

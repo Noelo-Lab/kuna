@@ -70,10 +70,10 @@ use crate::kuna_castimplied::{int_range, preserves, CType, ImpliedCasts, Printed
 /// Promoted C integer types, as bits of a set: `int`, `unsigned int`, and the
 /// signed and unsigned 8-byte integers (`long` where it is 8 bytes, else
 /// `long long`).  Only size and signedness decide a conversion's value.
-const INT: u8 = 1;
-const UINT: u8 = 2;
-const LONG: u8 = 4;
-const ULONG: u8 = 8;
+pub(crate) const INT: u8 = 1;
+pub(crate) const UINT: u8 = 2;
+pub(crate) const LONG: u8 = 4;
+pub(crate) const ULONG: u8 = 8;
 
 /// One arm of the conditional.
 #[derive(Debug, Clone, Copy)]
@@ -145,7 +145,7 @@ fn common(x: u8, y: u8) -> Option<u8> {
 /// The usual arithmetic conversions of two promoted types (C11 6.3.1.8): the
 /// wider type wins; at one width the unsigned type wins; a signed type wider than
 /// the unsigned one holds all its values and wins.
-fn usual(a: u8, b: u8) -> u8 {
+pub(crate) fn usual(a: u8, b: u8) -> u8 {
     let wide = |t: u8| t & (LONG | ULONG) != 0;
     let unsigned = |t: u8| t & (UINT | ULONG) != 0;
     match (wide(a), wide(b)) {
@@ -157,7 +157,7 @@ fn usual(a: u8, b: u8) -> u8 {
 }
 
 /// The promoted type of `t`, for an integer (or `bool`) of 1, 2, 4 or 8 bytes.
-fn promote(t: &Datatype) -> Option<u8> {
+pub(crate) fn promote(t: &Datatype) -> Option<u8> {
     let (lo, _) = int_range(t)?;
     match (t.get_size(), lo < 0) {
         (1 | 2, _) => Some(INT),
@@ -208,7 +208,7 @@ fn literal(p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, op: OpId) -> Opti
 /// `long` is `long_size` bytes: the first of the candidate types its suffix and
 /// base allow that holds its value.  A leading `-` is an operator and does not
 /// change the type; a character literal is an `int`.
-fn literal_type(tok: &str, long_size: i32) -> Option<u8> {
+pub(crate) fn literal_type(tok: &str, long_size: i32) -> Option<u8> {
     let t = tok.strip_prefix('-').unwrap_or(tok);
     if t.ends_with('\'') {
         return Some(INT);

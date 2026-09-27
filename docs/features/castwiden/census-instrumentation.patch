@@ -1,0 +1,159 @@
+diff --git a/decompiler/crates/kuna-decomp/src/p9_emit/kuna_castimplied.rs b/decompiler/crates/kuna-decomp/src/p9_emit/kuna_castimplied.rs
+index 1ec7ff3ac..f4a185973 100644
+--- a/decompiler/crates/kuna-decomp/src/p9_emit/kuna_castimplied.rs
++++ b/decompiler/crates/kuna-decomp/src/p9_emit/kuna_castimplied.rs
+@@ -436,7 +436,7 @@ impl ImpliedCasts {
+ 
+     /// The spelling of the declaration an explicit `vn` prints as, when that
+     /// declaration is exactly `vn`'s own storage.
+-    fn declared_spelling(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId) -> Option<String> {
++    pub(crate) fn declared_spelling(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId) -> Option<String> {
+         let v = fd.vbank().get(vn)?;
+         if !v.is_explicit() || v.is_constant() || v.is_annotation() {
+             return None;
+@@ -455,6 +455,84 @@ impl ImpliedCasts {
+ 
+ }
+ 
++
++fn opn(c: OpCode) -> &'static str { let s: &'static str = Box::leak(format!("{:?}", c).into_boxed_str()); s.trim_start_matches("CPUI_") }
++/// CENSUS (temporary, not for commit).
++pub(crate) fn census_line(ic: &ImpliedCasts, p: &dyn PrintedForms, fd: &Funcdata, op: OpId, read_op: Option<OpId>, how: &str) -> Option<String> {
++    let o = fd.obank().get(op)?;
++    let outvn = o.get_out()?;
++    let outv = fd.vbank().get(outvn)?;
++    let target = outv.get_type_def_facing().clone();
++    if target.get_size() != 8 || !matches!(target.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT) {
++        return None;
++    }
++    let invn = o.get_in(0)?;
++    let inv = fd.vbank().get(invn)?;
++    let ir_src = inv.get_type_read_facing(op).clone();
++    let kind = match o.code() {
++        OpCode::CPUI_INT_SEXT => "SEXT",
++        OpCode::CPUI_INT_ZEXT => "ZEXT",
++        OpCode::CPUI_CAST => {
++            if ir_src.get_metatype() == type_metatype::TYPE_PTR { "CASTPTR" } else if int_range(&ir_src).is_some() { "CASTSIGN" } else { "CASTOTHER" }
++        }
++        _ => return None,
++    };
++    let src = match ic.operand_type(p, fd, invn, op) {
++        CType::Known(t) => format!("K:{}", p.spell(&t)),
++        CType::Unknown => "U".to_string(),
++        CType::Opaque => "O".to_string(),
++    };
++    let indef = inv.get_def().and_then(|d| fd.obank().get(d)).map_or(if inv.is_constant() {"const"} else if inv.is_explicit() {"var"} else {"input"}, |d| if inv.is_explicit() { "var" } else { opn(d.code()) });
++    let (reader, value) = through_copies(fd, read_op, outvn);
++    let mut ctx = String::new();
++    match reader {
++        None => {
++            ctx.push_str("TOP");
++            if p.is_statement(op) {
++                ctx.push_str(&format!("\tstmt\tlhs={}", ic.declared_spelling(p, fd, outvn).unwrap_or_else(|| "?".into())));
++            } else {
++                ctx.push_str("\tnonstmt");
++            }
++        }
++        Some(r) => {
++            let ro = fd.obank().get(r)?;
++            let slot = ro.get_slot(value);
++            ctx.push_str(&format!("{}\t{}", opn(ro.code()), slot));
++            let rout = ro.get_out().and_then(|x| fd.vbank().get(x)).map(|v| p.spell(v.get_type_def_facing())).unwrap_or_else(|| "-".into());
++            ctx.push_str(&format!("\tout={}", rout));
++            match ro.code() {
++                OpCode::CPUI_CALL => {
++                    let t = trusted_param(fd, r, value).map(|t| p.spell(&t)).unwrap_or_else(|| "untrusted".into());
++                    ctx.push_str(&format!("\tparam={}", t));
++                }
++                OpCode::CPUI_STORE => {
++                    let pt = ro.get_in(1).map(|pv| match ic.operand_type(p, fd, pv, r) { CType::Known(t) => format!("K:{}", p.spell(&t)), CType::Unknown => format!("U:{}", fd.vbank().get(pv).map(|v| p.spell(v.get_type_read_facing(r))).unwrap_or_default()), CType::Opaque => "O".into() }).unwrap_or_default();
++                    ctx.push_str(&format!("\tptr={}", pt));
++                }
++                OpCode::CPUI_COPY => {
++                    let lhs = ro.get_out().and_then(|l| ic.declared_spelling(p, fd, l)).unwrap_or_else(|| "?".into());
++                    ctx.push_str(&format!("\tlhs={}\tstmt={}", lhs, p.is_statement(r)));
++                }
++                _ => {
++                    if ro.num_input() == 2 {
++                        let other = ro.get_in(1 - slot.max(0).min(1))?;
++                        let ov = fd.vbank().get(other)?;
++                        let od = if ov.is_constant() {
++                            format!("const:{}:{:#x}", ov.get_size(), ov.get_offset())
++                        } else {
++                            let ct = match ic.operand_type(p, fd, other, r) { CType::Known(t) => format!("K:{}", p.spell(&t)), CType::Unknown => format!("U:{}", p.spell(ov.get_type_read_facing(r))), CType::Opaque => "O".into() };
++                            let odef = ov.get_def().and_then(|d| fd.obank().get(d)).map_or("-", |d| opn(d.code()));
++                            format!("{}:{}:{}", if ov.is_explicit() {"var"} else {"expr"}, odef, ct)
++                        };
++                        ctx.push_str(&format!("\tother={}", od));
++                    }
++                }
++            }
++        }
++    }
++    Some(format!("CWCENSUS\t{:#x}\t{:#x}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", fd.get_address().get_offset(), o.get_addr().get_offset(), kind, how, p.spell(&target), p.spell(&ir_src), src, indef, ctx))
++}
++
+ /// The op that reads the value `vn` carries once `read_op` is known, looking
+ /// through implied `COPY`s (which print as their operand), with the varnode that
+ /// op reads it as.
+diff --git a/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs b/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+index 32277b822..88fde1262 100644
+--- a/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
++++ b/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+@@ -5555,6 +5555,8 @@ impl PrintC {
+                     // a parenthesized type cast, not a functional `OPC(args)`.
+                     OpEmitKind::TypeCast if opc == OpCode::CPUI_CAST => {
+                         let implied = self.implied_cast_drops(fd, arch, op, read_op);
++                        let how = if implied { "DROP" } else if self.sign_plan.drop_cast(fd, op) { "SIGNDROP" } else { "PRINT" };
++                        self.cw_census(fd, arch, op, read_op, how);
+                         self.op_type_cast_ir_with(fd, arch, op, implied)
+                     }
+                     OpEmitKind::TypeCast => self.op_type_cast_ir(fd, arch, op),
+@@ -6225,10 +6227,13 @@ impl PrintC {
+         };
+         if strat.is_zext_cast(&outtype, &intype) {
+             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
++                self.cw_census(fd, arch, op, read_op, "HIDDEN");
+                 self.op_hidden_func_ir(fd, arch, op);
+             } else if self.implied_cast_drops(fd, arch, op, read_op) {
++                self.cw_census(fd, arch, op, read_op, "DROP");
+                 self.op_type_cast_ir_with(fd, arch, op, true);
+             } else {
++                self.cw_census(fd, arch, op, read_op, "PRINT");
+                 self.op_type_cast_ir(fd, arch, op);
+             }
+         } else {
+@@ -6256,10 +6261,13 @@ impl PrintC {
+         };
+         if strat.is_sext_cast(&outtype, &intype) {
+             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
++                self.cw_census(fd, arch, op, read_op, "HIDDEN");
+                 self.op_hidden_func_ir(fd, arch, op);
+             } else if self.implied_cast_drops(fd, arch, op, read_op) {
++                self.cw_census(fd, arch, op, read_op, "DROP");
+                 self.op_type_cast_ir_with(fd, arch, op, true);
+             } else {
++                self.cw_census(fd, arch, op, read_op, "PRINT");
+                 self.op_type_cast_ir(fd, arch, op);
+             }
+         } else {
+@@ -6508,6 +6516,19 @@ impl PrintC {
+         self.cast_implied.drops(&view, fd, op, read_op)
+     }
+ 
++    fn cw_census(&self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>, how: &str) {
++        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++        if !*ON.get_or_init(|| std::env::var_os("KUNA_CW_CENSUS").is_some()) {
++            return;
++        }
++        let Some(strat) = cast_strategy_for(arch) else { return };
++        let view = ImpliedView { pc: self, fd, arch, strat };
++        let how = if how == "PRINT" && self.cast_implied.arm_dropped(op) { "ARMDROP" } else { how };
++        if let Some(l) = crate::kuna_castimplied::census_line(&self.cast_implied, &view, fd, op, read_op, how) {
++            eprintln!("{l}");
++        }
++    }
++
+     /// (kuna `castternary`) The casts to leave out of the arms of the conditional
+     /// `iteregion` prints for `m`.  See [`crate::kuna_castternary`].
+     fn conditional_arm_drops(
