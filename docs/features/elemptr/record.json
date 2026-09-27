@@ -54,7 +54,7 @@
   "off_arm": "byte-identical to main c960fb18d on all 45 files",
   "shape_deltas": "(char *)(...) -429, (long)v -321, (unsigned char *)(...) -312, (unsigned long)v -254, (int *)(...) -189, (unsigned short *)(...) -115, (char **)(...) -95; gained (char *)0x... +94 (a table globalref cannot name, one cast where main printed two), (unsigned int) on a subscript +48 (the same conversion, now on a subscript)",
   "more_casts_read": "all 17: a callee parameter now declared char * / char ** makes an integer caller argument print its conversion (tar O2-noinline 0x132d0, O0 0x1381d, 0x15a63, 0x135e3, diff3 O2-noinline 0x4ae0, ls O2 0xc0e0); a constant used at two pointee types across a callee keeps globalref's two-type cast (gzip O2 0xb700, O2-noinline 0xbb40, 0x67e0, O2 0x63e0); a call result kept in a char * slot where the callee's recovered return is long (diff O0 0x8710, 0x818f); a buffer typed unsigned char * from its zero-extended reads also passed to strftime (find O0 0x11c89, O2-noinline 0xeb50); a pointer-array global also stepped by a byte offset (diff O2 0x8590, O2-noinline 0x8320); grep O2-noinline 0xbfa0",
-  "rebased": "measured on c960fb18d, ef49332b2, 850e8c692, 0096e984d and b273c2259 (current; the entry elemptr_on_b273c2259)",
+  "rebased": "measured on c960fb18d, ef49332b2, 850e8c692, 0096e984d, b273c2259 and f96e80805 (current; the entry elemptr_on_f96e80805)",
   "main_850e8c692": {
    "casts": 35588,
    "per_kloc": 188.2,
@@ -140,12 +140,43 @@
    "off_arm": "byte-identical to the fresh main b273c2259 arm on all 45 files",
    "on_0096e984d": "35,588 -> 34,000 with the same engine; the engine before the batch agreement read 33,505 (a first cut of the agreement read 34,012 but decided 135 of bash -O2's functions twice, +17.9%, filing claimed pointees as types)",
    "more_casts_read": "all 18, the classes of analysis.md section 3: a callee parameter now char * (tar O2-noinline 0x132d0, O0 0x1381d, 0x135e3, 0x15a63, diff3 O2-noinline 0x4ae0, ls O2 0xc0e0); a constant at two pointee types (gzip O2 0x63e0, O2-noinline 0x67e0); a call result kept in a char * / unsigned char * variable where callrettype states an integer return (tar O2-noinline 0xf760, 0x1a320, 0x13140, O2 0x1ca20, find O0 0xb22b); an unsigned char * buffer passed to strftime (find O0 0x11c89, O2-noinline 0xeb50); grep O2-noinline 0xbfa0; the narrow load (cp O2 0x76f0, tar O2-noinline 0x16890)"
+  },
+  "main_f96e80805": {
+   "casts": 33289,
+   "per_kloc": 176.0,
+   "per_100_statements": 28.0,
+   "vs_ida": 0.88,
+   "arm": "a build of origin/main f96e80805 (#743 castobject, #744 castwiden on top of #718, #729), run fresh"
+  },
+  "elemptr_on_f96e80805": {
+   "casts": 32073,
+   "per_kloc": 169.6,
+   "per_100_statements": 27.0,
+   "vs_ida": 0.848,
+   "delta": -1216,
+   "functions_fewer": 301,
+   "casts_fewer": 1242,
+   "functions_more": 18,
+   "casts_more": 26,
+   "per_level_vs_ida": {
+    "O0": "0.871 -> 0.815",
+    "O2": "0.927 -> 0.907",
+    "O2-noinline": "0.838 -> 0.816"
+   },
+   "per_100_statements_by_level": {
+    "O0": "29.5 -> 27.6 (IDA 31.0)",
+    "O2": "29.9 -> 29.2 (IDA 26.1)",
+    "O2-noinline": "24.8 -> 24.1 (IDA 24.8)"
+   },
+   "off_arm": "byte-identical to the fresh main f96e80805 arm on all 45 files",
+   "on_earlier_bases": "b273c2259: 34,829 -> 33,241; 0096e984d: 35,588 -> 34,000 with the same engine; the engine before the batch agreement read 33,505 on 0096e984d (a first cut of the agreement read 34,012 but decided 135 of bash -O2's functions twice, +17.9%, filing claimed pointees as types)",
+   "more_casts_read": "all 18, the classes of analysis.md section 3: a callee parameter now char * (tar O2-noinline 0x132d0, O0 0x1381d, 0x135e3, 0x15a63, diff3 O2-noinline 0x4ae0, ls O2 0xc0e0); a constant at two pointee types (gzip O2 0x63e0, O2-noinline 0x67e0); a call result kept in a char * / unsigned char * variable where callrettype states an integer return (tar O2-noinline 0xf760, 0x1a320, 0x13140, O2 0x1ca20, find O0 0xb22b); an unsigned char * buffer passed to strftime (find O0 0x11c89, O2-noinline 0xeb50); grep O2-noinline 0xbfa0; the narrow load (cp O2 0x76f0, tar O2-noinline 0x16890)"
   }
  },
  "benchmark": {
   "metric": "decbench type_match pinned to 625e892 (final-c/pindb.py), DECBENCH_NO_CACHE=1, both arms the same binary (default on vs --option elemptr off)",
   "slice_set": "coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline (444 slices, 10,748 functions)",
-  "base": "origin/main b273c2259",
+  "base": "origin/main f96e80805",
   "perfect": "1631 -> 1674",
   "mean": ".3717 -> .3752",
   "onto_perfect": 43,
@@ -240,12 +271,12 @@
  },
  "corpus_sweep": {
   "method": "castbench full, both arms of one build (--option elemptr off vs default): docs/features/elemptr/structural.py (callees, strings, control keywords, program data, statement counts per changed function) and hunks.py (line hunks with canonical variable names)",
-  "functions_changed": 1242,
+  "functions_changed": 1255,
   "constant_named": 392,
   "structural_flags": 19,
   "classes": "constant named as the array globalref gives it; caller constant unnamed when a callee declares another pointee; register variable split (find O0 0x160f6 93 -> 54 statements, 0xdd20); tail duplicated by returndup under its budget (find O0 0x173d3); stores split / merged through a now-char * header (tar O2-noinline 0x12990, 0x12cb0: an 8-byte zero store as 8 byte stores, 'ustar' as builtin_strncpy, the same bytes); a read printed at each of its uses (upstream's expression-duplication bound, no intervening store in any case read); one while loop absorbing its iterator",
   "read_by_hand": "all 19 flagged functions (all among the 26 an earlier engine flagged) and the 18 with more casts",
-  "disjoint_sweep": "32 further binaries (bzip2, bzip2recover, libacl, crontab, coreutils cut/factor/printf/dircolors/numfmt/cksum/od/tr/ptx/shuf, update-passwd, kmod, libedit, zlib, xmlwf, dash, mirai, libbsd, init, dpkg-query, dpkg-divert, useradd, usermod, newusers, gnutls-cli, gnutls-cli-debug, libselinux, rtmon) against a build of main b273c2259: 555 functions changed, casts 36,637 -> 35,427, 264 fewer and 23 more (+43, read: two-type constants, a call result kept in a variable typed the other way from the stated return, a char ** parameter, an unsigned char * buffer passed to strlen/strncmp, a caller argument a callee now declares int * or char *, and the narrow load in kmod 0xe3f0/0xe250/0xe020/0xdde0 and init 0x87b0); off arm byte-identical to main on all 32; on 0096e984d, 111 functions differed from the engine before the batch agreement (blocked globals and tables back to main form, the narrow load)"
+  "disjoint_sweep": "32 further binaries (bzip2, bzip2recover, libacl, crontab, coreutils cut/factor/printf/dircolors/numfmt/cksum/od/tr/ptx/shuf, update-passwd, kmod, libedit, zlib, xmlwf, dash, mirai, libbsd, init, dpkg-query, dpkg-divert, useradd, usermod, newusers, gnutls-cli, gnutls-cli-debug, libselinux, rtmon) against a build of main f96e80805: 556 functions changed, casts 34,230 -> 33,337, 260 fewer and 25 more (+48, read: two-type constants, a call result kept in a variable typed the other way from the stated return, a char ** parameter, an unsigned char * buffer passed to strlen/strncmp/char * APIs, a caller argument a callee now declares int * or char *, a table-read difference printed at its uses, and the narrow load in kmod 0xe3f0/0xe250/0xe020/0xdde0 and init 0x87b0); off arm byte-identical to main on all 32"
  },
  "soundness": {
   "round_trip": "elemptr_x86_64.c: 19 witnesses x 3 builds (gcc -O0, clang -O0, gcc -O2) x 2 arms x 2 compilers print the binary's two lines: bytes >= 0x80 read signed and unsigned and used as indexes both ways, a negative index, a .data table of ints, a table filled through an allocated global, a returned buffer, 2- and 4-byte elements with the top bit set returned to callers that widen them, one shifted, one only compared, and a byte table read at two signs",
@@ -261,83 +292,83 @@
    {
     "label": "fmt_O2",
     "n": 15,
-    "delta_min_pct": 0.05,
-    "delta_median_of_ratios_pct": 0.05,
-    "off_min": 4117.6,
-    "on_min": 4119.5,
+    "delta_min_pct": 0.14,
+    "delta_median_of_ratios_pct": -0.03,
+    "off_min": 4111.3,
+    "on_min": 4117.2,
     "loadavg": [
-     3.8,
-     6.8,
-     10.4
+     1.3,
+     5.8,
+     5.6
     ]
    },
    {
     "label": "ls_O2",
     "n": 15,
-    "delta_min_pct": 0.11,
-    "delta_median_of_ratios_pct": -0.4,
-    "off_min": 13553.7,
-    "on_min": 13568.7,
+    "delta_min_pct": 0.17,
+    "delta_median_of_ratios_pct": 0.29,
+    "off_min": 13579.3,
+    "on_min": 13602.4,
     "loadavg": [
      1.3,
-     2.8,
-     7.2
+     2.4,
+     4.0
     ]
    },
    {
     "label": "sort_O2",
     "n": 15,
-    "delta_min_pct": 0.32,
-    "delta_median_of_ratios_pct": 2.65,
-    "off_min": 14243.4,
-    "on_min": 14289.5,
+    "delta_min_pct": 0.21,
+    "delta_median_of_ratios_pct": 0.17,
+    "off_min": 14275.6,
+    "on_min": 14305.8,
     "loadavg": [
-     18.0,
-     7.5,
-     7.1
+     1.1,
+     1.5,
+     2.9
     ]
    },
    {
     "label": "bash_O2",
     "n": 15,
-    "delta_min_pct": 1.65,
-    "delta_median_of_ratios_pct": 1.54,
-    "off_min": 87660.0,
-    "on_min": 89107.8,
+    "delta_min_pct": 0.39,
+    "delta_median_of_ratios_pct": 1.66,
+    "off_min": 87337.1,
+    "on_min": 87678.3,
     "loadavg": [
-     1.1,
-     1.2,
-     1.9
+     1.4,
+     1.5,
+     2.0
     ]
    }
   ],
   "budget_pct": 5.0,
-  "worst_delta_min_pct": 1.65,
+  "worst_delta_min_pct": 0.39,
   "within_budget": true,
-  "history": "the first measurement (before the per-storage memo and the disputed-global blocking) read bash +12.86% min / +11.43% median-of-ratios: the batch redo decompiled 23 functions again (14.7 s, the parser's two largest among them); after the fix 17 functions and 3.6 s; an engine that decided a defaulted table sign only after the batch read sort +57% (its main decompiled again for one table): a function decompiled after evidence settled a sign now reads it at once (Ledger::settled), and sort reads -1.58%; on 0096e984d another process's SIGTERM killed one bash sample, so bash was measured again on its own (speed.py now re-runs a killed sample instead of timing it); on 850e8c692 the reviewed engine read fmt +0.35%, ls -0.10%, sort -1.58%, bash +2.14%; on 0096e984d the engine before the batch agreement read fmt +0.42%, ls +0.39%, sort +0.32%, bash -0.30%; on 29cfedee0 a first cut of the agreement read fmt -0.69%, ls +1.69%, sort -0.61% and bash +17.85%: it filed a global whose fold already names a pointee (a libc FILE *) as a type, so one refusal elsewhere decided 135 of bash's functions twice; claims are now evidence and never redone (31 functions, the reviewed engine's count)"
+  "history": "the first measurement (before the per-storage memo and the disputed-global blocking) read bash +12.86% min / +11.43% median-of-ratios: the batch redo decompiled 23 functions again (14.7 s, the parser's two largest among them); after the fix 17 functions and 3.6 s; an engine that decided a defaulted table sign only after the batch read sort +57% (its main decompiled again for one table): a function decompiled after evidence settled a sign now reads it at once (Ledger::settled), and sort reads -1.58%; on 0096e984d another process's SIGTERM killed one bash sample, so bash was measured again on its own (speed.py now re-runs a killed sample instead of timing it); on 850e8c692 the reviewed engine read fmt +0.35%, ls -0.10%, sort -1.58%, bash +2.14%; on 0096e984d the engine before the batch agreement read fmt +0.42%, ls +0.39%, sort +0.32%, bash -0.30%; on 29cfedee0 a first cut of the agreement read fmt -0.69%, ls +1.69%, sort -0.61% and bash +17.85%: it filed a global whose fold already names a pointee (a libc FILE *) as a type, so one refusal elsewhere decided 135 of bash's functions twice; claims are now evidence and never redone (31 functions, the reviewed engine's count); on 0096e984d the engine before the batch agreement read fmt +0.42%, ls +0.39%, sort +0.32%, bash -0.30%; on 29cfedee0 a first cut of the agreement read fmt -0.69%, ls +1.69%, sort -0.61% and bash +17.85%: it filed a global whose fold already names a pointee (a libc FILE *) as a type, so one refusal elsewhere decided 135 of bash's functions twice; claims are now evidence and never redone (31 functions, the reviewed engine's count); on b273c2259 this engine read fmt +0.05%, ls +0.11%, sort +0.32%, bash +1.65%"
  },
  "gates": {
-  "measured_on": "feat/elemptr squashed onto origin/main b273c2259 (#718 callbacktype, #729 callrettype); head c36db163f: the engine, catalog text and speed numbers this record describes",
+  "measured_on": "feat/elemptr squashed onto origin/main f96e80805 (#743 castobject, #744 castwiden, #718 callbacktype, #729 callrettype); engine head d7484ecf2",
   "make_test": "datatests: 675/675 assertions passed, PARITY OK (default on)",
-  "make_test_stages": "datatests: 1438/1438 assertions passed, PARITY OK (baseline = main's plus the 22 kuna-elemptr keys; no key removed)",
+  "make_test_stages": "datatests: 1463/1463 assertions passed, PARITY OK (baseline = main's plus the 22 kuna-elemptr keys; no key removed)",
   "make_test_cli": "tests/cli: 267/267 passed",
   "check_spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
   "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
   "counters_check": "no drift: every hard-coded site agrees with the derived truth",
   "options_md": "byte-fresh",
   "phases_toml": "parses with python3 tomllib",
-  "make_rust_test": "RUST_TEST_RC=0 (7,680 passed, 0 failed, 38 ignored; 428 test results); lane 12:33:19Z-12:59:26Z on c36db163f"
+  "make_rust_test": "RUST_TEST_RC=0 (7,690 passed, 0 failed, 38 ignored; 428 test results); lane 13:35:50Z-14:01:07Z on d7484ecf2"
  },
  "default_on_evaluation": {
   "verdict": "flipped: elemptr ships on",
   "a_datatests": "675/675 PARITY OK with the default on; no assertion moved, no per-test opt-out",
-  "b_stages": "8 assertions of other options pinned the integer spelling and now read the subscript for the same access: ALIASOVERLAP #4, oxidizer-SecurityCheck #3, regionstructure-loop #3 (the while loop now a for loop absorbing its iterator, same semantics), castimplied #5/#6/#10, charptr #1/#2 (the malloc'd return is char *); regexes follow, keys unchanged; kuna-elemptr.xml (11 keys) added, pass 1 sets option elemptr off; on 850e8c692 kuna-castindex.xml sets option elemptr off in both passes (P5 already types ldidx's parameter, so its witness no longer shows castindex's rewrite), kuna-castternary.xml #1/#2/#3/#4/#7/#8/#9 follow the subscript spelling (castternary's effect unchanged, with castimplied reading a subscript's element from its declared base under elemptr), elemptr #2's off arm is castindex's cast base; on b273c2259 three assertions that pinned upstream's widened load of a 4-byte field through an inferred int8 * read the narrow load (TIEDPHITRIM #13/#14 `*(int4 *)&v2[1]`, STRUCTSYNTH-LOCALS #2 `*(int4 *)&v1[2]`), keys unchanged, and the stages baseline is main's plus the 22 kuna-elemptr.xml keys, none removed (1,438/1,438)",
-  "c_test_cli": "2 probes pinned the integer spelling: bytecode-append-call-loses (now &dat_402000[a1]) and passthrough-gives-a-forwarding-function-its-parameter (a control's parameter type left open; probe id re-derived); the three elemptr probes pin the rebuilt fixture, one of them a batch; 267/267 on b273c2259",
+  "b_stages": "8 assertions of other options pinned the integer spelling and now read the subscript for the same access: ALIASOVERLAP #4, oxidizer-SecurityCheck #3, regionstructure-loop #3 (the while loop now a for loop absorbing its iterator, same semantics), castimplied #5/#6/#10, charptr #1/#2 (the malloc'd return is char *); regexes follow, keys unchanged; kuna-elemptr.xml (11 keys) added, pass 1 sets option elemptr off; on 850e8c692 kuna-castindex.xml sets option elemptr off in both passes (P5 already types ldidx's parameter, so its witness no longer shows castindex's rewrite), kuna-castternary.xml #1/#2/#3/#4/#7/#8/#9 follow the subscript spelling (castternary's effect unchanged, with castimplied reading a subscript's element from its declared base under elemptr), elemptr #2's off arm is castindex's cast base; on b273c2259 three assertions that pinned upstream's widened load of a 4-byte field through an inferred int8 * read the narrow load (TIEDPHITRIM #13/#14 `*(int4 *)&v2[1]`, STRUCTSYNTH-LOCALS #2 `*(int4 *)&v1[2]`), keys unchanged, and the stages baseline is main's plus the 22 kuna-elemptr.xml keys, none removed (1,438/1,438); on f96e80805 three assertions that pinned upstream's widened load of a 4-byte field through an inferred int8 * read the narrow load (TIEDPHITRIM #13/#14 `*(int4 *)&v2[1]`, STRUCTSYNTH-LOCALS #2 `*(int4 *)&v1[2]`), keys unchanged, and the stages baseline is main's plus the 22 kuna-elemptr.xml keys, none removed (1,463/1,463)",
+  "c_test_cli": "2 probes pinned the integer spelling: bytecode-append-call-loses (now &dat_402000[a1]) and passthrough-gives-a-forwarding-function-its-parameter (a control's parameter type left open; probe id re-derived); the three elemptr probes pin the rebuilt fixture, one of them a batch; 267/267 on b273c2259; the three elemptr probes pin the rebuilt fixture, one of them a batch; 267/267 on f96e80805",
   "d_typesweep": "1631 -> 1674 perfect, 189 better, 0 worse, 0 off perfect; 243 scored variables gained, 0 lost; no variable or argument count moved",
-  "e_speed": "fmt +0.05%, ls +0.11%, sort +0.32%, bash +1.65%; worst +1.65%; budget +5%",
-  "f_hunks": "1,242 functions over 45 binaries, 19 flagged by structural.py, every one read and classified; plus a disjoint 32-binary sweep (555 functions, 23 with more casts, read)",
+  "e_speed": "fmt +0.14%, ls +0.17%, sort +0.21%, bash +0.39%; worst +0.39%; budget +5%",
+  "f_hunks": "1,255 functions over 45 binaries, 19 flagged by structural.py, every one read and classified; plus a disjoint 32-binary sweep (556 functions, 25 with more casts, read)",
   "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope",
-  "h_castbench": "34,829 -> 33,241 (0.921x -> 0.879x IDA) against a fresh build of main b273c2259, 306 fewer (-1,614), 18 more (+26), all read",
+  "h_castbench": "33,289 -> 32,073 (0.880x -> 0.848x IDA) against a fresh build of main f96e80805, 301 fewer (-1,242), 18 more (+26), all read",
   "workspace_tests": "5 kuna-cli tests pinned the integer spelling: a_load_is_not_printed_after_a_store_into_its_bytes, an_implied_cast_round_trips_through_the_printed_c, a_signed_only_variable_round_trips_through_the_printed_c follow the subscript; a_conditional_arm_cast_round_trips_through_the_printed_c (castternary) and a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed_c (castindex) keep their pins with elemptr off and also compile and run the elemptr-on output, which computes the same values"
  }
 }

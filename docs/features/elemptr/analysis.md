@@ -180,8 +180,9 @@ with renamed variables, which `structural.py` covers function by function.
 ## 5. Speed
 
 Interleaved min-of-15 whole-binary `decompile-all --json`, `--option elemptr off`
-against the default on one build, on main `b273c2259`: fmt +0.05%, ls +0.11%, sort
-+0.32%, bash +1.65% (on `0096e984d` the engine before the batch agreement read fmt
+against the default on one build, on main `f96e80805`: fmt +0.14%, ls +0.17%, sort
++0.21%, bash +0.39% (on `b273c2259` the same engine read fmt +0.05%, ls +0.11%,
+sort +0.32%, bash +1.65%; on `0096e984d` the engine before the batch agreement read fmt
 +0.42%, ls +0.39%, sort +0.32%, bash -0.30%). A first cut of the agreement read
 bash +17.85%: it filed a global whose fold already names a pointee (a libc
 `FILE *`) as a type, so one function refusing that global decided 135 of bash's
