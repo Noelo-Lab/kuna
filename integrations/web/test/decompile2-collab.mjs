@@ -21,6 +21,7 @@ import {
 import { compactSdp, expandSdp, validSdp, passiveAnswer } from '../decompile2/collab/sdp.js';
 import { sha256Js, sha256Hex } from '../decompile2/collab/sha256.js';
 import { Group, resolveColors } from '../decompile2/collab/group.js';
+import { iceServersFrom, loadCollabPrefs, PREFS_KEY } from '../decompile2/collab/collab.js';
 
 const checks = [];
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -343,6 +344,24 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   const colored = resolveColors([{ peer: 'b', color: COLORS[0] }, { peer: 'a', color: COLORS[0] }, { peer: 'c', color: COLORS[1] }]);
   assert.deepEqual(colored.map((m) => m.color), [COLORS[2], COLORS[0], COLORS[1]], 'of two with one colour, the larger id takes a free one');
   checks.push('rate limiter, ids, initials, colours');
+}
+
+// ── the connection setting: no ICE servers unless turned on ────────────────
+{
+  const store = (value) => ({ getItem: (k) => (k === PREFS_KEY ? value : null) });
+  assert.equal(PREFS_KEY, 'kuna.d2.collab');
+  assert.deepEqual(iceServersFrom(loadCollabPrefs(store(null))), [], 'off by default: host candidates only (one machine or one network)');
+  assert.deepEqual(iceServersFrom(loadCollabPrefs(store('not json'))), []);
+  assert.deepEqual(iceServersFrom({ name: 'Ana' }), []);
+  assert.deepEqual(iceServersFrom({ stun: true }), [{ urls: 'stun:stun.l.google.com:19302' }], 'stun: true is Google\'s public server');
+  assert.deepEqual(iceServersFrom({ stun: 'stun:stun.example.org:3478' }), [{ urls: 'stun:stun.example.org:3478' }]);
+  assert.deepEqual(iceServersFrom({ stun: 'https://example.org' }), [], 'only a stun: URL');
+  assert.deepEqual(iceServersFrom({ turn: { urls: 'turn:turn.example.org:3478', username: 'u', credential: 'p' } }),
+    [{ urls: 'turn:turn.example.org:3478', username: 'u', credential: 'p' }], 'a TURN relay when one is given');
+  assert.deepEqual(iceServersFrom({ turn: { urls: 'javascript:alert(1)' } }), [], 'only a turn: URL');
+  assert.deepEqual(iceServersFrom({ stun: true, turn: { urls: 'turns:t.example.org:443?transport=tcp' } }).map((s) => s.urls),
+    ['stun:stun.l.google.com:19302', 'turns:t.example.org:443?transport=tcp']);
+  checks.push('the STUN/TURN setting: off by default, one key turns it on');
 }
 
 // ── whole groups over in-memory links ──────────────────────────────────────

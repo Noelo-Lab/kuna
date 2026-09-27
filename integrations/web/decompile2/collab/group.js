@@ -8,7 +8,8 @@
 // forwarded to the pages that had not seen them, so a pair that could not
 // link directly still converges. A newcomer without the program receives it
 // in chunks and checks its SHA-256. Every message from another page passes
-// `readMessage` (shape and size) and a per-page rate limit first.
+// `readMessage` (shape and size) and a per-page rate limit first, and the
+// others cannot grow the registers past MAX_REGISTERS.
 //
 // `connect` makes links for introductions ({offer(), answer({id, sdp, bc})});
 // `page` is how the group tells the page what happened. A link is
@@ -24,6 +25,7 @@ const RETRY_MS = 6000;
 const MAX_TRIES = 3;
 const FLUSH_MS = 50;
 const MAX_BATCHES = 10;
+const MAX_REGISTERS = 100000;
 
 /** Members with distinct colours: of two that share one, the larger id takes the first free colour. */
 export function resolveColors(members) {
@@ -281,6 +283,10 @@ export class Group {
     const fresh = [];
     for (const op of list) {
       const before = typeof op?.k === 'string' ? this.replica.regs.get(op.k) : undefined;
+      if (!before && this.replica.regs.size >= MAX_REGISTERS) {
+        rec.dropped++;
+        continue;
+      }
       const r = this.replica.receive(op);
       if (r === 'invalid') {
         rec.dropped++;

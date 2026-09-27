@@ -42,10 +42,10 @@ function changesPart(model) {
     const fatal = e.fatal ? '<small>the code shown was made without this change</small>' : '';
     const a = e.author && COLOR.test(e.author.color) ? e.author : null;
     const by = a ? ` class="by" style="--who:${a.color}"` : '';
-    const who = a && !a.me ? ` <span class="who">${escapeHtml(a.name)}</span>` : '';
+    const who = a && !a.me ? `<span class="who">${escapeHtml(a.name)}</span>` : '';
     const tip = a ? `${e.text}\n${a.me ? 'Your change' : `Changed by ${a.name}`}` : e.text;
     return `<li data-key="${escapeHtml(e.key)}"${by}><span class="mk ${cls}" title="${title}">${sym}</span>` +
-      `<span class="tx" title="${escapeHtml(tip)}">${escapeHtml(e.label)}${who}${why}${fatal}</span>` +
+      `<span class="tx" title="${escapeHtml(tip)}">${who}${escapeHtml(e.label)}${why}${fatal}</span>` +
       '<span class="acts"><button data-act="edit-edit">edit</button><button data-act="edit-remove">remove</button></span></li>';
   }).join('');
   const banner = model.restored

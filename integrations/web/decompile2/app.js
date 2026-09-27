@@ -2438,7 +2438,9 @@ const rail = createRail({
         break;
       }
       case 'clear':
-        if (await dialogs.confirmBox(`Remove all ${session.size} of your changes to ${state.binary.name}?`, { confirmLabel: 'Clear all' })) {
+        if (await dialogs.confirmBox(collab?.shared
+          ? `Remove all ${session.size} changes to ${state.binary.name}, for everyone in the session?`
+          : `Remove all ${session.size} of your changes to ${state.binary.name}?`, { confirmLabel: 'Clear all' })) {
           applyEdit(() => session.clear(), { label: 'clear', done: 'Cleared all your changes' });
         }
         break;

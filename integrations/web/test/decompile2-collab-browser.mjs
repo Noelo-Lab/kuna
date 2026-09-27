@@ -160,6 +160,7 @@ try {
   assert.match(await text(ben, '#status'), /Ana renamed v1 to total/);
   assert.match(await text(ben, '#railchanges h3'), /^Changes/, '"Your changes" becomes "Changes"');
   assert.match(await ben.evaluate(`document.querySelector('#sesslist li').getAttribute('style') || ''`), /--who:#e8404e/, 'each change in its author\'s colour');
+  assert.equal(await ben.evaluate(`document.querySelector('#sesslist li .tx').firstChild?.textContent`), 'Ana', 'the author\'s name leads the row, on its first line');
   await ok('a rename on Ana\'s page shows on Ben\'s');
 
   await ana.click('#c-L5 .t[data-sym="total"]');
@@ -200,19 +201,26 @@ try {
       await ben.click(view === 'split' ? '#splitbtn' : '#tab-c');
     }
     await ana.hover('#c-L5 .ct');
-    await sleep(80);
+    await ben.waitFor(`document.querySelector('.d2-ptr:not([hidden])')?.dataset.anchor === 'c:5'`, { what: `Ana's pointer on line 5 at ${width} px, ${view}`, timeout: 10000 });
     await ana.hover(target);
-    await ben.waitFor(`document.querySelector('.d2-ptr:not([hidden])')?.dataset.anchor === 'c:6'`, { what: `Ana's pointer at ${width} px, ${view}`, timeout: 10000 });
-    await sleep(150);
-    const pt = await pointer(ben, target);
-    assert.ok(inside(pt, pt.target, 3), `Ana's arrow lands on printf in Ben's window at ${width} px, ${view} (${JSON.stringify(pt)})`);
+    let pt = null;
+    for (let i = 0; i < 40 && !inside(pt, pt?.target, 3); i++) {
+      await sleep(100);
+      pt = await pointer(ben, target);
+    }
+    assert.ok(inside(pt, pt?.target, 3), `Ana's arrow lands on printf in Ben's window at ${width} px, ${view} (${JSON.stringify(pt)})`);
   }
   await ben.viewport(1440, 860);
   await ben.click('#tab-c');
   await ana.hover(target);
-  await sleep(200);
+  await ben.waitFor(`document.querySelector('.d2-ptr:not([hidden])') && !document.querySelector('.d2-ptr.quiet')`, { what: 'the name tag shows while the pointer moves', timeout: 5000 });
   await shot(ben, 'pointer');
+  await ben.waitFor(`document.querySelector('.d2-ptr.quiet:not([hidden])')`, { what: 'and fades once it rests', timeout: 5000 });
+  assert.equal(await ben.evaluate(`getComputedStyle(document.querySelector('.d2-ptr .d2-ptr-arrow path')).fillOpacity`), '0.45', 'the arrow stays at its translucency');
   await front(ana);
+  await ana.hover('#c-L5 .ct');
+  await ben.waitFor(`document.querySelector('.d2-ptr:not([hidden]):not(.quiet)')?.dataset.anchor === 'c:5'`, { what: 'the tag comes back on the next move', timeout: 5000 });
+  await ana.hover(target);
   const noArrow = `!document.querySelector('.d2-ptr:not([hidden])')`;
   await ben.click('#fnlist .fn[data-addr="0x1161"]');
   await ben.waitFor(`document.getElementById('vname').textContent === 'sum_to'`, { what: 'Ben opens sum_to', timeout: 60000 });
@@ -231,6 +239,7 @@ try {
   await ana.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p7.x, y: p7.y, button: 'left', clickCount: 1, modifiers: 1 });
   await ben.waitFor(`[...document.querySelectorAll('.d2-toast')].some((t) => /Ana pinged line 7 of main/.test(t.textContent))`, { what: 'the ping toast', timeout: 10000 });
   assert.equal(await ana.evaluate(`document.querySelectorAll('#ccode .hl-sel').length`), 0, 'an Alt+click pings without selecting');
+  assert.deepEqual(await ana.evaluate(`[...document.querySelectorAll('.d2-ping')].map((r) => r.dataset.anchor)`), ['c:7'], 'the sender sees exactly the one thing pinged ringed');
   await ben.call(() => {
     const toast = [...document.querySelectorAll('.d2-toast')].find((t) => /Ana pinged line 7/.test(t.textContent));
     toast.querySelector('[data-act=toast]').click();
@@ -238,10 +247,12 @@ try {
   });
   await ben.waitFor(`document.getElementById('vname').textContent === 'main'`, { what: 'Go there opens main', timeout: 60000 });
   await ben.waitFor(`document.querySelector('.d2-ping[data-anchor="c:7"]')`, { what: 'line 7 rings on Ben\'s page', timeout: 5000 });
+  assert.equal(await ben.evaluate(`document.querySelectorAll('.d2-ping').length`), 1, 'exactly one ring for one ping, after Go there too');
   await front(ana);
   await ana.hover('#c-L6 .ct');
   await ana.key('p');
   await ben.waitFor(`document.querySelector('.d2-ping[data-anchor="c:6"]')`, { what: 'p pings the line under the mouse', timeout: 5000 });
+  assert.deepEqual(await ben.evaluate(`[...document.querySelectorAll('.d2-ping')].map((r) => r.dataset.anchor)`), ['c:6'], 'a new ping from Ana replaces her last ring');
   await ben.waitFor(`document.querySelector('.d2-ptr:not([hidden])')?.dataset.anchor === 'c:6'`, { what: 'Ana\'s pointer where she pinged', timeout: 5000 });
   await shot(ben, 'session');
   await ok('Alt+click (and p) pings; Go there opens the pinged line');
@@ -262,12 +273,19 @@ try {
   await hand.navigate(reply);
   await hand.waitFor(`/Connected — you can close this tab/.test(document.getElementById('d2collab')?.textContent || '')`, { what: 'the reply tab hands over and connects', timeout: 40000 });
   await shot(hand, 'reply-tab');
+  const again = await tab('reply again');
+  await again.navigate(reply);
+  await again.waitFor(`/This reply is for an invite that is no longer open/.test(document.getElementById('d2collab')?.textContent || '')`, { what: 'a reply opened twice says the invite is closed', timeout: 20000 });
   await cy.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf' && /sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'Cy has the program', timeout: 60000 });
   await idle(cy);
   for (const p of [ana, ben, cy]) {
     await p.waitFor(`document.querySelectorAll('#d2roster .d2-who:not(.wait)').length === 2`, { what: `${p.label} sees the two others`, timeout: 30000 });
   }
   assert.match(await text(ana, '#d2collab [data-status]'), /Cy joined/, 'Ana\'s invite says who came in');
+  await ana.click('#d2collab [data-act=invite]');
+  await ana.waitFor(`document.querySelector('#d2collab input[name=reply]')`, { what: 'a fresh invite\'s reply box' });
+  await ana.call((r) => { const i = document.querySelector('#d2collab input[name=reply]'); i.value = r; i.form.requestSubmit(); return true; }, reply);
+  await ana.waitFor(`/This reply is for an invite that is no longer open/.test(document.querySelector('#d2collab [data-status]')?.textContent || '')`, { what: 'an old reply pasted into a new invite', timeout: 10000 });
   await closeDialog(ana);
   assert.match(await code(cy), /unsigned long sum;/, 'the newcomer has the session\'s changes');
   await cy.click('#fnlist .fn[data-addr="0x1161"]');

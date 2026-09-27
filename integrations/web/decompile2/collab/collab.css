@@ -10,7 +10,8 @@
 .d2-ptr-arrow{display:block;overflow:visible;}
 .d2-ptr-arrow path{fill:var(--who);fill-opacity:.45;stroke:var(--who);stroke-opacity:.8;stroke-width:1;stroke-linejoin:round;}
 .d2-ptr-tag{position:absolute;left:13px;top:17px;padding:1px 6px;border-radius:3px;white-space:nowrap;
-  background:var(--who);color:#141110;opacity:.85;font:600 11px/16px var(--font-ui);}
+  background:var(--who);color:#141110;opacity:.85;font:600 11px/16px var(--font-ui);transition:opacity .4s;}
+.d2-ptr.quiet .d2-ptr-tag{opacity:0;}
 .d2-ping{position:absolute;left:0;top:0;border:2px solid var(--who);border-radius:4px;pointer-events:none;
   animation:d2ping .85s ease-out 3;}
 @keyframes d2ping{
@@ -60,8 +61,8 @@
 .d2-collab .cb-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
 .d2edits li.by{box-shadow:inset 3px 0 0 var(--who);}
-.d2edits .tx .who{display:inline-block;margin-left:6px;padding:0 6px;border-radius:99px;font-size:11.5px;line-height:18px;
-  background:color-mix(in srgb,var(--who) 24%,transparent);color:var(--text);}
+.d2edits .tx .who{display:inline-block;margin-right:6px;padding:0 6px;border-radius:99px;font-size:11.5px;line-height:17px;
+  vertical-align:1px;background:color-mix(in srgb,var(--who) 24%,transparent);color:var(--text);}
 
 @media (max-width:899px){
   .d2-together span:not(.d2-sr){display:none;}

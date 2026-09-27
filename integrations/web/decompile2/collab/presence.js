@@ -3,8 +3,12 @@
 // instruction, a line's heading in the assembly, a byte, a stack slot) and a
 // place on it — for code, the character column, so it lands on the same name
 // whatever the window's width — and each page draws it on that thing in its
-// own window, or hides it when that thing is not on screen. One overlay per
+// own window, or hides it when that thing is not on screen. The name tag shows
+// while the pointer moves and fades 1.5 s after it stops, so it does not sit
+// on the code; a ping rings one thing per person at a time. One overlay per
 // pane, moved with `transform`; nothing here takes pointer events.
+const TAG_MS = 1500;
+
 const ARROW = '<svg class="d2-ptr-arrow" width="16" height="22" viewBox="0 0 16 22" aria-hidden="true">' +
   '<path d="M1 1v17.5l4.6-4.4 3.3 7.2 3-1.4-3.2-7h6.4z"/></svg>';
 
@@ -134,6 +138,12 @@ export function createPresence({ panes }) {
       node.style.setProperty('--who', c.color);
       const tag = node.querySelector('.d2-ptr-tag');
       if (tag.textContent !== c.name) tag.textContent = c.name;
+      if (c.moved) {
+        c.moved = false;
+        node.classList.remove('quiet');
+        clearTimeout(node.quiet);
+        node.quiet = setTimeout(() => node.classList.add('quiet'), TAG_MS);
+      }
       const box = place.pane.getBoundingClientRect();
       node.style.transform = `translate(${Math.round(place.x - box.left)}px, ${Math.round(place.y - box.top)}px)`;
       node.dataset.anchor = c.anchor;
@@ -156,8 +166,9 @@ export function createPresence({ panes }) {
 
   return {
     /** Place (or move) a person's pointer; `visible` false hides it (another function). */
-    show(peer, cursor, who, visible = true) {
-      cursors.set(peer, { ...cursor, name: who.name, color: who.color, visible });
+    show(peer, cursor, who, visible = true, { moved = true } = {}) {
+      const was = cursors.get(peer);
+      cursors.set(peer, { ...cursor, name: who.name, color: who.color, visible, moved: moved || !!was?.moved });
       schedule();
     },
     hide(peer) {
@@ -175,8 +186,9 @@ export function createPresence({ panes }) {
     visible(anchor) {
       return !!placeOf({ anchor, fx: 0.5, fy: 0.5 });
     },
-    /** Ring the thing an anchor names, in `color`, if it is on screen. */
-    pulse(anchor, color) {
+    /** Ring the thing an anchor names, in `color`, if it is on screen; `who`'s previous ring goes. */
+    pulse(anchor, color, who = color) {
+      for (const old of panes.querySelectorAll('.d2-ping')) if (old.dataset.who === who) old.remove();
       const place = placeOf({ anchor, fx: 0.5, fy: 0.5 });
       if (!place) return false;
       const box = place.pane.getBoundingClientRect();
@@ -187,6 +199,7 @@ export function createPresence({ panes }) {
       ring.style.width = `${Math.round(place.rect.width)}px`;
       ring.style.height = `${Math.round(place.rect.height)}px`;
       ring.dataset.anchor = anchor;
+      ring.dataset.who = who;
       overlay(place.pane).appendChild(ring);
       setTimeout(() => ring.remove(), 2600);
       return true;

@@ -131,6 +131,58 @@ The collaboration code stays in `integrations/web/decompile2/collab/` and is
 loaded only when a session starts or a `#join=` link is opened; nothing changes
 for a solo user except the canonical directive order.
 
+## Decisions taken (2026-09-27), and what was built
+
+The user answered the five questions below; the feature was built to those
+answers in PR #742.
+
+1. **Handshake: approved.** The user asked whether a guest could just paste
+   the link and be in. Not with no server at all: the guest's reply has to
+   reach the inviter, and only a relay (a public third-party service, or one of
+   ours) could carry it on its own. Built instead: the guest opens the invite
+   link and gets a *reply link*; the inviter clicks it, which opens a tab of the
+   same page in their own browser that hands the reply to the waiting tab over
+   `BroadcastChannel` and says "Connected — you can close this tab". A paste
+   box in the invite stays as the fallback (another browser, a phone). Between
+   tabs of one browser the invite alone is enough: the guest's page finds the
+   inviter's tab over `BroadcastChannel` and no reply is needed.
+2. **STUN: built, off.** STUN is free (Google's public server, no account);
+   only a TURN relay costs money. By default there are no ICE servers (same
+   machine or same network). One setting turns them on, with no switch in the
+   page: `localStorage` key `kuna.d2.collab`, `{"stun": true}` for Google's
+   server (or a `stun:` URL), `{"turn": {"urls", "username", "credential"}}` for
+   a relay (`docs/web-integration.md` §4.2).
+3. **The program travels automatically.** The inviter's page sends it on join
+   (64 KiB chunks, paced by `bufferedAmount`, SHA-256 checked, at most 64 MiB)
+   and the guest's page opens it with no prompt; the invite dialog says that
+   the people who join receive a copy. A guest who has the same program open
+   (same SHA-256) is not sent it again.
+4. **Up to 8 people**, a full mesh with relayed introductions; the ninth is
+   told "This session is full (8 people)".
+5. **No roles.** Everyone edits.
+
+Where the build departs from the design above, and why:
+
+- **No QR code.** The invite is a link of about 300 characters; a QR encoder
+  was not in the approved build list.
+- **The file hash is not in the invite.** The link carries the inviter's name,
+  the program's name and size and the connection details; the SHA-256 comes in
+  the welcome over the encrypted channel, which keeps the link short.
+- **Pointers carry a character column** (`col`) for code rows as well as the
+  fraction across the anchor, so an arrow lands on the same name in windows of
+  any width; bytes and stack slots use the fraction.
+- **The build id is hashed from its own fetch** of `kuna_wasm.wasm` (served
+  from the browser cache), not from a clone of the loader's response, so the
+  worker shared with `/decompile/` is unchanged.
+- **A guest's own earlier changes to the program are set aside, not merged,**
+  when the program arrives with the join: a toast offers to save them as a
+  `.kuna` file. A guest who already has the program open when joining brings
+  its changes into the session (the session's value wins where both changed a
+  field).
+- **SHA-256 has a plain-JavaScript fallback**, since a page served over plain
+  HTTP on a local network has no `crypto.subtle`.
+- **One PR with milestone commits**, rather than one PR per milestone.
+
 ## Open questions for review (the user's decisions)
 
 1. **Handshake.** Is copy-paste of an invite link and a reply code acceptable,

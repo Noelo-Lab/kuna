@@ -48,7 +48,6 @@ export function validFile(f) {
 const ops = (list, max) => Array.isArray(list) && list.length <= max;
 
 const CHECKS = {
-  // A hello from another version still names its sender, so the page can say which version differs.
   hello: (m) => Number.isSafeInteger(m.proto) && isPeer(m.peer) && isName(m.name) && (m.proto !== PROTOCOL || (
     only(m, ['t', 'proto', 'build', 'peer', 'name', 'color', 'sid', 'file']) && typeof m.build === 'string' && HASH.test(m.build) &&
     (m.color === null || isColor(m.color)) && (m.sid === null || isSid(m.sid)) && (m.file === null || validFile(m.file)))),
@@ -74,7 +73,9 @@ const CHECKS = {
 /**
  * Whether a message from another page has a known type and a sane shape. The
  * register ops inside `snap` and `ops` are checked one by one when applied
- * (`Replica.receive`), so one bad op does not throw away the rest.
+ * (`Replica.receive`), so one bad op does not throw away the rest. A hello
+ * from another protocol version is checked only for its sender's id and name,
+ * so the page can say whose page is a different version.
  */
 export function validMessage(m) {
   if (!m || typeof m !== 'object' || Array.isArray(m) || typeof m.t !== 'string' || !Object.hasOwn(CHECKS, m.t)) return false;

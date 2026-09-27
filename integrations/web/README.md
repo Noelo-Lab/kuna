@@ -9,7 +9,7 @@ upload. Four pages, one static bundle:
 | `/` | **Landing** — what kuna is, a side-by-side compare section, the three project goals. Inert: no wasm, no network. |
 | `/dev-viz/` | **Development record** — phase activity, commit cadence, option provenance, DecBench evidence, and the autonomous improvement loop. Generated from tracked repository evidence at build time. |
 | `/decompile/` | **The decompiler** — load an ELF/PE/Mach-O and read its C, decompiled in the tab. |
-| `/decompile2/` | **The study view** (unlisted for now: no other page links to it) — the same engine for students, full screen, in plain words, in the site's Noelo palette (dark by default, light on a toggle) with its own app type: C, assembly, bytes and the stack frame linked line by line, a hover card showing the instructions behind a C line, an Explain panel for whatever is selected, a *Show hints* checkbox that hides the teaching notes once a student no longer needs them, renames/retypes/prototypes/notes and byte patches the engine applies, a patched-program download, and a changes file the CLI replays. "Try an example" loads a small program and its source; a file can also be dropped anywhere on the page. |
+| `/decompile2/` | **The study view** (unlisted for now: no other page links to it) — the same engine for students, full screen, in plain words, in the site's Noelo palette (dark by default, light on a toggle) with its own app type: C, assembly, bytes and the stack frame linked line by line, a hover card showing the instructions behind a C line, an Explain panel for whatever is selected, a *Show hints* checkbox that hides the teaching notes once a student no longer needs them, renames/retypes/prototypes/notes and byte patches the engine applies, a patched-program download, and a changes file the CLI replays. "Try an example" loads a small program and its source; a file can also be dropped anywhere on the page. ⋯ → *Work together…* starts a live session with no server: up to 8 people on one program, each other's edits, pointers and pings, the program sent to whoever joins (invite link, reply link; tabs of one browser need only the invite). |
 
 The engine (Ghidra's decompiler, ported to Rust) compiles to `wasm32-wasip1` and runs in
 the page under a pure-JS WASI shim; the SLEIGH specs and the binary you decompile live in
@@ -85,7 +85,7 @@ asset path is relative, so a project subpath just works.
 | `index.html` | The landing page: hero, the compare section, the three goals. Static — its only script wires the two dropdowns. |
 | `dev-viz/` | The development record. `generate.py` exports full git history plus tracked option, triage, feature, and baseline evidence to `data.json`; `app.js` renders the interactive charts. The generated JSON is ignored in source and assembled into `dist/` by `build.sh`. |
 | `decompile/index.html` | The decompiler application (upload → inventory → lazy highlighted C, stubs grouped, filterable list, cancellable project-zip download). Reaches the worker and shared assets at the bundle root with `../`. |
-| `decompile2/` | The study view: `index.html` + `decompile2.css` (Noelo's palette as dark and light tokens, its own type and layout, no `site.css`) + `app.js` and DOM-free modules for the C and assembly panes (including the easy assembly spelling), the function list's groups, the hover card, the Explain panel, the edit session (`--assert` directives), bytes and patching, the stack frame, instruction notes and help. `docs/web-integration.md` §4.2 has the layout and the module table. |
+| `decompile2/` | The study view: `index.html` + `decompile2.css` (Noelo's palette as dark and light tokens, its own type and layout, no `site.css`) + `app.js` and DOM-free modules for the C and assembly panes (including the easy assembly spelling), the function list's groups, the hover card, the Explain panel, the edit session (`--assert` directives), bytes and patching, the stack frame, instruction notes and help. `collab/` is *Working together*, loaded only when a session starts or an invite or reply link is opened: the controller and its dialogs, the group protocol, WebRTC and BroadcastChannel links, the shared registers, message checks and codes, pointers and pings. `docs/web-integration.md` §4.2 has the layout, the module table and *Working together*. |
 | `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
 | `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), `js/highlight-c.js` — the one C highlighter both pages use — and `js/fnfilter.js`, the DOM-free matcher/counters behind the /decompile sidebar filter. |
 | `CNAME` | The custom domain (`kuna.noelo.org`); `build.sh` copies it into `dist/`. Repo *Settings → Pages → Custom domain* must agree. |
@@ -159,12 +159,17 @@ node integrations/web/test/decompile2-session.mjs
 node integrations/web/test/decompile2-bytes.mjs
 node integrations/web/test/decompile2-learn.mjs
 node integrations/web/test/decompile2-groups.mjs
+node integrations/web/test/decompile2-collab.mjs
 
 # H. The study view's commands through the real Worker (inspect, read, --assert).
 node integrations/web/test/decompile2-worker.mjs
 
 # I. The study view in headless Chrome over the DevTools protocol (skips without Chrome).
 node integrations/web/test/decompile2-browser.mjs
+
+# J. Live sessions: tabs of one Chrome, then two Chrome processes over WebRTC.
+node integrations/web/test/decompile2-collab-browser.mjs [--shots DIR]
+node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
 ```
 
 - **`auto-mode.mjs`** pins the argv the glue builds: both `--mode auto` and `--language
@@ -206,6 +211,12 @@ node integrations/web/test/decompile2-browser.mjs
   instruction notes. Their fixtures (`fixtures/inspect-*.json`, `list-sample.json`) are
   what the native `kuna_wasm` prints; regenerate them with
   `node integrations/web/test/make-inspect-fixtures.mjs`.
+- **`decompile2-collab.mjs`** pins live sessions without a browser: register
+  convergence over the full key set, the ops another page may not send, sessions as
+  registers and back in one canonical order, undo that leaves what someone changed
+  since, messages, codes and the cut-down SDP, the STUN/TURN setting (off by default),
+  and whole groups over in-memory links (introductions, the program sent and checked,
+  8 people and no more, another build refused).
 - **`decompile2-worker.mjs`** runs `inspect`, `read` and `--assert` through the shipped
   Worker (a rename applies, a size-changing retype and an unknown symbol are rejected with
   a body, a `bytes` overlay shows in `read`, a function rename reaches `list`, a qualified
@@ -220,7 +231,12 @@ example through the file input, checks `main` opens by itself and the theme togg
 hovers a line, switches to Assembly, renames a variable, patches a byte, checks 1024 and 820 px for horizontal overflow, reloads to see the session
 restored, checks that `/decompile` still renders and its Language control switches
 to Rust, and checks that no other page links to `/decompile2/`. It fails on any uncaught page exception and skips when there is no Chrome (set
-`CHROME=` to point at one). CI runs it when the runner has `google-chrome`. Plain
+`CHROME=` to point at one). CI runs it when the runner has `google-chrome`, followed by
+**`decompile2-collab-browser.mjs`** (a live session in tabs of one Chrome: joining,
+shared edits, the shared decompiler effort, pointers at two widths, pings, a third page
+over WebRTC through the reply-link hand-off, undo, junk messages, leaving) and
+**`decompile2-collab-rtc.mjs`** (two Chrome processes over WebRTC; SKIPPED when ICE
+cannot connect on the machine; `--late 60` opens the reply a minute late). Plain
 `--headless --virtual-time-budget=… --dump-dom` does not work for these pages: the dump
 happens while the status still reads `loading decompiler…`.
 

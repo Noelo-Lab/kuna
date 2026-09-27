@@ -176,8 +176,10 @@ jobs:
             exit 1
           fi
 
-      # Node 22 for its global WebSocket, which the /decompile2 browser smoke
-      # drives headless Chrome with (the runner image ships google-chrome).
+      # Node 22 for its global WebSocket, which the /decompile2 browser tests
+      # drive headless Chrome with (the runner image ships google-chrome). The
+      # live-session tests run tabs of one Chrome over BroadcastChannel, then two
+      # Chrome processes over WebRTC (SKIPPED, not failed, when ICE cannot connect).
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -191,6 +193,7 @@ jobs:
           node integrations/web/test/decompile2-bytes.mjs
           node integrations/web/test/decompile2-learn.mjs
           node integrations/web/test/decompile2-groups.mjs
+          node integrations/web/test/decompile2-collab.mjs
 
       - name: Assemble and test the browser Worker boundary
         run: |
@@ -201,8 +204,10 @@ jobs:
           node integrations/web/test/decompile2-worker.mjs
           if command -v google-chrome >/dev/null; then
             node integrations/web/test/decompile2-browser.mjs
+            node integrations/web/test/decompile2-collab-browser.mjs
+            node integrations/web/test/decompile2-collab-rtc.mjs
           else
-            echo "decompile2-browser skipped: no google-chrome on this runner"
+            echo "decompile2 browser tests skipped: no google-chrome on this runner"
           fi
 
   rust-test:

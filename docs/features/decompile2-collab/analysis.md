@@ -147,6 +147,29 @@ What this shows, and what it does not:
   rows. The implementation's primary CI path is the `BroadcastChannel`
   transport (two tabs, same interface), with the real-WebRTC test on top.
 
+**A reply that comes back late.** People carry the reply, so the inviter may
+apply it minutes after the guest made it. With Chrome's defaults the answer
+takes the DTLS client role (`a=setup:active`), and a reply applied more than
+about 223 s after it was made did not connect. The guest's side of ICE
+connects at once (the inviter answers its connectivity checks before it has
+the reply), so the guest starts the DTLS handshake immediately and gives up
+when its retransmissions run out. Making the guest's answer passive
+(`a=setup:passive`, so the inviter starts the handshake once it applies the
+reply) removes the limit. Two headless Chrome processes, raw host candidates,
+the reply applied after a delay (`rtc-delay-passive.mjs`, kept out of the
+tree; one run per delay):
+
+| Delay before the inviter applies the reply | Answer active (Chrome's default) | Answer passive |
+|---|---|---|
+| a few seconds | open | open (5 s) |
+| more than about 223 s | not open | open (7 min; 30 min: open 231 ms after the reply was applied) |
+
+The 30-minute log, guest then inviter: `setup:a=setup:passive | 0s
+ice:checking | 0s conn:connecting | 0s ice:connected | 1800s conn:connected |
+1800s OPEN` and `1s ice:checking | 1801s ice:connected`. The implementation
+answers passive (`sdp.js`), and `test/decompile2-collab-rtc.mjs --late 60` runs
+the same case through the page.
+
 The alternatives, for the record:
 
 | Carrier for the handshake | Server of ours? | Cost |

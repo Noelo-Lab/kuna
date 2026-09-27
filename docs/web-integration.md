@@ -547,6 +547,7 @@ source tree):
 | `bytes-view.js` / `arch.js` | the hex dump and the patched file; no-op fills |
 | `mnemonics.js` / `stack-frame.js` / `xrefs-view.js` / `help.js` | instruction notes and idioms; the frame diagram; calls and callers in words; the help dialog |
 | `prefs.js` / `addr.js` | view settings (`kuna.d2.prefs`, v2 with the v1 migration); addresses as hex strings and BigInt |
+| `collab/` | *Working together* (below), loaded with a dynamic `import()` only when a session starts or an invite or reply link is opened: `collab.js` (the controller: dialogs, roster, the Session ⇄ register sync, file hand-over), `group.js` (the protocol: hello, snapshots, relayed introductions, file transfer, limits), `link.js` (WebRTC and BroadcastChannel links), `replica.js` (registers, `validOp`, the register-based undo), `wire.js` (messages and their checks, invite and reply codes), `sdp.js`, `presence.js` (pointers and pings), `sha256.js`, `collab.css`; all but `collab.js`, `link.js` and `presence.js` are DOM-free |
 
 **Linking.** Every pane shares one index: a C line's instructions are the union of the
 engine's `instructions[].lines`, `line_mappings` and the addresses on that line's tokens
@@ -585,7 +586,8 @@ C code, Assembly, Bytes, Stack · `s` side by side · `o` address format · `b` 
 · `↑↓` lines/rows · `←→` names on a line · `Enter` open the callee · `n` rename · `y`
 retype (on a function name: signature) · `;` note · `g` go to · `x` find who calls it ·
 `u`/Ctrl+Z undo · Ctrl+Shift+Z redo · Alt+←/→ history · `?` help · `Esc` closes the
-card, then a dialog, then the selection. The help dialog lists the eight worth knowing
+card, then a dialog, then the selection · in a live session, `p` (or Alt+click) points the
+others to what is under the mouse. The help dialog lists the eight worth knowing
 first and the rest under *All shortcuts*, then a glossary of the names a decompiler
 invents and what the colours mean.
 
@@ -678,6 +680,106 @@ linked to the calling instruction and saying how it refers ("Called by _start (u
 address)"), plus "Uses data at …". If the request fails, the panel keeps the callees and
 says why.
 
+**Working together.** Several people can work on one program at once, with no server:
+each person's page renames, retypes, notes and patches, and everyone sees the others'
+changes, where they are, and their pointers. ⋯ → *Work together…* (the page stays
+unlisted) asks for a name and makes an **invite link**, `/decompile2/#join=<code>`; the
+dialog says plainly that whoever opens it receives a copy of the program. The code lives
+in the fragment, which browsers never send to a server, and holds only what the other
+page needs to connect: the inviter's name, the program's name and size, and a compact
+WebRTC offer (the ICE username and password, the DTLS fingerprint and the candidate
+addresses, about 300 characters in all, rebuilt into SDP on the other side from
+validated fields only; `sdp.js`). One link lets one person in.
+
+The guest opens the link and presses *Join*. If a tab of the same browser made the
+invite, the two pages find each other over `BroadcastChannel` and are connected at once
+(the zero-setup demo: two tabs). Otherwise the guest's page shows a **reply link**
+(`#reply=<code>`) to send back. The inviter clicks it: it opens a tab of the same page in
+their own browser, which hands the reply to the waiting tab over `BroadcastChannel` and
+says "Connected — you can close this tab"; a paste box in the invite dialog is the
+fallback. A one-step join is not possible without a server: something has to carry the
+guest's reply back to the inviter, and with no relay the people do. The guest's answer is
+passive (`a=setup:passive`, the inviter starts the DTLS handshake), so a reply opened
+minutes later still connects (measured to 30 minutes; the analysis is in
+`docs/features/decompile2-collab/analysis.md`). A pair that cannot connect directly is
+told "Could not connect directly. You may need to be on the same network."
+
+*Connection setting.* By default the pages use no ICE servers, so sessions work between
+tabs of one browser and between computers on one network. One `localStorage` key turns
+more on, with no switch in the page: `kuna.d2.collab` holds `{"stun": true}` for Google's
+public STUN server (free, no account; it tells a browser its public address and sees no
+content), or `{"stun": "stun:host:port"}` for another, and `{"turn": {"urls":
+"turn:host:3478", "username": "…", "credential": "…"}}` for a TURN relay (a server that
+carries the traffic; relays are what cost money). In the browser's console:
+`localStorage.setItem('kuna.d2.collab', JSON.stringify({ ...JSON.parse(localStorage.getItem('kuna.d2.collab') || '{}'), stun: true }))`,
+then start the session again. The same key keeps the name last used.
+
+*What travels.* Only the edits, never the C: every page runs its own engine on the same
+bytes, so the same directives give the same code. The session is held as
+last-writer-wins registers, one per field a student can change (a local's name and its
+type, a function's name, a signature, a global's name and type, a type definition, a
+note, each patched byte, each directive the page does not model) plus the **decompiler
+effort**, which is shared because the engine's symbols depend on it (the same `v20` is a
+different variable in Fast); *Show code as* stays each person's own, and the ⋯ menu says
+"changes it for everyone" next to the effort. Each write carries a Lamport clock
+`[counter, page]` and the larger wins everywhere, so a rename and a retype of one local
+made at the same moment both survive, and pages that have seen the same writes hold the
+same session in whatever order the writes arrived. Directives go to the engine in one
+canonical order (by kind, then key) on every page, shared or not. A page's own edits
+are compared with the registers after each change and sent as register ops; the others'
+are applied through the page's remote path, which re-decompiles the open function only
+when they touch it (once per burst, 300 ms after the last, when no request is running),
+adds no undo step and restores nothing on failure. When someone's change replaces yours,
+a toast says so ("Ben renamed total to count after you"). *Your changes* becomes
+*Changes*, each row in its author's colour. **Undo** takes back only this page's own
+last change, and leaves any field someone else changed since ("Ben changed that after
+you, so it was not undone").
+
+*Joining.* On every link the pages exchange a hello (protocol version, build id,
+program SHA-256, name, colour); a different protocol or build — the build id is the
+SHA-256 of `kuna_wasm.wasm` — is refused with "Ben's page is a different version of
+Kuna; reload both". The page that invited sends the newcomer a welcome (the session, the
+people in it, the program's name, size and hash), then its registers. A newcomer without
+the program receives it (64 KiB chunks, paced by the channel's `bufferedAmount`, at most
+64 MiB), checks its SHA-256 and opens it without a prompt, opening the function the
+inviter is on; one who already has the same program open is not sent it again, and what
+it had changed joins the session (the session's value wins where both changed a field).
+Changes a newcomer had stored for that program from before are not merged: a toast
+offers to save them as a `.kuna` file.
+
+*Groups.* Up to 8 people, each page linked to every other. A newcomer needs one invite
+from anyone in the session; the pages gossip who is linked to whom, and for each pair not
+yet linked, the page with the smaller id makes an offer that a page linked to both
+relays, with the answer, so the group introduces the newcomer to everyone. Edits are
+forwarded to pages that had not seen them, so a pair that cannot link directly still
+converges. The ninth person is told "This session is full (8 people)". Leaving (the
+session dialog, or closing the tab) tells the others; a page that loses a link tries
+again through the others, and one that joins again merges what it changed meanwhile.
+
+*Presence.* The top bar shows the others as initials in their colours; the tooltip says
+where each one is ("Ben: sum_to, Assembly") and a click follows them until you click or
+press a key. Each other person's pointer is a translucent arrow with a name tag in their
+colour, anchored to what it is over — a C line, an instruction, a line's heading in the
+assembly, a byte, a stack slot, with the character column on code rows — so it lands on
+the same name in a window of any size, in C code or side by side, and hides when that
+thing is not on your screen (another function, scrolled away). Pointers are sent at most
+30 times a second, on an unordered channel that never resends. Alt+click (or `p`) on a
+line, an instruction, a byte or a stack slot **pings** it: a pulsing ring in the sender's
+colour on every page that shows it, and a toast "Ana pinged line 6 of main" with **Go
+there**.
+
+*Limits.* Every message from another page is checked before the page acts on it: a known
+type, each field in its expected shape and a size cap (`wire.js` `readMessage`), then a
+rate limit per page (edits 20 a second, pings 1, pointers 30); what fails is dropped and
+the link goes on. Each register op passes `validOp`: a key of a known shape, a value of
+its kind's shape, no control characters (a newline would start a second directive in an
+exported `.kuna` file) and never a form that makes the engine read a file (`@FILE`,
+`bytes ADDR @FILE`, an `@` in a type). A page's own change that others would refuse
+stays on that page, and it says so. The others cannot grow the session past 100,000
+registers. Remote directives go through the same refusal path as the page's own, and
+names are escaped wherever they are shown. Between browsers the pages talk only to each
+other, over DTLS; the invite and reply codes never reach a server.
+
 **Older engines.** What the engine can do is read off each `list` document: the
 study-view engine's carries `sections` and `target`, and the same build answers
 `inspect`, `read` and `--assert` (no stderr text is parsed for this). On an older wasm the
@@ -735,7 +837,14 @@ formats and architectures**:
    `list-sample.json`). **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
    `xrefs` and `--assert` through the real Worker, and pins the refusal error the page
    relies on (exit code plus the quoted directive); it skips with a message on a wasm
-   without `inspect`.
+   without `inspect`. **`test/decompile2-collab.mjs`** (build-free) covers live sessions:
+   2000 random rounds of registers over the full key set, the mode included, converge to
+   one map and one directive list; 27 hostile ops are refused; a session reads back as
+   registers and the registers as the same directives in the canonical order; undo skips
+   what someone changed since; messages, invite and reply codes and the cut-down SDP
+   refuse what is not theirs; the STUN/TURN setting is off by default; and whole groups
+   over in-memory links introduce newcomers, send the program, converge, stop at 8,
+   refuse another build and converge through a third page when two cannot link.
 5. **`test/decompile2-browser.mjs`** — the real page in headless Chrome over the DevTools
    protocol (Node's built-in `WebSocket`, no `puppeteer`; skips when there is no Chrome or
    the Node has no `WebSocket`): it checks the welcome screen's drop zone, loads the
@@ -754,6 +863,20 @@ formats and architectures**:
    `/decompile/` and `/dev-viz/` do not link to `/decompile2/`. Any uncaught page
    exception fails it; steps an older engine cannot serve assert the page's fallback and
    are listed as skipped. CI runs it when the runner has `google-chrome`.
+   **`test/decompile2-collab-browser.mjs`** drives live sessions in tabs of one headless
+   Chrome: an invite opened in another tab (the pages meet over `BroadcastChannel`), the
+   program received and opened by itself, a rename shown on the other page, a rename and a
+   retype at the same moment both kept, a new decompiler effort re-decompiling the other
+   page, a pointer on the same name at 1440 and 1024 px in C code and side by side and
+   hidden in another function, Alt+click and `p` pings with *Go there*, a third page
+   joining over WebRTC through the reply-link hand-off and introduced to the second by the
+   group, undo leaving what someone changed since, malformed and hostile messages from a
+   same-origin tab dropped, and leaving (`--shots DIR` saves screenshots).
+   **`test/decompile2-collab-rtc.mjs`** runs two Chrome processes over real WebRTC with
+   the links carried by the script, raw host candidates
+   (`--disable-features=WebRtcHideLocalIpsWithMdns`, since runners lack the multicast
+   `.local` names need) and prints SKIPPED when ICE cannot connect; `--late 60` applies the
+   reply a minute after it was made. CI runs both after the smoke test.
    The filter's DOM half was verified the same way during development (raw CDP): 16
    checks on `sample.elf` — row hiding is `display:none` and not the `.fn` flex rule,
    header and stub-divider counts, the invalid-regex report, `/`-to-focus, `Escape`,

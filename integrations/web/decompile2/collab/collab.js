@@ -22,6 +22,7 @@ const PEOPLE = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="tru
   '<path d="M1.8 13.5c.5-2.4 2.2-3.7 4.2-3.7s3.7 1.3 4.2 3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
   '<circle cx="11.3" cy="6" r="1.9" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M11 9.6c1.7 0 2.9 1.1 3.3 3.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const NETWORK = 'Could not connect directly. You may need to be on the same network.';
+const CLOSED = 'This reply is for an invite that is no longer open. Make a new invite link.';
 
 /** The collab setting (`kuna.d2.collab`): the name last used, and the connection setting. */
 export function loadCollabPrefs(storage) {
@@ -76,6 +77,7 @@ class Collab {
     this.holdDiff = false;
     this.localOnly = new Set();
     this.invites = new Map();
+    this.closedInvites = new Set();
     this.join = null;
     this.seen = new Map();
     this.cursors = new Map();
@@ -240,7 +242,10 @@ class Collab {
   leave({ quiet = false } = {}) {
     this.group?.leave();
     this.group = null;
-    for (const inv of this.invites.values()) inv.offer?.cancel?.();
+    for (const inv of this.invites.values()) {
+      inv.offer?.cancel?.();
+      this.closedInvites.add(inv.id);
+    }
     this.invites.clear();
     this.join?.res?.cancel?.();
     this.join = null;
@@ -422,8 +427,9 @@ class Collab {
         : 'That reply link is not complete. Copy all of it and try again.' };
     }
     const inv = this.invites.get(r.id);
-    if (!inv) return { ok: false, text: 'That reply is for an invite this page did not make. Open it in the tab that made the invite.' };
-    if (inv.state !== 'waiting') return { ok: false, text: 'That reply was already used.', inv };
+    if (!inv && this.closedInvites.has(r.id)) return { ok: false, text: CLOSED };
+    if (!inv) return { ok: false, text: 'That reply is for an invite made in another tab or browser. Open it there.' };
+    if (inv.state !== 'waiting') return { ok: false, text: CLOSED, inv };
     inv.guest = r.n;
     inv.state = 'connecting';
     this.#inviteStatus(inv);
@@ -432,7 +438,7 @@ class Collab {
     } catch (e) {
       inv.state = 'failed';
       this.#inviteStatus(inv);
-      return { ok: false, text: e.message === 'used' ? 'That reply was already used.' : NETWORK, inv };
+      return { ok: false, text: e.message === 'used' ? CLOSED : NETWORK, inv };
     }
     return { ok: true, inv };
   }
@@ -441,10 +447,9 @@ class Collab {
   async #handOff(data) {
     if (data?.k !== 'reply' || typeof data.id !== 'string' || typeof data.code !== 'string' || typeof data.from !== 'string') return;
     const inv = this.invites.get(data.id);
-    if (!inv) return;
     const post = (msg) => { try { this.replyChannel.postMessage({ ...msg, id: data.id, to: data.from }); } catch (_) { /* closed */ } };
-    if (inv.state !== 'waiting') {
-      post({ k: 'used' });
+    if (!inv || inv.state !== 'waiting') {
+      if (inv || this.closedInvites.has(data.id)) post({ k: 'used' });
       return;
     }
     post({ k: 'got', name: this.name });
@@ -462,8 +467,7 @@ class Collab {
 
   /** An opened `#join=` or `#reply=` link. */
   async handleHash(hash) {
-    const join = codeFrom(hash, 'invite');
-    if (/^#join=/.test(hash)) return this.#openInvite(join);
+    if (/^#join=/.test(hash)) return this.#openInvite(codeFrom(hash, 'invite'));
     if (/^#reply=/.test(hash)) return this.#openReply(codeFrom(hash, 'reply'));
     return null;
   }
@@ -640,8 +644,12 @@ class Collab {
       });
       return;
     }
-    if (this.invites.has(r.id)) {
+    if (this.invites.has(r.id) || this.closedInvites.has(r.id)) {
       const res = await this.applyReply(code);
+      if (!this.active) {
+        this.#show({ kind: 'notice', title: `${r.n}'s reply`, text: res.ok ? 'Connecting…' : res.text });
+        return;
+      }
       this.#show({ kind: 'session' });
       if (res.inv) {
         this.current = res.inv;
@@ -660,30 +668,28 @@ class Collab {
     }
     const from = randomId(8);
     const listen = new BroadcastChannel('kuna.d2.reply');
-    const timer = setTimeout(() => {
-      if (view.state !== 'handing') return;
-      view.state = 'nobody';
-      this.#render();
-    }, 1500);
     let give = 0;
+    const end = (state, text = '') => {
+      clearTimeout(timer);
+      clearTimeout(give);
+      listen.close();
+      view.state = state;
+      view.text = text;
+      this.#render();
+    };
+    const timer = setTimeout(() => end('nobody'), 1500);
     listen.onmessage = ({ data }) => {
       if (data?.to !== from || data.id !== r.id) return;
       if (data.k === 'got') {
         clearTimeout(timer);
         view.state = 'connecting';
-        view.inviter = typeof data.name === 'string' ? plainName(data.name) : '';
-        give = setTimeout(() => { if (view.state === 'connecting') { view.state = 'failed'; view.text = NETWORK; this.#render(); } }, 25000);
+        give = setTimeout(() => end('failed', NETWORK), 25000);
+        this.#render();
       } else if (data.k === 'used') {
-        clearTimeout(timer);
-        view.state = 'failed';
-        view.text = 'That reply was already used.';
+        end('failed', CLOSED);
       } else if (data.k === 'state') {
-        clearTimeout(give);
-        view.state = data.state === 'open' ? 'open' : 'failed';
-        view.text = data.state === 'open' ? '' : (typeof data.text === 'string' ? data.text.slice(0, 200) : NETWORK);
-        listen.close();
+        end(data.state === 'open' ? 'open' : 'failed', data.state === 'open' ? '' : (typeof data.text === 'string' ? data.text.slice(0, 200) : NETWORK));
       }
-      this.#render();
     };
     listen.postMessage({ k: 'reply', id: r.id, code, from });
   }
@@ -715,7 +721,7 @@ class Collab {
       this.group.setWhere(w);
       if (moved) this.#pointerOff();
     }
-    for (const [peer, m] of this.cursors) this.presence.show(peer, m, this.#member(peer), m.fn === w.fn);
+    for (const [peer, m] of this.cursors) this.presence.show(peer, m, this.#member(peer), m.fn === w.fn, { moved: false });
   }
 
   redraw() {
@@ -800,23 +806,23 @@ class Collab {
     }
     if (!this.pingLimit.take()) return true;
     this.group.sendPing({ fn: cur.fn, view: cur.view, anchor });
-    this.presence.pulse(anchor, this.#member(this.me).color || this.group.color);
+    this.presence.pulse(anchor, this.#member(this.me).color || this.group.color, this.me);
     this.api.status(`You pointed the others to ${this.#pingLabel(cur.fn, anchor)}`);
     return true;
   }
 
   #pinged(peer, m) {
     const who = this.#member(peer);
-    if (this.api.current().fn === m.fn) this.presence.pulse(m.anchor, who.color);
+    if (this.api.current().fn === m.fn) this.presence.pulse(m.anchor, who.color, peer);
     this.api.toast(`${who.name} pinged ${this.#pingLabel(m.fn, m.anchor)}`, {
-      ms: 10000, action: { label: 'Go there', run: () => this.goTo(m.fn, m.anchor, who.color) },
+      ms: 10000, action: { label: 'Go there', run: () => this.goTo(m.fn, m.anchor, who.color, peer) },
     });
   }
 
-  async goTo(fn, anchor, color) {
+  async goTo(fn, anchor, color, peer) {
     await this.api.goTo(fn, anchor);
     findAnchor(anchor)?.scrollIntoView({ block: 'center' });
-    setTimeout(() => this.presence.pulse(anchor, color), 60);
+    setTimeout(() => this.presence.pulse(anchor, color, peer), 60);
   }
 
   #follow(peer) {
@@ -1154,7 +1160,7 @@ class Collab {
     if (v.state === 'nobody') {
       return {
         title: `${v.reply.n}'s reply`,
-        body: '<p>No Kuna tab in this browser is waiting for this reply. Open it in the browser you sent the invite from, or paste it into that invite\'s reply box.</p>' +
+        body: '<p>No Kuna tab in this browser has this invite open. If you made the invite in this browser, its tab was closed or reloaded: make a new invite link. Otherwise open this reply link in the browser you sent the invite from.</p>' +
           this.#copyRow(`${this.#base()}#reply=${v.code}`, 'Reply link'),
       };
     }
