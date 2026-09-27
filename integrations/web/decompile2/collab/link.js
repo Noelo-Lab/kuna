@@ -3,7 +3,8 @@
 // reply links) or relayed by another member of the session; between tabs of
 // one browser it is a BroadcastChannel with the same interface. The page that
 // answers an offer knocks on the offer's BroadcastChannel first, and uses
-// WebRTC only when no tab of this browser answers. A link has two channels:
+// WebRTC only when no tab of this browser answers; a knock counts only once
+// the answering page confirms it had not given up waiting. A link has two channels:
 // `edits` (ordered, reliable) and `cursor` (unordered, never resent).
 // Gathering stops after 1.5 s, the ICE servers come from the page's
 // STUN/TURN setting (none by default), and the answer is passive (sdp.js).
@@ -12,6 +13,7 @@ import { randomId } from './wire.js';
 
 const GATHER_MS = 1500;
 const KNOCK_MS = 500;
+const CONFIRM_MS = 1500;
 const OPEN_MS = 20000;
 const quietly = (fn) => {
   try { return fn(); } catch (_) { return undefined; }
@@ -78,8 +80,13 @@ class RtcLink {
       const ch = this.edits;
       if (!ch || ch.readyState !== 'open' || ch.bufferedAmount <= threshold) { done(); return; }
       ch.bufferedAmountLowThreshold = threshold;
-      ch.addEventListener('bufferedamountlow', () => done(), { once: true });
-      ch.addEventListener('close', () => done(), { once: true });
+      const finish = () => {
+        ch.removeEventListener('bufferedamountlow', finish);
+        ch.removeEventListener('close', finish);
+        done();
+      };
+      ch.addEventListener('bufferedamountlow', finish);
+      ch.addEventListener('close', finish);
     });
   }
 
@@ -160,12 +167,12 @@ class BcLink {
 }
 
 /**
- * Start a link: an offer to hand to one other page. Resolves `{id, sdp, bc,
+ * Start a link: an offer to hand to one other page. Resolves `{id, sdp,
  * ready, answer(sdp), cancel(), onstate}`: `ready` settles with the link once
- * the other page answers (a knock from a tab of this browser, or `answer`
- * with its WebRTC reply), or fails.
+ * the other page answers (a confirmed knock from a tab of this browser, or
+ * `answer` with its WebRTC reply), or fails.
  */
-export async function makeOffer({ me, iceServers = [], bc = true } = {}) {
+export async function makeOffer({ me, iceServers = [] } = {}) {
   const id = randomId(10);
   const pc = new RTCPeerConnection({ iceServers });
   const edits = pc.createDataChannel('edits', { ordered: true });
@@ -176,7 +183,7 @@ export async function makeOffer({ me, iceServers = [], bc = true } = {}) {
   ready.catch(() => {});
   let done = false;
   let channel = null;
-  const offer = { id, bc, ready, onstate: null, answered: false };
+  const offer = { id, ready, onstate: null, answered: false };
   const finish = (link) => {
     if (done) return;
     done = true;
@@ -208,19 +215,29 @@ export async function makeOffer({ me, iceServers = [], bc = true } = {}) {
     stop('no description');
     throw new Error('this browser gave no usable connection details');
   }
-  if (bc && globalThis.BroadcastChannel) {
+  if (globalThis.BroadcastChannel) {
     channel = new BroadcastChannel(`kuna.d2.link.${id}`);
+    let knocked = null;
+    let expire = 0;
     channel.onmessage = ({ data }) => {
-      if (data?.k !== 'knock' || typeof data.from !== 'string') return;
-      if (done || offer.answered) {
-        quietly(() => channel.postMessage({ k: 'taken', to: data.from }));
-        return;
+      if (typeof data?.from !== 'string') return;
+      if (data.k === 'knock') {
+        if (done || offer.answered || knocked) {
+          quietly(() => channel.postMessage({ k: 'taken', to: data.from }));
+          return;
+        }
+        knocked = data.from;
+        quietly(() => channel.postMessage({ k: 'ack', from: me, to: data.from }));
+        expire = setTimeout(() => { knocked = null; }, CONFIRM_MS);
+      } else if (data.from === knocked && data.to === me && (data.k === 'yes' || data.k === 'no')) {
+        clearTimeout(expire);
+        knocked = null;
+        if (data.k === 'no' || done || offer.answered) return;
+        offer.answered = true;
+        const link = new BcLink(channel, me, data.from);
+        quietly(() => pc.close());
+        finish(link);
       }
-      offer.answered = true;
-      quietly(() => channel.postMessage({ k: 'ack', from: me, to: data.from }));
-      const link = new BcLink(channel, me, data.from);
-      quietly(() => pc.close());
-      finish(link);
     };
   }
   offer.answer = async (compact) => {
@@ -234,24 +251,34 @@ export async function makeOffer({ me, iceServers = [], bc = true } = {}) {
 }
 
 /**
- * Answer an offer. Resolves `{link}` when a tab of this browser made it (over
- * BroadcastChannel), else `{sdp, ready, cancel(), onstate}` with the WebRTC
- * answer to send back. Throws Error('used') when the offer was taken.
+ * Answer an offer: `{sdp, ready, cancel(), onstate}`. When a tab of this
+ * browser made the offer, the pages meet over BroadcastChannel: `sdp` is null
+ * and `ready` has the link already; otherwise `sdp` is the WebRTC answer to
+ * send back. Throws Error('used') when the offer was taken.
  */
-export async function takeOffer({ me, id, sdp, iceServers = [], bc = true } = {}) {
-  if (bc && globalThis.BroadcastChannel) {
+export async function takeOffer({ me, id, sdp, iceServers = [] } = {}) {
+  if (globalThis.BroadcastChannel) {
     const channel = new BroadcastChannel(`kuna.d2.link.${id}`);
     const reply = await new Promise((done) => {
-      const timer = setTimeout(() => done(null), KNOCK_MS);
+      let over = false;
+      const timer = setTimeout(() => { over = true; done(null); }, KNOCK_MS);
       channel.onmessage = ({ data }) => {
         if (data?.to !== me) return;
-        if (data.k === 'ack' && typeof data.from === 'string') { clearTimeout(timer); done(data); }
-        if (data.k === 'taken') { clearTimeout(timer); done({ k: 'taken' }); }
+        if (data.k === 'ack' && typeof data.from === 'string') {
+          quietly(() => channel.postMessage({ k: over ? 'no' : 'yes', from: me, to: data.from }));
+          if (over) return;
+          clearTimeout(timer);
+          done(data);
+        }
+        if (data.k === 'taken' && !over) { clearTimeout(timer); done({ k: 'taken' }); }
       };
       channel.postMessage({ k: 'knock', from: me });
     });
-    if (reply?.k === 'ack') return { link: new BcLink(channel, me, reply.from) };
-    channel.close();
+    if (reply?.k === 'ack') {
+      const link = new BcLink(channel, me, reply.from);
+      return { sdp: null, ready: Promise.resolve(link), cancel: () => link.close(), onstate: null };
+    }
+    setTimeout(() => quietly(() => channel.close()), CONFIRM_MS);
     if (reply?.k === 'taken') throw new Error('used');
   }
   const pc = new RTCPeerConnection({ iceServers });

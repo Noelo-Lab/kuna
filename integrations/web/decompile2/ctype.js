@@ -52,8 +52,8 @@ const FNPTR_RE = /^[A-Za-z_][A-Za-z0-9_ ]*\**\s*\(\s*\*+\s*\)\s*\([^()]*\)$/;
 export function validateCType(text) {
   const t = normalizeType(text);
   if (!t) return 'a type is required';
-  if (/[;{}#\n\r]/.test(t)) return 'a type cannot contain ; { } # or a newline';
-  if (TYPE_RE.test(t) || FNPTR_RE.test(t)) return null;
+  if (/[;{}#@\n\r]/.test(t)) return 'a type cannot contain ; { } # @ or a newline';
+  if (TYPE_RE.test(t) || FNPTR_RE.test(t)) return t.length > 512 ? 'that type is too long' : null;
   return `not a C type: ${t}`;
 }
 

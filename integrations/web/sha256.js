@@ -1,6 +1,8 @@
 // sha256.js — SHA-256 of some bytes as 64 hex digits: WebCrypto when the page
 // has it, else this file's own implementation, since a page served over plain
 // HTTP on a local network is not a secure context and has no crypto.subtle.
+// The one hash the site uses: a binary's identity in the study view, the
+// engine's build id in the Worker, a program's check in a live session.
 // DOM-free.
 
 const K = new Uint32Array([

@@ -5,11 +5,50 @@
 // directive, and writing a byte back to its original value removes the patch.
 // The same records export as a `.kuna` file the native CLI replays verbatim:
 //   kuna decompile <binary> <function> --assert @<binary>.kuna
-// DOM-free.
+// Directives go out grouped by kind, each kind in the order its records were
+// first made (a later edit keeps a record's place), since some depend on
+// earlier ones: a type definition on another, the later of two raw
+// directives winning, a rename that frees a name another takes. In a live
+// session `orderOf` gives that order from the shared registers instead, so
+// every page sends the same list. DOM-free.
 import { cDeclare, parseParam } from './ctype.js';
 
 const ORDER = ['typedef', 'data', 'fn', 'proto', 'bytes', 'raw', 'var', 'comment'];
-const UNDO_MAX = 100;
+export const UNDO_MAX = 100;
+
+/** How long a value in a directive may be, by what it is. */
+export const TEXT_LIMITS = Object.freeze({ name: 200, type: 512, decl: 2048, typedef: 8192, comment: 4096, raw: 4096 });
+
+/**
+ * Why `text` cannot go into a directive, or null: it is too long, holds a
+ * control character or a line break (it would start a second directive in a
+ * .kuna file), or a `#` at its start or after a space (the .kuna reader cuts
+ * the line there).
+ */
+export function directiveTextProblem(text, max = TEXT_LIMITS.raw) {
+  const t = String(text ?? '');
+  if (t.length > max) return `that is too long (at most ${max} characters)`;
+  if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t)) return 'a directive cannot hold a line break or a control character';
+  if (/(^|\s)#/.test(t)) return 'a directive cannot hold " #" or start with # (the .kuna file reads that as a comment)';
+  return null;
+}
+
+/** The same for a C declaration (a type or a signature), which also never holds `@`. */
+export function declarationProblem(text, max = TEXT_LIMITS.decl) {
+  return directiveTextProblem(text, max) || (String(text ?? '').includes('@') ? 'a C declaration cannot hold @' : null);
+}
+
+/** Order two directives of one kind by `orderOf` (records it does not know yet come last). */
+function byBirth(orderOf) {
+  return (a, b) => {
+    const x = orderOf(a.key);
+    const y = orderOf(b.key);
+    if (x && y && (x[0] !== y[0] || x[1] !== y[1])) return x[0] !== y[0] ? x[0] - y[0] : (x[1] < y[1] ? -1 : 1);
+    if (x && !y) return -1;
+    if (!x && y) return 1;
+    return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+  };
+}
 
 /** Strip a `#` comment the way the CLI's `@FILE` reader does (` #`, or a leading `#`). */
 export function stripComment(line) {
@@ -71,6 +110,7 @@ export class Session {
     this.undoStack = [];
     this.redoStack = [];
     this.rawSeq = 0;
+    this.orderOf = null;
   }
 
   get size() {
@@ -244,7 +284,7 @@ export class Session {
         groups.get(rec.kind).push({ key, text: recordDirective(rec, null) });
       }
     }
-    for (const list of groups.values()) list.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    if (this.orderOf) for (const list of groups.values()) list.sort(byBirth(this.orderOf));
     groups.set('bytes', this.#bytesDirectives().filter((d) => includeRefused || !this.refused.has(d.key)));
     const out = ORDER.flatMap((k) => groups.get(k));
     for (const d of out) this.sent.set(d.text, d.key);
@@ -370,11 +410,27 @@ export class Session {
     return true;
   }
 
+  /** The records in the order their directives are sent (see the file header). */
+  orderedRecords() {
+    const list = [...this.records].map(([key, rec]) => ({ key, rec }));
+    if (this.orderOf) {
+      const kind = (e) => ORDER.indexOf(e.rec.kind);
+      const birth = byBirth(this.orderOf);
+      list.sort((a, b) => kind(a) - kind(b) || birth(a, b));
+    }
+    return list;
+  }
+
+  /** Keep the records in that order from now on (a page leaving a live session keeps the session's order). */
+  reorder() {
+    this.records = new Map(this.orderedRecords().map(({ key, rec }) => [key, rec]));
+  }
+
   /** The records as plain JSON (what the page persists per binary). */
   toJSON() {
     return {
       v: 1,
-      records: [...this.records].map(([k, v]) => [k, { ...v }]),
+      records: this.orderedRecords().map(({ key, rec }) => [key, { ...rec }]),
       bytes: [...this.bytes].map(([a, v]) => [hex(a), v]),
       rawSeq: this.rawSeq,
     };

@@ -5,51 +5,64 @@
 // and the decompiler effort (the engine's symbols depend on it). A write
 // carries a Lamport clock `[counter, peer]` and the larger clock wins, so
 // pages that have seen the same writes hold the same registers whatever order
-// they arrived in; a deletion is a write of null.
+// they arrived in; a deletion is a write of null. Each register also keeps its
+// birth clock, the smallest clock any page has written it with (merged as a
+// grow-only minimum, sent along with every op), which orders the session's
+// directives the same way on every page.
 //
-// `registersOf` reads a Session as registers and `applyRegisters` writes
-// registers back into one. Ops from other pages pass `validOp` first: a key of
-// a known shape, a value of its kind's shape, no control characters (a
-// newline would start a second directive in an exported .kuna file) and never
-// a form that makes the engine read a file (`@FILE`, `bytes ADDR @FILE`).
-// DOM-free.
+// `registersOf` reads a Session as registers, `diffSession` finds what a page
+// changed since, and `applyRegisters` writes registers back into a Session,
+// field by field. Ops from other pages pass `validOp` first: a key of a known
+// shape, a value of its kind's shape (the same text rules as the page's own
+// dialogs, from session.js), and a clock within bounds. DOM-free.
+import { TEXT_LIMITS, UNDO_MAX, directiveTextProblem, declarationProblem } from '../session.js';
 
 export const MODES = ['auto', 'fast', 'reliable', 'aggressive'];
+export const MAX_COUNTER = 2 ** 48;
+export const COUNTER_WINDOW = 2 ** 24;
 
-const newer = (a, b) => (a[0] !== b[0] ? a[0] > b[0] : a[1] > b[1]);
+/** Whether clock `a` is later than clock `b`. */
+export const newer = (a, b) => (a[0] !== b[0] ? a[0] > b[0] : a[1] > b[1]);
 
 const HEX = '0x[0-9a-f]{1,16}';
 const SYM = '[A-Za-z_][A-Za-z0-9_]{0,199}';
 const PEER = '[a-z0-9]{1,16}';
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]{0,199}$/;
-const plain = (max) => (v) => v.length > 0 && v.length <= max && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(v) && !/(^|\s)#/.test(v);
-const decl = (max) => (v) => plain(max)(v) && !v.includes('@');
-const raw = (v) => plain(4096)(v) && !v.trim().split(/\s+/).some((t) => t.startsWith('@'));
+const text = (max) => (v) => v.length > 0 && !directiveTextProblem(v, max);
+const decl = (max) => (v) => v.length > 0 && !declarationProblem(v, max);
+const raw = (v) => text(TEXT_LIMITS.raw)(v) && !v.trim().split(/\s+/).some((t) => t.startsWith('@'));
 const KINDS = [
   [new RegExp(`^var:${HEX}:${SYM}:name$`), (v) => IDENT.test(v)],
-  [new RegExp(`^var:${HEX}:${SYM}:type$`), decl(512)],
+  [new RegExp(`^var:${HEX}:${SYM}:type$`), decl(TEXT_LIMITS.type)],
   [new RegExp(`^fn:${HEX}$`), (v) => IDENT.test(v)],
-  [new RegExp(`^proto:${HEX}$`), decl(2048)],
-  [new RegExp(`^data:${HEX}:type$`), decl(512)],
+  [new RegExp(`^proto:${HEX}$`), decl(TEXT_LIMITS.decl)],
+  [new RegExp(`^data:${HEX}:type$`), decl(TEXT_LIMITS.type)],
   [new RegExp(`^data:${HEX}:name$`), (v) => IDENT.test(v)],
-  [new RegExp(`^typedef:${SYM}$`), decl(8192)],
-  [new RegExp(`^comment:${HEX}:${HEX}$`), plain(4096)],
+  [new RegExp(`^typedef:${SYM}$`), decl(TEXT_LIMITS.typedef)],
+  [new RegExp(`^comment:${HEX}:${HEX}$`), text(TEXT_LIMITS.comment)],
   [new RegExp(`^byte:${HEX}$`), (v) => /^[0-9a-f]{2}$/.test(v)],
   [new RegExp(`^raw:${PEER}:[0-9]{1,9}$`), raw],
   [new RegExp(`^rawf:${HEX}:${PEER}:[0-9]{1,9}$`), raw],
   [/^setting:mode$/, (v) => MODES.includes(v)],
 ];
 
+const clockOk = (c) => Array.isArray(c) && c.length === 2 && Number.isSafeInteger(c[0]) && c[0] >= 1 && c[0] <= MAX_COUNTER &&
+  typeof c[1] === 'string' && /^[a-z0-9]{1,16}$/.test(c[1]);
+
+/** Whether `value` may be written to `key` (the check every op from another page passes). */
+export function validValue(key, value) {
+  if (typeof key !== 'string' || key.length > 300) return false;
+  const kind = KINDS.find(([re]) => re.test(key));
+  return !!kind && (value === null || (typeof value === 'string' && kind[1](value)));
+}
+
 /** Whether an op from another page may be applied. */
 export function validOp(op) {
-  if (!op || typeof op !== 'object' || Array.isArray(op) || Object.keys(op).length !== 3) return false;
-  const { k, v, c } = op;
-  if (typeof k !== 'string' || k.length > 300) return false;
-  if (!Array.isArray(c) || c.length !== 2 || !Number.isSafeInteger(c[0]) || c[0] < 1 ||
-      typeof c[1] !== 'string' || !/^[a-z0-9]{1,16}$/.test(c[1])) return false;
-  const kind = KINDS.find(([re]) => re.test(k));
-  if (!kind) return false;
-  return v === null || (typeof v === 'string' && kind[1](v));
+  if (!op || typeof op !== 'object' || Array.isArray(op)) return false;
+  const keys = Object.keys(op);
+  if (keys.length !== 3 && !(keys.length === 4 && 'b' in op)) return false;
+  if (!clockOk(op.c) || (op.b !== undefined && (!clockOk(op.b) || newer(op.b, op.c)))) return false;
+  return validValue(op.k, op.v);
 }
 
 export class Replica {
@@ -57,6 +70,7 @@ export class Replica {
     this.peer = peer;
     this.counter = 0;
     this.regs = new Map();
+    this.live = 0;
   }
 
   value(key) {
@@ -72,37 +86,60 @@ export class Replica {
     return this.regs.get(key)?.c ?? null;
   }
 
+  birth(key) {
+    return this.regs.get(key)?.b ?? null;
+  }
+
   /** A local write; returns the op to send. */
   set(key, value) {
-    const op = { k: key, v: value, c: [++this.counter, this.peer] };
+    const c = [++this.counter, this.peer];
+    const op = { k: key, v: value, c, b: this.regs.get(key)?.b || c };
     this.apply(op);
     return op;
   }
 
-  /** An op from another page: 'invalid', or whether it changed the register. */
+  /**
+   * An op from another page: 'invalid', or whether it changed the register
+   * (its value, or its birth). A counter far past this page's is refused, so
+   * one bad op cannot push every page's clock to the end of its range.
+   */
   receive(op) {
-    return validOp(op) ? this.apply(op) : 'invalid';
+    if (!validOp(op) || op.c[0] > this.counter + COUNTER_WINDOW) return 'invalid';
+    return this.apply(op);
   }
 
-  /** Apply a local or already-checked op; true when it changed the register. */
+  /** Apply a local or already-checked op; true when it changed the register's value or birth. */
   apply(op) {
     if (op.c[0] > this.counter) this.counter = op.c[0];
     const cur = this.regs.get(op.k);
-    if (cur && !newer(op.c, cur.c)) return false;
-    this.regs.set(op.k, { v: op.v, c: [op.c[0], op.c[1]] });
-    return true;
+    const b = op.b || op.c;
+    if (!cur) {
+      this.regs.set(op.k, { v: op.v, c: [op.c[0], op.c[1]], b: [b[0], b[1]] });
+      if (op.v !== null) this.live++;
+      return true;
+    }
+    let changed = false;
+    if (newer(cur.b, b)) {
+      cur.b = [b[0], b[1]];
+      changed = true;
+    }
+    if (newer(op.c, cur.c)) {
+      changed = changed || cur.v !== op.v;
+      this.live += (op.v !== null) - (cur.v !== null);
+      cur.v = op.v;
+      cur.c = [op.c[0], op.c[1]];
+    }
+    return changed;
   }
 
   /** Every register as an op, for a page catching up. */
   snapshot() {
-    return [...this.regs].map(([k, { v, c }]) => ({ k, v, c: [c[0], c[1]] }));
+    return [...this.regs].map(([k, { v, c, b }]) => ({ k, v, c: [c[0], c[1]], b: [b[0], b[1]] }));
   }
 
-  /** The registers that hold a value (tombstones left out). */
-  live() {
-    const out = new Map();
-    for (const [k, { v }] of this.regs) if (v !== null) out.set(k, v);
-    return out;
+  /** How many registers hold a value (tombstones left out). */
+  liveCount() {
+    return this.live;
   }
 }
 
@@ -129,16 +166,8 @@ export function adoptRawKeys(session, me) {
   return n;
 }
 
-function rawRegister(key, rec, me) {
-  const own = /^raw:(\d+)$/.exec(key);
-  const theirs = /^raw:([a-z0-9]{1,16}):(\d+)$/.exec(key);
-  const [peer, n] = own ? [me, own[1]] : theirs ? [theirs[1], theirs[2]] : [null, null];
-  if (!peer) return null;
-  return rec.func ? `rawf:${rec.func}:${peer}:${n}` : `raw:${peer}:${n}`;
-}
-
-/** The session as registers, `key → value` (values are strings). */
-export function registersOf(session, me) {
+/** The session as registers, `key → value` (values are strings). Raw records must have their shared names. */
+export function registersOf(session) {
   const out = new Map();
   for (const [key, rec] of session.records) {
     switch (rec.kind) {
@@ -149,14 +178,14 @@ export function registersOf(session, me) {
       case 'fn': out.set(`fn:${rec.addr}`, rec.name); break;
       case 'proto': out.set(`proto:${rec.addr}`, rec.decl); break;
       case 'data':
-        out.set(`data:${rec.addr}:type`, rec.type);
-        out.set(`data:${rec.addr}:name`, rec.name);
+        if (rec.type) out.set(`data:${rec.addr}:type`, rec.type);
+        if (rec.name) out.set(`data:${rec.addr}:name`, rec.name);
         break;
       case 'typedef': out.set(`typedef:${rec.tag}`, rec.decl); break;
       case 'comment': out.set(`comment:${rec.func}:${rec.addr}`, rec.text); break;
       case 'raw': {
-        const reg = rawRegister(key, rec, me);
-        if (reg) out.set(reg, rec.text);
+        const m = /^raw:([a-z0-9]{1,16}):(\d+)$/.exec(key);
+        if (m) out.set(rec.func ? `rawf:${rec.func}:${m[1]}:${m[2]}` : `raw:${m[1]}:${m[2]}`, rec.text);
         break;
       }
       default: break;
@@ -164,6 +193,34 @@ export function registersOf(session, me) {
   }
   for (const [addr, value] of session.bytes) out.set(`byte:${hexOf(addr)}`, value.toString(16).padStart(2, '0'));
   return out;
+}
+
+/**
+ * What this page changed since the registers last matched its Session:
+ * `{changes: [{key, value}], refused: [{key, value}]}`. A value another page
+ * would refuse, or a new register past `maxLive`, is refused (and tried again
+ * next time, so a later valid value is shared); a register the Session no
+ * longer has is written null. The decompiler effort is not a Session field.
+ */
+export function diffSession(session, replica, { maxLive = Infinity } = {}) {
+  const regs = registersOf(session);
+  const changes = [];
+  const refused = [];
+  let live = replica.liveCount();
+  for (const [key, value] of regs) {
+    if (replica.value(key) === value) continue;
+    const fresh = replica.value(key) === null;
+    if (!validValue(key, value) || (fresh && live >= maxLive)) {
+      refused.push({ key, value, why: validValue(key, value) ? 'full' : 'invalid' });
+      continue;
+    }
+    if (fresh) live++;
+    changes.push({ key, value });
+  }
+  for (const [key, r] of replica.regs) {
+    if (r.v !== null && !key.startsWith('setting:') && !regs.has(key)) changes.push({ key, value: null });
+  }
+  return { changes, refused };
 }
 
 /** The session record key a register lives in (`bytes` for a byte). */
@@ -180,12 +237,14 @@ export function recordKeyOf(register) {
 }
 
 /**
- * Write the registers `keys` (from `replica`) into `session`. A local's name
- * and type, and a global's type and name, are read together, since the
- * session keeps each pair in one record.
+ * Write the registers `keys` (from `replica`) into `session`, field by field:
+ * a register the replica has never held leaves its field alone, so applying
+ * another page's retype of a local keeps this page's rename of it. A global
+ * needs a type and a name: a half written null keeps the other half's record.
  */
 export function applyRegisters(session, replica, keys) {
   const done = new Set();
+  const field = (k) => (replica.regs.has(k) ? replica.value(k) : undefined);
   let bytes = false;
   for (const key of keys) {
     const parts = key.split(':');
@@ -195,17 +254,20 @@ export function applyRegisters(session, replica, keys) {
         const id = `${parts[1]}:${parts[2]}`;
         if (done.has('var:' + id)) break;
         done.add('var:' + id);
-        session.setVar(parts[1], parts[2], {
-          name: replica.value(`var:${id}:name`), type: replica.value(`var:${id}:type`),
-        });
+        session.setVar(parts[1], parts[2], { name: field(`var:${id}:name`), type: field(`var:${id}:type`) });
         break;
       }
       case 'fn': session.setFunctionName(parts[1], v); break;
       case 'proto': session.setProto(parts[1], v); break;
       case 'data': {
-        if (done.has('data:' + parts[1])) break;
-        done.add('data:' + parts[1]);
-        session.setData(parts[1], replica.value(`data:${parts[1]}:type`), replica.value(`data:${parts[1]}:name`));
+        const addr = parts[1];
+        if (done.has('data:' + addr)) break;
+        done.add('data:' + addr);
+        const rec = session.records.get(`data:${addr}`);
+        const type = field(`data:${addr}:type`);
+        const name = field(`data:${addr}:name`);
+        if (type === null && name === null) session.setData(addr, null, null);
+        else session.setData(addr, type ?? rec?.type ?? null, name ?? rec?.name ?? null);
         break;
       }
       case 'typedef': session.setTypedef(parts[1], v); break;
@@ -228,6 +290,21 @@ export function applyRegisters(session, replica, keys) {
     }
   }
   if (bytes) session.touchBytes();
+}
+
+/**
+ * The order of a session's records in a live session: each record's birth,
+ * the earliest of its registers' birth clocks (null for a record the
+ * registers do not hold yet, which then comes last).
+ */
+export function birthOrder(session, replica) {
+  const cache = new Map();
+  for (const [key, r] of replica.regs) {
+    const rk = recordKeyOf(key);
+    const b = cache.get(rk);
+    if (!b || newer(b, r.b)) cache.set(rk, r.b);
+  }
+  return (recordKey) => cache.get(recordKey) || null;
 }
 
 /** What a register change did, in words, for "Ben … after you" (`prev`: the value it replaced). */
@@ -253,11 +330,13 @@ export function describeRegister(key, value, prev = null, nameOf = (a) => a) {
  * one edit wrote, with the values they held before and the clocks of this
  * page's writes; Undo writes the old values back, except where another page
  * has written since (that register's clock is no longer this page's), and
- * Redo does the same forwards. A change that exactly takes back the last step
- * (an edit the engine could not apply, undone by the page) removes that step.
+ * Redo does the same forwards. A global's two registers go back together or
+ * not at all. When a step writes a register, the next step that expects the
+ * value it wrote takes the new clock, so Undo goes back through several edits
+ * of one field.
  */
 export class History {
-  constructor(max = 100) {
+  constructor(max = UNDO_MAX) {
     this.undoStack = [];
     this.redoStack = [];
     this.max = max;
@@ -267,16 +346,9 @@ export class History {
 
   get canRedo() { return this.redoStack.length > 0; }
 
-  /** One local edit: `[{key, prev, prevClock, op}]` (`op` is the write that replaced `prev`). */
+  /** One local edit: `[{key, prev, op}]` (`op` is the write that replaced `prev`). */
   record(changes) {
     if (!changes.length) return;
-    const last = this.undoStack[this.undoStack.length - 1];
-    const same = (a, b) => !!a && !!b && a[0] === b[0] && a[1] === b[1];
-    if (last && last.length === changes.length &&
-        changes.every((ch) => last.some((e) => e.key === ch.key && e.prev === ch.op.v && same(e.c, ch.prevClock)))) {
-      this.undoStack.pop();
-      return;
-    }
     this.undoStack.push(changes.map((ch) => ({ key: ch.key, prev: ch.prev, next: ch.op.v, c: ch.op.c })));
     if (this.undoStack.length > this.max) this.undoStack.shift();
     this.redoStack = [];
@@ -284,11 +356,11 @@ export class History {
 
   /** Undo the last step on `replica`: `{ops, skipped: [{key, by}]}`, or null when there is none. */
   undo(replica) {
-    return this.#step(replica, this.undoStack, this.redoStack, 'prev');
+    return this.#step(replica, this.undoStack, this.redoStack, 'prev', 'next');
   }
 
   redo(replica) {
-    return this.#step(replica, this.redoStack, this.undoStack, 'next');
+    return this.#step(replica, this.redoStack, this.undoStack, 'next', 'prev');
   }
 
   clear() {
@@ -296,21 +368,32 @@ export class History {
     this.redoStack = [];
   }
 
-  #step(replica, from, to, field) {
+  #step(replica, from, to, write, expect) {
     const step = from.pop();
     if (!step) return null;
+    const mine = (e) => {
+      const cur = replica.clock(e.key);
+      return !!cur && cur[0] === e.c[0] && cur[1] === e.c[1];
+    };
+    const blocked = new Map();
+    for (const e of step) if (e.key.startsWith('data:') && !mine(e)) blocked.set(recordKeyOf(e.key), replica.writer(e.key));
     const ops = [];
     const skipped = [];
     const back = [];
     for (const e of step) {
-      const cur = replica.clock(e.key);
-      if (!cur || cur[0] !== e.c[0] || cur[1] !== e.c[1]) {
-        skipped.push({ key: e.key, by: replica.writer(e.key) });
+      if (!mine(e) || blocked.has(recordKeyOf(e.key))) {
+        skipped.push({ key: e.key, by: mine(e) ? blocked.get(recordKeyOf(e.key)) : replica.writer(e.key) });
         continue;
       }
-      const op = replica.set(e.key, e[field]);
+      const op = replica.set(e.key, e[write]);
       ops.push(op);
       back.push({ key: e.key, prev: e.prev, next: e.next, c: op.c });
+      for (let i = from.length - 1; i >= 0; i--) {
+        const later = from[i].find((x) => x.key === e.key);
+        if (!later) continue;
+        if (later[expect] === e[write]) later.c = op.c;
+        break;
+      }
     }
     if (back.length) to.push(back);
     return { ops, skipped };

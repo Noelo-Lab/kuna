@@ -12,14 +12,14 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { Session } from '../decompile2/session.js';
 import {
-  Replica, validOp, registersOf, applyRegisters, adoptRawKeys, describeRegister, recordKeyOf, History, MODES,
+  Replica, validOp, registersOf, applyRegisters, adoptRawKeys, describeRegister, recordKeyOf, History, MODES, birthOrder,
 } from '../decompile2/collab/replica.js';
 import {
   PROTOCOL, MAX_PEERS, COLORS, validMessage, readMessage, maxBytes, encodeCode, decodeCode, codeFrom, limiter,
   randomId, initials, validAnchor,
 } from '../decompile2/collab/wire.js';
 import { compactSdp, expandSdp, validSdp, passiveAnswer } from '../decompile2/collab/sdp.js';
-import { sha256Js, sha256Hex } from '../decompile2/collab/sha256.js';
+import { sha256Js, sha256Hex } from '../sha256.js';
 import { Group, resolveColors } from '../decompile2/collab/group.js';
 import { iceServersFrom, loadCollabPrefs, PREFS_KEY } from '../decompile2/collab/collab.js';
 
@@ -83,6 +83,7 @@ function round(peers, n, lateJoiner) {
   const sessions = reps.map((r) => {
     const s = new Session();
     applyRegisters(s, r, [...r.regs.keys()].reverse());
+    s.orderOf = birthOrder(s, r);
     return s;
   });
   const want = JSON.stringify(sessions[0].allAssertions((a) => a));
@@ -92,7 +93,7 @@ function round(peers, n, lateJoiner) {
 const modes = new Set();
 for (let i = 0; i < 2000; i++) modes.add(round(['ana00000', 'ben00000', 'cy000000'].slice(0, 2 + rand(2)), 5 + rand(40), rand(2) === 0));
 assert.ok(modes.size >= 3, 'the decompiler effort is one of the registers that converge');
-checks.push('2000 random rounds over the full key set (incl. the mode) converge to one register map and one directive list');
+checks.push('2000 random rounds over the full key set (incl. the mode) converge to one register map (births too) and, in birth order, one directive list');
 
 // ── registers: what may not come from another page ─────────────────────────
 {
@@ -162,9 +163,17 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   const one = build('abcdefghijk');
   const two = build('kjihgfedcba');
   const nameOf = (a) => one.functionName(a) || a;
-  assert.deepEqual(two.allAssertions(nameOf), one.allAssertions(nameOf), 'the same edits in another order: the same directives, in the same order');
-  assert.deepEqual(two.assertionsFor(MAIN), one.assertionsFor(MAIN));
-  const regs = registersOf(one, 'ana00000');
+  const shared = (session) => {
+    const r = new Replica('ana00000');
+    for (const [k, v] of registersOf(build('abcdefghijk'))) r.set(k, v);
+    session.orderOf = birthOrder(session, r);
+    return session;
+  };
+  assert.notDeepEqual(two.allAssertions(nameOf), one.allAssertions(nameOf), 'on its own, a page sends its directives in the order it made them');
+  assert.deepEqual(shared(two).allAssertions(nameOf), shared(one).allAssertions(nameOf), 'in a live session, in the registers\' birth order: the same list on every page');
+  one.orderOf = null;
+  two.orderOf = null;
+  const regs = registersOf(one);
   assert.equal(regs.get('var:0x1198:v1:type'), 'unsigned long');
   assert.equal(regs.get('byte:0x11e1'), '90');
   assert.equal(regs.get('rawf:0x1198:ben00000:1'), 'flow 0x11b5 return', 'a raw directive bound to a function keeps its function');
@@ -173,7 +182,7 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   const back = new Session();
   applyRegisters(back, r, [...r.regs.keys()]);
   assert.deepEqual(back.allAssertions(nameOf), one.allAssertions(nameOf), 'registers back into a session give the same directives');
-  assert.deepEqual([...registersOf(back, 'ana00000')].sort(), [...regs].sort());
+  assert.deepEqual([...registersOf(back)].sort(), [...regs].sort());
   assert.equal(recordKeyOf('var:0x1198:v1:name'), 'var:0x1198:v1');
   assert.equal(recordKeyOf('rawf:0x1198:ben00000:1'), 'raw:ben00000:1');
 
@@ -185,7 +194,7 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   assert.equal(adoptRawKeys(own, 'ana00000'), 0);
   assert.equal(describeRegister('var:0x1198:v1:name', 'count', 'total'), 'renamed total to count');
   assert.equal(describeRegister('fn:0x1161', 'summation', null, () => 'sum_to'), 'renamed sum_to to summation');
-  checks.push('session ⇄ registers round trip; canonical directive order; raw keys adopted');
+  checks.push('session ⇄ registers round trip; one directive order per session (made order alone, birth order when shared); raw keys adopted');
 }
 
 // ── Undo in a live session ─────────────────────────────────────────────────
@@ -195,9 +204,8 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   const hist = new History();
   const write = (rep, key, value) => {
     const prev = rep.value(key);
-    const prevClock = rep.clock(key);
     const op = rep.set(key, value);
-    return { key, prev, prevClock, op };
+    return { key, prev, op };
   };
   const mine = write(a, 'comment:0x1198:0x11b5', 'calls add');
   hist.record([mine]);
@@ -217,12 +225,13 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   const redone = hist.redo(a);
   assert.equal(a.value('byte:0x11af'), '05', 'redo writes it again');
   assert.equal(redone.ops.length, 2);
-  const failed = write(a, 'fn:0x1149', 'adder');
-  hist.record([failed]);
+  const named = write(a, 'fn:0x1149', 'adder');
+  hist.record([named]);
   const depth = hist.undoStack.length;
   hist.record([write(a, 'fn:0x1149', null)]);
-  assert.equal(hist.undoStack.length, depth - 1, 'a change that takes back the last edit (the engine refused it) removes that step');
-  checks.push('undo skips registers someone changed since; redo; withdrawn edits');
+  assert.equal(hist.undoStack.length, depth + 1, 'a change that takes back the last one is a step of its own');
+  assert.equal(hist.canRedo, false, 'and every new step clears redo');
+  checks.push('undo skips registers someone changed since; redo; every edit its own step');
 }
 
 // ── the wire: messages ─────────────────────────────────────────────────────
@@ -304,7 +313,7 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   }
   assert.equal(compactSdp('v=0\r\n'), null);
 
-  const invite = await encodeCode('invite', { id: 'abcdefghij', n: 'Ana', f: 'crackme.elf', z: 14080, d, b: 1 });
+  const invite = await encodeCode('invite', { id: 'abcdefghij', n: 'Ana', f: 'crackme.elf', z: 14080, d });
   assert.ok(invite.length < 400, `an invite fits in a short link (${invite.length} characters)`);
   const got = await decodeCode(invite, 'invite');
   assert.equal(got.ok, true);
@@ -406,7 +415,7 @@ function connector(me) {
       let settle;
       const ready = new Promise((done) => { settle = done; });
       offers.set(id, { from: me, settle });
-      return { id, sdp: FAKE_SDP, bc: false, ready, answer: async () => {}, cancel() { offers.delete(id); } };
+      return { id, sdp: FAKE_SDP, ready, answer: async () => {}, cancel() { offers.delete(id); } };
     },
     async answer({ id }) {
       const off = offers.get(id);
@@ -502,9 +511,7 @@ const same = (...ms) => ms.every((m) => JSON.stringify([...m.replica.regs].sort(
   await settle(300);
   assert.equal(dee.p.welcomes[0].send, false, 'a guest that already has the program is not sent it again');
   assert.equal(dee.p.arrived, undefined);
-  dee.g.local(dee.replica.snapshot());
-  await settle(200);
-  assert.ok(same(ana, ben, cy, dee), 'what a newcomer brings merges everywhere');
+  assert.ok(same(ana, ben, cy, dee), 'what a newcomer brings merges everywhere, with no step of its own');
   assert.equal(ana.replica.value('comment:0x1198:0x11b5'), 'mine from before');
   assert.ok([ana, ben, cy].every((m) => linked(m, dee)));
 

@@ -4,28 +4,32 @@
 // roster each page gossips; of each pair not yet linked, the page with the
 // smaller id offers, and a page linked to both relays the offer and the
 // answer. On every link: a hello (another protocol or build is refused
-// politely), then each side's registers; after that, edits as they happen,
-// forwarded to the pages that had not seen them, so a pair that could not
-// link directly still converges. A newcomer without the program receives it
-// in chunks and checks its SHA-256. Every message from another page passes
-// `readMessage` (shape and size) and a per-page rate limit first, and the
-// others cannot grow the registers past MAX_REGISTERS.
+// politely), then each side's registers, both ways; after that, edits as they
+// happen. A page forwards an edit only to members its author has no direct
+// link to, so a pair that could not link directly still converges. A
+// newcomer without the program receives it in chunks and checks its SHA-256.
+// Every message from another page passes `readMessage` (shape and size) and a
+// per-page rate limit first; a page that had to drop edits asks for the
+// sender's registers again. This page sends within the same limits, sized in
+// UTF-8 bytes (what a data channel counts), and the others cannot grow the
+// registers past MAX_REGISTERS live ones.
 //
-// `connect` makes links for introductions ({offer(), answer({id, sdp, bc})});
+// `connect` makes links for introductions ({offer(), answer({id, sdp})});
 // `page` is how the group tells the page what happened. A link is
 // {send(text), sendCursor(text), sendBinary(bytes), buffered(), drain(n),
 // close(), onmessage(data, channel), onclose()}.
-import { PROTOCOL, MAX_PEERS, MAX_MESSAGE, COLORS, readMessage, limiter, randomId } from './wire.js';
-import { sha256Hex } from './sha256.js';
+import { PROTOCOL, MAX_PEERS, MAX_MESSAGE, COLORS, readMessage, limiter, randomId, utf8Length } from './wire.js';
+import { sha256Hex } from '../../sha256.js';
 
+export const MAX_REGISTERS = 100000;
+const MAX_STORED = 2 * MAX_REGISTERS;
 const CHUNK = 64 << 10;
 const HIGH_WATER = 1 << 20;
 const INTRO_MS = 25000;
 const RETRY_MS = 6000;
 const MAX_TRIES = 3;
 const FLUSH_MS = 50;
-const MAX_BATCHES = 10;
-const MAX_REGISTERS = 100000;
+const RESYNC_MS = 5000;
 
 /** Members with distinct colours: of two that share one, the larger id takes the first free colour. */
 export function resolveColors(members) {
@@ -103,13 +107,13 @@ export class Group {
   }
 
   /** A link from an invite: `joining` on the page that opened the invite. */
-  addLink(link, { joining = false, expect = null } = {}) {
+  addLink(link, { joining = false, peer = null } = {}) {
     const rec = {
-      link, peer: expect, joining, member: false, hello: null, name: '', color: null, where: null, listed: new Set(),
+      link, peer, joining, member: false, hello: false, name: '', color: null, where: null, listed: new Set(),
       lim: {
         ops: limiter(20, 20), snap: limiter(200, 400), cur: limiter(30, 45), ping: limiter(1, 2), other: limiter(20, 40),
       },
-      rx: null, dropped: 0, gone: false,
+      out: limiter(18, 18), rx: null, dropped: 0, gone: false, resyncAt: 0,
     };
     this.links.add(rec);
     link.onmessage = (data, channel) => this.#receive(rec, data, channel);
@@ -162,8 +166,11 @@ export class Group {
 
   // ── receiving ────────────────────────────────────────────────────────────
 
+  /** Send a message (or prebuilt JSON text) if it fits in one data-channel message. */
   #send(rec, msg) {
-    quietly(() => rec.link.send(JSON.stringify(msg)));
+    const text = typeof msg === 'string' ? msg : JSON.stringify(msg);
+    if (text.length > MAX_MESSAGE && utf8Length(text) > MAX_MESSAGE) return false;
+    return quietly(() => { rec.link.send(text); return true; }) === true;
   }
 
   #receive(rec, data, channel) {
@@ -179,6 +186,7 @@ export class Group {
     }
     if (!rec.lim[m.t in rec.lim ? m.t : 'other'].take()) {
       rec.dropped++;
+      if (m.t === 'ops' || m.t === 'snap') this.#askResync(rec);
       return;
     }
     switch (m.t) {
@@ -186,6 +194,7 @@ export class Group {
       case 'welcome': this.#welcome(rec, m); break;
       case 'snap': this.#ops(rec, m.ops, m.last); break;
       case 'ops': this.#ops(rec, m.ops, null); break;
+      case 'resync': if (rec.member) this.#sendSnap(rec); break;
       case 'file': this.#file(rec, m); break;
       case 'roster': this.#roster(rec, m); break;
       case 'where':
@@ -199,6 +208,7 @@ export class Group {
       case 'relay': this.#relay(rec, m); break;
       case 'full':
         if (rec.joining && !rec.member) {
+          rec.failed = true;
           this.page.event('full', { name: rec.name });
           this.#drop(rec);
         }
@@ -211,17 +221,27 @@ export class Group {
     }
   }
 
+  /** Ask a page for all its registers again (after this page had to drop some of its edits). */
+  #askResync(rec) {
+    const now = Date.now();
+    if (!rec.member || now < rec.resyncAt) return;
+    rec.resyncAt = now + RESYNC_MS;
+    setTimeout(() => { if (!rec.gone && !this.closed) this.#send(rec, { t: 'resync' }); }, 1000);
+  }
+
   #hello(rec, m) {
     if (rec.hello) return;
-    rec.hello = m;
+    rec.hello = true;
     rec.name = m.name;
     if (m.proto !== PROTOCOL || m.build !== this.build) {
+      rec.failed = true;
       this.page.event('mismatch', { name: m.name });
       this.#send(rec, { t: 'bye' });
       this.#drop(rec);
       return;
     }
     if (m.peer === this.me || (rec.peer && rec.peer !== m.peer) || this.peers.has(m.peer)) {
+      rec.failed = true;
       this.#drop(rec);
       return;
     }
@@ -241,6 +261,13 @@ export class Group {
       this.#rosterChanged();
       return;
     }
+    const file = this.page.fileMeta();
+    if (!file) {
+      this.#send(rec, { t: 'bye' });
+      this.peers.delete(m.peer);
+      setTimeout(() => this.#drop(rec), 250);
+      return;
+    }
     if (this.size() >= MAX_PEERS) {
       this.#send(rec, { t: 'full' });
       this.peers.delete(m.peer);
@@ -250,8 +277,7 @@ export class Group {
     const taken = new Set(this.members().map((x) => x.color));
     rec.color = COLORS.find((c) => !taken.has(c)) || COLORS[this.size() % COLORS.length];
     rec.member = true;
-    const file = this.page.fileMeta();
-    const send = !!file && m.file?.hash !== file.hash;
+    const send = m.file?.hash !== file.hash;
     this.#send(rec, {
       t: 'welcome', sid: this.sid, color: rec.color, roster: this.#rosterList().filter((x) => x.peer !== rec.peer),
       file, example: this.page.isExample(), send,
@@ -267,12 +293,13 @@ export class Group {
     if (!rec.joining || rec.member || this.sid) return;
     rec.member = true;
     rec.sponsor = true;
-    rec.expect = m.file;
+    rec.program = m.file;
     this.sid = m.sid;
     this.color = m.color;
     rec.listed = new Set(m.roster.map((x) => x.peer));
     for (const x of m.roster) if (x.peer !== this.me && x.peer !== rec.peer) this.#know(x, rec.peer);
     this.page.welcomed({ from: rec.peer, name: rec.name, file: m.file, example: m.example, send: m.send });
+    this.#sendSnap(rec);
     this.#sendWhere(rec);
     this.#rosterChanged();
   }
@@ -283,10 +310,11 @@ export class Group {
     const fresh = [];
     for (const op of list) {
       const before = typeof op?.k === 'string' ? this.replica.regs.get(op.k) : undefined;
-      if (!before && this.replica.regs.size >= MAX_REGISTERS) {
+      if (!before && (this.replica.regs.size >= MAX_STORED || (op?.v != null && this.replica.live >= MAX_REGISTERS))) {
         rec.dropped++;
         continue;
       }
+      const prev = before ? { v: before.v, by: before.c[1] } : null;
       const r = this.replica.receive(op);
       if (r === 'invalid') {
         rec.dropped++;
@@ -294,7 +322,7 @@ export class Group {
       }
       if (!r) continue;
       fresh.push(op);
-      changes.push({ key: op.k, value: op.v, by: op.c[1], prev: before ? before.v : null, prevBy: before ? before.c[1] : null });
+      changes.push({ key: op.k, value: op.v, by: op.c[1], prev: prev ? prev.v : null, prevBy: prev ? prev.by : null });
     }
     if (fresh.length) this.#queue(fresh, rec);
     if (changes.length) this.page.changed(changes, rec.peer);
@@ -305,11 +333,11 @@ export class Group {
   }
 
   #file(rec, m) {
-    if (!rec.sponsor || rec.rx || rec.gotFile || !rec.expect || m.hash !== rec.expect.hash || m.size !== rec.expect.size) {
+    if (!rec.sponsor || rec.rx || rec.gotFile || !rec.program || m.hash !== rec.program.hash || m.size !== rec.program.size) {
       rec.dropped++;
       return;
     }
-    rec.rx = { meta: { name: rec.expect.name, size: m.size, hash: m.hash }, buf: new Uint8Array(m.size), got: 0 };
+    rec.rx = { meta: { name: rec.program.name, size: m.size, hash: m.hash }, buf: new Uint8Array(m.size), got: 0 };
     this.page.fileProgress(0, m.size);
   }
 
@@ -368,38 +396,15 @@ export class Group {
     }
     if (m.kind === 'answer') {
       const intro = this.intros.get(m.from);
-      if (intro?.id === m.id && intro.answer) quietly(() => intro.answer(m.d));
+      if (intro?.id === m.id && intro.answer) Promise.resolve().then(() => intro.answer(m.d)).catch(() => {});
       return;
     }
     if (m.from === this.me || this.peers.has(m.from) || this.intros.has(m.from) || m.from > this.me) return;
     if (this.size() >= MAX_PEERS && !this.known.has(m.from)) return;
-    this.#accept(rec, m);
-  }
-
-  async #accept(via, m) {
-    const intro = { id: m.id, cancel: null };
-    this.intros.set(m.from, intro);
-    const timer = setTimeout(() => this.#introFailed(m.from, intro), INTRO_MS);
-    try {
-      const res = await this.connect.answer({ id: m.id, sdp: m.d, bc: m.b === true });
-      intro.cancel = res.cancel;
-      if (this.intros.get(m.from) !== intro || this.closed) {
-        quietly(() => res.cancel?.());
-        return;
-      }
-      if (res.sdp) this.#send(via, { t: 'relay', to: m.from, from: this.me, kind: 'answer', id: m.id, d: res.sdp });
-      const link = await res.ready;
-      clearTimeout(timer);
-      if (this.intros.get(m.from) !== intro || this.closed) {
-        quietly(() => link.close());
-        return;
-      }
-      this.intros.delete(m.from);
-      this.addLink(link, { expect: m.from });
-    } catch (_) {
-      clearTimeout(timer);
-      this.#introFailed(m.from, intro);
-    }
+    this.#pair(m.from, rec, async () => {
+      const res = await this.connect.answer({ id: m.id, sdp: m.d });
+      return { id: m.id, cancel: res.cancel, ready: res.ready, relay: res.sdp ? { kind: 'answer', id: m.id, d: res.sdp } : null };
+    });
   }
 
   #mesh() {
@@ -408,31 +413,41 @@ export class Group {
     for (const [peer, k] of this.known) {
       if (this.peers.has(peer) || this.intros.has(peer) || this.me > peer || k.tries >= MAX_TRIES || now < k.retryAt) continue;
       const via = [...k.via].map((p) => this.peers.get(p)).find((r) => r?.member);
-      if (via) this.#introduce(peer, k, via);
+      if (!via) continue;
+      k.tries++;
+      this.#pair(peer, via, async () => {
+        const off = await this.connect.offer();
+        return { id: off.id, cancel: off.cancel, ready: off.ready, answer: off.answer, relay: { kind: 'offer', id: off.id, d: off.sdp } };
+      });
     }
   }
 
-  async #introduce(peer, k, via) {
+  /**
+   * Link to `peer` through `via`: `start()` makes this page's half of the
+   * handshake (`{id, cancel, ready, answer?, relay}`), `relay` goes to the
+   * peer through `via`, and the link that `ready` brings joins the group.
+   */
+  async #pair(peer, via, start) {
     const intro = { id: null, answer: null, cancel: null };
     this.intros.set(peer, intro);
-    k.tries++;
     const timer = setTimeout(() => this.#introFailed(peer, intro), INTRO_MS);
+    const current = () => this.intros.get(peer) === intro && !this.closed;
     try {
-      const off = await this.connect.offer();
-      Object.assign(intro, { id: off.id, answer: off.answer, cancel: off.cancel });
-      if (this.intros.get(peer) !== intro || this.closed) {
-        quietly(() => off.cancel());
+      const half = await start();
+      Object.assign(intro, { id: half.id, answer: half.answer || null, cancel: half.cancel });
+      if (!current()) {
+        quietly(() => half.cancel?.());
         return;
       }
-      this.#send(via, { t: 'relay', to: peer, from: this.me, kind: 'offer', id: off.id, d: off.sdp, b: off.bc });
-      const link = await off.ready;
-      clearTimeout(timer);
-      if (this.intros.get(peer) !== intro || this.closed) {
+      if (half.relay) this.#send(via, { t: 'relay', to: peer, from: this.me, ...half.relay });
+      const link = await half.ready;
+      if (!current()) {
         quietly(() => link.close());
         return;
       }
+      clearTimeout(timer);
       this.intros.delete(peer);
-      this.addLink(link, { expect: peer });
+      this.addLink(link, { peer });
     } catch (_) {
       clearTimeout(timer);
       this.#introFailed(peer, intro);
@@ -457,13 +472,25 @@ export class Group {
       rec.rx = null;
       this.page.fileFailed('lost');
     }
+    const joinFailed = rec.joining && !rec.member && !rec.failed && !this.closed;
     if (!rec.peer || this.peers.get(rec.peer) !== rec) {
-      if (rec.joining && !rec.member && !this.closed) this.page.event('closed', { name: rec.name });
+      if (joinFailed) this.page.event('closed', { name: rec.name });
       return;
     }
     this.peers.delete(rec.peer);
     this.outbox.delete(rec);
-    if (!rec.member || this.closed) return;
+    if (!rec.member) {
+      if (joinFailed) this.page.event('closed', { name: rec.name });
+      return;
+    }
+    if (this.closed) return;
+    for (const [peer, k] of this.known) {
+      k.via.delete(rec.peer);
+      if (!k.via.size && !this.peers.has(peer)) {
+        this.known.delete(peer);
+        this.page.event('lost', { peer, name: k.name, reachable: false });
+      }
+    }
     if (!rec.bye) {
       for (const other of this.peers.values()) {
         if (other.member && other.listed.has(rec.peer)) this.#know({ peer: rec.peer, name: rec.name, color: rec.color }, other.peer);
@@ -503,28 +530,33 @@ export class Group {
     this.#send(rec, { t: 'where', fn: this.where.fn, view: this.where.view });
   }
 
-  #batches(ops) {
+  /**
+   * `ops` as messages `{text, count}`: the JSON of `head` and a run of ops, each
+   * op serialized once and each message at most MAX_MESSAGE bytes of UTF-8.
+   */
+  #messages(head, ops, last) {
     const out = [];
-    let batch = [];
+    let texts = [];
     let size = 0;
+    const room = MAX_MESSAGE - 64;
+    const close = (end) => out.push({ text: `${head}${texts.join(',')}]${last ? `,"last":${end}` : ''}}`, count: texts.length });
     for (const op of ops) {
-      const n = JSON.stringify(op).length + 1;
-      if (batch.length && (size + n > MAX_MESSAGE - 1024 || batch.length >= 4000)) {
-        out.push(batch);
-        batch = [];
+      const text = JSON.stringify(op);
+      const n = utf8Length(text) + 1;
+      if (texts.length && (size + n > room || texts.length >= 4000)) {
+        close(false);
+        texts = [];
         size = 0;
       }
-      batch.push(op);
+      texts.push(text);
       size += n;
     }
-    if (batch.length) out.push(batch);
+    if (texts.length || !out.length) close(true);
     return out;
   }
 
   #sendSnap(rec) {
-    const batches = this.#batches(this.replica.snapshot());
-    if (!batches.length) batches.push([]);
-    batches.forEach((ops, i) => this.#send(rec, { t: 'snap', ops, last: i === batches.length - 1 }));
+    for (const { text } of this.#messages('{"t":"snap","ops":[', this.replica.snapshot(), true)) this.#send(rec, text);
   }
 
   async #sendFile(rec) {
@@ -539,26 +571,35 @@ export class Group {
     }
   }
 
-  #queue(ops, except) {
+  /** Queue ops for the members that need them: all, for this page's own; for forwarded ones, those not linked to the author. */
+  #queue(ops, from) {
     for (const rec of this.peers.values()) {
-      if (!rec.member || rec === except) continue;
-      const box = this.outbox.get(rec) || [];
-      box.push(...ops);
-      this.outbox.set(rec, box);
+      if (!rec.member || rec === from) continue;
+      let box = null;
+      for (const op of ops) {
+        if (from && (op.c[1] === rec.peer || rec.listed.has(op.c[1]))) continue;
+        box ||= this.outbox.get(rec) || [];
+        box.push(op);
+      }
+      if (box) this.outbox.set(rec, box);
     }
     if (!this.flushTimer && this.outbox.size) this.flushTimer = setTimeout(() => this.#flush(), FLUSH_MS);
   }
 
-  /** At most MAX_BATCHES messages per page per flush, so a burst stays under the others' rate limit. */
+  /** Send what is queued, at most as fast as the others' rate limit takes it. */
   #flush() {
     this.flushTimer = 0;
     for (const [rec, box] of [...this.outbox]) {
-      const batches = this.#batches(box);
-      for (const ops of batches.slice(0, MAX_BATCHES)) this.#send(rec, { t: 'ops', ops });
-      const rest = batches.slice(MAX_BATCHES).flat();
-      if (rest.length) this.outbox.set(rec, rest);
-      else this.outbox.delete(rec);
+      const messages = this.#messages('{"t":"ops","ops":[', box, false);
+      let sent = 0;
+      let ops = 0;
+      while (sent < messages.length && rec.out.take()) {
+        this.#send(rec, messages[sent].text);
+        ops += messages[sent++].count;
+      }
+      if (sent === messages.length) this.outbox.delete(rec);
+      else this.outbox.set(rec, box.slice(ops));
     }
-    if (this.outbox.size) this.flushTimer = setTimeout(() => this.#flush(), 1000);
+    if (this.outbox.size) this.flushTimer = setTimeout(() => this.#flush(), 100);
   }
 }

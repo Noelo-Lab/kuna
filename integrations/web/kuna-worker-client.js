@@ -19,13 +19,17 @@ export class KunaWorkerClient {
     smallBundleUrl,
     baseUrl = globalThis.document?.baseURI || import.meta.url,
     workerFactory,
+    hashWasm = false,
   }) {
     if (!wasmUrl || !specRoot) throw new Error('wasmUrl and specRoot are required');
     this.workerUrl = asUrl(workerUrl, baseUrl);
     this.initParams = {
       wasmUrl: asUrl(wasmUrl, baseUrl),
       specRoot: asUrl(specRoot, baseUrl).replace(/\/$/, ''),
+      hashWasm,
     };
+    this.build = null;
+    this.onbuild = null;
     if (smallBundleUrl) this.initParams.smallBundleUrl = asUrl(smallBundleUrl, baseUrl);
     this.workerFactory = workerFactory || ((url, options) => new Worker(url, options));
     this.pending = new Map();
@@ -78,7 +82,15 @@ export class KunaWorkerClient {
         worker,
       );
     };
-    this.readyPromise = this.request('init', this.initParams);
+    this.readyPromise = this.request('init', this.initParams).then((info) => {
+      if (generation === this.generation && info && typeof info === 'object') {
+        const was = this.build;
+        this.build = info.build || null;
+        if (info.build) this.initParams.prevBuild = { validator: info.validator, build: info.build };
+        if (was && info.build && was !== info.build) this.onbuild?.(info.build, was);
+      }
+      return info;
+    });
     this.readyPromise.catch(() => {});
   }
 

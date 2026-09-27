@@ -95,14 +95,17 @@ function placeOf(cursor) {
 }
 
 /**
- * The overlay. `show(peer, cursor, who)` places a person's pointer
- * (`who`: {name, color}); `pulse(anchor, color)` rings a thing for a moment.
+ * The overlay, which keeps each person's last pointer. `setFunction(fn)` says
+ * which function this page shows (pointers in others hide); `show(peer,
+ * cursor, who)` places a person's pointer (`who`: {name, color}); `pulse(anchor,
+ * color, who)` rings a thing for a moment.
  */
 export function createPresence({ panes }) {
   const cursors = new Map();
   const nodes = new Map();
   let frame = 0;
   let late = 0;
+  let fn = null;
 
   const overlay = (pane) => {
     let layer = pane.querySelector(':scope > .d2-presence');
@@ -121,7 +124,7 @@ export function createPresence({ panes }) {
     late = 0;
     for (const [peer, c] of cursors) {
       let node = nodes.get(peer);
-      const place = c.off || !c.visible ? null : placeOf(c);
+      const place = c.fn !== fn ? null : placeOf(c);
       if (!place) {
         if (node) node.hidden = true;
         continue;
@@ -164,22 +167,31 @@ export function createPresence({ panes }) {
   for (const code of panes.querySelectorAll('.d2code')) watch.observe(code, { childList: true });
   for (const pane of panes.querySelectorAll('.d2pane')) watch.observe(pane, { attributeFilter: ['hidden'] });
 
+  const forget = (peer) => {
+    cursors.delete(peer);
+    nodes.get(peer)?.remove();
+    nodes.delete(peer);
+  };
+
   return {
-    /** Place (or move) a person's pointer; `visible` false hides it (another function). */
-    show(peer, cursor, who, visible = true, { moved = true } = {}) {
-      const was = cursors.get(peer);
-      cursors.set(peer, { ...cursor, name: who.name, color: who.color, visible, moved: moved || !!was?.moved });
+    /** The function this page shows now (null while none is). */
+    setFunction(next) {
+      if (next === fn) return;
+      fn = next;
       schedule();
     },
-    hide(peer) {
+    /** Place (or move) a person's pointer. */
+    show(peer, cursor, who) {
+      cursors.set(peer, { ...cursor, name: who.name, color: who.color, moved: true });
+      schedule();
+    },
+    /** A person's pointer left the code (or they left). */
+    hide: forget,
+    forget,
+    /** Where a person points in the function this page shows, or null. */
+    anchorOf(peer) {
       const c = cursors.get(peer);
-      if (c) c.off = true;
-      schedule();
-    },
-    forget(peer) {
-      cursors.delete(peer);
-      nodes.get(peer)?.remove();
-      nodes.delete(peer);
+      return c && c.fn === fn ? c.anchor : null;
     },
     redraw: schedule,
     /** Is this anchor on screen now? */
@@ -204,8 +216,12 @@ export function createPresence({ panes }) {
       setTimeout(() => ring.remove(), 2600);
       return true;
     },
+    /** Forget every pointer but those of `keep` (the people still here). */
+    keepOnly(keep) {
+      for (const peer of [...cursors.keys()]) if (!keep.has(peer)) forget(peer);
+    },
     clear() {
-      for (const peer of [...cursors.keys()]) this.forget(peer);
+      for (const peer of [...cursors.keys()]) forget(peer);
       for (const ring of panes.querySelectorAll('.d2-ping')) ring.remove();
     },
   };

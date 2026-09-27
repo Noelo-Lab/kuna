@@ -1,22 +1,30 @@
 // collab.js — "Work together", loaded by the study view only when a session
 // starts or an invite or reply link is opened. It keeps the page's Session
-// and the group's registers in step (this page's edits go out as register
-// ops; the others' come back through the page's remote path, which
-// re-decompiles only what they touch), runs the invite, join and reply
-// dialogs, shows who is here in the top bar, hands the program to a newcomer
-// who does not have it, and draws the others' pointers and pings. group.js
-// runs the protocol, link.js the connections, presence.js the pointers.
+// and the group's registers in step: this page's edits go out as register
+// ops; the others' come back, a batch per frame, through the page's remote
+// path, which re-decompiles only what they touch; in a session the Session
+// sends its directives in the registers' birth order. It runs the invite,
+// join and reply dialogs, shows who is here in the top bar, hands the program
+// to a newcomer who does not have it, and draws the others' pointers and
+// pings. A session joined from someone else is saved apart from this page's
+// own changes to that program, which come back when it leaves. group.js runs
+// the protocol, link.js the connections, presence.js the pointers.
 import { escapeHtml } from '../../assets/js/highlight-c.js';
 import { Session } from '../session.js';
-import { Replica, History, registersOf, applyRegisters, adoptRawKeys, describeRegister, recordKeyOf, validOp } from './replica.js';
-import { MAX_PEERS, encodeCode, decodeCode, codeFrom, randomId, initials, limiter } from './wire.js';
-import { Group } from './group.js';
+import { bare } from '../addr.js';
+import {
+  Replica, History, applyRegisters, adoptRawKeys, describeRegister, recordKeyOf, diffSession, newer,
+} from './replica.js';
+import {
+  MAX_PEERS, encodeCode, decodeCode, codeFrom, randomId, initials, limiter, cleanName, describeFile,
+} from './wire.js';
+import { Group, MAX_REGISTERS } from './group.js';
 import { makeOffer, takeOffer, holdPresenceLock } from './link.js';
 import { createPresence, anchorAt, findAnchor } from './presence.js';
-import { sha256Hex } from './sha256.js';
 
 export const PREFS_KEY = 'kuna.d2.collab';
 const STUN = 'stun:stun.l.google.com:19302';
+const JOIN_MS = 20000;
 const VIEW_WORDS = { c: 'C code', split: 'Side by side', asm: 'Assembly', bytes: 'Bytes', stack: 'Stack', src: 'Original source' };
 const PEOPLE = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6" cy="5.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
   '<path d="M1.8 13.5c.5-2.4 2.2-3.7 4.2-3.7s3.7 1.3 4.2 3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
@@ -50,12 +58,15 @@ export function iceServersFrom(prefs) {
   return out;
 }
 
-const plainName = (v) => {
-  const t = String(v || '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim();
-  return t.slice(0, 40);
-};
-const bare = (hex) => String(hex).replace(/^0x/, '');
+/** Does a change to register `key` change the directives of the function at `fn`? */
+export function touchesFunction(key, fn) {
+  const p = key.split(':');
+  if (p[0] === 'var' || p[0] === 'comment' || p[0] === 'rawf') return p[1] === fn;
+  return p[0] !== 'setting';
+}
+
 const sizeWords = (n) => (n < 1024 ? `${n} bytes` : n < 1 << 20 ? `${Math.round(n / 1024)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
+const statusLine = (text, cls = '') => `<p class="cb-status ${cls}" data-status>${escapeHtml(text || '')}</p>`;
 
 export async function createCollab(api) {
   const collab = new Collab(api);
@@ -67,24 +78,31 @@ class Collab {
   constructor(api) {
     this.api = api;
     this.me = randomId(8);
-    this.prefs = loadCollabPrefs(api.storage);
-    this.name = plainName(this.prefs.name);
+    this.name = cleanName(loadCollabPrefs(api.storage).name);
     this.group = null;
     this.replica = null;
     this.replicaHash = null;
     this.history = new History();
     this.shared = false;
     this.holdDiff = false;
-    this.localOnly = new Set();
+    this.applying = false;
+    this.slot = 'own';
+    this.aside = null;
+    this.refusedShown = new Set();
     this.invites = new Map();
     this.closedInvites = new Set();
+    this.current = null;
     this.join = null;
     this.seen = new Map();
-    this.cursors = new Map();
     this.following = null;
     this.whereKey = null;
-    this.file = null;
-    this.fileFor = null;
+    this.lastFn = null;
+    this.desc = null;
+    this.descBytes = null;
+    this.index = null;
+    this.runs = null;
+    this.pending = [];
+    this.pendingTimer = 0;
     this.pointer = null;
     this.pointerAt = 0;
     this.pointerTimer = 0;
@@ -92,7 +110,7 @@ class Collab {
     this.pingLimit = limiter(1, 2);
     this.dialog = null;
     this.view = null;
-    this.buildPromise = null;
+    this.statusNow = null;
   }
 
   init() {
@@ -118,12 +136,17 @@ class Collab {
       this.ping({ target: e.target, x: e.clientX, y: e.clientY });
     }, { capture: true });
     document.addEventListener('pointerdown', (e) => {
-      if (this.following && !e.target.closest?.('.d2-who')) this.#follow(null);
+      if (this.following && !e.target.closest?.('.d2-who, #d2collab')) this.#follow(null);
     }, { capture: true });
     document.addEventListener('keydown', (e) => {
-      if (this.following && !['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) this.#follow(null);
+      if (this.following && !['Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(e.key)) this.#follow(null);
     }, { capture: true });
     addEventListener('pagehide', () => this.group?.leave());
+    this.api.onBuild((build) => {
+      if (this.group && this.group.build !== build) {
+        this.leave({ why: 'This page\'s decompiler was updated (the site changed), so it left the session. Reload the page, then join again.' });
+      }
+    });
     if (globalThis.BroadcastChannel) {
       this.replyChannel = new BroadcastChannel('kuna.d2.reply');
       this.replyChannel.onmessage = ({ data }) => this.#handOff(data);
@@ -144,61 +167,45 @@ class Collab {
     try { this.api.storage?.setItem(PREFS_KEY, JSON.stringify(p)); } catch (_) { /* no storage */ }
   }
 
-  /** The build id: the SHA-256 of the engine's wasm, which every page in a session must share. */
-  build() {
-    this.buildPromise ||= fetch(this.api.wasmUrl)
-      .then((r) => {
-        if (!r.ok) throw new Error(`the engine could not be read (${r.status})`);
-        return r.arrayBuffer();
-      })
-      .then((b) => sha256Hex(new Uint8Array(b)))
-      .catch((e) => {
-        this.buildPromise = null;
-        throw e;
-      });
-    return this.buildPromise;
+  /** The engine's build id (the SHA-256 of the wasm this page's Worker compiled). */
+  async build() {
+    const build = await this.api.build();
+    if (!/^[0-9a-f]{64}$/.test(build || '')) throw new Error('this page could not tell which version of the decompiler it runs');
+    return build;
   }
 
-  /** `{name, size, hash}` of the open program (SHA-256), computed once per program. */
-  async fileMeta() {
+  /** How peers describe the open program: `{meta}`, `{problem}` when it cannot travel, or null with none open. */
+  describe() {
     const bin = this.api.binary();
     if (!bin) return null;
-    if (this.fileFor !== bin) {
-      const hash = /^sha256:[0-9a-f]{64}$/.test(bin.hash || '') ? bin.hash.slice(7) : await sha256Hex(bin.bytes);
-      if (this.api.binary() !== bin) return this.fileMeta();
-      this.file = { name: bin.name.replace(/[\\/]/g, '_').slice(0, 255) || 'program', size: bin.bytes.length, hash };
-      this.fileFor = bin;
+    if (this.descBytes !== bin.bytes || !this.desc) {
+      this.desc = describeFile(bin.name, bin.bytes.length, String(bin.hash || '').replace(/^sha256:/, ''));
+      this.descBytes = bin.bytes;
     }
-    return this.file;
+    return this.desc;
   }
 
   #fileMetaNow() {
-    return this.fileFor && this.fileFor === this.api.binary() ? this.file : null;
+    return this.describe()?.meta || null;
   }
 
   // ── the group ────────────────────────────────────────────────────────────
 
-  #connect() {
-    return {
-      offer: () => makeOffer({ me: this.me, iceServers: this.ice(), bc: true }),
-      answer: async ({ id, sdp, bc }) => {
-        const res = await takeOffer({ me: this.me, id, sdp, iceServers: this.ice(), bc });
-        return res.link ? { sdp: null, ready: Promise.resolve(res.link), cancel() {} } : res;
-      },
-    };
-  }
-
   #newGroup(build) {
     this.group?.leave();
     this.group = new Group({
-      me: this.me, name: this.name, build, replica: this.replica, connect: this.#connect(),
+      me: this.me, name: this.name, build, replica: this.replica,
+      connect: {
+        offer: () => makeOffer({ me: this.me, iceServers: this.ice() }),
+        answer: ({ id, sdp }) => takeOffer({ me: this.me, id, sdp, iceServers: this.ice() }),
+      },
       page: {
         fileMeta: () => this.#fileMetaNow(),
         fileBytes: () => this.api.binary()?.bytes || null,
         isExample: () => !!this.api.binary()?.example,
         welcomed: (info) => this.#welcomed(info),
         caughtUp: () => this.#caughtUp(),
-        changed: (changes, from) => this.#changed(changes, from),
+        changed: (changes) => this.#changed(changes),
         fileProgress: (got, size) => this.#progress(got, size),
         fileArrived: (bytes, meta) => this.#fileArrived(bytes, meta),
         fileFailed: (why) => this.#fileFailed(why),
@@ -214,32 +221,63 @@ class Collab {
   /** Start a session as its first member, with this page's changes as its registers. */
   async start() {
     if (this.active) return true;
-    const [build, file] = await Promise.all([this.build(), this.fileMeta()]);
-    if (!file) return false;
+    const desc = this.describe();
+    if (!desc) return false;
+    if (desc.problem) throw new Error(`${this.api.binary().name} cannot be shared: ${desc.problem}`);
+    const build = await this.build();
+    if (this.active) return true;
+    const file = desc.meta;
     if (this.replicaHash !== file.hash) {
       this.replica = new Replica(this.me);
       this.replicaHash = file.hash;
     }
     this.#newGroup(build);
     this.group.create();
+    this.slot = 'own';
     this.#share();
     this.#diff({ record: false });
     if (this.replica.value('setting:mode') !== this.api.mode()) this.group.local([this.replica.set('setting:mode', this.api.mode())]);
-    this.group.setWhere(this.api.current());
+    this.group.setWhere(this.#where());
     this.#rosterChanged();
     return true;
   }
 
   #share() {
     this.shared = true;
-    this.localOnly.clear();
+    this.refusedShown.clear();
     this.history.clear();
+    this.#dirty();
     this.api.clearUndo();
+    this.api.session().orderOf = (key) => this.#indexOf(key)?.birth || null;
+    this.api.shareStarted();
     this.api.refresh();
   }
 
-  /** Leave: close every link; this page keeps the session as it is. */
-  leave({ quiet = false } = {}) {
+  #dirty() {
+    this.index = null;
+    this.runs = null;
+  }
+
+  /** A record's place and author in the registers: `{birth, clock}` (the earliest birth, the latest write). */
+  #indexOf(recordKey) {
+    if (!this.index) {
+      this.index = new Map();
+      for (const [key, r] of this.replica?.regs || []) {
+        const rk = recordKeyOf(key);
+        const e = this.index.get(rk);
+        if (!e) this.index.set(rk, { birth: r.b, clock: r.v === null ? null : r.c });
+        else {
+          if (newer(e.birth, r.b)) e.birth = r.b;
+          if (r.v !== null && (!e.clock || newer(r.c, e.clock))) e.clock = r.c;
+        }
+      }
+    }
+    return this.index.get(recordKey) || null;
+  }
+
+  /** Leave: close every link and stop a join in progress. The page keeps what it shows (see endShared). */
+  leave({ quiet = false, why = null } = {}) {
+    const was = this.active;
     this.group?.leave();
     this.group = null;
     for (const inv of this.invites.values()) {
@@ -247,24 +285,33 @@ class Collab {
       this.closedInvites.add(inv.id);
     }
     this.invites.clear();
-    this.join?.res?.cancel?.();
-    this.join = null;
-    this.shared = false;
+    this.current = null;
+    this.#endJoin();
+    clearTimeout(this.pendingTimer);
+    this.pending = [];
+    this.pendingTimer = 0;
+    if (this.shared) {
+      this.api.session().reorder();
+      this.shared = false;
+      this.api.endShared();
+    }
     this.holdDiff = false;
     this.following = null;
+    this.aside = null;
     this.history.clear();
     this.api.clearUndo();
-    this.cursors.clear();
     this.presence.clear();
     this.#rosterChanged();
-    this.api.refresh();
-    if (!quiet) this.api.toast('You left the session. Your changes stay here.');
+    if (!quiet && (was || why)) this.api.toast(why || 'You left the session. Its changes stay on this page.', { kind: why ? 'err' : 'ok' });
   }
 
-  /** Before opening another program: leaving is the only way; ask first. */
+  /** Before opening another program: leaving (or stopping a join) is the only way; ask first. */
   async confirmLeave(name) {
-    if (!this.active) return true;
-    const ok = await this.api.confirm(`Opening ${name} ends your part in this session. Leave the session and open it?`, 'Leave and open');
+    const joining = this.join && !['failed', 'done'].includes(this.join.state);
+    if (!this.active && !joining) return true;
+    const ok = await this.api.confirm(joining
+      ? `You are joining ${this.join.inv?.n || 'someone'}'s session. Opening ${name} stops that. Open it anyway?`
+      : `Opening ${name} ends your part in this session. Leave the session and open it?`, joining ? 'Stop and open' : 'Leave and open');
     if (ok) this.leave({ quiet: true });
     return ok;
   }
@@ -273,43 +320,33 @@ class Collab {
 
   #write(key, value) {
     const prev = this.replica.value(key);
-    const prevClock = this.replica.clock(key);
     const op = this.replica.set(key, value);
-    return { key, prev, prevClock, op };
+    return { key, prev, op };
   }
 
   /** Compare the page's Session with the registers and send what this page changed. */
   #diff({ record = true } = {}) {
-    if (!this.shared || this.holdDiff || !this.replica) return;
+    if (!this.shared || this.holdDiff || this.applying || !this.replica) return;
     const session = this.api.session();
     adoptRawKeys(session, this.me);
-    const regs = registersOf(session, this.me);
-    const changes = [];
-    let refused = 0;
-    for (const [k, v] of regs) {
-      if (this.localOnly.has(k) || this.replica.value(k) === v) continue;
-      if (!validOp({ k, v, c: [1, this.me] })) {
-        this.localOnly.add(k);
-        refused++;
-        continue;
-      }
-      changes.push(this.#write(k, v));
-    }
-    for (const k of this.replica.live().keys()) {
-      if (!k.startsWith('setting:') && !regs.has(k)) changes.push(this.#write(k, null));
-    }
-    if (refused) {
-      this.api.toast('One of your changes stays on this page only.', {
-        kind: 'warn', detail: 'It reads a file or holds text the others\' pages do not accept, so it is not shared.',
+    const { changes, refused } = diffSession(session, this.replica, { maxLive: MAX_REGISTERS });
+    const fresh = refused.filter((r) => !this.refusedShown.has(`${r.key}\n${r.value}`));
+    if (fresh.length) {
+      for (const r of fresh) this.refusedShown.add(`${r.key}\n${r.value}`);
+      const full = fresh.some((r) => r.why === 'full');
+      this.api.toast(full ? 'This session holds as many changes as it can, so this one stays on this page.' : 'One of your changes stays on this page only.', {
+        kind: 'warn', detail: full ? `A session holds at most ${MAX_REGISTERS.toLocaleString()} changes.`
+          : 'It reads a file or holds text the others\' pages do not accept, so it is not shared.',
       });
     }
     if (!changes.length) return;
-    this.authors = null;
-    this.group?.local(changes.map((c) => c.op));
-    if (record) this.history.record(changes);
+    const written = changes.map(({ key, value }) => this.#write(key, value));
+    this.#dirty();
+    this.group?.local(written.map((w) => w.op));
+    if (record) this.history.record(written);
   }
 
-  /** The page's session changed (an edit, an undo, a restore). */
+  /** The page's session changed (an edit, an undo, a byte burst). */
   localChanged() {
     this.#diff();
   }
@@ -339,7 +376,7 @@ class Collab {
       this.api.refresh();
       return false;
     }
-    this.authors = null;
+    this.#dirty();
     applyRegisters(this.api.session(), this.replica, res.ops.map((op) => op.k));
     this.group?.local(res.ops);
     return true;
@@ -347,70 +384,79 @@ class Collab {
 
   // ── the others' edits ────────────────────────────────────────────────────
 
-  #changed(changes, from) {
-    this.authors = null;
-    for (const ch of changes) this.#remember(ch.by);
-    if (!this.shared) return;
+  #changed(changes) {
+    this.#dirty();
+    for (const c of changes) this.pending.push(c);
+    if (!this.pendingTimer) this.pendingTimer = setTimeout(() => this.#applyPending(), 16);
+  }
+
+  /** Apply a frame's worth of the others' changes to the page at once. */
+  #applyPending() {
+    this.pendingTimer = 0;
+    const changes = this.pending;
+    this.pending = [];
+    for (const by of new Set(changes.map((c) => c.by))) this.#remember(by);
+    if (!this.shared || !changes.length) return;
     const words = (c) => `${this.#nameOf(c.by)} ${describeRegister(c.key, c.value, c.prev, this.api.nameOf)}`;
-    const first = changes.find((c) => c.by !== this.me) || changes[0];
-    const label = words(first);
-    const replaced = changes.filter((c) => c.prevBy === this.me && c.by !== this.me && c.value !== c.prev);
-    const afterYou = replaced.length ? `${words(replaced[0])} after you` : null;
-    const session = this.api.session();
-    const fn = this.api.current().fn;
-    const before = fn ? session.assertionsFor(fn).join('\n') : '';
-    const keys = changes.map((c) => c.key).filter((k) => !k.startsWith('setting:'));
-    if (keys.length) applyRegisters(session, this.replica, keys);
-    const after = fn ? session.assertionsFor(fn).join('\n') : '';
+    const values = changes.filter((c) => c.value !== c.prev);
+    const first = values.find((c) => c.by !== this.me);
+    const replaced = values.filter((c) => c.prevBy === this.me && c.by !== this.me);
+    const keys = [...new Set(changes.map((c) => c.key))].filter((k) => !k.startsWith('setting:'));
+    const fn = this.api.target();
     const mode = changes.some((c) => c.key === 'setting:mode') ? this.replica.value('setting:mode') : null;
-    if (afterYou) {
+    if (replaced.length) {
       const more = replaced.length - 1;
-      this.api.toast(afterYou, { kind: 'warn', detail: more ? `and ${more} more of your change${more === 1 ? '' : 's'}` : '' });
+      this.api.toast(`${words(replaced[0])} after you`, { kind: 'warn', detail: more ? `and ${more} more of your change${more === 1 ? '' : 's'}` : '' });
     }
-    this.api.remoteChanged({ inspect: before !== after, mode: mode && mode !== this.api.mode() ? mode : null, label });
+    this.applying = true;
+    try {
+      if (keys.length) applyRegisters(this.api.session(), this.replica, keys);
+      this.api.remoteChanged({
+        inspect: keys.some((k) => touchesFunction(k, fn)), mode: mode && mode !== this.api.mode() ? mode : null, label: first ? words(first) : '',
+      });
+    } finally {
+      this.applying = false;
+    }
   }
 
   // ── inviting ─────────────────────────────────────────────────────────────
 
   /** Make a one-person invite link (starting a session if there is none). */
   async makeInvite() {
-    if (!(await this.start())) return null;
-    if (this.group.size() >= MAX_PEERS) {
-      this.#status('This session is full (8 people).', 'err');
-      return null;
-    }
-    this.#status('Making an invite link…', 'busy');
-    let offer;
+    let offer = null;
     try {
-      offer = await makeOffer({ me: this.me, iceServers: this.ice(), bc: true });
+      if (!this.name) throw new Error('type your name first');
+      if (!(await this.start())) throw new Error('open a program first');
+      if (this.group.size() >= MAX_PEERS) throw new Error('this session is full (8 people)');
+      this.#status('Making an invite link…', 'busy');
+      offer = await makeOffer({ me: this.me, iceServers: this.ice() });
+      const file = this.#fileMetaNow();
+      const code = await encodeCode('invite', { id: offer.id, n: this.name, f: file.name, z: file.size, d: offer.sdp });
+      if (!this.active) throw new Error('the session ended');
+      const inv = { id: offer.id, offer, link: `${this.#base()}#join=${code}`, state: 'waiting', guest: null };
+      this.invites.set(offer.id, inv);
+      offer.ready.then((link) => {
+        if (!this.active) {
+          link.close();
+          return;
+        }
+        inv.state = 'open';
+        this.group.addLink(link);
+        this.#inviteStatus(inv);
+        this.#tellReplyTab(inv, 'open');
+      }).catch((e) => {
+        if (e.message === 'cancelled') return;
+        inv.state = 'failed';
+        this.#inviteStatus(inv);
+        this.#tellReplyTab(inv, 'failed');
+      });
+      this.current = inv;
+      return inv;
     } catch (e) {
-      this.#status(`This browser could not make a connection: ${e.message}`, 'err');
+      offer?.cancel?.();
+      this.#status(`Could not make an invite link: ${e.message}.`, 'err');
       return null;
     }
-    const file = this.#fileMetaNow() || await this.fileMeta();
-    const code = await encodeCode('invite', { id: offer.id, n: this.name, f: file.name, z: file.size, d: offer.sdp, b: 1 });
-    const inv = { id: offer.id, offer, link: `${this.#base()}#join=${code}`, state: 'waiting', guest: null };
-    this.invites.set(offer.id, inv);
-    offer.onstate = (s) => {
-      if (inv.state === 'connecting' && s === 'checking') this.#inviteStatus(inv);
-    };
-    offer.ready.then((link) => {
-      if (!this.active) {
-        link.close();
-        return;
-      }
-      inv.state = 'open';
-      this.group.addLink(link);
-      this.#inviteStatus(inv);
-      this.#tellReplyTab(inv, 'open');
-    }).catch((e) => {
-      if (e.message === 'cancelled') return;
-      inv.state = 'failed';
-      this.#inviteStatus(inv);
-      this.#tellReplyTab(inv, 'failed');
-    });
-    this.current = inv;
-    return inv;
   }
 
   #base() {
@@ -443,7 +489,7 @@ class Collab {
     return { ok: true, inv };
   }
 
-  /** Another tab of this browser opened a reply link: take it if the invite is ours. */
+  /** Another tab of this browser opened a reply link: take it if the invite is (or was) this page's. */
   async #handOff(data) {
     if (data?.k !== 'reply' || typeof data.id !== 'string' || typeof data.code !== 'string' || typeof data.from !== 'string') return;
     const inv = this.invites.get(data.id);
@@ -452,7 +498,7 @@ class Collab {
       if (inv || this.closedInvites.has(data.id)) post({ k: 'used' });
       return;
     }
-    post({ k: 'got', name: this.name });
+    post({ k: 'got' });
     inv.replyTab = data.from;
     const res = await this.applyReply(data.code);
     if (!res.ok) post({ k: 'state', state: 'failed', text: res.text });
@@ -482,72 +528,115 @@ class Collab {
       });
       return;
     }
-    if (this.invites.has(inv.id)) {
+    if (this.invites.has(inv.id) || this.closedInvites.has(inv.id)) {
       this.#show({ kind: 'notice', title: 'This is your own invite link', text: 'Send it to the person you want to invite. When they open it, they get a reply link to send back to you.' });
       return;
     }
-    this.#show({ kind: 'join', inv });
+    if (this.join?.state === 'failed') this.join = null;
+    this.#show({ kind: 'join', inv, replacing: this.join && this.join.inv !== inv ? this.join : null });
   }
 
   async #joinNow(inv) {
+    this.#endJoin();
     if (this.active) this.leave({ quiet: true });
-    this.join = { inv, state: 'connecting', example: false };
+    const join = { inv, state: 'connecting' };
+    this.join = join;
+    this.view = { kind: 'join', inv };
     this.#render();
     let build;
     let res;
     try {
-      [build] = await Promise.all([this.build(), this.fileMeta()]);
-      res = await takeOffer({ me: this.me, id: inv.id, sdp: inv.d, iceServers: this.ice(), bc: inv.b === 1 });
+      [build, res] = await Promise.all([this.build(), takeOffer({ me: this.me, id: inv.id, sdp: inv.d, iceServers: this.ice() })]);
     } catch (e) {
-      this.#joinFailed(e.message === 'used' ? 'This invite link was already used: each link lets one person in. Ask for a new one.'
-        : `This browser could not make a connection: ${e.message}`);
+      if (this.join === join) {
+        this.#joinFailed(e.message === 'used' ? 'This invite link was already used: each link lets one person in. Ask for a new one.'
+          : `This browser could not make a connection: ${e.message}.`);
+      }
       return;
     }
-    if (!this.join || this.join.inv !== inv) return;
-    if (res.link) {
-      this.#joined(res.link, build);
+    if (this.join !== join) {
+      res.cancel?.();
       return;
     }
-    this.join.res = res;
-    const code = await encodeCode('reply', { id: inv.id, n: this.name, d: res.sdp });
-    this.join.reply = `${this.#base()}#reply=${code}`;
-    this.join.state = 'reply';
+    join.res = res;
+    if (res.sdp === null) {
+      join.sameBrowser = true;
+      res.ready.then((link) => this.#joined(join, link, build));
+      return;
+    }
+    let code;
+    try {
+      code = await encodeCode('reply', { id: inv.id, n: this.name, d: res.sdp });
+    } catch (e) {
+      this.#joinFailed(`Could not make a reply link: ${e.message}.`);
+      return;
+    }
+    if (this.join !== join) return;
+    join.reply = `${this.#base()}#reply=${code}`;
+    join.state = 'reply';
     res.onstate = (s) => {
-      if (s === 'failed' && this.join?.res === res && this.join.state === 'reply') {
-        this.join.stuck = true;
+      if (s === 'failed' && this.join === join && join.state === 'reply') {
+        join.stuck = true;
         this.#render();
       }
     };
-    res.ready.then((link) => { if (this.join?.res === res) this.#joined(link, build); else link.close(); }).catch(() => {});
+    res.ready.then((link) => { if (this.join === join) this.#joined(join, link, build); else link.close(); }).catch(() => {});
     this.#render();
   }
 
-  #joined(link, build) {
-    const bin = this.api.binary();
-    if (!(this.replica && this.fileFor === bin && this.file && this.replicaHash === this.file.hash)) {
+  #joined(join, link, build) {
+    if (this.join !== join) {
+      link.close();
+      return;
+    }
+    const desc = this.describe();
+    if (!(this.replica && desc?.meta && this.replicaHash === desc.meta.hash)) {
       this.replica = new Replica(this.me);
       this.replicaHash = null;
     }
     this.#newGroup(build);
-    this.join.state = 'joining';
+    join.state = 'joining';
     this.group.addLink(link, { joining: true });
+    join.timer = setTimeout(() => {
+      if (this.join === join && join.state === 'joining') this.#joinFailed(`${join.inv.n}'s page did not answer. Ask for a new invite link.`);
+    }, JOIN_MS);
     this.#render();
+  }
+
+  /** Stop a join in progress (its connection closes). */
+  #endJoin() {
+    const j = this.join;
+    if (!j) return;
+    clearTimeout(j.timer);
+    if (j.state !== 'done') j.res?.cancel?.();
+    this.join = null;
   }
 
   #joinFailed(text) {
-    if (this.join) {
-      this.join.state = 'failed';
-      this.join.error = text;
+    const j = this.join;
+    if (this.shared) this.leave({ quiet: true });
+    else {
+      this.group?.leave();
+      this.group = null;
     }
-    this.group?.leave();
-    this.group = null;
-    this.#render();
+    this.holdDiff = false;
+    if (j) {
+      clearTimeout(j.timer);
+      j.res?.cancel?.();
+      j.state = 'failed';
+      j.error = text;
+      this.join = j;
+    }
     this.#rosterChanged();
+    if (this.dialog?.open && this.view?.kind === 'join') this.#render();
+    else this.api.toast(text, { kind: 'err' });
   }
 
   #welcomed({ from, name, file, example, send }) {
-    if (!this.join) this.join = { inv: null, state: 'joining' };
-    Object.assign(this.join, { sponsor: from, sponsorName: name, file, send, example, state: send ? 'receiving' : 'merging' });
+    const j = this.join;
+    if (!j) return;
+    clearTimeout(j.timer);
+    Object.assign(j, { sponsor: from, sponsorName: name, file, send, example, state: send ? 'receiving' : 'merging' });
     this.#remember(from);
     if (this.replicaHash !== file.hash) {
       if (this.replica.regs.size) {
@@ -559,10 +648,11 @@ class Collab {
     }
     const mine = this.#fileMetaNow();
     if (mine && mine.hash === file.hash) {
+      this.slot = 'own';
       this.#share();
       this.#diff({ record: false });
     }
-    this.group.setWhere(this.api.current());
+    this.group.setWhere(this.#where());
     this.#rosterChanged();
     this.#render();
   }
@@ -576,42 +666,47 @@ class Collab {
   }
 
   #progress(got, size) {
-    if (!this.join) return;
-    this.join.got = got;
-    this.join.size = size;
+    const j = this.join;
+    if (!j) return;
+    j.got = got;
+    j.size = size;
     const bar = this.dialog?.querySelector('[data-progress]');
     if (bar) {
       bar.style.width = `${Math.round((got / size) * 100)}%`;
-      this.#setStatusText(`Receiving ${this.join.file?.name || 'the program'}… ${Math.round((got / size) * 100)}%`);
+      this.#setStatus(`Receiving ${j.file?.name || 'the program'}… ${Math.round((got / size) * 100)}%`, 'busy');
     }
   }
 
   async #fileArrived(bytes, meta) {
-    if (!this.join || this.shared) return;
-    this.join.state = 'opening';
+    const j = this.join;
+    if (!j || this.shared || !this.group) return;
+    j.state = 'opening';
     this.#render();
+    const hash = `sha256:${meta.hash}`;
+    const own = j.sameBrowser ? null : this.api.ownSession(hash);
     const session = new Session();
     applyRegisters(session, this.replica, [...this.replica.regs.keys()]);
-    const example = !!this.join.example && await this.api.isExample(bytes);
-    const old = await this.api.storedSession(bytes);
-    const mode = this.replica.value('setting:mode');
-    const open = this.group?.who(this.join.sponsor)?.where?.fn || null;
-    const ok = await this.api.openShared({ name: meta.name, bytes, example, session, mode, open });
-    if (!ok || !this.group) {
+    session.orderOf = (key) => this.#indexOf(key)?.birth || null;
+    this.slot = own ? 'shared' : 'own';
+    const open = this.group.who(j.sponsor)?.where?.fn || null;
+    const ok = await this.api.openShared({
+      name: meta.name, bytes, hash, session, mode: this.replica.value('setting:mode'), open, slot: this.slot,
+    });
+    if (this.join !== j || !this.group) return;
+    if (!ok) {
       this.#joinFailed(`Could not open ${meta.name}.`);
       return;
     }
-    await this.fileMeta();
+    this.aside = own ? { count: own.size, hash, name: meta.name } : null;
     this.#share();
     const opened = JSON.stringify(this.api.session().toJSON());
     applyRegisters(this.api.session(), this.replica, [...this.replica.regs.keys()]);
     const moved = JSON.stringify(this.api.session().toJSON()) !== opened;
     const lateMode = this.replica.value('setting:mode') !== this.api.mode() ? this.replica.value('setting:mode') : null;
     if (moved || lateMode) this.api.remoteChanged({ inspect: true, mode: lateMode, label: '' });
-    if (old?.size) {
-      this.api.toast(`Your own earlier changes to ${meta.name} are not part of this session.`, {
-        kind: 'warn', ms: 15000, detail: `${old.size} change${old.size === 1 ? '' : 's'} from before.`,
-        action: { label: 'Save them as a file', run: () => this.api.exportSession(old, meta.name) },
+    if (own) {
+      this.api.toast(`Your own ${own.size} change${own.size === 1 ? '' : 's'} to ${meta.name} are kept as they were.`, {
+        ms: 10000, detail: 'This session is saved apart from them, and they come back when you leave. The session dialog can save them as a file.',
       });
     }
     this.#joinDone();
@@ -626,8 +721,9 @@ class Collab {
     const j = this.join;
     if (!j || j.state === 'done' || !this.shared || !this.group) return;
     j.state = 'done';
+    clearTimeout(j.timer);
     const where = this.group.who(j.sponsor)?.where;
-    if (where?.fn && this.api.current().fn && where.fn !== this.api.current().fn) this.api.openFunction(where.fn);
+    if (where?.fn && this.api.target() && where.fn !== this.api.target()) this.api.openFunction(where.fn);
     this.api.toast(`You joined ${j.sponsorName}'s session.`, { detail: 'Their changes and yours now appear on every page.' });
     if (this.view?.kind === 'join') this.close();
     this.join = null;
@@ -654,7 +750,6 @@ class Collab {
       if (res.inv) {
         this.current = res.inv;
         this.#render();
-        this.#inviteStatus(res.inv);
       }
       if (!res.ok) this.#status(res.text, 'err');
       return;
@@ -702,8 +797,7 @@ class Collab {
   }
 
   #nameOf(peer) {
-    if (peer === this.me) return 'You';
-    return this.group?.who(peer)?.name || this.seen.get(peer)?.name || 'Someone';
+    return peer === this.me ? 'You' : this.#member(peer).name;
   }
 
   #member(peer) {
@@ -711,17 +805,24 @@ class Collab {
     return m ? { name: m.name, color: m.color } : this.seen.get(peer) || { name: 'Someone', color: '#a39894' };
   }
 
+  /** Where this page is: the function on screen or being opened, and the view. */
+  #where() {
+    return { fn: this.api.target(), view: this.api.current().view };
+  }
+
   whereChanged() {
-    const w = this.api.current();
+    const shown = this.api.current().fn;
+    this.presence.setFunction(shown);
+    const w = this.#where();
     const key = `${w.fn}|${w.view}`;
     if (key === this.whereKey) return;
-    const moved = this.whereKey?.split('|')[0] !== String(w.fn);
+    const moved = this.lastFn !== w.fn;
     this.whereKey = key;
+    this.lastFn = w.fn;
     if (this.group?.active) {
       this.group.setWhere(w);
       if (moved) this.#pointerOff();
     }
-    for (const [peer, m] of this.cursors) this.presence.show(peer, m, this.#member(peer), m.fn === w.fn, { moved: false });
   }
 
   redraw() {
@@ -767,14 +868,11 @@ class Collab {
 
   #cursor(peer, m) {
     if (m.off) {
-      this.cursors.delete(peer);
       this.presence.hide(peer);
       return;
     }
-    this.cursors.set(peer, m);
-    const mine = this.api.current().fn;
-    this.presence.show(peer, m, this.#member(peer), m.fn === mine);
-    if (this.following === peer && m.fn === mine && !this.presence.visible(m.anchor)) {
+    this.presence.show(peer, m, this.#member(peer));
+    if (this.following === peer && m.fn === this.api.current().fn && !this.presence.visible(m.anchor)) {
       findAnchor(m.anchor)?.scrollIntoView({ block: 'nearest' });
     }
   }
@@ -827,21 +925,22 @@ class Collab {
 
   #follow(peer) {
     this.following = peer;
-    this.#rosterChanged();
+    this.#renderRoster();
     if (!peer) return;
     const m = this.group?.who(peer);
     if (!m?.where?.fn) {
       this.api.toast(`${m?.name || 'They'} ${m?.linked === false ? 'are still connecting' : 'have not opened a function yet'}.`);
       this.following = null;
-      this.#rosterChanged();
+      this.#renderRoster();
       return;
     }
     this.#followTo(m);
     this.api.toast(`Following ${m.name}. Click anywhere or press a key to stop.`);
   }
 
+  /** Open where `m` is, unless this page is already there or on its way. */
   #followTo(m) {
-    if (m.where.fn !== this.api.current().fn) this.api.openFunction(m.where.fn, { view: m.where.view });
+    if (m.where.fn !== this.api.target()) this.api.openFunction(m.where.fn, { view: m.where.view });
     else if (m.where.view !== this.api.current().view) this.api.setView(m.where.view);
   }
 
@@ -856,22 +955,13 @@ class Collab {
   }
 
   #rosterChanged() {
-    this.authors = null;
-    if (this.following) {
-      const m = this.group?.who(this.following);
-      if (!m) this.following = null;
-      else if (m.where?.fn) this.#followTo(m);
-    }
-    for (const m of this.group?.members() || []) this.seen.set(m.peer, { name: m.name, color: m.color });
-    for (const peer of [...this.cursors.keys()]) {
-      if (!this.group?.who(peer)?.linked) {
-        this.cursors.delete(peer);
-        this.presence.forget(peer);
-      }
-    }
+    const members = this.group?.members() || [];
+    if (this.following && !members.some((m) => m.peer === this.following)) this.following = null;
+    for (const m of members) this.seen.set(m.peer, { name: m.name, color: m.color });
+    this.presence.keepOnly(new Set(members.filter((m) => m.linked).map((m) => m.peer)));
     this.#renderRoster();
     this.api.refresh();
-    if (this.view?.kind === 'session' || this.view?.kind === 'start') this.#renderPeople();
+    if (this.dialog?.open && (this.view?.kind === 'session' || this.view?.kind === 'start')) this.#renderPeople();
   }
 
   #whereWords(m) {
@@ -880,6 +970,7 @@ class Collab {
     return `${m.name}: ${this.api.nameOf(m.where.fn)}, ${VIEW_WORDS[m.where.view] || 'C code'}`;
   }
 
+  /** The people in the top bar, updated in place so a focused one keeps focus. */
   #renderRoster() {
     const { els } = this.api;
     if (!this.rosterEl) {
@@ -889,6 +980,12 @@ class Collab {
       this.rosterEl.setAttribute('role', 'group');
       this.rosterEl.setAttribute('aria-label', 'People working together');
       els.hintsBox.closest('label').before(this.rosterEl);
+      this.together = document.createElement('button');
+      this.together.className = 'd2-btn ghost d2-together';
+      this.together.dataset.act = 'collab-open';
+      this.together.title = 'Working together: invite someone, or leave';
+      this.together.innerHTML = `${PEOPLE}<span data-count></span><span class="d2-sr"> people</span>`;
+      this.rosterEl.appendChild(this.together);
       this.rosterEl.addEventListener('click', (e) => {
         const chip = e.target.closest('.d2-who');
         if (chip) this.#follow(this.following === chip.dataset.peer ? null : chip.dataset.peer);
@@ -897,45 +994,53 @@ class Collab {
     }
     const members = this.group?.active ? this.group.members() : [];
     this.rosterEl.hidden = !members.length;
-    if (!members.length) {
-      this.rosterEl.innerHTML = '';
-      return;
-    }
-    const chips = members.filter((m) => !m.me).map((m) => {
+    const chips = new Map([...this.rosterEl.querySelectorAll('.d2-who')].map((b) => [b.dataset.peer, b]));
+    for (const m of members.filter((x) => !x.me)) {
+      let b = chips.get(m.peer);
+      chips.delete(m.peer);
+      if (!b) {
+        b = document.createElement('button');
+        b.dataset.peer = m.peer;
+      }
       const on = this.following === m.peer;
-      return `<button class="d2-who${on ? ' on' : ''}${m.linked ? '' : ' wait'}" data-peer="${m.peer}" style="--who:${m.color}"` +
-        ` title="${escapeHtml(`${this.#whereWords(m)}\n${on ? 'Following: click to stop' : 'Click to follow'}`)}"` +
-        ` aria-pressed="${on}">${escapeHtml(initials(m.name))}</button>`;
-    }).join('');
-    this.rosterEl.innerHTML = chips +
-      `<button class="d2-btn ghost d2-together" data-act="collab-open" title="Working together: invite someone, or leave">${PEOPLE}` +
-      `<span>${members.length}</span><span class="d2-sr"> people</span></button>`;
+      const cls = `d2-who${on ? ' on' : ''}${m.linked ? '' : ' wait'}`;
+      if (b.className !== cls) b.className = cls;
+      b.style.setProperty('--who', m.color);
+      const title = `${this.#whereWords(m)}\n${on ? 'Following: click to stop' : 'Click to follow'}`;
+      if (b.title !== title) b.title = title;
+      b.setAttribute('aria-pressed', String(on));
+      const text = initials(m.name);
+      if (b.textContent !== text) b.textContent = text;
+      if (b.parentElement !== this.rosterEl) this.together.before(b);
+    }
+    for (const b of chips.values()) b.remove();
+    const count = this.together.querySelector('[data-count]');
+    if (count.textContent !== String(members.length)) count.textContent = String(members.length);
   }
 
   /** The author of a record in the Changes list (whoever wrote its newest register): `{name, color, me}` or null. */
   authorOf(key) {
     if (!this.shared || !this.replica) return null;
-    const later = (a, b) => !b || a[0] > b[0] || (a[0] === b[0] && a[1] > b[1]);
-    if (!this.authors) {
-      this.authors = new Map();
-      for (const [k, { c }] of this.replica.regs) {
-        const rk = recordKeyOf(k);
-        if (later(c, this.authors.get(rk))) this.authors.set(rk, c);
+    const clock = key.startsWith('bytes:') ? this.#runClock(key) : this.#indexOf(key)?.clock || null;
+    if (!clock) return null;
+    const mine = clock[1] === this.me;
+    const who = mine ? { name: this.name, color: this.group?.color || this.#member(this.me).color } : this.#member(clock[1]);
+    return { name: who.name, color: who.color, me: mine };
+  }
+
+  #runClock(key) {
+    if (!this.runs) {
+      this.runs = new Map();
+      for (const run of this.api.session().byteRuns()) {
+        let best = null;
+        for (let i = 0; i < run.values.length; i++) {
+          const c = this.replica.clock(`byte:0x${(run.addr + BigInt(i)).toString(16)}`);
+          if (c && (!best || newer(c, best))) best = c;
+        }
+        this.runs.set(`bytes:0x${run.addr.toString(16)}`, best);
       }
     }
-    let best = null;
-    if (key.startsWith('bytes:')) {
-      const run = this.api.session().byteRuns().find((r) => `bytes:0x${r.addr.toString(16)}` === key);
-      for (let i = 0; run && i < run.values.length; i++) {
-        const c = this.replica.clock(`byte:0x${(run.addr + BigInt(i)).toString(16)}`);
-        if (c && later(c, best)) best = c;
-      }
-    } else {
-      best = this.authors.get(key) || null;
-    }
-    if (!best) return null;
-    const who = best[1] === this.me ? { name: this.name, color: this.group?.color || this.#member(this.me).color } : this.#member(best[1]);
-    return { name: who.name, color: who.color, me: best[1] === this.me };
+    return this.runs.get(key) || null;
   }
 
   #event(kind, info) {
@@ -950,23 +1055,21 @@ class Collab {
         break;
       case 'left':
         this.api.toast(`${name} left the session.`);
-        this.cursors.delete(info.peer);
         this.presence.forget(info.peer);
         break;
       case 'lost':
         this.api.toast(`Lost the connection to ${name}.`, { kind: 'warn', detail: info.reachable ? 'Trying again through the others…' : '' });
-        this.cursors.delete(info.peer);
         this.presence.forget(info.peer);
         break;
       case 'full':
         this.#joinFailed('This session is full (8 people).');
         break;
       case 'mismatch':
-        if (this.join) this.#joinFailed(`${name}'s page is a different version of Kuna; reload both.`);
+        if (this.join && this.join.state !== 'done') this.#joinFailed(`${name}'s page is a different version of Kuna; reload both.`);
         else this.api.toast(`${name}'s page is a different version of Kuna; reload both.`, { kind: 'err' });
         break;
       case 'closed':
-        if (this.join && this.join.state !== 'done') this.#joinFailed('The connection closed before you joined. Ask for a new invite link.');
+        if (this.join && this.join.state !== 'done') this.#joinFailed(`${name}'s page closed the connection before you joined. Ask for a new invite link.`);
         break;
       default: break;
     }
@@ -977,7 +1080,8 @@ class Collab {
 
   /** ⋯ → Work together…: invite (or, in a session, who is here, invite more, leave). */
   open() {
-    this.#show({ kind: this.join && this.join.state !== 'done' ? 'join' : this.active ? 'session' : 'start', inv: this.join?.inv });
+    if (this.join?.state === 'failed') this.join = null;
+    this.#show({ kind: this.join ? 'join' : this.active ? 'session' : 'start', inv: this.join?.inv });
   }
 
   close() {
@@ -987,6 +1091,7 @@ class Collab {
 
   #show(view) {
     this.view = view;
+    this.statusNow = null;
     if (!this.dialog) {
       this.dialog = document.createElement('dialog');
       this.dialog.id = 'd2collab';
@@ -996,7 +1101,10 @@ class Collab {
       this.dialog.addEventListener('keydown', (e) => e.stopPropagation());
       this.dialog.addEventListener('click', (e) => this.#click(e));
       this.dialog.addEventListener('submit', (e) => this.#submit(e));
-      this.dialog.addEventListener('close', () => { this.view = null; });
+      this.dialog.addEventListener('close', () => {
+        this.view = null;
+        if (this.join?.state === 'failed') this.join = null;
+      });
     }
     this.#render();
     if (!this.dialog.open) this.dialog.showModal();
@@ -1005,27 +1113,28 @@ class Collab {
     if (first?.select) first.select();
   }
 
+  /** The dialog's status line (it keeps it across re-renders). */
   #status(text, cls = '') {
-    this.statusText = { text, cls };
-    this.#setStatusText(text, cls);
+    this.statusNow = { text, cls };
+    this.#setStatus(text, cls);
   }
 
-  #setStatusText(text, cls = null) {
+  #setStatus(text, cls = '') {
     const el = this.dialog?.querySelector('[data-status]');
     if (!el) return;
     el.textContent = text;
-    if (cls !== null) el.className = `cb-status ${cls}`;
+    el.className = `cb-status ${cls}`;
   }
 
   #inviteStatus(inv) {
     if (this.current !== inv) return;
-    const words = {
+    const [text, cls] = {
       waiting: ['Waiting for their reply link…', 'busy'],
       connecting: [`Connecting to ${inv.guest || 'them'}…`, 'busy'],
       open: [`${inv.guest || 'They'} joined.`, 'ok'],
       failed: [NETWORK, 'err'],
     }[inv.state] || ['', ''];
-    this.#status(...words);
+    this.#status(text, cls);
     const paste = this.dialog?.querySelector('[data-paste]');
     if (paste) paste.hidden = inv.state !== 'waiting';
   }
@@ -1060,11 +1169,12 @@ class Collab {
       body = `<p>Invite someone to work on <b>${escapeHtml(bin.name)}</b> with you. You both see the same program and each other's changes — names, types, notes and patched bytes — and where the other person is pointing.</p>` +
         `<p class="cb-note">The people who join receive a copy of ${escapeHtml(bin.name)} from your browser.</p>` +
         `<form data-form="start">${this.#nameField()}<div class="cb-row"><button class="d2-btn primary" type="submit">Make an invite link</button></div></form>` +
+        statusLine(this.statusNow?.text, this.statusNow?.cls) +
         '<p class="cb-small d2-teach">It works between tabs of this browser and between computers on the same network. Nothing is sent to a server.</p>';
     } else {
       const alone = this.group.size() < 2;
       title = alone ? 'Invite someone' : `Working together on ${bin ? bin.name : 'a program'}`;
-      body = `<div data-people${alone ? ' hidden' : ''}>${this.#peopleHtml()}</div>${this.#inviteHtml()}` +
+      body = `<div data-people${alone ? ' hidden' : ''}>${this.#peopleHtml()}</div>${this.#inviteHtml()}${this.#asideHtml()}` +
         '<p class="cb-small d2-teach">Everyone can change anything. Undo takes back only your own changes. Alt+click a line (or press P) to point the others to it.</p>' +
         '<div class="cb-row cb-end"><button type="button" class="d2-btn" data-act="leave">Leave the session</button>' +
         '<button type="button" class="d2-btn primary" data-act="close">Done</button></div>';
@@ -1073,7 +1183,7 @@ class Collab {
       `<h2 id="d2collabtitle">${escapeHtml(title)}</h2>` +
       '<button type="button" class="d2-iconbtn small" data-act="close" aria-label="Close" title="Close">×</button></div>' +
       `<div class="cb-body">${body}</div>`;
-    if (this.statusText && (v.kind === 'session' || v.kind === 'start')) this.#setStatusText(this.statusText.text, this.statusText.cls);
+    if (v.kind === 'session' && this.current && this.invites.get(this.current.id) === this.current) this.#inviteStatus(this.current);
   }
 
   #peopleHtml() {
@@ -1092,7 +1202,6 @@ class Collab {
     else if (this.dialog?.open && this.active) {
       if (this.view?.kind === 'start') this.view.kind = 'session';
       this.#render();
-      if (this.current) this.#inviteStatus(this.current);
     }
   }
 
@@ -1102,7 +1211,7 @@ class Collab {
       const full = (this.group?.size() || 0) >= MAX_PEERS;
       return `<div class="cb-row"><button type="button" class="d2-btn${inv ? '' : ' primary'}" data-act="invite"${full ? ' disabled' : ''}>Invite someone</button>` +
         `${full ? '<span class="cb-muted">This session is full (8 people).</span>' : ''}</div>` +
-        (inv ? '<p class="cb-status ok" data-status></p>' : '');
+        statusLine(this.statusNow?.text, this.statusNow?.cls);
     }
     const program = this.api.binary()?.name || 'the program';
     return '<div class="cb-step"><h3>1. Send this link to one person</h3>' + this.#copyRow(inv.link, 'Invite link') +
@@ -1113,60 +1222,74 @@ class Collab {
       `<form class="cb-copy" data-form="reply" data-paste${inv.state === 'waiting' ? '' : ' hidden'}>` +
       '<input class="d2-input" name="reply" placeholder="Paste the reply link" autocomplete="off" spellcheck="false" aria-label="Reply link">' +
       '<button class="d2-btn" type="submit">Connect</button></form></div>' +
-      '<p class="cb-status" data-status></p>' +
+      statusLine(this.statusNow?.text, this.statusNow?.cls) +
       '<div class="cb-row"><button type="button" class="d2-btn small" data-act="invite">Make another link</button></div>';
   }
 
+  /** While in a session joined with the program: this page's own earlier changes to it, kept apart. */
+  #asideHtml() {
+    const a = this.aside;
+    if (!a) return '';
+    return `<p class="cb-note">Your own ${a.count} change${a.count === 1 ? '' : 's'} to ${escapeHtml(a.name)} from before are kept as they were; they come back when you leave. ` +
+      '<button type="button" class="d2-link" data-act="save-aside">Save them as a file</button></p>';
+  }
+
   #joinView(v) {
-    const j = this.join;
+    const j = this.join && this.join.inv === v.inv ? this.join : null;
     const inv = v.inv || j?.inv;
-    const from = inv ? escapeHtml(inv.n) : 'Someone';
-    const title = `Join ${inv ? inv.n : 'the'}'s session`;
+    const from = inv ? inv.n : 'Someone';
+    const title = `Join ${from}'s session`;
     if (!j) {
-      const body = `<p><b>${from}</b> invites you to work on <b>${escapeHtml(inv.f)}</b> (${sizeWords(inv.z)}) together.</p>` +
-        `<p class="cb-note">When you join, ${from}'s browser sends you a copy of the program and it opens here.</p>` +
+      const was = v.replacing && v.replacing.state !== 'failed' ? v.replacing.inv?.n : null;
+      const body = `<p><b>${escapeHtml(from)}</b> invites you to work on <b>${escapeHtml(inv.f)}</b> (${sizeWords(inv.z)}) together.</p>` +
+        `<p class="cb-note">When you join, ${escapeHtml(from)}'s browser sends you a copy of the program and it opens here.</p>` +
         (this.active ? '<p class="cb-note">You will leave the session you are in now.</p>' : '') +
+        (was ? `<p class="cb-note">You were joining ${escapeHtml(was)}'s session; joining this one stops that.</p>` : '') +
         `<form data-form="join">${this.#nameField()}<div class="cb-row"><button type="button" class="d2-btn" data-act="close">Not now</button>` +
         '<button class="d2-btn primary" type="submit">Join</button></div></form>';
       return { title, body };
     }
-    let body = '';
     if (j.state === 'failed') {
-      body = `<p class="cb-status err">${escapeHtml(j.error || NETWORK)}</p><div class="cb-row"><button type="button" class="d2-btn primary" data-act="close" autofocus>OK</button></div>`;
-    } else if (j.state === 'reply') {
-      body = `<div class="cb-step"><h3>Send this reply link back to ${from}</h3>${this.#copyRow(j.reply, 'Reply link')}</div>` +
-        `<p class="cb-small">Send it the way the invite reached you. When ${from} opens it, you are connected. Keep this page open until then.</p>` +
-        `<p class="cb-status ${j.stuck ? 'err' : 'busy'}" data-status>${j.stuck ? NETWORK : `Waiting for ${from} to open your reply link…`}</p>`;
-    } else {
-      const words = {
-        connecting: ['Connecting…', 'busy'],
-        joining: [`Connected to ${inv ? inv.n : 'the session'}. Joining…`, 'busy'],
-        receiving: [`Receiving ${j.file?.name || 'the program'}…`, 'busy'],
-        merging: ['Joining…', 'busy'],
-        opening: [`Opening ${j.file?.name || 'the program'}…`, 'busy'],
-      }[j.state] || ['Joining…', 'busy'];
-      body = `<p class="cb-status ${words[1]}" data-status>${escapeHtml(words[0])}</p>` +
-        (j.state === 'receiving' ? `<div class="cb-bar"><span data-progress style="width:${j.size ? Math.round((j.got / j.size) * 100) : 0}%"></span></div>` : '');
+      return { title, body: statusLine(j.error || NETWORK, 'err') + '<div class="cb-row"><button type="button" class="d2-btn primary" data-act="close" autofocus>OK</button></div>' };
     }
-    return { title, body };
+    if (j.state === 'reply') {
+      return {
+        title,
+        body: `<div class="cb-step"><h3>Send this reply link back to ${escapeHtml(from)}</h3>${this.#copyRow(j.reply, 'Reply link')}</div>` +
+          `<p class="cb-small">Send it the way the invite reached you. When ${escapeHtml(from)} opens it, you are connected. Keep this page open until then.</p>` +
+          statusLine(j.stuck ? NETWORK : `Waiting for ${from} to open your reply link…`, j.stuck ? 'err' : 'busy'),
+      };
+    }
+    const [text, cls] = {
+      connecting: ['Connecting…', 'busy'],
+      joining: [`Connected to ${from}. Joining…`, 'busy'],
+      receiving: [`Receiving ${j.file?.name || 'the program'}…`, 'busy'],
+      merging: ['Joining…', 'busy'],
+      opening: [`Opening ${j.file?.name || 'the program'}…`, 'busy'],
+    }[j.state] || ['Joining…', 'busy'];
+    return {
+      title,
+      body: statusLine(text, cls) +
+        (j.state === 'receiving' ? `<div class="cb-bar"><span data-progress style="width:${j.size ? Math.round((j.got / j.size) * 100) : 0}%"></span></div>` : ''),
+    };
   }
 
   #replyView(v) {
-    const guest = escapeHtml(v.reply.n);
-    const words = {
-      handing: [`Handing ${guest}'s reply to your Kuna tab…`, 'busy'],
-      connecting: [`Connecting to ${guest}…`, 'busy'],
-      open: ['Connected — you can close this tab.', 'ok'],
-      failed: [escapeHtml(v.text || NETWORK), 'err'],
-    }[v.state];
+    const title = `${v.reply.n}'s reply`;
     if (v.state === 'nobody') {
       return {
-        title: `${v.reply.n}'s reply`,
+        title,
         body: '<p>No Kuna tab in this browser has this invite open. If you made the invite in this browser, its tab was closed or reloaded: make a new invite link. Otherwise open this reply link in the browser you sent the invite from.</p>' +
           this.#copyRow(`${this.#base()}#reply=${v.code}`, 'Reply link'),
       };
     }
-    return { title: `${v.reply.n}'s reply`, body: `<p class="cb-status ${words[1]}" data-status>${words[0]}</p>` };
+    const [text, cls] = {
+      handing: [`Handing ${v.reply.n}'s reply to your Kuna tab…`, 'busy'],
+      connecting: [`Connecting to ${v.reply.n}…`, 'busy'],
+      open: ['Connected — you can close this tab.', 'ok'],
+      failed: [v.text || NETWORK, 'err'],
+    }[v.state];
+    return { title, body: statusLine(text, cls) };
   }
 
   async #click(e) {
@@ -1181,17 +1304,17 @@ class Collab {
       this.close();
       this.#follow(e.target.closest('[data-peer]').dataset.peer);
     } else if (act === 'copy') this.#copy(e.target.closest('.cb-copy')?.querySelector('[data-copytext]'));
-    else if (act === 'leave') {
+    else if (act === 'save-aside') {
+      const own = this.aside && this.api.ownSession(this.aside.hash);
+      if (own) this.api.exportSession(own);
+    } else if (act === 'leave') {
       this.leave();
       this.close();
     } else if (act === 'invite') {
       const inv = await this.makeInvite();
-      if (inv) {
-        this.view = { kind: 'session' };
-        this.#render();
-        this.#inviteStatus(inv);
-        this.dialog.querySelector('[data-copytext]')?.select();
-      }
+      if (this.view?.kind === 'start') this.view.kind = 'session';
+      this.#render();
+      if (inv) this.dialog.querySelector('[data-copytext]')?.select();
     }
   }
 
@@ -1211,7 +1334,7 @@ class Collab {
     const form = e.target.closest('form');
     const kind = form?.dataset.form;
     if (kind === 'start' || kind === 'join') {
-      const name = plainName(form.elements.name.value);
+      const name = cleanName(form.elements.name.value);
       if (!name) {
         form.elements.name.focus();
         return;
@@ -1222,13 +1345,10 @@ class Collab {
         await this.#joinNow(this.view.inv);
         return;
       }
-      this.view = { kind: 'session' };
       const inv = await this.makeInvite();
+      if (this.active) this.view = { kind: 'session' };
       this.#render();
-      if (inv) {
-        this.#inviteStatus(inv);
-        this.dialog.querySelector('[data-copytext]')?.select();
-      }
+      if (inv) this.dialog.querySelector('[data-copytext]')?.select();
     } else if (kind === 'reply') {
       const res = await this.applyReply(form.elements.reply.value);
       if (!res.ok) this.#status(res.text, 'err');

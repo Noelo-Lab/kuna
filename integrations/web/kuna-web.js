@@ -31,6 +31,7 @@ import {
   PreopenDirectory,
   ConsoleStdout,
 } from './vendor/browser_wasi_shim/dist/index.js';
+import { sha256Hex } from './sha256.js';
 
 // Cosmetic only (status label) — NOT used to pick specs (the engine does that).
 export function formatName(bytes) {
@@ -93,14 +94,33 @@ function insertPath(rootMap, path, inode) {
 
 // Compile the wasm, preferring streaming compilation but falling back to a
 // buffered compile when the server doesn't send `Content-Type: application/wasm`.
-async function compileWasm(url) {
-  try {
-    return await WebAssembly.compileStreaming(fetch(url));
-  } catch (_) {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${url}`);
-    return WebAssembly.compile(await resp.arrayBuffer());
+// With `hash`, also returns the SHA-256 of the very bytes compiled (a copy of
+// the same response), which the study view's live sessions compare as the
+// engine's build id; `prev` ({validator, build}) skips hashing a response the
+// server marks as unchanged.
+async function compileWasm(url, { hash = false, prev = null } = {}) {
+  if (!hash) {
+    try {
+      return { module: await WebAssembly.compileStreaming(fetch(url)) };
+    } catch (_) {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${url}`);
+      return { module: await WebAssembly.compile(await resp.arrayBuffer()) };
+    }
   }
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${url}`);
+  const h = resp.headers;
+  const validator = h.get('etag') || h.get('last-modified') ? `${h.get('etag') || ''}|${h.get('last-modified') || ''}|${h.get('content-length') || ''}` : null;
+  const same = !!validator && prev?.validator === validator && typeof prev.build === 'string';
+  const copy = same ? null : resp.clone();
+  const [streamed, bytes] = await Promise.all([
+    WebAssembly.compileStreaming(resp).catch(() => null),
+    copy ? copy.arrayBuffer() : null,
+  ]);
+  const module = streamed || await WebAssembly.compile(bytes || await (await fetch(url)).arrayBuffer());
+  const build = same ? prev.build : await sha256Hex(new Uint8Array(bytes));
+  return { module, build, validator };
 }
 
 // Extract `id → { slafile, dir }` from an `.ldefs` file's `<language …>` tags.
@@ -118,8 +138,10 @@ function parseLdefs(text, dir, map) {
 /**
  * Load the decompiler once: compile the wasm and preload the small spec files.
  * `.sla` files are fetched lazily per binary. Returns `{ list, decompile,
- * project, inspect, read, xrefs, formatName }`; every command takes
- * `{ mode, language, assertions }`.
+ * project, inspect, read, xrefs, formatName, build, validator }`; every command
+ * takes `{ mode, language, assertions }`. With `hashWasm`, `build` is the
+ * SHA-256 of the compiled wasm (reused from `prevBuild` when the server marks
+ * the response unchanged).
  *
  * @param {object} opts
  * @param {string} opts.wasmUrl        URL of kuna_wasm.wasm
@@ -127,12 +149,12 @@ function parseLdefs(text, dir, map) {
  * @param {string} [opts.smallBundleUrl]  URL of specs-small.json (default:
  *                                         `${specRoot}-small.json`)
  */
-export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
+export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, hashWasm = false, prevBuild = null }) {
   const base = specRoot.replace(/\/$/, '');
   const bundleUrl = smallBundleUrl || `${base}-small.json`;
 
-  const [wasmModule, bundle] = await Promise.all([
-    compileWasm(wasmUrl),
+  const [compiled, bundle] = await Promise.all([
+    compileWasm(wasmUrl, { hash: hashWasm, prev: prevBuild }),
     fetch(bundleUrl).then((r) => {
       if (!r.ok) throw new Error(`spec bundle fetch failed (${r.status}): ${bundleUrl}`);
       return r.json();
@@ -150,6 +172,7 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
     }
   }
   const fetchedSla = new Set(); // rel paths already fetched (cache across calls)
+  const wasmModule = compiled.module;
 
   // Resolve a language id from an engine error (which may carry a trailing
   // `:compiler`) to its `.sla`, trimming id segments until one matches.
@@ -245,6 +268,9 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
   }
 
   return {
+    /** The SHA-256 of the compiled wasm, when asked for (`hashWasm`), else null. */
+    build: compiled.build || null,
+    validator: compiled.validator || null,
     /** Format label for the status line (ELF / PE / Mach-O / binary). */
     formatName,
     /** Enumerate functions: `{binary, count, functions:[{name, address, address_hex, size}]}`. */

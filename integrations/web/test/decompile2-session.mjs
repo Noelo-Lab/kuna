@@ -74,10 +74,10 @@ const names = new Map([[MAIN, 'main'], [SUM, 'sum_to']]);
     'bytes 0x11e1 90',
     'readonly 0x2000+8',
     'flow sum_to::0x1190 branch',
-    'name summation::v1 i',
     'name main::v1 total',
+    'name summation::v1 i',
     'comment main::0x11b5 calls add first',
-  ], 'export: qualified with the CURRENT name, after the function rename, each kind in key order');
+  ], 'export: qualified with the CURRENT name, after the function rename');
   assert.ok(!isGlobalRaw('flow 0x10 return') && !isGlobalRaw('name v1 x') && isGlobalRaw('param f::0 RDI int x') && isGlobalRaw('volatile 0x5+4'));
   checks.push('unqualified/qualified scoping');
 }
@@ -323,8 +323,8 @@ assert.equal(cliCommand('a b.exe', 'sub_401000'), "kuna decompile 'a b.exe' sub_
     'prototype 0x1161 long sum_to(int count)',
     'bytes 0x11e1 90',
     'flow summation::0x1190 branch',
-    'name summation::v1 i',
     'type main::v1 unsigned long total',
+    'name summation::v1 i',
     'comment main::0x11b5 calls add first',
   ]);
   const byName = new Map([['main', MAIN], ['summation', SUM], ['sum_to', SUM]]);

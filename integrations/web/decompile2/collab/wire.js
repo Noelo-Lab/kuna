@@ -5,14 +5,13 @@
 // server) is deflated, base64url JSON holding only what a peer needs to
 // connect. DOM-free.
 import { validSdp } from './sdp.js';
-import { validOp } from './replica.js';
 
 export const PROTOCOL = 1;
 export const MAX_PEERS = 8;
 export const MAX_FILE = 64 << 20;
 export const MAX_MESSAGE = 240 << 10;
 export const COLORS = ['#e8404e', '#5fb3e8', '#e6ae5c', '#8cc58e', '#b39ddb', '#f28fb3', '#6cc3c3', '#c8a27a'];
-export const VIEWS = ['c', 'split', 'asm', 'bytes', 'stack', 'src'];
+const VIEWS = ['c', 'split', 'asm', 'bytes', 'stack', 'src'];
 
 const PEER = /^[a-z0-9]{8}$/;
 const SID = /^[a-z0-9]{12}$/;
@@ -20,7 +19,8 @@ const ID = /^[a-z0-9]{10}$/;
 const HASH = /^[0-9a-f]{64}$/;
 const ADDR = /^0x[0-9a-f]{1,16}$/;
 
-const plain = (v, max) => typeof v === 'string' && v.length <= max && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(v);
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+const plain = (v, max) => typeof v === 'string' && v.length <= max && !CONTROL.test(v);
 const isName = (v) => plain(v, 40) && v.trim().length > 0;
 const isPeer = (v) => typeof v === 'string' && PEER.test(v);
 const isSid = (v) => typeof v === 'string' && SID.test(v);
@@ -35,12 +35,12 @@ export function validAnchor(a) {
 }
 
 /** One person in the roster. */
-export function validMember(m) {
+function validMember(m) {
   return !!m && typeof m === 'object' && only(m, ['peer', 'name', 'color']) && isPeer(m.peer) && isName(m.name) && isColor(m.color);
 }
 
 /** A program as peers describe it: its name, size and SHA-256. */
-export function validFile(f) {
+function validFile(f) {
   return !!f && typeof f === 'object' && only(f, ['name', 'size', 'hash']) && plain(f.name, 255) && f.name.trim().length > 0 &&
     !/[\\/]/.test(f.name) && Number.isSafeInteger(f.size) && f.size > 0 && f.size <= MAX_FILE && typeof f.hash === 'string' && HASH.test(f.hash);
 }
@@ -62,9 +62,9 @@ const CHECKS = {
   roster: (m) => only(m, ['t', 'members']) && Array.isArray(m.members) && m.members.length <= MAX_PEERS && m.members.every(validMember),
   where: (m) => only(m, ['t', 'fn', 'view']) && (m.fn === null || isAddr(m.fn)) && VIEWS.includes(m.view),
   ping: (m) => only(m, ['t', 'fn', 'view', 'anchor']) && isAddr(m.fn) && VIEWS.includes(m.view) && validAnchor(m.anchor),
-  relay: (m) => only(m, ['t', 'to', 'from', 'kind', 'id', 'd', 'b']) && isPeer(m.to) && isPeer(m.from) &&
-    (m.kind === 'offer' || m.kind === 'answer') && typeof m.id === 'string' && ID.test(m.id) && validSdp(m.d) &&
-    (m.b === undefined || typeof m.b === 'boolean'),
+  relay: (m) => only(m, ['t', 'to', 'from', 'kind', 'id', 'd']) && isPeer(m.to) && isPeer(m.from) &&
+    (m.kind === 'offer' || m.kind === 'answer') && typeof m.id === 'string' && ID.test(m.id) && validSdp(m.d),
+  resync: (m) => only(m, ['t']),
   cur: (m) => (only(m, ['t', 'off']) && m.off === true) ||
     (only(m, ['t', 'fn', 'view', 'anchor', 'fx', 'fy', 'col']) && isAddr(m.fn) && VIEWS.includes(m.view) && validAnchor(m.anchor) &&
       unit(m.fx) && unit(m.fy) && (m.col === undefined || (typeof m.col === 'number' && Number.isFinite(m.col) && m.col >= -64 && m.col <= 4096))),
@@ -107,7 +107,36 @@ export function readMessage(text, channel = 'edits') {
   return m;
 }
 
-export { validOp };
+/** A person's name as the others will see it (no control characters or line breaks, at most 40 characters), or ''. */
+export function cleanName(v) {
+  return String(v ?? '').replace(new RegExp(CONTROL.source, 'g'), ' ').replace(/\s+/g, ' ').trim().slice(0, 40).trim();
+}
+
+/**
+ * How peers describe a program: `{meta: {name, size, hash}}`, or `{problem}`
+ * when it cannot travel (over MAX_FILE). The name loses control characters
+ * and path separators and is cut to 255 characters.
+ */
+export function describeFile(name, size, hash) {
+  if (!Number.isSafeInteger(size) || size <= 0) return { problem: 'the program is empty' };
+  if (size > MAX_FILE) return { problem: `it is ${(size / (1 << 20)).toFixed(0)} MB, and a program sent to the others can be at most ${MAX_FILE >> 20} MB` };
+  const clean = String(name ?? '').replace(new RegExp(CONTROL.source, 'g'), ' ').replace(/[\\/]/g, '_').trim().slice(0, 255).trim();
+  const meta = { name: clean || 'program', size, hash };
+  return validFile(meta) ? { meta } : { problem: 'the program cannot be described' };
+}
+
+/** How many bytes `text` takes as UTF-8 (what a data channel's message limit counts). */
+export function utf8Length(text) {
+  let n = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < text.length) { n += 4; i++; }
+    else n += 3;
+  }
+  return n;
+}
 
 // ── invite and reply links ─────────────────────────────────────────────────
 
@@ -121,15 +150,15 @@ const pipe = async (u8, stream) => new Uint8Array(await new Response(new Blob([u
 const CODE = /^[A-Za-z0-9_-]{16,4000}$/;
 
 const SHAPES = {
-  invite: (o) => only(o, ['v', 'k', 'id', 'n', 'f', 'z', 'd', 'b']) && o.k === 'i' && ID.test(o.id) && isName(o.n) &&
-    validFile({ name: o.f, size: o.z, hash: '0'.repeat(64) }) && validSdp(o.d) && (o.b === undefined || o.b === 1),
+  invite: (o) => only(o, ['v', 'k', 'id', 'n', 'f', 'z', 'd']) && o.k === 'i' && ID.test(o.id) && isName(o.n) &&
+    validFile({ name: o.f, size: o.z, hash: '0'.repeat(64) }) && validSdp(o.d),
   reply: (o) => only(o, ['v', 'k', 'id', 'n', 'd']) && o.k === 'r' && ID.test(o.id) && isName(o.n) && validSdp(o.d),
 };
 
 /**
  * An invite (`{id, n: inviter's name, f: file name, z: its size, d: compact
- * offer, b: 1 when the page may answer over BroadcastChannel}`) or a reply
- * (`{id, n: guest's name, d: compact answer}`) as a link-safe code.
+ * offer}`) or a reply (`{id, n: guest's name, d: compact answer}`) as a
+ * link-safe code.
  */
 export async function encodeCode(kind, fields) {
   const obj = { v: PROTOCOL, k: kind === 'invite' ? 'i' : 'r', ...fields };
