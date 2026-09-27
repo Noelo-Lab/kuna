@@ -1,0 +1,46 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callbacktype",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64",
+    "binary_sha256": "b9e3aeab05dd089e299f03cb6b0135592771fe49cc73120da22127b41610799a",
+    "binary_size": 16800,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64",
+    "selector": "start_puts",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void start_puts\\(char \\*a0\\)\\n\\{\\n  puts\\(a0\\); // tail-call\\n\\}",
+      "pthread_create\\(&v\\d+,0,start_puts,",
+      "void warn_count\\([^)]*\\)\\n\\{\\n  HITS \\+= a1;\\n\\}",
+      "glob\\(\\\"/tmp/\\*\\\",0,warn_count,v\\d+\\)"
+    ],
+    "stdout_absent": [
+      "start_puts\\(void \\*a0\\)",
+      "CONCAT44\\(dat_",
+      "int warn_count\\("
+    ]
+  },
+  "notes": "`start_puts` is a `void` routine cast into pthread_create's `void *(*)(void *)` slot ending in a tail-called `puts`, which sets only the low four of the eight bytes returned; `warn_count`, cast into glob's `int` errfunc slot, never writes the return register. Parking either invents the return from the register's leftover (`CONCAT44(dat_4,puts(a0))`, an unset `v1`).",
+  "probe_id": "p-8ee15a584aa7"
+}

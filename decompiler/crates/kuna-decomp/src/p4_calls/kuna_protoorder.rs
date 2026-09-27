@@ -1580,6 +1580,29 @@ pub fn park_recovered(
     Ok(Recovered { pieces, trimmed })
 }
 
+/// (kuna `callbacktype`) Does the body of `entry` read the argument register
+/// ONE PAST a declared parameter list before writing it?
+///
+/// The same one-sided entry walk [`arity_claim_sound`] takes, asked of a list
+/// the program declared rather than one recovery built: a body that consumes a
+/// register the declaration does not pass is not the function that declaration
+/// describes, and locking it there would drop a live argument. A walk that
+/// cannot see the body answers `false`, so the declaration stands on the rest
+/// of the policy.
+pub fn reads_past_the_list(
+    arch: &mut Architecture,
+    entry: &Address,
+    pieces: &PrototypePieces,
+    storage: &[(Address, int4)],
+) -> bool {
+    if !storage.iter().all(|(a, _)| crate::kuna_calleearitybody::is_register(a)) {
+        return false;
+    }
+    let Some(next) = next_slot_storage(pieces, arch) else { return false };
+    let Some(facts) = entry_facts(arch, entry) else { return false };
+    facts.proves_input(&next.0, next.1)
+}
+
 /// Would [`park_recovered`]'s locking branch accept `storage` as a statement of
 /// the callee's arity?
 ///

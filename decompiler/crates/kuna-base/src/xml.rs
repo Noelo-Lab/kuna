@@ -1913,7 +1913,9 @@ mod tests {
         // sign-extends, and an indirect call keeps its target
         // and kuna-jumptablemax / a four-case switch is refused under
         // `option jumptablemax 2`
-        assert_eq!(count, 347, "corpus file count drifted");
+        // and kuna-callbacktype / a callback takes the prototype of the slot
+        // it is passed to
+        assert_eq!(count, 348, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
