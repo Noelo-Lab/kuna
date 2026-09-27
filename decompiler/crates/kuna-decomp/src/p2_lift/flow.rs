@@ -464,6 +464,12 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// Optional target-specific advice after a bad-instruction decode.
+    /// Called only when `decodehalt` diagnostics are enabled.
+    fn decode_failure_hint(&self, _addr: &Address) -> Option<String> {
+        None
+    }
+
     /// (kuna `calltrampoline`) Is the direct-call target `dest` a fragment that
     /// discards the pushed return address and jumps back into the instruction
     /// stream, so the `CALL` should be flowed through as a branch rather than
@@ -1948,6 +1954,9 @@ truncating the fall-through here"
                     if reports {
                         self.data
                             .warning(crate::kuna_decodehalt::BAD_INSTRUCTION_WARNING, curaddr);
+                        if let Some(hint) = self.env.decode_failure_hint(curaddr) {
+                            self.data.warning(&hint, curaddr);
+                        }
                     }
                     if !self.has_bad_data() {
                         self.flags |= flow_flags::baddata_present;

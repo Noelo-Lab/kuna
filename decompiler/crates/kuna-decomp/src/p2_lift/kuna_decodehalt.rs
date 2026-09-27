@@ -36,6 +36,9 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::ElementId;
 use kuna_base::types::uint4;
 
+mod powerpc;
+pub(crate) use powerpc::powerpc_isa_hint;
+
 /// Marshaling element `<decodehalt>` (kuna 4000+ range; 4159 = calleescratchbody).
 pub const ELEM_DECODEHALT: ElementId = ElementId::new("decodehalt", 4160);
 

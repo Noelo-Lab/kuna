@@ -262,6 +262,17 @@ printed a bare `return;` and `error: null`, indistinguishable from a function
 that returns normally. The fourth cause, `noreturn`, is not a decode failure and
 is deliberately untouched: it is already reported on the call it follows.
 
+When the generic `PowerPC:BE:64:default` or `PowerPC:LE:64:default` decoder
+fails on an aligned `isel` encoding, `decodehalt` also names the selected target
+and suggests an explicit `--target PowerPC:<endian>:64:A2ALT` for AltiVec code.
+The hint reads only the four bytes at the failure; an unreadable word, another
+opcode or another target adds no hint. It neither retries nor changes the ISA.
+ELF machine/class, ABI version flags and GNU vector calling-convention attributes
+do not identify a complete ISA: the A2 variants have conflicting vector encodings,
+and a matching `isel` word can also be data. The user must choose the variant
+appropriate to the input. The ordinary truncation marker remains, and
+`decodehalt off` suppresses the extra hint along with the existing warnings.
+
 **The instruction budget.** `max_instructions` (100000 by default, `option
 maxinstruction N`) caps how many instructions one function's flow may decode.
 Reaching it either throws — `option errortoomanyinstructions on`, upstream's

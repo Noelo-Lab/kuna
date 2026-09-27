@@ -1907,7 +1907,9 @@ mod tests {
         // declared signed
         // and kuna-pemain / a stripped PE names the function its CRT startup
         // calls `main`
-        assert_eq!(count, 344, "corpus file count drifted");
+        // and powerpc-isa-hint / a failed generic PowerPC64 isel decode
+        // suggests an explicit ISA target
+        assert_eq!(count, 345, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

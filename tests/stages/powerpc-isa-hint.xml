@@ -1,0 +1,25 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:64:default:default">
+<!-- Synthetic cmpdi r3,0; iseleq r3,r4,r5; blr. The generic target cannot
+     decode isel. The hint explains a supported override without retrying.
+     Off is run first because buffered comments survive repeated decompiles. -->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+2c2300007c64289e4e800020
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="select_value"/>
+</binaryimage>
+<script>
+  <com>option decodehalt off</com>
+  <com>lo fu select_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option decodehalt on</com>
+  <com>lo fu select_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PPCISA #1: only the reporting pass gives the ISA hint" min="1" max="1">isel encoding is not supported by PowerPC:BE:64:default</stringmatch>
+<stringmatch name="PPCISA #2: the supported override is actionable" min="1" max="1">--target PowerPC:BE:64:A2ALT for AltiVec</stringmatch>
+<stringmatch name="PPCISA #3: the selected decoder still halts" min="1" max="1">halt_baddata</stringmatch>
+</decompilertest>
