@@ -1915,7 +1915,7 @@ mod tests {
         // `option jumptablemax 2`
         // and kuna-callbacktype / a callback takes the prototype of the slot
         // it is passed to
-        assert_eq!(count, 347, "corpus file count drifted");
+        assert_eq!(count, 348, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
