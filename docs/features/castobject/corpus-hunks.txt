@@ -1,0 +1,402 @@
+# castobject -- whole-corpus decompile-all hunks, option on vs off, every one classified
+
+Both arms are the same build (this branch on origin/main 29cfedee0), whole
+binary, `kuna decompile-all` at the default mode, `--option castobject off`
+against the default:
+  A. the castbench set: 45 decbench binaries (coreutils fmt ls sort du cp tail wc,
+     grep, gzip, diffutils cmp diff diff3 sdiff, tar, find) x O0/O2/O2-noinline.
+     With the option off every file is byte-identical to the castbench arm of
+     origin/main 0096e984d. 3 binaries change.
+  B. 36 more decbench binaries, 11,603 functions: the 24 that import
+     waitpid/wait (sysvinit logsave x3, sulogin, killall5, shutdown x2, init x2;
+     coreutils timeout x3, split; shadow su x2, login, vipw x2; cronie crontab
+     x2, crond x2; dpkg-trigger O2; bash O2) and the 12 the review read
+     (ginstall O0/O2, dash O0/O2, dpkg-divert O0/O2, useradd O0, passwd O0, scp
+     O0, sftp-server O0, id O0, mkdir O2). 10 change.
+
+Classes (every changed line is one of these):
+  DECL   the out-parameter local's declaration: unsigned int/uint4 -> int/int4
+  CALL   the call that fills it passes &v uncast: (int *)&v -> &v
+  SHIFT  an arithmetic shift of it reads it uncast: (int)v >> 8 -> v >> 8
+  USUF   a bit test on it marks its constant unsigned: v & 0x7f -> v & 0x7fU
+         (the printer states the unsigned AND on the constant instead of on a
+         cast; the value is the same)
+  STORE  a store of it through a pointer spells the pointee at the new sign:
+         *(unsigned int *)(p + 4) = v1 -> *(int *)(p + 4) = v1 (same bits stored)
+  MERGE  a register copy of it takes int too and merges with another int register
+         variable whose live range it does not overlap (split O0 sub_3e43: the
+         errno temporary and the status copy become one `int v1`); one
+         declaration fewer, and every later register variable is renumbered by
+         one (RENUM). Register locals are not in the --json variables.
+
+Every function the option changes in A declares `int stat_loc` in IDA at the
+same address (sort -O0 0x48cf, diff -O0 0x11e1b, tar -O0 0x32ca8 0x33179
+0x343ea 0x345e7).
+
+Casts: A 35,588 -> 35,572 on the 4,815 functions shared with IDA (6 fewer, 0 more).
+
+## A. castbench corpus
+== ./O0/coreutils/sort.c
+1292c1292
+<   unsigned int v5; // stack - 0x28
+---
+>   int v5; // stack - 0x28
+1300c1300
+<   v6 = waitpid(v2,(int *)&v5,(unsigned int)(a0 == 0));
+---
+>   v6 = waitpid(v2,&v5,(unsigned int)(a0 == 0));
+1303c1303
+<       if ((v5 & 0x7f) || ((int)v5 >> 8 & 0xffU)) {
+---
+>       if ((v5 & 0x7fU) || (v5 >> 8 & 0xffU)) {
+== ./O0/diffutils/diff.c
+5580c5580
+<   unsigned int v2; // stack - 0x1c
+---
+>   int v2; // stack - 0x1c
+5590c5590
+<     if (waitpid(dat_2d870,(int *)&v2,0) <= -1)
+---
+>     if (waitpid(dat_2d870,&v2,0) <= -1)
+5592c5592
+<     if ((v3) || (v2 & 0x7f))
+---
+>     if ((v3) || (v2 & 0x7fU))
+5595c5595
+<       v4 = (int)v2 >> 8 & 0xff;
+---
+>       v4 = v2 >> 8 & 0xff;
+== ./O0/tar/tar.c
+17781c17781
+<   uint4 v1; // stack - 0x28
+---
+>   int4 v1; // stack - 0x28
+17787c17787
+<     if (waitpid(a0,(int4 *)&v1,0) != -1) goto label_32d10;
+---
+>     if (waitpid(a0,&v1,0) != -1) goto label_32d10;
+17792c17792
+<     if (!((int4)v1 >> 8 & 0xffU))
+---
+>     if (!(v1 >> 8 & 0xffU))
+17796c17796
+<     error(0,0,gettext("Child returned status %d"),(int4)v1 >> 8 & 0xff);
+---
+>     error(0,0,gettext("Child returned status %d"),v1 >> 8 & 0xff);
+17919c17919
+<   uint4 v1; // stack - 0x18
+---
+>   int4 v1; // stack - 0x18
+17927c17927
+<     if (waitpid(a0,(int4 *)&v1,0) != -1) goto label_331d8;
+---
+>     if (waitpid(a0,&v1,0) != -1) goto label_331d8;
+17933,17934c17933,17934
+<   else if ((int4)v1 >> 8 & 0xffU)
+<     v3 = (int4)v1 >> 8 & 0xff;
+---
+>   else if (v1 >> 8 & 0xffU)
+>     v3 = v1 >> 8 & 0xff;
+18316c18316
+<   uint4 v2; // stack - 0x24
+---
+>   int4 v2; // stack - 0x24
+18322,18323c18322,18323
+<     if (waitpid(dat_9f830,(int4 *)&v2,0) != -1) {
+<       if (v2 & 0x7f) { // branch-flip
+---
+>     if (waitpid(dat_9f830,&v2,0) != -1) {
+>       if (v2 & 0x7fU) { // branch-flip
+18338c18338
+<       else if ((dat_9f9a8 != '\x01') && ((int4)v2 >> 8 & 0xffU)) {
+---
+>       else if ((dat_9f9a8 != '\x01') && (v2 >> 8 & 0xffU)) {
+18342c18342
+<         error(0,0,gettext("%lu: Child returned status %d"),v1,(int4)v2 >> 8 & 0xff);
+---
+>         error(0,0,gettext("%lu: Child returned status %d"),v1,v2 >> 8 & 0xff);
+18366c18366
+<   uint4 v7; // stack - 0x54
+---
+>   int4 v7; // stack - 0x54
+18403c18403
+<     if (waitpid(v10,(int4 *)&v7,0) != -1) {
+---
+>     if (waitpid(v10,&v7,0) != -1) {
+18405,18406c18405,18406
+<       if (!(v7 & 0x7f)) {
+<         if (((int4)v7 >> 8 & 0xffU) || (v9 <= 0))
+---
+>       if (!(v7 & 0x7fU)) {
+>         if ((v7 >> 8 & 0xffU) || (v9 <= 0))
+18411c18411
+<         return (int4)v7 >> 8 & 0xff;
+---
+>         return v7 >> 8 & 0xff;
+
+## B. 36 more binaries
+== O0_coreutils_stripped_ginstall
+1714c1714
+<   unsigned int v4; // stack - 0x28
+---
+>   int v4; // stack - 0x28
+1728,1729c1728,1729
+<     if (0 <= waitpid(v6,(int *)&v4,0)) { // branch-flip
+<       if ((v4 & 0x7f) || ((int)v4 >> 8 & 0xffU))
+---
+>     if (0 <= waitpid(v6,&v4,0)) { // branch-flip
+>       if ((v4 & 0x7fU) || (v4 >> 8 & 0xffU))
+10636c10636
+<   unsigned int v3; // stack - 0x1c
+---
+>   int v3; // stack - 0x1c
+10655c10655
+<         if (0 <= waitpid(v4,(int *)&v3,0)) {
+---
+>         if (0 <= waitpid(v4,&v3,0)) {
+10657c10657
+<           if (v3 & 0x7f)
+---
+>           if (v3 & 0x7fU)
+10659c10659
+<           return (int)v3 >> 8 & 0xff;
+---
+>           return v3 >> 8 & 0xff;
+== O0_coreutils_stripped_split   [MERGE + RENUM, see above; the rest DECL/CALL/SHIFT/USUF]
+1175,1178c1175,1177
+<   unsigned int v1;
+<   unsigned int v10; // stack - 0x3c
+<   int v2;
+<   char *v3;
+---
+>   int v1;
+>   char *v2;
+>   char *v3; // rax
+1180,1184c1179,1183
+<   char *v5; // rax
+<   unsigned int v6; // stack - 0x48
+<   char v7 [24];
+<   int v8; // stack - 0x44
+<   unsigned int v9; // stack - 0x40
+---
+>   int v5; // stack - 0x48
+>   char v6 [24];
+>   int v7; // stack - 0x44
+>   unsigned int v8; // stack - 0x40
+>   unsigned int v9; // stack - 0x3c
+1187,1190c1186,1189
+<     v2 = *__errno_location();
+<     if (sub_2f3d(v2) != '\x01') {
+<       v3 = (char *)sub_91e6(0,3,a3);
+<       error(1,*__errno_location(),"%s",v3);
+---
+>     v1 = *__errno_location();
+>     if (sub_2f3d(v1) != '\x01') {
+>       v2 = (char *)sub_91e6(0,3,a3);
+>       error(1,*__errno_location(),"%s",v2);
+1196,1197c1195,1196
+<       v3 = (char *)sub_91e6(0,3,a3);
+<       error(1,*__errno_location(),"%s",v3);
+---
+>       v2 = (char *)sub_91e6(0,3,a3);
+>       error(1,*__errno_location(),"%s",v2);
+1200,1201c1199,1200
+<     for (v8 = 0; (unsigned long)v8 < dat_11300; v8 = v8 + 1) {
+<       if (a1 == *(int *)((long)v8 * 4 + dat_112f0)) {
+---
+>     for (v7 = 0; (unsigned long)v7 < dat_11300; v7 = v7 + 1) {
+>       if (a1 == *(int *)((long)v7 * 4 + dat_112f0)) {
+1203c1202
+<         *(unsigned int *)((long)v8 * 4 + dat_112f0) = *(unsigned int *)(dat_11300 * 4 + dat_112f0);
+---
+>         *(unsigned int *)((long)v7 * 4 + dat_112f0) = *(unsigned int *)(dat_11300 * 4 + dat_112f0);
+1210,1213c1209,1212
+<   v6 = 0;
+<   if ((waitpid(a2,(int *)&v6,0) == -1) && (*__errno_location() != 10)) {
+<     v3 = gettext("waiting for child process");
+<     error(1,*__errno_location(),v3);
+---
+>   v5 = 0;
+>   if ((waitpid(a2,&v5,0) == -1) && (*__errno_location() != 10)) {
+>     v2 = gettext("waiting for child process");
+>     error(1,*__errno_location(),v2);
+1216,1220c1215,1219
+<   v1 = v6;
+<   v3 = dat_112e0;
+<   if ('\x01' <= (char)(((unsigned char)v6 & 0x7f) + 1) >> 1) {
+<     v10 = v6 & 0x7f;
+<     if (v10 == 0xd)
+---
+>   v1 = v5;
+>   v2 = dat_112e0;
+>   if ('\x01' <= (char)(((unsigned char)v5 & 0x7f) + 1) >> 1) {
+>     v9 = v5 & 0x7f;
+>     if (v9 == 0xd)
+1222,1228c1221,1227
+<     v2 = sub_97d2(v10,v7);
+<     if (v2)
+<       sprintf(v7,"%d",v10);
+<     v3 = dat_112e0;
+<     v4 = (char *)sub_91e6(0,3,a3);
+<     v5 = gettext("with FILE=%s, signal %s from command: %s");
+<     error(v10 + 0x80,0,v5,v4,v7,v3);
+---
+>     v1 = sub_97d2(v9,v6);
+>     if (v1)
+>       sprintf(v6,"%d",v9);
+>     v2 = dat_112e0;
+>     v3 = (char *)sub_91e6(0,3,a3);
+>     v4 = gettext("with FILE=%s, signal %s from command: %s");
+>     error(v9 + 0x80,0,v4,v3,v6,v2);
+1231c1230
+<   if (v6 & 0x7f) {
+---
+>   if (v5 & 0x7fU) {
+1235,1236c1234,1235
+<   v9 = (int)v6 >> 8 & 0xff;
+<   if (!v9)
+---
+>   v8 = v5 >> 8 & 0xff;
+>   if (!v8)
+1238,1239c1237,1238
+<   v4 = (char *)sub_91e6(0,3,a3);
+<   error(v9,0,gettext("with FILE=%s, exit %d from command: %s"),v4,v9,v3);
+---
+>   v3 = (char *)sub_91e6(0,3,a3);
+>   error(v8,0,gettext("with FILE=%s, exit %d from command: %s"),v3,v8,v2);
+== O0_coreutils_stripped_timeout
+972c972
+<   unsigned int v7; // stack - 0xd4
+---
+>   int v7; // stack - 0xd4
+1006c1006
+<           while (v11 = waitpid(dat_d2d4,(int *)&v7,1), !v11) {
+---
+>           while (v11 = waitpid(dat_d2d4,&v7,1), !v11) {
+1030c1030
+<               v7 = (int)v7 >> 8 & 0xff;
+---
+>               v7 = v7 >> 8 & 0xff;
+== O0_cronie_stripped_crontab
+1251c1251
+<   unsigned int v7; // stack - 0x210dc
+---
+>   int v7; // stack - 0x210dc
+1368c1368
+<     v12 = waitpid(v11,(int *)&v7,0);
+---
+>     v12 = waitpid(v11,&v7,0);
+1380,1381c1380,1381
+<   if ((!(v7 & 0x7f)) && ((int)v7 >> 8 & 0xffU)) {
+<     fprintf(stderr,"%s: \"%s\" exited with status %d\n",dat_10380,v13,(int)v7 >> 8 & 0xff);
+---
+>   if ((!(v7 & 0x7fU)) && (v7 >> 8 & 0xffU)) {
+>     fprintf(stderr,"%s: \"%s\" exited with status %d\n",dat_10380,v13,v7 >> 8 & 0xff);
+1386c1386
+<     v3 = (v7 & 0x80) ? "" : "no "; // branch-flip
+---
+>     v3 = (v7 & 0x80U) ? "" : "no "; // branch-flip
+== O0_openssh-portable_stripped_scp
+1306c1306
+<   unsigned int v2; // stack - 0x1c
+---
+>   int v2; // stack - 0x1c
+1333c1333
+<   while (waitpid(v4,(int *)&v2,0) == -1) {
+---
+>   while (waitpid(v4,&v2,0) == -1) {
+1340c1340
+<   if ((!(v2 & 0x7f)) && (!((int)v2 >> 8 & 0xffU))) {
+---
+>   if ((!(v2 & 0x7fU)) && (!(v2 >> 8 & 0xffU))) {
+1525c1525
+<   unsigned int v9; // stack - 0x58
+---
+>   int v9; // stack - 0x58
+1613,1614c1613,1614
+<       if (waitpid(dat_48020,(int *)&v9,0) != -1) { // branch-flip
+<         if ((v9 & 0x7f) || ((int)v9 >> 8 & 0xffU))
+---
+>       if (waitpid(dat_48020,&v9,0) != -1) { // branch-flip
+>         if ((v9 & 0x7fU) || (v9 >> 8 & 0xffU))
+11924c11924
+<   unsigned int v3; // stack - 0x14
+---
+>   int v3; // stack - 0x14
+11926c11926
+<   while (waitpid(a0,(int *)&v3,0) == -1) {
+---
+>   while (waitpid(a0,&v3,0) == -1) {
+11937c11937
+<   if ((int)v3 >> 8 & 0xffU) {
+---
+>   if (v3 >> 8 & 0xffU) {
+11939c11939
+<     sub_227f4("misc.c","exited_cleanly",0x86c,0,v2,0,"%s %s failed, status %d",a1,a2,(int)v3 >> 8 & 0xff);
+---
+>     sub_227f4("misc.c","exited_cleanly",0x86c,0,v2,0,"%s %s failed, status %d",a1,a2,v3 >> 8 & 0xff);
+== O0_openssh-portable_stripped_sftp-server
+8554c8554
+<   unsigned int v3; // stack - 0x14
+---
+>   int v3; // stack - 0x14
+8556c8556
+<   while (waitpid(a0,(int *)&v3,0) == -1) {
+---
+>   while (waitpid(a0,&v3,0) == -1) {
+8567c8567
+<   if ((int)v3 >> 8 & 0xffU) {
+---
+>   if (v3 >> 8 & 0xffU) {
+8569c8569
+<     sub_15c02("misc.c","exited_cleanly",0x86c,0,v2,0,"%s %s failed, status %d",a1,a2,(int)v3 >> 8 & 0xff);
+---
+>     sub_15c02("misc.c","exited_cleanly",0x86c,0,v2,0,"%s %s failed, status %d",a1,a2,v3 >> 8 & 0xff);
+== O0_shadow_stripped_useradd
+3125c3125
+<   unsigned int v3; // stack - 0x5c
+---
+>   int v3; // stack - 0x5c
+3149c3149
+<     if (((waitpid(v5,(int *)&v3,0) == -1) || (v3 & 0x7f)) || ((int)v3 >> 8 & 0xffU))
+---
+>     if (((waitpid(v5,&v3,0) == -1) || (v3 & 0x7fU)) || (v3 >> 8 & 0xffU))
+== O0_sysvinit_stripped_init
+1344c1344
+<   unsigned int v1; // stack - 0x24
+---
+>   int v1; // stack - 0x24
+1352c1352
+<     v3 = waitpid(-1,(int *)&v1,1);
+---
+>     v3 = waitpid(-1,&v1,1);
+1363c1363
+<           *(unsigned int *)(*(long *)&v4[0x2e] + 4) = v1;
+---
+>           *(int *)(*(long *)&v4[0x2e] + 4) = v1;
+== O0_sysvinit_stripped_logsave
+430c430
+<   unsigned int v3; // stack - 0x11c
+---
+>   int v3; // stack - 0x11c
+458c458
+<     while (!waitpid(v6,(int *)&v3,1)) {
+---
+>     while (!waitpid(v6,&v3,1)) {
+464c464
+<     if (v3 & 0x7f) { // branch-flip
+---
+>     if (v3 & 0x7fU) { // branch-flip
+474c474
+<       v5 = (int)v3 >> 8 & 0xff;
+---
+>       v5 = v3 >> 8 & 0xff;
+== O2_sysvinit_stripped_init
+1510c1510
+<   unsigned int v6; // stack - 0x24
+---
+>   int v6; // stack - 0x24
+1517c1517
+<       v3 = waitpid(-1,(int *)&v6,1);
+---
+>       v3 = waitpid(-1,&v6,1);

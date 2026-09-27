@@ -353,6 +353,7 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "cookiescramble",
     "nulterminator",
     "endptrbound",
+    "castobject",
     "calleepop",
     "calleeprotostack",
     "calleedeadarg",

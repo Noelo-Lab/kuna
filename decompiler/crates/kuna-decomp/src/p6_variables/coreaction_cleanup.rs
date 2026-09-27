@@ -3157,6 +3157,9 @@ impl Action for ActionSetCasts {
         // bridge live in `crate::coreaction_casts` (`Funcdata::action_set_casts`).
         // The C++ `return 0` (full completion) is reproduced regardless of how
         // many casts were inserted; `count` accumulates inside the driver.
+        if data.get_arch().cast_object {
+            crate::kuna_castobject::reconcile(data);
+        }
         let _count = data.action_set_casts();
         0
     }

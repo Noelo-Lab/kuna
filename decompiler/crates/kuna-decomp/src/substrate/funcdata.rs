@@ -273,6 +273,10 @@ pub struct Funcdata {
     /// (kuna `slotptr`) What each `restructure_varnode` pass saw stored into, and
     /// touched in, the stack frame; read only by `extract_variables`.
     slot_evidence: std::cell::RefCell<crate::kuna_slotptr::SlotEvidence>,
+    /// (kuna `castobject`) Every stack object a `restructure_varnode` pass
+    /// re-declared, as `(offset, size, type)`; read by
+    /// [`crate::kuna_castobject::reconcile`] once the variables are merged.
+    cast_objects: std::cell::RefCell<Vec<(kuna_base::types::uintb, int4, std::rc::Rc<crate::dtype::Datatype>)>>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -553,6 +557,7 @@ impl Funcdata {
             localmap,
             frame_slots: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             slot_evidence: std::cell::RefCell::new(Default::default()),
+            cast_objects: std::cell::RefCell::new(Vec::new()),
             jumpvec: Vec::new(),
             vbank,
             obank: PcodeOpBank::new(),
@@ -1458,6 +1463,21 @@ impl Funcdata {
     /// (kuna `framelayout`) The union of every stack-frame slot any pass recovered.
     pub fn frame_slots(&self) -> Vec<(i64, FrameSlot)> {
         self.frame_slots.borrow().iter().map(|(k, v)| (*k, v.clone())).collect()
+    }
+
+    /// (kuna `castobject`) Remember the stack objects one pass re-declared.
+    pub fn record_cast_objects(&self, objects: Vec<(kuna_base::types::uintb, int4, std::rc::Rc<crate::dtype::Datatype>)>) {
+        let mut all = self.cast_objects.borrow_mut();
+        for o in objects {
+            if !all.iter().any(|(off, size, _)| (*off, *size) == (o.0, o.1)) {
+                all.push(o);
+            }
+        }
+    }
+
+    /// (kuna `castobject`) Every stack object any pass re-declared.
+    pub fn cast_objects(&self) -> Vec<(kuna_base::types::uintb, int4, std::rc::Rc<crate::dtype::Datatype>)> {
+        self.cast_objects.borrow().clone()
     }
 
     /// (kuna `slotptr`) Fold one pass's stack-store evidence into the running record.

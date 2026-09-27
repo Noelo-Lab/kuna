@@ -4731,6 +4731,201 @@ int main(void) {
     assert_eq!(rust[0], rust[1], "castsign changed Rust output");
 }
 
+/// (kuna `castobject`) A local whose address only fills declared `int *`
+/// parameters is declared `int` when no reader wants it unsigned, and the call
+/// stops casting its address.  `castobject_x86_64.c` reaps children that exit
+/// with 0, 7 and 255 or die of a signal, so every status bit the tests read is
+/// exercised, and runs the `init_*`, `gid_mixed` and `stored_value` objects,
+/// which start with a parameter's value that `waitpid` on a pid with no child
+/// (or `getgroups` with a size of 0) leaves in place, over values with the top
+/// bit set.  `init_signed` is read signed only and moves at `-O0`; the others
+/// have a reader that wants the other signedness (a logical shift, an unsigned
+/// compare, a zero-extension, a signed compare of a `gid_t`, or a logical shift
+/// of the value stored into the object), and they and the other readers that
+/// disagree (a logical shift at `-O2`, an address kept in a pointer, a byte read
+/// of one half, wrapping arithmetic) must print exactly as they did.  Each
+/// fixture is decompiled with the option off and on, the printed functions are
+/// compiled with gcc and clang at -O0 and -O2, and every build must print what
+/// the fixture binary prints.  `clang -O2` allocates the status slot with
+/// `push %rax` and kuna reads the pushed register back after the call, and it
+/// prints `escaped` and `two_widths` through a piece accessor, which is not C;
+/// both are defects of their own, the same in either arm, so the functions that
+/// reap children are not built from that fixture.
+#[test]
+fn an_out_parameter_local_round_trips_through_the_printed_c() {
+    const ALL: &str = "exit_code,status_order,reaped,escaped,two_widths,plus_one,cancel_state,\
+init_signed,init_ushr,init_ult,init_zext,gid_mixed,stored_value";
+    const CLANG_O2: &str =
+        "plus_one,cancel_state,init_signed,init_ushr,init_ult,init_zext,gid_mixed,stored_value";
+    const UNCHANGED: &[&str] = &[
+        "status_order", "reaped", "escaped", "two_widths", "plus_one", "cancel_state", "init_ushr", "init_ult",
+        "init_zext", "gid_mixed", "stored_value",
+    ];
+    const EVERY: &[&str] = &[
+        "exit_code", "status_order", "reaped", "escaped", "two_widths", "plus_one", "cancel_state", "init_signed",
+        "init_ushr", "init_ult", "init_zext", "gid_mixed", "stored_value",
+    ];
+    const INIT: &str = "init 00000000 0 0 0 0 0 ff800000\ninit 00000020 0 0 2 0 12 8\n\
+init 00000100 0 0 1 0 101 ff800000\ninit 00007f00 0 3 127 0 12869 ff80003f\n\
+init 80000000 -2048 800 0 ffffffff00000000 -1 ffc00000\ninit 80000001 0 0 0 0 -1 ffc00000\n\
+init fffffffe 255 ff 255 ff -1 f\ninit ffffffff 255 ff 255 ff -1 f\ninit 87654321 67 43 101 43 -1 c\n\
+init ffff0000 -1 fff 0 ffffffff00000000 -1 ffffff80\ninit 800000ff 0 0 0 0 -1 c\n";
+    const REAP: &str = "exit_code    0 7 255 -2\nstatus_order 0 3 9\nreaped       5 -15\nescaped      9 0\n\
+two_widths   9 3840\n";
+    const TAIL: &str = "plus_one     257 16\ncancel_state 7 7\n";
+    let want = format!("{REAP}{TAIL}{INIT}");
+    let want_clang_o2 = format!("{TAIL}{INIT}");
+    const MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+static int child(int code) {
+  int pid = fork();
+  if (pid == 0) {
+    if (code < 0)
+      raise(-code);
+    _exit(code);
+  }
+  return pid;
+}
+int main(void) {
+#ifndef SUBSET
+  int a = F(int, exit_code)(child(0)), b = F(int, exit_code)(child(7)), c = F(int, exit_code)(child(255)),
+      d = F(int, exit_code)(child(-SIGTERM));
+  printf("exit_code    %d %d %d %d\n", a, b, c, d);
+  long e = F(long, status_order)(child(0)), f = F(long, status_order)(child(3)),
+       g = F(long, status_order)(child(-SIGKILL));
+  printf("status_order %ld %ld %ld\n", e, f, g);
+  child(5);
+  long h = F(long, reaped)();
+  child(-SIGTERM);
+  long i = F(long, reaped)();
+  printf("reaped       %ld %ld\n", h, i);
+  int j = F(int, escaped)(child(9)), k = F(int, escaped)(child(-SIGTERM));
+  printf("escaped      %d %d\n", j, k);
+  int l = F(int, two_widths)(child(9)), m = F(int, two_widths)(child(-SIGTERM));
+  printf("two_widths   %d %d\n", l, m);
+#endif
+  unsigned long n = F(unsigned long, plus_one)(child(1)), o = F(unsigned long, plus_one)(child(-SIGTERM));
+  printf("plus_one     %lu %lu\n", n, o);
+  int q = F(int, cancel_state)();
+  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+  int r = F(int, cancel_state)();
+  printf("cancel_state %d %d\n", q, r);
+  unsigned vals[] = {0, 0x20, 0x100, 0x7f00, 0x80000000u, 0x80000001u, 0xfffffffeu, 0xffffffffu, 0x87654321u,
+                     0xffff0000u, 0x800000ffu};
+  for (unsigned t = 0; t < sizeof vals / sizeof *vals; t++)
+    printf("init %08x %d %x %d %lx %ld %x\n", vals[t], F(int, init_signed)(vals[t]), F(unsigned, init_ushr)(vals[t]),
+           F(int, init_ult)(vals[t]), F(long, init_zext)(vals[t]), F(long, gid_mixed)((int)vals[t]),
+           F(unsigned, stored_value)(vals[t]));
+  return 0;
+}
+"#;
+    // (fixture, functions, output, the lines option off prints and what option on
+    // prints instead, the functions option on must print unchanged)
+    type Case<'a> = (&'a str, &'a str, &'a str, &'a [(&'a str, &'a str)], &'a [&'a str]);
+    let cases: [Case; 4] = [
+        (
+            "castobject_gcc_O0_x86_64",
+            ALL,
+            want.as_str(),
+            &[
+                ("\n  unsigned int v1; // stack - 0x14\n  \n  if (waitpid(a0,(int *)&v1,0) <= -1)",
+                 "\n  int v1; // stack - 0x14\n  \n  if (waitpid(a0,&v1,0) <= -1)"),
+                ("    return (int)v1 >> 8 & 0xff;", "    return v1 >> 8 & 0xff;"),
+                ("\n  unsigned int v1; // stack - 0x14\n  \n  v1 = a0;\n  waitpid(0x7ffffff0,(int *)&v1,1);",
+                 "\n  int v1; // stack - 0x14\n  \n  v1 = a0;\n  waitpid(0x7ffffff0,&v1,1);"),
+                ("(int)v1 >> 8 & 0xff : (int)v1 >> 0x14;", "v1 >> 8 & 0xff : v1 >> 0x14;"),
+            ],
+            UNCHANGED,
+        ),
+        (
+            "castobject_clang_O0_x86_64",
+            ALL,
+            want.as_str(),
+            &[
+                ("\n  unsigned int v1; // stack - 0x14", "\n  int v1; // stack - 0x14"),
+                ("if (0 <= waitpid(a0,(int *)&v1,0)) {", "if (0 <= waitpid(a0,&v1,0)) {"),
+                ("  waitpid(0x7ffffff0,(int *)&v1,1);\n  v3 = (v1 & 0x7f) ? (int)v1 >> 8",
+                 "  waitpid(0x7ffffff0,&v1,1);\n  v3 = (v1 & 0x7f) ? v1 >> 8"),
+            ],
+            UNCHANGED,
+        ),
+        ("castobject_gcc_O2_x86_64", ALL, want.as_str(), &[("(int *)&v1", "(int *)&v1")], EVERY),
+        ("castobject_clang_O2_x86_64", CLANG_O2, want_clang_o2.as_str(), &[], &EVERY[5..]),
+    ];
+    let sp = specs();
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .collect();
+    for (fixture, funcs, want, lines, same) in cases {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        let mut printed: Vec<String> = Vec::new();
+        for opt in ["off", "on"] {
+            let args = [
+                "decompile-all", bin.as_str(), "--functions", funcs, "--sleighpath", sp.as_str(),
+                "--option", "castobject", opt,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("castobject round trip: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            for (off, on) in lines {
+                let line = if opt == "on" { on } else { off };
+                assert!(stdout.contains(line), "{fixture} option {opt} does not print `{line}`:\n{stdout}");
+            }
+            for cc in &compilers {
+                for level in ["-O0", "-O2"] {
+                    let dir = std::env::temp_dir()
+                        .join(format!("kuna-castobject-rt-{}-{fixture}-{opt}-{cc}{level}", std::process::id()));
+                    std::fs::create_dir_all(&dir).unwrap();
+                    let src = dir.join("rt.c");
+                    let exe = dir.join("rt");
+                    let subset = if funcs == CLANG_O2 { "#define SUBSET\n" } else { "" };
+                    std::fs::write(
+                        &src,
+                        format!(
+                            "{subset}#include <pthread.h>\n#include <signal.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <sys/wait.h>\n#include <unistd.h>\n{stdout}\n{MAIN}"
+                        ),
+                    )
+                    .unwrap();
+                    let out = Command::new(cc)
+                        .args(["-std=gnu11", "-w", "-Wno-error=int-conversion", level])
+                        .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                        .output()
+                        .expect("spawn the C compiler");
+                    assert!(
+                        out.status.success(),
+                        "{cc} {level} rejected the printed C ({fixture}, option {opt}):\n{}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let _ = std::fs::remove_dir_all(&dir);
+                    assert_eq!(
+                        String::from_utf8_lossy(&run.stdout),
+                        want,
+                        "{fixture} printed with option {opt} and built by {cc} {level} computes a different value:\n{stdout}"
+                    );
+                }
+            }
+            printed.push(stdout);
+        }
+        for name in same {
+            assert_eq!(
+                castsign_function(&printed[0], name),
+                castsign_function(&printed[1], name),
+                "{fixture}: option castobject changed {name}"
+            );
+        }
+    }
+}
+
 /// (kuna `castsign`) A declaration whose type is locked is never re-signed.  A
 /// `--assert type` on a stack local and on a register local, and a DWARF local
 /// the source declares `unsigned long`, keep that type and the `(long)` their

@@ -1917,6 +1917,8 @@ mod tests {
         // it is passed to
         // and kuna-callrettype / a call returns the type its callee states
         // (the single-function negative control)
+        // and kuna-castobject / an out-parameter local is declared at the type
+        // its callee declares when every reader agrees
         assert_eq!(count, 349, "corpus file count drifted");
     }
 

@@ -591,6 +591,11 @@ impl Funcdata {
             crate::kuna_endptrbound::coalesce_hints(&mut state, &endptr_walks, &space, t.as_ref());
         }
 
+        if self.get_arch().cast_object {
+            let declared = crate::kuna_castobject::declare_out_params(self, &mut state, &space);
+            self.record_cast_objects(declared);
+        }
+
         // overlapProblems = restructure(state).  Clone the type factory `Rc` out
         // first so the &mut ScopeLocal borrow does not alias the &self arch read.
         let types_rc = self.get_arch().types_rc();
