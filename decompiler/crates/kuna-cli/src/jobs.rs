@@ -389,6 +389,11 @@ pub(crate) struct PoolConfig<'a> {
     /// it to, so the serial run the replayed names belong to is
     /// `--jobs 1 --option protoorder off` and the report says so.
     pub(crate) serial_callee_first: bool,
+    /// (kuna `elemptr`) The pool decompiles a batch of one function, whose
+    /// worker types globals and tables as a serial batch of one does; the
+    /// workers of any larger pool type neither, as a serial run that is not
+    /// callee-first does not.
+    pub(crate) elem_objects: bool,
 }
 
 /// How many decode lanes `--jobs` asks the discovery walk for.
@@ -2154,6 +2159,9 @@ impl Worker {
         if cfg.no_vars {
             cmd.arg("--no-vars");
         }
+        if cfg.elem_objects {
+            cmd.arg("--jobs-objects");
+        }
         if cfg.want_proto {
             cmd.arg("--jobs-proto");
         }
@@ -3856,6 +3864,7 @@ mod tests {
             sleighpath: None,
             synth_base: None,
             serial_callee_first: false,
+            elem_objects: false,
         }
     }
 

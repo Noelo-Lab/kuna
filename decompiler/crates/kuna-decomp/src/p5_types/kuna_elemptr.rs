@@ -330,6 +330,9 @@ fn in_data(data: &Funcdata, vn: VarnodeId) -> Option<u64> {
 /// `(&dat_4040)[i]`, which that scalar's declaration reads right, so only the
 /// functions that name it an array are blocked.
 fn note_direct_storage(data: &Funcdata, vn: VarnodeId, cache: &mut Cache) {
+    if !data.kuna_elemptr_objects() {
+        return;
+    }
     if let Some(off) = in_data(data, vn) {
         if cache.direct.insert(off) {
             data.kuna_elemptr_note(Obj::Table(off), GlobalVerdict::Scalar);
@@ -548,6 +551,11 @@ fn decide(
     if globals_held.iter().any(|&g| data.kuna_elemptr_blocked(Obj::Held(g))) {
         return None;
     }
+    // With no batch to agree on a global, a pointer this function types must
+    // not become a global's type by being stored there either.
+    if !data.kuna_elemptr_objects() && reaches_global_storage(data, vn) {
+        return None;
+    }
     let input = input_key(data, vn, kind);
     if input.is_some_and(|k| data.kuna_elemptr_input(k) == Some(true)) {
         return None;
@@ -754,9 +762,10 @@ fn same_storage(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
 fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<(Kind, Vec<VarnodeId>)> {
     let v = data.vbank().get(vn)?;
     let arch = data.get_arch();
+    let objects = data.kuna_elemptr_objects();
     if v.is_constant() {
         let off = v.get_offset();
-        if !crate::kuna_globalref::in_ranges(&arch.elem_ptr_ranges, off) {
+        if !objects || !crate::kuna_globalref::in_ranges(&arch.elem_ptr_ranges, off) {
             return None;
         }
         let spc = Rc::clone(arch.manage().get_default_data_space()?);
@@ -782,7 +791,7 @@ fn candidate_kind(data: &Funcdata, vn: VarnodeId) -> Option<(Kind, Vec<VarnodeId
     }
     let data_space = arch.manage().get_default_data_space()?;
     let in_data = addr.get_space().is_some_and(|s| Rc::ptr_eq(s, data_space));
-    if in_data && crate::kuna_globalref::in_ranges(&arch.elem_ptr_ranges, v.get_offset()) {
+    if objects && in_data && crate::kuna_globalref::in_ranges(&arch.elem_ptr_ranges, v.get_offset()) {
         // A global the image names only by a symbol with no type (an ELF symtab
         // entry) is as open as one it does not name at all.
         let open = match arch.query_container_global(&addr, v.get_size(), &Address::new_invalid()) {
@@ -939,6 +948,37 @@ fn copies_alone(data: &Funcdata, vn: VarnodeId) -> Option<Vec<VarnodeId>> {
         }
     }
     Some(seen)
+}
+
+/// Is `vn`, through copies, written to storage in the data space -- a
+/// global?  A walk that reaches its bound says yes.
+fn reaches_global_storage(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(spc) = data.get_arch().manage().get_default_data_space().map(Rc::clone) else { return true };
+    let mut seen = vec![vn];
+    let mut i = 0;
+    while i < seen.len() {
+        let cur = seen[i];
+        i += 1;
+        let Some(v) = data.vbank().get(cur) else { continue };
+        if !v.is_constant() && v.get_addr().get_space().is_some_and(|s| Rc::ptr_eq(s, &spc)) {
+            return true;
+        }
+        for u in v.descend_iter() {
+            let Some(op) = data.obank().get(u) else { continue };
+            let follows = match op.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => true,
+                OpCode::CPUI_INDIRECT => op.get_in(0) == Some(cur),
+                _ => false,
+            };
+            if let Some(out) = op.get_out().filter(|o| follows && !seen.contains(o)) {
+                if seen.len() >= MAX_COPIES {
+                    return true;
+                }
+                seen.push(out);
+            }
+        }
+    }
+    false
 }
 
 /// Is `x` the constant zero, perhaps through a few copies (`v8 = NULL;` on a
@@ -2035,6 +2075,148 @@ fn element_signed(w: int4, ev: &Evidence) -> (bool, bool) {
     }
 }
 
+/// What a function decompiled before its callers states about the pointers
+/// this rule gave it: the storage of every parameter, and whether the value it
+/// returns, is an element pointer or is handed on to one.  Such a `char *`
+/// says the bytes are indexed, never that they end at a zero byte, so a
+/// caller's constant that reaches one prints as the address it is
+/// ([`reaches_element_pointer`]), not as a string literal cut off at the first
+/// zero byte of a table the callee reads `n` bytes of.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Stated {
+    pub params: Vec<(Address, int4)>,
+    pub ret: bool,
+}
+
+/// How many Varnodes [`element_derived`] visits before it assumes the answer
+/// is yes: declining a literal only prints the address.
+const FAMILY_CAP: usize = 64;
+
+/// State for the callers decompiled after it what `data`, entered at `entry`,
+/// gave element pointers ([`Stated`]).
+pub fn state(arch: &mut crate::architecture::Architecture, entry: &Address, data: &Funcdata) {
+    if !arch.elem_ptr {
+        return;
+    }
+    let Some(key) = entry.get_space().map(|sp| (sp.get_index(), entry.get_offset())) else { return };
+    let proto = data.get_func_proto();
+    let mut st = Stated::default();
+    for i in 0..proto.num_params() {
+        let Some(param) = proto.get_param(i) else { continue };
+        let (addr, size) = (param.get_address(), param.get_size());
+        if addr.is_invalid() || size <= 0 {
+            continue;
+        }
+        if data.find_varnode_input(size, &addr).is_some_and(|vn| element_derived(data, vn)) {
+            st.params.push((addr, size));
+        }
+    }
+    st.ret = crate::kuna_structsynth::returned_values(data).into_iter().any(|vn| element_derived(data, vn));
+    if st == Stated::default() {
+        arch.kuna_elemptr.stated.remove(&key);
+    } else {
+        arch.kuna_elemptr.stated.insert(key, Rc::new(st));
+    }
+}
+
+/// (printer) Does the constant `vn` reach, through copies, a pointer this rule
+/// gave its type?  A `char *` constant then prints as its address: the reader
+/// indexes the bytes and may read past a zero byte a literal would end at.
+pub fn reaches_element_pointer(data: &Funcdata, vn: VarnodeId) -> bool {
+    data.get_arch().elem_ptr && element_derived(data, vn)
+}
+
+/// Is `start`, or a value it is copied to or merged with, a pointer this rule
+/// typed -- an element pointer of this function, a global it typed, a callee's
+/// parameter or return a callee stated ([`Stated`]) -- or passed or stored
+/// into one?
+fn element_derived(data: &Funcdata, start: VarnodeId) -> bool {
+    let mut work = vec![start];
+    let mut seen: HashSet<VarnodeId> = HashSet::new();
+    while let Some(v) = work.pop() {
+        if !seen.insert(v) {
+            continue;
+        }
+        if seen.len() > FAMILY_CAP {
+            return true;
+        }
+        if data.kuna_elemptr_typed(v) {
+            return true;
+        }
+        let Some(node) = data.vbank().get(v) else { continue };
+        if let Some(a) = in_data(data, v) {
+            if held_typed(data, a) {
+                return true;
+            }
+        }
+        if let Some((d, o)) = node.get_def().and_then(|d| Some((d, data.obank().get(d)?))) {
+            match o.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => {
+                    work.extend((0..o.num_input()).filter_map(|i| o.get_in(i)));
+                }
+                OpCode::CPUI_INDIRECT => work.extend(o.get_in(0)),
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                    if callee_stated(data, d).is_some_and(|st| st.ret) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        for op in node.descend_iter() {
+            let Some(o) = data.obank().get(op) else { continue };
+            match o.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => work.extend(o.get_out()),
+                OpCode::CPUI_INDIRECT if o.get_in(0) == Some(v) => work.extend(o.get_out()),
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                    if (1..o.num_input()).any(|slot| o.get_in(slot) == Some(v) && stated_param(data, op, slot)) {
+                        return true;
+                    }
+                }
+                OpCode::CPUI_STORE if o.get_in(2) == Some(v) => {
+                    if stored_global(data, o).is_some_and(|a| held_typed(data, a)) {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
+/// What the callee of the call `op` stated, when it did.
+fn callee_stated(data: &Funcdata, op: OpId) -> Option<&Stated> {
+    let fc = data.get_call_specs(data.get_call_specs_index(op)?);
+    data.kuna_elemptr_stated(fc.get_entry_address())
+}
+
+/// Is argument `slot` of the call `op` a parameter its callee stated?
+fn stated_param(data: &Funcdata, op: OpId, slot: int4) -> bool {
+    let Some(st) = callee_stated(data, op) else { return false };
+    let Some(i) = data.get_call_specs_index(op) else { return false };
+    let storage = data.get_call_specs(i).final_input_storage();
+    storage.get((slot - 1) as usize).is_some_and(|(a, s)| st.params.iter().any(|(pa, ps)| pa == a && ps == s))
+}
+
+/// The global a `STORE` writes, when its address is a constant one.
+fn stored_global(data: &Funcdata, o: &crate::op::PcodeOp) -> Option<u64> {
+    let a = data.vbank().get(o.get_in(1)?)?;
+    if a.is_constant() {
+        return Some(a.get_offset());
+    }
+    let def = data.obank().get(a.get_def()?)?;
+    if def.code() != OpCode::CPUI_PTRSUB {
+        return None;
+    }
+    data.vbank().get(def.get_in(1)?).filter(|c| c.is_constant()).map(|c| c.get_offset())
+}
+
+/// Did this function type the global at `a` an element pointer?
+fn held_typed(data: &Funcdata, a: u64) -> bool {
+    matches!(data.kuna_elemptr_verdict(Obj::Held(a)), Some(GlobalVerdict::Typed { .. }))
+}
+
 /// (printer) When the constant `vn` is the base of the `PTRADD` `op` indexed
 /// by a computed value, and this rule typed it: `Some` of the largest index it
 /// can take, `None` inside when nothing bounds it.  The outer `None` means `vn`
@@ -2164,6 +2346,12 @@ impl GlobalVerdict {
 pub struct Ledger {
     /// A batch is running and recording.
     pub recording: bool,
+    /// Several functions are decompiled with no batch to agree on globals and
+    /// tables, so none of them types one.
+    no_objects: bool,
+    /// What each function decompiled so far stated for its callers
+    /// ([`state`]), by entry.
+    stated: HashMap<(int4, uintb), Rc<Stated>>,
     verdicts: BTreeMap<Obj, BTreeMap<u64, GlobalVerdict>>,
     blocked: BTreeMap<u64, Rc<BTreeSet<Obj>>>,
     adopt: BTreeMap<u64, Rc<Signs>>,
@@ -2178,8 +2366,19 @@ pub struct Ledger {
 }
 
 /// Start a batch: forget the previous one, and record while the option is on.
-pub fn start(arch: &mut crate::architecture::Architecture) {
-    arch.kuna_elemptr = Ledger { recording: arch.elem_ptr, ..Ledger::default() };
+/// `objects` says whether its functions may type globals and tables: a batch
+/// that decides them together (the callee-first driver, or a single
+/// function), not one whose functions are decompiled as if alone.
+pub fn start(arch: &mut crate::architecture::Architecture, objects: bool) {
+    arch.kuna_elemptr = Ledger { recording: arch.elem_ptr, no_objects: !objects, ..Ledger::default() };
+}
+
+/// Decompile what follows with no batch: several functions, each typing
+/// only its own parameters and call returns -- a `--jobs` worker, which sees
+/// a share of the functions, and a streamed export, which writes each one as
+/// it lands.
+pub fn without_objects(arch: &mut crate::architecture::Architecture) {
+    arch.kuna_elemptr = Ledger { no_objects: true, ..Ledger::default() };
 }
 
 /// End a batch's recording; the blocked sets stay for any later redo.
@@ -2192,8 +2391,21 @@ pub fn seed(arch: &crate::architecture::Architecture, data: &mut Funcdata) {
     if !arch.elem_ptr {
         return;
     }
-    let me = data.get_address().get_offset();
     let ledger = &arch.kuna_elemptr;
+    data.kuna_set_elemptr_objects(!ledger.no_objects);
+    if !ledger.stated.is_empty() {
+        let own = data.get_address().get_offset();
+        let entries: Vec<Address> = (0..data.num_calls())
+            .map(|i| data.get_call_specs(i).get_entry_address().clone())
+            .filter(|e| !e.is_invalid() && e.get_offset() != own)
+            .collect();
+        for e in entries {
+            if let Some(st) = e.get_space().and_then(|sp| ledger.stated.get(&(sp.get_index(), e.get_offset()))) {
+                data.kuna_set_elemptr_stated(&e, Rc::clone(st));
+            }
+        }
+    }
+    let me = data.get_address().get_offset();
     let settled = (!ledger.settled.is_empty()).then(|| Rc::clone(&ledger.settled));
     data.kuna_set_elemptr_adopt(ledger.adopt.get(&me).cloned(), settled);
     let own = ledger.blocked.get(&me);

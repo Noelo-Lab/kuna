@@ -203,6 +203,10 @@ pub(crate) struct Args {
     /// Internal: what this worker does with the synthesized-structure ledger
     /// (`--jobs-synth record|force|serial`, see [`jobs::SynthWorker`]).
     pub(crate) jobs_synth: Option<jobs::SynthWorker>,
+    /// Internal (kuna `elemptr`): the pool decompiles one function, which
+    /// types globals and tables as a serial batch of one does
+    /// (`--jobs-objects`); a worker of a larger pool types neither.
+    pub(crate) jobs_objects: bool,
 }
 
 impl Args {
@@ -241,6 +245,7 @@ impl Args {
             jobs_types: false,
             jobs_callees: false,
             jobs_synth: None,
+            jobs_objects: false,
         }
     }
 
@@ -1214,6 +1219,9 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
     let assignments = jobs::listen_for_assignments(scratch);
 
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    if !args.jobs_objects {
+        kuna_decomp::kuna_elemptr::without_objects(prog.arch_mut());
+    }
     let inventory = std::path::Path::new(scratch).join(jobs::INVENTORY_FILE);
     if !args.jobs_full_load && inventory.is_file() {
         seed_worker_inventory(&mut prog, &inventory.to_string_lossy())?;
@@ -1453,6 +1461,7 @@ pub(crate) fn decompile_targets_pooled(
     );
     cfg.synth_base = synth_base;
     cfg.serial_callee_first = serial_callee_first;
+    cfg.elem_objects = targets.len() <= 1;
     jobs::run_pool(&cfg, &specs, &inventory)
 }
 
@@ -1514,6 +1523,7 @@ pub(crate) fn pool_config<'a>(
         sleighpath: args.sleighpath.as_deref(),
         synth_base: None,
         serial_callee_first: false,
+        elem_objects: false,
     }
 }
 
@@ -1959,7 +1969,7 @@ pub(crate) fn decompile_callee_first(
         ledger.recording = true;
     }
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
-    kuna_decomp::kuna_elemptr::start(prog.arch_mut());
+    kuna_decomp::kuna_elemptr::start(prog.arch_mut(), true);
     for &(index, park) in &plan {
         let opts =
             kuna_console::project::DecompileOptions { park_recovered_proto: park, ..base };
@@ -3939,6 +3949,7 @@ pub(crate) fn parse_args_with_filters(
     let mut jobs_provenance = false;
     let mut jobs_types = false;
     let mut jobs_callees = false;
+    let mut jobs_objects = false;
     let mut jobs_synth: Option<jobs::SynthWorker> = None;
     // The three whole-binary surfaces the worker POOL serves; `functions`
     // enumerates and never decompiles, so there is nothing for a pool to do
@@ -4001,6 +4012,7 @@ pub(crate) fn parse_args_with_filters(
             "--jobs-provenance" if cmd == "decompile-all" => jobs_provenance = true,
             "--jobs-types" if cmd == "decompile-all" => jobs_types = true,
             "--jobs-callees" if cmd == "decompile-all" => jobs_callees = true,
+            "--jobs-objects" if cmd == "decompile-all" => jobs_objects = true,
             "--jobs-synth" if cmd == "decompile-all" => {
                 jobs_synth = Some(jobs::SynthWorker::parse(&take(argv, &mut i, "--jobs-synth")?)?);
             }
@@ -4249,6 +4261,7 @@ pub(crate) fn parse_args_with_filters(
             jobs_types,
             jobs_callees,
             jobs_synth,
+            jobs_objects,
         },
         filters,
     ))

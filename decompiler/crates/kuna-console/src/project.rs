@@ -288,7 +288,7 @@ fn decompile_batch(
     } else {
         Vec::new()
     };
-    kuna_decomp::kuna_elemptr::start(prog.arch_mut());
+    kuna_decomp::kuna_elemptr::start(prog.arch_mut(), targets.len() <= 1);
     let mut pending = targets.into_iter();
     decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| out.push(r));
     converge_synthesized_structs(prog, opts, &replay, &mut out);
@@ -718,6 +718,8 @@ pub fn decompile_pulled(
                 // (kuna `callrettype`) State what this function returns for its callers.
                 if opts.park_recovered_proto {
                     kuna_decomp::kuna_callrettype::record(prog.arch_mut(), &park_entry, &fd);
+                    // (kuna `elemptr`) And which of its pointers are indexed buffers.
+                    kuna_decomp::kuna_elemptr::state(prog.arch_mut(), &park_entry, &fd);
                 }
                 // (kuna `calleevote`) Record what this function passes at each call.
                 if prog.arch().kuna_calleevote.recording {

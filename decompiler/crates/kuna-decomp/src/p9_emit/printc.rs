@@ -7753,7 +7753,9 @@ impl PrintC {
             // documented LOSS below.
             use crate::dtype::type_metatype::{TYPE_PTR, TYPE_PTRREL};
             if matches!(ct.get_metatype(), TYPE_PTR | TYPE_PTRREL) {
-                if off != 0 {
+                // (kuna `elemptr`) A pointer the rule gave `char *` says the bytes
+                // are indexed, never that they end at a zero byte.
+                if off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
                     if let Some(sub) = ct.get_ptr_to() {
                         if sub.is_char_print() {
                             // point = op->getAddr() (the using op's address; used only
@@ -8490,7 +8492,12 @@ impl PrintC {
             // off==0 + printing-ptr) so every other symbol reference renders
             // EXACTLY as before — the XML datatest corpus never reaches this branch
             // with a readonly char-array spacebase symbol.
-            if sym_off == 0 && !arrayvalue {
+            let elem_reader = fd
+                .obank()
+                .get(op)
+                .and_then(|o| o.get_out())
+                .is_some_and(|out| crate::kuna_elemptr::reaches_element_pointer(fd, out));
+            if sym_off == 0 && !arrayvalue && !elem_reader {
                 if let Some(st) = &sym_type {
                     if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
                         if let Some(elem) = st.get_array_base() {

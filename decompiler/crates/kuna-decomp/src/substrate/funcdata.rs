@@ -490,6 +490,12 @@ pub struct Funcdata {
     kuna_elemptr_disputed: std::cell::Cell<bool>,
     /// (kuna `elemptr`) The Varnodes this type pass gave an element pointer.
     kuna_elemptr_typed: std::cell::RefCell<std::collections::HashSet<crate::context::VarnodeId>>,
+    /// (kuna `elemptr`) This function is one of several decompiled with no
+    /// batch to agree on globals and tables: it types neither.
+    kuna_elemptr_no_objects: bool,
+    /// (kuna `elemptr`) What each callee decompiled earlier stated about the
+    /// parameters and return an element pointer typed.
+    kuna_elemptr_stated: std::collections::HashMap<(int4, kuna_base::types::uintb), std::rc::Rc<crate::kuna_elemptr::Stated>>,
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
@@ -621,6 +627,8 @@ impl Funcdata {
             kuna_elemptr_inputs: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             kuna_elemptr_disputed: std::cell::Cell::new(false),
             kuna_elemptr_typed: std::cell::RefCell::new(std::collections::HashSet::new()),
+            kuna_elemptr_no_objects: false,
+            kuna_elemptr_stated: std::collections::HashMap::new(),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
         })
     }
@@ -962,6 +970,37 @@ impl Funcdata {
     /// (kuna `elemptr`) Is `obj` one this function must not type?
     pub fn kuna_elemptr_blocked(&self, obj: crate::kuna_elemptr::Obj) -> bool {
         self.kuna_elemptr_blocked.as_ref().is_some_and(|b| b.contains(&obj))
+    }
+
+    /// (kuna `elemptr`) Set whether this function may type globals and tables.
+    pub fn kuna_set_elemptr_objects(&mut self, on: bool) {
+        self.kuna_elemptr_no_objects = !on;
+    }
+
+    /// (kuna `elemptr`) May this function type globals and tables?
+    pub fn kuna_elemptr_objects(&self) -> bool {
+        !self.kuna_elemptr_no_objects
+    }
+
+    /// (kuna `elemptr`) Record what the callee entered at `entry` stated.
+    pub fn kuna_set_elemptr_stated(&mut self, entry: &Address, stated: std::rc::Rc<crate::kuna_elemptr::Stated>) {
+        if let Some(sp) = entry.get_space() {
+            self.kuna_elemptr_stated.insert((sp.get_index(), entry.get_offset()), stated);
+        }
+    }
+
+    /// (kuna `elemptr`) What the callee entered at `entry` stated, if anything.
+    pub fn kuna_elemptr_stated(&self, entry: &Address) -> Option<&crate::kuna_elemptr::Stated> {
+        if self.kuna_elemptr_stated.is_empty() {
+            return None;
+        }
+        let sp = entry.get_space()?;
+        self.kuna_elemptr_stated.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `elemptr`) What this function's last type pass said about `obj`.
+    pub fn kuna_elemptr_verdict(&self, obj: crate::kuna_elemptr::Obj) -> Option<crate::kuna_elemptr::GlobalVerdict> {
+        self.kuna_elemptr_verdicts.borrow().get(&obj).cloned()
     }
 
     /// (kuna `elemptr`) Forget what the previous type pass said: the verdicts

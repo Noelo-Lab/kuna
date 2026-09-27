@@ -175,7 +175,7 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
                     continue;
                 }
                 let Some(to) = ct.get_ptr_to() else { continue };
-                if arch.elem_ptr && is_indexed_base(fd, op, vn) {
+                if arch.elem_ptr && fd.kuna_elemptr_objects() && is_indexed_base(fd, op, vn) {
                     indexed.insert(off);
                 }
                 let seen = pointees.remove(&off);
