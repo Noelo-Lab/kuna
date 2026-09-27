@@ -360,5 +360,54 @@
   "rules": "high_contradicts (another call's result of the other class; beside a pointer a non-address number, a load through the pointer, a sum of integers) and a returned result beside a returned non-address number; only statements the variable's type carries; functions up to AUDIT_MAX_OPS = 1000 live p-code ops",
   "history": "v1 audited every statement and also votes a later pass refused: fmt -O2 +76% (quotearg_buffer_restyled redone for no change), bash -O2 +55% (218 redos, 51.6 s); narrowed to the above; the 2,000-op cap still let a 1,992-op dpkg-divert function cost 10% of its run, so the cap is 1,000"
  },
- "stale_statements": "A callee decompiled again after its callers (calleevote redo, convergence sweep) records again; callers decompiled before keep the statement they read. A redo the run discards (arity moved, or failed) restores the earlier statement (kuna_callrettype::restore), so the record describes the printed body."
+ "stale_statements": "A callee decompiled again after its callers (calleevote redo, convergence sweep) records again; callers decompiled before keep the statement they read. A redo the run discards (arity moved, or failed) restores the earlier statement (kuna_callrettype::restore), so the record describes the printed body.",
+ "landing_recheck": {
+  "base": "243177605 (#718 callbacktype, default on)",
+  "castbench": {
+   "main_arm": 35609,
+   "on": 34829,
+   "ratio_ida_main": 0.942,
+   "ratio_ida_on": 0.921,
+   "per_100_stmt": [
+    29.9,
+    29.3
+   ],
+   "fewer_functions": 393,
+   "fewer_casts": 810,
+   "more_functions": 25,
+   "more_casts": 30,
+   "more_list_identical_to_29cfedee0": true,
+   "off_arm_byte_identical_to_main": "45/45"
+  },
+  "typesweep": {
+   "slices": 444,
+   "perfect_off": 1625,
+   "perfect_on": 1631,
+   "lost": 0,
+   "improved": 17,
+   "worsened": 2,
+   "moved_rows_identical_to_29cfedee0": true
+  },
+  "corpus_sweep": {
+   "functions": 8878,
+   "changed": 1624,
+   "types_casts_names_only": 1513,
+   "expression_spelling_only": 44,
+   "statement_changes": 67,
+   "new_statement_changes": 0,
+   "call_arity_moved": 0,
+   "return_voidness_moved": 0,
+   "variables_rows_moved": 0,
+   "new_changed_function": "O0 e2fsck sub_8adcf: ((unsigned long *)a0)[3] -> ((uint8 *)a0)[3] = sub_8a563(...), type spelling only"
+  },
+  "gates": {
+   "make_test": "675/675 PARITY OK",
+   "make_test_stages": "1416/1416 PARITY OK",
+   "make_test_cli": "264/264",
+   "check_spec": "lenient + strict OK",
+   "catalog_check": "OK",
+   "counters_check": "no drift",
+   "rust_test": "7,666 passed and 0 failed"
+  }
+ }
 }

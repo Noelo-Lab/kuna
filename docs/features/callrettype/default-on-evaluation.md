@@ -102,3 +102,26 @@ them reaches the corpus. There: `make test` 675/675 and `make test-stages`
 1413/1413 PARITY OK, `make test-cli` 249/249, check-spec lenient and strict
 OK, `kuna catalog --check` and `counters --check` clean, `make rust-test`
 7,631 passed and 0 failed.
+
+## Re-checked on `243177605` (#718 `callbacktype`)
+
+origin/main then gained #718 (`callbacktype`, default on: a function handed
+to a libc callback slot is declared with the slot's prototype and decompiled
+once more after every other function), which runs in the same whole-binary
+pass. On the branch rebased onto `243177605`, against a main arm built there:
+castbench 35,609 -> 34,829 casts (0.942x -> 0.921x IDA; 188.3 -> 184.1 per
+kloc; 29.9 -> 29.3 per 100 statements), the same 393 functions fewer (810
+casts) and the same 25 more (+30), and option off prints main's bytes on all
+45 binaries. #718 moves 16 functions in sort, tar and grep; in 15 of them this
+option changes nothing either way, and in tar -O2 `sub_3ac00` the one change
+it made before (the `struct_N` number in the signature) is gone, since the
+comparator is now declared `int4 sub_3ac00(void *a0,void *a1)`. Typesweep 1,625 -> 1,631 perfect,
+0 lost, the moved rows identical to the run above. Corpus sweep 1,623 -> 1,624
+changed functions, the same 67 statement changes, 0 arity, void or
+`variables[]` moves. The new one is e2fsck -O0 `sub_8adcf`, a
+`pthread_create` start routine #718 now declares `void *(void *)`: its field
+store becomes `((T *)a0)[3] = sub_8a563(...)`, and the option spells `T` as
+the callee's stated `uint8` where off prints `unsigned long` (same width, same
+value). There: `make test` 675/675 and `make test-stages` 1416/1416 PARITY OK,
+`make test-cli` 264/264, check-spec lenient and strict OK, `kuna catalog
+--check` and `counters --check` clean, `make rust-test` 7,666 passed and 0 failed.
