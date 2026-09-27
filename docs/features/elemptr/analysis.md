@@ -197,16 +197,22 @@ function decompiled after the first disagreement, brings that to 17 functions an
 
 ## 6. Known limits
 
-- A single-function `decompile`, a sharded `--jobs` worker and the streaming
-  export have no batch ledger: they type a global on the function's own evidence.
+- Only a batch that decides its functions together types a global or a table:
+  the callee-first `decompile-all` and `decompile-project`, and a batch of one
+  function (`decompile`, one `--addr`). A `--jobs` worker, the streamed export and
+  a serial run of several functions that is not callee-first (`--option
+  protoorder off`, a narrowed selection, `decompile-graph`) type neither, so
+  `--jobs N` prints what `--jobs 1 --option protoorder off` prints; the default
+  serial run keeps them.
 - `decompile` and `decompile-all` print no declaration for a global or table
   (neither does main for any name `globalref` gives): only `decompile-project`'s
   header states the element a subscript reads.
 - A table read at two pointee types in one function keeps its casts
   (`globalref`'s two-type refusal).
-- A sharded `--jobs` export cannot adopt a batch's sign: where two workers type a
-  table at two elements the header declares neither (a compile error, never a
-  silent value change).
+- A string literal a table no reader stops at the zero byte of would end early,
+  so a character-pointer constant whose type comes from this rule alone prints as
+  its address. A callee that also reads the same bytes as a C string (a zero
+  test, a declared `char *` argument, a direct byte read) keeps main's literal.
 - A pre-existing return-recovery gap, not this option: gcc -O2 `char *f(n) { o =
   malloc(n + 1); ...; return o; }` decompiles as `void f` (rax never copied), in
   every mode.
@@ -297,6 +303,29 @@ it declared a wrong type without changing a value:
   that function: the stage test and the compiled round trip pin its return. A first cut that declined
   every address sharing the returned register untyped a base64 decoder's table,
   whose function returns its output buffer in that register.
+- **A table cut at its zero byte.** openssh `ssh-keyscan` -O2 passes the SHA-1
+  DigestInfo prefix `30 21 30 09 06 05 2b 0e 03 02 1a 05 00 04 14` to a 15-byte
+  `timingsafe_bcmp` whose parameters the rule typed `char *`, and the caller
+  printed it as a string literal that ends at the zero byte, two bytes short of
+  what the compare reads (the reviewer's `rb.c` computed `chk1=1` where the
+  binary computes 0; mydoom O0 `sub_4021bc("",1,v3)` was right only because it
+  reads one byte). A callee now states which parameters and return the rule
+  typed (`kuna_elemptr::state`), and a character-pointer constant whose type
+  comes from the rule alone prints as its address (`&dat_66e18`). The fixture's
+  `w_chk`, `w_hash` and `w_pick` are the shapes: a caller passing the table to a
+  typed parameter, and the table merged with a typed parameter. Nothing in the
+  45-binary cast corpus prints differently; in the 9-binary disjoint sweep the
+  two functions above change and nothing else.
+- **A global typed in one worker.** `--jobs N` workers never consulted the
+  batch ledger, so each typed a global from its own functions: the round trip
+  under `decompile-project --jobs 4` printed `dat_4048 += 4` beside
+  `dat_4048[a0]` read as `int` and computed `g=1997,5997,7997` where the binary
+  computes `1997,2997,261947392`; `--jobs 4` also stopped matching `--jobs 1`
+  (gzip -O2 by 1,534 lines). A worker, like any run of several functions without
+  the callee-first batch, now types no global or table, and a pointer it types
+  for its own parameter or call return is refused where it is stored into a
+  global; fmt, ls, grep and gzip print the same under `--jobs 4` and `--jobs 1`
+  with `--option protoorder off`.
 - **A narrow read made wide.** `c_hdr(const unsigned *p)` reads the 2-byte field
   at `p + 4` beside a call `c_sum4(p, 1)` whose parameter this rule declares
   `unsigned int *`. The caller's `p` takes that type, and upstream's

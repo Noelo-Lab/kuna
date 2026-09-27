@@ -65,7 +65,13 @@ per call it lives across.
   array (`Plan::indexed`), printed without `&` and declared `T dat_X[]`; the header
   prefers the array declaration when no function reads the name directly.
 - The string probe declines a literal the index can provably run past, and an empty
-  literal under any non-zero index.
+  literal under any non-zero index. A constant whose character-pointer type comes
+  from the rule alone (it reaches a pointer the rule typed or a callee parameter the
+  callee stated, `kuna_elemptr::state`, and nothing reads it as a C string) prints
+  as its address (`reaches_element_pointer`).
+- Globals and tables are typed only in a batch that decides its functions
+  together (`start(arch, objects)`); a `--jobs` worker, a streamed export and a
+  run of several functions without the callee-first order call `without_objects`.
 - `RuleExpandLoad` (p3) asks `keeps_load_narrow`: with the option on, a load through
   a pointer with no type-locked base keeps its own width instead of reading the
   whole inferred element and truncating it.
@@ -77,9 +83,12 @@ per call it lives across.
 ## 5. Tests
 
 Unit tests (`kuna_elemptr/tests.rs`), the two-pass stage test
-`tests/stages/kuna-elemptr.xml` on the compiled fixture, three `tests/cli` probes (one
+`tests/stages/kuna-elemptr.xml` on the compiled fixture, four `tests/cli` probes (one
 runs a batch that must leave a byte-stepped global and a first-element-named table
-untyped), and the compiled round trip over three builds, two arms and two compilers
+untyped, one a caller passing a table with a zero byte to a typed callee), the
+compiled round trip over three builds, two arms and two compilers
 (`decompile_all_cli.rs`, `an_element_pointer_round_trips_through_the_printed_c`),
-which compiles a global the header declines at the pointer its comment lists and
-reads a narrow field at a page end.
+which compiles a global the header declines at the pointer its comment lists,
+reads a narrow field at a page end and compares a table with a zero byte inside
+it, and `element_pointers_under_jobs_match_the_serial_run` (`--jobs 4` against
+`--jobs 1` on `decompile-all` and `decompile-project`).

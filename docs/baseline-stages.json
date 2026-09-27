@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1463,
-    1463
+    1467,
+    1467
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1171,6 +1171,10 @@
     "data:elemptr #20: a table's first element read by name is a scalar in both passes",
     "data:elemptr #21: an element loaded through an address in the returned register is returned as an integer in both passes",
     "data:elemptr #22: that function is never declared to return the element's address",
+    "data:elemptr #23: with the option off the table merged with the parameter is its address",
+    "data:elemptr #24: with the option on the parameter the table is merged with is a char pointer",
+    "data:elemptr #25: with the option on the table is still its address, the one the indexed reader takes",
+    "data:elemptr #26: the table is never a string literal cut at its zero byte in either pass",
     "data:elemptr #2: with the option off the table build casts the global table and reads the .data alphabet through an integer sum",
     "data:elemptr #3: with the option on the input and the returned buffer are char *",
     "data:elemptr #4: with the option on a store into the allocated buffer is a subscript",

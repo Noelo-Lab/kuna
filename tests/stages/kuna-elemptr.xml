@@ -57,8 +57,8 @@
                   this scalar the array; one function at a time has no batch,
                   and the compiled round trip in decompile_all_cli.rs checks
                   the batch.  Several functions decompiled with no batch to
-                  agree -- a --jobs worker, a streamed export, a run that does
-                  not take the callee-first order -- type no global or table
+                  agree (a jobs-pool worker, a streamed export, a run that does
+                  not take the callee-first order) type no global or table
         w_nexttab: coreutils expand's get_next_tab_column - loads an element
                   of a global table through an address computed in the rax it
                   returns that element in; typed, the address and the
