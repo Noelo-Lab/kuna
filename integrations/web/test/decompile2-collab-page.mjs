@@ -36,12 +36,14 @@ const chrome2 = await launchChrome(chromePath, { flags });
 const guard = setTimeout(() => { console.error('DECOMPILE2 COLLAB PAGE FAIL — timed out'); chrome.close(); chrome2.close(); process.exit(1); }, 900000);
 const SAMPLE_HASH = 'sha256:' + createHash('sha256').update(readFileSync(fixture('sample.elf'))).digest('hex');
 
-/** Worker answers arrive `window.__kunaDelay` ms late, so an engine request can be caught in flight. */
+/** Worker answers arrive `window.__kunaDelay` ms late, so an engine request can be caught in flight; `__kunaWorkers` counts engine starts. */
 const DELAY_SHIM = `(() => {
   const Real = window.Worker;
   window.__kunaDelay = 0;
+  window.__kunaWorkers = 0;
   window.Worker = function (url, opts) {
     const w = new Real(url, opts);
+    window.__kunaWorkers++;
     let handler = null;
     w.addEventListener('message', (ev) => { const d = window.__kunaDelay || 0; if (d) setTimeout(() => handler && handler(ev), d); else if (handler) handler(ev); });
     Object.defineProperty(w, 'onmessage', { get() { return handler; }, set(fn) { handler = fn; }, configurable: true });
@@ -73,14 +75,16 @@ const closeDialog = (p) => p.evaluate(`(() => { const d = document.getElementByI
 const setSelect = (p, id, value) => p.call((i, v) => { const s = document.getElementById(i); s.value = v; s.dispatchEvent(new Event('change')); return true; }, id, value);
 const front = (p) => p.send('Page.bringToFront');
 
+/** Open the page with this browser's storage emptied first (then `seed`), so no case inherits another's settings. */
 async function open(p, { seed = null } = {}) {
-  await p.navigate(`${server.base}/decompile2/`);
-  await ready(p);
+  await p.navigate(`${server.base}/kuna-web.js`);
   await p.call((entries) => {
     localStorage.clear();
     for (const [k, v] of entries) localStorage.setItem(k, v);
     return true;
   }, seed || []);
+  await p.navigate(`${server.base}/decompile2/`);
+  await ready(p);
 }
 
 async function example(p) {
@@ -138,6 +142,13 @@ async function popover(p, selector, key, value) {
   await p.call((v) => { const i = document.querySelector('#d2pop input, #d2pop textarea'); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); return true; }, value);
 }
 
+/** What a page shows, for a failed case's report. */
+const SUMMARY = `JSON.stringify({
+  fn: document.getElementById('vname')?.textContent, view: document.querySelector('#tabs [aria-selected=true]')?.dataset.tab,
+  status: document.getElementById('status')?.textContent, busy: !document.getElementById('cancelbtn')?.disabled,
+  code: (document.getElementById('ccode')?.textContent || '').slice(0, 80),
+  toasts: [...document.querySelectorAll('.d2-toast')].map((t) => t.textContent.slice(0, 90)),
+})`;
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 const CASE_MS = 150000;
 const results = [];
@@ -153,6 +164,7 @@ async function test(name, fn) {
   } catch (e) {
     results.push([false, name, e.message.split('\n')[0]]);
     console.log(`FAIL ${name} (${((Date.now() - t0) / 1000).toFixed(1)} s) — ${e.message.split('\n')[0]}`);
+    for (const p of tabs) console.log(`     ${p.label}: ${await p.evaluate(SUMMARY).catch((err) => err.message)}`);
   } finally {
     clearTimeout(timer);
     for (const p of tabs) await p.closeTab().catch(() => {});
@@ -246,15 +258,17 @@ try {
 
   await test('#10 a follower\'s page finishes opening a function while the others keep moving', async () => {
     const { ana, ben } = await pair({ benScript: DELAY_SHIM });
+    const starts = await ben.evaluate('window.__kunaWorkers');
     await ben.evaluate('window.__kunaDelay = 2500; true');
     await ben.click('#d2roster .d2-who');
     await front(ana);
     await ana.click('#fnlist .fn[data-addr="0x1161"]');
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       await sleep(700);
       await ana.click(i % 2 ? '#tab-c' : '#tab-asm');
     }
     await ben.waitFor(`document.getElementById('vname').textContent === 'sum_to' && /for \\(/.test(document.getElementById('ccode').textContent)`, { what: 'Ben shows sum_to', timeout: 30000 });
+    assert.equal(await ben.evaluate('window.__kunaWorkers'), starts, 'Ben\'s open was never cancelled and restarted');
   });
 
   await test('#12 after a failed join, the tab can join another invite', async () => {

@@ -52,6 +52,15 @@ deploy of the wasm can print different C, so peers must compare a build id. The
 SHA-256 of the `kuna_wasm.wasm` bytes the page already fetches, plus the page's
 own collaboration protocol version, is enough; no engine change.
 
+*Correction, after the build's review.* Order-blind holds for independent
+directives only. Three kinds depend on order: a type used by a later type has to
+come first, of two prototypes of one function the later wins, and in a rename
+chain (`v1` → `i`, then `acc` → `v1`) the first has to replay first. A canonical
+order by key broke all three, so the page keeps the order edits were made in when
+working alone, and orders a shared session by each register's birth clock
+(`docs/web-integration.md` §4.2). The build id is now hashed from the bytes the
+Worker compiles, not a separate fetch.
+
 **The decompiler effort (mode) must be shared; the output language need not
 be.** A record key names a local by the engine's symbol (`v20`), and which
 symbols exist, and what they stand for, depends on the passes the mode runs.

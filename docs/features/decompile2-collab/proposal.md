@@ -129,7 +129,8 @@ the first version.
 
 The collaboration code stays in `integrations/web/decompile2/collab/` and is
 loaded only when a session starts or a `#join=` link is opened; nothing changes
-for a solo user except the canonical directive order.
+for a solo user (the build keeps a solo page's directive order; see the
+departures below).
 
 ## Decisions taken (2026-09-27), and what was built
 
@@ -171,14 +172,30 @@ Where the build departs from the design above, and why:
 - **Pointers carry a character column** (`col`) for code rows as well as the
   fraction across the anchor, so an arrow lands on the same name in windows of
   any width; bytes and stack slots use the fraction.
-- **The build id is hashed from its own fetch** of `kuna_wasm.wasm` (served
-  from the browser cache), not from a clone of the loader's response, so the
-  worker shared with `/decompile/` is unchanged.
-- **A guest's own earlier changes to the program are set aside, not merged,**
-  when the program arrives with the join: a toast offers to save them as a
-  `.kuna` file. A guest who already has the program open when joining brings
-  its changes into the session (the session's value wins where both changed a
+- **The build id is the SHA-256 of the bytes the Worker compiles**, computed
+  by the Worker from a clone of the response it compiles (a client that does
+  not ask for it, like `/decompile/`, pays nothing), and again after each
+  restart; a page whose engine changes during a session leaves it. (The first
+  build hashed its own fetch of `kuna_wasm.wasm`; a review showed two pages on
+  either side of a deploy could then pass the check.)
+- **Directive order: as made when alone, by birth when shared.** The design's
+  "one canonical order (by kind, then key)" broke replay wherever order
+  matters (a type used by a later type, the later of two prototypes, a rename
+  chain), so a page on its own keeps the order edits were made in, and a
+  shared session orders each kind by each register's birth clock (the
+  smallest clock any page wrote it with, merged as a grow-only minimum), which
+  every page agrees on. A solo page is unchanged.
+- **A guest's own stored changes are kept apart, not merged,** when the
+  program arrives with the join: the session is saved under its own key
+  (`kuna.d2.shared.<hash>`), the session dialog offers to save the guest's
+  changes as a `.kuna` file, and leaving brings them back (a toast offers the
+  session's changes instead). A guest with nothing stored keeps the session as
+  its own. A guest who already has the program open when joining brings its
+  changes into the session (the session's value wins where both changed a
   field).
+- **In a session, a change is never rolled back by a failed or cancelled
+  request.** The others already have it; the page says so and Undo takes it
+  back. The design's "no snapshot restore" held for remote changes only.
 - **SHA-256 has a plain-JavaScript fallback**, since a page served over plain
   HTTP on a local network has no `crypto.subtle`.
 - **One PR with milestone commits**, rather than one PR per milestone.
