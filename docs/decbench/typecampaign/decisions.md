@@ -135,3 +135,23 @@
    stay +4.9% and +5.6% (re-run twice). A redo costs what the first decompile of that function cost, so
    the remaining lever is an incremental redo — a checkpointed `Funcdata` re-entering the action tree, a
    substrate change — and the breach is carried as an open lever rather than hidden by a smaller budget.
+33. 2026-09-27 a cast that appears because a type became right stays, and the lever is the other side.
+   `callrettype` (#729) and `elemptr` (#731) add 56 casts over 43 functions while removing 2,052: a
+   callee's recovered `char *` return stored into a caller's `long` field, an element pointer receiving a
+   callee's pointer of another element type, an address `globalref` no longer names because it is now
+   used at two pointee types. Dropping the return type or the element type would lose the casts and
+   the `type_match` they earn (+49 perfect); typing the caller's storage is the next lever. The same
+   rule reads the two typesweep rows `callrettype` costs: both are a right type scored against another
+   variable (a `dirent` member's address that `calleevote` does not count as a `char *` vote; an -O2
+   frame slot DWARF gives to a different variable).
+34. 2026-09-27 with the count at 0.848× IDA and per statement level with IDA (26.99 per 100), the cast
+   headline stays the count on the shared 4,815 functions but the residue is now ranked by FAMILY with
+   signedness merged (`final-l/shapes9.py`), and -O2 density (1.12× per statement) is reported beside it.
+   A family kuna prints fewer of than IDA (`(long *)(expr)`, `(int)v`) is not a target.
+35. 2026-09-27 the user's witness for rounds K and L came from a private binary; every public artifact
+   reproduces its shape only through the repo's own fixture (`elemptr_x86_64.c`, a textbook base64
+   decoder), never by name or output of the private one.
+36. 2026-09-27 a round whose levers are option-gated is attributed by an option ladder in landing order
+   on the final build, plus the previous round's own builds for its steps; every step here reproduced
+   its PR's published cast count and typesweep figure exactly, and the five other-session commits in
+   the window (#730, #732, #737, #738, #741) moved 0 casts and 0 typesweep values.

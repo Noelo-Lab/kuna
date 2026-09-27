@@ -1,0 +1,1194 @@
+{
+ "shared_functions": 4815,
+ "per_opt_functions": {
+  "O0": 1992,
+  "O2": 1067,
+  "O2-noinline": 1756
+ },
+ "all": {
+  "ida": {
+   "casts": 37821,
+   "lines": 243379,
+   "stmts": 140143,
+   "per_kloc": 155.4,
+   "per_100stmt": 26.99,
+   "vs_ida": 1.0
+  },
+  "i": {
+   "casts": 38602,
+   "lines": 190585,
+   "stmts": 120199,
+   "per_kloc": 202.5,
+   "per_100stmt": 32.12,
+   "vs_ida": 1.021
+  },
+  "j": {
+   "casts": 37477,
+   "lines": 190585,
+   "stmts": 120199,
+   "per_kloc": 196.6,
+   "per_100stmt": 31.18,
+   "vs_ida": 0.991
+  },
+  "k0": {
+   "casts": 37477,
+   "lines": 190585,
+   "stmts": 120199,
+   "per_kloc": 196.6,
+   "per_100stmt": 31.18,
+   "vs_ida": 0.991
+  },
+  "k1": {
+   "casts": 36617,
+   "lines": 190585,
+   "stmts": 120199,
+   "per_kloc": 192.1,
+   "per_100stmt": 30.46,
+   "vs_ida": 0.968
+  },
+  "k2": {
+   "casts": 36614,
+   "lines": 190585,
+   "stmts": 120199,
+   "per_kloc": 192.1,
+   "per_100stmt": 30.46,
+   "vs_ida": 0.968
+  },
+  "k": {
+   "casts": 35588,
+   "lines": 189131,
+   "stmts": 118883,
+   "per_kloc": 188.2,
+   "per_100stmt": 29.94,
+   "vs_ida": 0.941
+  },
+  "kctl": {
+   "casts": 35588,
+   "lines": 189131,
+   "stmts": 118883,
+   "per_kloc": 188.2,
+   "per_100stmt": 29.94,
+   "vs_ida": 0.941
+  }
+ },
+ "per_opt": {
+  "O0": {
+   "ida": {
+    "casts": 12195,
+    "lines": 72364,
+    "stmts": 39362,
+    "per_kloc": 168.5,
+    "per_100stmt": 30.98,
+    "vs_ida": 1.0
+   },
+   "i": {
+    "casts": 12591,
+    "lines": 59909,
+    "stmts": 36465,
+    "per_kloc": 210.2,
+    "per_100stmt": 34.53,
+    "vs_ida": 1.032
+   },
+   "j": {
+    "casts": 12234,
+    "lines": 59909,
+    "stmts": 36465,
+    "per_kloc": 204.2,
+    "per_100stmt": 33.55,
+    "vs_ida": 1.003
+   },
+   "k0": {
+    "casts": 12234,
+    "lines": 59909,
+    "stmts": 36465,
+    "per_kloc": 204.2,
+    "per_100stmt": 33.55,
+    "vs_ida": 1.003
+   },
+   "k1": {
+    "casts": 11942,
+    "lines": 59909,
+    "stmts": 36465,
+    "per_kloc": 199.3,
+    "per_100stmt": 32.75,
+    "vs_ida": 0.979
+   },
+   "k2": {
+    "casts": 11939,
+    "lines": 59909,
+    "stmts": 36465,
+    "per_kloc": 199.3,
+    "per_100stmt": 32.74,
+    "vs_ida": 0.979
+   },
+   "k": {
+    "casts": 11612,
+    "lines": 59390,
+    "stmts": 36005,
+    "per_kloc": 195.5,
+    "per_100stmt": 32.25,
+    "vs_ida": 0.952
+   },
+   "kctl": {
+    "casts": 11612,
+    "lines": 59390,
+    "stmts": 36005,
+    "per_kloc": 195.5,
+    "per_100stmt": 32.25,
+    "vs_ida": 0.952
+   }
+  },
+  "O2": {
+   "ida": {
+    "casts": 13459,
+    "lines": 87117,
+    "stmts": 51651,
+    "per_kloc": 154.5,
+    "per_100stmt": 26.06,
+    "vs_ida": 1.0
+   },
+   "i": {
+    "casts": 14208,
+    "lines": 65547,
+    "stmts": 42256,
+    "per_kloc": 216.8,
+    "per_100stmt": 33.62,
+    "vs_ida": 1.056
+   },
+   "j": {
+    "casts": 13837,
+    "lines": 65547,
+    "stmts": 42256,
+    "per_kloc": 211.1,
+    "per_100stmt": 32.75,
+    "vs_ida": 1.028
+   },
+   "k0": {
+    "casts": 13837,
+    "lines": 65547,
+    "stmts": 42256,
+    "per_kloc": 211.1,
+    "per_100stmt": 32.75,
+    "vs_ida": 1.028
+   },
+   "k1": {
+    "casts": 13539,
+    "lines": 65547,
+    "stmts": 42256,
+    "per_kloc": 206.6,
+    "per_100stmt": 32.04,
+    "vs_ida": 1.006
+   },
+   "k2": {
+    "casts": 13539,
+    "lines": 65547,
+    "stmts": 42256,
+    "per_kloc": 206.6,
+    "per_100stmt": 32.04,
+    "vs_ida": 1.006
+   },
+   "k": {
+    "casts": 13135,
+    "lines": 65000,
+    "stmts": 41751,
+    "per_kloc": 202.1,
+    "per_100stmt": 31.46,
+    "vs_ida": 0.976
+   },
+   "kctl": {
+    "casts": 13135,
+    "lines": 65000,
+    "stmts": 41751,
+    "per_kloc": 202.1,
+    "per_100stmt": 31.46,
+    "vs_ida": 0.976
+   }
+  },
+  "O2-noinline": {
+   "ida": {
+    "casts": 12167,
+    "lines": 83898,
+    "stmts": 49130,
+    "per_kloc": 145.0,
+    "per_100stmt": 24.76,
+    "vs_ida": 1.0
+   },
+   "i": {
+    "casts": 11803,
+    "lines": 65129,
+    "stmts": 41478,
+    "per_kloc": 181.2,
+    "per_100stmt": 28.46,
+    "vs_ida": 0.97
+   },
+   "j": {
+    "casts": 11406,
+    "lines": 65129,
+    "stmts": 41478,
+    "per_kloc": 175.1,
+    "per_100stmt": 27.5,
+    "vs_ida": 0.937
+   },
+   "k0": {
+    "casts": 11406,
+    "lines": 65129,
+    "stmts": 41478,
+    "per_kloc": 175.1,
+    "per_100stmt": 27.5,
+    "vs_ida": 0.937
+   },
+   "k1": {
+    "casts": 11136,
+    "lines": 65129,
+    "stmts": 41478,
+    "per_kloc": 171.0,
+    "per_100stmt": 26.85,
+    "vs_ida": 0.915
+   },
+   "k2": {
+    "casts": 11136,
+    "lines": 65129,
+    "stmts": 41478,
+    "per_kloc": 171.0,
+    "per_100stmt": 26.85,
+    "vs_ida": 0.915
+   },
+   "k": {
+    "casts": 10841,
+    "lines": 64741,
+    "stmts": 41127,
+    "per_kloc": 167.5,
+    "per_100stmt": 26.36,
+    "vs_ida": 0.891
+   },
+   "kctl": {
+    "casts": 10841,
+    "lines": 64741,
+    "stmts": 41127,
+    "per_kloc": 167.5,
+    "per_100stmt": 26.36,
+    "vs_ida": 0.891
+   }
+  }
+ },
+ "vs_ida_fn": {
+  "i": {
+   "fewer_than_ida": 1873,
+   "equal": 1403,
+   "more_than_ida": 1539
+  },
+  "j": {
+   "fewer_than_ida": 1946,
+   "equal": 1457,
+   "more_than_ida": 1412
+  },
+  "k0": {
+   "fewer_than_ida": 1946,
+   "equal": 1457,
+   "more_than_ida": 1412
+  },
+  "k1": {
+   "fewer_than_ida": 1970,
+   "equal": 1461,
+   "more_than_ida": 1384
+  },
+  "k2": {
+   "fewer_than_ida": 1970,
+   "equal": 1461,
+   "more_than_ida": 1384
+  },
+  "k": {
+   "fewer_than_ida": 1972,
+   "equal": 1462,
+   "more_than_ida": 1381
+  },
+  "kctl": {
+   "fewer_than_ida": 1972,
+   "equal": 1462,
+   "more_than_ida": 1381
+  }
+ },
+ "moves": {
+  "i:j": {
+   "fewer": 486,
+   "fewer_casts": 1125,
+   "more": 0,
+   "more_casts": 0,
+   "top_more": [],
+   "top_fewer": [
+    [
+     -19,
+     "O0",
+     "gzip",
+     "0x72f1"
+    ],
+    [
+     -17,
+     "O2",
+     "tar",
+     "0x23e80"
+    ],
+    [
+     -16,
+     "O0",
+     "gzip",
+     "0x5f11"
+    ],
+    [
+     -15,
+     "O2-noinline",
+     "tar",
+     "0x22c60"
+    ],
+    [
+     -13,
+     "O2",
+     "gzip",
+     "0xadd0"
+    ],
+    [
+     -13,
+     "O2",
+     "ls",
+     "0x4d10"
+    ],
+    [
+     -12,
+     "O0",
+     "gzip",
+     "0x6d5a"
+    ],
+    [
+     -12,
+     "O2",
+     "grep",
+     "0x4ff0"
+    ],
+    [
+     -11,
+     "O2",
+     "tar",
+     "0x2e4c0"
+    ],
+    [
+     -11,
+     "O2-noinline",
+     "tar",
+     "0x2d3a0"
+    ],
+    [
+     -10,
+     "O2",
+     "du",
+     "0x3c50"
+    ],
+    [
+     -10,
+     "O2",
+     "gzip",
+     "0x5750"
+    ],
+    [
+     -10,
+     "O2",
+     "gzip",
+     "0xaa20"
+    ],
+    [
+     -10,
+     "O2",
+     "gzip",
+     "0xbe90"
+    ],
+    [
+     -10,
+     "O2-noinline",
+     "gzip",
+     "0x5b50"
+    ],
+    [
+     -10,
+     "O2-noinline",
+     "gzip",
+     "0xc040"
+    ],
+    [
+     -9,
+     "O0",
+     "gzip",
+     "0x6814"
+    ],
+    [
+     -9,
+     "O0",
+     "gzip",
+     "0xd846"
+    ],
+    [
+     -9,
+     "O0",
+     "tar",
+     "0x1c92e"
+    ],
+    [
+     -9,
+     "O2",
+     "tar",
+     "0x11f60"
+    ],
+    [
+     -9,
+     "O2",
+     "tar",
+     "0x27340"
+    ],
+    [
+     -9,
+     "O2-noinline",
+     "gzip",
+     "0xad80"
+    ],
+    [
+     -9,
+     "O2-noinline",
+     "tar",
+     "0x118d0"
+    ],
+    [
+     -9,
+     "O2-noinline",
+     "tar",
+     "0x1a320"
+    ],
+    [
+     -8,
+     "O0",
+     "gzip",
+     "0x6ff8"
+    ],
+    [
+     -8,
+     "O2",
+     "sort",
+     "0x3ec0"
+    ],
+    [
+     -8,
+     "O2-noinline",
+     "du",
+     "0x3cd0"
+    ],
+    [
+     -8,
+     "O2-noinline",
+     "tar",
+     "0xe880"
+    ],
+    [
+     -7,
+     "O0",
+     "diff",
+     "0x128c2"
+    ],
+    [
+     -7,
+     "O2",
+     "sdiff",
+     "0x3b00"
+    ]
+   ],
+   "shape_down": [
+    [
+     -256,
+     "void*",
+     "<const>"
+    ],
+    [
+     -182,
+     "u64*",
+     "<const>"
+    ],
+    [
+     -168,
+     "char*",
+     "<const>"
+    ],
+    [
+     -126,
+     "i64*",
+     "<const>"
+    ],
+    [
+     -60,
+     "i32*",
+     "<const>"
+    ],
+    [
+     -55,
+     "u16*",
+     "<const>"
+    ],
+    [
+     -41,
+     "named:option*",
+     "<const>"
+    ],
+    [
+     -38,
+     "u32*",
+     "<const>"
+    ],
+    [
+     -29,
+     "f32*",
+     "<const>"
+    ],
+    [
+     -27,
+     "named:sigset_t*",
+     "<const>"
+    ],
+    [
+     -14,
+     "named:obstack*",
+     "<const>"
+    ],
+    [
+     -14,
+     "named:struct_1*",
+     "<const>"
+    ],
+    [
+     -12,
+     "uchar*",
+     "<const>"
+    ],
+    [
+     -12,
+     "named:struct_4*",
+     "<const>"
+    ],
+    [
+     -11,
+     "named:struct_2*",
+     "<const>"
+    ]
+   ],
+   "shape_up": []
+  },
+  "j:k0": {
+   "fewer": 0,
+   "fewer_casts": 0,
+   "more": 0,
+   "more_casts": 0,
+   "top_more": [],
+   "top_fewer": [],
+   "shape_down": [],
+   "shape_up": []
+  },
+  "k0:k1": {
+   "fewer": 220,
+   "fewer_casts": 860,
+   "more": 0,
+   "more_casts": 0,
+   "top_more": [],
+   "top_fewer": [
+    [
+     -26,
+     "O0",
+     "diff",
+     "0x6122"
+    ],
+    [
+     -24,
+     "O0",
+     "grep",
+     "0x5d23"
+    ],
+    [
+     -20,
+     "O2",
+     "diff",
+     "0xbbc0"
+    ],
+    [
+     -20,
+     "O2-noinline",
+     "grep",
+     "0x6c90"
+    ],
+    [
+     -18,
+     "O0",
+     "sort",
+     "0xa5c0"
+    ],
+    [
+     -18,
+     "O2",
+     "diff",
+     "0x6e20"
+    ],
+    [
+     -18,
+     "O2-noinline",
+     "diff",
+     "0x6e30"
+    ],
+    [
+     -17,
+     "O2-noinline",
+     "diff",
+     "0xc270"
+    ],
+    [
+     -16,
+     "O2",
+     "grep",
+     "0x7110"
+    ],
+    [
+     -16,
+     "O2",
+     "tar",
+     "0x308a0"
+    ],
+    [
+     -14,
+     "O0",
+     "tar",
+     "0x359a8"
+    ],
+    [
+     -13,
+     "O2",
+     "grep",
+     "0xaf70"
+    ],
+    [
+     -13,
+     "O2",
+     "sort",
+     "0xa430"
+    ],
+    [
+     -13,
+     "O2-noinline",
+     "sort",
+     "0xad90"
+    ],
+    [
+     -12,
+     "O0",
+     "tar",
+     "0x3afa7"
+    ],
+    [
+     -12,
+     "O2-noinline",
+     "tar",
+     "0x301b0"
+    ],
+    [
+     -11,
+     "O0",
+     "cmp",
+     "0x37d2"
+    ],
+    [
+     -10,
+     "O0",
+     "diff",
+     "0xef6a"
+    ],
+    [
+     -10,
+     "O0",
+     "grep",
+     "0x10409"
+    ],
+    [
+     -10,
+     "O2",
+     "gzip",
+     "0xf900"
+    ],
+    [
+     -10,
+     "O2-noinline",
+     "gzip",
+     "0xf880"
+    ],
+    [
+     -9,
+     "O2",
+     "grep",
+     "0x6a70"
+    ],
+    [
+     -9,
+     "O2",
+     "tar",
+     "0x2e4c0"
+    ],
+    [
+     -9,
+     "O2-noinline",
+     "cmp",
+     "0x35e0"
+    ],
+    [
+     -9,
+     "O2-noinline",
+     "tar",
+     "0x2cd70"
+    ],
+    [
+     -8,
+     "O0",
+     "tar",
+     "0x361aa"
+    ],
+    [
+     -8,
+     "O2",
+     "grep",
+     "0x9130"
+    ],
+    [
+     -8,
+     "O2",
+     "sort",
+     "0x7ef0"
+    ],
+    [
+     -8,
+     "O2",
+     "tar",
+     "0xf710"
+    ],
+    [
+     -8,
+     "O2-noinline",
+     "grep",
+     "0x9710"
+    ]
+   ],
+   "shape_down": [
+    [
+     -827,
+     "i64",
+     "<var>"
+    ],
+    [
+     -197,
+     "char*",
+     "<paren>"
+    ],
+    [
+     -59,
+     "void*",
+     "<paren>"
+    ],
+    [
+     -36,
+     "uchar*",
+     "<paren>"
+    ],
+    [
+     -21,
+     "i64*",
+     "<paren>"
+    ],
+    [
+     -17,
+     "u64*",
+     "<paren>"
+    ],
+    [
+     -12,
+     "i64**",
+     "<paren>"
+    ],
+    [
+     -9,
+     "i64",
+     "<field>"
+    ],
+    [
+     -9,
+     "i64",
+     "<addr>"
+    ],
+    [
+     -8,
+     "named:FILE**",
+     "<paren>"
+    ],
+    [
+     -8,
+     "named:struct_6**",
+     "<paren>"
+    ],
+    [
+     -6,
+     "char**",
+     "<paren>"
+    ],
+    [
+     -5,
+     "u64",
+     "<deref>"
+    ],
+    [
+     -4,
+     "i64",
+     "<paren>"
+    ],
+    [
+     -4,
+     "uchar**",
+     "<paren>"
+    ]
+   ],
+   "shape_up": [
+    [
+     242,
+     "char*",
+     "<var>"
+    ],
+    [
+     36,
+     "uchar*",
+     "<var>"
+    ],
+    [
+     19,
+     "i64*",
+     "<var>"
+    ],
+    [
+     17,
+     "u64*",
+     "<var>"
+    ],
+    [
+     12,
+     "i64**",
+     "<var>"
+    ],
+    [
+     8,
+     "named:FILE**",
+     "<var>"
+    ],
+    [
+     8,
+     "named:struct_6**",
+     "<var>"
+    ],
+    [
+     6,
+     "char**",
+     "<var>"
+    ],
+    [
+     5,
+     "char*",
+     "<addr>"
+    ],
+    [
+     5,
+     "char*",
+     "<field>"
+    ],
+    [
+     4,
+     "uchar**",
+     "<var>"
+    ],
+    [
+     4,
+     "named:struct_11**",
+     "<var>"
+    ],
+    [
+     2,
+     "i32*",
+     "<var>"
+    ],
+    [
+     2,
+     "i64*",
+     "<index>"
+    ],
+    [
+     2,
+     "u64",
+     "<paren>"
+    ]
+   ]
+  },
+  "k1:k2": {
+   "fewer": 2,
+   "fewer_casts": 3,
+   "more": 0,
+   "more_casts": 0,
+   "top_more": [],
+   "top_fewer": [
+    [
+     -2,
+     "O0",
+     "diff",
+     "0xe2f8"
+    ],
+    [
+     -1,
+     "O0",
+     "tail",
+     "0x5a69"
+    ]
+   ],
+   "shape_down": [
+    [
+     -2,
+     "u64",
+     "<var>"
+    ],
+    [
+     -1,
+     "u32",
+     "<var>"
+    ]
+   ],
+   "shape_up": []
+  },
+  "k2:k": {
+   "fewer": 24,
+   "fewer_casts": 1026,
+   "more": 0,
+   "more_casts": 0,
+   "top_more": [],
+   "top_fewer": [
+    [
+     -271,
+     "O2",
+     "cp",
+     "0x76f0"
+    ],
+    [
+     -172,
+     "O0",
+     "cp",
+     "0xabda"
+    ],
+    [
+     -149,
+     "O2-noinline",
+     "cp",
+     "0x9470"
+    ],
+    [
+     -55,
+     "O0",
+     "ls",
+     "0x9a40"
+    ],
+    [
+     -52,
+     "O2-noinline",
+     "gzip",
+     "0xf880"
+    ],
+    [
+     -44,
+     "O2",
+     "gzip",
+     "0xf900"
+    ],
+    [
+     -40,
+     "O0",
+     "cp",
+     "0x4b50"
+    ],
+    [
+     -36,
+     "O2-noinline",
+     "cp",
+     "0x52e0"
+    ],
+    [
+     -32,
+     "O2",
+     "cp",
+     "0x5210"
+    ],
+    [
+     -29,
+     "O2",
+     "cp",
+     "0x4b10"
+    ],
+    [
+     -29,
+     "O2-noinline",
+     "cp",
+     "0x4bf0"
+    ],
+    [
+     -23,
+     "O0",
+     "cp",
+     "0x4793"
+    ],
+    [
+     -20,
+     "O0",
+     "cp",
+     "0x5522"
+    ],
+    [
+     -16,
+     "O2",
+     "cp",
+     "0x5a50"
+    ],
+    [
+     -16,
+     "O2-noinline",
+     "cp",
+     "0x5ae0"
+    ],
+    [
+     -11,
+     "O0",
+     "tar",
+     "0x204f5"
+    ],
+    [
+     -5,
+     "O2",
+     "tar",
+     "0x21a20"
+    ],
+    [
+     -5,
+     "O2-noinline",
+     "tar",
+     "0x1c6e0"
+    ],
+    [
+     -5,
+     "O2-noinline",
+     "tar",
+     "0x20890"
+    ],
+    [
+     -4,
+     "O0",
+     "diff",
+     "0xda03"
+    ],
+    [
+     -4,
+     "O2",
+     "tar",
+     "0x1d660"
+    ],
+    [
+     -3,
+     "O2",
+     "diff",
+     "0xad70"
+    ],
+    [
+     -3,
+     "O2-noinline",
+     "diff",
+     "0xabe0"
+    ],
+    [
+     -2,
+     "O0",
+     "tar",
+     "0x26c90"
+    ]
+   ],
+   "shape_down": [
+    [
+     -856,
+     "u64*",
+     "<addr>"
+    ],
+    [
+     -72,
+     "u64*",
+     "<var>"
+    ],
+    [
+     -43,
+     "i64",
+     "<var>"
+    ],
+    [
+     -38,
+     "u64*",
+     "<paren>"
+    ],
+    [
+     -8,
+     "void*",
+     "<paren>"
+    ],
+    [
+     -7,
+     "u64",
+     "<addr>"
+    ],
+    [
+     -6,
+     "uchar",
+     "<var>"
+    ],
+    [
+     -2,
+     "u64",
+     "<paren>"
+    ],
+    [
+     -2,
+     "char*",
+     "<paren>"
+    ],
+    [
+     -1,
+     "named:stat*",
+     "<var>"
+    ]
+   ],
+   "shape_up": [
+    [
+     6,
+     "uchar",
+     "<paren>"
+    ],
+    [
+     3,
+     "u64",
+     "<var>"
+    ]
+   ]
+  },
+  "k:kctl": {
+   "fewer": 0,
+   "fewer_casts": 0,
+   "more": 0,
+   "more_casts": 0,
+   "top_more": [],
+   "top_fewer": [],
+   "shape_down": [],
+   "shape_up": []
+  }
+ }
+}

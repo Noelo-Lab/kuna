@@ -1,0 +1,22 @@
+##### O0/coreutils/sort @0xc481  casts 0 -> 7 (IDA 0)
+   -unsigned long sub_c481(unsigned long *a0)
+   +void * sub_c481(void *a0)
+   -  sub_c4e8(*a0,a0[1],a0[2],a0[3],a0[4],a0[5],a0[6]);
+   -  return 0;
+   +  sub_c4e8(*(long *)a0,((unsigned long *)a0)[1],((unsigned long *)a0)[2],((struct_21 **)a0)[3],((unsigned long **)a0)[4],((FILE **)a0)[5],((char **)a0)[6]);
+   +  return NULL;
+##### O2/coreutils/sort @0xba80  casts 0 -> 7 (IDA 7)
+   -unsigned long sub_ba80(unsigned long *a0)
+   +void * sub_ba80(void *a0)
+   -  sub_b220(*a0,a0[1],a0[2],a0[3],a0[4],a0[5],a0[6]);
+   -  return 0;
+   +  sub_b220(*(long *)a0,((unsigned long *)a0)[1],((unsigned long *)a0)[2],((struct_14 **)a0)[3],((unsigned long **)a0)[4],((FILE **)a0)[5],((char **)a0)[6]);
+   +  return NULL;
+##### O2-noinline/coreutils/sort @0xa710  casts 0 -> 7 (IDA 7)
+   -unsigned long sub_a710(unsigned long *a0)
+   +void * sub_a710(void *a0)
+   -  sub_a4e0(*a0,a0[1],a0[2],a0[3],a0[4],a0[5],a0[6]);
+   -  return 0;
+   +  sub_a4e0(*(long *)a0,((unsigned long *)a0)[1],((unsigned long *)a0)[2],((struct_20 **)a0)[3],((unsigned long **)a0)[4],((FILE **)a0)[5],((char **)a0)[6]);
+   +  return NULL;
+TOTAL +21

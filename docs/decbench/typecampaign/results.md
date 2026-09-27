@@ -1,43 +1,45 @@
 # Type-recovery campaign — results
 
-## Campaign summary — baseline → final (2026-09-16 → 2026-09-24)
+## Campaign summary — baseline → final (2026-09-16 → 2026-09-27)
 
-Nine rounds (A–I), about fifty merged PRs (#646 → #724). The campaign baseline is main `809712e9`;
-the final build is main `b3878d32e`. Every row is re-measured on the same instrument under the pinned
-metric (decbench `625e892`, decisions §12); round-by-round detail follows, rounds H and I are at the
-end, and the raw rows are in `final-i/`.
+Twelve rounds (A–L), about sixty merged PRs (#646 → #744). The campaign baseline is main `809712e9`;
+the final build is main `632437155`. Every row is re-measured on the same instrument under the pinned
+metric (decbench `625e892`, decisions §12); round-by-round detail follows, rounds J, K and L are at the
+end, and the raw rows are in `final-l/`.
 
 | instrument | baseline | **final** | change |
 |---|---|---|---|
-| type_match, 444 slices / 10,748 functions | 848 perfect (7.89%), mean .2645 | **1,615 (15.03%)**, mean **.3697** | ×1.90 perfect, +39.8% mean; 3,381 functions up, 17 down |
-| … at -O0 / -O2 / -O2-noinline | 612 / 42 / 194 perfect | **1,110 / 89 / 416** | 14.28% → 25.90%, 1.75% → 3.72%, 4.77% → 10.23% |
-| rank among five decompilers | 4th on perfect % | **1st at every opt level** | on binja's own 10,366 functions: 8.02% → **14.82%**, against binja's 12.28% |
-| GT variables matched | 25.4% (16,676 of 65,715) | **33.6% (22,058)** | arguments 36.1% → 52.4%, stack 48.5% → 58.7%; 1st of five on both |
-| `ptr_char` / `ptr_void` / `ptr_ptr` | 20.6% / 1.5% / 18.3% | **38.4% / 17.8% / 32.9%** | 1st, 1st, 2nd (binja 36.8% / 12.8%; ida 38.3% on `ptr_ptr`) |
-| `bool` / `struct_val` / `ptr_struct` | 21.6% / 0.0% / 0.0% | **42.5% / 28.5% / 4.0%** | 1st, 2nd (ghidra 30.6%), 1st |
-| decbench#93 counterfactual (credit any struct pointer) | 848 | **2,188** (20.4%), mean .4543 | +573 functions over the final build's own count |
-| **casts**, the 4,815 functions kuna and IDA both emit | 40,583 — **1.073× IDA**, 211.6 / kloc | **38,602 — 1.021× IDA**, 202.5 / kloc | −4.9%, after peaking at 45,126 (1.193×) in round G; fewer than IDA at -O2-noinline (0.970×) |
-| goal 2: declarations, fmt/ls/sort/du O0+O2 | 7,085; 151 `[16]` blobs; 11 phantom `// rdx` | **6,970; 65; 7** | −1.6%, −57%; `fmt::main` calls `sub_3700` with 2/2/2 arguments (was 1/2/3) and declares no phantom |
-| goal 3: TRex mean, pooled O0 / O2 | 3.638 / 1.579 | **4.477 / 1.960** | +23% / +24%; GT struct parameters typed as a struct 0 → 173 of 538 (O0), 0 → 95 of 297 (O2) |
+| type_match, 444 slices / 10,748 functions | 848 perfect (7.89%), mean .2645 | **1,674 (15.57%)**, mean **.3752** | ×1.97 perfect, +41.9% mean; 3,539 functions up, 17 down |
+| … at -O0 / -O2 / -O2-noinline | 612 / 42 / 194 perfect | **1,160 / 93 / 421** | 14.28% → 27.07%, 1.75% → 3.88%, 4.77% → 10.35% |
+| rank among five decompilers | 4th on perfect % | **1st at every opt level** | on binja's own 10,366 functions: 8.02% → **15.39%**, against binja's 12.28% |
+| GT variables matched | 25.4% (16,676 of 65,715) | **34.0% (22,373)** | arguments 36.1% → 53.5%, stack 48.5% → 59.1%; 1st of five on both |
+| `ptr_char` / `ptr_void` / `ptr_ptr` | 20.6% / 1.5% / 18.3% | **39.3% / 18.8% / 36.8%** | 1st, 1st, 2nd (binja 36.8% / 12.8%; ida 38.3% on `ptr_ptr`) |
+| `bool` / `struct_val` / `ptr_struct` | 21.6% / 0.0% / 0.0% | **42.5% / 28.5% / 4.1%** | 1st, 2nd (ghidra 30.6%), 1st |
+| decbench#93 counterfactual (credit any struct pointer) | 848 | **2,262** (21.0%), mean .4599 | +588 functions over the final build's own count |
+| **casts**, the 4,815 functions kuna and IDA both emit | 40,583 — **1.073× IDA**, 211.6 / kloc, 33.4 / 100 statements | **32,073 — 0.848× IDA**, 169.6 / kloc, **27.0 / 100 statements** | −21.0%, after peaking at 45,126 (1.193×) in round G; fewer than IDA at every opt level (O0 0.815×, O2 0.907×, O2-noinline 0.816×); per statement exactly IDA's density (26.99), per line 1.09×, at -O2 1.12× per statement |
+| goal 2: declarations, fmt/ls/sort/du O0+O2 | 7,085; 151 `[16]` blobs; 11 phantom `// rdx` | **6,956; 65; 7** | −1.8%, −57%; `fmt::main` calls `sub_3700` with 2/2/2 arguments (was 1/2/3) and declares no phantom |
+| goal 3: TRex mean, pooled O0 / O2 | 3.638 / 1.579 | **4.508 / 1.967** | +24% / +25%; GT struct parameters typed as a struct 0 → 173 of 538 (O0), 0 → 95 of 297 (O2) |
 | goal 3: layout, fields only (P / R / F1) | none (no records) | **.8713 / .0932 / .1684** | nesting F1 0 → .0036 |
-| speed, whole-binary `decompile-all` -O2 | — | **+1.7% / +3.5% / +3.4% / +4.0%** (fmt / ls / sort / bash) | inside the +5% budget; the one breach left is dpkg-divert -O2-noinline, +5.6% over the build before `calleevote` |
+| speed, whole-binary `decompile-all` -O2 | — | SUMMARY_SPEED | SUMMARY_SPEED_READING |
 
 **What each goal achieved.** *Primitives:* `bool` doubled (boolbyte, bytehonest) and kuna is 1st or 2nd
 on every integer and `char` class; the signedness work is real in the C and in TRex but worth zero on a
 metric that strips `unsigned`. *Variables:* the leanest declarer got leaner, the 128-bit blobs are mostly
 gone, and the named bad case (`fmt::main`'s phantom `rdx` arguments) is fixed by prototype recovery, not
 by hiding. *Structs:* from no records at all to 173 of 538 struct parameters typed as a struct at .87
-field precision, 568 correctly named library records, and +573 functions the moment decbench credits a
-struct pointer as one. *Casts* (round I, the user's newest ask): the count the type work had pushed to
-1.19× IDA is 1.02×, every removed cast is proven value-preserving by compiled round trips, and no type
-was weakened to lose one.
+field precision, 579 correctly named library records, and +588 functions the moment decbench credits a
+struct pointer as one. *Casts* (rounds I–L, the user's newest ask): the count the type work had pushed to
+1.19× IDA is 0.85×, per statement kuna prints exactly IDA's density, the user's base64 witness shape
+goes from 33 casts to 7, every removed cast is proven value-preserving by compiled round trips, and no
+type was weakened to lose one — the last three rounds' type levers (`elemptr`, `callrettype`,
+`callbacktype`) are also worth +59 perfect functions.
 
 **What stays opt-in, and why.** `charptr` (fails `test-cli` and the typesweep after #704);
 `structsynth nest` (+63% on a sharded run); `structmerge siblings` (#715: agreement is a shape, not an
 identity, and the sweep settles two `e2fsck` parameters lower); `libctypes glibc`, `protoorder lock`,
-`structdefs`, `indirectonly`, `signedness prefer-signed` (moves datatest assertions), `formatstring full`.
-Open and not landed: #723 `globalref` (approved; would be on), #720 `structheadless` (approved; off by
-design, layout precision .8713 → .8298), #718 `callbacktype` (three required review changes).
+`structdefs`, `indirectonly`, `signedness prefer-signed` (moves datatest assertions), `formatstring full`,
+`structheadless closed` (#720: −1,420 casts and layout recall .0932 → .1131, but fields-only precision
+.8713 → .8298). Nothing the campaign opened is still open.
 
 **The ceilings** no engine work moves on this metric: register-resident ground truth is 25,821 of
 65,715 GT variables (39.3%) and no stripped decompiler exports register locals; 10,559 variables carry a
@@ -46,24 +48,24 @@ unmatchable variable, and on the reachable ones kuna converts 43.8%, level with 
 variable count and call arity score zero by construction, so every arity change was judged on DWARF.
 
 **Ranked open levers.**
-1. **Upstream metric fixes**, each worth more than any engine lever left: decbench#93 (+573 perfect),
+1. **Upstream metric fixes**, each worth more than any engine lever left: decbench#93 (+588 perfect),
    excluding inlined callees' variables from the caller (measured at round E: O2 74 → 153, O2-noinline
    380 → 498, for every decompiler), and #94 (`restrict`; small, but it affects every tool).
-2. **Land what is approved.** #723 `globalref`: −1,125 casts, 0 functions more, typesweep identical.
-   #720 `structheadless` as opt-in: with it on, −3,118 casts, layout recall .0932 → .1131, nesting F1
-   doubles. #718 needs its three review changes.
-3. **The cast residue**, by count against IDA on the same 4,815 functions: `(long)v` arithmetic that
-   `castarith` declines — variable and scaled indexes, pointer difference `(long)p - (long)q`,
-   non-dividing offsets (4,563 vs IDA's 1,815); an object read at another width, `(unsigned long *)&v`
-   (1,252 vs 3; the plan's "split partially written variables"); constant addresses (871 vs 0, #723);
-   `(char *)<call>` on libc returns without a signature (1,994 vs 1,172, the `libcwiden` line); and the
-   `void *` bases a record would clear (#720).
-4. **Naming a synthesized record.** `ptr_struct` is 4.0% (568 of 14,252); under the pinned metric only a
+2. **The cast residue, by family against IDA** on the same 4,815 functions (L.1, signedness merged): the
+   64-bit widenings `castwiden` declines — comparisons, shifts, unary minus, `(unsigned long)c + l`
+   beside a signed `long`, operands of unknown type (5,833 vs IDA's 4,231); an address taken at another
+   type, `(int *)&x`, `(long *)&x`, `(char **)&x` (2,783 vs 1,864; `castobject` covers only locked
+   out-parameters); a call's pointer result, now mostly a right return stored into integer-typed caller
+   storage, which wants the storage typed (2,499 vs 1,793); and constant addresses `globalref` declines
+   because one static is used at two pointee types (701 vs 1). By density the gap is -O2 alone: 29.2
+   casts per 100 statements against IDA's 26.1.
+3. **Naming a synthesized record.** `ptr_struct` is 4.1% (579 of 14,252); under the pinned metric only a
    library type's name converts one.
-5. **Layout recall .0932 and nesting F1 .0036** — 8,563 of 9,443 ground-truth fields are never claimed.
-6. **`calleevote`'s redo.** The budget holds kmod and dpkg-divert -O2-noinline level with round G, but
-   against the build before `calleevote` they stay +4.9% and +5.6% (I.7). An incremental redo needs a checkpointed `Funcdata` that
-   re-enters the action tree, a substrate change.
+4. **Layout recall .0932 and nesting F1 .0036** — 8,563 of 9,443 ground-truth fields are never claimed.
+   The one measured lever, `structheadless closed`, lifts recall to .1131 and removes 1,420 casts, and
+   stays off for its precision (.8298).
+5. **`ptr_ptr`**, the one pointer class a rival still leads by rate: IDA 38.3%, kuna 36.8% (674 TP).
+LEVER6_SPEED
 
 ## Stage 3 — the first re-measure (2026-09-19)
 
@@ -75,7 +77,7 @@ instrument the campaign built, plus what the numbers cannot see. **Round C** (be
 measurement on `origin/main` `d8b9c0b1` once the eight items round B left open had landed. **Round D**,
 **Round E**, **Round F** and **Round G** repeat them again on `4c7704e0`, `2da619852`, `810b7dc86`
 and `10a0db235`, and **Rounds H and I** (the first round of the cast campaign) on `dbe854ba3` and
-`b3878d32e`.
+`b3878d32e`, and **Rounds J, K and L** (the rest of it) on `632437155`.
 
 | | binary | commit |
 |---|---|---|
@@ -2110,6 +2112,355 @@ The campaign-wide list is in the summary at the top of this page. What round I c
 cast levers of the plan's first, fourth and fifth rank are **on**; `structmerge siblings` joins the
 opt-in list; the new cast residue is ranked there by count against IDA.
 
+## Rounds J, K and L — 2026-09-24 → 2026-09-27
+
+Rounds J, K and L are the rest of the cast campaign. Round J landed #723 and then stopped on a weekly
+usage limit with four lanes mid-flight; round K resumed them, landed four PRs and was paused by the
+user; round L resumed the last three and added two. In between, the user reported a witness — a
+textbook base64 decoder whose every table access printed as an integer sum behind casts, "That is
+really bad. Fix it." — and round L's `elemptr` is the fix (L.2). No round-J or round-K re-measure was
+published, so this section measures all three against round I on the same instruments.
+
+| round | PR | lever | default |
+|---|---|---|---|
+| J | #723 | `globalref` — a constant address used as a pointer prints as the global it names, `&dat_<addr>` | `on` |
+| K | #720 | `structheadless closed` — a parameter read only past offset 0 is a record when every caller is a known direct call | `off` |
+| K | #727 | `castindex` — a variable index prints as a subscript, a `char *` difference as `p - q` | `on` |
+| K | #728 | `castternary` — a conditional's arm keeps no widening the conditional performs | `on` |
+| K | #726 | `callpush` — an x86 `call`'s own return-address store (after `alloca`) is part of the call | `on` |
+| L | #718 | `callbacktype` — a callback takes the prototype of the libc slot it is passed to; only the parked function changes | `on` |
+| L | #729 | `callrettype` — a call returns the type its callee's recovery stated | `on` |
+| L | #743 | `castobject` — a stack object whose every address use is a locked `T *` argument is declared `T` | `on` |
+| L | #744 | `castwiden` — a widening C performs by itself keeps no cast; beside an 8-byte constant the constant takes its suffix (`0xcL`) | `literal` |
+| L | #731 | `elemptr` — a pointer used only as an array of one element type is declared as that pointer | `on` |
+
+Every lever carries a compiled round trip (gcc and clang, the printed C rebuilt with the option off
+and on, required to compute what the binary computes). Five commits from other sessions landed in
+the same window (#730 Cortus APS3 specs, #732 ELF definition over import stub, #737 PE ordinals, #738
+`hugefn`, #741 PowerPC64 `isel`), plus round K's web, PE and CLI work (#733–#736, #739, #740); on every
+instrument below they move nothing (L.1, L.3).
+
+| | binary | commit |
+|---|---|---|
+| **final** | `/home/mahaloz/kwt/castbench/bin-632437155/kuna` (pinned copy) | main `632437155` (2026-09-27, #731) |
+
+Metric pin unchanged (decisions §12); `scripts/decbench/` is byte-identical between `b3878d32e` and
+`632437155`. Controls: the round-I binary re-run on this tree reproduces round I on every instrument
+(0 of 10,748 typesweep values differ; goal 2 6,970 / 65 / 7; TRex 4.4770 / 1.9597; layout .8713 /
+.0932), and the round-K binary re-run reproduces its castbench arm cast for cast.
+
+### Headline
+
+| goal | instrument | round I | **final** | reading |
+|---|---|---|---|---|
+| **casts** | castbench, the 4,815 functions kuna and IDA both emit (45 binaries) | 38,602, 202.5 / kloc, 32.1 / 100 statements, **1.021× IDA** | **32,073**, 169.6 / kloc, **27.0 / 100 statements, 0.848× IDA** | −6,529 (−16.9%); 1,299 functions fewer, 28 more; per statement now exactly IDA's density; fewer than IDA at every opt level |
+| the witness | `elemptr_x86_64.c` base64 decoder, gcc -O0 | `w_decode` 33 casts, `w_build` 9 | **7 and 1** | every table access a subscript (L.2) |
+| type_match | typesweep, 444 slices / 10,748 functions | 1,615 perfect (15.03%), mean .3697 | **1,674 (15.57%)**, mean **.3752** | 239 improved, 2 worse, 59 onto perfect; rounds J and K move 0 of 10,748 values |
+| vs the other decompilers | each rival on its own functions | 1st at every opt level | 1st at every opt level | on binja's functions 15.39% / .3769 against 12.28% / .3422 |
+| `ptr_char` / `ptr_ptr` / `ptr_prim` | per-GT-class match rate | 38.4% / 32.9% / 49.4% | **39.3% / 36.8% / 54.5%** | +127, +71, +63 TP, nearly all `elemptr`; `ptr_prim` passes binja (51.7%) |
+| goal 2: variables | varcensus, fmt/ls/sort/du O0+O2 | 6,970 declarations, 65 `[16]` blobs, 7 phantom `// rdx` | **6,956**, 65, 7 | `fmt::main` differs by one `&dat_baa0` |
+| goal 3: structs | TRex pooled O0 / O2; layout P / R; nesting F1 | 4.4770 / 1.9597; .8713 / .0932; .0036 | **4.5081 / 1.9665**; identical; identical | TRex rises on all eight builds |
+| decbench#93 crediting | replay of the same rows | 2,188 (+573), mean .4543 | **2,262** (+588), mean **.4599** | |
+| speed | whole-binary `decompile-all`, interleaved min | — | SPEED_HEADLINE | SPEED_HEADLINE_READING |
+
+### L.1 Casts
+
+Same instrument and function set as round I (I.1): `castbench` over 45 decbench binaries at -O0, -O2
+and -O2-noinline, every number on the **4,815 functions every arm and IDA emit at the same address**.
+Arms are whole-binary `kuna decompile-all --json` at defaults; rounds I, J and K are the castbench arms
+`main-b3878d32e`, `main-c960fb18d` and `main-0096e984d`, and the final build's arm is promoted as
+`main-632437155` for the next round.
+
+| arm | casts | per 1,000 lines | per 100 statements | **vs IDA (count)** |
+|---|---:|---:|---:|---:|
+| IDA | 37,821 | 155.4 | 26.99 | 1.000 |
+| campaign baseline `809712e9` | 40,583 | 211.6 | 33.43 | 1.073 |
+| round G `10a0db235` = round H | 45,126 | 236.8 | 37.54 | 1.193 |
+| round I `b3878d32e` | 38,602 | 202.5 | 32.12 | 1.021 |
+| round J `c960fb18d` | 37,477 | 196.6 | 31.18 | 0.991 |
+| round K `0096e984d` | 35,588 | 188.2 | 29.94 | 0.941 |
+| **final `632437155`** | **32,073** | **169.6** | **26.99** | **0.848** |
+
+| opt | functions | IDA (per kloc / per 100 stmts) | round I | round K | **final** (per kloc / per 100 stmts) |
+|---|---:|---:|---:|---:|---:|
+| O0 | 1,992 | 12,195 (168.5 / 30.98) | 12,591 — 1.032× | 11,612 — 0.952× | **9,934 — 0.815×** (167.4 / 27.64) |
+| O2 | 1,067 | 13,459 (154.5 / 26.06) | 14,208 — 1.056× | 13,135 — 0.976× | **12,206 — 0.907×** (187.8 / 29.24) |
+| O2-noinline | 1,756 | 12,167 (145.0 / 24.76) | 11,803 — 0.970× | 10,841 — 0.891× | **9,933 — 0.816×** (153.4 / 24.14) |
+
+By count kuna now prints 15% fewer casts than IDA on the same functions, and fewer at every opt level.
+Density, the caveat round I carried (decisions §30): per statement the final build is **exactly IDA's
+26.99 per 100**; per line it is 1.09× (169.6 against 155.4 per 1,000 lines, because kuna prints 189,081
+lines on these functions against IDA's 243,379). **-O2 is the one level where kuna is still denser**:
+29.24 against 26.06 per 100 statements (1.12×, was 1.21× in round K) and 1.22× per line. kuna casts less
+than IDA on **2,168 of the 4,815 functions** (45.0%; round I 38.9%) and more on 1,173 (24.4%; round I
+32.0%).
+
+The ladder, one step per landed PR in landing order — round J's step is its own build, rounds K and L
+are option arms on the round-K and final builds (each option off in turn), and every arm reproduces
+its PR's published figure exactly:
+
+| step | casts | vs IDA | functions fewer / more |
+|---|---:|---:|---|
+| round I | 38,602 | 1.021 | |
+| + #723 `globalref` (= round J) | 37,477 | 0.991 | 486 / 0 |
+| + #720 `structheadless` (off) and round K's other commits | 37,477 | 0.991 | 0 / 0 |
+| + #727 `castindex` | 36,617 | 0.968 | 220 / 0 |
+| + #728 `castternary` | 36,614 | 0.968 | 2 / 0 |
+| + #726 `callpush` (= round K) | 35,588 | 0.941 | 24 / 0 |
+| + the five other-session commits (= final with round L's five options off) | 35,588 | 0.941 | 0 / 0 |
+| + #718 `callbacktype` | 35,609 | 0.942 | 0 / 3 |
+| + #729 `callrettype` | 34,829 | 0.921 | 393 / 25 |
+| + #743 `castobject` | 34,813 | 0.920 | 6 / 0 |
+| + #744 `castwiden` | 33,289 | 0.880 | 482 / 0 |
+| + #731 `elemptr` (= final) | **32,073** | **0.848** | 301 / 18 |
+
+Ablated one at a time on the final build: `elemptr` −1,216, `castwiden` −1,152 (its ladder step is
+−1,524; `elemptr` now removes some of the same widenings itself), `callrettype` −777, `castobject` −16,
+`callbacktype` +21. `castwiden`'s `literal` value alone (against `on`) is −928. The opt-in
+`structheadless closed` on the final build takes 32,073 → 30,653 (0.810×; 219 functions fewer, 58 more).
+
+**Functions with more casts, all read** (`final-l/more-*.txt` holds every diff). Over the three rounds
+there are 28 (+52); rounds J and K add none. Per step:
+
+- `callbacktype`, 3 functions, +21: `sort`'s thread routine at all three levels. The `pthread_create`
+  slot declares its parameter `void *` (so does DWARF: `void *data`), and the routine reads seven
+  members of its argument record through it, `((FILE **)a0)[5]`. IDA prints the same seven at -O2 and
+  -O2-noinline.
+- `callrettype`, 25 functions, +30: a callee's recovered pointer return now reaches a caller whose
+  storage is an integer — `(long)sub_1563d(...)` stored into a record field typed `long`,
+  `(int8)xrealloc(...)` into an 8-byte integer slot in tar, `(long)last_component(a0) - (long)a0`
+  where `a0` is `void *` (a difference `castindex` keeps in integers) — plus `find` -O2 `sub_f400`, whose static result buffer is now used at
+  two pointee types, so `globalref` declines to name it (+2). The type is the callee's; typing the
+  caller's storage is the next step, not removing the return type.
+- `elemptr`, 18 functions, +26: an element pointer receives a callee's pointer of another element type
+  (`(uint1 *)sub_4ac50(a1)` in tar), and two gzip -O2 tables are now read at two pointee types, so
+  `globalref` stops naming them (`((unsigned char **)0x18040)[v7]`).
+
+`elemptr` also moves 470 lines from `(char)v4[4]` to `*(char *)&v4[4]` at the same count: with the
+option on, a narrow load through an inferred pointee stays narrow, and the old spelling read eight
+bytes where the binary reads one.
+
+Three real functions, round I → final (full texts, with IDA's, in `final-l/cast-snippets.md`):
+
+```c
+// gzip::pqdownheap -O0: 50 casts -> 8 (IDA 23) -- elemptr types the heap, castwiden drops (long)
+v1 = *(int *)((long)a1 * 4 + 0xdf200);                          v1 = dat_df200[a1];
+*(unsigned int *)((long)v2 * 4 + 0xdf200) =                     dat_df200[v2] = dat_df200[v3];
+    *(unsigned int *)((long)v3 * 4 + 0xdf200);
+*(int *)((long)v2 * 4 + 0xdf200) = v1;                          dat_df200[v2] = v1;
+
+// ls::getenv_quoting_style -O2-noinline: 5 casts -> 0 (IDA 0) -- globalref, elemptr, callrettype
+v1 = sub_cf70(v2,(long *)0x259e0,(void *)0x1d9c0,4);            v1 = sub_cf70(v2,&dat_259e0,dat_1d9c0,4);
+return *(unsigned int *)((long)v1 * 4 + 0x1d9c0);              return dat_1d9c0[v1];
+v2 = (char *)sub_158c0(v2);                                     v2 = sub_158c0(v2);
+
+// cmp::file_position -O0: 12 casts -> 4 (IDA 0) -- and what is left
+if (*(char *)((long)a0 + 0x10215) != '\x01') {                 if (dat_10215[a0] != '\x01') {
+v2 = *(unsigned long *)((long)a0 * 8 + 0x10200);                v2 = *(unsigned long *)(a0 * 8L + 0x10200);
+```
+
+`file_position`'s other three tables keep their integer form: `elemptr` types a table only where every
+function of the batch agrees, and other functions of `cmp` name their first elements directly
+(`dat_10200`, `dat_100b0`), which blocks the array. IDA names all four (`qword_10220[a1] = lseek(dword_100B0[a1], qword_10200[a1], 1)`).
+
+What is left against IDA, by cast family (the census counter's shapes, signedness merged — IDA's
+`_QWORD` and `__int64` and kuna's `unsigned long` and `long` are one cast; `final-l/shapes9.py`):
+
+| family | round I | round K | **final** | IDA | final − IDA |
+|---|---:|---:|---:|---:|---:|
+| a 64-bit widening, `(long)x` | 8,521 | 7,613 | **5,833** | 4,231 | **+1,602** (round K +3,382) |
+| an address taken at another type, `(T *)&x` | 3,355 | 2,504 | **2,783** | 1,864 | **+919** (+640) |
+| a call's pointer result, `(T *)f()` | 3,215 | 3,215 | **2,499** | 1,793 | **+706** (+1,422) |
+| a constant address, `(T *)0x…` | 1,712 | 587 | **701** | 1 | **+700** (+586) |
+| other integer casts | 5,836 | 5,835 | 5,505 | 10,331 | −4,826 |
+| other pointer casts | 15,963 | 15,834 | 14,752 | 19,601 | −4,849 |
+
+The four families kuna still prints more of: widenings `castwiden` declines (a comparison, a shift, a
+unary minus, `(unsigned long)c + l` beside a signed `long`, an operand whose type is unknown), led by
+`(long)v` +1,331 and `(long)(expr)` +443; addresses taken at another type, `(int *)&x` +431,
+`(long *)&x` +275 and `(char **)&x` +264, which `elemptr`'s narrow-load spelling raised by 263 and
+`castobject` reaches only for locked out-parameters; a call's pointer result, `(char *)f()` +201 (was
++822; `callrettype`) and `(long *)f()` +186, now mostly a right return meeting integer storage; and
+constant addresses, which rose by 114 in round L where `elemptr` and `callrettype` gave one static two
+pointee types and `globalref` refused it. What IDA pays and kuna does not: `(long *)(expr)` −3,557
+(IDA's `*((_QWORD *)a1 + k)`), `(int)v` −1,726, `(char *)(expr)` −1,076, `(int *)(expr)` −1,012,
+`(unsigned char)f()` −910.
+
+### L.2 The witness
+
+The user's witness was a base64 decoder: a decoding table filled from a constant alphabet into a
+`malloc`'d global, then indexed by input bytes into a `malloc`'d buffer. Its shape is reproduced here
+only through the repo's public fixture `decompiler/crates/kuna-analysis/tests/fixtures/elemptr_x86_64.c`,
+whose checked-in stripped builds are decompiled whole-binary (`final-l/b64-witness.md`):
+
+| build | `w_decode` gcc -O0 / clang -O0 / gcc -O2 | `w_build` | whole fixture |
+|---|---|---|---|
+| round I `b3878d32e` | 33 / 29 / 28 | 9 / 9 / 2 | 146 / 134 / 189 |
+| round J `c960fb18d` (when the witness was reported) | 33 / 29 / 28 | 9 / 9 / 2 | 144 / 132 / 184 |
+| round K `0096e984d` | 25 / 25 / 24 | 5 / 5 / 2 | 126 / 116 / 178 |
+| **final `632437155`** | **7 / 7 / 9** | **1 / 1 / 1** | **46 / 40 / 120** |
+
+```c
+// round J, gcc -O0
+void * w_decode(long a0,unsigned long a1,unsigned long *a2)
+  if (*(char *)(a0 + (a1 - 1)) == '=')
+    v2 = (*(char *)(v7 + a0) != '=') ? (int)*(char *)((unsigned long)*(unsigned char *)(v7 + a0) + dat_300053e0) : 0;
+      *(char *)(v8 + (long)v6) = (char)(v5 >> 0x10);
+  *(char *)((long)v6 + *a2) = 0;
+void w_build(void)
+    *(char *)((unsigned long)*(unsigned char *)((long)v2 + 0x30005080) + (long)dat_300053e0) = (char)v2;
+
+// final
+char * w_decode(char *a0,unsigned long a1,unsigned long *a2)
+  if (a0[a1 - 1] == '=')
+    v2 = (a0[v7] != '=') ? dat_300053e0[(unsigned char)a0[v7]] : 0;
+      v6[v8] = (char)(v5 >> 0x10);
+  v6[*a2] = '\0';
+void w_build(void)
+    dat_300053e0[dat_30005080[v2]] = (char)v2;
+```
+
+Round K's `castternary` and `castindex` took the arms' `(int)` and part of the index arithmetic; round
+L's `elemptr` declared the input `char *`, the buffer `char *`, the table global `char *` and the
+alphabet a byte table, and every access became a subscript. The seven casts left are the `(unsigned
+char)` index conversions the value needs and the truncating stores `(char)(v5 >> 0x10)`, which compute
+what the binary computes. The corpus has the same shape: tar's `base64_init` -O0 goes 5 → 2 casts
+(IDA 2), `dat_9f4a0[(int4)"ABCD…"[v1]] = (char)v1;`.
+
+### L.3 type_match
+
+| slice | functions | base | round C | round G | round I | rounds J, K | **final** | mean I → **final** |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| **ALL** | 10,748 | 848 | 1,349 | 1,609 | 1,615 | 1,615 | **1,674 (15.57%)** | .3697 → **.3752** |
+| O0 | 4,286 | 612 | 895 | 1,104 | 1,110 | 1,110 | **1,160 (27.07%)** | .5496 → **.5565** |
+| O2 | 2,394 | 42 | 74 | 89 | 89 | 89 | **93 (3.88%)** | .1984 → **.2043** |
+| O2-noinline | 4,068 | 194 | 380 | 416 | 416 | 416 | **421 (10.35%)** | .2811 → **.2847** |
+| coreutils | 6,422 | 525 | 877 | 985 | 989 | 989 | **1,019** | .3590 → .3630 (83 up, 2 down) |
+| tar | 1,548 | 94 | 158 | 213 | 213 | 213 | **221** | .3938 → .3982 (28 up) |
+| shadow | 686 | 20 | 31 | 89 | 89 | 89 | **99** | .3604 → .3724 (15 up) |
+| findutils | 790 | 31 | 41 | 60 | 61 | 61 | 61 | .2508 → .2600 (46 up) |
+| bzip2 | 267 | 15 | 31 | 34 | 34 | 34 | **40** | .4173 → .4372 (31 up) |
+| diffutils | 420 | 43 | 58 | 64 | 64 | 64 | **66** | .4514 → .4549 (15 up) |
+| grep | 247 | 37 | 51 | 52 | 53 | 53 | **55** | .4583 → .4695 (11 up) |
+| gzip | 368 | 83 | 102 | 112 | 112 | 112 | **113** | .5409 → .5438 (10 up) |
+
+**Attribution is exact**, by the same ladder as L.1 swept on the typesweep:
+
+| step | perfect | mean | improved / worse | onto perfect |
+|---|---:|---:|---|---:|
+| round I | 1,615 | .3697 | | |
+| round J (#723) and round K (#720, #727, #728, #726) | 1,615 | .3697 | 0 / 0 — 0 of 10,748 values move | 0 |
+| + the five other-session commits | 1,615 | .3697 | 0 / 0 | 0 |
+| + #718 `callbacktype` | 1,625 | .3713 | 29 / 0 | 10 |
+| + #729 `callrettype` | 1,631 | .3717 | 23 / **2** | 6 |
+| + #743 `castobject`, #744 `castwiden` | 1,631 | .3717 | 0 / 0 | 0 |
+| + #731 `elemptr` (= final) | **1,674** | **.3752** | 189 / 0 | 43 |
+
+Each step reproduces its PR's published figure (1,625, 1,631, 1,631, 1,674). `callbacktype`'s ten new
+perfect functions are `qsort` comparators (`cut`/`numfmt` `compare_ranges`, `ptx` `compare_occurs` and
+`compare_words`) and shadow's signal handlers (`catch_signals`, `alarm_handler` at -O2 and
+-O2-noinline, which gain the slot's `int`). `elemptr`'s 43 include bzip2's Huffman and sort routines
+(`BZ2_hbAssignCodes`, `mainGtU`, …), gnulib `dir_name` in ten coreutils tools and tar's
+`to_octal`/`to_base256`.
+
+**Both worse rows read** — both are `callrettype`, and both are a right type the metric scores against
+another variable:
+
+- `pwd` -O2-noinline `file_name_prepend`, 0.2 → 0.1: GT `s` (`char *`) goes `char *` → `void *`.
+  `callrettype` types the caller's `readdir` wrapper result as the `dirent *` it is, so the argument
+  prints as `&v6->field_0x13` (`d_name`) where it was `&((char *)v6)[0x13]`, and `calleevote` does not
+  read a record member's address as a `char *` vote; the parameter falls back to `void *`.
+- `who` -O2 `who`, 0.3077 → 0.2308: the frame slot at −0x80 is the variable kuna gives
+  `time_string()`'s result, now its `char *`; DWARF places `entries`, a `long`, at the same offset
+  (the -O2 frame shares the slot).
+
+Against the campaign baseline the final build stands at **3,539 improved and 17 worse**, 828 onto
+perfect and 2 off; the 17 are exactly rounds G and I's 17, with the same values. Every moved function
+is in `final-l/moved.csv`; per project × opt in `final-l/report-slices.md`.
+
+### L.4 Per ground-truth class
+
+Same classifier, same 65,715 GT variables; the rivals' columns are unchanged. The rows that moved:
+
+| GT class | GT vars | round I | **final** | step that moved it | ida | binja |
+|---|---:|---:|---:|---|---:|---:|
+| `ptr_char` | 14,645 | 38.4% (5,624) | **39.3% (5,751)** | `elemptr` +109, `callrettype` +18 | 24.4% | 36.8% |
+| `ptr_ptr` | 1,834 | 32.9% (603) | **36.8% (674)** | `elemptr` +71 | **38.3%** | 30.8% |
+| `ptr_prim` | 1,242 | 49.4% (614) | **54.5% (677)** | `elemptr` +63 | 30.7% | 51.7% |
+| `ptr_void` | 3,481 | 17.8% (618) | **18.8% (653)** | `callbacktype` +35 | 1.6% | 12.8% |
+| `ptr_struct` | 14,252 | 4.0% (568) | **4.1% (579)** | `callrettype` +11 | 2.4% | 2.8% |
+| `int_s4` | 8,788 | 53.8% (4,728) | 53.9% (4,738) | `callbacktype` +10 | 48.0% | 57.5% |
+| `int_s8` / `int_u8` | 10,135 | 1,451 / 3,913 | 1,450 / 3,912 | `callrettype` −1 / −1 | | |
+| **all GT variables** | 65,715 | 33.6% (22,058) | **34.0% (22,373)** | +315 | 24.1% | 30.7% |
+
+| storage | round I | **final** | ida | binja |
+|---|---:|---:|---:|---:|
+| argument (21,577) | 52.4% | **53.5%** | 40.6% | 48.4% |
+| stack (18,317) | 58.7% | **59.1%** | 38.2% | 51.8% |
+| register only (25,821) | 0.0% | 0.0% | 0.4% | 1.4% |
+
+| decompiler (functions it scored) | rival: perfect % / mean | kuna round I | **kuna final** |
+|---|---|---|---|
+| **binja** (10,366) | 12.28% / .3422 | 14.82% / .3717 | **15.39% / .3769** |
+| **ida** (10,273) | 8.33% / .2682 | 15.15% / .3761 | **15.72% / .3816** |
+| **angr** (10,502) | 8.27% / .2652 | 15.28% / .3739 | **15.84% / .3794** |
+| **ghidra** (10,673) | 6.84% / .2367 | 15.00% / .3708 | **15.55% / .3763** |
+
+Against binja on binja's functions: O0 **27.02%** / .5561 against 20.36% / .4956, O2 **3.78%** / .2030
+against 3.43% / .1868, O2-noinline **9.29%** / .2800 against 8.52% / .2632. `ptr_ptr` is the one
+pointer class a rival still leads by rate: IDA 38.3% of its own 1,748 variables (670 TP), kuna 36.8%
+of 1,834 (674 TP).
+
+### L.5 Goals 2 and 3, and the decbench#93 counterfactual
+
+Goal 2 (`final-l/goal2l.py`, round-I control beside the final build): 6,970 → **6,956** non-thunk
+declarations, 65 `[16]` blobs, 247 never-written locals (55 passed as a call argument), 17,289 call
+arguments and 7 phantom `// rdx` locals, all unchanged. `fmt::main` (`final-l/fmt-main-l.c`) differs
+from round I in one line, `getopt_long(argc,v10,"…",&dat_baa0,NULL)` where round I printed
+`(option *)0xbaa0` (#723); `sub_3700` is still called 2/2/2 with no phantom.
+
+Goal 3 (`structscore --all`, `final-l/structscore-table.md`): pooled TRex **O0 4.4770 → 4.5081** and
+**O2 1.9597 → 1.9665**, up on all eight builds (the `c_primitive` step passes on more variables:
+`sort` -O0 632 → 646). Struct-typed parameters stay 173 / 538 (O0) and 95 / 297 (O2); per-parameter
+layout is identical to round I (fields only .8713 = 880/1,010, recall .0932, F1 .1684), and so is
+nesting (F1 .0036). The measured layout lever is still opt-in: `structheadless closed` on the final
+build gives fields-only precision .8298 and recall .1131, as #720 measured.
+
+| decbench#93 crediting | perfect | credited perfect | TP added | mean → credited |
+|---|---:|---:|---:|---|
+| round I = round K | 1,615 | 2,188 (+573) | +2,734 | .3697 → .4543 |
+| **final** | 1,674 | **2,262 (+588)** | **+2,749** | .3752 → **.4599** |
+
+Under #93 the final build would be **2,262 of 10,748 (21.0%)**.
+
+### L.6 Speed
+
+SPEED_SECTION
+
+### L.7 Every round-J/K/L PR and what it measured
+
+| PR | item | default | measured effect (this page's arms) |
+|---|---|---|---|
+| #723 | `globalref` — `(T *)0x<addr>` → `&dat_<addr>`, the global declared at the pointed-to type in `decompile-project` | `on` | casts −1,125 (486 functions fewer, 0 more); typesweep identical |
+| #720 | `structheadless closed` | `off` | default output identical; on the final build: casts −1,420 (219 fewer, 58 more), layout P .8713 → .8298, R .0932 → .1131 |
+| #727 | `castindex` — `((T *)p)[x]` for a variable index, `p - q` for two `char *` | `on` | casts −860 (220 fewer, 0 more); typesweep identical |
+| #728 | `castternary` | `on` | casts −3 (2 fewer); typesweep identical |
+| #726 | `callpush` — the return-address store of a `call` after `alloca` is not printed | `on` | casts −1,026 (24 fewer, 0 more); typesweep identical |
+| #718 | `callbacktype` — 23 libc callback slots; the parked function alone is decompiled again | `on` | typesweep 1,615 → 1,625, 29 up / 0 down; `ptr_void` +35 TP; casts +21 (`sort`'s thread routine) |
+| #729 | `callrettype` | `on` | typesweep 1,625 → 1,631, 23 up / 2 down (L.3); casts −780 (393 fewer, 25 more) |
+| #743 | `castobject` | `on` | casts −16 (6 fewer); typesweep identical |
+| #744 | `castwiden` | `literal` | casts −1,524 (482 fewer, 0 more), of which the `literal` suffix is −928; typesweep identical |
+| #731 | `elemptr` — globals and tables typed only where the whole batch agrees | `on` | typesweep 1,631 → 1,674, 189 up / 0 down; `ptr_char` +109, `ptr_ptr` +71, `ptr_prim` +63 TP; casts −1,216 (301 fewer, 18 more); the witness 33 → 7 |
+
+Nothing the cast plan or round I left open is still open: #723, #720 and #718 landed with the rest.
+
+### L.8 What stays opt-in, and the ranked levers left
+
+The campaign-wide list is in the summary at the top of this page. What these rounds change in it:
+`structheadless closed` joins the opt-in list; `castwiden on` keeps every literal unsuffixed, at +928
+casts against the default `literal`; the cast residue is re-ranked by family against IDA (L.1), and -O2 density
+is the one place kuna still prints more casts per statement than IDA.
+
 ## Reproduce
 
 Tools are in `final/` (paths are this machine's; each is a thin driver over the repo's own instruments).
@@ -2237,4 +2588,25 @@ bash final-i/layout.sh              # layout P/R (final, G, H), structmerge sibl
 python3 final-i/speed8.py 11 <speed.json> fmt,ls,sort,bash   # baseline / G / H / final
 python3 final-i/speedextra8.py 15 <speed-extra.json>          # kmod, crontab, dpkg-divert: G / H / final
 python3 final-i/speedextraF.py 15 <speed-extraF.json>         # the same three: round F / G / final
+```
+
+Rounds J, K and L use `final-l/` the same way, with the `final-i/` tools on `PYTHONPATH`. Rounds J and K
+are their own builds (the castbench `bin-c960fb18d` and `bin-0096e984d`); every round-K and round-L PR
+is option-gated, so their ladders are option arms on the round-K and final builds; and the cast residue
+is ranked by family with signedness merged:
+
+```bash
+bash final-l/sweep.sh               # final, round-I control, rounds K and J, and the round-L ladder (options off in landing order)
+bash final-l/cball.sh               # castbench: final, round-L ladder and ablations, round-K ladder and control, opt-in arms
+bash final-l/phase2.sh              # goal 2 (goal2l.py), structscore (ss.sh), layout + nesting (layout.sh)
+python3 final-l/analyze9.py         # base / B … I / J / K / L (+ control, ladder), classes, rivals
+python3 final-l/moved9.py           # moved.csv + report-slices.md
+python3 final-c/credit93.py base=<rows> roundI=<rows> roundK=<rows> roundL=<rows> L0=<rows> ...
+python3 final-i/cast4.py i=<arm> j=<arm> k=<arm> l=<arm> --pairs=i:j,j:k,k:l,i:l   # the cast tables and ladders
+python3 final-l/shapes9.py i=<arm> k=<arm> l=<arm> --top=60                    # residue by family vs IDA
+python3 final-l/morecasts.py <armA> <armB>                                     # every function with more casts, as diffs
+python3 final-l/castpick9.py 25     # short functions whose casts fell most; castshow.py prints one beside IDA
+python3 final-l/sstable9.py         # structscore round I vs final
+python3 final-l/speed9.py 11 <speed.json>          # baseline / round I / final, fmt ls sort bash -O2
+python3 final-l/speedextra9.py 15 <speed-extra.json>   # kmod, dpkg-divert -O2-noinline: round F / round I / final
 ```
