@@ -202,5 +202,93 @@
   },
   "worst_delta_min_pct": 4.91
  },
- "design_revision": "The declaration moves only when no reader wants the other sign (the first version took a net vote, which left the merged variable unsigned under an int declaration for a slot stored from a register and printed its unsigned readers uncast); reconcile re-checks the merged variable at the head of ActionSetCasts and restores the variable's type when a member's reader disagrees; a slot the layout would stretch into an array declines; the walk stops at another stack slot."
+ "design_revision": "The declaration moves only when no reader wants the other sign (the first version took a net vote, which left the merged variable unsigned under an int declaration for a slot stored from a register and printed its unsigned readers uncast); reconcile re-checks the merged variable at the head of ActionSetCasts and restores the variable's type when a member's reader disagrees; a slot the layout would stretch into an array declines; the walk stops at another stack slot.",
+ "landing": {
+  "base": "origin/main b273c225997aeaa1b2602393bbf704bf4860eac5 (#718 callbacktype, #729 callrettype since the numbers above)",
+  "castbench": {
+   "shared_functions": 4815,
+   "main_casts": 34829,
+   "branch_casts": 34813,
+   "main_vs_ida": 0.921,
+   "branch_vs_ida": 0.92,
+   "main_per_100_statements": 29.3,
+   "branch_per_100_statements": 29.3,
+   "by_level_casts": {
+    "O0": [
+     11373,
+     11357
+    ],
+    "O2": [
+     12902,
+     12902
+    ],
+    "O2-noinline": [
+     10554,
+     10554
+    ]
+   },
+   "functions_fewer": 6,
+   "casts_fewer": 16,
+   "functions_more": 0,
+   "off_arm_files_differing_from_main": 0
+  },
+  "typesweep": {
+   "slices": 444,
+   "functions": 10748,
+   "perfect_off": 1631,
+   "perfect_on": 1631,
+   "aggregate_off": 3995.12,
+   "aggregate_on": 3995.12,
+   "moved_on": 0,
+   "moved_off": 0,
+   "improved": 0,
+   "worse": 0,
+   "variables_byte_identical_functions": 10738
+  },
+  "hunks": {
+   "O0_coreutils_stripped_sort": {
+    "functions": 479,
+    "changed": 1,
+    "SIGN": [
+     "0x48cf"
+    ],
+    "SIGN_RENUM": [],
+    "MERGE": [],
+    "OTHER": []
+   },
+   "O0_coreutils_stripped_split": {
+    "functions": 240,
+    "changed": 1,
+    "SIGN": [],
+    "SIGN_RENUM": [],
+    "MERGE": [
+     "0x3e43 decls 10->9"
+    ],
+    "OTHER": []
+   },
+   "O0_diffutils_stripped_diff": {
+    "functions": 507,
+    "changed": 1,
+    "SIGN": [
+     "0x11e1b"
+    ],
+    "SIGN_RENUM": [],
+    "MERGE": [],
+    "OTHER": []
+   },
+   "O0_tar_stripped_tar": {
+    "functions": 1570,
+    "changed": 4,
+    "SIGN": [
+     "0x32ca8",
+     "0x33179",
+     "0x343ea",
+     "0x345e7"
+    ],
+    "SIGN_RENUM": [],
+    "MERGE": [],
+    "OTHER": []
+   }
+  }
+ }
 }

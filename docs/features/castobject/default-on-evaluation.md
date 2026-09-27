@@ -39,3 +39,15 @@ version mismatched in every build from the gcc -O0, gcc -O2 and clang -O0
 fixtures.
 
 Flipped: every criterion passes.
+
+## Landing re-measurement on origin/main b273c2259
+
+origin/main gained #718 (`callbacktype`) and #729 (`callrettype`) after the
+numbers above. Re-measured on the rebased build, the default against
+`--option castobject off`:
+
+| criterion | result |
+|---|---|
+| castbench, full set | 34,829 -> 34,813 casts on the 4,815 functions shared with IDA (0.921x -> 0.920x IDA; per 100 statements 29.3 -> 29.3); 6 functions fewer (16 casts), 0 more; the same six functions as before. With the option off all 45 castbench files are byte-identical to the castbench arm of origin/main b273c2259 |
+| 444-slice typesweep | 1,631 -> 1,631 perfect, aggregate 3995.12 -> 3995.12; 0 functions move onto perfect and 0 off it, 0 improve and 0 get worse; 10,738 functions have byte-identical variables and the other 10 score the same |
+| hunks, `decompile-all` off vs on | sort -O0: 1 changed, 1 DECL/CALL/SHIFT/USUF; split -O0: 1 changed, 1 MERGE (0x3e43); diff -O0: 1 changed, 1 DECL/CALL/SHIFT/USUF; tar -O0: 4 changed, 4 DECL/CALL/SHIFT/USUF; nothing outside the classes of corpus-hunks.txt |
