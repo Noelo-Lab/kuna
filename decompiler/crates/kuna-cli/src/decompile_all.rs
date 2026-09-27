@@ -95,7 +95,7 @@ use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
 
 // The call-graph edges `--reachable-from` walks are `kuna xrefs`' own edges.
-use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
+use kuna_analysis::listing::xrefs::{SwitchTable, Xref, XrefIndex, XrefKind};
 use kuna_analysis::loader::macho_fat::SlicePref;
 use kuna_base::address::Address;
 use kuna_console::engine::{
@@ -368,16 +368,18 @@ impl Filters {
     ///
     /// The graph is built only when `--reachable-from` or `--summary` needs it,
     /// so `--filter`/`--min-size`/`--max-size`/`--limit` stay pure inventory
-    /// arithmetic with no extra decode.
+    /// arithmetic with no extra decode. `measured` keeps what [`crate::limits`]
+    /// reads off it ([`CallGraph::load`]).
     pub(crate) fn select(
         &self,
         prog: &ConsoleProgram,
         binary: &str,
         pref: SlicePref,
         entries: Vec<FunctionEntry>,
+        measured: bool,
     ) -> Result<(Vec<FunctionEntry>, Option<CallGraph>), String> {
         let graph = (self.reachable_from.is_some() || self.summary)
-            .then(|| CallGraph::build(prog, binary, pref))
+            .then(|| CallGraph::load(prog, binary, pref, measured))
             .transpose()?;
         let reachable = match (&self.reachable_from, &graph) {
             (Some(spec), Some(graph)) => Some(graph.reachable_from(prog, spec)?),
@@ -453,14 +455,29 @@ impl CallGraph {
         binary: &str,
         pref: SlicePref,
     ) -> Result<CallGraph, String> {
+        CallGraph::load(prog, binary, pref, false)
+    }
+
+    /// [`Self::build`]; `measured` also keeps what [`crate::limits`] measures
+    /// each function's own body on (`xrefs::build_measured`).
+    pub(crate) fn load(
+        prog: &ConsoleProgram,
+        binary: &str,
+        pref: SlicePref,
+        measured: bool,
+    ) -> Result<CallGraph, String> {
         let bytes = image_bytes(binary, pref)?;
         let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
             .map_err(|e| format!("could not parse {binary}: {e}"))?;
-        Ok(CallGraph::build_from(prog, &file))
+        Ok(CallGraph::walk(prog, &file, measured))
     }
 
     /// [`Self::build`] off an already-parsed image, for a caller that holds one.
     pub(crate) fn build_from(prog: &ConsoleProgram, file: &object::File) -> CallGraph {
+        CallGraph::walk(prog, file, false)
+    }
+
+    fn walk(prog: &ConsoleProgram, file: &object::File, measured: bool) -> CallGraph {
         let mut entries: Vec<(u64, u64)> = prog
             .function_entries_canonical()
             .iter()
@@ -469,12 +486,12 @@ impl CallGraph {
         entries.sort_unstable();
         entries.dedup_by_key(|(addr, _)| *addr);
         let seeds: Vec<u64> = entries.iter().map(|(addr, _)| *addr).collect();
-        let index = kuna_analysis::listing::xrefs::build(
-            file,
-            prog.arch(),
-            prog.arch().translate(),
-            &seeds,
-        );
+        let walk = if measured {
+            kuna_analysis::listing::xrefs::build_measured
+        } else {
+            kuna_analysis::listing::xrefs::build
+        };
+        let index = walk(file, prog.arch(), prog.arch().translate(), &seeds);
         // PE names both the IAT slot and its veneer in the canonical inventory;
         // ELF traditionally names only the PLT veneer. Keep the graph vocabulary
         // symmetric by admitting every decoded forwarding slot as a zero-extent
@@ -637,10 +654,26 @@ impl CallGraph {
     ///
     /// Bounded by the extent rather than just "the greatest entry at or below",
     /// so an address in a gap between functions is attributed to neither.
-    fn owner_of(&self, vma: u64) -> Option<u64> {
+    pub(crate) fn owner_of(&self, vma: u64) -> Option<u64> {
         let at = self.entries.partition_point(|(addr, _)| *addr <= vma);
         let (addr, size) = *self.entries.get(at.checked_sub(1)?)?;
         (vma == addr || vma - addr < size).then_some(addr)
+    }
+
+    /// Is `vma` an inventory entry?
+    pub(crate) fn is_entry(&self, vma: u64) -> bool {
+        self.entries.binary_search_by_key(&vma, |(addr, _)| *addr).is_ok()
+    }
+
+    /// Every jump table the walk read.
+    pub(crate) fn switch_tables(&self) -> &[SwitchTable] {
+        self.index.switch_tables()
+    }
+
+    /// Each of `entries`' own instruction count, stopping at `cap`; zero unless
+    /// the graph was loaded `measured` ([`Self::load`]).
+    pub(crate) fn instruction_counts(&self, entries: &[u64], cap: usize) -> Vec<usize> {
+        self.index.function_instruction_counts(entries, cap)
     }
 
     /// Does the function entered at `entry` make a computed call?
@@ -855,6 +888,8 @@ struct Summary {
     largest: Vec<FunctionEntry>,
     /// Recognized runtimes and packers, with what to do about each.
     runtime: Vec<crate::runtime_hints::RuntimeHint>,
+    /// The selected functions a decompile would hit an engine budget on.
+    limits: crate::limits::Limits,
 }
 
 /// Measure the orientation document over `all` (the discovered inventory) and
@@ -902,6 +937,7 @@ fn summarize(
         runtime: kuna_analysis::loader::elf_shdr::read_image(binary)
             .map(|bytes| crate::runtime_hints::detect(&bytes, true))
             .unwrap_or_default(),
+        limits: crate::limits::measure(prog, graph, selected),
     }
 }
 
@@ -1001,6 +1037,7 @@ fn summary_json(
                     ("size_buckets".into(), buckets),
                     ("largest".into(), entries_json(&summary.largest, display_address)),
                     ("runtime".into(), crate::runtime_hints::to_json(&summary.runtime)),
+                    ("limits".into(), crate::limits::to_json(&summary.limits, display_address)),
                 ])
             ),
         ]))
@@ -1055,6 +1092,7 @@ fn summary_text(
     for h in &summary.runtime {
         let _ = writeln!(out, "runtime\t{}\t{}", h.id, h.hint);
     }
+    crate::limits::write_text(&mut out, &summary.limits, display_address);
     out
 }
 
@@ -1567,19 +1605,22 @@ pub fn run_functions(argv: &[String]) -> i32 {
                 .then(|| zero_discovery_error(&args.binary))
                 .flatten();
             let total = all.len();
-            let entries = match filters.select(&prog, &args.binary, args.slice_pref(), all) {
-                Ok((entries, _)) => entries,
+            let (entries, graph) =
+                match filters.select(&prog, &args.binary, args.slice_pref(), all, args.json) {
+                Ok(pair) => pair,
                 Err(e) => {
                     eprintln!("error: {e}");
                     return 1;
                 }
             };
             let text = if args.json {
+                let limits = graph.as_ref().map(|g| crate::limits::measure(&prog, g, &entries));
                 functions_json(
                     &args.binary,
                     &entries,
                     total,
                     discovery_error.as_deref(),
+                    limits.as_ref(),
                     &|address| prog.output_code_offset(address),
                 )
             } else {
@@ -1625,7 +1666,8 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
     let discovery_error = (!prog.any_executable_entry(&all))
         .then(|| zero_discovery_error(&args.binary))
         .flatten();
-    let (selected, graph) = match filters.select(&prog, &args.binary, args.slice_pref(), all.clone()) {
+    let (selected, graph) =
+        match filters.select(&prog, &args.binary, args.slice_pref(), all.clone(), true) {
         Ok(pair) => pair,
         Err(e) => {
             eprintln!("error: {e}");
@@ -1682,7 +1724,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     let targets = resolve_targets(&prog, args)?;
     let discovered = targets.len();
     let targets = if filters.narrows() {
-        filters.select(&prog, &args.binary, args.slice_pref(), targets)?.0
+        filters.select(&prog, &args.binary, args.slice_pref(), targets, false)?.0
     } else {
         targets
     };
@@ -3212,24 +3254,27 @@ pub(crate) fn render_selected_json(
 ///
 /// `count` is what the `functions` array holds and `total` what discovery found,
 /// so a triage-narrowed listing says what it was narrowed from. They are equal on
-/// an unfiltered run.
+/// an unfiltered run. `limits` is present only when the selection already walked
+/// the image (`--reachable-from`): the plain listing never pays for that walk.
 fn functions_json(
     binary: &str,
     entries: &[FunctionEntry],
     total: usize,
     error: Option<&str>,
+    limits: Option<&crate::limits::Limits>,
     display_address: &dyn Fn(u64) -> u64,
 ) -> String {
-    format!(
-        "{}\n",
-        dumps_indent2(&Json::Object(vec![
-            ("binary".into(), Json::Str(binary.to_string())),
-            ("count".into(), Json::Number(entries.len().to_string())),
-            ("total".into(), Json::Number(total.to_string())),
-            ("error".into(), error_json(error)),
-            ("functions".into(), entries_json(entries, display_address)),
-        ]))
-    )
+    let mut doc = vec![
+        ("binary".into(), Json::Str(binary.to_string())),
+        ("count".into(), Json::Number(entries.len().to_string())),
+        ("total".into(), Json::Number(total.to_string())),
+        ("error".into(), error_json(error)),
+        ("functions".into(), entries_json(entries, display_address)),
+    ];
+    if let Some(limits) = limits {
+        doc.push(("limits".into(), crate::limits::to_json(limits, display_address)));
+    }
+    format!("{}\n", dumps_indent2(&Json::Object(doc)))
 }
 
 /// The inventory-record array shared by the `functions` listing and the
@@ -4281,13 +4326,14 @@ mod discovery_tests {
     /// reads it unconditionally rather than inferring failure from `count`.
     #[test]
     fn the_run_level_error_field_is_always_present() {
-        let healthy = functions_json("fixture", &[], 0, None, &|address| address);
+        let healthy = functions_json("fixture", &[], 0, None, None, &|address| address);
         assert!(healthy.contains("\"error\": null"), "{healthy}");
         let failed = functions_json(
             "fixture",
             &[],
             0,
             Some("no functions discovered in fixture"),
+            None,
             &|address| address,
         );
         assert!(

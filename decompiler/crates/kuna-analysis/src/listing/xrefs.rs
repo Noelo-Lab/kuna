@@ -165,6 +165,80 @@ pub struct XrefIndex {
     /// How many distinct instructions the walk decoded (a coverage signal for a
     /// caller that wants to say "nothing decoded" rather than "no references").
     insns: usize,
+    /// The successor graph a measured walk keeps ([`build_measured`]).
+    flow: Option<FlowGraph>,
+    /// Every jump table the walk read, in walk order.
+    switches: Vec<SwitchTable>,
+}
+
+/// Every decoded instruction and its intra-function successors, so each entry's
+/// own descent can be re-counted whatever order the walk claimed the code in.
+#[derive(Debug, Default)]
+struct FlowGraph {
+    /// `(vma, len, falls through)`, ascending by `vma`.
+    insns: Vec<(u64, u32, bool)>,
+    /// Branch and switch-case edges as `(from, to)`, ascending.
+    jumps: Vec<(u64, u64)>,
+    /// The entries a descent stops at, ascending.
+    seeds: Vec<u64>,
+}
+
+impl FlowGraph {
+    fn count_from(
+        &self,
+        entry: u64,
+        cap: usize,
+        seen: &mut [u32],
+        epoch: u32,
+        stack: &mut Vec<u64>,
+    ) -> usize {
+        let mut count = 0;
+        stack.clear();
+        stack.push(entry);
+        while let Some(vma) = stack.pop() {
+            if count >= cap {
+                break;
+            }
+            if vma != entry && self.seeds.binary_search(&vma).is_ok() {
+                continue;
+            }
+            let Ok(at) = self.insns.binary_search_by_key(&vma, |&(a, _, _)| a) else {
+                continue;
+            };
+            if seen[at] == epoch {
+                continue;
+            }
+            seen[at] = epoch;
+            count += 1;
+            let (_, len, falls) = self.insns[at];
+            if falls {
+                stack.push(vma.wrapping_add(u64::from(len)));
+            }
+            let lo = self.jumps.partition_point(|&(from, _)| from < vma);
+            stack.extend(
+                self.jumps[lo..].iter().take_while(|&&(from, _)| from == vma).map(|&(_, to)| to),
+            );
+        }
+        count
+    }
+}
+
+/// One jump table the walk read at a computed jump.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchTable {
+    /// The dispatching instruction.
+    pub dispatch: u64,
+    /// The entry whose walk decoded the dispatch first. A lower entry's descent
+    /// can reach another function's body before that function is walked, so the
+    /// owner is the function whose extent contains `dispatch`, not this.
+    pub function: u64,
+    /// The case count the switch's own range check states, when it has one.
+    pub cases: Option<usize>,
+    /// How many entries were read, at most the walk's `jumptablemax`.
+    pub read: usize,
+    /// The table is longer than `jumptablemax`: its range check states more
+    /// cases than that, or (with no range check) the read ran into the cap.
+    pub truncated: bool,
 }
 
 impl XrefIndex {
@@ -293,6 +367,29 @@ impl XrefIndex {
     /// How many distinct instructions the walk decoded.
     pub fn instruction_count(&self) -> usize {
         self.insns
+    }
+
+    /// How many instructions each of `entries` reaches by its own descent:
+    /// fall-through, branches and the switch cases the walk read, stopping at
+    /// every other seeded entry. Code two entries share counts for both, whichever
+    /// of them the walk reached it from first. Each count stops at `cap`; every
+    /// count is zero unless the index came from [`build_measured`].
+    pub fn function_instruction_counts(&self, entries: &[u64], cap: usize) -> Vec<usize> {
+        let Some(flow) = &self.flow else {
+            return vec![0; entries.len()];
+        };
+        let mut seen = vec![0u32; flow.insns.len()];
+        let mut stack = Vec::new();
+        entries
+            .iter()
+            .enumerate()
+            .map(|(i, &entry)| flow.count_from(entry, cap, &mut seen, i as u32 + 1, &mut stack))
+            .collect()
+    }
+
+    /// Every jump table the walk read.
+    pub fn switch_tables(&self) -> &[SwitchTable] {
+        &self.switches
     }
 
     /// Does the walk of the function entered at `entry` decode a **computed
@@ -434,7 +531,20 @@ pub fn build(
     translate: &dyn Translate,
     seeds: &[u64],
 ) -> XrefIndex {
-    build_with_focus(file, arch, translate, seeds, &[])
+    descend(file, arch, translate, seeds, &[], false)
+}
+
+/// [`build`], also keeping the successor graph
+/// [`XrefIndex::function_instruction_counts`] measures each entry's own body on.
+/// It costs one `(vma, len)` row per decoded instruction and one row per branch,
+/// which is why the plain walk does not keep it.
+pub fn build_measured(
+    file: &object::File,
+    arch: &Architecture,
+    translate: &dyn Translate,
+    seeds: &[u64],
+) -> XrefIndex {
+    descend(file, arch, translate, seeds, &[], true)
 }
 
 /// [`build`], plus the addresses the CALLER named.
@@ -455,6 +565,17 @@ pub fn build_with_focus(
     translate: &dyn Translate,
     seeds: &[u64],
     focus: &[u64],
+) -> XrefIndex {
+    descend(file, arch, translate, seeds, focus, false)
+}
+
+fn descend(
+    file: &object::File,
+    arch: &Architecture,
+    translate: &dyn Translate,
+    seeds: &[u64],
+    focus: &[u64],
+    measure: bool,
 ) -> XrefIndex {
     let Some(code_space) = arch.manage().get_default_code_space().map(Rc::clone) else {
         return empty();
@@ -516,6 +637,10 @@ pub fn build_with_focus(
     // read-only mapped section, and every relocatable object, whose sections are
     // not the runtime ones) leaves every reference below exactly as it was.
     let pool = if mapped.is_empty() { None } else { PoolImage::new(file) };
+    let max_entries = match arch.max_jumptable_size {
+        0 => kuna_switchtable::DEFAULT_MAX_ENTRIES,
+        n => n as usize,
+    };
 
     let mut st = State {
         by_target: BTreeMap::new(),
@@ -523,6 +648,11 @@ pub fn build_with_focus(
         decoded: HashSet::new(),
         funcs: seed_set.clone(),
         indirect_call_sites: BTreeSet::new(),
+        flow: measure.then(|| FlowGraph {
+            seeds: seed_set.iter().copied().collect(),
+            ..FlowGraph::default()
+        }),
+        switches: Vec::new(),
     };
 
     // Reused across every decode in the walk (see [`FullCapture`]).
@@ -622,6 +752,12 @@ pub fn build_with_focus(
                     .map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() }),
             );
             let c = classify(&raw, vma, len);
+            if let Some(flow) = st.flow.as_mut() {
+                flow.insns.push((vma, len, c.fall_through.is_some()));
+                if !c.flow.is_call {
+                    flow.jumps.extend(c.flows.iter().map(|&to| (vma, to)));
+                }
+            }
             let drefs = if mapped.is_empty() {
                 Vec::new()
             } else {
@@ -678,9 +814,17 @@ pub fn build_with_focus(
             if c.flows.is_empty() && c.flow.is_computed && c.flow.is_jump && !c.flow.is_call {
                 if let Some(p) = pool.as_ref() {
                     let mut cases: Vec<u64> = Vec::new();
+                    let mut stated: Option<usize> = None;
                     for &(base, kind) in &drefs {
                         if kind == XrefKind::Data {
-                            cases.extend(kuna_switchtable::targets(base, vma, p, &exec, None));
+                            cases.extend(kuna_switchtable::targets(
+                                base,
+                                vma,
+                                p,
+                                &exec,
+                                None,
+                                max_entries,
+                            ));
                         }
                     }
                     // The base is on an instruction of its own and the entries
@@ -693,7 +837,7 @@ pub fn build_with_focus(
                             .find(|o| o.opcode == OpCode::CPUI_BRANCHIND)
                             .and_then(|o| o.ins.first());
                         if let Some(branch) = branch {
-                            cases = kuna_switchtable::register_targets(
+                            (cases, stated) = kuna_switchtable::register_targets(
                                 translate,
                                 &code_space,
                                 data_space.as_ref(),
@@ -702,8 +846,22 @@ pub fn build_with_focus(
                                 branch,
                                 p,
                                 &exec,
+                                max_entries,
                             );
                         }
+                    }
+                    let over = stated.is_some_and(|n| n > max_entries);
+                    if !cases.is_empty() || over {
+                        st.switches.push(SwitchTable {
+                            dispatch: vma,
+                            function: entry,
+                            cases: stated,
+                            read: cases.len(),
+                            truncated: over || (stated.is_none() && cases.len() >= max_entries),
+                        });
+                    }
+                    if let Some(flow) = st.flow.as_mut() {
+                        flow.jumps.extend(cases.iter().map(|&to| (vma, to)));
                     }
                     // A dispatch that names no address rendered nothing above,
                     // and a row whose instruction column is blank does not say
@@ -965,6 +1123,8 @@ struct State {
     /// VMAs of the decoded `CALLIND` instructions; folded onto their containing
     /// function in [`State::finish`].
     indirect_call_sites: BTreeSet<u64>,
+    flow: Option<FlowGraph>,
+    switches: Vec<SwitchTable>,
 }
 
 impl State {
@@ -1016,6 +1176,12 @@ impl State {
             veneers,
             veneers_of_slot,
             insns,
+            flow: self.flow.map(|mut flow| {
+                flow.insns.sort_unstable_by_key(|&(vma, _, _)| vma);
+                flow.jumps.sort_unstable();
+                flow
+            }),
+            switches: self.switches,
         }
     }
 }
@@ -1043,6 +1209,8 @@ fn empty() -> XrefIndex {
         veneers: BTreeMap::new(),
         veneers_of_slot: BTreeMap::new(),
         insns: 0,
+        flow: None,
+        switches: Vec::new(),
     }
 }
 
@@ -1613,6 +1781,8 @@ mod tests {
             decoded: HashSet::from([0x1030, 0x1102, 0x1200]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
             indirect_call_sites: BTreeSet::new(),
+            flow: None,
+            switches: Vec::new(),
         };
         for e in edges {
             st.file(e.from, e.to, e.kind, "");
@@ -1668,6 +1838,8 @@ mod tests {
             decoded: HashSet::from([0x1188]),
             funcs: BTreeSet::from([0x1000, 0x1030, 0x1180]),
             indirect_call_sites: BTreeSet::from([0x1188]),
+            flow: None,
+            switches: Vec::new(),
         };
         st.file(0x1188, 0x4008, XrefKind::Read, "");
         let index = st.finish(BTreeMap::new());
@@ -1675,6 +1847,42 @@ mod tests {
         assert!(!index.has_indirect_calls(0x1030), "attributed to the preceding entry");
         // And it lands in the same bucket the instruction's references do.
         assert_eq!(index.refs_from_function(0x1180).len(), 1);
+    }
+
+    /// The gcc `.cold` shape: the fragment at 0x1000 sits below its parent at
+    /// 0x2000 and jumps into the middle of it, so the walk decodes the parent's
+    /// tail from the fragment before the parent is walked. The parent's own
+    /// descent still counts its whole body, the fragment counts the tail it
+    /// reaches too, and a descent stops at the other entry's first instruction.
+    #[test]
+    fn each_entry_counts_its_own_descent_whatever_order_the_walk_claimed_it_in() {
+        let fragment = [(0x1000, 1, true), (0x1001, 5, false)];
+        let tail = [(0x2004, 1, true), (0x2005, 1, true), (0x2006, 1, false)];
+        let head = [(0x2000, 2, true), (0x2002, 2, true)];
+        let mut insns: Vec<(u64, u32, bool)> = fragment.to_vec();
+        insns.extend(tail);
+        insns.extend(head);
+        insns.push((0x3000, 1, false));
+        let st = State {
+            by_target: BTreeMap::new(),
+            by_source: BTreeMap::new(),
+            decoded: insns.iter().map(|&(vma, _, _)| vma).collect(),
+            funcs: BTreeSet::from([0x1000, 0x2000, 0x3000]),
+            indirect_call_sites: BTreeSet::new(),
+            flow: Some(FlowGraph {
+                insns,
+                jumps: vec![(0x2006, 0x3000), (0x1001, 0x2004)],
+                seeds: vec![0x1000, 0x2000, 0x3000],
+            }),
+            switches: Vec::new(),
+        };
+        let index = st.finish(BTreeMap::new());
+        assert_eq!(index.function_instruction_counts(&[0x2000, 0x1000, 0x3000], usize::MAX), [5, 5, 1]);
+        assert_eq!(index.function_instruction_counts(&[0x2000], 3), [3]);
+        assert_eq!(index.function_instruction_counts(&[0x4000], usize::MAX), [0]);
+
+        let unmeasured = import_index();
+        assert_eq!(unmeasured.function_instruction_counts(&[0x1000], usize::MAX), [0]);
     }
 
     /// Off an alias class, unifying is exactly `refs_to`.

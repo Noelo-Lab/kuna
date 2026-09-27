@@ -56,6 +56,9 @@ mod jobs;
 #[path = "../src/runtime_hints.rs"]
 mod runtime_hints;
 #[allow(dead_code)]
+#[path = "../src/limits.rs"]
+mod limits;
+#[allow(dead_code)]
 #[path = "../src/decompile_all.rs"]
 mod decompile_all;
 #[allow(dead_code)]

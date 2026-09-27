@@ -497,3 +497,18 @@ fn tiedphitrim_defaults_on_and_toggles() {
     assert!(arch.tied_phi_trim);
     assert!(arch.set_kuna_option("tiedphitrim", "maybe").is_err());
 }
+
+/// (kuna) `jumptablemax`: ships at upstream's 1024, takes a positive decimal
+/// count, and refuses anything else rather than reading a prefix of it.
+#[test]
+fn jumptablemax_defaults_to_1024_and_parses_strictly() {
+    let mut arch = Architecture::new("t", bare_sleigh());
+    arch.reset_defaults_internal();
+    assert_eq!(arch.max_jumptable_size, 1024);
+    arch.set_kuna_option("jumptablemax", "100000").unwrap();
+    assert_eq!(arch.max_jumptable_size, 100000);
+    for bad in ["", "0", "wide", "12abc", "1.5", "-5", "+5", "0x10", "4294967296"] {
+        assert!(arch.set_kuna_option("jumptablemax", bad).is_err(), "{bad:?} was accepted");
+    }
+    assert_eq!(arch.max_jumptable_size, 100000);
+}

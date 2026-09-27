@@ -298,6 +298,21 @@ they are reachable through `--option` on every surface but do not appear in `kun
 catalog`. `--max-fn-seconds` (see `decompile-all` below) is the wall-clock half of
 the same budget.
 
+The jump-table ceiling is the other budget a giant function hits: a switch whose
+range check admits more than `jumptablemax` cases (1024 by default) is not
+recovered, and its dispatch prints as a computed call (`// jump-as-call`).
+`jumptablemax` is catalogued (`kuna catalog`), and the same value bounds how far
+`kuna functions`/`xrefs`/`strings`/`crypto` follow a switch table:
+
+```bash
+kuna decompile ./state_machine.exe 0x14000c0b0 --addr \
+    --option maxinstruction 4000000 --option jumptablemax 100000
+```
+
+`kuna functions --summary --json` (and `functions --reachable-from --json`) report
+which functions would hit either budget before anything is decompiled; see `limits`
+below.
+
 **`--define-function <start[-end][=name] | @file>`** (repeatable) tells kuna where a
 function starts and ends. Every boundary kuna knows is otherwise *derived* —
 discovery finds the entries, and the extent is the address-contiguous clip to the
@@ -1209,7 +1224,11 @@ without emitting a function list at all, let alone pseudocode.
             "reachable_from_entry":334,"no_callers":714,"code_bytes":171971,
             "size_buckets":[{"bucket":"0","min_size":0,"max_size":0,"count":114}, …],
             "largest":[{name,address,address_hex,aliases,size}, …],
-            "runtime":[{id,version,hint,actionable}, …]}}
+            "runtime":[{id,version,hint,actionable}, …],
+            "limits":{"maxinstruction":100000,"jumptablemax":1024,
+                      "over":[{name,address,address_hex,size,instructions,
+                               over_maxinstruction,
+                               switches_over_jumptablemax:[{address,address_hex,cases,read}]}]}}}
 ```
 
 - `entry` is the **image's declared entry point** (a PE `AddressOfEntryPoint` is
@@ -1236,6 +1255,33 @@ without emitting a function list at all, let alone pseudocode.
   section table, a repaired PE DOS `e_magic`, a clamped PE data-directory count),
   one string each, in the order they were applied — the same lines the run prints
   on stderr, without the `[kuna] ` prefix. Empty for a well-formed image.
+- `limits` names the selected functions a decompile would hit an engine budget
+  on, measured off the same reference walk and never by decompiling.
+  `instructions` counts the function's own descent: fall-through, branches and
+  the switch cases the walk read, stopping at every other inventory entry. Code
+  two functions share (a gcc `.cold` fragment that jumps back into its parent)
+  counts for both. Counting stops at `maxinstruction + 1`, so a function over
+  the budget reports exactly that; raise `--option maxinstruction` to measure
+  further. `over_maxinstruction` is `instructions > maxinstruction`.
+  `switches_over_jumptablemax` lists each dispatch whose table is longer than
+  the live `jumptablemax`, under the function whose extent contains it: `cases`
+  is the count its range check states (`null` when there is none and the read ran
+  into the ceiling), `read` how many entries were followed (`0` when the ceiling
+  is below the two entries a table needs). Both ceilings honour `--option`, so
+  re-running with a higher `jumptablemax` reads the whole table and re-measures
+  the body it reaches. On the in-repo MSVC fixture, whose one switch has four
+  cases:
+
+  ```console
+  $ kuna functions pe_switchdelta_x86_64.exe --summary --json --option jumptablemax 2 | jq -c .summary.limits
+  {"maxinstruction":100000,"jumptablemax":2,"over":[{"name":"sub_140001040","address":5368713280,
+   "address_hex":"0x140001040","size":128,"instructions":16,"over_maxinstruction":false,
+   "switches_over_jumptablemax":[{"address":5368713309,"address_hex":"0x14000105d","cases":4,"read":2}]}]}
+  $ kuna functions pe_switchdelta_x86_64.exe --summary --json --option jumptablemax 4 | jq -c .summary.limits
+  {"maxinstruction":100000,"jumptablemax":4,"over":[]}
+  ```
+
+  The text form prints the same under a `limits` line.
 - The triage flags apply: `--summary --reachable-from main` summarizes just that
   subgraph. `count` is what was selected, `total` what discovery found.
 - `runtime` names what wrapped or built the image when native decompilation is
@@ -1278,7 +1324,10 @@ numbers a caller orients by are the ones `kuna functions` reports.
 `{binary,count,functions:[{name,address,address_hex,aliases,object_location,size,code,error,
 unstructured_gotos,line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
 stack_offset,size,line_numbers,addresses}],types:[{name,definition,size}]}]}` (`kuna functions --json` emits
-`name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function).
+`name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function; with
+`--reachable-from`, which already walks the image, it also carries a top-level `limits`
+object shaped like the `--summary` one over the listed functions, and the key is absent
+otherwise, so the plain listing never pays for the walk).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
 definition it is `{section_index,section,offset,offset_hex}`. `count` is what the
 `functions` array holds. `kuna functions --json` also carries `total`, the count

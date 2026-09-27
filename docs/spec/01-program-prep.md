@@ -4512,6 +4512,38 @@ image has a delta switch — `mcount_x86_64` 495 to 508 functions reachable from
 entry, the gnulib image 89 to 100, the MSVC fixture 2 to 6. `kuna strings` over the
 896 KB `mcount_x86_64`, which holds 470 computed jumps, 676 ms to 704 ms.
 
+(kuna) Both reads stop at the engine's own jump-table ceiling,
+`Architecture::max_jumptable_size` — 1024 unless `option jumptablemax <n>` raises
+it — so one value decides how far a switch is followed in both tiers. A range
+check that states more cases than the ceiling is not a reason to decline: the
+first `jumptablemax` entries are still read and walked, and the walk records the
+switch as **truncated** (`SwitchTable`, with the case count the range check
+states and the number read, which is zero when the ceiling is below the two
+entries a table needs). A table with no range check that reads up to the
+ceiling is recorded the same way, with no stated count.
+
+(kuna) The walk's decode set is global, so it cannot say how long one function
+is: code two entries share is decoded under whichever entry reached it first. A
+gcc `.cold` fragment sits below its parent and jumps back into the parent's body,
+so the fragment's walk claims the parent's tail and the parent's own walk stops
+where that tail begins (on python3.10, `PyType_Ready`'s 12 KB body claimed 200
+instructions and its 1.9 KB fragment 2,782). `build_measured` therefore keeps the
+successor graph the walk decoded, one `(vma, len, falls through)` row per
+instruction plus one row per branch or switch-case edge, and
+`function_instruction_counts` re-runs each requested entry's own descent over it,
+stopping at every other seeded entry and at a caller-given cap. Shared code then
+counts for every entry that reaches it, whatever order the walk claimed it in.
+The plain `build` keeps no graph, so `kuna xrefs`, `strings`, `crypto` and the
+plain `kuna functions --json` listing pay nothing for it. `kuna functions
+--summary` (and `--reachable-from`, which already walk the image) count up to
+`maxinstruction + 1` to flag, before any decompile, the functions whose body
+exceeds `maxinstruction`, and list each truncated switch under the function whose
+extent contains its dispatch. On the MSVC state machine that motivated it (a
+16.6 MB function dispatching through a 90,781-entry image-base-relative table),
+the default walk reads 1024 entries and reports the switch; with `jumptablemax
+100000` it reads the whole table, and the body the cases reach is over the
+100000-instruction budget.
+
 
 (kuna) The same pool word is a second defect one surface over, in the **listing**
 rather than the reference walk. A function's extent contains its pool, so a
