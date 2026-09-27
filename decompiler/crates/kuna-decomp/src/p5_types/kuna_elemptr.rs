@@ -2088,8 +2088,8 @@ pub struct Stated {
     pub ret: bool,
 }
 
-/// How many Varnodes [`element_derived`] visits before it assumes the answer
-/// is yes: declining a literal only prints the address.
+/// How many Varnodes [`element_derived`] visits before it gives up and leaves
+/// the constant the spelling the fold's type gives it.
 const FAMILY_CAP: usize = 64;
 
 /// State for the callers decompiled after it what `data`, entered at `entry`,
@@ -2139,8 +2139,9 @@ pub fn reaches_element_pointer(data: &Funcdata, vn: VarnodeId) -> bool {
 /// rule typed -- an element pointer of this function other than a table
 /// constant, a global it typed, a callee's parameter or return a callee
 /// stated ([`Stated`]) -- and none of them is also typed without it: read or
-/// written through directly a byte at a time, or passed where a declared
-/// prototype takes a character pointer.  A table constant the rule typed
+/// written through directly a byte at a time, passed where a declared
+/// prototype takes a character pointer, or read as a C string
+/// ([`reads_to_a_zero`]).  A table constant the rule typed
 /// prints by [`literal_index_bound`]'s rule, and a family too large to walk
 /// keeps whatever the fold gave it.
 fn element_derived(data: &Funcdata, start: VarnodeId) -> bool {
