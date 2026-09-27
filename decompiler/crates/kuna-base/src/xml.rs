@@ -1907,7 +1907,8 @@ mod tests {
         // declared signed
         // and kuna-pemain / a stripped PE names the function its CRT startup
         // calls `main`
-        // Synthetic PowerPC ISA diagnostic, gated by decodehalt.
+        // and powerpc-isa-hint / a failed generic PowerPC64 isel decode
+        // suggests an explicit ISA target
         assert_eq!(count, 345, "corpus file count drifted");
     }
 
