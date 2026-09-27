@@ -2720,6 +2720,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "castobject"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "stack-frame-layout"
+strength = "HARD"
+rewind = "P6"
+issue = "kuna-castobject"
+summary = "Declare a stack local whose address only fills declared `int *`-style parameters at the pointee the callee declares, when no reader wants the other signedness: `int v5; waitpid(v2,&v5,0)` instead of `unsigned int v5; waitpid(v2,(int *)&v5,0)`. The frame layout types a stack slot from its own loads and stores and, where two readings of the same bytes differ only in signedness, keeps the one the data-type ordering ranks more specific (`unsigned int` over `int`), so an out-parameter comes back declared by its bit tests and cast at the call. With the option on, the callee's declaration decides the slot's signedness when every frame reference to it is a plain `&local` handed straight to a direct call at a parameter whose type is locked (a declared or libc signature; never a trial, a format-string position or an override) and is `T *` for one plain 4- or 8-byte integer `T`; every access the frame model sees inside the slot covers it whole at that width and is an integer or unknown, and the layout would not stretch it into an array; and every operator whose C meaning depends on the operand's sign (`<`, `/`, `%`, `>>`, a widening), reached through copies, phis and the operators whose result keeps its type, computes with `T`'s sign: one reader that wants the other sign declines. A value re-declared signed is also left alone when `+`, `-`, `*`, unary `-` or `<<` reads it, directly or through the expression it prints into (signed overflow is undefined where the binary wraps), or when it meets a constant with its top bit set in `==`, `!=`, `&`, `|` or `^`. An address kept in a variable, stored, compared, offset or passed at another type, a byte read of one half, a wider copy, a float, a type lock or a reader the walk does not model (an address, an index, a float conversion) declines. Only the declaration moves, and the cast pass computes with the merged variable's type, which a slot stored from a register can keep at the old signedness; so after merging, a re-declared slot whose variable has another type is checked again over every member of the variable, and when some reader disagrees the slot and its Symbol go back to the variable's type."
+use_when = "On by default. An out-parameter local is declared the way the callee declares it -- `waitpid`'s and `wait`'s `int *` status, `pthread_setcancelstate`'s `int *` old state -- when the body reads it with bit tests and signed operators only; the call then passes `&v1` uncast and an arithmetic shift of the status reads it uncast. A status the body also shifts right logically (the -O2 form of `WEXITSTATUS`), compares unsigned or zero-extends stays unsigned. Flip OFF to see the frame layout's own reading of the slot (`unsigned int v5; waitpid(v2,(int *)&v5,0)`), for a bisect or an ablation. The flip's evidence is docs/features/castobject/default-on-evaluation.md."
+example = "option castobject on"
+source_decompiler = "kuna"
+inspiration = "The 2026-09-27 address-of cast census on the castbench shared set: `waitpid(v2,(int *)&v5,0)` over `unsigned int v5;` where IDA prints `int stat_loc; waitpid(v1,&stat_loc,0)`"
+change_kind = "type-inference"
+tier = "transform"
+symptoms = "an out-parameter local is passed as (int *)&v2 to waitpid or wait|a stack local is declared unsigned int where the callee that fills it declares int *|return (int)v1 >> 8 & 0xff; over an unsigned int status filled by waitpid"
+live_field = "cast_object"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "dynamichashmax"
 values = "on|off"
 default = "on"
