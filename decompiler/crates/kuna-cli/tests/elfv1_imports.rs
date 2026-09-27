@@ -143,6 +143,36 @@ fn image(abi: u32, import: &str, alias_toc: Option<AliasToc>, import_addend: i64
 }
 
 #[test]
+fn descriptor_definition_wins_over_its_import_stub() {
+    let specs = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../specs");
+    for abi in [0, 1] {
+        for transfer in [Transfer::Lazy, Transfer::Full] {
+            let bytes = image(abi, "get_byte", None, 0, transfer);
+            let path = common::scratch_file("elfv1-definition-and-import", "elf");
+            std::fs::write(&path, bytes).unwrap();
+            for (selector, address) in [("get_byte", "0x1000"), ("0x1000", "0x1000"), ("0x1100", "0x1100")] {
+                let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+                    .args(["decompile", path.to_str().unwrap(), selector, "--json", "--mode", "reliable"])
+                    .output().unwrap();
+                let text = String::from_utf8_lossy(&out.stdout);
+                assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+                assert!(text.contains(&format!("\"address_hex\": \"{address}\"")), "{text}");
+            }
+            let prog = kuna_console::engine::bootstrap_from_file(
+                path.to_str().unwrap(), "", &[specs.to_str().unwrap().into()],
+            ).unwrap();
+            let mut addresses: Vec<_> = prog.function_entries_canonical().into_iter()
+                .filter(|entry| entry.name == "get_byte" || entry.aliases.iter().any(|name| name == "get_byte"))
+                .map(|entry| entry.addr.get_offset()).collect();
+            addresses.sort_unstable();
+            assert_eq!(addresses, [0x1000, 0x1100]);
+            assert_eq!(prog.find_entry_by_name("get_byte").unwrap().addr.get_offset(), 0x1000);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+}
+
+#[test]
 fn descriptor_import_names_and_noreturn_require_unambiguous_targets() {
     for (import,alias_toc,addend,transfer) in [
         ("__stack_chk_fail",None,0,Transfer::Lazy),("returning_import",None,0,Transfer::Lazy),
