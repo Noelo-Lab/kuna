@@ -1907,7 +1907,8 @@ mod tests {
         // declared signed
         // and kuna-pemain / a stripped PE names the function its CRT startup
         // calls `main`
-        assert_eq!(count, 344, "corpus file count drifted");
+        // Synthetic PowerPC ISA diagnostic, gated by decodehalt.
+        assert_eq!(count, 345, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

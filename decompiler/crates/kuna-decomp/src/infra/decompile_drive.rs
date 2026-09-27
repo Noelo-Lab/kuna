@@ -230,6 +230,15 @@ impl FlowEnvironment for ArchFlowEnv {
         // truncation + header warnings.
         self.arch().decode_halt
     }
+    fn decode_failure_hint(&self, addr: &Address) -> Option<String> {
+        crate::kuna_decodehalt::powerpc_isa_hint(
+            self.arch().get_description(), addr.get_offset(), |buffer| {
+                let loader = self.arch().translate().loader_rc();
+                let Ok(mut loader) = loader.try_borrow_mut() else { return false; };
+                loader.load_fill(buffer, addr).is_ok()
+            },
+        )
+    }
     fn query_call_inline(&self, entry: &Address) -> bool {
         // C++ `queryCall` copies the callee proto's `isInline()` flow effect; the
         // flag is set by `option inline <name>` (OptionInline) on the resolved

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1397,
-    1397
+    1400,
+    1400
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -736,6 +736,9 @@
     "data:PEMAIN #1: off, the CRT startup calls the program entry as an anonymous sub",
     "data:PEMAIN #2: default, the same call site names main",
     "data:PEMAIN #3: default, main is defined under its name",
+    "data:PPCISA #1: only the reporting pass gives the ISA hint",
+    "data:PPCISA #2: the supported override is actionable",
+    "data:PPCISA #3: the selected decoder still halts",
     "data:PUSHIMMEDIATERET #1: both arms preserve the unpacker call",
     "data:PUSHIMMEDIATERET #2: only option on emits the complete tail-transfer statement",
     "data:REALTYPES #1: signature uses real C types, not xunknown8",
