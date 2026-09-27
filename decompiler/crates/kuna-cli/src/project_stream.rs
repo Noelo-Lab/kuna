@@ -1141,6 +1141,9 @@ fn run_serial(
     if sweep.is_done() {
         run.set_asm_phase(AsmPhase::Complete);
     }
+    // (kuna `elemptr`) Each body is written as it lands, so nothing can decide
+    // a global or a table for the batch.
+    kuna_decomp::kuna_elemptr::without_objects(prog.arch_mut());
     let mut batch = 1usize;
     loop {
         // The callee-hint context is built once per `decompile_pulled` call, so

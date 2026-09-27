@@ -4207,7 +4207,7 @@ int main(void) {
     let changed: [(&str, &str); 6] = [
         ("memchr(a0,(int)a1,(unsigned long)a2);", "memchr(a0,a1,a2);"),
         ("strchr(a0,(int)a1);", "strchr(a0,a1);"),
-        ("v1 = (long)*(char *)(a0 + v2);", "v1 = *(char *)(a0 + v2);"),
+        ("v1 = (long)a0[v2];", "v1 = a0[v2];"),
         (
             "(int)(unsigned int)(unsigned char)to_uchar((int)a1)",
             "(int)(unsigned char)to_uchar((int)a1)",
@@ -4383,10 +4383,13 @@ int main(void) {
             .unwrap()
             .to_string();
         let gcc = fixture.contains("gcc");
-        for opt in ["off", "on"] {
+        // The spellings are pinned with `elemptr` off, which leaves the table
+        // bases integers; with it on (the default) they are subscripts of
+        // declared pointers, and the printed C must still compute the same values.
+        for (elem, opt) in [("off", "off"), ("off", "on"), ("on", "off"), ("on", "on")] {
             let args = [
                 "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
-                "--option", "castternary", opt, "--option", "castwiden", "off",
+                "--option", "castternary", opt, "--option", "castwiden", "off", "--option", "elemptr", elem,
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
             if !ok && is_specs_skip(&stderr) {
@@ -4396,19 +4399,21 @@ int main(void) {
             assert!(ok, "kuna decompile-all failed: {stderr}");
             let changed: Vec<(&str, &str)> =
                 both.iter().chain(if gcc { gcc_only.iter() } else { [].iter() }).copied().collect();
-            for (off, on) in changed {
-                let want = if opt == "on" { on } else { off };
-                assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
-            }
-            if gcc {
-                for want in gcc_kept {
-                    assert!(stdout.contains(want), "{fixture} option {opt} lost `{want}`:\n{stdout}");
+            if elem == "off" {
+                for (off, on) in changed {
+                    let want = if opt == "on" { on } else { off };
+                    assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
+                }
+                if gcc {
+                    for want in gcc_kept {
+                        assert!(stdout.contains(want), "{fixture} option {opt} lost `{want}`:\n{stdout}");
+                    }
                 }
             }
             for cc in &compilers {
                 for level in ["-O0", "-O2"] {
                     let dir = std::env::temp_dir().join(format!(
-                        "kuna-castternary-rt-{}-{fixture}-{opt}-{cc}{level}",
+                        "kuna-castternary-rt-{}-{fixture}-{elem}-{opt}-{cc}{level}",
                         std::process::id()
                     ));
                     std::fs::create_dir_all(&dir).unwrap();
@@ -4895,10 +4900,7 @@ int main(void) {
             FUNCS,
             MAIN,
             WANT,
-            &[(
-                "v1 = (unsigned long)*(unsigned int *)(a0 + (long)a2 * 4);",
-                "v1 = *(unsigned int *)(a0 + (long)a2 * 4);",
-            )],
+            &[("v1 = (unsigned long)a0[a2];", "v1 = a0[a2];")],
             OLD,
         ),
     ];
@@ -5441,10 +5443,13 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
     for build in ["gcc_O0", "clang_O0", "gcc_O2"] {
         let bin = fx.join(format!("castindex_{build}_x86_64"));
         let bin = bin.to_str().unwrap();
-        for arm in ["on", "off"] {
+        // The spellings are pinned with `elemptr` off, which leaves the bases
+        // `void *` for this option to rewrite; with it on (the default) P5 types
+        // them first, and the printed C must still compute the same values.
+        for (elem, arm) in [("off", "on"), ("off", "off"), ("on", "on"), ("on", "off")] {
             let args = [
-                "decompile-all", bin, "--sleighpath", sp.as_str(), "--option", "castindex", arm, "--option", "castwiden",
-                "off",
+                "decompile-all", bin, "--sleighpath", sp.as_str(), "--option", "castindex", arm, "--option",
+                "castwiden", "off", "--option", "elemptr", elem,
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
             if !ok && is_specs_skip(&stderr) {
@@ -5486,11 +5491,13 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
                     "(long)b64_table",
                 ]
             };
-            for w in want.iter().chain(kept) {
-                assert!(body.contains(w), "{build} castindex {arm}: expected `{w}`\n{body}");
-            }
-            if arm == "on" {
-                assert!(!body.contains("(long)b64_table"), "{build}: the table lookup kept its round trip\n{body}");
+            if elem == "off" {
+                for w in want.iter().chain(kept) {
+                    assert!(body.contains(w), "{build} castindex {arm}: expected `{w}`\n{body}");
+                }
+                if arm == "on" {
+                    assert!(!body.contains("(long)b64_table"), "{build}: the table lookup kept its round trip\n{body}");
+                }
             }
             if !runs_here || !have_cc {
                 eprintln!("castindex round trip: no x86-64 host or no `cc`, spelling checked only");
@@ -5498,7 +5505,7 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
             }
             let expected = Command::new(bin).output().expect("run the fixture");
             let dir = std::env::temp_dir()
-                .join(format!("kuna-castindex-rt-{}-{build}-{arm}", std::process::id()));
+                .join(format!("kuna-castindex-rt-{}-{build}-{elem}-{arm}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
             let c = dir.join("rt.c");
             let exe = dir.join("rt");
@@ -5955,7 +5962,7 @@ fn a_load_is_not_printed_after_a_store_into_its_bytes() {
         ("indexed", "*(unsigned long *)(a0 + a1 * 4);", "*(unsigned int *)(a0 + 4 + a1 * 4) = "),
         ("after", "((char *)a0)[0xb] = ", "return *(unsigned int *)((long)a0 + 7);"),
         ("before", "((char *)a0)[6] = ", "return *(unsigned int *)((long)a0 + 7);"),
-        ("next", "*(unsigned int *)(a0 + 4 + a1 * 4) = ", "return *(unsigned int *)(a0 + a1 * 4);"),
+        ("next", "a0[a1 + 1] = ", "return a0[a1];"),
     ];
     for (name, first, second) in ordered {
         let b = body(name);
@@ -6527,3 +6534,369 @@ int main(void) {
         }
     }
 }
+
+/// `elemptr`: a pointer the program uses only as an array of one element type
+/// is declared as that pointer, so a textbook base64 decoder reads
+/// `dat_30004060[v2]`, `a0[v7]` and `v6[v8]` instead of three integer sums behind
+/// casts. The round trip exports `elemptr_x86_64.c`'s gcc -O0, clang -O0 and
+/// gcc -O2 builds with the option on and off, compiles the witnesses exactly as
+/// printed against the export's own header with gcc and clang, links every
+/// `dat_<addr>` at `<addr>` with the fixture's data mapped where the binary keeps
+/// it, and runs them: both arms must print what the binary prints. The inputs
+/// read bytes at and above 0x80 signed and unsigned, use them as indexes both
+/// ways, index backwards from the end of an `int` array, read a `.data` table
+/// of `int`s, fill a table through a global the program allocated, and return
+/// an allocated buffer to the caller. Two controls keep their integer form: a
+/// record walked by a stride, and one pointer read at two widths. A second line
+/// reads tables whose elements have the top bit set: a `unsigned short` and an
+/// `unsigned int` element returned to a caller that widens them (declared
+/// signed, the callers would sign-extend), one shifted and one only compared,
+/// and a byte table one function zero-extends and another sign-extends (the
+/// header can declare it at one sign only, so neither indexes it). At -O2, gcc's
+/// `w_rev` returns the `malloc` result it never copies out of `rax`, and kuna
+/// declares it `void` in both arms (a return-recovery gap outside this option),
+/// so that build's round trip does not compare the reversed string. A third
+/// line copies a string into buffers bounded by a length the function compares
+/// a pointer difference against (the length stays `unsigned long`, never a
+/// `char *` base), and stores an `int` counter into an `unsigned` table and
+/// indexes a second table with its elements (the counter stays `int`). A
+/// fourth line reads a global `int *` two functions index and two others step
+/// by bytes, a table one function indexes and two others name the first
+/// element of, and a 2-byte field at the end of a readable page through a
+/// pointer a callee reads as `unsigned int *`: no function may type the global
+/// or the table (the batch's one declaration would rescale the others' byte
+/// arithmetic, or make the scalar the array), and the field is read 2 bytes
+/// wide (a 4-byte element read would fault). A global the header declines as
+/// read at two types is compiled at the pointer that header comment lists, the
+/// type the batch would commit, so a disagreement cannot hide behind `char *`.
+/// A fifth line returns 8-byte elements above 2^32 from a function that loads
+/// them through an address computed in the register it returns them in
+/// (`w_nexttab`, coreutils `expand`'s `get_next_tab_column`), which is never
+/// declared to return that address's type. A sixth line compares and hashes a
+/// 15-byte table with a zero byte inside it through parameters the option
+/// types `char *` (`w_chk`, `w_hash`) and through a parameter merged with it
+/// (`w_pick`): the table is passed as its address, never as a string literal
+/// that ends at the zero byte while the reader takes all fifteen.
+#[test]
+fn an_element_pointer_round_trips_through_the_printed_c() {
+    let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let sp = specs();
+    let witnesses = [
+        "w_build", "w_decode", "w_sbytes", "w_ubytes", "w_words", "w_back", "w_sidx", "w_table", "w_rev",
+        "w_record", "w_mixed", "w_wu", "w_wucall", "w_iu", "w_iucall", "w_iu2", "w_srch", "w_xu", "w_xs", "w_put",
+        "w_ctr", "w_gpinit", "w_gpbump", "w_gpadv", "w_gpread", "w_tidx", "w_tfirst", "w_tset", "w_sum4", "w_hdr",
+        "w_nexttab", "w_tabinit", "w_bcmp", "w_chk", "w_hsum", "w_hash", "w_pick",
+    ];
+    let on: &[&str] = &[
+        "char * w_decode(char *a0,unsigned long a1,unsigned long *a2)",
+        "long w_sbytes(char *a0,int a1)",
+        "long w_ubytes(unsigned char *a0,int a1)",
+        "long w_sidx(char *a0,int a1,int *a2)",
+        "long w_mixed(char *a0,int a1)",
+        "unsigned short w_wu(unsigned int a0)",
+        "unsigned int w_iu(unsigned int a0)",
+        "w_put(char *a0,unsigned long a1,char *a2)",
+        "w_ctr(unsigned int *a0,",
+        "long w_hsum(char *a0,long a1)",
+        "long w_pick(char *a0,long a1,int a2)",
+    ];
+    let off: &[&str] = &["void * w_decode(long a0,unsigned long a1,unsigned long *a2)"];
+    let dir = std::env::temp_dir().join(format!("kuna-elemptr-rt-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for build in ["gcc_O0", "clang_O0", "gcc_O2"] {
+        let stem = format!("elemptr_{build}_x86_64");
+        let bin = fixtures.join(&stem);
+        let expected = Command::new(&bin).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+        let Ok(mut expected) = expected else {
+            eprintln!("elemptr round trip: the x86-64 fixture does not run here, spelling checked only");
+            return;
+        };
+        let rev_broken = build == "gcc_O2";
+        if rev_broken {
+            let mut f: Vec<&str> = expected.split(' ').collect();
+            f[3] = "-";
+            expected = f.join(" ");
+        }
+        for arm in ["on", "off"] {
+            // The field sits at the very end of a readable page with the option
+            // on; off, upstream's widened load is kept, so it sits mid-page.
+            let harness = dir.join(format!("main-{build}-{arm}.c"));
+            std::fs::write(
+                &harness,
+                ELEMPTR_HARNESS
+                    .replace("@FIXTURE@", bin.to_str().unwrap())
+                    .replace("@REV@", if rev_broken { "0" } else { "1" })
+                    .replace("@PAGE_END@", if arm == "on" { "6" } else { "600" }),
+            )
+            .unwrap();
+            let out = dir.join(format!("{build}-{arm}"));
+            let (_, stderr, ok) = run_kuna(&[
+                "decompile-project",
+                bin.to_str().unwrap(),
+                "-o",
+                out.to_str().unwrap(),
+                "--sleighpath",
+                sp.as_str(),
+                "--option",
+                "elemptr",
+                arm,
+            ]);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("elemptr round trip: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "kuna decompile-project failed: {stderr}");
+            let header = std::fs::read_to_string(out.join(format!("{stem}.h"))).unwrap();
+            let code = std::fs::read_to_string(out.join(format!("{stem}.c"))).unwrap();
+            for w in if arm == "on" { on } else { off } {
+                assert!(code.contains(w), "{build} {arm}: missing `{w}`:\n{code}");
+            }
+            assert!(code.contains("long w_table(int a0)"), "{build} {arm}:\n{code}");
+            assert!(!code.contains("w_put(char *a0,char *a1"), "{build} {arm}: the length is a number:\n{code}");
+            if arm == "on" {
+                assert!(!code.contains("(unsigned short)a0[1]"), "{build}: the 2-byte field is read 4 wide:\n{code}");
+            }
+            assert!(
+                code.contains("unsigned long w_nexttab(unsigned long a0,"),
+                "{build} {arm}: the returned element is a number:\n{code}"
+            );
+            assert!(
+                !code.contains("\"0!0"),
+                "{build} {arm}: the table with a zero byte inside is a string literal:\n{code}"
+            );
+            if arm == "on" {
+                assert!(header.contains("extern unsigned char dat_"), "{build}: the encoding table:\n{header}");
+                assert!(header.contains("extern int dat_"), "{build}: the weights table:\n{header}");
+                assert!(!code.contains("(long)v6 + (long)v8"), "{build}: the decoded buffer:\n{code}");
+                assert!(header.contains("extern unsigned short dat_"), "{build}: the word table:\n{header}");
+                assert!(
+                    !header.lines().any(|l| l.contains("[];") && l.contains("also used as")),
+                    "{build}: one table declared at two elements:\n{header}"
+                );
+            }
+            let mut printed = format!("#include <stddef.h>\n#include <stdlib.h>\n#include \"{stem}.h\"\n");
+            let mut bodies = String::new();
+            for w in witnesses {
+                let head = format!("// Function: {w} @ ");
+                let at = code.find(&head).unwrap_or_else(|| panic!("{build} {arm}: no `{w}` in the export"));
+                let end = code[at + head.len()..].find("// Function: ").map_or(code.len(), |e| at + head.len() + e);
+                bodies.push_str(&code[at..end]);
+            }
+            let mut names: Vec<String> = Vec::new();
+            for (i, _) in bodies.match_indices("dat_") {
+                let hex: String = bodies[i + 4..].chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+                let name = format!("dat_{hex}");
+                if !hex.is_empty() && !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+            for n in &names {
+                if header.contains(&format!(" {n};")) || header.contains(&format!(" {n}[];")) {
+                    continue;
+                }
+                let listed = header.lines().find_map(|l| {
+                    let why = l.split_once(&format!("/* {n} is "))?.1;
+                    let decls = why.split_once("so it is not declared: ")?.1.trim_end_matches(" */");
+                    decls.split(", ").find(|d| d.contains('*') || d.ends_with("[]")).map(str::to_string)
+                });
+                // A name the header leaves out is main's integer global; one the
+                // bodies subscript is a pointer.
+                let guess = if bodies.contains(&format!("{n}[")) { format!("char *{n}") } else { format!("long {n}") };
+                printed.push_str(&format!("extern {};\n", listed.unwrap_or(guess)));
+            }
+            printed.push_str(&bodies);
+            std::fs::write(out.join("printed.c"), &printed).unwrap();
+            for cc in ["gcc", "clang"] {
+                if Command::new(cc).arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+                    eprintln!("elemptr round trip: no `{cc}`");
+                    continue;
+                }
+                let exe = out.join(format!("rt-{cc}"));
+                // Clang 16+ and gcc 14 make these errors, which `-w` does not
+                // silence; a guessed declaration of an undeclared global trips them.
+                let mut args: Vec<String> = [
+                    "-std=gnu11",
+                    "-w",
+                    "-Wno-error=int-conversion",
+                    "-Wno-error=incompatible-pointer-types",
+                    "-O0",
+                    "-fno-builtin",
+                    "-no-pie",
+                    "-o",
+                ]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+                args.push(exe.to_str().unwrap().to_string());
+                args.push(harness.to_str().unwrap().to_string());
+                args.push(out.join("printed.c").to_str().unwrap().to_string());
+                for n in &names {
+                    args.push(format!("-Wl,--defsym,{n}=0x{}", &n[4..]));
+                }
+                let built = Command::new(cc).args(&args).current_dir(&out).output().expect("spawn cc");
+                assert!(
+                    built.status.success(),
+                    "{build} {arm}/{cc}: the printed witnesses did not compile:\n{}\n{printed}",
+                    String::from_utf8_lossy(&built.stderr)
+                );
+                let run = Command::new(&exe).output().expect("run the round trip");
+                let mut got = String::from_utf8_lossy(&run.stdout).trim().to_string();
+                let mut want = expected.clone();
+                // gcc -O2 with the option off (main): `w_tabinit` fills the table
+                // through `unsigned long *` and `w_nexttab` reads it as an integer
+                // sum, and the header declares neither, so no one declaration
+                // computes both; with the option on both read `dat_<addr>[i]`.
+                if build == "gcc_O2" && arm == "off" {
+                    let four = |t: &str| t.lines().take(4).collect::<Vec<_>>().join("\n");
+                    got = four(&got);
+                    want = four(&want);
+                }
+                assert_eq!(got, want, "{build} {arm}/{cc}: the printed witnesses compute something else:\n{printed}");
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `elemptr` under `--jobs N`: a global or a table is an array only where
+/// every function of a batch agrees, and a worker sees a share of the
+/// functions, so a pool of more than one function types neither -- exactly as
+/// a serial run that does not take the callee-first order. With `--option
+/// protoorder off` on both, `decompile-all` and `decompile-project` print with
+/// `--jobs 4` what they print with `--jobs 1`, and neither declares the global
+/// `gp` an `int *` that `w_gpbump` steps by 4 bytes (as `int *`, `gp += 4`
+/// would move 16). The default serial run still types it where the batch agrees.
+#[test]
+fn element_pointers_under_jobs_match_the_serial_run() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let off = ["--sleighpath", sp.as_str(), "--option", "protoorder", "off"];
+    let serial: Vec<&str> = ["decompile-all", bin.as_str()].iter().chain(off.iter()).copied().collect();
+    let (want, stderr, ok) = run_kuna(&serial);
+    if !ok && is_specs_skip(&stderr) {
+        eprintln!("elemptr jobs: skipping (no `.sla`; run `make specs`)");
+        return;
+    }
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let mut pooled = serial.clone();
+    pooled.extend_from_slice(&["--jobs", "4", "--jobs-chunk", "1"]);
+    let (got, stderr, ok) = run_kuna(&pooled);
+    assert!(ok, "kuna decompile-all --jobs 4 failed: {stderr}");
+    assert_eq!(got, want, "--jobs 4 moved the elemptr fixture's document");
+    assert!(got.contains("dat_300053e8 += 4;"), "the byte step on gp:\n{got}");
+    assert!(!got.contains("dat_300053e8["), "gp is indexed as an array without a batch:\n{got}");
+    let (callee_first, _, ok) = run_kuna(&["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()]);
+    assert!(ok);
+    assert!(callee_first.contains("dat_300053e0[dat_30005080[v2]] = (char)v2;"), "{callee_first}");
+
+    let dir = std::env::temp_dir().join(format!("kuna-elemptr-jobs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut exports = Vec::new();
+    for jobs in ["1", "4"] {
+        let out = dir.join(format!("j{jobs}"));
+        let mut args = vec!["decompile-project", bin.as_str(), "-o", out.to_str().unwrap()];
+        args.extend_from_slice(&off);
+        args.extend_from_slice(&["--jobs", jobs, "--jobs-chunk", "1"]);
+        let (_, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-project --jobs {jobs} failed: {stderr}");
+        let read = |ext: &str| std::fs::read_to_string(out.join(format!("elemptr_gcc_O0_x86_64.{ext}"))).unwrap();
+        exports.push((read("c"), read("h")));
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(exports[0].0, exports[1].0, "decompile-project --jobs 4 moved the .c");
+    assert_eq!(exports[0].1, exports[1].1, "decompile-project --jobs 4 moved the .h");
+    assert!(!exports[1].1.contains("int *dat_300053e8"), "the .h declares gp an int *:\n{}", exports[1].1);
+}
+
+/// The `elemptr` round trip's `main`: map the fixture's non-executable load
+/// segments at their own addresses, then call the printed witnesses with the
+/// fixture's own inputs and print its line.
+const ELEMPTR_HARNESS: &str = r#"#include <elf.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
+unsigned char *w_decode(const char *, unsigned long, unsigned long *);
+long w_sbytes(const char *, int); long w_ubytes(const unsigned char *, int);
+long w_words(const int *, int); long w_back(const int *, int);
+long w_sidx(const signed char *, int, const int *); long w_table(int); char *w_rev(const char *, int);
+long w_record(const long *, int); long w_mixed(const char *, int);
+unsigned long w_wucall(unsigned int); unsigned long w_iucall(unsigned int); unsigned long w_iu2(unsigned int);
+long w_srch(unsigned int); unsigned long w_xu(const unsigned char *, int); long w_xs(const unsigned char *, int);
+void w_put(char *, unsigned long, const char *); void w_ctr(unsigned int *, unsigned int *, int);
+void w_gpinit(long); void w_gpbump(void); void w_gpadv(long); long w_gpread(long);
+long w_tidx(unsigned int); long w_tfirst(void); void w_tset(long); long w_hdr(const unsigned int *);
+void w_tabinit(void); unsigned long w_nexttab(unsigned long, unsigned long *, _Bool *);
+int w_chk(const char *); long w_hash(void); long w_pick(const char *, long, int);
+int main(void) {
+  int fd = open("@FIXTURE@", O_RDONLY);
+  Elf64_Ehdr eh; pread(fd, &eh, sizeof eh, 0);
+  for (int i = 0; i < eh.e_phnum; i++) {
+    Elf64_Phdr ph; pread(fd, &ph, sizeof ph, eh.e_phoff + i * sizeof ph);
+    if (ph.p_type != PT_LOAD || (ph.p_flags & PF_X)) continue;
+    unsigned long lo = ph.p_vaddr & ~0xfffUL, hi = (ph.p_vaddr + ph.p_memsz + 0xfff) & ~0xfffUL;
+    if (mmap((void *)lo, hi - lo, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) != (void *)lo) return 2;
+    pread(fd, (void *)ph.p_vaddr, ph.p_filesz, ph.p_offset);
+  }
+  static const char hi[] = "\x81\x7f\xfe\x01\x80\x10";
+  static const int wide[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+  static int span[256];
+  for (int i = 0; i < 256; i++)
+    span[i] = i * 3 - 384;
+  static const long recs[] = {2, 3, 5, 7, 11, 13};
+  unsigned long n = 0;
+  unsigned char *dec = w_decode("aGVsbG8gd29ybGQ=", 16, &n);
+  char *rev = @REV@ ? w_rev("kuna", 4) : (w_rev("kuna", 4), "-");
+  long a = w_sbytes(hi, 6);
+  long b = w_ubytes((const unsigned char *)hi, 6);
+  long c = w_words(wide, 16);
+  long d = w_back(wide + 16, 16);
+  long e = w_sidx((const signed char *)hi, 6, span + 128);
+  long f = w_table(8);
+  long g = w_record(recs, 3);
+  long h = w_mixed("abcdefgh", 2);
+  printf("%s %lu %s %ld %ld %ld %ld %ld %ld %ld %ld\n", (char *)dec, n, rev, a, b, c, d, e, f, g, h);
+  static const unsigned char ix[] = {0, 1, 2, 3, 4, 5};
+  printf("%lu %lu %lu %lu %lu %lu %ld %ld %lu %ld\n", w_wucall(1), w_wucall(6), w_iucall(1), w_iucall(3), w_iu2(1),
+         w_iu2(2), w_srch(0xffffffffu), w_srch(5), w_xu(ix, 6), w_xs(ix, 6));
+  char put8[8], put4[4];
+  static unsigned int fmap[8], eclass[8] = {5, 6, 7};
+  w_put(put8, 8, "abc");
+  w_put(put4, 4, "abcdef");
+  w_ctr(fmap, eclass, 8);
+  printf("%s %s %u %u %u\n", put8, put4, eclass[0], eclass[3], eclass[7]);
+  w_gpinit(16);
+  long g1 = w_gpread(1);
+  w_gpbump();
+  long g2 = w_gpread(1);
+  w_gpadv(2);
+  long g3 = w_gpread(1);
+  long t1 = w_tidx(3), t2 = w_tfirst();
+  w_tset(-7);
+  long t3 = w_tidx(8), t4 = w_tfirst();
+  unsigned char *pg = mmap(0, 8192, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  mprotect(pg + 4096, 4096, PROT_NONE);
+  unsigned char *o = pg + 4096 - @PAGE_END@;
+  o[0] = 1, o[1] = 2, o[2] = 3, o[3] = 4, o[4] = 0x34, o[5] = 0x92;
+  printf("%ld %ld %ld %ld %ld %ld %ld %ld\n", g1, g2, g3, t1, t2, t3, t4, w_hdr((const unsigned int *)o));
+  w_tabinit();
+  unsigned long ti = 0;
+  _Bool last = 0;
+  unsigned long n1 = w_nexttab(9, &ti, &last), n2 = w_nexttab(0x100000005ul, &ti, &last), n3 = w_nexttab(0x200000000ul, &ti, &last);
+  printf("%lu %lu %lu %lu %d\n", n1, n2, n3, ti, (int)last);
+  static const unsigned char der[15] = {0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14};
+  char ok[15], bad[15];
+  memcpy(ok, der, 15);
+  memcpy(bad, der, 15);
+  bad[14] = 0;
+  printf("%d %d %ld %ld %ld\n", w_chk(ok), w_chk(bad), w_hash(), w_pick("abcdefghijklmno", 15, 1), w_pick(0, 15, 0));
+  return 0;
+}
+"#;

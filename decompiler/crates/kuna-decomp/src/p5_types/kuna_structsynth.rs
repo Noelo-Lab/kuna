@@ -1020,7 +1020,7 @@ fn is_local_base(data: &Funcdata, base: VarnodeId, e: &Evidence) -> bool {
 /// declaration leave its pointee open?  Single assignment makes that value the
 /// local's only definition; a declared `char *` or `struct stat *` return is
 /// what the pointer is, and only `void *` (an allocator) says nothing.
-fn is_call_return(data: &Funcdata, vn: VarnodeId) -> bool {
+pub(crate) fn is_call_return(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(def) = data.vbank().get(vn).and_then(|v| v.get_def()) else { return false };
     let Some(op) = data.obank().get(def) else { return false };
     if !matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) || op.get_out() != Some(vn) {
@@ -1050,7 +1050,7 @@ const MAX_COPIES: usize = 64;
 /// `tar`'s `wordsplit_add_segm` keeps a record from `calloc` in the `rax` it
 /// returns its status in, and typing the record would declare the status a
 /// `struct_N *` too.
-fn copies_alone(data: &Funcdata, vn: VarnodeId, rets: &[VarnodeId]) -> Option<Vec<VarnodeId>> {
+pub(crate) fn copies_alone(data: &Funcdata, vn: VarnodeId, rets: &[VarnodeId]) -> Option<Vec<VarnodeId>> {
     let mut seen = vec![vn];
     let mut i = 0;
     while i < seen.len() {
@@ -1105,7 +1105,7 @@ fn points_past(data: &Funcdata, copies: &[VarnodeId], extent: intb) -> bool {
 }
 
 /// The value every live `RETURN` returns.
-fn returned_values(data: &Funcdata) -> Vec<VarnodeId> {
+pub(crate) fn returned_values(data: &Funcdata) -> Vec<VarnodeId> {
     data.obank()
         .iter_code(OpCode::CPUI_RETURN)
         .filter_map(|r| data.obank().get(r))
@@ -1118,7 +1118,7 @@ fn returned_values(data: &Funcdata) -> Vec<VarnodeId> {
 /// A function has one return type, so a value returned on one path types what
 /// every other path returns: a record returned where another path returns a
 /// name or a count declines. A constant zero is the null every pointer can be.
-fn returned_beside_others(data: &Funcdata, copies: &[VarnodeId], rets: &[VarnodeId]) -> bool {
+pub(crate) fn returned_beside_others(data: &Funcdata, copies: &[VarnodeId], rets: &[VarnodeId]) -> bool {
     if !rets.iter().any(|r| copies.contains(r)) {
         return false;
     }

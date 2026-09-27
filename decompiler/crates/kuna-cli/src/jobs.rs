@@ -389,6 +389,11 @@ pub(crate) struct PoolConfig<'a> {
     /// it to, so the serial run the replayed names belong to is
     /// `--jobs 1 --option protoorder off` and the report says so.
     pub(crate) serial_callee_first: bool,
+    /// (kuna `elemptr`) The pool decompiles a batch of one function, whose
+    /// worker types globals and tables as a serial batch of one does; the
+    /// workers of any larger pool type neither, as a serial run that is not
+    /// callee-first does not.
+    pub(crate) elem_objects: bool,
 }
 
 /// How many decode lanes `--jobs` asks the discovery walk for.
@@ -721,7 +726,7 @@ impl ResultWriter {
             put_str(&mut body, &g.name);
             put_str(&mut body, &g.declaration);
             body.extend_from_slice(&g.size.to_le_bytes());
-            body.push(u8::from(g.unknown) | u8::from(g.direct) << 1 | u8::from(g.aggregate) << 2);
+            body.push(u8::from(g.unknown) | u8::from(g.direct) << 1 | u8::from(g.aggregate) << 2 | u8::from(g.elem) << 3);
         }
         put_u64s(&mut body, &r.callee_hints);
         match &r.synth {
@@ -847,6 +852,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             unknown: bits & 1 != 0,
             direct: bits & 2 != 0,
             aggregate: bits & 4 != 0,
+            elem: bits & 8 != 0,
         });
     }
     let callee_hints = r.u64s()?;
@@ -2153,6 +2159,9 @@ impl Worker {
         if cfg.no_vars {
             cmd.arg("--no-vars");
         }
+        if cfg.elem_objects {
+            cmd.arg("--jobs-objects");
+        }
         if cfg.want_proto {
             cmd.arg("--jobs-proto");
         }
@@ -3304,6 +3313,7 @@ mod tests {
                 unknown: false,
                 direct: true,
                 aggregate: true,
+                elem: true,
             }],
             line_mappings: vec![LineMapping { line_number: 3, addresses: vec![0x401004] }],
             aliases: vec!["_main".into()],
@@ -3854,6 +3864,7 @@ mod tests {
             sleighpath: None,
             synth_base: None,
             serial_callee_first: false,
+            elem_objects: false,
         }
     }
 

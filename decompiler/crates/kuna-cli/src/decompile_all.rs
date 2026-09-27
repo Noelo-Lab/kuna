@@ -203,6 +203,10 @@ pub(crate) struct Args {
     /// Internal: what this worker does with the synthesized-structure ledger
     /// (`--jobs-synth record|force|serial`, see [`jobs::SynthWorker`]).
     pub(crate) jobs_synth: Option<jobs::SynthWorker>,
+    /// Internal (kuna `elemptr`): the pool decompiles one function, which
+    /// types globals and tables as a serial batch of one does
+    /// (`--jobs-objects`); a worker of a larger pool types neither.
+    pub(crate) jobs_objects: bool,
 }
 
 impl Args {
@@ -241,6 +245,7 @@ impl Args {
             jobs_types: false,
             jobs_callees: false,
             jobs_synth: None,
+            jobs_objects: false,
         }
     }
 
@@ -1214,6 +1219,9 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
     let assignments = jobs::listen_for_assignments(scratch);
 
     let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    if !args.jobs_objects {
+        kuna_decomp::kuna_elemptr::without_objects(prog.arch_mut());
+    }
     let inventory = std::path::Path::new(scratch).join(jobs::INVENTORY_FILE);
     if !args.jobs_full_load && inventory.is_file() {
         seed_worker_inventory(&mut prog, &inventory.to_string_lossy())?;
@@ -1453,6 +1461,7 @@ pub(crate) fn decompile_targets_pooled(
     );
     cfg.synth_base = synth_base;
     cfg.serial_callee_first = serial_callee_first;
+    cfg.elem_objects = targets.len() <= 1;
     jobs::run_pool(&cfg, &specs, &inventory)
 }
 
@@ -1514,6 +1523,7 @@ pub(crate) fn pool_config<'a>(
         sleighpath: args.sleighpath.as_deref(),
         synth_base: None,
         serial_callee_first: false,
+        elem_objects: false,
     }
 }
 
@@ -1770,8 +1780,9 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
         if callee_first {
             eprintln!(
                 "note: --jobs decompiles without the callee-first order (option protoorder, on by \
-                 default), so call-argument types can differ from a serial run; add --option \
-                 protoorder off to make the two byte-identical"
+                 default), so call-argument types, and which globals and tables are arrays, can \
+                 differ from a serial run; add --option protoorder off to make the two \
+                 byte-identical"
             );
         }
         let inventory = prog.function_entries_canonical();
@@ -1959,6 +1970,7 @@ pub(crate) fn decompile_callee_first(
         ledger.recording = true;
     }
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
+    kuna_decomp::kuna_elemptr::start(prog.arch_mut(), true);
     for &(index, park) in &plan {
         let opts =
             kuna_console::project::DecompileOptions { park_recovered_proto: park, ..base };
@@ -1975,7 +1987,37 @@ pub(crate) fn decompile_callee_first(
             callback_park_round(prog, graph, open, &targets, &plan, &base, &mut slots);
         }
     }
+    converge_element_globals_callee_first(prog, &targets, &plan, &base, &mut slots);
+    kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
     slots.into_iter().flatten().collect()
+}
+
+/// (kuna `elemptr`) [`kuna_console::project::converge_element_globals`] in plan
+/// order, each target with its own park decision.
+fn converge_element_globals_callee_first(
+    prog: &mut ConsoleProgram,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    base: &kuna_console::project::DecompileOptions,
+    slots: &mut [Option<FuncResult>],
+) {
+    for _ in 0..2 {
+        let redo = kuna_decomp::kuna_elemptr::disagreements(prog.arch_mut());
+        if redo.is_empty() {
+            return;
+        }
+        for &(index, park) in plan {
+            if !redo.contains(&targets[index].addr.get_offset()) {
+                continue;
+            }
+            let opts = kuna_console::project::DecompileOptions { park_recovered_proto: park, ..*base };
+            let again = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
+            match slots[index].as_ref() {
+                Some(first) if !kuna_console::project::redo_replaces(first, &again) => {}
+                _ => slots[index] = Some(again),
+            }
+        }
+    }
 }
 
 /// (kuna `calleevote`) How many times the callers' statements are decided and
@@ -3908,6 +3950,7 @@ pub(crate) fn parse_args_with_filters(
     let mut jobs_provenance = false;
     let mut jobs_types = false;
     let mut jobs_callees = false;
+    let mut jobs_objects = false;
     let mut jobs_synth: Option<jobs::SynthWorker> = None;
     // The three whole-binary surfaces the worker POOL serves; `functions`
     // enumerates and never decompiles, so there is nothing for a pool to do
@@ -3970,6 +4013,7 @@ pub(crate) fn parse_args_with_filters(
             "--jobs-provenance" if cmd == "decompile-all" => jobs_provenance = true,
             "--jobs-types" if cmd == "decompile-all" => jobs_types = true,
             "--jobs-callees" if cmd == "decompile-all" => jobs_callees = true,
+            "--jobs-objects" if cmd == "decompile-all" => jobs_objects = true,
             "--jobs-synth" if cmd == "decompile-all" => {
                 jobs_synth = Some(jobs::SynthWorker::parse(&take(argv, &mut i, "--jobs-synth")?)?);
             }
@@ -4218,6 +4262,7 @@ pub(crate) fn parse_args_with_filters(
             jobs_types,
             jobs_callees,
             jobs_synth,
+            jobs_objects,
         },
         filters,
     ))
@@ -4278,8 +4323,9 @@ fn usage_decompile_all() {
          structures have the serial ones' members, and is decompiled a second\n\
          time with the serial names otherwise. A worker cannot see another\n\
          worker's callees, so the pool does not type call arguments\n\
-         callee-first: on this surface it matches --jobs 1 with --option\n\
-         protoorder off on both. Progress goes to stderr. Every worker loads\n\
+         callee-first, and no global or table is an array without the whole\n\
+         batch (option elemptr): on this surface it matches --jobs 1 with\n\
+         --option protoorder off on both. Progress goes to stderr. Every worker loads\n\
          the binary itself, so peak memory is roughly N times one worker's RSS.\n\
          --jobs-chunk N sets the functions per worker invocation (bigger =\n\
          less load overhead, more peak RSS); --jobs-full-load makes each\n\

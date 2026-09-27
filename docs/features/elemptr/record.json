@@ -1,0 +1,381 @@
+{
+ "opportunity": "A pointer-width value the program uses only as an array of one element type -- a parameter indexed byte by byte, the buffer malloc returned, a global that holds an allocated table, a constant table in .data read with a computed index -- is declared long or void * (or not at all), so every access prints as an integer sum behind casts: *(char *)((long)v6 + (long)v8), *(unsigned char *)((long)v1 + 0x4020). TypeOpIntAdd votes an integer for both operands of p + i and refuses to carry the loaded element's pointer back over the add (typeop.cc:1217).",
+ "test_name": "tests/stages/kuna-elemptr.xml (26 assertions, pass 1 option elemptr off, pass 2 on; #10/#11 a returned 2-byte element unsigned, #12 the decoder's ?: arm reads the typed global with no (int), #13 a length compared against a pointer difference stays a number, #14-#16 an int counter stored into an unsigned table stays int, #17/#18 a 2-byte field through a pointer a callee reads as uint4 * is read 4 wide and truncated with the option off and 2 wide with it on, #19/#20 a global stepped by bytes and a table's first element read by name keep their integer form, #21/#22 an element loaded through an address in the returned register is returned as an integer, #23-#26 a 15-byte table holding a zero byte merged with a parameter the option types is its address, never a string literal) + unit tests (p5_types/kuna_elemptr/tests.rs, p9_emit/kuna_globalref/tests.rs) + compiled round trip decompile_all_cli.rs an_element_pointer_round_trips_through_the_printed_c (six lines; the sixth compares and hashes the zero-byte table) + decompile_all_cli.rs element_pointers_under_jobs_match_the_serial_run (--jobs 4 == --jobs 1 on decompile-all and decompile-project with --option protoorder off) + tests/cli/elemptr-keeps-a-global-another-function-steps-by-bytes-an-integer.json (a batch) and tests/cli/elemptr-passes-a-table-with-a-zero-byte-as-its-address.json (a caller passing the table to a callee's typed parameter)",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
+ "selector": "w_decode",
+ "func_addr": null,
+ "angr_version": null,
+ "option": "elemptr",
+ "flag": "elem_ptr",
+ "element_id": null,
+ "change_kind": "type-inference",
+ "tier": "transform",
+ "source_decompiler": "ida",
+ "inspiration": "IDA prints a base64 decoder's table lookup as *((char *)ptr + *(unsigned __int8 *)(a1 + v9)), its output store as v26[v12] = BYTE2(v19) with _BYTE *v26, and the table build as *((_BYTE *)ptr + byte_5020[i]) = i: the element type comes from the access, and a constant table read with a computed index is a named array (IDA at coreutils ls -O0 main: dword_205E0[sub_FE17(...)], sort -O2 0x9120: byte_1D740[(unsigned char)*v2], gzip -O0 0x4677: word_BD000[dword_1A084 + 0x8000]).",
+ "default_on": true,
+ "default_value": "on",
+ "values": "on|off",
+ "parity": "OK",
+ "witness": {
+  "function": "textbook base64 decoder (fixture elemptr_x86_64.c w_decode / w_build, gcc -O0): 38 -> 15 casts and 6 -> 1 (castcount); the remaining casts are the (int) arms of ?: (castimplied's question), the (unsigned char) index conversions the value needs and the truncating stores",
+  "before": "void * w_decode(long a0,...); v2 = (*(char *)(v7 + a0) != '=') ? (int)*(char *)((unsigned long)*(unsigned char *)(v7 + a0) + dat_300040e0) : 0; *(char *)(v8 + (long)v6) = (char)(v5 >> 0x10); *(char *)((unsigned long)*(unsigned char *)((long)v2 + 0x30004060) + (long)dat_300040e0) = (char)v2;",
+  "after": "char * w_decode(char *a0,...); v2 = (a0[v7] != '=') ? (int)dat_300040e0[(unsigned char)a0[v7]] : 0; v6[v8] = (char)(v5 >> 0x10); dat_300040e0[dat_30004060[v2]] = (char)v2;"
+ },
+ "castbench": {
+  "set": "full, 45 binaries x O0/O2/O2-noinline, 4,815 functions kuna, IDA and main share",
+  "ida": {
+   "casts": 37821,
+   "per_kloc": 155.4,
+   "per_100_statements": 27.0
+  },
+  "main_c960fb18d": {
+   "casts": 37477,
+   "per_kloc": 196.6,
+   "per_100_statements": 31.2,
+   "vs_ida": 0.991
+  },
+  "elemptr": {
+   "casts": 35327,
+   "per_kloc": 185.5,
+   "per_100_statements": 29.4,
+   "vs_ida": 0.934
+  },
+  "per_level_vs_ida": {
+   "O0": "1.003 -> 0.917",
+   "O2": "1.028 -> 0.986",
+   "O2-noinline": "0.937 -> 0.893"
+  },
+  "delta": -2150,
+  "delta_pct": -5.74,
+  "functions_fewer": 350,
+  "casts_fewer": 2172,
+  "functions_more": 17,
+  "casts_more": 22,
+  "off_arm": "byte-identical to main c960fb18d on all 45 files",
+  "shape_deltas": "(char *)(...) -429, (long)v -321, (unsigned char *)(...) -312, (unsigned long)v -254, (int *)(...) -189, (unsigned short *)(...) -115, (char **)(...) -95; gained (char *)0x... +94 (a table globalref cannot name, one cast where main printed two), (unsigned int) on a subscript +48 (the same conversion, now on a subscript)",
+  "more_casts_read": "all 17: a callee parameter now declared char * / char ** makes an integer caller argument print its conversion (tar O2-noinline 0x132d0, O0 0x1381d, 0x15a63, 0x135e3, diff3 O2-noinline 0x4ae0, ls O2 0xc0e0); a constant used at two pointee types across a callee keeps globalref's two-type cast (gzip O2 0xb700, O2-noinline 0xbb40, 0x67e0, O2 0x63e0); a call result kept in a char * slot where the callee's recovered return is long (diff O0 0x8710, 0x818f); a buffer typed unsigned char * from its zero-extended reads also passed to strftime (find O0 0x11c89, O2-noinline 0xeb50); a pointer-array global also stepped by a byte offset (diff O2 0x8590, O2-noinline 0x8320); grep O2-noinline 0xbfa0",
+  "rebased": "measured on c960fb18d, ef49332b2, 850e8c692, 0096e984d, b273c2259 and f96e80805 (current; the entry elemptr_on_f96e80805)",
+  "main_850e8c692": {
+   "casts": 35588,
+   "per_kloc": 188.2,
+   "per_100_statements": 29.9,
+   "vs_ida": 0.941
+  },
+  "elemptr_on_850e8c692": {
+   "casts": 33553,
+   "per_kloc": 177.5,
+   "per_100_statements": 28.2,
+   "vs_ida": 0.887,
+   "delta": -2035,
+   "functions_fewer": 339,
+   "casts_fewer": 2054,
+   "functions_more": 16,
+   "casts_more": 19,
+   "per_level_vs_ida": {
+    "O0": "0.952 -> 0.868",
+    "O2": "0.976 -> 0.938",
+    "O2-noinline": "0.891 -> 0.850"
+   },
+   "off_arm": "byte-identical to a build of main 850e8c692 on all 45 files",
+   "note": "measured on the final engine (sign on evidence, table ledger, index-of-other refusals); an earlier engine reached 33,472 by removing casts on a sign it had no evidence for; the 16 functions with more casts are the classes read in analysis.md section 3 (a callee now declaring char * / char ** making a caller's integer argument print its conversion, a constant used at two pointee types, a call result kept in a char * slot)"
+  },
+  "shape_deltas_850e8c692": "(char *)(...) -388, (unsigned char *)(...) -282, (long)v -254, (unsigned long)v -250, (int *)(...) -181, (unsigned long)(...) -134, (unsigned short *)(...) -115, (char **)(...) -91",
+  "main_0096e984d": {
+   "casts": 35588,
+   "per_kloc": 188.2,
+   "per_100_statements": 29.9,
+   "vs_ida": 0.941
+  },
+  "elemptr_on_0096e984d": {
+   "casts": 33505,
+   "per_kloc": 177.2,
+   "per_100_statements": 28.2,
+   "vs_ida": 0.886,
+   "delta": -2083,
+   "functions_fewer": 342,
+   "casts_fewer": 2101,
+   "functions_more": 15,
+   "casts_more": 18,
+   "per_level_vs_ida": {
+    "O0": "0.952 -> 0.868",
+    "O2": "0.976 -> 0.936",
+    "O2-noinline": "0.891 -> 0.848"
+   },
+   "per_100_statements_by_level": {
+    "O0": "32.3 -> 29.5 (IDA 31.0)",
+    "O2": "31.5 -> 30.2 (IDA 26.1)",
+    "O2-noinline": "26.4 -> 25.1 (IDA 24.8)"
+   },
+   "off_arm": "byte-identical to main 0096e984d (castbench arm main-0096e984d) on all 45 files",
+   "more_casts_read": "all 15, the classes of analysis.md section 3: a callee parameter now char * / char ** / int * (tar O2-noinline 0x132d0, O0 0x1381d, 0x15a63, 0x135e3, diff3 O2-noinline 0x4ae0, ls O2 0xc0e0); a constant at two pointee types (gzip O2 0x63e0, O2-noinline 0x67e0); a call result kept in a char * slot (diff O0 0x8710, 0x818f); an unsigned char * buffer passed to strftime (find O0 0x11c89, O2-noinline 0xeb50); a pointer-array global stepped by a byte offset (diff O2 0x8590, O2-noinline 0x8320); grep O2-noinline 0xbfa0"
+  },
+  "shape_deltas_0096e984d": "(char *)(...) -401, (unsigned char *)(...) -286, (unsigned long)v -254, (long)v -248, (int *)(...) -179, (unsigned long)(...) -136, (unsigned short *)(...) -115, (char **)(...) -91; gained (unsigned char *)0x... +94 (a table globalref cannot name, one cast where main printed two), (unsigned char) +80 (the index conversion a char used as a subscript needs)",
+  "main_b273c2259": {
+   "casts": 34829,
+   "per_kloc": 184.1,
+   "per_100_statements": 29.3,
+   "vs_ida": 0.921,
+   "arm": "a build of origin/main b273c2259 (#718 callbacktype, #729 callrettype), run fresh"
+  },
+  "elemptr_on_b273c2259": {
+   "casts": 33241,
+   "per_kloc": 175.8,
+   "per_100_statements": 28.0,
+   "vs_ida": 0.879,
+   "delta": -1588,
+   "functions_fewer": 306,
+   "casts_fewer": 1614,
+   "functions_more": 18,
+   "casts_more": 26,
+   "per_level_vs_ida": {
+    "O0": "0.933 -> 0.861",
+    "O2": "0.959 -> 0.931",
+    "O2-noinline": "0.867 -> 0.840"
+   },
+   "per_100_statements_by_level": {
+    "O0": "31.6 -> 29.2 (IDA 31.0)",
+    "O2": "30.9 -> 30.0 (IDA 26.1)",
+    "O2-noinline": "25.7 -> 24.8 (IDA 24.8)"
+   },
+   "off_arm": "byte-identical to the fresh main b273c2259 arm on all 45 files",
+   "on_0096e984d": "35,588 -> 34,000 with the same engine; the engine before the batch agreement read 33,505 (a first cut of the agreement read 34,012 but decided 135 of bash -O2's functions twice, +17.9%, filing claimed pointees as types)",
+   "more_casts_read": "all 18, the classes of analysis.md section 3: a callee parameter now char * (tar O2-noinline 0x132d0, O0 0x1381d, 0x135e3, 0x15a63, diff3 O2-noinline 0x4ae0, ls O2 0xc0e0); a constant at two pointee types (gzip O2 0x63e0, O2-noinline 0x67e0); a call result kept in a char * / unsigned char * variable where callrettype states an integer return (tar O2-noinline 0xf760, 0x1a320, 0x13140, O2 0x1ca20, find O0 0xb22b); an unsigned char * buffer passed to strftime (find O0 0x11c89, O2-noinline 0xeb50); grep O2-noinline 0xbfa0; the narrow load (cp O2 0x76f0, tar O2-noinline 0x16890)"
+  },
+  "main_f96e80805": {
+   "casts": 33289,
+   "per_kloc": 176.0,
+   "per_100_statements": 28.0,
+   "vs_ida": 0.88,
+   "arm": "a build of origin/main f96e80805 (#743 castobject, #744 castwiden on top of #718, #729), run fresh"
+  },
+  "elemptr_on_f96e80805": {
+   "casts": 32073,
+   "per_kloc": 169.6,
+   "per_100_statements": 27.0,
+   "vs_ida": 0.848,
+   "delta": -1216,
+   "functions_fewer": 301,
+   "casts_fewer": 1242,
+   "functions_more": 18,
+   "casts_more": 26,
+   "per_level_vs_ida": {
+    "O0": "0.871 -> 0.815",
+    "O2": "0.927 -> 0.907",
+    "O2-noinline": "0.838 -> 0.816"
+   },
+   "per_100_statements_by_level": {
+    "O0": "29.5 -> 27.6 (IDA 31.0)",
+    "O2": "29.9 -> 29.2 (IDA 26.1)",
+    "O2-noinline": "24.8 -> 24.1 (IDA 24.8)"
+   },
+   "off_arm": "byte-identical to the fresh main f96e80805 arm on all 45 files",
+   "on_earlier_bases": "b273c2259: 34,829 -> 33,241; 0096e984d: 35,588 -> 34,000 with the same engine; the engine before the batch agreement read 33,505 on 0096e984d (a first cut of the agreement read 34,012 but decided 135 of bash -O2's functions twice, +17.9%, filing claimed pointees as types)",
+   "more_casts_read": "all 18, the classes of analysis.md section 3: a callee parameter now char * (tar O2-noinline 0x132d0, O0 0x1381d, 0x135e3, 0x15a63, diff3 O2-noinline 0x4ae0, ls O2 0xc0e0); a constant at two pointee types (gzip O2 0x63e0, O2-noinline 0x67e0); a call result kept in a char * / unsigned char * variable where callrettype states an integer return (tar O2-noinline 0xf760, 0x1a320, 0x13140, O2 0x1ca20, find O0 0xb22b); an unsigned char * buffer passed to strftime (find O0 0x11c89, O2-noinline 0xeb50); grep O2-noinline 0xbfa0; the narrow load (cp O2 0x76f0, tar O2-noinline 0x16890)",
+   "remeasured_round_p": "the engine with the string-literal rule and the batch-only globals prints all 45 castbench files byte-identical to the round-O engine (32,073 casts), and its off arm is byte-identical to main f96e80805 on all 45"
+  }
+ },
+ "benchmark": {
+  "metric": "decbench type_match pinned to 625e892 (final-c/pindb.py), DECBENCH_NO_CACHE=1, both arms the same binary (default on vs --option elemptr off)",
+  "slice_set": "coreutils grep gzip diffutils bzip2 findutils tar shadow x O0/O2/O2-noinline (444 slices, 10,748 functions)",
+  "base": "origin/main f96e80805",
+  "perfect": "1631 -> 1674",
+  "mean": ".3717 -> .3752",
+  "onto_perfect": 43,
+  "off_perfect": 0,
+  "improved": 189,
+  "worse": 0,
+  "per_project": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 40,
+    "mean_off": 0.4229,
+    "mean_on": 0.4372,
+    "improved": 27,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 996,
+    "perfect_on": 1019,
+    "mean_off": 0.3606,
+    "mean_on": 0.363,
+    "improved": 56,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 64,
+    "perfect_on": 66,
+    "mean_off": 0.4514,
+    "mean_on": 0.4549,
+    "improved": 15,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 61,
+    "perfect_on": 61,
+    "mean_off": 0.2508,
+    "mean_on": 0.26,
+    "improved": 46,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 53,
+    "perfect_on": 55,
+    "mean_off": 0.4583,
+    "mean_on": 0.4695,
+    "improved": 11,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 112,
+    "perfect_on": 113,
+    "mean_off": 0.5412,
+    "mean_on": 0.5438,
+    "improved": 9,
+    "worse": 0
+   },
+   "pooled": {
+    "n": 10748,
+    "perfect_off": 1631,
+    "perfect_on": 1674,
+    "mean_off": 0.3717,
+    "mean_on": 0.3752,
+    "improved": 189,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 98,
+    "perfect_on": 99,
+    "mean_off": 0.3717,
+    "mean_on": 0.3724,
+    "improved": 1,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 213,
+    "perfect_on": 221,
+    "mean_off": 0.3948,
+    "mean_on": 0.3982,
+    "improved": 24,
+    "worse": 0
+   }
+  },
+  "variables": "243 scored variables gained, 0 lost",
+  "arity": "no function's scored variable or argument count moved in either direction over the 10,748 functions",
+  "remeasured_round_p": "the 444-slice sweep on the round-P engine is identical to round O on every project (1,631 -> 1,674, 189 better, 0 worse, 243 variables gained, 0 lost, no count moved)"
+ },
+ "corpus_sweep": {
+  "method": "castbench full, both arms of one build (--option elemptr off vs default): docs/features/elemptr/structural.py (callees, strings, control keywords, program data, statement counts per changed function) and hunks.py (line hunks with canonical variable names)",
+  "functions_changed": 1255,
+  "constant_named": 392,
+  "structural_flags": 19,
+  "classes": "constant named as the array globalref gives it; caller constant unnamed when a callee declares another pointee; register variable split (find O0 0x160f6 93 -> 54 statements, 0xdd20); tail duplicated by returndup under its budget (find O0 0x173d3); stores split / merged through a now-char * header (tar O2-noinline 0x12990, 0x12cb0: an 8-byte zero store as 8 byte stores, 'ustar' as builtin_strncpy, the same bytes); a read printed at each of its uses (upstream's expression-duplication bound, no intervening store in any case read); one while loop absorbing its iterator",
+  "read_by_hand": "all 19 flagged functions (all among the 26 an earlier engine flagged) and the 18 with more casts",
+  "disjoint_sweep": "32 further binaries (bzip2, bzip2recover, libacl, crontab, coreutils cut/factor/printf/dircolors/numfmt/cksum/od/tr/ptx/shuf, update-passwd, kmod, libedit, zlib, xmlwf, dash, mirai, libbsd, init, dpkg-query, dpkg-divert, useradd, usermod, newusers, gnutls-cli, gnutls-cli-debug, libselinux, rtmon) against a build of main f96e80805: 556 functions changed, casts 34,230 -> 33,337, 260 fewer and 25 more (+48, read: two-type constants, a call result kept in a variable typed the other way from the stated return, a char ** parameter, an unsigned char * buffer passed to strlen/strncmp/char * APIs, a caller argument a callee now declares int * or char *, a table-read difference printed at its uses, and the narrow load in kmod 0xe3f0/0xe250/0xe020/0xdde0 and init 0x87b0); off arm byte-identical to main on all 32",
+  "reviewer_disjoint_sweep": "9 binaries (openssh ssh-keyscan O2, ssh-add O0, bash mkbuiltins O2-noinline and mksyntax O0, nuttx O2, mydoom O0 and x0r-usb O2 PE32, rsyslogd O2, e2fsck O2): against the round-O engine exactly two functions change, ssh-keyscan O2 0x3f9b0 (`v19 = \"0!0\\t...\"` -> `v19 = &dat_66e18`, the SHA-1 DigestInfo prefix a 15-byte timingsafe_bcmp reads) and mydoom O0 0x4022b8 (`sub_4021bc(\"\",1,v3)` -> `sub_4021bc(&dat_40c100,1,v3)`); the off arm is byte-identical to main on all 9",
+  "jobs": "decompile-all --option protoorder off, --jobs 4 against --jobs 1: fmt O2, ls O0, grep O2, gzip O2 byte-identical (the round-O engine differed on gzip O2 by 1,534 lines and on ls O0 by 6)"
+ },
+ "soundness": {
+  "round_trip": "elemptr_x86_64.c: 19 witnesses x 3 builds (gcc -O0, clang -O0, gcc -O2) x 2 arms x 2 compilers print the binary's two lines: bytes >= 0x80 read signed and unsigned and used as indexes both ways, a negative index, a .data table of ints, a table filled through an allocated global, a returned buffer, 2- and 4-byte elements with the top bit set returned to callers that widen them, one shifted, one only compared, and a byte table read at two signs",
+  "strict_c": "the printed witnesses compile with -Werror=int-conversion -Werror=incompatible-pointer-types (gcc 11, clang 14)",
+  "more_fixtures": "reviewer fixtures cx.c and cy.c (returned and shared tables), exported with decompile-project, compiled with gcc and clang and run: option on prints exactly what option off prints on gcc -O0, clang -O0, gcc -O2 and clang -O2 builds; fab2.c put1 (a length compared against a pointer difference) keeps char *buf and unsigned long len at gcc/clang -O0/-O2; ctr.c's counter stays int",
+  "batch_agreement": "the reviewer's gp.c/cw.c (int *gp indexed in two functions and stepped by 4, 2 and k bytes in others; an unsigned short * advanced by k; a long global stepped by 6 and indexed as int) and ct.c (a table indexed in one function and read and written by its first element's name in others): exported with decompile-project, every global the header declines as read at two types compiled at the pointer type its comment lists, compiled with gcc and clang and run: with the option on every field equals the option off's on gcc and clang -O0/-O1/-O2 builds (0 worse); on the previous engine g=5997 for 2997, gh=20007 for 15007, gl=-616 for -20119553",
+  "address_in_return": "coreutils -O0 expand: get_next_tab_column indexes the global tab_list in the rax it returns tab_list[i] in; typed, its return became unsigned long * and, with callrettype, expand declared its column counters unsigned long * (the one worse row, .714 -> .429, of the first sweep on b273c2259); a held global whose element is loaded through an address in the register, at the width, the function returns that element in is not typed there (no castbench function changes; a first cut that declined any address sharing the returned register untyped a base64 decoder's table)",
+  "narrow_load": "cv.c c_hdr: a 2-byte field at +4 of a 6-byte object at the end of a readable page, through a parameter its callee declares unsigned int *: the previous engine printed (unsigned short)a0[1] and the compiled body faulted (gcc and clang -O0); it now prints *(unsigned short *)&a0[1] and returns the binary's 67343413 at every build; the round trip's fourth line places the field at a page end with the option on",
+  "string_literal": "the reviewer's rb.c (a 15-byte table with a zero byte passed to bcmp(char *,char *,n) and sum(char *,n)) printed the table as a literal cut at the zero byte and computed chk1=1 where the binary computes 0; exported, compiled with gcc and clang and run at gcc/clang -O0/-O1/-O2 it now computes what main computes on all 12 arms (main's own gcc -O1/-O2 hash1 literal, from a pointer walk upstream types char *, is unchanged); the fixture's w_chk/w_hash/w_pick round-trip on all three builds",
+  "jobs_agreement": "the reviewer's cw.c under decompile-project --jobs 4: the round-O engine computed g=7997,11997,13997, gh=20007,30007,35007, gl=-616,-1078; this engine computes what main's --jobs 4 computes on all 6 builds",
+  "reviewer_fixtures_round_p": "ct, cu, cv, cw, cy, cz, ra, rb, rc, rd at gcc/clang -O0/-O1/-O2, compiled with gcc and clang: 112 arms, 0 worse than main, 10 that fail to link on main too (CONCAT helpers)"
+ },
+ "speed": {
+  "method": "one pinned release binary (the engine at this head, on b273c2259), kuna decompile-all --json --max-fn-seconds 120, --option elemptr off vs default, arms interleaved and order-alternated, one warm-up discarded, min and median-of-ratios of 15 (docs/features/elemptr/speed.py)",
+  "measurements": [
+   {
+    "label": "fmt_O2",
+    "n": 15,
+    "delta_min_pct": 0.03,
+    "delta_median_of_ratios_pct": 0.09,
+    "off_min": 4090.2,
+    "on_min": 4091.5,
+    "loadavg": [
+     1.2,
+     1.8,
+     3.5
+    ]
+   },
+   {
+    "label": "ls_O2",
+    "n": 15,
+    "delta_min_pct": 0.25,
+    "delta_median_of_ratios_pct": 0.24,
+    "off_min": 13493.1,
+    "on_min": 13526.9,
+    "loadavg": [
+     1.4,
+     1.4,
+     2.6
+    ]
+   },
+   {
+    "label": "sort_O2",
+    "n": 15,
+    "delta_min_pct": 0.36,
+    "delta_median_of_ratios_pct": 0.15,
+    "off_min": 14185.1,
+    "on_min": 14235.6,
+    "loadavg": [
+     1.2,
+     1.4,
+     2.2
+    ]
+   },
+   {
+    "label": "bash_O2",
+    "n": 15,
+    "delta_min_pct": 1.81,
+    "delta_median_of_ratios_pct": 1.76,
+    "off_min": 86541.2,
+    "on_min": 88103.4,
+    "loadavg": [
+     1.5,
+     1.5,
+     1.6
+    ]
+   }
+  ],
+  "budget_pct": 5.0,
+  "worst_delta_min_pct": 1.81,
+  "within_budget": true,
+  "history": "the first measurement (before the per-storage memo and the disputed-global blocking) read bash +12.86% min / +11.43% median-of-ratios: the batch redo decompiled 23 functions again (14.7 s, the parser's two largest among them); after the fix 17 functions and 3.6 s; an engine that decided a defaulted table sign only after the batch read sort +57% (its main decompiled again for one table): a function decompiled after evidence settled a sign now reads it at once (Ledger::settled), and sort reads -1.58%; on 0096e984d another process's SIGTERM killed one bash sample, so bash was measured again on its own (speed.py now re-runs a killed sample instead of timing it); on 850e8c692 the reviewed engine read fmt +0.35%, ls -0.10%, sort -1.58%, bash +2.14%; on 0096e984d the engine before the batch agreement read fmt +0.42%, ls +0.39%, sort +0.32%, bash -0.30%; on 29cfedee0 a first cut of the agreement read fmt -0.69%, ls +1.69%, sort -0.61% and bash +17.85%: it filed a global whose fold already names a pointee (a libc FILE *) as a type, so one refusal elsewhere decided 135 of bash's functions twice; claims are now evidence and never redone (31 functions, the reviewed engine's count); on 0096e984d the engine before the batch agreement read fmt +0.42%, ls +0.39%, sort +0.32%, bash -0.30%; on 29cfedee0 a first cut of the agreement read fmt -0.69%, ls +1.69%, sort -0.61% and bash +17.85%: it filed a global whose fold already names a pointee (a libc FILE *) as a type, so one refusal elsewhere decided 135 of bash's functions twice; claims are now evidence and never redone (31 functions, the reviewed engine's count); on b273c2259 this engine read fmt +0.05%, ls +0.11%, sort +0.32%, bash +1.65%; round O on f96e80805: fmt +0.14%, ls +0.17%, sort +0.21%, bash +0.39%"
+ },
+ "gates": {
+  "measured_on": "feat/elemptr on origin/main f96e80805; engine head 5604ee773 (round P: the string-literal rule and batch-only globals)",
+  "make_test": "datatests: 675/675 assertions passed, PARITY OK (default on)",
+  "make_test_stages": "datatests: 1467/1467 assertions passed, PARITY OK (baseline = main's plus the 26 kuna-elemptr keys; no key removed)",
+  "make_test_cli": "tests/cli: 268/268 passed",
+  "check_spec": "check-spec OK (lenient mode) + check-spec OK (strict mode)",
+  "kuna_catalog_check": "catalog OK: documents exactly the registered kuna options",
+  "counters_check": "no drift: every hard-coded site agrees with the derived truth",
+  "options_md": "byte-fresh",
+  "phases_toml": "parses with python3 tomllib",
+  "make_rust_test": "RUST_TEST_RC=0 (7,691 passed, 0 failed, 38 ignored; 429 test results); lane from 16:17:22Z on 5604ee773"
+ },
+ "default_on_evaluation": {
+  "verdict": "flipped: elemptr ships on",
+  "a_datatests": "675/675 PARITY OK with the default on; no assertion moved, no per-test opt-out",
+  "b_stages": "8 assertions of other options pinned the integer spelling and now read the subscript for the same access: ALIASOVERLAP #4, oxidizer-SecurityCheck #3, regionstructure-loop #3 (the while loop now a for loop absorbing its iterator, same semantics), castimplied #5/#6/#10, charptr #1/#2 (the malloc'd return is char *); regexes follow, keys unchanged; kuna-elemptr.xml (11 keys) added, pass 1 sets option elemptr off; on 850e8c692 kuna-castindex.xml sets option elemptr off in both passes (P5 already types ldidx's parameter, so its witness no longer shows castindex's rewrite), kuna-castternary.xml #1/#2/#3/#4/#7/#8/#9 follow the subscript spelling (castternary's effect unchanged, with castimplied reading a subscript's element from its declared base under elemptr), elemptr #2's off arm is castindex's cast base; on b273c2259 three assertions that pinned upstream's widened load of a 4-byte field through an inferred int8 * read the narrow load (TIEDPHITRIM #13/#14 `*(int4 *)&v2[1]`, STRUCTSYNTH-LOCALS #2 `*(int4 *)&v1[2]`), keys unchanged, and the stages baseline is main's plus the 22 kuna-elemptr.xml keys, none removed (1,438/1,438); on f96e80805 three assertions that pinned upstream's widened load of a 4-byte field through an inferred int8 * read the narrow load (TIEDPHITRIM #13/#14 `*(int4 *)&v2[1]`, STRUCTSYNTH-LOCALS #2 `*(int4 *)&v1[2]`), keys unchanged, and the stages baseline is main's plus the 22 kuna-elemptr.xml keys, none removed (1,463/1,463); round P: the fixture's rebuild moves its .data 0x20 bytes, so #2/#5/#7/#12/#19/#20 follow the addresses, and #23-#26 add the zero-byte table (1,467/1,467, 26 kuna-elemptr keys)",
+  "c_test_cli": "2 probes pinned the integer spelling: bytecode-append-call-loses (now &dat_402000[a1]) and passthrough-gives-a-forwarding-function-its-parameter (a control's parameter type left open; probe id re-derived); the three elemptr probes pin the rebuilt fixture, one of them a batch; 267/267 on b273c2259; the three elemptr probes pin the rebuilt fixture, one of them a batch; 267/267 on f96e80805; round P: the three elemptr probes follow the rebuilt fixture's addresses and a fourth pins the zero-byte table passed as its address; 268/268",
+  "d_typesweep": "1631 -> 1674 perfect, 189 better, 0 worse, 0 off perfect; 243 scored variables gained, 0 lost; no variable or argument count moved",
+  "e_speed": "fmt +0.03%, ls +0.25%, sort +0.36%, bash +1.81%; worst +1.81%; budget +5%",
+  "f_hunks": "1,255 functions over 45 binaries, 19 flagged by structural.py, every one read and classified; plus a disjoint 32-binary sweep (556 functions, 25 with more casts, read)",
+  "g_modes": "nothing to do: a default-on option is outside the aggressive preset's default-off scope",
+  "h_castbench": "33,289 -> 32,073 (0.880x -> 0.848x IDA) against a fresh build of main f96e80805, 301 fewer (-1,242), 18 more (+26), all read",
+  "workspace_tests": "5 kuna-cli tests pinned the integer spelling: a_load_is_not_printed_after_a_store_into_its_bytes, an_implied_cast_round_trips_through_the_printed_c, a_signed_only_variable_round_trips_through_the_printed_c follow the subscript; a_conditional_arm_cast_round_trips_through_the_printed_c (castternary) and a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed_c (castindex) keep their pins with elemptr off and also compile and run the elemptr-on output, which computes the same values"
+ }
+}

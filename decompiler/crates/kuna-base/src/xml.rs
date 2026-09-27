@@ -1920,7 +1920,9 @@ mod tests {
         // and kuna-castobject / an out-parameter local is declared at the type
         // its callee declares when every reader agrees
         // and kuna-castwiden / a 64-bit widening C performs by itself keeps no cast
-        assert_eq!(count, 351, "corpus file count drifted");
+        // and kuna-elemptr / a pointer used only as an array is declared a
+        // pointer to its element
+        assert_eq!(count, 352, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

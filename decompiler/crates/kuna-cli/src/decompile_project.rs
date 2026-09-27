@@ -167,7 +167,8 @@ fn usage() {
          serial). Without --stream the artifacts are identical to a --jobs 1 run\n\
          with --option protoorder off on both, synthesized struct_N names and the\n\
          .h included: a worker cannot see another worker's callees, so the pool\n\
-         does not type call arguments callee-first the way a serial export does\n\
+         does not type call arguments callee-first the way a serial export does,\n\
+         nor declare a global or table an array (option elemptr)\n\
          (with --stream, workers run with structsynth off). Progress goes to\n\
          stderr, and peak memory is roughly N times one worker's RSS.\n\
          --stream writes the folder as the run goes instead of at the end: the entry\n\
@@ -243,8 +244,9 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
         if callee_first {
             eprintln!(
                 "note: --jobs decompiles without the callee-first order (option protoorder, on by \
-                 default), so call-argument types can differ from a serial run; add --option \
-                 protoorder off to make the two byte-identical"
+                 default), so call-argument types, and which globals and tables are arrays, can \
+                 differ from a serial run; add --option protoorder off to make the two \
+                 byte-identical"
             );
         }
         let inventory = prog.function_entries_canonical();
