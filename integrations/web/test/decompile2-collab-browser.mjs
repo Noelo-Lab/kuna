@@ -53,8 +53,18 @@ async function ok(step) {
   if (process.env.COLLAB_VERBOSE) console.log(`${((Date.now() - started) / 1000).toFixed(1)} s  ${step}`);
 }
 
+/**
+ * Bring a tab to the front, as the window a person is using would be: Chrome
+ * delivers pointer moves with animation frames, which a background tab does
+ * not get, so a move there only arrives with the next input.
+ */
+const front = (p) => p.send('Page.bringToFront');
+
 async function shot(page, name) {
-  if (shots) writeFileSync(join(shots, `${name}.png`), await page.screenshot());
+  if (!shots) return;
+  await front(page);
+  await sleep(250);
+  writeFileSync(join(shots, `${name}.png`), await page.screenshot());
 }
 
 const ready = (p) => p.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what: `${p.label} ready`, timeout: 60000 });
@@ -183,6 +193,7 @@ try {
 
   // ── pointers ───────────────────────────────────────────────────────────────
   const target = '#c-L6 .t[data-kind=funcname]';
+  await front(ana);
   for (const [width, view] of [[1440, 'c'], [1024, 'c'], [1440, 'split'], [1024, 'split']]) {
     await ben.viewport(width, 860);
     if ((await ben.evaluate(`document.querySelector('#tabs [aria-selected=true]').dataset.tab`)) !== view) {
@@ -201,17 +212,19 @@ try {
   await ana.hover(target);
   await sleep(200);
   await shot(ben, 'pointer');
+  await front(ana);
+  const noArrow = `!document.querySelector('.d2-ptr:not([hidden])')`;
   await ben.click('#fnlist .fn[data-addr="0x1161"]');
   await ben.waitFor(`document.getElementById('vname').textContent === 'sum_to'`, { what: 'Ben opens sum_to', timeout: 60000 });
-  await sleep(150);
-  assert.equal(await pointer(ben, target), null, 'the arrow hides while Ben\'s page decompiles another function');
+  await ben.waitFor(noArrow, { what: 'the arrow hides while Ben\'s page decompiles another function', timeout: 3000 });
   await idle(ben);
-  await sleep(150);
+  await sleep(1200);
   assert.equal(await pointer(ben, target), null, 'and stays hidden there, though that function has a line 6 too');
   assert.match(await ana.evaluate(`document.querySelector('#d2roster .d2-who').title`), /^Ben: sum_to, C code/, 'and Ana\'s roster says where he is');
   await ok('Ana\'s pointer lands on the same name at 1440 and 1024 px, in C code and side by side, and hides elsewhere');
 
   // ── pings ──────────────────────────────────────────────────────────────────
+  await front(ana);
   const p7 = await ana.call(() => { const r = document.querySelector('#c-L7 .ct').getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; });
   await ana.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p7.x, y: p7.y });
   await ana.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p7.x, y: p7.y, button: 'left', clickCount: 1, modifiers: 1 });
@@ -225,10 +238,11 @@ try {
   });
   await ben.waitFor(`document.getElementById('vname').textContent === 'main'`, { what: 'Go there opens main', timeout: 60000 });
   await ben.waitFor(`document.querySelector('.d2-ping[data-anchor="c:7"]')`, { what: 'line 7 rings on Ben\'s page', timeout: 5000 });
+  await front(ana);
   await ana.hover('#c-L6 .ct');
   await ana.key('p');
   await ben.waitFor(`document.querySelector('.d2-ping[data-anchor="c:6"]')`, { what: 'p pings the line under the mouse', timeout: 5000 });
-  await sleep(150);
+  await ben.waitFor(`document.querySelector('.d2-ptr:not([hidden])')?.dataset.anchor === 'c:6'`, { what: 'Ana\'s pointer where she pinged', timeout: 5000 });
   await shot(ben, 'session');
   await ok('Alt+click (and p) pings; Go there opens the pinged line');
 
@@ -270,16 +284,16 @@ try {
 
   // ── Undo only takes back your own, and not what someone changed since ──────
   await idle(ana);
-  await ana.click('#c-L6 .ct');
+  const printfLine = await ana.call(() => [...document.querySelectorAll('#ccode .d2-cl')].find((l) => /printf\(/.test(l.textContent)).id);
+  await ana.click(`#${printfLine} .ct`);
   await ana.key(';');
   await ana.waitFor(`!document.getElementById('d2pop').hidden`, { what: 'note popover' });
   await ana.type('prints it');
   await ana.key('Enter');
   await ben.waitFor(`/prints it/.test(document.getElementById('ccode').textContent)`, { what: 'the note on Ben\'s page', timeout: 30000 });
   await idle(ben);
-  await ben.click('#c-L6 .ct');
-  await ben.key(';');
-  await ben.waitFor(`!document.getElementById('d2pop').hidden`, { what: 'Ben note popover' });
+  await ben.click('#sesslist li[data-key^="comment:"] [data-act=edit-edit]');
+  await ben.waitFor(`!document.getElementById('d2pop').hidden`, { what: 'Ben edits the note from Changes' });
   await ben.call(() => { const i = document.querySelector('#d2pop input'); i.value = 'prints the sum'; i.dispatchEvent(new Event('input', { bubbles: true })); return true; });
   await ben.key('Enter');
   await ana.waitFor(`/prints the sum/.test(document.getElementById('ccode').textContent)`, { what: 'Ben\'s note on Ana\'s page', timeout: 30000 });
@@ -301,8 +315,10 @@ try {
     setTimeout(() => resolve(null), 15000);
   }), (await decodeCode(link1.split('#join=')[1], 'invite')).id);
   await sleep(200);
+  await front(ana);
   await ana.hover('#c-L5 .ct');
   await ana.hover('#c-L7 .ct');
+  await ana.hover('#c-L5 .ct');
   const pair = await seen;
   assert.ok(pair, 'the spy sees the Ana–Ben link');
   const junk = ['not json', '{"t":"ops","ops":[{"k":"raw:eeeeeeee:1","v":"@/etc/passwd","c":[99999,"eeeeeeee"]}]}',

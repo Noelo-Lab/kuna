@@ -36,15 +36,15 @@ const guard = setTimeout(() => {
 const ready = (p) => p.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { timeout: 60000 });
 const idle = (p) => p.waitFor(`document.getElementById('cancelbtn').disabled`, { timeout: 60000 });
 const dialog = (p) => p.evaluate(`document.getElementById('d2collab')?.textContent || ''`);
+const started = Date.now();
+const step = (what) => { if (process.env.COLLAB_VERBOSE) console.log(`${((Date.now() - started) / 1000).toFixed(1)} s  ${what}`); };
 let skipped = null;
 
 try {
   const [ana, ben] = await Promise.all(chromes.map((c) => openPage(c.port)));
-  for (const p of [ana, ben]) {
-    await p.viewport(1280, 860);
-    await p.navigate(`${server.base}/decompile2/`);
-    await ready(p);
-  }
+  for (const p of [ana, ben]) await p.viewport(1280, 860);
+  await ana.navigate(`${server.base}/decompile2/`);
+  await ready(ana);
   await ana.click('#examplebtn');
   await ana.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { timeout: 60000 });
   await idle(ana);
@@ -55,6 +55,7 @@ try {
   await ana.key('Enter');
   await ana.waitFor(`document.querySelector('#d2collab [data-copytext]')?.value.includes('#join=')`, { timeout: 20000 });
   const invite = await ana.evaluate(`document.querySelector('#d2collab [data-copytext]').value`);
+  step('Ana has an invite link');
 
   await ben.navigate(invite);
   await ben.waitFor(`document.querySelector('#d2collab input[name=name]')`, { timeout: 60000 });
@@ -63,6 +64,7 @@ try {
   await ben.key('Enter');
   await ben.waitFor(`document.querySelector('#d2collab [data-copytext]')?.value.includes('#reply=')`, { what: 'the reply link (no tab of Ben\'s browser made the invite)', timeout: 20000 });
   const reply = await ben.evaluate(`document.querySelector('#d2collab [data-copytext]').value`);
+  step('Ben has a reply link');
   const t0 = Date.now();
   if (late) {
     console.log(`waiting ${late} s before Ana opens the reply…`);
@@ -75,6 +77,7 @@ try {
     return true;
   }, reply);
   const applied = Date.now();
+  step('Ana applied the reply');
   try {
     await ben.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf'`, { what: 'Ben receives the program', timeout: 30000 });
   } catch (e) {

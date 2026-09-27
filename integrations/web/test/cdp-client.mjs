@@ -65,7 +65,14 @@ export async function openPage(port, { onException, targetId = null } = {}) {
   };
   const send = (method, params = {}) => new Promise((resolve, reject) => {
     const id = ++seq;
-    pending.set(id, { resolve, reject });
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error(`DevTools did not answer ${method} within 90 s (is the page busy?)`));
+    }, 90000);
+    pending.set(id, {
+      resolve: (v) => { clearTimeout(timer); resolve(v); },
+      reject: (e) => { clearTimeout(timer); reject(e); },
+    });
     ws.send(JSON.stringify({ id, method, params }));
   });
   const on = (method, fn) => {

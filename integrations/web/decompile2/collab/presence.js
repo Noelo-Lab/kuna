@@ -149,6 +149,7 @@ export function createPresence({ panes }) {
 
   panes.addEventListener('scroll', schedule, { capture: true, passive: true });
   window.addEventListener('resize', schedule);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) draw(); });
   const watch = new MutationObserver(schedule);
   for (const code of panes.querySelectorAll('.d2code')) watch.observe(code, { childList: true });
   for (const pane of panes.querySelectorAll('.d2pane')) watch.observe(pane, { attributeFilter: ['hidden'] });

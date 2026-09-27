@@ -121,7 +121,6 @@ class Collab {
     document.addEventListener('keydown', (e) => {
       if (this.following && !['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) this.#follow(null);
     }, { capture: true });
-    document.addEventListener('visibilitychange', () => { if (document.hidden) this.#pointerOff(); });
     addEventListener('pagehide', () => this.group?.leave());
     if (globalThis.BroadcastChannel) {
       this.replyChannel = new BroadcastChannel('kuna.d2.reply');
@@ -347,6 +346,11 @@ class Collab {
     this.authors = null;
     for (const ch of changes) this.#remember(ch.by);
     if (!this.shared) return;
+    const words = (c) => `${this.#nameOf(c.by)} ${describeRegister(c.key, c.value, c.prev, this.api.nameOf)}`;
+    const first = changes.find((c) => c.by !== this.me) || changes[0];
+    const label = words(first);
+    const replaced = changes.filter((c) => c.prevBy === this.me && c.by !== this.me && c.value !== c.prev);
+    const afterYou = replaced.length ? `${words(replaced[0])} after you` : null;
     const session = this.api.session();
     const fn = this.api.current().fn;
     const before = fn ? session.assertionsFor(fn).join('\n') : '';
@@ -354,20 +358,11 @@ class Collab {
     if (keys.length) applyRegisters(session, this.replica, keys);
     const after = fn ? session.assertionsFor(fn).join('\n') : '';
     const mode = changes.some((c) => c.key === 'setting:mode') ? this.replica.value('setting:mode') : null;
-    this.#afterYou(changes);
-    const first = changes.find((c) => c.by !== this.me) || changes[0];
-    const label = `${this.#nameOf(first?.by || from)} ${describeRegister(first.key, first.value, first.prev, this.api.nameOf)}`;
+    if (afterYou) {
+      const more = replaced.length - 1;
+      this.api.toast(afterYou, { kind: 'warn', detail: more ? `and ${more} more of your change${more === 1 ? '' : 's'}` : '' });
+    }
     this.api.remoteChanged({ inspect: before !== after, mode: mode && mode !== this.api.mode() ? mode : null, label });
-  }
-
-  #afterYou(changes) {
-    const mine = changes.filter((c) => c.prevBy === this.me && c.by !== this.me && c.value !== c.prev);
-    if (!mine.length) return;
-    const c = mine[0];
-    const more = mine.length - 1;
-    this.api.toast(`${this.#nameOf(c.by)} ${describeRegister(c.key, c.value, c.prev, this.api.nameOf)} after you`, {
-      kind: 'warn', detail: more ? `and ${more} more of your change${more === 1 ? '' : 's'}` : '',
-    });
   }
 
   // ── inviting ─────────────────────────────────────────────────────────────
@@ -1101,8 +1096,10 @@ class Collab {
         `${full ? '<span class="cb-muted">This session is full (8 people).</span>' : ''}</div>` +
         (inv ? '<p class="cb-status ok" data-status></p>' : '');
     }
+    const program = this.api.binary()?.name || 'the program';
     return '<div class="cb-step"><h3>1. Send this link to one person</h3>' + this.#copyRow(inv.link, 'Invite link') +
-      '<p class="cb-small d2-teach">It lets one person in. Make another link for each person you invite.</p></div>' +
+      `<p class="cb-small">Whoever opens it receives a copy of ${escapeHtml(program)} from your browser.` +
+      '<span class="d2-teach"> It lets one person in: make another link for each person you invite.</span></p></div>' +
       '<div class="cb-step"><h3>2. Open the reply link they send back</h3>' +
       '<p class="cb-small">Click it (it opens in this browser and connects by itself), or paste it here:</p>' +
       `<form class="cb-copy" data-form="reply" data-paste${inv.state === 'waiting' ? '' : ' hidden'}>` +
@@ -1130,7 +1127,7 @@ class Collab {
       body = `<p class="cb-status err">${escapeHtml(j.error || NETWORK)}</p><div class="cb-row"><button type="button" class="d2-btn primary" data-act="close" autofocus>OK</button></div>`;
     } else if (j.state === 'reply') {
       body = `<div class="cb-step"><h3>Send this reply link back to ${from}</h3>${this.#copyRow(j.reply, 'Reply link')}</div>` +
-        `<p class="cb-small">When ${from} opens it, you are connected. Keep this page open until then.</p>` +
+        `<p class="cb-small">Send it the way the invite reached you. When ${from} opens it, you are connected. Keep this page open until then.</p>` +
         `<p class="cb-status ${j.stuck ? 'err' : 'busy'}" data-status>${j.stuck ? NETWORK : `Waiting for ${from} to open your reply link…`}</p>`;
     } else {
       const words = {
