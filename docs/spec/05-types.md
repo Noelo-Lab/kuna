@@ -859,9 +859,9 @@ pins the batch leaving the global and the table untyped.
 
 Shipped on: with it, the 444-slice decbench sweep has 1,674 perfect functions
 against 1,631 (189 better, none worse, no function's variable count moved), and
-the 45-binary cast corpus prints 33,241 casts against 34,829 on the functions kuna
-and IDA both emit (on a main that already has `castindex`, `castternary` and
-`callrettype`). The price is a
+the 45-binary cast corpus prints 32,073 casts against 33,289 on the functions kuna
+and IDA both emit (on a main that already has `castindex`, `castternary`,
+`callrettype`, `castobject` and `castwiden`). The price is a
 knock-on the rule cannot see from one function: a callee parameter it now declares
 `char *` or `char **` makes an integer-typed argument in a caller print its
 conversion, and a constant a caller uses at one pointee type while a callee

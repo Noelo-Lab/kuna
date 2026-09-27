@@ -68,13 +68,14 @@ through a pointer whose pointee was inferred rather than declared stays narrow
 ## 3. Where the casts went, and the functions with more
 
 castbench (45 binaries x O0/O2/O2-noinline, 4,815 functions kuna, IDA and main
-share), against a build of main `b273c2259` (which already has `castindex`,
-`castternary`, `callbacktype` and `callrettype`; the `off` arm is byte-identical to
-it on all 45 binaries): 34,829 -> 33,241 casts (0.921x -> 0.879x IDA; 184.1 ->
-175.8 per 1,000 lines, 29.3 -> 28.0 per 100 statements; O0 0.933x -> 0.861x, O2
-0.959x -> 0.931x, O2-noinline 0.867x -> 0.840x), 306 functions with fewer (-1,614)
-and 18 with more (+26). On main `0096e984d` the same engine measured 35,588 ->
-34,000.
+share), against a build of main `f96e80805` (which already has `castindex`,
+`castternary`, `callrettype`, `castobject` and `castwiden`; the `off` arm is
+byte-identical to it on all 45 binaries): 33,289 -> 32,073 casts (0.880x -> 0.848x
+IDA; 176.0 -> 169.6 per 1,000 lines, 28.0 -> 27.0 per 100 statements; O0 0.871x ->
+0.815x, O2 0.927x -> 0.907x, O2-noinline 0.838x -> 0.816x), 301 functions with
+fewer (-1,242) and 18 with more (+26). The same engine measured 34,829 -> 33,241
+on `b273c2259` and 35,588 -> 34,000 on `0096e984d`: `castwiden` and `castobject`
+now drop some of the casts this rule also removes.
 On `0096e984d` the engine before the batch agreement reached 33,505. The difference is casts it
 removed by typing a global another function steps by bytes or uses as an integer,
 or a table another function names the first element of (section 7): those
@@ -109,7 +110,7 @@ Every one of the 18 functions with more casts (+26 in all) was read:
 
 ## 4. Whole-corpus hunks
 
-`structural.py` checks every changed function (1,242 over the 45 binaries; 1,084
+`structural.py` checks every changed function (1,255 over the 45 binaries; 1,084
 before the narrow load, which respells a truncated wide read in functions the
 rule's types never reach) for the same callees, string literals, control keywords
 and program data (a constant address may become the `dat_<addr>` it names), with
@@ -149,8 +150,8 @@ A second, disjoint sweep over 32 more binaries (bzip2 and `bzip2recover`, libacl
 `od`, `tr`, `ptx` and `shuf`, `update-passwd`, kmod, libedit, zlib, `xmlwf`,
 `dash`, `mirai`, libbsd, `init`, `dpkg-query`, `dpkg-divert`, `useradd`,
 `usermod`, `newusers`, `gnutls-cli`, `gnutls-cli-debug`, libselinux, `rtmon`)
-changes 555 functions on main `b273c2259`, 36,637 -> 35,427 casts, 264 with fewer
-and 23 with more (+43); the `off` arm is byte-identical to a build of main on all
+changes 556 functions on main `f96e80805`, 34,230 -> 33,337 casts, 260 with fewer
+and 25 with more (+48); the `off` arm is byte-identical to a build of main on all
 32. On `0096e984d`, against the engine before the batch agreement, 111 functions
 changed: the globals and tables it typed while another function stepped them by
 bytes or named their first element now print main's form (dash `dat_26a40`,
@@ -162,7 +163,8 @@ at both its uses; `init`'s `testb $2` printed `*v7 & 2`, a 4-byte read, and now
 prints `*(unsigned char *)v7 & 2`. `numfmt` 0x27a0, `dpkg-divert` 0x6100 and
 `crontab` 0x606b keep a call's result in a variable typed the other way from the
 return `callrettype` states (`(unsigned long)sub_8d50(...)`, `(char
-**)sub_9417()`). The
+**)sub_9417()`); `ptx` 0x53b0 prints a difference of two table reads at both its
+uses. The
 rest: a constant used at two pointee types (`tr` main's
 translation table and buffer, `cksum` 0x461a), a call result kept in a `char *`
 slot whose callee returns `long` (`mirai` 0x7efb, 0xa015), a `char **` parameter
