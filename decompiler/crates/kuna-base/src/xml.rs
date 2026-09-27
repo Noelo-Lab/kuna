@@ -1919,7 +1919,8 @@ mod tests {
         // (the single-function negative control)
         // and kuna-castobject / an out-parameter local is declared at the type
         // its callee declares when every reader agrees
-        assert_eq!(count, 350, "corpus file count drifted");
+        // and kuna-castwiden / a 64-bit widening C performs by itself keeps no cast
+        assert_eq!(count, 351, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

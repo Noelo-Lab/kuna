@@ -79,7 +79,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_243() {
+fn settable_count_is_244() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -172,12 +172,13 @@ fn settable_count_is_243() {
     // +1 for `callbacktype` (P4 a callback takes its slot's prototype).
     // +1 for `callrettype` (P4 a call returns its callee's stated type).
     // +1 for `castobject` (P6 an out-parameter local declared at its callee's pointee).
-    assert_eq!(kuna_num_settables(), 243);
-    assert_eq!(SETTABLE_TABLE.len(), 243);
+    // +1 for `castwiden` (P9 a widening C performs by itself keeps no cast).
+    assert_eq!(kuna_num_settables(), 244);
+    assert_eq!(SETTABLE_TABLE.len(), 244);
 }
 
 #[test]
-fn tier_counts_are_76_core_101_transform_66_analysis() {
+fn tier_counts_are_76_core_102_transform_66_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -335,7 +336,8 @@ fn tier_counts_are_76_core_101_transform_66_analysis() {
     // transform 99 -> 100: +1 for `callrettype` (P4 a call returns its callee's
     // stated type).
     // transform 100 -> 101: +1 for `castobject` (P6 an out-parameter local declared at its callee's pointee).
-    assert_eq!((core, transform, analysis), (76, 101, 66));
+    // transform 101 -> 102: +1 for `castwiden` (P9 a widening C performs by itself keeps no cast).
+    assert_eq!((core, transform, analysis), (76, 102, 66));
 }
 
 #[test]
@@ -858,6 +860,11 @@ fn option_values_live_value_present_for_103() {
                             // (kuna) `callbacktype` is an enum field the same
                             // way; its live value is `Architecture::callbacktype`.
                             | "callbacktype"
+                            // (kuna `castwiden`) takes a MODE
+                            // (`off|on|literal`) over an enum field, for the
+                            // same reason.  Its live value is
+                            // `Architecture::cast_widen`.
+                            | "castwiden"
                             | "arraycoverwidth"
                             | "emptystrconst"
                             // (kuna) `structdefs` is a PrintC option like
@@ -1178,7 +1185,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 238 -> 239: +1 for `jumptablemax`.
     // 240 -> 241: +1 for `callrettype`; its P4 row sits mid-table.
     // 241 -> 242: +1 for `castobject`.
-    assert_eq!(json.matches("},\n").count(), 242);
+    // 242 -> 243: +1 for `castwiden`.
+    assert_eq!(json.matches("},\n").count(), 243);
 }
 
 #[test]

@@ -121,7 +121,7 @@ c3
 <stringmatch name="DWARFVARIANTS #4: on, the discriminant is the named tag field DW_AT_discr pointed at" min="1" max="1">rethidden-&gt;tag = 0;</stringmatch>
 <stringmatch name="DWARFVARIANTS #5: off, a variant payload is a raw byte offset" min="1" max="1">\*\(uint4 \*\)&amp;rethidden-&gt;field_0x4 = x;</stringmatch>
 <stringmatch name="DWARFVARIANTS #6: on, variant A's payload carries the SOURCE variant name, not a synthesized one" min="1" max="1">\(rethidden-&gt;payload\)\.A\.__0 = x;</stringmatch>
-<stringmatch name="DWARFVARIANTS #7: on, and so does variant B, so three variants are not two" min="1" max="1">\(rethidden-&gt;payload\)\.B\.__0 = \(uint8\)x;</stringmatch>
+<stringmatch name="DWARFVARIANTS #7: on, and so does variant B, so three variants are not two" min="1" max="1">\(rethidden-&gt;payload\)\.B\.__0 = x;</stringmatch>
 <stringmatch name="DWARFVARIANTS #8: a plain C-shaped struct in the same image renders identically in BOTH passes" min="2" max="2">fx::Pair ret_pair\(uint4 x\)</stringmatch>
 <stringmatch name="DWARFVARIANTS #9: and so does a fieldless enum, which rustc emits as an enumeration type this pass never sees" min="2" max="2">Plain ret_plain\(uint4 x\)</stringmatch>
 <stringmatch name="DWARFVARIANTS #10: no variant name is ever synthesized" min="0" max="0">Variant0</stringmatch>

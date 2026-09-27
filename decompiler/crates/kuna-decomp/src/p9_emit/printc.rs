@@ -2450,6 +2450,11 @@ impl PrintC {
             arch.cast_implied && promotes,
             cast_sign,
             arch.cast_ternary && promotes && arch.types().get_size_of_int() == 4,
+            if promotes && arch.types().get_size_of_int() == 4 {
+                arch.cast_widen
+            } else {
+                crate::kuna_castwiden::CastWidenMode::Off
+            },
         );
         self.stmt_op = None;
         // (kuna) Publish the fd for the fd-free RPN leaf emitters (emit_atom /
@@ -5554,8 +5559,12 @@ impl PrintC {
                     // all reduce to opTypeCast (printc.hh:332-341) — they render as
                     // a parenthesized type cast, not a functional `OPC(args)`.
                     OpEmitKind::TypeCast if opc == OpCode::CPUI_CAST => {
-                        let implied = self.implied_cast_drops(fd, arch, op, read_op);
-                        self.op_type_cast_ir_with(fd, arch, op, implied)
+                        if self.widen_drops(fd, arch, op, read_op) {
+                            self.op_hidden_func_ir(fd, arch, op);
+                        } else {
+                            let implied = self.implied_cast_drops(fd, arch, op, read_op);
+                            self.op_type_cast_ir_with(fd, arch, op, implied)
+                        }
                     }
                     OpEmitKind::TypeCast => self.op_type_cast_ir(fd, arch, op),
                     OpEmitKind::Func | OpEmitKind::Custom => {
@@ -6226,6 +6235,8 @@ impl PrintC {
         if strat.is_zext_cast(&outtype, &intype) {
             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
                 self.op_hidden_func_ir(fd, arch, op);
+            } else if self.widen_drops(fd, arch, op, read_op) {
+                self.op_hidden_func_ir(fd, arch, op);
             } else if self.implied_cast_drops(fd, arch, op, read_op) {
                 self.op_type_cast_ir_with(fd, arch, op, true);
             } else {
@@ -6256,6 +6267,8 @@ impl PrintC {
         };
         if strat.is_sext_cast(&outtype, &intype) {
             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
+                self.op_hidden_func_ir(fd, arch, op);
+            } else if self.widen_drops(fd, arch, op, read_op) {
                 self.op_hidden_func_ir(fd, arch, op);
             } else if self.implied_cast_drops(fd, arch, op, read_op) {
                 self.op_type_cast_ir_with(fd, arch, op, true);
@@ -6506,6 +6519,31 @@ impl PrintC {
         let Some(strat) = cast_strategy_for(arch) else { return false };
         let view = ImpliedView { pc: self, fd, arch, strat };
         self.cast_implied.drops(&view, fd, op, read_op)
+    }
+
+    /// (kuna `castwiden`) Does the arithmetic `read_op` convert the widening `op`
+    /// by itself?  The operand then prints as upstream's hidden extension, which
+    /// keeps the parentheses the cast gave it (`p + (a + b)`, never `p + a + b`).
+    /// See [`crate::kuna_castwiden`].
+    fn widen_drops(&self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) -> bool {
+        if !self.cast_implied.widen_on() || read_op.is_none() {
+            return false;
+        }
+        let Some(strat) = cast_strategy_for(arch) else { return false };
+        let view = ImpliedView { pc: self, fd, arch, strat };
+        self.cast_implied.widen_drops(&view, fd, op, read_op)
+    }
+
+    /// (kuna `castwiden`) The suffix the constant `vn` read by `op` prints with
+    /// so C converts the other operand itself: `Some(true)` for `UL`.  See
+    /// [`crate::kuna_castwiden`].
+    fn widen_suffix(&self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) -> Option<bool> {
+        if !self.cast_implied.widen_literal() {
+            return None;
+        }
+        let strat = cast_strategy_for(arch)?;
+        let view = ImpliedView { pc: self, fd, arch, strat };
+        self.cast_implied.widen_suffix(&view, fd, vn, op)
     }
 
     /// (kuna `castternary`) The casts to leave out of the arms of the conditional
@@ -7783,7 +7821,10 @@ impl PrintC {
             // when present.  So: equate-Symbol format wins; otherwise the
             // read-facing type format (e.g. `force datatype octint4 oct` ->
             // `globaloct = 05555`).
-            let lit = self.integer_literal(fd, arch, vn, &ct);
+            let mut lit = self.integer_literal(fd, arch, vn, &ct);
+            if let Some(unsigned) = self.widen_suffix(fd, arch, vn, op) {
+                lit.suffix_as_long(arch, unsigned);
+            }
             self.push_constant_ir_fmt_sign_flags(
                 off,
                 sz,
@@ -9952,6 +9993,25 @@ struct IntegerLiteral {
     size_suffix: &'static str,
 }
 
+impl IntegerLiteral {
+    /// (kuna `castwiden`) Print the literal with the size suffix of an 8-byte
+    /// integer, `UL` when `unsigned`: `-4UL` is the unsigned value of the bits
+    /// `-4` spells, as `(unsigned long)-4` is.
+    fn suffix_as_long(&mut self, arch: &Architecture, unsigned: bool) {
+        let ll = arch.types().get_size_of_long() == arch.types().get_size_of_int();
+        self.force_sized = true;
+        self.size_suffix = match (unsigned, ll) {
+            (false, false) => "L",
+            (false, true) => "LL",
+            (true, false) => "UL",
+            (true, true) => "ULL",
+        };
+        if unsigned {
+            self.force_unsigned = false;
+        }
+    }
+}
+
 /// C++ `castStrategy = data.getArch()->print->getCastStrategy()` (the
 /// `CastStrategyC` the C printer holds).  Rebuilt here from the bound type
 /// factory each time it is needed (the strategy is stateless apart from the
@@ -10022,6 +10082,34 @@ impl crate::kuna_castimplied::PrintedForms for ImpliedView<'_> {
 
     fn long_size(&self) -> i32 {
         self.arch.types().get_size_of_long()
+    }
+
+    fn integer_token(&self, vn: VarnodeId, op: OpId, suffix: Option<bool>) -> Option<String> {
+        use crate::dtype::type_metatype::{TYPE_INT, TYPE_UINT, TYPE_UNKNOWN};
+        let v = self.fd.vbank().get(vn)?;
+        if !v.is_constant() || v.is_annotation() {
+            return None;
+        }
+        let ct = v.get_type_read_facing(op).clone();
+        if ct.is_enum_type()
+            || ct.is_char_print()
+            || !matches!(ct.get_metatype(), TYPE_INT | TYPE_UINT | TYPE_UNKNOWN)
+        {
+            return None;
+        }
+        let mut lit = self.pc.integer_literal(self.fd, self.arch, vn, &ct);
+        if let Some(unsigned) = suffix {
+            lit.suffix_as_long(self.arch, unsigned);
+        }
+        Some(self.pc.integer_token(
+            v.get_offset(),
+            v.get_size(),
+            lit.display_fmt,
+            lit.sign,
+            lit.force_unsigned,
+            lit.force_sized,
+            lit.size_suffix,
+        ))
     }
 }
 

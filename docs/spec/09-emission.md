@@ -389,6 +389,90 @@ base64 decoder and arms of `char`, `unsigned char`, `short` and `int` against
 `int`, unsigned, `long` and negative arms, built with gcc and clang at -O0 and
 -O2, printing the binary's values with the option off and on.
 
+**Widenings C performs by itself (kuna `castwiden`).** Upstream hides an
+INT_SEXT/INT_ZEXT under arithmetic only when the other operand is an explicit
+variable of the same metatype (or a constant no wider than `int`), so a widened
+`int` beside a loaded `long` prints `((long *)a0)[1] + (long)a1`, beside a
+structure field `a0->field_0x8 % (long)a1`, beside a literal `(long)i * 0xc + 7`,
+and into a store through a `long` pointer `((long *)a0)[1] = (long)a1;`. With the
+option `castwiden` set to `on` (`off` keeps them; `literal`, the default, is
+described below), the printer leaves out a 64-bit widening where C's own
+conversions give the same type and value. The IR is unchanged; the decision is
+made per arithmetic op, once, and cached for the function
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_castimplied.rs (ImpliedCasts::widen_plan)`,
+computed by `decompiler/crates/kuna-decomp/src/p9_emit/kuna_castwiden.rs (plan)`
+and read by `printc.rs (PrintC::implied_cast_drops)`).
+
+An operand of `+ - * / % & | ^` qualifies when it is an INT_SEXT or INT_ZEXT
+printed as a cast to an 8-byte integer, or a `CPUI_CAST` to one over an operand
+`castimplied` left narrower, and the extension is the one C performs on the
+operand's printed type: a sign-extension of a signed type, a zero-extension of
+an unsigned one (`kuna_castwiden.rs (widening)`). Its cast goes when, for every
+promoted type the other operand may have as printed, the usual arithmetic
+conversions give the operation the same type with and without the cast, and
+that type is the cast's own or the cast keeps every value of its operand
+(`kuna_castwiden.rs (fits)`): C then converts the operand to the operation's
+type itself, and an integer conversion depends only on the value it converts.
+The other operand's type is the set `castternary` uses, derived from the
+printed text (`kuna_castwiden.rs (operand_set)`): a declared variable, a
+conversion that stays, a literal's C type, a load through a pointer printed as a
+declared variable, a cast, a structure field or an element of such a base
+(`kuna_castwiden.rs (load_type)`), and for a nested arithmetic op the usual
+conversions of its own operands after its own decision (`kuna_castwiden.rs
+(expr_set)`). Anything else is unknown and keeps the cast. Of two widened
+operands only the right one's cast goes, so `(long)a * (long)b` prints
+`(long)a * b` and the survivor keeps the product 64-bit. An op that reads one
+widened value in both slots, `(long)i * (long)i`, keeps both casts: the printer
+asks about a cast per reading op, not per slot, so leaving one out would leave
+out both and print a 32-bit square. A zero-extension beside a signed 8-byte
+operand keeps its cast, because the bare operand would make the operation signed
+(`*a0 + (unsigned long)*a1`), and so does every widening a comparison, a shift
+or unary minus reads.
+
+Leaving a cast out must not change how C groups the text. The operand prints as
+upstream's hidden extension does (`printc.rs (PrintC::widen_drops)` pushes the
+hidden-function token instead of the cast), which parenthesizes it whenever its
+operator binds no tighter than the reader's: `((long *)a0)[1] + (long)(a1 + a2)`
+prints `((long *)a0)[1] + (a1 + a2)`, never `((long *)a0)[1] + a1 + a2`, which C
+would compute as two 64-bit additions. And since the printer writes `x + (y + z)`
+as `x + y + z` (the same associative operator on the right takes no
+parentheses), which C groups as `(x + y) + z`, the left operand of `+ * & | ^`
+whose right operand is such a chain meets the chain's first leaf in C, not the
+chain: its cast goes only when that leaf, as printed, would let it go
+(`kuna_castwiden.rs (first_leaf_fits)`), so `(long)a + ((long)b + *p)` prints
+`(long)a + b + *p` and not `a + b + *p`.
+
+`on` also widens `castimplied`'s destinations for a widening to eight bytes
+(`kuna_castimplied.rs (ImpliedCasts::converts_exactly)`,
+`(ImpliedCasts::fits_dest)`; a narrower widening keeps what `castimplied`
+decides): a widening that does not keep its value, `(unsigned long)i` of an `int`, goes into an
+assignment, prototyped argument or return declared with exactly its spelling,
+because that conversion is the one the cast spelled; a value-keeping widening
+also goes into an integer of the cast's width with the other signedness, as
+`memchr(a0,0x78,a1)` for an `int a1` does; and a store through a pointer printed
+as a declared variable, a cast, a field or an element is such a destination
+(`kuna_castwiden.rs (store_pointee)`).
+
+With `literal`, the operand beside an integer literal qualifies too. The literal
+is an 8-byte constant in the IR, but C types `8` as `int`, so today the cast is
+what makes `(long)i * 8` a 64-bit product. The literal is printed with the
+suffix of its width, `L` (`LL` where `long` is 4 bytes), or `UL` as the unsigned
+value of its bits for an unsigned target (`printc.rs
+(IntegerLiteral::suffix_as_long)`, asked through `printc.rs
+(PrintC::widen_suffix)`), and the cast goes when the suffixed literal has the
+cast's type and the operation keeps its type (`kuna_castwiden.rs
+(literal_suffix)`): `a0 * 0xcL + 7`, `a0 / 3UL`. A negated literal C types as
+unsigned (`-0x80000000`, whose C value is 2^31) keeps the cast, because the
+suffix would change its value. Only where `int` is 4 bytes, and only for C
+output. Pinned by `tests/stages/kuna-castwiden.xml` (three passes) and by a
+compiled round trip (`kuna-cli/tests/decompile_all_cli.rs`,
+`an_implied_widening_round_trips_through_the_printed_c`) over gcc and clang
+builds at -O0 and -O2, printed with each value and compiled with gcc and clang
+at -O0 and -O2 (`-fwrapv`, so the 32-bit arithmetic kuna prints as `int` wraps as
+the machine's does), all printing the binary's values for negative inputs,
+0x80000000..0xffffffff, sums past 32 bits and squares past 2^32, including the
+shared, parenthesized and regrouped shapes above.
+
 **Casting an output.** `coreaction_casts.rs (Funcdata::cast_output)` compares
 the *token* type the operator naturally produces — `coreaction_casts.rs
 (get_output_token)`: COPY/PTRADD echo the input, arithmetic takes the

@@ -4171,6 +4171,8 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
 /// a widening, a varargs argument) or pass a type C would convert differently.
 /// The round trip compiles the printed functions, option off and on, with gcc
 /// and clang, and checks every build prints what the original binary prints.
+/// `castwiden` is held off: it leaves out some of the widenings pinned here,
+/// which `an_implied_widening_round_trips_through_the_printed_c` covers.
 #[test]
 fn an_implied_cast_round_trips_through_the_printed_c() {
     const FUNCS: &str = "arg_memchr,arg_toupper,arg_strchr,asg_char,asg_uint,asg_short,asg_uchar,\
@@ -4229,7 +4231,7 @@ int main(void) {
         for opt in ["off", "on"] {
             let args = [
                 "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
-                "--option", "castimplied", opt,
+                "--option", "castimplied", opt, "--option", "castwiden", "off",
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
             if !ok && is_specs_skip(&stderr) {
@@ -4290,6 +4292,8 @@ int main(void) {
 /// gcc -O0 keeps the result of each conditional in a register, so its build
 /// prints conditionals; clang -O0 spills it, and most of its diamonds print as
 /// if/else, where `castimplied` already leaves the widening out.
+/// `castwiden` is held off: it leaves out some of the widenings pinned here,
+/// which `an_implied_widening_round_trips_through_the_printed_c` covers.
 #[test]
 fn a_conditional_arm_cast_round_trips_through_the_printed_c() {
     const FUNCS: &str = "b64_decode,arm_char,arm_uchar,arm_short,arm_char_uint,arm_long,arm_char_long,\
@@ -4382,7 +4386,7 @@ int main(void) {
         for opt in ["off", "on"] {
             let args = [
                 "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
-                "--option", "castternary", opt,
+                "--option", "castternary", opt, "--option", "castwiden", "off",
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
             if !ok && is_specs_skip(&stderr) {
@@ -4437,6 +4441,263 @@ int main(void) {
     }
 }
 
+/// (kuna `castwiden`) A 64-bit widening C performs by itself keeps no cast: an
+/// operand of `+ - * / % & | ^` beside a 64-bit operand of the cast's type, beside
+/// a literal the `literal` value prints with its `L`/`UL` suffix, and a widening
+/// into an assignment, a store or a prototyped argument of the cast's type or
+/// width.  A shift, a comparison, an unsigned widening beside a signed operand, a
+/// negated unsigned literal and one widened value read by both operands of an op
+/// (`(long)i * (long)i`) keep their cast, and a 32-bit sum or product beside a long
+/// of the same operator keeps its parentheses.  Beside a chain of its own operator,
+/// which prints without parentheses and which C regroups (`(long)a + ((long)b + x)`
+/// prints `(long)a + b + x`), the left operand keeps its cast unless the chain's
+/// first leaf is 64-bit.  The functions of
+/// `castwiden_x86_64.c`, built with gcc and clang at -O0 and -O2, are printed with
+/// the option off, on and literal, compiled with gcc and clang at -O0 and -O2
+/// (`-fwrapv`, so the 32-bit arithmetic kuna prints as `int` wraps as the machine's
+/// does), and every build must print what the fixture binary prints for negative
+/// values, 0x80000000..0xffffffff, sums past 32 bits and squares past 2^32.
+#[test]
+fn an_implied_widening_round_trips_through_the_printed_c() {
+    const FUNCS: &str = "add_load,minus_load,add_uload,mix_uint,add_char,div_load,udiv_load,mul_two,lit_mul,lit_add,\
+                         lit_umul,lit_index,lit_mask,lit_neg,ret_ulong,store_long,store_ulong,store_uchar,assign_ulong,\
+                         assign_loop,sink,assign_call,assign_size,field_add,field_umix,find_len,keep_shift,keep_less,\
+                         keep_mixed,keep_neglit,sq,usq,sq_diff,dist,par_add,par_mul,chain_add,chain_mul,chain_add3,\
+                         chain_xor";
+    const WANT: &str = "2147483647 2147483647 5 0 0 7 1 0 -3\n\
+0 1 0\n\
+0 0\n\
+2147483646 2147483648 4 1 3 -5 0 -1664 -4\n\
+18446744073709551615 1 18446744073709551613\n\
+5\n\
+-1 18446744073709551615\n\
+4294967294 0 2147483652 4611686014132420609 -6442450941 25769803771 2147483648 3573412788608 2147483644\n\
+2147483647 1 18446744071562067965\n\
+0\n\
+2147483647 2147483647\n\
+-1 4294967295 18446744071562067973 4611686018427387904 6442450944 -25769803769 -2147483647 -3573412790272 -2147483651\n\
+18446744071562067968 0 2147483648\n\
+2147483647\n\
+-2147483648 18446744071562067968\n\
+2147483640 2147483654 18446744073709551614 49 21 -77 -6 -11648 -10\n\
+18446744073709551609 0 18446744073709551607\n\
+1\n\
+-7 18446744073709551609\n\
+2147483650 2147483644 8 9 -9 43 4 4992 0\n\
+3 1 18446744073709551609\n\
+0\n\
+3 3\n\
+18446744073709551600 0 4294967296 0\n\
+18446744071562067983 34359738360 8589934591 18446742974197923840 4294967296\n\
+18446744073709551600 17179869184 6442450944 0 8589934591\n\
+18446744073709551603 24 4294967299 3298534883328 6148914691236517200\n\
+-133 122 255 250 2147483775\n\
+3 -1 -1\n\
+38654705538 4294967284\n\
+6148914691236517202 715827882 6148914690520689323\n\
+4294967292 2 10\n\
+-6 18446744069414584334\n\
+4294967294 18446744071562067968\n\
+-2147483647 0\n\
+0 0 0 0 2147483647 2147483648 0 0\n\
+-5 0 2147483647 18446744073709551603\n\
+1 18446744065119617025 0 2 2147483645 2147483647 2147483647 -6442450941\n\
+-7 -9 2147483644 18446744069414584332\n\
+4611686014132420609 4611686014132420609 1152921504606846976 5764607516591783938 2147483645 -1 2147483647 4611686009837453315\n\
+4294967289 19327352823 8589934588 18446744071562067980\n\
+4611686018427387904 4611686018427387904 1152921504606846976 5764607523034234880 2147483647 0 0 -4611686016279904256\n\
+-4294967301 -19327352832 -4294967297 18446744071562067955\n\
+4294967296 4294967296 1073741824 5368709120 2147614719 2147549184 0 422212464869376\n\
+131067 589824 2147680255 18446744073709486067\n\
+4295098369 18446181119461294081 1073741824 5368905730 2147352573 2147418111 281477124063231 -422218907320317\n\
+-131079 -589833 2147287036 18446744069414649868\n\
+2147488281 2147488281 536895241 2684337181 2147576329 2147529989 -4611676066988167705 298549619056881\n\
+92677 417069 2147622670 18446744073709505270\n";
+    const MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+struct rec {
+  long a;
+  unsigned long b;
+  int c;
+  unsigned int d;
+};
+int main(void) {
+  long lp[4] = {-5, 0x7fffffff, -1, 3};
+  unsigned long up[4] = {0xfffffffffffffff0UL, 0x80000000UL, 5, 0};
+  static const signed char sc[] = {1, -128, 127};
+  static const unsigned char uc[] = {0xff, 0x80};
+  int ints[] = {0, -1, 0x7fffffff, (int)0x80000000, -7, 3};
+  unsigned int uints[] = {0, 0xffffffffu, 0x80000000u, 3};
+  for (int k = 0; k < 6; k++) {
+    int i = ints[k];
+    printf("%ld %ld %lu %ld %ld %ld %ld %ld %ld\n", F(long, add_load)(lp, i), F(long, minus_load)(lp, i),
+           F(unsigned long, add_uload)(up, i), F(long, mul_two)(i, i), F(long, mul_two)(i, -3), F(long, lit_mul)(i),
+           F(long, lit_add)(i), F(long, lit_index)(i, i), F(long, lit_neg)(i));
+    printf("%lu %d %lu\n", F(unsigned long, ret_ulong)(i), (int)F(bool, keep_less)(lp, i),
+           F(unsigned long, assign_ulong)(i, (int)(0u - (unsigned int)i)));
+    if (i != 0)
+      printf("%ld\n", F(long, div_load)(lp, i));
+    long sl[4] = {0};
+    unsigned long su[4] = {0};
+    F(void, store_long)(sl, i);
+    F(void, store_ulong)(su, i);
+    printf("%ld %lu\n", sl[1], su[2]);
+  }
+  for (int k = 0; k < 4; k++) {
+    unsigned int u = uints[k];
+    printf("%lu %lu %lu %lu", F(unsigned long, mix_uint)(up, u), F(unsigned long, lit_umul)(u),
+           F(unsigned long, lit_mask)(u), F(unsigned long, keep_shift)(u));
+    if (u != 0)
+      printf(" %lu", F(unsigned long, udiv_load)(up, u));
+    printf("\n");
+  }
+  unsigned long su[4] = {0};
+  F(void, store_uchar)(su, uc);
+  printf("%ld %ld %lu %lu %lu\n", F(long, add_char)(lp, sc), F(long, add_char)(lp, sc + 1), su[3],
+         F(unsigned long, keep_mixed)(lp, uc), F(unsigned long, keep_mixed)(lp + 1, uc + 1));
+  printf("%ld %ld %ld\n", F(long, find_len)("abcxdef", 7), F(long, find_len)("abcxdef", 3),
+         F(long, find_len)("abcdef", 6));
+  printf("%lu %lu\n", F(unsigned long, assign_loop)(ints, 6), F(unsigned long, assign_loop)(ints + 1, 3));
+  printf("%lu %lu %lu\n", F(unsigned long, assign_size)(-7), F(unsigned long, assign_size)(0x7fffffff),
+         F(unsigned long, assign_size)((int)0x80000000));
+  printf("%lu %lu %lu\n", F(unsigned long, assign_call)(-1, 0xffffffffu), F(unsigned long, assign_call)((int)0x80000000, 0x80000000u),
+         F(unsigned long, assign_call)(5, 7));
+  struct rec rs[3] = {{-5, 7, -1, 0xffffffffu}, {0x7fffffff, 0xfffffffffffffff0UL, 0x7fffffff, 1},
+                      {1, 2, (int)0x80000000, 0x80000000u}};
+  for (int k = 0; k < 3; k++)
+    printf("%ld %lu\n", F(long, field_add)(&rs[k]), F(unsigned long, field_umix)(&rs[k]));
+  int big[] = {0, -1, 0x7fffffff, (int)0x80000000, 0x10000, -0x10001, 46341};
+  for (int k = 0; k < 7; k++) {
+    int i = big[k];
+    printf("%ld %lu %ld %ld %ld %ld %ld %ld\n", F(long, sq)(i), F(unsigned long, usq)((unsigned int)i),
+           F(long, sq_diff)(i, i >> 1), F(long, dist)(0, 0, i, i >> 1), F(long, par_add)(lp, i, i),
+           F(long, par_add)(lp, i, 1), F(long, par_mul)(lp, i, i), F(long, par_mul)(lp, i, 3));
+    printf("%ld %ld %ld %lu\n", F(long, chain_add)(lp, i, i), F(long, chain_mul)(lp + 3, i, 3),
+           F(long, chain_add3)(lp, i, i, i), F(unsigned long, chain_xor)(up, (unsigned int)i, 3u));
+  }
+  return 0;
+}
+"#;
+    // (function, text with the option off, with `on`, with `literal`) per fixture.
+    type Pins = &'static [(&'static str, &'static str, &'static str, &'static str)];
+    let gcc_o0: Pins = &[
+        ("add_load", "(long)a1 + ((long *)a0)[1]", "return a1 + ((long *)a0)[1];", "return a1 + ((long *)a0)[1];"),
+        ("mul_two", "(long)a1 * (long)a0", "return (long)a1 * a0;", "return (long)a1 * a0;"),
+        ("lit_mul", "return (long)a0 * 0xc + 7;", "return (long)a0 * 0xc + 7;", "return a0 * 0xcL + 7;"),
+        ("lit_mask", "(unsigned long)a0 | 0x100000000;", "(unsigned long)a0 | 0x100000000;", "return a0 | 0x100000000UL;"),
+        ("store_ulong", "((long *)a0)[2] = (long)a1;", "((long *)a0)[2] = a1;", "((long *)a0)[2] = a1;"),
+        ("assign_size", "v1 = (unsigned long)a0;", "v1 = a0;", "v1 = a0;"),
+        ("find_len", "memchr(a0,0x78,(long)a1)", "memchr(a0,0x78,a1)", "memchr(a0,0x78,a1)"),
+        ("keep_mixed", "*a0 + (unsigned long)*a1", "*a0 + (unsigned long)*a1", "*a0 + (unsigned long)*a1"),
+        ("sq", "return (long)a0 * (long)a0;", "return (long)a0 * a0;", "return (long)a0 * a0;"),
+        ("sq_diff", "(long)(a0 - a1) * (long)(a0 - a1)", "(long)(a0 - a1) * (long)(a0 - a1)", "(long)(a0 - a1) * (long)(a0 - a1)"),
+        ("par_add", "return (long)(a2 + a1) + ((long *)a0)[1];", "return (a2 + a1) + ((long *)a0)[1];", "return (a2 + a1) + ((long *)a0)[1];"),
+    ];
+    let clang_o0: Pins = &[
+        ("add_load", "((long *)a0)[1] + (long)a1", "return ((long *)a0)[1] + a1;", "return ((long *)a0)[1] + a1;"),
+        ("mul_two", "(long)a0 * (long)a1", "return (long)a0 * a1;", "return (long)a0 * a1;"),
+        ("lit_index", "((long)a0 * 0xc + (long)a1) * 0x80", "((long)a0 * 0xc + a1) * 0x80", "(a0 * 0xcL + a1) * 0x80"),
+        ("assign_size", "v1 = (unsigned long)a0;", "v1 = a0;", "v1 = a0;"),
+        ("keep_mixed", "(unsigned long)*a1 + *a0", "(unsigned long)*a1 + *a0", "(unsigned long)*a1 + *a0"),
+        ("par_add", "((long *)a0)[1] + (long)(a1 + a2);", "((long *)a0)[1] + (a1 + a2);", "((long *)a0)[1] + (a1 + a2);"),
+        ("par_mul", "((long *)a0)[1] * (long)(a1 * a2);", "((long *)a0)[1] * (a1 * a2);", "((long *)a0)[1] * (a1 * a2);"),
+        ("chain_add", "return (long)a1 + (long)a2 + *a0;", "return (long)a1 + a2 + *a0;", "return (long)a1 + a2 + *a0;"),
+        ("chain_add3", "(long)a1 + (long)a2 + (long)a3 + ", "return a1 + (long)a2 + a3 + ", "return a1 + (long)a2 + a3 + "),
+    ];
+    let gcc_o2: Pins = &[
+        ("add_load", "(long)a1 + ((long *)a0)[1]", "return a1 + ((long *)a0)[1];", "return a1 + ((long *)a0)[1];"),
+        ("lit_add", "return (long)a0 + 1;", "return (long)a0 + 1;", "return a0 + 1L;"),
+        ("store_long", "((long *)a0)[1] = (long)a1;", "((long *)a0)[1] = a1;", "((long *)a0)[1] = a1;"),
+        ("assign_size", "v1 = (unsigned long)a0;", "v1 = a0;", "v1 = a0;"),
+        ("sq", "return (long)a0 * (long)a0;", "return (long)a0 * (long)a0;", "return (long)a0 * (long)a0;"),
+        ("usq", "(unsigned long)a0 * (unsigned long)a0;", "(unsigned long)a0 * (unsigned long)a0;", "(unsigned long)a0 * (unsigned long)a0;"),
+    ];
+    let clang_o2: Pins = &[
+        ("sq", "return (long)a0 * (long)a0;", "return (long)a0 * (long)a0;", "return (long)a0 * (long)a0;"),
+        ("usq", "(unsigned long)a0 * (unsigned long)a0;", "(unsigned long)a0 * (unsigned long)a0;", "(unsigned long)a0 * (unsigned long)a0;"),
+        ("par_mul", "return (long)(a1 * a2) * ((long *)a0)[1];", "return (a1 * a2) * ((long *)a0)[1];", "return (a1 * a2) * ((long *)a0)[1];"),
+        ("chain_mul", "return (long)a2 * (long)a1 * *a0;", "return (long)a2 * a1 * *a0;", "return (long)a2 * a1 * *a0;"),
+    ];
+    // Kept by every value: a comparison operand, and a widening beside a negated
+    // unsigned literal (`keep_neglit`, whose constant kuna prints with the option
+    // off too in a form C reads as +2^31, so it is not called below).
+    let kept = [("keep_less", "*a0 < (long)a1"), ("keep_neglit", "return (long)a0 + ")];
+    let sp = specs();
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .collect();
+    for (fixture, pins) in [
+        ("castwiden_gcc_O0_x86_64", gcc_o0),
+        ("castwiden_clang_O0_x86_64", clang_o0),
+        ("castwiden_gcc_O2_x86_64", gcc_o2),
+        ("castwiden_clang_O2_x86_64", clang_o2),
+    ] {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        for (arm, opt) in ["off", "on", "literal"].into_iter().enumerate() {
+            let args = [
+                "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
+                "--option", "castwiden", opt, "--option", "structdefs", "on",
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("castwiden round trip: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            for &(func, off, on, literal) in pins {
+                let want = [off, on, literal][arm];
+                let text = castsign_function(&stdout, func);
+                assert!(text.contains(want), "{fixture} option {opt}: {func} does not print `{want}`:\n{text}");
+            }
+            for (func, want) in kept {
+                let text = castsign_function(&stdout, func);
+                assert!(text.contains(want), "{fixture} option {opt}: {func} lost `{want}`:\n{text}");
+            }
+            for cc in &compilers {
+                for level in ["-O0", "-O2"] {
+                    let dir = std::env::temp_dir().join(format!(
+                        "kuna-castwiden-rt-{}-{fixture}-{opt}-{cc}{level}",
+                        std::process::id()
+                    ));
+                    std::fs::create_dir_all(&dir).unwrap();
+                    let src = dir.join("rt.c");
+                    let exe = dir.join("rt");
+                    std::fs::write(
+                        &src,
+                        format!("#include <stdbool.h>\n#include <stdio.h>\n#include <string.h>\n{stdout}\n{MAIN}"),
+                    )
+                    .unwrap();
+                    let out = Command::new(cc)
+                        .args([
+                            "-std=gnu11", level, "-w", "-fno-strict-aliasing", "-fwrapv", "-Wno-error=int-conversion",
+                            "-o", exe.to_str().unwrap(), src.to_str().unwrap(),
+                        ])
+                        .output()
+                        .expect("spawn the C compiler");
+                    assert!(
+                        out.status.success(),
+                        "{cc} rejected the printed C ({fixture}, option {opt}):\n{}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let _ = std::fs::remove_dir_all(&dir);
+                    assert_eq!(
+                        String::from_utf8_lossy(&run.stdout),
+                        WANT,
+                        "{fixture} printed with option {opt} and built by {cc} {level} computes a different value:\n{stdout}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// The text of one function in a `decompile-all` listing, from its `// Function:`
 /// header to the next.
 fn castsign_function<'a>(listing: &'a str, name: &str) -> &'a str {
@@ -4460,6 +4721,8 @@ fn castsign_function<'a>(listing: &'a str, name: &str) -> &'a str {
 /// option leaves alone.  `castsign_eq_x86_64.c` also compares the value for
 /// equality with `3000000000` or `10000000000000000000`, decimal literals whose C
 /// type is wider than the declaration, so those declarations stay unsigned.
+/// `castwiden` is held off: it leaves out some of the widenings pinned here,
+/// which `an_implied_widening_round_trips_through_the_printed_c` covers.
 #[test]
 fn a_signed_only_variable_round_trips_through_the_printed_c() {
     const WRAP_FUNCS: &str = "dec_neg,cnt_wrap,spin,count_down,dec_neg32,sign_of,sign_of32,peek";
@@ -4655,7 +4918,7 @@ int main(void) {
         for opt in ["off", "on"] {
             let args = [
                 "decompile-all", bin.as_str(), "--functions", funcs, "--sleighpath", sp.as_str(),
-                "--option", "castsign", opt,
+                "--option", "castsign", opt, "--option", "castwiden", "off",
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
             if !ok && is_specs_skip(&stderr) {
@@ -5153,6 +5416,8 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
 /// byte offset read at 8 bytes and a `long *` difference keep the integer form.
 /// A base64 decoder indexes its `malloc`ed global table by input bytes of 0x80
 /// and up, into a filler with the sign bit set, and checksums every quad.
+/// `castwiden` is held off: it leaves out some of the widenings pinned here,
+/// which `an_implied_widening_round_trips_through_the_printed_c` covers.
 #[test]
 fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed_c() {
     let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
@@ -5177,7 +5442,10 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
         let bin = fx.join(format!("castindex_{build}_x86_64"));
         let bin = bin.to_str().unwrap();
         for arm in ["on", "off"] {
-            let args = ["decompile-all", bin, "--sleighpath", sp.as_str(), "--option", "castindex", arm];
+            let args = [
+                "decompile-all", bin, "--sleighpath", sp.as_str(), "--option", "castindex", arm, "--option", "castwiden",
+                "off",
+            ];
             let (stdout, stderr, ok) = run_kuna(&args);
             if !ok && is_specs_skip(&stderr) {
                 eprintln!("castindex round trip: skipping (no `.sla`; run `make specs`)");

@@ -73,6 +73,7 @@
 //!
 //! Output languages without implicit integer conversions (Rust) get nothing.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -81,6 +82,7 @@ use kuna_num::opcodes::OpCode;
 use crate::context::{HighVariableId, OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
+use crate::kuna_castwiden::{narrow_operand, plain_int, store_pointee, CastWidenMode, Plan};
 
 /// What the printer knows about how an op prints, which the IR alone does not say.
 pub(crate) trait PrintedForms {
@@ -105,6 +107,10 @@ pub(crate) trait PrintedForms {
     fn literal_token(&self, vn: VarnodeId, op: OpId) -> Option<String>;
     /// The size of the target's `long` (`castternary`).
     fn long_size(&self) -> i32;
+    /// The token the constant `vn` prints as where `op` reads it when it takes
+    /// the integer path (an integer or undefined type), or with `castwiden`'s
+    /// size suffix, `UL` when `Some(true)` (`castwiden`).
+    fn integer_token(&self, vn: VarnodeId, op: OpId, suffix: Option<bool>) -> Option<String>;
 }
 
 /// What is known about the C type of a printed operand.
@@ -134,6 +140,8 @@ pub(crate) struct ImpliedCasts {
     enabled: bool,
     resigned: bool,
     arms: bool,
+    widen: CastWidenMode,
+    plans: RefCell<HashMap<OpId, Plan>>,
     arm_drops: Vec<OpId>,
     locals: HashMap<HighVariableId, String>,
     params: HashMap<String, String>,
@@ -142,11 +150,14 @@ pub(crate) struct ImpliedCasts {
 
 impl ImpliedCasts {
     /// Start a function: forget the previous one's declarations.  `arms` turns on
-    /// `castternary` ([`crate::kuna_castternary`]).
-    pub(crate) fn begin(&mut self, enabled: bool, resigned: bool, arms: bool) {
+    /// `castternary` ([`crate::kuna_castternary`]), `widen` sets `castwiden`
+    /// ([`crate::kuna_castwiden`]).
+    pub(crate) fn begin(&mut self, enabled: bool, resigned: bool, arms: bool, widen: CastWidenMode) {
         self.enabled = enabled;
         self.resigned = enabled && resigned;
         self.arms = arms;
+        self.widen = widen;
+        self.plans.borrow_mut().clear();
         self.arm_drops.clear();
         self.locals.clear();
         self.params.clear();
@@ -172,7 +183,48 @@ impl ImpliedCasts {
     }
 
     fn tracking(&self) -> bool {
-        self.enabled || self.arms
+        self.enabled || self.arms || self.widen != CastWidenMode::Off
+    }
+
+    /// Is `castwiden` on?
+    pub(crate) fn widen_on(&self) -> bool {
+        self.widen != CastWidenMode::Off
+    }
+
+    /// Is `castwiden` set to `literal`?
+    pub(crate) fn widen_literal(&self) -> bool {
+        self.widen == CastWidenMode::Literal
+    }
+
+    /// What the arithmetic op `r` prints differently under `castwiden`.
+    pub(crate) fn widen_plan(&self, p: &dyn PrintedForms, fd: &Funcdata, r: OpId, depth: u32) -> Plan {
+        if !self.widen_on() {
+            return Plan::default();
+        }
+        if let Some(pl) = self.plans.borrow().get(&r) {
+            return *pl;
+        }
+        let pl = crate::kuna_castwiden::plan(self, p, fd, r, depth);
+        self.plans.borrow_mut().insert(r, pl);
+        pl
+    }
+
+    /// Does `castwiden` leave out the widening `op` prints where the arithmetic
+    /// `read_op` reads it?
+    pub(crate) fn widen_drops(&self, p: &dyn PrintedForms, fd: &Funcdata, op: OpId, read_op: Option<OpId>) -> bool {
+        read_op.is_some_and(|r| self.widen_on() && self.widen_plan(p, fd, r, 0).drop == Some(op))
+    }
+
+    /// The suffix `castwiden` prints on the constant `vn` read by `op`: `Some(true)`
+    /// for `UL`, `Some(false)` for `L`.
+    pub(crate) fn widen_suffix(&self, p: &dyn PrintedForms, fd: &Funcdata, vn: VarnodeId, op: OpId) -> Option<bool> {
+        if !self.widen_literal() {
+            return None;
+        }
+        match self.widen_plan(p, fd, op, 0).suffix {
+            Some((c, unsigned)) if c == vn => Some(unsigned),
+            _ => None,
+        }
     }
 
     /// The printer declared local `high` as `spelling`.
@@ -260,28 +312,72 @@ impl ImpliedCasts {
             CType::Unknown => &ir_src,
             CType::Opaque => return false,
         };
-        if !preserves(from, &target) {
+        let keeps = preserves(from, &target);
+        let exact = keeps || self.converts_exactly(code, &src, &target);
+        if !exact {
             return false;
         }
+        let plain = self.widen_on() && narrow_operand(self, p, fd, op);
+        let dest = Dest { want: &want, target: &target, keeps, exact, plain };
         let (reader, value) = through_copies(fd, read_op, outvn);
         match reader {
-            None => p.is_statement(op) && self.assigns_to(p, fd, outvn, &want, &target),
+            None => p.is_statement(op) && self.assigns_to(p, fd, outvn, &dest),
             Some(r) => {
                 let Some(ro) = fd.obank().get(r) else { return false };
                 match ro.code() {
                     OpCode::CPUI_CALL => trusted_param(fd, r, value)
-                        .is_some_and(|t| p.spell(&t) == want),
+                        .is_some_and(|t| self.fits_dest(p, &t, &dest)),
                     OpCode::CPUI_RETURN => {
                         ro.get_slot(value) == 1 && self.ret.as_deref() == Some(want.as_str())
                     }
                     OpCode::CPUI_COPY => p.is_statement(r) && ro.get_out().is_some_and(|lhs| {
                         fd.vbank().get(lhs).is_some_and(|v| v.is_explicit())
-                            && self.assigns_to(p, fd, lhs, &want, &target)
+                            && self.assigns_to(p, fd, lhs, &dest)
                     }),
+                    OpCode::CPUI_STORE => self.widen_on()
+                        && target.get_size() == 8
+                        && dest.plain
+                        && ro.get_slot(value) == 2
+                        && store_pointee(self, p, fd, r).is_some_and(|t| self.fits_dest(p, &t, &dest)),
                     _ => false,
                 }
             }
         }
+    }
+
+    /// (`castwiden`) Is the widening `code` from the printed operand type `src`
+    /// to the eight-byte `target` the conversion C performs on `src` to `target`, so a
+    /// destination of exactly `target` performs it without the cast even when it
+    /// does not keep the value?  The operand's type must be a known integer
+    /// narrower than `target`, and an extension the one C performs on it: a
+    /// sign-extension of a signed type, a zero-extension of an unsigned one.  A
+    /// `CPUI_CAST` qualifies only over a narrower printed operand, which is an
+    /// extension this module left out below it because it kept the value.
+    fn converts_exactly(&self, code: OpCode, src: &CType, target: &Datatype) -> bool {
+        let CType::Known(s) = src else { return false };
+        let sext = match code {
+            OpCode::CPUI_INT_SEXT => Some(true),
+            OpCode::CPUI_INT_ZEXT => Some(false),
+            OpCode::CPUI_CAST => None,
+            _ => return false,
+        };
+        self.widen_on()
+            && plain_int(s)
+            && plain_int(target)
+            && target.get_size() == 8
+            && s.get_size() < target.get_size()
+            && int_range(s).is_some_and(|(lo, _)| sext.is_none_or(|x| (lo < 0) == x))
+    }
+
+    /// May a conversion go into a destination declared `d`?  A declaration of
+    /// exactly the cast's spelling performs the cast's conversion; under
+    /// `castwiden` an eight-byte integer performs a value-keeping widening to
+    /// eight bytes of a known C integer.
+    fn fits_dest(&self, p: &dyn PrintedForms, d: &Rc<Datatype>, dest: &Dest) -> bool {
+        if p.spell(d) == dest.want {
+            return dest.exact;
+        }
+        self.widen_on() && dest.keeps && dest.plain && dest.target.get_size() == 8 && plain_int(d) && d.get_size() == 8
     }
 
     /// The C type of `vn` as printed where `reader` reads it.
@@ -415,11 +511,28 @@ impl ImpliedCasts {
     /// depends only on the value modulo 2^N (C11 6.3.1.3, and gcc and clang define
     /// the signed case that way), so converting `e` straight to the declaration
     /// yields the bits the cast followed by the assignment's conversion would.
-    fn assigns_to(&self, p: &dyn PrintedForms, fd: &Funcdata, lhs: VarnodeId, want: &str, target: &Datatype) -> bool {
-        if self.declared_spelling(p, fd, lhs).as_deref() == Some(want) {
+    fn assigns_to(&self, p: &dyn PrintedForms, fd: &Funcdata, lhs: VarnodeId, dest: &Dest) -> bool {
+        if self.declared_spelling(p, fd, lhs).as_deref() == Some(dest.want) {
+            return dest.exact;
+        }
+        if !dest.keeps {
+            return false;
+        }
+        if self.resigned_type(p, fd, lhs).is_some_and(|d| d.get_size() == dest.target.get_size()) {
             return true;
         }
-        self.resigned_type(p, fd, lhs).is_some_and(|d| d.get_size() == target.get_size())
+        if !self.widen_on() || self.declared_spelling(p, fd, lhs).is_none() {
+            return false;
+        }
+        let Some(high) = fd.vbank().get(lhs).and_then(|v| v.get_high()) else { return false };
+        let declared = match fd.vbank().get(lhs) {
+            Some(v) => [p.planned_decl_type(high), Some(v.get_type().clone())]
+                .into_iter()
+                .flatten()
+                .find(|t| self.declared_spelling(p, fd, lhs).as_deref() == Some(p.spell(t).as_str())),
+            None => None,
+        };
+        declared.is_some_and(|d| self.fits_dest(p, &d, dest))
     }
 
     /// The type `signedness` re-declared `vn`'s variable as, when `castsign` is on
@@ -453,6 +566,20 @@ impl ImpliedCasts {
         self.params.get(&name).cloned()
     }
 
+}
+
+/// The destination a conversion at the top of a chain flows into.
+struct Dest<'a> {
+    /// The cast's spelling.
+    want: &'a str,
+    target: &'a Datatype,
+    /// Does the conversion keep its operand's value?
+    keeps: bool,
+    /// Does a destination of exactly the cast's type perform the conversion?
+    exact: bool,
+    /// Does the operand print as a C integer narrower than the cast's type, which
+    /// C extends as the cast does (`castwiden` widens only those destinations)?
+    plain: bool,
 }
 
 /// The op that reads the value `vn` carries once `read_op` is known, looking
