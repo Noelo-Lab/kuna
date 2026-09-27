@@ -8492,12 +8492,7 @@ impl PrintC {
             // off==0 + printing-ptr) so every other symbol reference renders
             // EXACTLY as before — the XML datatest corpus never reaches this branch
             // with a readonly char-array spacebase symbol.
-            let elem_reader = fd
-                .obank()
-                .get(op)
-                .and_then(|o| o.get_out())
-                .is_some_and(|out| crate::kuna_elemptr::reaches_element_pointer(fd, out));
-            if sym_off == 0 && !arrayvalue && !elem_reader {
+            if sym_off == 0 && !arrayvalue {
                 if let Some(st) = &sym_type {
                     if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
                         if let Some(elem) = st.get_array_base() {

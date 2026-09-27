@@ -32,7 +32,11 @@
  * and truncated).  The fifth line reads a global table whose element a function
  * loads through an address computed in the register it returns that element in
  * (`w_nexttab`, coreutils `expand`'s `get_next_tab_column`: the return stays
- * `unsigned long`, never the element's address type).
+ * `unsigned long`, never the element's address type).  The sixth line compares
+ * and hashes a 15-byte table with a zero byte inside it through `char *`
+ * parameters that only index it (`w_chk`, `w_hash`, and `w_pick`, which merges
+ * the table with its parameter): the table is passed as its address, never as a
+ * string literal that ends at that zero byte.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -317,6 +321,47 @@ void w_tabinit(void)
     increment_size = 3;
 }
 
+/* A DER prefix, compared or hashed `n` bytes at a time: a zero byte sits
+ * inside it, so a string literal would end before the bytes the reader takes. */
+static const unsigned char der_sha1[15] = {0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e,
+                                           0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14};
+static const unsigned char order[15] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
+
+int w_bcmp(const char *a, const char *b, long n)
+{
+    for (long i = 0; i < n; i++)
+        if (a[i] != b[i])
+            return 1;
+    return 0;
+}
+
+int w_chk(const char *buf)
+{
+    return w_bcmp(buf, (const char *)der_sha1, 15);
+}
+
+long w_hsum(const char *s, long n)
+{
+    long t = 0;
+    for (long i = 0; i < n; i++)
+        t = t * 31 + s[order[i]];
+    return t;
+}
+
+long w_hash(void)
+{
+    return w_hsum((const char *)der_sha1, 15);
+}
+
+long w_pick(const char *s, long n, int k)
+{
+    const char *p = k ? s : (const char *)der_sha1;
+    long t = 0;
+    for (long i = 0; i < n; i++)
+        t = t * 31 + p[order[i]];
+    return t;
+}
+
 int main(void)
 {
     static const char hi[] = "\x81\x7f\xfe\x01\x80\x10";
@@ -365,5 +410,10 @@ int main(void)
     bool last = false;
     uintmax_t n1 = w_nexttab(9, &ti, &last), n2 = w_nexttab(0x100000005ul, &ti, &last), n3 = w_nexttab(0x200000000ul, &ti, &last);
     printf("%lu %lu %lu %zu %d\n", (unsigned long)n1, (unsigned long)n2, (unsigned long)n3, ti, (int)last);
+    char ok[15], bad[15];
+    memcpy(ok, der_sha1, 15);
+    memcpy(bad, der_sha1, 15);
+    bad[14] = 0;
+    printf("%d %d %ld %ld %ld\n", w_chk(ok), w_chk(bad), w_hash(), w_pick("abcdefghijklmno", 15, 1), w_pick(0, 15, 0));
     return 0;
 }

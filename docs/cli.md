@@ -1599,10 +1599,14 @@ Behaviors specific to `decompile-all`:
   - **It is the serial answer with `--option protoorder off`.** A serial
     `decompile-all` or `decompile-project` decompiles callees first by default
     and types call arguments from what each callee recovered; a pool worker
-    cannot see another worker's callees, so the pool does not. Under `--jobs N`
-    with the default, the parent prints a note and call-argument types can
-    differ from the serial run; add `--option protoorder off` to both to
-    compare them byte for byte.
+    cannot see another worker's callees, so the pool does not. The same batch
+    decides which globals and tables are arrays (`elemptr`): a global is
+    declared an element pointer only where every function that uses it agrees,
+    which no worker sees, so a pool of more than one function types no global
+    or table, and neither does a serial run that is not callee-first. Under
+    `--jobs N` with the default, the parent prints a note and call-argument
+    types and array globals can differ from the serial run; add `--option
+    protoorder off` to both to compare them byte for byte.
   - **It can depend on how the work was divided, wherever the engine's own output
     already does.** A few emission decisions are first-toucher-wins in the
     per-process type and symbol database, so they are a function of which *other*

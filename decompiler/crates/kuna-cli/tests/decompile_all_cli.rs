@@ -6572,7 +6572,11 @@ int main(void) {
 /// A fifth line returns 8-byte elements above 2^32 from a function that loads
 /// them through an address computed in the register it returns them in
 /// (`w_nexttab`, coreutils `expand`'s `get_next_tab_column`), which is never
-/// declared to return that address's type.
+/// declared to return that address's type. A sixth line compares and hashes a
+/// 15-byte table with a zero byte inside it through parameters the option
+/// types `char *` (`w_chk`, `w_hash`) and through a parameter merged with it
+/// (`w_pick`): the table is passed as its address, never as a string literal
+/// that ends at the zero byte while the reader takes all fifteen.
 #[test]
 fn an_element_pointer_round_trips_through_the_printed_c() {
     let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
@@ -6581,7 +6585,7 @@ fn an_element_pointer_round_trips_through_the_printed_c() {
         "w_build", "w_decode", "w_sbytes", "w_ubytes", "w_words", "w_back", "w_sidx", "w_table", "w_rev",
         "w_record", "w_mixed", "w_wu", "w_wucall", "w_iu", "w_iucall", "w_iu2", "w_srch", "w_xu", "w_xs", "w_put",
         "w_ctr", "w_gpinit", "w_gpbump", "w_gpadv", "w_gpread", "w_tidx", "w_tfirst", "w_tset", "w_sum4", "w_hdr",
-        "w_nexttab", "w_tabinit",
+        "w_nexttab", "w_tabinit", "w_bcmp", "w_chk", "w_hsum", "w_hash", "w_pick",
     ];
     let on: &[&str] = &[
         "char * w_decode(char *a0,unsigned long a1,unsigned long *a2)",
@@ -6593,6 +6597,8 @@ fn an_element_pointer_round_trips_through_the_printed_c() {
         "unsigned int w_iu(unsigned int a0)",
         "w_put(char *a0,unsigned long a1,char *a2)",
         "w_ctr(unsigned int *a0,",
+        "long w_hsum(char *a0,long a1)",
+        "long w_pick(char *a0,long a1,int a2)",
     ];
     let off: &[&str] = &["void * w_decode(long a0,unsigned long a1,unsigned long *a2)"];
     let dir = std::env::temp_dir().join(format!("kuna-elemptr-rt-{}", std::process::id()));
@@ -6654,6 +6660,10 @@ fn an_element_pointer_round_trips_through_the_printed_c() {
             assert!(
                 code.contains("unsigned long w_nexttab(unsigned long a0,"),
                 "{build} {arm}: the returned element is a number:\n{code}"
+            );
+            assert!(
+                !code.contains("\"0!0"),
+                "{build} {arm}: the table with a zero byte inside is a string literal:\n{code}"
             );
             if arm == "on" {
                 assert!(header.contains("extern unsigned char dat_"), "{build}: the encoding table:\n{header}");
@@ -6749,6 +6759,60 @@ fn an_element_pointer_round_trips_through_the_printed_c() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// `elemptr` under `--jobs N`: a global or a table is an array only where
+/// every function of a batch agrees, and a worker sees a share of the
+/// functions, so a pool of more than one function types neither -- exactly as
+/// a serial run that does not take the callee-first order. With `--option
+/// protoorder off` on both, `decompile-all` and `decompile-project` print with
+/// `--jobs 4` what they print with `--jobs 1`, and neither declares the global
+/// `gp` an `int *` that `w_gpbump` steps by 4 bytes (as `int *`, `gp += 4`
+/// would move 16). The default serial run still types it where the batch agrees.
+#[test]
+fn element_pointers_under_jobs_match_the_serial_run() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let off = ["--sleighpath", sp.as_str(), "--option", "protoorder", "off"];
+    let serial: Vec<&str> = ["decompile-all", bin.as_str()].iter().chain(off.iter()).copied().collect();
+    let (want, stderr, ok) = run_kuna(&serial);
+    if !ok && is_specs_skip(&stderr) {
+        eprintln!("elemptr jobs: skipping (no `.sla`; run `make specs`)");
+        return;
+    }
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let mut pooled = serial.clone();
+    pooled.extend_from_slice(&["--jobs", "4", "--jobs-chunk", "1"]);
+    let (got, stderr, ok) = run_kuna(&pooled);
+    assert!(ok, "kuna decompile-all --jobs 4 failed: {stderr}");
+    assert_eq!(got, want, "--jobs 4 moved the elemptr fixture's document");
+    assert!(got.contains("dat_300053e8 += 4;"), "the byte step on gp:\n{got}");
+    assert!(!got.contains("dat_300053e8["), "gp is indexed as an array without a batch:\n{got}");
+    let (callee_first, _, ok) = run_kuna(&["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()]);
+    assert!(ok);
+    assert!(callee_first.contains("dat_300053e0[dat_30005080[v2]] = (char)v2;"), "{callee_first}");
+
+    let dir = std::env::temp_dir().join(format!("kuna-elemptr-jobs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut exports = Vec::new();
+    for jobs in ["1", "4"] {
+        let out = dir.join(format!("j{jobs}"));
+        let mut args = vec!["decompile-project", bin.as_str(), "-o", out.to_str().unwrap()];
+        args.extend_from_slice(&off);
+        args.extend_from_slice(&["--jobs", jobs, "--jobs-chunk", "1"]);
+        let (_, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-project --jobs {jobs} failed: {stderr}");
+        let read = |ext: &str| std::fs::read_to_string(out.join(format!("elemptr_gcc_O0_x86_64.{ext}"))).unwrap();
+        exports.push((read("c"), read("h")));
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(exports[0].0, exports[1].0, "decompile-project --jobs 4 moved the .c");
+    assert_eq!(exports[0].1, exports[1].1, "decompile-project --jobs 4 moved the .h");
+    assert!(!exports[1].1.contains("int *dat_300053e8"), "the .h declares gp an int *:\n{}", exports[1].1);
+}
+
 /// The `elemptr` round trip's `main`: map the fixture's non-executable load
 /// segments at their own addresses, then call the printed witnesses with the
 /// fixture's own inputs and print its line.
@@ -6756,6 +6820,7 @@ const ELEMPTR_HARNESS: &str = r#"#include <elf.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
 unsigned char *w_decode(const char *, unsigned long, unsigned long *);
@@ -6769,6 +6834,7 @@ void w_put(char *, unsigned long, const char *); void w_ctr(unsigned int *, unsi
 void w_gpinit(long); void w_gpbump(void); void w_gpadv(long); long w_gpread(long);
 long w_tidx(unsigned int); long w_tfirst(void); void w_tset(long); long w_hdr(const unsigned int *);
 void w_tabinit(void); unsigned long w_nexttab(unsigned long, unsigned long *, _Bool *);
+int w_chk(const char *); long w_hash(void); long w_pick(const char *, long, int);
 int main(void) {
   int fd = open("@FIXTURE@", O_RDONLY);
   Elf64_Ehdr eh; pread(fd, &eh, sizeof eh, 0);
@@ -6825,6 +6891,12 @@ int main(void) {
   _Bool last = 0;
   unsigned long n1 = w_nexttab(9, &ti, &last), n2 = w_nexttab(0x100000005ul, &ti, &last), n3 = w_nexttab(0x200000000ul, &ti, &last);
   printf("%lu %lu %lu %lu %d\n", n1, n2, n3, ti, (int)last);
+  static const unsigned char der[15] = {0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14};
+  char ok[15], bad[15];
+  memcpy(ok, der, 15);
+  memcpy(bad, der, 15);
+  bad[14] = 0;
+  printf("%d %d %ld %ld %ld\n", w_chk(ok), w_chk(bad), w_hash(), w_pick("abcdefghijklmno", 15, 1), w_pick(0, 15, 0));
   return 0;
 }
 "#;

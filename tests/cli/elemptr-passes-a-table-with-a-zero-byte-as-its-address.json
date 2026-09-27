@@ -1,16 +1,19 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "p-eb288df72c8a",
+  "probe_id": "p-1a283c46d533",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
     "decompile-all",
     "{{BIN}}",
     "--functions",
-    "w_build",
+    "w_bcmp,w_chk,w_hsum,w_hash",
     "--option",
     "elemptr",
-    "on"
+    "on",
+    "--option",
+    "protoorder",
+    "cycles"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -23,7 +26,7 @@
     "binary_size": 21768,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
-    "selector": "w_build",
+    "selector": "w_chk",
     "selector_kind": "name"
   },
   "expect": {
@@ -31,12 +34,13 @@
       "eq": 0
     },
     "stdout_matches": [
-      "dat_300053e0\\[dat_30005080\\[v2\\]\\] = \\(char\\)v2;"
+      "w_bcmp\\(char \\*a0,char \\*a1,long a2\\)",
+      "w_bcmp\\(a0,&dat_30003020,0xf\\);",
+      "return w_hsum\\(&dat_30003020,0xf\\);"
     ],
     "stdout_absent": [
-      "0x30005080\\)",
-      "\\(long\\)dat_300053e0"
+      "\"0!0"
     ]
   },
-  "notes": "With elemptr on, the decoding table the program allocated and keeps in a global is indexed as char *, and the alphabet in .data it is built from, a constant address read with a computed index, prints as the array globalref names (dat_30005080[v2]) instead of *(unsigned char *)((long)v2 + 0x30005080)."
+  "notes": "A 15-byte table holding a zero byte goes to parameters elemptr types char * because the callees index all fifteen bytes (w_bcmp compares, w_hsum hashes). Callers pass its address, &dat_30003020: a string literal would stop at the zero byte. Naming protoorder makes the narrowed run the callee-first batch in which callees state their parameters."
 }

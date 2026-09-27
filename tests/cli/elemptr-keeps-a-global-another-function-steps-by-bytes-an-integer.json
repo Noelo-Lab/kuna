@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "p-1bbd6c1a8c05",
+  "probe_id": "p-f722412501aa",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -10,7 +10,10 @@
     "w_gpinit,w_gpbump,w_gpadv,w_gpread,w_tidx,w_tfirst,w_tset",
     "--option",
     "elemptr",
-    "on"
+    "on",
+    "--option",
+    "protoorder",
+    "cycles"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -19,8 +22,8 @@
   "timeout_s": 120,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
-    "binary_sha256": "425b5a15de1fcbe9f5de3948030034050b773304989d3f9ab7111ccec4f81441",
-    "binary_size": 21536,
+    "binary_sha256": "9111eb49e758aae85158c7d5637be62e7ed63708f431086aa8c32f87448643e6",
+    "binary_size": 21768,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
     "selector": "w_gpinit",
@@ -31,14 +34,14 @@
       "eq": 0
     },
     "stdout_matches": [
-      "dat_300053c8 \\+= 4;",
-      "return \\*\\(int \\*\\)\\(a0 \\* 4 \\+ dat_300053c8\\);",
-      "return dat_30005340 \\+ 1;"
+      "dat_300053e8 \\+= 4;",
+      "return \\*\\(int \\*\\)\\(a0 \\* 4 \\+ dat_300053e8\\);",
+      "return dat_30005360 \\+ 1;"
     ],
     "stdout_absent": [
-      "dat_300053c8\\[",
-      "dat_30005340\\["
+      "dat_300053e8\\[",
+      "dat_30005360\\["
     ]
   },
-  "notes": "A batch types a global only where every function holding it agrees. Two functions step the global int * by bytes (gp++) and two read a .data table's first element by name; one header declaration would make dat_300053c8 += 4 step four elements, or the scalar the array. Neither is typed: every function keeps main's byte form."
+  "notes": "A batch types a global only where every function holding it agrees; naming protoorder makes this narrowed run the callee-first batch that decides. Two functions step the global int * by bytes (gp++), two read a .data table's first element by name: one declaration would make dat_300053e8 += 4 step four elements, or the scalar the array. Neither is typed."
 }

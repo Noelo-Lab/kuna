@@ -10,7 +10,7 @@
     decoder reads, with the option off,
 
         void * w_decode(int8 a0,uint8 a1,uint8 *a2)
-        ((char *)dat_300053c0)[*(uint1 *)(v2 + 0x30005060L)] = (char)v2;
+        ((char *)dat_300053e0)[*(uint1 *)(v2 + 0x30005080L)] = (char)v2;
 
     its input `long`, its output buffer `void *`, the table it allocated and
     keeps in a global an integer behind a cast, and the constant alphabet in
@@ -56,13 +56,25 @@
                   the one declaration would rescale this byte step or make
                   this scalar the array; one function at a time has no batch,
                   and the compiled round trip in decompile_all_cli.rs checks
-                  the batch
+                  the batch.  Several functions decompiled with no batch to
+                  agree -- a --jobs worker, a streamed export, a run that does
+                  not take the callee-first order -- type no global or table
         w_nexttab: coreutils expand's get_next_tab_column - loads an element
                   of a global table through an address computed in the rax it
                   returns that element in; typed, the address and the
                   returned element merged into one variable and the function
                   was declared to return `uint8 *`.  It returns `uint8` in
                   both passes
+        w_pick:   merges its parameter with a 15-byte .rodata table that
+                  holds a zero byte, then hashes `n` bytes through the merged
+                  pointer: with the option on the parameter is `char *` and
+                  the table stays its address, `&dat_30003020`, never the
+                  string literal "0!0\t\x06..." that would end at that zero
+                  byte while the reader takes all fifteen.  A caller passing
+                  the table to a callee whose parameter the option typed is
+                  the same shape across two functions, which only a batch
+                  sees; tests/cli and the compiled round trip in
+                  decompile_all_cli.rs cover it
 
     Pass 1 (`option elemptr off`) reproduces the casts and pass 2 (`on`) is the
     fix. The two controls are identical in both passes.
@@ -119,6 +131,9 @@ c3
   <com>lo fu w_nexttab</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu w_pick</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64</com>
   <com>option elemptr on</com>
@@ -165,28 +180,35 @@ c3
   <com>lo fu w_nexttab</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu w_pick</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="elemptr #1: with the option off the decoder's input is an integer and its buffer void * - the bug" min="1" max="1">void \* w_decode\(int8 a0,uint8 a1,uint8 \*a2\)</stringmatch>
-<stringmatch name="elemptr #2: with the option off the table build casts the global table and reads the .data alphabet through an integer sum" min="1" max="1">\(\(char \*\)dat_300053c0\)\[\*\(uint1 \*\)\(v2 \+ 0x30005060L\)\] = \(char\)v2;</stringmatch>
+<stringmatch name="elemptr #2: with the option off the table build casts the global table and reads the .data alphabet through an integer sum" min="1" max="1">\(\(char \*\)dat_300053e0\)\[\*\(uint1 \*\)\(v2 \+ 0x30005080L\)\] = \(char\)v2;</stringmatch>
 <stringmatch name="elemptr #3: with the option on the input and the returned buffer are char *" min="1" max="1">char \* w_decode\(char \*a0,uint8 a1,uint8 \*a2\)</stringmatch>
 <stringmatch name="elemptr #4: with the option on a store into the allocated buffer is a subscript" min="1" max="1">v6\[v8\] = \(char\)\(v5 >> 0x10\);</stringmatch>
-<stringmatch name="elemptr #5: with the option on the global table and the .data alphabet are arrays" min="1" max="1">dat_300053c0\[dat_30005060\[v2\]\] = \(char\)v2;</stringmatch>
+<stringmatch name="elemptr #5: with the option on the global table and the .data alphabet are arrays" min="1" max="1">dat_300053e0\[dat_30005080\[v2\]\] = \(char\)v2;</stringmatch>
 <stringmatch name="elemptr #6: with the option on a signed byte indexes an int array" min="1" max="1">int8 w_sidx\(char \*a0,int4 a1,int4 \*a2\)</stringmatch>
-<stringmatch name="elemptr #7: with the option on a .data table of ints is read by subscript" min="1" max="1">v2 = dat_300050a0\[v1\] \+ v2 \* 0xb;</stringmatch>
+<stringmatch name="elemptr #7: with the option on a .data table of ints is read by subscript" min="1" max="1">v2 = dat_300050c0\[v1\] \+ v2 \* 0xb;</stringmatch>
 <stringmatch name="elemptr #8: a record walked by a stride keeps its integer form in both passes" min="2" max="2">int8 w_record\(int8 a0,int4 a1\)</stringmatch>
 <stringmatch name="elemptr #9: a pointer read at two widths is not an array in either pass" min="2" max="2">int8 w_mixed\(void \*a0,int4 a1\)</stringmatch>
 <stringmatch name="elemptr #10: with the option on a returned word nothing shows the sign of is an unsigned element" min="1" max="1">uint2 w_wu\(uint4 a0\)</stringmatch>
 <stringmatch name="elemptr #11: the returned word is never declared signed in either pass" min="0" max="0">\bint2 w_wu\(|^short w_wu\(</stringmatch>
-<stringmatch name="elemptr #12: with the option on a lookup in the global table is a char the conditional widens itself" min="4" max="4">\? dat_300053c0\[\(uint1\)a0\[v7\]\] : 0;</stringmatch>
+<stringmatch name="elemptr #12: with the option on a lookup in the global table is a char the conditional widens itself" min="4" max="4">\? dat_300053e0\[\(uint1\)a0\[v7\]\] : 0;</stringmatch>
 <stringmatch name="elemptr #13: a buffer's length compared against a pointer difference stays a number in both passes" min="2" max="2">void w_put\(char \*a0,uint8 a1,char \*a2\)</stringmatch>
 <stringmatch name="elemptr #14: with the option on the table a counter is stored into is unsigned and the counter stays int" min="1" max="1">void w_ctr\(uint4 \*a0,int4 \*a1,int4 a2\)</stringmatch>
 <stringmatch name="elemptr #15: the stored counter is compared and used as an index with no cast" min="1" max="1">a0\[v1\] = v1;</stringmatch>
 <stringmatch name="elemptr #16: the counter is never re-declared unsigned and cast back" min="0" max="0">\(int4\)v1</stringmatch>
 <stringmatch name="elemptr #17: with the option off a 2-byte field through a pointer a callee reads as uint4 * is read 4 wide and truncated - the bug" min="1" max="1">return \(uint8\)\(uint2\)a0\[1\] \+ v1;</stringmatch>
 <stringmatch name="elemptr #18: with the option on the 2-byte field is read 2 wide" min="1" max="1">return \(uint8\)\*\(uint2 \*\)&amp;a0\[1\] \+ v1;</stringmatch>
-<stringmatch name="elemptr #19: a global stepped by bytes prints the byte step in both passes" min="2" max="2">dat_300053c8 \+= 4;</stringmatch>
-<stringmatch name="elemptr #20: a table's first element read by name is a scalar in both passes" min="2" max="2">return dat_30005340 \+ 1;</stringmatch>
+<stringmatch name="elemptr #19: a global stepped by bytes prints the byte step in both passes" min="2" max="2">dat_300053e8 \+= 4;</stringmatch>
+<stringmatch name="elemptr #20: a table's first element read by name is a scalar in both passes" min="2" max="2">return dat_30005360 \+ 1;</stringmatch>
 <stringmatch name="elemptr #21: an element loaded through an address in the returned register is returned as an integer in both passes" min="2" max="2">uint8 w_nexttab\(uint8 a0,uint8 \*a1,char \*a2\)</stringmatch>
 <stringmatch name="elemptr #22: that function is never declared to return the element's address" min="0" max="0">uint8 \* w_nexttab\(</stringmatch>
+<stringmatch name="elemptr #23: with the option off the table merged with the parameter is its address" min="1" max="1">    a0 = 0x30003020;</stringmatch>
+<stringmatch name="elemptr #24: with the option on the parameter the table is merged with is a char pointer" min="1" max="1">int8 w_pick\(char \*a0,int8 a1,int4 a2\)</stringmatch>
+<stringmatch name="elemptr #25: with the option on the table is still its address, the one the indexed reader takes" min="1" max="1">    a0 = &amp;dat_30003020;</stringmatch>
+<stringmatch name="elemptr #26: the table is never a string literal cut at its zero byte in either pass" min="0" max="0">"0!0</stringmatch>
 </decompilertest>

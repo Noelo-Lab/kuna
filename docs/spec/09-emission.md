@@ -1745,7 +1745,12 @@ constant `elemptr` itself typed (`Funcdata::kuna_elemptr_typed_constant`): a
 character array another pass already recovered keeps the spelling it had
 (`sort`'s `"CCc"[v21]`, `tar`'s base64 alphabet, `&" %s"[v0]`). A declined
 literal falls through to the address, and so to the array name `globalref` gives
-it (§9.9). The upstream symbol path (a read-only character-array symbol) does
+it (§9.9). A constant whose character-pointer type comes from `elemptr` alone —
+it reaches, through copies and merges, a pointer the rule typed or a callee's
+parameter the rule typed and stated, and nothing reads it as a C string — never
+prints as a literal (`kuna_elemptr.rs (reaches_element_pointer)`, 05-types
+§5.2): the reader indexes the bytes and may take more than a literal ending at
+the first zero byte holds. The upstream symbol path (a read-only character-array symbol) does
 not consult the bound.
 
 **A character pointer the probe declines is still an address.** When the bytes
@@ -2471,7 +2476,10 @@ address at different elements (`char dat_4020[]` and `unsigned char dat_4020[]`)
 leave it undeclared with a comment too: a body reads `dat_4020[i]` at whatever
 element the header declares, so either declaration would change what the other
 body computes. The batch's agreement pass (05-types §5.2) keeps that from arising
-within one process; a sharded `--jobs` worker cannot see the other functions. An
+within one process; a sharded `--jobs` worker cannot see the other functions, so
+it names no table an array at all (`Funcdata::kuna_elemptr_objects`), nor does
+any run of several functions that is not the callee-first batch, and a pool
+prints what the serial run with `--option protoorder off` prints. An
 array whose storage this function also reads or writes directly keeps its cast
 (`DirectAccess`). With `elemptr` on, `plan` also takes an undefined word
 (`undefined2 *`) and an unsigned word of the same size read at one address as

@@ -1780,8 +1780,9 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
         if callee_first {
             eprintln!(
                 "note: --jobs decompiles without the callee-first order (option protoorder, on by \
-                 default), so call-argument types can differ from a serial run; add --option \
-                 protoorder off to make the two byte-identical"
+                 default), so call-argument types, and which globals and tables are arrays, can \
+                 differ from a serial run; add --option protoorder off to make the two \
+                 byte-identical"
             );
         }
         let inventory = prog.function_entries_canonical();
@@ -4322,8 +4323,9 @@ fn usage_decompile_all() {
          structures have the serial ones' members, and is decompiled a second\n\
          time with the serial names otherwise. A worker cannot see another\n\
          worker's callees, so the pool does not type call arguments\n\
-         callee-first: on this surface it matches --jobs 1 with --option\n\
-         protoorder off on both. Progress goes to stderr. Every worker loads\n\
+         callee-first, and no global or table is an array without the whole\n\
+         batch (option elemptr): on this surface it matches --jobs 1 with\n\
+         --option protoorder off on both. Progress goes to stderr. Every worker loads\n\
          the binary itself, so peak memory is roughly N times one worker's RSS.\n\
          --jobs-chunk N sets the functions per worker invocation (bigger =\n\
          less load overhead, more peak RSS); --jobs-full-load makes each\n\

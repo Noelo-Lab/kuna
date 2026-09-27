@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "p-446b14cce20e",
+  "probe_id": "p-657caab9b997",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -19,8 +19,8 @@
   "timeout_s": 120,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
-    "binary_sha256": "425b5a15de1fcbe9f5de3948030034050b773304989d3f9ab7111ccec4f81441",
-    "binary_size": 21536,
+    "binary_sha256": "9111eb49e758aae85158c7d5637be62e7ed63708f431086aa8c32f87448643e6",
+    "binary_size": 21768,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
     "selector": "w_decode",
@@ -34,7 +34,7 @@
       "char \\* w_decode\\(char \\*a0,unsigned long a1,unsigned long \\*a2\\)",
       "v6\\[v8\\] = \\(char\\)\\(v5 >> 0x10\\);",
       "\\(a0\\[v7\\] != '='\\)",
-      "\\? dat_300053c0\\[\\(unsigned char\\)a0\\[v7\\]\\] : 0;"
+      "\\? dat_300053e0\\[\\(unsigned char\\)a0\\[v7\\]\\] : 0;"
     ],
     "stdout_absent": [
       "\\(long\\)v6 \\+",

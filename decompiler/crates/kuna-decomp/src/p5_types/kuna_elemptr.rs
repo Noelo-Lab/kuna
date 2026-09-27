@@ -2123,31 +2123,48 @@ pub fn state(arch: &mut crate::architecture::Architecture, entry: &Address, data
 /// gave its type?  A `char *` constant then prints as its address: the reader
 /// indexes the bytes and may read past a zero byte a literal would end at.
 pub fn reaches_element_pointer(data: &Funcdata, vn: VarnodeId) -> bool {
-    data.get_arch().elem_ptr && element_derived(data, vn)
+    if !data.get_arch().elem_ptr {
+        return false;
+    }
+    let why = element_source(data, vn);
+    if let (Some(why), true) = (why, trace_on()) {
+        let at = data.vbank().get(vn).map(|v| v.get_offset()).unwrap_or(0);
+        eprintln!("[elemptr] fn={:#x} constant {at:#x} prints as its address: {why}", data.get_address().get_offset());
+    }
+    why.is_some()
 }
 
-/// Is `start`, or a value it is copied to or merged with, a pointer this rule
-/// typed -- an element pointer of this function, a global it typed, a callee's
-/// parameter or return a callee stated ([`Stated`]) -- or passed or stored
-/// into one?
+/// Does the pointer type of `start` and the values it is copied to or merged
+/// with come from this rule alone?  It does when one of them is a pointer the
+/// rule typed -- an element pointer of this function other than a table
+/// constant, a global it typed, a callee's parameter or return a callee
+/// stated ([`Stated`]) -- and none of them is also typed without it: read or
+/// written through directly a byte at a time, or passed where a declared
+/// prototype takes a character pointer.  A table constant the rule typed
+/// prints by [`literal_index_bound`]'s rule, and a family too large to walk
+/// keeps whatever the fold gave it.
 fn element_derived(data: &Funcdata, start: VarnodeId) -> bool {
+    element_source(data, start).is_some()
+}
+
+/// [`element_derived`], naming the source it found.
+fn element_source(data: &Funcdata, start: VarnodeId) -> Option<&'static str> {
     let mut work = vec![start];
     let mut seen: HashSet<VarnodeId> = HashSet::new();
+    let mut elem: Option<&'static str> = None;
     while let Some(v) = work.pop() {
         if !seen.insert(v) {
             continue;
         }
         if seen.len() > FAMILY_CAP {
-            return true;
-        }
-        if data.kuna_elemptr_typed(v) {
-            return true;
+            return None;
         }
         let Some(node) = data.vbank().get(v) else { continue };
-        if let Some(a) = in_data(data, v) {
-            if held_typed(data, a) {
-                return true;
-            }
+        if data.kuna_elemptr_typed(v) && !node.is_constant() {
+            elem = elem.or(Some("typed"));
+        }
+        if in_data(data, v).is_some_and(|a| held_typed(data, a)) {
+            elem = elem.or(Some("held"));
         }
         if let Some((d, o)) = node.get_def().and_then(|d| Some((d, data.obank().get(d)?))) {
             match o.code() {
@@ -2157,7 +2174,7 @@ fn element_derived(data: &Funcdata, start: VarnodeId) -> bool {
                 OpCode::CPUI_INDIRECT => work.extend(o.get_in(0)),
                 OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
                     if callee_stated(data, d).is_some_and(|st| st.ret) {
-                        return true;
+                        elem = elem.or(Some("ret"));
                     }
                 }
                 _ => {}
@@ -2169,20 +2186,156 @@ fn element_derived(data: &Funcdata, start: VarnodeId) -> bool {
                 OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => work.extend(o.get_out()),
                 OpCode::CPUI_INDIRECT if o.get_in(0) == Some(v) => work.extend(o.get_out()),
                 OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
-                    if (1..o.num_input()).any(|slot| o.get_in(slot) == Some(v) && stated_param(data, op, slot)) {
-                        return true;
+                    for slot in (1..o.num_input()).filter(|&slot| o.get_in(slot) == Some(v)) {
+                        if stated_param(data, op, slot) {
+                            elem = elem.or(Some("param"));
+                        } else if declared_char_pointer(data, op, slot) {
+                            return None;
+                        }
+                    }
+                }
+                OpCode::CPUI_LOAD if o.get_in(1) == Some(v) => {
+                    if o.get_out().and_then(|x| data.vbank().get(x)).is_some_and(|x| x.get_size() == 1) {
+                        return None;
+                    }
+                }
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB => {
+                    if reads_to_a_zero(data, op, 2) {
+                        return None;
+                    }
+                }
+                OpCode::CPUI_STORE if o.get_in(1) == Some(v) => {
+                    if o.get_in(2).and_then(|x| data.vbank().get(x)).is_some_and(|x| x.get_size() == 1) {
+                        return None;
                     }
                 }
                 OpCode::CPUI_STORE if o.get_in(2) == Some(v) => {
                     if stored_global(data, o).is_some_and(|a| held_typed(data, a)) {
-                        return true;
+                        elem = elem.or(Some("store"));
                     }
                 }
                 _ => {}
             }
         }
     }
-    false
+    elem
+}
+
+/// Does the pointer arithmetic `op` lead, through at most `depth` more steps
+/// of it, to a byte the program reads as a character of a C string
+/// ([`string_character`])?
+fn reads_to_a_zero(data: &Funcdata, op: OpId, depth: usize) -> bool {
+    let Some(out) = data.obank().get(op).and_then(|o| o.get_out()) else { return false };
+    let Some(node) = data.vbank().get(out) else { return false };
+    node.descend_iter().any(|u| {
+        let Some(o) = data.obank().get(u) else { return false };
+        match o.code() {
+            OpCode::CPUI_LOAD if o.get_in(1) == Some(out) => o
+                .get_out()
+                .is_some_and(|x| data.vbank().get(x).is_some_and(|v| v.get_size() == 1) && string_character(data, x)),
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_COPY | OpCode::CPUI_CAST
+                if depth > 0 =>
+            {
+                reads_to_a_zero(data, u, depth - 1)
+            }
+            _ => false,
+        }
+    })
+}
+
+/// How far a character is followed through the ops that keep it one
+/// (extensions, copies, merges, a constant added or masked).
+const CHAR_DEPTH: usize = 4;
+
+/// Is the loaded byte `x` a character of a C string: compared equal or
+/// unequal with zero, or with another loaded byte that is -- the reader stops
+/// at the zero byte (`c_strcasecmp` tests only its first string's byte for
+/// zero, and stops at the second's where the two differ)?
+fn string_character(data: &Funcdata, x: VarnodeId) -> bool {
+    let mut others = Vec::new();
+    if char_compares(data, x, CHAR_DEPTH, &mut others) {
+        return true;
+    }
+    others.into_iter().any(|o| loaded_byte(data, o, CHAR_DEPTH).is_some_and(|b| b != x && char_compares(data, b, CHAR_DEPTH, &mut Vec::new())))
+}
+
+/// Is the character `x` compared with zero?  Every other value it is compared
+/// equal or unequal with is gathered in `others`.
+fn char_compares(data: &Funcdata, x: VarnodeId, depth: usize, others: &mut Vec<VarnodeId>) -> bool {
+    let Some(node) = data.vbank().get(x) else { return false };
+    let mut zero = false;
+    for u in node.descend_iter() {
+        let Some(o) = data.obank().get(u) else { continue };
+        match o.code() {
+            OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => {
+                for i in 0..2 {
+                    let Some(c) = o.get_in(i).filter(|&c| c != x) else { continue };
+                    match data.vbank().get(c) {
+                        Some(v) if v.is_constant() => zero |= v.get_offset() == 0,
+                        Some(_) => others.push(c),
+                        None => {}
+                    }
+                }
+            }
+            OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT | OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL
+            | OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_AND
+                if depth > 0 && keeps_a_character(data, o, x) =>
+            {
+                if let Some(y) = o.get_out() {
+                    zero |= char_compares(data, y, depth - 1, others);
+                }
+            }
+            _ => {}
+        }
+    }
+    zero
+}
+
+/// Does `o`, reading the character `x`, produce the same character: an
+/// extension, copy or merge, or `x` with a constant added or masked?
+fn keeps_a_character(data: &Funcdata, o: &crate::op::PcodeOp, x: VarnodeId) -> bool {
+    match o.code() {
+        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_AND => (0..2).any(|i| {
+            o.get_in(i) != Some(x) && o.get_in(i).and_then(|c| data.vbank().get(c)).is_some_and(|c| c.is_constant())
+        }),
+        _ => true,
+    }
+}
+
+/// The byte a `LOAD` produced that `v` is, through the ops that keep a
+/// character.
+fn loaded_byte(data: &Funcdata, v: VarnodeId, depth: usize) -> Option<VarnodeId> {
+    let node = data.vbank().get(v)?;
+    let o = data.obank().get(node.get_def()?)?;
+    match o.code() {
+        OpCode::CPUI_LOAD => (node.get_size() == 1).then_some(v),
+        OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT | OpCode::CPUI_COPY | OpCode::CPUI_CAST if depth > 0 => {
+            loaded_byte(data, o.get_in(0)?, depth - 1)
+        }
+        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_AND if depth > 0 => {
+            let i = (0..2).find(|&i| o.get_in(i).and_then(|c| data.vbank().get(c)).is_some_and(|c| !c.is_constant()))?;
+            loaded_byte(data, o.get_in(i)?, depth - 1)
+        }
+        OpCode::CPUI_MULTIEQUAL if depth > 0 => {
+            (0..o.num_input()).find_map(|i| loaded_byte(data, o.get_in(i)?, depth - 1))
+        }
+        _ => None,
+    }
+}
+
+/// Is argument `slot` of the call `op` a character pointer a declared
+/// prototype takes?
+fn declared_char_pointer(data: &Funcdata, op: OpId, slot: int4) -> bool {
+    let Some(i) = data.get_call_specs_index(op) else { return false };
+    let proto = data.get_call_specs(i).proto();
+    if !proto.is_input_locked() {
+        return false;
+    }
+    proto
+        .get_param(slot - 1)
+        .and_then(|p| p.get_type())
+        .and_then(|t| t.get_ptr_to())
+        .is_some_and(|p| p.is_char_print())
 }
 
 /// What the callee of the call `op` stated, when it did.

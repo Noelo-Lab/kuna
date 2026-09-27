@@ -815,9 +815,25 @@ functions decompiled before the evidence are decided twice: without it, `sort`
 every function decompiled after it leaves that object alone (`Ledger::disputed`,
 handed out by `seed`), so only the functions decompiled before the first
 disagreement are decided again: on bash -O2 that is 17 functions instead of 23,
-and 3.6 s of redo instead of 14.7 s. A single-function `decompile`, a sharded
-`--jobs` worker and the streaming export have no batch to consult and decide each
-function on its own evidence.
+and 3.6 s of redo instead of 14.7 s.
+
+Only a batch that decides its functions together types an object at all: the
+callee-first driver of `decompile-all` and `decompile-project`
+(`kuna_elemptr.rs (start)` with `objects`), and a batch of one function (a
+single-function `decompile`, one `--addr`), whose declarations it alone reads.
+Several functions decompiled with nobody to agree on their globals type none of
+them and no table (`kuna_elemptr.rs (without_objects)`, handed to each function by
+`seed` as `Funcdata::kuna_elemptr_objects`): a `--jobs` worker, which sees a share
+of the functions, the streamed export, which writes each function as it lands,
+and a serial run that is not callee-first (`--option protoorder off`, a narrowed
+selection, `decompile-graph`), which is what a pool reproduces. Such a function
+also leaves untyped a parameter or call return it stores into a global
+(`kuna_elemptr.rs (reaches_global_storage)`): `gp = malloc(n * 4)` would type the
+global from this one function, and `gp++` in another steps it by bytes. So a
+`--jobs N` run with `--option protoorder off` prints what `--jobs 1` prints, byte
+for byte, as the pool's contract says (a pool of one function types what a
+serial batch of one does, `--jobs-objects`); the default `--jobs 1` is
+callee-first and still types what its batch agrees on.
 
 The constant candidate is the fourth piece: typed `unsigned char *`, the
 constant becomes the base of a `PTRADD`, and `globalref` (09-emission §9.9)
@@ -826,6 +842,27 @@ prints it as the array it names, `dat_4020[v1]`, which the export header declare
 otherwise render as a string literal keeps the literal only when the index
 provably stays inside it (09-emission §9.4): `""[x]` reads bytes the literal does
 not have.
+
+The rule's evidence is an index, which says nothing about where a byte array
+ends, so a character pointer it typed never makes a constant print as a string
+literal. A callee decompiled before its callers states which of its parameters
+and whether its return value are pointers the rule typed
+(`kuna_elemptr.rs (state)`, `Stated`, beside `protoorder`'s statement), and a
+character-pointer constant prints as its address rather than as a literal when
+its type comes from the rule alone (`kuna_elemptr.rs (reaches_element_pointer)`):
+the constant, or a value it is copied to or merged with, is an element pointer
+the rule typed in this function (a table constant keeps the index-bound rule
+above), a global it typed, or a callee's stated parameter or return, and none of
+them is typed without it — read or written through directly a byte at a time,
+passed where a declared prototype takes a character pointer, or read as a C
+string, a loaded byte compared with zero or with another byte that is
+(`string_character`: `c_strcasecmp` tests only its first string's byte for zero).
+A parameter handed on to such a callee parameter is stated too. openssh
+`ssh-keyscan` -O2 passes the SHA-1 DigestInfo prefix `30 21 30 09 06 05 2b 0e 03
+02 1a 05 00 04 14` to a 15-byte `timingsafe_bcmp` whose parameters the rule
+typed `char *`; printed as a literal it ended at its zero byte, two bytes short of
+what the compare reads. It prints as the address it is, `&dat_66e18` under
+`globalref`.
 
 The round trip in `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs
 (an_element_pointer_round_trips_through_the_printed_c)` compiles the witnesses of
@@ -845,8 +882,11 @@ an `unsigned` table whose elements index a second one (the counter stays `int`);
 a global `int *` two functions index and two others step by bytes, a table one
 function indexes and two others name the first element of (neither is typed),
 and a 2-byte field at the very end of a readable page through a pointer a callee
-reads as `unsigned int *` (read 2 bytes wide), and 8-byte elements above 2^32
-returned from the register their address was computed in (`w_nexttab`). A global
+reads as `unsigned int *` (read 2 bytes wide), 8-byte elements above 2^32
+returned from the register their address was computed in (`w_nexttab`), and a
+15-byte table holding a zero byte compared and hashed through parameters the rule
+types and through a parameter merged with it (`w_chk`, `w_hash`, `w_pick`: the
+table is passed as its address). A global
 the header declines as
 read at two types is compiled at the pointer that comment lists, so a
 disagreement cannot hide behind a guessed declaration.
@@ -854,8 +894,16 @@ disagreement cannot hide behind a guessed declaration.
 record walked by a stride, a pointer read at two widths, the length), the byte
 step and the first-element read in both passes, the narrow load (pass 1 is
 upstream's widened read), and an element returned from the register its address
-was computed in, which stays an integer return (`w_nexttab`); `tests/cli/elemptr-keeps-a-global-another-function-steps-by-bytes-an-integer.json`
-pins the batch leaving the global and the table untyped.
+was computed in, which stays an integer return (`w_nexttab`), and the table
+merged with a parameter printed as its address, never a literal (`w_pick`);
+`tests/cli/elemptr-keeps-a-global-another-function-steps-by-bytes-an-integer.json`
+pins the batch leaving the global and the table untyped, and
+`tests/cli/elemptr-passes-a-table-with-a-zero-byte-as-its-address.json` a caller
+passing the table to a callee's stated parameter.
+`decompile_all_cli.rs (element_pointers_under_jobs_match_the_serial_run)` pins
+`decompile-all` and `decompile-project` under `--jobs 4` to their `--jobs 1`
+output with `--option protoorder off`, neither typing the global that is stepped
+by bytes.
 
 Shipped on: with it, the 444-slice decbench sweep has 1,674 perfect functions
 against 1,631 (189 better, none worse, no function's variable count moved), and
