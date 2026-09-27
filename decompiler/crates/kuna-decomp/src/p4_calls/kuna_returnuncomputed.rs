@@ -132,7 +132,7 @@ fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
 /// [`crate::p4_calls::kuna_protoorder`]'s `recovered_output`, where `true` states
 /// the callee's return to every caller ahead of it and `false` states nothing at
 /// all, so the unfinished walk has to take the second.
-fn computes_everywhere(data: &Funcdata, vn: VarnodeId, placed_at: Option<&Address>) -> bool {
+fn computes_everywhere(data: &Funcdata, vn: VarnodeId, placed_at: Option<&Address>, globals: bool) -> bool {
     let mut seen: std::collections::HashSet<VarnodeId> = std::collections::HashSet::new();
     let mut work: Vec<VarnodeId> = vec![vn];
     let mut budget = MAX_NODES;
@@ -153,6 +153,9 @@ fn computes_everywhere(data: &Funcdata, vn: VarnodeId, placed_at: Option<&Addres
         let Some(def) = v.get_def() else {
             if placed_at.is_some_and(|a| a == v.get_addr()) {
                 return false;
+            }
+            if globals && v.is_persist() {
+                continue;
             }
             if !crate::kuna_retinputhalf::is_input_parameter(data, cur) {
                 return false;
@@ -243,6 +246,14 @@ fn computes_from(data: &Funcdata, vn: VarnodeId, depth: u32, placed_at: Option<&
 /// `false` means at least one RETURN hands back a terminal the function never
 /// computed. A function with no live RETURN answers `true`, the no-change answer.
 pub fn every_return_computes(data: &Funcdata) -> bool {
+    every_return_computes_with(data, false)
+}
+
+/// [`every_return_computes`], with a value read out of global memory
+/// (`return stdout;`) counted as computed when `globals`: the program's own
+/// data, not a register or frame slot the caller left behind.  `callrettype`
+/// asks it this way ([`crate::p4_calls::kuna_callrettype`]).
+pub fn every_return_computes_with(data: &Funcdata, globals: bool) -> bool {
     for retop in data.obank().iter_code(OpCode::CPUI_RETURN).collect::<Vec<_>>() {
         let Some(o) = data.obank().get(retop) else { continue };
         if o.is_dead() || o.get_halt_type() != 0 || o.num_input() < 2 {
@@ -250,7 +261,7 @@ pub fn every_return_computes(data: &Funcdata) -> bool {
         }
         let Some(value) = o.get_in(1) else { continue };
         let placed = data.vbank().get(value).map(|v| v.get_addr().clone());
-        if !computes_everywhere(data, value, placed.as_ref()) {
+        if !computes_everywhere(data, value, placed.as_ref(), globals) {
             return false;
         }
     }

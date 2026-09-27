@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-992e4eff99f2",
+  "probe_id": "a-29f23a602cea",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -28,7 +28,7 @@
       "eq": 0
     },
     "stdout_matches": [
-      "return \\(int\\)\\(float\\)h\\(a0,v1\\) \\+ v1 \\+ 3;",
+      "return \\(int\\)h\\(a0,v1\\) \\+ v1 \\+ 3;",
       "\\(unsigned int\\)\\(v1 < 0x3fc00000\\)",
       "if \\(v1 == 0x3fc00001\\)",
       "\\(unsigned int\\)\\(0x3fc00000 < v1\\)",
@@ -41,5 +41,5 @@
       "1\\.5000001"
     ]
   },
-  "notes": "DEFAULT on MIPS o32: h(int, float) takes its float in a GPR; each g* passes a word's bits to h and also adds or compares the word as an integer. A float vote printed that as a value conversion ((int)v1 + 3, v1 == 1.5000001) that computes different values, so it is refused and v1 stays int. h's int vote still wins: g3(int a0,int a1)."
+  "notes": "DEFAULT on MIPS o32: h(int, float) takes its float in a GPR; each g* passes a word's bits to h and also adds or compares the word as an integer. A float vote for that word would print value conversions that compute different values, so it is refused and v1 stays int. With callrettype the call produces h's stated float, so its result converts once: (int)h(a0,v1)."
 }

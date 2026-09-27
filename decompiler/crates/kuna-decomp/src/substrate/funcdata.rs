@@ -433,6 +433,15 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
+    /// (kuna `callrettype`) The recovered return value of each callee this
+    /// function calls, copied off the `Architecture` like `kuna_protoorder_types`.
+    kuna_callret_types: crate::kuna_callrettype::StatedReturns,
+    /// (kuna `callrettype`) The loader's data ranges, for telling an address
+    /// from a number ([`crate::kuna_callrettype::contradicted`]).
+    kuna_callret_data: std::rc::Rc<Vec<(u64, u64)>>,
+    /// (kuna `callrettype`) The extensions the return trimming narrowed the
+    /// returned value back through ([`crate::kuna_callrettype::note_returned_extension`]).
+    kuna_callret_returned: Vec<(bool, int4)>,
     /// (kuna `passthrough`) The register ranges `ActionFuncLink` made visible to
     /// heritage for a call whose callee states them, with the calls that own
     /// each ([`crate::p4_calls::kuna_passthrough`]).  Empty unless the option is
@@ -565,6 +574,9 @@ impl Funcdata {
             kuna_callee_entry_dead: std::collections::HashMap::new(),
             kuna_callee_forward: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
+            kuna_callret_types: std::collections::HashMap::new(),
+            kuna_callret_data: std::rc::Rc::new(Vec::new()),
+            kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
@@ -800,6 +812,62 @@ impl Funcdata {
         if let Some(sp) = entry.get_space() {
             self.kuna_protoorder_types.insert((sp.get_index(), entry.get_offset()), stated);
         }
+    }
+
+    /// (kuna `callrettype`) Record what the callee filed under `key` returns.
+    pub fn kuna_set_callret_type(
+        &mut self,
+        key: (int4, kuna_base::types::uintb),
+        stated: std::rc::Rc<crate::kuna_callrettype::StatedReturn>,
+    ) {
+        self.kuna_callret_types.insert(key, stated);
+    }
+
+    /// (kuna `callrettype`) Record the loader's data ranges.
+    pub fn kuna_set_callret_data(&mut self, ranges: std::rc::Rc<Vec<(u64, u64)>>) {
+        self.kuna_callret_data = ranges;
+    }
+
+    /// (kuna `callrettype`) The loader's data ranges recorded by the seed.
+    pub fn kuna_callret_data(&self) -> &[(u64, u64)] {
+        &self.kuna_callret_data
+    }
+
+    /// (kuna `callrettype`) Whether any callee stated what it returns.
+    pub fn kuna_has_callret_types(&self) -> bool {
+        !self.kuna_callret_types.is_empty()
+    }
+
+    /// (kuna `callrettype`) Whether any callee stated an integer return.
+    pub fn kuna_has_integer_callret_types(&self) -> bool {
+        self.kuna_callret_types.values().any(|s| {
+            matches!(
+                s.ct.get_metatype(),
+                crate::dtype::type_metatype::TYPE_INT | crate::dtype::type_metatype::TYPE_UINT
+            )
+        })
+    }
+
+    /// (kuna `callrettype`) Record an extension the returned value was narrowed
+    /// back through.
+    pub fn kuna_note_callret_returned(&mut self, ext: (bool, int4)) {
+        if !self.kuna_callret_returned.contains(&ext) {
+            self.kuna_callret_returned.push(ext);
+        }
+    }
+
+    /// (kuna `callrettype`) The extensions the returned value was narrowed back
+    /// through: whether each extends at the sign, and from what width.
+    pub fn kuna_callret_returned(&self) -> &[(bool, int4)] {
+        &self.kuna_callret_returned
+    }
+
+    /// (kuna `callrettype`) What the callee filed under `key` stated it returns.
+    pub fn kuna_callret_type(
+        &self,
+        key: (int4, kuna_base::types::uintb),
+    ) -> Option<&crate::kuna_callrettype::StatedReturn> {
+        self.kuna_callret_types.get(&key).map(|r| r.as_ref())
     }
 
     /// (kuna `calleevote`) Record what this function's callers pass for its inputs.

@@ -268,7 +268,7 @@ pub fn uncommitted_under(ct: &Datatype, ptr_size: int4, headless: bool) -> bool 
 /// The same type: one factory entry, or the same name and shape all the way
 /// down its pointer chain. A layout comparison alone would equate two records
 /// that merely have the same size.
-fn same_type(a: &Datatype, b: &Datatype) -> bool {
+pub(crate) fn same_type(a: &Datatype, b: &Datatype) -> bool {
     if std::ptr::eq(a, b) {
         return true;
     }

@@ -1915,6 +1915,8 @@ mod tests {
         // `option jumptablemax 2`
         // and kuna-callbacktype / a callback takes the prototype of the slot
         // it is passed to
+        // and kuna-callrettype / a call returns the type its callee states
+        // (the single-function negative control)
         assert_eq!(count, 348, "corpus file count drifted");
     }
 
