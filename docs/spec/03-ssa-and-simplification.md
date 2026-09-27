@@ -625,9 +625,19 @@ uses type `unsigned int *`. Widened, it printed `sink((short)a0[0x1a])`, which C
 sign-extends, so 0x9abc reached `sink` as 4294941372. Declined, the load keeps
 its own width and kuna's unsigned spelling of an undefined value:
 `sink(*(unsigned short *)&a0[0x1a])`. A value whose type is known signed or
-unsigned still takes the truncation form. That form is value-correct but reads
-the whole element, and narrowing it too would move pinned output
-(`kuna-tiedphitrim.xml` #13/#14).
+unsigned still takes the truncation form through a declared pointer. That form
+is value-correct but reads the whole element, bytes the program never reads, so
+with `elemptr` on (the default) a pointer whose pointee was inferred from use --
+no type-locked Varnode at the base of its chain of offsets and copies -- keeps
+the load its own width
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_elemptr.rs (keeps_load_narrow)`).
+`elemptr` supplies such pointees and a prototype carries them to callers: a
+2-byte field at `+4` of a 6-byte object, read through a parameter its callee
+declares `unsigned int *`, printed `(unsigned short)a0[1]`, a 4-byte read that
+faults when the object ends a page, and now prints `*(unsigned short *)&a0[1]`.
+A type-locked pointer keeps upstream's form; the datatest corpus does not move.
+`kuna-tiedphitrim.xml` #13/#14 and `structsynth-locals.xml` #2 pin the narrow
+spelling of a 4-byte field read through an inferred `int8 *`.
 
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
 default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the

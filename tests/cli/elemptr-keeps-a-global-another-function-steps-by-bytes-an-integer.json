@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-1bbd6c1a8c05",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--functions",
+    "w_gpinit,w_gpbump,w_gpadv,w_gpread,w_tidx,w_tfirst,w_tset",
+    "--option",
+    "elemptr",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "timeout_s": 120,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
+    "binary_sha256": "425b5a15de1fcbe9f5de3948030034050b773304989d3f9ab7111ccec4f81441",
+    "binary_size": 21536,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
+    "selector": "w_gpinit",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "dat_300053c8 \\+= 4;",
+      "return \\*\\(int \\*\\)\\(a0 \\* 4 \\+ dat_300053c8\\);",
+      "return dat_30005340 \\+ 1;"
+    ],
+    "stdout_absent": [
+      "dat_300053c8\\[",
+      "dat_30005340\\["
+    ]
+  },
+  "notes": "A batch types a global only where every function holding it agrees. Two functions step the global int * by bytes (gp++) and two read a .data table's first element by name; one header declaration would make dat_300053c8 += 4 step four elements, or the scalar the array. Neither is typed: every function keeps main's byte form."
+}

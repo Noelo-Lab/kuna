@@ -371,11 +371,11 @@ if \(v3\[0\]\) \{
 v1 = 0;
 v2 = v3\[0\];
 do \{
-v1 \+= \(int4\)v2\[1\];
+v1 \+= \*\(int4 \*\)&amp;v2\[1\];
 v2 = \(int8 \*\)\*v2;
 \} while \(v2\);</stringmatch>
 <stringmatch name="TIEDPHITRIM #14: option off, outparam_walk stores each next pointer into the stack slot getnode filled" min="1" max="1">do \{
-v1 \+= \(int4\)v2\[0\]\[1\];
+v1 \+= \*\(int4 \*\)&amp;v2\[0\]\[1\];
 v2\[0\] = \(int8 \*\)\*v2\[0\];
 \} while \(v2\[0\]\);</stringmatch>
 <stringmatch name="TIEDPHITRIM #15: default, t8 keeps the loop variable out of buf[1] and stores the exit byte only after the loop" min="1" max="1">v1 = v4;

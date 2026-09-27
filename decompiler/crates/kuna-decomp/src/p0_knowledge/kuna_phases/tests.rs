@@ -79,7 +79,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_244() {
+fn settable_count_is_245() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -173,12 +173,13 @@ fn settable_count_is_244() {
     // +1 for `callrettype` (P4 a call returns its callee's stated type).
     // +1 for `castobject` (P6 an out-parameter local declared at its callee's pointee).
     // +1 for `castwiden` (P9 a widening C performs by itself keeps no cast).
-    assert_eq!(kuna_num_settables(), 244);
-    assert_eq!(SETTABLE_TABLE.len(), 244);
+    // +1 for `elemptr` (P5 a pointer used only as an array).
+    assert_eq!(kuna_num_settables(), 245);
+    assert_eq!(SETTABLE_TABLE.len(), 245);
 }
 
 #[test]
-fn tier_counts_are_76_core_102_transform_66_analysis() {
+fn tier_counts_are_76_core_103_transform_66_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -337,7 +338,8 @@ fn tier_counts_are_76_core_102_transform_66_analysis() {
     // stated type).
     // transform 100 -> 101: +1 for `castobject` (P6 an out-parameter local declared at its callee's pointee).
     // transform 101 -> 102: +1 for `castwiden` (P9 a widening C performs by itself keeps no cast).
-    assert_eq!((core, transform, analysis), (76, 102, 66));
+    // transform 102 -> 103: +1 for `elemptr` (P5 a pointer used only as an array).
+    assert_eq!((core, transform, analysis), (76, 103, 66));
 }
 
 #[test]
@@ -527,7 +529,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_103() {
+fn option_values_live_value_present_for_104() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -1007,7 +1009,8 @@ fn option_values_live_value_present_for_103() {
     // 100 -> 101: +1 for `callpush` (live_field = drop_call_push).
     // 101 -> 102: +1 for `callrettype` (live_field = call_ret_type).
     // 102 -> 103: +1 for `castobject` (live_field = cast_object).
-    assert_eq!(with_live, 103);
+    // 103 -> 104: +1 for `elemptr` (live_field = elem_ptr).
+    assert_eq!(with_live, 104);
 }
 
 #[test]
@@ -1186,7 +1189,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 240 -> 241: +1 for `callrettype`; its P4 row sits mid-table.
     // 241 -> 242: +1 for `castobject`.
     // 242 -> 243: +1 for `castwiden`.
-    assert_eq!(json.matches("},\n").count(), 243);
+    // 243 -> 244: +1 for `elemptr`.
+    assert_eq!(json.matches("},\n").count(), 244);
 }
 
 #[test]
