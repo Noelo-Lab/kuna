@@ -118,6 +118,11 @@ export class Session {
     return key;
   }
 
+  /** Set (or with empty `text`, remove) the raw directive under `key` (another page's, in a live session). */
+  setRaw(key, text, func = null) {
+    return this.#set(key, text ? { kind: 'raw', text: text.trim(), ...(func ? { func } : {}) } : null);
+  }
+
   /** Replace a record with whatever `text` parses to (a rail edit of one directive). */
   replaceWith(key, text, options = {}) {
     this.remove(key);
@@ -129,14 +134,14 @@ export class Session {
     const a = BigInt(addr);
     if (value === original) this.bytes.delete(a);
     else this.bytes.set(a, value & 0xff);
-    this.#touchBytes();
+    this.touchBytes();
   }
 
   remove(key) {
     if (key.startsWith('bytes:')) {
       const run = this.byteRuns().find((r) => `bytes:${hex(r.addr)}` === key);
       for (let i = 0; i < (run?.values.length || 0); i++) this.bytes.delete(run.addr + BigInt(i));
-      this.#touchBytes();
+      this.touchBytes();
       return;
     }
     this.records.delete(key);
@@ -163,7 +168,8 @@ export class Session {
     this.refused.delete(key);
   }
 
-  #touchBytes() {
+  /** Patched bytes changed: the byte runs' old outcomes no longer describe them. */
+  touchBytes() {
     for (const key of [...this.outcomes.keys(), ...this.refused]) {
       if (key.startsWith('bytes:')) this.#touch(key);
     }
@@ -238,6 +244,7 @@ export class Session {
         groups.get(rec.kind).push({ key, text: recordDirective(rec, null) });
       }
     }
+    for (const list of groups.values()) list.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     groups.set('bytes', this.#bytesDirectives().filter((d) => includeRefused || !this.refused.has(d.key)));
     const out = ORDER.flatMap((k) => groups.get(k));
     for (const d of out) this.sent.set(d.text, d.key);
@@ -314,7 +321,7 @@ export class Session {
     for (const key of new Set([...before.keys(), ...this.records.keys()])) {
       if (before.get(key) !== JSON.stringify(this.records.get(key))) this.#touch(key);
     }
-    if (bytesBefore !== JSON.stringify([...this.bytes].map(([a, v]) => [a.toString(16), v]))) this.#touchBytes();
+    if (bytesBefore !== JSON.stringify([...this.bytes].map(([a, v]) => [a.toString(16), v]))) this.touchBytes();
   }
 
   /** What is in the session now, to discard later if it is still unchanged. */
@@ -335,7 +342,7 @@ export class Session {
     for (const [a, v] of mark.bytes) {
       if (this.bytes.get(a) === v) { this.bytes.delete(a); bytes++; }
     }
-    if (bytes) this.#touchBytes();
+    if (bytes) this.touchBytes();
     return n + bytes;
   }
 

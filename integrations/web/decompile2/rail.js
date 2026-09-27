@@ -1,8 +1,9 @@
 // rail.js — the Explain panel beside the code. Three parts: what is selected
 // (a card app.js writes), this function in plain words (what it takes and
 // returns, what it calls and who calls it, its variables and types), and the
-// student's changes with undo, redo and a small menu for the rest. The panel
-// renders; app.js acts on the `data-act` it reports.
+// student's changes with undo, redo and a small menu for the rest (in a live
+// session, everyone's: each row in its author's colour). The panel renders;
+// app.js acts on the `data-act` it reports.
 import { escapeHtml } from '../assets/js/highlight-c.js';
 
 const MARK = {
@@ -32,13 +33,19 @@ function functionPart(fn) {
     `<h4>Variables</h4>${vars}${debug}${types}</section>`;
 }
 
+const COLOR = /^#[0-9a-f]{6}$/i;
+
 function changesPart(model) {
   const items = model.edits.map((e) => {
     const [cls, sym, title] = MARK[e.status] || MARK.pending;
     const why = (e.status === 'rejected' || e.status === 'refused') && e.detail ? `<small>${escapeHtml(e.detail)}</small>` : '';
     const fatal = e.fatal ? '<small>the code shown was made without this change</small>' : '';
-    return `<li data-key="${escapeHtml(e.key)}"><span class="mk ${cls}" title="${title}">${sym}</span>` +
-      `<span class="tx" title="${escapeHtml(e.text)}">${escapeHtml(e.label)}${why}${fatal}</span>` +
+    const a = e.author && COLOR.test(e.author.color) ? e.author : null;
+    const by = a ? ` class="by" style="--who:${a.color}"` : '';
+    const who = a && !a.me ? ` <span class="who">${escapeHtml(a.name)}</span>` : '';
+    const tip = a ? `${e.text}\n${a.me ? 'Your change' : `Changed by ${a.name}`}` : e.text;
+    return `<li data-key="${escapeHtml(e.key)}"${by}><span class="mk ${cls}" title="${title}">${sym}</span>` +
+      `<span class="tx" title="${escapeHtml(tip)}">${escapeHtml(e.label)}${who}${why}${fatal}</span>` +
       '<span class="acts"><button data-act="edit-edit">edit</button><button data-act="edit-remove">remove</button></span></li>';
   }).join('');
   const banner = model.restored
@@ -48,7 +55,7 @@ function changesPart(model) {
     ? '<p class="x-empty">This version of the decompiler cannot apply changes; they are kept and can be exported.</p>' : '';
   const empty = items ? '' : '<p class="x-empty">Nothing yet.<span class="d2-teach"> Double-click a name to rename it.</span></p>';
   const n = model.edits.length;
-  return `<section class="x-sec" id="railchanges"><h3>Your changes${n ? ` <span class="x-count">(${n})</span>` : ''}</h3>` +
+  return `<section class="x-sec" id="railchanges"><h3>${model.shared ? 'Changes' : 'Your changes'}${n ? ` <span class="x-count">(${n})</span>` : ''}</h3>` +
     banner + unsupported + `<ul class="d2edits" id="sesslist">${items}</ul>` + empty +
     '<div class="x-editacts">' +
     `<button class="d2-btn small" data-act="undo"${model.canUndo ? '' : ' disabled'} title="Undo (U)">Undo</button>` +

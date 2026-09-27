@@ -411,6 +411,7 @@ a.xt:hover{color:var(--accent);text-decoration:underline;}
 .d2-mi:disabled{color:var(--text-muted);cursor:default;}
 .d2-mi small{color:var(--text-muted);font-size:12px;}
 .d2-mfield{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 10px;font-size:var(--fs-ui);}
+.d2-mfield small{display:block;color:var(--text-muted);font-size:12px;}
 .d2-mfield select,.d2-vo select{height:30px;padding:0 6px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);}
 .d2-viewmenu{width:340px;padding:12px 14px;}
 .d2-vo{display:flex;flex-direction:column;gap:12px;font-size:var(--fs-ui);}

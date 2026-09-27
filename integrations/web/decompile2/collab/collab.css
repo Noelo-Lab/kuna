@@ -1,0 +1,68 @@
+/* collab.css — "Work together": the invite, join and reply dialog, the
+   people in the top bar, the others' pointers and pings over the panes, and
+   each change's author in the Changes list. Loaded with collab.js, so a page
+   nobody shares carries none of it. Colours are the page's tokens; a person's
+   colour arrives as --who. */
+
+.d2pane{position:relative;}
+.d2-presence{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:4;}
+.d2-ptr{position:absolute;left:0;top:0;pointer-events:none;will-change:transform;}
+.d2-ptr-arrow{display:block;overflow:visible;}
+.d2-ptr-arrow path{fill:var(--who);fill-opacity:.45;stroke:var(--who);stroke-opacity:.8;stroke-width:1;stroke-linejoin:round;}
+.d2-ptr-tag{position:absolute;left:13px;top:17px;padding:1px 6px;border-radius:3px;white-space:nowrap;
+  background:var(--who);color:#141110;opacity:.85;font:600 11px/16px var(--font-ui);}
+.d2-ping{position:absolute;left:0;top:0;border:2px solid var(--who);border-radius:4px;pointer-events:none;
+  animation:d2ping .85s ease-out 3;}
+@keyframes d2ping{
+  0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--who) 60%,transparent);opacity:1;}
+  100%{box-shadow:0 0 0 12px color-mix(in srgb,var(--who) 0%,transparent);opacity:.55;}
+}
+
+.d2-roster{display:flex;align-items:center;gap:4px;flex:none;}
+.d2-who{display:grid;place-items:center;width:28px;height:28px;padding:0;border:2px solid var(--who);border-radius:50%;
+  background:var(--who);color:#141110;font:700 11.5px/1 var(--font-ui);cursor:pointer;}
+.d2-who:hover{box-shadow:0 0 0 2px var(--bg-subtle),0 0 0 3px var(--text-faint);}
+.d2-who.on{box-shadow:0 0 0 2px var(--bg-subtle),0 0 0 4px var(--who);}
+.d2-who.wait{background:transparent;color:var(--text-muted);border-style:dashed;}
+.d2-together{height:32px;padding:0 8px;gap:4px;}
+.d2-together svg{flex:none;}
+
+.d2-collab{width:min(560px,94vw);max-height:88vh;padding:0;border:1px solid var(--border);border-radius:var(--radius-lg);
+  background:var(--bg);color:var(--text);box-shadow:var(--shadow);font:400 var(--fs-ui)/1.5 var(--font-ui);}
+.d2-collab::backdrop{background:var(--lift);}
+.d2-collab .cb-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 16px 8px 20px;}
+.d2-collab h2{font-size:18px;font-weight:600;overflow-wrap:anywhere;}
+.d2-collab .cb-body{display:flex;flex-direction:column;gap:12px;padding:0 20px 20px;}
+.d2-collab h3{font-size:14px;font-weight:600;margin:0 0 6px;}
+.d2-collab form{display:flex;flex-direction:column;gap:12px;}
+.d2-collab .cb-note{padding:8px 12px;border-radius:var(--radius);background:var(--bg-subtle);border-left:2px solid var(--mark-red);}
+.d2-collab .cb-small{color:var(--text-muted);font-size:13px;}
+.d2-collab .cb-muted{color:var(--text-muted);font-size:13px;}
+.d2-collab .cb-field{display:flex;flex-direction:column;gap:4px;}
+.d2-collab .cb-field span{color:var(--text-muted);font-size:13px;}
+.d2-collab .cb-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:flex-end;}
+.d2-collab .cb-row.cb-end{justify-content:space-between;}
+.d2-collab .cb-copy{display:flex;flex-direction:row;gap:8px;}
+.d2-collab .cb-copy input{flex:1 1 auto;min-width:0;font:12.5px var(--font-code);}
+.d2-collab .cb-step{padding-top:4px;}
+.d2-collab .cb-status{display:flex;align-items:center;gap:8px;min-height:1.5em;font-size:13.5px;}
+.d2-collab .cb-status:empty{display:none;}
+.d2-collab .cb-status::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--text-faint);}
+.d2-collab .cb-status.busy::before{background:var(--accent);animation:d2pulse 1s ease-in-out infinite;}
+.d2-collab .cb-status.ok::before{background:var(--ok);}
+.d2-collab .cb-status.err{color:var(--danger);}
+.d2-collab .cb-status.err::before{background:var(--danger);}
+.d2-collab .cb-bar{height:6px;border-radius:3px;background:var(--bg-muted);overflow:hidden;}
+.d2-collab .cb-bar span{display:block;height:100%;background:var(--accent);transition:width .2s;}
+.d2-collab .cb-people{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;}
+.d2-collab .cb-people li{display:flex;align-items:baseline;gap:8px;min-width:0;}
+.d2-collab .cb-dot{flex:none;align-self:center;width:10px;height:10px;border-radius:50%;background:var(--who);}
+.d2-collab .cb-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+.d2edits li.by{box-shadow:inset 3px 0 0 var(--who);}
+.d2edits .tx .who{display:inline-block;margin-left:6px;padding:0 6px;border-radius:99px;font-size:11.5px;line-height:18px;
+  background:color-mix(in srgb,var(--who) 24%,transparent);color:var(--text);}
+
+@media (max-width:899px){
+  .d2-together span:not(.d2-sr){display:none;}
+}

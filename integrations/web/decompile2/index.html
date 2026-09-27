@@ -41,10 +41,12 @@
         <span class="d2-sr">More</span>
       </button>
       <div class="d2-menu d2-moremenu" id="moremenu" role="menu" hidden>
+        <button class="d2-mi" id="collabbtn" role="menuitem">Work together…<small>Invite someone to work on this program with you</small></button>
+        <hr>
         <button class="d2-mi" id="dlbtn" role="menuitem" disabled>Download C code (.zip)</button>
         <button class="d2-mi" id="patchbtn" role="menuitem" disabled>Download patched program<small id="patchwhy">Patch some bytes first</small></button>
         <hr>
-        <label class="d2-mfield">Decompiler effort
+        <label class="d2-mfield"><span>Decompiler effort<small id="modenote" hidden>changes it for everyone</small></span>
           <select id="mode">
             <option value="auto" selected>Automatic</option>
             <option value="fast">Fast</option>

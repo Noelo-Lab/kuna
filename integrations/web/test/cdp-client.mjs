@@ -21,14 +21,14 @@ export function findChrome() {
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-/** Launch headless Chrome; resolves `{browser, close}` once DevTools answers. */
-export async function launchChrome(chromePath = findChrome(), { width = 1280, height = 860 } = {}) {
+/** Launch headless Chrome (with any extra `flags`); resolves `{port, child, close}` once DevTools answers. */
+export async function launchChrome(chromePath = findChrome(), { width = 1280, height = 860, flags = [] } = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'kuna-cdp-'));
   const child = spawn(chromePath, [
     '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run',
     '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`,
-    `--window-size=${width},${height}`, 'about:blank',
+    `--window-size=${width},${height}`, ...flags, 'about:blank',
   ], { stdio: 'ignore' });
   let port = null;
   for (let i = 0; i < 200 && !port; i++) {
@@ -43,10 +43,10 @@ export async function launchChrome(chromePath = findChrome(), { width = 1280, he
   return { port: Number(port), child, close };
 }
 
-/** Attach to the first page target; resolves a small session API. */
-export async function openPage(port, { onException } = {}) {
+/** Attach to a page target (the first, or `targetId`); resolves a small session API. */
+export async function openPage(port, { onException, targetId = null } = {}) {
   const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-  const page = targets.find((t) => t.type === 'page');
+  const page = targets.find((t) => t.type === 'page' && (!targetId || t.id === targetId));
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((done, fail) => { ws.onopen = done; ws.onerror = fail; });
   let seq = 0;
@@ -172,6 +172,13 @@ export async function openPage(port, { onException } = {}) {
   }
 
   return { send, on, evaluate, call, waitFor, navigate, click, hover, key, type, viewport, screenshot, exceptions, close: () => ws.close() };
+}
+
+/** Open another tab in the same browser (same profile: tabs share storage and BroadcastChannel). */
+export async function openTab(port, options = {}) {
+  const res = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' });
+  const target = await res.json();
+  return openPage(port, { ...options, targetId: target.id });
 }
 
 const VK = { Enter: 13, Escape: 27, ' ': 32, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Tab: 9, Backspace: 8 };

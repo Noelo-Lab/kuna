@@ -3,6 +3,8 @@
 // linked views (C code, side by side, assembly, bytes, stack) with an Explain
 // panel. Every engine string is escaped by the pure renderers this module
 // mounts; this file owns the DOM, the operation model and the keyboard.
+// Working together (collab/) is loaded only when a live session starts or
+// an invite or reply link is opened.
 import {
   KunaWorkerCancelledError,
   KunaWorkerClient,
@@ -44,6 +46,7 @@ const els = {
   status: $('status'), cancel: $('cancelbtn'), dl: $('dlbtn'), patch: $('patchbtn'), patchWhy: $('patchwhy'),
   mode: $('mode'), lang: $('lang'), example: $('examplebtn'), pick: $('pick'), file: $('file'),
   help: $('helpbtn'), keys: $('keysbtn'), more: $('morebtn'), moreMenu: $('moremenu'), theme: $('themebtn'), hintsBox: $('hintsbox'),
+  collab: $('collabbtn'), modeNote: $('modenote'),
   crumb: $('crumb'), crumbName: $('crumbname'), crumbCount: $('crumbcount'), fnsBtn: $('fnsbtn'),
   progress: $('progress'), work: $('work'), codearea: $('codearea'), tip: $('tip'), tipBtn: $('tipbtn'),
   narrow: $('narrownote'), list: $('fnlist'), filter: $('fnfilter'), none: $('fnnone'),
@@ -78,6 +81,7 @@ const state = {
   hist: { index: 0, max: 0 },
   view: 'c',
   rendered: new Set(),
+  sessionVersion: 0,
 };
 const CACHE_MAX = 32;
 
@@ -226,6 +230,7 @@ async function fetchFunction(fn) {
 
 let session = new Session();
 const store = new SessionStore(storage);
+let collab = null;
 
 /** A function's name as the student sees it (their rename, else the engine's). */
 function displayName(fn) {
@@ -417,7 +422,7 @@ function markSelectedRow(addrHex) {
  * Load `source` (a File, or `{name, bytes}`) and list its functions. `keep`
  * reopens the function that was showing (a mode/language change).
  */
-async function indexBinary(source, { example = false, keep = null } = {}) {
+async function indexBinary(source, { example = false, keep = null, shared = null } = {}) {
   if (!source || !state.kuna) return;
   const op = beginOperation('load', { clearSession: true });
   const name = source.name || 'binary';
@@ -434,7 +439,10 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
     bytes = source.bytes || new Uint8Array(await source.arrayBuffer());
     const hash = await hashBytes(bytes);
     if (!isCurrent(op)) return;
-    if (hash !== state.binary?.hash) {
+    if (shared) {
+      session = shared;
+      state.restored = null;
+    } else if (hash !== state.binary?.hash) {
       session = restoreSession(hash);
       state.restored = session.size ? { count: session.size, mark: session.mark(), toasted: false } : null;
     } else {
@@ -527,6 +535,7 @@ function listAssertions() {
 /** Read a picked or dropped file, then open it. Reading comes first: see the input handler. */
 async function openFile(f) {
   if (!f || !state.kuna) return;
+  if (collab && !(await collab.confirmLeave(f.name))) return;
   try {
     const bytes = new Uint8Array(await f.arrayBuffer());
     indexBinary({ name: f.name, bytes });
@@ -583,10 +592,14 @@ window.addEventListener('drop', (e) => {
 const reindex = () => {
   if (state.binary) indexBinary(state.binary, { example: state.binary.example, keep: state.current?.fn.address_hex });
 };
-els.mode.addEventListener('change', reindex);
+els.mode.addEventListener('change', () => {
+  collab?.modeChanged(els.mode.value);
+  reindex();
+});
 els.lang.addEventListener('change', reindex);
 
 async function openExample() {
+  if (collab && !(await collab.confirmLeave('the example'))) return;
   els.example.disabled = true;
   try {
     const [elf, src] = await Promise.all([
@@ -698,12 +711,14 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
     for (const pane of [els.asmcode, els.hexdump, els.stackframe]) pane.innerHTML = '';
   }
   const t0 = performance.now();
+  const version = state.sessionVersion;
   try {
     const doc = await fetchFunction(fn);
     if (!isCurrent(op)) return;
     const data = normalizeInspect(doc);
     session.recordOutcomes(data.assertions);
-    cacheSet(fn.address_hex, data);
+    if (version === state.sessionVersion) cacheSet(fn.address_hex, data);
+    else scheduleRemoteInspect();
     showFunction(fn, data, { focusAddr });
     const dt = Math.round(performance.now() - t0);
     setStatus(data.error ? `Could not decompile ${label}` : `Showing ${label}`, data.error ? 'err' : 'ok',
@@ -762,6 +777,7 @@ function showFunction(fn, data, { focusAddr = null, keep = false } = {}) {
   renderRail();
   if (state.refsOpen) loadRefs();
   if (focusAddr) selectTarget({ addr: focusAddr }, null);
+  collab?.whereChanged();
 }
 
 const DEFAULT_HINT = 'Tip: hover a line to see its assembly';
@@ -795,6 +811,7 @@ function renderVisible() {
     state.rendered.add(tab);
     RENDER[tab]?.();
   }
+  collab?.redraw();
 }
 
 function needsInspect(what) {
@@ -1274,9 +1291,9 @@ const hover = createHover({
 });
 
 /** Select a target in every pane; `from` is the pane that asked (not scrolled). */
-function selectTarget(target, from, tokEl = null) {
+function selectTarget(target, from, tokEl = null, { reveal = true } = {}) {
   state.sel = target;
-  const sets = sync.select(target, { from });
+  const sets = sync.select(target, { from, reveal });
   setCursor(tokEl);
   rail.markVars(sets ? sets.syms : new Set());
   const active = target?.addr ? 'a-' + target.addr : Number.isInteger(target?.line) ? 'c-L' + target.line : null;
@@ -1469,6 +1486,7 @@ function setView(view) {
   if (state.asmRendered && state.asmRendered !== (inSplit() ? 'split' : 'asm')) state.rendered.delete('asm');
   applyPaneClasses();
   renderVisible();
+  collab?.whereChanged();
 }
 const setTab = setView;
 
@@ -1765,6 +1783,11 @@ document.addEventListener('keydown', (e) => {
       e.preventDefault();
       openRefs();
       break;
+    case 'p':
+      if (!collab?.active) return;
+      e.preventDefault();
+      collab.ping();
+      break;
     default:
       return;
   }
@@ -2036,6 +2059,7 @@ async function goToDialog() {
  * caches need no flush: their keys carry the directives a body depends on.
  */
 function sessionChanged() {
+  collab?.localChanged();
   persist();
   bytesState.version++;
   syncPatchButton();
@@ -2089,7 +2113,7 @@ async function applyEdit(mutate, { label = 'edit', reselect = null, done = '' } 
   return reinspect({ snap, fresh, label, reselect, done });
 }
 
-async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = null, done = '' } = {}) {
+async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = null, done = '', remote = false } = {}) {
   const fn = state.current.fn;
   const oldCode = state.current.data.code;
   const scroll = captureScroll();
@@ -2103,6 +2127,7 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
   };
   setStatus('Updating the code…');
   const t0 = performance.now();
+  const version = state.sessionVersion;
   try {
     const doc = await fetchFunction(fn);
     if (!isCurrent(op)) return false;
@@ -2111,10 +2136,11 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
     session.recordOutcomes(data.assertions);
     if (snap) session.pushUndo(snap);
     persist();
-    cacheSet(fn.address_hex, data);
+    if (version === state.sessionVersion) cacheSet(fn.address_hex, data);
+    else scheduleRemoteInspect();
     showFunction(fn, data, { keep: true });
     restoreScroll(scroll);
-    if (keepSel) selectTarget(keepSel, null);
+    if (keepSel) selectTarget(keepSel, null, null, { reveal: !remote });
     flash(changedLines(oldCode, data.code));
     if (!state.caps.assert) {
       setStatus('Change kept but not applied', 'err', 'This version of the decompiler cannot apply changes');
@@ -2130,7 +2156,7 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
     for (const row of broke) {
       toast('An earlier change no longer applies.', {
         kind: 'warn',
-        detail: `${row.directive}: ${row.detail || 'the code changed under it'}. Edit or remove it under Your changes.`,
+        detail: `${row.directive}: ${row.detail || 'the code changed under it'}. Edit or remove it under ${collab?.shared ? 'Changes' : 'Your changes'}.`,
       });
     }
     if (data.assertions.some((r) => r.fatal)) {
@@ -2147,24 +2173,56 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
       session.restore(snap);
       sessionChanged();
     }
-    toast('The change could not be applied, so it was undone.', { kind: 'err', detail: errorLine(e) });
-    setStatus('The change could not be applied', 'err', e.message);
+    if (remote) toast('Could not update the code with the others\' changes.', { kind: 'err', detail: errorLine(e) });
+    else toast('The change could not be applied, so it was undone.', { kind: 'err', detail: errorLine(e) });
+    setStatus(remote ? 'Could not update the code' : 'The change could not be applied', 'err', e.message);
     return false;
   } finally {
     finishOperation(op);
   }
 }
 
+/** Undo (in a live session: this page's own last change, where nobody has changed it since). */
 function undo() {
-  if (active?.kind === 'edit' || !session.undo()) return;
+  if (active?.kind === 'edit' || !(collab?.shared ? collab.undo() : session.undo())) return;
   sessionChanged();
   if (state.current && state.caps.assert) reinspect({ label: 'undo' });
 }
 
 function redo() {
-  if (active?.kind === 'edit' || !session.redo()) return;
+  if (active?.kind === 'edit' || !(collab?.shared ? collab.redo() : session.redo())) return;
   sessionChanged();
   if (state.current && state.caps.assert) reinspect({ label: 'redo' });
+}
+
+/**
+ * Another person's changes reached the session: refresh what shows it, and
+ * re-decompile the open function once no request is running, only if they
+ * touch it (a new decompiler effort re-lists the program). No undo step.
+ */
+function remoteChanged({ inspect = false, mode = null, label = '' } = {}) {
+  state.sessionVersion++;
+  sessionChanged();
+  if (mode) {
+    els.mode.value = mode;
+    reindex();
+    if (label) toast(label + '.', { detail: 'The decompiler effort is shared by everyone in the session.' });
+    return;
+  }
+  if (inspect) scheduleRemoteInspect(label);
+  else if (label) setStatus(label, 'ok');
+}
+
+/** One re-inspect for a burst of remote changes, 300 ms after the last. */
+function scheduleRemoteInspect(label = '') {
+  if (label) state.remoteLabel = label;
+  clearTimeout(state.remoteTimer);
+  state.remoteTimer = setTimeout(() => whenIdle(() => {
+    if (!state.current || !state.caps.assert) return;
+    const done = state.remoteLabel || 'Updated the code';
+    state.remoteLabel = '';
+    reinspect({ label: 'another person\'s change', done, remote: true });
+  }), 300);
 }
 
 /**
@@ -2232,11 +2290,13 @@ function changeLabel(entry) {
 }
 
 function renderRail() {
-  const edits = session.entries(nameOfAddr).map((e) => ({ ...e, label: changeLabel(e) }));
+  const shared = !!collab?.shared;
+  const edits = session.entries(nameOfAddr).map((e) => ({ ...e, label: changeLabel(e), author: shared ? collab.authorOf(e.key) : null }));
   const base = {
     edits,
-    canUndo: session.canUndo,
-    canRedo: session.canRedo,
+    shared,
+    canUndo: shared ? collab.canUndo : session.canUndo,
+    canRedo: shared ? collab.canRedo : session.canRedo,
     restored: state.restored?.count || 0,
     assertSupported: state.caps.assert,
     selectedHtml: selectedCard(),
@@ -2824,3 +2884,116 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// ── working together (collab/, loaded on demand) ───────────────────────────
+
+/** The file the example button loads, to tell a received copy of it by its hash. */
+async function isExampleBytes(bytes) {
+  try {
+    const r = await fetch('./examples/sample.elf');
+    if (!r.ok) return false;
+    return (await hashBytes(new Uint8Array(await r.arrayBuffer()))) === (await hashBytes(bytes));
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Open a program another person sent, with the session's changes (not the ones stored here). */
+async function openShared({ name, bytes, example, session: shared, mode, open = null }) {
+  if (mode && [...els.mode.options].some((o) => o.value === mode)) els.mode.value = mode;
+  if (example) state.exampleSource = await fetch('./examples/sample.c').then((r) => (r.ok ? r.text() : null)).catch(() => null);
+  await indexBinary({ name, bytes }, { example, shared, keep: open });
+  return state.binary?.bytes === bytes && !!state.inventory;
+}
+
+/** Open a function in the view that shows an anchor (`c:6`, `a:0x11b5`, …). */
+async function goToAnchor(fnAddr, anchor) {
+  const fn = state.byAddr.get(fnAddr);
+  if (!fn) return;
+  const want = { c: 'c', h: 'asm', a: 'asm', b: 'bytes', s: 'stack' }[anchor[0]];
+  if (!(state.view === 'split' && (want === 'c' || want === 'asm') && isShown(want))) setView(want);
+  if (state.current?.fn !== fn) await openFunction(fn);
+}
+
+/** The selection as an anchor, for a ping. */
+function selectionAnchor() {
+  const sel = state.sel;
+  if (!sel || !state.current) return null;
+  if (sel.addr) return `a:${sel.addr}`;
+  if (Number.isInteger(sel.line)) return `c:${sel.line}`;
+  if (Number.isInteger(sel.slot)) return `s:${sel.slot}`;
+  const lines = sel.sym ? [...(state.current.index.symToLines.get(sel.sym) || [])] : [];
+  return lines.length ? `c:${Math.min(...lines)}` : null;
+}
+
+function syncCollabMenu() {
+  els.modeNote.hidden = !collab?.active;
+}
+
+const collabApi = {
+  els,
+  storage,
+  toast,
+  wasmUrl: new URL('../kuna_wasm.wasm', document.baseURI).href,
+  session: () => session,
+  binary: () => state.binary,
+  mode: () => els.mode.value,
+  current: () => ({ fn: state.current?.data.address_hex ?? null, view: state.view }),
+  nameOf: nameOfAddr,
+  clearUndo: () => {
+    session.undoStack = [];
+    session.redoStack = [];
+  },
+  refresh: () => {
+    renderRail();
+    syncCollabMenu();
+  },
+  remoteChanged,
+  confirm: (text, confirmLabel) => dialogs.confirmBox(text, { confirmLabel }),
+  status: (text) => setStatus(text, 'ok'),
+  openShared,
+  openFunction: (addr, { view = null } = {}) => {
+    const fn = state.byAddr.get(addr);
+    if (view) setView(view);
+    return fn ? openFunction(fn) : null;
+  },
+  setView,
+  goTo: goToAnchor,
+  selectionAnchor,
+  isExample: isExampleBytes,
+  storedSession: async (bytes) => {
+    try {
+      const text = store.load(await hashBytes(bytes));
+      return text ? Session.fromJSON(JSON.parse(text)) : null;
+    } catch (_) {
+      return null;
+    }
+  },
+  exportSession: (s, name) => download(new Blob([s.toFileText({ binary: name, nameOf: nameOfAddr })], { type: 'text/plain' }), `${name}.kuna`),
+};
+
+let collabLoading = null;
+
+function loadCollab() {
+  collabLoading ||= import('./collab/collab.js')
+    .then((m) => m.createCollab(collabApi))
+    .then((c) => (collab = c))
+    .catch((e) => {
+      collabLoading = null;
+      toast('Working together could not start.', { kind: 'err', detail: e.message });
+      console.error(e);
+      return null;
+    });
+  return collabLoading;
+}
+
+els.collab.addEventListener('click', async () => (await loadCollab())?.open());
+
+/** An invite (`#join=`) or reply (`#reply=`) link: hand it to collab and take the code out of the address. */
+async function collabFromHash() {
+  const hash = location.hash;
+  if (!/^#(join|reply)=/.test(hash)) return;
+  history.replaceState(history.state, '', location.pathname + location.search);
+  (await loadCollab())?.handleHash(hash);
+}
+window.addEventListener('hashchange', collabFromHash);
+collabFromHash();
