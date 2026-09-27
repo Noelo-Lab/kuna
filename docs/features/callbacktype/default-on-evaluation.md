@@ -4,7 +4,10 @@ Both arms of the SAME build -- be75f8cc8, this PR rebased onto 0096e984d (every 
 castimplied, castarith, castsign, globalref, castindex, castternary, callpush; structheadless
 opt-in). `--option callbacktype off` is the old default; `on` is the shipped one. The `off` arm is
 main: 1,615 perfect on the typesweep, and its castbench output is byte-identical to main's own arm
-at 0096e984d on all 45 binaries.
+at 0096e984d on all 45 binaries. After the measurements main gained five commits (29cfedee0: #741,
+#737 peordinal, #732, #730, #738 hugefn); rebased onto it (31d6f2849), the typesweep's `rows.json`,
+both castbench arms and the whole-corpus hunk rows are identical to the numbers below, and every
+gate was run again on that tree.
 
 **What this build changes.** A park changes only the parked function. The park round runs after
 every other decompile of the whole-binary run -- the callee-first pass, `calleevote`'s rounds and
@@ -33,22 +36,23 @@ option only ever speaks from a recorded call site on a whole-binary run.
 ## (b) `make test-stages`
 
 ```
-datatests: 1400/1400 assertions passed
+datatests: 1413/1413 assertions passed
 PARITY OK
 ```
 
 0 assertions move. `docs/baseline-stages.json` is re-recorded only for the three assertions this
-PR's own stage test adds (1,397 on main at 0096e984d + 3). That test is a negative control: the
+PR's own stage test adds (1,410 on main at 29cfedee0 + 3; 1,397 + 3 at 0096e984d). That test is a negative control: the
 one-function path has no recorded call site, so pass 1 (`option callbacktype off`) and pass 2
 (`on`) print the same thing. The off/on coverage is in the `tests/cli` probes.
 
 ## (c) `make test-cli`
 
 ```
-tests/cli: 259/259 passed
+tests/cli: 262/262 passed
 ```
 
-259 = main's 244 + fifteen callbacktype probes over five fixtures. Three `calleevote` probes use a
+262 = main's 247 at 29cfedee0 + fifteen callbacktype probes over five fixtures (259 = 244 + 15 at
+0096e984d). Three `calleevote` probes use a
 `qsort` comparator, `by_used`, as calleevote's control; under the new default the slot declares it
 (`int by_used(void *a0,void *a1)` where its own body gives `bool`), which is this option's effect on
 the comparator itself, so the three probes pass `--option callbacktype off` and keep main's

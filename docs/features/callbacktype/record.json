@@ -189,15 +189,15 @@
  },
  "gates": {
   "make test": "datatests: 675/675 assertions passed / PARITY OK",
-  "make test-stages": "datatests: 1400/1400 assertions passed / PARITY OK",
-  "make test-cli": "tests/cli: 259/259 passed",
-  "make rust-test": "LANE: start 2026-09-27T04:09:53Z / LANE: done rc=0 2026-09-27T04:37:48Z / RUST_TEST_RC=0 on 419b1b6a2 (the last .rs/.toml/cli.md commit): 426 suites, 7643 passed, 0 failed",
+  "make test-stages": "datatests: 1413/1413 assertions passed / PARITY OK",
+  "make test-cli": "tests/cli: 262/262 passed",
+  "make rust-test": "LANE: start 2026-09-27T06:59:26Z / LANE: done rc=0 2026-09-27T07:27:12Z / RUST_TEST_RC=0 on 31d6f2849 (rebased onto 29cfedee0): 429 suites, 7665 passed, 0 failed",
   "make check-spec": "check-spec OK (lenient mode); check-spec OK (strict mode)",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "regenerated (kuna catalog --markdown)",
-  "phases.toml": "parses with python3.11 tomllib (CI's parser): 239 settables",
-  "base": "0096e984d"
+  "phases.toml": "parses with python3.11 tomllib (CI's parser): 241 settables",
+  "base": "29cfedee0"
  },
  "files": [
   "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_forward_x86_64",
@@ -673,5 +673,11 @@
  "rebase_0096e984d": {
   "what": "squash-rebased onto 0096e984d (six commits of other sessions: /decompile2 web, PE analysis, CLI; none touches the ELF type/cast paths)",
   "counts": "counters --rederive/--fix on a fresh build: 239 settables, tiers 76/98/65, 238 catalog JSON records, 345 stage-corpus files; phase_catalog.json recaptured for the new summary; stages baseline 1397 + 3 = 1400"
+ },
+ "rebase_29cfedee0": {
+  "what": "squash-rebased onto 29cfedee0 (#741 ppc64 isel hint, #737 peordinal, #732 ELF definition over import stub, #730 Cortus APS3, #738 hugefn)",
+  "counts": "counters --fix on a fresh build: 241 settables, tiers 76/99/66, 240 catalog JSON records, 348 stage-corpus files; phase_catalog.json and docs/options.md unchanged; stages 1410 + 3 = 1413",
+  "remeasured": "typesweep rows.json identical to the 0096e984d run; castbench off arm byte-identical to main-0096e984d and on arm to the 0096e984d on arm (45/45 each); hunks rows identical (131 changed incl. fixtures and the round-9 builds, all parked, 0 non-parked)",
+  "gates": "make test 675/675 PARITY OK; make test-stages 1413/1413 PARITY OK; make test-cli 262/262; check-spec lenient+strict OK; catalog OK; counters no drift; tomllib 241; make rust-test RUST_TEST_RC=0 (429 suites, 7665 passed, 0 failed)"
  }
 }
