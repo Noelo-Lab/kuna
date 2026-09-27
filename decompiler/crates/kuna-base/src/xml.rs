@@ -1911,7 +1911,9 @@ mod tests {
         // suggests an explicit ISA target
         // and cortus-aps3-constructors / inv with an immediate negates, extb.cc
         // sign-extends, and an indirect call keeps its target
-        assert_eq!(count, 346, "corpus file count drifted");
+        // and kuna-jumptablemax / a four-case switch is refused under
+        // `option jumptablemax 2`
+        assert_eq!(count, 347, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

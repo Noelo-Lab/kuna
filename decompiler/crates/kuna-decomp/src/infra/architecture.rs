@@ -3460,6 +3460,16 @@ impl Architecture {
                 self.max_term_duplication = val;
                 Ok(msg)
             }
+            "jumptablemax" => {
+                let field = p1.trim();
+                let val = field
+                    .parse::<uint4>()
+                    .ok()
+                    .filter(|&v| v > 0 && field.bytes().all(|b| b.is_ascii_digit()))
+                    .ok_or_else(|| KunaError::parse("Must specify integer maximum"))?;
+                self.max_jumptable_size = val;
+                Ok(format!("Maximum jumptable size set to {val}"))
+            }
             "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
             "msvcstackguard" => {
                 on_off!(strip_msvc_stack_guard, "MSVC /GS frame-cookie stripping")

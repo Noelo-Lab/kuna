@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    jumptablemax: the most entries one jump table may have (upstream's
+    OptionJumpTableMax, Architecture::max_jumptable_size, shipped at 1024).
+    Jump-table recovery refuses a switch whose range check admits more cases
+    than the cap, and the dispatch then prints as a computed call.
+
+    Source (hand-written gcc -O2 shape, assembled with GNU as, linked at
+    0x100000): a four-case switch behind `cmp $3,%edi; ja default`, lowered
+    through a table of 32-bit displacements (lea jt(%rip); movslq; add; jmp).
+
+    Pass 1 (default 1024, asserts #1/#2): the four cases are recovered.
+    Pass 2 (`option jumptablemax 2`, asserts #3/#4): four cases exceed the cap,
+        recovery declines, and the dispatch prints as `// jump-as-call`.
+
+    Stage model: P2 / switch-model, tier transform, change_kind opt-in-tool.
+    The default is upstream's constant, so it is byte-identical (675/675
+    datatests, stages PARITY OK).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+83ff03772a89ff488d1532000000486304ba4801d0ffe0b80a000000c3b814000000c3b81e000000c3b828000000c331c0c366662e0f1f8400000000000f1f00d7ffffffddffffffe3ffffffe9ffffff
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="pick"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 pick(uint4 sel);</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option jumptablemax 2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="JUMPTABLEMAX #1: at the default cap the four-case switch is recovered" min="1" max="1">switch\(sel\)</stringmatch>
+<stringmatch name="JUMPTABLEMAX #2: every case of the table is a case label" min="1" max="1">case 3:</stringmatch>
+<stringmatch name="JUMPTABLEMAX #3: `option jumptablemax 2` refuses the four-case table and the dispatch prints as a call" min="1" max="1">// jump-as-call</stringmatch>
+<stringmatch name="JUMPTABLEMAX #4: the lower cap prints no case label, so the one `case 0:` is the default pass" min="1" max="1">case 0:</stringmatch>
+</decompilertest>

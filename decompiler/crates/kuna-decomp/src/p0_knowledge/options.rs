@@ -407,6 +407,8 @@ pub const KUNA_OPTION_NAMES: &[&str] = &[
     "hideshadow",
     "impliedrefs",
     "termdup",
+    // (kuna) upstream's `OptionJumpTableMax`, catalogued and parsed strictly.
+    "jumptablemax",
     "stackguard",
     "msvcstackguard",
     "securitycheck",

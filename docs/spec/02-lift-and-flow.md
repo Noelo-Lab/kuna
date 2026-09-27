@@ -1004,7 +1004,11 @@ the case targets.
    "switch" is a jump through a read-only pointer; its value is read from the
    load image and the table has one entry.
 4. **Accept or rescue.** If the chosen range exceeds `max_jumptable_size`
-   (1024, `architecture.rs (reset_defaults_internal)`), the four kuna bound
+   (1024, `architecture.rs (reset_defaults_internal)`; settable per run as the
+   catalogued `option jumptablemax <n>`: upstream's `OptionJumpTableMax`, parsed
+   strictly by `Architecture::set_kuna_option`, so anything but a positive
+   decimal count is refused; the analysis tier's switch-table read takes the
+   same field, see chapter 01), the four kuna bound
    extensions below get one chance each, in order; if none installs a bound the
    model is declined, model 2 is tried, and then recovery fails with
    `"Could not recover jumptable ... Too many branches"`
