@@ -1917,7 +1917,7 @@ mod tests {
         // it is passed to
         // and kuna-callrettype / a call returns the type its callee states
         // (the single-function negative control)
-        assert_eq!(count, 348, "corpus file count drifted");
+        assert_eq!(count, 349, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

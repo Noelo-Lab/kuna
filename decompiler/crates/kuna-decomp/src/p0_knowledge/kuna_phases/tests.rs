@@ -79,7 +79,7 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_241() {
+fn settable_count_is_242() {
     // One row per kuna ArchOption; the authoritative per-option list (with
     // tier, symptoms, and provenance) is phases.toml settableTable.
     // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
@@ -171,12 +171,12 @@ fn settable_count_is_241() {
     // +1 for `jumptablemax` (P2 switch-model jump-table size cap).
     // +1 for `callbacktype` (P4 a callback takes its slot's prototype).
     // +1 for `callrettype` (P4 a call returns its callee's stated type).
-    assert_eq!(kuna_num_settables(), 241);
-    assert_eq!(SETTABLE_TABLE.len(), 241);
+    assert_eq!(kuna_num_settables(), 242);
+    assert_eq!(SETTABLE_TABLE.len(), 242);
 }
 
 #[test]
-fn tier_counts_are_76_core_99_transform_66_analysis() {
+fn tier_counts_are_76_core_100_transform_66_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -331,9 +331,9 @@ fn tier_counts_are_76_core_99_transform_66_analysis() {
     // analysis 65 -> 66: +1 for `peordinal` (P1 PE import-by-ordinal naming).
     // transform 97 -> 98: +1 for `jumptablemax` (P2 switch-model jump-table size cap).
     // transform 98 -> 99: +1 for `callbacktype` (P4 a callback takes its slot's prototype).
-    // transform 98 -> 99: +1 for `callrettype` (P4 a call returns its callee's
+    // transform 99 -> 100: +1 for `callrettype` (P4 a call returns its callee's
     // stated type).
-    assert_eq!((core, transform, analysis), (76, 99, 66));
+    assert_eq!((core, transform, analysis), (76, 100, 66));
 }
 
 #[test]
@@ -1173,8 +1173,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 235 -> 236: +1 for `callpush`; its P4 row sits mid-table.
     // 237 -> 238: +1 for `peordinal`.
     // 238 -> 239: +1 for `jumptablemax`.
-    // 239 -> 240: +1 for `callrettype`; its P4 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 240);
+    // 240 -> 241: +1 for `callrettype`; its P4 row sits mid-table.
+    assert_eq!(json.matches("},\n").count(), 241);
 }
 
 #[test]
