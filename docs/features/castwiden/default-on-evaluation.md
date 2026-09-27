@@ -15,6 +15,19 @@ after rebasing onto 243177605 (#718).
 | (g) `modes.rs` | coherent: the option is multi-valued and no preset overrides it, so every mode prints the default. |
 | (h) castbench | 35,588 -> 34,061 casts on the 4,815 shared functions (0.941x -> 0.901x IDA), 481 functions fewer, 0 more; per 100 statements 29.9 -> 28.7 (IDA 27.0), at O2 31.5 -> 30.4 (IDA 26.1). The off arm is byte-identical to the main 0096e984d arm in all 45 files. Rebased onto 243177605 (#718, +21 casts in the base): 35,609 -> 34,082 (0.942x -> 0.901x), the same 481 functions fewer and 0 more. |
 
+On the landing base 59d38b581 (#729 `callrettype` and #743 `castobject`, both on), re-measured
+on the rebased build: (a) 675/675 PARITY OK; (b) 1441/1441 PARITY OK, the stages baseline
+re-recorded as main's 1427 keys plus the 14 `castwiden` keys, none missing; (c) `make test-cli` 264/264;
+(d) the 444-slice typesweep identical in both arms, 1,631 perfect (15.17%), mean .3717,
+all 65,715 type decisions identical; (f) `semhunks.py` over the 45 castbench builds and the 8
+outside it: 1,718 changed functions, 4,802 changed lines, 0 flagged; every line that differs
+from the earlier runs (castbench on 243177605, corpus8 on 0096e984d) is a renumbered variable, a pointer type the two new options changed
+(`unsigned long *` to `FILE **` beside the same `v3 * 8L`), or a call whose result main no
+longer widens, plus one new `long - (long)(int)x` to `long - (int)x` argument, verified; (h)
+castbench 34,813 -> 33,289 casts (0.920x -> 0.880x IDA), 482 functions fewer, 0 more, per 100
+statements 29.3 -> 28.0 (IDA 27.0), at O2 30.9 -> 29.9 (IDA 26.1); the off arm is
+byte-identical to main in all 45 files.
+
 Value preservation: the compiled round trip over `castwiden_x86_64.c` (four builds,
 three option values, gcc and clang at -O0 and -O2 with `-fwrapv`) prints the binary's
 values, including a widened value read twice, a 32-bit sum or product beside a long
