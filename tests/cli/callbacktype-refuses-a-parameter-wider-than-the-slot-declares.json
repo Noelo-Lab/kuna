@@ -1,0 +1,48 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callbacktype",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_width_x86_64",
+    "binary_sha256": "d6ff4a586c73366bd46fbb981c17e0265ca6455f1fe6d2c575c1604e4ee77c25",
+    "binary_size": 16496,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_width_x86_64",
+    "selector": "cleanup",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void cleanup\\(struct_\\d+ \\*a0\\)",
+      "void add_total\\(long a0\\)",
+      "\\bcleanup\\(G\\);",
+      "\\badd_total\\(strtol\\("
+    ],
+    "stdout_absent": [
+      "cleanup\\(int a0\\)",
+      "add_total\\(int a0\\)",
+      "\\(int\\)G\\b",
+      "add_total\\(\\(int\\)",
+      "CONCAT44\\(v\\d+,a0\\)"
+    ]
+  },
+  "notes": "`cleanup` takes a `struct ctx *` and `add_total` a `long`; both are cast into signal's `void (*)(int)` slot and also called directly. The slot's four-byte `int` is narrower than the register each body reads, so the declaration rebuilt the pointer as CONCAT44 of the declared half and an unset register, and truncated both direct calls: `cleanup((int)G)`, `add_total((int)strtol(..) * 0x3b9aca07)`.",
+  "probe_id": "p-478beb92614e"
+}

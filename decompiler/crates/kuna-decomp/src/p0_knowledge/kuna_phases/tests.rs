@@ -169,6 +169,7 @@ fn settable_count_is_240() {
     // +1 for `callpush` (P4 a call's own return-address push).
     // +1 for `peordinal` (P1 PE import-by-ordinal naming).
     // +1 for `jumptablemax` (P2 switch-model jump-table size cap).
+    // +1 for `callbacktype` (P4 a callback takes its slot's prototype).
     assert_eq!(kuna_num_settables(), 240);
     assert_eq!(SETTABLE_TABLE.len(), 240);
 }
@@ -328,6 +329,7 @@ fn tier_counts_are_76_core_98_transform_66_analysis() {
     // transform 96 -> 97: +1 for `callpush` (P4 a call's own return-address push).
     // analysis 65 -> 66: +1 for `peordinal` (P1 PE import-by-ordinal naming).
     // transform 97 -> 98: +1 for `jumptablemax` (P2 switch-model jump-table size cap).
+    // transform 98 -> 99: +1 for `callbacktype` (P4 a callback takes its slot's prototype).
     assert_eq!((core, transform, analysis), (76, 98, 66));
 }
 
@@ -848,6 +850,9 @@ fn option_values_live_value_present_for_101() {
                             // same reason.  Its live value is
                             // `Architecture::calleevote`.
                             | "calleevote"
+                            // (kuna) `callbacktype` is an enum field the same
+                            // way; its live value is `Architecture::callbacktype`.
+                            | "callbacktype"
                             | "arraycoverwidth"
                             | "emptystrconst"
                             // (kuna) `structdefs` is a PrintC option like

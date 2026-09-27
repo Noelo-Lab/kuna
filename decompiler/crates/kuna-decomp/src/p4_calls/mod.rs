@@ -40,5 +40,6 @@ pub mod kuna_rustabi; // (kuna) the rustc two-register return: keep the pair, co
 pub mod kuna_langabi; // (kuna) the ABI seam: per-language `extern` rendering
 pub mod kuna_formattail; // (kuna) a resolved format call keeps an open tail through trial scoring
 pub mod kuna_protoorder; // (kuna) a callee's recovered prototype, parked for the callers decompiled after it
+pub mod kuna_callbacktype; // (kuna) a callback takes the prototype of the slot it is passed to
 pub mod kuna_calleevote; // (kuna) a callee parameter takes the type every caller passes
 pub mod kuna_callpush; // (kuna) a call's own return-address push is part of the call
