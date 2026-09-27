@@ -59,11 +59,15 @@
 .d2-collab .cb-people li{display:flex;align-items:baseline;gap:8px;min-width:0;}
 .d2-collab .cb-dot{flex:none;align-self:center;width:10px;height:10px;border-radius:50%;background:var(--who);}
 .d2-collab .cb-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.d2-collab .cb-follow{margin-left:auto;font-size:13px;}
 
 .d2edits li.by{box-shadow:inset 3px 0 0 var(--who);}
 .d2edits .tx .who{display:inline-block;margin-right:6px;padding:0 6px;border-radius:99px;font-size:11.5px;line-height:17px;
   vertical-align:1px;background:color-mix(in srgb,var(--who) 24%,transparent);color:var(--text);}
 
+@media (max-width:1100px){
+  .d2-roster .d2-who:nth-of-type(n+4){display:none;}
+}
 @media (max-width:899px){
-  .d2-together span:not(.d2-sr){display:none;}
+  .d2-roster .d2-who{display:none;}
 }

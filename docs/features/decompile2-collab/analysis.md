@@ -168,7 +168,9 @@ The 30-minute log, guest then inviter: `setup:a=setup:passive | 0s
 ice:checking | 0s conn:connecting | 0s ice:connected | 1800s conn:connected |
 1800s OPEN` and `1s ice:checking | 1801s ice:connected`. The implementation
 answers passive (`sdp.js`), and `test/decompile2-collab-rtc.mjs --late 60` runs
-the same case through the page.
+the same case through the page: with the reply applied 60 s after it was made,
+the guest had the program 520 ms later on Chrome 131 and 522 ms later on Chrome
+154.
 
 The alternatives, for the record:
 

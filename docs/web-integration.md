@@ -758,7 +758,8 @@ again through the others, and one that joins again merges what it changed meanwh
 
 *Presence.* The top bar shows the others as initials in their colours; the tooltip says
 where each one is ("Ben: sum_to, Assembly") and a click follows them until you click or
-press a key. Each other person's pointer is a translucent arrow with a name tag in their
+press a key (on a narrow window the top bar shows only the people button, and the session
+dialog has a *Follow* button for each person). Each other person's pointer is a translucent arrow with a name tag in their
 colour, anchored to what it is over — a C line, an instruction, a line's heading in the
 assembly, a byte, a stack slot, with the character column on code rows — so it lands on
 the same name in a window of any size, in C code or side by side, and hides when that
@@ -868,10 +869,13 @@ formats and architectures**:
    program received and opened by itself, a rename shown on the other page, a rename and a
    retype at the same moment both kept, a new decompiler effort re-decompiling the other
    page, a pointer on the same name at 1440 and 1024 px in C code and side by side and
-   hidden in another function, Alt+click and `p` pings with *Go there*, a third page
+   hidden in another function, following someone from the top bar, Alt+click and `p`
+   pings (one ring each) with *Go there*, a third page
    joining over WebRTC through the reply-link hand-off and introduced to the second by the
-   group, undo leaving what someone changed since, malformed and hostile messages from a
-   same-origin tab dropped, and leaving (`--shots DIR` saves screenshots).
+   group, a reply link opened twice or pasted into another invite refused, the top bar
+   without overflow at 1024 and 820 px, undo leaving what someone changed since,
+   malformed and hostile messages from a same-origin tab dropped, and leaving
+   (`--shots DIR` saves screenshots).
    **`test/decompile2-collab-rtc.mjs`** runs two Chrome processes over real WebRTC with
    the links carried by the script, raw host candidates
    (`--disable-features=WebRtcHideLocalIpsWithMdns`, since runners lack the multicast

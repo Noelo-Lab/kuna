@@ -1080,7 +1080,9 @@ class Collab {
     const members = this.group?.members() || [];
     return '<ul class="cb-people">' + members.map((m) => `<li style="--who:${m.color}"><span class="cb-dot"></span>` +
       `<span class="cb-name">${escapeHtml(m.name)}${m.me ? ' <span class="cb-muted">(you)</span>' : ''}</span>` +
-      `<span class="cb-muted">${escapeHtml(m.me ? '' : this.#whereWords(m).slice(m.name.length + 2))}</span></li>`).join('') + '</ul>';
+      `<span class="cb-muted">${escapeHtml(m.me ? '' : this.#whereWords(m).slice(m.name.length + 2))}</span>` +
+      (!m.me && m.where?.fn ? `<button type="button" class="d2-link cb-follow" data-act="follow" data-peer="${m.peer}">Follow</button>` : '') +
+      '</li>').join('') + '</ul>';
   }
 
   #renderPeople() {
@@ -1175,7 +1177,10 @@ class Collab {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (!act) return;
     if (act === 'close') this.close();
-    else if (act === 'copy') this.#copy(e.target.closest('.cb-copy')?.querySelector('[data-copytext]'));
+    else if (act === 'follow') {
+      this.close();
+      this.#follow(e.target.closest('[data-peer]').dataset.peer);
+    } else if (act === 'copy') this.#copy(e.target.closest('.cb-copy')?.querySelector('[data-copytext]'));
     else if (act === 'leave') {
       this.leave();
       this.close();

@@ -231,6 +231,21 @@ try {
   assert.match(await ana.evaluate(`document.querySelector('#d2roster .d2-who').title`), /^Ben: sum_to, C code/, 'and Ana\'s roster says where he is');
   await ok('Ana\'s pointer lands on the same name at 1440 and 1024 px, in C code and side by side, and hides elsewhere');
 
+  // ── following ──────────────────────────────────────────────────────────────
+  const benTab = () => ben.evaluate(`document.querySelector('#tabs [aria-selected=true]').dataset.tab`);
+  await ben.click('#d2roster .d2-who');
+  await ben.waitFor(`document.getElementById('vname').textContent === 'main'`, { what: 'a click on Ana\'s initials follows her to main', timeout: 60000 });
+  assert.equal(await ben.evaluate(`document.querySelector('#d2roster .d2-who').getAttribute('aria-pressed')`), 'true');
+  await ana.click('#tab-asm');
+  await ben.waitFor(`document.querySelector('#tabs [aria-selected=true]').dataset.tab === 'asm'`, { what: 'and into the assembly', timeout: 10000 });
+  await ben.key('Escape');
+  await ana.click('#tab-c');
+  await sleep(1200);
+  assert.equal(await benTab(), 'asm', 'a key press stops following');
+  await ben.click('#tab-c');
+  await idle(ben);
+  await ok('a click on someone\'s initials follows them until you press a key');
+
   // ── pings ──────────────────────────────────────────────────────────────────
   await front(ana);
   const p7 = await ana.call(() => { const r = document.querySelector('#c-L7 .ct').getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; });
@@ -287,6 +302,13 @@ try {
   await ana.call((r) => { const i = document.querySelector('#d2collab input[name=reply]'); i.value = r; i.form.requestSubmit(); return true; }, reply);
   await ana.waitFor(`/This reply is for an invite that is no longer open/.test(document.querySelector('#d2collab [data-status]')?.textContent || '')`, { what: 'an old reply pasted into a new invite', timeout: 10000 });
   await closeDialog(ana);
+  for (const width of [1024, 820]) {
+    await ana.viewport(width, 860);
+    await sleep(200);
+    const overflow = await ana.evaluate(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
+    assert.ok(overflow <= 0, `no horizontal page overflow at ${width} px with three people (got ${overflow})`);
+  }
+  await ana.viewport(1280, 860);
   assert.match(await code(cy), /unsigned long sum;/, 'the newcomer has the session\'s changes');
   await cy.click('#fnlist .fn[data-addr="0x1161"]');
   await cy.waitFor(`document.getElementById('vname').textContent === 'sum_to'`, { what: 'Cy opens sum_to', timeout: 60000 });

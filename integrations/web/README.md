@@ -233,8 +233,9 @@ restored, checks that `/decompile` still renders and its Language control switch
 to Rust, and checks that no other page links to `/decompile2/`. It fails on any uncaught page exception and skips when there is no Chrome (set
 `CHROME=` to point at one). CI runs it when the runner has `google-chrome`, followed by
 **`decompile2-collab-browser.mjs`** (a live session in tabs of one Chrome: joining,
-shared edits, the shared decompiler effort, pointers at two widths, pings, a third page
-over WebRTC through the reply-link hand-off, undo, junk messages, leaving) and
+shared edits, the shared decompiler effort, pointers at two widths, following, pings, a
+third page over WebRTC through the reply-link hand-off, stale replies, undo, junk
+messages, leaving) and
 **`decompile2-collab-rtc.mjs`** (two Chrome processes over WebRTC; SKIPPED when ICE
 cannot connect on the machine; `--late 60` opens the reply a minute late). Plain
 `--headless --virtual-time-budget=… --dump-dom` does not work for these pages: the dump
