@@ -43,3 +43,4 @@ pub mod kuna_protoorder; // (kuna) a callee's recovered prototype, parked for th
 pub mod kuna_callbacktype; // (kuna) a callback takes the prototype of the slot it is passed to
 pub mod kuna_calleevote; // (kuna) a callee parameter takes the type every caller passes
 pub mod kuna_callpush; // (kuna) a call's own return-address push is part of the call
+pub mod kuna_callrettype; // (kuna) a call returns the type its callee's recovery gave it
