@@ -1274,6 +1274,67 @@ tests, 48 binary/XML comparisons, 17 saved CLI comparisons, spec/catalog checks,
 and a fresh WASM build with all 11 browser scripts. Tracked and new-file hashes
 remain exact through the last gate. No baseline expectation moved.
 
+## Thirty-second checkpoint: callee-first execution and p-code construction
+
+The whole-program execution path moves from `decompile_all.rs` to its private
+`callee_first.rs` owner. Planning remains in `callgraph`, loading and selection
+remain in the command module, and project export keeps the same entry point.
+Five repeated decompile calls share target cloning and the driver's copied
+output options, changing only the planned prototype-parking bit. Caller-vote,
+structure, callback and element-global rounds retain their order and failure
+handling. Stale comments now acknowledge that parking changes recovered types,
+element-global convergence follows callback parking, and budget ties use the
+space/address key.
+
+A new regression pins equal-charge admission across address spaces and input
+orders; it and the three existing budget tests pass before the move. All 240 CLI
+unit tests and 375 compiler/runtime tests pass afterward with zero warnings.
+Source checks account for all 119 function/test bodies and 13 constants, with
+only the five checked substitutions; the installed child matches the candidate.
+The clean native build is warning-free. CLI-only Clippy still reports 17
+collection-policy errors and 20 warnings, not a passing lint gate.
+
+The saved before/after comparisons cover 125 callee-first requests, including
+15 fixtures, text and JSON, default/off/cycles/lock policies, caller-vote and
+callback settings, narrowed selections and decision traces. Twelve project
+exports retain all four artifacts, stdout, stderr and status. These are not
+vacuous option comparisons: the prototype-order fixture's caller signature
+changes when the option is off, caller-vote traces record actual redos, and
+callback traces record parked prototypes. Forty additional whole-binary
+ELF/PE cases and 286 compiler CLI cases remain exact.
+
+P-code construction shares input-location generation, clones the existing queued
+operation before pointer adjustment, extends the varnode pool from a sized
+iterator, and resolves each label through one varnode borrow. The cache uses its
+derived default; indices, masks, wrapping, reuse and failure ordering remain.
+The entire installed runtime module matches the checked candidate. Both
+overflow-mode cache models agree on 589,824 stepwise outcomes across 4,096
+sequences, including partial failures and reuse. All 144 dynamic read/write,
+delay-slot, unimplemented-template, retry and emitter-panic outcomes match
+across both byte orders. The tiny Rust-compiled fixtures match the decoded
+contents of their pinned C++ images; only compression bytes differ.
+
+The full allocation probe preserves 7,321 operations and 19,581 varnodes over
+1,171 instruction locations, with identical results in three independent
+repetitions per fixture. Requests remain 8,090 and cumulative requested bytes
+remain 1,073,016; this workload shows no allocation reduction. Both public
+assembly APIs retain the saved strings at all 1,171 locations, with zero errors.
+CPU-41-pinned full lift and assembly medians change -0.05%/-0.24% over 66 runs
+each. Twenty measured callee-first pairs per fixture change -0.22%/-1.24%/-0.98%
+for budget, callback and cyclic-structure cases (paired -0.27%/-1.39%/-0.98%).
+All stay within the 5% budget. Root artifacts are under
+`/tmp/kuna-deslop-callee-owner.8wTNk6yj`; the existing corrected crate header is
+preserved rather than overwritten by the independent documentation variant.
+
+The frozen final tree passes all four required gates: 675/675 upstream and
+1,467/1,467 stage assertions, 7,438 workspace tests (38 ignored, 438 groups,
+zero warnings), and spec validation. The 268 CLI, 42 Python, 56 Ghidra and 48
+compiler XML checks also pass, as do 17 saved CLI comparisons and all eleven
+browser scripts against freshly built WASM. Both the tracked diff and new
+callee-first module hashes remained unchanged through the final gate. The
+CLI Clippy audit remains open at 17 errors and 20 warnings; it is not a passing
+gate. Final gate logs use `/tmp/kuna-deslop-callee-final-*.log`.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1283,7 +1344,7 @@ These are investigation targets, not a claim that the repository review is done.
 | CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Compiler probes reject broken tools, and required native runs check both status and output. The two fixture-launch false skips now retain spelling checks on non-native hosts. Other platform gates and conditional assertions still need review. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
-| CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay and object-file views have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
+| CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering and callee-first feedback have separate owners. Loading/configuration and the remaining pool module still combine several lifecycle policies; review the next meaningful boundary. |
 | Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 17 errors and 20 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |

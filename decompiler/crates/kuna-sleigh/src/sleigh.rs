@@ -979,7 +979,7 @@ struct PcodeCacher {
 impl PcodeCacher {
     /// C++ `PcodeCacher()`.
     fn new() -> PcodeCacher {
-        PcodeCacher { pool: Vec::new(), issued: Vec::new(), label_refs: Vec::new(), labels: Vec::new() }
+        Self::default()
     }
 
 
@@ -987,9 +987,7 @@ impl PcodeCacher {
     /// of `size` freshly allocated VarnodeData (indices are stable).
     fn allocate_varnodes(&mut self, size: u32) -> usize {
         let start = self.pool.len();
-        for _ in 0..size {
-            self.pool.push(VarnodeData::default());
-        }
+        self.pool.extend(std::iter::repeat_with(VarnodeData::default).take(size as usize));
         start
     }
 
@@ -1031,16 +1029,13 @@ impl PcodeCacher {
     /// C++ `resolveRelatives`.
     fn resolve_relatives(&mut self) -> KunaResult<()> {
         for rec in &self.label_refs {
-            let ptr = rec.dataptr;
-            let id = self.pool[ptr].offset; // uint4 id = ptr->offset
-            // C++ `(id >= labels.size())||(labels[id] == 0xbadbeef)`
+            let varnode = &mut self.pool[rec.dataptr];
+            let id = varnode.offset;
             if id >= self.labels.len() as u64 || self.labels[id as usize] == 0x0badbeef {
                 return Err(KunaError::lowlevel("Reference to non-existant sleigh label"));
             }
-            // res = labels[id] - calling_index  (uintb)
-            let res = self.labels[id as usize].wrapping_sub(rec.calling_index as u64);
-            let res = res & calc_mask(self.pool[ptr].size as i32); // C++ &= calc_mask(ptr->size)
-            self.pool[ptr].offset = res;
+            let offset = self.labels[id as usize].wrapping_sub(rec.calling_index as u64);
+            varnode.offset = offset & calc_mask(varnode.size as i32);
         }
         Ok(())
     }
@@ -1202,10 +1197,7 @@ impl<'a> SleighBuilder<'a> {
             return Ok(());
         }
         let nextop_idx = self.cache.allocate_instruction();
-        self.cache.issued[nextop_idx].opc = self.cache.issued[op_idx].opc;
-        self.cache.issued[nextop_idx].invar = self.cache.issued[op_idx].invar;
-        self.cache.issued[nextop_idx].isize = self.cache.issued[op_idx].isize;
-        self.cache.issued[nextop_idx].outvar = self.cache.issued[op_idx].outvar;
+        self.cache.issued[nextop_idx] = self.cache.issued[op_idx].clone();
         self.cache.issued[op_idx].isize = 2;
         self.cache.issued[op_idx].opc = OpCode::CPUI_INT_ADD;
         let newparams = self.cache.allocate_varnodes(2);
@@ -1307,11 +1299,10 @@ impl PcodeBuilder for SleighBuilder<'_> {
         for i in 0..isize {
             let vn = op.get_in(i);
             let dynamic = vn.is_dynamic(&self.walker())?;
+            let mut tmp = VarnodeData::default();
+            self.generate_location(vn, &mut tmp)?;
+            self.cache.pool[invars + i as usize] = tmp;
             if dynamic {
-                // input is really temporary storage
-                let mut tmp = VarnodeData::default();
-                self.generate_location(vn, &mut tmp)?;
-                self.cache.pool[invars + i as usize] = tmp;
                 let load_op = self.cache.allocate_instruction();
                 self.cache.issued[load_op].opc = OpCode::CPUI_LOAD;
                 self.cache.issued[load_op].outvar = Some(invars + i as usize);
@@ -1328,10 +1319,6 @@ impl PcodeBuilder for SleighBuilder<'_> {
                 if vn.get_offset().get_select() == VField::VOffsetPlus {
                     self.generate_pointer_add(load_op, vn)?;
                 }
-            } else {
-                let mut tmp = VarnodeData::default();
-                self.generate_location(vn, &mut tmp)?;
-                self.cache.pool[invars + i as usize] = tmp;
             }
         }
         if isize > 0 && op.get_in(0).is_relative() {

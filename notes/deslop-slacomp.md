@@ -1131,3 +1131,53 @@ and model/build/check logs.
 All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
 assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
 across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### P-code cache construction
+
+P-code construction extends its varnode pool from an exact-sized iterator,
+uses the cache's derived default and borrows one varnode while resolving each
+relative label. Direct and dynamic inputs share location generation, and
+pointer adjustment copies the original queued operation through its existing
+`Clone` implementation. Indices, reuse, label growth, wrapping and error ordering
+are preserved; production implementation is 13 lines shorter. The crate header
+also replaces the obsolete claim that the compiler remains C++ with its current
+relationship to `kuna-slacomp`.
+
+The actual cache implementation matches 589,824 stepwise outcomes across 4,096
+sequences with overflow checks both enabled and disabled. Comparisons include
+partial state on errors, missing labels, repeated resolution, invalid indices,
+clearing and reuse, emitted varnodes and emitter panics. All 371 focused tests
+pass, including the pinned binary compiler oracles and lift vectors.
+
+Two small specifications exercise dynamic reads and writes through memory
+exports, byte slices with zero and nonzero pointer adjustments, missing root
+and nested templates, delay slots, invalid instructions and emitter panics.
+Their 144 runtime outcomes match before and after, including diagnostic text,
+instruction lengths, partial emissions, retries and subsequent assembly.
+The specifications cover both byte orders and were compiled with the pinned
+C++ compiler; runtime comparisons use the saved Rust baseline. Initial fixture
+attempts with an unquoted register display were rejected by both compilers;
+the final specifications use literal display text.
+
+An allocation probe decodes all 1,171 instruction locations across 16 lift
+fixtures three times with independent engines. Each repetition retains the
+same statuses and output digest over 7,321 p-code operations and 19,581
+varnodes. Allocation requests remain 8,090 and cumulative requested bytes
+remain 1,073,016. Counts cover instruction decoding and a nonallocating emitter,
+excluding initialization, fixture loading, address setup and result formatting;
+they do not measure peak memory. This workload shows no allocation reduction.
+
+All 66 balanced, CPU-40-pinned timing runs pass the 16 independent lift fixtures.
+With 30 measured samples per version, median wall time changes from 421.0922 ms
+to 420.2576 ms (-0.1982%; paired -0.3728%) and CPU time changes -0.3103%
+(paired -0.4350%), within the 5% budget.
+
+Artifacts use `/tmp/kuna-deslop-pcode-cache-`: `model.py`, `model.rs`,
+`model.log`, `cost.rs`, `cost-comparison.json`, `runtime-verified/`, the
+`errors-{little,big}.slaspec` fixtures and before/after transcripts, and
+build/check logs. The error driver is `/tmp/kuna-deslop-runtime-errors.rs`.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.

@@ -1977,7 +1977,7 @@ the driver's own.
 The callee-first loop ends with the same `structsynth` convergence sweep as an
 address-order batch (chapter [00](00-overview.md), synthesized structures across
 a batch): the results that name a structure a later, larger one superseded are
-decompiled once more (`decompiler/crates/kuna-cli/src/decompile_all.rs
+decompiled once more (`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs
 (converge_callee_first)`). The redo walks the same plan, callees first, and each
 function states its recovered types again where the plan let it, so a callee
 moved onto the surviving structure states that one before its redone callers
@@ -2744,7 +2744,7 @@ sub_3a72)`. `callbacktype` (values `on|off`, default `on`;
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_callbacktype.rs`) reads the
 argument in that fourth slot as what it is: a declaration of `sub_3a72`. The
 driver is `callback_park_round` in
-`decompiler/crates/kuna-cli/src/decompile_all.rs`, and like `protoorder` and
+`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs`, and like `protoorder` and
 `calleevote` it lives only on the callee-first whole-binary pass.
 
 **The slot table.** `SLOTS` names 23 library entry points that declare a
@@ -3021,7 +3021,7 @@ named record or a `char *` for the same value. `calleevote` (values
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleevote.rs`) closes that
 direction on the one surface that decompiles every caller: the callee-first
 whole-binary run `protoorder` drives (`decompile-all`, `decompile-project`). The
-driver is `callee_vote_rounds` in `decompiler/crates/kuna-cli/src/decompile_all.rs`.
+driver is `callee_vote_rounds` in `decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs`.
 
 **Recording.** During the callee-first pass the driver sets
 `Ledger::recording`, and after each successful decompile `record` files two
@@ -3168,7 +3168,7 @@ redoing it charges.
 The pass is given one budget for all three rounds,
 `CALLEE_VOTE_BUDGET_PCT` (5) percent of the lines the first pass printed, and
 every redo is charged the lines it reprints (`redo_charge`). Each round admits
-from what it decided shortest first, ties to the lower address
+from what it decided shortest first, ties to the lower (space, address) key
 (`admit_within_budget`), so the cheapest bodies are bought first and the
 admitted set is a function of the program rather than of the order the plan
 visits it. A function printing at most `CALLEE_VOTE_MAX_LINES` (32) lines — the

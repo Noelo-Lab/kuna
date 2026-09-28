@@ -151,6 +151,15 @@ quantifiers share suffix handling. Count parsing scans all ASCII digits before
 checking the value, so overflow retains the same cursor and literal-brace
 fallback behavior. Match-budget accounting and warnings remain unchanged.
 
+The private `decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs`
+owns callee-first execution for whole-binary and project-export commands.
+It applies the call-graph plan, runs caller-vote rounds and structure convergence,
+parks eligible callbacks, then converges element globals. Results retain target
+order. Each planned decompile copies the driver's output options and changes
+only prototype parking; ledger resets, budgets and failed-redo handling remain
+part of the same execution path. Loading and target selection stay in the parent
+command module, while call-graph planning stays in `callgraph.rs`.
+
 Browser smoke tests use `integrations/web/test/cdp-client.mjs` as a checked
 process boundary: spawn, exit and port-deadline failures retain bounded stderr
 diagnostics and clean up the owned profile. Availability skips remain the
@@ -909,6 +918,12 @@ containing-register lookups retain their address-space identity checks,
 same-offset fallback and wrapping bounds. Misses remain empty. Invalid UTF-8
 still uses replacement characters in string results.
 
+P-code construction appends default varnodes as a single batch, retaining stable
+pool indices and reusing allocations between instructions. Both direct and
+dynamic inputs generate their storage location before any auxiliary load; a
+pointer adjustment preserves the original queued operation before replacing it
+with the addition. Relative labels update one varnode at a time, retaining
+wrapping offsets, size masks and partial updates when a later label is missing.
 Queued p-code operations pass borrowed varnode slices to the emitter, retaining
 stored space-index constants. An unimplemented template is reported from the
 failing context's base constructor, with that context's address and the total
@@ -1332,7 +1347,7 @@ asks the ledger which names have been superseded and decompiles again, once,
 exactly the results that spell one. The default callee-first order
 (`protoorder`, chapter [04](04-calls-and-prototypes.md)) runs the same sweep at
 its end, in its own plan order
-(`decompiler/crates/kuna-cli/src/decompile_all.rs (converge_callee_first)`).
+(`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs (converge_callee_first)`).
 
 (kuna) Which `struct_N` a layout becomes is decided by the order the program is
 visited in, so the whole-program surfaces that keep a ledger take the SAME
