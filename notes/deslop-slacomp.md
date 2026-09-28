@@ -482,3 +482,42 @@ The independent attachment snapshot passed all four gates: 675 upstream and
 1,467 stage assertions, 7,709 workspace tests with 38 existing ignores, and the
 spec check. The option catalog passed, and all 47 XML outputs still match
 pinned C++. No baseline or existing oracle expectation changed.
+
+Symbol compaction updated numeric ids but left each scope's name lookup map
+pointing at old ids. With a transient section before user operations `first`
+and `second`, cleanup put them in slots 0 and 1, yet looking up `first` returned
+`second` and looking up `second` returned nothing. Compaction now remaps scope
+bindings along with parent scopes and symbol references. Two public-API tests
+cover name/id lookup agreement, scope iteration, repeated cleanup, and removal
+of macro/subtable operands and empty scopes. The lookup regression fails before
+the fix; the ownership-removal control already passes.
+
+Cleanup now takes ownership of removed symbols and uses their existing names
+and operand lists. This removes name copies for retained symbols and the
+separate lists of child ids, scopes and copied names used for deletion. The
+retention rules and public APIs are unchanged, and the misleading description
+of which global symbols survive was corrected. The production path shrank by
+38 lines. All 368 compiler/SLEIGH release tests pass, including the 47 binary
+oracle cases; the standalone public-API reproduction now resolves both names
+and scope ids correctly.
+
+A full-compilation allocator counter measured these cumulative requests on each
+of three repetitions, with identical output before and after:
+
+| Spec | Requests before → after | Bytes requested before → after |
+| --- | ---: | ---: |
+| Toy builder | 26,118 → 25,854 | 2,842,767 → 2,841,316 |
+| x86-64 | 3,727,747 → 3,705,594 | 316,393,776 → 316,197,430 |
+| Hexagon | 882,323 → 871,393 | 83,270,440 → 83,189,763 |
+
+These are requested-byte totals, not peak or resident memory. Alternating
+uninstrumented runs pinned to CPU 40 measured Toy-builder wall time at
+4.7168 → 4.7837 ms (+1.42%, 110 samples per version), x86-64 at 476.0627 →
+478.9264 ms (+0.60%, 12 samples), and Hexagon at 150.9603 → 151.6380 ms
+(+0.45%, 12 samples). Child CPU changes were +1.04%, +0.61%, and +0.46%.
+Every output was identical. Measurements followed warmups on the shared host.
+
+The independent symbol-compaction snapshot passed all four gates: 675 upstream
+and 1,467 stage assertions, 7,711 workspace tests with 38 existing ignores, and
+the spec check. The option catalog passed, and all 47 XML outputs still match
+pinned C++. No baseline or existing oracle expectation changed.

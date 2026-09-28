@@ -4391,102 +4391,48 @@ impl SymbolTable {
         Ok(())
     }
 
-    /// C++ `SymbolTable::purge` (slghsymbol.cc:281): get rid of unsavable
-    /// symbols and scopes, then `renumber` so the saved
-    /// stream has no id gaps.  In the global scope only
-    /// space/token/epsilon/section/bitrange/macro/subtable survive; in any
-    /// child scope only operands survive.  Removing a macro or an unreferenced
-    /// subtable also removes its operand locals.
+    /// Remove transient global symbols, non-operand locals, and unused subtables.
+    /// Macros and unused subtables also lose their operand locals, then symbol
+    /// and scope ids are compacted (`SymbolTable::purge`, slghsymbol.cc:281).
     pub fn purge(&mut self) {
         for i in 0..self.symbollist.len() {
-            // Decide whether to drop slot i (and collect any operand locals to
-            // also drop), without holding an outstanding borrow.
-            let (drop_self, scopeid, name): (bool, u32, Vec<u8>) = {
-                let sym = match self.symbollist[i].as_ref() {
-                    Some(s) => s,
-                    None => continue,
-                };
-                let scopeid = sym.scopeid;
-                let name = sym.name.clone();
-                let ty = sym.get_type();
-                if scopeid != 0 {
-                    // Not in global scope: keep only operands.
-                    if ty == SymbolType::Operand {
-                        continue;
-                    }
-                    (true, scopeid, name)
-                } else {
-                    match ty {
-                        SymbolType::Space
-                        | SymbolType::Token
-                        | SymbolType::Epsilon
-                        | SymbolType::Section
-                        | SymbolType::Bitrange => (true, scopeid, name),
-                        SymbolType::Macro => {
-                            // Macro symbols themselves are removed, plus their
-                            // operand locals (C++ `purge`: MacroSymbol case
-                            // walks getOperand(j) and deletes each).
-                            let mut to_drop: Vec<(u32, u32, Vec<u8>)> = Vec::new();
-                            if let Some(m) = self.symbollist[i].as_ref().and_then(|s| s.as_macro()) {
-                                for &opid in m.operand_ids() {
-                                    if let Some(op) =
-                                        self.symbollist.get(opid as usize).and_then(|s| s.as_ref())
-                                    {
-                                        to_drop.push((opid, op.scopeid, op.name.clone()));
-                                    }
-                                }
-                            }
-                            for (opid, opscope, opname) in to_drop {
-                                if let Some(sc) =
-                                    self.table.get_mut(opscope as usize).and_then(|s| s.as_mut())
-                                {
-                                    sc.remove_symbol(&opname);
-                                }
-                                self.symbollist[opid as usize] = None;
-                            }
-                            (true, scopeid, name)
-                        }
-                        SymbolType::Subtable => {
-                            // Drop only an *unused* subtable (no built pattern),
-                            // along with its constructors' operand locals.
-                            let keep = self
-                                .symbollist[i]
-                                .as_ref()
-                                .and_then(|s| s.as_subtable())
-                                .map(|st| st.get_pattern().is_some())
-                                .unwrap_or(true);
-                            if keep {
-                                continue;
-                            }
-                            // Collect this subtable's operand locals and drop
-                            // them too.
-                            let mut to_drop: Vec<(u32, u32, Vec<u8>)> = Vec::new();
-                            if let Some(st) = self.symbollist[i].as_ref().and_then(|s| s.as_subtable()) {
-                                for con in &st.construct {
-                                    for &opid in &con.operands {
-                                        if let Some(op) = self.symbollist.get(opid as usize).and_then(|s| s.as_ref()) {
-                                            to_drop.push((opid, op.scopeid, op.name.clone()));
-                                        }
-                                    }
-                                }
-                            }
-                            for (opid, opscope, opname) in to_drop {
-                                if let Some(sc) = self.table.get_mut(opscope as usize).and_then(|s| s.as_mut()) {
-                                    sc.remove_symbol(&opname);
-                                }
-                                self.symbollist[opid as usize] = None;
-                            }
-                            (true, scopeid, name)
-                        }
-                        _ => continue, // keep everything else? No: C++ default => continue (skip removal)
-                    }
+            let Some(symbol) = self.symbollist[i].as_ref() else {
+                continue;
+            };
+            let remove = if symbol.scopeid != 0 {
+                symbol.get_type() != SymbolType::Operand
+            } else {
+                match &symbol.kind {
+                    SymbolKind::Space(_)
+                    | SymbolKind::Token(_)
+                    | SymbolKind::Epsilon(_)
+                    | SymbolKind::Section(_)
+                    | SymbolKind::Bitrange(_)
+                    | SymbolKind::Macro(_) => true,
+                    SymbolKind::Subtable(table) => table.get_pattern().is_none(),
+                    _ => false,
                 }
             };
-            if drop_self {
-                if let Some(sc) = self.table.get_mut(scopeid as usize).and_then(|s| s.as_mut()) {
-                    sc.remove_symbol(&name);
+            if !remove {
+                continue;
+            }
+            let symbol = self.remove_symbol(i as u32).expect("symbol exists");
+            if symbol.scopeid == 0 {
+                match &symbol.kind {
+                    SymbolKind::Macro(macro_symbol) => {
+                        for &id in macro_symbol.operand_ids() {
+                            let _ = self.remove_symbol(id);
+                        }
+                    }
+                    SymbolKind::Subtable(table) => {
+                        for constructor in &table.construct {
+                            for &id in constructor.get_operands() {
+                                let _ = self.remove_symbol(id);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
-                self.symbollist[i] = None;
             }
         }
         // Remove any empty scopes (except the global scope 0).
@@ -4499,12 +4445,20 @@ impl SymbolTable {
         self.renumber();
     }
 
-    /// C++ `SymbolTable::renumber` (slghsymbol.cc): compact `table` and
-    /// `symbollist` so there are no id gaps, fixing up each survivor's
-    /// `id`/`scopeid`.  Cross-references between symbols are by-pointer in
-    /// C++ (immune to renumber); in the kuna port the by-id references that
-    /// matter for the saved stream are the pattern/decision-tree data (already
-    /// built into numeric form) and the scope parent ids (remapped here).
+    fn remove_symbol(&mut self, id: u32) -> Option<SleighSymbol> {
+        let symbol = self.symbollist.get_mut(id as usize)?.take()?;
+        if let Some(scope) = self
+            .table
+            .get_mut(symbol.scopeid as usize)
+            .and_then(|s| s.as_mut())
+        {
+            scope.remove_symbol(&symbol.name);
+        }
+        Some(symbol)
+    }
+
+    /// Compact symbol and scope ids, remapping name bindings, parent scopes
+    /// and symbol references (`SymbolTable::renumber`, slghsymbol.cc).
     fn renumber(&mut self) {
         // First renumber the scopes: new scope id = position in the compacted
         // table.  Build old-id -> new-id map.
@@ -4540,6 +4494,16 @@ impl SymbolTable {
                 }
             }
         }
+        for scope in newtable.iter_mut().flatten() {
+            scope.tree.retain(|_, id| {
+                if let Some(newid) = sym_remap.get(*id as usize).copied().flatten() {
+                    *id = newid;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
         // Now renumber the symbols.
         let mut newsymbol: Vec<Option<SleighSymbol>> = Vec::new();
         for i in 0..self.symbollist.len() {
@@ -4559,8 +4523,6 @@ impl SymbolTable {
         }
         self.table = newtable;
         self.symbollist = newsymbol;
-        // C++ leaves curscope pointing at table[0] implicitly via later use;
-        // after purge the table is only read for encode.
         self.curscope = self.table.first().and_then(|s| s.as_ref()).map(|s| s.get_id());
     }
 
@@ -5469,6 +5431,93 @@ mod tests {
             .add_symbol(SleighSymbol::new_userop(b"dup"))
             .expect_err("duplicate must fail");
         assert!(format!("{err2}").contains("Duplicate symbol name: dup"));
+    }
+
+    #[test]
+    fn symbol_table_purge_preserves_name_lookup() {
+        let mut table = SymbolTable::new();
+        table.add_scope();
+        table
+            .add_symbol(SleighSymbol::new(
+                b"temporary",
+                SymbolKind::Section(SectionSymbol::new(0)),
+            ))
+            .unwrap();
+        table.add_symbol(SleighSymbol::new_userop(b"first")).unwrap();
+        table.add_symbol(SleighSymbol::new_userop(b"second")).unwrap();
+
+        for _ in 0..2 {
+            table.purge();
+            assert!(table.find_global_symbol(b"temporary").is_none());
+            for (id, name) in [(0, b"first".as_slice()), (1, b"second".as_slice())] {
+                let symbol = table.find_global_symbol(name).unwrap();
+                assert_eq!(symbol.get_name(), name);
+                assert_eq!(symbol.get_id(), id);
+                assert_eq!(table.find_symbol(name).unwrap().get_id(), id);
+                assert_eq!(table.find_symbol_by_id(id).unwrap().get_name(), name);
+            }
+            let ids: Vec<_> = table.get_global_scope().unwrap().symbol_ids().collect();
+            assert_eq!(ids, [0, 1]);
+        }
+    }
+
+    #[test]
+    fn symbol_table_purge_removes_owned_operands_and_empty_scopes() {
+        let mut table = SymbolTable::new();
+        table.add_scope();
+        table.add_symbol(SleighSymbol::new_userop(b"keep")).unwrap();
+        table.add_scope();
+        let macro_operand = table
+            .add_symbol(SleighSymbol::new_operand(
+                b"macro_arg",
+                0,
+                ConstructorRef {
+                    table_id: u32::MAX,
+                    ct_id: 0,
+                },
+            ))
+            .unwrap();
+        table.pop_scope();
+        let mut macro_symbol = MacroSymbol::new(0);
+        macro_symbol.add_operand(macro_operand);
+        table
+            .add_symbol(SleighSymbol::new(b"macro", SymbolKind::Macro(macro_symbol)))
+            .unwrap();
+
+        let unused = table
+            .add_symbol(SleighSymbol::new_subtable(b"unused"))
+            .unwrap();
+        table.add_scope();
+        let operand = table
+            .add_symbol(SleighSymbol::new_operand(
+                b"table_arg",
+                0,
+                ConstructorRef {
+                    table_id: unused,
+                    ct_id: 0,
+                },
+            ))
+            .unwrap();
+        let mut constructor = Constructor::new();
+        constructor.set_parent(unused);
+        constructor.add_operand(operand);
+        table
+            .find_symbol_by_id_mut(unused)
+            .unwrap()
+            .as_subtable_mut()
+            .unwrap()
+            .add_constructor(constructor);
+        table.pop_scope();
+
+        table.purge();
+        assert_eq!(table.num_scopes(), 1);
+        assert_eq!(table.num_symbols(), 1);
+        assert_eq!(table.get_current_scope(), Some(0));
+        assert_eq!(table.find_global_symbol(b"keep").unwrap().get_id(), 0);
+        assert!(table.find_global_symbol(b"macro").is_none());
+        assert!(table.find_global_symbol(b"unused").is_none());
+        let ids: Vec<_> = table.get_global_scope().unwrap().symbol_ids().collect();
+        assert_eq!(ids, [0]);
     }
 
     // -- calc_maskword / ContextOp / ContextCommit -------------------------------

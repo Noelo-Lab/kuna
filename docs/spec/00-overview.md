@@ -884,6 +884,13 @@ warning symbol. Variable attachments check register widths after the duplicate
 warning and before replacing symbols. Each directive keeps its existing table
 representation, diagnostic labels and public entry point.
 
+Symbol cleanup takes ownership of removed arena slots and uses their existing
+names and operand lists. Macros and unused subtables lose their operand locals;
+non-operand locals and empty non-global scopes are also discarded. Retained
+symbols stay in place until compaction. The compacted ids update scope name
+bindings as well as parent scopes and symbol references, so name lookup and
+scope iteration remain consistent with numeric lookup after repeated cleanup.
+
 Finalized macro templates are shared immutably between their symbols and the
 compiler's expansion table. Expanding a macro borrows this shared definition
 and creates independent output operations for parameter substitution and label
@@ -1319,7 +1326,7 @@ watchdog or a worker failure cut short in the first pool is exempt from the
 checks, since it asks a different number of questions on every run.
 
 A `decompile-project` header is rendered by the workers
-(`decompiler/crates/kuna-cli/src/jobs.rs (merge_type_definitions)`). The workers that hold the replayed structures
+(`decompiler/crates/kuna-cli/src/jobs/type_blocks.rs (merge_type_definitions)`). The workers that hold the replayed structures
 render their block in full; when no function was decompiled again, every idle
 worker installs them before it retires
 (`decompiler/crates/kuna-cli/src/jobs.rs (install_on_idle_workers)`). Every
@@ -1328,7 +1335,13 @@ its block without the structures it minted or installed, so the types its own
 functions interned (a `TEB` read by a function that synthesizes nothing) still
 reach the header. A block that holds every definition any block holds is the
 serial answer and is emitted as is; otherwise the parent warns and emits the
-union. Across thirty-two binaries (seventeen projects at O0, O2 and
+union. The merger parses each block once and borrows complete definition spans
+from canonical printer text. Membership and subset checks do not determine
+emission order: the first containing block wins, or definitions are appended in
+block/item order. CRLF and missing-final-newline input retain the earlier
+normalization for comparison and appended items; a selected whole block, and
+the first block of a union, remain byte-for-byte as supplied.
+Across thirty-two binaries (seventeen projects at O0, O2 and
 O2-noinline, stripped and with DWARF, an ARM firmware ELF and two PEs) at
 `--jobs 2` and `--jobs 4`, `decompile-all` (text and `--json`),
 `decompile-graph` and every `decompile-project` artifact are byte-identical to

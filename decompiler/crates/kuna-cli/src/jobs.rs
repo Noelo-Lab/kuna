@@ -20,8 +20,10 @@ use kuna_console::engine::{EntryProvenance, ObjectLocation};
 use kuna_console::project::FuncResult;
 use kuna_decomp::kuna_structsynth::shard::{self, FunctionRecord, Replay, SynthRequest};
 
+mod type_blocks;
 mod wire;
 
+pub(crate) use type_blocks::merge_type_definitions;
 use wire::{decode_results, encode_spec};
 pub(crate) use wire::{read_spec, ResultWriter};
 
@@ -1773,80 +1775,6 @@ fn stall_deadline(cfg: &PoolConfig, warm: bool) -> Option<Duration> {
         return Some(budget);
     }
     Some(budget + Duration::from_secs_f64(60.0 + 3.0 * cfg.load_seconds))
-}
-
-/// The user-defined type block for a sharded `decompile-project` `.h`.
-///
-/// `print_c_types` renders the type factory, and a decompile can intern a type
-/// into it, so the block is a function of WHICH functions the process
-/// decompiled.  A serial run has one factory; a sharded one has one per worker,
-/// each rendered when that worker retires, after every chunk it served.
-///
-/// The merge only claims what it can prove.  When one block holds every
-/// definition any block holds, no shard interned a renderable type that
-/// worker's did not, which means the serial run's factory held what that
-/// worker's did, and its block IS the serial answer.  The blocks that speak for
-/// the synthesized structures come first ([`Session::close`]); every other
-/// worker's comes without the structures it minted or installed, so a worker
-/// that numbered its own `struct_N` still adds the other types its functions
-/// interned.  When no block holds them all the parent says so and emits the
-/// ordered union, deduplicated by whole definition, so the `.h` still declares
-/// everything the `.c` uses; the exact serial ordering is what `--jobs 1` is
-/// for.
-pub(crate) fn merge_type_definitions(blocks: &[String], tag: &str) -> String {
-    let Some(first) = blocks.first() else { return String::new() };
-    let items: Vec<HashSet<String>> =
-        blocks.iter().map(|b| type_items(b).into_iter().map(|(_, item)| item).collect()).collect();
-    if let Some(k) = (0..blocks.len()).find(|&k| items.iter().all(|other| other.is_subset(&items[k]))) {
-        return blocks[k].clone();
-    }
-    let known = items.into_iter().next().unwrap_or_default();
-    eprintln!(
-        "[kuna {tag}] warning: worker shards recovered different user-defined types, so the .h \
-         type block is their union rather than the exact --jobs 1 rendering. Re-run with \
-         --jobs 1 if the ordering matters."
-    );
-    let mut seen = known;
-    let mut out = first.clone();
-    for block in &blocks[1..] {
-        for (spaced, item) in type_items(block) {
-            if seen.insert(item.clone()) {
-                if spaced && !out.is_empty() && !out.ends_with("\n\n") {
-                    out.push('\n');
-                }
-                out.push_str(&item);
-            }
-        }
-    }
-    out
-}
-
-/// A type block's items, each with whether a blank line came before it. A
-/// definition is one item from its `{` line to its closing `}` line: its member
-/// lines are not items of their own, or two structures that share a member
-/// would lose it from the second.
-fn type_items(block: &str) -> Vec<(bool, String)> {
-    let mut items = Vec::new();
-    let mut spaced = false;
-    let mut lines = block.lines();
-    while let Some(line) = lines.next() {
-        if line.trim().is_empty() {
-            spaced = true;
-            continue;
-        }
-        let mut item = format!("{line}\n");
-        if line.ends_with('{') {
-            for member in lines.by_ref() {
-                item.push_str(member);
-                item.push('\n');
-                if member.starts_with('}') {
-                    break;
-                }
-            }
-        }
-        items.push((std::mem::take(&mut spaced), item));
-    }
-    items
 }
 
 /// Why a pool gives its workers `structsynth off`, or `None` when the run had
