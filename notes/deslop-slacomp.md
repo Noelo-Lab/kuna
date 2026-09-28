@@ -1743,3 +1743,41 @@ Final rustdoc passes with broken intra-doc links denied. All four required gates
 passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
 (7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
 gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.
+
+### Shared token-pattern construction
+
+The true-pattern constructor delegates to the existing boolean constructor.
+Concatenation reuses the minimum-length calculation and performs one final
+intersection after clamping the alignment shift to zero. Token copying,
+ellipsis checks and their rejection order are unchanged. These three small
+consolidations remove 15 source lines without adding a helper or changing APIs.
+
+Complete source modules agree on 20,736 public-API outcomes per overflow mode,
+including complete result and input states: 7,560 successes, 13,176 errors and
+no panics. A boundary adapter appends private-state constructors to the same
+unchanged modules and compares 32,768 additional cases per mode. It varies token
+sizes across integer boundaries with true/false patterns to bound allocations.
+Checked mode preserves 3,091 overflow panics, 10,069 successes and 19,608 errors;
+unchecked mode preserves 12,360 successes and 20,408 errors. The real release
+library separately matches all 20,736 complete public outcomes after rebuilding.
+All 371 focused tests pass, including the compiler binary and lift oracles.
+
+In 66 balanced CPU-pinned native runs, 30 measured per version, aggregate median
+time changes +0.823% (paired +0.911%). The six ellipsis configurations range
+from -0.371% to +1.745%, within the 5% budget; every run preserves their result
+digests. Each run performs 124,416 concatenations over 1,296 fixture pairs,
+with fixture preparation outside the timer. No speed or allocation improvement
+is claimed. Sources, complete records, model adaptations, hashes and raw samples
+use `/tmp/kuna-deslop-token-concat-`.
+
+The accompanying equation documentation removes another 38 comment lines.
+It describes token identity, mutable expression children, operand-layout state
+and arena-owned nodes without obsolete port milestones or ownership lectures.
+The source proof confirms every noncomment line matches the modeled code;
+the cumulative branch's earlier header and method-documentation fixes remain
+intact. Rustdoc passes with broken intra-doc links denied.
+
+Final rustdoc passes with broken intra-doc links denied. All four required gates
+passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
+(7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
+gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.

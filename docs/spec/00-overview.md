@@ -1062,6 +1062,12 @@ Constructor operand patterns use the defining symbol when present. Otherwise,
 pattern generation borrows the operand's defining expression without copying
 its tree. The operand retains ownership of the expression throughout the build.
 
+Token-pattern concatenation shares the existing minimum-length calculation
+and performs one final intersection with a nonnegative alignment shift.
+Interior-ellipsis cases use zero shift; invalid interior or double ellipses
+retain their existing rejection order. True patterns use the same constructor
+as boolean patterns, with no tokens or ellipses.
+
 Aligned instruction patterns intersect and find their common subpattern from
 borrowed blocks. Blocks are normalized when constructed or decoded, so a zero
 alignment shift needs no copied block or additional normalization.
@@ -2413,6 +2419,11 @@ them. Common-subexpression lookup returns the first eligible equal op in that
 sequence; earliest-use lookup instead compares block-local op order. The common
 subexpression query still checks its op, Varnode and optional cutoff before
 walking descendants, including when the descendant list is empty.
+
+Nonzero-mask propagation appends descendants directly to its local worklist
+after updating the output mask. Stored descendant order and duplicate reads
+are preserved; iterating the successors does not mutate the IR. The initial
+alive-op snapshot remains because the depth-first walk updates op marks.
 
 Every cross-arena mutation routes through `Funcdata` — Rust cannot hold two
 `&mut` arenas through a method on one of them, so the op-in-block primitives the

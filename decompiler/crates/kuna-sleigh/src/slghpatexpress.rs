@@ -57,9 +57,7 @@ pub trait PatternExpressionContext {
     /// `Result`.
     fn get_n2addr(&self) -> KunaResult<Address>;
 
-    /// Stand-in for the body of C++ `OperandValue::getValue`
-    /// (slghpatexpress.cc), which needs the symbol table and an out-of-band
-    /// walker; the sleigh-core implementor transcribes that body exactly.
+    /// Evaluate a constructor operand using this context's symbol and walker state.
     fn operand_value(&self, index: i32, table_id: u32, ct_id: u32) -> KunaResult<i64>;
 }
 
@@ -157,14 +155,9 @@ pub struct TokenField {
     byteend: i32,
     /// Amount to shift to align value (bitstart % 8)
     shift: i32,
-    /// (kuna build side) The owning `Token`'s byte size, retained so the
-    /// SLEIGH-compiler `genPattern`/`genMinPattern` can build a
-    /// `TokenPattern`.  C++ carries `Token *tok` here; the decode path nulls
-    /// it (and never calls genPattern) so the decode factory leaves this -1.
+    /// Token byte size for pattern generation; -1 after runtime decoding.
     tok_size: i32,
-    /// (kuna build side) The owning `Token`'s index (its identity in the
-    /// pattern token list, replacing the C++ `Token *` pointer-identity).
-    /// -1 after decode (no token).
+    /// Token identity for pattern alignment; -1 after runtime decoding.
     tok_index: i32,
 }
 
@@ -606,8 +599,7 @@ impl OperandValue {
         self.table_id
     }
 
-    /// (WS4b purge/renumber) re-point the owning-subtable id after the symbol
-    /// table is renumbered.
+    /// Remap the owning subtable after symbol renumbering.
     pub fn set_table_id(&mut self, id: u32) {
         self.table_id = id;
     }
@@ -829,7 +821,7 @@ impl BinaryExpression {
         &self.right
     }
 
-    /// Mutable left/right (WS4c operand-index remap).
+    /// Borrow the left child for expression rewrites.
     pub fn get_left_mut(&mut self) -> &mut PatternExpression {
         &mut self.left
     }
@@ -879,7 +871,7 @@ impl UnaryExpression {
         &self.unary
     }
 
-    /// Mutable child (WS4c operand-index remap).
+    /// Borrow the child for expression rewrites.
     pub fn get_unary_mut(&mut self) -> &mut PatternExpression {
         &mut self.unary
     }
@@ -1263,32 +1255,11 @@ impl PatternExpression {
     }
 }
 
-// ===========================================================================
-// SLEIGH-compiler build side (ws4a): TokenPattern + PatternEquation arena
-//
-// Port of the compile-only half of slghpatexpress.{hh,cc} — the machinery the
-// SLEIGH compiler drives to turn the parsed grammar into `Pattern`s.  This is
-// ADDITIVE to the decode side above; the decoder never enters this code.
-//
-// Ownership / arena convention (consumed by WS4b's driver):
-//   * `TokenPattern` is a value type (Clone) wrapping a `Pattern` plus its
-//     token alignment list; the C++ `Pattern *pattern` + `simplifyClone`
-//     ownership protocol becomes plain Rust ownership (`simplifyClone` IS the
-//     Clone the assignment operator performed).
-//   * `PatternEquation` is an `enum` stored in an `EquationArena` and
-//     referenced by a `u32` arena id (`EqId`) — exactly the `u32` the WS2
-//     parser actions thread.  The C++ refcounted `PatternEquation *` tree
-//     (layClaim/release) becomes an arena of nodes whose children are `EqId`s.
-//     The driver owns the arena; the parser returns the ids the arena indexes.
-//   * Equation `genPattern` is non-const in C++ (it caches `resultpattern`);
-//     here `gen_pattern` is a pure function returning the `TokenPattern` (no
-//     mutable cache needed — the callers in slghsymbol read it back through
-//     the return value).
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// Compiler token patterns and equation arena
+// ---------------------------------------------------------------------------
 
-/// The three `Token` properties the build-side `TokenField`/`TokenPattern`
-/// machinery reads (C++ `Token *`): byte size, endianness, and a unique index
-/// standing in for pointer identity in the token-alignment list.
+/// Token layout and identity used to build and align instruction patterns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildToken {
     /// C++ `tok->getSize()`.
@@ -1299,9 +1270,7 @@ pub struct BuildToken {
     pub index: i32,
 }
 
-/// C++ `TokenPattern`: the token-aligned pattern builder.  Wraps a
-/// [`Pattern`] together with the list of tokens it spans (for alignment) and
-/// the two ellipsis flags.
+/// A pattern with its token alignment and leading/trailing ellipses.
 #[derive(Debug, Clone)]
 pub struct TokenPattern {
     pattern: Pattern,
@@ -1313,14 +1282,7 @@ pub struct TokenPattern {
 impl TokenPattern {
     /// C++ `TokenPattern(void)`: TRUE pattern unassociated with a token.
     pub fn new_true() -> TokenPattern {
-        TokenPattern {
-            pattern: Pattern::Disjoint(DisjointPattern::Instruction(
-                InstructionPattern::new_always(true),
-            )),
-            toklist: Vec::new(),
-            leftellipsis: false,
-            rightellipsis: false,
-        }
+        Self::new_bool(true)
     }
 
     /// C++ `TokenPattern(bool tf)`: TRUE or FALSE pattern, no token.
@@ -1599,11 +1561,7 @@ impl TokenPattern {
             }
             sa = -1;
         } else {
-            let mut acc = 0;
-            for tok in &self.toklist {
-                acc += tok.size;
-            }
-            sa = acc;
+            sa = self.get_minimum_length();
             for tok in &tokpat.toklist {
                 res.toklist.push(*tok);
             }
@@ -1612,11 +1570,7 @@ impl TokenPattern {
         if res.rightellipsis && res.leftellipsis {
             return Err(KunaError::sleigh("Double ellipsis in pattern"));
         }
-        if sa < 0 {
-            res.pattern = self.pattern.do_and(&tokpat.pattern, 0).simplify_clone();
-        } else {
-            res.pattern = self.pattern.do_and(&tokpat.pattern, sa).simplify_clone();
-        }
+        res.pattern = self.pattern.do_and(&tokpat.pattern, sa.max(0)).simplify_clone();
         Ok(res)
     }
 
@@ -1782,10 +1736,8 @@ fn build_equation_pattern(
 // OperandResolve (slghpatexpress.hh:339)
 // ---------------------------------------------------------------------------
 
-/// C++ `OperandResolve`: the traversal state for `resolveOperandLeft`.  The
-/// C++ struct holds a `vector<OperandSymbol*> &operands`; here the operand
-/// updates flow through the [`OperandResolveSink`] hook so the equation code
-/// stays independent of the symbol table.
+/// Left-to-right operand-layout traversal state. Symbol updates pass through
+/// [`OperandResolveSink`].
 pub struct OperandResolve {
     /// Current base operand (as we traverse left to right).
     pub base: i32,
@@ -1815,9 +1767,7 @@ impl OperandResolve {
     }
 }
 
-/// Hook for the operand mutations `OperandEquation::resolveOperandLeft`
-/// performs on a `OperandSymbol` (C++ reaches through `state.operands[index]`
-/// directly).  Implemented by the slghsymbol build side.
+/// Symbol access needed to resolve operand offsets in a pattern equation.
 pub trait OperandResolveSink {
     /// C++ `OperandSymbol::isOffsetIrrelevant()` for operand `index`.
     fn is_offset_irrelevant(&self, index: i32) -> bool;
@@ -1829,14 +1779,11 @@ pub trait OperandResolveSink {
 // PatternEquation arena (slghpatexpress.hh:351-487, slghpatexpress.cc)
 // ---------------------------------------------------------------------------
 
-/// Arena id of a [`PatternEquation`] node (the `u32` the WS2 parser threads).
+/// Index of a [`PatternEquation`] node in its owning arena.
 pub type EqId = u32;
 
-/// C++ `PatternEquation` hierarchy as an arena enum.  Children are stored as
-/// [`EqId`]s into the owning [`EquationArena`] (replacing the C++ refcounted
-/// `PatternEquation *` pointers); leaf payloads (the value/expression of a
-/// comparison, the operand index, the unconstrained expression) are owned
-/// inline.
+/// An equation node with owned leaf values and child indices into its
+/// [`EquationArena`].
 #[derive(Debug, Clone)]
 pub enum PatternEquation {
     /// C++ `OperandEquation(int4 index)`.
@@ -1867,8 +1814,8 @@ pub enum PatternEquation {
     RightEllipsis { eq: EqId },
 }
 
-/// The driver-owned arena of [`PatternEquation`] nodes (the storage the WS2
-/// `u32` equation ids index).
+/// Driver-owned equation nodes. Pattern generation returns new patterns
+/// without caching them in the arena.
 #[derive(Debug, Clone, Default)]
 pub struct EquationArena {
     nodes: Vec<PatternEquation>,

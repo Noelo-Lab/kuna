@@ -261,9 +261,9 @@ impl Funcdata {
             let cur = self.vbank().get(outvn).map(|v| v.get_nz_mask()).unwrap_or(0);
             if nzmask != cur {
                 self.vbank_mut().get_mut(outvn).expect("calc_nz_mask: stale out").set_nz_mask(nzmask);
-                let descend: Vec<OpId> =
-                    self.vbank().get(outvn).map(|v| v.descend_iter().collect()).unwrap_or_default();
-                worklist.extend(descend);
+                if let Some(v) = self.vbank().get(outvn) {
+                    worklist.extend(v.descend_iter());
+                }
             }
         }
     }

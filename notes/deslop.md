@@ -2178,6 +2178,76 @@ Frozen diff hash `6b39ea09` remained unchanged through the last terminal
 success. Logs use `/tmp/kuna-deslop-redundant-expressions-final-`. The preceding
 published checkpoint's CI and CodeQL pass. No baseline or threshold changed.
 
+## Borrowed nonzero-mask worklist and token-pattern construction
+
+Nonzero-mask propagation appends a changed output's descendants directly to
+its local worklist. The temporary vector is gone; visit order, duplicate
+readers and missing-node handling are unchanged. The initial operation
+snapshot and neighboring mutating walks keep their snapshots. A persistent
+loop regression checks the fixed point, duplicate-reader order, and unchanged
+Varnode and operation flags across three calls. All ten integration tests pass
+on the original implementation and after the change.
+
+Actual before/after method bodies and the rebuilt library match 12,288 outcomes
+per overflow mode across 4,096 real IR graphs and three retries. Each mode has
+11,028 successes and 1,260 panics, with all nonzero masks and node/operation
+flags compared, including partial state on malformed dead-reader failures.
+This is a method-level model, not a whole-engine equivalence claim.
+Three fresh native allocation samples per case agree: empty and straight-line
+controls retain 0/2 requests and 0/80 bytes; loop workloads with 0, 8 and 64
+extra readers fall from 128/131/134 requests to 3/6/9 and from
+1,112/5,408/35,872 bytes to 112/376/2,616. A sixteen-node chain falls from
+1,076 requests and 9,624 bytes to 6 requests and 560 bytes. These are cumulative
+allocation requests and requested bytes, not peak memory. Graph construction,
+warmup and fixed-point/state verification are outside the counter.
+
+Token patterns share the true/boolean constructor, reuse their minimum-length
+query and clamp the common-token count once. Obsolete pattern-equation design
+commentary is removed. Whole-module models preserve 20,736 public outcomes
+per overflow mode: 7,560 successes, 13,176 errors and no panics. Private boundary
+adapters compare another 32,768 outcomes per mode, including 3,091 checked
+overflow panics; unchecked mode has no panics. All inputs and complete results
+match. The actual rebuilt library agrees on all 20,736 public records.
+
+The release build takes 44.73 seconds without warnings. All 3,073 engine units,
+ten Varnode integration tests and 378 SLEIGH/compiler tests pass, along with
+strict public/private rustdoc and CI's CLI lint check (its existing dependency
+warning remains). Engine Clippy retains exactly 208 errors and 91 warnings;
+all primary diagnostic messages and source text are unchanged. Four complete
+stage transcripts, 36 CLI cases, 286 compiler comparisons and 48 XML outputs
+match their saved references. Source proofs cover all five candidate files.
+Artifacts use `/tmp/kuna-deslop-nz-worklist.zggtkxdl`.
+
+Initial balanced mask timings use thirty measured samples per version. The
+empty control slows 5.82% (paired 5.41%); a larger ninety-sample-per-version
+run reproduces +5.90% (paired +5.71%), about 6.83 to 7.23 nanoseconds per call.
+That adverse result is retained, not classified as noise. The same larger run
+improves straight-line, zero/eight/sixty-four-reader loops and the chain by
+3.47%/48.91%/22.74%/20.92%/52.65%. Keeping the simpler borrowed traversal is a
+tradeoff: fewer allocations and faster nonempty cases, with a small absolute
+cost in the empty microbenchmark. No universal speedup is claimed.
+
+Token-pattern timings use thirty measured samples per version after three
+warmup pairs: aggregate -0.56% (paired -0.53%), with all six configurations
+between -1.06% and +0.98%. Every run verifies its 124,416 concatenation results.
+Toy, x86-64 and Hexagon compiler wall time changes -1.02%/-1.79%/+0.78%, with
+CPU time -1.14%/-1.79%/-0.61%; every generated SLA hash matches. Toy uses 110
+measured samples per version; the larger compilers use twelve. Four complete
+call-push, argument-guard, array-cover and stack-alias workloads change
+-0.89%/-0.88%/-0.98%/-0.91% (paired -0.83%/-0.90%/-1.08%/-0.88%), with thirty
+measured samples per version and exact streams/status on every run. These
+whole-workload timings remain within the 5% budget. Native/stage runs use
+CPU 41; compiler runs use CPU 40. Timing and correctness logs are retained.
+
+All nine gates pass: 7,462 workspace tests, 38 existing ignores across 439
+groups and no warnings; upstream 675/675 and stages 1,467/1,467 retain parity.
+The isolated CLI run passes all 268 probes on its first try. The 42 Python
+tests, 56 Ghidra tests, 48 XML comparisons, 17 saved CLI comparisons and eleven
+browser probes pass, as do spec/catalog checks and strict CLI lint. Frozen
+diff `161d7da6` remained unchanged through the last terminal success. Logs use
+`/tmp/kuna-deslop-nz-worklist-final-`. The preceding commit's CI and CodeQL
+pass. No baseline or threshold changed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
