@@ -1040,6 +1040,10 @@ Runtime context application borrows the constructor's commands and expressions.
 Commands run in stored order against the mutable parser context; evaluation
 stops at the first error without undoing preceding local updates or queued commits.
 
+Runtime handle resolution borrows operand expressions and result templates from
+its immutable SLEIGH tables. It writes computed handles to the parser context;
+if evaluation fails, earlier handle updates remain in place.
+
 Constructor operand patterns use the defining symbol when present. Otherwise,
 pattern generation borrows the operand's defining expression without copying
 its tree. The operand retains ownership of the expression throughout the build.

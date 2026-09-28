@@ -1991,6 +1991,60 @@ Diff hash `0dcbf51e` remained unchanged through the last terminal success.
 Logs use `/tmp/kuna-deslop-indirect-walk-final-`. The prior published commit's
 CI and CodeQL checks pass. No baseline moved.
 
+### Index-key cleanup and borrowed runtime handles
+
+Varnode index construction drops four redundant clones of derived-`Copy` keys
+and sixteen references that were immediately dereferenced. Cached keys, tree
+ordering, range bounds and insertion order are unchanged. The flag-class
+description is moved off the address key onto its own type; bank ownership
+headers now describe the current op-arena interface instead of unfinished port
+work. These changes remove nineteen comment lines without adding suppressions.
+
+All 39 Varnode-related tests pass before and after. Source comparison limits
+executable changes to the twenty reviewed expressions. Engine Clippy warnings
+fall from 117 to 97; its 208 collection-policy errors remain. Every remaining
+diagnostic matches apart from moved Varnode source positions and the once-only
+lint-default note moving to the next warning. This is not a clean engine gate.
+
+Runtime handle resolution borrows defining expressions and result templates.
+The immutable table retains ownership while the parser context receives handles;
+error paths and preceding updates are preserved. Constructor documentation no
+longer incorrectly says its compiler pattern/error fields were removed. A
+strict private-documentation check found three pre-existing broken links in
+SLEIGH; qualifying two and rendering the cross-crate architecture name as code
+makes public and private rustdoc pass with all warnings denied. These final
+link fixes change no executable source. The initial failing check is retained.
+
+Fresh root-library probes match 360 complete handle/context records, 144
+error/retry outcomes and sixteen instruction status/count/hash records. Across
+1,171 instruction calls, requests fall from 2,110 to 1,412 and requested bytes
+from 824,424 to 802,088; three fresh-engine samples per fixture agree. Engine
+initialization is outside the counter, and these are cumulative requests, not
+peak memory. The sixteen independent lift fixtures check complete p-code.
+
+The final native build takes 46.91 seconds without warnings. All 376 focused
+compiler/SLEIGH tests, strict private rustdoc, 36 CLI comparisons, 286 compiler
+comparisons, 48 XML outputs and two option-off/on stage transcripts pass.
+CI's Rust 1.98.1 CLI lint check passes with its existing SLEIGH dependency warning.
+Source proofs cover all six candidate files, including the documentation-only
+changes. Artifacts use `/tmp/kuna-deslop-varnode-keys.hkkfXDEm`.
+
+Balanced CPU-pinned timings use thirty measured samples per version after three
+warmup pairs. The instruction probe changes -3.38% in aggregate median time
+(paired -3.31%); every individual workload remains within the 5% budget.
+Whole lift-oracle wall/CPU changes are -0.79%/-0.98% (paired -0.25%/-0.12%),
+with all sixteen oracles passing in each of sixty-six runs. The two full stage
+workloads change -0.16%/-0.18% (paired +0.03%/-0.08%) and retain their exact
+stdout, stderr and exit status on every run.
+
+All nine gates pass: 7,457 workspace tests, 38 existing ignores across 439
+groups and no warnings; 675/675 upstream and 1,467/1,467 stage assertions retain
+parity. All 268 CLI probes, 42 Python tests, 56 Ghidra tests, 48 XML comparisons,
+17 saved CLI comparisons and eleven browser probes pass. Spec/catalog checks
+and CLI linting pass. Frozen diff hash `1fb76f96` remained unchanged through the
+last terminal success. Logs use `/tmp/kuna-deslop-varnode-keys-final-`. The prior
+published checkpoint's CI and CodeQL also pass. No baseline moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -2001,7 +2055,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Archive member and console output files have scoped cleanup. Loading/configuration and the remaining pool module still combine several lifecycle policies. |
-| Collection policy | The CLI has a strict warning-clean Clippy gate. The release engine-library check last reported 208 collection-policy errors/117 warnings, and analysis 215 errors/64 warnings. Reviewed lookup-only collections and explicitly ordered reports preserve existing implementations where iteration cannot affect output. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and extend enforcement. |
+| Collection policy | The CLI has a strict warning-clean Clippy gate. The release engine-library check last reported 208 collection-policy errors/97 warnings, and analysis 215 errors/64 warnings. Reviewed lookup-only collections and explicitly ordered reports preserve existing implementations where iteration cannot affect output. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and extend enforcement. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Public and private analysis rustdoc links now resolve; other documentation warnings and stale migration narratives remain. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. Inherited-stderr exit diagnostics are regression-tested; the earlier real-Chrome startup timeouts remain unexplained. |
 

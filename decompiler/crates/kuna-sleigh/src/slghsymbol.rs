@@ -782,10 +782,9 @@ pub struct FlowRefSymbol {
     const_space: Option<Rc<AddrSpace>>,
 }
 
-/// C++ `SubtableSymbol`: a table of constructors with its decode-time
-/// decision tree.  The compiler-only `TokenPattern *pattern` and
-/// `beingbuilt`/`errors` flags are present for the build side (ws4a); the
-/// decode path leaves them at their defaults.
+/// Constructor table and its runtime decision tree. Compilation also stores
+/// an aggregate pattern, recursion guard and error state; decoding leaves
+/// those build fields at their defaults.
 #[derive(Debug, Clone, Default)]
 pub struct SubtableSymbol {
     construct: Vec<Constructor>,
@@ -1116,9 +1115,9 @@ impl ContextChange {
 // Constructor
 // ---------------------------------------------------------------------------
 
-/// C++ `Constructor` ("This is NOT a symbol").  Compiler-only members
-/// (`pattern`, `pateq`, `inerror`; see module docs) are dropped; pointers
-/// become symbol ids / template handles.
+/// Instruction constructor with owned print pieces and context commands.
+/// Operands are symbol ids; p-code sections are template-arena handles.
+/// Compilation also stores a pattern equation, built pattern and error state.
 #[derive(Debug, Clone, Default)]
 pub struct Constructor {
     /// Owning `SubtableSymbol` id (C++ null parent of a decode shell is
@@ -1146,14 +1145,12 @@ pub struct Constructor {
     lineno: i32,
     /// Source file index.
     src_index: i32,
-    /// (kuna build side) C++ `PatternEquation *pateq`: the constructor's
-    /// pattern equation, as an arena id ([`EqId`]) into the driver-owned
-    /// [`EquationArena`].  `None` for a decode shell.
+    /// Pattern equation id in the compiler's [`EquationArena`].
+    /// Absent in decoded constructors.
     pateq: Option<EqId>,
-    /// (kuna build side) C++ `TokenPattern *pattern`: the built pattern,
-    /// `None` until [`Constructor::build_pattern`] runs.
+    /// Pattern produced during compilation; absent in decoded constructors.
     pattern: Option<TokenPattern>,
-    /// (kuna build side) C++ `mutable bool inerror`.
+    /// Whether compilation reported an error for this constructor.
     inerror: bool,
     /// Operand reordering map: `handmap[original_index] = new_index`. The
     /// compiler applies it to template sections; empty until operands are ordered.
@@ -1381,7 +1378,7 @@ impl Constructor {
         self.firstwhitespace
     }
 
-    /// The decoded context commands (test/inspection surface).
+    /// Borrow the constructor's context commands in execution order.
     pub fn get_context_changes(&self) -> &[ContextChange] {
         &self.context
     }

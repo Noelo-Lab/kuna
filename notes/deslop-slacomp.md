@@ -1616,3 +1616,46 @@ All four required gates passed: `make test` (675/675), `make test-stages`
 (1,467/1,467), `make rust-test` (7,714 passed, 38 ignored across 433 groups),
 and `make check-spec`. Both parity gates report `PARITY OK`; the option
 catalog and whitespace checks also pass. Neither baseline changed.
+
+### Borrowed runtime handle definitions
+
+Runtime handle resolution evaluates operand expressions and fixes result
+templates by reference. Their immutable SLEIGH tables retain ownership while
+the parser context receives the computed handles. The existing error paths and
+preceding handle updates remain intact. Public signatures are unchanged;
+`sleigh.rs` loses one source line.
+
+Constructor documentation now correctly describes its retained compiler fields,
+owned context commands and template-arena handles. It previously claimed that
+`pattern`, `pateq` and `inerror` had been dropped. All noncomment source in
+`slghsymbol.rs` is identical; three comment lines are removed overall. Rustdoc
+passes with broken intra-doc links denied.
+
+All 371 focused SLEIGH tests pass. A public-API probe matches 360 complete
+p-code/context records across both byte orders, covering constants, expression
+trees, token/context/address values, nested `inst_next2` decoding during handle
+resolution, malformed operands, missing expressions, division panics, delay
+slots and retries. An additional 144 runtime error/retry outcomes match.
+All 16 standard runtime fixture statuses, p-code counts and hashes agree.
+
+For 1,171 instruction calls, allocation/reallocation requests fall from 2,110
+to 1,412 and requested bytes from 824,424 to 802,088. Three samples per fixture
+agree; these totals describe one repetition with engine initialization outside
+the counter, not peak memory. Each repetition emits 7,321 operations and 19,581
+varnodes without errors. Baseline executables and allocation results were
+copied from the validated context-command change's final snapshots, after
+verifying exact source identity; hashes record that provenance.
+
+Across 66 balanced CPU-pinned runs, 30 measured per version, the uninstrumented
+instruction probe improves 3.936% in aggregate median time (paired 3.776%).
+Individual deltas range from -11.299% to +1.022%, all within the 5% budget.
+Each run uses three fresh-engine repetitions per fixture, with initialization
+outside the timer. Whole lift-oracle runs improve 0.337% in median wall time
+and 0.380% in CPU time (paired 0.481% and 0.503%); each of those 66 runs passes
+all 16 fixtures. Native probes, complete outputs, source snapshots, hashes,
+raw timing samples and logs use `/tmp/kuna-deslop-runtime-handle-expression-`.
+
+All four required gates passed: `make test` (675/675), `make test-stages`
+(1,467/1,467), `make rust-test` (7,714 passed, 38 ignored across 433 groups),
+and `make check-spec`. Both parity gates report `PARITY OK`; the option
+catalog and whitespace checks also pass. Neither baseline changed.

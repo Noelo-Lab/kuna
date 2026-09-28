@@ -700,7 +700,7 @@ impl SymbolWalker for ParserWalker<'_> {
 
 /// C++ `ParserWalkerChange`: a `ParserWalker` that can modify the tree as the
 /// instruction is parsed (`Sleigh::resolve`).  Holds the [`ParserContext`]
-/// mutably; reads share the immutable `ParserWalker` body via [`as_reader`].
+/// mutably; reads share the immutable `ParserWalker` body via [`ParserWalkerChange::as_reader`].
 struct ParserWalkerChange<'a> {
     ctx: &'a mut ParserContext,
     table: &'a SymbolTable,
@@ -1955,8 +1955,7 @@ impl Sleigh {
                     // expression operand: result is a constant
                     let patexp = op
                         .get_defining_expression()
-                        .ok_or_else(|| KunaError::sleigh("resolveHandles: no defining expr"))?
-                        .clone();
+                        .ok_or_else(|| KunaError::sleigh("resolveHandles: no defining expr"))?;
                     let res = {
                         let reader = walker.as_reader();
                         patexp.get_value(&reader)?
@@ -1975,7 +1974,7 @@ impl Sleigh {
             if oper >= numoper {
                 let handle = table.get_constructor(ct)?.get_templ();
                 if let Some(h) = handle {
-                    if let Some(res) = self.base.templates[h].get_result().cloned() {
+                    if let Some(res) = self.base.templates[h].get_result() {
                         let mut hand = FixedHandle::default();
                         {
                             let reader = walker.as_reader();
@@ -2099,7 +2098,7 @@ fn classify_handle(hand: &FixedHandle, is_code_address: bool) -> OpObject {
     }
 }
 
-/// Helper: borrow a [`SubtableSymbol`] by symbol id (C++ blind cast).
+/// Helper: borrow a [`SubtableSymbol`](crate::slghsymbol::SubtableSymbol) by symbol id (C++ blind cast).
 fn subtable_ref(table: &SymbolTable, id: u32) -> KunaResult<&crate::slghsymbol::SubtableSymbol> {
     let sym = table
         .find_symbol_by_id(id)

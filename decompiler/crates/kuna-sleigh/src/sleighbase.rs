@@ -125,7 +125,7 @@ pub struct SleighBase {
     /// The address spaces (C++ inherited `AddrSpaceManager`).
     ///
     /// Held behind an [`Rc`] so the single space set the SLEIGH lift populates
-    /// can be **shared** with the [`Architecture`] / `Funcdata::glb`
+    /// can be **shared** with the `Architecture` / `Funcdata::glb`
     /// (LOSS-132 unification): the C++ `Architecture` *is-a* `AddrSpaceManager`,
     /// so there is exactly one manager and the lifted varnodes, the
     /// architecture, and every analysis pass key state by the same
