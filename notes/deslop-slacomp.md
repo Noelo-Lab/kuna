@@ -149,3 +149,27 @@ The independent template-borrowing snapshot passed all four gates: 675 upstream
 and 1,467 stage assertions, 7,701 workspace tests with 38 existing ignores, and
 the spec check. The option catalog passed, Rust documentation had no warnings,
 and no baseline expectations changed.
+
+The compiler accepted context assignments in `with` blocks but discarded them.
+For example, `with : [ mode=1; ] { :outer is op=0 { r0=r0+1; } }` compiled
+without retaining the assignment. Blocks now own their parsed context changes;
+each constructor receives copies from outer to inner blocks, then its local
+changes. Inherited copies pass directly to the constructor, removing an
+unnecessary allocate-then-take cycle through the parser's context arena.
+
+The 20-line `with_context.slaspec` fixture covers nested blocks, siblings,
+local overrides, `globalset`, leaving an inner block, and a constructor outside
+the outer block. Its digest comes from the same pinned C++ compiler as the
+existing oracle. The new case fails before the fix; all 45 binary oracle cases
+pass afterward, with no existing digest changed. All 45 XML outputs also match
+the pinned C++ compiler byte-for-byte. The 358 compiler and SLEIGH release tests
+pass.
+
+Fifty alternating Toy-builder compilation samples measured 7.200 → 7.215 ms
+(+0.21%); 12 x86-64 samples measured 473.641 → 473.309 ms (-0.07%). Both used
+warmups, and all before/after outputs for these existing specs were identical.
+
+The independent context-inheritance snapshot passed all four gates: 675
+upstream and 1,467 stage assertions, 7,701 workspace tests with 38 existing
+ignores, and the spec check. The option catalog passed. No baseline or existing
+oracle expectation changed.

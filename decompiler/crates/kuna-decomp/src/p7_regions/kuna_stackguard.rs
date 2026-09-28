@@ -34,9 +34,8 @@
 //!
 //! ## Detection is purely structural
 //!
-//! kuna's BFD console loader does not resolve a PLT stub to its imported name,
-//! so the callee name is NOT a usable signal.  The canary is pinned by its
-//! compare: a CBRANCH whose `INT_EQUAL`/`INT_NOTEQUAL` boolean compares two
+//! Detection does not depend on recovered callee names. The canary is pinned
+//! by a CBRANCH whose `INT_EQUAL`/`INT_NOTEQUAL` boolean compares two
 //! values that BOTH derive from a LOAD of `<base> + 0x28` (the saved canary slot
 //! vs. a fresh reload of the x86-64 glibc TLS canary at `fs:0x28`).  The
 //! corrupted-canary branch (which must contain the no-return handler CALL) is
@@ -46,8 +45,8 @@
 //!
 //! ## The option
 //!
-//! The decision is a P0 assertion: `option stackguard on|off` (default `off` =
-//! upstream byte-identical; the Action is inert when off).  The live flag is
+//! The decision is a P0 assertion: `option stackguard on|off` (default `on`).
+//! Setting it `off` retains the upstream canary check. The live flag is
 //! [`Architecture::strip_stack_guard`](crate::architecture::Architecture).
 //!
 //! ## The CFG surgery
@@ -367,16 +366,12 @@ fn block_has_call(bb: BlockId, data: &Funcdata) -> bool {
 /// block.  Inert (returns 0) when the option is off or no canary is present.
 pub struct ActionStripStackGuard {
     base: ActionBase,
-    /// Resolved `glb->strip_stack_guard` gate (STUB(W4); see module docs).  The
-    /// C++ reads `data.getArch()->strip_stack_guard` inline, but the boundary
-    /// [`Funcdata::get_arch`] does not carry kuna analysis flags, so — as in the
-    /// sibling kuna Actions/Rules — the gate is resolved at construction.
+    /// Explicit enable override for callers without a configured architecture.
     enabled: bool,
 }
 
 impl ActionStripStackGuard {
-    /// `enabled` is the resolved `strip_stack_guard` gate (default on per DIV-14;
-    /// `option stackguard off` restores the upstream rendering).
+    /// The scheduler passes false; `apply` also reads the live architecture gate.
     pub fn new(enabled: bool, g: impl Into<String>) -> ActionStripStackGuard {
         ActionStripStackGuard { base: ActionBase::new(0, "stripstackguard", g), enabled }
     }
@@ -400,12 +395,7 @@ impl Action for ActionStripStackGuard {
 
     /// C++ `ActionStripStackGuard::apply`, `kuna_stackguard.cc:115`.
     ///
-    /// The detection — option gate, per-block CBRANCH-on-canary-compare scan,
-    /// fail-successor selection, handler-call safety, and victim-edge index —
-    /// is realized faithfully.  The terminal `removeBranch`/
-    /// `removeUnreachableBlocks` pair is the W4/W8 funcdata_block boundary (see the
-    /// module docs); the scan still runs and `idx` is computed so the boundary is
-    /// a single drop-in point.
+    /// Remove a structurally proven canary failure branch and its unreachable handler.
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ `if (!data.getArch()->strip_stack_guard) return 0;` — the live gate
         // is carried on the boundary Architecture (`build_arch_handle`); `enabled`
@@ -517,10 +507,11 @@ impl Action for ActionStripStackGuard {
 /// (kuna) Toggle glibc stack-protector epilogue stripping
 /// (C++ `OptionStackGuard`, `kuna_stackguard.hh:74`).
 ///
-/// `off` (default) is upstream byte-identical (the Action is inert).  `on`
+/// `off` retains the upstream rendering (the Action is inert). `on`
 /// strips the `-fstack-protector` canary check + `__stack_chk_fail` call, like
-/// angr's StackCanarySimplifier.  The resolved value is written into
-/// [`Architecture::strip_stack_guard`](crate::architecture::Architecture).
+/// angr's StackCanarySimplifier. This standalone value is separate from the
+/// live [`Architecture::strip_stack_guard`](crate::architecture::Architecture)
+/// flag used by the option dispatcher.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StackGuardOption {
     /// True when the canary epilogue is stripped
@@ -529,8 +520,7 @@ pub struct StackGuardOption {
 }
 
 impl Default for StackGuardOption {
-    /// Shipped default: `option stackguard off` (upstream byte-identical;
-    /// `architecture.rs` sets `strip_stack_guard = false`).
+    /// Standalone option state starts disabled; Architecture's live default is on.
     fn default() -> Self {
         StackGuardOption { enabled: false }
     }

@@ -36,10 +36,7 @@ pub const I386_PIE_PLT_ENV: &str = "KUNA_I386_PIE_PLT";
 /// disables it.  Consulted in `decode_i386` so that `--option i386_pie_plt off`
 /// (bridged to the env var by the CLI) reproduces the pre-fix output.
 pub fn i386_pie_plt_enabled() -> bool {
-    match std::env::var(I386_PIE_PLT_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
-        Err(_) => true, // unset ⇒ default-on
-    }
+    crate::options::env_toggle(I386_PIE_PLT_ENV, true)
 }
 
 /// Bridge a `set_kuna_option("i386_pie_plt", val)` toggle to [`I386_PIE_PLT_ENV`]

@@ -808,6 +808,12 @@ invalid handles before reading a template. The mutable `SleighBaseTrans`
 callback is used only while decoding new templates. Encoding therefore needs
 neither a mutable adapter nor a copy of the template collection.
 
+The compiler's `with` stack owns each block's parsed context changes. Every
+enclosed constructor receives copies in outer-to-inner block order, followed
+by its local changes. Closing a block removes its assignments from subsequent
+constructors. These copies pass directly to the constructor; they do not need
+temporary handles in the parser's context-change arena.
+
 (kuna) **Mixed builds.** The engine binary `kuna` runs can come from a different
 build than `kuna` itself (an override naming another install, or a sibling left
 behind when only `kuna` was rebuilt), and nothing in the output shows it. So every
@@ -1944,6 +1950,15 @@ disabled `macho-arm64e` removes its variable. `LoadtimeEnv` restores inherited
 values, including non-Unicode values, when the load returns or unwinds. The
 conversions preserve each loader's accepted tokens and fallback behavior;
 runtime option validation remains separate.
+
+The default-on and opt-in boolean loader gates share
+`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs (env_toggle)`.
+They trim Unicode whitespace and compare ASCII case-insensitively: `off`, `0`
+and `false` disable; `on`, `1`, `true` and the empty string enable. Missing,
+non-Unicode or unrecognized values retain that gate's default. Gates with
+different vocabularies, such as relocatable-object loading, keep their own
+conversion rules; these permissive loader tokens do not change the strict
+runtime `on_or_off` parser.
 
 | env var | option | read at |
 |---|---|---|

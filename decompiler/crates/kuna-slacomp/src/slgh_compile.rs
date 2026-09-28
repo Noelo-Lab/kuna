@@ -1108,11 +1108,16 @@ impl SleighCompile {
     }
 
     /// `pushWith` (slgh_compile.cc:3676).
-    pub fn push_with(&mut self, ss: Option<SymbolId>, pateq: Option<u32>, _contvec: Option<Vec<u32>>) {
+    pub fn push_with(&mut self, ss: Option<SymbolId>, pateq: Option<u32>, contvec: Option<Vec<u32>>) {
+        let contvec = contvec
+            .into_iter()
+            .flatten()
+            .map(|id| self.take_context_change(id))
+            .collect();
         let mut block = WithBlock {
             ss,
             pateq,
-            contvec: Vec::new(),
+            contvec,
         };
         if block.ss.is_none() {
             block.ss = self.with_block_current_subtable();
@@ -3044,34 +3049,24 @@ impl SleighCompile {
                 self.constructor_mut(table_id, ct_idx).add_equation(eps);
             }
             self.constructor_mut(table_id, ct_idx).remove_trailing_space();
-            // Context changes (prepended from the with-stack, then this ctor's).
-            let mut contvec = self.collect_and_prepend_context(contvec);
-            if !contvec.is_empty() {
-                let changes: Vec<ContextChange> =
-                    contvec.drain(..).map(|id| self.take_context_change(id)).collect();
-                self.constructor_mut(table_id, ct_idx).add_context(changes);
-            }
+            let changes = self.collect_and_prepend_context(contvec);
+            self.constructor_mut(table_id, ct_idx).add_context(changes);
         }
         self.base.symtab_mut().pop_scope(); // In all cases pop scope
     }
 
     /// C++ `WithBlock::collectAndPrependContext` (slgh_compile.hh): prepend each
     /// with-block's context changes (outermost first) to this ctor's.
-    fn collect_and_prepend_context(&mut self, contvec: Option<Vec<u32>>) -> Vec<u32> {
-        let mut res: Vec<u32> = Vec::new();
-        // C++ iterates withstack front-to-back, prepending each block's context
-        // (the stack is pushed inner-last, so iterate from the bottom).
-        for block in &self.withstack {
-            for cc in &block.contvec {
-                let id = self.contextchange_arena.len() as u32;
-                self.contextchange_arena.push(Some(cc.clone()));
-                res.push(id);
-            }
+    fn collect_and_prepend_context(&mut self, contvec: Option<Vec<u32>>) -> Vec<ContextChange> {
+        let mut changes: Vec<_> = self
+            .withstack
+            .iter()
+            .flat_map(|block| block.contvec.iter().cloned())
+            .collect();
+        if let Some(local) = contvec {
+            changes.extend(local.into_iter().map(|id| self.take_context_change(id)));
         }
-        if let Some(v) = contvec {
-            res.extend(v);
-        }
-        res
+        changes
     }
 
     /// C++ `SleighCompile::finalizeSections(Constructor *big,SectionVector *vec)`

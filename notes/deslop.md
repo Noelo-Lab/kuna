@@ -89,6 +89,15 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
 - SLEIGH encoding borrows constructor templates without cloning their arena.
   The mutable template callback now serves decoding only. Sparse section IDs,
   section ordering and invalid-handle errors have direct regression checks.
+- Twelve boolean loader gates share their environment-token policy. The existing
+  variable names, public wrappers, defaults, whitespace/case handling and unknown
+  token behavior are unchanged; other loader vocabularies remain separate.
+  Corrected nearby obsolete option-dispatch and stack-guard comments without
+  changing the standalone option object's disabled initial state.
+- SLEIGH `with` blocks retain their context assignments and pass inherited
+  changes directly to each constructor, eliminating a temporary arena round trip.
+  A new pinned C++ oracle covers nesting, siblings, local overrides, `globalset`
+  and leaving a block. None of the existing 44 oracle digests changed.
 
 ## Evidence
 
@@ -212,6 +221,28 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   executable and failed worker spawning with `No such file or directory` in
   every retained error record; the unchanged project and triage suites then
   passed 34/34 and 16/16. The complete workspace run passed without that failure.
+- The shared environment reader passes 3,061 core unit tests, including all
+  existing per-gate environment checks and an explicit token/default matrix.
+  The context fix passes 360 compiler/SLEIGH release tests and all 45 binary
+  oracle cases. Before applying it, the new context fixture produced SHA256
+  `a8e6d023...` instead of the pinned C++ stream's `7c2c42f2...`.
+- The first environment/context workspace run passed 7,379 tests and failed
+  only the relocated-manual test with `ETXTBSY`. That failure reproduced twice
+  in 40 unchanged parallel runs; 40 serial runs passed. A process trace showed
+  other test children being spawned while the executable copy was open for
+  writing. A test-only mutex now excludes copy and process spawning; it is
+  released before waiting for output, and no assertion or timeout was relaxed.
+- All 45 pinned C++ XML outputs match after the context fix. Fourteen saved CLI
+  cases remain byte-identical to the original baseline. Twenty alternating
+  summary runs measured 141.136 → 139.949 ms wall medians (140.008 → 139.007 ms
+  child CPU), with a 0.9993 median paired wall ratio. Other tests were running;
+  this local check does not establish a small speedup.
+- The corrected frozen snapshot passes all four gates: 7,380 workspace tests
+  with 38 existing ignores and no warnings, 675/675 upstream and 1467/1467
+  stage assertions, and spec checks. All 268 CLI probes, 16 Python tests,
+  56 Ghidra tests and catalog checks pass again. The repaired nine-test docs
+  suite also passed 100 debug and 100 release repetitions (1,800 assertions),
+  including the profile and parallel-test setup that reproduced the failure.
 
 ## Audit still open
 
@@ -220,7 +251,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Area | Evidence / next check |
 |---|---|
 | CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers now use explicit field paths and preserve raw bytes where required. Duplicate process helpers and conditional assertions still need review. |
-| Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. Numerous per-option modules repeat boolean parsing. |
+| Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
 | Collection policy | `cargo clippy --workspace --lib --bins` stops in `kuna-decomp` with 222 denied `HashMap`/`HashSet` findings. Removed its missing-ADR reference. Review iteration semantics and lookup costs before replacing collections, then check the remaining crates and enforce the gate. |

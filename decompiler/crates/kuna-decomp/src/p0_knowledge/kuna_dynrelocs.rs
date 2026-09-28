@@ -38,10 +38,7 @@ pub const DYNRELOCS_ENV: &str = "KUNA_DYNRELOCS";
 /// Whether the linked-image dynamic-relocation pass is enabled for this process.
 /// Default **on**: only an explicit off-token in [`DYNRELOCS_ENV`] disables it.
 pub fn dynrelocs_enabled() -> bool {
-    match std::env::var(DYNRELOCS_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
-        Err(_) => true, // unset ⇒ default-on
-    }
+    crate::options::env_toggle(DYNRELOCS_ENV, true)
 }
 
 /// Bridge a `set_kuna_option("dynrelocs", val)` toggle to [`DYNRELOCS_ENV`] so a

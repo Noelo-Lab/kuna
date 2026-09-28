@@ -1,0 +1,20 @@
+define endian = little;
+define alignment = 1;
+define space ram type=ram_space size=4 default;
+define space register type=register_space size=4;
+define register offset=0 size=4 r0;
+define register offset=4 size=4 contextreg;
+define context contextreg
+  mode=(0,1)
+  aux=(2,3)
+;
+define token instr8(8) op=(0,7);
+with : [ mode=1; globalset(inst_next, mode); ] {
+  :outer is op=0 { r0=r0+1; }
+  with : [ mode=2; aux=mode; ] {
+    :nested is op=1 [ mode=3; ] { r0=r0+2; }
+    :sibling is op=2 { r0=r0+3; }
+  }
+  :after_inner is op=3 { r0=r0+4; }
+}
+:outside is op=4 { r0=r0+5; }

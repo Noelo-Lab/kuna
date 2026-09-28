@@ -1,7 +1,8 @@
 //! Validate the embedded manual through the CLI, including a relocated binary.
 
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::process::{Child, Command, Output, Stdio};
+use std::sync::Mutex;
 
 use serde_json::Value;
 
@@ -10,12 +11,24 @@ use common::repo_root;
 
 const REQUIRED: [&str; 5] = ["cli", "options", "agents", "phases", "modes"];
 
-fn run_docs(args: &[&str]) -> Output {
+// A concurrent fork can inherit the copy's writable descriptor until exec,
+// causing the relocated executable to fail with ETXTBSY even after copy returns.
+static PROCESS_SETUP: Mutex<()> = Mutex::new(());
+
+fn spawn_docs(args: &[&str]) -> Child {
+    let _setup = PROCESS_SETUP.lock().unwrap();
     Command::new(env!("CARGO_BIN_EXE_kuna"))
         .arg("docs")
         .args(args)
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .expect("spawn kuna docs")
+}
+
+fn run_docs(args: &[&str]) -> Output {
+    spawn_docs(args).wait_with_output().expect("wait for kuna docs")
 }
 
 fn docs(args: &[&str]) -> String {
@@ -134,16 +147,23 @@ fn the_binary_carries_its_docs_out_of_the_repo() {
     let sandbox = std::env::temp_dir().join(format!("kuna_docs_norepo_{}", std::process::id()));
     std::fs::create_dir(&sandbox).expect("create sandbox");
     let exe = sandbox.join("kuna");
-    std::fs::copy(env!("CARGO_BIN_EXE_kuna"), &exe).expect("copy kuna");
-    make_executable(&exe);
-    let output = Command::new(&exe)
-        .current_dir(&sandbox)
-        .args(["docs", "cli"])
-        .env_remove("KUNA_SPECS")
-        .env_remove("SLEIGHHOME")
-        .env_remove("KUNA_DECOMP_DBG")
-        .output()
-        .expect("run relocated kuna");
+    let child = {
+        let _setup = PROCESS_SETUP.lock().unwrap();
+        std::fs::copy(env!("CARGO_BIN_EXE_kuna"), &exe).expect("copy kuna");
+        make_executable(&exe);
+        Command::new(&exe)
+            .current_dir(&sandbox)
+            .args(["docs", "cli"])
+            .env_remove("KUNA_SPECS")
+            .env_remove("SLEIGHHOME")
+            .env_remove("KUNA_DECOMP_DBG")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run relocated kuna")
+    };
+    let output = child.wait_with_output().expect("wait for relocated kuna");
     let file_count = std::fs::read_dir(&sandbox).unwrap().count();
     std::fs::remove_dir_all(&sandbox).unwrap();
     assert!(
@@ -168,12 +188,7 @@ fn make_executable(_path: &Path) {}
 
 #[test]
 fn a_reader_that_walks_away_is_not_a_panic() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
-        .args(["docs", "--all"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn kuna");
+    let mut child = spawn_docs(&["--all"]);
     drop(child.stdout.take().expect("stdout pipe"));
     let output = child.wait_with_output().expect("wait for kuna");
     let stderr = String::from_utf8_lossy(&output.stderr);

@@ -4,10 +4,11 @@
 stream produced by Ghidra's C++ `sleigh_opt` at revision
 `cef869af04c4740a71ad31a55704045b1b0d1644`. Compression bytes are excluded because
 flate2 and zlib can compress the same stream differently. The manifest covers
-44 specs, including both endiannesses, Toy variants, major processor families
-and Hexagon's named sections and crossbuilds.
+45 specs, including both endiannesses, Toy variants, major processor families,
+Hexagon's named sections and crossbuilds, and inherited context assignments
+across nested `with` blocks.
 
-The Rust test compiles the vendored sources and compares directly with these
+The Rust test compiles the listed sources and compares directly with these
 digests. It needs no prebuilt `.sla` files, Ghidra installation or C++ toolchain.
 The other golden text files pin scanner, parser and macro-expansion traces.
 
