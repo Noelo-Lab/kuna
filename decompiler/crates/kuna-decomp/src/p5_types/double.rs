@@ -470,53 +470,6 @@ impl SplitVarnode {
 
     // --- discovery / feasibility (double.cc:106-694) -----------------------
 
-    /// Verify the most significant piece is a SUBPIECE and search for the least
-    /// significant piece off the same whole (C++ `inHandHi`).
-    ///
-    /// Part of the C++ `SplitVarnode` public interface; no currently-ported form
-    /// reaches it (only `inHandLo`/`inHandLoOut` are on a live path via
-    /// `LogicalForm::findHiMatch`).  Kept for parity with the C++ API.
-    #[allow(dead_code)]
-    fn in_hand_hi(&mut self, data: &Funcdata, h: VarnodeId) -> bool {
-        // Check for mark, in order to have quick -false- in most cases
-        if !vn_is_precis_hi(data, h) {
-            return false;
-        }
-        if vn_is_written(data, h) {
-            let op = vn_get_def(data, h).expect("in_hand_hi: written vn has def");
-            // We could check for double loads here
-            if op_code(data, op) == OpCode::CPUI_SUBPIECE {
-                let w = op_get_in(data, op, 0);
-                if vn_get_offset(data, op_get_in(data, op, 1))
-                    != (vn_get_size(data, w) - vn_get_size(data, h)) as uintb
-                {
-                    return false;
-                }
-                for tmpop in descend_ops(data, w) {
-                    if op_code(data, tmpop) != OpCode::CPUI_SUBPIECE {
-                        continue;
-                    }
-                    let tmplo = match op_get_out(data, tmpop) {
-                        Some(v) => v,
-                        None => continue,
-                    };
-                    if !vn_is_precis_lo(data, tmplo) {
-                        continue;
-                    }
-                    if vn_get_size(data, tmplo) + vn_get_size(data, h) != vn_get_size(data, w) {
-                        continue;
-                    }
-                    if vn_get_offset(data, op_get_in(data, tmpop, 1)) != 0 {
-                        continue;
-                    }
-                    // There could conceivably be more than one, but not with CSE
-                    self.init_all(data, w, tmplo, Some(h));
-                    return true;
-                }
-            }
-        }
-        false
-    }
 
     /// Verify the least significant piece is a SUBPIECE and search for the most
     /// significant piece off the same whole (C++ `inHandLo`).
@@ -556,83 +509,6 @@ impl SplitVarnode {
         false
     }
 
-    /// Initialize given just the least significant piece; the other piece may be
-    /// an implied zero (C++ `inHandLoNoHi`).
-    ///
-    /// Part of the C++ `SplitVarnode` public interface; not on a currently-ported
-    /// call path.  Kept for parity with the C++ API.
-    #[allow(dead_code)]
-    fn in_hand_lo_no_hi(&mut self, data: &Funcdata, l: VarnodeId) -> bool {
-        if !vn_is_precis_lo(data, l) {
-            return false;
-        }
-        if !vn_is_written(data, l) {
-            return false;
-        }
-        let op = vn_get_def(data, l).expect("in_hand_lo_no_hi: def");
-        if op_code(data, op) != OpCode::CPUI_SUBPIECE {
-            return false;
-        }
-        if vn_get_offset(data, op_get_in(data, op, 1)) != 0 {
-            return false;
-        }
-        let w = op_get_in(data, op, 0);
-        for tmpop in descend_ops(data, w) {
-            if op_code(data, tmpop) != OpCode::CPUI_SUBPIECE {
-                continue;
-            }
-            let tmphi = match op_get_out(data, tmpop) {
-                Some(v) => v,
-                None => continue,
-            };
-            if !vn_is_precis_hi(data, tmphi) {
-                continue;
-            }
-            if vn_get_size(data, tmphi) + vn_get_size(data, l) != vn_get_size(data, w) {
-                continue;
-            }
-            if vn_get_offset(data, op_get_in(data, tmpop, 1)) != vn_get_size(data, l) as uintb {
-                continue;
-            }
-            self.init_all(data, w, l, Some(tmphi));
-            return true;
-        }
-        self.init_all(data, w, l, None);
-        true
-    }
-
-    /// Initialize given the most significant piece if immediately concatenated
-    /// with its least significant piece (C++ `inHandHiOut`).
-    ///
-    /// Part of the C++ `SplitVarnode` public interface; not on a currently-ported
-    /// call path.  Kept for parity with the C++ API.
-    #[allow(dead_code)]
-    fn in_hand_hi_out(&mut self, data: &Funcdata, h: VarnodeId) -> bool {
-        let mut lo_tmp: Option<VarnodeId> = None;
-        let mut outvn: Option<VarnodeId> = None;
-        for pieceop in descend_ops(data, h) {
-            if op_code(data, pieceop) != OpCode::CPUI_PIECE {
-                continue;
-            }
-            if op_get_in(data, pieceop, 0) != h {
-                continue;
-            }
-            let l = op_get_in(data, pieceop, 1);
-            if !vn_is_precis_lo(data, l) {
-                continue;
-            }
-            if lo_tmp.is_some() {
-                return false; // Whole is not unique
-            }
-            lo_tmp = Some(l);
-            outvn = op_get_out(data, pieceop);
-        }
-        if let Some(l) = lo_tmp {
-            self.init_all(data, outvn.expect("in_hand_hi_out: piece has out"), l, Some(h));
-            return true;
-        }
-        false
-    }
 
     /// Initialize given the least significant piece if immediately concatenated
     /// with its most significant piece (C++ `inHandLoOut`).

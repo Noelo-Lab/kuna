@@ -288,11 +288,6 @@ impl IntrusiveList {
     fn len(&self) -> usize {
         self.len
     }
-    /// `true` if the list is empty (C++ `list::empty`).
-    #[allow(dead_code)]
-    fn is_empty(&self) -> bool {
-        self.len == 0
-    }
 
     /// Insert `op` at the end (C++ `list.insert(list.end(), op)` /
     /// `push_back`).  `op` must not already be on this list.

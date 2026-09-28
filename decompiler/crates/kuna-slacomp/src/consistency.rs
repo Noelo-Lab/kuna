@@ -1,4 +1,4 @@
-//! WS4c -- the `ConsistencyChecker` (port of `slgh_compile.cc:215-1776`).
+//! Template consistency checks, ported from Ghidra's slgh_compile.cc:215-1776.
 //!
 //! The three passes the post-parse `process()` runs over every constructor's
 //! p-code template trees:

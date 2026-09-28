@@ -49,6 +49,18 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   no longer treat missing specs or failed architecture initialization as a pass.
 - Pipeline/repipe writers share unique sibling-file publication and failure
   cleanup. JSON layout, encoding, explicit modes, and existing locks are retained.
+- Worker record encoding and decoding are isolated from process scheduling.
+  Literal-byte tests pin both existing wire versions; framing, flush order and
+  truncated-tail recovery are unchanged. The repeated pool design narrative
+  is replaced by a short ownership summary pointing to the existing spec.
+- SLEIGH compiler modules no longer suppress dead-code warnings. Removed three
+  unused private items and corrected stale porting documentation. Its fixture
+  checks fail when vendored sources are missing; independent compiler evidence
+  is recorded in `notes/deslop-slacomp.md`.
+- Removed unused private IR, emulator, split-value and loop helpers found by a
+  forced-warning build. String/fill modules no longer suppress dead-code
+  warnings, and fill-model fixture helpers live with tests. Input registration
+  uses the canonical prototype-effect constants without an always-true switch.
 
 ## Evidence
 
@@ -105,6 +117,13 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   persistence policy. The long-name regression fails with destination-derived
   scratch names and passes with fixed-length unique sibling names. The
   59-case level-zero smoke suite passes after the writer consolidation.
+- Worker wire fixtures pass before and after the module split. All 29 worker
+  unit tests pass; the moved codec bodies are byte-identical apart from the
+  three visibility qualifiers needed by the parent module. The combined compiler,
+  worker and private-helper snapshot passed all four gates: 7,369 workspace tests
+  with 38 existing ignores and no warnings, 675/675 upstream assertions,
+  1467/1467 stage assertions, and spec checks. All 268 CLI probes, 16 Python
+  tests, and catalog checks pass. The full workspace run took 428 seconds.
 
 ## Audit still open
 
@@ -115,10 +134,10 @@ These are investigation targets, not a claim that the repository review is done.
 | CLI test structure | Private module copies and missing-command/spec skips are removed; the full workspace passes. Other suites still contain ad hoc JSON field extraction and duplicate process helpers. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. Numerous per-option modules repeat boolean parsing. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
-| CLI responsibilities | `decompile_all.rs` and `jobs.rs` combine discovery, scheduling, serialization, and process lifecycle. Identify ownership boundaries and duplicated policies. |
+| CLI responsibilities | The worker codec is isolated and byte-pinned. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
 | Collection policy | `cargo clippy --workspace --lib --bins` stops in `kuna-decomp` with 222 denied `HashMap`/`HashSet` findings. Removed its missing-ADR reference. Review iteration semantics and lookup costs before replacing collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Ninety engine files still contain wave-era STUB notes. |
-| Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory corruption fails closed and Python text writers share atomic publication. SLEIGH stale-code suppression, analyzer boundaries, and integration duplication still need review. |
+| Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory corruption fails closed and Python text writers share atomic publication. Compiler stale-code suppression is removed. Read-only audit found setup-failure skips in 138 console test files, six SLEIGH runtime tests, and the Ghidra simulation helper; replace them with direct failures for required fixtures. |
 
 Before each commit: `make test`, `make test-stages`, `make rust-test`,
 `make check-spec`. Also run the catalog check and relevant CLI probes. Preserve

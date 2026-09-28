@@ -2494,6 +2494,11 @@ terminator from being claimed as a memset (the Stack-string ablation in
 DIV-2). Rewrite: one `builtin_memset(dest, value, count)` CALLOTHER; teardown
 shares the string path's COPY removal. Off restores the per-element stores.
 
+The live rule uses `StringSequence` for collection and replacement. The legacy
+`MemsetSequence` detection model does not collect IR through its direct
+constructor; fixture-only construction and inspection helpers live with its
+unit tests. Both paths use the same fill predicate.
+
 **(kuna) Read-only string block copy —**
 [`rodatastring`](../options.md)**, default on** (DIV-113).
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_rodatastring.rs

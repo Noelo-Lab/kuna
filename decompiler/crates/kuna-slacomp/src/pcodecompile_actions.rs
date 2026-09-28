@@ -1,34 +1,8 @@
-//! WS3 -- the compiler-side p-code build actions.
+//! Compiler-side p-code builders, ported from Ghidra's slgh_compile.cc.
 //!
-//! The generic [`kuna_sleigh::pcodecompile::PcodeCompile`] trait (the `createOp`
-//! / `createLoad` / `assignBitRange` / ... machinery from `pcodecompile.hh`) is
-//! **already fully ported** in `kuna-sleigh/src/pcodecompile.rs` -- it was needed
-//! for the runtime `parse line` path.  WS3 supplies the *compiler-specific*
-//! pieces that `pcodecompile.hh`/`slgh_compile.hh` add on top:
-//!
-//! - [`SleighPcode`]: the concrete `PcodeCompile` implementation used by the
-//!   compiler (`class SleighPcode : public PcodeCompile`, slgh_compile.hh:282-292).
-//!   It overrides the five abstract hooks (`allocateTemp`, `getLocation`,
-//!   `reportError`, `reportWarning`, `addSymbol`) to route them into
-//!   [`crate::slgh_compile::SleighCompile`] (slgh_compile.cc:1930-1958).
-//! - [`MacroBuilder`]: expands a `macro` directive's `OpTpl` list with parameter
-//!   substitution (`class MacroBuilder : public PcodeBuilder`,
-//!   slgh_compile.hh:256-275; slgh_compile.cc:1785-1928).
-//!
-//! ## The `SleighCompile <-> SleighPcode/MacroBuilder` ownership split
-//!
-//! In C++ both classes hold a back-pointer to the `SleighCompile` (`compiler` /
-//! `slgh`) and call back into it: `getUniqueAddr`, `getUniqueSpace`,
-//! `getConstantSpace`, `getLocation`, `addSymbol`, `reportError`,
-//! `reportWarning`.  In the Rust port the driver (WS4) owns that state, so this
-//! module abstracts the back-pointer behind the [`CompilerHost`] trait
-//! ("freeze interface" for WS4): `SleighCompile` implements `CompilerHost`, and
-//! WS3's two classes drive the compiler exclusively through it.  This keeps WS3
-//! file-disjoint from WS4 while transcribing the C++ call-backs 1:1.
-//!
-//! ## Module ownership: WS3 owns this file exclusively.
-
-#![allow(dead_code)]
+//! [`SleighPcode`] supplies compiler callbacks for the shared p-code builder;
+//! [`MacroBuilder`] expands macro templates with parameter substitution.
+//! Both access the driver's state through [`CompilerHost`].
 
 use std::rc::Rc;
 
@@ -38,13 +12,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_sleigh::pcodecompile::{Location, PcodeCompileSymbol};
 use kuna_sleigh::semantics::{ConstTpl, ConstType, HandleTpl, OpTpl, PcodeBuilder, VarnodeTpl};
 
-/// The compiler-side back-pointer both [`SleighPcode`] and [`MacroBuilder`] call
-/// into (the C++ `SleighCompile *compiler` / `*slgh`).  WS4's `SleighCompile`
-/// implements this trait; WS3's classes use nothing else from the driver.
-///
-/// This is the WS3 "freeze interface" recorded for WS4 -- the exact set of
-/// callbacks the C++ `MacroBuilder`/`SleighPcode` make on their owning
-/// `SleighCompile`:
+/// Compiler state used by [`SleighPcode`] and [`MacroBuilder`].
 ///
 /// | C++ call               | trait method         | C++ anchor                  |
 /// |------------------------|----------------------|-----------------------------|

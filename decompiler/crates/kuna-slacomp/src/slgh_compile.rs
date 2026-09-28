@@ -1,36 +1,8 @@
-//! WS4b -- the `SleighCompile` driver and its subsystems (port of
-//! `decompiler/cpp/slgh_compile.cc`, header `slgh_compile.hh`).
+//! SLEIGH compilation driver, ported from Ghidra's slgh_compile.cc.
 //!
-//! This is the bulk of the compiler.  It owns the symbol-table build, the
-//! parse-time builder methods the parser (WS2) calls, the post-parse `process()`
-//! pipeline (consistency-check / pattern build / decision trees / unique
-//! allocation), and the orchestration of the final `.sla` `encode` (WS5).
-//!
-//! It *composes* the already-ported `kuna_sleigh::SleighBase` and reuses the
-//! `kuna_sleigh` symbol/pattern/template types throughout -- symbols are
-//! referenced by their integer id in the `SymbolTable`, modelled as
-//! [`SymbolId`]; pattern equations live in a driver-owned
-//! [`kuna_sleigh::slghpatexpress::EquationArena`]; ConstructTpl sections live in
-//! the `SleighBase` template arena.
-//!
-//! ## Lifecycle (slgh_compile.cc:3774, 2479)
-//!
-//! `run_compilation`: parse -> `process()` (consistency / patterns / decision
-//! trees / unique allocation / purge) -> encode (WS5).
-//!
-//! ## Scope note (WS4b landed subset)
-//!
-//! The full definition half (spaces / tokens / contexts / varnodes / attaches /
-//! subtables / constructors / pattern equations) plus the `process()` pattern/
-//! decision-tree pipeline and the `.sla` encode are implemented and exercised
-//! end-to-end (data-le-64 / data-be-64 byte-identical against C++ `sleigh_opt`).
-//! The deep p-code *section* path (semantic RTL with `Constructor::
-//! setMainSection` / `markSubtableOperands` / `ConstructTpl::fillinBuild`, which
-//! were never ported to `kuna-sleigh`) is stubbed with errors/panics that carry
-//! their `slgh_compile.cc`/`slghsymbol.cc` anchors; specs that exercise it are
-//! not yet claimed.
-
-#![allow(dead_code)]
+//! Owns symbols and semantic-value arenas, implements the scanner/parser
+//! callbacks, and runs consistency checks, pattern construction, decision-tree
+//! generation and unique-space allocation before emitting the compiled image.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -308,7 +280,6 @@ pub struct SleighCompile {
     // --- parse-time state (slgh_compile.hh:309-334) ---
     preproc_defines: BTreeMap<Vec<u8>, Vec<u8>>,
     contexttable: Vec<FieldContext>,
-    macrotable: Vec<u32>,
     /// Number of tokens defined so far (`tokentable.size()`).
     token_count: u32,
     /// Subtable symbol ids (`tables`).
@@ -2565,16 +2536,6 @@ impl SleighCompile {
             }
         }
     }
-    fn symbol_varnode_size(&self, sym: SymbolId) -> i32 {
-        self.base
-            .symtab()
-            .find_symbol_by_id(sym)
-            .map(|s| match s.kind() {
-                SymbolKind::Varnode(v) => v.get_size(),
-                _ => 0,
-            })
-            .unwrap_or(0)
-    }
     fn space_symbol_space(&mut self, sym: SymbolId) -> Rc<AddrSpace> {
         self.base
             .symtab()
@@ -3564,15 +3525,6 @@ impl ScannerHost for SleighCompile {
             SymbolType::Dummy => return None,
         })
     }
-}
-
-/// The unported p-code section path; reaching one means a spec with semantic RTL
-/// hit the WS4b landed-subset boundary.
-fn pcode_unported(name: &str) -> ! {
-    panic!(
-        "WS4b landed subset: p-code action `{name}` requires the unported \
-         ConstructTpl/section path (slgh_compile.cc / pcodecompile.cc)"
-    )
 }
 
 impl ParserActions for SleighCompile {

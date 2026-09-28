@@ -1,36 +1,7 @@
-//! WS5 -- the `.sla` encode/writer orchestration.
+//! Encode a compiled [`SleighBase`] as a `.sla` image.
 //!
-//! Most of the writer side is **already ported** in `kuna-sleigh`: the
-//! `kuna_sleigh::slaformat::FormatEncode` packed-stream encoder, and the
-//! per-object `encode(...)` methods on every `SleighSymbol` subclass, on
-//! `SymbolTable` (`slghsymbol.rs` `SymbolTable::encode`), on the pattern types
-//! (`slghpattern.rs`), the pattern expressions (`slghpatexpress.rs`), and the
-//! semantics templates (`semantics.rs`).  Those were written/exercised by the
-//! decoder round-trip and are reused verbatim.
-//!
-//! What was **missing** is the single top-level orchestrator that the C++
-//! compiler calls at the end of `run_compilation`:
-//!
-//! - `SleighBase::encode` (sleighbase.cc:226-255): opens `<sleigh>`, writes the
-//!   version/endian/align/uniqbase/maxdelay/uniqmask/numsections attributes,
-//!   emits the source-file indexer, the `<spaces>` block, then `symtab.encode`.
-//! - `SleighBase::encodeSlaSpace` (sleighbase.cc:197-225): one `<space>` element
-//!   per non-internal address space.
-//!
-//! WS5 landed those two **in `kuna-sleigh`** (`SleighBase::encode` /
-//! `SleighBase::encode_sla_space`, next to `SleighBase::decode`) because they
-//! need `&self` access to the private symbol-table / address-space / template
-//! state and the private `SlaTrans` `ConstructTpl`-encode boundary.  The plan
-//! (`docs/rust-port/sleigh-compiler/map.md` WS5) explicitly allows this and
-//! records it as a freeze interface.  This module is the compiler-side wiring:
-//! it drives `SleighBase::encode` through a `FormatEncode` (header + packed
-//! stream + deflate) to produce the final `.sla` byte buffer, exactly as the
-//! C++ `run_compilation` does (`FormatEncode encoder(s,-1); encode(encoder);
-//! encoder.flush();`).
-//!
-//! ## Module ownership: WS5 owns this file exclusively.
-
-#![allow(dead_code)]
+//! The runtime types emit the element stream; [`FormatEncode`] supplies the
+//! header, packed encoding and deflate compression used by Ghidra's compiler.
 
 use std::io::Write;
 

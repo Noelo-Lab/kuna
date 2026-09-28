@@ -1,199 +1,14 @@
-//! `--jobs N` — the **subprocess worker pool** behind the three whole-binary
-//! surfaces.
+//! Persistent subprocess workers for whole-binary decompilation.
 //!
-//! ```text
-//!   kuna decompile-all     <binary> --jobs 12 [--jobs-chunk N] [--jobs-full-load]
-//!   kuna decompile-project <binary> --jobs 12 [--jobs-chunk N] [--jobs-full-load]
-//!   kuna decompile-graph   <binary> --jobs 12 [--jobs-chunk N] [--jobs-full-load]
-//! ```
+//! The parent fixes loader policy and inventory, schedules chunks dynamically,
+//! and merges results into target-order slots. Workers keep one program load
+//! across chunks; their assignment pipe also detects a dead parent.
 //!
-//! Whole-binary decompilation is embarrassingly parallel per function, but the
-//! engine is structurally single-threaded: a `Funcdata` holds `ArchHandle =
-//! Rc<ArchContext>` and the flow environment holds a raw `*const Architecture`,
-//! so nothing in the pipeline is `Send`.  The pool therefore fans out over
-//! **processes**, re-executing this same binary (`std::env::current_exe`) in a
-//! hidden worker mode — no `libc` dependency, no `unsafe`, no new crate, and a
-//! hard-crashing function takes down one chunk instead of the run.
-//!
-//! Only the *plumbing* is threaded — the parent's pool threads own nothing but
-//! `Command`s, byte buffers and [`TargetSpec`]/[`FuncResult`] values, all of
-//! which are `Send`.
-//!
-//! ## Determinism
-//!
-//! Work is handed out dynamically (a shared chunk cursor, so a pathological
-//! function cannot idle the pool) and deliberately NOT in output order, but it
-//! is merged back **positionally**: every target owns a slot index and its
-//! result is written to that slot, so the emitted document is byte-identical to
-//! a `--jobs 1` run regardless of completion order, synthesized structures
-//! included (below).  The parent resolves the
-//! per-function watchdog budget, the concrete `--mode` and every `--option` ONCE
-//! and passes them explicitly, so a worker cannot resolve a different policy
-//! just because the run was sharded.  The one thing that can still differ is the
-//! watchdog itself: it is a wall-clock deadline, so a function that finished
-//! just inside it serially can miss it under N-way contention
-//! ([`warn_about_anomalies`]).  The other is the callee-first `protoorder`
-//! order, which `decompile-all` and `decompile-project` both take serially: a
-//! worker cannot see another worker's callees, so on those two surfaces the
-//! pool matches the serial run only with `--option protoorder off` on both.
-//!
-//! ## Synthesized structures — the replayed ledger
-//!
-//! `structsynth` names a `struct_N` in decompile order: each ledger lookup reads
-//! what the functions before it minted, and after the batch the functions that
-//! name a structure a later, larger one superseded are decompiled once more.  A
-//! worker sees only its own functions, so the names it mints are its own.  What
-//! a function ASKS the ledger does not depend on the answers, though, so the
-//! first pool's workers record every lookup and their own answer
-//! (`--jobs-synth record`), and the parent replays the lookups in target order
-//! through the ledger's own decision (`kuna_structsynth::shard::Replay`).  That
-//! gives every answer, every mint, the superseded set and what the sweep's
-//! lookups will answer.  A function whose own answers name structures with the
-//! members of the serial ones keeps its first decompile with the numbers
-//! renamed (`kuna_structsynth::shard::renaming`) -- on `tar` O2, 100 of 106.
-//! The others are decompiled again by the same workers, each of which first
-//! forgets the structures it minted itself, mints the replayed ones in the
-//! serial order and from then on answers each lookup with its replayed name
-//! (`synth` on the assignment pipe, or `--jobs-synth force` for a worker
-//! started that late); a function the sweep redoes with different answers is
-//! renamed onto them or goes out twice in that pool, and the parent applies the
-//! sweep exactly as `converge_synthesized_structs` does.
-//!
-//! The second decompile records its lookups too, and they must be the first
-//! ones, repeats aside: a decompile can ask the same thing twice (a restarted
-//! pass measures the same layout again), whether it does depends on what the
-//! process decompiled before, and a repeat is answered as the first asking was.
-//! A function whose first answers change what it asks next is the one real
-//! exception; its record is corrected from the second decompile and the replay
-//! runs again, renaming or re-decompiling only what moved.  When that does not
-//! settle, when a structure's field type is one another worker may not hold, or
-//! when a second decompile fails where the first did not, the functions that
-//! asked are decompiled again in target order by ONE worker running the ledger
-//! and the sweep itself (`--jobs-synth serial`), which is the serial
-//! computation over the only functions that take part in it, and stderr says
-//! so.  A function the watchdog or a dead worker cut short asks a different
-//! number of questions on each run, so its record is taken as it comes -- the
-//! same wall-clock caveat as the watchdog itself.  [`name_structs_serially`].
-//!
-//! A project's `.h` comes from the workers' type blocks: in full from the
-//! workers holding the replayed structures, and from every other worker
-//! without the structures it numbered itself ([`Session::close`],
-//! [`merge_type_definitions`]).
-//!
-//! `--stream` has no sweep to reproduce and writes each body as it lands, so its
-//! workers still run with `structsynth off` ([`structsynth_shard_note`]).
-//!
-//! ## Worker load equivalence — the inventory hand-off
-//!
-//! A worker must reach the same program state the serial run had, and the
-//! expensive half of that state is **function discovery**: a worker that runs it
-//! costs 31 s and 1.97 GB against 17 s and 469 MB without, so re-running it in
-//! every worker is what decides whether `--jobs 12` fits on an ordinary desktop
-//! at all.  Skipping it is not free either:
-//! discovery's *product* — the function inventory — is what `FlowInfo::queryCall`
-//! reads, so a worker that has not discovered `sub_28690` renders a tail jump to
-//! it as `(*dat_21a198)(...) // jump-as-call` instead of `sub_28690(...)`.
-//!
-//! So the parent **hands its inventory over** rather than making each worker
-//! re-derive it: every canonical entry is written once to a spec file and each
-//! worker replays the ones its own load did not already resolve, through
-//! `ConsoleProgram::seed_function_inventory` — the seam the loader's own symbols
-//! come in through.  `--jobs-full-load` is the escape
-//! hatch: each worker re-runs the real discovery instead, identical by
-//! construction and priced accordingly.
-//!
-//! ## A worker outlives its chunk
-//!
-//! A worker's load is not cheap: on the 18 MB PE this exists for it costs 17 s
-//! and 469 MB, against ~70 ms to decompile the average function.  So a
-//! worker loads once and then takes chunk after chunk down a pipe until the plan
-//! is empty, which pays the load `--jobs` times for the whole run rather than
-//! once per chunk — restarting per chunk made a 12-way run of 1,500
-//! `mpengine.dll` functions *slower* than the serial one (327 s against 113 s).
-//! Chunks stay small anyway, because they now cost only a spec file, and a small
-//! chunk is what keeps a worker from sitting idle at the end of a run.  The one
-//! reason to retire a live worker is memory: a process holds its allocator arena
-//! at the high-water mark of the worst per-function transient it ever saw, so a
-//! worker is recycled after [`RECYCLE_AFTER`] functions and the next one starts
-//! from the floor again.
-//!
-//! ## Wire format
-//!
-//! Parent → worker is a **chunk spec file** and worker → parent a **result
-//! file**, both little-endian length-prefixed frames rather than JSON: the
-//! decompiled C round-trips byte-exactly with no escaping, and a worker killed
-//! mid-chunk still leaves every record it had flushed.  The pipes carry only the
-//! scheduling: a chunk index per line down, [`ACK_PREFIX`] and that index back.
-//! Anything else the worker's stdout carries is ignored, so nothing the engine
-//! prints can fake progress.
-//!
-//! ## Cancellation — the liveness pipe
-//!
-//! `--jobs` exists for hour-long runs on huge binaries, which is exactly the
-//! workload a user cancels or a supervisor times out, so the parent dying must
-//! not leave dozens of multi-gigabyte workers running unattended.  std has no
-//! signal API and no process groups without `libc`, so the parent cannot be the
-//! one to notice: instead **each worker notices for itself**.  The assignment
-//! pipe is the liveness pipe — its only write end is a
-//! [`std::process::ChildStdin`] the parent holds for the worker's lifetime, and
-//! the worker has a thread blocked on reading it
-//! ([`listen_for_assignments`]).  End of pipe means every write end is closed,
-//! which happens when the parent exits *however* it exits — normally,
-//! panicking, SIGINT, SIGTERM or SIGKILL, the last of which no in-process handler
-//! could ever cover.  The worker then removes the pool's scratch directory and
-//! exits.  A parent that is merely done with one worker says [`QUIT_PREFIX`]
-//! first, so a retiring worker does not mistake that for a dead parent and sweep
-//! a directory its siblings are still using.  The parent's own
-//! happy/error/panic paths are covered by [`ScratchDir`]'s `Drop`; the one
-//! uncovered window — the parent killed after creating the directory but before
-//! any worker is up — is swept on the next run's [`sweep_stale_scratch`].
-//!
-//! ## A dead worker costs one function, not its chunk
-//!
-//! A worker decompiles its chunk in spec order and flushes a record per
-//! function, so when it dies the records it left are a prefix: the first target
-//! without one is the function it was running, and every target after that never
-//! started.  Writing all of them off let one panicking function take 26..512
-//! chunk-mates with it (456 of 601 failures on a 392,814-function export).  So
-//! the thread that served the chunk re-runs each undelivered target once, as a
-//! chunk of its own, before it asks for more work ([`retry_order`]): its
-//! bystanders come back, and the function that died is run again as the first
-//! function of a fresh worker, so its `error` record is what it does alone.
-//!
-//! Three failures are not re-run.  A worker killed by the stall watchdog had
-//! already run its function past four times the per-function budget, whose
-//! verdict in-process is a final `error` too, and a second attempt would cost
-//! another whole stall window.  A worker that never finished a chunk and never
-//! opened this one may have died in its own program load, which every re-run
-//! would repeat.  And a chunk no worker ran at all (a spec that cannot be
-//! written, a spawn the OS refuses) failed for a reason no target has.
-//!
-//! The price is one extra worker load for every function that fails again on
-//! its own, since its death takes the re-run worker with it.  Bystanders are
-//! re-run in an order spread across the chunk ([`spread`]), because the planner
-//! cuts chunks from a size-sorted order and functions that crash alike tend to
-//! sit side by side; a chunk's early re-runs then sample all of it.  A re-run is
-//! never re-run, and a chunk stops re-running (its remaining functions keep
-//! their record, marked as not re-run) at the first re-run that cannot start,
-//! once [`CHUNK_RERUN_STALLS`] of its re-runs have stalled, which caps the extra
-//! stall windows per chunk, or once [`CHUNK_RERUN_FAILURES`] of its bystanders
-//! have failed again and they outnumber the ones recovered.  [`RetryGate`] holds
-//! back any re-run that would start while [`RUN_RERUN_FAILURES`] or more re-runs
-//! have failed and they outnumber every record the workers have delivered,
-//! which is what workers that die on everything look like; it is asked afresh
-//! each time, so an early burst of crashes among the large functions the
-//! planner runs first does not switch re-running off for the rest of the run.
-//! Under `--stream` each re-run also rebuilds its worker's callee-hint table,
-//! one pass over the inventory.
-//!
-//! Re-runs stay on the thread whose worker died, one at a time.  That is the
-//! same serial path the chunk would have taken had nothing died, so the pool
-//! loses no parallelism, and termination needs no argument beyond the chunk
-//! itself: a thread re-runs at most the targets of the chunk it holds, never
-//! waits on another thread, and every target still reaches the sink exactly
-//! once.
+//! This module owns scheduling, recovery and synthesized-structure replay.
+//! [`wire`] owns the versioned chunk and result records. The complete behavior
+//! and its serial-equivalence limits are specified in `docs/spec/00-overview.md`.
 
-use std::io::{BufRead, BufWriter, Write};
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::collections::{HashMap, HashSet};
@@ -203,8 +18,12 @@ use std::time::{Duration, Instant};
 
 use kuna_console::engine::{EntryProvenance, ObjectLocation};
 use kuna_console::project::FuncResult;
-use kuna_decomp::decompile_drive::{GlobalInfo, LineMapping, TypeInfo, VarInfo};
 use kuna_decomp::kuna_structsynth::shard::{self, FunctionRecord, Replay, SynthRequest};
+
+mod wire;
+
+use wire::{decode_results, encode_spec};
+pub(crate) use wire::{read_spec, ResultWriter};
 
 /// Ceiling on an automatically planned chunk, when `--jobs-chunk` is omitted.
 /// A chunk is only a scheduling unit here, so this exists to keep the tail of a
@@ -251,12 +70,6 @@ const ACK_PREFIX: &str = "done ";
 /// on" ([`Worker::force`]).
 const SYNTH_LINE: &str = "synth";
 
-const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC3";
-const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES04";
-
-/// Result-stream frame kind.  One kind today; the envelope is what lets a
-/// truncated tail be dropped rather than guessed.
-const FRAME_RESULT: u8 = 1;
 
 /// Names every pool scratch directory, so a worker and the next run's sweep can
 /// both recognize one without being told.
@@ -428,462 +241,6 @@ pub(crate) fn parse_jobs(value: &str) -> Result<(usize, bool), String> {
     }
 }
 
-// --- wire primitives ---------------------------------------------------------
-
-fn put_u32(out: &mut Vec<u8>, v: u32) {
-    out.extend_from_slice(&v.to_le_bytes());
-}
-
-fn put_u64(out: &mut Vec<u8>, v: u64) {
-    out.extend_from_slice(&v.to_le_bytes());
-}
-
-fn put_str(out: &mut Vec<u8>, s: &str) {
-    put_u32(out, s.len() as u32);
-    out.extend_from_slice(s.as_bytes());
-}
-
-fn put_opt_str(out: &mut Vec<u8>, s: Option<&str>) {
-    match s {
-        Some(s) => {
-            out.push(1);
-            put_str(out, s);
-        }
-        None => out.push(0),
-    }
-}
-
-fn put_u64s(out: &mut Vec<u8>, values: &[u64]) {
-    put_u32(out, values.len() as u32);
-    for &v in values {
-        put_u64(out, v);
-    }
-}
-
-fn put_object_location(out: &mut Vec<u8>, location: Option<&ObjectLocation>) {
-    match location {
-        Some(location) => {
-            out.push(1);
-            put_u64(out, location.section_index as u64);
-            put_str(out, &location.section);
-            put_u64(out, location.offset);
-        }
-        None => out.push(0),
-    }
-}
-
-fn provenance_code(p: EntryProvenance) -> u8 {
-    match p {
-        EntryProvenance::Mapped => 0,
-        EntryProvenance::DefinedObject => 1,
-        EntryProvenance::UndefinedExternal => 2,
-    }
-}
-
-fn provenance_of(code: u8) -> Option<EntryProvenance> {
-    match code {
-        0 => Some(EntryProvenance::Mapped),
-        1 => Some(EntryProvenance::DefinedObject),
-        2 => Some(EntryProvenance::UndefinedExternal),
-        _ => None,
-    }
-}
-
-struct Reader<'a> {
-    bytes: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
-        let end = self.pos.checked_add(n)?;
-        let out = self.bytes.get(self.pos..end)?;
-        self.pos = end;
-        Some(out)
-    }
-
-    fn u32(&mut self) -> Option<u32> {
-        Some(u32::from_le_bytes(self.take(4)?.try_into().ok()?))
-    }
-
-    fn u64(&mut self) -> Option<u64> {
-        Some(u64::from_le_bytes(self.take(8)?.try_into().ok()?))
-    }
-
-    fn i64(&mut self) -> Option<i64> {
-        Some(i64::from_le_bytes(self.take(8)?.try_into().ok()?))
-    }
-
-    fn u8(&mut self) -> Option<u8> {
-        Some(self.take(1)?[0])
-    }
-
-    /// A count read off the wire is untrusted: reserve for it only as far as the
-    /// bytes actually left could possibly justify (the smallest element any
-    /// count here governs is a 4-byte length prefix), so a corrupt frame cannot
-    /// turn into a multi-hundred-gigabyte allocation.
-    fn sized<T>(&self, count: usize) -> Vec<T> {
-        Vec::with_capacity(count.min((self.bytes.len() - self.pos) / 4))
-    }
-
-    fn string(&mut self) -> Option<String> {
-        let n = self.u32()? as usize;
-        String::from_utf8(self.take(n)?.to_vec()).ok()
-    }
-
-    fn opt_string(&mut self) -> Option<Option<String>> {
-        match self.u8()? {
-            0 => Some(None),
-            1 => Some(Some(self.string()?)),
-            _ => None,
-        }
-    }
-
-    fn u64s(&mut self) -> Option<Vec<u64>> {
-        let n = self.u32()? as usize;
-        let mut out = self.sized(n);
-        for _ in 0..n {
-            out.push(self.u64()?);
-        }
-        Some(out)
-    }
-
-    fn object_location(&mut self) -> Option<Option<ObjectLocation>> {
-        match self.u8()? {
-            0 => Some(None),
-            1 => Some(Some(ObjectLocation {
-                section_index: self.u64()? as usize,
-                section: self.string()?,
-                offset: self.u64()?,
-            })),
-            _ => None,
-        }
-    }
-}
-
-// --- chunk spec (parent → worker) --------------------------------------------
-
-fn encode_spec(targets: &[TargetSpec]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(64 * targets.len() + SPEC_MAGIC.len() + 4);
-    out.extend_from_slice(SPEC_MAGIC);
-    put_u32(&mut out, targets.len() as u32);
-    for t in targets {
-        put_u64(&mut out, t.addr);
-        put_str(&mut out, &t.space);
-        put_str(&mut out, &t.name);
-        put_u32(&mut out, t.aliases.len() as u32);
-        for a in &t.aliases {
-            put_str(&mut out, a);
-        }
-        put_u64(&mut out, t.size);
-        put_object_location(&mut out, t.object_location.as_ref());
-        out.push(provenance_code(t.provenance));
-        put_opt_str(&mut out, t.binding.as_deref());
-        match &t.synth {
-            Some(answers) => {
-                out.push(1);
-                put_u32(&mut out, answers.len() as u32);
-                for a in answers {
-                    put_opt_str(&mut out, a.as_deref());
-                }
-            }
-            None => out.push(0),
-        }
-    }
-    out
-}
-
-/// Decode a worker's chunk spec (the worker side of [`encode_spec`]).
-pub(crate) fn read_spec(path: &str) -> Result<Vec<TargetSpec>, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("cannot read chunk spec {path}: {e}"))?;
-    decode_spec(&bytes).ok_or_else(|| format!("malformed chunk spec {path}"))
-}
-
-fn decode_spec(bytes: &[u8]) -> Option<Vec<TargetSpec>> {
-    let mut r = Reader { bytes, pos: 0 };
-    if r.take(SPEC_MAGIC.len())? != SPEC_MAGIC {
-        return None;
-    }
-    let n = r.u32()? as usize;
-    let mut out = r.sized(n);
-    for _ in 0..n {
-        let addr = r.u64()?;
-        let space = r.string()?;
-        let name = r.string()?;
-        let na = r.u32()? as usize;
-        let mut aliases = r.sized(na);
-        for _ in 0..na {
-            aliases.push(r.string()?);
-        }
-        let size = r.u64()?;
-        let object_location = r.object_location()?;
-        let provenance = provenance_of(r.u8()?)?;
-        let binding = r.opt_string()?;
-        let synth = match r.u8()? {
-            0 => None,
-            1 => {
-                let n = r.u32()? as usize;
-                let mut answers = r.sized(n);
-                for _ in 0..n {
-                    answers.push(r.opt_string()?);
-                }
-                Some(answers)
-            }
-            _ => return None,
-        };
-        out.push(TargetSpec {
-            addr,
-            space,
-            name,
-            aliases,
-            size,
-            object_location,
-            provenance,
-            binding,
-            synth,
-        });
-    }
-    Some(out)
-}
-
-// --- result stream (worker → parent) -----------------------------------------
-
-/// A worker's incremental result writer: one length-prefixed frame per function,
-/// flushed as it is produced so a worker killed mid-chunk still delivers every
-/// function it had finished.
-pub(crate) struct ResultWriter {
-    out: BufWriter<std::fs::File>,
-}
-
-impl ResultWriter {
-    pub(crate) fn create(path: &str) -> Result<Self, String> {
-        let file = std::fs::File::create(path)
-            .map_err(|e| format!("cannot create worker result file {path}: {e}"))?;
-        let mut out = BufWriter::new(file);
-        out.write_all(RESULT_MAGIC).map_err(|e| format!("worker result write failed: {e}"))?;
-        Ok(Self { out })
-    }
-
-    pub(crate) fn push(&mut self, r: &FuncResult) -> Result<(), String> {
-        let mut body = Vec::with_capacity(256);
-        put_u64(&mut body, r.address);
-        put_u64(&mut body, r.byte_address);
-        body.extend_from_slice(&r.size.to_le_bytes());
-        put_str(&mut body, &r.name);
-        put_opt_str(&mut body, r.code.as_deref());
-        put_opt_str(&mut body, r.error.as_deref());
-        put_opt_str(&mut body, r.proto.as_deref());
-        put_object_location(&mut body, r.object_location.as_ref());
-        put_u32(&mut body, r.aliases.len() as u32);
-        for a in &r.aliases {
-            put_str(&mut body, a);
-        }
-        put_u32(&mut body, r.line_mappings.len() as u32);
-        for m in &r.line_mappings {
-            put_u64(&mut body, m.line_number as u64);
-            put_u64s(&mut body, &m.addresses);
-        }
-        put_u32(&mut body, r.variables.len() as u32);
-        for v in &r.variables {
-            put_str(&mut body, &v.name);
-            put_str(&mut body, &v.type_name);
-            body.push(u8::from(v.is_param));
-            match v.arg_index {
-                Some(i) => {
-                    body.push(1);
-                    put_u64(&mut body, i as u64);
-                }
-                None => body.push(0),
-            }
-            match v.stack_offset {
-                Some(o) => {
-                    body.push(1);
-                    body.extend_from_slice(&o.to_le_bytes());
-                }
-                None => body.push(0),
-            }
-            body.extend_from_slice(&v.size.to_le_bytes());
-            put_u32(&mut body, v.line_numbers.len() as u32);
-            for &n in &v.line_numbers {
-                put_u64(&mut body, n as u64);
-            }
-            put_u64s(&mut body, &v.addresses);
-        }
-        // (kuna `structdefs`) The recovered type definitions travel with the
-        // record: a pooled worker renders the C, so the parent has no `Funcdata`
-        // left to re-derive them from.
-        put_u32(&mut body, r.types.len() as u32);
-        for t in &r.types {
-            put_str(&mut body, &t.name);
-            put_str(&mut body, &t.definition);
-            body.extend_from_slice(&t.size.to_le_bytes());
-        }
-        // (kuna `globalref`) The globals the body names by address, for the
-        // project header the parent writes.
-        put_u32(&mut body, r.globals.len() as u32);
-        for g in &r.globals {
-            put_u64(&mut body, g.address);
-            put_str(&mut body, &g.name);
-            put_str(&mut body, &g.declaration);
-            body.extend_from_slice(&g.size.to_le_bytes());
-            body.push(u8::from(g.unknown) | u8::from(g.direct) << 1 | u8::from(g.aggregate) << 2 | u8::from(g.elem) << 3);
-        }
-        put_u64s(&mut body, &r.callee_hints);
-        match &r.synth {
-            Some(record) => {
-                body.push(1);
-                record.encode(&mut body);
-            }
-            None => body.push(0),
-        }
-        self.frame(FRAME_RESULT, &body)
-    }
-
-    fn frame(&mut self, kind: u8, body: &[u8]) -> Result<(), String> {
-        let mut frame = Vec::with_capacity(body.len() + 5);
-        frame.push(kind);
-        put_u32(&mut frame, body.len() as u32);
-        frame.extend_from_slice(body);
-        self.out.write_all(&frame).map_err(|e| format!("worker result write failed: {e}"))?;
-        self.out.flush().map_err(|e| format!("worker result flush failed: {e}"))
-    }
-}
-
-/// Decode every complete frame in a worker result file, ignoring a truncated
-/// tail (a worker killed mid-write).  `None` only when the magic is absent.
-fn decode_results(bytes: &[u8]) -> Option<Vec<FuncResult>> {
-    let mut r = Reader { bytes, pos: 0 };
-    if r.take(RESULT_MAGIC.len())? != RESULT_MAGIC {
-        return None;
-    }
-    let mut out = Vec::new();
-    while let Some(kind) = r.u8() {
-        let Some(len) = r.u32() else { break };
-        let Some(body) = r.take(len as usize) else { break };
-        match kind {
-            FRAME_RESULT => match decode_one(body) {
-                Some(rec) => out.push(rec),
-                None => break,
-            },
-            _ => break,
-        }
-    }
-    Some(out)
-}
-
-fn decode_one(body: &[u8]) -> Option<FuncResult> {
-    let mut r = Reader { bytes: body, pos: 0 };
-    let address = r.u64()?;
-    let byte_address = r.u64()?;
-    let size = r.i64()?;
-    let name = r.string()?;
-    let code = r.opt_string()?;
-    let error = r.opt_string()?;
-    let proto = r.opt_string()?;
-    let object_location = r.object_location()?;
-    let na = r.u32()? as usize;
-    let mut aliases = r.sized(na);
-    for _ in 0..na {
-        aliases.push(r.string()?);
-    }
-    let nm = r.u32()? as usize;
-    let mut line_mappings = r.sized(nm);
-    for _ in 0..nm {
-        line_mappings.push(LineMapping {
-            line_number: r.u64()? as usize,
-            addresses: r.u64s()?,
-        });
-    }
-    let nv = r.u32()? as usize;
-    let mut variables = r.sized(nv);
-    for _ in 0..nv {
-        let vname = r.string()?;
-        let type_name = r.string()?;
-        let is_param = r.u8()? != 0;
-        let arg_index = match r.u8()? {
-            0 => None,
-            1 => Some(r.u64()? as usize),
-            _ => return None,
-        };
-        let stack_offset = match r.u8()? {
-            0 => None,
-            1 => Some(r.i64()?),
-            _ => return None,
-        };
-        let vsize = r.i64()?;
-        let nl = r.u32()? as usize;
-        let mut line_numbers = r.sized(nl);
-        for _ in 0..nl {
-            line_numbers.push(r.u64()? as usize);
-        }
-        let addresses = r.u64s()?;
-        variables.push(VarInfo {
-            name: vname,
-            type_name,
-            stack_offset,
-            size: vsize,
-            is_param,
-            arg_index,
-            line_numbers,
-            addresses,
-        });
-    }
-    let nt = r.u32()? as usize;
-    let mut types = r.sized(nt);
-    for _ in 0..nt {
-        let tname = r.string()?;
-        let definition = r.string()?;
-        let tsize = r.i64()?;
-        types.push(TypeInfo { name: tname, definition, size: tsize });
-    }
-    let ng = r.u32()? as usize;
-    let mut globals = r.sized(ng);
-    for _ in 0..ng {
-        let address = r.u64()?;
-        let gname = r.string()?;
-        let declaration = r.string()?;
-        let gsize = r.i64()?;
-        let bits = r.u8()?;
-        globals.push(GlobalInfo {
-            address,
-            name: gname,
-            declaration,
-            size: gsize,
-            unknown: bits & 1 != 0,
-            direct: bits & 2 != 0,
-            aggregate: bits & 4 != 0,
-            elem: bits & 8 != 0,
-        });
-    }
-    let callee_hints = r.u64s()?;
-    let synth = match r.u8()? {
-        0 => None,
-        1 => {
-            let (record, used) = FunctionRecord::decode(&body[r.pos..])?;
-            r.pos += used;
-            Some(record)
-        }
-        _ => return None,
-    };
-    Some(FuncResult {
-        name,
-        address,
-        byte_address,
-        size,
-        code,
-        error,
-        proto,
-        variables,
-        types,
-        globals,
-        line_mappings,
-        aliases,
-        object_location,
-        callee_hints,
-        synth,
-        detail: None,
-    })
-}
 
 // --- the pool ----------------------------------------------------------------
 
@@ -3263,6 +2620,8 @@ fn hms(seconds: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::wire::{decode_spec, RESULT_MAGIC};
+    use kuna_decomp::decompile_drive::{GlobalInfo, LineMapping, TypeInfo, VarInfo};
 
     fn sample_result() -> FuncResult {
         FuncResult {
@@ -3415,6 +2774,41 @@ mod tests {
         assert!(decoded[1].callee_hints.is_empty());
     }
 
+    #[test]
+    fn result_encoding_matches_the_version_four_wire_layout() {
+        let dir = ScratchDir::create().unwrap();
+        let path = dir.path().join("wire.bin").to_string_lossy().into_owned();
+        let result = FuncResult {
+            name: "f".into(),
+            address: 0x10,
+            byte_address: 0x20,
+            size: -1,
+            code: None,
+            error: Some("e".into()),
+            proto: None,
+            variables: Vec::new(),
+            types: Vec::new(),
+            globals: Vec::new(),
+            line_mappings: Vec::new(),
+            aliases: Vec::new(),
+            object_location: None,
+            callee_hints: Vec::new(),
+            synth: None,
+            detail: None,
+        };
+        let expected = b"KUNAJOBRES04\x01\x3f\0\0\0\
+            \x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0\
+            \xff\xff\xff\xff\xff\xff\xff\xff\
+            \x01\0\0\0f\0\x01\x01\0\0\0e\0\0\
+            \0\0\0\0\0\0\0\0\0\0\0\0\
+            \0\0\0\0\0\0\0\0\0\0\0\0\0";
+        ResultWriter::create(&path).unwrap().push(&result).unwrap();
+        assert_eq!(std::fs::read(path).unwrap(), expected);
+        let decoded = decode_results(expected).unwrap();
+        assert_eq!(decoded.len(), 1);
+        assert!(same(&decoded[0], &result));
+    }
+
     /// The dynamic source is the only thing `--stream` changes about the pool:
     /// every chunk it hands out is served once, and a drained source ends the
     /// thread's loop.
@@ -3499,6 +2893,17 @@ mod tests {
         ];
         assert_eq!(decode_spec(&encode_spec(&targets)).unwrap(), targets);
         assert!(decode_spec(b"KUNAJOBSPEC3\xff\xff\xff\xff").is_none());
+    }
+
+    #[test]
+    fn spec_encoding_matches_the_version_three_wire_layout() {
+        let expected = b"KUNAJOBSPEC3\x01\0\0\0\
+            \0\x10\0\0\0\0\0\0\
+            \x03\0\0\0ram\x08\0\0\0sub_1000\
+            \0\0\0\0\x20\0\0\0\0\0\0\0\
+            \0\0\0\0";
+        assert_eq!(encode_spec(&[target(0x1000)]), expected);
+        assert_eq!(decode_spec(expected).unwrap(), vec![target(0x1000)]);
     }
 
     /// A worker killed mid-chunk keeps its flushed prefix; the rest of ITS chunk

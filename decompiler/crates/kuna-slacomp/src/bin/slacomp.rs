@@ -1,23 +1,7 @@
-//! The `slacomp` binary -- the Rust `sleigh_opt` replacement.
+//! Command-line SLEIGH compiler, compatible with Ghidra's `sleigh_opt` flags.
 //!
-//! CLI contract (mirrors C++ `sleigh_opt`, slgh_compile.cc:3926-4090):
-//!
-//! ```text
-//! slacomp [-options] inputfile [outputfile]
-//!   -a              recurse: `inputfile` is a directory; compile every *.slaspec
-//!   -y              write .sla in XML debug format
-//!   -u -l -n -t -e -c -s   warning/strictness toggles (see usage below)
-//!   -DNAME=VALUE    define a preprocessor macro
-//! ```
-//!
-//! With a single `<file.slaspec>` and no output given, writes `<file>.sla` next
-//! to it.  The Python differential harness (`kuna/slacomp.py`) drives this binary
-//! and byte-compares the result against `sleigh_opt`'s.
-//!
-//! The argument parsing here is real (so the harness wiring is exercised); the
-//! actual compilation is delegated to
-//! [`SleighCompile::run_compilation`](kuna_slacomp::slgh_compile::SleighCompile::run_compilation),
-//! whose body lands in WS4.
+//! Compiles one `.slaspec` or, with `-a`, a directory tree. An omitted output
+//! path selects the input's sibling `.sla` file.
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;

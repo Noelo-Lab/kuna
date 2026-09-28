@@ -1621,30 +1621,6 @@ impl<'a> RegionStructurer<'a> {
         heads
     }
 
-    /// Is `head` the head of an *innermost* loop — i.e. its natural-loop body (the
-    /// nodes that reach a latch of `head` without leaving the dominator subtree of
-    /// `head`) contains no *other* live loop head?  Mirrors the inside-out order
-    /// `CollapseStructure` gets from its depth-sorted `loopbody`.
-    ///
-    /// (Retained for a future increment: the speculative `refine_loop_edges`
-    /// machinery this supports is not run in Inc 3 — see `match_cyclic_schemas`.)
-    #[allow(dead_code)]
-    fn is_innermost_loop_head(&self, head: BlockId) -> KunaResult<bool> {
-        let body = self.natural_loop_body(head);
-        for &bl in body.iter() {
-            if bl == head {
-                continue;
-            }
-            // Another live loop head inside the body ⇒ not innermost.
-            let b = self.graph.block(bl);
-            for j in 0..b.size_in() {
-                if b.is_back_edge_in(j) {
-                    return Ok(false);
-                }
-            }
-        }
-        Ok(true)
-    }
 
     /// Compute the natural-loop body of `head`: starting from each latch (a
     /// back-edge source into `head`), walk predecessors that are dominated by

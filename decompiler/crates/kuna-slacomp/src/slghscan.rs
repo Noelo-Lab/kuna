@@ -1,52 +1,16 @@
-//! WS1 -- the SLEIGH lexer (port of `decompiler/cpp/slghscan.l`).
+//! SLEIGH scanner and preprocessor, ported from Ghidra's slghscan.l.
 //!
-//! The C++ lexer is a flex scanner with **start-conditions** (`%x`) that switch
-//! the active token set per syntactic region, plus a hand-written preprocessor
-//! layer (`@include` / `@define` / `@ifdef` / `@if` ... `@endif`) that runs
-//! *before* tokenization.  This module is the hand port of that scanner.
-//!
-//! ## Start conditions (flex `%x`, slghscan.l:483-488)
-//!
-//! - `INITIAL`    -- top level: `define`/`attach`/`macro`/`with`/subtable names.
-//! - `defblock`   -- inside `define`/`attach` blocks (token/context/space/varnode).
-//! - `macroblock` -- a macro's parameter list `( ... )`.
-//! - `print`      -- a constructor's display (mnemonic) section, up to `is`.
-//! - `pattern`    -- a constructor's pattern/context section, up to `{`.
-//! - `sem`        -- a constructor's semantic (p-code) section `{ ... }`.
-//! - `preproc`    -- transient state used while a preprocessor directive erases
-//!   a region (`last_preproc` saves the state to return to).
-//!
-//! The scanner returns to `INITIAL` (or the saved state) on the structural
-//! delimiters (`;`, `is`, `{`, `}`); `slgh->calcContextLayout()` is triggered as
-//! a side effect when `attach`/`with` is scanned (slghscan.l:501-502).
-//!
-//! ## Porting strategy: longest-match per start-condition
-//!
-//! flex picks, at each input position, the rule with the **longest match**
-//! (ties broken by rule order).  This module reproduces that explicitly: for
-//! the current [`ScanState`] it tries each rule's matcher in the flex source
-//! order, keeps the longest match, then runs that rule's action.  An action
-//! either returns a [`Token`] or loops (whitespace / comment / preprocessor /
-//! `$(...)` macro expansion produce no token).
-//!
-//! Two flex features are honored exactly:
-//! - The `^@[^\n]*\n?` preprocessor rule and the `<preproc>^.*\n` erasure rule
-//!   are **column-0 anchored** (the leading `^`): an `@` mid-line falls to the
-//!   `.` rule instead.  We track whether the cursor is at the start of a line.
-//! - The number rules and the operator rules interact via longest-match: e.g.
-//!   `0xZZ` lexes as `INTEGER 0` then identifier `xZZ`, because `0x[0-9a-fA-F]+`
-//!   needs at least one hex digit and otherwise loses to `[0-9]+` matching `0`.
-//!
-//! ## Module ownership: WS1 owns this file exclusively.
-
-#![allow(dead_code)]
+//! Each [`ScanState`] selects a token set. Rules use longest-match selection,
+//! breaking ties in source order, as flex does. Preprocessor directives and
+//! `$(...)` macro expansion run before tokenization. Directive recognition is
+//! anchored at the start of a line.
 
 use kuna_base::error::KunaResult;
 
 /// Lexer start-conditions, mirroring the flex `%x` states (slghscan.l:483-488).
 ///
 /// `Preproc` corresponds to the `preproc` `%x` state used during directive
-/// erasure; the state to resume is saved in [`SleighScanner::last_preproc`].
+/// erasure; the scanner saves the previous state to resume afterwards.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScanState {
     /// Top-level (flex `INITIAL`).

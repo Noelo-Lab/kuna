@@ -774,15 +774,6 @@ const DT_INIT_ARRAY: u64 = 25;
 const DT_FINI_ARRAY: u64 = 26;
 const DT_INIT_ARRAYSZ: u64 = 27;
 const DT_FINI_ARRAYSZ: u64 = 28;
-// Ghidra also seeds `DT_PREINIT_ARRAY` (named `_PREINIT_<i>`), but kuna does not
-// currently *discover* preinit-array elements as code entries. Adding that would
-// change the discovery set (which VMAs are found), out of scope for this purely
-// additive naming pass — wired here as the faithful follow-up seam (the
-// `read_pointer_table` `base_name` would just be `"_PREINIT_"`).
-#[allow(dead_code)]
-const DT_PREINIT_ARRAY: u64 = 32;
-#[allow(dead_code)]
-const DT_PREINIT_ARRAYSZ: u64 = 33;
 
 /// The loader-seeded external entry-point VMAs from the `.dynamic` table:
 /// `DT_INIT`/`DT_FINI` (one each) plus every pointer in the `DT_INIT_ARRAY` /

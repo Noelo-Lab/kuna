@@ -20,7 +20,6 @@
 //! driven externally by [`emulate_path`](EmulateFunction::emulate_path): there is
 //! exactly one execution path even though there may be multiple data-flow paths.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -486,8 +485,3 @@ impl EmulateFunction<'_> {
             .ok_or_else(|| KunaError::lowlevel("EmulateFunction: dangling varnode size"))
     }
 }
-
-/// A `RefCell`-wrapped temporary so a hand-built fixture can construct an
-/// emulator without a shared `Funcdata` borrow conflict (test-support only).
-#[allow(dead_code)]
-type EmulateCell<'a> = RefCell<EmulateFunction<'a>>;

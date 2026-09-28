@@ -1,18 +1,10 @@
-//! WS4b end-to-end gate: the `SleighCompile` driver compiles a `.slaspec` all
-//! the way to a `.sla` whose **decompressed element stream** is byte-identical
-//! to the committed C++ `sleigh_opt` output.
+//! Compile specs and compare their decompressed element streams with the
+//! `.sla` fixtures available in the checkout. Compression bytes can differ
+//! between flate2 and zlib even when the encoded elements are identical.
 //!
-//! Whole-file raw byte-identity is blocked by LOSS-010 (flate2 deflate != C
-//! zlib), so the gate compares the *decompressed* packed element streams,
-//! exactly as `encode_roundtrip.rs` (WS5) does.
-//!
-//! The byte-identical subset is the specs with no semantic p-code sections
-//! (`data-le-64` / `data-be-64`: the simplest of the 148 vendored specs, a
-//! single `:nop is test=1 unimpl` constructor).  Specs whose constructors carry
-//! RTL bodies / macros / operand definitions need the p-code section path that
-//! `kuna-sleigh` does not yet port (`ConstructTpl::fillinBuild` /
-//! `Constructor::setMainSection` / `markSubtableOperands`); they are deferred to
-//! WS6/WS7 and not asserted here.
+//! These fixtures can be built by kuna, so this is a consistency check against
+//! the installed specs, not an independent C++ oracle. Committed scanner,
+//! parser and macro-expansion traces are tested separately.
 
 use std::path::PathBuf;
 
@@ -37,7 +29,7 @@ fn inflate(sla: &[u8]) -> Vec<u8> {
 }
 
 /// Compile `rel` (a `.slaspec` under `specs/`) with the Rust driver and assert
-/// its decompressed element stream equals the committed C++ `.sla`.
+/// its decompressed element stream equals the available `.sla` fixture.
 fn check_byte_identical(rel: &str) {
     let spec = repo_root().join(rel);
     let gold_path = repo_root().join(rel.replace(".slaspec", ".sla"));
@@ -95,10 +87,8 @@ fn ws4b_compile_data_be_64() {
     check_byte_identical("specs/Ghidra/Processors/DATA/data/languages/data-be-64.slaspec");
 }
 
-/// WS4c content-identity gate: every spec the p-code-section RTL path + the
-/// ConsistencyChecker drives to a decompressed element stream byte-identical to
-/// C++ `sleigh_opt`.  Covers the full Toy family plus the real ISAs that land
-/// (BPF, SparcV9, SuperH4, tricore, nds32, 8048, CR16B, m8c, 6805/6809, H6309).
+/// Exercise p-code sections and consistency checks across the Toy family and
+/// processor specs, comparing the packed elements with the installed fixtures.
 #[test]
 fn ws4c_compile_content_identical() {
     const SPECS: &[&str] = &[
@@ -149,9 +139,7 @@ fn ws4c_compile_content_identical() {
         "specs/Ghidra/Processors/Dalvik/data/languages/Dalvik_Base.slaspec",
     ];
     for rel in SPECS {
-        if repo_root().join(rel).exists() {
-            check_byte_identical(rel);
-        }
+        check_byte_identical(rel);
     }
 }
 
@@ -164,7 +152,5 @@ fn ws4c_compile_content_identical() {
 #[test]
 fn ws7_compile_hexagon_content_identical() {
     let rel = "specs/Ghidra/Processors/Hexagon/data/languages/hexagon.slaspec";
-    if repo_root().join(rel).exists() {
-        check_byte_identical(rel);
-    }
+    check_byte_identical(rel);
 }

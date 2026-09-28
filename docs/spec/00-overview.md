@@ -1107,6 +1107,14 @@ in the pipeline is `Send`. `--jobs N` on `decompile-all`, `decompile-project` an
 mode. `--jobs 1` is the default and is the in-process loop above, unchanged; the
 console and parity paths never see a pool.
 
+The record codec is isolated in `decompiler/crates/kuna-cli/src/jobs/wire.rs`;
+it does not own worker processes or scheduling. Chunk specifications and result
+frames retain their existing version markers, little-endian fields and field
+order. A worker flushes each completed function's result, and the parent keeps
+every complete frame before a truncated tail. Wire counts reserve no more
+storage than the remaining bytes can justify. Literal-byte tests pin both
+formats independently of their decoders.
+
 The pool is driver policy, and its contract is that it cannot be observed in the
 output. Work is planned longest-first into equal-work chunks and handed out
 dynamically, which is deliberately not output order; every target owns a slot
@@ -1949,6 +1957,11 @@ still orders the way it did — `decompiler/crates/kuna-decomp/src/substrate/op.
 the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as a
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
+
+Registering an input varnode also applies the prototype's saved-register and
+return-address effects. This is unconditional registration behavior, not a
+separate feature gate; `funcdata_varnode.rs (apply_input_effect_marking)` uses
+the canonical `fspec.rs (effect_type)` values rather than maintaining copies.
 
 The varnode bank's two sorted trees are the container the decompiler touches most
 — a large function creates and destroys well over a million Varnodes, each one
