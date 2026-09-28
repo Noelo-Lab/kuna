@@ -41,7 +41,7 @@
 //!
 //! The marker scans gate on the object architecture (ARM-only / MIPS-only), so on
 //! x86-64 (and anything else with no decode-mode context) [`ContextPainter::new`]
-//! collects **zero** paints and [`paint_all`] is a no-op — x86-64 decode is
+//! collects **zero** paints and `ContextPainter::paint_all` is a no-op — x86-64 decode is
 //! byte-identical to no painter at all. Belt-and-suspenders: `set_variable`
 //! returns `Err` for a context variable the active language does not register
 //! (e.g. `TMode` on a MIPS object), and that error is swallowed — the exact

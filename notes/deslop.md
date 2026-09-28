@@ -1619,6 +1619,68 @@ including a fresh WASM build. Spec/catalog checks pass. Tracked diff hash
 `a52fd8ea` remains unchanged through the final terminal success. Logs use
 `/tmp/kuna-deslop-fid-serialize-final-`; no baseline moved.
 
+### Analysis documentation ownership and borrowed temporary records
+
+Eighteen analysis source files lose 187 comment lines while retaining every
+non-comment, nonblank source line exactly. The format boundary now describes
+all four implemented formats; the format-string and PDB headers identify their
+current consumers. Obsolete field/type references are corrected. Mach-O entry
+documentation no longer claims to decode unsupported `LC_UNIXTHREAD` commands.
+The DWARF recursion guard is described in terms of its current `Guard` variants.
+
+Module files own their documentation instead of also carrying duplicate parent
+summaries. A small rustdoc fixture reproduces the scope problem: combining an
+outer module summary with inner documentation resolves the inner links in the
+parent scope; removing the duplicate restores the child scope. The original
+analysis documentation has 18 broken public links and 57 with private items
+included. Both checks now pass with `-D rustdoc::broken_intra_doc_links`.
+There are still 111 other documentation warnings, so this is not a warning-clean
+crate. No lint suppression, visibility change or executable edit hides an error.
+
+The integrated compiler change lends overlapping temporary records to the
+existing two-pass coalescer instead of collecting cloned records. Complete
+before/after source matches the reviewed candidate; the extracted implementations
+are verbatim installed code. The differential model reproduces 32,768 transitions
+in each overflow mode, including panic text and partial state. Fresh allocation
+probes reproduce all twelve full state files and stable costs: 4,867 to 2,819
+allocation/reallocation requests and 454,216 to 203,800 cumulative requested bytes
+across four workloads. This does not measure peak memory.
+
+Across 66 balanced CPU-41 runs, median aggregate workload time falls 20.35%
+(paired 20.40%); all four workloads improve. Full compiler wall-time changes are
++2.53%/-0.06%/-0.61% for Toy/x86/Hexagon, with paired changes
++0.05%/-0.28%/-0.82%; generated images match throughout. All 286 saved compiler
+cases retain output bytes, diagnostics and status. The 1,280 focused tests pass
+without warnings, as does the native build (19.53 seconds).
+
+Artifacts are under `/tmp/kuna-deslop-analysis-docs.tmqCSugl`, including source
+identity proofs, public/private rustdoc logs, the tiny scope fixture, fresh
+record models and allocation files, and raw timing samples. The previous
+checkpoint's CI job failed when Chrome did not publish a DevTools port in ten
+seconds; its unchanged retry passed. The failure is retained in the artifacts.
+
+The first local workspace run failed one top-level compiler-probe test: its
+freshly written fake compiler produced `Text file busy` rather than the intended
+exit 7. Forty isolated repetitions of the unchanged three-test probe group did
+not reproduce the full-suite failure. The fixture now uses symlinks to a
+checked-in script with the same bytes, avoiding a write/execute window while
+other test threads spawn children. Missing-tool and non-executable-tool setup,
+every assertion and all timeouts are unchanged. This is a test-fixture change,
+not a retry or a relaxation in the production command runner. The corrected
+three-test group passes once through cargo and in forty further parallel-harness
+repetitions (120 test results). The old executable and all before/after outputs
+remain in the artifact directory.
+
+All nine gates pass after the fixture change: 7,450 workspace tests with 38
+existing ignores across 439 groups and no warnings; 675/675 upstream and
+1,467/1,467 stage assertions retain parity. The 268 CLI probes, 42 Python tests,
+56 Ghidra tests, 48 XML comparisons, 17 saved CLI comparisons and all eleven
+browser probes pass, including another fresh WASM build. Spec/catalog checks
+pass. Tracked diff hash `14d65c1d` and fixture hash `4d8fe247` (mode 755) remain
+unchanged through the final terminal success. Final logs use
+`/tmp/kuna-deslop-analysis-docs-verified-`; the earlier failing run remains
+under the `analysis-docs-final-` prefix. No baseline moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1631,7 +1693,7 @@ These are investigation targets, not a claim that the repository review is done.
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Archive member and console output files have scoped cleanup. Loading/configuration and the remaining pool module still combine several lifecycle policies. |
 | Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; CLI finds 16 errors/20 warnings and analysis 215 errors/64 warnings. Declaration naming, rendered-signature dedup, FID dedup/database indices, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
-| Analysis, SLEIGH, Python, integrations | Broader review remains open, including 18 unresolved analysis rustdoc links and stale format-dispatch claims. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
+| Analysis, SLEIGH, Python, integrations | Public and private analysis rustdoc links now resolve; other documentation warnings and stale migration narratives remain. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. Two CI runs have timed out during Chrome startup; monitor the retry and inspect readiness diagnostics. |
 
 Before each commit: `make test`, `make test-stages`, `make rust-test`,
 `make check-spec`. Also run the catalog check and relevant CLI probes. Preserve

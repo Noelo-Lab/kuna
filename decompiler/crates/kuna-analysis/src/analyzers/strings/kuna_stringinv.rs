@@ -5,7 +5,7 @@
 //! # Why this is not a second scanner
 //!
 //! The analyzer tier's job is to *mark up* strings: it emits a
-//! [`StringFact`] per literal so the commit seam can plant a typelocked
+//! [`StringFact`](crate::pass::StringFact) per literal so the commit seam can plant a typelocked
 //! `char[N]`, and the printer renders `puts("Username: ")`. It deliberately keeps
 //! nothing an analyst would ask for — no text, no section, no encoding — because
 //! nothing downstream of the commit needed it.

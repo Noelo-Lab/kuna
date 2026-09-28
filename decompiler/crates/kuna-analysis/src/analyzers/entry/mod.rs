@@ -1488,7 +1488,7 @@ fn harvest_vector_slots(
 /// decode mode, so a function reached only through the reset→main call tree would
 /// still decode as A32 without the region paint. Wired into both the analysis
 /// commit path (`EntryDiscoveryPass::run` → `context_paints`) and the Listing
-/// walk's [`crate::listing::context::ContextPainter`].
+/// walk's `ContextPainter` in [`crate::listing::context`].
 ///
 /// Empty on any ARM object without the vector-table signature (and every non-ARM
 /// arch), so it is a strict no-op outside stripped Cortex-M firmware.

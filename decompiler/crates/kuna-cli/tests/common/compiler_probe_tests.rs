@@ -25,13 +25,14 @@ fn check(probe: Probe) {
     if !matches!(probe, Probe::Missing) {
         for name in ["cc", "gcc", "clang"] {
             let path = directory.0.join(name);
-            std::fs::write(&path, b"#!/bin/sh\nexit 7\n").unwrap();
-            let mode = if matches!(probe, Probe::Unusable) {
-                0o600
+            if matches!(probe, Probe::Failed) {
+                let fixture = common::repo_root()
+                    .join("decompiler/crates/kuna-cli/tests/common/failed-compiler.sh");
+                std::os::unix::fs::symlink(fixture, path).unwrap();
             } else {
-                0o700
-            };
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+                std::fs::write(&path, b"#!/bin/sh\nexit 7\n").unwrap();
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+            }
         }
     }
     for test in [

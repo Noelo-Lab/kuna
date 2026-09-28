@@ -76,10 +76,6 @@
 //! builds elide `__cxx11`). For the name-only path this only affects which
 //! intermediate `::` scopes are created, not correctness of the base name.
 
-/// (kuna `cppsig`) The signature arm — apply the demangled parameter types and
-/// the class type for `this` to a function whose mangled symbol survives. This
-/// is the "deferred follow-up" the Scope section above records, and the first
-/// production consumer of [`demangle_raw`].
 pub mod kuna_cppsig;
 
 /// `GnuDemangler.GLOBAL_PREFIX` (`GnuDemangler.java:35`).

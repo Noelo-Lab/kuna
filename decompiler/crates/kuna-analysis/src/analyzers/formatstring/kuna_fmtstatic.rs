@@ -23,7 +23,7 @@
 //!    (`assign_parameter_storage`), so the register is derived from the cspec
 //!    rather than hard-coded per architecture;
 //! 4. a bounded backward window of the call site's own basic block is re-lifted
-//!    to p-code and constant-folded forward ([`fold`]); a format argument that is
+//!    to p-code and constant-folded forward (`fold`); a format argument that is
 //!    not a constant in that window is simply not resolved.
 //!
 //! The resolved VMA is read as a NUL-terminated string, parsed by the shared

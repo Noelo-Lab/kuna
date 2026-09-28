@@ -902,6 +902,10 @@ Selecting a copy-propagation rule and reporting unused temporaries iterate the
 existing records in increasing offset order, without copying their keys into
 a separate collection. Only a selected rule is copied out of the read-only
 search; applying it retains the owned varnode copy needed to rewrite an operation.
+Overlapping temporary records are borrowed while computing their combined span
+and read/write counts, then the map entries are replaced by the merged record.
+Both traversals visit existing definitions in order and the new record last;
+coalescing does not build an owned copy of the records.
 
 After consistency checking, the compiler checks whether different operands of a
 constructor can export the same temporary storage. It follows subtable exports

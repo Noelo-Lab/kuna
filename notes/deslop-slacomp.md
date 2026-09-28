@@ -1360,3 +1360,35 @@ changes, so runtime benchmarks do not need repeating.
 All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
 assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
 across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### Borrowed temporary records
+
+`UniqueState::set` now lends the overlapping records to `OptimizeRecord::coalesce`
+instead of cloning them into a temporary vector. Coalescing still visits the
+existing definitions followed by the new record, first for span bounds and then
+for read/write counts. Map replacement and checked arithmetic retain their
+order. Public interfaces and compiler output are unchanged; implementation code
+is two lines shorter.
+
+A differential probe extracted the actual private record/state implementations
+and compared 32,768 transitions with overflow checks both enabled and disabled.
+It covers gaps, overlaps, zero/negative sizes, extreme offsets, read/write count
+overflow, and state after a caught panic. Outcomes and panic messages match.
+Four allocation workloads each perform 256 merges; three samples per workload
+produce identical full states and stable counts. Aggregate allocation plus
+reallocation requests fall from 4,867 to 2,819, and cumulative requested bytes
+from 454,216 to 203,800. These are allocation requests, not peak memory.
+
+Uninstrumented versions of those workloads ran in 66 balanced CPU-pinned runs,
+with 30 measured samples per version and 2,000 repetitions per workload. Median
+aggregate time falls 20.4571% (paired median 20.4078%); each workload improves.
+Full compiler timing remains within the 5% budget: Toy +0.1480%, x86 -1.4271%,
+Hexagon +1.0475% wall time (paired +0.2280%, -1.7217%, +1.0006%). Every generated
+binary image matches. The 371 focused tests pass, including compiler and lift
+oracles; 286 CLI cases and 48 XML outputs remain identical. Probe sources, raw
+samples, output states and logs use `/tmp/kuna-deslop-unique-records-`.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.

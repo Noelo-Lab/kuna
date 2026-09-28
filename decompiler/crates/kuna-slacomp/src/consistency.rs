@@ -69,10 +69,10 @@ impl OptimizeRecord {
     }
 
     /// C++ `OptimizeRecord(vector<OptimizeRecord*> &records)`: merge overlapping.
-    fn coalesce(records: &[OptimizeRecord]) -> OptimizeRecord {
+    fn coalesce<'a>(records: impl Iterator<Item = &'a OptimizeRecord> + Clone) -> OptimizeRecord {
         let mut min_off: Option<u64> = None;
         let mut max_off: Option<u64> = None;
-        for r in records {
+        for r in records.clone() {
             if min_off.map(|m| r.offset < m).unwrap_or(true) {
                 min_off = Some(r.offset);
             }
@@ -148,10 +148,8 @@ impl UniqueState {
     /// C++ `set(OptimizeRecord &rec)`: coalesce overlaps and replace.
     fn set(&mut self, rec: OptimizeRecord) {
         let defs = self.get_definition_keys(rec.offset, rec.size);
-        let mut records: Vec<OptimizeRecord> =
-            defs.iter().map(|k| self.recs[k].clone()).collect();
-        records.push(rec);
-        let coalesced = OptimizeRecord::coalesce(&records);
+        let records = defs.iter().map(|k| &self.recs[k]).chain(std::iter::once(&rec));
+        let coalesced = OptimizeRecord::coalesce(records);
         // erase [coalesced.offset, coalesced.offset+coalesced.size)
         let lo = coalesced.offset;
         let hi = coalesced.offset + coalesced.size as u64;

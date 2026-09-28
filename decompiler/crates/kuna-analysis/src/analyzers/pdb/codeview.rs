@@ -20,20 +20,15 @@
 //! - **NB10** (`PdbInfoCodeView`) — the older form: `NB10` magic, a `u32` offset
 //!   (always 0), a `u32` signature, a `u32` age, then the path.
 //!
-//! ## Scope (PR-P0)
-//!
-//! This PR ships **only** the extractor + its test: given a PE image, return the
-//! CodeView record ([`CodeViewInfo`]) or `None`. It registers no analysis pass,
-//! adds no `--option`, and pulls in no `pdb` crate — those land in the
-//! PR-P1 `.pdb`-consuming pass (which calls this `pub fn` to learn which `.pdb`
-//! to open and which GUID/age to gate on). Because there is no pass and no
-//! settable, this module cannot perturb the parity oracles.
+//! [`crate::pdb::PdbPass`] uses this identity and recorded path when locating
+//! and matching a sidecar. This module only extracts the CodeView record;
+//! loading PDB symbols and types belongs to the analyzer.
 //!
 //! ## Faithfulness
 //!
 //! The two record layouts and their field order match Ghidra's `read()` methods
-//! byte-for-byte (`PdbInfoDotNet.read`: magic[4], guid[16], age:u32, path;
-//! `PdbInfoCodeView.read`: magic[4], offset:u32, sig:u32, age:u32, path). The
+//! byte-for-byte (`PdbInfoDotNet.read`: `magic[4], guid[16], age:u32, path`;
+//! `PdbInfoCodeView.read`: `magic[4], offset:u32, sig:u32, age:u32, path`). The
 //! magic is matched as the raw four ASCII bytes (Ghidra's big-endian `MAGIC`
 //! compare is the same four bytes in stream order). Everything is total: a
 //! non-PE input, a PE with no debug directory, no CodeView entry, an unknown
@@ -46,16 +41,15 @@ use object::{pod, FileKind, LittleEndian as LE};
 
 /// A decoded PE CodeView debug record — the fingerprint linking a PE to its
 /// external `.pdb`. The two variants mirror Ghidra's `PdbInfoDotNet` (RSDS) and
-/// `PdbInfoCodeView` (NB10); the PR-P1 pass uses the GUID/sig + age to gate a
-/// supplied `.pdb` (the "don't apply the wrong debug file" check) and the path as
-/// the tier-1/tier-2 sidecar hint.
+/// `PdbInfoCodeView` (NB10). The analyzer uses the recorded path to locate a
+/// sidecar and accepts it only when the fingerprint matches; the GUID-based
+/// matching path rejects NB10 records.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CodeViewInfo {
     /// The modern GUID-keyed record (`RSDS` magic) — `PdbInfoDotNet`.
     Rsds {
         /// The 16 raw GUID bytes, exactly as stored (a Microsoft mixed-endian
-        /// GUID: `{u32 LE, u16 LE, u16 LE, [u8;8]}`). Kept raw so the PR-P1 gate
-        /// can byte-compare against the `.pdb`'s own GUID; [`guid_string`] renders
+        /// GUID: `{u32 LE, u16 LE, u16 LE, [u8;8]}`). [`guid_string`] renders
         /// the canonical `XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX` text form.
         ///
         /// [`guid_string`]: CodeViewInfo::guid_string
