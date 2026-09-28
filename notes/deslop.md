@@ -15,6 +15,11 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   precedence, explicit removal, and restoration after unwinding.
 - Removed obsolete porting instructions and historical count-change logs from
   the touched option code. Count assertions remain intact.
+- CLI integration tests exercise the executable instead of compiling private
+  module copies. They parse output with an independent JSON implementation.
+  Removed missing-command and missing-spec success paths throughout the CLI
+  suite, including wrappers that returned `Option` only to support those skips.
+  Missing processor specs now fail tests; optional C-compiler checks are retained.
 
 ## Evidence
 
@@ -31,6 +36,9 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   this is a check for a noticeable slowdown, not evidence of a speedup.
 - Baseline executables retained outside the repository at
   `/tmp/kuna-deslop-baseline.5KlEYM` for comparison.
+- CLI test cleanup: all four gates and 268/268 CLI probes pass again. Running
+  the modulo CLI regression with an empty specs directory fails as intended;
+  missing specs can no longer turn that test green.
 
 ## Audit still open
 
@@ -38,7 +46,7 @@ These are investigation targets, not a claim that the repository review is done.
 
 | Area | Evidence / next check |
 |---|---|
-| CLI test structure | `strings_cli.rs` and `disassemble_cli.rs` include a duplicate CLI module tree with `#[path]`. Separate private implementation tests from binary integration tests; remove obsolete missing-command skips. |
+| CLI test structure | Private module copies and missing-command/spec skips are removed; the full workspace passes. Other suites still contain ad hoc JSON field extraction and duplicate process helpers. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. Numerous per-option modules repeat boolean parsing. |
 | Parsing and serialization | `jsonfmt.rs` contains a permissive handwritten JSON parser; `build.rs` contains a handwritten TOML subset. Check compatibility requirements before choosing replacements. |
 | CLI responsibilities | `decompile_all.rs` and `jobs.rs` combine discovery, scheduling, serialization, and process lifecycle. Identify ownership boundaries and duplicated policies. |

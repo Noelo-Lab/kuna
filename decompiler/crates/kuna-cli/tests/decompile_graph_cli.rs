@@ -26,19 +26,13 @@ fn specs() -> String {
     repo_root().join("specs").to_string_lossy().into_owned()
 }
 
-fn missing_specs(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-}
-
-/// Run the command, or `None` as a visible skip when the `.sla` files are absent.
-fn graph(args: &[&str]) -> Option<String> {
-    run(args).map(|(stdout, _)| stdout)
+/// Run the graph command and return its document.
+fn graph(args: &[&str]) -> String {
+    run(args).0
 }
 
 /// [`graph`], keeping stderr, for the warnings the document itself cannot carry.
-fn run(args: &[&str]) -> Option<(String, String)> {
+fn run(args: &[&str]) -> (String, String) {
     let specs = specs();
     let mut argv = vec!["decompile-graph"];
     argv.extend_from_slice(args);
@@ -48,12 +42,8 @@ fn run(args: &[&str]) -> Option<(String, String)> {
         .output()
         .expect("spawn kuna decompile-graph");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() && missing_specs(&stderr) {
-        eprintln!("decompile_graph_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-        return None;
-    }
     assert!(output.status.success(), "decompile-graph failed: {stderr}");
-    Some((String::from_utf8_lossy(&output.stdout).into_owned(), stderr.into_owned()))
+    (String::from_utf8_lossy(&output.stdout).into_owned(), stderr.into_owned())
 }
 
 /// One `"key": value` of a rendered object, unquoted — enough to walk this
@@ -95,7 +85,7 @@ fn rows(document: &str, array: &str) -> Vec<String> {
 
 #[test]
 fn the_document_carries_the_schema_and_both_arrays() {
-    let Some(stdout) = graph(&[&fixture("fauxware"), "--label", "fixture-label"]) else { return };
+    let stdout = graph(&[&fixture("fauxware"), "--label", "fixture-label"]);
     assert!(stdout.starts_with("{\n"), "not JSON: {stdout}");
     for key in [
         "\"schemaVersion\": 4",
@@ -131,9 +121,6 @@ fn a_file_export_writes_nothing_to_stdout() {
         .output()
         .expect("spawn kuna decompile-graph");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if !output.status.success() && missing_specs(&stderr) {
-        return;
-    }
     assert!(output.status.success(), "decompile-graph failed: {stderr}");
     assert!(output.stdout.is_empty(), "file output must not mix JSON into stdout");
     let document = std::fs::read_to_string(&path).expect("exported JSON file");
@@ -148,7 +135,7 @@ fn a_file_export_writes_nothing_to_stdout() {
 /// ([`an_explicitly_named_import_slot_still_gets_no_body`]).
 #[test]
 fn a_pe_import_slot_gets_a_label_not_a_body() {
-    let Some(stdout) = graph(&[&fixture("pe_imports.exe")]) else { return };
+    let stdout = graph(&[&fixture("pe_imports.exe")]);
     let rows = rows(&stdout, "functions");
     let imports: Vec<&String> =
         rows.iter().filter(|r| field(r, "kind").as_deref() == Some("import")).collect();
@@ -179,7 +166,7 @@ fn a_pe_import_slot_gets_a_label_not_a_body() {
 #[test]
 fn every_edge_endpoint_is_a_function_row() {
     for name in ["pe_imports.exe", "fauxware", "plt_ppc64le"] {
-        let Some(stdout) = graph(&[&fixture(name)]) else { return };
+        let stdout = graph(&[&fixture(name)]);
         let known: BTreeSet<String> =
             rows(&stdout, "functions").iter().filter_map(|r| field(r, "address")).collect();
         for edge in rows(&stdout, "edges") {
@@ -200,8 +187,8 @@ fn every_edge_endpoint_is_a_function_row() {
 /// both.
 #[test]
 fn two_runs_produce_the_same_bytes() {
-    let Some(first) = graph(&[&fixture("pe_imports.exe")]) else { return };
-    let Some(second) = graph(&[&fixture("pe_imports.exe")]) else { return };
+    let first = graph(&[&fixture("pe_imports.exe")]);
+    let second = graph(&[&fixture("pe_imports.exe")]);
     assert_eq!(first, second, "two runs disagreed");
 }
 
@@ -211,11 +198,11 @@ fn two_runs_produce_the_same_bytes() {
 #[test]
 fn a_sharded_graph_keeps_the_serial_structure_names() {
     let bin = fixture("structsynthchain_x86_64");
-    let Some(serial) = graph(&[&bin, "--max-fn-seconds", "0"]) else { return };
+    let serial = graph(&[&bin, "--max-fn-seconds", "0"]);
     assert!(serial.contains("struct_1 *"), "the fixture stopped synthesizing:\n{serial}");
     for pool in [&["--jobs", "2", "--jobs-chunk", "1"][..], &["--jobs", "4"][..]] {
         let args = [&[bin.as_str(), "--max-fn-seconds", "0"][..], pool].concat();
-        let Some((sharded, stderr)) = run(&args) else { return };
+        let (sharded, stderr) = run(&args);
         assert!(stderr.contains("[kuna --jobs] structsynth: "), "{pool:?}:\n{stderr}");
         assert_eq!(sharded, serial, "{pool:?} moved the document");
     }
@@ -227,7 +214,7 @@ fn a_sharded_graph_keeps_the_serial_structure_names() {
 /// for with no caller at all.
 #[test]
 fn an_address_taken_callee_is_still_an_edge() {
-    let Some(stdout) = graph(&[&fixture("fauxware")]) else { return };
+    let stdout = graph(&[&fixture("fauxware")]);
     let functions = rows(&stdout, "functions");
     let address = |name: &str| {
         functions
@@ -258,7 +245,7 @@ fn forwarding_veneers_are_jump_edges_to_import_rows_on_pe_and_elf() {
         ("pe_noreturn_import.exe", 0x140001070u64, 0x140005038u64),
         ("aif_gap_x86_64", 0x1030, 0x3ff8),
     ] {
-        let Some(stdout) = graph(&[&fixture(binary)]) else { return };
+        let stdout = graph(&[&fixture(binary)]);
         let veneer = veneer.to_string();
         let slot = slot.to_string();
         let functions = rows(&stdout, "functions");
@@ -311,9 +298,7 @@ fn forwarding_veneers_are_jump_edges_to_import_rows_on_pe_and_elf() {
 /// says on stderr that it exported no body for it.
 #[test]
 fn an_explicitly_named_import_slot_still_gets_no_body() {
-    let Some((stdout, stderr)) = run(&[&fixture("pe_imports.exe"), "--addr", "0x14000d1dc"]) else {
-        return;
-    };
+    let (stdout, stderr) = run(&[&fixture("pe_imports.exe"), "--addr", "0x14000d1dc"]);
     for row in rows(&stdout, "functions") {
         assert_eq!(field(&row, "codeC").as_deref(), Some("null"), "invented a body:\n{row}");
         assert_eq!(field(&row, "assembly").as_deref(), Some("null"), "invented a listing:\n{row}");
@@ -341,9 +326,6 @@ fn a_non_c_output_language_is_refused() {
             .output()
             .expect("spawn kuna decompile-graph");
         let stderr = String::from_utf8_lossy(&output.stderr);
-        if missing_specs(&stderr) {
-            return;
-        }
         assert!(!output.status.success(), "{flag:?} was accepted: {stderr}");
         assert!(stderr.contains("C-only"), "{flag:?} failed for another reason: {stderr}");
     }
@@ -354,7 +336,7 @@ fn a_non_c_output_language_is_refused() {
 /// would carry Rust in `codeC` with no flag given at all.
 #[test]
 fn a_rust_binary_is_still_exported_as_c() {
-    let Some(stdout) = graph(&[&fixture("rust_hello_x86_64")]) else { return };
+    let stdout = graph(&[&fixture("rust_hello_x86_64")]);
     let bodies: Vec<String> = rows(&stdout, "functions")
         .into_iter()
         .filter_map(|r| field(&r, "codeC"))
@@ -371,7 +353,7 @@ fn a_rust_binary_is_still_exported_as_c() {
 /// on any `LC_MAIN` image.
 #[test]
 fn a_macho_entry_point_row_is_flagged() {
-    let Some(document) = graph(&[&fixture("macho_stripped_main")]) else { return };
+    let document = graph(&[&fixture("macho_stripped_main")]);
     let flagged: Vec<String> = rows(&document, "functions")
         .into_iter()
         .filter(|row| field(row, "isEntryPoint").as_deref() == Some("true"))

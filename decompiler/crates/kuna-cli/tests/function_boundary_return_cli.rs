@@ -27,42 +27,29 @@ fn specs() -> String {
         .unwrap_or_else(|_| repo_root().join("specs").to_string_lossy().into_owned())
 }
 
-fn specs_missing(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-        || stderr.contains(".sla")
-}
-
-fn run(args: &[&str]) -> Option<Output> {
+fn run(args: &[&str]) -> Output {
     let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args(args)
         .output()
         .expect("spawn kuna");
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        if specs_missing(&stderr) {
-            eprintln!("skipping: specs not built ({stderr})");
-            return None;
-        }
         panic!("kuna {:?} failed: {stderr}", args);
     }
-    Some(out)
+    out
 }
 
-fn decompile(function: &str, extra: &[&str]) -> Option<String> {
+fn decompile(function: &str, extra: &[&str]) -> String {
     let binary = fixture();
     let sleigh = specs();
     let mut args = vec!["decompile", &binary, function, "--sleighpath", &sleigh];
     args.extend_from_slice(extra);
-    run(&args).map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+    String::from_utf8_lossy(&run(&args).stdout).into_owned()
 }
 
 #[test]
 fn shared_entry_return_is_included_and_stops_the_flow() {
-    let Some(c) = decompile("shared_wrapper", &[]) else {
-        return;
-    };
+    let c = decompile("shared_wrapper", &[]);
     assert!(
         c.contains("return 7;"),
         "the success path still loses the shared RET:\n{c}"
@@ -83,9 +70,7 @@ fn shared_entry_return_is_included_and_stops_the_flow() {
 
 #[test]
 fn ordinary_next_function_is_still_a_hard_boundary() {
-    let Some(default) = decompile("ordinary_first", &[]) else {
-        return;
-    };
+    let default = decompile("ordinary_first", &[]);
     assert!(
         default.contains("funcboundflow:"),
         "the ordinary foreign MOV entry was not bounded:\n{default}"
@@ -95,9 +80,7 @@ fn ordinary_next_function_is_still_a_hard_boundary() {
         "ordinary_first swallowed ordinary_next's return value:\n{default}"
     );
 
-    let Some(off) = decompile("ordinary_first", &["--option", "funcboundflow", "off"]) else {
-        return;
-    };
+    let off = decompile("ordinary_first", &["--option", "funcboundflow", "off"]);
     assert!(
         off.contains("return 0x16;"),
         "the option-off control did not expose the neighbouring body:\n{off}"
@@ -107,9 +90,7 @@ fn ordinary_next_function_is_still_a_hard_boundary() {
 #[test]
 fn branch_entries_are_not_safe_shared_terminators() {
     for function in ["before_direct_branch", "before_indirect_branch"] {
-        let Some(c) = decompile(function, &[]) else {
-            return;
-        };
+        let c = decompile(function, &[]);
         assert!(
             c.contains("funcboundflow:"),
             "{function} flowed into a branch entry which can reach more code:\n{c}"
@@ -119,9 +100,7 @@ fn branch_entries_are_not_safe_shared_terminators() {
 
 #[test]
 fn separately_callable_return_stays_inventoried_and_callable() {
-    let Some(c) = decompile("callable_ret", &[]) else {
-        return;
-    };
+    let c = decompile("callable_ret", &[]);
     assert!(
         c.contains("void callable_ret(void)"),
         "RET entry is not callable by name:\n{c}"
@@ -133,25 +112,21 @@ fn separately_callable_return_stays_inventoried_and_callable() {
 
     let binary = fixture();
     let sleigh = specs();
-    let Some(functions) = run(&["functions", &binary, "--json", "--sleighpath", &sleigh]) else {
-        return;
-    };
+    let functions = run(&["functions", &binary, "--json", "--sleighpath", &sleigh]);
     let functions = String::from_utf8_lossy(&functions.stdout);
     assert!(
         functions.contains("\"name\": \"callable_ret\""),
         "the genuine RET function disappeared from inventory:\n{functions}"
     );
 
-    let Some(xrefs) = run(&[
+    let xrefs = run(&[
         "xrefs",
         &binary,
         "--to",
         "callable_ret",
         "--sleighpath",
         &sleigh,
-    ]) else {
-        return;
-    };
+    ]);
     let xrefs = String::from_utf8_lossy(&xrefs.stdout);
     assert!(
         xrefs.contains("# 1 reference"),

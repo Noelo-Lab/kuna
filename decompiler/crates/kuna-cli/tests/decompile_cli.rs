@@ -396,10 +396,6 @@ fn pe_iat_body_selection_refuses_name_address_and_adjacent_slots() {
         let out = run_pe_decompile(binary, target, &extra);
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
-        if is_specs_skip(&stderr) {
-            eprintln!("skipping: specs-less environment: {stderr}");
-            return;
-        }
         assert_eq!(out.status.code(), Some(1), "{target} must be refused: {stderr}");
         assert!(stdout.trim().is_empty(), "{target} emitted a body:\n{stdout}");
         assert_eq!(stderr, format!("error: {expected}\n"), "unstable diagnostic for {target}");
@@ -415,10 +411,6 @@ fn pe_import_thunk_and_real_function_still_decompile_with_named_prototypes() {
     let data = pe_fixture("pe_imports.exe");
     let thunk = run_pe_decompile(&data, "GetLastError", &[]);
     let thunk_stderr = String::from_utf8_lossy(&thunk.stderr);
-    if is_specs_skip(&thunk_stderr) {
-        eprintln!("skipping: specs-less environment: {thunk_stderr}");
-        return;
-    }
     let thunk_stdout = String::from_utf8_lossy(&thunk.stdout);
     assert_eq!(thunk.status.code(), Some(0), "thunk failed: {thunk_stderr}");
     assert!(
@@ -446,10 +438,6 @@ fn pe_iat_json_selection_is_a_non_success_without_code() {
     let out = run_pe_decompile(&binary, "0x401000", &["--addr", "--json"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    if is_specs_skip(&stderr) {
-        eprintln!("skipping: specs-less environment: {stderr}");
-        return;
-    }
     let expected = "selector \"0x401000\" identifies import VirtualAlloc at 0x401000; \
                     the IAT slot contains a loader-written pointer, not a function body";
     assert_eq!(out.status.code(), Some(1), "JSON selection must fail: {stderr}");
@@ -472,17 +460,6 @@ fn hostile_scope() -> String {
         .to_str()
         .unwrap()
         .to_string()
-}
-
-/// `true` only for a genuinely specs-less environment.
-///
-/// The sibling `decompile_all_cli.rs (is_specs_skip)` treats *any*
-/// `could not build an architecture` as a missing-`.sla` skip, which would
-/// swallow the exact message this test asserts — hence the narrower predicate.
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("No sleigh specification")
-        || stderr.contains("Could not discover")
-        || stderr.contains("Could not find .sla")
 }
 
 /// GH-337: all four surfaces must answer one binary-load failure with one
@@ -525,11 +502,6 @@ fn every_surface_reports_the_same_load_failure() {
             .output()
             .expect("failed to spawn the kuna binary");
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        if is_specs_skip(&stderr) {
-            eprintln!("skipping: specs-less environment ({name}): {stderr}");
-            let _ = std::fs::remove_dir_all(&project_out);
-            return;
-        }
         assert_eq!(out.status.code(), Some(1), "{name} must fail the load: {stderr}");
         reports.push((name, stderr.trim().to_string()));
     }
@@ -594,10 +566,6 @@ fn a_binary_under_a_spaced_directory_decompiles() {
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     let _ = std::fs::remove_dir_all(&dir);
 
-    if is_specs_skip(&stderr) {
-        eprintln!("skipping: specs-less environment: {stderr}");
-        return;
-    }
     assert!(
         !stderr.contains("Unable to recognize imagefile"),
         "the path was split on its space, got: {stderr}"
@@ -637,10 +605,6 @@ fn a_spaced_temp_dir_still_yields_c() {
         let _ = std::fs::remove_file(&clobbered);
     }
 
-    if is_specs_skip(&stderr) {
-        eprintln!("skipping: specs-less environment: {stderr}");
-        return;
-    }
     assert!(!stderr.contains("no C output"), "the redirect was truncated, got: {stderr}");
     assert_eq!(out.status.code(), Some(0), "the run must succeed: {stderr}");
     assert!(stdout.contains("main"), "C for main must reach stdout, got: {stdout}");
@@ -689,10 +653,6 @@ fn a_call_that_finalizes_before_its_witness_recovers_its_argument() {
             .output()
             .expect("failed to spawn the kuna binary");
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        if is_specs_skip(&stderr) {
-            eprintln!("skipping: specs-less environment: {stderr}");
-            return None;
-        }
         assert_eq!(out.status.code(), Some(0), "kuna decompile failed: {stderr}");
         Some(String::from_utf8_lossy(&out.stdout).into_owned())
     };
@@ -766,10 +726,6 @@ fn a_generated_name_the_inventory_prints_is_selectable_by_decompile() {
         .expect("failed to spawn the kuna binary");
     let inventory = String::from_utf8_lossy(&listed.stdout).into_owned();
     let inventory_err = String::from_utf8_lossy(&listed.stderr).into_owned();
-    if is_specs_skip(&inventory_err) {
-        eprintln!("skipping: specs-less environment: {inventory_err}");
-        return;
-    }
     assert_eq!(listed.status.code(), Some(0), "functions must succeed: {inventory_err}");
     assert!(
         inventory.contains("\"sub_410\""),
@@ -790,10 +746,6 @@ fn a_generated_name_the_inventory_prints_is_selectable_by_decompile() {
         .expect("failed to spawn the kuna binary");
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    if is_specs_skip(&stderr) {
-        eprintln!("skipping: specs-less environment: {stderr}");
-        return;
-    }
     assert!(
         !stderr.contains("no function"),
         "a listed name must not be rejected by the selector, got: {stderr}"
@@ -832,10 +784,6 @@ fn a_name_that_already_resolved_is_not_re_decompiled_wider() {
         .expect("failed to spawn the kuna binary");
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    if is_specs_skip(&stderr) {
-        eprintln!("skipping: specs-less environment: {stderr}");
-        return;
-    }
     assert_eq!(out.status.code(), Some(0), "must succeed: {stderr}");
     assert!(
         !stdout.contains("funcboundflow"),
@@ -878,10 +826,6 @@ fn a_prototype_declared_under_another_name_binds_on_both_surfaces() {
             .output()
             .expect("failed to spawn the kuna binary");
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        if is_specs_skip(&stderr) {
-            eprintln!("skipping: specs-less environment: {stderr}");
-            return None;
-        }
         assert_eq!(out.status.code(), Some(0), "kuna decompile failed: {stderr}");
         assert!(!stderr.contains("rejected"), "the directive was rejected: {stderr}");
         Some(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -939,10 +883,6 @@ fn a_prototype_at_an_entry_address_binds_on_both_surfaces() {
             .output()
             .expect("failed to spawn the kuna binary");
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        if is_specs_skip(&stderr) {
-            eprintln!("skipping: specs-less environment: {stderr}");
-            return None;
-        }
         assert_eq!(out.status.code(), Some(0), "kuna decompile failed: {stderr}");
         assert!(!stderr.contains("rejected"), "the directive was rejected: {stderr}");
         Some(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -990,14 +930,10 @@ fn a_prototype_address_that_starts_no_function_is_rejected() {
         .output()
         .expect("failed to spawn the kuna binary");
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    if is_specs_skip(&stderr) {
-        eprintln!("skipping: specs-less environment: {stderr}");
-        return;
-    }
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     assert!(
         stdout.contains(r#""status": "rejected""#),
-        "an unbindable address was still reported applied:\n{stdout}"
+        "an unbindable address was still reported applied:\n{stdout}\n{stderr}"
     );
     assert!(
         stdout.contains("no function starts at 0x999999"),
@@ -1035,10 +971,6 @@ fn a_prototype_binds_to_the_address_the_run_selected() {
         .output()
         .expect("failed to spawn the kuna binary");
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    if is_specs_skip(&stderr) {
-        eprintln!("skipping: specs-less environment: {stderr}");
-        return;
-    }
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     assert!(
         !stderr.contains("no function starts at 0x400678"),
@@ -1072,14 +1004,10 @@ fn an_unselected_address_that_starts_no_function_is_still_rejected() {
         .output()
         .expect("failed to spawn the kuna binary");
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    if is_specs_skip(&stderr) {
-        eprintln!("skipping: specs-less environment: {stderr}");
-        return;
-    }
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     assert!(
         stdout.contains(r#""status": "rejected""#),
-        "an unbindable address was reported applied:\n{stdout}"
+        "an unbindable address was reported applied:\n{stdout}\n{stderr}"
     );
     assert!(
         stdout.contains("no function starts at 0x999999"),

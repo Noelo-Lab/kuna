@@ -2,10 +2,6 @@
 //! is not in the image's symbol table: the C spelling of a Mach-O symbol is not
 //! a miss at all, and a miss that IS one says what the image carries instead of
 //! calling every image stripped.
-//!
-//! The binaries are vendored fixtures; bootstrapping needs the built `.sla`
-//! under `specs/` (gitignored, `make specs`), so a specs-less environment is a
-//! visible skip rather than a false green.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -42,20 +38,10 @@ fn decompile(binary: &str, selector: &str) -> (String, String, bool) {
     )
 }
 
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-}
-
 /// The C spelling of a Mach-O function selects it.
 #[test]
 fn a_macho_c_name_decompiles() {
     let (stdout, stderr, ok) = decompile("macho_imports", "main");
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("name_miss_cli: skipping (no `.sla`): {stderr}");
-        return;
-    }
     assert!(ok, "the C spelling of _main must select it: {stderr}");
     assert!(stdout.contains("main("), "no body for main:\n{stdout}");
 }
@@ -65,10 +51,6 @@ fn a_macho_c_name_decompiles() {
 #[test]
 fn a_near_miss_is_named_instead_of_blamed_on_stripping() {
     let (_stdout, stderr, ok) = decompile("fauxware", "start");
-    if is_specs_skip(&stderr) {
-        eprintln!("name_miss_cli: skipping (no `.sla`): {stderr}");
-        return;
-    }
     assert!(!ok, "start is not a name fauxware carries: {stderr}");
     assert!(
         stderr.contains(r#"did you mean "_start" (0x400580)?"#),
@@ -84,10 +66,6 @@ fn a_near_miss_is_named_instead_of_blamed_on_stripping() {
 #[test]
 fn a_plain_miss_says_the_image_is_not_stripped() {
     let (_stdout, stderr, ok) = decompile("fauxware", "zork");
-    if is_specs_skip(&stderr) {
-        eprintln!("name_miss_cli: skipping (no `.sla`): {stderr}");
-        return;
-    }
     assert!(!ok, "zork is not a name fauxware carries: {stderr}");
     assert!(
         stderr.contains("none spelled that way") && !stderr.contains("stripped"),
@@ -100,10 +78,6 @@ fn a_plain_miss_says_the_image_is_not_stripped() {
 #[test]
 fn a_stripped_image_still_gets_the_addr_advice() {
     let (_stdout, stderr, ok) = decompile("argclobber_x86_64", "zork");
-    if is_specs_skip(&stderr) {
-        eprintln!("name_miss_cli: skipping (no `.sla`): {stderr}");
-        return;
-    }
     assert!(!ok, "a stripped image answers no name: {stderr}");
     assert!(
         stderr.contains("for a stripped binary pass an address with --addr"),

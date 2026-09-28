@@ -42,6 +42,7 @@ regex.workspace = true
 
 [dev-dependencies]
 object = { workspace = true, features = ["write"] }
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [lints]
 workspace = true

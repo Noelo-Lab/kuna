@@ -17,14 +17,7 @@ fn fixture() -> String {
         .into_owned()
 }
 
-fn specs_missing(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-        || stderr.contains(".sla")
-}
-
-fn decompile_with(function: &str, extra: &[&str]) -> Option<String> {
+fn decompile_with(function: &str, extra: &[&str]) -> String {
     let binary = fixture();
     let sleigh = repo_root().join("specs").to_string_lossy().into_owned();
     let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
@@ -37,16 +30,12 @@ fn decompile_with(function: &str, extra: &[&str]) -> Option<String> {
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if !out.status.success() {
-        if specs_missing(&stderr) {
-            eprintln!("skipping: specs not built ({stderr})");
-            return None;
-        }
         panic!("kuna decompile failed: {stderr}");
     }
-    Some(stdout)
+    stdout
 }
 
-fn decompile(function: &str) -> Option<String> {
+fn decompile(function: &str) -> String {
     decompile_with(function, &[])
 }
 
@@ -54,9 +43,7 @@ const CALLS: [&str; 3] = ["(*dat_804a000)()", "(*dat_804a004)()", "(*dat_804a008
 
 #[test]
 fn entry_dispatch_recovers_every_call_and_continuation() {
-    let Some(code) = decompile("entry_dispatch") else {
-        return;
-    };
+    let code = decompile("entry_dispatch");
     for call in CALLS {
         assert!(
             code.contains(call),
@@ -71,17 +58,13 @@ fn entry_dispatch_recovers_every_call_and_continuation() {
 
 #[test]
 fn ordinary_and_immediate_returns_keep_return_semantics() {
-    let Some(ordinary) = decompile("ordinary_ret") else {
-        return;
-    };
+    let ordinary = decompile("ordinary_ret");
     assert!(
         ordinary.contains("return 0x1111;"),
         "ordinary RET changed:\n{ordinary}"
     );
 
-    let Some(immediate) = decompile("immediate_ret") else {
-        return;
-    };
+    let immediate = decompile("immediate_ret");
     assert!(
         immediate.contains("return 0x2222;"),
         "RET-immediate changed:\n{immediate}"
@@ -90,9 +73,7 @@ fn ordinary_and_immediate_returns_keep_return_semantics() {
 
 #[test]
 fn incoming_return_address_is_not_a_dispatch_target() {
-    let Some(code) = decompile("incoming_return_ret") else {
-        return;
-    };
+    let code = decompile("incoming_return_ret");
     assert!(
         code.contains("return;"),
         "incoming return address became a call:\n{code}"
@@ -121,9 +102,7 @@ fn unrelated_computed_returns_are_not_calls() {
         } else {
             &[]
         };
-        let Some(code) = decompile_with(function, extra) else {
-            return;
-        };
+        let code = decompile_with(function, extra);
         assert!(
             code.contains("return;"),
             "{function} became a call:\n{code}"
@@ -140,9 +119,7 @@ fn unrelated_computed_returns_are_not_calls() {
         }
     }
 
-    let Some(code) = decompile("unrelated_fallthrough_store_ret") else {
-        return;
-    };
+    let code = decompile("unrelated_fallthrough_store_ret");
     assert!(
         code.contains("dat_804b00c = 0x8049058;"),
         "unrelated store disappeared:\n{code}"
@@ -155,10 +132,7 @@ fn unrelated_computed_returns_are_not_calls() {
 
 #[test]
 fn option_off_restores_the_first_ret_termination() {
-    let Some(code) = decompile_with("entry_dispatch", &["--option", "entryretdispatch", "off"])
-    else {
-        return;
-    };
+    let code = decompile_with("entry_dispatch", &["--option", "entryretdispatch", "off"]);
     assert!(code.contains("return;"), "option off did not restore the return:\n{code}");
     for call in CALLS {
         assert!(!code.contains(call), "option off still derived {call}:\n{code}");
@@ -167,10 +141,7 @@ fn option_off_restores_the_first_ret_termination() {
 
 #[test]
 fn explicit_return_cleanly_vetoes_the_automatic_call() {
-    let Some(code) = decompile_with("entry_dispatch", &["--assert", "flow 0x804900b return"])
-    else {
-        return;
-    };
+    let code = decompile_with("entry_dispatch", &["--assert", "flow 0x804900b return"]);
     assert!(code.contains("return;"), "explicit return did not win:\n{code}");
     for call in CALLS {
         assert!(!code.contains(call), "explicit return was overridden by {call}:\n{code}");

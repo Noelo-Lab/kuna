@@ -2,12 +2,7 @@
 //! built `kuna` binary over the real vendored `fauxware` ELF and asserts the
 //! machine-readable JSON surface decbench and an LLM driver consume.
 //!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored;
-//! `make specs`).  When it is absent the command fails to build an architecture;
-//! the test prints that and returns early (a specs-less CI is a visible skip,
-//! never a false green).
+//! Integration tests require the built processor specs under `specs/`.
 
 mod common;
 
@@ -178,19 +173,15 @@ fn json_addresses(stdout: &str) -> Vec<u64> {
         .collect()
 }
 
-/// Run `kuna <cmd> <bin> --mode reliable --json` and return its entry addresses,
-/// or `None` on a missing-`.sla` skip.
-fn run_json_addrs(cmd: &str, bin: &str, sp: &str, extra: &[&str]) -> Option<Vec<u64>> {
+/// Run `kuna <cmd> <bin> --mode reliable --json` and return its entry addresses.
+fn run_json_addrs(cmd: &str, bin: &str, sp: &str, extra: &[&str]) -> Vec<u64> {
     let mut args = vec![cmd, bin, "--json", "--sleighpath", sp, "--mode", "reliable"];
     args.extend_from_slice(extra);
     let (stdout, stderr, ok) = run_kuna(&args);
     if !ok {
-        if is_specs_skip(&stderr) {
-            return None;
-        }
         panic!("kuna {cmd} failed on {bin}: {stderr}");
     }
-    Some(json_addresses(&stdout))
+    json_addresses(&stdout)
 }
 
 /// The `error(nonzero,…)` boundary-overrun fixture (`noreturn_error_x86_64`):
@@ -294,14 +285,6 @@ fn run_kuna_env_with_timeout(
     status.map(|st| (stdout, stderr, st.success()))
 }
 
-/// `true` when the failure is a missing-`.sla` bootstrap failure (a legitimate
-/// skip), not a real bug.
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-}
-
 /// A filtered whole-binary run is still a body-lifting surface. Selecting a
 /// mapped IAT word must fail before it can become a result row.
 #[test]
@@ -320,10 +303,6 @@ fn decompile_all_refuses_an_executable_section_iat_slot() {
         "--sleighpath",
         &specs(),
     ]);
-    if is_specs_skip(&stderr) {
-        eprintln!("decompile_all_iat: skipping (no `.sla`; run `make specs`): {stderr}");
-        return;
-    }
     assert!(!ok, "an IAT slot unexpectedly decompiled: {stdout}");
     assert!(stdout.trim().is_empty(), "an IAT result row escaped: {stdout}");
     assert_eq!(
@@ -346,10 +325,6 @@ fn decompile_all_emits_json_for_main() {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_all_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     // Shape assertions (no JSON dep): two functions, both with non-null code.
@@ -397,24 +372,18 @@ fn decompile_all_emits_json_for_main() {
 fn fast_mode_matches_explicit_options_and_user_override_wins() {
     let bin = arm_entrymain();
     let sp = specs();
-    let run = |extra: &[&str]| -> Option<String> {
+    let run = |extra: &[&str]| -> String {
         let mut args =
             vec!["decompile-all", bin.as_str(), "--json", "--no-vars", "--sleighpath", sp.as_str()];
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
         }
-        Some(stdout)
+        stdout
     };
 
-    let Some(fast) = run(&["--mode", "fast"]) else {
-        eprintln!("fast mode: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
+    let fast = run(&["--mode", "fast"]);
     let explicit = run(&[
         "--mode",
         "reliable",
@@ -430,8 +399,7 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
         "--option",
         "fast_funcdisc",
         "on",
-    ])
-    .expect("explicit fast-equivalent run");
+    ]);
     assert_eq!(fast, explicit, "fast must equal its four explicit option overrides");
 
     let noreturn = noreturn_fixture();
@@ -494,7 +462,7 @@ fn modes_command_lists_auto_policy_and_fast_preset() {
 fn omitted_and_explicit_auto_match_aggressive_on_a_small_binary() {
     let bin = fauxware();
     let sp = specs();
-    let run = |mode: Option<&str>| -> Option<String> {
+    let run = |mode: Option<&str>| -> String {
         let mut args = vec![
             "functions",
             bin.as_str(),
@@ -507,20 +475,14 @@ fn omitted_and_explicit_auto_match_aggressive_on_a_small_binary() {
         }
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna functions failed for mode {mode:?}: {stderr}");
         }
-        Some(stdout)
+        stdout
     };
 
-    let Some(omitted) = run(None) else {
-        eprintln!("auto mode: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
-    assert_eq!(omitted, run(Some("auto")).expect("explicit auto"));
-    assert_eq!(omitted, run(Some("aggressive")).expect("explicit aggressive"));
+    let omitted = run(None);
+    assert_eq!(omitted, run(Some("auto")));
+    assert_eq!(omitted, run(Some("aggressive")));
 }
 
 #[test]
@@ -550,7 +512,7 @@ fn decompile_mode_requires_a_value() {
 fn arm_decompile_all_defaults_funcstart_patterns_on() {
     let bin = arm_entrymain();
     let sp = specs();
-    let run = |extra: &[&str]| -> Option<usize> {
+    let run = |extra: &[&str]| -> usize {
         let mut args = vec![
             "decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str(),
             "--mode", "reliable",
@@ -558,19 +520,13 @@ fn arm_decompile_all_defaults_funcstart_patterns_on() {
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
         }
-        Some(json_count(&stdout).expect("count in json"))
+        json_count(&stdout).expect("count in json")
     };
-    let Some(default_cnt) = run(&[]) else {
-        eprintln!("arm funcstart default: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
-    let off_cnt = run(&["--option", "funcstart_patterns", "off"]).expect("second run");
-    let on_cnt = run(&["--option", "funcstart_patterns", "on"]).expect("third run");
+    let default_cnt = run(&[]);
+    let off_cnt = run(&["--option", "funcstart_patterns", "off"]);
+    let on_cnt = run(&["--option", "funcstart_patterns", "on"]);
     // The non-x86-64 default injects the pass: it discovers strictly more than `off`,
     // and matches the explicit `on`.
     assert!(
@@ -598,7 +554,7 @@ fn arm_decompile_all_defaults_funcstart_patterns_on() {
 fn arm_decompile_all_defaults_aif_on() {
     let bin = arm_thumb();
     let sp = specs();
-    let run = |extra: &[&str]| -> Option<usize> {
+    let run = |extra: &[&str]| -> usize {
         let mut args = vec![
             "decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str(),
             "--mode", "reliable",
@@ -606,19 +562,13 @@ fn arm_decompile_all_defaults_aif_on() {
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
         }
-        Some(json_count(&stdout).expect("count in json"))
+        json_count(&stdout).expect("count in json")
     };
-    let Some(default_cnt) = run(&[]) else {
-        eprintln!("arm aif default: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
-    let off_cnt = run(&["--option", "aif", "off"]).expect("second run");
-    let on_cnt = run(&["--option", "aif", "on"]).expect("third run");
+    let default_cnt = run(&[]);
+    let off_cnt = run(&["--option", "aif", "off"]);
+    let on_cnt = run(&["--option", "aif", "on"]);
     assert_eq!(
         default_cnt, on_cnt,
         "ARM default must equal explicit `aif on` (default={default_cnt}, on={on_cnt}) — the injection did not fire"
@@ -654,7 +604,7 @@ fn arm_decompile_all_defaults_aif_on() {
 fn arm_decompile_all_raw_thumb_prologue_seed_non_destructive() {
     let bin = arm_thumb();
     let sp = specs();
-    let run = |extra: &[&str]| -> Option<usize> {
+    let run = |extra: &[&str]| -> usize {
         let mut args = vec![
             "decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str(),
             "--mode", "reliable",
@@ -662,21 +612,15 @@ fn arm_decompile_all_raw_thumb_prologue_seed_non_destructive() {
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
         }
-        Some(json_count(&stdout).expect("count in json"))
+        json_count(&stdout).expect("count in json")
     };
-    let Some(default_cnt) = run(&[]) else {
-        eprintln!("arm raw-prologue default: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
+    let default_cnt = run(&[]);
     // `funcstart_patterns off` disables the whole recursive-discovery tier (the raw
     // Thumb-prologue seed is gated on the same flag), so the default (with the raw
     // seed active) must never discover fewer.
-    let off_cnt = run(&["--option", "funcstart_patterns", "off"]).expect("second run");
+    let off_cnt = run(&["--option", "funcstart_patterns", "off"]);
     assert!(
         default_cnt >= off_cnt,
         "raw Thumb-prologue seed must never discover FEWER than funcstart_patterns off \
@@ -699,12 +643,9 @@ fn arm_decompile_all_raw_thumb_prologue_seed_non_destructive() {
 fn arm_functions_inventory_covers_every_decompile_all_entry() {
     let bin = arm_entrymain();
     let sp = specs();
-    let Some(inventory) = run_json_addrs("functions", &bin, &sp, &[]) else {
-        eprintln!("arm functions parity: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
+    let inventory = run_json_addrs("functions", &bin, &sp, &[]);
     let decompiled =
-        run_json_addrs("decompile-all", &bin, &sp, &["--no-vars"]).expect("second run");
+        run_json_addrs("decompile-all", &bin, &sp, &["--no-vars"]);
 
     let missing: Vec<u64> =
         decompiled.iter().copied().filter(|a| !inventory.contains(a)).collect();
@@ -731,8 +672,7 @@ fn arm_functions_inventory_covers_every_decompile_all_entry() {
         &sp,
         &["--option", "listing", "on", "--option", "funcstart_patterns", "on", "--option",
           "aif", "on"],
-    )
-    .expect("third run");
+    );
     assert_eq!(
         inventory, explicit,
         "the non-x86-64 `functions` default must equal the explicit discovery bundle"
@@ -748,19 +688,16 @@ fn arm_functions_inventory_covers_every_decompile_all_entry() {
 fn x86_64_functions_inventory_is_unchanged_and_covers_decompile_all() {
     let bin = fauxware();
     let sp = specs();
-    let Some(inventory) = run_json_addrs("functions", &bin, &sp, &[]) else {
-        eprintln!("x86-64 functions parity: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
+    let inventory = run_json_addrs("functions", &bin, &sp, &[]);
     let no_listing =
-        run_json_addrs("functions", &bin, &sp, &["--option", "listing", "off"]).expect("second run");
+        run_json_addrs("functions", &bin, &sp, &["--option", "listing", "off"]);
     assert_eq!(
         inventory, no_listing,
         "x86-64 `kuna functions` must not build the Listing — the DIV-15 default is the \
          decompiling surfaces'"
     );
     let decompiled =
-        run_json_addrs("decompile-all", &bin, &sp, &["--no-vars"]).expect("third run");
+        run_json_addrs("decompile-all", &bin, &sp, &["--no-vars"]);
     let missing: Vec<u64> =
         decompiled.iter().copied().filter(|a| !inventory.contains(a)).collect();
     assert!(
@@ -791,10 +728,6 @@ fn decompile_all_reports_each_entry_once() {
     let (stdout, stderr, ok) =
         run_kuna(&["decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str()]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("entry dedup: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
     }
     assert_eq!(
@@ -841,10 +774,6 @@ fn decompile_all_functions_filter_resolves_an_alias() {
         "sub_100b8",
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("alias lookup: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
     }
     assert_eq!(
@@ -875,10 +804,6 @@ fn decompile_all_addr_tolerates_the_arm_thumb_bit() {
         "decompile-all", arm.as_str(), "--json", "--sleighpath", sp.as_str(), "--addr", "0x100b9",
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("thumb --addr: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
     }
     assert!(
@@ -900,9 +825,6 @@ fn decompile_all_addr_tolerates_the_arm_thumb_bit() {
         "decompile-all", x86.as_str(), "--json", "--sleighpath", sp.as_str(), "--addr", "0x1357",
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            return;
-        }
         panic!("kuna decompile-all failed on the x86-64 fixture: {stderr}");
     }
     assert!(
@@ -925,10 +847,6 @@ fn arm_thumb_pe_functions_and_address_decompile() {
         &sp,
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("ARM PE CLI: skipping (no ARM `.sla`)");
-            return;
-        }
         panic!("kuna functions failed on synthetic ARM PE: {stderr}");
     }
     assert!(
@@ -981,11 +899,6 @@ fn te_image_auto_detects_entry_mapping_and_thumb_context() {
 
     let (stdout, stderr, ok) =
         run_kuna(&["functions", &binary, "--json", "--sleighpath", &sp]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("te_image CLI: skipping (no ARM `.sla`): {stderr}");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
     assert!(ok, "TE functions failed: {stderr}");
     assert!(stdout.contains("\"count\": 1"), "{stdout}");
     assert!(
@@ -1127,10 +1040,6 @@ fn te_object_view_commands_report_capability_errors() {
         let mut args = vec![command, &binary, "--sleighpath", &sp];
         args.extend(flag);
         let (_stdout, stderr, ok) = run_kuna(&args);
-        if !ok && matches!(command, "functions" | "decompile-all") && is_specs_skip(&stderr) {
-            eprintln!("TE {command} filters: skipping (no ARM `.sla`): {stderr}");
-            continue;
-        }
         assert!(!ok, "TE {command} unexpectedly succeeded");
         assert!(
             stderr.contains("UEFI TE input has no object-file view"),
@@ -1234,10 +1143,6 @@ fn decompile_all_converges_on_past_pathological_function() {
         ),
     };
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_all_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     // Shape assertions (no JSON dep): a well-formed single-function document
@@ -1280,10 +1185,6 @@ fn decompile_all_watchdog_quiet_on_healthy_function() {
         None => panic!("kuna decompile-all on a healthy function did not terminate in 300s"),
     };
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_all_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(stdout.contains("\"count\": 1"), "expected count 1:\n{stdout}");
@@ -1349,10 +1250,6 @@ fn decompile_all_listing_default_collapses_noreturn_wrapper() {
     // Pass 1: reliable has no listing override, so the driver fallback fires.
     let (on_out, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_all_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all (default) failed: {stderr}");
     }
     let on_code = code_field(&on_out).to_string();
@@ -1403,10 +1300,6 @@ fn functions_lists_main() {
     let bin = fauxware();
     let (stdout, stderr, ok) = run_kuna(&["functions", &bin, "--json", "--sleighpath", &specs()]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_all_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     assert!(stdout.contains("\"name\": \"main\""), "enumeration missing `main`:\n{stdout}");
@@ -1429,27 +1322,21 @@ fn functions_lists_main() {
 fn decompile_all_error_nonzero_does_not_absorb_next_function() {
     let bin = noreturn_error_fixture();
     let sp = specs();
-    let code = |extra: &[&str]| -> Option<String> {
+    let code = |extra: &[&str]| -> String {
         let mut a: Vec<&str> =
             vec!["decompile-all", &bin, "--addr", "0x4011c0", "--json", "--sleighpath", &sp];
         a.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&a);
-        if !ok {
-            eprintln!("decompile-all failed (likely a specs-less environment): {stderr}");
-            return None;
-        }
-        Some(stdout)
+        assert!(ok, "decompile-all failed: {stderr}");
+        stdout
     };
     // OFF: err_fatal's flow walks past `call error(2)` into the following functions.
     // `funcboundflow` (default-on, DIV-67) is a SECOND, name-independent bound that
     // stops the same overrun at `compute`'s entry, so it must also be off to expose
     // the pre-fix overrun this test isolates.
-    let Some(off) = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"])
-    else {
-        return; // specs-less skip
-    };
+    let off = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"]);
     // ON (default): the CALL_RETURN prune stops err_fatal at the no-return call.
-    let on = code(&[]).expect("second run succeeds if the first did");
+    let on = code(&[]);
     // `err_warn` belongs to `compute_warn` — a DIFFERENT function two hops after
     // err_fatal. It can only appear in err_fatal's decompilation if the flow-follower
     // overran `call error(2)` and absorbed the following functions. OFF must show the
@@ -1475,25 +1362,19 @@ fn decompile_all_error_nonzero_does_not_absorb_next_function() {
 fn kuna_decompile_single_error_nonzero_does_not_absorb_next_function() {
     let bin = noreturn_error_fixture();
     let sp = specs();
-    let code = |extra: &[&str]| -> Option<String> {
+    let code = |extra: &[&str]| -> String {
         let mut a: Vec<&str> = vec!["decompile", &bin, "0x4011c0", "--addr", "--sleighpath", &sp];
         a.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&a);
-        if !ok {
-            eprintln!("kuna decompile failed (likely a specs-less environment): {stderr}");
-            return None;
-        }
-        Some(stdout)
+        assert!(ok, "kuna decompile failed: {stderr}");
+        stdout
     };
     // `err_warn` belongs to `compute_warn`, a DIFFERENT function — it appears in err_fatal's
     // output ONLY if the flow overran past `call error(2)`.  `funcboundflow` (default-on,
     // DIV-67) is a second, name-independent bound at `compute`'s entry, so it too must be
     // off to expose the pre-fix overrun.
-    let Some(off) = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"])
-    else {
-        return; // specs-less skip
-    };
-    let on = code(&[]).expect("second run succeeds if the first did");
+    let off = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"]);
+    let on = code(&[]);
     assert!(
         off.contains("err_warn"),
         "noreturn_error off: single-function err_fatal should overrun (pre-fix):\n{off}"
@@ -1519,23 +1400,18 @@ fn dwarf_source_line_comments_stay_opt_in_under_every_mode() {
         .unwrap()
         .to_string();
     let sp = specs();
-    let code = |extra: &[&str]| -> Option<String> {
+    let code = |extra: &[&str]| -> String {
         let mut a: Vec<&str> =
             vec!["decompile", &bin, "elaborate_debug_symbol", "--sleighpath", &sp];
         a.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&a);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna decompile failed for {extra:?}: {stderr}");
         }
-        Some(stdout)
+        stdout
     };
 
-    let Some(default) = code(&[]) else {
-        return; // specs-less skip
-    };
+    let default = code(&[]);
     assert!(
         default.contains("elaborate_debug_symbol"),
         "expected the function body, got:\n{default}"
@@ -1545,14 +1421,14 @@ fn dwarf_source_line_comments_stay_opt_in_under_every_mode() {
         "the default (auto -> aggressive here) must NOT annotate source lines:\n{default}"
     );
 
-    let aggressive = code(&["--mode", "aggressive"]).expect("second run succeeds");
+    let aggressive = code(&["--mode", "aggressive"]);
     assert!(
         !aggressive.contains("/* debug_symbol.c:"),
         "--mode aggressive must NOT annotate source lines:\n{aggressive}"
     );
 
     // Named explicitly, the pass still works — and outranks the mode.
-    let opted_in = code(&["--option", "dwarf_lines", "on"]).expect("third run succeeds");
+    let opted_in = code(&["--option", "dwarf_lines", "on"]);
     assert!(
         opted_in.contains("/* debug_symbol.c:124 */"),
         "`--option dwarf_lines on` must still annotate source lines:\n{opted_in}"
@@ -1567,11 +1443,7 @@ fn raw_image_supported_surfaces_share_seed_and_base_semantics() {
     let sp = specs();
     let target = "ARM:LE:32:v4t:default";
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla");
-    if !spec.exists() {
-        eprintln!("raw_image CLI: skipping (no ARM `.sla`)");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
+    assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     let (stdout, stderr, ok) = run_kuna(&[
         "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
@@ -1664,11 +1536,7 @@ fn raw_image_discovers_called_functions_beyond_its_seeds() {
     let sp = specs();
     let target = "Cortus:LE:32:APS3:default";
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/Cortus/data/languages/aps3.sla");
-    if !spec.exists() {
-        eprintln!("raw_image CLI: skipping (no Cortus APS3 `.sla`)");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
+    assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     // Off: the inventory is exactly the seed, as it was before the option.
     let (stdout, stderr, ok) = run_kuna(&[
@@ -1731,11 +1599,7 @@ fn raw_image_decompile_scales_word_addressed_selector() {
     let binary = path.to_string_lossy().into_owned();
     let sp = specs();
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/Atmel/data/languages/avr8.sla");
-    if !spec.exists() {
-        eprintln!("raw_image CLI: skipping (no AVR8 `.sla`)");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
+    assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     let (stdout, stderr, ok) = run_kuna(&[
         "functions", &binary, "--json", "--raw-image", "--target",
@@ -1829,11 +1693,7 @@ fn raw_project_preserves_byte_addressed_data_coordinates() {
     let binary = path.to_string_lossy().into_owned();
     let sp = specs();
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/Atmel/data/languages/avr8.sla");
-    if !spec.exists() {
-        eprintln!("raw_image CLI: skipping (no AVR8 `.sla`)");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
+    assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     let out_dir = common::scratch_file("raw-avr-data-project", "dir");
     let (stdout, stderr, ok) = run_kuna(&[
@@ -1871,10 +1731,7 @@ fn raw_address_directives_use_target_units() {
     let sp = specs();
     let avr_spec = PathBuf::from(&sp).join("Ghidra/Processors/Atmel/data/languages/avr8.sla");
     let arm_spec = PathBuf::from(&sp).join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla");
-    if !avr_spec.exists() || !arm_spec.exists() {
-        eprintln!("raw_image CLI: skipping (no AVR8 or ARM `.sla`)");
-        return;
-    }
+    assert!(avr_spec.exists() && arm_spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     let avr_path = common::scratch_file("raw-avr-directives", "bin");
     std::fs::write(&avr_path, [0, 0, 0x08, 0x95]).unwrap();
@@ -1935,11 +1792,7 @@ fn raw_text_decode_failure_is_not_reported_as_an_external() {
     let binary = path.to_string_lossy().into_owned();
     let sp = specs();
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/x86/data/languages/x86-64.sla");
-    if !spec.exists() {
-        eprintln!("raw_image CLI: skipping (no x86-64 `.sla`)");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
+    assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile", &binary, "0", "--raw-image", "--target", "x86:LE:64:default",
@@ -2049,10 +1902,6 @@ fn functions_json_carries_a_ranking_extent() {
     let (stdout, stderr, ok) =
         run_kuna(&["functions", &bin, "--json", "--sleighpath", &specs()]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("functions_json_carries_a_ranking_extent: skipping (no `.sla`): {stderr}");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let sizes = json_sizes(&stdout);
@@ -2105,19 +1954,11 @@ fn functions_and_decompile_all_agree_on_size() {
     let (inventory, stderr, ok) =
         run_kuna(&["functions", &bin, "--json", "--sleighpath", &sp]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("functions_and_decompile_all_agree_on_size: skipping: {stderr}");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let (decompiled, stderr, ok) =
         run_kuna(&["decompile-all", &bin, "--json", "--sleighpath", &sp]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("functions_and_decompile_all_agree_on_size: skipping: {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     // Both documents are address-ordered over the same entry set, so the size
@@ -2157,10 +1998,6 @@ fn instruction_budget_overrun_truncates_instead_of_failing() {
                   "--option", "maxinstruction", "5"];
     let (truncated, stderr, ok) = run_kuna(&budget);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("instruction_budget_overrun_truncates_instead_of_failing: skipping: {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(
@@ -2216,10 +2053,6 @@ fn aggregate_exit_distinguishes_all_failed_from_partial_success() {
     let mut text_args = vec!["decompile-all", &bin, "--functions", "main"];
     text_args.extend_from_slice(&fatal);
     let (stdout, stderr, ok) = run_kuna(&text_args);
-    if is_specs_skip(&stderr) {
-        eprintln!("aggregate_exit_distinguishes_all_failed_from_partial_success: skipping: {stderr}");
-        return;
-    }
     assert!(!ok, "an all-failed text batch exited zero");
     assert!(
         stdout.contains("// Function: main @ 0x40071d")
@@ -2266,10 +2099,6 @@ fn fast_discovery_finds_the_pointer_only_target() {
     let args = ["functions", &bin, "--json", "--sleighpath", &sp, "--mode", "fast"];
     let (stdout, stderr, ok) = run_kuna(&args);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("fast_discovery_finds_the_pointer_only_target: skipping (no `.sla`)");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let fast = json_addresses(&stdout);
@@ -2318,10 +2147,6 @@ fn jobs_output_is_byte_identical_to_serial() {
             "--option", "protoorder", "off"];
         let (want, stderr, ok) = run_kuna(&base);
         if !ok {
-            if is_specs_skip(&stderr) {
-                eprintln!("jobs: skipping (no `.sla`; run `make specs`): {stderr}");
-                return;
-            }
             panic!("kuna decompile-all failed: {stderr}");
         }
         assert!(want.contains("\"code\""), "the serial run decompiled nothing:\n{want}");
@@ -2361,10 +2186,6 @@ fn jobs_notes_that_the_default_callee_first_order_is_serial_only() {
     let base = ["decompile-all", &bin, "--max-fn-seconds", "0", "--sleighpath", &sp];
     let (serial, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(!stderr.contains("callee-first"), "a serial run printed the pool note:\n{stderr}");
@@ -2390,10 +2211,6 @@ fn a_narrowed_run_orders_callees_first_only_when_asked() {
     let base = ["decompile-all", &bin, "--functions", "caller,callee", "--sleighpath", &sp];
     let (plain, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("protoorder: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(!stderr.contains("protoorder"), "a default narrowed run printed a note:\n{stderr}");
@@ -2432,10 +2249,6 @@ fn recursive_callees_state_their_types_under_cycles() {
                 "calleevote", "off",
             ]);
         if !ok {
-            if is_specs_skip(&stderr) {
-                eprintln!("protoorder cycles: skipping (no `.sla`; run `make specs`): {stderr}");
-                return;
-            }
             panic!("kuna decompile-all --option protoorder {value} failed: {stderr}");
         }
         for f in ["wrap", "wrap2"] {
@@ -2463,10 +2276,6 @@ fn a_frame_records_char_pointer_pointer_is_not_its_type() {
         let (got, stderr, ok) =
             run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "calleevote", value]);
         if !ok {
-            if is_specs_skip(&stderr) {
-                eprintln!("calleevote frame: skipping (no `.sla`; run `make specs`): {stderr}");
-                return;
-            }
             panic!("kuna decompile-all --option calleevote {value} failed: {stderr}");
         }
         assert!(got.contains("v2[1] = 0x506070801020304;"), "{value}: the node's word store split:\n{got}");
@@ -2495,10 +2304,6 @@ fn a_redone_recursive_function_reads_no_statement_of_its_own() {
         let (got, stderr, ok) =
             run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "protoorder", value]);
         if !ok {
-            if is_specs_skip(&stderr) {
-                eprintln!("protoorder cyclestruct: skipping (no `.sla`; run `make specs`): {stderr}");
-                return;
-            }
             panic!("kuna decompile-all --option protoorder {value} failed: {stderr}");
         }
         let chunk = |name: &str| -> String {
@@ -2583,10 +2388,6 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
     let sp = specs();
     let (stdout, stderr, ok) =
         run_kuna(&["decompile-all", &bin, "--option", "structdefs", "on", "--sleighpath", &sp]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("protoorder float-in-GPR: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     for want in [
         "return (int)h(a0,v1) + v1 + 3;",
@@ -2696,10 +2497,6 @@ fn a_float_pointee_keeps_the_callers_integer_stores_round_trip() {
             args.extend_from_slice(&["--option", "protoorder", "off"]);
         }
         let (stdout, stderr, ok) = run_kuna(&args);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("protoorder float pointee: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-all failed: {stderr}");
         let names = ["u1 ", "u2 ", "s3 ", "cp1 ", "cp3 ", "cp5 "];
         let chunks: Vec<&str> =
@@ -2801,10 +2598,6 @@ fn a_byte_pointee_vote_keeps_the_callers_wide_stores() {
             args.extend_from_slice(&["--option", "ptrfromuse", "off"]);
         }
         let (stdout, stderr, ok) = run_kuna(&args);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("protoorder byte pointee: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-all failed: {stderr}");
         let fill = stdout.split("// Function: ").find(|c| c.starts_with("fill ")).expect("fill is printed");
         assert!(fill.contains("= 0x2020726174737575;"), "the eight-byte store was split (off={off}):\n{fill}");
@@ -2826,10 +2619,6 @@ fn callee_first_runs_the_structsynth_convergence_sweep() {
     let sp = specs();
     let base = ["decompile-all", bin.as_str(), "--sleighpath", sp.as_str(), "--option", "structsynth", "param"];
     let (default, stderr, ok) = run_kuna(&base);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("protoorder structsynth sweep: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     let mut off_args = base.to_vec();
     off_args.extend_from_slice(&["--option", "protoorder", "off"]);
@@ -2861,10 +2650,6 @@ fn a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole() {
             args.extend_from_slice(&["--option", "ptrfromuse", "off"]);
         }
         let (stdout, stderr, ok) = run_kuna(&args);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("protoorder word fills: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-all failed: {stderr}");
         for (name, store) in [("fill_words", "= 0x102030405060708;"), ("fill_many", "= 0x2020726174737575;")] {
             let body = stdout
@@ -2895,10 +2680,6 @@ fn jobs_full_load_agrees_with_the_inventory_handoff() {
     ];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs full-load: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     let mut args = base.to_vec();
@@ -2925,10 +2706,6 @@ fn jobs_preserves_namespaced_cpp_callee_names() {
         ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs c++ names: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(
@@ -2958,10 +2735,6 @@ fn jobs_auto_and_the_plain_c_surface_match_serial() {
         ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs auto: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(want.matches("// Function:").count() > 1, "the fixture must hold several functions");
@@ -3016,10 +2789,6 @@ fn jobs_names_synthesized_structs_as_the_serial_run_does() {
             }
             let (want, stderr, ok) = run_kuna(&base);
             if !ok {
-                if is_specs_skip(&stderr) {
-                    eprintln!("jobs structsynth: skipping (no `.sla`; run `make specs`): {stderr}");
-                    return;
-                }
                 panic!("kuna decompile-all {fixture} failed: {stderr}");
             }
             assert!(want.contains(pinned), "{fixture} stopped synthesizing {pinned:?}");
@@ -3066,10 +2835,6 @@ fn jobs_falls_back_when_a_worker_cannot_install_the_replayed_structures() {
         "--option", "protoorder", "off"];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs structsynth install: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(want.contains("struct_4 *"), "the fixture stopped synthesizing");
@@ -3102,10 +2867,6 @@ fn jobs_falls_back_when_a_structure_holds_a_type_other_workers_lack() {
         "--option", "protoorder", "off"];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs structsynth peb: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(want.contains("void store_a(struct_0 *a0"), "the fixture stopped synthesizing:\n{want}");
@@ -3144,10 +2905,6 @@ fn jobs_structsynth_off_is_the_serial_structsynth_off_document() {
     ];
     let (want, stderr, ok) = run_kuna(&off);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs structsynth off: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(!want.contains("struct_0"), "structsynth off still synthesized");
@@ -3225,10 +2982,7 @@ fn jobs_leaves_no_scratch_directory_behind() {
         .expect("failed to spawn the kuna binary");
     let pid = child.id();
     let status = child.wait().expect("wait on the kuna binary");
-    if !status.success() {
-        eprintln!("jobs scratch: skipping (the run failed; likely no `.sla`)");
-        return;
-    }
+    assert!(status.success(), "pooled decompilation failed: {status}");
     let mine = format!("kuna-jobs-{pid}-");
     let left: Vec<String> = std::fs::read_dir(std::env::temp_dir())
         .into_iter()
@@ -3308,11 +3062,7 @@ fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
         if Instant::now() >= deadline || child.try_wait().expect("try_wait").is_some() {
             let _ = child.kill();
             let _ = child.wait();
-            let sla =
-                PathBuf::from(specs()).join("Ghidra/Processors/x86/data/languages/x86-64.sla");
-            assert!(!sla.exists(), "the pool never came up although {} is built", sla.display());
-            eprintln!("jobs cancellation: skipping (the pool never came up; no `.sla`)");
-            return;
+            panic!("the worker pool did not start before the deadline");
         }
         std::thread::sleep(Duration::from_millis(100));
     };
@@ -3359,9 +3109,8 @@ fn recovered_count(stderr: &str) -> Option<usize> {
     line.split("] ").nth(1)?.split(' ').next()?.parse().ok()
 }
 
-/// The serial `decompile-all --json` document of `fauxware`, or `None` on a
-/// specs-less skip.
-fn fauxware_serial_json() -> Option<String> {
+/// The serial `decompile-all --json` document of `fauxware`.
+fn fauxware_serial_json() -> String {
     let (want, stderr, ok) = run_kuna(&[
         "decompile-all",
         &fauxware(),
@@ -3372,13 +3121,9 @@ fn fauxware_serial_json() -> Option<String> {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs faults: skipping (no `.sla`; run `make specs`): {stderr}");
-            return None;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
-    Some(want)
+    want
 }
 
 /// A pooled `decompile-all --json` of `fauxware` in ONE chunk (so one worker
@@ -3429,7 +3174,7 @@ fn assert_only_lost_differ(serial: &str, pooled: &str, lost: &[&str]) {
 /// load); `authenticate` comes third, after a delivered prefix.
 #[test]
 fn jobs_a_worker_panic_loses_only_the_function_that_panicked() {
-    let Some(serial) = fauxware_serial_json() else { return };
+    let serial = fauxware_serial_json();
     let total = json_records(&serial).len();
     for (name, addr) in [("main", "0x40071d"), ("authenticate", "0x400664")] {
         let (got, stderr, ok) = fauxware_pooled_with_fault(&format!("panic:{addr}"), "0");
@@ -3466,7 +3211,7 @@ fn jobs_a_worker_panic_loses_only_the_function_that_panicked() {
 /// succeeds alone the document is the serial one and nothing is reported lost.
 #[test]
 fn jobs_a_transient_worker_death_loses_nothing() {
-    let Some(serial) = fauxware_serial_json() else { return };
+    let serial = fauxware_serial_json();
     let (got, stderr, ok) = fauxware_pooled_with_fault("panic-once:0x40071d", "0");
     assert!(ok, "{stderr}");
     assert_eq!(got, serial, "a recovered run must be the serial document");
@@ -3489,7 +3234,7 @@ fn jobs_a_transient_worker_death_loses_nothing() {
 /// warm too.
 #[test]
 fn jobs_a_stalled_worker_loses_only_the_function_that_stalled() {
-    let Some(serial) = fauxware_serial_json() else { return };
+    let serial = fauxware_serial_json();
     let (got, stderr, ok) = fauxware_pooled_with_fault("stall:0x4006fd", "1");
     assert!(ok, "{stderr}");
     assert_only_lost_differ(&serial, &got, &["rejected"]);
@@ -3544,7 +3289,7 @@ fn jobs_a_stalled_worker_loses_only_the_function_that_stalled() {
 /// must cost those five and nothing else, not the chunk.
 #[test]
 fn jobs_neighbouring_crashers_do_not_forfeit_their_chunk() {
-    let Some(serial) = fauxware_serial_json() else { return };
+    let serial = fauxware_serial_json();
     let crashers = [
         ("main", "0x40071d"),
         ("__libc_csu_init", "0x4007e0"),
@@ -3576,7 +3321,7 @@ fn jobs_neighbouring_crashers_do_not_forfeit_their_chunk() {
 /// behind says it was not re-run.
 #[test]
 fn jobs_rerunning_a_dead_worker_never_loops() {
-    let Some(serial) = fauxware_serial_json() else { return };
+    let serial = fauxware_serial_json();
     let total = json_records(&serial).len();
     let every_record_failed = |doc: &str, prefix: &str| {
         let records = json_records(doc);
@@ -3696,10 +3441,6 @@ fn jobs_decode_lanes_are_byte_identical_to_serial() {
     let lanes_on = [("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_STATS", "1")];
     let (want, want_err, ok) = run_kuna(&["functions", &bin, "--json", "--sleighpath", &sp]);
     if !ok {
-        if is_specs_skip(&want_err) {
-            eprintln!("jobs decode: skipping (no `.sla`; run `make specs`): {want_err}");
-            return;
-        }
         panic!("kuna functions failed: {want_err}");
     }
     assert!(want.contains("\"name\""), "the serial run enumerated nothing:\n{want}");
@@ -3754,10 +3495,6 @@ fn jobs_decode_lanes_decline_on_a_context_committing_language() {
     let args = ["functions", &bin, "--json", "--sleighpath", &sp];
     let (want, stderr, ok) = run_kuna(&args);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs decode arm: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let mut with_jobs = args.to_vec();
@@ -3784,10 +3521,6 @@ fn a_dead_lane_falls_back_to_the_serial_walk() {
     let args = ["functions", &bin, "--json", "--sleighpath", &sp];
     let (want, stderr, ok) = run_kuna(&args);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs decode fault: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let mut with_jobs = args.to_vec();
@@ -3823,10 +3556,6 @@ fn jobs_decode_lanes_agree_with_serial_on_decompile_all() {
         ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath", &sp];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs decode all: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     let mut args = base.to_vec();
@@ -3854,10 +3583,6 @@ fn a_refused_lane_spawn_falls_back_to_the_serial_walk() {
     let args = ["functions", &bin, "--json", "--sleighpath", &sp];
     let (want, stderr, ok) = run_kuna(&args);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs decode spawn: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let mut with_jobs = args.to_vec();
@@ -3910,10 +3635,6 @@ fn functions_takes_jobs_with_a_raw_image() {
         "4",
     ];
     let (got, stderr, ok) = run_kuna_env(&args, &[("KUNA_DECODE_MIN_BYTES", "0")]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("jobs decode raw: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "functions --raw-image --jobs 4 must not be refused: {stderr}");
     assert!(got.contains("\"functions\""), "the raw image enumerated nothing:\n{got}");
     assert!(
@@ -3964,10 +3685,6 @@ fn functions_takes_jobs_with_an_assert_overlay() {
         ["functions", &bin, "--summary", "--sleighpath", &sp, "--assert", overlay, "--jobs", "4"];
     let (got, stderr, ok) =
         run_kuna_env(&args, &[("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_STATS", "1")]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("jobs decode assert: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "functions --assert --jobs 4 must not be refused: {stderr}");
     assert!(
         stderr.contains("[kuna --jobs] decode: 4 lanes, "),
@@ -4003,10 +3720,6 @@ fn a_sign_contested_synthesized_field_round_trips_through_the_printed_c() {
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile-all", &bin, "--functions", "f", "--option", "structdefs", "on", "--sleighpath", &sp,
     ]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("signfield round trip: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     assert!(stdout.contains("unsigned short field_0xc;"), "{stdout}");
     assert!(stdout.contains("sink(a0->field_0xc);"), "{stdout}");
@@ -4058,10 +3771,6 @@ fn a_float_and_integer_union_field_round_trips_through_the_printed_c() {
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile-all", &bin, "--functions", "vread", "--option", "structdefs", "on", "--sleighpath", &sp,
     ]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("unionfield round trip: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     assert!(stdout.contains("char field_0x8[8];"), "{stdout}");
     assert!(stdout.contains("return *(double *)a0->field_0x8;"), "{stdout}");
@@ -4126,10 +3835,6 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
         let mut args = vec!["decompile-all", bin.as_str(), "--functions", "f", "--sleighpath", sp.as_str()];
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("expandload round trip: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-all failed: {stderr}");
         assert!(stdout.contains(call), "{stdout}");
 
@@ -4234,10 +3939,6 @@ int main(void) {
                 "--option", "castimplied", opt, "--option", "castwiden", "off",
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castimplied round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             for want in kept {
                 assert!(stdout.contains(want), "{fixture} option {opt} lost `{want}`:\n{stdout}");
@@ -4392,10 +4093,6 @@ int main(void) {
                 "--option", "castternary", opt, "--option", "castwiden", "off", "--option", "elemptr", elem,
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castternary round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             let changed: Vec<(&str, &str)> =
                 both.iter().chain(if gcc { gcc_only.iter() } else { [].iter() }).copied().collect();
@@ -4650,10 +4347,6 @@ int main(void) {
                 "--option", "castwiden", opt, "--option", "structdefs", "on",
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castwiden round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             for &(func, off, on, literal) in pins {
                 let want = [off, on, literal][arm];
@@ -4923,10 +4616,6 @@ int main(void) {
                 "--option", "castsign", opt, "--option", "castwiden", "off",
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castsign round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             for (off, on) in lines {
                 let want = if opt == "on" { on } else { off };
@@ -5136,10 +4825,6 @@ int main(void) {
                 "--option", "castobject", opt,
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castobject round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             for (off, on) in lines {
                 let line = if opt == "on" { on } else { off };
@@ -5220,10 +4905,6 @@ fn castsign_leaves_a_locked_declaration_alone() {
         let bin = fixture(name);
         let (stdout, stderr, ok) =
             run_kuna(&["decompile", &bin, func, "--sleighpath", &sp, "--option", "castsign", "on"]);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("castsign locked declaration: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile failed: {stderr}");
         for want in unlocked {
             assert!(stdout.contains(want), "{name} {func} unlocked does not print `{want}`:\n{stdout}");
@@ -5321,10 +5002,6 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
                 "--option", "structdefs", "on", "--option", "castarith", arm,
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castarith round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             let mut body = String::new();
             let mut seen = 0;
@@ -5452,10 +5129,6 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
                 "castwiden", "off", "--option", "elemptr", elem,
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castindex round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             let mut body = String::new();
             let mut seen = 0;
@@ -5563,21 +5236,17 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
     let sp = specs();
     let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
     let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-    let decompile = |bin: &str, arm: &str| -> Option<String> {
+    let decompile = |bin: &str, arm: &str| -> String {
         let args = [
             "decompile-all", bin, "--sleighpath", sp.as_str(),
             "--option", "structdefs", "on", "--option", "castarith", arm,
         ];
         let (stdout, stderr, ok) = run_kuna(&args);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("castarith enum round trip: skipping (no `.sla`; run `make specs`)");
-            return None;
-        }
         assert!(ok, "kuna decompile-all failed: {stderr}");
-        Some(stdout)
+        stdout
     };
     let cxx = fx.join("castarith_enumclass_gpp_O2_x86_64");
-    let Some(out) = decompile(cxx.to_str().unwrap(), "on") else { return };
+    let out = decompile(cxx.to_str().unwrap(), "on");
     let rd = out.split("// Function: rd_enum_class ").nth(1).expect("rd_enum_class printed");
     let rd = rd.split("// Function: ").next().unwrap();
     for w in ["use_kind(*(Kind *)((long)p + 5));", "use_op(*(Op *)((long)p + 6));"] {
@@ -5587,7 +5256,7 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
         let bin = fx.join(format!("castarith_enum_{build}_x86_64"));
         let bin = bin.to_str().unwrap();
         for arm in ["on", "off"] {
-            let Some(stdout) = decompile(bin, arm) else { return };
+            let stdout = decompile(bin, arm);
             let mut types: Vec<String> = Vec::new();
             let mut body = String::new();
             let mut seen = 0;
@@ -5733,10 +5402,6 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
             "globalref",
             arm,
         ]);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("globalref round trip: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-project failed: {stderr}");
         let header = std::fs::read_to_string(out.join("globalref_x86_64.h")).unwrap();
         let code = std::fs::read_to_string(out.join("globalref_x86_64.c")).unwrap();
@@ -5880,10 +5545,6 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
             .to_string();
         let (stdout, stderr, ok) =
             run_kuna(&["decompile-all", bin.as_str(), "--functions", "w1f,w4f", "--sleighpath", sp.as_str()]);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("foldcallret short-circuit round trip: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
         for w in want {
             assert!(stdout.contains(w), "{name}: missing `{w}`:\n{stdout}");
@@ -5946,10 +5607,6 @@ fn a_load_is_not_printed_after_a_store_into_its_bytes() {
         "--sleighpath",
         sp.as_str(),
     ]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("aliasoverlap round trip: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     let body = |name: &str| -> String {
         let at = stdout.find(&format!("// Function: {name} @")).unwrap_or_else(|| panic!("no {name}:\n{stdout}"));
@@ -6044,10 +5701,6 @@ fn a_split_load_is_not_moved_past_a_store_or_a_call() {
         "--sleighpath",
         sp.as_str(),
     ]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("splitload round trip: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     let body = |name: &str| -> String {
         let at = stdout.find(&format!("// Function: {name} @")).unwrap_or_else(|| panic!("no {name}:\n{stdout}"));
@@ -6197,10 +5850,6 @@ fn a_calls_own_return_address_push_is_part_of_the_call() {
         for arm in ["off", "on"] {
             let args = ["decompile-all", bin.to_str().unwrap(), "--sleighpath", sp.as_str(), "--option", "callpush", arm];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("callpush: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             let mut body = String::new();
             for part in stdout.split("// Function: ").skip(1) {
@@ -6464,10 +6113,6 @@ int main(void) {
         for opt in ["off", "on"] {
             let args = ["decompile-all", bin.as_str(), "--sleighpath", sp.as_str(), "--option", "callrettype", opt];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("callrettype round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             for (off, on) in lines {
                 let want = if opt == "on" { on } else { off };
@@ -6642,10 +6287,6 @@ fn an_element_pointer_round_trips_through_the_printed_c() {
                 "elemptr",
                 arm,
             ]);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("elemptr round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-project failed: {stderr}");
             let header = std::fs::read_to_string(out.join(format!("{stem}.h"))).unwrap();
             let code = std::fs::read_to_string(out.join(format!("{stem}.c"))).unwrap();
@@ -6778,10 +6419,6 @@ fn element_pointers_under_jobs_match_the_serial_run() {
     let off = ["--sleighpath", sp.as_str(), "--option", "protoorder", "off"];
     let serial: Vec<&str> = ["decompile-all", bin.as_str()].iter().chain(off.iter()).copied().collect();
     let (want, stderr, ok) = run_kuna(&serial);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("elemptr jobs: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     let mut pooled = serial.clone();
     pooled.extend_from_slice(&["--jobs", "4", "--jobs-chunk", "1"]);

@@ -76,13 +76,9 @@ fn closed_stdout_is_a_quiet_terminal_condition() {
 fn functions_json_tolerates_a_closed_reader() {
     let root = repo_root();
     let specs = root.join("specs");
-    if !specs
+    assert!(specs
         .join("Ghidra/Processors/x86/data/languages/x86-64.sla")
-        .exists()
-    {
-        eprintln!("broken_pipe: skipping functions test (no built x86-64.sla)");
-        return;
-    }
+        .exists(), "required processor spec missing; build specs before running integration tests");
     let binary = root.join("tests/hang-repro/ssh-sk-helper");
     let output = run_with_closed_stdout(&[
         "functions",

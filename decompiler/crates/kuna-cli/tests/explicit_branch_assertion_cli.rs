@@ -37,13 +37,6 @@ explicit_branch_assertion_pe_i386.exe",
         .into_owned()
 }
 
-fn specs_missing(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-        || stderr.contains(".sla")
-}
-
 fn json_string_field<'a>(doc: &'a str, key: &str) -> Option<&'a str> {
     let at = doc.find(&format!("\"{key}\":"))? + key.len() + 3;
     let body = doc[at..].trim_start().strip_prefix('"')?;
@@ -59,10 +52,9 @@ fn json_string_field<'a>(doc: &'a str, key: &str) -> Option<&'a str> {
     None
 }
 
-/// Decompile `entry` with `extra` arguments; `None` is a visible skip when the
-/// specs are not built. A refused assertion exits nonzero but still prints the
-/// function, so the exit status is returned rather than judged here.
-fn decompile_at(entry: &str, extra: &[&str]) -> Option<Run> {
+/// A refused assertion exits nonzero but still prints the function, so return
+/// its exit status for the caller to check.
+fn decompile_at(entry: &str, extra: &[&str]) -> Run {
     let binary = fixture();
     let sleigh = repo_root().join("specs").to_string_lossy().into_owned();
     let mut args = vec![
@@ -81,24 +73,20 @@ fn decompile_at(entry: &str, extra: &[&str]) -> Option<Run> {
         .expect("spawn kuna");
     let doc = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    if !out.status.success() && specs_missing(&stderr) {
-        eprintln!("skipping: specs not built ({stderr})");
-        return None;
-    }
     let code = json_string_field(&doc, "code")
         .unwrap_or_else(|| panic!("JSON result has no function code: {stderr}\n{doc}"))
         .to_string();
-    Some(Run {
+    Run {
         success: out.status.success(),
         doc,
         code,
-    })
+    }
 }
 
-fn decompile(extra: &[&str]) -> Option<(String, String)> {
-    let run = decompile_at("0x40d120", extra)?;
+fn decompile(extra: &[&str]) -> (String, String) {
+    let run = decompile_at("0x40d120", extra);
     assert!(run.success, "kuna decompile failed:\n{}", run.doc);
-    Some((run.doc, run.code))
+    (run.doc, run.code)
 }
 
 fn assert_full_body(code: &str) {
@@ -118,9 +106,7 @@ fn assert_full_body(code: &str) {
 
 #[test]
 fn explicit_branch_owns_precedence_over_tail_call_inference() {
-    let Some((doc, code)) = decompile(&["--assert", "flow 0x40d126 branch"]) else {
-        return;
-    };
+    let (doc, code) = decompile(&["--assert", "flow 0x40d126 branch"]);
     assert_full_body(&code);
     assert!(
         doc.contains("\"status\": \"applied\""),
@@ -130,44 +116,33 @@ fn explicit_branch_owns_precedence_over_tail_call_inference() {
 
 #[test]
 fn disabling_tailcalljump_is_an_equivalent_control() {
-    let Some((_, precedence)) = decompile(&["--assert", "flow 0x40d126 branch"]) else {
-        return;
-    };
-    let Some((_, option_off)) = decompile(&[
+    let (_, precedence) = decompile(&["--assert", "flow 0x40d126 branch"]);
+    let (_, option_off) = decompile(&[
         "--assert",
         "flow 0x40d126 branch",
         "--option",
         "tailcalljump",
         "off",
-    ]) else {
-        return;
-    };
+    ]);
     assert_eq!(precedence, option_off);
 }
 
 #[test]
 fn no_assertion_control_stays_a_full_body() {
-    let Some((_, default)) = decompile(&[]) else {
-        return;
-    };
+    let (_, default) = decompile(&[]);
     assert_full_body(&default);
 }
 
 #[test]
 fn applied_branch_at_another_instruction_keeps_tail_call_recovery() {
-    let Some(control) = decompile_at(NEAR_MISS_ENTRY, &[]) else {
-        return;
-    };
+    let control = decompile_at(NEAR_MISS_ENTRY, &[]);
     assert!(control.success, "kuna decompile failed:\n{}", control.doc);
     assert!(
         control.code.contains(NEAR_MISS_TAIL_CALL),
         "the control no longer recovers the tail call at 0x401148:\n{}",
         control.code
     );
-    let Some(run) = decompile_at(NEAR_MISS_ENTRY, &["--assert", "flow 0x40109a branch"])
-    else {
-        return;
-    };
+    let run = decompile_at(NEAR_MISS_ENTRY, &["--assert", "flow 0x40109a branch"]);
     assert!(run.success, "kuna decompile failed:\n{}", run.doc);
     assert!(
         run.doc.contains("\"status\": \"applied\""),
@@ -183,10 +158,7 @@ fn applied_branch_at_another_instruction_keeps_tail_call_recovery() {
 
 #[test]
 fn refused_branch_fact_keeps_tail_call_recovery() {
-    let Some(run) = decompile_at(NEAR_MISS_ENTRY, &["--assert", "flow 0x401148 branch"])
-    else {
-        return;
-    };
+    let run = decompile_at(NEAR_MISS_ENTRY, &["--assert", "flow 0x401148 branch"]);
     assert!(!run.success, "a refused assertion must fail the command:\n{}", run.doc);
     assert!(
         run.doc.contains("\"status\": \"rejected\""),

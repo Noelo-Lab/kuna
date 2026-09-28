@@ -29,16 +29,8 @@ fn fixture() -> String {
         .into_owned()
 }
 
-fn specs_missing(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-        || stderr.contains(".sla")
-}
-
-/// Decompile `chain_entry`, optionally under a `flow` assertion.  `None` ⇒ the
-/// `.sla` tree is not built (a visible skip, never a false green).
-fn decompile(assertion: Option<&str>) -> Option<String> {
+/// Decompile `chain_entry`, optionally under a `flow` assertion.
+fn decompile(assertion: Option<&str>) -> String {
     let binary = fixture();
     let sleigh = repo_root().join("specs").to_string_lossy().into_owned();
     let mut args: Vec<&str> =
@@ -51,13 +43,9 @@ fn decompile(assertion: Option<&str>) -> Option<String> {
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if !out.status.success() {
-        if specs_missing(&stderr) {
-            eprintln!("skipping: specs not built ({stderr})");
-            return None;
-        }
         panic!("kuna decompile failed: {stderr}");
     }
-    Some(stdout)
+    stdout
 }
 
 /// The three callees the chain reaches, by the global each `ret` pops.
@@ -66,7 +54,7 @@ const CALLS: [&str; 3] = ["(*dat_804a000)()", "(*dat_804a004)()", "(*dat_804a008
 /// Unasserted entry chains are recovered by the same strict detector.
 #[test]
 fn the_default_recovers_the_whole_entry_chain() {
-    let Some(code) = decompile(None) else { return };
+    let code = decompile(None);
     for call in CALLS {
         assert!(code.contains(call), "the default chain stopped before {call}:\n{code}");
     }
@@ -75,7 +63,7 @@ fn the_default_recovers_the_whole_entry_chain() {
 /// The need's own case: one override on the first link recovers all three calls.
 #[test]
 fn overriding_the_first_link_recovers_the_whole_chain() {
-    let Some(code) = decompile(Some(&format!("flow {FIRST_LINK_RET} call"))) else { return };
+    let code = decompile(Some(&format!("flow {FIRST_LINK_RET} call")));
     for call in CALLS {
         assert!(code.contains(call), "the chain stopped before {call}:\n{code}");
     }
@@ -85,7 +73,7 @@ fn overriding_the_first_link_recovers_the_whole_chain() {
 /// disturb the automatically recovered links before it.
 #[test]
 fn overriding_the_plain_epilogue_extends_to_nothing() {
-    let Some(code) = decompile(Some(&format!("flow {EPILOGUE_RET} call"))) else { return };
+    let code = decompile(Some(&format!("flow {EPILOGUE_RET} call")));
     for call in CALLS {
         assert!(code.contains(call), "the default chain stopped before {call}:\n{code}");
     }

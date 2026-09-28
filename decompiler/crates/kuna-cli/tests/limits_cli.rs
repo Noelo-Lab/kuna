@@ -39,21 +39,13 @@ fn kuna(args: &[&str]) -> std::process::Output {
         .expect("failed to spawn the kuna binary")
 }
 
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture") || stderr.contains(".sla")
-}
-
-/// Stdout with every whitespace character removed, or `None` on a specs skip.
-fn run_kuna(args: &[&str]) -> Option<String> {
+/// Stdout with every whitespace character removed.
+fn run_kuna(args: &[&str]) -> String {
     let out = kuna(args);
     let stderr = String::from_utf8_lossy(&out.stderr);
     let code = out.status.code().unwrap_or(-1);
-    if code != 0 && is_specs_skip(&stderr) {
-        eprintln!("skip: no built x86 .sla");
-        return None;
-    }
     assert_eq!(code, 0, "kuna {args:?} failed: {stderr}");
-    Some(String::from_utf8_lossy(&out.stdout).chars().filter(|c| !c.is_whitespace()).collect())
+    String::from_utf8_lossy(&out.stdout).chars().filter(|c| !c.is_whitespace()).collect()
 }
 
 const OVER_CAP: &str = r#""switches_over_jumptablemax":[{"address":5368713309,"address_hex":"0x14000105d","cases":4,"read":2}]"#;
@@ -65,7 +57,7 @@ fn the_summary_flags_a_switch_over_jumptablemax_and_a_body_over_maxinstruction()
         "functions", &bin, "--summary", "--json", "--option", "jumptablemax", "2", "--option",
         "maxinstruction", "10",
     ];
-    let Some(out) = run_kuna(&args) else { return };
+    let out = run_kuna(&args);
     assert!(out.contains(r#""limits":{"maxinstruction":10,"jumptablemax":2,"over":[{"name":"sub_140001040""#), "{out}");
     assert!(out.contains(r#""instructions":11,"over_maxinstruction":true"#), "counting stops at maxinstruction + 1: {out}");
     assert!(out.contains(OVER_CAP), "{out}");
@@ -74,7 +66,7 @@ fn the_summary_flags_a_switch_over_jumptablemax_and_a_body_over_maxinstruction()
 #[test]
 fn nothing_is_flagged_under_the_default_budgets() {
     let bin = fixture();
-    let Some(out) = run_kuna(&["functions", &bin, "--summary", "--json"]) else { return };
+    let out = run_kuna(&["functions", &bin, "--summary", "--json"]);
     assert!(out.contains(r#""limits":{"maxinstruction":100000,"jumptablemax":1024,"over":[]}"#), "{out}");
 }
 
@@ -83,17 +75,13 @@ fn nothing_is_flagged_under_the_default_budgets() {
 #[test]
 fn only_a_listing_that_already_walked_the_image_carries_limits() {
     let bin = fixture();
-    let Some(plain) = run_kuna(&["functions", &bin, "--json", "--option", "jumptablemax", "2"])
-    else {
-        return;
-    };
+    let plain = run_kuna(&["functions", &bin, "--json", "--option", "jumptablemax", "2"]);
     assert!(!plain.contains(r#""limits""#), "{plain}");
 
     let reached = run_kuna(&[
         "functions", &bin, "--json", "--reachable-from", "sub_140001040", "--option",
         "jumptablemax", "2",
-    ])
-    .expect("the reachable-from listing");
+    ]);
     assert!(reached.contains(r#""limits":{"maxinstruction":100000,"jumptablemax":2,"over":[{"name":"sub_140001040""#), "{reached}");
     assert!(reached.contains(r#""over_maxinstruction":false"#), "{reached}");
     assert!(reached.contains(OVER_CAP), "{reached}");
@@ -111,9 +99,9 @@ fn a_ceiling_at_the_case_count_reads_the_whole_table() {
             "maxinstruction", "16",
         ])
     };
-    let Some(truncated) = summary("2") else { return };
+    let truncated = summary("2");
     assert!(truncated.contains(r#""instructions":16,"over_maxinstruction":false"#), "{truncated}");
-    let whole = summary("4").expect("the whole-table summary");
+    let whole = summary("4");
     assert!(
         whole.contains(r#""instructions":17,"over_maxinstruction":true,"switches_over_jumptablemax":[]"#),
         "{whole}"
@@ -125,10 +113,7 @@ fn a_ceiling_at_the_case_count_reads_the_whole_table() {
 #[test]
 fn a_ceiling_below_a_table_still_reports_the_switch() {
     let bin = fixture();
-    let Some(out) = run_kuna(&["functions", &bin, "--summary", "--json", "--option", "jumptablemax", "1"])
-    else {
-        return;
-    };
+    let out = run_kuna(&["functions", &bin, "--summary", "--json", "--option", "jumptablemax", "1"]);
     assert!(out.contains(r#""address_hex":"0x14000105d","cases":4,"read":0"#), "{out}");
 }
 
@@ -153,14 +138,10 @@ fn a_function_is_measured_on_its_own_descent_whatever_the_walk_reached_first() {
     std::fs::write(&path, image).unwrap();
     let bin = path.to_str().unwrap();
 
-    let Some(out) = run_kuna(&["functions", bin, "--summary", "--json", "--option", "maxinstruction", "44"])
-    else {
-        return;
-    };
+    let out = run_kuna(&["functions", bin, "--summary", "--json", "--option", "maxinstruction", "44"]);
     assert!(out.contains(r#""over":[{"name":"parent","address":65552,"address_hex":"0x10010","size":45,"instructions":45,"over_maxinstruction":true"#), "{out}");
 
-    let out = run_kuna(&["functions", bin, "--summary", "--json", "--option", "maxinstruction", "42"])
-        .expect("the lower budget");
+    let out = run_kuna(&["functions", bin, "--summary", "--json", "--option", "maxinstruction", "42"]);
     assert!(out.contains(r#""name":"fragment","address":65536,"#), "{out}");
     assert!(out.contains(r#""instructions":43,"over_maxinstruction":true,"switches_over_jumptablemax":[]},{"name":"parent""#), "{out}");
 }

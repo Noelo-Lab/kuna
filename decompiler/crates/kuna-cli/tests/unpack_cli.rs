@@ -3,21 +3,7 @@
 //! recovered file is a real, analyzable ELF, and that an image this build cannot
 //! unpack is refused by name instead of half-written.
 //!
-//! ## Dispatch precondition
-//!
-//! `kuna-cli/src/main.rs` is owned by the integrator, so `kuna unpack` may not
-//! be wired into the dispatch table yet when this test runs. An unwired build
-//! answers `unknown subcommand` on stderr; that is a visible skip, never a false
-//! green -- a *wired* build that unpacks wrongly still fails loudly here. The
-//! unpacker's own end-to-end coverage does not depend on the wiring: it lives in
-//! `kuna_analysis::upx`'s unit tests, which run against the same fixture.
-//!
-//! ## `.sla` precondition
-//!
-//! The "the output is analyzable" assertion bootstraps an architecture and so
-//! needs the built `x86` `.sla` under `specs/` (gitignored; `make specs`). When
-//! it is absent that one assertion prints why and returns, like
-//! `decompile_all_cli.rs`.
+//! Integration tests require the built processor specs under `specs/`.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -70,20 +56,6 @@ fn run_kuna(args: &[&str]) -> (String, String, bool) {
     )
 }
 
-/// `true` when the run failed only because the integrator has not wired the
-/// subcommand into `main.rs` yet.
-fn is_unwired(stderr: &str) -> bool {
-    stderr.contains("unknown subcommand")
-}
-
-/// `true` when the failure is a missing-`.sla` bootstrap failure (a legitimate
-/// skip), not a real bug.
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-}
-
 /// A per-test scratch directory that removes itself, so a `-o` target never
 /// lands next to the fixture.
 struct Scratch(PathBuf);
@@ -116,10 +88,6 @@ fn unpack_recovers_the_original_elf() {
     let out = scratch.path("snake.unpacked");
     let (stdout, stderr, ok) = run_kuna(&["unpack", &packed_fixture(), "-o", &out]);
     if !ok {
-        if is_unwired(&stderr) {
-            eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
-            return;
-        }
         panic!("kuna unpack failed: {stderr}");
     }
 
@@ -143,20 +111,12 @@ fn the_unpacked_output_is_analyzable() {
     let out = scratch.path("snake.unpacked");
     let (_, stderr, ok) = run_kuna(&["unpack", &packed_fixture(), "-o", &out]);
     if !ok {
-        if is_unwired(&stderr) {
-            eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
-            return;
-        }
         panic!("kuna unpack failed: {stderr}");
     }
 
     let (stdout, stderr, ok) =
         run_kuna(&["functions", &out, "--json", "--sleighpath", &specs()]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("unpack_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna functions failed on the unpacked output: {stderr}");
     }
     let count = json_count(&stdout).expect("functions --json has a count");
@@ -172,10 +132,6 @@ fn unpack_json_reports_the_pack_header() {
     let out = scratch.path("snake.unpacked");
     let (stdout, stderr, ok) = run_kuna(&["unpack", &packed_fixture(), "-o", &out, "--json"]);
     if !ok {
-        if is_unwired(&stderr) {
-            eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
-            return;
-        }
         panic!("kuna unpack --json failed: {stderr}");
     }
     assert!(stdout.trim_start().starts_with('{'), "output is not a JSON object:\n{stdout}");
@@ -201,10 +157,6 @@ fn an_unpacked_binary_is_refused_by_name() {
     let scratch = Scratch::new("plain");
     let out = scratch.path("plain.unpacked");
     let (_, stderr, ok) = run_kuna(&["unpack", &plain_fixture(), "-o", &out]);
-    if is_unwired(&stderr) {
-        eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
-        return;
-    }
     assert!(!ok, "unpacking a plain ELF should fail");
     assert!(stderr.contains("no UPX PackHeader"), "unhelpful diagnostic:\n{stderr}");
     assert!(!PathBuf::from(&out).exists(), "a refused run must write nothing");
@@ -221,10 +173,6 @@ fn an_unimplemented_method_is_refused_by_name() {
 
     let out = scratch.path("deflate.unpacked");
     let (_, stderr, ok) = run_kuna(&["unpack", &input, "-o", &out]);
-    if is_unwired(&stderr) {
-        eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
-        return;
-    }
     assert!(!ok, "a DEFLATE-compressed image must not be unpacked by this build");
     assert!(stderr.contains("DEFLATE"), "the refusal does not name the method:\n{stderr}");
     assert!(!PathBuf::from(&out).exists(), "a refused run must write nothing");
@@ -250,10 +198,6 @@ fn a_block_mislabelled_as_lzma_is_refused_not_guessed_at() {
 
     let out = scratch.path("mislabelled.unpacked");
     let (_, stderr, ok) = run_kuna(&["unpack", &input, "-o", &out]);
-    if is_unwired(&stderr) {
-        eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
-        return;
-    }
     assert!(!ok, "an NRV block relabelled as LZMA must not unpack");
     assert!(stderr.contains("block at 0x100"), "the refusal does not name the block:\n{stderr}");
     assert!(!PathBuf::from(&out).exists(), "a refused run must write nothing");
@@ -269,10 +213,6 @@ fn unpack_recovers_an_lzma_packed_elf() {
     let out = scratch.path("snake.lzma.unpacked");
     let (stdout, stderr, ok) = run_kuna(&["unpack", &lzma_fixture(), "-o", &out, "--json"]);
     if !ok {
-        if is_unwired(&stderr) {
-            eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
-            return;
-        }
         panic!("kuna unpack failed on an LZMA image: {stderr}");
     }
     assert!(!stderr.contains("unsupported UPX image"), "still refused:\n{stderr}");
@@ -324,10 +264,6 @@ fn raw_lzma_recovers_a_stream_no_pack_header_describes() {
         "--json",
     ]);
     if !ok {
-        if is_unwired(&stderr) {
-            eprintln!("unpack_cli: skipping (kuna unpack not wired into main.rs yet): {stderr}");
-            return;
-        }
         panic!("kuna unpack --raw-lzma failed: {stderr}");
     }
 
@@ -350,9 +286,6 @@ fn the_pack_header_search_is_not_degraded_by_the_override() {
     let scratch = Scratch::new("nodegrade");
     let out = scratch.path("payload.bin");
     let (_stdout, stderr, ok) = run_kuna(&["unpack", &headerless_fixture(), "-o", &out]);
-    if is_unwired(&stderr) {
-        return;
-    }
     assert!(!ok, "a file with no PackHeader must not unpack:\n{stderr}");
     assert!(stderr.contains("no UPX PackHeader found"), "{stderr}");
     assert!(!PathBuf::from(&out).exists(), "a refusal wrote a file anyway");
@@ -380,9 +313,6 @@ fn raw_lzma_accepts_file_offsets_and_explicit_properties() {
         "2,0,3",
         "--json",
     ]);
-    if is_unwired(&stderr) {
-        return;
-    }
     assert!(ok, "kuna unpack --raw-offsets failed: {stderr}");
     assert!(stdout.contains(r#""range_kind": "file-offset""#), "{stdout}");
     let bytes = std::fs::read(&out).expect("payload was written");
@@ -415,9 +345,6 @@ fn a_range_that_is_not_a_stream_is_refused_not_half_written() {
     let out = scratch.path("payload.bin");
     let (_o, stderr, ok) =
         run_kuna(&["unpack", &headerless_fixture(), "-o", &out, "--raw-lzma", "0x140009000:0x14000a000"]);
-    if is_unwired(&stderr) {
-        return;
-    }
     assert!(!ok, "an unmapped range must not decode");
     assert!(stderr.contains("not inside any section"), "{stderr}");
     assert!(!PathBuf::from(&out).exists(), "a refusal wrote a file anyway");
@@ -442,9 +369,6 @@ fn a_range_that_is_not_a_stream_is_refused_not_half_written() {
 #[test]
 fn a_raw_modifier_without_a_range_is_a_usage_error() {
     let (_o, stderr, ok) = run_kuna(&["unpack", &plain_fixture(), "--lzma-props", "2,0,3"]);
-    if is_unwired(&stderr) {
-        return;
-    }
     assert!(!ok);
     assert!(stderr.contains("only applies with --raw-lzma"), "{stderr}");
 }
