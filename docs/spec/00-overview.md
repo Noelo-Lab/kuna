@@ -167,6 +167,14 @@ and the first record's metadata without cloning names. Different names or
 specific hashes remain separate records. Database serialization and command
 diagnostics are unchanged.
 
+Archive-member loading is owned by
+`decompiler/crates/kuna-cli/src/fid/archive.rs`. Each object member is written to
+a privately created temporary file whose guard removes it after loading or on
+unwind. The writing handle is closed before the path-based loader opens it;
+simultaneous ingests have independent member files. Non-object members are
+still skipped, bootstrap failures retain the archive/member warning, and
+record order and cross-input deduplication remain unchanged.
+
 Inventory queries share function attribution and address records through
 `decompiler/crates/kuna-cli/src/function_info.rs`. Attribution prefers the
 reference walk, then the engine's inventory. String and constant rows prefer
@@ -924,6 +932,12 @@ keeps the first register name and reports the later name before that original
 name. Context registration and re-registration use the same scope order and
 stop at the first error, retaining registrations and cross-references already
 completed.
+
+Context values and change masks have matching word counts. Resizing preserves
+existing words, zeroes new words and reuses buffer capacity. Partition copies
+preserve values and clear explicit-change masks. Context-cache hits refetch the
+current database slice; misses update the cached space and bounds before
+copying the database's word count into the caller's buffer.
 
 Register-name lookup borrows the selected name until the caller constructs its
 return value. The base API returns an owned byte vector; both the native engine

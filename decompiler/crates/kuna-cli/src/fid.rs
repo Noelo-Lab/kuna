@@ -17,7 +17,9 @@
 //! A `.a` archive is unpacked member-by-member (each member is bootstrapped as a
 //! standalone object); a `.o`/linked image is bootstrapped directly.
 
-use std::path::Path;
+mod archive;
+
+use archive::records_for_archive;
 
 use kuna_analysis::loadimage_object::ObjectLoadImage;
 use kuna_analysis::fid::build::build_records;
@@ -185,63 +187,9 @@ fn records_for_object_path(path: &str, spec_roots: &[String]) -> Result<Vec<FidR
     ))
 }
 
-/// Unpack a `.a` archive and build records from every object member. Each member
-/// is written to a temp file (the bootstrap reads from a path) and bootstrapped
-/// as a standalone object.
-fn records_for_archive(
-    archive_path: &str,
-    bytes: &[u8],
-    spec_roots: &[String],
-) -> Result<Vec<FidRecord>, String> {
-    use object::read::archive::ArchiveFile;
-
-    let archive = ArchiveFile::parse(bytes).map_err(|e| format!("not a valid archive: {e}"))?;
-    let stem = Path::new(archive_path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "archive".to_string());
-
-    let mut out: Vec<FidRecord> = Vec::new();
-    let mut idx = 0usize;
-    for member in archive.members() {
-        let member = member.map_err(|e| format!("archive member error: {e}"))?;
-        let data = member.data(bytes).map_err(|e| format!("archive member data error: {e}"))?;
-        // Skip the archive's symbol-index / string-table members (not objects).
-        if !is_object(data) {
-            continue;
-        }
-        // Materialize the member so the bootstrap (which reads a path) can open it.
-        let name = String::from_utf8_lossy(member.name());
-        let tmp = std::env::temp_dir().join(format!("kuna_fid_{stem}_{idx}.o"));
-        idx += 1;
-        std::fs::write(&tmp, data)
-            .map_err(|e| format!("cannot stage member {name}: {e}"))?;
-        let tmp_str = tmp.to_string_lossy().into_owned();
-        let res = records_for_object_path(&tmp_str, spec_roots);
-        let _ = std::fs::remove_file(&tmp);
-        match res {
-            Ok(mut recs) => out.append(&mut recs),
-            // A member that fails to bootstrap (e.g. a non-code object) is skipped
-            // with a warning, not fatal — the rest of the archive still ingests.
-            Err(e) => eprintln!("kuna fid build: {archive_path}({name}): skipped: {e}"),
-        }
-    }
-    Ok(out)
-}
-
 /// Is `bytes` a Unix `ar` archive (the `.a` magic `!<arch>\n`)?
 fn is_archive(bytes: &[u8]) -> bool {
     bytes.starts_with(b"!<arch>\n")
-}
-
-/// Does `bytes` look like a single object file (ELF/Mach-O/PE/COFF magic)?
-fn is_object(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"\x7fELF")            // ELF
-        || bytes.starts_with(&[0xcf, 0xfa, 0xed, 0xfe]) // Mach-O 64 LE
-        || bytes.starts_with(&[0xce, 0xfa, 0xed, 0xfe]) // Mach-O 32 LE
-        || bytes.starts_with(b"MZ")          // PE
-        || (bytes.len() >= 2 && bytes[0] == 0x4c && bytes[1] == 0x01) // COFF x86 (IMAGE_FILE_MACHINE_I386)
-        || (bytes.len() >= 2 && bytes[0] == 0x64 && bytes[1] == 0x86) // COFF x86-64
 }
 
 /// The SLEIGH spec roots (`SLEIGHHOME` then the repo `specs/` dir), matching how

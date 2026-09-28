@@ -1445,6 +1445,65 @@ WASM also pass. The tracked diff and new module hashes remain unchanged through
 the last gate. Final logs use `/tmp/kuna-deslop-query-final-*.log`; no baseline
 expectation moved.
 
+## Owned archive staging and context buffers
+
+FID archive ingestion now has a private owner. Each object member is written
+through the already locked `tempfile` 3.27 library, then its writing handle is
+closed before the path-based loader opens it. A path guard cleans up after
+loading and on unwind; concurrent ingests have independently owned member
+files. Archive parsing, classification, warning labels, record order and dedup
+remain unchanged. Cargo adds the existing package as a CLI dependency without
+changing package versions. Source checks preserve all nine parent production
+bodies and existing tests, pin object classification, and restrict the moved
+archive body to the checked staging/cleanup substitutions.
+
+Three persistent staging tests cover independent lifetimes, private Unix
+permissions, unwind cleanup and normal concurrent use. The exact helper and
+tests pass in an external crate, including 50 repetitions (150 tests) with an
+empty temporary directory afterward. A hermetic real-CLI test writes an archive
+without an external tool, containing two duplicate objects and a non-object
+member. It passes against original ingestion before the change and after it,
+retaining the vendored FID bytes and leaving no staging files. This is normal
+operation and ownership coverage.
+
+All 15 saved FID CLI cases preserve status, diagnostics and database bytes,
+including object/archive duplication, custom headers and errors. All 286
+compiler cases preserve status, diagnostics and raw/decoded hashes. Focused
+validation passes 246 CLI unit tests, the new CLI integration test, and 375
+compiler/runtime tests without warnings. The native build is also warning-free
+(18.86 seconds). The CLI Clippy audit remains failing at 16 errors/20 warnings.
+
+Context words and masks resize their own buffers instead of allocating and
+copying replacements. Cache hits/misses select their existing database slice
+before one shared copy. The entire installed module matches the reviewed
+candidate. Both root overflow-mode models match 376,832 outcomes across 2,048
+sequences, including masks, clones, registration/defaults, range paints, cache
+hits/misses, write masks and partial state after panics.
+
+Three native initialization samples per spec retain exact metadata and stable
+counts. Toy stays at 2,308 allocation requests, x86-64 drops 203,957 to 203,955,
+and Hexagon stays at 78,230. Requested bytes increase 24/8/8 from
+662,877/60,051,728/22,338,449 respectively. This is a small capacity tradeoff,
+not a memory-saving claim; the measurements exclude input reads, metadata
+formatting and teardown and are not peak memory. Both assembly APIs retain
+the saved text at all 1,171 locations with zero errors.
+
+CPU-41-pinned full lift and assembly wall medians change +0.80%/+1.30% over 66
+balanced runs each, within the 5% budget. Thirty measured FID pairs per case
+change +3.04%/-0.26%/-0.49% for single, eight-repeated-object and archive inputs
+(paired +1.36%/-0.62%/-0.25%). Every timed database and diagnostic matches.
+Small command timing changes are not claimed as speedups. Root artifacts are
+under `/tmp/kuna-deslop-archive-owner.Ykj97osF`; the native build log is
+`/tmp/kuna-deslop-archive-final-build.log`.
+
+All nine final gates pass on the frozen source: 7,445 workspace tests with
+38 existing ignores across 439 groups and no warnings; 675/675 upstream and
+1,467/1,467 stage assertions retain parity. The 268 CLI probes, 42 Python tests,
+56 Ghidra tests, 48 XML compiler comparisons, 17 saved CLI comparisons and all
+11 browser probes pass, including a fresh WASM build. Spec/catalog checks pass.
+The tracked diff and both new-file hashes remain unchanged through the last
+terminal success. Logs use `/tmp/kuna-deslop-archive-final-`. No baseline moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1454,7 +1513,7 @@ These are investigation targets, not a claim that the repository review is done.
 | CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Compiler probes reject broken tools, and required native runs check both status and output. The two fixture-launch false skips now retain spelling checks on non-native hosts. Other platform gates and conditional assertions still need review. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
-| CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback and query function metadata have separate owners. Loading/configuration and the remaining pool module still combine several lifecycle policies. Archive staging and console output lifetimes need review. |
+| CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Loading/configuration and the remaining pool module still combine several lifecycle policies. Archive member files are now owned; console output lifetimes still need review. |
 | Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 16 errors and 20 warnings. Declaration naming, rendered-signature dedup, FID dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |

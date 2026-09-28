@@ -1253,3 +1253,44 @@ logs. The phase benchmark is `speed.rs`; allocation measurements use `cost.rs`.
 All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
 assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
 across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### Context buffer ownership
+
+Context words and explicit-change masks resize their vectors directly, keeping
+existing capacity instead of allocating two replacements and copying the old
+prefixes. Cache hits and misses select the database slice before one shared
+copy into the caller's buffer. Getter order, bounds updates and the existing
+cache-hit refetch remain the same. The implementation is eight lines shorter.
+
+The two private buffers have equal lengths: construction, reset and the custom
+clone maintain that invariant, and callers receive slices. Cloning still copies
+values and clears explicit-change masks. The complete module comparison matches
+376,832 outcomes across 2,048 sequences in each overflow mode, including resize
+and clone sequences, eight separately named context words with nonzero defaults,
+registration failures, range paints, cache hits/misses, short output buffers,
+write masks and partial state after panics. All 371 focused tests pass.
+
+Three initialization measurements per specification produce identical metadata
+and stable allocation counts. Toy remains at 2,308 allocation requests; x86-64
+changes from 203,957 to 203,955; Hexagon remains at 78,230. Cumulative requested
+bytes increase by 24, 8 and 8 respectively, from 662,877, 60,051,728 and
+22,338,449. This small capacity tradeoff accompanies reuse of the vectors.
+These figures cover engine construction and SLA initialization, excluding input
+reading, metadata formatting and teardown; they do not measure peak memory.
+
+Both full workloads pass 66 balanced runs on CPU 40, with 30 measured samples
+per version. P-code output matches all 16 independent fixtures; median wall time
+changes +0.3378% (paired +0.2433%) and CPU time +0.4215% (paired +0.2345%).
+Assembly at all 1,171 locations matches through both public APIs with no errors;
+median wall time changes -0.3619% (paired -0.3297%) and CPU time -0.3580%
+(paired -0.3464%). Both are within the 5% budget.
+
+Artifacts use `/tmp/kuna-deslop-context-buffer-`: the actual-module `model.py`,
+`model.rs` and `model.log`, `cost/comparison.json`, `runtime-verified/`,
+`assembly-verified/` and build/check logs. Initialization measurement uses
+`/tmp/kuna-deslop-runtime-init-bench.rs`.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.

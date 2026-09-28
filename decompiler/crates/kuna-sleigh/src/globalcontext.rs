@@ -702,13 +702,8 @@ impl FreeArray {
     /// \param sz is the new number of words to resize array to
     fn reset(&mut self, sz: i32) {
         let sz = sz as usize; // cast: word count, non-negative by construction
-        let mut newarray = vec![0u32; sz]; // Pad new part with zero
-        let mut newmask = vec![0u32; sz];
-        let min = sz.min(self.array.len());
-        newarray[..min].copy_from_slice(&self.array[..min]); // Copy old part
-        newmask[..min].copy_from_slice(&self.mask[..min]);
-        self.array = newarray;
-        self.mask = newmask;
+        self.array.resize(sz, 0);
+        self.mask.resize(sz, 0);
     }
 }
 
@@ -1144,19 +1139,16 @@ impl ContextCache {
         // C++: (addr.getSpace()!=curspace)||(first>addr.getOffset())||
         //      (last<addr.getOffset())
         let n = database.get_context_size() as usize; // cast: word count
-        if !self.cache_covers(addr) {
+        let context = if !self.cache_covers(addr) {
             self.curspace = addr.get_space().cloned();
             let (context, first, last) = database.get_context_bounds(addr);
             self.first = first;
             self.last = last;
-            buf[..n].copy_from_slice(&context[..n]);
+            context
         } else {
-            // Cache hit: the C++ copies from its cached blob pointer; the
-            // port re-fetches the same blob with the cheap single lookup
-            // (see module docs).
-            let context = database.get_context(addr);
-            buf[..n].copy_from_slice(&context[..n]);
-        }
+            database.get_context(addr)
+        };
+        buf[..n].copy_from_slice(&context[..n]);
     }
 
     /// \brief Change the value of a context variable at the given address
