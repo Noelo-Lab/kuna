@@ -1,47 +1,11 @@
-//! Port of `decompiler/cpp/multiprecision.{hh,cc}` -- multi-precision
-//! integers (item w1-num-float-multiprec).
+//! Fixed-width integer arithmetic, from `decompiler/cpp/multiprecision.{hh,cc}`.
 //!
-//! The C++ passes 128-bit values as `uint8*` arrays of 2 little-endian
-//! 64-bit words (word 0 = least significant); the port uses `&[u64; 2]`
-//! references with the same word order.  The internal helpers are generic
-//! over `num` words like the C++ statics, even though only `num == 2` is
-//! exercised today.
-//!
-//! Integer semantics follow ADR 0003: arithmetic that can legitimately wrap
-//! uses the `Wrap` helpers; in-range index arithmetic stays on `i32` like
-//! the C++ `int4` loops.
+//! Public operations use two little-endian `u64` limbs. Division uses native
+//! `u128` arithmetic while preserving the narrow-input path and zero-divisor
+//! behavior.
 
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::Wrap;
-
-/// `count_leading_zeros(uintb val)` (address.cc): number of leading zero
-/// bits, by the upstream mask-halving loop (returns 64 for zero).  The C++
-/// file re-declares this itself as an `extern`; the canonical public port
-/// belongs to the kuna-base address module (a different port item), so a
-/// private transcription lives here too.
-fn count_leading_zeros(val: u64) -> i32 {
-    if val == 0 {
-        return 8 * 8; // 8*sizeof(uintb)
-    }
-    let mut mask: u64 = !0u64;
-    let mut mask_size: i32 = 4 * 8; // 4*sizeof(uintb)
-    mask &= mask << mask_size;
-    let mut bit = 0;
-    loop {
-        if (mask & val) == 0 {
-            bit += mask_size;
-            mask_size >>= 1;
-            mask |= mask >> mask_size;
-        } else {
-            mask_size >>= 1;
-            mask &= mask << mask_size;
-        }
-        if mask_size == 0 {
-            break;
-        }
-    }
-    bit
-}
 
 /// Multi-precision logical left shift by a constant amount.
 ///
@@ -149,160 +113,8 @@ pub fn subtract128(in1: &[u64; 2], in2: &[u64; 2], out: &mut [u64; 2]) {
     subtract(2, in1, in2, out);
 }
 
-/// Split an array of 64-bit words into an array of 32-bit words.
-///
-/// The least significant half of each 64-bit word is put into the 32-bit
-/// word array first.  The index of the most significant non-zero 32-bit
-/// word is calculated and returned as the *effective size* of the resulting
-/// array.
-fn split64_32(num: i32, val: &[u64], res: &mut [u32]) -> i32 {
-    let mut m: i32 = 0;
-    for i in 0..num {
-        let iu = i as usize;
-        let hi: u32 = (val[iu] >> 32) as u32;
-        let lo: u32 = (val[iu] & 0xffffffff) as u32;
-        if hi != 0 {
-            m = i * 2 + 2;
-        } else if lo != 0 {
-            m = i * 2 + 1;
-        }
-        res[iu * 2] = lo;
-        res[iu * 2 + 1] = hi;
-    }
-    m
-}
-
-/// Pack an array of 32-bit words into an array of 64-bit words.
-///
-/// The 64-bit word array is padded out with zeroes if the specified size
-/// (`num` 64-bit words) exceeds the provided number of 32-bit words (`max`).
-fn pack32_64(num: i32, max: i32, out: &mut [u64], in_: &[u32]) {
-    let mut j = num * 2 - 1;
-    let mut i = num - 1;
-    while i >= 0 {
-        let mut val: u64 = if j < max { u64::from(in_[j as usize]) } else { 0 };
-        val <<= 32;
-        j -= 1;
-        if j < max {
-            val |= u64::from(in_[j as usize]);
-        }
-        j -= 1;
-        out[i as usize] = val;
-        i -= 1;
-    }
-}
-
-/// Logical shift left for an extended integer in 32-bit word arrays.
-/// `size` is the number of words in the array; `sa` the number of bits
-/// (0 <= sa < 32) to shift.
-fn shift_left(arr: &mut [u32], size: i32, sa: i32) {
-    if sa == 0 {
-        return;
-    }
-    let mut i = size - 1;
-    while i > 0 {
-        arr[i as usize] = (arr[i as usize] << sa) | (arr[i as usize - 1] >> (32 - sa));
-        i -= 1;
-    }
-    arr[0] <<= sa;
-}
-
-/// Logical shift right for an extended integer in 32-bit word arrays.
-/// `size` is the number of words in the array; `sa` the number of bits
-/// (0 <= sa < 32) to shift.
-fn shift_right(arr: &mut [u32], size: i32, sa: i32) {
-    if sa == 0 {
-        return;
-    }
-    for i in 0..size - 1 {
-        let iu = i as usize;
-        arr[iu] = (arr[iu] >> sa) | (arr[iu + 1] << (32 - sa));
-    }
-    arr[(size - 1) as usize] >>= sa;
-}
-
-/// Knuth's algorithm d, for integer division.
-///
-/// The numerator and denominator, expressed in 32-bit *digits*, are
-/// provided.  The algorithm calculates the quotient and the remainder is
-/// left in the array originally containing the numerator.  We assume
-/// m > n > 0 and u[n-1] >= v[n-1] > 0.
-/// `m` is the number of 32-bit digits in the numerator; `n` the number of
-/// 32-bit digits in the denominator; `u` is the numerator and will hold the
-/// remainder; `v` is the denominator; `q` will hold the final quotient.
-fn knuth_algorithm_d(m: i32, n: i32, u: &mut [u32], v: &mut [u32], q: &mut [u32]) {
-    // count_leading_zeros takes a uintb: the uint4 digit arrives
-    // zero-extended, and 8*(sizeof(uintb)-sizeof(uint4)) == 32 removes the
-    // high-word zeros from the count.
-    let s = count_leading_zeros(u64::from(v[(n - 1) as usize])) - 32;
-    shift_left(v, n, s);
-    shift_left(u, m, s);
-
-    let mut j = m - n - 1;
-    while j >= 0 {
-        let ju = j as usize;
-        let nu = n as usize;
-        let mut tmp: u64 = (u64::from(u[nu + ju]) << 32) + u64::from(u[nu - 1 + ju]);
-        let mut qhat: u64 = tmp / u64::from(v[nu - 1]);
-        let mut rhat: u64 = tmp % u64::from(v[nu - 1]);
-        loop {
-            // qhat*v[n-2] is guarded by qhat <= 0xffffffff (short-circuit),
-            // so the 64-bit product cannot wrap.
-            if qhat <= 0xffffffff
-                && qhat * u64::from(v[nu - 2]) <= (rhat << 32) + u64::from(u[nu - 2 + ju])
-            {
-                break;
-            }
-            qhat -= 1;
-            rhat += u64::from(v[nu - 1]);
-            if rhat > 0xffffffff {
-                break;
-            }
-        }
-
-        let mut carry: u64 = 0;
-        let mut t: i64;
-        for i in 0..n {
-            let iu = i as usize;
-            // qhat <= 2^32+1 after the loop above, so qhat*v[i] fits in u64;
-            // C++ computes it as a (wrapping) uint64 multiply regardless.
-            tmp = qhat.wmul(u64::from(v[iu]));
-            // C++: t = u[i+j] - carry - (tmp & 0xffffffff), evaluated in
-            // wrapping uint64 arithmetic, then converted to int8 (wraps).
-            t = u64::from(u[iu + ju]).wsub(carry).wsub(tmp & 0xffffffff) as i64;
-            u[iu + ju] = t as u32; // truncating uint4 store
-                                   // C++: carry = (tmp >> 32) - (t >> 32); t >> 32 is an arithmetic
-                                   // shift on int8, converted back to uint64 for the subtraction.
-            carry = (tmp >> 32).wsub((t >> 32) as u64);
-        }
-        t = u64::from(u[ju + nu]).wsub(carry) as i64;
-        u[ju + nu] = t as u32;
-
-        q[ju] = qhat as u32; // truncating uint4 store
-        if t < 0 {
-            q[ju] = q[ju].wsub(1);
-            carry = 0;
-            for i in 0..n {
-                let iu = i as usize;
-                // C++: tmp = u[i+j] + (v[i] + carry) in uint64.
-                tmp = u64::from(u[iu + ju]).wadd(u64::from(v[iu]).wadd(carry));
-                u[iu + ju] = tmp as u32; // truncating uint4 store
-                carry = tmp >> 32;
-            }
-            // C++: u[j+n] += carry; the uint4 addition truncates.  carry is
-            // 0 or 1 here, so adding the truncated carry is identical.
-            u[ju + nu] = u[ju + nu].wadd(carry as u32);
-        }
-        j -= 1;
-    }
-    shift_right(u, m, s);
-}
-
-/// 128-bit INT_DIV: divide `numer` by `denom` (each 2 64-bit words),
-/// producing the quotient and remainder.
-///
-/// Returns the C++ `LowlevelError("divide by 0")` when the full 128-bit
-/// denominator is zero on the multi-digit path.
+/// Divide two little-endian 128-bit values, writing quotient and remainder.
+/// A zero divisor panics for a 64-bit numerator and returns an error otherwise.
 pub fn udiv128(
     numer: &[u64; 2],
     denom: &[u64; 2],
@@ -310,53 +122,37 @@ pub fn udiv128(
     remainder_res: &mut [u64; 2],
 ) -> KunaResult<()> {
     if numer[1] == 0 && denom[1] == 0 {
-        // (kuna) C++ divides directly here; a zero denom[0] is a hardware
-        // trap (SIGFPE) in the oracle, i.e. an internal invariant violation
-        // -- the Rust division panic is the analogous failure (ADR 0004).
         quotient_res[0] = numer[0] / denom[0];
         quotient_res[1] = 0;
         remainder_res[0] = numer[0] % denom[0];
         remainder_res[1] = 0;
         return Ok(());
     }
-    let mut v = [0u32; 4];
-    let mut u = [0u32; 5]; // Array needs one more entry for normalization overflow
-    let mut q = [0u32; 4];
-    let n = split64_32(2, denom, &mut v);
-    if n == 0 {
+    udiv128_wide(numer, denom, quotient_res, remainder_res)
+}
+
+/// Keep wide arithmetic out of the narrow-input path.
+#[inline(never)]
+fn udiv128_wide(
+    numer: &[u64; 2],
+    denom: &[u64; 2],
+    quotient_res: &mut [u64; 2],
+    remainder_res: &mut [u64; 2],
+) -> KunaResult<()> {
+    let n = u128::from(numer[0]) | (u128::from(numer[1]) << 64);
+    let d = u128::from(denom[0]) | (u128::from(denom[1]) << 64);
+    if d == 0 {
         return Err(KunaError::lowlevel("divide by 0"));
     }
-    let mut m = split64_32(2, numer, &mut u);
-    if m < n || ((n == m) && u[(n - 1) as usize] < v[(n - 1) as usize]) {
-        // denominator is smaller than the numerator, quotient is 0
-        quotient_res[0] = 0;
-        quotient_res[1] = 0;
-        remainder_res[0] = numer[0];
-        remainder_res[1] = numer[1];
+    if n < d {
+        *quotient_res = [0, 0];
+        *remainder_res = *numer;
         return Ok(());
     }
-    if n == 1 {
-        let d = v[0];
-        let mut rem: u32 = 0;
-        let mut i = m - 1;
-        while i >= 0 {
-            let iu = i as usize;
-            let tmp: u64 = (u64::from(rem) << 32) + u64::from(u[iu]);
-            // tmp/d < 2^32 because rem < d, so the uint4 store is exact.
-            q[iu] = (tmp / u64::from(d)) as u32;
-            u[iu] = 0;
-            rem = (tmp % u64::from(d)) as u32;
-            i -= 1;
-        }
-        u[0] = rem; // Last carry is final remainder
-    } else {
-        u[m as usize] = 0;
-        m += 1; // Temporarily extend u array by 1 to allow for normalization
-        knuth_algorithm_d(m, n, &mut u, &mut v, &mut q);
-        m -= 1; // Remove the extension
-    }
-    pack32_64(2, m - n + 1, quotient_res, &q);
-    pack32_64(2, m, remainder_res, &u);
+    let quotient = n / d;
+    let remainder = n % d;
+    *quotient_res = [quotient as u64, (quotient >> 64) as u64];
+    *remainder_res = [remainder as u64, (remainder >> 64) as u64];
     Ok(())
 }
 
@@ -434,9 +230,7 @@ mod tests {
 
     #[test]
     fn test_edge_udiv_paths_against_u128() {
-        // Each (numer, denom) pair drives a distinct udiv128 code path:
-        // fast 64/64, n==1 with 128-bit numerator, quotient-zero, and the
-        // full Knuth path (n in {2,3,4}), including an add-back candidate.
+        // Narrow and wide inputs, smaller numerators and quotient boundaries.
         let cases: [([u64; 2], [u64; 2]); 9] = [
             ([12345, 0], [7, 0]),                                  // fast path
             ([0x1234_5678_9abc_def0, 5], [3, 0]),                  // n == 1
@@ -477,7 +271,9 @@ mod tests {
     }
 
     #[test]
-    fn test_edge_count_leading_zeros_loop() {
+    fn test_edge_count_leading_zeros() {
+        use kuna_base::address::count_leading_zeros;
+
         assert_eq!(count_leading_zeros(0), 64);
         assert_eq!(count_leading_zeros(1), 63);
         assert_eq!(count_leading_zeros(u64::MAX), 0);

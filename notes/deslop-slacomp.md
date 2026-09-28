@@ -1781,3 +1781,52 @@ Final rustdoc passes with broken intra-doc links denied. All four required gates
 passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
 (7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
 gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.
+
+### Primitive bit queries and native wide division
+
+Four public bit queries now use Rust's primitive leading-zero, trailing-zero
+and population-count operations, retaining their zero sentinels. Multiprecision
+division replaces the private digit splitting, shifting and Knuth machinery
+with native `u128` division and remainder. The existing 64-bit path and the
+smaller-numerator shortcut remain. Zero division still panics for a 64-bit
+numerator and returns the same error for a wider one, leaving outputs untouched.
+A private wide helper stays separate from the narrow wrapper with
+`#[inline(never)]` to keep wide-path overhead off narrow calls. Public APIs are
+unchanged; the six source files together lose 313 lines, including documentation.
+
+The source comparisons cover 4,211,522 values for all four bit helpers and
+211,460 division cases in each overflow mode. Division preserves 211,078
+successes, 192 errors and 190 panics, including failure payloads and output-array
+state. Both complete division modules compile unchanged in the retained model;
+bit helper bodies are extracted verbatim. The actual rebuilt library separately
+passes those same cases against the fixed earlier Knuth-division reference.
+The extra `u128` reference in the original harness is now the implementation,
+so it is not counted as independent evidence. Focused tests pass: 293 passed
+and three existing ignored tests across 23 groups.
+
+In 66 balanced CPU-pinned native runs, 30 measured per version, aggregate median
+time improves 62.599% (paired 61.901%). Wide division improves 76.322%, division
+by a 32-bit value 55.240%, smaller-numerator handling 25.407%, and the narrow
+64-bit path 7.573%. Bit-helper medians improve 28.836% to 79.896%. All eight
+scenario digests match in every run. Each run performs 1,048,576 calls; fixture
+construction and independent expected digests stay outside the timers. These
+are numeric microbenchmarks, not an end-to-end decompiler speed claim.
+
+Four earlier implementations were rejected because the narrow-division control
+regressed despite aggregate improvements: a shared helper, its inline variant,
+direct digit normalization, and flat native division. Their raw timings and
+executables remain beside the retained split-helper evidence under
+`/tmp/kuna-deslop-bit-counts-`. The retained source/library hashes and reference
+scope are recorded separately, so discarded results cannot be confused with
+this implementation.
+
+Numeric documentation now describes implemented register lookup and format
+providers, shared ownership, actual module contents and descending varnode
+size ordering. The address-space lookup comment also fixes a pre-existing
+broken rustdoc method link. These documentation changes preserve all
+noncomment source lines; their proof files record the snapshots.
+
+Final rustdoc passes with broken intra-doc links denied. All four required gates
+passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
+(7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
+gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.

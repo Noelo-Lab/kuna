@@ -1213,12 +1213,9 @@ impl AddrSpace {
         }
     }
 
-    /// Find the JoinRecord whose unified range starts exactly at \e offset
-    /// within \b this (join) space (C++ `AddrSpaceManager::findJoin`, reached
-    /// here through the join space's own `JoinState` rather than the C++
-    /// `glb->findJoin` manager back-pointer — mirrors how [`overlap_join`]
-    /// reaches the table).  Errors if \b this is not a join space or the offset
-    /// is unlinked.
+    /// Look up the join record whose unified range starts at `offset`.
+    /// Uses this space's join table, as does [`Self::overlap_join`].
+    /// Returns an error for other space kinds or an unlinked offset.
     pub fn find_join(&self, offset: u64) -> KunaResult<Rc<JoinRecord>> {
         match self.join_state() {
             Some(state) => state.borrow().find_join(offset),

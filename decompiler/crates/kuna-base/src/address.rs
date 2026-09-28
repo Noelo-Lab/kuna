@@ -1804,62 +1804,25 @@ pub fn byte_swap(mut val: u64, mut size: i32) -> u64 {
 /// Return index of least significant bit set in given value.
 /// The least significant bit is index 0.
 /// \return the index of the least significant set bit, or -1 if none are set
-pub fn leastsigbit_set(mut val: u64) -> i32 {
+pub fn leastsigbit_set(val: u64) -> i32 {
     if val == 0 {
-        return -1;
+        -1
+    } else {
+        val.trailing_zeros() as i32
     }
-    let mut res: i32 = 0;
-    let mut sz: i32 = 32; // 4*sizeof(uintb)
-    let mut mask: u64 = u64::MAX;
-    loop {
-        mask >>= sz;
-        if (mask & val) == 0 {
-            res += sz;
-            val >>= sz;
-        }
-        sz >>= 1;
-        if sz == 0 {
-            break;
-        }
-    }
-    res
 }
 
 /// Return index of most significant bit set in given value.
 /// The least significant bit is index 0.
 /// \return the index of the most significant set bit, or -1 if none are set
-pub fn mostsigbit_set(mut val: u64) -> i32 {
-    if val == 0 {
-        return -1;
-    }
-    let mut res: i32 = 63; // 8*sizeof(uintb)-1
-    let mut sz: i32 = 32; // 4*sizeof(uintb)
-    let mut mask: u64 = u64::MAX;
-    loop {
-        mask <<= sz;
-        if (mask & val) == 0 {
-            res -= sz;
-            val <<= sz;
-        }
-        sz >>= 1;
-        if sz == 0 {
-            break;
-        }
-    }
-    res
+pub fn mostsigbit_set(val: u64) -> i32 {
+    63 - val.leading_zeros() as i32
 }
 
 /// Return the number of one bits in the given value.
 /// Count the number (population) of bits set.
-pub fn popcount(mut val: u64) -> i32 {
-    val = (val & 0x5555555555555555) + ((val >> 1) & 0x5555555555555555);
-    val = (val & 0x3333333333333333) + ((val >> 2) & 0x3333333333333333);
-    val = (val & 0x0f0f0f0f0f0f0f0f) + ((val >> 4) & 0x0f0f0f0f0f0f0f0f);
-    val = (val & 0x00ff00ff00ff00ff) + ((val >> 8) & 0x00ff00ff00ff00ff);
-    val = (val & 0x0000ffff0000ffff) + ((val >> 16) & 0x0000ffff0000ffff);
-    let mut res = (val & 0xff) as i32;
-    res += ((val >> 32) & 0xff) as i32;
-    res
+pub fn popcount(val: u64) -> i32 {
+    val.count_ones() as i32
 }
 
 /// Return the number of leading zero bits in the given value.
@@ -1867,28 +1830,7 @@ pub fn popcount(mut val: u64) -> i32 {
 /// Count the number of more significant zero bits before the most
 /// significant one bit in the representation of the given value.
 pub fn count_leading_zeros(val: u64) -> i32 {
-    if val == 0 {
-        return 64; // 8*sizeof(uintb)
-    }
-    let mut mask: u64 = u64::MAX;
-    let mut mask_size: i32 = 32; // 4*sizeof(uintb)
-    mask &= mask << mask_size;
-    let mut bit: i32 = 0;
-
-    loop {
-        if (mask & val) == 0 {
-            bit += mask_size;
-            mask_size >>= 1;
-            mask |= mask >> mask_size;
-        } else {
-            mask_size >>= 1;
-            mask &= mask << mask_size;
-        }
-        if mask_size == 0 {
-            break;
-        }
-    }
-    bit
+    val.leading_zeros() as i32
 }
 
 /// Return a mask that \e covers the given value.

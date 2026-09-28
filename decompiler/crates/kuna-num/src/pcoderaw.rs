@@ -1,30 +1,13 @@
-//! Port of `decompiler/cpp/pcoderaw.hh` + `pcoderaw.cc` (W1, item
-//! `w1-num-pcode-semantics`): raw descriptions of varnodes and p-code ops.
+//! Raw varnode and p-code operation storage, from
+//! `decompiler/cpp/pcoderaw.{hh,cc}`.
 //!
-//! Pointer-representation decisions (each noted at its use site):
+//! [`VarnodeData`] holds an optional shared address space, offset and size.
+//! Space equality uses `Rc` identity. Address-space constants store a manager
+//! index in the offset and resolve through [`AddrSpaceManager`].
 //!
-//! - `VarnodeData::space` (C++ `AddrSpace *`, possibly null) is
-//!   `Option<Rc<AddrSpace>>`, following the kuna-base convention
-//!   (`Address`/`Range`).  Pointer comparisons become `Rc::ptr_eq`.
-//! - C++ `VarnodeData::getSpaceFromConst` reinterprets the `offset` field as
-//!   a raw `AddrSpace *` heap pointer (`(AddrSpace *)(uintp)offset`), and
-//!   `PcodeOpRaw::decode` stuffs that pointer in when it meets a
-//!   `<spaceid>` input.  A heap address cannot live in a Rust `u64` and come
-//!   back out as an `Rc`, so the port stores the space's **manager index**
-//!   in `offset` and resolves it back through the `AddrSpaceManager`
-//!   (`get_space_from_const` takes the manager the C++ pointer implied).
-//!   This is *more* deterministic than the C++ pointer value — the golden
-//!   harness already has to scrub the nondeterministic C++ pointers
-//!   (`docs/rust-port/losses.md` LOSS-009).
-//! - `PcodeOpRaw` holds its behavior as `Rc<dyn OpBehavior>` (shared with
-//!   the `register_instructions` table) and its varnodes **by value**: the
-//!   C++ `VarnodeData *out` / `vector<VarnodeData *> in` point into an
-//!   emulator-owned cache whose entries are immutable while referenced, so
-//!   plain values carry the same information without the aliasing.
-//! - The `name=` (register) form of `VarnodeData::decodeFromAttributes`
-//!   requires `Translate::getRegister`, which arrives with the sleigh wave;
-//!   until then that path returns an error (same deferral as
-//!   `kuna_base::address::Address::decode`).
+//! [`PcodeOpRaw`] owns its varnode values and shares its [`OpBehavior`] through
+//! `Rc`. Named-register decoding uses the manager's installed register lookup;
+//! it returns an error when no lookup is installed.
 
 use std::cmp::Ordering;
 use std::rc::Rc;
@@ -38,9 +21,7 @@ use kuna_base::types::Wrap;
 use crate::opbehavior::OpBehavior;
 use crate::opcodes::{OpCode, OpcodeDecoder};
 
-// Ids from translate.hh/translate.cc, defined here ahead of the sleigh-wave
-// translate port (which should re-export these).  The numeric values are
-// pinned by the packed wire format.
+// Translation IDs shared with the SLEIGH layer; values are fixed by the wire format.
 
 /// Marshaling attribute "code" (translate.cc: `AttributeId ATTRIB_CODE =
 /// AttributeId("code",43)`)
@@ -99,7 +80,7 @@ impl Ord for VarnodeData {
     ///
     /// VarnodeData can be sorted in terms of the space its in
     /// (the space's \e index), the offset within the space,
-    /// and finally by the size.
+    /// and finally by descending size.
     fn cmp(&self, op2: &VarnodeData) -> Ordering {
         // C++ `if (space != op2.space)` is a pointer compare; distinct
         // spaces order by their index.  Dereferencing a null space here is
@@ -190,12 +171,6 @@ impl VarnodeData {
                 self.space = Some(spc);
                 break;
             } else if attrib_id == ATTRIB_NAME.get_id() {
-                // In the kuna port the `Translate` back-pointer is the manager's
-                // installed `RegisterLookup` (the same stand-in
-                // `Range::decode_from_attributes` uses for its `name=` register
-                // path).  Resolving a register by name needs that lookup to be
-                // installed on the manager (the engine installs itself during
-                // bootstrap); without one this errs exactly as before.
                 let lookup = decoder
                     .get_addr_space_manager()
                     .register_lookup()
@@ -567,8 +542,7 @@ mod tests {
     fn test_pcoderaw_decode_xml() {
         let manager = test_manager();
         let mut registry = IdRegistry::with_base_ids();
-        // "spaceid" belongs to the (unported) translate tables; tests
-        // register it explicitly, as the architecture bootstrap will.
+        // This standalone registry needs the translation element too.
         registry.register_element(&ELEM_SPACEID);
         let mut dec = XmlDecode::new(&manager, &registry);
         dec.ingest_stream(

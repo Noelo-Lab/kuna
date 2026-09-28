@@ -2248,6 +2248,64 @@ diff `161d7da6` remained unchanged through the last terminal success. Logs use
 `/tmp/kuna-deslop-nz-worklist-final-`. The preceding commit's CI and CodeQL
 pass. No baseline or threshold changed.
 
+## Native integer queries and wide division
+
+Four public bit queries now use Rust's integer primitives, retaining the
+zero sentinels. Two-limb division keeps its narrow wrapper and moves wide
+arithmetic to a private `u128` helper, removing digit splitting, normalization
+and hand-written long division. The non-inlined wide helper preserves the
+narrow path's isolation; earlier variants with worse narrow-call timings were
+rejected. Numeric and address-space comments describe implemented interfaces
+and ownership, and one broken method link is corrected. All six production
+Rust files exactly match the reviewed implementation.
+
+Complete actual-root division modules and verbatim bit-helper bodies agree on
+4,211,522 bit-query inputs and 211,460 division outcomes per overflow mode.
+Division preserves 211,078 successes, 192 errors and 190 panics, including error
+and panic text and all output limbs. The rebuilt native library separately
+matches the original bit routines and complete original Knuth-division module.
+The harness's additional `u128` check is not independent evidence for the new
+`u128` implementation. Two persistent regressions preserve narrow zero-divide
+panics, wide zero-divide errors, untouched outputs on failure, and complete
+output writes for zero, equal and smaller numerators. All 295 base/numeric
+tests pass before and after, with three existing ignores across 23 groups.
+
+The release build takes 48.92 seconds without warnings. The 295 numeric/base,
+3,073 engine and 378 SLEIGH/compiler tests all pass: 3,746 total, three ignores
+across 58 groups, no warnings. Base/numeric Clippy remains clean and passes
+with warnings denied. Public and private rustdoc pass with broken links denied;
+four existing private-link warnings remain. A stricter baseline had five link
+errors, of which this patch fixes the unresolved `overlap_join` link. CI's CLI
+lint passes with its existing SLEIGH dependency warning. Four complete stage
+transcripts, 36 CLI comparisons, 286 compiler comparisons and 48 XML outputs
+are unchanged. Artifacts use `/tmp/kuna-deslop-native-integers.3gJLxMUw`.
+
+Balanced CPU-pinned native timings use thirty measured samples per version
+after three warmup pairs. Aggregate median improves 63.05% (paired 63.03%):
+wide division 76.59%, division by a 32-bit value 53.20%, smaller-numerator
+handling 24.74%, and narrow division 18.75%. The four bit queries improve
+40.51% to 78.64%. Each run checks all eight digests across 1,048,576 calls;
+fixture construction and expected results are outside the timer. These are
+numeric microbenchmarks, not a whole-decompiler speedup.
+
+Toy/x86-64/Hexagon compiler wall times change +0.05%/-0.57%/-0.003%, with CPU
+times -0.04%/-0.58%/+0.06%; every SLA hash matches. Toy has 110 measured samples
+per version and the larger compilers twelve. Call-push, argument-guard,
+array-cover and stack-alias workloads change +0.39%/+0.73%/+0.86%/+1.10%
+(paired +0.59%/+0.95%/+0.84%/+0.75%), with thirty measured samples per version
+and exact streams/status in every run. All whole workloads remain within the
+5% budget. Numeric/stage runs use CPU 41; compiler runs use CPU 40.
+
+All nine gates pass: 7,464 workspace tests, 38 existing ignores across 439
+groups and no warnings; upstream 675/675 and stages 1,467/1,467 retain parity.
+All 268 CLI probes pass in the isolated final run, along with 42 Python tests,
+56 Ghidra tests, 48 XML outputs, 17 saved CLI comparisons and eleven browser
+probes. Spec/catalog checks and strict CLI lint pass. Strict base/numeric
+Clippy is also clean on CI's Rust 1.98.1. Frozen diff `dd5e6c5f` remained
+unchanged through the last terminal success. Logs use
+`/tmp/kuna-deslop-native-integers-final-`. The preceding commit's CI and CodeQL
+pass. No baseline or threshold changed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.

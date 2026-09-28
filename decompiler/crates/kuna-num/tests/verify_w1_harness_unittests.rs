@@ -1,16 +1,6 @@
-//! Verifier adversarial tests for item `w1-harness-unittests`
-//! (testmultiprec half, `decompiler/unittests/testmultiprec.cc`).
-//!
-//! The ported `multiprec_udiv` test zero-initializes its `q`/`r` output
-//! arrays (the C++ declares them uninitialized, testmultiprec.cc:31-32).
-//! Zero-init can MASK a port bug the C++ test would (nondeterministically)
-//! catch: a `udiv128` that fails to write an output limb whose expected
-//! value is 0 (q[1] in three of the four C++ cases, r[1] in two) would
-//! still pass the ported test.  Here every output limb is pre-filled with
-//! a sentinel, so each expected limb value — including the zeros — is
-//! proven to be *written* by `udiv128`, per the C++ contract that
-//! `quotient_res`/`remainder_res` "will hold the 2 words"
-//! (multiprecision.cc:284-287; pack32_64 zero-fills the tail).
+//! Division output-state checks, including cells from upstream
+//! `decompiler/unittests/testmultiprec.cc`. Sentinel-filled outputs verify
+//! that successful calls write every limb and failures leave them untouched.
 
 use kuna_num::multiprecision::udiv128;
 
@@ -19,10 +9,7 @@ const SENTINEL: u64 = 0xdead_beef_dead_beef;
 /// (numerator, denominator, expected quotient, expected remainder)
 type UdivCase = ([u64; 2], [u64; 2], [u64; 2], [u64; 2]);
 
-// The four C++ udiv cells (testmultiprec.cc:21-26, 30-57), exercising the
-// 64-bit fast path is not among them; these hit: full-width quotient,
-// n==1 single-word divisor, numerator < denominator early return, and the
-// Knuth m>n path with a 2-word remainder.
+// Upstream testmultiprec.cc:21-26, 30-57.
 const CASES: [UdivCase; 4] = [
     (
         [0xffffffffffffffff, 0xffffffffffffffff], // num1
@@ -60,5 +47,48 @@ fn verify_udiv128_writes_every_output_limb() {
         assert_eq!(r, *expect_r, "remainder limbs, case {i}");
         assert_ne!(q[1], SENTINEL, "q[1] left unwritten, case {i}");
         assert_ne!(r[1], SENTINEL, "r[1] left unwritten, case {i}");
+    }
+}
+
+#[test]
+fn zero_division_preserves_outputs_on_both_failure_paths() {
+    let quotient = [0xaabb_ccdd_eeff_0011, 0x1122_3344_5566_7788];
+    let remainder = [0xdead_beef, 0xfedc_ba98];
+    for numer in [[0, 0], [1, 0], [u64::MAX, 0], [0, 1], [u64::MAX; 2]] {
+        let (mut q, mut r) = (quotient, remainder);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            udiv128(&numer, &[0, 0], &mut q, &mut r)
+        }));
+        if numer[1] == 0 {
+            let payload = result.expect_err("narrow zero division must panic");
+            let message = payload.downcast_ref::<String>().map(String::as_str)
+                .or_else(|| payload.downcast_ref::<&str>().copied());
+            assert_eq!(message, Some("attempt to divide by zero"));
+        } else {
+            assert_eq!(
+                result.expect("wide zero division must return an error"),
+                Err(kuna_base::error::KunaError::lowlevel("divide by 0"))
+            );
+        }
+        assert_eq!(q, quotient);
+        assert_eq!(r, remainder);
+    }
+}
+
+#[test]
+fn zero_equal_and_smaller_division_write_every_output_limb() {
+    let cases: [UdivCase; 6] = [
+        ([0, 0], [1, 0], [0, 0], [0, 0]),
+        ([0, 0], [0, 1], [0, 0], [0, 0]),
+        ([u64::MAX, 0], [u64::MAX, 0], [1, 0], [0, 0]),
+        ([u64::MAX; 2], [u64::MAX; 2], [1, 0], [0, 0]),
+        ([1, 1], [2, 1], [0, 0], [1, 1]),
+        ([u64::MAX, 0], [0, 1], [0, 0], [u64::MAX, 0]),
+    ];
+    for (numer, denom, quotient, remainder) in cases {
+        let (mut q, mut r) = ([SENTINEL; 2], [SENTINEL; 2]);
+        udiv128(&numer, &denom, &mut q, &mut r).unwrap();
+        assert_eq!(q, quotient);
+        assert_eq!(r, remainder);
     }
 }

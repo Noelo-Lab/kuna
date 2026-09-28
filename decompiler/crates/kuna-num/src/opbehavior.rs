@@ -1,30 +1,15 @@
-//! Port of `decompiler/cpp/opbehavior.hh` + `opbehavior.cc` (W1, item
-//! `w1-num-pcode-semantics`): classes describing the behavior of individual
-//! p-code operations.
+//! Scalar p-code operation behavior, from `decompiler/cpp/opbehavior.{hh,cc}`.
 //!
-//! Paradigm mapping:
+//! [`OpBehavior`] supplies evaluation and input-recovery methods whose defaults
+//! return unsupported-operation errors. [`OpBehaviorDefault`] represents
+//! operations requiring handling outside these scalar methods.
 //!
-//! - The C++ virtual hierarchy becomes the [`OpBehavior`] trait whose default
-//!   methods are the base-class "emulation unimplemented" /
-//!   "Cannot recover input" throws; each `OpBehaviorXxx` subclass becomes a
-//!   struct implementing the trait with the C++ bodies transcribed exactly.
-//!   The plain instances C++ creates directly from the concrete base class
-//!   (`new OpBehavior(CPUI_LOAD,false,true)` etc.) are [`OpBehaviorDefault`].
-//! - **Translate substitution (noted per the item spec):** the C++ float
-//!   behaviors hold a `const Translate *` purely to call
-//!   `Translate::getFloatFormat(int4 size)`.  `Translate` arrives with the
-//!   sleigh wave, so the registration is parameterized by the
-//!   [`FloatFormatProvider`] trait — exactly that one lookup — and the float
-//!   behaviors store an `Rc<dyn FloatFormatProvider>` (the C++ raw pointer's
-//!   shared, non-owning role).  `Translate` will implement the trait when it
-//!   lands.
-//! - Exceptions become `Result` (ADR 0004): `EvaluationError` ->
-//!   `KunaError::Evaluation`, the base-class `LowlevelError` throws ->
-//!   `KunaError::Lowlevel`, same explain strings.
-//! - UB-2 (`docs/rust-port/upstream-bugs.md`): the C++ `INT_SDIV`/`INT_SREM`
-//!   evaluation SIGFPEs on `INT64_MIN / -1`; the port returns an evaluation
-//!   error for that cell (never panics, never wraps) — the golden vectors pin
-//!   those cells as `TRAP` rows, with TRAP == error.
+//! Floating-point behaviors share an `Rc<dyn FloatFormatProvider>` and look up
+//! formats by encoding size. Engine adapters provide translator-owned formats
+//! or copies of the configured formats.
+//!
+//! Signed division and remainder report evaluation errors for the 64-bit
+//! minimum value divided by -1, preserving the golden vectors' trap behavior.
 
 use std::rc::Rc;
 
