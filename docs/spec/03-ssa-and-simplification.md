@@ -1021,6 +1021,15 @@ through CAST/COPY chains. Rewrite: one wide `INT_ADD(PIECE(hipart, b),
 ZEXT(a))`, recovering the single 16-bit addition the 6502-class ADC pair
 implements. Settable `addcarrychain`, shipped default **on** (DIV-2).
 
+Carry-chain and array-stride helper outputs use
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs (new_unique_out)`
+instead of private copies of the bank allocation sequence. The shared factory
+links each definition and assigns its HighVariable when high-level variables
+are already enabled; it also owns lane bookkeeping. Pattern guards, opcode
+metadata, graph-edit order and option gates are unchanged. The ordinary
+schedule applies these rules before high-level assignment, while direct rule
+invocations must also preserve the function's existing high-level state.
+
 **booleanmask** (GH-1282) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_booleanmask.rs
 (RuleBoolSignShift)`, oppool1, fires on INT_SRIGHT. Pattern:

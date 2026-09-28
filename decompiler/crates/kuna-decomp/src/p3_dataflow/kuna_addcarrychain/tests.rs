@@ -137,28 +137,36 @@ fn build_idiom(fd: &mut Funcdata) -> (OpId, VarnodeId, VarnodeId, VarnodeId) {
 
 #[test]
 fn fuses_carry_chain_to_wide_add() {
-    let mut fd = build_fd();
-    let (op, a, _b, _hipart) = build_idiom(&mut fd);
+    for high_level in [false, true] {
+        let mut fd = build_fd();
+        let (op, a, _b, _hipart) = build_idiom(&mut fd);
+        if high_level {
+            fd.set_high_level();
+        }
 
-    let mut rule = RuleAddCarryChain::new(true);
-    assert_eq!(rule.apply_op(op, &mut fd), 1);
+        let mut rule = RuleAddCarryChain::new(true);
+        assert_eq!(rule.apply_op(op, &mut fd), 1);
 
-    // op is now INT_ADD(base, zext(index)).
-    let o = fd.obank().get(op).unwrap();
-    assert_eq!(o.code(), OpCode::CPUI_INT_ADD);
-    let base_out = o.get_in(0).unwrap();
-    let zext_out = o.get_in(1).unwrap();
+        // op is now INT_ADD(base, zext(index)).
+        let o = fd.obank().get(op).unwrap();
+        assert_eq!(o.code(), OpCode::CPUI_INT_ADD);
+        let base_out = o.get_in(0).unwrap();
+        let zext_out = o.get_in(1).unwrap();
+        for output in [base_out, zext_out] {
+            assert_eq!(fd.vbank().get(output).unwrap().get_high().is_some(), high_level);
+        }
 
-    // in0 = PIECE(hipart, b)
-    let baseop = fd.vbank().get(base_out).unwrap().get_def().unwrap();
-    assert_eq!(fd.obank().get(baseop).unwrap().code(), OpCode::CPUI_PIECE);
+        // in0 = PIECE(hipart, b)
+        let baseop = fd.vbank().get(base_out).unwrap().get_def().unwrap();
+        assert_eq!(fd.obank().get(baseop).unwrap().code(), OpCode::CPUI_PIECE);
 
-    // in1 = INT_ZEXT(a)
-    let zextop = fd.vbank().get(zext_out).unwrap().get_def().unwrap();
-    assert_eq!(fd.obank().get(zextop).unwrap().code(), OpCode::CPUI_INT_ZEXT);
-    assert_eq!(fd.obank().get(zextop).unwrap().get_in(0), Some(a));
-    // zext output width matches the 2-byte PIECE output.
-    assert_eq!(fd.vbank().get(zext_out).unwrap().get_size(), 2);
+        // in1 = INT_ZEXT(a)
+        let zextop = fd.vbank().get(zext_out).unwrap().get_def().unwrap();
+        assert_eq!(fd.obank().get(zextop).unwrap().code(), OpCode::CPUI_INT_ZEXT);
+        assert_eq!(fd.obank().get(zextop).unwrap().get_in(0), Some(a));
+        // zext output width matches the 2-byte PIECE output.
+        assert_eq!(fd.vbank().get(zext_out).unwrap().get_size(), 2);
+    }
 }
 
 #[test]

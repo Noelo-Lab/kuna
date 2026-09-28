@@ -132,28 +132,34 @@ fn build_two_phis(fd: &mut Funcdata, sz: int4, stride: u64) -> (OpId, VarnodeId,
 
 #[test]
 fn rewrites_accumulator_as_counter_times_stride() {
-    let mut fd = build_fd();
-    let (acc_phi, acc_out, cnt_out, reader, _bl) = build_two_phis(&mut fd, 4, 0x10);
+    for high_level in [false, true] {
+        let mut fd = build_fd();
+        let (acc_phi, acc_out, cnt_out, reader, _bl) = build_two_phis(&mut fd, 4, 0x10);
+        if high_level {
+            fd.set_high_level();
+        }
 
-    let mut rule = RuleArrayStride::new(true);
-    assert_eq!(rule.apply_op(acc_phi, &mut fd), 1);
+        let mut rule = RuleArrayStride::new(true);
+        assert_eq!(rule.apply_op(acc_phi, &mut fd), 1);
 
-    // The external reader now reads `INT_MULT(cnt, 0x10)`.
-    let multout = fd.obank().get(reader).unwrap().get_in(0).unwrap();
-    let multop = fd.vbank().get(multout).unwrap().get_def().unwrap();
-    let mo = fd.obank().get(multop).unwrap();
-    assert_eq!(mo.code(), OpCode::CPUI_INT_MULT);
-    assert_eq!(mo.get_in(0), Some(cnt_out));
-    let strv = mo.get_in(1).unwrap();
-    assert!(fd.vbank().get(strv).unwrap().is_constant());
-    assert_eq!(fd.vbank().get(strv).unwrap().get_offset(), 0x10);
+        // The external reader now reads `INT_MULT(cnt, 0x10)`.
+        let multout = fd.obank().get(reader).unwrap().get_in(0).unwrap();
+        assert_eq!(fd.vbank().get(multout).unwrap().get_high().is_some(), high_level);
+        let multop = fd.vbank().get(multout).unwrap().get_def().unwrap();
+        let mo = fd.obank().get(multop).unwrap();
+        assert_eq!(mo.code(), OpCode::CPUI_INT_MULT);
+        assert_eq!(mo.get_in(0), Some(cnt_out));
+        let strv = mo.get_in(1).unwrap();
+        assert!(fd.vbank().get(strv).unwrap().is_constant());
+        assert_eq!(fd.vbank().get(strv).unwrap().get_offset(), 0x10);
 
-    // The accumulator phi was destroyed (opDestroy unhooks + marks dead; the op
-    // object survives on the dead list until clearDeadOps, exactly as in C++).
-    assert!(fd.obank().get(acc_phi).unwrap().is_dead());
-    assert!(fd.obank().get(acc_phi).unwrap().get_out().is_none());
-    // acc_out has no readers left (all redirected to the multiply output).
-    assert_eq!(fd.vbank().get(acc_out).map(|v| v.num_descend()).unwrap_or(0), 0);
+        // The accumulator phi was destroyed (opDestroy unhooks + marks dead; the op
+        // object survives on the dead list until clearDeadOps, exactly as in C++).
+        assert!(fd.obank().get(acc_phi).unwrap().is_dead());
+        assert!(fd.obank().get(acc_phi).unwrap().get_out().is_none());
+        // acc_out has no readers left (all redirected to the multiply output).
+        assert_eq!(fd.vbank().get(acc_out).map(|v| v.num_descend()).unwrap_or(0), 0);
+    }
 }
 
 #[test]

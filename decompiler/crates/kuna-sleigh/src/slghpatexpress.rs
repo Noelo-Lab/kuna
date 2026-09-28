@@ -1596,51 +1596,45 @@ impl TokenPattern {
             )));
         }
 
+        let (left, right) = if reversedirection {
+            (&tok1.toklist[l1 - minsize..], &tok2.toklist[l2 - minsize..])
+        } else {
+            (&tok1.toklist[..minsize], &tok2.toklist[..minsize])
+        };
+        let mut pairs = left.iter().zip(right);
+        let mismatch = if reversedirection {
+            pairs.rfind(|(a, b)| a != b)
+        } else {
+            pairs.find(|(a, b)| a != b)
+        };
+        if let Some((a, b)) = mismatch {
+            return Err(KunaError::sleigh(format!(
+                "Mismatched tokens when combining patterns -- {} != {}",
+                a.index, b.index
+            )));
+        }
+
         if reversedirection {
-            for i in 0..minsize {
-                if tok1.toklist[l1 - 1 - i] != tok2.toklist[l2 - 1 - i] {
-                    return Err(KunaError::sleigh(format!(
-                        "Mismatched tokens when combining patterns -- {} != {}",
-                        tok1.toklist[l1 - 1 - i].index,
-                        tok2.toklist[l2 - 1 - i].index
-                    )));
-                }
-            }
-            if l1 <= l2 {
-                for i in minsize..l2 {
-                    ressa += tok2.toklist[l2 - 1 - i].size;
-                }
+            let extra = if l1 <= l2 {
+                &tok2.toklist[..l2 - minsize]
             } else {
-                for i in minsize..l1 {
-                    ressa += tok1.toklist[l1 - 1 - i].size;
-                }
+                &tok1.toklist[..l1 - minsize]
+            };
+            for token in extra.iter().rev() {
+                ressa += token.size;
             }
             if l1 < l2 {
                 ressa = -ressa;
             }
-        } else {
-            for i in 0..minsize {
-                if tok1.toklist[i] != tok2.toklist[i] {
-                    return Err(KunaError::sleigh(format!(
-                        "Mismatched tokens when combining patterns -- {} != {}",
-                        tok1.toklist[i].index, tok2.toklist[i].index
-                    )));
-                }
-            }
         }
-        // Save the results into -self-
-        if l1 <= l2 {
-            self.toklist = tok2.toklist.clone();
-        } else {
-            self.toklist = tok1.toklist.clone();
-        }
+        let selected = if l1 <= l2 { tok2 } else { tok1 };
+        self.toklist = selected.toklist.clone();
         Ok(ressa)
     }
 
     /// C++ `TokenPattern::doAnd`.
     pub fn do_and(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
         let mut res = TokenPattern::new_true();
-        res.toklist.clear();
         let sa = res.resolve_tokens(self, tokpat)?;
         // C++ returns `res` by value; the caller's TokenPattern copy/assign
         // runs `pattern->simplifyClone()`.  Apply it here so the stored
@@ -1652,7 +1646,6 @@ impl TokenPattern {
     /// C++ `TokenPattern::doOr`.
     pub fn do_or(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
         let mut res = TokenPattern::new_true();
-        res.toklist.clear();
         let sa = res.resolve_tokens(self, tokpat)?;
         // do_or takes &mut on both operands (the upstream const-cast quirk);
         // operate on clones since C++ `doOr` may mutate either receiver.
@@ -1665,7 +1658,6 @@ impl TokenPattern {
     /// C++ `TokenPattern::doCat`: concatenation of `self` and `tokpat`.
     pub fn do_cat(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
         let mut res = TokenPattern::new_true();
-        res.toklist.clear();
         res.leftellipsis = self.leftellipsis;
         res.rightellipsis = self.rightellipsis;
         res.toklist = self.toklist.clone();
@@ -1707,7 +1699,6 @@ impl TokenPattern {
     /// C++ `TokenPattern::commonSubPattern`.
     pub fn common_sub_pattern(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
         let mut patres = TokenPattern::new_true();
-        patres.toklist.clear();
         let mut reversedirection = false;
 
         if self.leftellipsis || tokpat.leftellipsis {
@@ -1720,36 +1711,29 @@ impl TokenPattern {
         // Find common subset of tokens and ellipses
         patres.leftellipsis = self.leftellipsis || tokpat.leftellipsis;
         patres.rightellipsis = self.rightellipsis || tokpat.rightellipsis;
-        let mut minnum = self.toklist.len();
-        let mut maxnum = tokpat.toklist.len();
-        if maxnum < minnum {
-            std::mem::swap(&mut minnum, &mut maxnum);
-        }
-        let mut i = 0usize;
+        let maxnum = self.toklist.len().max(tokpat.toklist.len());
+        let common = if reversedirection {
+            self.toklist
+                .iter()
+                .rev()
+                .zip(tokpat.toklist.iter().rev())
+                .take_while(|(a, b)| a == b)
+                .count()
+        } else {
+            self.toklist
+                .iter()
+                .zip(&tokpat.toklist)
+                .take_while(|(a, b)| a == b)
+                .count()
+        };
         if reversedirection {
-            while i < minnum {
-                let tok = self.toklist[self.toklist.len() - 1 - i];
-                if tok == tokpat.toklist[tokpat.toklist.len() - 1 - i] {
-                    patres.toklist.insert(0, tok);
-                } else {
-                    break;
-                }
-                i += 1;
-            }
-            if i < maxnum {
+            patres.toklist = self.toklist[self.toklist.len() - common..].to_vec();
+            if common < maxnum {
                 patres.leftellipsis = true;
             }
         } else {
-            while i < minnum {
-                let tok = self.toklist[i];
-                if tok == tokpat.toklist[i] {
-                    patres.toklist.push(tok);
-                } else {
-                    break;
-                }
-                i += 1;
-            }
-            if i < maxnum {
+            patres.toklist = self.toklist[..common].to_vec();
+            if common < maxnum {
                 patres.rightellipsis = true;
             }
         }

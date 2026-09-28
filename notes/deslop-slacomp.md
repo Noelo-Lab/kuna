@@ -832,3 +832,37 @@ the 5% budget. All measured images are identical.
 The query/bounds snapshot passed all four gates: 675 upstream and 1,467 stage
 assertions, 7,714 workspace tests with 38 existing ignores, and the spec check.
 The option catalog passed. No baseline, test count or oracle expectation changed.
+
+Token alignment now compares paired prefix or suffix slices in the required
+direction, shares unmatched-prefix accumulation and selects the resulting
+token list once. Common subpatterns copy their shared prefix or suffix once,
+replacing repeated front insertion for suffixes. Four redundant clears of new,
+empty vectors are removed. This removes 16 production lines; public signatures,
+ellipsis flags, error priority, first mismatch and input ownership are preserved.
+An existing unused test import is also removed.
+
+Actual-module comparisons agree on 72,000 alignment/algebra outcomes and their
+input/result states, plus 100,000 integer-boundary alignment outcomes and partial
+result states. Both overflow-check settings pass. Cases include every pair of
+five pattern forms, all ellipsis combinations, empty token lists, differing
+sizes/endianness with the same index, and overflow during reverse accumulation.
+The applied source matches the compared candidate. All 371 targeted release
+tests pass without warnings; 286 CLI cases and 48 binary/XML compiler oracles
+remain identical.
+
+Full-compilation allocation request counts remain 16,835 for Toy builder,
+2,724,101 for x86-64 and 689,014 for Hexagon in three repetitions. Requested
+bytes fall by 288, 28,176 and 6,372 respectively, to 2,331,153, 239,646,482 and
+76,750,658. These totals do not measure peak or resident memory.
+
+Alternating uninstrumented runs pinned to CPU 40 measured Toy-builder wall time
+at 5.7332 → 5.2800 ms (-7.90%, 110 samples per version), x86-64 at 439.3014 →
+438.2380 ms (-0.24%, 12 samples), and Hexagon at 145.3572 → 145.1342 ms
+(-0.15%, 12 samples). Paired wall-time medians were +0.11%, -0.40% and -0.23%;
+paired child CPU medians were -0.19%, -0.40% and -0.24%. The short Toy run's
+separate medians vary with the shared host, so it does not establish a speedup.
+All results fit the 5% budget and every measured image is identical.
+
+The token-alignment snapshot passed all four gates: 675 upstream and 1,467 stage
+assertions, 7,714 workspace tests with 38 existing ignores, and the spec check.
+The option catalog passed. No baseline, test count or oracle expectation changed.

@@ -937,6 +937,46 @@ its DevTools port within ten seconds. That job is not reported as green; the
 discarded browser diagnostics prevent identifying the startup cause from its
 log. No browser code changed in that commit.
 
+## Twenty-fifth checkpoint: shared IR factories and token alignment
+
+Carry-chain and array-stride rules copied the unique-output factory and
+omitted its high-variable bookkeeping. Their helper outputs therefore lacked
+HighVariables when the public rules ran after high-level assignment. The
+ordinary schedule applies these rules earlier; this is an API-state invariant
+failure, not a reproduced CLI crash. Both rules now use `Funcdata::new_unique_out`.
+Matching, gates, opcode metadata and graph-edit order are unchanged. Stale
+comments claiming the shared factory and architecture flags were unavailable
+are removed. The two remaining ruleaction factory copies are still an audit
+target, not silently folded into this change.
+
+Two existing tests now run with high-level variables off and on, retaining all
+their graph assertions and checking helper metadata. Compiled separately
+against the old library, these fixtures give 8 passes and 2 intended failures;
+against the rebuilt library all 10 pass. A second valid-IR probe against the
+actual public rule types changes from 0/2 to 2/2. All 3068 engine-library tests
+pass without adding a test harness or new test functions to the repository.
+Forty ELF/PE whole-binary cases preserve exact output across worker counts and
+forced replay/fallback modes. Twenty alternating project-export pairs after
+warmups preserve all four artifacts; paired median wall time changes +0.27%,
+within the 5% budget.
+
+Token alignment shares directional slice comparison, retains reverse size
+accumulation and copies common prefixes/suffixes once instead of repeatedly
+inserting at the front. Root AST checks show all non-comment production tokens
+match the model sources; the older model headers differ only in comments.
+Both overflow modes agree on 72,000 alignment/algebra cases and 100,000 boundary
+outcomes, including partial states and error order. All 375 compiler/SLEIGH
+release tests and 286 compiler CLI cases pass. Independent allocation and
+timing evidence is retained in `notes/deslop-slacomp.md`. The native release
+build is warning-free. The preceding commit passed CodeQL and the complete CI
+job, including the browser test; the earlier Chrome startup failure did not recur.
+
+Final frozen-tree checks passed: 675 upstream and 1467 stage assertions,
+7432 workspace tests (38 ignored, no warnings), spec/catalog checks, 268 CLI
+probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
+CLI comparisons. All eight gate processes exited zero and the tracked diff
+retained its frozen hash. No baseline or existing output expectation changed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -948,7 +988,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay and object-file views have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
 | Collection policy | The release engine-library Clippy check still reports 211 collection-policy errors; the CLI-only check finds 17 errors and 22 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
-| Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
+| Engine boundaries | Carry-chain and array-stride output creation now uses the shared factory, with high-level-state regressions. `ruleaction_3` and `ruleaction_4` still duplicate it, and the latter also copies the addressed-output factory; review their bookkeeping before replacing them. Wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 
 Before each commit: `make test`, `make test-stages`, `make rust-test`,

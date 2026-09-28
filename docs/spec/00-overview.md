@@ -930,6 +930,12 @@ instruction bits still requires every alternative to qualify. Block comparisons
 bound each positive remaining span to one word and retain the existing maximum
 extent.
 
+Token alignment compares matching prefix or suffix slices in the required
+direction, retaining the first mismatch and ellipsis error order. Reverse
+alignment sums unmatched token sizes from right to left. Common subpatterns
+copy the shared prefix or suffix once, retaining token metadata and the same
+ellipsis flags; combining patterns leaves both inputs unchanged.
+
 Decision nodes enumerate compatible branch values in ascending order without
 building a temporary list. Terminal nodes sort pattern indices by specialization
 while retaining the original patterns for conflict checks. The sorted prefix
