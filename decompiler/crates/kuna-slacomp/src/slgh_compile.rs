@@ -66,13 +66,13 @@ enum RtlValue {
 /// slgh_compile.hh:42-47).
 #[derive(Clone, Copy, Default, Debug)]
 pub struct RtlPair {
-    /// `ConstructTpl` handle in the base template arena (or `None`).
+    /// Section handle in the compiler's parser arena (or `None`).
     pub section: Option<u32>,
     /// Symbol scope id associated with the section (or `None`).
     pub scope: Option<u32>,
 }
 
-/// The collection of named p-code sections for one Constructor (`SectionVector`,
+/// Main and named p-code sections for one constructor (`SectionVector`,
 /// slgh_compile.hh:58-72).
 #[derive(Default, Debug)]
 pub struct SectionVector {
@@ -300,7 +300,6 @@ pub struct SleighCompile {
     filename: Vec<Vec<u8>>,
     lineno: Vec<i32>,
     symbol_loc: BTreeMap<SymbolId, Location>,
-    ctor_loc: BTreeMap<u32, Location>,
     userop_count: i32,
     warnunnecessarypcode: bool,
     warndeadtemps: bool,
@@ -489,18 +488,13 @@ impl SleighCompile {
         self.report_warning(msg);
     }
     /// `compiler->reportError(compiler->getLocation(ct), msg)` keyed by ctor.
-    pub(crate) fn cc_report_error_ct(&mut self, _sym: SymbolId, ctid_unused: u32, msg: &str) {
-        let _ = ctid_unused;
-        // The ctor location is keyed by the driver constructor id; the checker
-        // navigates (table,ctidx) but the location map is keyed by the global
-        // ctor id, so fall back to the current parse location (matches C++ when
-        // the per-ctor location is unavailable).
-        let loc = self.current_location();
+    pub(crate) fn cc_report_error_ct(&mut self, sym: SymbolId, ctidx: u32, msg: &str) {
+        let loc = self.constructor_location(sym, ctidx);
         self.report_error_loc(Some(&loc), msg);
     }
     /// `compiler->reportWarning(compiler->getLocation(ct), msg)` keyed by ctor.
-    pub(crate) fn cc_report_warning_ct(&mut self, _sym: SymbolId, _ctidx: u32, msg: &str) {
-        let loc = self.current_location();
+    pub(crate) fn cc_report_warning_ct(&mut self, sym: SymbolId, ctidx: u32, msg: &str) {
+        let loc = self.constructor_location(sym, ctidx);
         self.report_warning_loc(Some(&loc), msg);
     }
     pub(crate) fn cc_warn_unnecessary(&self) -> bool {
@@ -1088,7 +1082,6 @@ impl SleighCompile {
         }
         let id = self.ctmap.len() as u32;
         self.ctmap.push((table_id, ct_idx));
-        self.ctor_loc.insert(id, loc);
         self.base.symtab_mut().add_scope();
         self.pcode.local_labelcount = 0; // C++ pcode.resetLabelCount() (cc:3377)
         self.curct = Some(id);
@@ -1140,23 +1133,38 @@ impl SleighCompile {
         None
     }
 
-    /// `buildConstructor` (slgh_compile.cc:3698).  In the landed subset `vec` is
-    /// always `None` (no semantic section: `unimpl` or context-only).
+    /// C++ `SleighCompile::buildConstructor(...)` (slgh_compile.cc:3698).
+    /// Section handles belong to this compiler's parser arena.
     pub fn build_constructor(
         &mut self,
         big: u32,
         pateq: Option<u32>,
-        _contvec: Option<Vec<u32>>,
+        contvec: Option<Vec<u32>>,
         vec: Option<SectionVector>,
     ) {
         let (table_id, ct_idx) = self.ctmap[big as usize];
         let mut noerrors = true;
-        if vec.is_some() {
-            self.report_error(
-                "buildConstructor: p-code section finalize not yet ported \
-                 (slgh_compile.cc:3436 finalizeSections)",
-            );
-            noerrors = false;
+        if let Some(mut sections) = vec {
+            noerrors = self.finalize_sections(big, &sections);
+            if noerrors {
+                let main = sections.release_main_section();
+                if let Some(secid) = main {
+                    let ct = self.take_section(secid);
+                    let handle = self.base.add_template(ct);
+                    self.constructor_mut(table_id, ct_idx)
+                        .set_main_section(handle);
+                }
+                let maxid = sections.get_max_id();
+                for i in 0..maxid {
+                    let named = sections.release_named_section(i);
+                    if let Some(secid) = named {
+                        let ct = self.take_section(secid);
+                        let handle = self.base.add_template(ct);
+                        self.constructor_mut(table_id, ct_idx)
+                            .set_named_section(handle, i);
+                    }
+                }
+            }
         }
         if noerrors {
             let pateq = self.collect_and_prepend_pattern(pateq);
@@ -1171,6 +1179,8 @@ impl SleighCompile {
                 self.constructor_mut(table_id, ct_idx).add_equation(eps);
             }
             self.constructor_mut(table_id, ct_idx).remove_trailing_space();
+            let changes = self.collect_and_prepend_context(contvec);
+            self.constructor_mut(table_id, ct_idx).add_context(changes);
         }
         self.base.symtab_mut().pop_scope();
     }
@@ -1275,20 +1285,17 @@ impl SleighCompile {
     fn alloc_secvec(&mut self, v: SectionVector) -> u32 {
         self.alloc_rtl(RtlValue::SecVec(v))
     }
-    fn secvec_ref(&self, id: u32) -> &SectionVector {
-        match self.rtl_arena.get(id as usize).and_then(|s| s.as_ref()) {
-            Some(RtlValue::SecVec(v)) => v,
-            _ => panic!("rtl id {id} is not a section vector"),
-        }
-    }
     fn secvec_mut(&mut self, id: u32) -> &mut SectionVector {
         match self.rtl_arena.get_mut(id as usize).and_then(|s| s.as_mut()) {
             Some(RtlValue::SecVec(v)) => v,
             _ => panic!("rtl id {id} is not a section vector"),
         }
     }
-    fn drop_secvec(&mut self, id: u32) {
-        self.rtl_arena[id as usize] = None;
+    fn take_secvec(&mut self, id: u32) -> SectionVector {
+        match self.rtl_arena[id as usize].take() {
+            Some(RtlValue::SecVec(sections)) => sections,
+            _ => panic!("rtl id {id} is not a section vector"),
+        }
     }
 
     // --- post-parse subsystems ---
@@ -1610,6 +1617,12 @@ impl SleighCompile {
             .and_then(|s| s.as_subtable())
             .and_then(|st| st.get_constructor(idx).ok())
             .expect("constructor exists")
+    }
+
+    fn constructor_location(&self, table_id: SymbolId, idx: u32) -> Location {
+        let ct = self.constructor(table_id, idx);
+        let filename = self.base.indexer().get_filename(ct.get_src_index());
+        Location::new(&filename, ct.get_lineno())
     }
 
     fn constructor_mut(
@@ -3003,7 +3016,7 @@ impl SleighCompile {
     // per-constructor section finalize + the process()-time crossbuild shift
     // -----------------------------------------------------------------------
 
-    /// C++ `SleighCompile::buildConstructor(...)` (slgh_compile.cc:3698).
+    /// Takes the parser arena's section vector and builds the constructor.
     pub fn build_constructor_ws4c(
         &mut self,
         big: u32,
@@ -3011,48 +3024,8 @@ impl SleighCompile {
         contvec: Option<Vec<u32>>,
         vec: Option<u32>,
     ) {
-        let (table_id, ct_idx) = self.ctmap[big as usize];
-        let mut noerrors = true;
-        if let Some(secvec_id) = vec {
-            noerrors = self.finalize_sections(big, secvec_id);
-            if noerrors {
-                // Attach sections to the Constructor.
-                let main = self.secvec_mut(secvec_id).release_main_section();
-                if let Some(secid) = main {
-                    let ct = self.take_section(secid);
-                    let handle = self.base.add_template(ct);
-                    self.constructor_mut(table_id, ct_idx).set_main_section(handle);
-                }
-                let maxid = self.secvec_ref(secvec_id).get_max_id();
-                for i in 0..maxid {
-                    let named = self.secvec_mut(secvec_id).release_named_section(i);
-                    if let Some(secid) = named {
-                        let ct = self.take_section(secid);
-                        let handle = self.base.add_template(ct);
-                        self.constructor_mut(table_id, ct_idx).set_named_section(handle, i);
-                    }
-                }
-            }
-            // Drop the section vector (C++ delete vec).
-            self.drop_secvec(secvec_id);
-        }
-        if noerrors {
-            let pateq = self.collect_and_prepend_pattern(pateq);
-            if let Some(eq) = pateq {
-                self.constructor_mut(table_id, ct_idx).add_equation(eq);
-            } else {
-                let eps = self.arena.alloc(PatternEquation::Unconstrained {
-                    patex: PatternExpression::Value(PatternValue::ConstantValue(ConstantValue::new(
-                        0,
-                    ))),
-                });
-                self.constructor_mut(table_id, ct_idx).add_equation(eps);
-            }
-            self.constructor_mut(table_id, ct_idx).remove_trailing_space();
-            let changes = self.collect_and_prepend_context(contvec);
-            self.constructor_mut(table_id, ct_idx).add_context(changes);
-        }
-        self.base.symtab_mut().pop_scope(); // In all cases pop scope
+        let sections = vec.map(|id| self.take_secvec(id));
+        self.build_constructor(big, pateq, contvec, sections);
     }
 
     /// C++ `WithBlock::collectAndPrependContext` (slgh_compile.hh): prepend each
@@ -3071,16 +3044,16 @@ impl SleighCompile {
 
     /// C++ `SleighCompile::finalizeSections(Constructor *big,SectionVector *vec)`
     /// (slgh_compile.cc:3436).
-    fn finalize_sections(&mut self, big: u32, secvec_id: u32) -> bool {
+    fn finalize_sections(&mut self, big: u32, sections: &SectionVector) -> bool {
         let (table_id, ct_idx) = self.ctmap[big as usize];
         let parent = self.constructor_parent(table_id, ct_idx);
         let root = self.base.get_root();
         let mut errors: Vec<String> = Vec::new();
 
-        let mut cur = self.secvec_ref(secvec_id).get_main_pair();
+        let mut cur = sections.get_main_pair();
         let mut i: i32 = -1;
         let mut sectionstring = String::from("   Main section: ");
-        let max = self.secvec_ref(secvec_id).get_max_id();
+        let max = sections.get_max_id();
         loop {
             let errstring = self
                 .base
@@ -3137,9 +3110,9 @@ impl SleighCompile {
                     .unwrap_or(0);
                 if delay != 0 {
                     if root != parent {
-                        let loc = self.ctor_loc.get(&big).cloned();
+                        let loc = self.constructor_location(table_id, ct_idx);
                         self.report_warning_loc(
-                            loc.as_ref(),
+                            Some(&loc),
                             "Delay slot used in non-root constructor",
                         );
                     }
@@ -3154,7 +3127,7 @@ impl SleighCompile {
                 if i >= max {
                     break;
                 }
-                cur = self.secvec_ref(secvec_id).get_named_pair(i);
+                cur = sections.get_named_pair(i);
                 if cur.section.is_some() {
                     break;
                 }
@@ -3167,12 +3140,12 @@ impl SleighCompile {
             sectionstring = format!("   {} section: ", String::from_utf8_lossy(&nm));
         }
         if !errors.is_empty() {
-            let loc = self.ctor_loc.get(&big).cloned();
+            let loc = self.constructor_location(table_id, ct_idx);
             let mut info = String::from("in ");
             self.constructor_print_info(table_id, ct_idx, &mut info);
-            self.report_error_loc(loc.as_ref(), &info);
+            self.report_error_loc(Some(&loc), &info);
             for e in &errors {
-                self.report_error_loc(loc.as_ref(), e);
+                self.report_error_loc(Some(&loc), e);
             }
             return false;
         }

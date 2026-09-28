@@ -16,6 +16,28 @@ fn write_spec(directory: &Path, name: &str) {
     .unwrap();
 }
 
+fn write_diagnostic_spec(directory: &Path, body: &str) {
+    fs::write(
+        directory.join("main.slaspec"),
+        "define endian = little;\n\
+         define alignment = 1;\n\
+         define space ram type=ram_space size=4 default;\n\
+         define space register type=register_space size=4;\n\
+         define register offset=0 size=4 r0;\n\
+         define token instr8(8) op=(0,7);\n\
+         :before is op=2 { r0=0; }\n\
+         @include \"fault.sinc\"\n\
+         :bad value is value { build value; }\n\
+         :tail is op=1 { r0=r0+1; }\n",
+    )
+    .unwrap();
+    fs::write(
+        directory.join("fault.sinc"),
+        format!("# included constructor\n\nvalue: \"bad\" is op=0 {{ {body} export r0; }}\n"),
+    )
+    .unwrap();
+}
+
 fn compile(arguments: &[&Path]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_slacomp"))
         .args(arguments)
@@ -100,6 +122,38 @@ fn extra_filenames_are_rejected_before_compilation() {
     ]);
     assert_eq!(result.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&result.stderr).contains("Too many parameters"));
+    assert!(!destination.exists());
+}
+
+#[test]
+fn consistency_warning_uses_included_constructor_location() {
+    let scratch = tempfile::tempdir().unwrap();
+    write_diagnostic_spec(scratch.path(), "local tmp:4=1; r0=2;");
+    let destination = scratch.path().join("compiled.sla");
+    let result = compile(&[
+        Path::new("-t"),
+        &scratch.path().join("main.slaspec"),
+        &destination,
+    ]);
+    assert_eq!(
+        std::str::from_utf8(&result.stderr).unwrap(),
+        "WARN  fault.sinc:3: Temporary is written but not read\n"
+    );
+    assert_compiled(result, &destination);
+}
+
+#[test]
+fn consistency_error_uses_included_constructor_location() {
+    let scratch = tempfile::tempdir().unwrap();
+    write_diagnostic_spec(scratch.path(), "local tmp:4; r0=tmp;");
+    let destination = scratch.path().join("compiled.sla");
+    let result = compile(&[&scratch.path().join("main.slaspec"), &destination]);
+    assert_eq!(result.status.code(), Some(2));
+    assert_eq!(
+        std::str::from_utf8(&result.stderr).unwrap(),
+        "main.slaspec:11 - ERROR fault.sinc:3: Temporary is read but not written\n\
+         No output produced\n"
+    );
     assert!(!destination.exists());
 }
 

@@ -98,6 +98,14 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   changes directly to each constructor, eliminating a temporary arena round trip.
   A new pinned C++ oracle covers nesting, siblings, local overrides, `globalset`
   and leaving a block. None of the existing 44 oracle digests changed.
+- Declaration naming keeps reserved and assigned spellings in one lookup table
+  instead of copying them among two sets and a suffix-counter map. Assignment
+  follows caller order; hash iteration does not choose names. Existing names,
+  suffix selection and the public API are preserved.
+- Compiler diagnostics and section validation read the constructor's existing
+  source metadata instead of maintaining a separate location map. Both public
+  constructor builders now share the complete finalizer; the parser entry point
+  takes ownership of its section vector before delegating.
 
 ## Evidence
 
@@ -244,6 +252,36 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   suite also passed 100 debug and 100 release repetitions (1,800 assertions),
   including the profile and parallel-test setup that reproduced the failure.
 
+- All 13 declaration-helper tests pass before and after the name allocator
+  refactor. A first-free-name reference checks 64,000 assignments independently;
+  a standalone comparison of the extracted implementations agrees on another
+  640,000 calls, including reserved suffixes, occupied and unlisted names,
+  generated names reused as bases, and empty/Unicode strings.
+- The extracted production allocator was measured in 30 alternating rounds of
+  50 runs after warmup, pinned to CPU 40. Median per-run times were 140.340 →
+  77.003 µs for 512 unique names, 251.041 → 142.415 µs for 512 repeated names,
+  751.061 → 421.346 µs for 2,048 mixed names, and 284.572 → 229.863 µs with
+  1,024 reserved suffixes. Separate allocation instrumentation measured requests
+  of 1552 → 1028, 3087 → 1540, 14104 → 8068, and 4621 → 3075, respectively;
+  cumulative requested bytes fell 53%, 53%, 51%, and 31%. These are local helper
+  measurements, not whole-decompilation speedups or peak-memory measurements.
+  A single-tree prototype was rejected because two workloads slowed 19–31%.
+- The name table's narrow lookup-only Clippy expectation is fulfilled. Existing
+  collection-policy failures elsewhere remain: the release engine-library check
+  reports 216 errors, down from the prior 222; this is not a passing Clippy gate.
+- Both included-constructor diagnostic regressions reproduce with the saved
+  old compiler and pass afterward. All three direct constructor-builder tests
+  fail on the former owned-vector path and pass after unification. The combined
+  compiler/SLEIGH release suite passes 365 tests, including all 45 binary oracles.
+- The frozen naming/constructor snapshot passes all four gates: 7,387 workspace
+  tests with 38 existing ignores and no warnings, 675/675 upstream and 1467/1467
+  stage assertions, and spec checks. All 268 CLI probes, 16 Python tests,
+  56 Ghidra checks and catalog validation pass. All 45 pinned C++ XML outputs
+  and the 14 saved CLI cases are unchanged. Twenty alternating summary pairs
+  measured 137.650 → 132.882 ms wall medians and 136.781 → 131.968 ms child CPU;
+  the median paired wall ratio was 1.002, with identical output. Concurrent
+  workspace activity means this does not establish a small speed difference.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -254,7 +292,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
-| Collection policy | `cargo clippy --workspace --lib --bins` stops in `kuna-decomp` with 222 denied `HashMap`/`HashSet` findings. Removed its missing-ADR reference. Review iteration semantics and lookup costs before replacing collections, then check the remaining crates and enforce the gate. |
+| Collection policy | The release engine-library Clippy check still reports 216 collection-policy errors. Declaration naming now uses one reviewed lookup-only table. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Ninety engine files still contain wave-era STUB notes. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory corruption fails closed and Python text writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 

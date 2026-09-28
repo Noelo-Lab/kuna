@@ -173,3 +173,57 @@ The independent context-inheritance snapshot passed all four gates: 675
 upstream and 1,467 stage assertions, 7,701 workspace tests with 38 existing
 ignores, and the spec check. The option catalog passed. No baseline or existing
 oracle expectation changed.
+
+Consistency diagnostics ignored the supplied constructor identity and used the
+parser's final location. An uninitialized temporary at `fault.sinc:3`, for
+example, was reported as `main.slaspec:11`. Diagnostics now resolve the existing
+constructor source-file index and line number. Section finalization uses the
+same lookup, and the separate constructor-location map has been removed.
+
+Two CLI regressions put the faulty constructor in an included subtable after
+an existing root constructor. Both fail before the change and match the pinned
+C++ compiler's complete diagnostics afterward. They also check successful
+warning output and failed compilation without an output file. Independent
+comparisons preserve section-error and delay-slot behavior, exit statuses and
+compiled bytes. The existing abbreviated delay-slot warning remains unchanged.
+All 360 compiler and SLEIGH release tests pass, including 45 binary oracles.
+
+An initial unpinned Toy timing batch varied enough to suggest a 5.3% slowdown.
+A controlled repeat pinned both programs to CPU 40, balanced their order and
+discarded warmup pairs. Across 110 samples per version, median Toy wall time
+was 6.8415 → 6.8248 ms (-0.25%) and child CPU time was 6.4245 → 6.4100 ms
+(-0.23%). Twelve interleaved x86-64 samples measured 473.342 → 472.030 ms
+(-0.28%). The before/after compiler-output checks were identical; these are local
+measurements on a shared host.
+
+The independent constructor-location snapshot passed all four gates: 675
+upstream and 1,467 stage assertions, 7,703 workspace tests with 38 existing
+ignores, and the spec check. The option catalog passed, Rust documentation had
+no warnings, and all 45 XML outputs still match the pinned C++ reference.
+No baseline or existing oracle expectation changed.
+
+The public constructor builder still had a partial implementation that rejected
+semantic sections as “not yet ported” and ignored context changes, even though
+the parser's other entry point supported both. The complete implementation now
+owns its section vector directly. The parser entry point takes that vector from
+its arena slot and delegates; finalization borrows the local vector instead of
+looking it up repeatedly. Both public signatures are preserved.
+
+Three API regressions cover main and sparse named sections, inherited and local
+context without semantic sections, and validation errors with scope cleanup.
+All three fail on the former public path and pass through both entry points
+after the change. The 363 compiler and SLEIGH release tests pass, including the
+45 independent binary oracle cases.
+
+Alternating before/after compiler runs pinned to CPU 40 measured Toy-builder
+wall time at 6.9436 → 6.9332 ms (-0.15%, 110 samples per version), x86-64 at
+483.2231 → 483.7396 ms (+0.11%, 12 samples), and Hexagon at 154.0491 →
+153.1624 ms (-0.58%, 12 samples). Child CPU times changed by +0.15%, +0.12%
+and -0.58%, respectively. Every measured output was byte-identical. These
+local measurements followed warmups and include process startup.
+
+The independent constructor-builder snapshot passed all four gates: 675
+upstream and 1,467 stage assertions, 7,706 workspace tests with 38 existing
+ignores, and the spec check. The option catalog passed, and all 45 XML outputs
+still match the pinned C++ reference. No baseline or existing oracle expectation
+changed.

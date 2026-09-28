@@ -1,52 +1,12 @@
-//! (kuna) Collapse duplicate local-variable *declarations* — the scalar analogue
-//! of the existing composite-symbol declaration collapse in
-//! [`crate::printc`]'s `emit_local_var_decls`.
+//! Declaration deduplication and function-scope name allocation.
 //!
-//! This is a kuna-owned presentation policy (NOT upstream Ghidra), inspired by the
-//! angr decompiler.  angr's variable recovery yields exactly one variable per
-//! storage location, so its declaration block lists each local once.  kuna's
-//! printer instead walks **HighVariables** (the documented "W4 ScopeLocal symbol
-//! walk is the missing surface"), so when the angr-style naming maps many distinct
-//! scalar HighVariables that share one stack slot to the *same* name + type +
-//! storage, kuna emits one declaration **per high** — a wall of textually
-//! identical lines (e.g. `int4 option_index; // stack - 0x3c` repeated ~200×, seen
-//! on x86_64/cvs `main`).  The body refers to all of them by the one shared name,
-//! so the duplicate declaration *lines* are pure noise (strictly, invalid C
-//! re-declarations).
-//!
-//! Ghidra walks the `ScopeLocal` *Symbol* table once per Symbol
-//! (`emitScopeVarDecls`, printc.cc:2667/2696), so it never repeats a declaration.
-//! `emit_local_var_decls` already reproduces this for **composite** (array/struct/
-//! union) mapped symbols (`printc.rs`, the `seen_sym` retain) but explicitly keeps
-//! the per-high behavior for scalars.  This module supplies the scalar collapse,
-//! gated by `option dedupvardecls`.
-//!
-//! # What is collapsed
-//!
-//! A declaration is suppressed ONLY when its **fully-rendered signature** — final
-//! declarator type, variable name, array adornment, and storage comment — is
-//! byte-identical to one already emitted.  This is provably lossless: the emitted
-//! C bytes would be character-for-character the same, so no information is removed.
-//! Two highs that render the same name but a *different* type or storage have
-//! different signatures and both survive here.
-//!
-//! A same-name/different-type pair at ONE storage location is not a collision the
-//! reader can act on, though — it is one stack slot declared twice, which is not
-//! compilable C.  That case is caught before this deduper runs, by the Symbol-keyed
-//! collapse in `printc.rs` (`PrintC::collapse_symbol_decls`, gated by the same
-//! option): several highs of one mapped `ScopeLocal` Symbol emit one declaration
-//! carrying the Symbol's own type.  This module is the residual line-level pass for
-//! the highs that reach no Symbol at all.
-//!
-//! # Apply boundary
-//!
-//! Following the kuna-option idiom ([`crate::kuna_arraynotation::OptionArrayNotation`]),
-//! `apply` parses + validates the `on`/`off` value and returns the resolved flag
-//! plus the confirmation message; the caller flips the architecture flag
-//! (`Architecture::dedup_var_decls`), which the printer reads via the ArchContext.
+//! The printer uses rendered signatures to collapse identical declaration lines
+//! when `dedupvardecls` is enabled. Name allocation reserves existing identifiers
+//! and future local spellings, then assigns collision suffixes in caller order.
+//! Symbol and overlap-group collapsing remain in [`crate::printc`].
 
-use kuna_base::marshal::ElementId;
 use kuna_base::error::KunaResult;
+use kuna_base::marshal::ElementId;
 
 use crate::options::on_or_off;
 
@@ -71,7 +31,10 @@ impl OptionDedupVarDecls {
     pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
         let val = on_or_off(p1)?;
         let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Duplicate local-declaration collapse turned {prop}")))
+        Ok((
+            val,
+            format!("Duplicate local-declaration collapse turned {prop}"),
+        ))
     }
 }
 
@@ -88,13 +51,17 @@ impl OptionDedupVarDecls {
 /// * `comment` — the `(text, offset)` storage comment (`// stack - 0x3c`), present
 ///   only under angr naming.  Two locals at *different* slots carry different
 ///   comments and so are NOT collapsed.
-pub type DeclSignature =
-    (String, String, String, Option<(String, i32)>, Option<(String, u64)>);
+pub type DeclSignature = (
+    String,
+    String,
+    String,
+    Option<(String, i32)>,
+    Option<(String, u64)>,
+);
 
 /// Tracks the rendered signatures already emitted so duplicates can be suppressed.
 ///
-/// Used by `emit_local_var_decls` only when `Architecture::dedup_var_decls` is set;
-/// when unset the printer never constructs one, so default output is byte-identical.
+/// Used by `emit_local_var_decls` only when `Architecture::dedup_var_decls` is set.
 #[derive(Debug, Default)]
 pub struct DeclDedup {
     seen: std::collections::HashSet<DeclSignature>,
@@ -102,14 +69,23 @@ pub struct DeclDedup {
 
 /// Allocates declaration identifiers that are unique in one function scope.
 ///
-/// `reserved` contains every as-yet unassigned local name, so a generated suffix
-/// cannot take the spelling of a later declaration. `used` starts with names
-/// already owned by the function signature and grows in declaration order.
+/// Reserved spellings cannot become generated suffixes. Assigned spellings also
+/// carry the next suffix to try when another declaration requests that name.
 #[derive(Debug, Default)]
 pub struct DeclNameUniquifier {
-    reserved: std::collections::HashSet<String>,
-    used: std::collections::HashSet<String>,
-    next_suffix: std::collections::HashMap<String, u32>,
+    #[expect(
+        clippy::disallowed_types,
+        reason = "Hash iteration cannot affect naming; assignment follows caller order"
+    )]
+    names: std::collections::HashMap<String, NameState>,
+}
+
+#[derive(Debug)]
+enum NameState {
+    Reserved,
+    Assigned {
+        next_suffix: u32,
+    },
 }
 
 impl DeclNameUniquifier {
@@ -119,26 +95,47 @@ impl DeclNameUniquifier {
         locals: impl IntoIterator<Item = &'a str>,
         occupied: impl IntoIterator<Item = &'a str>,
     ) -> Self {
-        let mut reserved: std::collections::HashSet<String> =
-            locals.into_iter().map(str::to_string).collect();
-        let used: std::collections::HashSet<String> =
-            occupied.into_iter().map(str::to_string).collect();
-        reserved.extend(used.iter().cloned());
-        Self { reserved, used, next_suffix: std::collections::HashMap::new() }
+        let mut allocator = Self {
+            names: locals
+                .into_iter()
+                .map(|name| (name.to_owned(), NameState::Reserved))
+                .collect(),
+        };
+        for name in occupied {
+            allocator
+                .names
+                .insert(name.to_owned(), NameState::Assigned { next_suffix: 1 });
+        }
+        allocator
     }
 
     /// Return `base` when it is free, otherwise the first free `<base>_<n>`.
     pub fn unique(&mut self, base: &str) -> String {
-        if self.used.insert(base.to_string()) {
-            return base.to_string();
+        match self.names.get_mut(base) {
+            Some(state @ NameState::Reserved) => {
+                *state = NameState::Assigned { next_suffix: 1 };
+                return base.to_owned();
+            }
+            None => {
+                self.names
+                    .insert(base.to_owned(), NameState::Assigned { next_suffix: 1 });
+                return base.to_owned();
+            }
+            Some(NameState::Assigned { .. }) => {}
         }
-        let next = self.next_suffix.entry(base.to_string()).or_insert(1);
         loop {
-            let candidate = format!("{base}_{next}");
-            *next += 1;
-            if !self.reserved.contains(&candidate) && self.used.insert(candidate.clone()) {
-                self.reserved.insert(candidate.clone());
-                return candidate;
+            let candidate = {
+                let NameState::Assigned { next_suffix } = self.names.get_mut(base).unwrap() else {
+                    unreachable!("base was assigned above")
+                };
+                let candidate = format!("{base}_{next_suffix}");
+                *next_suffix += 1;
+                candidate
+            };
+            if let std::collections::hash_map::Entry::Vacant(entry) = self.names.entry(candidate) {
+                let name = entry.key().clone();
+                entry.insert(NameState::Assigned { next_suffix: 1 });
+                return name;
             }
         }
     }
@@ -147,7 +144,9 @@ impl DeclNameUniquifier {
 impl DeclDedup {
     /// A fresh deduper (nothing seen yet).
     pub fn new() -> Self {
-        Self { seen: std::collections::HashSet::new() }
+        Self {
+            seen: std::collections::HashSet::new(),
+        }
     }
 
     /// Record `sig` and report whether it was **already** present — i.e. whether the

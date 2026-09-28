@@ -814,6 +814,18 @@ by its local changes. Closing a block removes its assignments from subsequent
 constructors. These copies pass directly to the constructor; they do not need
 temporary handles in the parser's context-change arena.
 
+Compiler diagnostics for a constructor resolve its stored source-file index
+and line number. Consistency checks and section finalization share this lookup,
+so included-file diagnostics keep the constructor's location after parsing
+returns to the parent file. No separate constructor-location map is maintained.
+
+Both compiler constructor-building entry points use the same complete
+finalizer. The entry point accepting a section vector owns it directly; the
+parser-arena entry point takes the vector from its slot before delegating.
+Finalization borrows this local vector while validating its sections, then
+attaches valid templates and context changes. Scope cleanup runs after either
+success or a validation error, including constructors without semantic sections.
+
 (kuna) **Mixed builds.** The engine binary `kuna` runs can come from a different
 build than `kuna` itself (an override naming another install, or a sibling left
 behind when only `kuna` was rebuilt), and nothing in the output shows it. So every

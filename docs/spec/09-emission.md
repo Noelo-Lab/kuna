@@ -1613,6 +1613,12 @@ is keyed by HighVariable and used by every body reference path as well as its
 declaration; existing parameter, user/debug, Ghidra-style, global, and callee
 names remain authoritative.
 
+The name allocator stores each spelling once, either reserved for a future
+declaration or assigned with its next suffix counter. It uses only keyed lookup;
+the caller's declaration order, never hash iteration, decides who receives each
+name. This replaces separate reserved-name, used-name and suffix-counter maps
+without changing the first-free-suffix rule.
+
 Partial covers of a mapped scalar are suppressed only when another
 HighVariable with the same name actually represents the whole storage: its
 first member is non-constant, starts at symbol offset zero, and has the symbol's

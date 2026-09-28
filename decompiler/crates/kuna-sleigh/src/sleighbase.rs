@@ -952,8 +952,12 @@ impl SleighBase {
         self.base.set_unique_base(val);
     }
 
-    /// The source-file indexer (C++ `indexer`), mutable — `createConstructor`
-    /// indexes the defining filename.
+    /// Source filenames referenced by constructor metadata.
+    pub fn indexer(&self) -> &SourceFileIndexer {
+        &self.indexer
+    }
+
+    /// Registers source filenames while constructing the symbol table.
     pub fn indexer_mut(&mut self) -> &mut SourceFileIndexer {
         &mut self.indexer
     }
