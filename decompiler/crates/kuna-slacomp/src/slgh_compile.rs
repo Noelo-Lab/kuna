@@ -23,8 +23,9 @@ use kuna_sleigh::slghpatexpress::{
     ConstantValue, ContextField, EquationArena, PatternEquation, PatternExpression, PatternValue,
 };
 use kuna_sleigh::slghsymbol::{
-    Constructor, ConstructorRef, ContextChange, ContextCommit, ContextOp, DecisionProperties,
-    LabelTableSymbol, MacroSymbol, SectionSymbol, SleighSymbol, SymbolKind, SymbolType,
+    BitrangeSymbol, Constructor, ConstructorRef, ContextChange, ContextCommit, ContextOp,
+    DecisionProperties, LabelTableSymbol, MacroSymbol, SectionSymbol, SleighSymbol, SymbolKind,
+    SymbolType,
 };
 use kuna_sleigh::sleighbase::SleighBase;
 
@@ -831,9 +832,7 @@ impl SleighCompile {
         true
     }
 
-    /// `defineBitrange` (slgh_compile.cc:2800) -- needs `BitrangeSymbol` (not
-    /// yet ported in kuna-sleigh).  Falls back to a plain varnode when the
-    /// range is byte-aligned (the common case); a sub-byte bitrange errors.
+    /// Define a register alias (`defineBitrange`, slgh_compile.cc:2800).
     pub fn define_bitrange(&mut self, name: &[u8], sym: SymbolId, bitoffset: u32, numb: u32) {
         let (space, offset, vbytes) = match self.base.symtab().find_symbol_by_id(sym) {
             Some(s) => match s.kind() {
@@ -876,9 +875,10 @@ impl SleighCompile {
                 newsize as i32,
             ));
         } else {
-            self.report_error(
-                "defineBitrange: sub-byte BitrangeSymbol not yet ported (slgh_compile.cc:2800)",
-            );
+            self.add_sleigh_symbol(SleighSymbol::new(
+                name,
+                SymbolKind::Bitrange(BitrangeSymbol::new(sym, bitoffset, numb)),
+            ));
         }
     }
 
@@ -895,7 +895,7 @@ impl SleighCompile {
     }
 
     /// `dedupSymbolList` (slgh_compile.cc:2849).
-    fn dedup_symbol_list(&self, symlist: &mut [SymbolId]) -> Option<SymbolId> {
+    fn dedup_symbol_list(symlist: &mut [SymbolId]) -> Option<SymbolId> {
         let mut res = None;
         for i in 0..symlist.len() {
             let sym = symlist[i];
@@ -912,19 +912,27 @@ impl SleighCompile {
         res
     }
 
-    /// `attachValues` (slgh_compile.cc:2872).
-    pub fn attach_values(&mut self, mut symlist: Vec<SymbolId>, numlist: Vec<i64>) {
-        if let Some(dup) = self.dedup_symbol_list(&mut symlist) {
+    fn warn_attach_duplicates(&mut self, symlist: &mut [SymbolId], kind: &str) {
+        if let Some(dup) = Self::dedup_symbol_list(symlist) {
             let nm = self.symbol_name(dup);
             let loc = self.current_location();
             self.report_warning_loc(
                 Some(&loc),
                 &format!(
-                    "'attach values' list contains duplicate entries: {}",
+                    "'attach {kind}' list contains duplicate entries: {}",
                     String::from_utf8_lossy(&nm)
                 ),
             );
         }
+    }
+
+    fn attach_symbols(
+        &mut self,
+        symlist: Vec<SymbolId>,
+        table_len: usize,
+        kind: &str,
+        build: impl Fn(&[u8], PatternValue) -> KunaResult<SleighSymbol>,
+    ) {
         for sym in symlist {
             if sym == NO_SYMBOL {
                 continue;
@@ -933,10 +941,16 @@ impl SleighCompile {
                 Some(p) => p,
                 None => continue,
             };
-            let maxv = match patval.max_value() { Ok(m) => m, Err(e) => { self.report_error(&e.explain()); continue; } };
-            self.check_attach_size(sym, maxv, numlist.len(), "value");
+            let maxv = match patval.max_value() {
+                Ok(maxv) => maxv,
+                Err(error) => {
+                    self.report_error(&error.explain());
+                    continue;
+                }
+            };
+            self.check_attach_size(sym, maxv, table_len, kind);
             let nm = self.symbol_name(sym);
-            match SleighSymbol::new_valuemap(&nm, patval, numlist.clone()) {
+            match build(&nm, patval) {
                 Ok(newsym) => {
                     let _ = self.base.symtab_mut().replace_symbol(sym, newsym);
                 }
@@ -945,50 +959,25 @@ impl SleighCompile {
         }
     }
 
+    /// `attachValues` (slgh_compile.cc:2872).
+    pub fn attach_values(&mut self, mut symlist: Vec<SymbolId>, numlist: Vec<i64>) {
+        self.warn_attach_duplicates(&mut symlist, "values");
+        self.attach_symbols(symlist, numlist.len(), "value", |nm, patval| {
+            SleighSymbol::new_valuemap(nm, patval, numlist.clone())
+        });
+    }
+
     /// `attachNames` (slgh_compile.cc:2900).
     pub fn attach_names(&mut self, mut symlist: Vec<SymbolId>, names: Vec<Vec<u8>>) {
-        if let Some(dup) = self.dedup_symbol_list(&mut symlist) {
-            let nm = self.symbol_name(dup);
-            let loc = self.current_location();
-            self.report_warning_loc(
-                Some(&loc),
-                &format!(
-                    "'attach names' list contains duplicate entries: {}",
-                    String::from_utf8_lossy(&nm)
-                ),
-            );
-        }
-        for sym in symlist {
-            if sym == NO_SYMBOL {
-                continue;
-            }
-            let patval = match self.value_symbol_patval(sym) {
-                Some(p) => p,
-                None => continue,
-            };
-            let maxv = match patval.max_value() { Ok(m) => m, Err(e) => { self.report_error(&e.explain()); continue; } };
-            self.check_attach_size(sym, maxv, names.len(), "name");
-            let nm = self.symbol_name(sym);
-            match SleighSymbol::new_name_symbol(&nm, patval, names.clone()) {
-                Ok(newsym) => { let _ = self.base.symtab_mut().replace_symbol(sym, newsym); }
-                Err(e) => self.report_error(&e.explain()),
-            }
-        }
+        self.warn_attach_duplicates(&mut symlist, "names");
+        self.attach_symbols(symlist, names.len(), "name", |nm, patval| {
+            SleighSymbol::new_name_symbol(nm, patval, names.clone())
+        });
     }
 
     /// `attachVarnodes` (slgh_compile.cc:2928).
     pub fn attach_varnodes(&mut self, mut symlist: Vec<SymbolId>, varlist: Vec<SymbolId>) {
-        if let Some(dup) = self.dedup_symbol_list(&mut symlist) {
-            let nm = self.symbol_name(dup);
-            let loc = self.current_location();
-            self.report_warning_loc(
-                Some(&loc),
-                &format!(
-                    "'attach variables' list contains duplicate entries: {}",
-                    String::from_utf8_lossy(&nm)
-                ),
-            );
-        }
+        self.warn_attach_duplicates(&mut symlist, "variables");
         let var_ids: Vec<Option<u32>> = varlist
             .iter()
             .map(|&v| if v == NO_SYMBOL { None } else { Some(v) })
@@ -1016,24 +1005,9 @@ impl SleighCompile {
                 }
             }
         }
-        for sym in symlist {
-            if sym == NO_SYMBOL {
-                continue;
-            }
-            let patval = match self.value_symbol_patval(sym) {
-                Some(p) => p,
-                None => continue,
-            };
-            let maxv = match patval.max_value() { Ok(m) => m, Err(e) => { self.report_error(&e.explain()); continue; } };
-            self.check_attach_size(sym, maxv, varlist.len(), "varnode");
-            let nm = self.symbol_name(sym);
-            match SleighSymbol::new_varnodelist(&nm, patval, var_ids.clone()) {
-                Ok(newsym) => {
-                    let _ = self.base.symtab_mut().replace_symbol(sym, newsym);
-                }
-                Err(e) => self.report_error(&e.explain()),
-            }
-        }
+        self.attach_symbols(symlist, varlist.len(), "varnode", |nm, patval| {
+            SleighSymbol::new_varnodelist(nm, patval, var_ids.clone())
+        });
     }
 
     /// `newTable` (slgh_compile.cc:2968).

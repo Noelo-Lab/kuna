@@ -4,9 +4,10 @@
 stream produced by Ghidra's C++ `sleigh_opt` at revision
 `cef869af04c4740a71ad31a55704045b1b0d1644`. Compression bytes are excluded because
 flate2 and zlib can compress the same stream differently. The manifest covers
-45 specs, including both endiannesses, Toy variants, major processor families,
+47 specs, including both endiannesses, Toy variants, major processor families,
 Hexagon's named sections and crossbuilds, and inherited context assignments
-across nested `with` blocks.
+across nested `with` blocks. The named-bitrange fixtures exercise reads and
+writes of one-bit, nine-bit and byte-aligned aliases in both endiannesses.
 
 The Rust test compiles the listed sources and compares directly with these
 digests. It needs no prebuilt `.sla` files, Ghidra installation or C++ toolchain.

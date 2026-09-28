@@ -427,3 +427,58 @@ The independent final-pass snapshot passed all four gates: 675 upstream and
 1,467 stage assertions, 7,709 workspace tests with 38 existing ignores, and the
 spec check. The option catalog passed; all 45 binary and 45 XML oracle outputs
 are unchanged. No baseline or existing expectation changed.
+
+The compiler rejected a definition such as `define bitrange flag=r0[3,1];`
+with a claim that `BitrangeSymbol` was unported, although the shared symbol type,
+scanner classification, read/write builders and purge support were already
+implemented. The driver now registers that existing symbol. Byte-aligned aliases,
+range validation and public APIs retain their behavior; no runtime format or
+parallel implementation was added.
+
+Two eleven-line fixtures exercise reads and writes of one-bit, nine-bit and
+byte-aligned aliases in little and big endian specifications. Their independent
+C++ hashes extend the existing compiler oracle from 45 to 47 cases without a new
+test runner. The oracle test fails before the fix at the stale rejection and
+passes afterward; all 366 compiler/SLEIGH release tests pass. All eight CLI
+comparisons (the two fixtures and six smaller probes) match the pinned C++
+compiler's complete diagnostics, status and decoded images. Previously accepted
+byte-aligned probes retain byte-identical Rust images.
+
+Alternating compiler runs pinned to CPU 40 measured Toy-builder wall time at
+5.2539 → 5.2205 ms (-0.64%, 110 samples per version), x86-64 at 566.6605 →
+557.9362 ms (-1.54%, 12 samples), and Hexagon at 157.8122 → 154.3188 ms
+(-2.21%, 12 samples). Child CPU changes were -0.82%, +0.69%, and -2.20%.
+Every measured output was identical. Measurements followed warmups on the shared
+host and include scheduling variation.
+
+The independent bitrange snapshot passed all four gates: 675 upstream and 1,467
+stage assertions, 7,709 workspace tests with 38 existing ignores, and the spec
+check. The option catalog passed. All 47 binary and 47 XML oracle cases match
+pinned C++, including the two new fixtures; the original 45 expectations and
+both parity baselines are unchanged.
+
+The three attachment handlers now share duplicate reporting and their symbol
+replacement loop. Each public entry point still selects its own table type and
+diagnostic labels; variable-width validation remains between duplicate warnings
+and per-symbol replacement. The duplicate-selection algorithm is unchanged:
+`[a, b, b, a]` still reports `b`. The refactor removes 26 production lines and
+keeps table ownership and public APIs unchanged.
+
+All 366 compiler/SLEIGH release tests pass, including 47 binary oracle cases.
+Seven temporary before/after CLI comparisons cover duplicate entries for each
+attachment kind, table-size errors, and mixed register widths. Complete Rust
+diagnostics, exit status and output bytes are unchanged. The first six cases
+also match pinned C++ exactly. For mixed widths, C++ already repeats the error
+for each attached symbol while Rust reports it once per directive; this refactor
+preserves that existing difference.
+
+Alternating compiler runs pinned to CPU 40 measured Toy-builder wall time at
+6.7384 → 6.8142 ms (+1.13%, 110 samples per version), x86-64 at 484.1825 →
+478.9084 ms (-1.09%, 12 samples), and Hexagon at 155.1930 → 154.8527 ms
+(-0.22%, 12 samples). Child CPU changes were +0.94%, -1.08%, and -0.20%.
+Every output was identical. Measurements followed warmups on the shared host.
+
+The independent attachment snapshot passed all four gates: 675 upstream and
+1,467 stage assertions, 7,709 workspace tests with 38 existing ignores, and the
+spec check. The option catalog passed, and all 47 XML outputs still match
+pinned C++. No baseline or existing oracle expectation changed.

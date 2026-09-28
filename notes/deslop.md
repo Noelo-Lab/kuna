@@ -481,6 +481,61 @@ probes, 42 Python tests, 56 Ghidra tests, spec and catalog checks pass. All 45
 pinned C++ XML references and 17 saved CLI cases remain identical. Frozen source
 and new-file hashes match after the final process exits; no baseline moved.
 
+## Fifteenth checkpoint: one JSON writer and completed compiler paths
+
+Compact and indented CLI JSON shared their value model but duplicated recursive
+rendering. The unsorted indented path also allocated an index vector for every
+object, even though the stored field order was already correct. One private
+writer now owns all three layouts. Only sorted objects with multiple fields
+allocate an ordering vector; it contains borrowed references and uses stable
+sorting. Numeric tokens, duplicate keys, ASCII escaping, indentation, field order
+and the public rendering functions remain unchanged. A stale abandoned-plan
+comment in transcript extraction was removed; extraction behavior is unchanged.
+
+Five new conformance tests pass both before and after the refactor. They pin
+nested layout, raw numeric spelling, stable duplicate-key sorting, empty values,
+control/surrogate escapes and every Unicode scalar's ASCII-safe round trip.
+All 224 CLI unit tests pass. The production writer also matches 30,003 saved-code
+comparisons and 3,000 independent CPython formatting comparisons. A CLI-only
+Clippy run reports no JSON-module diagnostics, but still finds 21 existing
+collection-policy errors and 22 warnings elsewhere; it is not a clean gate.
+
+For arrays containing 32, 256 and 2,048 representative records, unsorted indented
+rendering allocation requests fall from 75 → 11, 526 → 14 and 4,113 → 17;
+cumulative requested bytes fall from 17,912 → 16,376, 143,352 → 131,064 and
+1,146,872 → 1,048,568. Compact and sorted allocation counts are unchanged on
+these inputs. Thirty alternating timing rounds of ten renders after warmup,
+pinned to CPU 41, measured indented output at 13,719 → 12,646 ns, 102,638 →
+99,004 ns and 572,100 → 552,285 ns. Compact timings were 1.2–1.6% higher;
+sorted timings ranged from unchanged to 2.1% higher. A const-generic prototype
+did not establish a useful advantage over the simpler layout enum. These are
+local helper measurements, not an across-the-board speedup or peak-memory claim.
+
+Twenty alternating whole-command pairs after two warmup pairs retain identical
+stdout, stderr and status. The 828,889-byte catalog JSON median wall time is
+13.936 → 13.757 ms (paired ratio 0.9921); a whole-binary JSON decompilation is
+103.115 → 102.791 ms (paired ratio 0.9957). CPU medians are 13.326 → 13.187 ms
+and 102.634 → 102.298 ms. Both were pinned to CPU 41 on the shared host; the
+small differences do not establish a whole-command performance improvement.
+
+The compiler's stale sub-byte register-alias rejection is replaced by registration
+of the already implemented bitrange symbol. The root's old-code oracle test
+fails on the added fixture. Two small fixtures extend the independent oracle to
+47 cases, retaining the original 45 hashes. Attachment directives now share
+their duplicate-warning and replacement logic. Seven direct root before/after
+attachment comparisons preserve complete diagnostics, status and output bytes,
+including existing error behavior. All 370 compiler/SLEIGH release tests pass.
+Independent C++ diagnostics, images and compiler timing evidence are recorded in
+`notes/deslop-slacomp.md`; no parity baseline changed.
+
+Final fifteenth checkpoint validation: all four required gates pass. The full
+workspace reports 7,407 passed, zero failed, 38 existing ignores across 437
+groups, and no warnings. Upstream/stage parity is unchanged at 675/675 and
+1467/1467; 268 CLI probes, 42 Python tests, 56 Ghidra tests, spec and catalog
+checks pass. All 47 pinned C++ XML cases and 17 saved CLI comparisons match.
+Frozen source and all four new-file hashes match after the final process exits.
+CodeQL and parity CI also passed on the preceding commit `76f3769d4`.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -491,7 +546,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
-| Collection policy | The release engine-library Clippy check still reports 211 collection-policy errors. Declaration naming, rendered-signature dedup and profiling use reviewed lookup-only collections or explicitly sorted reports. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
+| Collection policy | The release engine-library Clippy check still reports 211 collection-policy errors; the CLI-only check finds 21 errors and 22 warnings. Declaration naming, rendered-signature dedup and profiling use reviewed lookup-only collections or explicitly sorted reports. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Ninety engine files still contain wave-era STUB notes. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 

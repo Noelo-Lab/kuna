@@ -870,6 +870,20 @@ borrows each register's spelling while forming its uppercase comparison key;
 collision order and the `-s` policy remain unchanged.
 The decoder rebuilds runtime register cross-references from the encoded symbols.
 
+Named register bit ranges with byte-aligned ends use ordinary varnodes at the
+appropriate byte offset for the declared endianness. Other ranges register a
+compiler-only bitrange symbol holding the parent register, least-significant
+bit offset and width. Existing bitrange expression and assignment builders
+lower reads and writes; symbol-table cleanup removes these aliases before
+encoding. Zero-width and out-of-bounds ranges retain their existing errors.
+
+The three attachment directives share duplicate reporting and the replacement
+loop for pattern-value lookup, table-size validation and symbol construction.
+Duplicate entries are removed in their original order, preserving the selected
+warning symbol. Variable attachments check register widths after the duplicate
+warning and before replacing symbols. Each directive keeps its existing table
+representation, diagnostic labels and public entry point.
+
 Finalized macro templates are shared immutably between their symbols and the
 compiler's expansion table. Expanding a macro borrows this shared definition
 and creates independent output operations for parameter substitution and label
@@ -2280,6 +2294,12 @@ and an agent writes:
   Conversion is bounded to 128 nested containers and rejects malformed or trailing
   content. The parity command separately validates its baseline's required
   string-valued passing set: invalid records are errors, not empty expectations.
+  CLI JSON rendering uses one traversal for compact, indented and sorted output
+  (`decompiler/crates/kuna-cli/src/jsonfmt/writer.rs`). Numeric tokens retain
+  their original spelling; string escaping remains ASCII-safe, including UTF-16
+  surrogate pairs for non-BMP characters. Unsorted objects borrow their stored
+  field order directly. Sorted output orders borrowed field references stably,
+  preserving duplicate-key order, and applies the same policy to nested objects.
 - **Modes (option presets)** (kuna)
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs (MODE_TABLE, mode_overrides)`,
   applied by `decompiler/crates/kuna-decomp/src/infra/architecture.rs (apply_mode)`):
