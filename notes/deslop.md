@@ -819,6 +819,45 @@ probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
 CLI comparisons. The tracked diff retained its frozen hash through the final
 suite exit. The preceding commit's six CodeQL analyses and parity CI passed.
 
+## Twenty-second checkpoint: synthesized-structure protocol ownership
+
+The worker pool no longer owns the replay algorithm in the middle of its
+scheduling code. `jobs/synth.rs` owns the first-pass and sweep caches, replay
+plans, compatible renames, forced runs and serial fallback. Its parent-facing
+interface is one controller and its result; process lifetime, scheduling and
+wire records retain their existing owners. The six focused tests move with
+the implementation and reuse the existing test fixtures.
+
+A Rust syntax-tree comparison verifies that all 138 function bodies across
+the original pool and replay tests retain every non-comment token. No assertion
+or algorithm changed. The function header now points to the complete contract
+in the spec instead of repeating it. All 236 CLI unit tests pass. The release
+build and CLI documentation build are warning-free after removing the obsolete
+parent import and correcting two preexisting documentation links/markup issues.
+
+All 40 replay CLI cases match the prior committed binary's captured status and
+stdout, including the expected fallback markers. Two independent 20-pair
+project-export timings, plus warmups, preserve all four artifacts in every run.
+The first paired median wall-time change is +2.02%; a confirmation without other
+root probes running is +0.12%. Both are within the 5% budget. These shared-host
+measurements do not establish a general speedup from moving the module.
+
+The compiler contribution borrows normalized instruction blocks for zero-shift
+algebra, uses the default decision node directly, and iterates context then
+instruction fields explicitly. Public APIs and search order are unchanged.
+Root verification confirms the complete before/after pattern modules and four
+field-selection model functions match production. All 280,000 algebra results,
+50,000 selected fields, 375 compiler/SLEIGH release tests and 286 compiler CLI
+comparisons agree. Independent full-compilation allocation and timing evidence
+is in `notes/deslop-slacomp.md`; the measured wall-time range is -1.22% to +0.34%.
+
+Final frozen-tree checks passed: 675 upstream and 1467 stage assertions,
+7430 workspace tests (38 ignored, no warnings), spec/catalog checks, 268 CLI
+probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
+CLI comparisons. The tracked diff and both moved/new source paths retained their
+frozen hashes through the final suite exit. The preceding commit's six CodeQL
+analyses and parity CI passed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -828,7 +867,7 @@ These are investigation targets, not a claim that the repository review is done.
 | CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Compiler probes reject broken tools, and required native runs check both status and output. The two fixture-launch false skips now retain spelling checks on non-native hosts. Other platform gates and conditional assertions still need review. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
-| CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
+| CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay and object-file views have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
 | Collection policy | The release engine-library Clippy check still reports 211 collection-policy errors; the CLI-only check finds 17 errors and 22 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |

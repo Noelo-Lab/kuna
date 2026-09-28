@@ -1,4 +1,5 @@
-use super::{shard, SynthPlan, SynthRequest};
+use super::{only_types_are_renamed, serial_run, shard, PoolConfig, SynthPlan, SynthRequest};
+use super::super::tests::{cfg, sample_result};
 
 fn plan() -> SynthPlan {
     SynthPlan {
@@ -84,4 +85,31 @@ fn borrowed_comparison_agrees_with_owned_key_equality() {
             }
         }
     }
+}
+
+/// A `struct_N` that is a symbol's name, not a type's, must not be rewritten
+/// with the type: such a function is decompiled again instead.
+#[test]
+fn a_rename_covering_a_symbol_name_is_refused() {
+    let map = [("struct_3".to_string(), "struct_0".to_string())];
+    let mut r = sample_result();
+    assert!(only_types_are_renamed(&r, &map));
+    r.variables[0].name = "struct_3".into();
+    assert!(!only_types_are_renamed(&r, &map));
+    r.variables[0].name = "param_1".into();
+    r.aliases.push("struct_3".into());
+    assert!(!only_types_are_renamed(&r, &map));
+    r.aliases.clear();
+    r.name = "struct_3".into();
+    assert!(!only_types_are_renamed(&r, &map));
+}
+
+/// (kuna `protoorder`) The names a pool replays are a serial run's, and on
+/// `decompile-all` that run is the one without the callee-first order: the
+/// report has to name it, not `--jobs 1`.
+#[test]
+fn the_report_names_the_serial_run_it_can_actually_replay() {
+    assert_eq!(serial_run(&cfg(0, 0.0)), "--jobs 1");
+    let callee_first = PoolConfig { serial_callee_first: true, ..cfg(0, 0.0) };
+    assert_eq!(serial_run(&callee_first), "--jobs 1 --option protoorder off");
 }

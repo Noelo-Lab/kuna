@@ -740,3 +740,39 @@ This measures fixture loading and lifting together on the shared host.
 The resolution snapshot passed all four gates: 675 upstream and 1,467 stage
 assertions, 7,714 workspace tests with 38 existing ignores, and the spec check.
 The option catalog passed. No baseline, test count or oracle expectation changed.
+
+Aligned instruction-pattern algebra now borrows its normalized blocks directly
+instead of copying a block and shifting it by zero. Nonzero alignment keeps its
+existing owned shift. Decision construction also uses the default node directly
+and iterates context then instruction fields explicitly, removing two empty
+constructor distinctions and toggle-and-break loops. Production source shrank
+by 16 lines. Public APIs and pattern, field-selection and diagnostic behavior
+are unchanged.
+
+The production modules match the separately compared candidates: 280,000
+algebra results agree exactly across instruction, context, combined and OR
+patterns, constants, multiword blocks and positive/negative/zero shifts;
+50,000 chosen fields also agree. All 371 existing compiler/SLEIGH release tests,
+48 binary/XML oracles and 286 CLI cases pass without expectation changes.
+The current pre-change CLI was checked again before the comparison.
+
+The full-compilation allocation counter measured these cumulative requests on
+each of three repetitions, with identical output before and after:
+
+| Spec | Requests before → after | Bytes requested before → after |
+| --- | ---: | ---: |
+| Toy builder | 17,009 → 16,835 | 2,332,137 → 2,331,441 |
+| x86-64 | 2,727,789 → 2,724,101 | 239,689,410 → 239,674,658 |
+| Hexagon | 699,760 → 689,014 | 76,800,014 → 76,757,030 |
+
+These are requested-byte totals, not peak or resident memory. Alternating
+uninstrumented runs pinned to CPU 40 measured Toy-builder wall time at
+6.3577 → 6.3447 ms (-0.20%, 110 samples per version), x86-64 at 434.9820 →
+436.4796 ms (+0.34%, 12 samples), and Hexagon at 144.7279 → 142.9611 ms
+(-1.22%, 12 samples). Child CPU changes were -0.18%, +0.33%, and -1.22%.
+Every output was identical. Measurements followed warmups on the shared host.
+
+The pattern-construction snapshot passed all four gates: 675 upstream and 1,467
+stage assertions, 7,714 workspace tests with 38 existing ignores, and the spec
+check. The option catalog passed. No baseline, test count or oracle expectation
+changed.

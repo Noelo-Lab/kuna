@@ -77,7 +77,7 @@ pub(crate) fn looks_like_addr(target: &str) -> bool {
 /// object-file coordinate (`.text+0x10`) or does not parse as an address.
 ///
 /// The number grammar is `--addr`'s own — `0x`-prefixed or bare hex — which is
-/// the same one [`build_script`] uses to spell the `load addr` line.
+/// the same one [`build_script_for_input`] uses to spell the `load addr` line.
 fn selected_vma(target: &str, by_address: bool) -> Option<u64> {
     if !by_address {
         return None;

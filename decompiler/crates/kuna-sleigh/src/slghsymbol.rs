@@ -1778,16 +1778,6 @@ impl DecisionNode {
 
     // ---- build side (ws4a) ----
 
-    /// C++ `DecisionNode(DecisionNode *p)` for the root (`p == 0`).
-    fn new_root() -> DecisionNode {
-        DecisionNode::default()
-    }
-
-    /// C++ `DecisionNode(DecisionNode *p)` child node.
-    fn new_child() -> DecisionNode {
-        DecisionNode::default()
-    }
-
     /// C++ `DecisionNode::addConstructorPair`.
     fn add_constructor_pair(&mut self, pat: &DisjointPattern, ct: u32) {
         let Pattern::Disjoint(pattern) = pat.simplify_clone() else {
@@ -1868,8 +1858,7 @@ impl DecisionNode {
         let mut maxfixed = 1i32;
 
         // single-bit fields, context then instruction
-        let mut context = true;
-        loop {
+        for context in [true, false] {
             let maxlength = 8 * self.get_maximum_length(context);
             for sbit in 0..maxlength {
                 let numfixed = self.get_num_fixed(sbit, 1, context);
@@ -1892,15 +1881,10 @@ impl DecisionNode {
                     self.contextdecision = context;
                 }
             }
-            context = !context;
-            if context {
-                break;
-            }
         }
 
         // multi-bit fields (2..=8), context then instruction
-        let mut context = true;
-        loop {
+        for context in [true, false] {
             let maxlength = 8 * self.get_maximum_length(context);
             for size in 2..=MAX_FIELD_BITS {
                 let mut sbit = 0;
@@ -1916,10 +1900,6 @@ impl DecisionNode {
                     }
                     sbit += 1;
                 }
-            }
-            context = !context;
-            if context {
-                break;
             }
         }
         if score <= 0.0 {
@@ -1954,7 +1934,7 @@ impl DecisionNode {
         let num_children = 1usize << self.bitsize;
         let mut children: Vec<DecisionNode> = Vec::with_capacity(num_children);
         for _ in 0..num_children {
-            children.push(DecisionNode::new_child());
+            children.push(DecisionNode::default());
         }
         let list = std::mem::take(&mut self.list);
         for (pat, ct) in &list {
@@ -4229,7 +4209,7 @@ impl SymbolTable {
         if table.pattern.is_none() {
             return Ok(());
         }
-        let mut tree = DecisionNode::new_root();
+        let mut tree = DecisionNode::default();
         for (i, constructor) in table.construct.iter().enumerate() {
             let pat = match constructor.get_pattern() {
                 Some(tp) => tp.get_pattern(),

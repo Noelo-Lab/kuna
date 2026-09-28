@@ -903,6 +903,10 @@ constructor's changes. Each decision node still owns its simplified patterns,
 moving the simplifier's result directly into the node. Source patterns and
 context changes remain owned by their constructors.
 
+Aligned instruction patterns intersect and find their common subpattern from
+borrowed blocks. Blocks are normalized when constructed or decoded, so a zero
+alignment shift needs no copied block or additional normalization.
+
 Decision nodes enumerate compatible branch values in ascending order without
 building a temporary list. Terminal nodes sort pattern indices by specialization
 while retaining the original patterns for conflict checks. The sorted prefix
@@ -913,7 +917,9 @@ search copies to recover their indices.
 
 Field selection reuses a bounded counter array for candidates up to eight bits
 wide. Each score resets only the candidate's bins; fixed-pattern counts, entropy
-arithmetic, candidate order and tie-breaking remain unchanged.
+arithmetic, candidate order and tie-breaking remain unchanged. Each pass
+explicitly examines context fields before instruction fields. Root and child
+nodes both start from the same default state.
 
 Runtime constructor resolution and matched-pattern capture share one decision
 walk. The matched leaf supplies both the constructor id and the precise pattern
@@ -1279,6 +1285,12 @@ every complete frame before a truncated tail. Wire counts reserve no more
 storage than the remaining bytes can justify. Literal-byte tests pin both
 formats independently of their decoders.
 
+Synthesized-structure reconciliation is owned by
+`decompiler/crates/kuna-cli/src/jobs/synth.rs`. It keeps the first-pass and sweep
+caches, replay plans, compatible renames and serial fallback together. The pool
+hands it the recorded run and receives the final worker kind and optional table;
+worker lifetime, chunk scheduling and record serialization remain separate.
+
 The pool is driver policy, and its contract is that it cannot be observed in the
 output. Work is planned longest-first into equal-work chunks and handed out
 dynamically, which is deliberately not output order; every target owns a slot
@@ -1335,7 +1347,7 @@ one (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 (install_table)`) and answers each lookup with its replayed name; a function the
 sweep will decide differently is renamed onto its sweep answers or goes out
 twice in that pool, and the parent applies the sweep on the first-pass text
-exactly as the serial batch does (`decompiler/crates/kuna-cli/src/jobs.rs (name_structs_serially)`). The second
+exactly as the serial batch does (`decompiler/crates/kuna-cli/src/jobs/synth.rs (name_structs_serially)`). The second
 decompile records its lookups as well, and they have to be the first ones,
 repeats aside. A decompile can ask one question twice (a restarted pass measures
 the same layout again), whether it does follows the process's history, and a

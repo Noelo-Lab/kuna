@@ -1255,7 +1255,9 @@ fn do_and_view(a: PatView<'_>, b: PatView<'_>, sa: i32) -> Pattern {
                 PatView::Instruction(x) => x,
                 _ => panic!("InstructionPattern::doAnd: operand is not an InstructionPattern (C++ UB cast)"),
             };
-            let respattern = if sa < 0 {
+            let respattern = if sa == 0 {
+                a_ip.maskvalue.intersect(&b4.maskvalue)
+            } else if sa < 0 {
                 let mut a_block = a_ip.maskvalue.clone();
                 a_block.shift(-sa);
                 a_block.intersect(&b4.maskvalue)
@@ -1361,7 +1363,9 @@ fn common_sub_view(a: PatView<'_>, b: PatView<'_>, sa: i32) -> Pattern {
                 PatView::Instruction(x) => x,
                 _ => panic!("InstructionPattern::commonSubPattern: operand is not an InstructionPattern (C++ UB cast)"),
             };
-            let respattern = if sa < 0 {
+            let respattern = if sa == 0 {
+                a_ip.maskvalue.common_sub_pattern(&b4.maskvalue)
+            } else if sa < 0 {
                 let mut a_block = a_ip.maskvalue.clone();
                 a_block.shift(-sa);
                 a_block.common_sub_pattern(&b4.maskvalue)

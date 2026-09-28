@@ -1,7 +1,7 @@
 //! `kuna specs` — a thin alias for the Rust SLEIGH compiler (`slacomp`).
 //!
 //! `kuna specs <slaspec>...`     compile the given `.slaspec` files.
-//! `kuna specs -a <dir>`         compile every `.slaspec` under <dir> (slacomp's
+//! `kuna specs -a <dir>`         compile every `.slaspec` under `<dir>` (slacomp's
 //!                               recursive `-a` mode).
 //! `kuna specs --diff`           print the note that the old C++ differential
 //!                               (`kuna/slacomp.py`, which diffed against
