@@ -1453,6 +1453,15 @@ every complete frame before a truncated tail. Wire counts reserve no more
 storage than the remaining bytes can justify. Literal-byte tests pin both
 formats independently of their decoders.
 
+Scratch storage is owned by `decompiler/crates/kuna-cli/src/jobs/scratch.rs`.
+The session holds a temporary-directory guard through inventory, worker and
+result handling, so normal return, errors and unwinding all release its files.
+Directory creation is exclusive and requests private Unix permissions before
+any content is written; the final mode remains 0700 regardless of umask. Missing
+temporary parents are still created. Names retain the owner-pid prefix used by
+workers and the existing orphan sweep; parent-liveness and stale-owner policies
+are unchanged.
+
 Synthesized-structure reconciliation is owned by
 `decompiler/crates/kuna-cli/src/jobs/synth.rs`. It keeps the first-pass and sweep
 caches, replay plans, compatible renames and serial fallback together. The pool

@@ -1,48 +1,14 @@
-//! Port of `decompiler/cpp/slghpattern.{hh,cc}` (item `w2-sleigh-pattern`)
-//! — instruction/context match patterns.
+//! Instruction and context match patterns, ported from Ghidra's slghpattern.cc.
 //!
-//! ## Shape of the port
+//! [`Pattern`] and [`DisjointPattern`] represent unions and instruction/context
+//! combinations over [`PatternBlock`] mask/value pairs. Matching reads bytes
+//! through [`PatternExpressionContext`]; encoding uses the shared [`sla`] IDs.
 //!
-//! The C++ class hierarchy
-//!
-//! ```text
-//! Pattern
-//!  +- DisjointPattern            (a pattern with no ORs in it)
-//!  |   +- InstructionPattern     (matches the instruction bitstream)
-//!  |   +- ContextPattern         (matches the context bitstream)
-//!  |   +- CombinePattern         (a context piece and an instruction piece)
-//!  +- OrPattern
-//! ```
-//!
-//! maps onto the enums [`Pattern`] / [`DisjointPattern`] over the three
-//! concrete structs, with [`PatternBlock`] as the shared mask/value pair.
-//! Virtual dispatch becomes `match`; the C++ `dynamic_cast` ladders in the
-//! algebra (`doAnd`/`doOr`/`commonSubPattern`) are transcribed in the exact
-//! C++ cast order, and the C-style downcasts that would be UB on a type
-//! confusion become panics (ADR 0004).  The C++ two-phase
-//! construct-then-`decode` protocol becomes `decode` factory functions, so a
-//! null `maskvalue` (only possible pre-decode upstream) cannot exist here.
-//! `PatternBlock::clone()` is the derived [`Clone`].
-//!
-//! ## The `OrPattern::doOr` mutation quirk
-//!
-//! Upstream `OrPattern::doOr` is declared `const` but, when `sa < 0`, shifts
-//! the elements of the receiver's OWN `orlist` (through the element
-//! pointers) while pushing the *unshifted* clones into the result; with
-//! `sa > 0` it shifts EVERY element of the result, the receiver's clones
-//! included.  Both behaviors are transcribed exactly, which is why
-//! [`Pattern::do_or`] takes `&mut self` and `&mut Pattern` (the C++ `const`
-//! is a lie there, and delegation can make either operand the mutated
-//! receiver).
-//!
-//! ## Walker boundary
-//!
-//! Pattern matching reads instruction and context bytes through
-//! [`PatternExpressionContext`], implemented by the parser walkers.
-//!
-//! ## sla format ids ([`sla`])
-//!
-//! SLA element and attribute IDs are shared through [`sla`].
+//! [`Pattern::do_or`] preserves an upstream mutation quirk. For an `OrPattern`
+//! receiver, a negative shift changes its original elements while the result
+//! keeps unshifted copies. A positive shift changes every result element,
+//! including copies of the receiver. Delegation can select either operand as
+//! the receiver, so both arguments are mutable.
 
 use kuna_base::error::KunaResult;
 use kuna_base::marshal::{Decoder, Encoder};

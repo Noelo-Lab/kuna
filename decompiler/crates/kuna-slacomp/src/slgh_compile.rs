@@ -44,9 +44,8 @@ const NO_SYMBOL: SymbolId = u32::MAX;
 // Compiler-only helper structs (slgh_compile.hh:42-246)
 // ---------------------------------------------------------------------------
 
-/// The heterogeneous bison semantic values of the p-code grammar
-/// (`SLEIGHSTYPE`), unified into one tagged enum so the WS2 parser's `u32` ids
-/// index a single arena and never alias across value kinds.
+/// P-code grammar values (`SLEIGHSTYPE`) held in one tagged arena and
+/// referenced by the parser's `u32` handles.
 #[derive(Debug)]
 enum RtlValue {
     /// `VarnodeTpl *` (varnode/jumpdest/intvn/lhsvarnode/exportvarnode).
@@ -245,9 +244,9 @@ pub struct SleighCompile {
     /// The shared SLEIGH base (symbol table, address spaces, root, templates).
     pub base: SleighBase,
 
-    /// The driver-owned pattern-equation arena (the WS2 `peq_*` ids index it).
+    /// Pattern-equation arena indexed by the parser's `peq_*` handles.
     arena: EquationArena,
-    /// The driver-owned pattern-expression arena (the WS2 `pexp_*` ids index it).
+    /// Pattern-expression arena indexed by the parser's `pexp_*` handles.
     patexp: Vec<PatternExpression>,
 
     /// Parser semantic values share one arena; taking a slot consumes its value.
@@ -1177,7 +1176,7 @@ impl SleighCompile {
         base
     }
 
-    // --- p-code RTL arena accessors (WS4c) ---
+    // --- p-code RTL arena accessors ---
     //
     // A SINGLE arena (`rtl_arena`) of a tagged enum backs every heterogeneous
     // bison semantic value, so ids are globally unique across value kinds
@@ -1772,7 +1771,7 @@ fn is_absolute_path(p: &[u8]) -> bool {
 }
 
 // ===========================================================================
-// CompilerHost (WS3 boundary: SleighPcode/MacroBuilder back-pointer)
+// CompilerHost callbacks for SleighPcode and MacroBuilder
 // ===========================================================================
 
 /// C++ `UNIQUE_CROSSBUILD_POSITION` / `UNIQUE_CROSSBUILD_NUMBITS`
@@ -1943,7 +1942,7 @@ fn pcode_opc_to_opcode(opc: PcodeOpc) -> OpCode {
 }
 
 // ===========================================================================
-// WS4c: the p-code section RTL build path
+// P-code section RTL construction
 //
 // Inherent methods backing the parser's p-code-section actions, plus the
 // per-constructor section finalize (finalizeSections / forceExportSize /
@@ -3390,7 +3389,7 @@ impl PcodeCompile for SleighCompile {
 }
 
 // ===========================================================================
-// ScannerHost + ParserActions impls (WS2 driver boundary)
+// ScannerHost and ParserActions implementations
 // ===========================================================================
 
 impl ScannerHost for SleighCompile {

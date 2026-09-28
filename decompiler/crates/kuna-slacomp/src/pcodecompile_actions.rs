@@ -104,16 +104,9 @@ impl SleighPcode {
 /// the call-site arguments for the macro's formal parameters
 /// (`MacroBuilder`, slgh_compile.hh:256-275; bodies slgh_compile.cc:1785-1928).
 ///
-/// In C++ this derives from `PcodeBuilder` and overrides `dump`/`appendBuild`/
-/// `delaySlot`/`setLabel`/`appendCrossBuild` so that, instead of emitting raw
-/// p-code, it *clones* the macro's `OpTpl`s (with parameter handles swapped) into
-/// `outvec`.  WS3 ports the build/transfer logic; the `PcodeBuilder` trait it
-/// implements lives in `kuna_sleigh::semantics`.
-///
-/// The C++ `build(...)` dispatch loop lives on the [`PcodeBuilder`] trait; this
-/// struct supplies the overrides.  Because `dump`/`transferOp` need the compiler
-/// back-pointer (`getUniqueAddr`/`getUniqueSpace`/`getConstantSpace`) the host is
-/// held by mutable reference for the lifetime of the expansion.
+/// [`PcodeBuilder`] dispatches expansion to this implementation, which copies
+/// templates into `outvec` and substitutes parameter handles. The compiler is
+/// borrowed for the expansion to allocate unique storage and resolve spaces.
 pub struct MacroBuilder<'a> {
     /// The partial op list to expand the macro into (`outvec`).
     pub outvec: &'a mut Vec<OpTpl>,

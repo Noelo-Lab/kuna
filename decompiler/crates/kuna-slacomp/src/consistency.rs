@@ -1,24 +1,11 @@
 //! Template consistency checks, ported from Ghidra's slgh_compile.cc:215-1776.
 //!
-//! The three passes the post-parse `process()` runs over every constructor's
-//! p-code template trees:
-//!
-//! 1. **`test_size_restrictions`** -- a post-order walk of the subtables
-//!    deriving export sizes and enforcing per-opcode size rules; this also
-//!    converts unnecessary `INT_ZEXT`/`INT_SEXT`/`SUBPIECE` into `COPY`
-//!    (`deal_with_unnecessary_ext`/`trunc`), which *mutates* the templates.
-//! 2. **`test_truncations`** -- resolves `v_offset_plus` truncated varnode
-//!    offsets now that all sizes are known (`adjust_truncation`).
-//! 3. **`optimize_all`** -- the limited COPY-propagation: for each temporary
-//!    read-once/written-once through a `COPY`, remove the `COPY` and rewire
-//!    (`apply_optimization`), then the dead-temp / read-before-write checks.
-//!
-//! Because these passes MODIFY the `ConstructTpl`s (which by `process()` time
-//! live in the `SleighBase` template arena, referenced from each constructor by
-//! handle), the checker is implemented as inherent methods on
-//! [`crate::slgh_compile::SleighCompile`] so it has direct access to the base /
-//! symbol table / template arena (the C++ class holds a `compiler` back-pointer
-//! for exactly this).
+//! Size checks derive subtable export sizes, enforce opcode restrictions and
+//! turn unnecessary extensions/truncations into copies. Truncation checks then
+//! resolve varnode offsets. Copy propagation rewires temporaries read and
+//! written once, checks for reads before writes, and reports unused temporaries.
+//! The methods on [`crate::slgh_compile::SleighCompile`] update templates in
+//! the driver's `SleighBase` arena.
 
 #![allow(clippy::needless_range_loop)]
 

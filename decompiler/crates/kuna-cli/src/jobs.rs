@@ -5,11 +5,11 @@
 //! across chunks; their assignment pipe also detects a dead parent.
 //!
 //! This module owns scheduling and recovery. [`synth`] owns synthesized-structure
-//! replay; [`wire`] owns the versioned chunk and result records. The complete
-//! behavior and serial-equivalence limits are in `docs/spec/00-overview.md`.
+//! replay; [`wire`] owns the versioned records; [`scratch`] owns temporary
+//! storage. Behavior and serial-equivalence limits are in `docs/spec/00-overview.md`.
 
 use std::io::{BufRead, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -19,10 +19,12 @@ use kuna_console::engine::{EntryProvenance, ObjectLocation};
 use kuna_console::project::FuncResult;
 use kuna_decomp::kuna_structsynth::shard::{self, Replay, SynthRequest};
 
+mod scratch;
 mod synth;
 mod type_blocks;
 mod wire;
 
+use scratch::{pool_scratch, ScratchDir};
 use synth::{name_structs_serially, Named};
 pub(crate) use type_blocks::merge_type_definitions;
 use wire::{decode_results, encode_spec};
@@ -73,10 +75,6 @@ const ACK_PREFIX: &str = "done ";
 /// on" ([`Worker::force`]).
 const SYNTH_LINE: &str = "synth";
 
-
-/// Names every pool scratch directory, so a worker and the next run's sweep can
-/// both recognize one without being told.
-const SCRATCH_PREFIX: &str = "kuna-jobs-";
 
 /// A worker's exit code when it outlived its parent.  Distinct from anything the
 /// engine returns, and it never reaches a user: whoever would have read it is the
@@ -1606,97 +1604,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
     }
 }
 
-// --- the scratch directory ----------------------------------------------------
-
-/// The pool's temp directory, owned by its `Drop`.  Cleanup cannot live on
-/// [`run_pool`]'s happy path: the early `Err` returns and a panicking pool thread
-/// leave by other doors, and the directory carries every worker's decompiled C
-/// plus the whole-program symbol inventory.
-struct ScratchDir {
-    path: PathBuf,
-}
-
-impl ScratchDir {
-    fn create() -> Result<Self, String> {
-        let temp = std::env::temp_dir();
-        sweep_stale_scratch(&temp);
-        let path = temp.join(format!(
-            "{SCRATCH_PREFIX}{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        std::fs::create_dir_all(&path)
-            .map_err(|e| format!("cannot create the worker scratch dir {}: {e}", path.display()))?;
-        let dir = Self { path };
-        // 0700, not the ambient umask: the whole program's symbol inventory and
-        // every function's decompiled C transit this directory.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&dir.path, std::fs::Permissions::from_mode(0o700)).map_err(
-                |e| format!("cannot restrict the worker scratch dir {}: {e}", dir.path.display()),
-            )?;
-        }
-        Ok(dir)
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for ScratchDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
-    }
-}
-
-/// Sweep scratch directories left behind by a run whose parent died in the one
-/// window nothing else covers — killed after creating the directory but before a
-/// worker existed to notice.  A directory is only removed once its owning pid is
-/// provably gone; on Linux `/proc` answers that exactly, and elsewhere the only
-/// std-visible evidence is age, so the fallback waits a week rather than risk
-/// deleting a live multi-hour run's directory.
-fn sweep_stale_scratch(temp: &Path) {
-    let Ok(entries) = std::fs::read_dir(temp) else { return };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let Some(pid) = name.to_str().and_then(scratch_owner) else { continue };
-        if !owner_is_gone(pid, &entry.path()) {
-            continue;
-        }
-        let _ = std::fs::remove_dir_all(entry.path());
-    }
-}
-
-/// The pid encoded in a scratch directory name (`kuna-jobs-<pid>-<nanos>`).
-fn scratch_owner(name: &str) -> Option<u32> {
-    name.strip_prefix(SCRATCH_PREFIX)?.split('-').next()?.parse().ok()
-}
-
-fn owner_is_gone(pid: u32, path: &Path) -> bool {
-    if Path::new("/proc/self/stat").exists() {
-        return !Path::new(&format!("/proc/{pid}")).exists();
-    }
-    const WEEK: Duration = Duration::from_secs(7 * 24 * 3600);
-    std::fs::metadata(path)
-        .and_then(|m| m.modified())
-        .and_then(|t| t.elapsed().map_err(|_| std::io::ErrorKind::Other.into()))
-        .is_ok_and(|age| age > WEEK)
-}
-
 // --- worker-side assignments and parent liveness ------------------------------
-
-/// The scratch directory a worker was pointed at, but only when it is
-/// recognizably one of ours: a worker must never delete a directory the pool did
-/// not create.
-fn pool_scratch(dir: &str) -> Option<PathBuf> {
-    let path = Path::new(dir);
-    path.file_name()?.to_str()?.starts_with(SCRATCH_PREFIX).then(|| path.to_path_buf())
-}
 
 /// The chunk a worker should decompile next, and — by the same pipe — whether it
 /// still has a parent to decompile it for.
@@ -2578,78 +2486,6 @@ mod tests {
         let unretried = anomaly_lines((0, 5), 0, JOBS_TAG, none);
         assert_eq!(unretried.len(), 1);
         assert!(!unretried[0].contains("re-run on their own"), "{unretried:?}");
-    }
-
-    /// Cleanup is a `Drop`, not a step on the happy path: the directory holds the
-    /// whole program's symbol inventory and every worker's decompiled C, and
-    /// [`run_pool`] can also leave by an early `Err` or a panicking pool thread.
-    #[test]
-    fn the_scratch_dir_is_private_and_removed_on_every_path() {
-        let kept = {
-            let dir = ScratchDir::create().unwrap();
-            let path = dir.path().to_path_buf();
-            assert!(path.is_dir());
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-                assert_eq!(
-                    mode, 0o700,
-                    "worker C and symbols must not transit a world-readable dir"
-                );
-            }
-            std::fs::write(path.join("inventory.spec"), b"payload").unwrap();
-            path
-        };
-        assert!(!kept.exists(), "a non-empty scratch dir must go with its guard");
-
-        let leaked = std::sync::Mutex::new(PathBuf::new());
-        let _ = std::panic::catch_unwind(|| {
-            let dir = ScratchDir::create().unwrap();
-            *leaked.lock().unwrap() = dir.path().to_path_buf();
-            panic!("pool thread died");
-        });
-        assert!(!leaked.lock().unwrap().exists());
-    }
-
-    /// A worker only ever deletes a directory the pool itself named.
-    #[test]
-    fn a_worker_recognizes_only_its_own_scratch_dir() {
-        assert_eq!(
-            pool_scratch("/tmp/kuna-jobs-4242-99"),
-            Some(PathBuf::from("/tmp/kuna-jobs-4242-99"))
-        );
-        for foreign in ["/tmp", "/home/u/out", "kuna-jobs-1/nested", "/"] {
-            assert_eq!(pool_scratch(foreign), None, "{foreign} is not a pool scratch dir");
-        }
-        assert_eq!(scratch_owner("kuna-jobs-4242-17384"), Some(4242));
-        for bad in ["kuna-jobs-", "kuna-jobs-abc-1", "kunajobs-1-2", "tmpdir"] {
-            assert_eq!(scratch_owner(bad), None, "{bad}");
-        }
-    }
-
-    /// The sweep is the last resort for the one window a dying process cannot
-    /// cover, so it must be exact about ownership: this process is alive, so its
-    /// own directory is never a candidate.
-    #[test]
-    fn the_sweep_spares_a_live_owner() {
-        let dir = ScratchDir::create().unwrap();
-        let mine = dir.path().to_path_buf();
-        let temp = mine.parent().unwrap().to_path_buf();
-        let dead = temp.join(format!("{SCRATCH_PREFIX}{}-11", u32::MAX));
-        let unrelated = temp.join(format!("kuna-not-a-job-{}", std::process::id()));
-        std::fs::create_dir_all(&dead).unwrap();
-        std::fs::create_dir_all(&unrelated).unwrap();
-
-        sweep_stale_scratch(&temp);
-
-        assert!(mine.is_dir(), "a live run's directory must survive the sweep");
-        assert!(unrelated.is_dir(), "the sweep must not touch directories it did not create");
-        if Path::new("/proc/self/stat").exists() {
-            assert!(!dead.exists(), "a dead owner's directory must be swept");
-        }
-        let _ = std::fs::remove_dir_all(&dead);
-        let _ = std::fs::remove_dir_all(&unrelated);
     }
 
     /// Both silent-difference classes are counted, and an ordinary decompile

@@ -216,9 +216,8 @@ pub trait ParserActions {
     fn report_error(&mut self, msg: &str);
 }
 
-/// Parsed token/context field qualities (the grammar's `FieldQuality`).  Mirrors
-/// [`crate::slgh_compile::FieldQuality`] but stays parser-local so the parser
-/// never depends on the driver's not-yet-built `FieldQuality::new` (WS4).
+/// Parsed token/context field qualities, converted by the driver into
+/// [`crate::slgh_compile::FieldQuality`].
 #[derive(Clone, Debug)]
 pub struct FieldQual {
     pub name: Vec<u8>,

@@ -1681,6 +1681,53 @@ unchanged through the final terminal success. Final logs use
 `/tmp/kuna-deslop-analysis-docs-verified-`; the earlier failing run remains
 under the `analysis-docs-final-` prefix. No baseline moved.
 
+### Worker scratch ownership and compiler API documentation
+
+Worker scratch storage now lives in `jobs/scratch.rs`. A `TempDir` guard owns
+exclusive directory creation and cleanup, replacing the timestamp-derived path
+and manual destructor. The owner-pid prefix, worker recognition, orphan sweep
+and parent-liveness rules remain unchanged. Missing temporary parents are still
+created. Unix creation requests mode 0700 before any content is written, and the
+existing final chmod preserves owner access under restrictive umasks.
+
+All 113 other function/test bodies are byte-identical, including the three
+moved scratch tests. Three new cases cover independent lifetimes, missing parent
+directories and failed creation without damaging an existing parent file.
+Original and changed lifetime/unwind tests pass under umasks 000, 077 and 777.
+The 251 CLI unit tests and 99 pool integration tests pass without warnings,
+including worker death, retries, panic recovery and parent termination.
+
+Eighteen pooled CLI comparisons cover three binaries, JSON/C output, explicit
+worker counts, one-function chunks and full-load workers. Every run starts with
+a missing temporary parent whose path contains spaces, and leaves it empty.
+Stdout is byte-identical; stderr is compared after removing only the live
+elapsed-time and optional ETA fields. Plans, counts, percentages and all other
+messages remain exact. The initial comparison caught an optional ETA difference;
+raw streams and that failed attempt remain available. All 286 compiler cases
+retain output bytes, diagnostics and status.
+
+Six compiler/pattern modules lose 73 stale comment lines, with every executable
+line unchanged. The root parser's earlier header cleanup is preserved. Strict
+SLEIGH/compiler rustdoc passes without warnings. The native build passes in
+44.07 seconds without warnings. CLI Clippy still reports 16 errors and 20
+warnings; this is not a lint-clean claim. Source proofs, scoped permission tests,
+CLI streams and timing samples are under `/tmp/kuna-deslop-pool-owner.9HcYnQfa`.
+
+Thirty balanced measured command pairs per fixture, after six warmups, change
+median wall time +0.11%/+1.89%/+0.87% for fauxware, protoorder and C++ inputs.
+Paired changes are -0.17%/+1.28%/+0.55%; CPU changes are +0.25%/+1.17%/+0.28%.
+Every timed run checks output, diagnostics and scratch cleanup. These are small
+whole-command differences, all within the 5% budget, not speedup claims.
+
+All nine gates pass: 7,453 workspace tests with 38 existing ignores across
+439 groups and no warnings; 675/675 upstream and 1,467/1,467 stage assertions
+retain parity. The 268 CLI probes, 42 Python tests, 56 Ghidra tests, 48 XML
+comparisons, 17 saved CLI comparisons and all eleven browser probes pass,
+including a fresh WASM build. Spec/catalog checks pass. Tracked diff hash
+`77863c11` and the new scratch-module hash `09b566ba` remain unchanged through
+the last terminal success. Logs use `/tmp/kuna-deslop-pool-owner-final-`;
+no baseline moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.

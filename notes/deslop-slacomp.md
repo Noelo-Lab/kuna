@@ -1392,3 +1392,23 @@ samples, output states and logs use `/tmp/kuna-deslop-unique-records-`.
 All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
 assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
 across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### Compiler API documentation
+
+Six pattern/compiler modules now describe current interfaces without porting-wave
+labels or unfinished-driver claims. Scanner tokens are resolved to symbol ids;
+parsed field qualities are converted by the driver; failed includes restore the
+previous location before the scanner reports an error. The pattern header keeps
+the sign-dependent `do_or` mutation behavior, and compiler comments retain arena
+ownership and template-rewrite responsibilities.
+
+The patch removes 73 comment lines. Every non-comment, nonblank source line is
+identical, with hashes in `/tmp/kuna-deslop-compiler-api-docs-source-proof.json`.
+Rustdoc passes for both SLEIGH crates with broken intra-doc links denied. The
+candidate and validation logs use `/tmp/kuna-deslop-compiler-api-docs-`.
+No behavior, public interface or option changes, so timing does not need repeating.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.
