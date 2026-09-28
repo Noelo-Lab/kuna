@@ -893,6 +893,13 @@ name. Context registration and re-registration use the same scope order and
 stop at the first error, retaining registrations and cross-references already
 completed.
 
+Register-name lookup borrows the selected name until the caller constructs its
+return value. Byte-returning APIs copy once; string-returning snapshots decode
+the borrowed bytes directly. Exact lookups retain the storage-key comparison;
+containing-register lookups retain their address-space identity checks,
+same-offset fallback and wrapping bounds. Misses remain empty. Invalid UTF-8
+still uses replacement characters in string results.
+
 Named register bit ranges with byte-aligned ends use ordinary varnodes at the
 appropriate byte offset for the declared endianness. Other ranges register a
 compiler-only bitrange symbol holding the parent register, least-significant

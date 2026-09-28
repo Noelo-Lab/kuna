@@ -984,3 +984,47 @@ Artifacts use `/tmp/kuna-deslop-xrefs-`: `runtime-cost/comparison.json`,
 All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
 assertions retain parity; the workspace has 7,714 passing tests and 38 existing
 ignores across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### Borrowed register-name lookup
+
+The private register-name helpers return borrowed bytes from the cross-reference
+map. Public `SleighBase` methods still return owned byte vectors; snapshot
+lookups construct their strings directly from the borrowed name, removing an
+intermediate vector. Exact storage-key matching and containing-register search
+remain distinct, including their existing address-space identity behavior.
+
+External wrappers extract the actual helper methods and both caller surfaces.
+With overflow checks enabled and disabled, 3,488,000 outcomes across 2,000 maps
+agree in each mode. Cases cover distinct address-space objects sharing an index,
+size and offset boundaries, wrapping ranges, misses, empty names and invalid
+UTF-8. All 371 focused tests pass, including the 48 pinned binary compiler
+oracles. The 286 CLI cases and 48 corresponding XML fixtures are unchanged.
+
+For each register in three real SLA images, an allocation probe queries exact,
+interior, zero-size and negative-size locations through both snapshot lookup
+methods. Three repetitions produce identical result bytes. Allocation requests
+change from 467 to 234 for Toy, 13,987 to 6,994 for x86-64, and 5,007 to 2,504
+for Hexagon; cumulative requested bytes change from 11,712 to 11,040, 373,808
+to 325,144, and 133,730 to 122,065 respectively. These totals include collection
+of the returned strings, excluding initialization, query setup, formatting and
+teardown. They measure allocation traffic, not peak memory.
+
+A separate uninstrumented lookup benchmark runs 100 repetitions of those queries
+per sample. CPU-40-pinned, balanced before/after runs retain identical result
+checksums. With 30 measured samples per image, median lookup time improves
+10.85% for Toy, 6.38% for x86-64 and 5.18% for Hexagon; paired medians improve
+11.02%, 6.41% and 5.23%. This isolates name lookup and is not a whole-decompiler
+speed claim.
+
+All 16 independent lift fixtures (1,171 instructions per run) pass 66 full
+runtime runs. With 30 measured samples per version, median wall time changes
+from 426.2699 to 422.8330 ms (-0.8063%; paired -0.6300%). CPU time changes
+-0.7385% (paired -0.6970%), within the 5% budget. Artifacts use the
+`/tmp/kuna-deslop-register-name-` prefix: `cost/comparison.json`,
+`lookup-verified/timing.json`, `runtime-verified/timing.json`, `verified/`
+and model/build/check logs.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.

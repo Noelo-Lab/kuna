@@ -1107,6 +1107,57 @@ green, and no baseline expectation moved. The tracked diff remained
 `29b0c54979d64b396a0b48c37aade0c5af53db93acd28cff1081a0c5b94bef91`
 through the last gate; logs use `/tmp/kuna-deslop-addressed-final-`.
 
+## Twenty-ninth checkpoint: shared output reassignment and borrowed register names
+
+The last copied output-reassignment helper in `ruleaction_4.rs` linked the banks
+but omitted the shared scope-property update. Public `RuleSubZext` calls in
+high-level state therefore produced defined outputs without cover storage. The
+middle-truncation and shifted-truncation probes both failed before the change;
+their graph, sizes, masks and shifts were otherwise correct.
+
+All three callers now use `Funcdata::op_set_output`, retaining old-definition
+unlinking, the bank's reader-replacement callback and cover bookkeeping. The
+obsolete claim that the central implementation was deferred is removed. This
+corrects an IR invariant, not a new rewrite decision or default. One persistent
+test checks both truncation shapes with high-level state off and on; it fails
+before the helper replacement. Both independent public probes pass afterward.
+An AST comparison checks all 115 retained production bodies: only the three
+calls change non-comment tokens. All 3,070 core release tests pass.
+
+Register-name helpers now borrow the selected bytes until their caller builds
+the return value. Public byte-vector APIs remain owned; snapshot string APIs
+avoid the intermediate vector. Root differential models retain all eight exact
+production methods and match 3,488,000 outcomes across 2,000 maps in each
+overflow mode, including aliasing spaces, boundaries, misses and invalid UTF-8.
+The applied source matches the compared module byte-for-byte. All 375 focused
+compiler/SLEIGH tests, 286 compiler CLI comparisons and 40 whole-binary ELF/PE
+comparisons pass without output changes.
+
+Root allocation probes reproduce 467 → 234, 13,987 → 6,994 and 5,007 → 2,504
+requests for Toy/x86-64/Hexagon snapshot queries. Requested bytes decrease by
+672/48,664/11,665; three repetitions preserve every result byte. These counts
+include result collection but exclude initialization, query setup and teardown;
+they are not peak-memory or whole-decompiler speed measurements.
+
+CPU-41-pinned, uninstrumented lookup checks use 30 samples per version and
+image after warmups. Median lookup times improve 13.80%/10.42%/8.66%, with
+identical checksums. Full runtime checks pass all 16 independent lift fixtures
+in 66 runs: median wall time changes 413.48 → 413.61 ms (+0.031%). Twenty
+alternating project-export pairs preserve all four artifacts; paired median
+wall time changes +0.078%. The full-runtime deltas fit the 5% budget. Evidence
+is under `/tmp/kuna-deslop-output-link.DAmpMyRB`; the fresh native build has
+no warnings.
+
+All gates pass on the frozen checkpoint: 675/675 upstream and 1,467/1,467
+stage assertions retain parity, and the workspace finishes with 7,434 passed,
+38 existing ignores and zero warnings across 438 groups. All 268 CLI probes,
+42 Python tests, 56 Ghidra tests, 48 compiler XML comparisons and 17 saved CLI
+comparisons pass. The fresh WASM build and all eleven browser scripts pass,
+including the real Chrome UI flow. Spec and catalog checks are green; no
+baseline moved. The diff hash remained
+`8b6a28289eae00bb554cc4ce33f2bc9eb5ca54572345891b4da6a4a9de2104ad`
+through the final gate. Logs use `/tmp/kuna-deslop-output-final-`.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1117,8 +1168,8 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay and object-file views have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
-| Collection policy | The release engine-library Clippy check still reports 211 collection-policy errors; the CLI-only check finds 17 errors and 22 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
-| Engine boundaries | Unique and addressed rule outputs now use shared factories, with high-level/lane-state regressions. `ruleaction_4` still copies output reassignment; review its missing scope-property/cover handling and alias callback before replacing it. Wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
+| Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 17 errors and 23 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
+| Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 
 Before each commit: `make test`, `make test-stages`, `make rust-test`,

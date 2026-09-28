@@ -620,7 +620,12 @@ unchanged. Addressed outputs in `ruleaction_4.rs` likewise use
 `Funcdata::new_varnode_out`: store promotion and extension shortening retain
 the shared factory's high-variable, lane-storage and scope-property bookkeeping.
 Shortening still adjusts the address for endianness and unsets the prior output
-before allocating its replacement. Output reassignment still uses a local helper.
+before allocating its replacement. Output reassignment uses
+`Funcdata::op_set_output`, preserving old-definition unlinking and the bank's
+reader-replacement callback. The shared property update supplies missing covers
+in high-level state and marks high-variable cover information dirty. This also
+applies when `RuleSubZext` turns a middle truncation, with or without a following
+shift, into a full-width shift and mask.
 
 For the 64-bit unsigned divide-by-three reciprocal, GCC can share one wide
 multiply between the quotient and remainder. After `RuleDivOpt` recovers

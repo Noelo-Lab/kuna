@@ -1222,6 +1222,46 @@ fn subzext_offset0_to_and_mask() {
     assert_eq!(fd.vbank().get(maskc).unwrap().get_offset(), 0xffff);
 }
 
+#[test]
+fn subzext_reassigned_output_keeps_cover() {
+    for high in [false, true] {
+        for shifted in [false, true] {
+            let mut fd = build_fd();
+            let bl = mk_block(&mut fd);
+            let basevn = mk_vn(&mut fd, 4, 0x10);
+            let offset = fd.new_constant(4, 1);
+            let (_, small) = mk_def(&mut fd, bl, OpCode::CPUI_SUBPIECE, 2, 0x20, &[basevn, offset]);
+            let small = if shifted {
+                let amount = fd.new_constant(4, 1);
+                mk_def(&mut fd, bl, OpCode::CPUI_INT_RIGHT, 2, 0x28, &[small, amount]).1
+            } else {
+                small
+            };
+            let (zop, _) = mk_def(&mut fd, bl, OpCode::CPUI_INT_ZEXT, 4, 0x30, &[small]);
+            if high {
+                fd.set_high_level();
+            }
+
+            assert_eq!(RuleSubZext::new().apply_op(zop, &mut fd), 1);
+            let op = fd.obank().get(zop).unwrap();
+            assert_eq!(op.code(), OpCode::CPUI_INT_AND);
+            let output = op.get_in(0).unwrap();
+            let vn = fd.vbank().get(output).unwrap();
+            assert_eq!(vn.get_size(), 4);
+            assert_eq!(vn.get_high().is_some(), high);
+            assert_eq!(vn.cover().is_some(), high);
+            let shift = fd.obank().get(vn.get_def().unwrap()).unwrap();
+            assert_eq!(shift.code(), OpCode::CPUI_INT_RIGHT);
+            assert_eq!(shift.get_out(), Some(output));
+            assert_eq!(shift.get_in(0), Some(basevn));
+            assert_eq!(fd.vbank().get(shift.get_in(1).unwrap()).unwrap().get_offset(),
+                       if shifted { 9 } else { 8 });
+            assert_eq!(fd.vbank().get(op.get_in(1).unwrap()).unwrap().get_offset(),
+                       if shifted { 0x7fff } else { 0xffff });
+        }
+    }
+}
+
 // Early-out: sub base size != zext output size (not "truncate then extend to same").
 #[test]
 fn subzext_rejects_size_mismatch() {

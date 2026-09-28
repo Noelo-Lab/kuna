@@ -2,9 +2,9 @@
 //! Port of `decompiler/cpp/ruleaction.cc` lines 4293-5526.
 //!
 //! Registration retains upstream definition order. Opcode changes use canonical
-//! TypeOp metadata. Defined outputs use Funcdata factories; output reassignment
-//! still has a local helper. Remaining architecture-dependent limitations are
-//! documented at their call sites.
+//! TypeOp metadata. Output allocation and reassignment use Funcdata's shared
+//! bookkeeping. Remaining architecture-dependent limitations are documented at
+//! their call sites.
 
 use kuna_base::address::{calc_mask, leastsigbit_set, sign_extend_sized, Address, SeqNum};
 use kuna_base::types::{int4, uintb, Wrap};
@@ -14,10 +14,9 @@ use std::rc::Rc;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
 use crate::context::{OpId, VarnodeId};
-use crate::varnode::DefOpInfo;
 
 // =============================================================================
-// Local opcode and output-reassignment helpers
+// Local opcode helper
 // =============================================================================
 
 /// `data.opSetOpcode(op, opc)` — resolves the [`OpCode`] to a [`TypeOp`] and
@@ -31,35 +30,6 @@ use crate::varnode::DefOpInfo;
 /// redundant `value & SUB(0xffffffff,0)` mask in the rendered C.
 fn set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
     data.op_set_opcode(op, crate::typeop::type_op_for(opc));
-}
-
-/// `data.opSetOutput(op, vn)` for the case where `vn` is a fresh (unique)
-/// Varnode being moved onto a different op (C++ `Funcdata::opSetOutput`,
-/// `funcdata_op.cc:70`).
-///
-/// The full `Funcdata::opSetOutput` is deferred on the `banks_mut()` accessor;
-/// here `vn` is always a just-created unique with no pre-existing equivalent, so
-/// the unify branch of `set_def` is dead and the no-op `replace_reads` is exact.
-/// The C++ prologue (unset `op`'s old output, steal `vn` from any prior def) is
-/// transcribed.  STUB(W3).
-fn op_set_output(data: &mut Funcdata, op: OpId, vn: VarnodeId) {
-    if data.obank().get(op).expect("op_set_output: stale op").get_out() == Some(vn) {
-        return;
-    }
-    if data.obank().get(op).expect("op_set_output: stale op").get_out().is_some() {
-        data.op_unset_output(op);
-    }
-    if let Some(defop) = data.vbank().get(vn).expect("op_set_output: stale vn").get_def() {
-        data.op_unset_output(defop);
-    }
-    // No unify for a fresh unique — no-op replace closure.
-    let seqnum = data.obank().get(op).expect("op_set_output: stale op").get_seq_num().clone();
-    let def = DefOpInfo { id: op, seqnum };
-    let vn = data
-        .vbank_mut()
-        .set_def(vn, def, &mut |_, _, _| Ok(()))
-        .expect("op_set_output: setDef");
-    data.obank_mut().get_mut(op).expect("op_set_output: stale op").set_output(Some(vn));
 }
 
 // --- terse Varnode/op read helpers (the C++ `op->getIn(i)->...` chains) -------
@@ -772,7 +742,7 @@ impl Rule for RuleSubCommute {
             }
             last_in = Some(vn);
         }
-        op_set_output(data, longform, outvn);
+        data.op_set_output(longform, outvn).expect("opSetOutput");
         // Get rid of old SUBPIECE
         data.op_destroy(op);
         1
@@ -1417,7 +1387,7 @@ impl Rule for RuleSubZext {
                 set_opcode(data, subop, OpCode::CPUI_INT_RIGHT); // truncation -> shift
                 let rc = data.new_constant(csize, right_val);
                 data.op_set_input(subop, rc, 1).expect("RuleSubZext: opSetInput");
-                op_set_output(data, subop, newvn);
+                data.op_set_output(subop, newvn).expect("opSetOutput");
             } else {
                 data.op_set_input(op, basevn, 0).expect("RuleSubZext: opSetInput");
             }
@@ -1470,7 +1440,7 @@ impl Rule for RuleSubZext {
             let shift_in1_size = size_of(data, in_vn(data, shiftop, 1));
             let sc = data.new_constant(shift_in1_size, sa); // by the combined amount
             data.op_set_input(shiftop, sc, 1).expect("RuleSubZext: opSetInput");
-            op_set_output(data, shiftop, newvn);
+            data.op_set_output(shiftop, newvn).expect("opSetOutput");
             let constvn = data.new_constant(basesize, val);
             set_opcode(data, op, OpCode::CPUI_INT_AND); // Turn the ZEXT into an AND
             data.op_insert_input(op, constvn, 1).expect("RuleSubZext: opInsertInput");
