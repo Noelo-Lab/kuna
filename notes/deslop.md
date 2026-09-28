@@ -126,6 +126,17 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
 - Compiler consistency errors now propagate through optimization and compilation.
   A single read preceding or occurring in its sole write is rejected before
   encoding, rather than silently skipped; the obsolete checker trampoline is gone.
+- Compiler consistency inspection borrows template fields and traverses existing
+  ordered-map values. Five overlapping read helpers become one, temporary key
+  vectors are gone, and rule selection copies only the chosen record.
+- CLI fault-injection tests share pipe draining, timeout handling and child
+  reaping. Each caller retains its environment setup, polling interval and cap.
+  Read and launch failures cannot silently produce partial successful results.
+- Optional CLI test tools skip only on a spawn `NotFound`; other launch errors
+  and unsuccessful exits fail explicitly. The limits test no longer hides an
+  architecture-loading failure, and the dead-writer check loses its always-true
+  skip wrapper. The CLI manifest no longer describes obsolete subprocess-only
+  behavior or promises unverified byte equality.
 
 ## Evidence
 
@@ -354,13 +365,36 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   identical output. The median paired wall ratio was 0.9997. Concurrent
   workspace activity means this does not establish a small speed difference.
 
+- The limits test reported success before, and fails afterward, when only this
+  worktree's required x86-64 spec link is temporarily withheld. The link is
+  restored; all seven limits tests pass with the required input present.
+- An earlier header test silently passed when `cc` was replaced by a command
+  exiting 1. The shared optional-tool check now fails that case; a missing `cc`
+  still takes the documented optional skip. New process-helper tests cover
+  non-executable tools, nonzero exits, a 512 KiB stream on each pipe, and timeout
+  termination. All four passed 100 repetitions, and the focused helper/limits
+  run passed 11 tests. An initial after-check accidentally used a stale test
+  executable; that log is excluded from the comparison.
+- The borrowed checker passes all 368 compiler/SLEIGH release tests, including
+  its diagnostic cases and 45 independent binary oracles. Independent compiler
+  allocation and timing measurements are recorded in `notes/deslop-slacomp.md`.
+- The affected CLI release suites pass all 94 whole-binary and 34 project-export
+  tests, including worker failures, watchdogs, streaming errors, and optional
+  compiler round trips.
+- The frozen process-helper/checker snapshot passes all four gates: 7,397
+  workspace tests with 38 existing ignores and no warnings, 675/675 upstream
+  and 1467/1467 stage assertions, and spec checks. All 268 CLI probes, 34 Python
+  tests, 56 Ghidra checks and catalog validation pass. All 45 pinned C++ XML
+  outputs and 17 saved CLI comparisons remain unchanged.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
 
 | Area | Evidence / next check |
 |---|---|
-| CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers now use explicit field paths and preserve raw bytes where required. Duplicate process helpers and conditional assertions still need review. |
+| CodeQL | The PR's aggregate check flags four path-expression flows in the existing RE dashboard readers and asset routes. Analyzer jobs and parity CI succeed. Review the validation boundaries before treating these as defects or false positives; do not dismiss the alerts without evidence. |
+| CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Fault-test process handling is shared; optional-tool failures are explicit. Remaining native-platform gates and conditional assertions still need review. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |

@@ -6,6 +6,9 @@
 //!
 //! Integration tests require the built processor specs under `specs/`.
 
+#[path = "common/process.rs"]
+mod process;
+
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -272,9 +275,8 @@ fn dat_labels_cross_referenced() {
 
 #[test]
 fn header_syntax_checks_with_cc() {
-    // Gated: only run when a C compiler is available.
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
-        eprintln!("header_syntax_checks_with_cc: skipping (no working `cc`)");
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        eprintln!("header_syntax_checks_with_cc: skipping (no `cc`)");
         return;
     }
     let dir = project("fauxware", "cc");
@@ -316,7 +318,7 @@ fn header_syntax_checks_with_cc() {
 /// has to parse, and has to arrive after the aggregates it holds by value.
 #[test]
 fn header_syntax_checks_when_a_type_shares_a_name_with_a_function() {
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("header_syntax_checks_when_a_type_shares_a_name_with_a_function: no `cc`");
         return;
     }
@@ -1121,41 +1123,18 @@ fn run_kuna_env_with_timeout(
     env: &[(&str, &str)],
     cap: std::time::Duration,
 ) -> Option<(String, String, bool)> {
-    use std::io::Read;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
-        .args(args)
-        .envs(env.iter().copied())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn the kuna binary");
-    let mut out = child.stdout.take().expect("stdout piped");
-    let mut err = child.stderr.take().expect("stderr piped");
-    let out = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = out.read_to_end(&mut buf);
-        buf
-    });
-    let err = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = err.read_to_end(&mut buf);
-        buf
-    });
-    let deadline = std::time::Instant::now() + cap;
-    let status = loop {
-        match child.try_wait().expect("try_wait on the kuna binary") {
-            Some(status) => break Some(status),
-            None if std::time::Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break None;
-            }
-            None => std::thread::sleep(std::time::Duration::from_millis(100)),
-        }
-    };
-    let out = String::from_utf8_lossy(&out.join().expect("stdout reader")).into_owned();
-    let err = String::from_utf8_lossy(&err.join().expect("stderr reader")).into_owned();
-    status.map(|s| (out, err, s.success()))
+    process::output_with_timeout(
+        Command::new(env!("CARGO_BIN_EXE_kuna")).args(args).envs(env.iter().copied()),
+        cap,
+        std::time::Duration::from_millis(100),
+    )
+    .map(|output| {
+        (
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+            output.status.success(),
+        )
+    })
 }
 
 /// `--stream` hands its chunks to the same pool, so a worker that panics costs
@@ -1508,21 +1487,16 @@ fn a_missing_binary_creates_no_folder() {
 #[test]
 fn a_dead_writer_stops_the_run_and_reports_its_own_error() {
     for jobs in ["1", "2"] {
-        if !a_dead_writer_stops_a_run_at_jobs(jobs) {
-            return;
-        }
+        a_dead_writer_stops_a_run_at_jobs(jobs);
     }
 }
 
-/// One arm of the test above; `false` means the specs were missing and the run
-/// never started.
-///
 /// The fault waits for `asm: complete`, so the producer is past the sweep
 /// interleave and doing nothing but pulling targets — which is where ignoring
 /// the stop signal costs the whole binary: the fixture's 1,073 functions take
 /// ~95 s serially and ~50 s at `--jobs 2`, against the few dozen written by the
 /// time a stopping run notices.
-fn a_dead_writer_stops_a_run_at_jobs(jobs: &str) -> bool {
+fn a_dead_writer_stops_a_run_at_jobs(jobs: &str) {
     let bin = fixture("mcount_x86_64");
     let dir = out_dir(&format!("stream_writer_death_j{jobs}"));
     std::fs::create_dir_all(&dir).unwrap();
@@ -1623,7 +1597,6 @@ fn a_dead_writer_stops_a_run_at_jobs(jobs: &str) -> bool {
         );
     }
     let _ = std::fs::remove_dir_all(&dir);
-    true
 }
 
 /// Replace `path` with a directory, retrying against the writer's own atomic

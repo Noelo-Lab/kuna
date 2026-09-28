@@ -6,6 +6,9 @@
 
 mod common;
 
+#[path = "common/process.rs"]
+mod process;
+
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -271,42 +274,14 @@ fn run_kuna_env_with_timeout(
     env: &[(&str, &str)],
     cap: Duration,
 ) -> Option<(String, String, bool)> {
-    use std::io::Read;
-    let mut child = kuna_command(env)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn the kuna binary");
-    // Drain the pipes on reader threads so a chatty child can never block on a
-    // full pipe while we poll for exit.
-    let mut stdout_pipe = child.stdout.take().expect("stdout piped");
-    let mut stderr_pipe = child.stderr.take().expect("stderr piped");
-    let out_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stdout_pipe.read_to_end(&mut buf);
-        buf
-    });
-    let err_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stderr_pipe.read_to_end(&mut buf);
-        buf
-    });
-    let deadline = Instant::now() + cap;
-    let status = loop {
-        match child.try_wait().expect("try_wait on the kuna binary") {
-            Some(st) => break Some(st),
-            None if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break None;
-            }
-            None => std::thread::sleep(Duration::from_millis(200)),
-        }
-    };
-    let stdout = String::from_utf8_lossy(&out_thread.join().expect("stdout reader")).into_owned();
-    let stderr = String::from_utf8_lossy(&err_thread.join().expect("stderr reader")).into_owned();
-    status.map(|st| (stdout, stderr, st.success()))
+    process::output_with_timeout(kuna_command(env).args(args), cap, Duration::from_millis(200))
+        .map(|output| {
+            (
+                String::from_utf8_lossy(&output.stdout).into_owned(),
+                String::from_utf8_lossy(&output.stderr).into_owned(),
+                output.status.success(),
+            )
+        })
 }
 
 /// A filtered whole-binary run is still a body-lifting surface. Selecting a
@@ -2426,7 +2401,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
     assert!(!converts_v1("(int)v1", false), "`(int)v1` printed:\n{stdout}");
     assert!(!converts_v1("(unsigned int)v1", true), "`(unsigned int)v1` printed:\n{stdout}");
 
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("protoorder float-in-GPR round trip: no `cc`, spelling checked only");
         return;
     }
@@ -3740,7 +3715,7 @@ fn a_sign_contested_synthesized_field_round_trips_through_the_printed_c() {
     assert!(stdout.contains("unsigned short field_0xc;"), "{stdout}");
     assert!(stdout.contains("sink(a0->field_0xc);"), "{stdout}");
 
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("signfield round trip: no `cc`, spelling checked only");
         return;
     }
@@ -3791,7 +3766,7 @@ fn a_float_and_integer_union_field_round_trips_through_the_printed_c() {
     assert!(stdout.contains("char field_0x8[8];"), "{stdout}");
     assert!(stdout.contains("return *(double *)a0->field_0x8;"), "{stdout}");
 
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("unionfield round trip: no `cc`, spelling checked only");
         return;
     }
@@ -3854,7 +3829,7 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
         assert!(ok, "kuna decompile-all failed: {stderr}");
         assert!(stdout.contains(call), "{stdout}");
 
-        if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+        if process::optional_output(Command::new("cc").arg("--version")).is_none() {
             eprintln!("expandload round trip: no `cc`, spelling checked only");
             continue;
         }
@@ -4956,10 +4931,10 @@ fn castsign_leaves_a_locked_declaration_alone() {
     let dir = std::env::temp_dir().join(format!("kuna-castsign-lock-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let stripped = dir.join("sign_of");
-    let strip = Command::new("objcopy")
-        .args(["--strip-debug", dwarf.as_str(), stripped.to_str().unwrap()])
-        .output();
-    if strip.is_ok_and(|o| o.status.success()) {
+    let strip = process::optional_output(
+        Command::new("objcopy").args(["--strip-debug", dwarf.as_str(), stripped.to_str().unwrap()]),
+    );
+    if strip.is_some() {
         let args = [
             "decompile-all", stripped.to_str().unwrap(), "--functions", "sign_of", "--sleighpath",
             sp.as_str(), "--option", "castsign", "on",
@@ -4969,6 +4944,8 @@ fn castsign_leaves_a_locked_declaration_alone() {
         for want in signed_stack {
             assert!(stdout.contains(want), "stripped, the slot does not print `{want}`:\n{stdout}");
         }
+    } else {
+        eprintln!("castsign stripped-DWARF check: no `objcopy`");
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -5456,7 +5433,7 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
         printed.insert_str(printed.find('\n').unwrap() + 1, &undeclared);
         std::fs::write(out.join("printed.c"), &printed).unwrap();
         for cc in ["gcc", "clang"] {
-            if Command::new(cc).arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+            if process::optional_output(Command::new(cc).arg("--version")).is_none() {
                 eprintln!("globalref round trip: no `{cc}`");
                 continue;
             }
@@ -5569,7 +5546,7 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
             assert!(!stdout.contains(n), "{name}: the call was folded into a right-hand operand (`{n}`):\n{stdout}");
         }
 
-        if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+        if process::optional_output(Command::new("cc").arg("--version")).is_none() {
             eprintln!("foldcallret short-circuit round trip: no `cc`, spelling checked only");
             continue;
         }
@@ -5643,7 +5620,7 @@ fn a_load_is_not_printed_after_a_store_into_its_bytes() {
         assert!(i.is_some() && j.is_some() && i < j, "{name}: `{first}` must print before `{second}`:\n{b}");
     }
 
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("aliasoverlap round trip: no `cc`, order checked only");
         return;
     }
@@ -5731,7 +5708,7 @@ fn a_split_load_is_not_moved_past_a_store_or_a_call() {
     }
     assert!(body("plain").contains("v1._0_1_ = s->c7;"), "plain no longer splits:\n{}", body("plain"));
 
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("splitload round trip: no `cc`, order checked only");
         return;
     }
@@ -6365,7 +6342,7 @@ fn an_element_pointer_round_trips_through_the_printed_c() {
             printed.push_str(&bodies);
             std::fs::write(out.join("printed.c"), &printed).unwrap();
             for cc in ["gcc", "clang"] {
-                if Command::new(cc).arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+                if process::optional_output(Command::new(cc).arg("--version")).is_none() {
                     eprintln!("elemptr round trip: no `{cc}`");
                     continue;
                 }

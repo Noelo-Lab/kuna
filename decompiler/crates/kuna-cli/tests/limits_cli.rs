@@ -9,7 +9,7 @@
 //! `jumptablemax` of 2 puts it over the cap. The instruction count is pinned on a
 //! generated i386 image shaped like a gcc `.cold` fragment.
 //!
-//! Needs the built `x86` `.sla` under `specs/`; without it each test returns early.
+//! Requires the built x86 processor specs under `specs/`.
 
 #[path = "common/arm_images.rs"]
 #[allow(dead_code)]
@@ -152,6 +152,7 @@ fn jumptablemax_is_catalogued_and_refuses_anything_but_a_positive_count() {
         .args(["catalog", "--json"])
         .output()
         .expect("failed to spawn the kuna binary");
+    assert!(out.status.success(), "catalog failed: {}", String::from_utf8_lossy(&out.stderr));
     let catalog = String::from_utf8_lossy(&out.stdout);
     assert!(catalog.contains(r#""option": "jumptablemax""#), "{catalog}");
 
@@ -159,9 +160,6 @@ fn jumptablemax_is_catalogued_and_refuses_anything_but_a_positive_count() {
     for bad in ["wide", "12abc", "1.5", "-5", "0", "4294967296"] {
         let out = kuna(&["functions", &bin, "--json", "--option", "jumptablemax", bad]);
         let stderr = String::from_utf8_lossy(&out.stderr);
-        if stderr.contains("could not build an architecture") {
-            return;
-        }
         assert_ne!(out.status.code(), Some(0), "{bad:?} was accepted");
         assert!(stderr.contains("Must specify integer maximum"), "{bad:?}: {stderr}");
     }

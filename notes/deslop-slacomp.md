@@ -288,3 +288,37 @@ and 1,467 stage assertions, 7,707 workspace tests with 38 existing ignores,
 and the spec check. The option catalog passed and all 45 XML outputs still
 match the pinned C++ reference. No baseline or existing oracle expectation
 changed.
+
+The consistency checker now borrows varnodes and their size and offset fields
+instead of cloning them for inspection. One borrowed-varnode helper replaces
+five overlapping read helpers. Rule selection and unused-temporary reporting
+iterate the ordered map's existing values, removing temporary key vectors and
+subsequent lookups. Rule selection takes an immutable state reference and copies
+only the selected record. Applying a rule still makes the owned varnode copy
+needed to rewrite an operation. Check order, diagnostics and optimization rules
+are unchanged.
+
+A temporary full-compilation allocator counter produced identical output and
+measured the following cumulative allocation/reallocation requests:
+
+| Spec | Requests before → after | Bytes requested before → after |
+| --- | ---: | ---: |
+| Toy builder | 26,216 → 26,200 | 2,842,066 → 2,841,554 |
+| x86-64 | 3,725,907 → 3,720,678 | 315,315,352 → 314,978,144 |
+| Hexagon | 883,423 → 881,560 | 83,176,868 → 83,100,348 |
+
+These requested-byte totals are not peak or resident memory. All 364 compiler
+and SLEIGH release tests pass, including the existing negative diagnostic tests
+and all 45 independent binary oracle cases.
+
+Uninstrumented compiler runs pinned to CPU 40 measured Toy-builder wall time at
+6.7628 → 6.7658 ms (+0.04%, 110 samples per version), x86-64 at 478.4616 →
+477.6233 ms (-0.18%, 12 samples), and Hexagon at 149.5080 → 150.1109 ms
+(+0.40%, 12 samples). Child CPU times changed by +0.03%, -0.17%, and +0.38%.
+Runs alternated order after warmup, and every output was identical. These are
+local measurements on a shared host.
+
+The independent checker-borrowing snapshot passed all four gates: 675 upstream
+and 1,467 stage assertions, 7,707 workspace tests with 38 existing ignores, and
+the spec check. The option catalog passed, and all 45 XML outputs still match
+the pinned C++ reference. No baseline or existing oracle expectation changed.

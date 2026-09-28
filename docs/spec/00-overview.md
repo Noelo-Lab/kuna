@@ -826,6 +826,12 @@ optimization and the compiler pipeline before encoding can produce an image.
 The CLI prints the error's explanation and exits with status 2. A correctly
 ordered write and read remains eligible for copy propagation.
 
+Consistency checks borrow template varnodes and their size and offset fields.
+Selecting a copy-propagation rule and reporting unused temporaries iterate the
+existing records in increasing offset order, without copying their keys into
+a separate collection. Only a selected rule is copied out of the read-only
+search; applying it retains the owned varnode copy needed to rewrite an operation.
+
 Both compiler constructor-building entry points use the same complete
 finalizer. The entry point accepting a section vector owns it directly; the
 parser-arena entry point takes the vector from its slot before delegating.

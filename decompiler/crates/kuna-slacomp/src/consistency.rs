@@ -198,10 +198,6 @@ impl UniqueState {
         }
         result
     }
-
-    fn keys_in_order(&self) -> Vec<u64> {
-        self.recs.keys().copied().collect()
-    }
 }
 
 impl SleighCompile {
@@ -380,7 +376,7 @@ impl SleighCompile {
     /// Recover the export size of a constructor's main section (or `None` if no
     /// export).  Mirrors the inline in `checkSubtable`.
     fn constructor_export_size(
-        &mut self,
+        &self,
         handle: Option<ConstructTplHandle>,
         sym: SymbolId,
         ctidx: u32,
@@ -392,8 +388,8 @@ impl SleighCompile {
             .templates()
             .get(h)
             .and_then(|t| t.get_result())
-            .map(|r| r.get_size().clone())?;
-        match self.recover_size(&szconst, sym, ctidx, cc) {
+            .map(|r| r.get_size())?;
+        match self.recover_size(szconst, sym, ctidx, cc) {
             Ok(sz) => Some(sz),
             Err(_) => Some(-1),
         }
@@ -466,14 +462,10 @@ impl SleighCompile {
         cc: &CcState,
     ) -> bool {
         let opcode = self.template_op_opcode(h, opidx);
-        // `recover` helper closure analog: read a varnode size from the op.
         macro_rules! rsize {
             ($slot:expr) => {{
-                let szc = self.template_vn_size(h, opidx, $slot);
-                match self.recover_size(&szc, sym, ctidx, cc) {
-                    Ok(v) => Some(v),
-                    Err(_) => None,
-                }
+                let szc = self.template_varnode(h, opidx, $slot).get_size();
+                self.recover_size(szc, sym, ctidx, cc).ok()
             }};
         }
         use OpCode::*;
@@ -641,7 +633,7 @@ impl SleighCompile {
                 true
             }
             CPUI_LOAD | CPUI_STORE => {
-                let off0 = self.template_vn_offset(h, opidx, 0);
+                let off0 = self.template_varnode(h, opidx, 0).get_offset();
                 if off0.get_type() != ConstType::Spaceid {
                     return true;
                 }
@@ -664,7 +656,7 @@ impl SleighCompile {
                     Some(v) => v,
                     None => return self.op_err(h, opidx, sym, ctidx, 0, 0, "Using subtable with exports in expression"),
                 };
-                let vn1 = self.template_vn_offset(h, opidx, 1).get_real() as i32;
+                let vn1 = self.template_varnode(h, opidx, 1).get_offset().get_real() as i32;
                 if vnout == 0 || vn0 == 0 {
                     return true;
                 }
@@ -792,18 +784,18 @@ impl SleighCompile {
         isbig: bool,
         cc: &CcState,
     ) -> bool {
-        let off = self.template_vn_offset_for(h, opidx, slot);
+        let off = self.template_varnode(h, opidx, slot).get_offset();
         if off.get_type() != ConstType::Handle {
             return true;
         }
         if off.get_select() != VField::VOffsetPlus {
             return true;
         }
-        let sztype = self.template_vn_size_for(h, opidx, slot).get_type();
+        let sztype = self.template_varnode(h, opidx, slot).get_size().get_type();
         if sztype != ConstType::Real && sztype != ConstType::Handle {
             return self.op_err(h, opidx, sym, ctidx, slot, slot, "Bad truncation expression");
         }
-        let sz = match self.recover_size(&off, sym, ctidx, cc) {
+        let sz = match self.recover_size(off, sym, ctidx, cc) {
             Ok(v) => v,
             Err(_) => return self.op_err(h, opidx, sym, ctidx, slot, slot, "Could not recover size"),
         };
@@ -849,7 +841,7 @@ impl SleighCompile {
                 self.optimize_gather1(sym, ctidx, &mut state, i);
                 self.optimize_gather2(sym, ctidx, &mut state, i);
             }
-            match self.find_valid_rule(sym, ctidx, &mut state)? {
+            match self.find_valid_rule(sym, ctidx, &state)? {
                 Some(rec) => self.apply_optimization(sym, ctidx, &rec),
                 None => break,
             }
@@ -868,12 +860,12 @@ impl SleighCompile {
         for i in 0..numops {
             let ninput = self.template_op_num_input(h, i);
             for j in 0..ninput {
-                let vn = self.template_vn_clone(h, i, j);
-                examine_vn(state, &vn, i as u32, j, secnum);
+                let vn = self.template_varnode(h, i, j);
+                examine_vn(state, vn, i as u32, j, secnum);
             }
             if self.template_has_out(h, i) {
-                let vn = self.template_vn_clone(h, i, -1);
-                examine_vn(state, &vn, i as u32, -1, secnum);
+                let vn = self.template_varnode(h, i, -1);
+                examine_vn(state, vn, i as u32, -1, secnum);
             }
         }
     }
@@ -910,10 +902,9 @@ impl SleighCompile {
         &self,
         sym: SymbolId,
         ctidx: u32,
-        state: &mut UniqueState,
+        state: &UniqueState,
     ) -> KunaResult<Option<OptimizeRecord>> {
-        for key in state.keys_in_order() {
-            let currec = state.recs[&key].clone();
+        for currec in state.recs.values() {
             if currec.writecount == 1 && currec.readcount == 1 && currec.readsection == currec.writesection {
                 let Some(h) = self.section_handle(sym, ctidx, currec.readsection) else {
                     return Ok(None);
@@ -921,40 +912,40 @@ impl SleighCompile {
                 if currec.writeop >= currec.readop {
                     return Err(KunaError::sleigh("Read of temporary before write"));
                 }
-                let writevn = self.template_vn_clone(h, currec.writeop as usize, -1);
-                let readvn = self.template_vn_clone(h, currec.readop as usize, currec.inslot);
+                let writevn = self.template_varnode(h, currec.writeop as usize, -1);
+                let readvn = self.template_varnode(h, currec.readop as usize, currec.inslot);
                 if writevn != readvn {
                     continue;
                 }
                 let readop_code = self.template_op_opcode(h, currec.readop as usize);
                 let writeop_code = self.template_op_opcode(h, currec.writeop as usize);
                 if readop_code == OpCode::CPUI_COPY {
-                    let mut rec = currec.clone();
-                    rec.opttype = 0;
-                    let vn = self.template_vn_clone(h, currec.readop as usize, -1);
+                    let vn = self.template_varnode(h, currec.readop as usize, -1);
                     let mut save = true;
                     for i in (currec.writeop + 1)..currec.readop {
-                        if self.read_write_interference(h, &vn, i as usize, true) {
+                        if self.read_write_interference(h, vn, i as usize, true) {
                             save = false;
                             break;
                         }
                     }
                     if save {
+                        let mut rec = currec.clone();
+                        rec.opttype = 0;
                         return Ok(Some(rec));
                     }
                 }
                 if writeop_code == OpCode::CPUI_COPY {
-                    let mut rec = currec.clone();
-                    rec.opttype = 1;
-                    let vn = self.template_vn_clone(h, currec.writeop as usize, 0);
+                    let vn = self.template_varnode(h, currec.writeop as usize, 0);
                     let mut save = true;
                     for i in (currec.writeop + 1)..currec.readop {
-                        if self.read_write_interference(h, &vn, i as usize, false) {
+                        if self.read_write_interference(h, vn, i as usize, false) {
                             save = false;
                             break;
                         }
                     }
                     if save {
+                        let mut rec = currec.clone();
+                        rec.opttype = 1;
                         return Ok(Some(rec));
                     }
                 }
@@ -996,8 +987,7 @@ impl SleighCompile {
     }
 
     fn check_unused_temps(&mut self, sym: SymbolId, ctidx: u32, state: &UniqueState, cc: &mut CcState) {
-        for key in state.keys_in_order() {
-            let currec = &state.recs[&key];
+        for currec in state.recs.values() {
             if currec.readcount == 0 {
                 if self.warndeadtemps() {
                     self.cc_report_warning_ct(sym, ctidx, "Temporary is written but not read");
@@ -1034,15 +1024,15 @@ impl SleighCompile {
         if checkread {
             let ninput = self.template_op_num_input(h, opidx);
             for i in 0..ninput {
-                let other = self.template_vn_clone(h, opidx, i);
-                if possible_intersection(vn, &other) {
+                let other = self.template_varnode(h, opidx, i);
+                if possible_intersection(vn, other) {
                     return true;
                 }
             }
         }
         if self.template_has_out(h, opidx) {
-            let other = self.template_vn_clone(h, opidx, -1);
-            if possible_intersection(vn, &other) {
+            let other = self.template_varnode(h, opidx, -1);
+            if possible_intersection(vn, other) {
                 return true;
             }
         }
@@ -1318,37 +1308,13 @@ impl SleighCompile {
     fn template_has_out(&self, h: ConstructTplHandle, opidx: usize) -> bool {
         self.base.templates().get(h).map(|t| t.get_opvec()[opidx].get_out().is_some()).unwrap_or(false)
     }
-    fn template_vn_clone(&self, h: ConstructTplHandle, opidx: usize, slot: i32) -> VarnodeTpl {
+    fn template_varnode(&self, h: ConstructTplHandle, opidx: usize, slot: i32) -> &VarnodeTpl {
         let t = self.base.templates().get(h).unwrap();
         let op = &t.get_opvec()[opidx];
         if slot < 0 {
-            op.get_out().expect("out present").clone()
+            op.get_out().expect("out present")
         } else {
-            op.get_in(slot).clone()
-        }
-    }
-    fn template_vn_size(&self, h: ConstructTplHandle, opidx: usize, slot: i32) -> ConstTpl {
-        self.template_vn_size_for(h, opidx, slot)
-    }
-    fn template_vn_size_for(&self, h: ConstructTplHandle, opidx: usize, slot: i32) -> ConstTpl {
-        let t = self.base.templates().get(h).unwrap();
-        let op = &t.get_opvec()[opidx];
-        if slot < 0 {
-            op.get_out().expect("out present").get_size().clone()
-        } else {
-            op.get_in(slot).get_size().clone()
-        }
-    }
-    fn template_vn_offset(&self, h: ConstructTplHandle, opidx: usize, slot: i32) -> ConstTpl {
-        self.template_vn_offset_for(h, opidx, slot)
-    }
-    fn template_vn_offset_for(&self, h: ConstructTplHandle, opidx: usize, slot: i32) -> ConstTpl {
-        let t = self.base.templates().get(h).unwrap();
-        let op = &t.get_opvec()[opidx];
-        if slot < 0 {
-            op.get_out().expect("out present").get_offset().clone()
-        } else {
-            op.get_in(slot).get_offset().clone()
+            op.get_in(slot)
         }
     }
     fn op_name(&self, h: ConstructTplHandle, opidx: usize) -> String {
@@ -1399,7 +1365,7 @@ impl SleighCompile {
         ctidx: u32,
         slot: i32,
     ) -> Option<String> {
-        let szc = self.template_vn_size_for(h, opidx, slot);
+        let szc = self.template_varnode(h, opidx, slot).get_size();
         if szc.get_type() != ConstType::Handle {
             return None;
         }
