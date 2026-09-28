@@ -1412,3 +1412,58 @@ No behavior, public interface or option changes, so timing does not need repeati
 All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
 assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
 across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### Pattern normalization
+
+`PatternBlock::normalize` uses fixed-width leading/trailing bit counts for byte
+padding and a reverse-position search for the final nonzero mask word. This
+removes 24 lines of manual loops while preserving the leading-word drain,
+mask/value shifts, offset updates and sentinel behavior. Public interfaces and
+storage layout are unchanged.
+
+A differential probe compiled both complete, actual modules and compared
+32,768 outcomes per overflow mode. It covers zero and unaligned masks, sentinel
+sizes, extreme offsets, unequal mask/value lengths, panic messages and partial
+state, including repeated normalization. All 128 complete block-state fixtures
+also match. The 371 focused tests, 286 compiler CLI cases and 48 XML outputs pass;
+nine complete runtime initialization metadata files match across three samples
+each for Toy, x86 and Hexagon.
+
+The isolated benchmark reuses input buffers and normalizes two million blocks
+per workload. Across 66 balanced CPU-pinned runs, aggregate median time improves
+20.1247% (paired 20.2969%). The unchanged sentinel workload measures 7.3198%
+slower (paired 6.7173%), so this is not an improvement for every microbenchmark.
+Recompiling the probe against the final library reproduces the measured binary
+hashes. The compiler, fresh-initialization and full p-code workloads stay within
+the 5% budget: compiler wall deltas are -0.1117%, +0.3686%, +0.0029% for
+Toy/x86/Hexagon, and initialization deltas are -0.5271%, +0.0151%, -0.9184%.
+Initialization uses an uninstrumented probe with source bytes read before timing;
+every measured run initializes 300/10/30 fresh engines respectively. Full p-code
+wall time changes +0.3311% (paired +0.2845%); all 16 independent lift fixtures
+pass in each of 66 runs. Every compiled image is identical. Sources, exact
+baselines, raw samples and logs use `/tmp/kuna-deslop-pattern-normalize-`.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### Context and image documentation
+
+The context and image-loader modules describe their implemented contracts
+without migration inventories or repeated class/trait explanations. The headers
+retain context mask reset and flow-stop rules, fresh database reads on cache
+hits, image byte-count/error conventions, XML symbol cursors and the unchanged
+read-only address set during clearing or relocation. `ImageBytes` is included
+in the loader overview.
+
+The three files lose 94 comment lines. Every non-comment, nonblank source line
+is identical, with hashes in `/tmp/kuna-deslop-context-image-docs-source-proof.json`.
+Rustdoc passes with broken intra-doc links denied. Candidate and validation
+logs use `/tmp/kuna-deslop-context-image-docs-`. No behavior or public interface
+changes; no timing repetition is needed for this documentation patch.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.

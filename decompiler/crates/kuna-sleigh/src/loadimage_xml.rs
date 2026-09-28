@@ -1,30 +1,13 @@
-//! Port of `decompiler/cpp/loadimage_xml.hh` + `loadimage_xml.cc` (W2, item
-//! `w2-sleigh-loadimage`) — support for programs stored using an XML schema.
+//! XML-backed executable images, symbols and read-only ranges.
 //!
-//! Structural mapping (vs C++):
+//! [`LoadImageXml`] retains an `Rc<Element>` root and orders chunks and symbols
+//! by [`Address`]. Opening receives the address-space manager and [`IdRegistry`]
+//! explicitly. Architecture and symbol names remain byte strings.
 //!
-//! - `const Element *rootel` becomes an `Rc<Element>` from
-//!   [`kuna_base::xml`]; `map`/`set` members become `BTreeMap`/`BTreeSet`
-//!   keyed by [`Address`] (whose `Ord` transcribes the C++ `operator<`, ADR
-//!   0002).
-//! - The `const AddrSpaceManager *manage` member is **not** stored (the
-//!   workspace convention bans manager back-pointers, see
-//!   `kuna_base::space` module docs): it was only ever read inside `open()`
-//!   where the same manager arrives as the parameter.  `open()` also takes
-//!   the explicit [`IdRegistry`] that replaces the C++ global id tables.
-//! - The `mutable map<Address,string>::const_iterator cursymbol` becomes a
-//!   `RefCell<Option<Address>>` cursor holding the next key to report
-//!   (equivalent while the symbol map is unchanged between
-//!   `open_symbols`/`get_next_symbol` calls — mutating it mid-iteration is
-//!   iterator-invalidation UB in C++).  Before `openSymbols` the C++
-//!   iterator is uninitialized (UB to use); the Rust cursor starts at
-//!   "end", so a premature `get_next_symbol` returns `false`.
-//! - Symbol names and the arch type are byte strings (`Vec<u8>`), per the
-//!   marshal byte-string convention.
-//! - C++ quirks transcribed deliberately: `clear()` does **not** clear
-//!   `readonlyset`, and `adjustVma()` rebuilds `chunk`/`addrtosymbol` but
-//!   not `readonlyset` (so previously readonly chunks stop being reported
-//!   by `getReadonly` after an adjustment), exactly as upstream.
+//! Symbol iteration uses an interior cursor over address keys. Before
+//! `open_symbols`, the cursor is at the end and `get_next_symbol` returns false.
+//! Clearing or relocating the image leaves its read-only address set unchanged,
+//! preserving the upstream behavior.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};

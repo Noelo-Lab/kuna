@@ -1033,6 +1033,12 @@ Aligned instruction patterns intersect and find their common subpattern from
 borrowed blocks. Blocks are normalized when constructed or decoded, so a zero
 alignment shift needs no copied block or additional normalization.
 
+Block normalization removes leading zero mask words, shifts mask and value
+words together past leading zero bytes, and truncates words after the final
+nonzero mask. Fixed-width bit counts determine the leading and trailing byte
+padding. Always-true and always-false blocks retain empty storage and zero
+offset; ordinary blocks retain the same significant byte span.
+
 Mask and value reads share one word extractor, preserving unsigned word-index
 conversion, zero fill outside the stored words and masked shift counts.
 Specialization, identity and intersection resolution compare instruction then

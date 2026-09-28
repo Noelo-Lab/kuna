@@ -1728,6 +1728,60 @@ including a fresh WASM build. Spec/catalog checks pass. Tracked diff hash
 the last terminal success. Logs use `/tmp/kuna-deslop-pool-owner-final-`;
 no baseline moved.
 
+### Pattern normalization and context/image contracts
+
+Pattern blocks use fixed-width leading/trailing bit counts and a reverse search
+for their final nonzero mask word, removing 24 implementation lines. Leading
+word removal, offset updates, mask/value shifting and sentinel handling remain
+unchanged. The actual source matches the reviewed complete-module candidate;
+the three context/image documentation files lose 94 comment lines without any
+executable change. Their current cache, read-error, symbol-cursor and read-only
+marker contracts are preserved.
+
+Root differential checks match 32,768 outcomes in each overflow mode, including
+malformed lengths, extreme offsets, panic text, partial state and repeat calls.
+All 128 full block-state files match. A new persistent unit checks 2,080 bit-range
+combinations against byte-based alignment expectations and verifies idempotence;
+it passes with all 21 existing module tests on both original and changed sources.
+The 376 focused tests pass without warnings. All 286 compiler cases, 48 XML
+outputs and nine complete initialization metadata files match. Strict rustdoc
+passes without warnings; the native build takes 57.27 seconds without warnings.
+
+The fresh 66-run CPU-41 microbenchmark improves aggregate median time by 19.70%
+(paired 19.67%). Its three ordinary cases improve 6.54%, 27.52% and 17.26%, but
+the unchanged sentinel case is 7.08% slower (paired 6.79%). This reproduces the
+independent measurement's adverse control result; it is not claimed as an
+all-cases speedup. Recompiling both probes against the final library reproduces
+their measured binary hashes exactly. Sources, complete outputs and raw timing
+samples are under `/tmp/kuna-deslop-pattern-normalization.TQbIBC9M`.
+
+Full compiler wall-time changes are -0.92%/-1.81%/+0.25% for Toy/x86/Hexagon;
+paired changes are -0.68%/-1.67%/-0.45%, with every compiled image identical.
+Fresh-engine initialization changes -0.82%/+0.03%/+0.17% (paired
+-0.79%/-0.22%/-0.30%). These real-workload measurements are within the 5%
+budget; the adverse isolated sentinel result remains separately reported.
+
+Full instruction lifting changes -0.46% wall time (paired -0.35%) and -0.42%
+CPU time; all 16 independent instruction fixtures pass in each of 66 runs.
+Together the full compiler, initialization and lifting measurements justify
+retaining the simpler normalization without claiming that every isolated path
+improves. No allocation reduction or change in peak memory is claimed.
+
+The first full browser gate reached its final test, then Chrome failed to
+publish a DevTools port within ten seconds, before any application page loaded.
+The unchanged full build/browser retry passes; the timeout and retry are saved
+separately. No timeout or assertion was relaxed. The previous checkpoint's
+remote CI and CodeQL checks also pass.
+
+All nine gates now pass: 7,454 workspace tests with 38 existing ignores across
+439 groups and no warnings; 675/675 upstream and 1,467/1,467 stage assertions
+retain parity. The 268 CLI probes, 42 Python tests, 56 Ghidra tests, 48 XML
+comparisons, 17 saved CLI comparisons and all eleven browser probes pass.
+Spec/catalog checks pass. Tracked diff hash `7d5e051a` remains unchanged through
+the last terminal success. Logs use `/tmp/kuna-deslop-pattern-normalization-final-`,
+with the unchanged browser retry at `pattern-normalization-verified-web.log`.
+No baseline moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.

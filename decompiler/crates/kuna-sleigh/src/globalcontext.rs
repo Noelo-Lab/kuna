@@ -1,55 +1,19 @@
-//! Port of `decompiler/cpp/globalcontext.hh` + `globalcontext.cc` (W2, item
-//! `w2-sleigh-context`): utilities for getting address-based context to the
-//! disassembler and decompiler.
+//! Address-based decoding context and tracked register values.
 //!
-//! Pieces: [`ContextBitRange`] (a value packed into the context blob),
-//! [`TrackedContext`]/[`TrackedSet`] (tracked register values),
-//! [`ContextDatabase`] (the abstract database interface),
-//! [`ContextInternal`] (the in-memory implementation on
-//! `kuna_base::partmap::PartMap`), and [`ContextCache`] (the per-address
-//! cache with flow-boundary invalidation).
+//! [`ContextDatabase`] defines the interface; [`ContextInternal`] stores context
+//! in address partitions, and [`ContextCache`] caches the current flow range.
+//! Context values use `u32` words. Variable names are byte strings ordered
+//! lexicographically by byte.
 //!
-//! Port decisions (each justified at its use site):
+//! Region updates call back for each context blob in database order. Explicit
+//! assignments mark change points; a flowing update stops where the affected
+//! bits are already marked. Cloning `FreeArray` copies values and clears masks,
+//! so a split inherits values without marking another explicit assignment.
 //!
-//! - `uintm -> u32`: a context *blob* is an array of `u32` words
-//!   (`8*sizeof(uintm)` is 32 everywhere below).
-//! - Context-variable names are byte strings (`Vec<u8>`/`&[u8]`) per the
-//!   workspace marshal convention; `BTreeMap<Vec<u8>,_>` iterates in the
-//!   same byte-lexicographic order as the C++ `std::map<string,_>`.
-//! - The C++ protected virtuals (`getVariable`, `getRegionForSet`,
-//!   `getRegionToChangePoint`, `getDefaultValue`) are public trait methods —
-//!   Rust traits have no protected visibility.  `getVariable` returns the
-//!   `ContextBitRange` *by value* (it is a `Copy` POD that is immutable
-//!   after registration; the C++ non-const reference is never used to
-//!   mutate), which sidesteps borrow conflicts in the provided methods.
-//! - C++ `getRegionForSet`/`getRegionToChangePoint` pass back a
-//!   `vector<uintm *>` of raw pointers into the database which the caller
-//!   then writes through.  Safe Rust cannot hand out a list of aliasing
-//!   `&mut`; instead the region methods invoke a caller-supplied callback
-//!   on each blob, in the same iteration order.  Every C++ caller applies
-//!   one uniform mutation per returned blob, so interleaving "mark mask /
-//!   mutate blob" per entry produces the identical final state (the mask
-//!   array and value array of an entry never alias, and the
-//!   `getRegionToChangePoint` stop-test reads only masks of *later*
-//!   entries, which the callback never touches).
-//! - `FreeArray`'s `Clone` transcribes the C++ `operator=` — values are
-//!   copied, the mask is **zeroed** ("Copy value at split point, but not
-//!   fact that value is being set").  `PartMap::split`/`clear_range` are
-//!   the only cloners, exactly the C++ `database[pnt] = ...` sites.
-//! - [`ContextCache`] does not own the database: the C++ encapsulated
-//!   `ContextDatabase *` becomes an explicit method parameter (same
-//!   precedent as `kuna_num::pcoderaw::VarnodeData::get_space_from_const`,
-//!   which takes the manager the C++ pointer implied).  C++ `getDatabase()`
-//!   has no equivalent.  The C++ cached `const uintm *context` pointer
-//!   cannot be stored safely; on a cache hit the blob is re-fetched with
-//!   the cheap single-lookup `ContextDatabase::get_context` instead.  This
-//!   reproduces the C++ behavior for every flow that goes through the
-//!   ContextCache API (including paints from below `first` that reach into
-//!   the cached range without tripping the invalidation tests).  The only
-//!   divergence is flows that mutate the database *directly* while a cache
-//!   is live AND insert a new split point inside the cached range: C++
-//!   serves the stale pre-split blob, the port serves the fresh one.  No
-//!   in-tree flow does this (reported as a loss by the porting item).
+//! The cache receives its database as a method parameter and fetches values
+//! even on a range hit. Reads therefore observe direct database changes,
+//! including new split points inside the cached range; unlike the upstream
+//! cached pointer, no old context blob is retained.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;

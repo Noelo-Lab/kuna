@@ -104,13 +104,7 @@ impl PatternBlock {
 
         if !self.maskvec.is_empty() {
             // Cut off unaligned zeros from beginning of mask
-            let mut suboff: i32 = 0;
-            let mut tmp = self.maskvec[0];
-            while tmp != 0 {
-                suboff += 1;
-                tmp >>= 8;
-            }
-            suboff = 4 - suboff; // sizeof(uintm) - suboff
+            let suboff = (self.maskvec[0].leading_zeros() / 8) as i32;
             if suboff != 0 {
                 self.offset += suboff; // Slide up maskvec by suboff bytes
                 let n = self.maskvec.len();
@@ -130,23 +124,9 @@ impl PatternBlock {
                 self.valvec[n - 1] = self.valvec[n - 1].wshl((suboff * 8) as u32);
             }
 
-            // Cut zeros from end of mask: walk iter1 back to the last
-            // non-zero word (or begin()), then advance past it
-            let mut i = self.maskvec.len();
-            loop {
-                if i == 0 {
-                    break; // iter1 == maskvec.begin()
-                }
-                i -= 1;
-                if self.maskvec[i] != 0 {
-                    break; // Find last non-zero
-                }
-            }
-            if i != self.maskvec.len() {
-                i += 1; // Find first zero, in last zero chain
-            }
-            self.maskvec.truncate(i);
-            self.valvec.truncate(i);
+            let end = self.maskvec.iter().rposition(|&word| word != 0).map_or(0, |i| i + 1);
+            self.maskvec.truncate(end);
+            self.valvec.truncate(end);
         }
 
         if self.maskvec.is_empty() {
@@ -156,11 +136,7 @@ impl PatternBlock {
         }
         // size_t -> int4: pattern masks are a handful of words
         self.nonzerosize = (self.maskvec.len() as i32) * 4;
-        let mut tmp = *self.maskvec.last().unwrap(); // tmp must be nonzero
-        while (tmp & 0xff) == 0 {
-            self.nonzerosize -= 1;
-            tmp >>= 8;
-        }
+        self.nonzerosize -= (self.maskvec.last().unwrap().trailing_zeros() / 8) as i32;
     }
 
     /// C++ `PatternBlock::commonSubPattern`: the resulting pattern has a
@@ -1513,6 +1489,40 @@ mod tests {
     }
 
     // -- PatternBlock -------------------------------------------------------
+
+    #[test]
+    fn patternblock_normalization_preserves_byte_alignment() {
+        for first in 0..64 {
+            for last in first..64 {
+                let mut mask = [0u8; 16];
+                mask[4 + first / 8] |= 0x80 >> (first % 8);
+                mask[4 + last / 8] |= 0x80 >> (last % 8);
+                let values: Vec<u8> = (0..16).map(|i| i * 13 + 7).collect();
+                let words = |bytes: &[u8]| {
+                    bytes.chunks_exact(4).map(|b| u32::from_be_bytes(b.try_into().unwrap())).collect::<Vec<_>>()
+                };
+                let start = 4 + first / 8;
+                let span = last / 8 - first / 8 + 1;
+                let count = span.div_ceil(4) * 4;
+                let mut expected_mask = mask[start..start + span].to_vec();
+                expected_mask.resize(count, 0);
+                let mut block = PatternBlock {
+                    offset: 7,
+                    nonzerosize: 16,
+                    maskvec: words(&mask),
+                    valvec: words(&values),
+                };
+                block.normalize();
+                assert_eq!(block.offset, 7 + start as i32, "{first}/{last}");
+                assert_eq!(block.nonzerosize, span as i32, "{first}/{last}");
+                assert_eq!(block.maskvec, words(&expected_mask), "{first}/{last}");
+                assert_eq!(block.valvec, words(&values[start..start + count]), "{first}/{last}");
+                let normalized = block.clone();
+                block.normalize();
+                assert_eq!(format!("{block:?}"), format!("{normalized:?}"));
+            }
+        }
+    }
 
     #[test]
     fn patternblock_normalize_offsets_and_length() {
