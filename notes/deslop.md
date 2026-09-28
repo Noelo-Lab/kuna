@@ -1917,6 +1917,80 @@ hash `4186b98f` stayed unchanged through the last terminal success. Logs use
 `/tmp/kuna-deslop-browser-exit-final-`. The prior published checkpoint's CI and
 CodeQL checks also pass. No baseline or browser deadline changed.
 
+### Borrowed dataflow walks and runtime context commands
+
+`check_indirect_use` borrows each visited Varnode's descendant sequence instead
+of allocating a temporary copy. The function only reads the IR; its ordered
+worklist and local membership set retain traversal and cycle handling. Marking
+still collects accepted inputs before setting flags. The shorter module header
+describes the current behavior and preserves the default-OFF warning about
+unsound source-side merges. Neither the option nor its default changes.
+
+A new persistent test checks that repeated rejected walks preserve every flag,
+including existing traversal marks. All ten module tests pass on both the
+original and updated implementation. Actual-IR models agree on 91,161 query
+and marking outcomes per overflow mode across 4,096 graphs, including cycles,
+absent nodes, read-only flags and repeated marking. Two narrow membership-only
+expectations remove three collection-policy errors; every other Clippy
+diagnostic is byte-identical. The engine still has 208 such errors and 117
+warnings, not a clean gate.
+
+The public-API allocation probe builds its IR outside the counter. Across
+empty/single-reader/eight-link/64-link/rejected-64-link cases, requests change
+2/3/16/78/78 to 2/2/7/13/13, and requested bytes change
+60/68/604/4,908/4,908 to 60/60/532/4,388/4,388. Three fresh-process samples
+agree per case: 140 fewer requests and 1,120 fewer cumulatively requested bytes
+across one of each case, not peak memory. Both complete stage transcripts,
+including option-off/on runs and the unsafe-merge counterexample, remain exact.
+
+Runtime context application borrows stored commands and expression trees in
+order instead of cloning them. The actual helper bodies agree on 36,864 modeled
+outcomes per overflow mode with a probe walker; this is not a whole-runtime
+model. Real-engine probes separately match 192 complete context/p-code records
+and 144 error/retry outcomes. Native context decoding confirms `inst_next2`
+refusal while uninitialized; nested application in the helper model is a
+synthetic stress case, not evidence that real decoding allows that operation.
+
+For 1,171 actual instruction calls, three samples per fixture retain the same
+statuses and hashes while requests fall from 8,090 to 2,110 and requested bytes
+from 1,073,016 to 824,424. Initialization is outside the counter. These are
+cumulative allocations; complete p-code is separately checked by the sixteen
+golden fixtures. All 376 focused compiler/SLEIGH tests pass without warnings,
+as do strict rustdoc and CI's CLI lint gate (with the existing dependency warning).
+The combined native build takes 45.86 seconds without warnings; all 286 compiler
+cases and 48 XML outputs match. Source proofs cover all six candidate files and
+preserve every other engine lint diagnostic. Artifacts are under
+`/tmp/kuna-deslop-indirect-walk.hN59Nwlm`.
+
+Balanced CPU-pinned traversal timings use thirty measured samples per version
+after three warmups. Empty/single/eight-link/64-link/rejected-64-link median
+changes are +3.82%/-14.27%/-2.50%/-3.08%/-3.51%; paired medians are
++2.71%/-14.42%/-2.16%/-2.66%/-3.56%. The empty case is slower despite its
+unchanged allocation count. Both full stage workloads retain exact transcripts
+on every run and change +1.04%/+0.74% in median wall time (paired +0.78%/+0.75%).
+
+The first sixty-six instruction-probe runs improve aggregate median time by
+4.88% (paired 4.72%). Individual medians range from -38.38% to +4.87%; the
+small `gp` fixture is the slowest, with a +5.55% paired median. Whole lift-oracle
+runs change -0.94% wall and -0.98% CPU (paired -0.80%/-0.72%), passing all
+sixteen fixtures on every run. These measurements do not imply that every
+individual instruction workload improves.
+
+The retained follow-up runs ninety measured pairs after three warmup pairs,
+checking all sixteen result records every time. Aggregate median time changes
+-5.15% (paired -5.01%); `gp` changes +2.94% (paired +3.08%), and the slowest
+individual median is +3.37%. The original near-boundary sample remains above
+instead of being replaced by this larger follow-up.
+
+All nine gates pass on the frozen source: 7,457 workspace tests, 38 existing
+ignores across 439 groups and no warnings; upstream 675/675 and stage
+1,467/1,467 assertions retain parity. The 268 CLI probes, 42 Python tests,
+56 Ghidra tests, 48 XML comparisons, 17 saved CLI comparisons and eleven
+browser probes pass, as do spec/catalog checks and strict CLI linting.
+Diff hash `0dcbf51e` remained unchanged through the last terminal success.
+Logs use `/tmp/kuna-deslop-indirect-walk-final-`. The prior published commit's
+CI and CodeQL checks pass. No baseline moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1927,7 +2001,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Archive member and console output files have scoped cleanup. Loading/configuration and the remaining pool module still combine several lifecycle policies. |
-| Collection policy | The CLI has a strict warning-clean Clippy gate. The release engine-library check last reported 211 collection-policy errors, and analysis 215 errors/64 warnings. Reviewed lookup-only collections and explicitly ordered reports preserve existing implementations where iteration cannot affect output. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and extend enforcement. |
+| Collection policy | The CLI has a strict warning-clean Clippy gate. The release engine-library check last reported 208 collection-policy errors/117 warnings, and analysis 215 errors/64 warnings. Reviewed lookup-only collections and explicitly ordered reports preserve existing implementations where iteration cannot affect output. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and extend enforcement. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Public and private analysis rustdoc links now resolve; other documentation warnings and stale migration narratives remain. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. Inherited-stderr exit diagnostics are regression-tested; the earlier real-Chrome startup timeouts remain unexplained. |
 

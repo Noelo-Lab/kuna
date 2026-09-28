@@ -1,73 +1,15 @@
-//! (kuna) Mark the function inputs that are read only through INDIRECT ops —
-//! the `indirectonly` option.
+//! Mark illegal input Varnodes whose uses terminate in INDIRECT operations.
 //!
-//! # The gap
+//! Plain INDIRECT readers end a branch. The walk follows MULTIEQUAL and
+//! STORE-induced INDIRECT outputs; other readers reject the input. A local
+//! visited set handles cycles without leaving Varnode marks on rejection.
 //!
-//! `varnode_flags::indirectonly` ([`crate::varnode`]) has two readers and, on
-//! the merged tree, no writer at all: `ActionMarkIndirectOnly` was scheduled but
-//! its body was left a no-op, so every test of `is_indirect_only` answers
-//! `false`.  Both readers take the wrong branch when it does:
-//!
-//!   * [`HighVariable::has_name`](crate::p6_variables::variable::HighVariable::has_name)
-//!     refuses to name an unaffected input whose every instance is
-//!     indirect-only.  With the flag dead, such an input is named, and the name
-//!     is what `emit_local_var_decls` needs to print a declaration — so a
-//!     register the function never really uses gets its own `vN;` line.
-//!   * [`Merge::merge_test_adjacent`](crate::p6_variables::merge::Merge) refuses
-//!     a speculative merge involving an *illegal* input, "UNLESS the illegal
-//!     input is only used indirectly".  With the flag dead the exception never
-//!     applies and kuna rejects strictly more merges than upstream.
-//!
-//! # What this does
-//!
-//! [`mark_indirect_only`] is `Funcdata::markIndirectOnly`
-//! (`funcdata_varnode.cc:845-858`): walk the input def-set, and for every
-//! *illegal* input — an input Varnode that `ActionDirectWrite` did not reach, so
-//! nothing a real parameter feeds can be affected by it — ask
-//! [`check_indirect_use`] whether all of its flow ends in INDIRECT ops.  If so,
-//! set `indirectonly`.
-//!
-//! [`check_indirect_use`] is `Funcdata::checkIndirectUse`
-//! (`funcdata_varnode.cc:801-844`): a worklist over the descendants.  A reader
-//! that is a plain `CPUI_INDIRECT` is the accepting case and the walk stops
-//! there; an INDIRECT *from a STORE* is accepted but the walk continues through
-//! its output (the value survives the store, so where it ends up still matters);
-//! a `CPUI_MULTIEQUAL` is transparent and the walk continues through its output.
-//! **Any other reader at all — a real arithmetic use, a compare, a CALL
-//! argument, a COPY — fails the whole test**, which is what keeps an input that
-//! is genuinely read out of the flag.
-//!
-//! Upstream uses the Varnode `mark` bit as its visited set and clears it on the
-//! way out; this port keeps the visited set local so a bailout cannot leave
-//! stale marks behind for a later pass.  The traversal order and the accepted
-//! opcode set are unchanged.
-//!
-//! # Why it is an option, and why it is off
-//!
-//! Both consumers change what is printed — a declaration disappears, and a
-//! speculative merge that was refused can now happen — so the change ships
-//! behind `indirectonly`, and `off` (the default) restores the inert stub
-//! byte-for-byte.
-//!
-//! It defaults to *off* although the body is upstream verbatim.  The merge the
-//! flag unlocks is sound in one direction and not in the other:
-//!
-//!   * The illegal input is the copy's **destination** — the machine really
-//!     does store into the frame slot — and the merge only moves where the
-//!     value is computed.  Safe, and the reason to turn the option on.
-//!   * The illegal input is the copy's **source** — the machine loads the slot
-//!     into a register and mutates the register — and the merge makes the
-//!     emitted C mutate the slot.  If the slot's address escaped, a later call
-//!     reads a value the machine never wrote there.
-//!
-//! The cover machinery cannot separate the two: a CPUI_INDIRECT is only
-//! attached where the storage is still live in the SSA, so a slot whose last
-//! read is before the loop carries no INDIRECT at any call after it and there
-//! is nothing for the cover-intersection test to intersect.  Stock Ghidra
-//! 12.1.2 emits the same fabricated store on the same input, so this is an
-//! upstream defect the port inherits faithfully rather than a porting error —
-//! see `docs/features/indirectonly/counterexample.md`.
+//! `indirectonly` remains off by default. The flag can permit a speculative
+//! merge that fabricates a store when an escaped frame slot is the copy's
+//! source. Destination-side merges can be sound, but this pass does not
+//! distinguish those cases. See `docs/features/indirectonly/counterexample.md`.
 
+#[expect(clippy::disallowed_types, reason = "Membership only; the Vec worklist determines traversal order.")]
 use std::collections::HashSet;
 
 use kuna_base::error::KunaResult;
@@ -86,6 +28,7 @@ use crate::varnode::varnode_flags;
 /// INDIRECT op.
 pub fn check_indirect_use(data: &Funcdata, vn: VarnodeId) -> bool {
     let mut vlist: Vec<VarnodeId> = vec![vn];
+    #[expect(clippy::disallowed_types, reason = "Only insert is used; set iteration cannot affect output.")]
     let mut mark: HashSet<VarnodeId> = HashSet::new();
     mark.insert(vn);
 
@@ -94,11 +37,8 @@ pub fn check_indirect_use(data: &Funcdata, vn: VarnodeId) -> bool {
     while i < vlist.len() && result {
         let cur = vlist[i];
         i += 1;
-        let descend: Vec<_> = match data.vbank().get(cur) {
-            Some(v) => v.descend_iter().collect(),
-            None => continue,
-        };
-        for op in descend {
+        let Some(v) = data.vbank().get(cur) else { continue };
+        for op in v.descend_iter() {
             let (opc, indirect_store, outvn) = match data.obank().get(op) {
                 Some(o) => (o.code(), o.is_indirect_store(), o.get_out()),
                 None => continue,

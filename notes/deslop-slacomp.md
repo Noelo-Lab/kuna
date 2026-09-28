@@ -1577,3 +1577,42 @@ All four required gates passed: `make test` (675/675), `make test-stages`
 (1,467/1,467), `make rust-test` (7,714 passed, 38 ignored across 433 groups),
 and `make check-spec`. Both parity gates report `PARITY OK`; the option
 catalog and whitespace checks also pass. Neither baseline changed.
+
+### Borrowed runtime context commands
+
+Runtime context application iterates over each constructor's stored commands
+without cloning their expressions. The symbol table stays immutable while the
+commands update the parser context. Stored order, errors, preceding local
+updates and queued commits remain unchanged. Public signatures are unchanged;
+`sleigh.rs` loses three source lines.
+
+A differential model uses the actual before/after `apply_context` bodies with a
+probe walker, matching 36,864 outcomes per overflow-checking mode across 4,096
+symbol tables. It compares errors, panic payloads, local context, queued commits,
+event order and retries. Nested context application is a mock stress case;
+actual decoding rejects `inst_next2` while its parser state is uninitialized.
+The actual-engine probe confirms that refusal and matches 192 complete p-code
+and context records across both byte orders, including sequential writes,
+commits, malformed expressions, delay slots and retries. An additional 144
+runtime error/retry outcomes match. All 371 focused SLEIGH tests pass.
+
+Across 16 runtime fixtures, three samples per fixture agree on statuses,
+p-code counts and hashes. For 1,171 instruction calls, allocation/reallocation
+requests fall from 8,090 to 2,110 and requested bytes from 1,073,016 to 824,424.
+These totals describe one repetition and exclude engine initialization; they
+do not measure peak memory. Each repetition emits 7,321 operations and 19,581
+varnodes without errors. Independent golden fixtures compare complete p-code.
+
+An uninstrumented probe times three fresh-engine repetitions per fixture, with
+initialization outside the timer. In 66 balanced CPU-pinned runs, 30 measured
+per version, aggregate median instruction time improves 6.805% (paired 6.664%).
+Individual median deltas range from -41.538% to -0.354%; every fixture stays
+within the 5% budget. Whole lift-oracle runs improve 0.837% in median wall time
+and 0.851% in CPU time (paired 0.746% and 0.742%). Each of those 66 runs passes
+all 16 fixtures. Models, source snapshots, native probes, hashes, raw samples
+and logs use the local `/tmp/kuna-deslop-context-commands-` prefix.
+
+All four required gates passed: `make test` (675/675), `make test-stages`
+(1,467/1,467), `make rust-test` (7,714 passed, 38 ignored across 433 groups),
+and `make check-spec`. Both parity gates report `PARITY OK`; the option
+catalog and whitespace checks also pass. Neither baseline changed.

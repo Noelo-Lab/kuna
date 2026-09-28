@@ -385,6 +385,12 @@ input stays isolated. `mark_indirect_only` applies that to every illegal input
 and sets `indirectonly` on the ones that pass, and the two tests above then take
 their exception branch.
 
+The walk borrows each Varnode's descendant sequence directly: the function is
+read-only, and neither operation inspection nor worklist growth changes that
+sequence. A local membership set deduplicates the ordered worklist without
+using set iteration or changing Varnode flags. Input marking still collects
+all accepted inputs before setting their flags.
+
 The visible effect is the merge, and its soundness depends on which side of the
 copy the illegal input is. When the slot is the copy's **destination** the
 machine really does store into it, and the merge only moves where the value is

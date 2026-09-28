@@ -2146,10 +2146,7 @@ fn apply_context(
     ct: ConstructorRef,
     walker: &mut ParserWalkerChange<'_>,
 ) -> KunaResult<()> {
-    // The context commands are owned by the constructor; cloning them keeps
-    // the symbol-table borrow disjoint from the &mut walker.
-    let changes = table.get_constructor(ct)?.get_context_changes().to_vec();
-    for change in &changes {
+    for change in table.get_constructor(ct)?.get_context_changes() {
         change.apply(walker)?;
     }
     Ok(())

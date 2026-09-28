@@ -1036,6 +1036,10 @@ constructor's changes. Each decision node still owns its simplified patterns,
 moving the simplifier's result directly into the node. Source patterns and
 context changes remain owned by their constructors.
 
+Runtime context application borrows the constructor's commands and expressions.
+Commands run in stored order against the mutable parser context; evaluation
+stops at the first error without undoing preceding local updates or queued commits.
+
 Constructor operand patterns use the defining symbol when present. Otherwise,
 pattern generation borrows the operand's defining expression without copying
 its tree. The operand retains ownership of the expression throughout the build.
