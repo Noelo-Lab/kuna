@@ -88,7 +88,7 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::{Decoder, Encoder};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::Wrap;
-use kuna_num::opcodes::OpcodeEncoder;
+use kuna_num::opcodes::{OpcodeDecoder, OpcodeEncoder};
 use kuna_num::pcoderaw::VarnodeData;
 
 use crate::context::{FixedHandle, Token};
@@ -100,82 +100,8 @@ use crate::slghpatexpress::{
 use crate::slghpattern::{DisjointPattern, Pattern};
 use crate::semantics::{ConstTpl, ConstType, ConstructTpl, VarnodeTpl};
 
-/// `.sla`-format ElementIds/AttributeIds used by the symbol system
-/// (slaformat.cc, `FORMAT_SCOPE`).  Extends the set already defined by the
-/// pattern wave in [`crate::slghpattern::sla`], which is re-exported here so
-/// symbol code uses a single `sla::` namespace.
-pub mod sla {
-    use kuna_base::marshal::{AttributeId, ElementId};
-
-    pub use crate::slghpattern::sla::*;
-
-    pub const ATTRIB_ID: AttributeId = AttributeId::new("id", 3);
-    pub const ATTRIB_SPACE: AttributeId = AttributeId::new("space", 4);
-    pub const ATTRIB_CODE: AttributeId = AttributeId::new("code", 7);
-    pub const ATTRIB_PIECE: AttributeId = AttributeId::new("piece", 11);
-    pub const ATTRIB_NAME: AttributeId = AttributeId::new("name", 12);
-    pub const ATTRIB_SCOPE: AttributeId = AttributeId::new("scope", 13);
-    pub const ATTRIB_SIZE: AttributeId = AttributeId::new("size", 15);
-    pub const ATTRIB_MINLEN: AttributeId = AttributeId::new("minlen", 18);
-    pub const ATTRIB_BASE: AttributeId = AttributeId::new("base", 19);
-    pub const ATTRIB_NUMBER: AttributeId = AttributeId::new("number", 20);
-    pub const ATTRIB_CONTEXT: AttributeId = AttributeId::new("context", 21);
-    pub const ATTRIB_PARENT: AttributeId = AttributeId::new("parent", 22);
-    pub const ATTRIB_SUBSYM: AttributeId = AttributeId::new("subsym", 23);
-    pub const ATTRIB_LINE: AttributeId = AttributeId::new("line", 24);
-    pub const ATTRIB_SOURCE: AttributeId = AttributeId::new("source", 25);
-    pub const ATTRIB_LENGTH: AttributeId = AttributeId::new("length", 26);
-    pub const ATTRIB_FIRST: AttributeId = AttributeId::new("first", 27);
-    pub const ATTRIB_SCOPESIZE: AttributeId = AttributeId::new("scopesize", 45);
-    pub const ATTRIB_SYMBOLSIZE: AttributeId = AttributeId::new("symbolsize", 46);
-    pub const ATTRIB_VARNODE: AttributeId = AttributeId::new("varnode", 47);
-    pub const ATTRIB_LOW: AttributeId = AttributeId::new("low", 48);
-    pub const ATTRIB_HIGH: AttributeId = AttributeId::new("high", 49);
-    pub const ATTRIB_FLOW: AttributeId = AttributeId::new("flow", 50);
-    pub const ATTRIB_I: AttributeId = AttributeId::new("i", 52);
-    pub const ATTRIB_NUMCT: AttributeId = AttributeId::new("numct", 53);
-
-    pub const ELEM_PRINT: ElementId = ElementId::new("print", 8);
-    pub const ELEM_PAIR: ElementId = ElementId::new("pair", 9);
-    pub const ELEM_NULL: ElementId = ElementId::new("null", 11);
-    pub const ELEM_OPERAND_SYM: ElementId = ElementId::new("operand_sym", 13);
-    pub const ELEM_OPERAND_SYM_HEAD: ElementId = ElementId::new("operand_sym_head", 14);
-    pub const ELEM_OPER: ElementId = ElementId::new("oper", 15);
-    pub const ELEM_DECISION: ElementId = ElementId::new("decision", 16);
-    pub const ELEM_OPPRINT: ElementId = ElementId::new("opprint", 17);
-    pub const ELEM_CONSTRUCTOR: ElementId = ElementId::new("constructor", 20);
-    pub const ELEM_SCOPE: ElementId = ElementId::new("scope", 22);
-    pub const ELEM_VARNODE_SYM: ElementId = ElementId::new("varnode_sym", 23);
-    pub const ELEM_VARNODE_SYM_HEAD: ElementId = ElementId::new("varnode_sym_head", 24);
-    pub const ELEM_USEROP: ElementId = ElementId::new("userop", 25);
-    pub const ELEM_USEROP_HEAD: ElementId = ElementId::new("userop_head", 26);
-    pub const ELEM_VAR: ElementId = ElementId::new("var", 28);
-    pub const ELEM_CONTEXT_OP: ElementId = ElementId::new("context_op", 32);
-    pub const ELEM_SYMBOL_TABLE: ElementId = ElementId::new("symbol_table", 38);
-    pub const ELEM_VALUE_SYM: ElementId = ElementId::new("value_sym", 39);
-    pub const ELEM_VALUE_SYM_HEAD: ElementId = ElementId::new("value_sym_head", 40);
-    pub const ELEM_CONTEXT_SYM: ElementId = ElementId::new("context_sym", 41);
-    pub const ELEM_CONTEXT_SYM_HEAD: ElementId = ElementId::new("context_sym_head", 42);
-    pub const ELEM_END_SYM: ElementId = ElementId::new("end_sym", 43);
-    pub const ELEM_END_SYM_HEAD: ElementId = ElementId::new("end_sym_head", 44);
-    pub const ELEM_EPSILON_SYM: ElementId = ElementId::new("epsilon_sym", 62);
-    pub const ELEM_EPSILON_SYM_HEAD: ElementId = ElementId::new("epsilon_sym_head", 63);
-    pub const ELEM_NAME_SYM: ElementId = ElementId::new("name_sym", 64);
-    pub const ELEM_NAME_SYM_HEAD: ElementId = ElementId::new("name_sym_head", 65);
-    pub const ELEM_NAMETAB: ElementId = ElementId::new("nametab", 66);
-    pub const ELEM_NEXT2_SYM: ElementId = ElementId::new("next2_sym", 67);
-    pub const ELEM_NEXT2_SYM_HEAD: ElementId = ElementId::new("next2_sym_head", 68);
-    pub const ELEM_START_SYM: ElementId = ElementId::new("start_sym", 69);
-    pub const ELEM_START_SYM_HEAD: ElementId = ElementId::new("start_sym_head", 70);
-    pub const ELEM_SUBTABLE_SYM: ElementId = ElementId::new("subtable_sym", 71);
-    pub const ELEM_SUBTABLE_SYM_HEAD: ElementId = ElementId::new("subtable_sym_head", 72);
-    pub const ELEM_VALUEMAP_SYM: ElementId = ElementId::new("valuemap_sym", 73);
-    pub const ELEM_VALUEMAP_SYM_HEAD: ElementId = ElementId::new("valuemap_sym_head", 74);
-    pub const ELEM_VALUETAB: ElementId = ElementId::new("valuetab", 75);
-    pub const ELEM_VARLIST_SYM: ElementId = ElementId::new("varlist_sym", 76);
-    pub const ELEM_VARLIST_SYM_HEAD: ElementId = ElementId::new("varlist_sym_head", 77);
-    pub const ELEM_COMMIT: ElementId = ElementId::new("commit", 79);
-}
+/// SLA IDs used by the symbol system.
+pub use crate::slaformat::ids as sla;
 
 // ---------------------------------------------------------------------------
 // Boundaries
@@ -249,7 +175,7 @@ pub trait SleighBaseTrans {
     /// means the main section.
     fn decode_construct_tpl(
         &mut self,
-        decoder: &mut dyn Decoder,
+        decoder: &mut dyn OpcodeDecoder,
     ) -> KunaResult<(i32, ConstructTplHandle)>;
     /// C++ `templ->encode(encoder, section_id)` inside `Constructor::encode`
     /// (`section_id == -1` for the main section).
@@ -1315,7 +1241,7 @@ pub struct Constructor {
     /// (kuna build side) C++ `mutable bool inerror`.
     inerror: bool,
     /// (kuna build side, WS4b boundary) the operand handle re-index map computed
-    /// by [`SymbolTable::order_operands`] (`handmap[original_index] =
+    /// by `SymbolTable::order_operands` (`handmap[original_index] =
     /// new_index`).  C++ applies `templ->changeHandleIndex(handmap)` inline,
     /// but the kuna `ConstructTpl` arena is owned by the WS4b driver, so the
     /// map is stashed here for the driver to apply.  Empty until ordered.
@@ -1345,7 +1271,7 @@ impl Constructor {
     }
 
     /// (kuna build side, WS4b boundary) the operand handle re-index map computed
-    /// during [`SymbolTable::order_operands`].  `handmap[original_index] =
+    /// during `SymbolTable::order_operands`.  `handmap[original_index] =
     /// new_index`.  The WS4b driver applies it to the constructor's
     /// `ConstructTpl` sections via `change_handle_index` (the C++ inline
     /// `templ->changeHandleIndex(handmap)`).  Empty if no reorder ran.
@@ -1754,7 +1680,7 @@ impl Constructor {
     /// sections (the [`SleighBaseTrans`] boundary); symbol cross-references are
     /// stored as ids.
     pub fn decode(
-        decoder: &mut dyn Decoder,
+        decoder: &mut dyn OpcodeDecoder,
         resolver: &dyn OperandValueResolver,
         trans: &mut dyn SleighBaseTrans,
     ) -> KunaResult<Constructor> {
@@ -3104,7 +3030,7 @@ impl SleighSymbol {
         }
     }
 
-    /// Like [`Symbol::resolve`], but for a subtable triple also returns the
+    /// Like [`SleighSymbol::resolve`], but for a subtable triple also returns the
     /// matched `DisjointPattern` leaf (cloned) alongside the constructor id —
     /// i.e. `(ct_id, Some(pattern))`.  Dispatches identically to `resolve`
     /// (same `is_match` walk, same `BadDataError` on no match): for non-subtable
@@ -4529,7 +4455,7 @@ impl SymbolTable {
     }
 
     /// C++ `SymbolTable::purge` (slghsymbol.cc:281): get rid of unsavable
-    /// symbols and scopes, then [`renumber`](Self::renumber) so the saved
+    /// symbols and scopes, then `renumber` so the saved
     /// stream has no id gaps.  In the global scope only
     /// space/token/epsilon/section/bitrange/macro/subtable survive; in any
     /// child scope only operands survive.  Removing a macro or an unreferenced
@@ -4746,7 +4672,7 @@ impl SymbolTable {
     /// (headers, then contents in stream order).
     pub fn decode(
         &mut self,
-        decoder: &mut dyn Decoder,
+        decoder: &mut dyn OpcodeDecoder,
         trans: &mut dyn SleighBaseTrans,
     ) -> KunaResult<()> {
         let el = decoder.open_element_id(&sla::ELEM_SYMBOL_TABLE)?;
@@ -4883,7 +4809,7 @@ impl SymbolTable {
     /// caller has already opened the content element and read `ATTRIB_ID`.
     fn decode_symbol_content(
         &mut self,
-        decoder: &mut dyn Decoder,
+        decoder: &mut dyn OpcodeDecoder,
         trans: &mut dyn SleighBaseTrans,
         id: u32,
     ) -> KunaResult<()> {
@@ -5259,7 +5185,7 @@ impl OperandValueResolver for TableResolver<'_> {
 /// the decision tree.  Runs against `&SymbolTable` so expression decode can
 /// validate operand values mid-restore.
 fn decode_subtable_content(
-    decoder: &mut dyn Decoder,
+    decoder: &mut dyn OpcodeDecoder,
     table: &SymbolTable,
     trans: &mut dyn SleighBaseTrans,
     self_id: u32,
@@ -5356,7 +5282,7 @@ mod tests {
 
         fn decode_construct_tpl(
             &mut self,
-            _decoder: &mut dyn Decoder,
+            _decoder: &mut dyn OpcodeDecoder,
         ) -> KunaResult<(i32, ConstructTplHandle)> {
             Err(KunaError::sleigh("no ConstructTpl in symbol tests"))
         }
@@ -6416,5 +6342,4 @@ mod tests {
         }
     }
 }
-
 

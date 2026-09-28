@@ -73,6 +73,15 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
 - Compiler XML output honors `-y`. The symbol/constructor boundary preserves
   the opcode encoder's format-specific behavior instead of forcing binary
   integer attributes through XML. Default binary output is unchanged.
+- SLEIGH symbol decoding also preserves its format-specific opcode reader.
+  One canonical ID table replaces duplicate definitions and supplies complete
+  XML registration; existing import paths remain available. XML registration is
+  lazy, and the packed binary path keeps its numeric IDs.
+- CLI call-graph queries, callee-first scheduling and object-file views live in
+  their own modules. Command drivers share these boundaries without importing
+  unrelated helpers from `decompile_all`. Inventory storage stays private to
+  the graph; its caller-completeness query retains the conservative read-failure
+  policy. The command module also loses its obsolete introductory narrative.
 
 ## Evidence
 
@@ -156,6 +165,27 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   This build also reproduced all 44 pinned C++ XML hashes. Fourteen CLI cases
   covering graph exports, summaries, reachability, Mach-O slices, image readers,
   and callee ordering match the original baseline's stdout, stderr and status.
+- Before moving the graph scheduler, all seven planning tests passed, including
+  two new checks: exhaustive directed graphs up to four nodes against independent
+  reachability, and a 100,000-function chain that exercises the iterative walk.
+- After the module split, all 299 focused CLI tests and 358 compiler/SLEIGH
+  tests pass. The 14 saved CLI cases remain byte-identical, including status and
+  stderr. A syntax-tree comparison confirms 44 moved function bodies retain
+  their tokens after normalizing formatting and the new graph method receiver.
+  Twenty interleaved summary runs measured medians of 146.396 ms before and
+  148.728 ms after (+1.6%); this is a local warm-run check, not a speedup claim.
+- The combined graph/decoder snapshot passed all four gates: 7,375 workspace
+  tests with 38 existing ignores and no warnings in 411 seconds, 675/675
+  upstream and 1467/1467 stage assertions, and spec checks. Catalog checks,
+  16 Python tests and 56 Ghidra tests pass. The first concurrent CLI run missed
+  the disassembly timing bound (673 ms minimum versus 600 ms required), with
+  correct output. The unchanged probe passed on rerun; an interleaved comparison
+  measured minima of 313 ms before and 315 ms after, with identical output.
+  Both the targeted rerun and the later complete 268/268 CLI run passed without
+  changing the bound. The first failure log is retained outside the repository.
+  Twenty further interleaved pairs after those suites finished measured
+  406/435 ms wall medians and a 1.012 median paired ratio, again with identical
+  output; the variation does not establish a small speedup or slowdown.
 
 ## Audit still open
 
@@ -166,7 +196,7 @@ These are investigation targets, not a claim that the repository review is done.
 | CLI test structure | Private module copies and missing-command/spec skips are removed; the full workspace passes. Other suites still contain ad hoc JSON field extraction and duplicate process helpers. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. Numerous per-option modules repeat boolean parsing. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
-| CLI responsibilities | The worker codec is isolated and byte-pinned. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
+| CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
 | Collection policy | `cargo clippy --workspace --lib --bins` stops in `kuna-decomp` with 222 denied `HashMap`/`HashSet` findings. Removed its missing-ADR reference. Review iteration semantics and lookup costs before replacing collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Ninety engine files still contain wave-era STUB notes. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory corruption fails closed and Python text writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |

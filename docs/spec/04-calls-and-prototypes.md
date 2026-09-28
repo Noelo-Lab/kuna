@@ -2279,7 +2279,7 @@ file name keeps an integer: `emit_verbose` renders
 `cycles` is `types` with one change: a member of a recursive component states
 its recovered types too, as every other function does, through the same table
 and the same refusals. What stays open is the order, because inside a cycle there
-is no callee-first one (`decompiler/crates/kuna-cli/src/decompile_all.rs
+is no callee-first one (`decompiler/crates/kuna-cli/src/callgraph/plan.rs
 (plan_from_components)`). A function that only calls itself is decompiled once,
 like any other function, and its own call to itself reads nothing, in the
 `structsynth` sweep's redo as well (above). The members of

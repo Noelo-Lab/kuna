@@ -209,7 +209,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     // message `load_program` would have given it.
     std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
-    let bytes = crate::decompile_all::image_bytes(
+    let bytes = crate::image::image_bytes(
         &args.binary,
         kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
     )?;

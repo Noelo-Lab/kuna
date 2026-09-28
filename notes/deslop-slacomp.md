@@ -87,3 +87,31 @@ about other specs or machines.
 The independent XML cleanup snapshot passed all four gates: 675 upstream and
 1,467 stage assertions, 7,700 workspace tests with 38 existing ignores, and the
 spec check. The option catalog passed, and no baseline expectations changed.
+
+The corresponding decoder also erased `OpcodeDecoder` and reconstructed the
+packed protocol through a wrapper and a copied numeric conversion. It now
+retains the opcode-aware interface through symbol tables, subtables and
+constructor templates, using the existing XML and packed readers directly.
+Custom decoder implementations on this path must implement `OpcodeDecoder`.
+
+The pinned XML fixture initially failed even earlier: its space index was not
+registered. SLA IDs had 189 repeated definitions across four modules, while XML
+registration contained only a partial list. One canonical table now defines all
+142 IDs and supplies registration automatically. Every name and number matches
+both the previous definitions and pinned Ghidra; the old public `sla` import
+paths re-export the same IDs. The XML lookup is built on demand, avoiding its
+construction during ordinary binary loading.
+
+The new symbol-table test fails on the original registry, fails on named opcodes
+with only registration fixed, and passes with the complete change. All 358
+compiler and SLEIGH release tests pass, including the 44 binary-output oracle
+checks. All 44 XML outputs still match the pinned C++ reference byte-for-byte.
+Fifty interleaved Toy-builder compilation samples measured 7.009 ms before and
+7.209 ms after (+2.9% on this host); complete binary output remained identical.
+
+Public Rust documentation builds without warnings after correcting 12 stale
+links to private or renamed items; no visibility was widened.
+
+The independent decoder/ID cleanup snapshot passed all four gates: 675 upstream
+and 1,467 stage assertions, 7,701 workspace tests with 38 existing ignores, and
+the spec check. The option catalog passed; no baseline expectations changed.

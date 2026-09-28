@@ -1,6 +1,7 @@
 //! Command dispatch for the kuna CLI.
 
 mod args;
+mod callgraph;
 mod catalog;
 mod crypto;
 mod cryptosig;
@@ -13,6 +14,7 @@ mod disassemble;
 mod fid;
 mod assertdecl;
 mod funcdecl;
+mod image;
 mod jobs;
 mod jsonfmt;
 mod limits;

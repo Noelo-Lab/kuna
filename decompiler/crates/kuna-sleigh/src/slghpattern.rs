@@ -44,13 +44,7 @@
 //!
 //! ## sla format ids ([`sla`])
 //!
-//! The `.sla` ElementIds/AttributeIds live in C++ `slaformat.{hh,cc}` under
-//! `FORMAT_SCOPE = 1`.  Scoped ids are never registered in the global
-//! name->id registry (the C++ constructors skip registration for
-//! `scope != 0`, and `.sla` streams are packed/id-numeric), so there is no
-//! `IdRegistry` registration function here.  Only the ids used by
-//! slghpattern/slghpatexpress are defined; they should migrate to
-//! `slaformat.rs` when item `w2-sleigh-slaformat` ports that file.
+//! SLA element and attribute IDs are shared through [`sla`].
 
 use kuna_base::error::KunaResult;
 use kuna_base::marshal::{Decoder, Encoder};
@@ -58,52 +52,8 @@ use kuna_base::types::Wrap;
 
 use crate::slghpatexpress::PatternExpressionContext;
 
-/// SLA-format ids used by the pattern/pattern-expression modules (C++
-/// `slaformat.cc`, `FORMAT_SCOPE = 1`); see the module docs for why these
-/// are not registered in any [`kuna_base::marshal::IdRegistry`].
-pub mod sla {
-    use kuna_base::marshal::{AttributeId, ElementId};
-
-    pub const ATTRIB_VAL: AttributeId = AttributeId::new("val", 2);
-    pub const ATTRIB_OFF: AttributeId = AttributeId::new("off", 6);
-    pub const ATTRIB_MASK: AttributeId = AttributeId::new("mask", 8);
-    pub const ATTRIB_INDEX: AttributeId = AttributeId::new("index", 9);
-    pub const ATTRIB_NONZERO: AttributeId = AttributeId::new("nonzero", 10);
-    pub const ATTRIB_STARTBIT: AttributeId = AttributeId::new("startbit", 14);
-    pub const ATTRIB_TABLE: AttributeId = AttributeId::new("table", 16);
-    pub const ATTRIB_CT: AttributeId = AttributeId::new("ct", 17);
-    pub const ATTRIB_SHIFT: AttributeId = AttributeId::new("shift", 29);
-    pub const ATTRIB_ENDBIT: AttributeId = AttributeId::new("endbit", 30);
-    pub const ATTRIB_SIGNBIT: AttributeId = AttributeId::new("signbit", 31);
-    pub const ATTRIB_ENDBYTE: AttributeId = AttributeId::new("endbyte", 32);
-    pub const ATTRIB_STARTBYTE: AttributeId = AttributeId::new("startbyte", 33);
-    pub const ATTRIB_BIGENDIAN: AttributeId = AttributeId::new("bigendian", 35);
-
-    pub const ELEM_MASK_WORD: ElementId = ElementId::new("mask_word", 6);
-    pub const ELEM_PAT_BLOCK: ElementId = ElementId::new("pat_block", 7);
-    pub const ELEM_CONTEXT_PAT: ElementId = ElementId::new("context_pat", 10);
-    pub const ELEM_OPERAND_EXP: ElementId = ElementId::new("operand_exp", 12);
-    pub const ELEM_INSTRUCT_PAT: ElementId = ElementId::new("instruct_pat", 18);
-    pub const ELEM_COMBINE_PAT: ElementId = ElementId::new("combine_pat", 19);
-    pub const ELEM_TOKENFIELD: ElementId = ElementId::new("tokenfield", 27);
-    pub const ELEM_CONTEXTFIELD: ElementId = ElementId::new("contextfield", 29);
-    pub const ELEM_AND_EXP: ElementId = ElementId::new("and_exp", 47);
-    pub const ELEM_DIV_EXP: ElementId = ElementId::new("div_exp", 48);
-    pub const ELEM_LSHIFT_EXP: ElementId = ElementId::new("lshift_exp", 49);
-    pub const ELEM_MINUS_EXP: ElementId = ElementId::new("minus_exp", 50);
-    pub const ELEM_MULT_EXP: ElementId = ElementId::new("mult_exp", 51);
-    pub const ELEM_NOT_EXP: ElementId = ElementId::new("not_exp", 52);
-    pub const ELEM_OR_EXP: ElementId = ElementId::new("or_exp", 53);
-    pub const ELEM_PLUS_EXP: ElementId = ElementId::new("plus_exp", 54);
-    pub const ELEM_RSHIFT_EXP: ElementId = ElementId::new("rshift_exp", 55);
-    pub const ELEM_SUB_EXP: ElementId = ElementId::new("sub_exp", 56);
-    pub const ELEM_XOR_EXP: ElementId = ElementId::new("xor_exp", 57);
-    pub const ELEM_INTB: ElementId = ElementId::new("intb", 58);
-    pub const ELEM_END_EXP: ElementId = ElementId::new("end_exp", 59);
-    pub const ELEM_NEXT2_EXP: ElementId = ElementId::new("next2_exp", 60);
-    pub const ELEM_START_EXP: ElementId = ElementId::new("start_exp", 61);
-    pub const ELEM_OR_PAT: ElementId = ElementId::new("or_pat", 78);
-}
+/// SLA IDs used by patterns and pattern expressions.
+pub use crate::slaformat::ids as sla;
 
 // ---------------------------------------------------------------------------
 // PatternBlock

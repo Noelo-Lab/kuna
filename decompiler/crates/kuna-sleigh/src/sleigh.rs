@@ -4,14 +4,14 @@
 //!
 //! What lives here:
 //!
-//! - [`ConstructState`] / [`ContextSet`] / [`ParserContext`] / [`ParserWalker`]
-//!   / [`ParserWalkerChange`] from `context.{hh,cc}` (context.rs deferred them
+//! - `ConstructState` / `ContextSet` / [`ParserContext`] / `ParserWalker`
+//!   / `ParserWalkerChange` from `context.{hh,cc}` (context.rs deferred them
 //!   here — see that module's docs — because they are built around the symbol
 //!   table and the engine).  The C++ pointer tree becomes an index-based arena
 //!   (ADR 0001): `ConstructState` nodes live in `ParserContext::state`, child
 //!   links are `Option<usize>` indices, the `ParserWalker` carries a node
 //!   index plus the breadcrumb path.
-//! - [`PcodeCacher`] / [`SleighBuilder`] / [`Sleigh`] from `sleigh.{hh,cc}`.
+//! - `PcodeCacher` / `SleighBuilder` / [`Sleigh`] from `sleigh.{hh,cc}`.
 //!   Parser contexts are recycled between decodes while retaining their state
 //!   arenas, the allocation-saving part of the C++ `DisassemblyCache`.
 //!
@@ -458,7 +458,7 @@ impl ParserContext {
 // ---------------------------------------------------------------------------
 
 /// Mutable walk state (C++ `ParserWalker::point/depth/breadcrumb`).  Split out
-/// so the immutable [`ParserWalker`] and the mutating [`ParserWalkerChange`]
+/// so the immutable `ParserWalker` and the mutating `ParserWalkerChange`
 /// share one cursor representation.
 #[derive(Debug, Clone)]
 struct WalkCursor {
@@ -713,7 +713,7 @@ impl SymbolWalker for ParserWalker<'_> {
     }
 }
 
-/// C++ `ParserWalkerChange`: a [`ParserWalker`] that can modify the tree as the
+/// C++ `ParserWalkerChange`: a `ParserWalker` that can modify the tree as the
 /// instruction is parsed (`Sleigh::resolve`).  Holds the [`ParserContext`]
 /// mutably; reads share the immutable `ParserWalker` body via [`as_reader`].
 struct ParserWalkerChange<'a> {
@@ -732,7 +732,7 @@ impl<'a> ParserWalkerChange<'a> {
         ParserWalkerChange { ctx, table, engine, cur: WalkCursor::new() }
     }
 
-    /// Build a read-only [`ParserWalker`] view sharing this cursor (for the
+    /// Build a read-only `ParserWalker` view sharing this cursor (for the
     /// boundary methods that only read — `applyContext`/`resolve` evaluation).
     fn as_reader(&self) -> ParserWalker<'_> {
         ParserWalker {
@@ -1103,7 +1103,7 @@ impl Drop for ParserContextGuard {
 
 /// A parser context fully resolved to `pcode` state, paired with its address.
 /// The engine resolves the main instruction plus any delay-slot / crossbuild
-/// targets into a flat set before p-code emission, so the [`SleighBuilder`]
+/// targets into a flat set before p-code emission, so the `SleighBuilder`
 /// can walk them by index without re-entering the (RefCell) caches.
 struct ResolvedCtx {
     addr: Address,
@@ -1111,7 +1111,7 @@ struct ResolvedCtx {
 }
 
 /// C++ `SleighBuilder : PcodeBuilder`: walks the parse tree and prepares data
-/// for final p-code emission (through the [`PcodeCacher`]).
+/// for final p-code emission (through the `PcodeCacher`).
 struct SleighBuilder<'a> {
     /// C++ `PcodeBuilder::labelbase`.
     labelbase: u32,

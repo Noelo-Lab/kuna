@@ -132,7 +132,7 @@ fn section_matches(name: Option<&str>, want: &str) -> bool {
 }
 
 pub(crate) fn query(args: &CryptoArgs) -> Result<String, String> {
-    let bytes = crate::decompile_all::image_bytes(
+    let bytes = crate::image::image_bytes(
         &args.binary,
         kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
     )?;

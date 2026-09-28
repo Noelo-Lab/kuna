@@ -69,7 +69,7 @@ impl SleighBaseTrans for TestTrans {
 
     fn decode_construct_tpl(
         &mut self,
-        _decoder: &mut dyn Decoder,
+        _decoder: &mut dyn kuna_num::opcodes::OpcodeDecoder,
     ) -> KunaResult<(i32, ConstructTplHandle)> {
         Err(KunaError::sleigh("no ConstructTpl in verifier tests"))
     }

@@ -2198,7 +2198,15 @@ Assembly comes from the listing walk
 undecodable byte inside a body is a `.byte` row and not the loss of the whole
 listing. Edges come from the reference index `kuna xrefs` answers with, through
 the same call-graph model `--reachable-from` walks
-(`decompiler/crates/kuna-cli/src/decompile_all.rs (CallGraph::callees_of)`).
+(`decompiler/crates/kuna-cli/src/callgraph.rs (CallGraph::callees_of)`).
+
+The CLI graph module owns inventory containment, reachability and caller
+completeness queries. Its scheduling module,
+`decompiler/crates/kuna-cli/src/callgraph/plan.rs`, owns the iterative SCC walk
+and recursion policy used by callee-first decompilation. Object-file consumers
+share `decompiler/crates/kuna-cli/src/image.rs`: they read the selected Mach-O
+slice and reject TE inputs that have no object-file view. These boundaries are
+shared by the command drivers without changing edge rules or output ordering.
 
 **Both ends of every edge are rows of the same document.** A reference into the
 middle of a body resolves to the body, and one that lands in no discovered
@@ -2513,4 +2521,3 @@ casts; with the option off the output is byte-identical to the build without it.
 On the 4,815 functions kuna and IDA both emit, casts fall from 45,126 to 44,001
 and no function gains one. Variables and types are untouched, so `type_match`
 cannot move (1,609 perfect functions in both arms of the 444-slice sweep).
-

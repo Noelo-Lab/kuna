@@ -793,6 +793,14 @@ XML attributes where Ghidra expects names
 (`decompiler/crates/kuna-sleigh/src/sleighbase.rs (encode)`,
 `decompiler/crates/kuna-sleigh/src/slghsymbol.rs (SleighBaseTrans)`).
 
+The corresponding decoding path retains `OpcodeDecoder` through symbol tables,
+subtables and constructor templates. XML opcode names and packed opcode values
+therefore use the existing format-specific readers, including their validation.
+The shared ID table in `decompiler/crates/kuna-sleigh/src/slaformat/ids.rs` defines
+every SLA element and attribute once and supplies the complete XML registration
+list. Existing `sla` import paths re-export that table. `SleighBase::registry`
+builds its XML name lookup on demand; binary decoding uses numeric IDs directly.
+
 (kuna) **Mixed builds.** The engine binary `kuna` runs can come from a different
 build than `kuna` itself (an override naming another install, or a sibling left
 behind when only `kuna` was rebuilt), and nothing in the output shows it. So every
@@ -1360,7 +1368,7 @@ remove — so each finished function reports the entries it reaches
 the scheduler intersects them with the resolved target set. Those hints are a
 **scheduling hint and not an edge model**: they are never serialized into any
 artifact, they are not what `kuna decompile-graph` or `--reachable-from`
-traverse — that is `decompiler/crates/kuna-cli/src/decompile_all.rs
+traverse — that is `decompiler/crates/kuna-cli/src/callgraph.rs
 (CallGraph::callees_of)`, built from the reference index — and intersecting
 rather than unioning is what keeps an `--addr`/`--functions` export from growing
 callees it was not asked for. The seeds are pool chunks like any other, which is

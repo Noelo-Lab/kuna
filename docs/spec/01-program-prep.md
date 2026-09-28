@@ -4243,7 +4243,7 @@ an executable section a function — an IAT slot lives in `.rdata`, so it is nev
 one — while the inventory does name it, because `pe_iat` (§1.3) registered the
 import there. For PE, the graph therefore falls back from the walk's function
 set to the inventory extent containing the target
-(`decompiler/crates/kuna-cli/src/decompile_all.rs (CallGraph::callee_of)`), which
+(`decompiler/crates/kuna-cli/src/callgraph.rs (CallGraph::callee_of)`), which
 is the same fold it already applies to every callee it reports. ELF historically
 inventories the PLT veneer only, not its GOT slot, so the graph admits the slot
 half of each decoded forwarding relation as a zero-extent node; `decompile-graph`

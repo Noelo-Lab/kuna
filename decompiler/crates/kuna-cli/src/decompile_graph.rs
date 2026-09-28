@@ -39,8 +39,9 @@ use object::{Object, ObjectSegment};
 
 use crate::decompile_all::{
     decompile_targets_pooled, load_program, parse_args, resolve_targets_allow_bodyless,
-    synth_base, Args, CallGraph, DriverDefaults,
+    synth_base, Args, DriverDefaults,
 };
+use crate::callgraph::CallGraph;
 use crate::jsonfmt::{dumps_indent2, Json};
 
 /// The document shape. Bumped whenever a field is added, removed or changes
@@ -131,7 +132,7 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
     // The object view first: an input without one (a UEFI TE) is refused
     // before anything is loaded or decompiled for nothing.
     crate::decompile_all::warn_protoorder_inert(&args.options, "decompile-graph");
-    let bytes = crate::decompile_all::image_bytes(&args.binary, args.slice_pref())?;
+    let bytes = crate::image::image_bytes(&args.binary, args.slice_pref())?;
     let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
         .map_err(|error| format!("could not parse {}: {error}", args.binary))?;
     let load_started = std::time::Instant::now();

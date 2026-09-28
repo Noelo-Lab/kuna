@@ -55,39 +55,8 @@ use kuna_num::opcodes::{OpCode, OpcodeDecoder, OpcodeEncoder};
 use crate::context::FixedHandle;
 use crate::slghsymbol::SymbolWalker;
 
-/// `.sla`-format ElementIds/AttributeIds used by the template system
-/// (slaformat.cc, `FORMAT_SCOPE`).  Extends the set already defined by the
-/// pattern/symbol waves, which is re-exported here so template code uses a
-/// single `sla::` namespace.
-pub mod sla {
-    use kuna_base::marshal::{AttributeId, ElementId};
-
-    pub use crate::slghsymbol::sla::*;
-
-    pub const ATTRIB_S: AttributeId = AttributeId::new("s", 5);
-    pub const ATTRIB_PLUS: AttributeId = AttributeId::new("plus", 28);
-    pub const ATTRIB_DELAY: AttributeId = AttributeId::new("delay", 42);
-    pub const ATTRIB_SECTION: AttributeId = AttributeId::new("section", 54);
-    pub const ATTRIB_LABELS: AttributeId = AttributeId::new("labels", 55);
-
-    pub const ELEM_CONST_REAL: ElementId = ElementId::new("const_real", 1);
-    pub const ELEM_VARNODE_TPL: ElementId = ElementId::new("varnode_tpl", 2);
-    pub const ELEM_CONST_SPACEID: ElementId = ElementId::new("const_spaceid", 3);
-    pub const ELEM_CONST_HANDLE: ElementId = ElementId::new("const_handle", 4);
-    pub const ELEM_OP_TPL: ElementId = ElementId::new("op_tpl", 5);
-    pub const ELEM_CONSTRUCT_TPL: ElementId = ElementId::new("construct_tpl", 21);
-    pub const ELEM_HANDLE_TPL: ElementId = ElementId::new("handle_tpl", 30);
-    pub const ELEM_CONST_RELATIVE: ElementId = ElementId::new("const_relative", 31);
-    pub const ELEM_CONST_START: ElementId = ElementId::new("const_start", 80);
-    pub const ELEM_CONST_NEXT: ElementId = ElementId::new("const_next", 81);
-    pub const ELEM_CONST_NEXT2: ElementId = ElementId::new("const_next2", 82);
-    pub const ELEM_CONST_CURSPACE: ElementId = ElementId::new("const_curspace", 83);
-    pub const ELEM_CONST_CURSPACE_SIZE: ElementId = ElementId::new("const_curspace_size", 84);
-    pub const ELEM_CONST_FLOWREF: ElementId = ElementId::new("const_flowref", 85);
-    pub const ELEM_CONST_FLOWREF_SIZE: ElementId = ElementId::new("const_flowref_size", 86);
-    pub const ELEM_CONST_FLOWDEST: ElementId = ElementId::new("const_flowdest", 87);
-    pub const ELEM_CONST_FLOWDEST_SIZE: ElementId = ElementId::new("const_flowdest_size", 88);
-}
+/// SLA IDs used by the template system.
+pub use crate::slaformat::ids as sla;
 
 // We remap these opcodes for internal use during pcode generation
 // (semantics.hh `#define`s).

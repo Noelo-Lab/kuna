@@ -9,7 +9,7 @@
 //!
 //! ## Shape of the port
 //!
-//! - **Lexer** ([`PcodeLexer`]): the C++ hand-written `PcodeLexer` is a
+//! - **Lexer** (`PcodeLexer`): the C++ hand-written `PcodeLexer` is a
 //!   character-by-character state machine (`moveState`) with a two-character
 //!   lookahead; it is transcribed state-for-state, including the `idents`
 //!   binary-search keyword table and the `s`/`f`-prefixed multi-character
@@ -1183,7 +1183,7 @@ fn sleigh_symbol_to_snippet(sym: &SleighSymbol) -> Option<SnippetSymbol> {
 // Recursive-descent parser (the bison grammar, hand-written per LOSS-006)
 // ---------------------------------------------------------------------------
 
-/// The hand-written recursive-descent parser. Drives [`PcodeLexer`] for
+/// The hand-written recursive-descent parser. Drives `PcodeLexer` for
 /// tokens and the [`PcodeSnippet`] (`PcodeCompile`) for the semantic actions,
 /// reproducing the bison grammar's reductions in order. A `bool` flag tracks
 /// the bison `YYERROR`/`yyparse()!=0` path: on a grammar error the parse

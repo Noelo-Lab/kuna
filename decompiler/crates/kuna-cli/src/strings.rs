@@ -111,7 +111,7 @@ pub fn run(argv: &[String]) -> i32 {
 
 /// Scan, attribute, filter, render — the whole command in one pass.
 pub(crate) fn query(args: &StringsArgs) -> Result<String, String> {
-    let bytes = crate::decompile_all::image_bytes(
+    let bytes = crate::image::image_bytes(
         &args.binary,
         kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
     )?;
