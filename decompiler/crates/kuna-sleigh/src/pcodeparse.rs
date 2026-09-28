@@ -1,64 +1,20 @@
-//! Port of `decompiler/cpp/pcodeparse.{cc,hh}` (grammar `pcodeparse.y`)
-//! (item `w2-sleigh-pcodeparse`): the runtime p-code **snippet** parser that
-//! compiles the `<pcode>` injection bodies found in `.cspec`/`.pspec`
-//! constructor/callotherfixup/callfixup definitions.
+//! Runtime p-code snippet parser, from `decompiler/cpp/pcodeparse.{hh,cc}`
+//! and the `pcodeparse.y` grammar. [`PcodeSnippet`] compiles injection bodies
+//! from processor and compiler specifications.
 //!
-//! This is part of the oracle runtime (`decomp_dbg`/`decomp_test_dbg` link
-//! it), not the build-time SLEIGH compiler, so it must reproduce the C++
-//! behavior exactly.
+//! The byte lexer uses two-character lookahead and a NUL end sentinel. The
+//! recursive-descent parser follows the grammar's operator precedence,
+//! associativity and builder-call order, including its disambiguation of sized
+//! integer varnodes and temporary declarations.
 //!
-//! ## Shape of the port
+//! [`SnippetLanguage`] supplies symbols and address spaces; the native
+//! implementation is [`crate::sleighbase::SleighBase`]. [`SnippetSymbol`] is
+//! the parser's projection of a language symbol, and [`get_varnode_tpl`]
+//! converts it to a varnode template using the snippet's constant space.
 //!
-//! - **Lexer** (`PcodeLexer`): the C++ hand-written `PcodeLexer` is a
-//!   character-by-character state machine (`moveState`) with a two-character
-//!   lookahead; it is transcribed state-for-state, including the `idents`
-//!   binary-search keyword table and the `s`/`f`-prefixed multi-character
-//!   operator recognition. The lexer reads from a byte slice (the C++
-//!   `istream`); `'\0'` is the end-of-stream sentinel exactly as in C++.
-//! - **Parser** ([`PcodeSnippet::parse_stream`]): the C++ parser is
-//!   bison-generated (`pcodeparse.cc` LALR tables); per **LOSS-006** there is
-//!   no bison in the Rust toolchain, so it is replaced by a hand-written
-//!   recursive-descent parser. The grammar is `pcodeparse.y`; this port
-//!   reproduces (a) the same `PcodeCompile` calls in the same order, (b) the
-//!   operator precedence/associativity from the `%left`/`%right`/`%nonassoc`
-//!   declarations, (c) the two documented shift/reduce conflict resolutions
-//!   (`%expect 3`): `':'` binds to `INTEGER` (integervarnode) by shifting,
-//!   and `STRING` after `=` is a temporary declaration by shifting, and
-//!   (d) the error text emitted by the `yyerror(...)` grammar actions
-//!   wherever it is observable through `firsterror`.
-//! - **`getVarnode()` resolver** ([`get_varnode_tpl`]): the C++
-//!   `SpecificSymbol::getVarnode()` virtuals (VarnodeSymbol / OperandSymbol /
-//!   Start / End / Next2 / FlowDest / FlowRef) were deferred by the symbol
-//!   wave (**LOSS-022**, refined by **LOSS-026**); this item implements them
-//!   as a free function over the resolved [`SnippetSymbol`], matching the
-//!   per-kind `(space, offset, size)` `ConstTpl` triples of slghsymbol.cc.
-//!   The const space the address-symbols (Start/End/Next2/FlowDest/FlowRef)
-//!   carry is, in every construction site (slgh_compile.cc and
-//!   `PcodeSnippet`'s own ctor), `sleigh->getConstantSpace()` — the same
-//!   space the snippet holds — so the resolver uses the snippet constant
-//!   space, byte-equivalent to reading the (private) `const_space` member.
-//!
-//! ## The language boundary
-//!
-//! C++ `PcodeSnippet` holds a `const SleighBase *sleigh` and calls only
-//! `sleigh->findSymbol(name)`, `sleigh->numSpaces()`, `sleigh->getSpace(i)`,
-//! `sleigh->getDefaultCodeSpace()`, `sleigh->getConstantSpace()`,
-//! `sleigh->getUniqueSpace()` on it. `sleighbase.rs` is still a stub, so —
-//! following the W1/W2 boundary convention — those operations are abstracted
-//! behind the [`SnippetLanguage`] trait, implemented by the decode-engine
-//! wave (`SleighBase`) and synthetically by tests. `findSymbol` returns a
-//! resolved [`SnippetSymbol`] (the parser-relevant projection of the C++
-//! `SleighSymbol *` switch in `PcodeSnippet::lex`).
-//!
-//! ## Local symbol scope
-//!
-//! C++ keeps a `SymbolTree tree` of `SleighSymbol *` (temporaries, operands,
-//! and `LabelSymbol`s) sorted by name. The port keeps a `BTreeMap<Vec<u8>,
-//! SnippetLocal>` (the `SymbolTree` comparator is byte-string name order;
-//! see [`crate::slghsymbol`]). It holds the snippet-local definitions: the
-//! `VarnodeSymbol`s `newOutput`/`newLocalDefinition` create, the
-//! `OperandSymbol`s `addOperand` adds, and the `LabelSymbol`s
-//! `defineLabel` creates. `inst_dest`/`inst_ref` are added by the ctor.
+//! Local temporaries, operands and labels live in a byte-name-ordered
+//! `BTreeMap`, separate from the language's symbols. The constructor also
+//! defines the `inst_dest` and `inst_ref` address symbols.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;

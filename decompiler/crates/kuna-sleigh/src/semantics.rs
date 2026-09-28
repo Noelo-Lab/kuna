@@ -1,48 +1,18 @@
-//! Port of `decompiler/cpp/semantics.{hh,cc}` (item `w2-sleigh-semantics`):
-//! the p-code construct templates decoded from a compiled `.sla` file.
+//! P-code construct templates and builder dispatch, from
+//! `decompiler/cpp/semantics.{hh,cc}`.
 //!
-//! ## What is ported
+//! [`ConstTpl`] resolves constants, handle references and instruction-address
+//! placeholders through [`SymbolWalker`]. Address-space constants store manager
+//! indices instead of process pointers. A null space encodes as zero.
+//! `fix_space` distinguishes a nullable result from a resolution error.
 //!
-//! - [`ConstTpl`]: a constant template with all `const_type` variants
-//!   (real constants, handle references with `v_field` selection including
-//!   `v_offset_plus` truncation, space ids, relative jump offsets, the
-//!   `j_*` placeholders).  `fix`/`fixSpace` resolve against the
-//!   `ParserWalker` boundary ([`SymbolWalker`], defined by the symbol wave).
-//! - [`VarnodeTpl`] / [`OpTpl`] / [`HandleTpl`] / [`ConstructTpl`] with
-//!   their encode/decode paths (`.sla` FORMAT_SCOPE ids, see [`sla`]).
-//! - [`PcodeBuilder`]: the SLEIGH-specific p-code generator dispatch
-//!   (`build`), as a trait whose required methods are the C++ virtuals.
+//! [`VarnodeTpl`], [`OpTpl`], [`HandleTpl`] and [`ConstructTpl`] own their child
+//! values and encode or decode the compiled `.sla` representation. Their mutable
+//! accessors also support compiler construction and size propagation.
 //!
-//! ## Representation notes
-//!
-//! - The C++ `value` union (`AddrSpace *spaceid` / `int4 handle_index`) is
-//!   two struct fields; only the field matching `type` is meaningful, as in
-//!   C++ (the inactive arm is dead data).
-//! - C++ encodes an `AddrSpace *` **pointer** as a `uintb`
-//!   (`(uintb)(uintp)spc`, `ConstTpl::fix`).  The port follows the
-//!   `kuna-num` `pcoderaw.rs` convention and encodes the space's *manager
-//!   index* instead (`VarnodeData::get_space_from_const` recovers it
-//!   through the `AddrSpaceManager`); a C++ null pointer encodes as 0.
-//!   This also makes `ConstTpl::operator<` deterministic where C++
-//!   compared heap pointers.
-//! - C++ nullable owning pointers (`OpTpl::output`, `ConstructTpl::result`)
-//!   are `Option<...>` by value; `vector<VarnodeTpl *>` /
-//!   `vector<OpTpl *>` are `Vec<...>` by value.
-//! - `ConstTpl::fixSpace` returns `KunaResult<Option<Rc<AddrSpace>>>`: the
-//!   `Option` mirrors the C++ nullable `AddrSpace *` result and the `Err`
-//!   mirrors the C++ `LowlevelError` throw.  Call sites that C++
-//!   dereferences unconditionally `expect()` (UB in C++ = internal
-//!   invariant violation, ADR 0004).
-//! - The C++ `PcodeBuilder` private fields `labelbase`/`labelcount` become
-//!   required accessors on the trait (Rust traits cannot hold state); the
-//!   protected `ParserWalker *walker` member and `getCurrentWalker()` are
-//!   left to the implementor (the sleigh decode-engine wave), which holds
-//!   its own walker.
-//! - The compiler-only protected mutators `ConstructTpl::setOpvec` /
-//!   `setNumLabels` (friend `SleighCompile`) are not ported (LOSS-001
-//!   scope); `get_opvec_mut` is a port-added accessor standing in for the
-//!   C++ pattern of mutating template ops through `vector<OpTpl *>`
-//!   pointees (used by `pcodecompile.rs` size propagation).
+//! [`PcodeBuilder`] dispatches template operations. Implementors provide label
+//! state and their own walker; the runtime implementation lives in
+//! [`crate::sleigh`].
 
 use std::rc::Rc;
 

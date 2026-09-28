@@ -1335,6 +1335,58 @@ callee-first module hashes remained unchanged through the final gate. The
 CLI Clippy audit remains open at 17 errors and 20 warnings; it is not a passing
 gate. Final gate logs use `/tmp/kuna-deslop-callee-final-*.log`.
 
+## FID deduplication and runtime documentation
+
+Cross-input FID dedup now borrows each name while building a membership mask,
+then compacts the input in order after releasing those borrows. It keeps the
+first record's metadata and distinguishes full hash, specific hash and name;
+the database API, format and generation policy are unchanged. The lookup-only
+set has a narrowly justified collection-policy expectation, since the mask
+rather than hash iteration determines output order.
+
+Two persistent tests pass against the extracted original two-statement logic
+before replacement. They cover first metadata, order, hash collisions, aliases,
+empty input and all-duplicate input. Both overflow modes match 8,192 sequences,
+including 524,022 input records and their serialized databases per mode. Source
+checks pin the installed helper to that model and all ten other production
+functions, with only the checked forwarding substitution in the command.
+
+For 4,096 unique records, dedup allocation requests fall from 4,108 to 13 and
+cumulative requested bytes from 741,404 to 544,828. The duplicate-heavy case
+falls from 4,101 to 6 requests and 74,796 to 8,268 bytes. Empty names instead
+add one request (12 to 13), while bytes fall from 671,772 to 544,828. These are
+dedup-only allocation traffic, not peak memory, verified in three repetitions.
+Thirty measured CPU-41-pinned component pairs reduce paired time by 28.1%,
+33.1%, 27.6%, 12.8% and 14.1% for unique, duplicate, full-hash-collision,
+long-name and empty-name inputs respectively.
+
+All 15 real FID CLI comparisons retain exact status, diagnostics and database
+bytes, including repeated objects, duplicate archive members, header variants
+and errors. Successful default-header cases also match the vendored database.
+Thirty measured end-to-end pairs change median wall time by -0.03%/+3.59%/-0.90%
+for single, eight-repeated-object and archive inputs; paired changes are
+-0.003%/-1.44%/-0.14%. Every timed database and diagnostic also matches. The
+component savings are not a claim of a measurable end-to-end speedup; all
+three cases remain within the 5% budget.
+
+Seven runtime module headers now describe implemented code instead of claiming
+the decoder, IR emulation, snippet language or template mutators are absent.
+They remove 170 lines, preserving the already corrected compiler/crate headers.
+Every non-header byte is unchanged. Strict rustdoc passes before and after;
+242 CLI and 375 compiler/runtime focused tests pass without warnings. The
+286 compiler CLI cases match status, diagnostics and raw/decoded hashes. The
+CLI Clippy audit is still failing, now at 16 errors and 20 warnings.
+
+Root artifacts are under `/tmp/kuna-deslop-fid-dedup.Dk64MKp8`; the final native
+build log is `/tmp/kuna-deslop-fid-final-build.log` (17.37 seconds, no warnings).
+
+The final frozen tree passes 675/675 upstream and 1,467/1,467 stage assertions,
+7,440 workspace tests (38 ignored, 438 groups, zero warnings), and spec checks.
+Also green are 268 CLI probes, 42 Python tests, 56 Ghidra tests, 48 compiler XML
+oracles, 17 saved CLI comparisons, and all eleven browser scripts against fresh
+WASM. The tracked diff hash is unchanged through the final gate. Logs use
+`/tmp/kuna-deslop-fid-final-*.log`; no baseline expectation moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1345,7 +1397,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering and callee-first feedback have separate owners. Loading/configuration and the remaining pool module still combine several lifecycle policies; review the next meaningful boundary. |
-| Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 17 errors and 20 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
+| Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 16 errors and 20 warnings. Declaration naming, rendered-signature dedup, FID dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 

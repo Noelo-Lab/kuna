@@ -1,32 +1,17 @@
-//! Port of `decompiler/cpp/sleigh.{hh,cc}` + the parser pieces of
-//! `context.{hh,cc}` (W2, item `w2-sleigh-core`): the main SLEIGH decode
-//! engine.
+//! Instruction decoding and p-code generation, from
+//! `decompiler/cpp/sleigh.{hh,cc}` and the parser portions of `context.{hh,cc}`.
 //!
-//! What lives here:
+//! [`Sleigh`] combines specification state, a loader, context values and reusable
+//! parser and p-code arenas. Parser nodes use indices into a state vector;
+//! walkers retain the current node and breadcrumb path.
 //!
-//! - `ConstructState` / `ContextSet` / [`ParserContext`] / `ParserWalker`
-//!   / `ParserWalkerChange` from `context.{hh,cc}` (context.rs deferred them
-//!   here — see that module's docs — because they are built around the symbol
-//!   table and the engine).  The C++ pointer tree becomes an index-based arena
-//!   (ADR 0001): `ConstructState` nodes live in `ParserContext::state`, child
-//!   links are `Option<usize>` indices, the `ParserWalker` carries a node
-//!   index plus the breadcrumb path.
-//! - `PcodeCacher` / `SleighBuilder` / [`Sleigh`] from `sleigh.{hh,cc}`.
-//!   Parser contexts are recycled between decodes while retaining their state
-//!   arenas, the allocation-saving part of the C++ `DisassemblyCache`.
+//! Walkers implement the symbol and pattern-expression interfaces while
+//! borrowing the symbol table. Constructor references identify the resolved
+//! constructor without retaining mutable references into its table.
 //!
-//! The walker implements the `SymbolWalker`/`SymbolWalkerChange`/
-//! `PatternExpressionContext` hooks (slghsymbol.rs / slghpatexpress.rs):
-//! constructor resolution returns a `ConstructorRef`, and the walker borrows
-//! the [`SymbolTable`] so it can navigate constructors/operands during a walk.
-//!
-//! Interior mutability: the C++ `Translate::oneInstruction`/`instructionLength`
-//! are `const` but mutate caches and read the load image through pointers; the
-//! Rust [`Sleigh`] keeps the load image, context database, context cache and
-//! disassembly/p-code caches behind `RefCell` so the trait methods stay `&self`
-//! (ADR 0004 reserves panics for invariant violations — borrow conflicts here
-//! are invariant violations, since the engine is single-threaded and never
-//! re-enters a cache mid-borrow).
+//! Loaders, context state and caches use interior mutability so the translation
+//! methods can take `&self`. Checked-out parser contexts use distinct storage,
+//! including nested `inst_next2` and delay-slot decodes.
 
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};

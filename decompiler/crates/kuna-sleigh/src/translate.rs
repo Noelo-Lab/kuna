@@ -1,47 +1,18 @@
-//! Port of `decompiler/cpp/translate.hh` + `translate.cc` (W2, item
-//! `w2-sleigh-translate`): the abstract `Translate` layer for disassembly
-//! and p-code generation.
+//! Disassembly and p-code translation interfaces, from
+//! `decompiler/cpp/translate.{hh,cc}`.
 //!
-//! Where the C++ file's pieces live in the Rust port:
+//! [`Translate`] extends [`RegisterLookup`] and exposes [`TranslateBase`]
+//! configuration. Engines own an [`AddrSpaceManager`]; register lookup is
+//! installed separately so base-level decode paths can resolve named registers.
 //!
-//! - The `AddrSpaceManager` (including the `JoinRecord` machinery,
-//!   `SpacebaseSpace`, the resolver list and `decode_space`/`decode_spaces`)
-//!   lives in `kuna_base::space` — the W1 lookup core was already there, and
-//!   the W2 extensions joined it rather than duplicating the manager (the
-//!   `JoinSpace`/`Address` virtuals in kuna-base need to reach the join
-//!   table without a back-pointer).  This module re-exports the
-//!   translate.hh names so the C++ file maps onto one Rust module.
-//! - `JoinRecord` pieces (and `SpacebaseSpace` base registers) are
-//!   `kuna_base::space::VarnodeStorage` — a kuna-base mirror of the
-//!   `VarnodeData` triple, because the canonical
-//!   [`kuna_num::pcoderaw::VarnodeData`] cannot be named from kuna-base.
-//!   [`varnode_data_from_storage`]/[`storage_from_varnode_data`] convert at
-//!   the boundary.
-//! - The C++ abstract class `Translate` splits into:
-//!   [`kuna_base::space::RegisterLookup`] (the register-name virtuals, a
-//!   supertrait so kuna-base decode paths can consult registers through the
-//!   manager), the [`Translate`] trait here (the remaining virtuals), and
-//!   [`TranslateBase`] (the concrete base-class state:
-//!   endianness/unique base/alignment/float formats), reached through
-//!   [`Translate::translate_base`].  C++ `Translate` also *is* an
-//!   `AddrSpaceManager`; the Rust engine implementing the trait owns a
-//!   `kuna_base::space::AddrSpaceManager` instead (composition), and
-//!   installs itself as the manager's `RegisterLookup`
-//!   (`AddrSpaceManager::set_register_lookup`).
-//! - `UnimplError`/`BadDataError` were ported in W1 as the
-//!   `KunaError::Unimpl`/`KunaError::BadData` variants (kuna-base
-//!   `error.rs`).
-//! - `PcodeEmit::decodeOp` uses `PcodeOpRaw::decode` from
-//!   `kuna_num::pcoderaw` over the [`OpcodeDecoder`] extension trait.
+//! Address-space management and join records live in `kuna-base` and are
+//! re-exported here. [`varnode_data_from_storage`] and
+//! [`storage_from_varnode_data`] convert between base-level [`VarnodeStorage`]
+//! and numeric p-code varnodes.
 //!
-//! Marshal ids: `ATTRIB_CODE`/`ELEM_SPACEID` were pre-defined by
-//! `kuna_num::pcoderaw` (re-exported here, as promised there); the ids
-//! needed by kuna-base decode paths (`ATTRIB_CONTAIN`, `ATTRIB_DEFAULTSPACE`
-//! and the `ELEM_SPACE*` family) are defined in `kuna_base::space` and
-//! re-exported here; the rest of the translate.cc table is defined below.
-//! [`register_translate_ids`] registers the complete table on an
-//! [`IdRegistry`] (the explicit replacement for the C++ global-constructor
-//! registration; see kuna-base marshal.rs module docs).
+//! [`PcodeEmit`] receives decoded operations; [`AssemblyEmit`] receives assembly
+//! text. [`register_translate_ids`] registers the translation marshal identifiers,
+//! including the identifiers shared with `kuna-base` and `kuna-num`.
 
 use std::collections::BTreeMap;
 

@@ -1,25 +1,15 @@
-//! Port of `decompiler/cpp/sleighbase.{hh,cc}` (W2, item `w2-sleigh-core`):
-//! [`SourceFileIndexer`] and [`SleighBase`], the common core of everything
-//! that reads or writes SLEIGH specification files natively.
+//! Shared SLEIGH specification state, from
+//! `decompiler/cpp/sleighbase.{hh,cc}`.
 //!
-//! Architecture mapping (C++ has no multiple inheritance to reproduce):
+//! [`SleighBase`] owns address spaces, [`TranslateBase`] configuration, the
+//! [`SymbolTable`], constructor templates and register cross-references.
+//! [`crate::sleigh::Sleigh`] embeds it and adds the loader and parsing state.
+//! [`SourceFileIndexer`] records source-file names used by compiled specifications.
 //!
-//! - C++ `SleighBase : Translate` *is* an `AddrSpaceManager` and *holds* the
-//!   `TranslateBase` state.  The Rust [`SleighBase`] **owns** an
-//!   `AddrSpaceManager`, a [`TranslateBase`], the [`SymbolTable`], the
-//!   register cross-reference map, the user-op list, and the
-//!   `ConstructTpl` store (the `ConstructTplHandle` backing the
-//!   [`SleighBaseTrans`] boundary).  The concrete `Sleigh` engine (sleigh.rs)
-//!   embeds a `SleighBase` and adds the load image / context machinery.
-//! - The C++ register virtuals (`getRegister`/`getRegisterName`/...) are the
-//!   [`RegisterLookup`] surface; [`SleighBase`] is installed as the manager's
-//!   register lookup so kuna-base decode paths reach the symbol-table-backed
-//!   register map.  Because the lookup is shared by `Rc`, the register map is
-//!   built once after decode and stored behind a clone-on-read accessor.
-//! - The `SleighBaseTrans` boundary needed by `SymbolTable::decode`
-//!   (`getConstantSpace` + `ConstructTpl` decode) is satisfied by a
-//!   short-lived `TemplateDecoder` borrowing the constant space and the template
-//!   store, so it stays disjoint from the `&mut symtab` borrow.
+//! [`SnapshotRegisterLookup`] provides an independent register lookup for the
+//! address-space manager, avoiding a reference cycle back to the engine.
+//! During symbol decoding, a temporary `TemplateDecoder` borrows the constant
+//! space and template store separately from the mutable symbol table.
 
 use std::cell::OnceCell;
 use std::collections::btree_map::Entry;

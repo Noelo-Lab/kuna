@@ -1181,3 +1181,24 @@ build/check logs. The error driver is `/tmp/kuna-deslop-runtime-errors.rs`.
 All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
 assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
 across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+### Runtime module documentation
+
+The independent header cleanup replaces obsolete port milestones with the
+implemented interfaces and ownership: the parser/context split, template
+mutators, register lookup snapshots and IR emulation in `kuna-decomp`.
+It removes 201 lines across eight headers. Root integration preserves its
+already corrected `pcodecompile.rs` header and label documentation, so the
+seven headers applied here remove 170 lines. Relevant representation details
+remain, including byte-string names, manager-index constants and label state.
+
+Every byte following each module header matches the committed baseline.
+Documentation builds before and after pass with broken intra-doc links
+treated as errors. Independent evidence is in
+`/tmp/kuna-deslop-runtime-docs-body-proof.json` and matching build logs;
+root verification is under `/tmp/kuna-deslop-fid-dedup.Dk64MKp8/`.
+There is no executable-code change to benchmark.
+
+The independent branch passes all four gates: 675/675 upstream and 1,467/1,467
+stage assertions, 7,714 workspace tests with 38 ignores across 433 groups,
+and spec/catalog checks. Root integration totals are recorded in `deslop.md`.

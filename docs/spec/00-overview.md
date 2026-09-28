@@ -160,6 +160,13 @@ only prototype parking; ledger resets, budgets and failed-redo handling remain
 part of the same execution path. Loading and target selection stay in the parent
 command module, while call-graph planning stays in `callgraph.rs`.
 
+FID library ingestion deduplicates across inputs in
+`decompiler/crates/kuna-cli/src/fid.rs (dedup_records)`. Membership is keyed by
+full hash, specific hash and borrowed name; a retain mask preserves input order
+and the first record's metadata without cloning names. Different names or
+specific hashes remain separate records. Database serialization and command
+diagnostics are unchanged.
+
 Browser smoke tests use `integrations/web/test/cdp-client.mjs` as a checked
 process boundary: spawn, exit and port-deadline failures retain bounded stderr
 diagnostics and clean up the owned profile. Availability skips remain the
