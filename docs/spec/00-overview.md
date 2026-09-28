@@ -106,7 +106,7 @@ the read-symbols boundary is a no-op — the facts were already committed or
 dropped, and the drained stash means a second `read symbols` re-commits nothing.
 Every driver therefore emits option lines strictly between `load file` and
 `read symbols` (`decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`,
-`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`).
+`decompiler/crates/kuna-cli/src/decompile.rs (build_script_for_input)`).
 
 The commit is also not transactional. Its arms mutate the architecture in place
 and in order, so an arm that fails leaves the earlier ones applied and abandons
@@ -146,7 +146,7 @@ Four front-ends drive one engine assembly:
   same bootstrap over the XML corpus. This is the parity surface: it never arms
   the watchdog and (on the XML path) never runs tier one.
 - (kuna) **`kuna decompile`** (`decompiler/crates/kuna-cli/src/decompile.rs
-  (build_script)`) — subprocess-per-function: it scripts a fresh `decomp_dbg` for
+  (build_script_for_input)`) — subprocess-per-function: it scripts a fresh `decomp_dbg` for
   each request, so every invocation re-parses the SLEIGH spec and re-runs the
   whole-binary analysis. It injects `option listing on` by default (unless the
   caller names `listing`), so the no-return analyses fire even on the
@@ -771,6 +771,11 @@ to is not an answer on a machine that has no checkout, and a missing SLEIGH tree
 is reported where it is resolved rather than as the engine's downstream
 `No sleigh specification` — which reads as a problem with the binary.
 
+`kuna specs --diff` is informational: it writes verification guidance without
+starting a compiler (`decompiler/crates/kuna-cli/src/specs.rs (run)`). It identifies
+pinned Ghidra compiler element-stream comparisons separately from decompiler
+behavioral assertions; neither substitutes for the other.
+
 (kuna) **Compiler filenames.** The single-file `slacomp` command accepts one input
 and at most one output filename. It appends `.slaspec` or `.sla` when the filename
 has no extension; dots in parent directories do not count. Explicit matching
@@ -906,6 +911,11 @@ context changes remain owned by their constructors.
 Aligned instruction patterns intersect and find their common subpattern from
 borrowed blocks. Blocks are normalized when constructed or decoded, so a zero
 alignment shift needs no copied block or additional normalization.
+
+Mask and value reads share one word extractor, preserving unsigned word-index
+conversion, zero fill outside the stored words and masked shift counts.
+Specialization, identity and intersection resolution compare instruction then
+context constraints with the same short-circuit order and absent-block rules.
 
 Decision nodes enumerate compatible branch values in ascending order without
 building a temporary list. Terminal nodes sort pattern indices by specialization
@@ -1083,7 +1093,7 @@ line (DIV-89).
 (kuna) **The console's filename grammar.** `kuna decompile` is the one front-end
 that reaches the engine through a console *script* rather than an in-process
 call: it writes `load file <path>` / `openfile write <path>` into `decomp_dbg`'s
-stdin (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`), where the
+stdin (`decompiler/crates/kuna-cli/src/decompile.rs (build_script_for_input)`), where the
 other three read the image with `bootstrap_from_object` and never tokenize the
 path at all. Upstream reads every path with `s >> filename`, a pure whitespace
 scan, so a path containing a space arrived as two arguments: `load file` took the
@@ -1174,7 +1184,7 @@ touches the engine default or the console/datatest surfaces.
 Single-function `kuna decompile` reads the same table, and that is why the table
 is shared rather than duplicated: it builds a `decomp_dbg` script instead of
 loading in-process, so it applies the pairs as `option` lines ahead of
-`read symbols` (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`).
+`read symbols` (`decompiler/crates/kuna-cli/src/decompile.rs (build_script_for_input)`).
 What it does differently is *when*. It injects the Listing up front and holds the
 discovery half back for a **second attempt**, made only when the console answers
 a by-name selection with `no function matches`.
@@ -1723,7 +1733,7 @@ applies them to the first pass's `Funcdata` (`assertions::apply_symbol_scoped`),
 and decompiles again with the mutated local scope carried across as
 `mapped_symbols`. That second pass is emitted only when such a directive bound to
 the function, so every run without one costs exactly what it did before. The
-script surface (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`)
+script surface (`decompiler/crates/kuna-cli/src/decompile.rs (build_script_for_input)`)
 emits the same facts at the same three slots, with the same conditional second
 `decompile`.
 
@@ -1829,7 +1839,7 @@ while the identical directive bound the moment the same run selected the functio
 BY NAME. Pointing `--addr` at an address claims a lift entry, but does not
 override loader knowledge that the address is an import pointer. The generated
 script ensures a symbol exists
-(`decompiler/crates/kuna-cli/src/decompile.rs (build_script, selected_vma)` ->
+(`decompiler/crates/kuna-cli/src/decompile.rs (build_script_for_input, selected_vma)` ->
 `function symbol <vma>` -> `ConsoleProgram::ensure_function_symbol`) between the
 caller's own `--define-function` declarations and the program-scoped directives.
 It is the symbol-table half of `--define-function <start>`, and it is skipped

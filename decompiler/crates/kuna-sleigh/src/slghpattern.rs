@@ -331,70 +331,28 @@ impl PatternBlock {
 
     /// C++ `PatternBlock::getMask`.
     pub fn get_mask(&self, startbit: i32, size: i32) -> u32 {
-        let startbit = startbit - 8 * self.offset;
-        // Note the division and remainder here is unsigned (C++ divides the
-        // int4 by `8*sizeof(uintm)`, a size_t, promoting the dividend to
-        // 64-bit unsigned).  Then it is recast to signed.  If startbit is
-        // negative, then wordnum1 is either negative or very big; in either
-        // case, shift comes out between 0 and 31.
-        let ustart = startbit as i64 as u64; // int4 -> size_t: sign-extend then reinterpret
-        let wordnum1 = (ustart / 32) as i32; // size_t -> int4 truncation
-        let shift = (ustart % 32) as i32; // in [0,31]
-        let wordnum2 = ((startbit + size - 1) as i64 as u64 / 32) as i32; // same int4 -> size_t -> int4 path
-
-        // (wordnum1<0)||(wordnum1>=maskvec.size()): the second compare is
-        // int4 vs size_t in C++ but is only reached with wordnum1 >= 0
-        let mut res: u32 = if wordnum1 < 0 || wordnum1 as usize >= self.maskvec.len() {
-            0
-        } else {
-            self.maskvec[wordnum1 as usize] // wordnum1 >= 0 here
-        };
-
-        res = res.wshl(shift as u32); // shift in [0,31]
-        if wordnum1 != wordnum2 {
-            let tmp: u32 = if wordnum2 < 0 || wordnum2 as usize >= self.maskvec.len() {
-                0
-            } else {
-                self.maskvec[wordnum2 as usize] // wordnum2 >= 0 here
-            };
-            // 32-shift: shift==0 cannot reach this branch for the size<=32
-            // call sites (it would be shift-by-32 UB in C++); out-of-range
-            // counts resolve x86-masked (ADR 0003)
-            res |= tmp.wshr((32 - shift) as u32);
-        }
-        // size in (0,32] for all C++ call sites; x86-masked otherwise
-        res = res.wshr((32 - size) as u32);
-
-        res
+        self.get_bits(&self.maskvec, startbit, size)
     }
 
     /// C++ `PatternBlock::getValue`.
     pub fn get_value(&self, startbit: i32, size: i32) -> u32 {
+        self.get_bits(&self.valvec, startbit, size)
+    }
+
+    /// Extract a field with the C++ unsigned word indexing and masked shifts.
+    fn get_bits(&self, words: &[u32], startbit: i32, size: i32) -> u32 {
         let startbit = startbit - 8 * self.offset;
-        // Same unsigned division/remainder transcription as get_mask
-        let ustart = startbit as i64 as u64; // int4 -> size_t: sign-extend then reinterpret
-        let wordnum1 = (ustart / 32) as i32; // size_t -> int4 truncation
-        let shift = (ustart % 32) as i32; // in [0,31]
-        let wordnum2 = ((startbit + size - 1) as i64 as u64 / 32) as i32; // same int4 -> size_t -> int4 path
+        let ustart = startbit as i64 as u64;
+        let wordnum1 = (ustart / 32) as i32;
+        let shift = (ustart % 32) as i32;
+        let wordnum2 = ((startbit + size - 1) as i64 as u64 / 32) as i32;
 
-        let mut res: u32 = if wordnum1 < 0 || wordnum1 as usize >= self.valvec.len() {
-            0
-        } else {
-            self.valvec[wordnum1 as usize] // wordnum1 >= 0 here
-        };
-        res = res.wshl(shift as u32); // shift in [0,31]
+        let mut res = words.get(wordnum1 as usize).copied().unwrap_or(0).wshl(shift as u32);
         if wordnum1 != wordnum2 {
-            let tmp: u32 = if wordnum2 < 0 || wordnum2 as usize >= self.valvec.len() {
-                0
-            } else {
-                self.valvec[wordnum2 as usize] // wordnum2 >= 0 here
-            };
-            // see get_mask for the shift-count notes
-            res |= tmp.wshr((32 - shift) as u32);
+            let next = words.get(wordnum2 as usize).copied().unwrap_or(0);
+            res |= next.wshr((32 - shift) as u32);
         }
-        res = res.wshr((32 - size) as u32);
-
-        res
+        res.wshr((32 - size) as u32)
     }
 
     /// C++ `PatternBlock::alwaysTrue`.
@@ -816,111 +774,33 @@ impl DisjointPattern {
         }
     }
 
-    /// C++ `DisjointPattern::specializes`: return true if everywhere this's
-    /// mask is non-zero, op2's mask is non-zero and op2's value matches.
+    /// Compare instruction and context specialization (`DisjointPattern::specializes`).
     pub fn specializes(&self, op2: &DisjointPattern) -> bool {
-        let a = self.get_block(false);
-        let b = op2.get_block(false);
-        if let Some(b) = b {
-            if !b.always_true() {
-                // a must match existing block
-                match a {
-                    None => return false,
-                    Some(a) => {
-                        if !a.specializes(b) {
-                            return false;
-                        }
-                    }
-                }
+        [false, true].into_iter().all(|context| {
+            match (self.get_block(context), op2.get_block(context)) {
+                (_, None) => true,
+                (None, Some(b)) => b.always_true(),
+                (Some(a), Some(b)) => b.always_true() || a.specializes(b),
             }
-        }
-        let a = self.get_block(true);
-        let b = op2.get_block(true);
-        if let Some(b) = b {
-            if !b.always_true() {
-                // a must match existing block
-                match a {
-                    None => return false,
-                    Some(a) => {
-                        if !a.specializes(b) {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-        true
+        })
     }
 
-    /// C++ `DisjointPattern::identical`: return true if patterns match
-    /// exactly.
+    /// C++ `DisjointPattern::identical`: instruction and context constraints match.
     pub fn identical(&self, op2: &DisjointPattern) -> bool {
-        let a = self.get_block(false);
-        let b = op2.get_block(false);
-        match b {
-            Some(b) => {
-                // a must match existing block
-                match a {
-                    None => {
-                        if !b.always_true() {
-                            return false;
-                        }
-                    }
-                    Some(a) => {
-                        if !a.identical(b) {
-                            return false;
-                        }
-                    }
-                }
+        [false, true].into_iter().all(|context| {
+            match (self.get_block(context), op2.get_block(context)) {
+                (None, None) => true,
+                (Some(a), None) | (None, Some(a)) => a.always_true(),
+                (Some(a), Some(b)) => a.identical(b),
             }
-            None => {
-                if let Some(a) = a {
-                    if !a.always_true() {
-                        return false;
-                    }
-                }
-            }
-        }
-        let a = self.get_block(true);
-        let b = op2.get_block(true);
-        match b {
-            Some(b) => {
-                // a must match existing block
-                match a {
-                    None => {
-                        if !b.always_true() {
-                            return false;
-                        }
-                    }
-                    Some(a) => {
-                        if !a.identical(b) {
-                            return false;
-                        }
-                    }
-                }
-            }
-            None => {
-                if let Some(a) = a {
-                    if !a.always_true() {
-                        return false;
-                    }
-                }
-            }
-        }
-        true
+        })
     }
 
-    /// C++ `DisjointPattern::resolvesIntersect`: is this pattern equal to
-    /// the intersection of `op1` and `op2`.
+    /// C++ `DisjointPattern::resolvesIntersect`: equal to the intersection of `op1` and `op2`.
     pub fn resolves_intersect(&self, op1: &DisjointPattern, op2: &DisjointPattern) -> bool {
-        if !resolve_intersect_block(
-            op1.get_block(false),
-            op2.get_block(false),
-            self.get_block(false),
-        ) {
-            return false;
-        }
-        resolve_intersect_block(op1.get_block(true), op2.get_block(true), self.get_block(true))
+        [false, true].into_iter().all(|context| {
+            resolve_intersect_block(op1.get_block(context), op2.get_block(context), self.get_block(context))
+        })
     }
 
     /// C++ `DisjointPattern::decodeDisjoint`: DisjointPattern factory.

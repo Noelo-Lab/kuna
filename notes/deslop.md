@@ -858,6 +858,41 @@ CLI comparisons. The tracked diff and both moved/new source paths retained their
 frozen hashes through the final suite exit. The preceding commit's six CodeQL
 analyses and parity CI passed.
 
+## Twenty-third checkpoint: truthful compiler guidance and pattern access
+
+`kuna specs --diff` said there was no in-tree compiler oracle, claimed datatest
+success replaced compiler-output comparison, and linked a deleted document.
+It remains an informational command with exit 0 and no compiler invocation,
+but now names the pinned Ghidra compiler test separately from the decompiler's
+behavioral gate and links the current provenance documents. Help and the
+embedded CLI manual agree. Six specification anchors and one field comment
+now identify the production script builder rather than its test-only wrapper.
+
+The real-CLI regression fails against the old message and passes afterward.
+It points the child-only compiler override at a non-executable manifest, so
+accidentally invoking a compiler cannot pass. All six help tests pass in cargo
+and in the independently compiled test executable. The advertised compiler
+command was run from the repository root and passes its pinned-oracle test.
+The final release and CLI documentation builds are warning-free. The help-test
+header no longer claims that its manually copied command list automatically
+covers future additions; that duplication remains a separate design issue.
+
+The compiler contribution shares mask/value extraction and instruction/context
+comparison paths without changing public signatures or short-circuit order.
+Root checks confirm the actual before/after modules match the compared source.
+With overflow checks both enabled and disabled, all 1,844,850 word reads and
+boundary outcomes, 280,000 algebra results and 60,000 predicates agree. All 375
+compiler/SLEIGH release tests and 286 compiler status/diagnostic/image cases
+pass. Independent allocation totals are unchanged; the full-compilation timing
+range in `notes/deslop-slacomp.md` is -0.77% to +0.61%.
+
+Final frozen-tree checks passed: 675 upstream and 1467 stage assertions,
+7431 workspace tests (38 ignored, no warnings), spec/catalog checks, 268 CLI
+probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
+CLI comparisons. All eight gate processes exited zero, and the tracked diff
+retained its frozen hash through the last exit. The preceding commit's six
+CodeQL analyses, aggregate and parity CI passed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.

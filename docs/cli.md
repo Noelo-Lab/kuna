@@ -74,6 +74,24 @@ prefix, in the `warnings` array of `kuna functions --summary --json` (and as
 learns that the image it is orienting in was repaired. A well-formed image has
 `"warnings": []`.
 
+## Compiling and verifying SLEIGH specs
+
+`kuna specs` forwards compilation arguments to `slacomp`. `kuna specs --diff`
+only prints verification guidance; it does not invoke a compiler or run checks.
+From the source checkout's root:
+
+```sh
+cargo test --manifest-path decompiler/Cargo.toml --release -p kuna-slacomp --test compiler_parity
+make test
+```
+
+The first command compares decompressed `.sla` contents with pinned Ghidra
+outputs. The second checks decompiler behavior against the datatest baseline.
+These are separate contracts: passing the datatests does not establish compiler
+output equality. Fixture provenance is in
+`decompiler/crates/kuna-slacomp/tests/golden/README.md`; the retired live C++
+differential is described in `docs/history.md`.
+
 ## Where kuna finds the engine and the specs
 
 `kuna` drives two sibling binaries — `decomp_dbg` (the engine behind `decompile`

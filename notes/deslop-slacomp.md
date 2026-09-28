@@ -776,3 +776,30 @@ The pattern-construction snapshot passed all four gates: 675 upstream and 1,467
 stage assertions, 7,714 workspace tests with 38 existing ignores, and the spec
 check. The option catalog passed. No baseline, test count or oracle expectation
 changed.
+
+Pattern masks and values now share one word extractor. It retains the signed
+extension to unsigned word indices, zero fill for missing words and masked
+shift counts. Disjoint-pattern specialization, identity and intersection
+resolution use ordered instruction/context iteration, preserving early exits
+and the rules for absent or unconstrained blocks. This removes 120 production
+lines while retaining every public signature.
+
+A comparison of the actual old and new modules checks 1,844,850 mask/value reads
+and boundary outcomes, 280,000 algebra results and 60,000 pattern predicates.
+All agree with overflow checks both enabled and disabled, including negative
+positions, cross-word fields, unusual widths and integer-boundary panics. The
+production source matches the compared candidate. All 371 existing release
+tests, 48 binary/XML compiler oracles and 286 CLI cases pass unchanged.
+
+Full-compilation allocation requests and requested bytes are identical in
+three repetitions on Toy builder, x86-64 and Hexagon, as are the output images.
+Alternating uninstrumented runs pinned to CPU 40 measured Toy-builder wall time
+at 6.2820 → 6.2337 ms (-0.77%, 110 samples per version), x86-64 at 435.3269 →
+432.6248 ms (-0.62%, 12 samples), and Hexagon at 143.9592 → 144.8409 ms
+(+0.61%, 12 samples). Child CPU changes were -0.65%, -0.62%, and +0.62%.
+Every output was identical. Measurements followed warmups on the shared host.
+
+The extraction/comparison snapshot passed all four gates: 675 upstream and 1,467
+stage assertions, 7,714 workspace tests with 38 existing ignores, and the spec
+check. The option catalog passed. No baseline, test count or oracle expectation
+changed.

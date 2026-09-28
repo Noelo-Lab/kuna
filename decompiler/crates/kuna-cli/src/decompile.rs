@@ -42,9 +42,8 @@ pub struct DecompileArgs {
     /// `--define-function <start[-end][=name] | @file>` (repeatable): the
     /// caller-declared function boundaries, lowered to `function bounds` lines.
     pub func_decls: Vec<crate::funcdecl::FuncDecl>,
-    /// `--assert <directive> | @FILE` (repeatable): the caller-supplied
-    /// assertions, lowered to console lines at the slots `build_script`
-    /// documents (`crate::assertdecl`).
+    /// `--assert <directive> | @FILE` (repeatable), lowered to console lines
+    /// by [`build_script_for_input`].
     pub assertions: Vec<kuna_console::assertions::Directive>,
     /// `--assert-strict`: a rejected directive makes the run exit non-zero.
     pub assert_strict: bool,

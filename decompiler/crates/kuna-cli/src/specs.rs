@@ -1,16 +1,7 @@
-//! `kuna specs` — a thin alias for the Rust SLEIGH compiler (`slacomp`).
+//! SLEIGH compiler passthrough, plus usage and verification guidance.
 //!
-//! `kuna specs <slaspec>...`     compile the given `.slaspec` files.
-//! `kuna specs -a <dir>`         compile every `.slaspec` under `<dir>` (slacomp's
-//!                               recursive `-a` mode).
-//! `kuna specs --diff`           print the note that the old C++ differential
-//!                               (`kuna/slacomp.py`, which diffed against
-//!                               `sleigh_opt`) is moot now the C++ tree is gone.
-//!
-//! The byte-for-byte oracle the Python `kuna.slacomp` used (`sleigh_opt`) no
-//! longer exists in-tree; its result (148/148 content-identical) is recorded in
-//! docs/rust-port/README.md and is subsumed by `kuna test` (the Rust-built specs decode
-//! to 675/675).  So `--diff` is a documentation note, not a live comparison.
+//! `--diff` describes the independent compiler and decompiler gates without
+//! running either. Compilation arguments otherwise pass through to `slacomp`.
 
 use std::io::Read;
 use std::process::{Command, Stdio};
@@ -18,16 +9,18 @@ use std::process::{Command, Stdio};
 use crate::paths;
 
 const DIFF_NOTE: &str = "\
-kuna specs --diff: the C++ differential is moot.
+kuna specs --diff is informational; it does not run a comparison.
 
-The Python `kuna.slacomp` differential compiled each .slaspec with both the C++
-`sleigh_opt` and the Rust `slacomp` and required byte-identical .sla content.
-The C++ tree was removed (see docs/rust-port/README.md); there is no in-tree oracle to
-diff against anymore.  The recorded result was 148/148 content-identical, and it
-is subsumed by `kuna test`: rebuilding all specs with the Rust `slacomp` and
-re-running the datatest corpus yields 675/675, proving the Rust-built specs
-decode identically to the C++-built ones.  Use `kuna specs -a <dir>` to compile,
-and `kuna test --datatests --baseline docs/baseline.json` as the end-to-end gate.";
+From the repository root, check compiled .sla contents (after decompression)
+against pinned Ghidra outputs:
+  cargo test --manifest-path decompiler/Cargo.toml --release -p kuna-slacomp --test compiler_parity
+
+The decompiler's behavioral parity gate is separate; it does not establish
+compiler output equality:
+  make test
+
+The historical live C++ differential is not bundled. See docs/history.md and
+decompiler/crates/kuna-slacomp/tests/golden/README.md for provenance.";
 
 pub fn run(args: &[String]) -> i32 {
     // Ahead of the passthrough: slacomp owns no help flag and answers `-h` with
@@ -112,6 +105,6 @@ fn usage() {
          specs/); a bare list of files compiles just those.  A .sla is a build\n\
          artifact and is gitignored; the engine finds them under KUNA_SPECS /\n\
          SLEIGHHOME.\n\
-         --diff prints why the old C++ byte-for-byte differential is moot."
+         --diff prints guidance for independent compiler and decompiler checks; it runs neither."
     );
 }

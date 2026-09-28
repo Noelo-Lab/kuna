@@ -1,16 +1,5 @@
-//! `kuna <subcommand> --help` — the discovery surface, over every subcommand at
-//! once.
-//!
-//! Asking a command to describe itself is an agent's first reflex, and four of
-//! the sixteen answered it with `error: unknown option --help` and exit 2
-//! (`docs/re-needs/decompile-rejects-subcommand-help.md`). `decompile` is the
-//! one the need was filed against; `test`, `catalog` and `specs` sat one command
-//! away with the same defect, so the test is written over the whole dispatch
-//! table rather than over the reported case — a seventeenth subcommand that
-//! forgets its help arm fails here the day it lands.
-//!
-//! No `.sla` and no fixture: help is answered before anything is loaded, which
-//! is itself part of the contract ([`help_needs_no_binary_and_no_specs`]).
+//! Subcommand help and verification guidance without loading an image.
+//! Exercise the real CLI's dispatch, statuses and advertised flags.
 
 use std::process::{Command, Output};
 
@@ -133,4 +122,30 @@ fn an_unknown_option_is_still_a_usage_error() {
             "`kuna {sub} --no-such-flag` lost its diagnostic"
         );
     }
+}
+
+#[test]
+fn specs_diff_explains_independent_gates_without_running_a_compiler() {
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["specs", "--diff"])
+        .env("KUNA_SLACOMP", concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+        .output()
+        .expect("spawn kuna");
+    assert_eq!(out.status.code(), Some(0), "{}", help_text(&out));
+    assert!(out.stderr.is_empty(), "{}", help_text(&out));
+    let text = String::from_utf8(out.stdout).expect("UTF-8 guidance");
+    for expected in [
+        "informational",
+        "pinned Ghidra",
+        "--test compiler_parity",
+        "make test",
+        "separate",
+        "docs/history.md",
+        "decompiler/crates/kuna-slacomp/tests/golden/README.md",
+    ] {
+        assert!(text.contains(expected), "missing {expected:?}: {text}");
+    }
+    assert!(!text.contains("no in-tree oracle"), "{text}");
+    assert!(!text.contains("subsumed"), "{text}");
+    assert!(!text.contains("docs/rust-port/"), "{text}");
 }
