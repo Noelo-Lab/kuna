@@ -935,62 +935,67 @@ impl PatternExpression {
     /// values and resolve x86-masked; `Div` panics on a zero divisor (C++
     /// SIGFPE/UB, an internal invariant violation per ADR 0004).
     pub fn get_value(&self, walker: &dyn PatternExpressionContext) -> KunaResult<i64> {
+        self.evaluate(&mut |value| value.get_value(walker))
+    }
+
+    /// Evaluate leaves left to right with wrapping arithmetic in both modes.
+    fn evaluate(&self, leaf: &mut impl FnMut(&PatternValue) -> KunaResult<i64>) -> KunaResult<i64> {
         match self {
-            PatternExpression::Value(v) => v.get_value(walker),
+            PatternExpression::Value(v) => leaf(v),
             PatternExpression::Plus(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval.wadd(rightval))
             }
             PatternExpression::Sub(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval.wsub(rightval))
             }
             PatternExpression::Mult(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval.wmul(rightval))
             }
             PatternExpression::LeftShift(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 // intb << intb: count truncated then masked mod 64 (x86)
                 Ok(leftval.wshl(rightval as u32))
             }
             PatternExpression::RightShift(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 // intb >> intb: arithmetic shift; count truncated then
                 // masked mod 64 (x86)
                 Ok(leftval.wshr(rightval as u32))
             }
             PatternExpression::And(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval & rightval)
             }
             PatternExpression::Or(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval | rightval)
             }
             PatternExpression::Xor(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval ^ rightval)
             }
             PatternExpression::Div(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval.wdiv(rightval))
             }
             PatternExpression::Minus(u) => {
-                let val = u.get_unary().get_value(walker)?;
+                let val = u.get_unary().evaluate(leaf)?;
                 Ok(val.wneg())
             }
             PatternExpression::Not(u) => {
-                let val = u.get_unary().get_value(walker)?;
+                let val = u.get_unary().evaluate(leaf)?;
                 Ok(!val)
             }
         }
@@ -1126,64 +1131,7 @@ impl PatternExpression {
     /// expression substituting `replace[..]` for the leaves in `listValues`
     /// order.  Arithmetic transcription matches [`Self::get_value`].
     pub fn get_sub_value(&self, replace: &[i64], listpos: &mut i32) -> KunaResult<i64> {
-        match self {
-            PatternExpression::Value(v) => v.get_sub_value(replace, listpos),
-            PatternExpression::Plus(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval.wadd(rightval))
-            }
-            PatternExpression::Sub(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval.wsub(rightval))
-            }
-            PatternExpression::Mult(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval.wmul(rightval))
-            }
-            PatternExpression::LeftShift(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                // intb << intb: count truncated then masked mod 64 (x86)
-                Ok(leftval.wshl(rightval as u32))
-            }
-            PatternExpression::RightShift(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                // intb >> intb: arithmetic; count truncated, masked mod 64
-                Ok(leftval.wshr(rightval as u32))
-            }
-            PatternExpression::And(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval & rightval)
-            }
-            PatternExpression::Or(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval | rightval)
-            }
-            PatternExpression::Xor(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval ^ rightval)
-            }
-            PatternExpression::Div(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval.wdiv(rightval))
-            }
-            PatternExpression::Minus(u) => {
-                let val = u.get_unary().get_sub_value(replace, listpos)?;
-                Ok(val.wneg())
-            }
-            PatternExpression::Not(u) => {
-                let val = u.get_unary().get_sub_value(replace, listpos)?;
-                Ok(!val)
-            }
-        }
+        self.evaluate(&mut |value| value.get_sub_value(replace, listpos))
     }
 
     /// C++ non-virtual `getSubValue(const vector<intb>&)`: start the leaf

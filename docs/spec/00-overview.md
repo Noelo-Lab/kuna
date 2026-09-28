@@ -143,6 +143,11 @@ remain in argv order when forwarded from `decompile --json` to `decompile-all`.
 Missing flag values make the parsers return a usage error (exit status 2)
 immediately, without invoking the command engine.
 
+Browser smoke tests use `integrations/web/test/cdp-client.mjs` as a checked
+process boundary: spawn, exit and port-deadline failures retain bounded stderr
+diagnostics and clean up the owned profile. Availability skips remain the
+caller's decision; a failed launch is not converted into a skip.
+
 Four front-ends drive one engine assembly:
 
 - **The console** — `decomp_dbg`
@@ -929,6 +934,12 @@ one alternative must itself be always true. The query for unconstrained
 instruction bits still requires every alternative to qualify. Block comparisons
 bound each positive remaining span to one word and retain the existing maximum
 extent.
+
+Expression evaluation uses one arithmetic traversal for runtime walker values
+and compiler leaf substitutions. Each mode supplies its leaf reader; both visit
+left before right, stop at the first leaf error, and retain wrapping arithmetic,
+masked shift counts and the existing division behavior. A failed substitution
+retains the cursor progress made before the error or panic.
 
 Token alignment compares matching prefix or suffix slices in the required
 direction, retaining the first mismatch and ellipsis error order. Reverse

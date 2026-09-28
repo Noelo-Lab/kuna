@@ -977,6 +977,43 @@ probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
 CLI comparisons. All eight gate processes exited zero and the tracked diff
 retained its frozen hash. No baseline or existing output expectation changed.
 
+## Twenty-sixth checkpoint: browser startup and expression evaluation
+
+The browser smoke-test launcher discarded stderr, did not handle spawn errors,
+and waited ten seconds after an exited process. It now reports spawn, exit,
+invalid-port and deadline failures with bounded diagnostics, and cleans up its
+owned profile on failure or close. The public return shape, Chrome flags and
+default ten-second deadline are unchanged. A complete valid port line is
+required before returning. Eleven build-free process-fixture cases cover these
+paths, partial port publication and cleanup; CI runs them before the web build.
+
+A deterministic exit-7 fixture with sentinel stderr fails against the old
+launcher after 10,082 ms with only a generic message. The actual edited launcher
+rejects in 57.5 ms with the status and sentinel intact. The repository's eleven
+tests pass in ten repetitions. Three real Chrome launches and DevTools
+evaluations pass, as do the six build-free scripts, a fresh warning-free WASM
+build, worker/error checks, generated visualization checks and both complete
+study-view worker and real-browser suites. This improves failure handling and
+diagnosis; it does not establish the cause of the earlier remote Chrome failure.
+The preceding published commit passed the complete CI job and all CodeQL checks.
+
+Runtime expression evaluation and compiler leaf substitution now share their
+arithmetic traversal, removing 52 production lines without changing public
+entrypoints. Root AST checks match both actual modules to the model sources.
+With overflow checks on and off, 357,744 outcomes across 12,336 trees agree,
+including callback order, failures, panics and partial substitution cursors.
+All 375 compiler/SLEIGH release tests, 286 compiler CLI cases and 65 CLI
+command/status/output snapshots pass. The native build is warning-free.
+Independent allocation totals are unchanged; compiler and runtime timings stay
+within the 5% budget, with full evidence in `notes/deslop-slacomp.md`.
+
+Final frozen-tree checks passed: 675 upstream and 1467 stage assertions,
+7432 workspace tests (38 ignored, no warnings), spec/catalog checks, 268 CLI
+probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
+CLI comparisons. All eight gate processes exited zero; the tracked diff and
+new startup test retained their frozen hashes. No baseline or existing output
+expectation changed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.

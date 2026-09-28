@@ -693,6 +693,13 @@ array fields to be present with the expected type. Missing fixtures, processor
 specs, or architecture initialization now fail the native tests rather than
 turning them into successful skips.
 
+`test/cdp-client-startup.mjs` checks the browser launcher's lifecycle with
+temporary executables, without requiring Chrome or a web build. Missing or
+exited executables fail promptly with bounded stderr diagnostics; a running
+browser still has ten seconds to publish a complete, valid DevTools port line.
+Failures and explicit close clean up the owned temporary profile. Startup
+errors remain failures, not browser-test skips.
+
 Five layers, all but the last runnable without a browser in CI, spanning **multiple
 formats and architectures**:
 

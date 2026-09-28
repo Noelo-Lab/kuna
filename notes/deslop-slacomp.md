@@ -866,3 +866,36 @@ All results fit the 5% budget and every measured image is identical.
 The token-alignment snapshot passed all four gates: 675 upstream and 1,467 stage
 assertions, 7,714 workspace tests with 38 existing ignores, and the spec check.
 The option catalog passed. No baseline, test count or oracle expectation changed.
+
+Runtime expression evaluation and compiler leaf substitution now share one
+arithmetic traversal. A private generic leaf reader keeps the two public entry
+points and expression variants intact, visits left before right and preserves
+wrapping operations, masked shifts, division behavior and early failures. This
+removes 52 production lines and the duplicated arithmetic implementation.
+
+Actual-module comparisons agree on 357,744 outcomes across 12,336 expression
+trees with overflow checks both enabled and disabled. They cover every binary
+operator with integer-boundary values, unary boundaries and mixed trees with
+all seven leaf kinds. Runtime reads, injected errors/panics and substitution
+cursor progress also match. The applied source is identical to the compared
+candidate. All 371 targeted release tests, 286 CLI comparisons and 48 binary/XML
+compiler oracles pass unchanged. Full-compilation allocation request counts and
+requested-byte totals remain identical across three repetitions per spec.
+
+Alternating uninstrumented compilation runs pinned to CPU 40 measured Toy
+builder at 5.7321 → 5.7030 ms (-0.51%, 110 samples per version), x86-64 at
+445.9354 → 442.2835 ms (-0.82%, 12 samples), and Hexagon at 148.4401 →
+149.3912 ms (+0.64%, 12 samples). Paired wall-time medians changed -0.28%,
+-0.83% and +0.53%; paired child CPU medians changed -0.43%, -0.83% and +0.56%.
+Every output image was identical.
+
+The runtime benchmark passed all 16 independent lift fixtures in each of 66
+runs, covering 1,171 instructions. With 30 measured samples per version on CPU
+40, wall time was 427.9381 → 424.7398 ms (-0.75%; paired median -0.19%). Child
+CPU changed -0.75% (paired -0.17%). Both compiler and runtime results fit the
+5% budget; measurements followed warmups on the shared host.
+
+The shared-evaluator snapshot passed all four gates: 675 upstream and 1,467
+stage assertions, 7,714 workspace tests with 38 existing ignores, and the spec
+check. The option catalog passed. No baseline, test count or oracle expectation
+changed.
