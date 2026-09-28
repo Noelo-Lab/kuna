@@ -871,11 +871,7 @@ impl SubtableSymbol {
     /// C++ `SubtableSymbol::resolve`: `decisiontree->resolve(walker)`
     /// (a null tree dereference is UB in C++; an error here).
     pub fn resolve(&self, walker: &dyn SymbolWalker) -> KunaResult<u32> {
-        let tree = self
-            .decisiontree
-            .as_ref()
-            .ok_or_else(|| KunaError::sleigh("subtable has no decision tree (not decoded)"))?;
-        tree.resolve(walker)
+        self.resolve_matched(walker).map(|(_, id)| *id)
     }
 
     /// Like [`SubtableSymbol::resolve`], but returns the matched
@@ -1733,51 +1729,17 @@ impl DecisionNode {
     /// C++ `DecisionNode::resolve`: dispatch to a constructor id, or the
     /// C++ `BadDataError` when no terminal pattern matches.
     pub fn resolve(&self, walker: &dyn SymbolWalker) -> KunaResult<u32> {
-        if self.bitsize == 0 {
-            // The node is terminal
-            let pw: &dyn PatternExpressionContext = walker;
-            for (pat, ct) in &self.list {
-                if pat.is_match(pw)? {
-                    return Ok(*ct);
-                }
-            }
-            let mut s = String::new();
-            s.push(walker.get_addr().get_shortcut());
-            walker.get_addr().print_raw(&mut s)?;
-            s.push_str(": Unable to resolve constructor");
-            return Err(KunaError::bad_data(s));
-        }
-        let val = if self.contextdecision {
-            walker.get_context_bits(self.startbit, self.bitsize)?
-        } else {
-            walker.get_instruction_bits(self.startbit, self.bitsize)?
-        };
-        // C++ `children[val]->resolve(walker)`: val < 2^bitsize by
-        // construction; an undersized children vector (corrupt .sla) is UB
-        // in C++ and an indexing panic here (ADR 0004).
-        self.children[val as usize].resolve(walker)
+        self.resolve_matched(walker).map(|(_, id)| *id)
     }
 
-    /// Like [`DecisionNode::resolve`], but returns the matched
-    /// `(DisjointPattern, ct)` *pair* (the specific terminal leaf) rather
-    /// than just the constructor id.  This walks the decision tree byte-for-byte
-    /// identically to `resolve` — same context/instruction-bit dispatch, same
-    /// `BadDataError` on no match — but at the terminal node it hands back the
-    /// concrete `DisjointPattern` whose `is_match` succeeded.  No kuna-sleigh
-    /// decode path calls this; it exists only so the FID instruction-mask
-    /// accessor (`Sleigh::instruction_mask`) can recover the fixed-bit mask of
-    /// the constructor that actually matched at a node.
-    ///
-    /// **Why a pair, not a ct lookup:** one constructor can sit under several
-    /// `(DisjointPattern, ct)` leaves (different context/operand
-    /// specializations); the specific leaf must be captured by re-running
-    /// `pat.is_match`, there is no canonical "pattern for this ct".
+    /// Resolve the exact pattern leaf and its constructor id. A constructor can
+    /// have several specialized leaves, so the id alone cannot recover the
+    /// matched pattern used by instruction masking.
     pub fn resolve_matched(
         &self,
         walker: &dyn SymbolWalker,
     ) -> KunaResult<&(DisjointPattern, u32)> {
         if self.bitsize == 0 {
-            // The node is terminal
             let pw: &dyn PatternExpressionContext = walker;
             for pair in &self.list {
                 if pair.0.is_match(pw)? {
@@ -1795,7 +1757,6 @@ impl DecisionNode {
         } else {
             walker.get_instruction_bits(self.startbit, self.bitsize)?
         };
-        // Mirror of `resolve`: val < 2^bitsize by construction.
         self.children[val as usize].resolve_matched(walker)
     }
 
@@ -2920,39 +2881,19 @@ impl SleighSymbol {
         }
     }
 
-    /// Like [`SleighSymbol::resolve`], but for a subtable triple also returns the
-    /// matched `DisjointPattern` leaf (cloned) alongside the constructor id —
-    /// i.e. `(ct_id, Some(pattern))`.  Dispatches identically to `resolve`
-    /// (same `is_match` walk, same `BadDataError` on no match): for non-subtable
-    /// triples it runs the same validating `resolve` and returns
-    /// `(None, None)` — they have no instruction-stream pattern.  kuna-only:
-    /// used by `Sleigh::resolve` to capture, during decode (under the correct
-    /// per-node multi-phase context), the same pattern that
-    /// `Sleigh::instruction_mask` would otherwise re-derive by a post-decode
-    /// re-walk.  No decode behavior changes — the constructor chosen is the one
-    /// `resolve` picks; the pattern is the leaf its `is_match` already matched.
+    /// Resolve and clone the matched subtable pattern under the active decode
+    /// context. Other symbols retain the validation performed by [`Self::resolve`]
+    /// and return no pattern.
     pub fn resolve_matched(
         &self,
         walker: &dyn SymbolWalker,
     ) -> KunaResult<(Option<u32>, Option<DisjointPattern>)> {
         match &self.kind {
-            SymbolKind::ValueMap(v) => {
-                v.resolve(walker)?;
-                Ok((None, None))
-            }
-            SymbolKind::Name(v) => {
-                v.resolve(walker)?;
-                Ok((None, None))
-            }
-            SymbolKind::VarnodeList(v) => {
-                v.resolve(walker)?;
-                Ok((None, None))
-            }
             SymbolKind::Subtable(v) => {
                 let (pat, ct) = v.resolve_matched(walker)?;
                 Ok((Some(*ct), Some(pat.clone())))
             }
-            _ => Ok((None, None)), // TripleSymbol::resolve base: null
+            _ => Ok((self.resolve(walker)?, None)),
         }
     }
 

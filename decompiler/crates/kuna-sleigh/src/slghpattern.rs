@@ -37,10 +37,8 @@
 //!
 //! ## Walker boundary
 //!
-//! `isMatch`/`isInstructionMatch`/`isContextMatch` evaluate against a
-//! `ParserWalker`, which does not exist yet in the port DAG; they take the
-//! [`PatternExpressionContext`] boundary trait defined in
-//! [`crate::slghpatexpress`] (see its module docs).
+//! Pattern matching reads instruction and context bytes through
+//! [`PatternExpressionContext`], implemented by the parser walkers.
 //!
 //! ## sla format ids ([`sla`])
 //!

@@ -720,3 +720,23 @@ Every output was identical. Measurements followed warmups on the shared host.
 The counter-reuse snapshot passed all four gates: 675 upstream and 1,467 stage
 assertions, 7,714 workspace tests with 38 existing ignores, and the spec check.
 The option catalog passed. No baseline, test count or oracle expectation changed.
+
+Constructor-id resolution and matched-pattern capture now share one decision
+walk. Subtable lookup and non-subtable index validation also use a single path
+for both public APIs. Id-only calls borrow the matched leaf without cloning its
+pattern. Public signatures, constructor selection, failure messages and pattern
+capture semantics are unchanged. The production source shrank by 61 lines,
+including obsolete claims that parser walkers did not exist and matched-leaf
+resolution was unused during decoding.
+
+The existing compiler/SLEIGH release suite passes all 371 tests, including
+48 independent compiler oracles, instruction-mask checks and 16 C++ lift
+fixtures covering 1,171 instructions. No new test scaffolding was needed.
+Alternating runs of the complete lift-fixture suite pinned to CPU 40 measured
+424.2964 → 425.0527 ms (+0.18%, 30 samples per version after three warmup pairs).
+Child CPU changed by +0.14%. All 66 runs reproduced the expected lift output.
+This measures fixture loading and lifting together on the shared host.
+
+The resolution snapshot passed all four gates: 675 upstream and 1,467 stage
+assertions, 7,714 workspace tests with 38 existing ignores, and the spec check.
+The option catalog passed. No baseline, test count or oracle expectation changed.

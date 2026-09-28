@@ -779,6 +779,46 @@ probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
 CLI comparisons. The tracked diff retained its frozen hash through the final
 suite exit. The preceding commit's six CodeQL analyses and parity CI passed.
 
+## Twenty-first checkpoint: replay table transfer and shared symbol resolution
+
+The CLI planner borrowed a temporary replay, copied every minted name and
+request into its lookup map, then discarded the originals. It now owns that
+temporary and consumes its table after deriving the answers, superseded names
+and ordered worker message. The new consuming accessor preserves the existing
+borrowed API. The ledger regression checks the original allocation is transferred,
+the encoded table is identical, mint order is retained, and an empty replay
+produces an empty table. All 15 shard tests and 236 CLI unit tests pass.
+
+An external comparison using the real request types checks 10,000 table maps,
+including duplicate names and nested field recipes. Every result agrees. For
+32 eight-field requests, the isolated map handoff drops from 1,089 allocation
+requests / 51,734 requested bytes to one request / 8,784 bytes. Both versions
+receive prebuilt input; their preparation is excluded. The same isolated
+handoff is 58.864 versus 18.545 microseconds on CPU 41. These numbers describe
+table collection, not whole-program decompilation or resident memory.
+
+All 40 before/after CLI cases preserve status and stdout across four ELF/PE
+fixtures, text/JSON output and normal, forced, serial and failed-install paths.
+Their expected diagnostic markers remain present; concurrent stderr order is
+not claimed byte-identical. Twenty alternating project-export pairs preserve
+all four artifacts, with a paired median wall-time ratio of 0.9837 on CPUs
+41–44. Two warmup pairs also agree. This is a shared-host measurement, not a
+claim of a general end-to-end speedup.
+
+The resolution contribution replaces duplicate constructor-id and matched-leaf
+walks with one borrowed decision walk. Non-subtable validation is also shared;
+public APIs, errors and selected constructors are unchanged. Root verification
+passes all 375 compiler/SLEIGH release tests, including the independent lift
+fixtures, and all 286 compiler status/diagnostic/image comparisons. The separate
+30-pair lift timing in `notes/deslop-slacomp.md` measures +0.18% wall time with
+identical expected output in every run.
+
+Final frozen-tree checks passed: 675 upstream and 1467 stage assertions,
+7430 workspace tests (38 ignored, no warnings), spec/catalog checks, 268 CLI
+probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
+CLI comparisons. The tracked diff retained its frozen hash through the final
+suite exit. The preceding commit's six CodeQL analyses and parity CI passed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.

@@ -1937,6 +1937,9 @@ therefore the eager batch's, name for name -- the batch a pool can run, which on
 (chapter [04](04-calls-and-prototypes.md)) decides what a function measures and
 no worker can see another worker's callees. Chapter [00](00-overview.md) has the
 pool's side, including the checks that send a run back to one ordered worker.
+The replay exposes its table either by borrow or by consuming ownership. Both
+preserve mint order; consuming the replay transfers its existing table allocation
+and field recipes without copying them.
 
 The `.h` of a project export lists the minted structures after every other
 type, in ascending `N`

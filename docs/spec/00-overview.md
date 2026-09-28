@@ -915,6 +915,11 @@ Field selection reuses a bounded counter array for candidates up to eight bits
 wide. Each score resets only the candidate's bins; fixed-pattern counts, entropy
 arithmetic, candidate order and tie-breaking remain unchanged.
 
+Runtime constructor resolution and matched-pattern capture share one decision
+walk. The matched leaf supplies both the constructor id and the precise pattern
+needed for instruction masking. Id-only callers borrow the leaf without cloning
+its pattern. Non-subtable symbols use the same index validation in both APIs.
+
 Pattern-building failures report the accumulated reasons. Subtable errors
 identify the table at its source location, and unreferenced-table warnings
 include its name. Decision-tree errors retain both constructors' table-qualified
@@ -1351,6 +1356,10 @@ retained results across replay rounds. Each retained first-pass result also
 owns its rename provenance, so replacement and invalidation update the result
 and its reported rename count together. The cache stays sparse over functions
 that asked the ledger; sweep results remain separate from first-pass results.
+Each plan owns its temporary replay. After deriving the answers, superseded
+names and ordered worker message, the plan consumes the replay's minted table
+into its name lookup instead of copying names and field recipes. Replay rounds
+still start from a fresh clone of the same base ledger.
 
 A structure can travel only if another process can rebuild every field type,
 and a named type counts only if the worker's load created it

@@ -465,7 +465,7 @@ fn name_structs_serially(
     let mut forced = 0usize;
     let mut round = 0;
     let plan = loop {
-        let plan = match SynthPlan::replay(&mut base.clone(), &asked) {
+        let plan = match SynthPlan::replay(base.clone(), &asked) {
             Ok(plan) => plan,
             Err(why) => return fallback(run, &why),
         };
@@ -672,7 +672,7 @@ struct SynthPlan {
 }
 
 impl SynthPlan {
-    fn replay(replay: &mut Replay, asked: &[Vec<SynthRequest>]) -> Result<SynthPlan, String> {
+    fn replay(mut replay: Replay, asked: &[Vec<SynthRequest>]) -> Result<SynthPlan, String> {
         let mut first = Vec::with_capacity(asked.len());
         for requests in asked {
             // Every asking goes through the ledger, as it does serially; a
@@ -716,7 +716,7 @@ impl SynthPlan {
             sweep,
             stale: replay.superseded_names(),
             table: shard::encode_table(replay.table()),
-            minted: replay.table().iter().cloned().collect(),
+            minted: replay.into_table().into_iter().collect(),
         })
     }
 
