@@ -32,6 +32,7 @@ mod funcdecl;
 mod jobs;
 mod jsonfmt;
 mod limits;
+mod loadtime;
 mod optname;
 mod output;
 mod paths;

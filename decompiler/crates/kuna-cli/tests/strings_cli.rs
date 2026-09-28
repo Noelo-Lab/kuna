@@ -71,6 +71,9 @@ mod runtime_hints;
 #[path = "../src/limits.rs"]
 mod limits;
 #[allow(dead_code)]
+#[path = "../src/loadtime.rs"]
+mod loadtime;
+#[allow(dead_code)]
 #[path = "../src/decompile_all.rs"]
 mod decompile_all;
 #[allow(dead_code)]

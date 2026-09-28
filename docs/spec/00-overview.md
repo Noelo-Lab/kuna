@@ -1880,12 +1880,18 @@ space="ram"/>`), so on any ordinary image an added range was global before the
 caller spoke; only the removal direction moves the C. Exposing an assertion that
 is measurably a no-op would be the same failure the plane is built to avoid.
 
-(kuna) **Load-time env bridges.** Seven loader gates are consumed *inside* the
+(kuna) **Load-time env bridges.** Loader gates are consumed *inside* the
 bootstrap — before any console `option` line can possibly run — so the option
 surface alone cannot deliver them; each is bridged through a process environment
-variable exported first (`decompiler/crates/kuna-cli/src/decompile_all.rs
-(apply_loadtime_env)` in-process; the equivalent `Command::env` calls in
-`decompiler/crates/kuna-cli/src/decompile.rs` for the subprocess):
+variable exported first. Both CLI paths use the bindings and value conversions
+in `decompiler/crates/kuna-cli/src/loadtime.rs (binding, settings)`:
+`apply_to_command` configures the console subprocess, and `apply_to_process`
+temporarily configures the in-process loader. Repeated options keep their final
+value. An omitted option leaves the inherited environment alone; an explicit
+disabled `macho-arm64e` removes its variable. `LoadtimeEnv` restores inherited
+values, including non-Unicode values, when the load returns or unwinds. The
+conversions preserve each loader's accepted tokens and fallback behavior;
+runtime option validation remains separate.
 
 | env var | option | read at |
 |---|---|---|
@@ -2110,8 +2116,12 @@ and an agent writes:
   (OptionDatabase, KUNA_OPTION_NAMES)`): upstream options dispatch by registered
   element id through `OptionDatabase::set`; the kuna-added options are an
   allowlisted name set routed to
-  `decompiler/crates/kuna-decomp/src/infra/architecture.rs (set_kuna_option)`,
-  which writes the live flag the consuming pass reads. The machine-readable
+  `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_option_dispatch.rs
+  (set_kuna_option)`, which writes the live flag the consuming pass reads.
+  The handler declaration generates both the dispatch and its name allowlist;
+  adding a handler cannot leave those two out of sync. Catalog metadata remains
+  independent, so `kuna catalog --check` compares the documented options against
+  the implemented handlers. The machine-readable
   catalog rows — values, defaults, tier, symptoms, flip guidance — are generated
   into `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases.rs
   (SETTABLE_TABLE, emit_catalog_json)` from `decompiler/crates/kuna-decomp/phases.toml`

@@ -98,7 +98,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 
 - **Anything that can change emitted C ships behind a named option** — a `settableTable`
   row in `decompiler/crates/kuna-decomp/phases.toml` (every field populated, including
-  `tier` + `symptoms`) plus registration in `src/p0_knowledge/options.rs`; `kuna catalog
+  `tier` + `symptoms`) plus a handler in `src/p0_knowledge/kuna_option_dispatch.rs`; `kuna catalog
   --check` must stay green. Options can take values, not just on/off. New logic goes in a
   `kuna_<slug>.rs` module inside its owning phase folder (canonical template:
   `p2_lift/kuna_loweredswitch.rs`). This is for *features* — behavior that is a judgment
