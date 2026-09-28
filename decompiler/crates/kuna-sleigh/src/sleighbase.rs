@@ -22,6 +22,7 @@
 //!   store, so it stays disjoint from the `&mut symtab` borrow.
 
 use std::cell::OnceCell;
+use std::collections::btree_map::Entry;
 use std::rc::Rc;
 
 use kuna_base::error::{KunaError, KunaResult};
@@ -224,27 +225,27 @@ impl SleighBase {
         error_pairs: &mut Vec<Vec<u8>>,
         mut register_context: impl FnMut(&[u8], i32, i32) -> KunaResult<()>,
     ) -> KunaResult<()> {
-        // Collect the global-scope symbol ids in scope (BTreeMap) order, the
-        // C++ `SymbolTree` (set<SleighSymbol*,SymbolCompare>) iteration order.
         let glb = self
             .symtab
             .get_global_scope()
             .ok_or_else(|| KunaError::sleigh("symbol table has no global scope"))?;
-        let ids: Vec<u32> = glb.symbol_ids().collect();
-        for sym_id in ids {
+        for sym_id in glb.symbol_ids() {
             let sym = self
                 .symtab
                 .find_symbol_by_id(sym_id)
                 .ok_or_else(|| KunaError::sleigh("undefined global symbol"))?;
-            let name = sym.get_name().to_vec();
+            let name = sym.get_name();
             match sym.kind() {
                 SymbolKind::Varnode(v) => {
                     let key = storage_from_varnode_data(v.get_fixed_varnode());
-                    if let Some(existing) = self.varnode_xref.get(&key) {
-                        error_pairs.push(name);
-                        error_pairs.push(existing.clone());
-                    } else {
-                        self.varnode_xref.insert(key, name);
+                    match self.varnode_xref.entry(key) {
+                        Entry::Occupied(entry) => {
+                            error_pairs.push(name.to_vec());
+                            error_pairs.push(entry.get().clone());
+                        }
+                        Entry::Vacant(entry) => {
+                            entry.insert(name.to_vec());
+                        }
                     }
                 }
                 SymbolKind::UserOp(u) => {
@@ -252,11 +253,11 @@ impl SleighBase {
                     while self.userop.len() <= index {
                         self.userop.push(Vec::new());
                     }
-                    self.userop[index] = name;
+                    self.userop[index] = name.to_vec();
                 }
                 SymbolKind::Context(_) => {
                     let (sb, eb) = context_field_bits(sym)?;
-                    register_context(&name, sb, eb)?;
+                    register_context(name, sb, eb)?;
                 }
                 _ => {}
             }
@@ -273,8 +274,7 @@ impl SleighBase {
             .symtab
             .get_global_scope()
             .ok_or_else(|| KunaError::sleigh("symbol table has no global scope"))?;
-        let ids: Vec<u32> = glb.symbol_ids().collect();
-        for sym_id in ids {
+        for sym_id in glb.symbol_ids() {
             let sym = self
                 .symtab
                 .find_symbol_by_id(sym_id)

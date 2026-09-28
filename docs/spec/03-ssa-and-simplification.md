@@ -616,8 +616,11 @@ The boolean/arithmetic and bit-piece families in `ruleaction_3.rs` and
 New outputs therefore receive high variables when high-level state is enabled,
 including public rule calls after that transition, and matching lane-storage
 records while lane collection is active. Rule matching and graph-edit order are
-unchanged. The addressed-output and output-reassignment helpers in
-`ruleaction_4.rs` remain separate; this change does not alter their alias handling.
+unchanged. Addressed outputs in `ruleaction_4.rs` likewise use
+`Funcdata::new_varnode_out`: store promotion and extension shortening retain
+the shared factory's high-variable, lane-storage and scope-property bookkeeping.
+Shortening still adjusts the address for endianness and unsets the prior output
+before allocating its replacement. Output reassignment still uses a local helper.
 
 For the 64-bit unsigned divide-by-three reciprocal, GCC can share one wide
 multiply between the quotient and remainder. After `RuleDivOpt` recovers

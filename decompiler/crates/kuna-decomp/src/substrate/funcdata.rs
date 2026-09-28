@@ -2528,33 +2528,10 @@ impl Funcdata {
         self.get_scope_local()?.container_entry_key(&addr, &usepoint)
     }
 
-    /// Look-up boolean properties and data-type information for a Varnode
+    /// Seed unmapped Varnodes with local/global symbol flags and exact global
+    /// types, preserving existing mapped properties. In high-level mode, create
+    /// a missing cover and mark its HighVariable cover dirty when necessary.
     /// (C++ `Funcdata::setVarnodeProperties`, `funcdata_varnode.cc:25`).
-    ///
-    /// where `localmap->queryProperties` reaches the global scope, so a
-    /// global-mapped Varnode would pick up `mapped | addrtied | persist` at every
-    /// Varnode-creation site (`newVarnode`/`newVarnodeOut`/`setInput`).
-    ///
-    /// DEFERRED (the persist/addrtied marking is a no-op here, as in the W3 base):
-    /// the global-store *survival* this item targets is delivered instead by the
-    /// heritage path — `Heritage::guard` queries `query_global_properties` for the
-    /// same `mapped | addrtied | persist` directly and `guard_returns` inserts the
-    /// `addrforce` RETURN-COPY that keeps the store's def-chain alive through
-    /// `ActionDeadCode`.  That path is sufficient for every global-store datatest
-    /// (displayformat, condconst, varcross), so this early marking is redundant
-    /// for the target.
-    ///
-    /// Marking persist/addrtied *here* (at IR construction, on every global READ as
-    /// well) was measured to regress `varcross.xml::global_cross` ("Global cross
-    /// #2", a positive-content assertion): the early `addrtied` flag perturbs the
-    /// HighVariable merge so the recovered global-flow register (`v1`) renders as a
-    /// raw register instead of its name — the downstream HighVariable-naming /
-    /// global-store render seams (`merge.rs`/`variable.rs`/`printc.rs`, owned by the
-    /// naming/render waves) are not yet landed.  Activating it gains **zero** passing
-    /// assertions over the heritage path while regressing `global_cross`, so it is
-    /// held until the naming seam lands (matrix in
-    /// `docs/rust-port/reviews/w10-global-persist.md`).  When that seam lands the
-    /// body above folds back in unchanged.
     pub fn set_varnode_properties(&mut self, vn: VarnodeId) {
         // An already-mapped Varnode keeps its flags.
         let already_mapped = match self.vbank().get(vn) {

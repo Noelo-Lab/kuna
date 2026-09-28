@@ -886,6 +886,12 @@ Register-name collision checking likewise walks the global scope directly and
 borrows each register's spelling while forming its uppercase comparison key;
 collision order and the `-s` policy remain unchanged.
 The decoder rebuilds runtime register cross-references from the encoded symbols.
+It walks global symbols directly in name order, copying names only for stored
+registers, user operations and duplicate-register reports. Duplicate storage
+keeps the first register name and reports the later name before that original
+name. Context registration and re-registration use the same scope order and
+stop at the first error, retaining registrations and cross-references already
+completed.
 
 Named register bit ranges with byte-aligned ends use ordinary varnodes at the
 appropriate byte offset for the declared endianness. Other ranges register a

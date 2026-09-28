@@ -946,3 +946,41 @@ or resident memory. Balanced CPU-40 timing measures Toy at 6.7870 → 6.3528 ms
 Paired wall medians are -6.42%, -7.17% and -3.24%; paired child CPU medians are
 -6.88%, -7.18% and -3.25%. This comparison checks the accumulated compiler
 changes, including the later refactors whose individual timings increased.
+
+
+### Register and context cross-reference setup
+
+`SleighBase::build_xrefs` and `reregister_context` iterate global symbol ids
+without a temporary vector. Names remain borrowed until stored in the register
+map, user-operation list or duplicate report. Register insertion uses one map
+entry lookup. The original name ordering, first storage binding, duplicate-pair
+order, callback sequence and partial state on errors remain intact. Public
+signatures and option defaults are unchanged.
+
+An external differential model extracts the exact two methods and context-field
+helper into wrappers using the real symbol-table and storage types. All 48,000
+outcomes across 2,000 tables agree, including missing scopes, name collisions,
+register aliases, sparse user operations, invalid context fields, callback errors
+and panics, and repeated build/register/build calls. The production build and
+371 focused tests pass. All 286 CLI cases and 48 independent binary/XML compiler
+fixtures preserve their outputs.
+
+An allocation-counting runtime probe measures engine construction and SLA
+initialization only, excluding input reads, metadata formatting and teardown.
+Three repetitions per image produce identical register/user-operation metadata
+and context sizes. Allocation/reallocation requests change from 2,357 to 2,308
+for Toy, 204,401 to 203,957 for x86-64, and 78,970 to 78,230 for Hexagon.
+Cumulative requested bytes decrease by 711, 18,154 and 14,900 respectively;
+these figures are allocation traffic, not peak memory. Instrumented elapsed
+times are not used as performance evidence.
+
+Balanced, CPU-40-pinned runs of all 16 independent lift fixtures (1,171
+instructions per run) pass 66 times. With 30 measured samples per version,
+median wall time changes from 418.9417 to 419.6009 ms (+0.1573%; paired median
++0.1763%). CPU time changes +0.2265% (paired +0.2620%), within the 5% budget.
+Artifacts use `/tmp/kuna-deslop-xrefs-`: `runtime-cost/comparison.json`,
+`runtime-verified/timing.json`, `verified/` and the model/build/check logs.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; the workspace has 7,714 passing tests and 38 existing
+ignores across 433 groups. Spec and catalog checks pass. No baseline moved.

@@ -2,9 +2,9 @@
 //! Port of `decompiler/cpp/ruleaction.cc` lines 4293-5526.
 //!
 //! Registration retains upstream definition order. Opcode changes use canonical
-//! TypeOp metadata, and unique outputs use the Funcdata factory. Addressed
-//! outputs and output reassignment still have local helpers; remaining
-//! architecture-dependent limitations are documented at their call sites.
+//! TypeOp metadata. Defined outputs use Funcdata factories; output reassignment
+//! still has a local helper. Remaining architecture-dependent limitations are
+//! documented at their call sites.
 
 use kuna_base::address::{calc_mask, leastsigbit_set, sign_extend_sized, Address, SeqNum};
 use kuna_base::types::{int4, uintb, Wrap};
@@ -12,13 +12,12 @@ use kuna_num::opcodes::OpCode;
 use std::rc::Rc;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
-use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::context::{OpId, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 // =============================================================================
-// Local opcode and addressed-output helpers
+// Local opcode and output-reassignment helpers
 // =============================================================================
 
 /// `data.opSetOpcode(op, opc)` — resolves the [`OpCode`] to a [`TypeOp`] and
@@ -32,49 +31,6 @@ use crate::varnode::DefOpInfo;
 /// redundant `value & SUB(0xffffffff,0)` mask in the rendered C.
 fn set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
     data.op_set_opcode(op, crate::typeop::type_op_for(opc));
-}
-
-/// The unknown-base [`Datatype`] of size `s` (C++ `glb->types->getBase(s,
-/// TYPE_UNKNOWN)`).  STUB(W6): the `TypeFactory` is W6; the skeleton is built
-/// directly, exactly as the funcdata_varnode factories do.
-fn type_base_unknown(s: int4) -> Rc<Datatype> {
-    Rc::new(Datatype::new(s, type_metatype::TYPE_UNKNOWN))
-}
-
-/// `data.newVarnodeOut(s, m, op)` (C++ `funcdata_varnode.cc:106`): allocate a
-/// Varnode at storage address `m` as the output of `op`.
-///
-/// Composed from `VarnodeBank::create_def`.  STUB(W3): a register-address output
-/// can in principle unify with an existing equivalent free Varnode, in which case
-/// the genuine `opSetOutput` would run the `replace_reads` op-rewiring; the
-/// `banks_mut()` split-borrow that needs is the funcdata serial chain's, so the
-/// callback here is a no-op (correct whenever no equivalent pre-exists, the case
-/// the calling rules construct).
-///
-/// The C++ `Funcdata::newVarnodeOut` tail then runs
-/// `setVarnodeProperties(vn)` (the `localmap->queryProperties` symbol/flag seed).
-/// `RuleStoreVarnode` builds the output at the *global* storage address of a
-/// `STORE ram,#const,val`, so in C++ that seed paints `persist`/`addrtied` on the
-/// global write.  Here [`Funcdata::set_varnode_properties`](crate::funcdata::Funcdata::set_varnode_properties)
-/// is the faithful call site, but its persist/addrtied marking is currently
-/// DEFERRED (see its doc): the global-store survival is instead delivered by the
-/// heritage path (`Heritage::guard` + `guard_returns` RETURN-COPY), which is
-/// sufficient for every global-store datatest and does not regress the
-/// HighVariable-naming-dependent cases.  The call is retained so the marking
-/// re-lands here unchanged when the naming hook arrives.
-fn new_varnode_out(data: &mut Funcdata, s: int4, m: Address, op: OpId) -> VarnodeId {
-    let seqnum = data.obank().get(op).expect("new_varnode_out: stale op").get_seq_num().clone();
-    let def = DefOpInfo { id: op, seqnum };
-    let ct = type_base_unknown(s);
-    let vn = data
-        .vbank_mut()
-        .create_def(s, m, ct, def, &mut |_, _, _| Ok(()))
-        .expect("new_varnode_out: createDef");
-    data.obank_mut().get_mut(op).expect("new_varnode_out: stale op").set_output(Some(vn));
-    // setVarnodeProperties(vn): the C++ tail seed (persist/addrtied marking
-    // currently deferred in the callee — see its doc).
-    data.set_varnode_properties(vn);
-    vn
 }
 
 /// `data.opSetOutput(op, vn)` for the case where `vn` is a fresh (unique)
@@ -408,7 +364,7 @@ impl Rule for RuleStoreVarnode {
         let size = size_of(data, in_vn(data, op, 2));
         let offoff = kuna_base::space::AddrSpace::address_to_byte(offoff, baseoff.get_word_size());
         let addr = Address::new(Rc::clone(&baseoff), offoff);
-        let outvn = new_varnode_out(data, size, addr, op);
+        let outvn = data.new_varnode_out(size, &addr, op).expect("newVarnodeOut");
         data.vbank_mut().get_mut(outvn).expect("RuleStoreVarnode: stale out").set_stack_store();
         data.op_remove_input(op, 1);
         data.op_remove_input(op, 0);
@@ -539,7 +495,7 @@ impl RuleSubCommute {
             addr = &addr + ((orig_size - max_size) as i64);
         }
         data.op_unset_output(ext_op);
-        new_varnode_out(data, max_size, addr, ext_op)
+        data.new_varnode_out(max_size, &addr, ext_op).expect("newVarnodeOut")
     }
 
     /// \brief Eliminate input extensions on the given binary PcodeOp (C++

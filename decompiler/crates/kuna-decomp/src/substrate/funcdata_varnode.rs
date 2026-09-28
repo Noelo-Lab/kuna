@@ -537,11 +537,8 @@ impl Funcdata {
     /// it split-borrows both banks ([`Funcdata::banks_mut`]) and runs
     /// [`replace_reads_thunk`](Funcdata::replace_reads_thunk) over `obank`.
     ///
-    /// STUB(W4): the `localmap->queryProperties` symbol look-up + `setSymbolProperties`/
-    /// `setFlags(vflags & ~typelock)` tail is the W4 symbol scope; the W3 placeholder
-    /// reports no entry, so it is the [`Funcdata::set_varnode_properties`] no-op,
-    /// preserving the call cadence (and never touching the (space,offset,size) the
-    /// flow gate asserts).
+    /// The attached output receives its high variable and lane-storage record
+    /// when those analyses are active, followed by scope-derived properties.
     pub fn new_varnode_out(&mut self, s: int4, m: &Address, op: OpId) -> KunaResult<VarnodeId> {
         let ct = Self::type_base_unknown(s);
         // Split-borrow: the thunk (holds &mut obank) drops before later &mut self calls.
@@ -556,7 +553,6 @@ impl Funcdata {
         if s >= self.get_min_laned_size() {
             self.check_for_laned_register(s, m);
         }
-        // uint4 vflags=0; entry = localmap->queryProperties(...); ...  -- STUB(W4)
         self.set_varnode_properties(vn);
         Ok(vn)
     }

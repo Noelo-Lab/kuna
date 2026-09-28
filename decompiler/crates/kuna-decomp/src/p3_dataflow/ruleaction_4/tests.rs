@@ -160,8 +160,49 @@ fn clone_filters_on_group() {
 }
 
 // ---------------------------------------------------------------------------
-// RuleSubCommute / cancelbytearithmetic
+// RuleSubCommute
 // ---------------------------------------------------------------------------
+
+#[test]
+fn shorten_extension_keeps_high_and_lane_metadata() {
+    for high in [false, true] {
+        for collect_lanes in [false, true] {
+            let mut ctx = ArchContext::new(build_manager());
+            ctx.lanerecords = vec![crate::transform::LanedRegister::with_mask(4, 2)];
+            let ram = Rc::clone(ctx.manage().get_space_by_name("ram").unwrap());
+            let mut fd = Funcdata::new(
+                "func", "func", Rc::new(ctx), Address::new(ram, 0x1000), 0x10000000, 0x40,
+            ).unwrap();
+            let bl = mk_block(&mut fd);
+            let input = mk_vn(&mut fd, 2, 0x10);
+            let (op, original) = mk_def(&mut fd, bl, OpCode::CPUI_INT_ZEXT, 8, 0x20, &[input]);
+            let address = fd.vbank().get(original).unwrap().get_addr().clone();
+            if high {
+                fd.set_high_level();
+            }
+            fd.clear_laned_access_map();
+            if !collect_lanes {
+                fd.set_laned_reg_generated();
+            }
+
+            let output = RuleSubCommute::shorten_extension(&mut fd, op, 4);
+            let vn = fd.vbank().get(output).unwrap();
+            assert_eq!(vn.get_addr(), &address);
+            assert_eq!(vn.get_size(), 4);
+            assert_eq!(vn.get_def(), Some(op));
+            assert_eq!(vn.get_high().is_some(), high);
+            assert_eq!(fd.obank().get(op).unwrap().get_out(), Some(output));
+            assert_eq!(fd.obank().get(op).unwrap().get_in(0), Some(input));
+            assert_eq!(fd.vbank().get(original).unwrap().get_def(), None);
+            let lanes = fd.lane_access_snapshot();
+            assert_eq!(lanes.len(), usize::from(collect_lanes));
+            if collect_lanes {
+                assert_eq!(&lanes[0].0, &address);
+                assert_eq!(lanes[0].1, 4);
+            }
+        }
+    }
+}
 
 struct ByteCancellationFixture {
     subpiece: OpId,
