@@ -158,6 +158,34 @@ fn consistency_error_uses_included_constructor_location() {
 }
 
 #[test]
+fn a_temporary_must_be_written_before_its_only_read() {
+    for body in [
+        "local tmp:4; r0=tmp; tmp=1;",
+        "local tmp:4; tmp=tmp+1;",
+    ] {
+        let scratch = tempfile::tempdir().unwrap();
+        write_diagnostic_spec(scratch.path(), body);
+        let destination = scratch.path().join("compiled.sla");
+        let result = compile(&[&scratch.path().join("main.slaspec"), &destination]);
+        assert_eq!(result.status.code(), Some(2), "{body}");
+        assert_eq!(
+            std::str::from_utf8(&result.stderr).unwrap(),
+            "Unrecoverable error: Read of temporary before write\n",
+            "{body}"
+        );
+        assert!(!destination.exists());
+    }
+
+    let scratch = tempfile::tempdir().unwrap();
+    write_diagnostic_spec(scratch.path(), "local tmp:4=1; r0=tmp;");
+    let destination = scratch.path().join("compiled.sla");
+    assert_compiled(
+        compile(&[&scratch.path().join("main.slaspec"), &destination]),
+        &destination,
+    );
+}
+
+#[test]
 fn xml_output_matches_pinned_ghidra_in_single_and_recursive_modes() {
     for recursive in [false, true] {
         let scratch = tempfile::tempdir().unwrap();

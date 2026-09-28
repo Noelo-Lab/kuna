@@ -260,3 +260,31 @@ spec check. All 363 compiler and SLEIGH release tests pass, including 45 binary
 oracle cases, and all 45 XML outputs match the pinned C++ reference. The option
 catalog passed and Rust documentation had no warnings. No baseline or existing
 oracle expectation changed.
+
+The consistency checker silently skipped a temporary whose only read preceded
+its only write, based on a false claim that size validation had already caught
+it. For example, the semantic body `local tmp:4; r0=tmp; tmp=1;` compiled
+successfully, whereas pinned Ghidra exits with status 2 and reports
+`Unrecoverable error: Read of temporary before write`. The same gap affected
+`local tmp:4; tmp=tmp+1;`, which reads and writes in one operation.
+
+The checker now returns that error through optimization and the compiler pipeline
+before encoding. Its obsolete forwarding wrapper was removed. The CLI prints the
+error explanation rather than the Rust debug representation. A parameterized CLI
+regression covers both invalid orderings and a valid write-before-read control;
+it fails before the change. Both rejected inputs now match Ghidra's complete
+stderr, exit status, and absence of an output file. All 364 compiler and SLEIGH
+release tests pass, including the 45 existing binary oracle cases.
+
+Alternating compiler runs pinned to CPU 40 measured Toy-builder wall time at
+6.7037 → 6.6910 ms (-0.19%, 110 samples per version), x86-64 at 473.5369 →
+476.8359 ms (+0.70%, 12 samples), and Hexagon at 150.1469 → 148.6977 ms
+(-0.97%, 12 samples). Child CPU times changed by -0.34%, +0.66%, and -0.98%.
+Every measured output was identical. These local measurements followed warmups
+and include process startup.
+
+The independent temporary-order snapshot passed all four gates: 675 upstream
+and 1,467 stage assertions, 7,707 workspace tests with 38 existing ignores,
+and the spec check. The option catalog passed and all 45 XML outputs still
+match the pinned C++ reference. No baseline or existing oracle expectation
+changed.

@@ -49,7 +49,7 @@ fn compile_one(
     match compiler.run_compilation(slaspec, sla_out) {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("Unrecoverable error: {e:?}");
+            eprintln!("Unrecoverable error: {}", e.explain());
             2
         }
     }

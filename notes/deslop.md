@@ -115,6 +115,17 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
 - Finalized compiler macro definitions are shared immutably by symbols and the
   expansion table. Each invocation still owns its rewritten operations; the
   existing owned setter and borrowed getter retain their signatures.
+- The reserved branch-normalization action no longer walks the CFG and builds
+  flip lists that it discards. Registration, group filtering and the initialized
+  graph check are retained; no branch-rewriting feature is enabled. The module
+  introduction no longer claims its implemented supporting APIs are absent.
+- Declaration rendering borrows names while counting duplicates and passes them
+  directly to the allocator. The counting borrow ends before names can change;
+  the intermediate vector of cloned strings is gone. Rendered-signature dedup
+  uses its existing default constructor and a reviewed membership-only hash set.
+- Compiler consistency errors now propagate through optimization and compilation.
+  A single read preceding or occurring in its sole write is rejected before
+  encoding, rather than silently skipped; the obsolete checker trampoline is gone.
 
 ## Evidence
 
@@ -312,6 +323,37 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   56 Ghidra checks, 367 compiler/SLEIGH tests and catalog validation pass.
   All 45 pinned C++ XML outputs and the 14 saved CLI cases remain unchanged.
 
+- Three branch-action compatibility tests pass on the old implementation,
+  including eligible flip candidates, unchanged IR and edge order, action/group
+  identity, empty initialized graphs and the existing missing-root panic.
+- A focused caller prototype retains the same name allocator on both sides.
+  Removing the owned name counter and intermediate string vector reduced
+  allocation/reallocation requests from 2062 → 1037 (512 unique names),
+  2566 → 1541 (512 repeated), 12171 → 8074 (2,048 mixed), and 5134 → 3085
+  (1,024 reserved suffixes). Cumulative requested bytes fell from 131694 → 94058,
+  54336 → 40992, 310006 → 226710, and 257824 → 190444, respectively.
+  Thirty alternating rounds of 50 runs after warmup, pinned to CPU 40, measured
+  196.352 → 140.904, 138.261 → 116.353, 593.492 → 503.879, and
+  382.601 → 307.036 µs median per run. These are local helper measurements,
+  not whole-decompilation speedups or peak-memory measurements.
+- The temporary-order regression fails against the previous compiler, which
+  exits successfully for `local tmp:4; r0=tmp; tmp=1;`. The fixed test checks
+  both a read before its write and a read in the writing operation, plus a valid
+  ordered control, against the pinned compiler's error text and exit behavior.
+- After the changes, all 3,066 core unit tests and 368 compiler/SLEIGH release
+  tests pass. The rendered-signature set's narrow Clippy expectation is fulfilled;
+  the remaining engine collection-policy errors decrease from 216 to 214.
+- The frozen branch/declaration/temporary-order snapshot passes all four gates:
+  7,393 workspace tests with 38 existing ignores and no warnings, 675/675
+  upstream and 1467/1467 stage assertions, and spec checks. All 268 CLI probes,
+  34 Python tests, 56 Ghidra checks and catalog validation pass. All 45 pinned
+  C++ XML outputs remain unchanged. The 14 saved CLI cases and three additional
+  declaration-rendering cases retain identical stdout, stderr and status.
+- Twenty alternating whole-binary declaration-rendering pairs measured
+  157.691 → 153.834 ms wall medians and 157.026 → 153.131 ms child CPU, with
+  identical output. The median paired wall ratio was 0.9997. Concurrent
+  workspace activity means this does not establish a small speed difference.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -322,7 +364,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
-| Collection policy | The release engine-library Clippy check still reports 216 collection-policy errors. Declaration naming now uses one reviewed lookup-only table. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
+| Collection policy | The release engine-library Clippy check still reports 214 collection-policy errors. Declaration naming and rendered-signature dedup use reviewed lookup-only collections. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Ninety engine files still contain wave-era STUB notes. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 

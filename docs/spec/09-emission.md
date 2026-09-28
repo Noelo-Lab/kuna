@@ -1619,6 +1619,12 @@ the caller's declaration order, never hash iteration, decides who receives each
 name. This replaces separate reserved-name, used-name and suffix-counter maps
 without changing the first-free-suffix rule.
 
+Duplicate-name counting borrows the declaration strings and releases those
+borrows before suffix assignment mutates names. The allocator consumes borrowed
+names directly and owns its reserved keys, without an intermediate string-copy
+vector. Rendered-signature deduplication likewise observes only set membership;
+caller order determines which declaration is retained.
+
 Partial covers of a mapped scalar are suppressed only when another
 HighVariable with the same name actually represents the whole storage: its
 first member is non-constant, starts at symbol offset zero, and has the symbol's

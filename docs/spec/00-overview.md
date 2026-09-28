@@ -819,6 +819,13 @@ and line number. Consistency checks and section finalization share this lookup,
 so included-file diagnostics keep the constructor's location after parsing
 returns to the parent file. No separate constructor-location map is maintained.
 
+The consistency checker rejects a temporary that is read exactly once and
+written exactly once in the same semantic section when the read precedes or
+occurs in the write operation. This fatal error propagates through constructor
+optimization and the compiler pipeline before encoding can produce an image.
+The CLI prints the error's explanation and exits with status 2. A correctly
+ordered write and read remains eligible for copy propagation.
+
 Both compiler constructor-building entry points use the same complete
 finalizer. The entry point accepting a section vector owns it directly; the
 parser-arena entry point takes the vector from its slot before delegating.

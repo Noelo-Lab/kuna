@@ -64,6 +64,10 @@ pub type DeclSignature = (
 /// Used by `emit_local_var_decls` only when `Architecture::dedup_var_decls` is set.
 #[derive(Debug, Default)]
 pub struct DeclDedup {
+    #[expect(
+        clippy::disallowed_types,
+        reason = "Only signature membership is observed; caller order determines declarations"
+    )]
     seen: std::collections::HashSet<DeclSignature>,
 }
 
@@ -144,9 +148,7 @@ impl DeclNameUniquifier {
 impl DeclDedup {
     /// A fresh deduper (nothing seen yet).
     pub fn new() -> Self {
-        Self {
-            seen: std::collections::HashSet::new(),
-        }
+        Self::default()
     }
 
     /// Record `sig` and report whether it was **already** present — i.e. whether the
@@ -154,7 +156,6 @@ impl DeclDedup {
     /// occurrence of a signature returns `false` (emit it); every later identical
     /// one returns `true` (suppress it).
     pub fn is_duplicate(&mut self, sig: DeclSignature) -> bool {
-        // `insert` returns false when the value was already present.
         !self.seen.insert(sig)
     }
 }

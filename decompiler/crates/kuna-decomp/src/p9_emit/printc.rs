@@ -3170,15 +3170,17 @@ impl PrintC {
         // distinct declarations. Their accesses must be relative to their own
         // piece-sized objects; retaining the group's offset/type decoration would
         // produce forms such as `byte_2._1_1_` against a one-byte declaration.
-        let mut remaining_name_count = std::collections::HashMap::<String, usize>::new();
-        for (_, name) in &decls {
-            *remaining_name_count.entry(name.clone()).or_default() += 1;
-        }
-        for (high, name) in &decls {
-            if remaining_name_count.get(name).copied().unwrap_or(0) > 1
-                && fd.high_bank().high_piece_id(*high).is_some()
-            {
-                self.local_name_standalones.insert(*high);
+        {
+            let mut remaining_name_count = std::collections::HashMap::<&str, usize>::new();
+            for (_, name) in &decls {
+                *remaining_name_count.entry(name.as_str()).or_default() += 1;
+            }
+            for (high, name) in &decls {
+                if remaining_name_count.get(name.as_str()).copied().unwrap_or(0) > 1
+                    && fd.high_bank().high_piece_id(*high).is_some()
+                {
+                    self.local_name_standalones.insert(*high);
+                }
             }
         }
         // Existing collapses remove declarations proven to denote one Symbol.
@@ -3189,10 +3191,9 @@ impl PrintC {
         // `value_1` global or direct call. The override is also read by all body
         // render paths.
         {
-            let original: Vec<String> = decls.iter().map(|(_, name)| name.clone()).collect();
             let occupied = declaration_occupied_names(fd, param_names);
             let mut names = crate::kuna_dedupvardecls::DeclNameUniquifier::new(
-                original.iter().map(String::as_str),
+                decls.iter().map(|(_, name)| name.as_str()),
                 occupied.iter().map(String::as_str),
             );
             for (high, name) in &mut decls {

@@ -417,8 +417,11 @@ the print-prep — for-loop rerolling, switch-case label assignment and
 sorting, the §8.3 `scopeBreak` hook, `mark_unstructured` (labelling every
 goto target so the printer emits `label_N:`), and `mark_label_bump_up` (a
 loop-head label is hoisted above the loop rather than into its condition).
-`blockaction.rs (ActionNormalizeBranches)` is transcribed control-flow with
-its mutating half still stubbed (recorded in the retired losses ledger, see `docs/history.md`).
+`blockaction.rs (ActionNormalizeBranches)` remains a non-mutating compatibility
+action in the `jumptable` and `normalize` groups. It preserves its registration
+and initialized-root check, but does not traverse branches or allocate unused
+flip lists. Branch opcodes, operands, flags and edge order remain unchanged;
+removing this discarded analysis does not enable branch normalization.
 
 **The label invariant.** An emitted `goto label_X;` without a `label_X:` in
 the same function is not C, so the set of blocks

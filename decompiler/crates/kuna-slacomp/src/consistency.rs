@@ -19,16 +19,12 @@
 //! [`crate::slgh_compile::SleighCompile`] so it has direct access to the base /
 //! symbol table / template arena (the C++ class holds a `compiler` back-pointer
 //! for exactly this).
-//!
-//! Faithful to the C++: the per-opcode `size_restriction` switch, the
-//! `UniqueState`/`OptimizeRecord` machinery (`getDefinitions` interval
-//! splitting, `findValidRule` interference checks), and the post-order subtable
-//! traversal are transcribed 1:1.
 
 #![allow(clippy::needless_range_loop)]
 
 use std::collections::BTreeMap;
 
+use kuna_base::error::{KunaError, KunaResult};
 use kuna_num::opcodes::OpCode;
 use kuna_sleigh::semantics::{
     ConstTpl, ConstType, VField, VarnodeTpl, BUILD, CROSSBUILD, DELAY_SLOT, LABELBUILD, MACROBUILD,
@@ -209,19 +205,18 @@ impl UniqueState {
 }
 
 impl SleighCompile {
-    /// C++ `SleighCompile::checkConsistency()` (slgh_compile.cc:2148): run the
-    /// three ConsistencyChecker passes, bumping the driver error count on a
-    /// fatal pass.
-    pub(crate) fn check_consistency_real(&mut self) {
+    /// Runs template validation and copy propagation (`checkConsistency`,
+    /// slgh_compile.cc:2148), propagating unrecoverable errors to the caller.
+    pub(crate) fn check_consistency(&mut self) -> KunaResult<()> {
         let mut cc = CcState::default();
         self.set_post_order(&mut cc);
         if !self.test_size_restrictions(&mut cc) {
             self.bump_error();
-            return;
+            return Ok(());
         }
         if !self.test_truncations(&cc) {
             self.bump_error();
-            return;
+            return Ok(());
         }
         cc.unnecessarypcode = self.cc_take_unnecessary();
         if !self.warnunnecessarypcode() && cc.unnecessarypcode > 0 {
@@ -231,10 +226,10 @@ impl SleighCompile {
             ));
             self.report_warning_plain("Use -u switch to list each individually");
         }
-        self.optimize_all(&mut cc);
+        self.optimize_all(&mut cc)?;
         if cc.readnowrite > 0 {
             self.bump_error();
-            return;
+            return Ok(());
         }
         if !self.warndeadtemps() && cc.writenoread > 0 {
             self.report_warning_plain(&format!(
@@ -244,6 +239,7 @@ impl SleighCompile {
             self.report_warning_plain("Use -t switch to list each individually");
         }
         self.test_large_temporary(&cc);
+        Ok(())
     }
 
     // --- post-order subtable traversal (setPostOrder) ---
@@ -833,17 +829,18 @@ impl SleighCompile {
 
     // --- pass 3: optimization (optimizeAll) ---
 
-    fn optimize_all(&mut self, cc: &mut CcState) {
+    fn optimize_all(&mut self, cc: &mut CcState) -> KunaResult<()> {
         for i in 0..cc.postorder.len() {
             let sym = cc.postorder[i];
             let numconstruct = self.subtable_num_constructors(sym);
             for j in 0..numconstruct {
-                self.optimize(sym, j as u32, cc);
+                self.optimize(sym, j as u32, cc)?;
             }
         }
+        Ok(())
     }
 
-    fn optimize(&mut self, sym: SymbolId, ctidx: u32, cc: &mut CcState) {
+    fn optimize(&mut self, sym: SymbolId, ctidx: u32, cc: &mut CcState) -> KunaResult<()> {
         let numsections = self.constructor_num_sections(sym, ctidx);
         let mut state = UniqueState::default();
         loop {
@@ -852,12 +849,13 @@ impl SleighCompile {
                 self.optimize_gather1(sym, ctidx, &mut state, i);
                 self.optimize_gather2(sym, ctidx, &mut state, i);
             }
-            match self.find_valid_rule(sym, ctidx, &mut state) {
+            match self.find_valid_rule(sym, ctidx, &mut state)? {
                 Some(rec) => self.apply_optimization(sym, ctidx, &rec),
                 None => break,
             }
         }
         self.check_unused_temps(sym, ctidx, &state, cc);
+        Ok(())
     }
 
     fn optimize_gather1(&self, sym: SymbolId, ctidx: u32, state: &mut UniqueState, secnum: i32) {
@@ -908,15 +906,20 @@ impl SleighCompile {
         }
     }
 
-    fn find_valid_rule(&self, sym: SymbolId, ctidx: u32, state: &mut UniqueState) -> Option<OptimizeRecord> {
+    fn find_valid_rule(
+        &self,
+        sym: SymbolId,
+        ctidx: u32,
+        state: &mut UniqueState,
+    ) -> KunaResult<Option<OptimizeRecord>> {
         for key in state.keys_in_order() {
             let currec = state.recs[&key].clone();
             if currec.writecount == 1 && currec.readcount == 1 && currec.readsection == currec.writesection {
-                let h = self.section_handle(sym, ctidx, currec.readsection)?;
+                let Some(h) = self.section_handle(sym, ctidx, currec.readsection) else {
+                    return Ok(None);
+                };
                 if currec.writeop >= currec.readop {
-                    // C++ throws SleighError; we treat as no rule (the caller's
-                    // size pass already errored on genuinely malformed p-code).
-                    continue;
+                    return Err(KunaError::sleigh("Read of temporary before write"));
                 }
                 let writevn = self.template_vn_clone(h, currec.writeop as usize, -1);
                 let readvn = self.template_vn_clone(h, currec.readop as usize, currec.inslot);
@@ -937,7 +940,7 @@ impl SleighCompile {
                         }
                     }
                     if save {
-                        return Some(rec);
+                        return Ok(Some(rec));
                     }
                 }
                 if writeop_code == OpCode::CPUI_COPY {
@@ -952,12 +955,12 @@ impl SleighCompile {
                         }
                     }
                     if save {
-                        return Some(rec);
+                        return Ok(Some(rec));
                     }
                 }
             }
         }
-        None
+        Ok(None)
     }
 
     fn apply_optimization(&mut self, sym: SymbolId, ctidx: u32, rec: &OptimizeRecord) {

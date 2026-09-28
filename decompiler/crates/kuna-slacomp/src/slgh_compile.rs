@@ -369,7 +369,7 @@ impl SleighCompile {
         if self.errors > 0 {
             return Ok(());
         }
-        self.check_consistency();
+        self.check_consistency()?;
         if self.errors > 0 {
             return Ok(());
         }
@@ -1468,12 +1468,6 @@ impl SleighCompile {
             }
         }
         Ok(())
-    }
-
-    /// `checkConsistency` (slgh_compile.cc:2148) -- trivial in the landed subset.
-    fn check_consistency(&mut self) {
-        // The full ConsistencyChecker lives in `consistency.rs`.
-        self.check_consistency_real();
     }
 
     /// `checkLocalCollisions` (slgh_compile.cc:2250) -- no exports in the landed subset.
