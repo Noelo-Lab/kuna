@@ -202,11 +202,7 @@ impl PatternBlock {
     /// agree.
     pub fn common_sub_pattern(&self, b: &PatternBlock) -> PatternBlock {
         let mut res = PatternBlock::new_always(true);
-        let maxlength = if self.get_length() > b.get_length() {
-            self.get_length()
-        } else {
-            b.get_length()
-        };
+        let maxlength = self.get_length().max(b.get_length());
 
         res.offset = 0;
         let mut offset: i32 = 0; // local cursor (C++ shadows the member)
@@ -232,11 +228,7 @@ impl PatternBlock {
             return PatternBlock::new_always(false);
         }
         let mut res = PatternBlock::new_always(true);
-        let maxlength = if self.get_length() > b.get_length() {
-            self.get_length()
-        } else {
-            b.get_length()
-        };
+        let maxlength = self.get_length().max(b.get_length());
 
         res.offset = 0;
         let mut offset: i32 = 0; // local cursor (C++ shadows the member)
@@ -262,18 +254,13 @@ impl PatternBlock {
         res
     }
 
-    /// C++ `PatternBlock::specializes`: does every masked bit in `self`
-    /// match the corresponding masked bit in `op2`.
+    /// C++ `PatternBlock::specializes`: every bit masked in `op2` is also
+    /// masked in `self`, with matching values.
     pub fn specializes(&self, op2: &PatternBlock) -> bool {
         let length = 8 * op2.get_length();
         let mut sbit: i32 = 0;
         while sbit < length {
-            let mut tmplength = length - sbit;
-            // C++ `tmplength > 8*sizeof(uintm)` compares int4 vs size_t:
-            // tmplength converts to 64-bit unsigned (it is positive here)
-            if (tmplength as i64 as u64) > 32 {
-                tmplength = 32;
-            }
+            let tmplength = (length - sbit).min(32);
             let mask1 = self.get_mask(sbit, tmplength);
             let value1 = self.get_value(sbit, tmplength);
             let mask2 = op2.get_mask(sbit, tmplength);
@@ -291,18 +278,10 @@ impl PatternBlock {
 
     /// C++ `PatternBlock::identical`: do the mask and value match exactly.
     pub fn identical(&self, op2: &PatternBlock) -> bool {
-        let mut length = 8 * op2.get_length();
-        let tmplen = 8 * self.get_length();
-        if tmplen > length {
-            length = tmplen; // Maximum of two lengths
-        }
+        let length = (8 * op2.get_length()).max(8 * self.get_length());
         let mut sbit: i32 = 0;
         while sbit < length {
-            let mut tmplength = length - sbit;
-            // C++ int4 vs size_t mixed comparison (positive here)
-            if (tmplength as i64 as u64) > 32 {
-                tmplength = 32;
-            }
+            let tmplength = (length - sbit).min(32);
             let mask1 = self.get_mask(sbit, tmplength);
             let value1 = self.get_value(sbit, tmplength);
             let mask2 = op2.get_mask(sbit, tmplength);
@@ -937,47 +916,30 @@ impl OrPattern {
         Some(&self.orlist[i as usize]) // i >= 0 expected (C++ UB otherwise)
     }
 
-    /// C++ `OrPattern::alwaysTrue`.  This isn't quite right because
-    /// different branches may cover the entire gamut (upstream comment).
+    /// True when an alternative is always true; collectively exhaustive
+    /// alternatives are not detected (`OrPattern::alwaysTrue`).
     pub fn always_true(&self) -> bool {
-        for pat in &self.orlist {
-            if pat.always_true() {
-                return true;
-            }
-        }
-        false
+        self.orlist.iter().any(DisjointPattern::always_true)
     }
 
     /// C++ `OrPattern::alwaysFalse`.
     pub fn always_false(&self) -> bool {
-        for pat in &self.orlist {
-            if !pat.always_false() {
-                return false;
-            }
-        }
-        true
+        self.orlist.iter().all(DisjointPattern::always_false)
     }
 
-    /// C++ `OrPattern::alwaysInstructionTrue`.
+    /// Require every alternative to leave instruction bits unconstrained
+    /// (`OrPattern::alwaysInstructionTrue`).
     pub fn always_instruction_true(&self) -> bool {
-        for pat in &self.orlist {
-            if !pat.always_instruction_true() {
-                return false;
-            }
-        }
-        true
+        self.orlist.iter().all(DisjointPattern::always_instruction_true)
     }
 
     /// C++ `OrPattern::simplifyClone`: look for alwaysTrue, eliminate
     /// alwaysFalse.
     pub fn simplify_clone(&self) -> Pattern {
-        for pat in &self.orlist {
-            // Look for alwaysTrue
-            if pat.always_true() {
-                return Pattern::Disjoint(DisjointPattern::Instruction(
-                    InstructionPattern::new_always(true),
-                ));
-            }
+        if self.always_true() {
+            return Pattern::Disjoint(DisjointPattern::Instruction(
+                InstructionPattern::new_always(true),
+            ));
         }
 
         let mut newlist: Vec<DisjointPattern> = Vec::new();

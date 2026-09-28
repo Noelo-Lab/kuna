@@ -803,3 +803,32 @@ The extraction/comparison snapshot passed all four gates: 675 upstream and 1,467
 stage assertions, 7,714 workspace tests with 38 existing ignores, and the spec
 check. The option catalog passed. No baseline, test count or oracle expectation
 changed.
+
+OR-pattern queries now use short-circuit iterator predicates, and simplification
+reuses the same conservative always-true query. The instruction-unconstrained
+query still requires every alternative to qualify. Pattern-block comparisons
+use the maximum extent and cap positive remaining spans at one word. This
+removes 38 production lines without changing public signatures or truth rules.
+
+The actual old and new modules agree on 40,000 OR-query and simplification
+cases, including empty and singleton alternatives, in addition to 1,844,850
+mask/value reads and boundary outcomes, 280,000 algebra results and 60,000
+pattern predicates. Both overflow-check settings pass. All 371 targeted release
+tests, 48 binary/XML compiler oracles and 286 CLI cases remain unchanged.
+Allocation requests, requested bytes and output images match on Toy builder,
+x86-64 and Hexagon in three repetitions.
+
+Alternating uninstrumented runs pinned to CPU 40 measured x86-64 at
+434.4786 → 440.4147 ms (+1.37%, 12 samples per version) and Hexagon at
+143.9275 → 144.2885 ms (+0.25%, 12 samples). Toy's first 110-sample run had
+separate medians of 5.6761 → 6.3005 ms (+11.00%); a 220-sample repeat reversed
+them to 6.2230 → 5.8031 ms (-6.75%). The median of each adjacent after/before
+pair was +0.95% and +0.93%, respectively. Pooling all 330 samples gives
+6.2230 → 6.2540 ms (+0.50%), with a paired median of +0.94%. Pooled child CPU
+medians change +0.42% (paired +0.92%). Both runs are retained: the short Toy
+measurement is sensitive to host variation, while paired results agree within
+the 5% budget. All measured images are identical.
+
+The query/bounds snapshot passed all four gates: 675 upstream and 1,467 stage
+assertions, 7,714 workspace tests with 38 existing ignores, and the spec check.
+The option catalog passed. No baseline, test count or oracle expectation changed.

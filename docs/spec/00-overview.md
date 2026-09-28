@@ -129,6 +129,13 @@ tier one.
 
 ## 0.2 Front-ends and the decompile-all walk
 
+The public command names and handlers have one ordered table in
+`decompiler/crates/kuna-cli/src/main.rs`. Dispatch and the top-level help's
+command list use that same table. Help integration tests discover the names
+from the real CLI, reject empty or repeated entries, and exercise both help
+spellings for every advertised command. Version/help aliases remain separate;
+missing or unknown commands retain exit status 2 and diagnostics on stderr.
+
 The CLI shares flag-value and option-pair consumption in
 `decompiler/crates/kuna-cli/src/args.rs`. Command-specific parsers retain their
 flag sets and diagnostics; option names are validated before loading, and pairs
@@ -916,6 +923,12 @@ Mask and value reads share one word extractor, preserving unsigned word-index
 conversion, zero fill outside the stored words and masked shift counts.
 Specialization, identity and intersection resolution compare instruction then
 context constraints with the same short-circuit order and absent-block rules.
+
+OR-pattern simplification uses the same conservative truth query as callers:
+one alternative must itself be always true. The query for unconstrained
+instruction bits still requires every alternative to qualify. Block comparisons
+bound each positive remaining span to one word and retain the existing maximum
+extent.
 
 Decision nodes enumerate compatible branch values in ascending order without
 building a temporary list. Terminal nodes sort pattern indices by specialization

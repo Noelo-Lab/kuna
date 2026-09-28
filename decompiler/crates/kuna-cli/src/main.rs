@@ -36,6 +36,27 @@ use std::process::ExitCode;
 use crate::args::take_value;
 use test::{Mode, TestArgs};
 
+const COMMANDS: &[(&str, fn(&[String]) -> i32)] = &[
+    ("decompile", |args| args::report(decompile::main(args))),
+    ("decompile-all", decompile_all::run),
+    ("decompile-project", decompile_project::run),
+    ("decompile-graph", decompile_graph::run),
+    ("functions", decompile_all::run_functions),
+    ("disassemble", disassemble::run),
+    ("read", disassemble::run_read),
+    ("xrefs", xrefs::run),
+    ("strings", strings::run),
+    ("crypto", crypto::run),
+    ("unpack", unpack::run),
+    ("docs", docs::run),
+    ("install-skill", |args| args::report(skill::run(args))),
+    ("test", |args| args::report(cmd_test(args))),
+    ("catalog", |args| args::report(cmd_catalog(args))),
+    ("modes", cmd_modes),
+    ("specs", specs::run),
+    ("fid", fid::run),
+];
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
@@ -46,24 +67,6 @@ fn main() -> ExitCode {
     let rest = &args[2..];
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {
-        "decompile" => args::report(decompile::main(rest)),
-        "decompile-all" => decompile_all::run(rest),
-        "decompile-project" => decompile_project::run(rest),
-        "decompile-graph" => decompile_graph::run(rest),
-        "functions" => decompile_all::run_functions(rest),
-        "test" => args::report(cmd_test(rest)),
-        "catalog" => args::report(cmd_catalog(rest)),
-        "docs" => docs::run(rest),
-        "install-skill" => args::report(skill::run(rest)),
-        "modes" => cmd_modes(rest),
-        "specs" => specs::run(rest),
-        "fid" => fid::run(rest),
-        "unpack" => unpack::run(rest),
-        "strings" => strings::run(rest),
-        "crypto" => crypto::run(rest),
-        "disassemble" => disassemble::run(rest),
-        "read" => disassemble::run_read(rest),
-        "xrefs" => xrefs::run(rest),
         "-V" | "--version" | "version" => {
             // Release CI bakes the repo-derived MAJOR.MINOR (docs/release.md)
             // via KUNA_VERSION; dev builds report the workspace Cargo version.
@@ -80,17 +83,22 @@ fn main() -> ExitCode {
             0
         }
         other => {
-            eprintln!("kuna: unknown subcommand {other:?}");
-            usage();
-            2
+            if let Some((_, run)) = COMMANDS.iter().find(|(name, _)| *name == other) {
+                run(rest)
+            } else {
+                eprintln!("kuna: unknown subcommand {other:?}");
+                usage();
+                2
+            }
         }
     };
     ExitCode::from(code as u8)
 }
 
 fn usage() {
+    let names = COMMANDS.iter().map(|(name, _)| *name).collect::<Vec<_>>().join("|");
     eprintln!(
-        "usage: kuna <decompile|decompile-all|decompile-project|decompile-graph|functions|disassemble|read|xrefs|strings|crypto|unpack|docs|install-skill|test|catalog|modes|specs|fid> ...\n\
+        "usage: kuna <{names}> ...\n\
          \n\
          LLM agents: run `kuna install-skill` once.  It installs the kuna skill -- how to drive\n\
          this CLI well, embedded in the binary, no network -- for Claude Code, Codex and OpenCode\n\

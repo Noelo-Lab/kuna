@@ -893,6 +893,50 @@ CLI comparisons. All eight gate processes exited zero, and the tracked diff
 retained its frozen hash through the last exit. The preceding commit's six
 CodeQL analyses, aggregate and parity CI passed.
 
+## Twenty-fourth checkpoint: one command registry and conservative pattern queries
+
+The CLI repeated its public command names in dispatch, top-level help and a
+test-only list. A small ordered table now owns names and handlers; dispatch
+and the help list both use it. The help tests discover names from the actual
+binary and reject empty or duplicate entries before exercising every command.
+All 18 handlers, result reporting, runtime-hint ordering, special aliases and
+command order remain unchanged. No command or public flag was added.
+
+The seven help/alias tests pass before and after the refactor, as do all 236
+CLI unit tests. A controlled wrapper advertising an absent command demonstrates
+the coverage improvement: the old copied-list test falsely passes, while the
+new discovery test fails on that advertised command. The wrapper is external
+verification only, not another repository harness. All 65 saved command cases
+retain exact statuses, stdout and stderr, including no arguments, aliases,
+unknown commands and each subcommand's help and usage errors.
+
+With 130 alternating pairs after warmups on CPU 41, paired median wall time
+changes are +0.94% for top-level help, +0.39% for decompile help and +0.40% for
+fid help. All captured outputs are identical. These short-process shared-host
+measurements stay within the 5% budget; they are not a general speedup claim.
+
+The compiler contribution shares conservative OR truth queries and simplifies
+maximum extents and positive word bounds. Empty alternatives and the stricter
+all-alternatives instruction query keep their existing behavior. The actual
+before/after modules match the compared candidates. Root runs with overflow
+checks on and off agree on 1,844,850 reads and boundary outcomes, 40,000 OR
+queries/simplifications, 280,000 algebra results and 60,000 predicates. All 375
+compiler/SLEIGH release tests and 286 compiler CLI cases pass. Independent
+allocation totals are unchanged; all timing runs, including contradictory
+short Toy medians and their stable paired results, are retained in
+`notes/deslop-slacomp.md`.
+
+Final frozen-tree checks passed: 675 upstream and 1467 stage assertions,
+7432 workspace tests (38 ignored, no warnings), spec/catalog checks, 268 CLI
+probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
+CLI comparisons. All eight gate processes exited zero and the tracked diff
+retained its frozen hash. The preceding commit passed all six CodeQL analyses.
+Its CI job passed the actual parity, CLI, catalog, Ghidra and browser-worker
+checks, then failed before opening a browser page because Chrome did not create
+its DevTools port within ten seconds. That job is not reported as green; the
+discarded browser diagnostics prevent identifying the startup cause from its
+log. No browser code changed in that commit.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
