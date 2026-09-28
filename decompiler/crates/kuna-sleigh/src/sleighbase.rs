@@ -636,11 +636,10 @@ fn space_eq(a: &Option<Rc<AddrSpace>>, base: &Rc<AddrSpace>) -> bool {
 /// The register cross-reference map type (location -> register name).
 type VarnodeXref = std::collections::BTreeMap<VarnodeStorage, Vec<u8>>;
 
-/// C++ `SleighBase::getRegisterName` over a register cross-reference map (the
-/// `varnode_xref` location->name table).  Factored out so both [`SleighBase`]
-/// and [`SnapshotRegisterLookup`] resolve names identically.
+/// C++ `SleighBase::getRegisterName`, shared by the engine, base API and
+/// register snapshots.
 #[allow(clippy::mutable_key_type)]
-fn register_name_from_xref<'a>(
+pub(crate) fn register_name_from_xref<'a>(
     xref: &'a VarnodeXref,
     base: &Rc<AddrSpace>,
     off: u64,
@@ -682,7 +681,7 @@ fn register_name_from_xref<'a>(
 
 /// C++ `SleighBase::getExactRegisterName` over a register cross-reference map.
 #[allow(clippy::mutable_key_type)]
-fn exact_register_name_from_xref<'a>(
+pub(crate) fn exact_register_name_from_xref<'a>(
     xref: &'a VarnodeXref,
     base: &Rc<AddrSpace>,
     off: u64,

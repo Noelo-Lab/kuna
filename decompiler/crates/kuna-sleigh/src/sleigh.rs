@@ -44,7 +44,7 @@ use crate::context::FixedHandle;
 use crate::globalcontext::{ContextCache, ContextDatabase};
 use crate::loadimage::{ImageBytes, LoadImage};
 use crate::semantics::{ConstructTpl, OpTpl, PcodeBuilder, VField, VarnodeTpl};
-use crate::sleighbase::SleighBase;
+use crate::sleighbase::{exact_register_name_from_xref, register_name_from_xref, SleighBase};
 use crate::slghpatexpress::{PatternExpression, PatternExpressionContext};
 use crate::slghpattern::DisjointPattern;
 use crate::slghsymbol::{
@@ -1045,23 +1045,14 @@ impl PcodeCacher {
         Ok(())
     }
 
-    /// C++ `emit(const Address&,PcodeEmit*)`.
-    fn emit(&self, addr: &Address, emt: &mut dyn PcodeEmit, manager: &AddrSpaceManager) {
+    /// C++ `emit`: pass borrowed pool slices to the emitter.
+    fn emit(&self, addr: &Address, emt: &mut dyn PcodeEmit) {
         for op in &self.issued {
             let outvar = op.outvar.map(|i| &self.pool[i]);
-            // An op's inputs are a consecutive run in the pool
-            // (`allocate_varnodes` hands back the run's start), so the emit
-            // borrows the run the way the C++ passes a pointer into the same
-            // array. Rebuilding it cost one heap allocation per emitted p-code
-            // op on every decode in the program.
             let invars: &[VarnodeData] = match op.invar {
                 Some(base) => &self.pool[base..base + op.isize as usize],
                 None => &[],
             };
-            // The spaceid pointer constant (input 0 of LOAD/STORE) is stored
-            // as the space's manager index (LOSS-015); the emitter renders the
-            // space name, so the value passed through is the raw stored index.
-            let _ = manager;
             emt.dump(addr, op.opc, outvar, invars);
         }
     }
@@ -2581,18 +2572,11 @@ impl Sleigh {
         let main_ct = builder.walker().get_constructor_inner()?;
         let handle = table.get_constructor(main_ct)?.get_templ();
         let tpl = handle.map(|h| &self.base.templates[h]);
-        let build_res = (|| -> KunaResult<()> {
-            builder.build(tpl, -1)?;
-            Ok(())
-        })();
-        match build_res {
+        match builder.build(tpl, -1) {
             Ok(()) => {}
             Err(KunaError::Unimpl { .. }) => {
                 // C++ rethrows with a descriptive message + instruction_length.
                 let mut s = String::from("Instruction not implemented in pcode:\n ");
-                // baseState the current walker, print the constructor.
-                let cw = builder.walker();
-                // reset to base for the message
                 let mut basewalker = ParserWalker::new(&contexts[builder.cur_ctx].ctx, table, self);
                 basewalker.base_state();
                 let bct = basewalker.get_constructor_inner()?;
@@ -2607,13 +2591,12 @@ impl Sleigh {
                 let mut bod = String::new();
                 table.get_constructor(bct)?.print_body(&mut bod, &mut basewalker, table)?;
                 s.push_str(&bod);
-                let _ = cw;
                 return Err(KunaError::unimpl(s, fall_offset));
             }
             Err(e) => return Err(e),
         }
         cache.resolve_relatives()?;
-        cache.emit(baseaddr, emit, &self.base.manager);
+        cache.emit(baseaddr, emit);
         *self.pcode_cacher.borrow_mut() = cache;
         contexts.clear();
         *self.ctx_vec.borrow_mut() = contexts;
@@ -2627,10 +2610,12 @@ impl RegisterLookup for Sleigh {
         Ok(storage_from_varnode_data(&vd))
     }
     fn get_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
-        String::from_utf8_lossy(&self.base.get_register_name(base, off, size)).into_owned()
+        let name = register_name_from_xref(self.base.get_all_registers(), base, off, size);
+        String::from_utf8_lossy(name).into_owned()
     }
     fn get_exact_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
-        String::from_utf8_lossy(&self.base.get_exact_register_name(base, off, size)).into_owned()
+        let name = exact_register_name_from_xref(self.base.get_all_registers(), base, off, size);
+        String::from_utf8_lossy(name).into_owned()
     }
 }
 

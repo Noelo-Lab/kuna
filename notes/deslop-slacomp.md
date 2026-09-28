@@ -1074,3 +1074,60 @@ and `/tmp/kuna-deslop-assembly-timing.py`.
 All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
 assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
 across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### Native runtime adapters
+
+The native `Sleigh` register-name adapter uses the same borrowed lookup as the
+base API and register snapshots, avoiding an intermediate byte vector when
+forming a string. P-code emission no longer accepts an unused address-space
+manager. The build result is matched directly, and unimplemented-template
+reporting no longer constructs an unused walker. Public signatures, pool reuse,
+emission order and diagnostic formatting remain unchanged; production code is
+16 lines shorter.
+
+The extracted register-name methods match 3,488,000 outcomes across 2,000 maps
+with overflow checks enabled and disabled. The cases retain distinct-space
+identity behavior, boundary sizes and offsets, wrapping ranges, misses, empty
+names and invalid UTF-8. All 371 focused tests pass, including the 48 pinned
+binary compiler oracles; 286 CLI cases and 48 XML fixtures are unchanged.
+
+The independent lift corpus has no unimplemented-template errors. An additional
+small compiled specification therefore exercises missing semantics in the root,
+a nested constructor and delay slots, plus successful delay-slot execution,
+relative branches, loads, invalid instructions and emitter panics. All 72
+before/after outcomes match exactly, including 32 unimplemented errors, repeated
+calls, partial emitted operations, error explanations and lengths, and assembly
+after each attempt. This is a Rust before/after comparison; the error baseline
+was captured before the emission/build-boundary edits. The fixture and driver
+are `/tmp/kuna-deslop-runtime-errors.slaspec` and
+`/tmp/kuna-deslop-runtime-errors.rs`.
+
+Three repetitions of the native engine's lookup probe produce identical result
+bytes. Allocation requests change from 467 to 234 for Toy, 13,987 to 6,994 for
+x86-64 and 5,007 to 2,504 for Hexagon. Cumulative requested bytes change from
+11,712 to 11,040, 373,808 to 325,144 and 133,730 to 122,065. The counts cover
+lookup and collection of returned strings, excluding initialization, query
+setup, formatting and teardown; they are allocation traffic, not peak memory.
+A separate uninstrumented benchmark runs 100 query repetitions per sample.
+CPU-40-pinned, balanced runs with 30 measured samples per image show median
+lookup changes of -11.69%, -5.70% and -4.26% respectively (paired medians
+-12.13%, -5.73% and -4.27%). These are lookup measurements, not whole-decompiler
+speed claims.
+
+Full p-code and assembly workloads each pass 66 balanced runs on CPU 40, with
+30 measured samples per version. P-code output matches all 16 independent
+fixtures (1,171 instructions); median wall time changes +0.9155% (paired
++0.4098%) and CPU time +0.7977% (paired +0.3293%). Assembly output at all 1,171
+locations matches the saved baseline through both public APIs with zero errors;
+median wall time changes -0.2440% (paired -0.1541%) and CPU time -0.2195%
+(paired -0.1675%). Both workloads include initialization and stay within the
+5% budget.
+
+Artifacts use `/tmp/kuna-deslop-engine-name-`: `cost/`, `lookup-verified/`,
+`runtime-verified/`, `assembly-verified/`, `verified/`, the error transcripts,
+and model/build/check logs.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.

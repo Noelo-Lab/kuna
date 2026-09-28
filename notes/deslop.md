@@ -1215,6 +1215,65 @@ stage assertions retain parity. All 268 CLI, 42 Python and 56 Ghidra tests,
 and the fresh WASM build with all 11 browser scripts pass. Tracked and new-file
 hashes are unchanged through the final gate. No baseline expectation moved.
 
+## Thirty-first checkpoint: string-filter ownership and native adapters
+
+The string inventory delegates its existing pattern grammar and bounded matcher
+to a private `strings/filter.rs` module. Repetition state travels as one value,
+ordinary and counted quantifiers share suffix handling, and counted numbers no
+longer allocate a temporary string. The obsolete claim that the workspace avoids
+a regex dependency is removed; this is not a switch to the dependency's different
+grammar. Unicode folding, empty repeats, overflow fallback, diagnostics and
+budget warnings retain their existing behavior.
+
+Two added regressions pass on the original implementation: numeric values and
+cursor advancement, and the grammar's overflow/empty-repeat cases. All ten
+string tests pass before the move; all 239 CLI and 375 compiler/runtime tests
+pass afterward without warnings. Source checks retain all 14 inventory-command
+functions, the complete modeled filter, and all 11 test/helper bodies. Each
+overflow-mode model agrees on 82,092 compile/match outcomes across 4,116 patterns
+and 60,033 numeric value/cursor outcomes. Eighty-three real CLI cases preserve
+stdout, stderr and status exactly, including Unicode/wide text, attribution,
+invalid patterns and budget exhaustion. Forty whole-binary ELF/PE cases and all
+286 compiler CLI cases are unchanged. CLI-only Clippy remains open at 17
+collection-policy errors and 20 warnings; no filter-module diagnostic remains.
+
+The native engine's string register-name adapter now uses the borrowed lookup
+already shared by the base API and snapshots. Emission drops an unused manager
+argument, the build result is matched directly, and unimplemented-template
+reporting no longer constructs an unused read-only walker. The eight modeled
+methods match production; both overflow modes agree on 3,488,000 lookup outcomes
+across 2,000 maps. Seventy-two real runtime outcomes match, including 32
+unimplemented-template errors, partial emissions, retries, delay slots and
+emitter panics. Assembly strings at all 1,171 locations from 16 lift fixtures
+match the saved Rust baseline through both public APIs, with zero errors.
+
+Three stable allocation samples reduce native lookup requests from 467 to 234
+for Toy, 13,987 to 6,994 for x86-64 and 5,007 to 2,504 for Hexagon, retaining
+identical results. Requested bytes fall by 672, 48,664 and 11,665 respectively.
+These count lookup and result collection, not initialization or peak memory.
+Each thousand counted-filter compile/match operations eliminates one or two
+temporary allocations per operation across five representative patterns, with
+the same result counts in all three repetitions.
+
+CPU-41-pinned isolated filter timings change -17.54% for compilation and -2.81%
+for matching (paired medians -17.65%/-5.46%). Native lookup medians change
+-19.83%/-9.28%/-8.03% for Toy/x86-64/Hexagon. These are local component timings,
+not whole-decompiler speed claims. The 66-run full assembly and lift workloads
+change -0.27%/+0.21%; twenty project-export pairs retain all four artifacts
+(+0.18% paired wall time). Single-command string timings were noisy at 1–2 ms,
+so a second run batches 16 commands per sample: thirty measured samples per
+version for each of four patterns change +0.50%/-2.84%/+0.45%/-0.25% in median
+wall time, preserving every output and diagnostic. All complete workloads stay
+within the 5% budget. Artifacts are under
+`/tmp/kuna-deslop-string-filter.wte6INQZ`.
+
+All nine final gates pass on the frozen tree: 7,437 workspace tests, 38 existing
+ignores across 438 groups and zero warnings; 675/675 upstream and 1,467/1,467
+stage assertions retain parity. Also green are 268 CLI, 42 Python and 56 Ghidra
+tests, 48 binary/XML comparisons, 17 saved CLI comparisons, spec/catalog checks,
+and a fresh WASM build with all 11 browser scripts. Tracked and new-file hashes
+remain exact through the last gate. No baseline expectation moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1225,7 +1284,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay and object-file views have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
-| Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 17 errors and 21 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
+| Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 17 errors and 20 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 

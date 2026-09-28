@@ -143,6 +143,14 @@ remain in argv order when forwarded from `decompile --json` to `decompile-all`.
 Missing flag values make the parsers return a usage error (exit status 2)
 immediately, without invoking the command engine.
 
+String filtering is separate from inventory and reference attribution. The
+private `decompiler/crates/kuna-cli/src/strings/filter.rs (Regex)` module owns
+the existing pattern grammar, case folding and bounded matching. A repetition
+carries its node, limits and greedy/lazy policy together; ordinary and counted
+quantifiers share suffix handling. Count parsing scans all ASCII digits before
+checking the value, so overflow retains the same cursor and literal-brace
+fallback behavior. Match-budget accounting and warnings remain unchanged.
+
 Browser smoke tests use `integrations/web/test/cdp-client.mjs` as a checked
 process boundary: spawn, exit and port-deadline failures retain bounded stderr
 diagnostics and clean up the owned profile. Availability skips remain the
@@ -894,11 +902,17 @@ stop at the first error, retaining registrations and cross-references already
 completed.
 
 Register-name lookup borrows the selected name until the caller constructs its
-return value. Byte-returning APIs copy once; string-returning snapshots decode
-the borrowed bytes directly. Exact lookups retain the storage-key comparison;
+return value. The base API returns an owned byte vector; both the native engine
+and register snapshots form strings directly from the borrowed bytes. Exact
+lookups retain the storage-key comparison;
 containing-register lookups retain their address-space identity checks,
 same-offset fallback and wrapping bounds. Misses remain empty. Invalid UTF-8
 still uses replacement characters in string results.
+
+Queued p-code operations pass borrowed varnode slices to the emitter, retaining
+stored space-index constants. An unimplemented template is reported from the
+failing context's base constructor, with that context's address and the total
+instruction length including delay slots.
 
 Named register bit ranges with byte-aligned ends use ordinary varnodes at the
 appropriate byte offset for the declared endianness. Other ranges register a
