@@ -738,13 +738,54 @@ CLI comparisons. The tracked diff and both new paths retained their frozen
 hashes through the final suite exit. The preceding commit's six CodeQL analyses
 and parity CI also passed.
 
+## Twentieth checkpoint: required native runs and compiler scratch ownership
+
+Nineteen generated round-trip execution sites and five native-fixture sites
+checked stdout without requiring a successful exit. They now use one required
+command helper layered on the existing checked optional-tool helper. A missing
+required command, launch error or nonzero exit fails with a diagnostic; an
+absent optional C compiler remains optional. The process module is reached
+through the existing shared test module instead of repeated path declarations.
+
+The required-command regression fails on the extracted unchecked behavior and
+passes with status checking; all five process-helper tests pass. Independent
+child-only compiler wrappers make the real `globalref` and `elemptr` round-trip
+programs print their usual output but return 7. Both actual tests pass before
+the fix and fail afterward with the exit-7 diagnostic. No repository fixture
+was changed or hidden for these checks.
+
+Those two tests also returned before their spelling assertions on any fixture
+launch error, despite reporting that spellings were checked. Native execution
+now uses the same explicit Linux/x86-64 policy as adjacent tests, while all
+spelling and export checks run on other hosts. Two additional tests exercise
+the non-native path on this host; they pass even with failed compilers on the
+child search path. Unique scratch names prevent the paired tests from sharing
+directories. All 99 whole-binary CLI tests pass with unchanged output assertions.
+
+The compiler contribution reuses a bounded 256-counter array across candidate
+fields instead of allocating per score. Root verification confirms both old
+and new model functions match the production source exactly; all 800,000
+floating-point score bits and 5,000 selected fields agree. All 375 compiler and
+SLEIGH release tests and 286 status/diagnostic/image comparisons pass. The
+independent measurements in `notes/deslop-slacomp.md` report 605,069 fewer x86
+allocation requests and 72,810,920 fewer requested bytes per compile, with
+Toy/x86/Hexagon wall-time deltas of -2.21%/-5.31%/-0.80%. These are cumulative
+allocation requests, not resident-memory savings. Its five recent evidence
+sections were reordered intact to match implementation order.
+
+Final frozen-tree checks passed: 675 upstream and 1467 stage assertions,
+7430 workspace tests (38 ignored, no warnings), spec/catalog checks, 268 CLI
+probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
+CLI comparisons. The tracked diff retained its frozen hash through the final
+suite exit. The preceding commit's six CodeQL analyses and parity CI passed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
 
 | Area | Evidence / next check |
 |---|---|
-| CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Fault-test process handling is shared; all ten remaining compiler-probe false greens now use the checked helper. Missing/broken/non-executable compiler regressions drive real test subprocesses. Remaining native-platform gates and conditional assertions still need review. |
+| CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Compiler probes reject broken tools, and required native runs check both status and output. The two fixture-launch false skips now retain spelling checks on non-native hosts. Other platform gates and conditional assertions still need review. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |

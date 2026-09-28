@@ -6,8 +6,7 @@
 
 mod common;
 
-#[path = "common/process.rs"]
-mod process;
+use common::process;
 
 #[cfg(unix)]
 #[path = "common/compiler_probe_tests.rs"]
@@ -2457,7 +2456,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed callers did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-    let run = Command::new(&exe).output().expect("run the round trip");
+    let run = process::required_output(&mut Command::new(&exe));
     let got = String::from_utf8_lossy(&run.stdout).to_string();
     let _ = std::fs::remove_dir_all(&dir);
     let lines: Vec<&str> = got.lines().collect();
@@ -2560,7 +2559,7 @@ fn a_float_pointee_keeps_the_callers_integer_stores_round_trip() {
             "the printed callers did not compile (off={off}):\n{}\n{printed}",
             String::from_utf8_lossy(&cc.stderr)
         );
-        let run = Command::new(&exe).output().expect("run the round trip");
+        let run = process::required_output(&mut Command::new(&exe));
         let got = String::from_utf8_lossy(&run.stdout).to_string();
         let _ = std::fs::remove_dir_all(&dir);
         let (printed_run, source_run) = got.split_once("--\n").expect("both runs printed");
@@ -3743,7 +3742,7 @@ fn a_sign_contested_synthesized_field_round_trips_through_the_printed_c() {
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed f did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-    let run = Command::new(&exe).output().expect("run the round trip");
+    let run = process::required_output(&mut Command::new(&exe));
     let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got, (0x9abcu32).to_string(), "the printed f hands sink a different value:\n{stdout}");
@@ -3801,7 +3800,7 @@ fn a_float_and_integer_union_field_round_trips_through_the_printed_c() {
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed vread did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-    let run = Command::new(&exe).output().expect("run the round trip");
+    let run = process::required_output(&mut Command::new(&exe));
     let got = String::from_utf8_lossy(&run.stdout).to_string();
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got.lines().last(), Some("0"), "the printed vread reads the union differently:\n{got}\n{stdout}");
@@ -3857,7 +3856,7 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
             .output()
             .expect("spawn cc");
         assert!(cc.status.success(), "the printed f did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-        let run = Command::new(&exe).output().expect("run the round trip");
+        let run = process::required_output(&mut Command::new(&exe));
         let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(got, (0x9abcu32).to_string(), "the printed f hands sink a different value:\n{stdout}");
@@ -3965,7 +3964,7 @@ int main(void) {
                     "{cc} rejected the printed C ({fixture}, option {opt}):\n{}",
                     String::from_utf8_lossy(&out.stderr)
                 );
-                let run = Command::new(&exe).output().expect("run the round trip");
+                let run = process::required_output(&mut Command::new(&exe));
                 let _ = std::fs::remove_dir_all(&dir);
                 assert_eq!(
                     String::from_utf8_lossy(&run.stdout),
@@ -4125,7 +4124,7 @@ int main(void) {
                         "{cc} rejected the printed C ({fixture}, option {opt}):\n{}",
                         String::from_utf8_lossy(&out.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let run = process::required_output(&mut Command::new(&exe));
                     let _ = std::fs::remove_dir_all(&dir);
                     assert_eq!(
                         String::from_utf8_lossy(&run.stdout),
@@ -4378,7 +4377,7 @@ int main(void) {
                         "{cc} rejected the printed C ({fixture}, option {opt}):\n{}",
                         String::from_utf8_lossy(&out.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let run = process::required_output(&mut Command::new(&exe));
                     let _ = std::fs::remove_dir_all(&dir);
                     assert_eq!(
                         String::from_utf8_lossy(&run.stdout),
@@ -4640,7 +4639,7 @@ int main(void) {
                         "{cc} {level} rejected the printed C ({fixture}, option {opt}):\n{}",
                         String::from_utf8_lossy(&out.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let run = process::required_output(&mut Command::new(&exe));
                     let _ = std::fs::remove_dir_all(&dir);
                     assert_eq!(
                         String::from_utf8_lossy(&run.stdout),
@@ -4850,7 +4849,7 @@ int main(void) {
                         "{cc} {level} rejected the printed C ({fixture}, option {opt}):\n{}",
                         String::from_utf8_lossy(&out.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let run = process::required_output(&mut Command::new(&exe));
                     let _ = std::fs::remove_dir_all(&dir);
                     assert_eq!(
                         String::from_utf8_lossy(&run.stdout),
@@ -5048,7 +5047,7 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
                 eprintln!("castarith round trip: no x86-64 host or no `cc`, spelling checked only");
                 continue;
             }
-            let expected = Command::new(bin).output().expect("run the fixture");
+            let expected = process::required_output(&mut Command::new(bin));
             let dir = std::env::temp_dir()
                 .join(format!("kuna-castarith-rt-{}-{build}-{arm}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
@@ -5068,7 +5067,7 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
                 "{build} castarith {arm}: the printed functions did not compile:\n{}\n{body}",
                 String::from_utf8_lossy(&cc.stderr)
             );
-            let got = Command::new(&exe).output().expect("run the round trip");
+            let got = process::required_output(&mut Command::new(&exe));
             let _ = std::fs::remove_dir_all(&dir);
             assert_eq!(
                 String::from_utf8_lossy(&got.stdout),
@@ -5173,7 +5172,7 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
                 eprintln!("castindex round trip: no x86-64 host or no `cc`, spelling checked only");
                 continue;
             }
-            let expected = Command::new(bin).output().expect("run the fixture");
+            let expected = process::required_output(&mut Command::new(bin));
             let dir = std::env::temp_dir()
                 .join(format!("kuna-castindex-rt-{}-{build}-{elem}-{arm}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
@@ -5193,7 +5192,7 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
                 "{build} castindex {arm}: the printed functions did not compile:\n{}\n{body}",
                 String::from_utf8_lossy(&cc.stderr)
             );
-            let got = Command::new(&exe).output().expect("run the round trip");
+            let got = process::required_output(&mut Command::new(&exe));
             let _ = std::fs::remove_dir_all(&dir);
             assert_eq!(
                 String::from_utf8_lossy(&got.stdout),
@@ -5296,7 +5295,7 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
                 eprintln!("castarith enum round trip: no x86-64 host or no `cc`, spelling checked only");
                 continue;
             }
-            let expected = Command::new(bin).output().expect("run the fixture");
+            let expected = process::required_output(&mut Command::new(bin));
             let dir = std::env::temp_dir()
                 .join(format!("kuna-castarith-enum-rt-{}-{build}-{arm}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
@@ -5316,7 +5315,7 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
                 "{build} castarith {arm}: the printed functions did not compile:\n{}\n{body}",
                 String::from_utf8_lossy(&cc.stderr)
             );
-            let got = Command::new(&exe).output().expect("run the round trip");
+            let got = process::required_output(&mut Command::new(&exe));
             let _ = std::fs::remove_dir_all(&dir);
             assert_eq!(
                 String::from_utf8_lossy(&got.stdout),
@@ -5340,6 +5339,15 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
 /// type, twice, and a value also ordered or divided as a number, twice).
 #[test]
 fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
+    check_globalref_round_trip(cfg!(all(target_os = "linux", target_arch = "x86_64")));
+}
+
+#[test]
+fn globalref_spellings_are_checked_without_native_execution() {
+    check_globalref_round_trip(false);
+}
+
+fn check_globalref_round_trip(run_native: bool) {
     let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
     let bin = fixtures.join("globalref_x86_64");
     let sp = specs();
@@ -5375,15 +5383,17 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
             &[],
         ),
     ];
-    let expected = Command::new(&bin).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-    let Ok(expected) = expected else {
-        eprintln!("globalref round trip: the x86-64 fixture does not run here, spelling checked only");
-        return;
-    };
-    assert_eq!(expected, "210 21 27 121 1 0 4 229 1 -8608764254683430263 2", "the fixture itself");
-    let dir = std::env::temp_dir().join(format!("kuna-globalref-rt-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let expected = run_native.then(|| {
+        let output = process::required_output(&mut Command::new(&bin));
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        assert_eq!(text, "210 21 27 121 1 0 4 229 1 -8608764254683430263 2", "the fixture itself");
+        text
+    });
+    if !run_native {
+        eprintln!("globalref round trip: native execution disabled; checking all spellings");
+    }
+    let dir = common::scratch_file("globalref-round-trip", "dir");
+    std::fs::create_dir(&dir).unwrap();
     let harness = dir.join("main.c");
     std::fs::write(&harness, GLOBALREF_HARNESS.replace("@FIXTURE@", bin.to_str().unwrap())).unwrap();
     for (arm, want, decls) in arms {
@@ -5436,6 +5446,7 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
             .collect();
         printed.insert_str(printed.find('\n').unwrap() + 1, &undeclared);
         std::fs::write(out.join("printed.c"), &printed).unwrap();
+        let Some(expected) = &expected else { continue };
         for cc in ["gcc", "clang"] {
             if process::optional_output(Command::new(cc).arg("--version")).is_none() {
                 eprintln!("globalref round trip: no `{cc}`");
@@ -5467,9 +5478,9 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
                 "{arm}/{cc}: the printed callers did not compile:\n{}\n{printed}",
                 String::from_utf8_lossy(&built.stderr)
             );
-            let run = Command::new(&exe).output().expect("run the round trip");
+            let run = process::required_output(&mut Command::new(&exe));
             let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
-            assert_eq!(got, expected, "{arm}/{cc}: the printed callers compute something else:\n{printed}");
+            assert_eq!(got, *expected, "{arm}/{cc}: the printed callers compute something else:\n{printed}");
         }
     }
     let _ = std::fs::remove_dir_all(&dir);
@@ -5571,7 +5582,7 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
             .output()
             .expect("spawn cc");
         assert!(cc.status.success(), "{name}: the printed C did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-        let run = Command::new(&exe).output().expect("run the round trip");
+        let run = process::required_output(&mut Command::new(&exe));
         let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(got, "2 0", "{name}: the printed C makes a different number of calls than the binary:\n{stdout}");
@@ -5667,7 +5678,7 @@ int main(void) {
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed functions did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-    let run = Command::new(&exe).output().expect("run the round trip");
+    let run = process::required_output(&mut Command::new(&exe));
     let got = String::from_utf8_lossy(&run.stdout).to_string();
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got.lines().last(), Some("0"), "the printed functions read different bytes:\n{got}\n{stdout}");
@@ -5763,7 +5774,7 @@ int main(void) {
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed functions did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-    let run = Command::new(&exe).output().expect("run the round trip");
+    let run = process::required_output(&mut Command::new(&exe));
     let got = String::from_utf8_lossy(&run.stdout).to_string();
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got.lines().last(), Some("0"), "the printed functions read different bytes:\n{got}\n{printed}");
@@ -6146,7 +6157,7 @@ int main(void) {
                         "{cc} {level} rejected the printed C ({fixture}, option {opt}):\n{}",
                         String::from_utf8_lossy(&out.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let run = process::required_output(&mut Command::new(&exe));
                     let _ = std::fs::remove_dir_all(&dir);
                     assert_eq!(
                         String::from_utf8_lossy(&run.stdout),
@@ -6221,6 +6232,15 @@ int main(void) {
 /// that ends at the zero byte while the reader takes all fifteen.
 #[test]
 fn an_element_pointer_round_trips_through_the_printed_c() {
+    check_elemptr_round_trip(cfg!(all(target_os = "linux", target_arch = "x86_64")));
+}
+
+#[test]
+fn elemptr_spellings_are_checked_without_native_execution() {
+    check_elemptr_round_trip(false);
+}
+
+fn check_elemptr_round_trip(run_native: bool) {
     let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
     let sp = specs();
     let witnesses = [
@@ -6243,23 +6263,25 @@ fn an_element_pointer_round_trips_through_the_printed_c() {
         "long w_pick(char *a0,long a1,int a2)",
     ];
     let off: &[&str] = &["void * w_decode(long a0,unsigned long a1,unsigned long *a2)"];
-    let dir = std::env::temp_dir().join(format!("kuna-elemptr-rt-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    if !run_native {
+        eprintln!("elemptr round trip: native execution disabled; checking all spellings");
+    }
+    let dir = common::scratch_file("elemptr-round-trip", "dir");
+    std::fs::create_dir(&dir).unwrap();
     for build in ["gcc_O0", "clang_O0", "gcc_O2"] {
         let stem = format!("elemptr_{build}_x86_64");
         let bin = fixtures.join(&stem);
-        let expected = Command::new(&bin).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-        let Ok(mut expected) = expected else {
-            eprintln!("elemptr round trip: the x86-64 fixture does not run here, spelling checked only");
-            return;
-        };
         let rev_broken = build == "gcc_O2";
-        if rev_broken {
-            let mut f: Vec<&str> = expected.split(' ').collect();
-            f[3] = "-";
-            expected = f.join(" ");
-        }
+        let expected = run_native.then(|| {
+            let output = process::required_output(&mut Command::new(&bin));
+            let mut text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if rev_broken {
+                let mut fields: Vec<&str> = text.split(' ').collect();
+                fields[3] = "-";
+                text = fields.join(" ");
+            }
+            text
+        });
         for arm in ["on", "off"] {
             // The field sits at the very end of a readable page with the option
             // on; off, upstream's widened load is kept, so it sits mid-page.
@@ -6345,6 +6367,7 @@ fn an_element_pointer_round_trips_through_the_printed_c() {
             }
             printed.push_str(&bodies);
             std::fs::write(out.join("printed.c"), &printed).unwrap();
+            let Some(expected) = &expected else { continue };
             for cc in ["gcc", "clang"] {
                 if process::optional_output(Command::new(cc).arg("--version")).is_none() {
                     eprintln!("elemptr round trip: no `{cc}`");
@@ -6378,7 +6401,7 @@ fn an_element_pointer_round_trips_through_the_printed_c() {
                     "{build} {arm}/{cc}: the printed witnesses did not compile:\n{}\n{printed}",
                     String::from_utf8_lossy(&built.stderr)
                 );
-                let run = Command::new(&exe).output().expect("run the round trip");
+                let run = process::required_output(&mut Command::new(&exe));
                 let mut got = String::from_utf8_lossy(&run.stdout).trim().to_string();
                 let mut want = expected.clone();
                 // gcc -O2 with the option off (main): `w_tabinit` fills the table

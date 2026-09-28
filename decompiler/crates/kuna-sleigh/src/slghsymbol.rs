@@ -1863,13 +1863,14 @@ impl DecisionNode {
     }
 
     /// C++ `DecisionNode::getScore(int4 low,int4 size,bool context)`.
-    fn get_score(&self, low: i32, size: i32, context: bool) -> f64 {
-        let num_bins = 1usize << size; // size is between 1 and 8
+    fn get_score(&self, low: i32, size: i32, context: bool, counters: &mut [i32]) -> f64 {
+        let num_bins = 1usize << size;
         let mut m: u32 = 1u32 << size;
         m = m.wrapping_sub(1);
 
         let mut total = 0i32;
-        let mut count = vec![0i32; num_bins];
+        let count = &mut counters[..num_bins];
+        count.fill(0);
 
         for (pat, _) in &self.list {
             let mask = pat.get_mask(low, size, context);
@@ -1885,7 +1886,7 @@ impl DecisionNode {
         }
         let mut sc = 0.0f64;
         let listlen = self.list.len() as i32;
-        for &c in count.iter().take(num_bins) {
+        for &c in count.iter() {
             if c <= 0 {
                 continue;
             }
@@ -1900,6 +1901,8 @@ impl DecisionNode {
 
     /// C++ `DecisionNode::chooseOptimalField`.
     fn choose_optimal_field(&mut self) {
+        const MAX_FIELD_BITS: i32 = 8;
+        let mut counters = [0; 1 << MAX_FIELD_BITS];
         let mut score = 0.0f64;
         let mut maxfixed = 1i32;
 
@@ -1912,7 +1915,7 @@ impl DecisionNode {
                 if numfixed < maxfixed {
                     continue;
                 }
-                let sc = self.get_score(sbit, 1, context);
+                let sc = self.get_score(sbit, 1, context, &mut counters);
                 if numfixed > maxfixed && sc > 0.0 {
                     score = sc;
                     maxfixed = numfixed;
@@ -1938,11 +1941,11 @@ impl DecisionNode {
         let mut context = true;
         loop {
             let maxlength = 8 * self.get_maximum_length(context);
-            for size in 2..=8 {
+            for size in 2..=MAX_FIELD_BITS {
                 let mut sbit = 0;
                 while sbit < maxlength - size + 1 {
                     if self.get_num_fixed(sbit, size, context) >= maxfixed {
-                        let sc = self.get_score(sbit, size, context);
+                        let sc = self.get_score(sbit, size, context, &mut counters);
                         if sc > score {
                             score = sc;
                             self.startbit = sbit;

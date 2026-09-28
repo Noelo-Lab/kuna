@@ -5,6 +5,11 @@ use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+/// A required command must exist and exit successfully.
+pub fn required_output(command: &mut Command) -> Output {
+    optional_output(command).unwrap_or_else(|| panic!("required command not found: {command:?}"))
+}
+
 /// Treat a spawn NotFound as optional; require successful execution otherwise.
 pub fn optional_output(command: &mut Command) -> Option<Output> {
     match command.output() {

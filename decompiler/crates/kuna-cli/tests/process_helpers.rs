@@ -5,8 +5,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-#[path = "common/process.rs"]
-mod process;
+use common::process;
 
 const CHILD_MODE: &str = "KUNA_CLI_PROCESS_TEST_MODE";
 const PIPE_BYTES: usize = 512 * 1024;
@@ -102,4 +101,20 @@ fn an_unusable_tool_is_not_missing() {
     }))
     .is_err());
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn required_commands_must_exist_and_succeed() {
+    let output = process::required_output(&mut child("pipes"));
+    assert_eq!(output.stderr, vec![b'y'; PIPE_BYTES]);
+    let absent = common::scratch_file("required-absent-tool", "exe");
+    assert!(!absent.exists());
+    assert!(catch_unwind(AssertUnwindSafe(|| {
+        process::required_output(&mut Command::new(absent));
+    }))
+    .is_err());
+    assert!(catch_unwind(AssertUnwindSafe(|| {
+        process::required_output(&mut child("fail"));
+    }))
+    .is_err());
 }

@@ -911,6 +911,10 @@ by matching pattern values and constructor ids. Once checking finishes,
 patterns move into their final order. Sorting does not copy pattern trees or
 search copies to recover their indices.
 
+Field selection reuses a bounded counter array for candidates up to eight bits
+wide. Each score resets only the candidate's bins; fixed-pattern counts, entropy
+arithmetic, candidate order and tie-breaking remain unchanged.
+
 Pattern-building failures report the accumulated reasons. Subtable errors
 identify the table at its source location, and unreferenced-table warnings
 include its name. Decision-tree errors retain both constructors' table-qualified

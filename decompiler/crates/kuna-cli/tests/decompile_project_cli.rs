@@ -6,8 +6,9 @@
 //!
 //! Integration tests require the built processor specs under `specs/`.
 
-#[path = "common/process.rs"]
-mod process;
+mod common;
+
+use common::process;
 
 use std::path::PathBuf;
 use std::process::Command;
