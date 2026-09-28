@@ -2121,6 +2121,63 @@ that named probe. Both logs remain; no threshold or expectation changed.
 Frozen diff hash `7561e5ce` remained unchanged through the last terminal
 success. Logs use `/tmp/kuna-deslop-block-queries-final-`; no baseline moved.
 
+### Reachable snippet grammar and redundant engine expressions
+
+Six redundant casts, borrows and a forwarding closure are removed from call
+recovery, symbol synchronization and declaration rendering. Values already have
+the required types; the signed-to-unsigned Varnode size conversion remains.
+The alias branch's stale instructions to enable code that already runs are
+replaced by its current contract. The first restructuring pass skips the
+unmapped-alias check; later passes and the final sync enable it. No alias or
+merge behavior changes. Engine Clippy drops from 208 errors/97 warnings to
+208/91: exactly three redundant-cast, two needless-borrow and one forwarding-
+closure warnings disappear. All other primary diagnostic messages and source
+text match; this does not make the engine warning-clean.
+
+The snippet parser loses its private `New` token and builder, which neither
+the byte lexer nor symbol classifier produces. `new` remains an ordinary
+identifier, including a local name or language-defined user operation.
+The actual `borrow` token retains its syntax-error path. Documentation now
+describes the parser's real reset behavior and numbers context-word bits from
+most-significant 0 to least-significant 31. Context-bit noncomment code and
+derived-debug fields remain unchanged.
+
+Two persistent tests pin identifier/user-operation handling, `borrow` rejection,
+and reset of non-space locals, flow symbols, results and diagnostics while
+retaining spaces and the temporary base. All 43 parser tests pass on the
+original implementation. Complete before/after parser modules match 10,656
+outcomes per overflow mode over 444 byte programs, both byte orders, four
+bindings for `new`, and fresh, reused and cleared parsers. Each mode has
+3,122 accepted outcomes and no panics. Supporting library modules are real;
+this models the parser, not the full instruction decoder. The rebuilt native
+library matches every complete XML template, diagnostic and parser-state record.
+
+The native build takes 45.73 seconds without warnings. All 3,073 engine units
+and 378 focused SLEIGH/compiler tests pass, as do strict public/private rustdoc,
+CI's CLI lint gate (with its existing dependency warning), 36 CLI comparisons,
+four complete stage transcripts, 286 compiler comparisons and 48 XML outputs.
+Source proofs cover all ten candidate files. Artifacts use
+`/tmp/kuna-deslop-redundant-expressions.7T2LiUPy`.
+
+Balanced CPU-pinned parser timings use thirty measured samples per version
+after three warmup pairs. Aggregate median time changes -1.26% (paired -1.33%);
+all eight configurations improve by 1.26% to 1.71%. Every run preserves the
+result digest across 113,664 parses, with language and program setup outside
+the timer. Complete call-push, argument-guard, array-cover and stack-alias stage
+workloads change +0.13%/-0.21%/+0.08%/-0.46% (paired
++0.36%/-0.18%/-0.29%/-0.43%). Each has sixty-six runs, with exact stdout,
+stderr and exit status checked every time. All remain within the 5% budget;
+no allocation or whole-decompiler speed improvement is claimed.
+
+All nine gates pass: 7,461 workspace tests, 38 existing ignores across 439
+groups and no warnings; 675/675 upstream and 1,467/1,467 stage assertions
+retain parity. All 268 CLI probes pass after the builds finish, along with
+42 Python tests, 56 Ghidra tests, 48 XML comparisons, 17 saved CLI comparisons
+and eleven browser probes. Spec/catalog checks and strict CLI lint pass.
+Frozen diff hash `6b39ea09` remained unchanged through the last terminal
+success. Logs use `/tmp/kuna-deslop-redundant-expressions-final-`. The preceding
+published checkpoint's CI and CodeQL pass. No baseline or threshold changed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -2131,7 +2188,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Archive member and console output files have scoped cleanup. Loading/configuration and the remaining pool module still combine several lifecycle policies. |
-| Collection policy | The CLI has a strict warning-clean Clippy gate. The release engine-library check last reported 208 collection-policy errors/97 warnings, and analysis 215 errors/64 warnings. Reviewed lookup-only collections and explicitly ordered reports preserve existing implementations where iteration cannot affect output. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and extend enforcement. |
+| Collection policy | The CLI has a strict warning-clean Clippy gate. The release engine-library check last reported 208 collection-policy errors/91 warnings, and analysis 215 errors/64 warnings. Reviewed lookup-only collections and explicitly ordered reports preserve existing implementations where iteration cannot affect output. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and extend enforcement. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Public and private analysis rustdoc links now resolve; other documentation warnings and stale migration narratives remain. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. Inherited-stderr exit diagnostics are regression-tested; the earlier real-Chrome startup timeouts remain unexplained. |
 

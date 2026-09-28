@@ -1704,3 +1704,42 @@ Final rustdoc passes with broken intra-doc links denied. All four required gates
 passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
 (7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
 gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.
+
+### Reachable snippet grammar and context-bit contracts
+
+The snippet parser no longer carries a private `New` token, match arm and
+expression builder that neither its lexer nor its symbol classifier can
+produce. `new` remains an ordinary identifier; the lexed but rejected `borrow`
+token is unchanged. The refactor and related documentation remove 38 source
+lines without changing public APIs. The `clear()` contract now correctly says
+that it removes `inst_dest` and `inst_ref`, and the constant-space accessor
+has its own description instead of an unrelated label-resolution comment.
+
+Complete before/after parser modules agree on 10,656 outcomes per overflow
+checking mode: 444 byte programs, both byte orders, four language bindings
+for `new`, and fresh, reused and cleared parsers. All parsing uses the public
+`SnippetLanguage`/`parse_stream` boundary with real supporting library modules.
+The rebuilt native library matches all 10,656 records, including full XML
+operation templates, diagnostics, result presence and temporary-base state;
+3,122 outcomes succeed and none panic. All 371 focused tests pass.
+
+A separate native parser benchmark uses 66 balanced CPU-pinned runs, 30 measured
+per version. Each run parses 444 programs 32 times in eight configurations,
+113,664 parses in total, with language and fixture setup outside the timer.
+Median aggregate time changes +1.464% (paired -0.047%); individual medians range
+from -1.307% to +4.439%, within the 5% budget. Every run preserves all eight
+configuration digests. This is a structural cleanup, with no speed or allocation
+improvement claimed. Complete source snapshots, model adaptations, native
+outputs, hashes and raw samples use `/tmp/kuna-deslop-snippet-new-`.
+
+Context-bit documentation also removes 23 comment lines. It correctly numbers
+bits from most significant 0 to least significant 31 and states that callers
+must provide an ordered, nonnegative range within one word. The constructor
+does not validate that precondition. A separate source proof under
+`/tmp/kuna-deslop-context-bitrange-docs-` confirms all noncomment source lines
+are unchanged, including the fields exposed by derived `Debug` output.
+
+Final rustdoc passes with broken intra-doc links denied. All four required gates
+passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
+(7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
+gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.

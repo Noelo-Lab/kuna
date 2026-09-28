@@ -30,13 +30,11 @@ use crate::semantics::{ConstTpl, ConstType, ConstructTpl, OpTpl, VarnodeTpl};
 use crate::slghsymbol::{SleighSymbol, SymbolType, UserOpSymbol, VarnodeSymbol};
 
 // ---------------------------------------------------------------------------
-// Tokens (mirror of the bison %token set, with carried values)
+// Lexer and symbol-resolution tokens
 // ---------------------------------------------------------------------------
 
-/// A lexed token. Mirrors the bison terminal set of `pcodeparse.y`: the
-/// keyword/operator terminals are unit variants; `INTEGER`/`STRING` carry
-/// their value; the symbol terminals (`SPACESYM`/`USEROPSYM`/`VARSYM`/
-/// `OPERANDSYM`/`JUMPSYM`/`LABELSYM`) carry the resolved [`SnippetSymbol`].
+/// Tokens produced by the byte lexer and symbol classifier. Operators and
+/// keywords are unit variants; integers, names and symbols carry their values.
 /// `Endofstream` is the explicit `ENDOFSTREAM` terminal `rtl` ends on;
 /// `Eof` is the bison "0 = end of file" the parser stops at.
 #[derive(Debug, Clone)]
@@ -84,13 +82,6 @@ enum Token {
     Int2float,
     Float2float,
     Trunc,
-    /// `OP_NEW`: the grammar has `OP_NEW '(' expr ...)` productions, but the
-    /// C++ lexer's `idents[]` table has **no** `"new"` entry, so the token is
-    /// never produced from a snippet (an upstream dead path, faithfully
-    /// preserved: `new` lexes as a STRING/identifier instead). Kept so the
-    /// grammar's OP_NEW reductions are transcribed; unreachable like upstream.
-    #[allow(dead_code)]
-    New,
     // keywords
     BadInteger,
     GotoKey,
@@ -950,13 +941,9 @@ impl<'a> PcodeSnippet<'a> {
         );
     }
 
-    /// C++ `clear`: reset for a new parse against the same language. Keeps the
-    /// SpaceSymbols (and inst_dest/inst_ref, which C++ leaves too — only the
-    /// non-space symbols are erased), drops the rest.
+    /// Clear the result, errors, labels and non-space local symbols, including
+    /// `inst_dest` and `inst_ref`. Space symbols and the temporary base remain.
     pub fn clear(&mut self) {
-        // C++ erases every non-space symbol (this drops inst_dest/inst_ref,
-        // operands, locals, labels — matching the SleighSymbol::space_symbol
-        // guard).
         self.tree
             .retain(|_, v| matches!(v, SnippetLocal::Symbol(SnippetSymbol::Space(_))));
         self.result = None;
@@ -984,8 +971,7 @@ impl<'a> PcodeSnippet<'a> {
         Token::Str(name.to_vec())
     }
 
-    /// Resolve a label by name from the local tree (used after a label is
-    /// `defineLabel`/`placeLabel`-created and later referenced).
+    /// Clone the snippet's constant-space handle.
     fn snippet_constant_space(&self) -> Rc<AddrSpace> {
         self.constantspace
             .clone()
@@ -1990,8 +1976,7 @@ impl<'p, 'l, 's> Parser<'p, 'l, 's> {
                 }
                 Some(e)
             }
-            // named unary p-code function calls: OP '(' expr ')' (and the
-            // binary/ternary OP_CARRY/OP_SCARRY/OP_SBORROW/OP_NEW forms).
+            // Named unary and binary p-code functions.
             Token::Abs => self.parse_unary_func(OpCode::CPUI_FLOAT_ABS),
             Token::Sqrt => self.parse_unary_func(OpCode::CPUI_FLOAT_SQRT),
             Token::Sext => self.parse_unary_func(OpCode::CPUI_INT_SEXT),
@@ -2012,8 +1997,6 @@ impl<'p, 'l, 's> Parser<'p, 'l, 's> {
                 self.failed = true;
                 None
             }
-            // OP_NEW '(' expr ')' | OP_NEW '(' expr ',' expr ')'
-            Token::New => self.parse_new(),
             // USEROPSYM '(' paramlist ')'  -> createUserOp (with out)
             Token::UserOpSym(sym) => {
                 self.advance();
@@ -2078,27 +2061,6 @@ impl<'p, 'l, 's> Parser<'p, 'l, 's> {
             return None;
         }
         Some(self.pcode.create_op2(opc, a, b))
-    }
-
-    /// `OP_NEW '(' expr ')' | OP_NEW '(' expr ',' expr ')'`.
-    fn parse_new(&mut self) -> Option<ExprTree> {
-        self.advance(); // OP_NEW
-        if !self.expect_char(b'(') {
-            return None;
-        }
-        let a = self.parse_expr(PREC_LOWEST)?;
-        if self.is_char(b',') {
-            self.advance();
-            let b = self.parse_expr(PREC_LOWEST)?;
-            if !self.expect_char(b')') {
-                return None;
-            }
-            return Some(self.pcode.create_op2(OpCode::CPUI_NEW, a, b));
-        }
-        if !self.expect_char(b')') {
-            return None;
-        }
-        Some(self.pcode.create_op(OpCode::CPUI_NEW, a))
     }
 
     /// specificsymbol-leading primaries:

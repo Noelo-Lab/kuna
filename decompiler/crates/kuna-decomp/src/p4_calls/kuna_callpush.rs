@@ -169,7 +169,7 @@ fn is_pushed_sp(data: &Funcdata, ptr: VarnodeId, addr: &kuna_base::address::Addr
         let Some(d) = data.obank().get(def) else { return false };
         let is_sp = v.get_space().get_index() == sp_space.get_index()
             && v.get_offset() == sp.offset
-            && v.get_size() as u32 == sp.size as u32;
+            && v.get_size() as u32 == sp.size;
         if is_sp {
             return d.get_addr() == addr;
         }

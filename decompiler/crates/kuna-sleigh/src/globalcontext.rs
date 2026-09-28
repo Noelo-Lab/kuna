@@ -70,27 +70,17 @@ pub fn register_globalcontext_ids(registry: &mut IdRegistry) {
 // ContextBitRange
 // ---------------------------------------------------------------------------
 
-/// \brief Description of a context variable within the disassembly context
-/// \e blob
-///
-/// Disassembly context is stored as individual (integer) values packed into
-/// a sequence of words. This class represents the info for encoding or
-/// decoding a single value within this sequence.  A value is a contiguous
-/// range of bits within one context word. Size can range from 1 bit up to
-/// the size of a word.
-///
-/// (C++ `ContextBitRange(void)` leaves the fields uninitialized; `Default`
-/// zeroes them here.)
+/// A contiguous value packed within one 32-bit context word.
+/// Bit indices run from the most significant bit (0) to the least significant
+/// bit (31). `Default` zeroes all fields.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ContextBitRange {
     /// Index of word containing this context value
     word: i32,
-    /// Starting bit of the value within its word (0=most significant bit
-    /// 1=least significant).  Never read after construction, as in C++.
+    /// First bit within the word, numbered from the most significant bit.
     #[allow(dead_code)]
     startbit: i32,
-    /// Ending bit of the value within its word.  Never read after
-    /// construction, as in C++.
+    /// Last bit within the word.
     #[allow(dead_code)]
     endbit: i32,
     /// Right-shift amount to apply when unpacking this value from its word
@@ -100,44 +90,34 @@ pub struct ContextBitRange {
 }
 
 impl ContextBitRange {
-    /// Bits within the whole context blob are labeled starting with 0 as the
-    /// most significant bit in the first word in the sequence. The new
-    /// context value must be contained within a single word.
-    /// \param sbit is the starting (most significant) bit of the new value
-    /// \param ebit is the ending (least significant) bit of the new value
+    /// Describe the inclusive range `sbit..=ebit` in the whole context blob.
+    /// Callers must supply ordered, nonnegative indices within one 32-bit word;
+    /// this constructor does not validate them.
     pub fn new(sbit: i32, ebit: i32) -> ContextBitRange {
-        // 8*sizeof(uintm) == 32.  (C++ divides int4 by size_t — an unsigned
-        // division — identical to i32 division for the non-negative bit
-        // positions used here.)
         let word = sbit / 32;
         let startbit = sbit - word * 32;
         let endbit = ebit - word * 32;
         let shift = 32 - endbit - 1;
-        // cast: startbit+shift is in [0,31] for any in-word range (C++
-        // shifts by an int with the same value)
         let mask = (!0u32) >> ((startbit + shift) as u32);
         ContextBitRange { word, startbit, endbit, shift, mask }
     }
 
-    /// Return the shift-amount for \b this value
+    /// Right shift needed to unpack the value.
     pub fn get_shift(&self) -> i32 {
         self.shift
     }
 
-    /// Return the mask for \b this value
+    /// Mask applied after shifting to unpack the value.
     pub fn get_mask(&self) -> u32 {
         self.mask
     }
 
-    /// Return the word index for \b this value
+    /// Index of the context word containing the value.
     pub fn get_word(&self) -> i32 {
         self.word
     }
 
-    /// \brief Set \b this value within a given context blob
-    ///
-    /// \param vec is the given context blob to alter (as an array of words)
-    /// \param val is the integer value to set
+    /// Store the low bits of `val`, preserving the rest of the context word.
     pub fn set_value(&self, vec: &mut [u32], val: u32) {
         let word = self.word as usize; // cast: word index, non-negative
         let mut newval = vec[word];
@@ -146,10 +126,7 @@ impl ContextBitRange {
         vec[word] = newval;
     }
 
-    /// \brief Retrieve \b this value from a given context blob
-    ///
-    /// \param vec is the given context blob (as an array of words)
-    /// \return the recovered integer value
+    /// Read the value from the context blob.
     pub fn get_value(&self, vec: &[u32]) -> u32 {
         (vec[self.word as usize] >> self.shift) & self.mask // cast: word index
     }

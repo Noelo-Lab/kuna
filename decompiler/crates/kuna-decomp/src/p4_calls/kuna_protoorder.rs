@@ -251,7 +251,7 @@ fn prints_exactly_as_a_float(data: &Funcdata, vn: VarnodeId) -> bool {
         return false;
     }
     data.get_arch().get_float_format(node.get_size()).is_some_and(|f| {
-        f.get_host_float(node.get_offset() as u64).1 != kuna_num::float::floatclass::nan
+        f.get_host_float(node.get_offset()).1 != kuna_num::float::floatclass::nan
     })
 }
 
@@ -335,7 +335,7 @@ fn inside_a_frame_aggregate(
             return true;
         }
     }
-    let shift = 64 - 8 * space.get_addr_size().clamp(1, 8) as u32;
+    let shift = 64 - 8 * space.get_addr_size().clamp(1, 8);
     let signed = |x: kuna_base::types::uintb| ((x << shift) as i64) >> shift;
     let regions = regions.get_or_insert_with(|| {
         let Some(sp) = data.find_spacebase_input(space) else { return Vec::new() };
@@ -734,7 +734,7 @@ pub(crate) fn with_sibling_loads(data: &Funcdata, family: &[VarnodeId]) -> Vec<V
         if through_the_frame(data, o) {
             continue;
         }
-        let Some((base, off)) = o.get_in(1).and_then(|a| place(a)) else { continue };
+        let Some((base, off)) = o.get_in(1).and_then(&place) else { continue };
         let Some(bnode) = data.vbank().get(base) else { continue };
         let mut addrs: Vec<VarnodeId> = if off == 0 { vec![base] } else { Vec::new() };
         for r in bnode.descend_iter() {

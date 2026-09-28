@@ -661,7 +661,10 @@ COPY ranges). Every surviving range becomes a Symbol in the local scope
 (`adjust_fit`/`create_entry`), and `funcdata_spacebase.rs
 (Funcdata::sync_varnodes_with_symbols)` paints the resulting
 `mapped`/`addrtied`/`addrforce`/`nolocalalias` flags (and, in the final sync
-only, data-types) onto the Varnodes. After `fullloop` exits,
+only, data-types) onto the Varnodes. Unmapped locations gain `nolocalalias`
+only when the caller enables alias checking and the local map proves the
+location unaliased. The first restructuring pass disables this check;
+later passes and the final sync enable it. After `fullloop` exits,
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionMappedLocalSync)` runs that final data-type-updating sync once; its
 failure mode is tolerance, not an abort — the layout keeps the conceded

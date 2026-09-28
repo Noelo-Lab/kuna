@@ -1036,6 +1036,12 @@ constructor's changes. Each decision node still owns its simplified patterns,
 moving the simplifier's result directly into the node. Source patterns and
 context changes remain owned by their constructors.
 
+Snippet expressions have no built-in `new` operation. The byte lexer treats
+`new` as an ordinary identifier, resolved through local and language symbols.
+Clearing a snippet removes its result, diagnostics and
+non-space locals, including `inst_dest` and `inst_ref`, while preserving space
+symbols and the temporary base.
+
 Runtime context application borrows the constructor's commands and expressions.
 Commands run in stored order against the mutable parser context; evaluation
 stops at the first error without undoing preceding local updates or queued commits.
