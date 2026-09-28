@@ -9,6 +9,10 @@ mod common;
 #[path = "common/process.rs"]
 mod process;
 
+#[cfg(unix)]
+#[path = "common/compiler_probe_tests.rs"]
+mod compiler_probe_tests;
+
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -2476,7 +2480,7 @@ fn a_float_pointee_keeps_the_callers_integer_stores_round_trip() {
         .unwrap()
         .to_string();
     let sp = specs();
-    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    let have_cc = process::optional_output(Command::new("cc").arg("--version")).is_some();
     for off in [false, true] {
         let mut args = vec!["decompile-all", bin.as_str(), "--option", "structdefs", "on", "--sleighpath", &sp];
         if off {
@@ -3915,7 +3919,7 @@ int main(void) {
     let sp = specs();
     let compilers: Vec<&str> = ["gcc", "clang"]
         .into_iter()
-        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     for fixture in ["castimplied_gcc_O0_x86_64", "castimplied_clang_O0_x86_64"] {
         let bin = repo_root()
@@ -4065,7 +4069,7 @@ int main(void) {
     let sp = specs();
     let compilers: Vec<&str> = ["gcc", "clang"]
         .into_iter()
-        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     for fixture in ["castternary_gcc_O0_x86_64", "castternary_clang_O0_x86_64"] {
         let bin = repo_root()
@@ -4318,7 +4322,7 @@ int main(void) {
     let sp = specs();
     let compilers: Vec<&str> = ["gcc", "clang"]
         .into_iter()
-        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     for (fixture, pins) in [
         ("castwiden_gcc_O0_x86_64", gcc_o0),
@@ -4591,7 +4595,7 @@ int main(void) {
     let sp = specs();
     let compilers: Vec<&str> = ["gcc", "clang"]
         .into_iter()
-        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     for (fixture, funcs, main, want, lines, same) in cases {
         let bin = repo_root()
@@ -4800,7 +4804,7 @@ int main(void) {
     let sp = specs();
     let compilers: Vec<&str> = ["gcc", "clang"]
         .into_iter()
-        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     for (fixture, funcs, want, lines, same) in cases {
         let bin = repo_root()
@@ -4985,7 +4989,7 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
     assert!(tested.len() >= 24, "{tested:?}");
     let sp = specs();
     let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
-    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    let have_cc = process::optional_output(Command::new("cc").arg("--version")).is_some();
     for build in ["gcc_O0", "clang_O0", "gcc_O2"] {
         let bin = fx.join(format!("castarith_{build}_x86_64"));
         let bin = bin.to_str().unwrap();
@@ -5109,7 +5113,7 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
     assert!(tested.len() >= 20, "{tested:?}");
     let sp = specs();
     let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
-    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    let have_cc = process::optional_output(Command::new("cc").arg("--version")).is_some();
     for build in ["gcc_O0", "clang_O0", "gcc_O2"] {
         let bin = fx.join(format!("castindex_{build}_x86_64"));
         let bin = bin.to_str().unwrap();
@@ -5228,7 +5232,7 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
     assert_eq!(tested.len(), 4, "{tested:?}");
     let sp = specs();
     let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
-    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    let have_cc = process::optional_output(Command::new("cc").arg("--version")).is_some();
     let decompile = |bin: &str, arm: &str| -> String {
         let args = [
             "decompile-all", bin, "--sleighpath", sp.as_str(),
@@ -6093,7 +6097,7 @@ int main(void) {
     let sp = specs();
     let compilers: Vec<&str> = ["gcc", "clang"]
         .into_iter()
-        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     for (fixture, funcs, main, want, lines, kept) in cases {
         let bin = repo_root()

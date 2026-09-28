@@ -1375,17 +1375,32 @@ impl SleighCompile {
         for i in 0..self.tables.len() {
             self.apply_handmaps(self.tables[i]);
         }
+        let mut message = errs.join("\n");
+        if !errs.is_empty() {
+            message.push('\n');
+        }
         if self.subtable_is_error(root) {
             self.errors += 1;
+            self.report_error(&message);
         }
         for i in 0..self.tables.len() {
             let t = self.tables[i];
             if self.subtable_is_error(t) {
                 self.errors += 1;
+                let loc = self.symbol_loc.get(&t).cloned();
+                let name = self.symbol_name(t);
+                self.report_error_loc(
+                    loc.as_ref(),
+                    &format!("Problem in table '{}':{message}", String::from_utf8_lossy(&name)),
+                );
             }
             if self.subtable_pattern_none(t) {
                 let loc = self.symbol_loc.get(&t).cloned();
-                self.report_warning_loc(loc.as_ref(), "Unreferenced table");
+                let name = self.symbol_name(t);
+                self.report_warning_loc(
+                    loc.as_ref(),
+                    &format!("Unreferenced table '{}'", String::from_utf8_lossy(&name)),
+                );
             }
         }
         Ok(())
@@ -1419,26 +1434,48 @@ impl SleighCompile {
     /// `buildDecisionTrees` (slgh_compile.cc:2086).
     fn build_decision_trees(&mut self) -> KunaResult<()> {
         let root = self.base.get_root().expect("root set");
-        let mut props = DecisionProperties::new();
-        self.base.symtab_mut().build_decision_tree(root, &mut props)?;
-        for &t in &self.tables {
-            self.base.symtab_mut().build_decision_tree(t, &mut props)?;
-        }
-        let ident = props.get_ident_errors().len();
-        for _ in 0..ident {
-            self.errors += 1;
-            self.report_error("Constructor has identical pattern to another constructor");
-        }
-        if !self.lenientconflicterrors {
-            let conflict = props.get_conflict_errors().len();
-            for _ in 0..conflict {
-                self.errors += 1;
-                self.report_error(
-                    "Constructor pattern cannot be distinguished from another constructor",
-                );
+        let mut ident = Vec::new();
+        let mut conflicts = Vec::new();
+        for table_index in 0..=self.tables.len() {
+            let table_id = if table_index == 0 {
+                root
+            } else {
+                self.tables[table_index - 1]
+            };
+            let mut props = DecisionProperties::new();
+            self.base
+                .symtab_mut()
+                .build_decision_tree(table_id, &mut props)?;
+            let qualify = |&(a, b)| {
+                (
+                    ConstructorRef { table_id, ct_id: a },
+                    ConstructorRef { table_id, ct_id: b },
+                )
+            };
+            ident.extend(props.get_ident_errors().iter().map(qualify));
+            if !self.lenientconflicterrors {
+                conflicts.extend(props.get_conflict_errors().iter().map(qualify));
             }
         }
+        for (a, b) in ident {
+            self.report_pattern_error(a, b, "Constructor has identical pattern to constructor at ");
+        }
+        for (a, b) in conflicts {
+            self.report_pattern_error(
+                a,
+                b,
+                "Constructor pattern cannot be distinguished from constructor at ",
+            );
+        }
         Ok(())
+    }
+
+    fn report_pattern_error(&mut self, a: ConstructorRef, b: ConstructorRef, message: &str) {
+        let loc_a = self.constructor_location(a);
+        let loc_b = self.constructor_location(b);
+        self.errors += 1;
+        self.report_error_loc(Some(&loc_a), &format!("{message}{}", loc_b.format()));
+        self.report_error_loc(Some(&loc_b), &format!("{message}{}", loc_a.format()));
     }
 
     /// Warn about operands sharing exported temporaries

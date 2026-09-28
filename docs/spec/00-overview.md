@@ -903,6 +903,14 @@ constructor's changes. Each decision node still owns its simplified patterns,
 moving the simplifier's result directly into the node. Source patterns and
 context changes remain owned by their constructors.
 
+Pattern-building failures report the accumulated reasons. Subtable errors
+identify the table at its source location, and unreferenced-table warnings
+include its name. Decision-tree errors retain both constructors' table-qualified
+references, so equal local constructor ids in different tables remain separate
+errors. Reports identify both source locations, including included files.
+Identical patterns are always errors; unresolved overlaps are reported when
+strict conflict checking is requested with `-l`.
+
 Finalized macro templates are shared immutably between their symbols and the
 compiler's expansion table. Expanding a macro borrows this shared definition
 and creates independent output operations for parameter substitution and label

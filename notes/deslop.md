@@ -648,13 +648,57 @@ All 47 pinned C++ XML outputs and 17 saved CLI cases remain identical. Frozen
 source and new-test hashes match after the final test process exits. CodeQL
 and parity CI passed on the preceding commit `589d4c4ba`.
 
+## Eighteenth checkpoint: failures that tests and the compiler must report
+
+Ten round-trip test paths treated an unsuccessful `cc`, `gcc` or `clang`
+version probe as an absent compiler. They now use the existing shared process
+helper: only a spawn `NotFound` is optional, while a nonzero exit or other
+spawn error fails the check. Successful probes and the spelling checks retained
+without a compiler are unchanged.
+
+Three Unix subprocess regressions exercise the real round-trip tests under a
+child-only executable search path: missing compilers, executables returning 7,
+and non-executable compiler files. They cover both a single compiler probe and
+compiler-list selection, require that the named child test actually ran, and
+check the failure diagnostic. Unique scratch directories are removed on drop;
+the parent environment and repository fixtures are untouched. Before the fix,
+the broken-tool regressions fail while the missing-tool control passes. All
+three pass afterward, as do all 97 whole-binary CLI tests. Separate saved-test
+runs also demonstrate both false greens before the fix.
+
+The compiler now reports previously discarded pattern-building reasons, names
+unused tables and reports both source locations for conflicting constructors.
+Errors retain table-qualified constructor references, so distinct conflicts in
+different tables no longer collapse merely because their local indices match.
+The root's three new compiler tests fail before the fix and pass afterward;
+all 375 compiler/SLEIGH release tests pass. Identical patterns remain errors,
+and ordinary overlap errors remain controlled by the existing `-l` flag.
+
+Direct root comparisons match all 27 focused cases against the saved pinned
+C++ diagnostics, status and decoded-image references. Another 256 generated
+cases retain pre-fix Rust status, stdout and accepted encoded bytes. Their
+three acceptance/image differences and 96 diagnostic differences from C++
+already existed; this fix does not adopt C++'s different suppression of later
+errors involving an already-marked constructor. Independent compiler timing
+and the detailed comparison evidence are in `notes/deslop-slacomp.md`.
+No production CLI/decompiler path changed in the test cleanup, and no baseline
+or existing oracle expectation moved.
+
+Final frozen-tree validation passed all four required gates: 675 upstream and
+1467 stage assertions, 7427 workspace tests (38 ignored, no warnings), and spec
+checks. All 268 CLI probes, 42 Python tests, 56 Ghidra tests, 47 pinned compiler
+XML comparisons and 17 saved CLI comparisons also passed. Twenty repeated runs
+of the new compiler-probe subprocess tests passed all 60 checks. The tracked
+diff and both new test files retained their frozen hashes through the last
+suite exit. The preceding commit's six CodeQL analyses and parity CI passed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
 
 | Area | Evidence / next check |
 |---|---|
-| CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Fault-test process handling is shared; optional-tool failures are explicit. Remaining native-platform gates and conditional assertions still need review. |
+| CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Fault-test process handling is shared; all ten remaining compiler-probe false greens now use the checked helper. Missing/broken/non-executable compiler regressions drive real test subprocesses. Remaining native-platform gates and conditional assertions still need review. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |

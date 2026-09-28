@@ -522,6 +522,53 @@ and 1,467 stage assertions, 7,711 workspace tests with 38 existing ignores, and
 the spec check. The option catalog passed, and all 47 XML outputs still match
 pinned C++. No baseline or existing oracle expectation changed.
 
+Pattern-building errors were collected and then discarded, leaving invalid
+specifications with only `No output produced`. Decision-tree errors discarded
+the constructor identities and printed one generic message. They also shared
+local constructor ids across tables, so matching id pairs in separate tables
+collapsed into one report. Unreferenced-table warnings omitted the table name.
+
+The compiler now reports accumulated pattern-building errors with the affected
+subtable's source location and prints the name in unused-table warnings. Each
+decision tree collects errors independently, and the driver qualifies the pairs
+with `ConstructorRef` before reporting both constructors' source locations.
+Identical patterns remain errors in either mode; ordinary conflicts are still
+accepted by default and reported with `-l`. The runtime property API and its
+pair-deduplication rules are unchanged. The built-in instruction table has no
+user declaration, so its build errors use the collected constructor details
+without assigning the source header as its location.
+
+Three CLI tests cover seven cases: undefined operands in the root and an
+included subtable, a named unused-table warning, and conflicts in two included
+tables whose local constructor ids repeat (overlap/identical patterns, each
+with default settings and `-l`). All three tests fail before the fix and pass
+when the same test driver invokes pinned C++. After the fix, all 371 compiler
+and SLEIGH release tests pass, including the 47 binary oracle cases.
+
+A separate 27-case comparison includes those cases plus the previous pattern
+ordering probes. All final diagnostics, statuses and decoded images match
+pinned C++. Before/after Rust exit statuses and all accepted raw images remain
+identical. The three generic-message differences recorded above are now fixed.
+
+Alternating compiler runs pinned to CPU 40 measured Toy-builder wall time at
+6.6211 → 6.6270 ms (+0.09%, 110 samples per version), x86-64 at 475.7773 →
+467.1450 ms (-1.81%, 12 samples), and Hexagon at 148.5649 → 148.5627 ms
+(-0.0015%, 12 samples). Child CPU changes were +0.17%, -1.79%, and +0.03%.
+Every output was identical. Measurements followed warmups on the shared host.
+
+A further 256 deterministic generated cases (128 small specs, each in default
+and strict mode) preserve before/after Rust status, stdout and raw images. They
+also expose existing differences from C++'s suppression of later errors for an
+already-marked constructor: three default-mode specifications are accepted by
+C++ but rejected by Rust, and 96 diagnostic transcripts differ. Re-running the
+pre-fix compiler confirms these acceptance differences predate this change.
+The diagnostic fix leaves the runtime's existing pair-deduplication rules intact.
+
+The independent pattern-diagnostics snapshot passed all four gates: 675 upstream
+and 1,467 stage assertions, 7,714 workspace tests with 38 existing ignores, and
+the spec check. The option catalog passed, and all 47 XML outputs still match
+pinned C++. No baseline or existing oracle expectation changed.
+
 Pattern construction now borrows completed constructor patterns for common
 subpattern folding and decision-tree setup, and borrows context changes while
 validating them. Decision nodes retain ownership of their simplified patterns
