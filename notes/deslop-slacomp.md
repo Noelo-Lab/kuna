@@ -1519,3 +1519,61 @@ All four required gates passed: `make test` (675/675), `make test-stages`
 (1,467/1,467), `make rust-test` (7,714 passed, 38 ignored across 433 groups),
 and `make check-spec`. Both parity gates report `PARITY OK`; the option
 catalog and whitespace checks also pass. Neither baseline changed.
+
+### Borrowed constructor operand expressions
+
+Constructor pattern building borrows each operand's defining expression instead
+of copying the expression tree before choosing between its defining symbol and
+expression. The symbol branch still takes precedence, including malformed
+operands that contain both definitions. Public signatures and ownership remain
+unchanged; `slghsymbol.rs` loses four source lines.
+
+The complete before/after modules agree on 12,288 outcomes per overflow-checking
+mode across 4,096 symbol tables, including 4,623 outcomes without diagnostics
+and 980 panic outcomes. Comparisons include diagnostics, panic payloads, partial
+table and equation state, and retries. All 371 focused SLEIGH tests pass; 286
+compiler CLI cases preserve status, both output streams and compiled images,
+and all 48 XML output fixtures match.
+
+A public-API allocation probe runs `SleighCompile::run_compilation` three times
+per specification in fresh processes. All samples agree, and all nine complete
+compiled images and diagnostic streams match. Allocation/reallocation requests
+for Toy, x86 and Hexagon fall from 16,816 / 2,671,156 / 681,381 to
+16,798 / 2,671,102 / 680,770. Requested bytes fall from
+2,328,801 / 233,293,010 / 75,834,626 to 2,328,225 / 233,291,282 / 75,815,074.
+Across one compilation of each, that is 683 fewer requests and 21,856 fewer
+requested bytes, not a measure of peak memory. Both versions use the same
+input and output paths, with compiler construction outside the counter.
+
+Balanced CPU-pinned compiler timings use 110 measured runs per version for Toy
+and 12 each for x86 and Hexagon, after warmups. Median wall-time deltas are
++0.570% / +0.358% / -0.219%; paired medians are +0.611% / +0.239% / -0.571%.
+All compiled images match, and every workload stays inside the 5% budget.
+Models, source snapshots, allocation probes, native compiler snapshots and raw
+timing samples use the local `/tmp/kuna-deslop-operand-expression-` prefix.
+
+All four required gates passed: `make test` (675/675), `make test-stages`
+(1,467/1,467), `make rust-test` (7,714 passed, 38 ignored across 433 groups),
+and `make check-spec`. Both parity gates report `PARITY OK`; the option
+catalog and whitespace checks also pass. Neither baseline changed.
+
+### Emulator callback contracts
+
+Emulator API documentation now describes its Rust traits and callbacks directly.
+Default breakpoint hooks return `true` without changing emulator state; missing
+registered callbacks return `false`. Registration replaces the callback for a
+key and retains the supplied shared callback. Operation names use the first
+translator match, with a low-level error for an unknown name. The execution
+and memory trait docs distinguish engine-provided handlers from the shared
+handlers that reject unsupported operations.
+
+`emulate.rs` loses 109 comment lines. Every noncomment, nonblank source line is
+identical, so public signatures and runtime behavior are unchanged. Rustdoc
+passes with broken intra-doc links denied for `kuna-sleigh` and `kuna-slacomp`.
+Source identity evidence and check logs use the local
+`/tmp/kuna-deslop-emulator-contract-docs-` prefix.
+
+All four required gates passed: `make test` (675/675), `make test-stages`
+(1,467/1,467), `make rust-test` (7,714 passed, 38 ignored across 433 groups),
+and `make check-spec`. Both parity gates report `PARITY OK`; the option
+catalog and whitespace checks also pass. Neither baseline changed.

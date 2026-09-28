@@ -1036,6 +1036,10 @@ constructor's changes. Each decision node still owns its simplified patterns,
 moving the simplifier's result directly into the node. Source patterns and
 context changes remain owned by their constructors.
 
+Constructor operand patterns use the defining symbol when present. Otherwise,
+pattern generation borrows the operand's defining expression without copying
+its tree. The operand retains ownership of the expression throughout the build.
+
 Aligned instruction patterns intersect and find their common subpattern from
 borrowed blocks. Blocks are normalized when constructed or decoded, so a zero
 alignment shift needs no copied block or additional normalization.

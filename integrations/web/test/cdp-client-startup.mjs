@@ -10,6 +10,7 @@ const directory = mkdtempSync(join(tmpdir(), 'kuna-cdp-tests-'));
 const originalTmp = process.env.TMPDIR;
 process.env.TMPDIR = directory;
 const fixture = `#!/usr/bin/env node
+import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 const mode = basename(process.argv[1], '.mjs');
@@ -19,6 +20,13 @@ const portFile = join(profile, 'DevToolsActivePort');
 if (mode === 'early') {
   process.stderr.write('sentinel-chrome-startup-failure\\n');
   process.exitCode = 7;
+} else if (mode === 'inherited-stderr') {
+  const holder = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: ['ignore', 'ignore', 2],
+  });
+  writeFileSync(join(dirname(process.argv[1]), mode + '.pid'), String(holder.pid));
+  holder.unref();
+  process.stderr.write('inherited-stderr-sentinel\\n', () => process.exit(7));
 } else if (mode === 'flood') {
   process.stderr.write('x'.repeat(20000) + 'tail-sentinel\\n');
   process.exitCode = 9;
@@ -72,6 +80,22 @@ try {
   assert.ok(performance.now() - started < 2000, 'an exited browser must not await the deadline');
   cases++;
 
+  try {
+    const started = performance.now();
+    const inherited = await rejected(executable('inherited-stderr'), /code 7/, { startupTimeoutMs: 4000 });
+    assert.match(inherited.message, /inherited-stderr-sentinel/);
+    assert.ok(performance.now() - started < 2000, 'exit detection must not wait for inherited stderr to close');
+    cases++;
+  } finally {
+    const pidFile = join(directory, 'inherited-stderr.pid');
+    if (existsSync(pidFile)) {
+      const pid = Number(readFileSync(pidFile, 'utf8'));
+      assert.ok(Number.isInteger(pid) && pid > 1);
+      try { process.kill(pid, 'SIGKILL'); }
+      catch (error) { if (error.code !== 'ESRCH') throw error; }
+    }
+  }
+
   await rejected(join(directory, 'missing'), /Could not start Chrome:.*ENOENT/);
   cases++;
   await rejected({}, /file.*string/i);
@@ -96,6 +120,7 @@ try {
     } finally {
       chrome.close();
       chrome.close();
+      assert.equal(chrome.child.stderr.destroyed, true);
       await closed;
     }
     assert.equal(existsSync(record.profile), false);

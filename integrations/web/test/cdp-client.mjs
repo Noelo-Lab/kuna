@@ -34,6 +34,7 @@ export async function launchChrome(chromePath = findChrome(), { width = 1280, he
   };
   const close = () => {
     try { child?.kill('SIGKILL'); } catch (_) { /* gone */ }
+    child?.stderr?.destroy();
     cleanup();
   };
   let stderr = '';
@@ -51,7 +52,7 @@ export async function launchChrome(chromePath = findChrome(), { width = 1280, he
     let spawnError;
     let exited;
     child.once('error', (error) => { spawnError = error; });
-    child.once('close', (code, signal) => { exited = { code, signal }; });
+    child.once('exit', (code, signal) => { exited = { code, signal }; });
     const deadline = Date.now() + startupTimeoutMs;
     for (;;) {
       if (spawnError) throw failure(`Could not start Chrome: ${spawnError.message}`);

@@ -698,7 +698,10 @@ temporary executables, without requiring Chrome or a web build. Missing or
 exited executables fail promptly with bounded stderr diagnostics; a running
 browser still has ten seconds to publish a complete, valid DevTools port line.
 Failures and explicit close clean up the owned temporary profile. Startup
-errors remain failures, not browser-test skips.
+errors remain failures, not browser-test skips. Process exit is observed separately
+from stderr closure, since a descendant may retain the pipe after the browser
+dies. Closing the launcher also releases its stderr stream; exit status and
+captured diagnostics are retained even when the pipe would remain open.
 
 Five layers, all but the last runnable without a browser in CI, spanning **multiple
 formats and architectures**:

@@ -1863,6 +1863,60 @@ unchanged through the last terminal success. Logs use
 `/tmp/kuna-deslop-cli-lint-final-`. Prior remote CI and CodeQL also pass. No
 baseline moved.
 
+### Browser exit ownership and borrowed operand expressions
+
+The browser launcher now observes process exit independently of stderr closure
+and releases the stderr stream when closed. A subprocess retaining that pipe
+previously made an exited browser report a timeout instead of its exit code.
+The new regression fails on the original helper after four seconds with the
+wrong timeout, and all twelve startup cases pass across ten candidate runs.
+The installed helper passes too. Live-browser readiness still has its existing
+ten-second deadline. This synthetic failure is not established as the cause
+of the earlier real-Chrome startup timeouts.
+
+Constructor pattern building borrows the operand's defining expression instead
+of cloning its tree before selecting a definition. Defining symbols still take
+precedence, including malformed operands with both definitions. Actual root
+modules match all 12,288 modeled outcomes in each overflow mode across 4,096
+symbol tables: errors, panic payloads, partial state and retries are preserved.
+The model includes 4,623 clean and 980 panic outcomes per mode. Emulator callback
+documentation loses 109 comment lines while every executable line stays exact;
+default hooks, missing registrations, replacement and unsupported operations
+are described from their implementations.
+
+All 376 focused tests and strict compiler/SLEIGH rustdoc pass without warnings.
+The native build takes 45.02 seconds without warnings. CI's Rust 1.98.1 CLI
+lint gate passes, retaining the separately recorded pre-existing SLEIGH
+dependency warning. Seven candidate files match the reviewed source exactly;
+the operand model includes the complete installed module. Artifacts are under
+`/tmp/kuna-deslop-browser-exit.y9Hr4jNf`.
+
+All 286 compiler cases, 48 XML comparisons and 36 CLI comparisons remain exact.
+Public compiler allocation probes retain all nine complete images and diagnostic
+streams. Three fresh-process samples per specification agree: Toy/x86/Hexagon
+requests change 16,816/2,671,156/681,381 to 16,798/2,671,102/680,770; requested
+bytes change 2,328,425/233,236,618/75,827,030 to
+2,327,849/233,234,890/75,807,478. Across one compilation of each, that removes
+683 allocation/reallocation requests and 21,856 requested bytes. These are
+cumulative requests, not peak-memory measurements. Compiler construction is
+outside the counter, and both versions use identical input/output paths.
+
+Balanced CPU-pinned compiler timings remain within the 5% budget. Median
+wall-time changes are -1.74%/+1.27%/+0.96% for Toy/x86/Hexagon; paired medians
+are +0.51%/+1.35%/+0.81%. All compiled images match across 110 measured Toy
+runs and twelve runs each for x86 and Hexagon per version, after warmups.
+The measured allocation reduction and simpler ownership do not imply a
+general compilation speedup.
+
+All nine gates pass: 7,456 workspace tests, 38 existing ignores across 439
+groups and no warnings; 675/675 upstream and 1,467/1,467 stage assertions retain
+parity. All 268 CLI probes, 42 Python tests, 56 Ghidra tests, 48 XML comparisons,
+17 saved CLI comparisons and eleven browser probes pass, including the twelve
+startup lifecycle cases. Spec/catalog checks and CLI linting pass. Frozen diff
+hash `4186b98f` stayed unchanged through the last terminal success. Logs use
+`/tmp/kuna-deslop-browser-exit-final-`. The prior published checkpoint's CI and
+CodeQL checks also pass. No baseline or browser deadline changed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1875,7 +1929,7 @@ These are investigation targets, not a claim that the repository review is done.
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Archive member and console output files have scoped cleanup. Loading/configuration and the remaining pool module still combine several lifecycle policies. |
 | Collection policy | The CLI has a strict warning-clean Clippy gate. The release engine-library check last reported 211 collection-policy errors, and analysis 215 errors/64 warnings. Reviewed lookup-only collections and explicitly ordered reports preserve existing implementations where iteration cannot affect output. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and extend enforcement. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
-| Analysis, SLEIGH, Python, integrations | Public and private analysis rustdoc links now resolve; other documentation warnings and stale migration narratives remain. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. Two CI runs have timed out during Chrome startup; monitor the retry and inspect readiness diagnostics. |
+| Analysis, SLEIGH, Python, integrations | Public and private analysis rustdoc links now resolve; other documentation warnings and stale migration narratives remain. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. Inherited-stderr exit diagnostics are regression-tested; the earlier real-Chrome startup timeouts remain unexplained. |
 
 Before each commit: `make test`, `make test-stages`, `make rust-test`,
 `make check-spec`. Also run the catalog check and relevant CLI probes. Preserve

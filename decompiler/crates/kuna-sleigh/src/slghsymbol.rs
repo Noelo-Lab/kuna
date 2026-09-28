@@ -3883,12 +3883,8 @@ impl SymbolTable {
         let mut recursion = false;
 
         for &opid in &operand_ids {
-            // Read the operand's defining symbol / expression.
-            let (triple, defexp) = {
-                let sym = self.operand_symbol(opid)?;
-                (sym.get_defining_symbol(), sym.get_defining_expression().cloned())
-            };
-            let sympat: TokenPattern = if let Some(tripid) = triple {
+            let operand = self.operand_symbol(opid)?;
+            let sympat: TokenPattern = if let Some(tripid) = operand.get_defining_symbol() {
                 let is_subtable =
                     self.symbol(tripid)?.get_type() == SymbolType::Subtable;
                 if is_subtable {
@@ -3913,7 +3909,7 @@ impl SymbolTable {
                         None => TokenPattern::new_true(),
                     }
                 }
-            } else if let Some(pe) = defexp {
+            } else if let Some(pe) = operand.get_defining_expression() {
                 pe.gen_min_pattern(&oppattern)
             } else {
                 let nm = name_text(self.symbol(opid)?.get_name()).to_string();
