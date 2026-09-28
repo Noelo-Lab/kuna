@@ -848,6 +848,28 @@ Finalization borrows this local vector while validating its sections, then
 attaches valid templates and context changes. Scope cleanup runs after either
 success or a validation error, including constructors without semantic sections.
 
+Parser constructor handles index the runtime's `ConstructorRef` values, which
+carry a table identity and an index within that table. Driver helpers pass this
+reference through operand creation, section finalization and diagnostics instead
+of maintaining a second pair representation. Section checks borrow the existing
+operand list. Inherited pattern composition walks the `with` stack directly,
+from inner to outer blocks, before combining each outer pattern with the result.
+Address-space lookups use the `PcodeCompile` override-or-base policy for both the
+parser's expression builders and `CompilerHost` callbacks; the existing public
+setters and parser handle types are unchanged.
+
+Pattern construction borrows the equation arena while updating the symbol table.
+Later handmap and decision-tree passes traverse the existing table list. When
+crossbuilds require extra unique-space offset bits, the compiler updates each
+referenced template in place: root table first, then declared subtables, with
+each constructor's main section before its named sections. Missing sections are
+skipped. The pass does not copy table or template-handle lists, move templates
+out of their arena, or alter templates without a constructor reference.
+Register-name collision checking likewise walks the global scope directly and
+borrows each register's spelling while forming its uppercase comparison key;
+collision order and the `-s` policy remain unchanged.
+The decoder rebuilds runtime register cross-references from the encoded symbols.
+
 Finalized macro templates are shared immutably between their symbols and the
 compiler's expansion table. Expanding a macro borrows this shared definition
 and creates independent output operations for parameter substitution and label
@@ -2493,7 +2515,12 @@ Flow-follow itself runs *before* the tree (the upstream `followFlow` →
 itself: with `KUNA_ACTION_PROF` set to a path, every `apply` call is timed and
 the engine writes an exclusive-time table there
 (`decompiler/crates/kuna-decomp/src/infra/actionprof.rs`), rewritten each time
-the schedule unwinds so the file holds the running total for the whole process.
+the outermost timing frame closes. A scope guard closes frames on both normal
+return and panic unwind, so a caught action panic cannot strand the timing stack
+or prevent later actions from publishing. Totals belong to the current thread;
+threads and worker processes do not merge their tables when sharing an output
+path. File-write failures remain non-fatal. Rendering borrows the accumulated
+rows and sorts by descending exclusive time, then by name for ties.
 Time is exclusive — a group is charged only what it spends outside its children,
 so the rows sum to the schedule's wall time and a container cannot hide a leaf —
 and each row is keyed by the root variant it ran under, which is what separates a

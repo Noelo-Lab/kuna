@@ -1,42 +1,7 @@
-//! The end-to-end decompilation orchestrator (item `w9x-arch-engine-glue`).
+//! End-to-end flow following, action scheduling, and C emission.
 //!
-//! Wires the merged subsystems — the [`Architecture`] god object, the
-//! [`FlowInfo`] flow engine, the universalAction pipeline
-//! ([`crate::universalaction`]), and the [`PrintC`] printer — into a single
-//! function-decompilation path, mirroring `decompiler/cpp/ifacedecomp.cc`'s
-//! `IfcDecompile` + `IfcPrintC`:
-//!
-//! ```text
-//! IfcDecompile::execute (ifacedecomp.cc:889)
-//!   fd->followFlow(...)                         -> generate_ops + generate_blocks
-//!   allacts.getCurrent()->reset(*fd)
-//!   res = allacts.getCurrent()->perform(*fd)    -> the restart loop
-//! IfcPrintC::execute (ifacedecomp.cc:925)
-//!   print->docFunction(fd)                      -> PrintC::doc_function shell
-//! ```
-//!
-//! ## What runs end-to-end today (and what stubs out)
-//!
-//! * **Flow following is real.**  [`FlowInfo::generate_ops`] (C++
-//!   `Funcdata::followFlow` -> `generateOps`) lifts and links every
-//!   straight-line instruction's p-code into the `Funcdata`; CALL / jump-table
-//!   sites hit the documented W4 `FlowInfo` stubs (FuncCallSpecs / JumpTable),
-//!   which are no-ops here (faithful partial flow), so `generate_ops` returns
-//!   the IR built up to those boundaries rather than erroring.
-//! * **The universalAction perform loop is real.**  The 252-pass `decompile`
-//!   root is installed and run; the *boot* passes (`ActionStart` -> the C++
-//!   `Funcdata::startProcessing`) are W3/W4 stub no-ops in the merged tree
-//!   (which is why the flow follow is driven explicitly here, outside the
-//!   pipeline, exactly as the C++ `followFlow` runs before `perform`), so the
-//!   pass scheduler/status state-machine executes without rebuilding the IR.
-//! * **The printer body is the W9-emit stub.**  [`PrintC::doc_function`] emits a
-//!   structurally-complete C function *shell* (real signature + matched braces)
-//!   driving the real [`Emit`](crate::prettyprint::Emit) primitives; the
-//!   per-statement RPN expression body is the `// STUB(W9-emit)` driver absent
-//!   from the merged tree (see `printc.rs`).
-//!
-//! This proves the full path RUNS and emits plausible C — not byte-parity (the
-//! W10 grind), which the e2e gate (`tests/decompile_e2e.rs`) asserts.
+//! This connects the architecture's flow environment, restartable action tree,
+//! and printer, following upstream `IfcDecompile` and `IfcPrintC`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;

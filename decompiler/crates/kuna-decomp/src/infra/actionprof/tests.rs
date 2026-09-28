@@ -1,99 +1,120 @@
-//! Tests for the `KUNA_ACTION_PROF` exclusive-time table.
+//! Deterministic accounting and byte-format checks for action profiles.
 
 use super::*;
+use std::time::Duration;
 
-fn reset() {
-    STACK.with(|s| s.borrow_mut().clear());
-    TOTALS.with(|t| t.borrow_mut().clear());
-    ROOT.with(|r| r.borrow_mut().clear());
+fn frame(key: &str, at: Instant, children: u128) -> OpenFrame {
+    OpenFrame {
+        key: key.to_owned(),
+        at,
+        children,
+    }
 }
 
-/// `set_root` is a no-op unless the env var is set, so the tests write the
-/// thread-local directly.
-fn root(name: &str) {
-    ROOT.with(|r| {
-        let mut cur = r.borrow_mut();
-        cur.clear();
-        cur.push_str(name);
-    });
-}
-
-/// A parent is charged only what it spends outside its child, and both rows
-/// carry the root action's name.
 #[test]
 fn parent_time_is_exclusive_of_its_children() {
-    reset();
-    root("decompile");
-    enter("universal");
-    enter("heritage");
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    leave();
-    leave();
+    let at = Instant::now();
+    let mut profiler = Profiler::default();
+    profiler.stack.push(frame("decompile/universal", at, 0));
+    profiler.stack.push(frame(
+        "decompile/heritage",
+        at + Duration::from_nanos(10),
+        0,
+    ));
+    assert!(!profiler.close(at + Duration::from_nanos(30)));
+    profiler
+        .stack
+        .push(frame("decompile/types", at + Duration::from_nanos(40), 0));
+    assert!(!profiler.close(at + Duration::from_nanos(70)));
+    assert!(profiler.close(at + Duration::from_nanos(100)));
 
-    let (parent, child) = TOTALS.with(|t| {
-        let m = t.borrow();
-        (m["decompile/universal"], m["decompile/heritage"])
-    });
-    assert!(child.0 >= 20_000_000, "child kept its own time: {}", child.0);
-    assert!(parent.0 < 20_000_000, "parent was charged the child's time: {}", parent.0);
-    assert_eq!((parent.1, child.1), (1, 1));
-    reset();
+    assert_eq!(profiler.totals["decompile/universal"], (50, 1));
+    assert_eq!(profiler.totals["decompile/heritage"], (20, 1));
+    assert_eq!(profiler.totals["decompile/types"], (30, 1));
 }
 
-/// Two roots do not share a row, which is what separates a function's own
-/// `decompile` pass from the reduced `jumptable` pipeline.
 #[test]
-fn rows_are_keyed_by_root_action() {
-    reset();
-    for name in ["decompile", "jumptable"] {
-        root(name);
-        enter("universal");
-        enter("heritage");
-        leave();
-        leave();
-    }
-    let keys = TOTALS.with(|t| {
-        let mut k: Vec<String> = t.borrow().keys().cloned().collect();
-        k.sort();
-        k
+fn rows_capture_the_root_at_entry() {
+    PROFILE.with(|p| *p.borrow_mut() = Profiler::default());
+    enter("unrooted");
+    PROFILE.with(|p| p.borrow_mut().root = "decompile".into());
+    enter("universal");
+    PROFILE.with(|p| p.borrow_mut().root = "jumptable".into());
+    enter("universal");
+    PROFILE.with(|p| {
+        let mut profiler = p.borrow_mut();
+        for _ in 0..3 {
+            profiler.close(Instant::now());
+        }
+        let mut keys: Vec<_> = profiler.totals.keys().map(String::as_str).collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            ["decompile/universal", "jumptable/universal", "unrooted"]
+        );
+        *profiler = Profiler::default();
     });
+}
+
+#[test]
+fn render_preserves_format_and_breaks_cost_ties_by_name() {
+    let mut profiler = Profiler::default();
+    assert_eq!(profiler.render(), "total_exclusive_ms 0.0\n");
+    profiler.totals.extend([
+        ("root/z".to_owned(), (2_000_000, 3)),
+        ("root/a".to_owned(), (2_000_000, 1)),
+        ("root/dear".to_owned(), (6_000_000, 2)),
+        ("root/zero".to_owned(), (0, 4)),
+    ]);
     assert_eq!(
-        keys,
-        [
-            "decompile/heritage",
-            "decompile/universal",
-            "jumptable/heritage",
-            "jumptable/universal"
-        ]
+        profiler.render(),
+        concat!(
+            "total_exclusive_ms 10.0\n",
+            "       6.0 ms   60.00%          2 calls  root/dear\n",
+            "       2.0 ms   20.00%          1 calls  root/a\n",
+            "       2.0 ms   20.00%          3 calls  root/z\n",
+            "       0.0 ms    0.00%          4 calls  root/zero\n",
+        )
     );
-    reset();
+    profiler.totals.retain(|key, _| key == "root/zero");
+    assert_eq!(
+        profiler.render(),
+        "total_exclusive_ms 0.0\n       0.0 ms    0.00%          4 calls  root/zero\n"
+    );
 }
 
-/// `render` sums to the recorded total and puts the most expensive row first.
 #[test]
-fn render_sorts_by_cost_and_totals() {
-    reset();
-    root("decompile");
-    enter("universal");
-    enter("cheap");
-    leave();
-    enter("dear");
-    std::thread::sleep(std::time::Duration::from_millis(15));
-    leave();
-    leave();
-
-    let text = render();
-    let body: Vec<&str> = text.lines().skip(1).collect();
-    assert!(body[0].ends_with("decompile/dear"), "dearest row first: {text}");
-    assert!(text.starts_with("total_exclusive_ms "), "{text}");
-    reset();
+fn repeated_and_nested_frames_accumulate_in_one_row() {
+    let at = Instant::now();
+    let mut profiler = Profiler::default();
+    profiler.stack.push(frame("root/action", at, 0));
+    profiler
+        .stack
+        .push(frame("root/action", at + Duration::from_nanos(10), 0));
+    assert!(!profiler.close(at + Duration::from_nanos(30)));
+    assert!(profiler.close(at + Duration::from_nanos(50)));
+    profiler
+        .stack
+        .push(frame("root/action", at + Duration::from_nanos(60), 0));
+    assert!(profiler.close(at + Duration::from_nanos(90)));
+    assert_eq!(profiler.totals["root/action"], (80, 3));
 }
 
-/// An unbalanced `leave` is a no-op rather than a panic: the instrument must
-/// never be able to take the engine down.
+#[test]
+fn child_time_larger_than_elapsed_saturates() {
+    let at = Instant::now();
+    let mut profiler = Profiler::default();
+    profiler.stack.push(frame("root/action", at, 100));
+    assert!(profiler.close(at + Duration::from_nanos(50)));
+    assert_eq!(profiler.totals["root/action"], (0, 1));
+}
+
 #[test]
 fn leave_without_enter_is_inert() {
-    reset();
+    let mut profiler = Profiler::default();
+    assert!(!profiler.close(Instant::now()));
+    assert!(profiler.totals.is_empty());
+    PROFILE.with(|p| *p.borrow_mut() = profiler);
     leave();
-    assert!(TOTALS.with(|t| t.borrow().is_empty()));
+    assert_eq!(render(), "total_exclusive_ms 0.0\n");
 }

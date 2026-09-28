@@ -1,36 +1,7 @@
-//! END-TO-END GATE for item `w9x-arch-engine-glue`.
+//! End-to-end checks for XML-loaded architectures, options, and C emission.
 //!
-//! Proves the god-object assembly produces C end-to-end.  For 5 corpus
-//! datatests spanning architectures (8051 / AARCH64 / MIPS / PowerPC / ARM),
-//! this gate:
-//!
-//!   1. extracts the `<binaryimage>` + `<symbol>` functions + `<script>`
-//!      `option` commands from `tests/datatests/*.xml` (reusing the
-//!      `corpus_bootstrap.rs` bootstrap mechanics),
-//!   2. bootstraps a full [`Architecture`] (the XML frontend through
-//!      `build_translator`, then [`Architecture::init_post_engine`] — the
-//!      `buildTypegrp`/`buildCoreTypes`/`buildAction`/… tail of
-//!      `Architecture::init`),
-//!   3. applies any `<script>` `option NAME VALUE` commands against the **real**
-//!      `Architecture` via `OptionDatabase::set` (proving item #2:
-//!      `Architecture: ArchOptionContext`),
-//!   4. decompiles each `<symbol>` function to C
-//!      ([`decompile_drive::decompile_func`] -> [`decompile_drive::print_c`]),
-//!      and
-//!   5. asserts the C output is non-empty + structurally sane (a function
-//!      signature + matched braces).
-//!
-//! This proves the full path RUNS and emits plausible C — NOT byte-parity (the
-//! W10 grind); the printer body is the documented W9-emit seam (see
-//! `printc.rs` / `decompile_drive.rs`), so the asserted C is a complete,
-//! brace-matched function *shell*.
-//!
-//! ## `.sla` precondition
-//!
-//! Like `corpus_bootstrap.rs`, this gate needs the built `.sla` artifacts under
-//! `specs/` (gitignored; `make specs`).  A fixture whose `.sla` is absent is
-//! reported as `errored` (with its first error) rather than silently skipped,
-//! so the gate's pass/fail count is honest.
+//! These tests require the built SLEIGH fixtures and check structural output;
+//! the separate datatest corpus verifies emitted-C expectations.
 
 use std::path::PathBuf;
 use std::rc::Rc;

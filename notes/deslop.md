@@ -422,7 +422,64 @@ groups, and no warnings. Upstream and stage parity remain 675/675 and 1467/1467;
 268 CLI probes, 42 Python tests, 56 Ghidra tests, spec and catalog checks pass.
 All 45 pinned C++ XML outputs and the 17 saved CLI comparison cases remain
 unchanged. Source and new-file hashes were checked again after the final test
-process exited. The fresh CodeQL result is still pending publication.
+process exited. On published commit `8d8ace707`, all six CodeQL analyzer jobs
+and the aggregate CodeQL check pass; the PR-ref open-alert query returns no
+findings. The four dashboard findings are no longer reported. No alert was
+dismissed or suppressed.
+
+## Fourteenth checkpoint: profiler ownership and compiler finalization
+
+The action profiler manually paired `enter` and `leave` around `apply`. A caught
+action panic left both the child and enclosing group on the timing stack: their
+rows disappeared, and subsequent successful actions never published the file.
+A new isolated integration test fails before the fix on the missing panic row.
+Afterward it checks both unwound rows, publication after the panic, accumulating
+later actions, and ignored write errors. It passed 100 repeated release runs.
+A separate nested-action executable independently reproduces the old failure
+and confirms the corrected row/file behavior.
+
+One private profiler state now owns the root label, open frames and totals.
+`Action::perform` holds a thread-bound drop guard around each timed application.
+The public profiling functions, cached enablement and text format are unchanged.
+Six deterministic accounting tests replace sleep-based assertions and cover
+exclusive child costs, captured root labels, repeated rows, saturating time,
+empty-stack handling, exact formatting and cost ties. All 3,068 core release
+unit tests pass. Rendering borrows keys rather than cloning them. The collection
+policy expectation is narrow and fulfilled; the engine's remaining Clippy errors
+fall from 214 to 211, not to zero. The profiler and orchestration headers no
+longer claim process-wide aggregation or describe implemented flow/printing as
+stubs.
+
+The extracted production renderer matches the prior implementation for 3,072
+deterministic tables. Thirty alternating rounds of 25 renders, after warmup and
+pinned to CPU 41, measured 18,062 → 15,715 ns for 32 rows, 136,276 → 121,580 ns
+for 256, and 804,597 → 706,251 ns for 2,048. Separate allocation-counter runs
+report 104 → 72, 780 → 523, and 6,159 → 4,111 requests, respectively. Requested
+bytes fall from 10,856 → 9,234, 100,706 → 75,216, and 815,992 → 643,022. These
+are local rendering costs and cumulative allocation requests, not whole-engine
+speedups or peak memory measurements.
+
+Twenty alternating whole-CLI pairs per profiling mode, with two warmup pairs
+and CPU 41 affinity, preserve stdout, stderr and status exactly, both between
+versions and with profiling on/off. Disabled median wall time is 102.770 →
+102.948 ms (paired ratio 1.0014); enabled is 108.459 → 107.534 ms (paired ratio
+1.0008). CPU medians are 102.289 → 102.464 ms and 107.133 → 107.082 ms. Both
+versions publish nonempty profiles when enabled. The shared-host measurements
+do not establish a whole-decompilation speed change.
+
+The compiler now uses canonical constructor references and shared address-space
+lookup policy. Final passes borrow arenas/table lists and update referenced
+templates in place, retaining traversal order and missing-section behavior;
+the empty cross-reference pass is removed. All 370 compiler/SLEIGH release tests
+pass. Independent byte-oracle, diagnostic, allocation and timing evidence is in
+`notes/deslop-slacomp.md`. No baseline or existing oracle was changed.
+
+Final fourteenth checkpoint validation: all four required gates pass, with
+7,402 workspace tests passed, zero failed, 38 existing ignores across 437
+groups, and no warnings. The 675 upstream and 1,467 stage assertions, 268 CLI
+probes, 42 Python tests, 56 Ghidra tests, spec and catalog checks pass. All 45
+pinned C++ XML references and 17 saved CLI cases remain identical. Frozen source
+and new-file hashes match after the final process exits; no baseline moved.
 
 ## Audit still open
 
@@ -430,12 +487,11 @@ These are investigation targets, not a claim that the repository review is done.
 
 | Area | Evidence / next check |
 |---|---|
-| CodeQL | The PR's aggregate check flagged four path-expression flows in existing dashboard readers and asset routes. Directory-based lookup now extends the existing agent-log boundary; valid behavior is checked offline. A fresh CI result is still required before claiming the alerts are resolved. |
 | CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Fault-test process handling is shared; optional-tool failures are explicit. Remaining native-platform gates and conditional assertions still need review. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
-| Collection policy | The release engine-library Clippy check still reports 214 collection-policy errors. Declaration naming and rendered-signature dedup use reviewed lookup-only collections. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
+| Collection policy | The release engine-library Clippy check still reports 211 collection-policy errors. Declaration naming, rendered-signature dedup and profiling use reviewed lookup-only collections or explicitly sorted reports. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Ninety engine files still contain wave-era STUB notes. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 

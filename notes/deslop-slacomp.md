@@ -357,3 +357,73 @@ The independent collision-warning snapshot passed all four gates: 675 upstream
 and 1,467 stage assertions, 7,709 workspace tests with 38 existing ignores, and
 the spec check. The option catalog passed, and all 45 XML outputs still match
 the pinned C++ reference. No baseline or existing oracle expectation changed.
+
+The compiler driver now stores canonical `ConstructorRef` values for its parser
+handles instead of splitting and reconstructing table/index pairs. Private
+helpers use the same reference through operand creation, finalization and
+diagnostics. Section validation borrows the constructor's operand list, and
+inherited pattern composition iterates the existing `with` stack without an
+intermediate vector. Address-space helpers share the existing `PcodeCompile`
+override-or-base policy. Public handle types, space setters, lookup fallbacks
+and diagnostic text are unchanged. Comments now correctly locate temporary
+allocation in `SleighBase`; the unused public compatibility field remains.
+
+All 366 compiler and SLEIGH release tests pass, including the existing constructor
+API, context and diagnostic regressions and 45 binary oracle cases. All 45 XML
+outputs also match the pinned C++ reference; no new implementation-shaped tests
+were added for this internal refactor.
+
+Alternating compiler runs pinned to CPU 40 measured Toy-builder wall time at
+4.7249 → 4.7511 ms (+0.55%, 110 samples per version), x86-64 at 475.9100 →
+478.7274 ms (+0.59%, 12 samples), and Hexagon at 150.2054 → 150.6355 ms
+(+0.29%, 12 samples). Child CPU changes were +0.18%, +0.69%, and +0.29%.
+Every output was identical. This repeated an initial run where both Toy versions
+shifted between roughly 6.8 ms and 4.3 ms during sampling, making the ratio of
+separate medians show +8.68% despite a median paired change of -0.23%. Both raw
+runs are retained; these are local shared-host measurements after warmup.
+
+The independent driver-reference snapshot passed all four gates: 675 upstream
+and 1,467 stage assertions, 7,709 workspace tests with 38 existing ignores, and
+the spec check. The option catalog passed. No baseline or existing oracle
+expectation changed.
+
+Compiler finalization now borrows its equation arena and existing table list.
+Crossbuild allocation updates referenced templates in place, removing the copied
+subtable list, accumulated handle list, per-constructor named-section vectors
+and template take/restore operations. A private per-table helper preserves root,
+subtable, constructor and main-before-named section order, including repeated
+references and missing-section skips. Templates without constructor references
+remain untouched. The empty private cross-reference pass and its redundant error
+check were removed; the decoder still builds runtime register cross-references.
+
+The register-name check iterates the global scope directly and borrows original
+spellings when building uppercase keys. Eight temporary case/flag comparisons
+cover duplicate spellings, distinct names, similarly named user operations and
+local temporaries, with and without `-s`. Complete Rust diagnostics, status and
+images are unchanged. Status and decoded images match pinned C++ in all eight
+cases; C++'s duplicate-name diagnostic already includes the earlier definition's
+location while Rust omits that suffix. This refactor preserves that difference.
+
+A full-compilation allocator counter measured these cumulative requests on each
+of three repetitions, with identical output before and after:
+
+| Spec | Requests before → after | Bytes requested before → after |
+| --- | ---: | ---: |
+| Toy builder | 26,175 → 26,118 | 2,843,530 → 2,842,767 |
+| x86-64 | 3,729,190 → 3,727,747 | 316,420,392 → 316,393,776 |
+| Hexagon | 883,328 → 882,323 | 83,367,400 → 83,270,440 |
+
+These are requested-byte totals, not peak or resident memory. Existing compiler
+oracles cover the Hexagon crossbuild and named-section path; no expectations or
+public APIs changed.
+
+Alternating uninstrumented runs pinned to CPU 40 measured Toy-builder wall time
+at 6.8399 → 6.8092 ms (-0.45%, 110 samples per version), x86-64 at 482.4734 →
+477.5635 ms (-1.02%, 12 samples), and Hexagon at 151.3198 → 151.3736 ms
+(+0.04%, 12 samples). Child CPU changes were -0.47%, -1.01%, and +0.02%.
+Every output was identical. Measurements followed warmups on the shared host.
+
+The independent final-pass snapshot passed all four gates: 675 upstream and
+1,467 stage assertions, 7,709 workspace tests with 38 existing ignores, and the
+spec check. The option catalog passed; all 45 binary and 45 XML oracle outputs
+are unchanged. No baseline or existing expectation changed.

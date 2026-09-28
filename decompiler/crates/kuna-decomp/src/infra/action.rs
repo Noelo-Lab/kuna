@@ -496,10 +496,8 @@ pub trait Action {
                 || st == statusflags::status_mid
             {
                 let res = if crate::actionprof::enabled() {
-                    crate::actionprof::enter(self.get_name());
-                    let res = self.apply(data, ctx); // Start or continue action
-                    crate::actionprof::leave();
-                    res
+                    let _frame = crate::actionprof::ActionFrame::new(self.get_name());
+                    self.apply(data, ctx)
                 } else {
                     self.apply(data, ctx) // Start or continue action
                 };

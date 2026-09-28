@@ -49,16 +49,11 @@ pub trait CompilerHost {
     fn report_warning(&mut self, loc: Option<&Location>, msg: &str);
 }
 
-/// The compiler's concrete p-code compiler (`SleighPcode`, slgh_compile.hh:282).
-///
-/// In C++ this *is-a* `PcodeCompile` and holds a back-pointer to the
-/// `SleighCompile`.  In the Rust port, `SleighCompile` owns the `PcodeCompile`
-/// state and the abstract hooks are dispatched through [`CompilerHost`]; this
-/// struct carries the per-section state the compiler needs (temp allocation
-/// base, label count) and forwards the five overridden hooks to the host.
+/// P-code parser state and compiler-host callbacks
+/// (`SleighPcode`, slgh_compile.hh:282).
 #[derive(Default)]
 pub struct SleighPcode {
-    /// Next free unique-space (temporary) offset; bumped by `allocateTemp`.
+    /// Retained for compatibility; temporary allocation uses the host's unique base.
     pub unique_base: u32,
     /// Number of labels in the current constructor (`local_labelcount`).
     pub local_labelcount: u32,
