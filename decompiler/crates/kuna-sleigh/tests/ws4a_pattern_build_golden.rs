@@ -17,7 +17,7 @@
 //! XML proves the BUILD side produced the identical mask/value bit vectors,
 //! disjoint list, and decision-node partition.
 
-use kuna_base::marshal::{Encoder, XmlEncode};
+use kuna_base::marshal::XmlEncode;
 use kuna_sleigh::slghpatexpress::{
     BuildToken, ConstantValue, ContextField, EquationArena, PatternEquation, PatternExpression,
     PatternValue, TokenField, TokenPattern,

@@ -20,7 +20,7 @@ use std::rc::Rc;
 use kuna_base::address::{Address, SeqNum};
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::IdRegistry;
-use kuna_base::space::{AddrSpaceManager, RegisterLookup};
+use kuna_base::space::AddrSpaceManager;
 use kuna_base::xml::{DocumentStorage, Element};
 
 use kuna_decomp::architecture::Architecture;

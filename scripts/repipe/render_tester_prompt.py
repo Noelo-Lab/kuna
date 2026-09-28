@@ -14,9 +14,9 @@ import argparse
 import json
 import os
 import sys
-from pathlib import Path
 
 from . import config
+from ..atomic import atomic_text_writer
 
 TOKENS_DOC = "{{KUNA}} and {{BIN}}"
 
@@ -177,9 +177,8 @@ def render(hexid, round_n, arena, out=None):
             .replace("{{RECENTLY_SHIPPED}}", _recently_shipped())
             .replace("{{KNOWN_NEEDS}}", _known_needs()))
     if out:
-        tmp = str(out) + ".tmp"
-        Path(tmp).write_text(body)
-        os.replace(tmp, out)
+        with atomic_text_writer(out) as fh:
+            fh.write(body)
     return body
 
 

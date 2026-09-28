@@ -5417,7 +5417,7 @@ mod tests {
     use super::*;
     use std::rc::Rc;
 
-    use kuna_base::address::{Address, SeqNum};
+    use kuna_base::address::Address;
     use kuna_base::space::{
         addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace,
     };

@@ -104,14 +104,6 @@ const MAX_DEPTH: u32 = 24;
 /// than a budget the walk is expected to spend.
 const MAX_NODES: u32 = 4096;
 
-/// Does `vn` carry a value the function actually computed?
-///
-/// Walks back through move-only operations; see the module docs for the
-/// classification. Errs toward `true` (computed), which is the no-change answer.
-fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
-    computes_from(data, vn, depth, None)
-}
-
 /// [`computes_from`], asked of every byte and every path instead of any one of
 /// them: a value is computed only when NO terminal reachable through the
 /// move-only operations is one the function never produced.

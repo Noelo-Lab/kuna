@@ -17,7 +17,7 @@ PYTHON  ?= python3
 # (inside target/, which is gitignored, so a failed run leaves no repo litter).
 GHIDRA_SIM_LOG := $(ENGINE)/target/ghidra-sim.log
 
-.PHONY: all binaries specs test test-stages test-cli test-ghidra rust rust-test clean check-spec version
+.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test clean check-spec version
 
 all: binaries specs
 
@@ -102,6 +102,9 @@ check-spec:
 # here. Every case is `in-repo` targeted, so this needs no dataset. An empty corpus passes.
 test-cli:
 	PYTHONPATH=$(ROOT) python3 -m scripts.repipe.clitests
+
+test-tools:
+	PYTHONPATH=$(ROOT) $(PYTHON) -m unittest discover -s $(ROOT)/scripts/tests -p 'test_*.py'
 
 # Print the repo version as MAJOR.MINOR (VERSION file + commit count -- the
 # scheme release CI tags with; see docs/release.md).

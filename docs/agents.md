@@ -55,6 +55,13 @@ the suite starts on the label alone. (It also always runs pre-merge on a fork PR
 *Run workflow*.) Run all four locally regardless: the workspace suite is the long pole in
 CI, so local failures are found far sooner.
 
+Python tooling unit tests run with `make test-tools` and are also required by CI.
+They use temporary state directories, not the live pipeline inventory.
+
+The Rust test profile uses optimization level 1 for real-image tests, with debug
+assertions and integer-overflow checks enabled. Ordinary development builds retain
+Cargo's unoptimized default.
+
 - **Never re-pin `docs/baseline.json` to absorb a regression** — fix the code or make the
   change opt-in. The only sanctioned re-pins are an intentional upstream sync or a
   deliberate default change, and the commit message says which (`kuna test --save-baseline`).

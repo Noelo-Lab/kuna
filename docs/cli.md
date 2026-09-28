@@ -146,6 +146,11 @@ when adding stage tests. `docs/baseline.json` is re-pinned only for sanctioned i
 changes (an upstream sync per `docs/history.md`, or a deliberate default flip the commit
 message names) — never to absorb a regression.
 
+A baseline must be a JSON object with one `passing` array containing only strings.
+Other metadata is optional. Malformed JSON, trailing non-whitespace content, a
+missing or repeated `passing` field, and wrongly typed entries exit `2`; they are
+not treated as an empty baseline. An explicitly empty `passing` array remains valid.
+
 ## `kuna decompile` — one function
 
 ```bash

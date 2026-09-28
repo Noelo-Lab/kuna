@@ -129,6 +129,13 @@ tier one.
 
 ## 0.2 Front-ends and the decompile-all walk
 
+The CLI shares flag-value and option-pair consumption in
+`decompiler/crates/kuna-cli/src/args.rs`. Command-specific parsers retain their
+flag sets and diagnostics; option names are validated before loading, and pairs
+remain in argv order when forwarded from `decompile --json` to `decompile-all`.
+Missing flag values make the parsers return a usage error (exit status 2)
+immediately, without invoking the command engine.
+
 Four front-ends drive one engine assembly:
 
 - **The console** — `decomp_dbg`
@@ -1915,6 +1922,15 @@ record is honest.
 
 ## 0.3 The IR substrate
 
+Floating-point constant evaluation uses `decompiler/crates/kuna-num/src/float.rs`
+(`FloatFormat`). Finite arithmetic uses host `f64`; NaN payloads are canonical.
+Square root, ceiling, floor, and rounding preserve an input NaN's sign;
+negation flips it and absolute value clears it. Binary arithmetic takes the
+first NaN operand's sign in p-code input order. Operations on non-NaN inputs
+that produce NaN use the negative quiet encoding pinned by the x86 golden
+oracle. This policy is explicit because Rust arithmetic does not guarantee a
+NaN result's sign, even across optimization levels of the same compiler.
+
 The per-function IR is one container, `Funcdata`
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata)`), owning
 slotmap arenas keyed by three generational id newtypes — `VarnodeId`, `OpId`,
@@ -2125,8 +2141,17 @@ and an agent writes:
   catalog rows — values, defaults, tier, symptoms, flip guidance — are generated
   into `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases.rs
   (SETTABLE_TABLE, emit_catalog_json)` from `decompiler/crates/kuna-decomp/phases.toml`
-  by `decompiler/crates/kuna-decomp/build.rs`; the rendered catalog is
+  by `decompiler/crates/kuna-decomp/build.rs`. The build uses the TOML parser
+  with a typed schema in `decompiler/crates/kuna-decomp/build/registry.rs`:
+  row order is preserved, required fields have explicit types, and duplicate or
+  unknown fields are rejected. Live mappings must supply all three fields or
+  none. The rendered catalog is
   [docs/options.md](../options.md) and this spec never duplicates its metadata.
+  The CLI parses catalog JSON with the standard JSON parser while preserving
+  field order, duplicate keys, and number spellings for its existing renderers.
+  Conversion is bounded to 128 nested containers and rejects malformed or trailing
+  content. The parity command separately validates its baseline's required
+  string-valued passing set: invalid records are errors, not empty expectations.
 - **Modes (option presets)** (kuna)
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs (MODE_TABLE, mode_overrides)`,
   applied by `decompiler/crates/kuna-decomp/src/infra/architecture.rs (apply_mode)`):

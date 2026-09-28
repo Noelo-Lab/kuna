@@ -30,6 +30,7 @@ use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
 use kuna_base::address::Address;
 use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
 
+use crate::args::take_value as take;
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
 use crate::jsonfmt::{dumps_indent2, Json};
 
@@ -587,14 +588,7 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
                     kinds.push(parse_kind(k)?);
                 }
             }
-            "--option" => {
-                if i + 2 >= argv.len() {
-                    return Err("--option requires NAME VALUE".into());
-                }
-                crate::optname::check(&argv[i + 1])?;
-                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
-                i += 2;
-            }
+            "--option" => options.push(crate::args::take_option(argv, &mut i)?),
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
             "--isa" => isa = kuna_console::engine::ArmIsa::parse(&take(argv, &mut i, "--isa")?)?,
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
@@ -641,15 +635,6 @@ fn parse_kind(k: &str) -> Result<XrefKind, String> {
         "read" => Ok(XrefKind::Read),
         "write" => Ok(XrefKind::Write),
         other => Err(format!("unknown --kind {other:?} (call, jump, data, read, write)")),
-    }
-}
-
-fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
-    if *i + 1 < argv.len() {
-        *i += 1;
-        Ok(argv[*i].clone())
-    } else {
-        Err(format!("{flag} requires a value"))
     }
 }
 

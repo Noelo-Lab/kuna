@@ -282,39 +282,17 @@ impl Rule for RuleBooleanDedup {
             }
         };
 
-        let mut isflipped = false;
-        let left_a;
-        let right_a;
-        let left_o;
-        let right_o;
-        if let Some(f) = is_match(data, ins[0], ins[2]) {
-            isflipped = f;
-            left_a = ins[0];
-            right_a = ins[2];
-            left_o = ins[1];
-            right_o = ins[3];
+        let (isflipped, left_a, right_a, left_o, right_o) = if let Some(f) = is_match(data, ins[0], ins[2]) {
+            (f, ins[0], ins[2], ins[1], ins[3])
         } else if let Some(f) = is_match(data, ins[0], ins[3]) {
-            isflipped = f;
-            left_a = ins[0];
-            right_a = ins[3];
-            left_o = ins[1];
-            right_o = ins[2];
+            (f, ins[0], ins[3], ins[1], ins[2])
         } else if let Some(f) = is_match(data, ins[1], ins[2]) {
-            isflipped = f;
-            left_a = ins[1];
-            right_a = ins[2];
-            left_o = ins[0];
-            right_o = ins[3];
+            (f, ins[1], ins[2], ins[0], ins[3])
         } else if let Some(f) = is_match(data, ins[1], ins[3]) {
-            isflipped = f;
-            left_a = ins[1];
-            right_a = ins[3];
-            left_o = ins[0];
-            right_o = ins[2];
+            (f, ins[1], ins[3], ins[0], ins[2])
         } else {
             return 0;
-        }
-        let _ = right_a;
+        };
         let central_opc = op_code(data, op);
         let bc_opc: OpCode;
         let final_opc: OpCode;

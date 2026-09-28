@@ -52,7 +52,6 @@ const RESOURCE_DATA_ENTRY_SIZE: u32 = 16;
 const DIR_IMPORT: usize = 1;
 const DIR_RESOURCE: usize = 2;
 const DIR_BASERELOC: usize = 5;
-const DIR_TLS: usize = 9;
 const DIR_BOUND_IMPORT: usize = 11;
 const DIR_DELAY_IMPORT: usize = 13;
 

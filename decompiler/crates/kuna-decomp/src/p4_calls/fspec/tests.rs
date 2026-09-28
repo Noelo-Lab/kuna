@@ -2209,7 +2209,6 @@ fn push_pointermax_rule_appends_convert_to_pointer() {
     // appended to model_rules.  Verifies the count bump (the action's pointer
     // build is exercised by the modelrules ConvertToPointer tests, which need a
     // real TypeFactory).
-    let mgr = AddrSpaceManager::new();
     let (mut model, _reg) = three_reg_model();
     assert_eq!(model.num_model_rules(), 0);
     model.push_pointermax_rule(8);

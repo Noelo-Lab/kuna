@@ -295,7 +295,7 @@ impl ArraySequence {
         let el_size = self.char_type.get_size();
         for i in 0..self.move_ops.len() {
             let byte_pos: int4 = (self.move_ops[i].offset.wrapping_sub(root_off)) as int4;
-            if byte_pos < 0 || byte_pos + el_size > sz {
+            if byte_pos < 0 || byte_pos.checked_add(el_size).is_none_or(|end| end > sz) {
                 continue;
             }
             let mut val = vn_get_offset(data, op_get_in(data, self.move_ops[i].op, slot));

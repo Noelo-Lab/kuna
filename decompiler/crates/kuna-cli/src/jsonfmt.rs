@@ -1,215 +1,24 @@
-//! A minimal JSON value model + a pretty-printer byte-identical to CPython's
-//! `json.dumps(obj, indent=2)` (the default `ensure_ascii=True`, key order
-//! preserved — NOT `sort_keys`).
-//!
-//! `kuna/catalog.py` produced its `--json` output by running `decomp_dbg stage
-//! catalog`, `json.loads`-ing the embedded array, then `json.dumps(..., indent=2)`.
-//! To match it byte-for-byte the Rust CLI parses the binary's JSON into this
-//! model (preserving object key order) and re-emits with the exact CPython
-//! indent-2 layout.  No serde dependency: the catalog JSON is the binary's own
-//! controlled, ASCII, escape-free output (verified), so a small hand parser is
-//! both sufficient and the lightest faithful reproduction.
+//! Ordered JSON values and the CLI's CPython-compatible ASCII-safe rendering.
 
 use std::fmt::Write as _;
 
-/// A parsed JSON value.  Object key order is preserved (a `Vec` of pairs), which
-/// is what `json.loads` does (Python dicts are insertion-ordered) and what the
-/// catalog re-emission must reproduce.
+#[path = "jsonfmt/parser.rs"]
+mod parser;
+
+/// Parse one complete JSON value, allowing trailing whitespace.
+pub fn parse(text: &str) -> Option<Json> {
+    parser::parse(text)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Json {
     Null,
     Bool(bool),
-    /// The raw numeric token (preserved verbatim, as CPython would re-emit an
-    /// int unchanged; the catalog only ever uses bools/strings/arrays, but
-    /// numbers are supported for completeness).
+    /// The original numeric token, without rounding or normalization.
     Number(String),
     Str(String),
     Array(Vec<Json>),
     Object(Vec<(String, Json)>),
-}
-
-/// Parse a single JSON value from `s`, returning it (trailing whitespace is
-/// permitted).  Returns `None` on any malformed input.
-pub fn parse(s: &str) -> Option<Json> {
-    let bytes = s.as_bytes();
-    let mut p = Parser { bytes, pos: 0 };
-    p.skip_ws();
-    let v = p.value()?;
-    p.skip_ws();
-    // Allow trailing content (the console transcript), since callers extract the
-    // balanced span first; here we only require a complete value was parsed.
-    Some(v)
-}
-
-struct Parser<'a> {
-    bytes: &'a [u8],
-    pos: usize,
-}
-
-impl Parser<'_> {
-    fn peek(&self) -> Option<u8> {
-        self.bytes.get(self.pos).copied()
-    }
-
-    fn skip_ws(&mut self) {
-        while let Some(c) = self.peek() {
-            if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r' {
-                self.pos += 1;
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn value(&mut self) -> Option<Json> {
-        self.skip_ws();
-        match self.peek()? {
-            b'{' => self.object(),
-            b'[' => self.array(),
-            b'"' => Some(Json::Str(self.string()?)),
-            b't' => self.literal("true", Json::Bool(true)),
-            b'f' => self.literal("false", Json::Bool(false)),
-            b'n' => self.literal("null", Json::Null),
-            b'-' | b'0'..=b'9' => self.number(),
-            _ => None,
-        }
-    }
-
-    fn literal(&mut self, kw: &str, val: Json) -> Option<Json> {
-        if self.bytes[self.pos..].starts_with(kw.as_bytes()) {
-            self.pos += kw.len();
-            Some(val)
-        } else {
-            None
-        }
-    }
-
-    fn number(&mut self) -> Option<Json> {
-        let start = self.pos;
-        if self.peek() == Some(b'-') {
-            self.pos += 1;
-        }
-        while let Some(c) = self.peek() {
-            if c.is_ascii_digit() || c == b'.' || c == b'e' || c == b'E' || c == b'+' || c == b'-' {
-                self.pos += 1;
-            } else {
-                break;
-            }
-        }
-        if self.pos == start {
-            return None;
-        }
-        Some(Json::Number(std::str::from_utf8(&self.bytes[start..self.pos]).ok()?.to_string()))
-    }
-
-    fn string(&mut self) -> Option<String> {
-        // Consume the opening quote.
-        if self.peek() != Some(b'"') {
-            return None;
-        }
-        self.pos += 1;
-        let mut out = String::new();
-        loop {
-            let c = self.peek()?;
-            self.pos += 1;
-            match c {
-                b'"' => return Some(out),
-                b'\\' => {
-                    let e = self.peek()?;
-                    self.pos += 1;
-                    match e {
-                        b'"' => out.push('"'),
-                        b'\\' => out.push('\\'),
-                        b'/' => out.push('/'),
-                        b'b' => out.push('\u{0008}'),
-                        b'f' => out.push('\u{000C}'),
-                        b'n' => out.push('\n'),
-                        b'r' => out.push('\r'),
-                        b't' => out.push('\t'),
-                        b'u' => {
-                            let hex = self.bytes.get(self.pos..self.pos + 4)?;
-                            self.pos += 4;
-                            let cp =
-                                u32::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()?;
-                            out.push(char::from_u32(cp)?);
-                        }
-                        _ => return None,
-                    }
-                }
-                _ => {
-                    // A raw byte; reconstruct the UTF-8 char (the input is valid
-                    // UTF-8, so push the byte sequence for this code point).
-                    if c < 0x80 {
-                        out.push(c as char);
-                    } else {
-                        // Multi-byte: back up and decode via str slicing.
-                        let start = self.pos - 1;
-                        let s = std::str::from_utf8(&self.bytes[start..]).ok()?;
-                        let ch = s.chars().next()?;
-                        out.push(ch);
-                        self.pos = start + ch.len_utf8();
-                    }
-                }
-            }
-        }
-    }
-
-    fn array(&mut self) -> Option<Json> {
-        self.pos += 1; // '['
-        let mut items = Vec::new();
-        self.skip_ws();
-        if self.peek() == Some(b']') {
-            self.pos += 1;
-            return Some(Json::Array(items));
-        }
-        loop {
-            let v = self.value()?;
-            items.push(v);
-            self.skip_ws();
-            match self.peek()? {
-                b',' => {
-                    self.pos += 1;
-                }
-                b']' => {
-                    self.pos += 1;
-                    return Some(Json::Array(items));
-                }
-                _ => return None,
-            }
-        }
-    }
-
-    fn object(&mut self) -> Option<Json> {
-        self.pos += 1; // '{'
-        let mut pairs = Vec::new();
-        self.skip_ws();
-        if self.peek() == Some(b'}') {
-            self.pos += 1;
-            return Some(Json::Object(pairs));
-        }
-        loop {
-            self.skip_ws();
-            let key = self.string()?;
-            self.skip_ws();
-            if self.peek() != Some(b':') {
-                return None;
-            }
-            self.pos += 1;
-            let v = self.value()?;
-            pairs.push((key, v));
-            self.skip_ws();
-            match self.peek()? {
-                b',' => {
-                    self.pos += 1;
-                }
-                b'}' => {
-                    self.pos += 1;
-                    return Some(Json::Object(pairs));
-                }
-                _ => return None,
-            }
-        }
-    }
 }
 
 /// Render `v` exactly as CPython's `json.dumps(v, indent=2)` would (ASCII-safe

@@ -182,22 +182,25 @@ fn decompile_json_emits_the_record_shape_for_one_function() {
 fn decompile_json_is_byte_identical_to_decompile_all_for_one_function() {
     let bin = fixture();
     let sp = specs();
-    let (one, stderr, code) =
-        run_kuna(&["decompile", &bin, "_DT_INIT", "--json", "--sleighpath", &sp]);
-    if code != Some(0) {
-        panic!("kuna decompile --json failed: {stderr}");
+    for options in [
+        &[][..],
+        &["--option", "setlanguage", "rust-language"][..],
+        &["--option", "setlanguage", "rust-language", "--option", "setlanguage", "c-language"][..],
+    ] {
+        let mut one_args = vec!["decompile", &bin, "_DT_INIT", "--json", "--sleighpath", &sp];
+        one_args.extend_from_slice(options);
+        let (one, stderr, code) = run_kuna(&one_args);
+        if code != Some(0) {
+            panic!("kuna decompile --json failed: {stderr}");
+        }
+        let mut all_args = vec![
+            "decompile-all", &bin, "--functions", "_DT_INIT", "--json", "--sleighpath", &sp,
+        ];
+        all_args.extend_from_slice(options);
+        let (all, stderr, code) = run_kuna(&all_args);
+        assert_eq!(code, Some(0), "kuna decompile-all --json failed: {stderr}");
+        assert_eq!(one, all, "the two surfaces must emit one document: {options:?}");
     }
-    let (all, stderr, code) = run_kuna(&[
-        "decompile-all",
-        &bin,
-        "--functions",
-        "_DT_INIT",
-        "--json",
-        "--sleighpath",
-        &sp,
-    ]);
-    assert_eq!(code, Some(0), "kuna decompile-all --json failed: {stderr}");
-    assert_eq!(one, all, "the two surfaces must emit one document, byte for byte");
 }
 
 /// A `0x`-prefixed selector and an explicit `--addr` reach the same record, so

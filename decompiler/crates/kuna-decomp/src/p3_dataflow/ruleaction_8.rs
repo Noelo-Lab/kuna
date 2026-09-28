@@ -1983,10 +1983,6 @@ mod tests {
         fd.obank_mut().get_mut(op).unwrap().set_input(Some(vn), slot);
     }
 
-    fn groups() -> ActionGroupList {
-        ActionGroupList::from_names(["analysis"])
-    }
-
     fn code(fd: &Funcdata, op: OpId) -> OpCode {
         fd.obank().get(op).unwrap().code()
     }

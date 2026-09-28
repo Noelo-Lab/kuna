@@ -116,6 +116,7 @@ use kuna_decomp::options::{OptionDatabase, KUNA_OPTION_NAMES};
 
 use regex::Regex;
 
+use crate::args::take_value as take;
 use crate::jobs;
 use crate::jsonfmt::{dumps_indent2, Json};
 use crate::loadtime::{apply_to_process as apply_loadtime_env, is_loadtime_gate, last_option_value};
@@ -3793,14 +3794,7 @@ pub(crate) fn parse_args_with_filters(
                 filters.sort = SortKey::parse(&v)?;
             }
             "--summary" if triageable => filters.summary = true,
-            "--option" => {
-                if i + 2 >= argv.len() {
-                    return Err("--option requires NAME VALUE".into());
-                }
-                crate::optname::check(&argv[i + 1])?;
-                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
-                i += 2;
-            }
+            "--option" => options.push(crate::args::take_option(argv, &mut i)?),
             // (kuna outlang) `--language` is the first-class surface for the
             // output language; it lowers to the upstream `setlanguage` option, so
             // it reaches every downstream consumer (the console script here, the
@@ -4012,14 +4006,6 @@ fn parse_count(v: &str, flag: &str) -> Result<u64, String> {
         .map_err(|_| format!("invalid {flag} value {v:?} (expected a non-negative integer)"))
 }
 
-fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
-    if *i + 1 < argv.len() {
-        *i += 1;
-        Ok(argv[*i].clone())
-    } else {
-        Err(format!("{flag} requires a value"))
-    }
-}
 
 fn parse_hex(s: &str) -> Result<u64, String> {
     let t = s.trim();

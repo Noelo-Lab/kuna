@@ -3651,6 +3651,14 @@ directly, so they are not vacuous on small fixtures. This is a driver-tier resou
 effect, so it is a CLI flag and an environment bridge rather than a settable
 option (DIV-169).
 
+The serial-fallback variants, their public enumeration order, and their stable
+diagnostic strings share one declaration in
+`decompiler/crates/kuna-analysis/src/listing/kuna_pdecode/refusal.rs`.
+`Refusal::ALL` and `Refusal::COUNT` are generated from that declaration, so adding
+a refusal cannot omit it from the documentation checks. A compatibility test
+pins the existing order and spellings; the scheduling and fallback policies do
+not depend on this representation.
+
 (kuna) The seed set carries one more source, under the same `funcstart_patterns`
 gate as the prologue starts: **the entries the load-time passes have already
 committed**, handed down from `engine.rs (commit_pending_analysis)` rather than

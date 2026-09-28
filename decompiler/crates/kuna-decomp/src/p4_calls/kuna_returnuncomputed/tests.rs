@@ -17,6 +17,10 @@ use kuna_base::space::{
 
 use crate::context::{ArchContext, TypeOp};
 
+fn computes_a_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    computes_from(data, vn, depth, None)
+}
+
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
@@ -61,7 +65,7 @@ fn mk_def(fd: &mut Funcdata, opc: OpCode, inputs: &[VarnodeId], out_off: u64) ->
     let op = fd.new_op(inputs.len() as int4, Address::new(Rc::clone(&r), out_off));
     fd.obank_mut().change_opcode(op, TypeOp::new(opc, 0, format!("{opc:?}")));
     for (i, &vn) in inputs.iter().enumerate() {
-        fd.op_set_input(op, vn, i as int4);
+        fd.op_set_input(op, vn, i as int4).expect("wire input");
     }
     fd.new_varnode_out(8, &Address::new(r, out_off), op).expect("varnode out")
 }
@@ -195,6 +199,7 @@ fn the_strict_walk_keeps_a_value_every_byte_of_which_is_computed() {
 fn the_strict_walk_stops_at_an_operation_that_produces_a_value() {
     let mut fd = build_fd();
     let leftover = unwritten(&mut fd, 0x2000, 8);
+    let leftover = fd.set_input_varnode(leftover).expect("function input");
     let sum = mk_def(&mut fd, OpCode::CPUI_INT_ADD, &[leftover, leftover], 0x2100);
     assert!(
         computes_everywhere(&fd, sum, None, false),

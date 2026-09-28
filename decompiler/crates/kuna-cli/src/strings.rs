@@ -56,6 +56,7 @@ use kuna_analysis::strings::kuna_stringinv::{self, FoundString, Termination};
 use kuna_base::address::Address;
 use kuna_console::engine::ConsoleProgram;
 
+use crate::args::take_value as take;
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
 use crate::jsonfmt::{dumps_indent2, Json};
 
@@ -457,14 +458,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<StringsArgs, String> {
                 };
             }
             "--no-xrefs" => no_xrefs = true,
-            "--option" => {
-                if i + 2 >= argv.len() {
-                    return Err("--option requires NAME VALUE".into());
-                }
-                crate::optname::check(&argv[i + 1])?;
-                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
-                i += 2;
-            }
+            "--option" => options.push(crate::args::take_option(argv, &mut i)?),
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
             "--isa" => isa = kuna_console::engine::ArmIsa::parse(&take(argv, &mut i, "--isa")?)?,
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
@@ -524,15 +518,6 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<StringsArgs, String> {
         sleighpath,
         isa,
     })
-}
-
-fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
-    if *i + 1 < argv.len() {
-        *i += 1;
-        Ok(argv[*i].clone())
-    } else {
-        Err(format!("{flag} requires a value"))
-    }
 }
 
 fn usage() {

@@ -29,6 +29,7 @@ import time
 
 from . import config
 from .. import decompile as kdecompile
+from ..atomic import atomic_text_writer
 
 # The record.json fields this module owns (always written, even when within budget).
 SPEED_FIELDS = (
@@ -158,11 +159,8 @@ def main(argv=None):
         block = measure(rec, option=args.option, binary=args.binary, selector=args.selector,
                         func_addr=args.func_addr, repeat=args.repeat, budget_pct=args.budget_pct)
         rec.update(block)
-        tmp = args.record + ".tmp"
-        with open(tmp, "w") as fh:
+        with atomic_text_writer(args.record) as fh:
             json.dump(rec, fh, indent=2)
-        import os
-        os.replace(tmp, args.record)
         print(json.dumps(block, indent=2))
         print(_summary(block), file=sys.stderr)
         return 0

@@ -2464,7 +2464,10 @@ gather the sibling writes in the same block, keep the maximal window with no
 interfering LOAD/STORE/CALL between members (`check_interference`), and
 assemble the constants into one byte array by offset with endian-correct
 unpacking, a single NUL allowed, contiguity required, and at least **4**
-elements (`ArraySequence::MINIMUM_SEQUENCE_LENGTH`; upper bound 0x20000). The
+elements (`ArraySequence::MINIMUM_SEQUENCE_LENGTH`; upper bound 0x20000).
+The byte-array range check uses checked addition for each write's end offset.
+An overflowing or out-of-range write is ignored, preserving the contiguous
+valid writes without a debug overflow panic or a release bounds panic. The
 two drivers are `constseq.rs (RuleStringCopy)` — COPY-into-array, requiring
 the destination be an address-tied char array backed by a symbol container —
 and `constseq.rs (RuleStringStore)` — STORE-through-pointer

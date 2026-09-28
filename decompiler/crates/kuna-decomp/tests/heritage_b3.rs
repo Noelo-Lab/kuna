@@ -31,7 +31,7 @@ use std::rc::Rc;
 use kuna_base::address::{Address, SeqNum};
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::IdRegistry;
-use kuna_base::space::{AddrSpace, AddrSpaceManager, RegisterLookup};
+use kuna_base::space::{AddrSpace, AddrSpaceManager};
 use kuna_base::xml::{DocumentStorage, Element};
 
 use kuna_decomp::architecture::Architecture;
@@ -42,7 +42,7 @@ use kuna_decomp::xml_arch::{XmlArchitecture, XmlArchitectureCapability};
 
 use kuna_sleigh::loadimage::LoadImage;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
-use kuna_sleigh::translate::{register_translate_ids, Translate};
+use kuna_sleigh::translate::register_translate_ids;
 
 // ===========================================================================
 // Repo plumbing (mirrors decompile_e2e.rs / corpus_bootstrap.rs).

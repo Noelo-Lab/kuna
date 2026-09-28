@@ -24,6 +24,7 @@ use kuna_analysis::fid::build::build_records;
 use kuna_analysis::fid::db::{FidDb, FidRecord};
 use kuna_console::engine::bootstrap_from_object;
 
+use crate::args::take_value;
 use crate::paths;
 
 /// Parsed `kuna fid build` arguments.
@@ -264,10 +265,4 @@ fn parse_build_args(argv: &[String]) -> Result<BuildArgs, String> {
         i += 1;
     }
     Ok(a)
-}
-
-/// Consume the value following a flag at `argv[*i]`, advancing `*i` past it.
-fn take_value(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
-    *i += 1;
-    argv.get(*i).cloned().ok_or_else(|| format!("{flag} requires a value"))
 }

@@ -687,6 +687,12 @@ selectable) and the other tabs say what they need; edits are kept, exported and 
 
 ## 5. Testing
 
+Native tests decode the front-end's JSON with the test-only `serde_json` dependency.
+They check integer addresses without converting them to floating point and require
+array fields to be present with the expected type. Missing fixtures, processor
+specs, or architecture initialization now fail the native tests rather than
+turning them into successful skips.
+
 Five layers, all but the last runnable without a browser in CI, spanning **multiple
 formats and architectures**:
 

@@ -352,11 +352,6 @@ fn classify_value(
     }
 }
 
-/// True when `input` is shown to be exactly the value `recorded` names.
-pub(crate) fn input_is_recorded_value(data: &Funcdata, input: VarnodeId, recorded: &ValueName, size: int4) -> bool {
-    classify_input(data, input, recorded, size) == InputVerdict::Matches
-}
-
 /// What the synthesized `BRANCHIND` reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HeadOperand {

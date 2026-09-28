@@ -79,9 +79,10 @@ notes for the Rust port:
 - `trunc` of NaN/infinity/out-of-range values goes through a host
   `(int64_t)double` cast in C++ (x86: 0x8000000000000000); Rust's saturating
   `as` casts differ and must special-case these cells.
-- NaN-producing arithmetic re-encodes through the host's double pipeline;
-  the C++ side canonicalizes NaNs via getNaNEncoding, so payloads are stable,
-  but the sign of a NaN *result* follows host semantics.
+- The C++ oracle canonicalizes NaN payloads but follows host arithmetic for
+  their signs. Rust pins the recorded x86 policy explicitly: the first NaN
+  operand supplies the sign; an invalid operation on non-NaN inputs produces
+  a negative quiet NaN. Compiler optimization must not change these results.
 - The decimal column of `dec` rows is C++ iostream `operator<<(double)` with
   default (6 significant digit) precision, e.g. `3.14159`, `1e+10`, `-inf`,
   `nan`.

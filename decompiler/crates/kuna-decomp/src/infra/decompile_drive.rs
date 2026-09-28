@@ -1305,19 +1305,7 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         // decode: the registers the callee is proven NOT to write; inert unless
         // `option calleepreserves` is live.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, &mut fd);
-        // With the single-manager unification (LOSS-132) the universalAction passes
-        // now reach the *real* lifted varnodes, so the pipeline genuinely executes
-        // heritage / simplification / merge / … on live IR.  Some pass BODIES are
-        // still un-ported stubs (LOSS-131, the M3 grind): a hand-built fixture never
-        // reached them, but a real corpus function can hit, e.g.,
-        // `Heritage::normalizeWriteSize`'s PIECE-concat path.  Those stubs abort via
-        // `unimplemented_stub` (a deliberate `#[cold] panic!`).  Convert such a
-        // stub-abort into a recoverable `Err` at this orchestration boundary so the
-        // end-to-end harnesses degrade to the documented "honest partial parity"
-        // (the pipeline ran; a body declined at a stub) instead of taking down the
-        // whole run — exactly the graceful-degradation the LOSS-130/131 measurement
-        // assumes.  `fd`/`arch` are discarded on the unwind, so no half-mutated
-        // state escapes (`AssertUnwindSafe` is sound here for that reason).
+        // Report a pass panic as a per-function failure at the driver boundary.
         let res =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_pipeline(arch, &mut fd)));
         match res {

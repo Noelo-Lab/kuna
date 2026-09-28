@@ -39,9 +39,9 @@ fn eval(op: char, a: i128, b: i128, t: u8) -> Option<i128> {
         '+' => a + b,
         '-' => a - b,
         '*' => a.wrapping_mul(b),
-        '&' => (a.rem_euclid(1i128 << bits) & b.rem_euclid(1i128 << bits)),
-        '|' => (a.rem_euclid(1i128 << bits) | b.rem_euclid(1i128 << bits)),
-        '^' => (a.rem_euclid(1i128 << bits) ^ b.rem_euclid(1i128 << bits)),
+        '&' => a.rem_euclid(1i128 << bits) & b.rem_euclid(1i128 << bits),
+        '|' => a.rem_euclid(1i128 << bits) | b.rem_euclid(1i128 << bits),
+        '^' => a.rem_euclid(1i128 << bits) ^ b.rem_euclid(1i128 << bits),
         '/' | '%' => {
             if b == 0 || (signed && b == -1) {
                 return None;

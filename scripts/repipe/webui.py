@@ -60,6 +60,7 @@ from pathlib import Path
 
 from . import config as rconfig
 from ..pipeline import status as pstatus
+from ..atomic import atomic_text_writer
 
 # Siblings written in parallel with this file. A dashboard that 500s because a module it
 # wants does not exist yet is worse than one that shows an empty pane.
@@ -1123,12 +1124,10 @@ class Cache:
 
     def _write_through(self, payload):
         path = self.state_dir / "webui-cache.json"
-        tmp = str(path) + ".tmp"
         try:
             os.makedirs(self.state_dir, exist_ok=True)
-            with open(tmp, "w") as fh:
+            with atomic_text_writer(path) as fh:
                 json.dump(payload, fh, default=str)
-            os.replace(tmp, str(path))
         except OSError:
             pass
 

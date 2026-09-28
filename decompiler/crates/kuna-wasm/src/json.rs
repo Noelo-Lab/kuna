@@ -160,160 +160,6 @@ pub fn assertions_json(outcomes: &[Outcome]) -> String {
     }))
 }
 
-/// A minimal JSON reader for this crate's tests: enough to walk the documents
-/// the front-end writes.
-#[cfg(test)]
-pub(crate) mod read {
-    use std::collections::BTreeMap;
-
-    #[derive(Debug, Clone, PartialEq)]
-    pub enum Value {
-        Null,
-        Bool(bool),
-        Num(f64),
-        Str(String),
-        Arr(Vec<Value>),
-        Obj(BTreeMap<String, Value>),
-    }
-
-    impl Value {
-        pub fn get(&self, key: &str) -> &Value {
-            match self {
-                Value::Obj(map) => map.get(key).unwrap_or(&Value::Null),
-                _ => &Value::Null,
-            }
-        }
-        pub fn arr(&self) -> &[Value] {
-            match self {
-                Value::Arr(items) => items,
-                _ => &[],
-            }
-        }
-        pub fn str(&self) -> Option<&str> {
-            match self {
-                Value::Str(s) => Some(s),
-                _ => None,
-            }
-        }
-        pub fn num(&self) -> Option<f64> {
-            match self {
-                Value::Num(n) => Some(*n),
-                _ => None,
-            }
-        }
-        pub fn u64(&self) -> Option<u64> {
-            self.num().map(|n| n as u64)
-        }
-        pub fn has(&self, key: &str) -> bool {
-            matches!(self, Value::Obj(map) if map.contains_key(key))
-        }
-    }
-
-    pub fn parse(text: &str) -> Value {
-        let chars: Vec<char> = text.chars().collect();
-        let mut at = 0;
-        let v = value(&chars, &mut at);
-        skip(&chars, &mut at);
-        assert_eq!(at, chars.len(), "trailing text after JSON value");
-        v
-    }
-
-    fn skip(c: &[char], at: &mut usize) {
-        while *at < c.len() && c[*at].is_whitespace() {
-            *at += 1;
-        }
-    }
-
-    fn value(c: &[char], at: &mut usize) -> Value {
-        skip(c, at);
-        match c[*at] {
-            '{' => {
-                *at += 1;
-                let mut map = BTreeMap::new();
-                loop {
-                    skip(c, at);
-                    if c[*at] == '}' {
-                        *at += 1;
-                        return Value::Obj(map);
-                    }
-                    let Value::Str(key) = value(c, at) else { panic!("object key") };
-                    skip(c, at);
-                    assert_eq!(c[*at], ':');
-                    *at += 1;
-                    map.insert(key, value(c, at));
-                    skip(c, at);
-                    if c[*at] == ',' {
-                        *at += 1;
-                    }
-                }
-            }
-            '[' => {
-                *at += 1;
-                let mut items = Vec::new();
-                loop {
-                    skip(c, at);
-                    if c[*at] == ']' {
-                        *at += 1;
-                        return Value::Arr(items);
-                    }
-                    items.push(value(c, at));
-                    skip(c, at);
-                    if c[*at] == ',' {
-                        *at += 1;
-                    }
-                }
-            }
-            '"' => {
-                *at += 1;
-                let mut s = String::new();
-                while c[*at] != '"' {
-                    if c[*at] == '\\' {
-                        *at += 1;
-                        match c[*at] {
-                            'n' => s.push('\n'),
-                            't' => s.push('\t'),
-                            'r' => s.push('\r'),
-                            'b' => s.push('\u{8}'),
-                            'f' => s.push('\u{c}'),
-                            'u' => {
-                                let hex: String = c[*at + 1..*at + 5].iter().collect();
-                                s.push(char::from_u32(u32::from_str_radix(&hex, 16).unwrap()).unwrap());
-                                *at += 4;
-                            }
-                            other => s.push(other),
-                        }
-                    } else {
-                        s.push(c[*at]);
-                    }
-                    *at += 1;
-                }
-                *at += 1;
-                Value::Str(s)
-            }
-            't' => {
-                *at += 4;
-                Value::Bool(true)
-            }
-            'f' => {
-                *at += 5;
-                Value::Bool(false)
-            }
-            'n' => {
-                *at += 4;
-                Value::Null
-            }
-            _ => {
-                let start = *at;
-                while *at < c.len() && matches!(c[*at], '-' | '+' | '.' | 'e' | 'E' | '0'..='9') {
-                    *at += 1;
-                }
-                let text: String = c[start..*at].iter().collect();
-                Value::Num(text.parse().unwrap())
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,9 +180,14 @@ mod tests {
              \"address_hex\":\"0x1161\",\"list\":[1,2]}"
         );
         assert_eq!(arr(Vec::<String>::new()), "[]");
-        let back = read::parse(&o);
-        assert_eq!(back.get("name").str(), Some("a\"b\n"));
-        assert_eq!(back.get("list").arr().len(), 2);
-        assert_eq!(back.get("address_hex").str(), Some("0x1161"));
+        let address = u64::MAX - 1;
+        let wide = Obj::new().addr("address", address).end();
+        let wide: serde_json::Value = serde_json::from_str(&wide).expect("valid JSON");
+        assert_eq!(wide["address"].as_u64(), Some(address));
+        assert_eq!(wide["address_hex"].as_str(), Some("0xfffffffffffffffe"));
+        let back: serde_json::Value = serde_json::from_str(&o).expect("valid JSON");
+        assert_eq!(back["name"].as_str(), Some("a\"b\n"));
+        assert_eq!(back["list"].as_array().expect("list").len(), 2);
+        assert_eq!(back["address_hex"].as_str(), Some("0x1161"));
     }
 }

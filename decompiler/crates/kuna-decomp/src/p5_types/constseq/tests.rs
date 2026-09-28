@@ -270,21 +270,8 @@ fn w6s5_form_byte_array_offset_before_root_is_skipped_not_panic() {
     assert_eq!(&seq.byte_array[..4], &[0x41, 0x42, 0x43, 0x44]);
 }
 
-/// FINDING F1 (minor, debug-only divergence).  `form_byte_array`'s in-range
-/// guard is C++ `bytePos + elSize > sz`.  When `bytePos` is a large positive
-/// `int4` (the wrapped result of `offset - rootOff` when `offset` is far above
-/// `rootOff`) the C++ evaluates `bytePos + elSize` in signed `int4`, *wraps* on
-/// overflow (UB but in practice wraps), and the `> sz` test still drops the op,
-/// then `continue`s — no crash, the remaining chars still form a valid count.
-/// The Rust `byte_pos + el_size` (constseq.rs:276) is a *checked* `i32` add that
-/// PANICS in debug builds at `byte_pos == i32::MAX`, diverging from the C++
-/// silent-drop.  This `#[should_panic]` pins the *current* (divergent) behavior;
-/// the fix is `byte_pos.wrapping_add(el_size)` (matching the C++ int4 wrap).
-/// Reachable only via the `pub(crate)` reuse surface / synthetic offsets, not
-/// the bounded `StringSequence` caller — hence minor, not a blocker.
 #[test]
-#[should_panic(expected = "add with overflow")]
-fn w6s5_form_byte_array_huge_bytepos_diverges_debug_panic() {
+fn out_of_range_writes_do_not_interrupt_byte_array_assembly() {
     let mut fd = build_fd(false);
     let bl = mk_block(&mut fd);
     let huge_off = i32::MAX as u64; // 0x7fff_ffff
@@ -295,8 +282,9 @@ fn w6s5_form_byte_array_huge_bytepos_diverges_debug_panic() {
         let op = mk_copy_const(&mut fd, bl, 0x10 + i as u64 * 4, cval);
         seq.move_ops.push(WriteNode::new(off, op, -1, order_of(&fd, op)));
     }
-    // C++ would drop the huge-offset op and return count 4; Rust panics here.
-    let _ = seq.form_byte_array(&fd, 4, 0, 0, false);
+    assert_eq!(seq.form_byte_array(&fd, 4, 0, 0, false), 4);
+    assert_eq!(seq.byte_array, b"ABCD");
+    assert_eq!(seq.move_ops.len(), 4);
 }
 
 /// Little-endian multi-byte unpacking: the C++ `val >>= 8` per element byte.

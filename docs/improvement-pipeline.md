@@ -346,6 +346,18 @@ JSONL plus final output are retained beside the worker log; merged/closed-PR wor
 GC'd, open ones kept. Proposals: `status --proposals` lists parked drafts;
 `state approve --opportunity <id>` green-lights one.
 
+Only a missing inventory initializes empty state. An unreadable or malformed
+`inventory.json`, or a section with the wrong container type, stops the operation
+without replacing the file; the state CLI reports the error and exits `2`. Repair
+or restore the inventory before continuing. `make test-tools` covers these failure
+paths using temporary state directories and also runs in CI.
+
+Pipeline and repipe text writers share `scripts/atomic.py`. Each write uses its
+own sibling file, publishes it only after a successful close, and removes it on
+failure. Existing locks still serialize read-modify-write operations; atomic
+replacement alone does not prevent lost updates or guarantee crash durability.
+Callers retain their existing encoding, JSON layout, and permission choices.
+
 ## Machinery reference
 
 | Piece | What |

@@ -74,6 +74,9 @@ jobs:
           # integrations/web/build.sh generates /dev-viz from git history.
           fetch-depth: 0
 
+      - name: Python tooling unit tests
+        run: make test-tools
+
       - name: Install Rust (stable) + wasm32-wasip1 target
         run: |
           rustup toolchain install stable --profile minimal

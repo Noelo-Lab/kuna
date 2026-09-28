@@ -1,54 +1,9 @@
-//! Port of `decompiler/cpp/ruleaction.cc` lines 6931-8373 (W5, item
-//! `w5-s3-rules-6`): 14 simplification [`Rule`]s in C++ definition order
+//! Pointer, division, and arithmetic simplification rules, derived from
+//! upstream `decompiler/cpp/ruleaction.cc` lines 6931-8373.
+//! See [`specs`] for the rule names and registration groups.
 //!
-//! ```text
-//!   RulePtraddUndo, RulePtrsubUndo, RuleMultNegOne, RuleAddUnsigned,
-//!   Rule2Comp2Sub, RuleSubRight, RulePtrsubCharConstant, RuleExtensionPush,
-//!   RulePieceStructure, RuleSubNormal, RulePositiveDiv, RuleDivTermAdd,
-//!   RuleDivTermAdd2, RuleDivOpt
-//! ```
-//!
-//! Each rule keeps the exact `name()` string (the C++ ctor's 3rd argument), the
-//! exact `getOpList` contents, and the exact `applyOp` body structure.  The pure
-//! read-only helpers (`RulePtrsubUndo::getConstOffsetBack`/`getExtraOffset`,
-//! `RuleDivTermAdd::findSubshift`, `RuleDivOpt::calcDivisor`/`findForm`/
-//! `checkFormOverlap`/`moveSignBitExtraction`, `RulePieceStructure::spanningRange`)
-//! are transcribed exactly; see [`specs`] for the W8 registration list.
-//!
-//! ## Cross-wave stubs (the load-bearing missing API)
-//!
-//! These rules sit on top of op-graph mutation + type-factory + type-facing
-//! substrate that the merge base does **not** yet provide, and that this parallel
-//! item may NOT add (it owns only this file):
-//!
-//!   - **`Funcdata::opSetOpcode(op, OpCode)`** — the C++ resolves `glb->inst[opc]`
-//!     (the W6 `TypeOp` table) to a behavioral class and caches its property flags
-//!     into the op.  The present [`Funcdata::op_set_opcode`](crate::funcdata::Funcdata::op_set_opcode)
-//!     takes an already-resolved [`TypeOp`]; there is no OpCode->`TypeOp` table and
-//!     no opcode->flags table, so a faithful opcode change is **not** expressible
-//!     here.  Routed through [`set_opcode_typed`].  // STUB(W6)
-//!   - **`Funcdata::opSetOutput` / `newUniqueOut` / `newVarnodeOut`** — the merge
-//!     base's [`Funcdata::op_set_output`](crate::funcdata::Funcdata::op_set_output)
-//!     returns `Err` (it needs a `banks_mut` split-borrow accessor the funcdata
-//!     owner has not yet added, for `vbank.setDef` + `replace_reads_thunk`).  So
-//!     any transform that creates a new op with a fresh output Varnode cannot be
-//!     committed.  Routed through [`new_unique_out_typed`].  // STUB(W3-funcdata)
-//!   - **type-facing / type-factory** — `Varnode::getTypeReadFacing`,
-//!     `getTypeDefFacing`, `getStructuredType`, `Varnode::isConstantExtended`,
-//!     `Funcdata::newExtendedConstant`, `opUndoPtradd`, `opMarkSpecialPrint`,
-//!     `inheritUnionField`, `glb->types->getBase`/`getExactPiece`,
-//!     `Scope::isReadOnly`, `StringManager::isString`, `PieceNode::gatherPieces`,
-//!     `Merge::registerProtoPartialRoot`, `RulePushPtr::duplicateNeed` — all W6 /
-//!     W4 / sibling-W5 surfaces absent at this merge base.  Routed through the
-//!     typed helpers below.  // STUB(W6)/STUB(W4)
-//!
-//! Every rule's `applyOp` is transcribed in full.  The early-out guards that use
-//! *available* API are evaluated for real (so the negative tests below exercise
-//! the genuine C++ control flow).  At the exact C++ statement where a transform
-//! would commit through a missing primitive, the rule records the stub (so the
-//! algorithm structure and iteration order stand in code for the next wave) and
-//! returns `0` — "made no change" — preserving the engine contract.  These are
-//! enumerated in the item's `losses` output.
+//! Opcode mutations use canonical type operations. Unsupported type-facing
+//! cases decline their rewrite.
 
 use std::rc::Rc;
 
@@ -64,32 +19,11 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::funcdata::Funcdata;
-use crate::context::{OpId, TypeOp, VarnodeId};
+use crate::context::{OpId, VarnodeId};
 
-// =============================================================================
-// Cross-wave helper shims (precise missing-API surface, one place to grep)
-// =============================================================================
-//
-// Each returns the documented `Err`/`None`; the rule bodies call them at the
-// exact C++ commit point and, on `Err`, record the stub and return 0.  None of
-// these invents type/op behavior (per the STUB rule); they mark the boundary.
-
-/// `data.opSetOpcode(op, opc)` with the W6 inst-table resolution folded in
-/// (the real funcdata mutator is now available end-to-end; this resolves the
-/// bare [`OpCode`] to its [`TypeOp`] via [`typeop_for`] exactly as the sibling
-/// `ruleaction_7`/`ruleaction_3` commit rules do).
 #[inline]
-fn set_opcode_typed(data: &mut Funcdata, op: OpId, opc: OpCode) -> KunaResult<()> {
-    data.op_set_opcode(op, typeop_for(opc));
-    Ok(())
-}
-
-/// `Funcdata::newUniqueOut(size, op)` — build a fresh unique Varnode and set it
-/// as `op`'s output.  Routes to the real funcdata factory (available now that
-/// the engine runs the pipeline end-to-end).
-#[inline]
-fn new_unique_out_typed(data: &mut Funcdata, size: int4, op: OpId) -> KunaResult<VarnodeId> {
-    data.new_unique_out(size, op)
+fn set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
+    data.op_set_opcode(op, crate::typeop::seam_type_op_for(opc));
 }
 
 /// `Varnode::isConstantExtended(uint8 *val)` — if `vn` is a constant, or is
@@ -157,15 +91,15 @@ fn new_extended_constant(
     let opaddr = op_addr(data, op);
     if val[1] == 0 {
         let ext_op = data.new_op(1, opaddr);
-        set_opcode_typed(data, ext_op, OpCode::CPUI_INT_ZEXT)?;
-        new_const_vn = new_unique_out_typed(data, s, ext_op)?;
+        set_opcode(data, ext_op, OpCode::CPUI_INT_ZEXT);
+        new_const_vn = data.new_unique_out(s, ext_op)?;
         let c = data.new_constant(8, val[0]);
         data.op_set_input(ext_op, c, 0)?;
         data.op_insert_before(ext_op, op);
     } else {
         let piece_op = data.new_op(2, opaddr);
-        set_opcode_typed(data, piece_op, OpCode::CPUI_PIECE)?;
-        new_const_vn = new_unique_out_typed(data, s, piece_op)?;
+        set_opcode(data, piece_op, OpCode::CPUI_PIECE);
+        new_const_vn = data.new_unique_out(s, piece_op)?;
         let chi = data.new_constant(8, val[1]); // Most significant piece
         let clo = data.new_constant(8, val[0]); // Least significant piece
         data.op_set_input(piece_op, chi, 0)?;
@@ -173,15 +107,6 @@ fn new_extended_constant(
         data.op_insert_before(piece_op, op);
     }
     Ok(new_const_vn)
-}
-
-/// `data.opSetOpcode(op, opc)` op-flags resolution (`glb->inst[opc]`) folded in:
-/// builds the [`TypeOp`] from the canonical `inst[]` table
-/// ([`crate::typeop::seam_type_op_for`], the `opflags` transcribed verbatim from
-/// `typeop.cc`), so the op's cached property bits match what the C++ would
-/// install for *any* op-code a rule in this batch produces.
-fn typeop_for(opc: OpCode) -> TypeOp {
-    crate::typeop::seam_type_op_for(opc)
 }
 
 /// `Varnode::getTypeReadFacing(op)` — the read-facing data-type resolution
@@ -514,7 +439,7 @@ impl RulePtrsubUndo {
             if is_const(data, in_vn(data, op, 1)) {
                 retval = retval.wadd(offset(data, in_vn(data, op, 1)) as int8);
                 data.op_remove_input(op, 1);
-                data.op_set_opcode(op, typeop_for(OpCode::CPUI_COPY));
+                set_opcode(data, op, OpCode::CPUI_COPY);
             } else {
                 retval =
                     retval.wadd(Self::remove_local_add_recurse(data, op, 0, max_level));
@@ -540,7 +465,7 @@ impl RulePtrsubUndo {
                 if slot == 0 && is_const(data, in_vn(data, curop, 1)) {
                     extra = extra.wadd(offset(data, in_vn(data, curop, 1)) as int8);
                     data.op_remove_input(curop, 1);
-                    data.op_set_opcode(curop, typeop_for(OpCode::CPUI_COPY));
+                    set_opcode(data, curop, OpCode::CPUI_COPY);
                 } else {
                     extra = extra.wadd(Self::remove_local_add_recurse(
                         data,
@@ -556,7 +481,7 @@ impl RulePtrsubUndo {
                     .expect("removeLocalAdds: stale ptrsub")
                     .clear_stop_type_propagation();
                 data.op_remove_input(curop, 1);
-                data.op_set_opcode(curop, typeop_for(OpCode::CPUI_COPY));
+                set_opcode(data, curop, OpCode::CPUI_COPY);
             } else if opc == OpCode::CPUI_PTRADD {
                 if in_vn(data, curop, 0) != next_vn {
                     break;
@@ -567,7 +492,7 @@ impl RulePtrsubUndo {
                     extra = extra.wadd(ptraddmult.wmul(offset(data, invn) as int8));
                     data.op_remove_input(curop, 2);
                     data.op_remove_input(curop, 1);
-                    data.op_set_opcode(curop, typeop_for(OpCode::CPUI_COPY));
+                    set_opcode(data, curop, OpCode::CPUI_COPY);
                 } else {
                     data.op_undo_ptradd(curop, false);
                     extra = extra.wadd(Self::remove_local_add_recurse(
@@ -704,7 +629,7 @@ impl Rule for RulePtrsubUndo {
             return 0;
         }
 
-        data.op_set_opcode(op, typeop_for(OpCode::CPUI_INT_ADD));
+        set_opcode(data, op, OpCode::CPUI_INT_ADD);
         data.obank_mut()
             .get_mut(op)
             .expect("ptrsubundo: stale op")
@@ -757,9 +682,7 @@ impl Rule for RuleMultNegOne {
         if offset(data, constvn) != calc_mask(size(data, constvn)) {
             return 0;
         }
-        if set_opcode_typed(data, op, OpCode::CPUI_INT_2COMP).is_err() {
-            return 0; // STUB(W6)
-        }
+        set_opcode(data, op, OpCode::CPUI_INT_2COMP);
         data.op_remove_input(op, 1);
         1
     }
@@ -886,9 +809,7 @@ impl Rule for Rule2Comp2Sub {
         //   bail with a "no change" return (which would leave a half-applied
         //   transform).  Equivalent ordering: the opcode change is the load-bearing
         //   commit — if it cannot run, the whole transform is a no-op.
-        if set_opcode_typed(data, addop, OpCode::CPUI_INT_SUB).is_err() {
-            return 0; // STUB(W6): no input rewiring performed -> truly no change
-        }
+        set_opcode(data, addop, OpCode::CPUI_INT_SUB);
         if in_vn(data, addop, 0) == opout {
             let addin1 = in_vn(data, addop, 1);
             data.op_set_input(addop, addin1, 0).expect("2comp2sub: opSetInput");
@@ -983,9 +904,7 @@ impl Rule for RuleSubRight {
                     }
                     data.op_unlink(op);
                     op = lone;
-                    if set_opcode_typed(data, op, OpCode::CPUI_SUBPIECE).is_err() {
-                        return 0;
-                    }
+                    set_opcode(data, op, OpCode::CPUI_SUBPIECE);
                     opc = opc2;
                 }
             }
@@ -1003,9 +922,7 @@ impl Rule for RuleSubRight {
             .get_base(asize, meta)
             .expect("subright: getBase");
         let shiftop = data.new_op(2, op_addr(data, op));
-        if set_opcode_typed(data, shiftop, opc).is_err() {
-            return 0;
-        }
+        set_opcode(data, shiftop, opc);
         let newout = data.new_unique(asize, Some(ct));
         data.op_set_output(shiftop, newout).expect("subright: opSetOutput");
         data.op_set_input(shiftop, a, 0).expect("subright: opSetInput");
@@ -1650,10 +1567,8 @@ impl Rule for RuleSubNormal {
                 } else {
                     OpCode::CPUI_INT_ZEXT
                 };
-                if set_opcode_typed(data, newop, OpCode::CPUI_SUBPIECE).is_err() {
-                    return 0;
-                }
-                let newout = match new_unique_out_typed(data, trunc_size, newop) {
+                set_opcode(data, newop, OpCode::CPUI_SUBPIECE);
+                let newout = match data.new_unique_out(trunc_size, newop) {
                     Ok(v) => v,
                     Err(_) => return 0,
                 };
@@ -1664,9 +1579,7 @@ impl Rule for RuleSubNormal {
 
                 data.op_set_input(op, newout, 0).expect("subnormal: opSetInput");
                 data.op_remove_input(op, 1);
-                if set_opcode_typed(data, op, opc).is_err() {
-                    return 0;
-                }
+                set_opcode(data, op, opc);
                 return 1;
             } else {
                 k = insize - c - outsize; // Or we can shrink the cut
@@ -1690,10 +1603,8 @@ impl Rule for RuleSubNormal {
         }
 
         let newop = data.new_op(2, op_addr(data, op));
-        if set_opcode_typed(data, newop, OpCode::CPUI_SUBPIECE).is_err() {
-            return 0;
-        }
-        let newout = match new_unique_out_typed(data, outsize, newop) {
+        set_opcode(data, newop, OpCode::CPUI_SUBPIECE);
+        let newout = match data.new_unique_out(outsize, newop) {
             Ok(v) => v,
             Err(_) => return 0,
         };
@@ -1705,9 +1616,7 @@ impl Rule for RuleSubNormal {
         data.op_set_input(op, newout, 0).expect("subnormal: opSetInput");
         let nc = data.new_constant(4, n as uintb);
         data.op_set_input(op, nc, 1).expect("subnormal: opSetInput");
-        if set_opcode_typed(data, op, opc).is_err() {
-            return 0;
-        }
+        set_opcode(data, op, opc);
         1
     }
 }
@@ -1757,9 +1666,7 @@ impl Rule for RulePositiveDiv {
             OpCode::CPUI_INT_REM
         };
         // data.opSetOpcode(op, opc); return 1;  -- STUB(W6)
-        if set_opcode_typed(data, op, opc).is_err() {
-            return 0; // STUB(W6)
-        }
+        set_opcode(data, op, opc);
         1
     }
 }
@@ -1899,10 +1806,8 @@ impl Rule for RuleDivTermAdd {
 
             // Construct the new multiply
             let newmultop = data.new_op(2, op_addr(data, op));
-            if set_opcode_typed(data, newmultop, OpCode::CPUI_INT_MULT).is_err() {
-                return 0;
-            }
-            let newmultvn = match new_unique_out_typed(data, size(data, extvn), newmultop) {
+            set_opcode(data, newmultop, OpCode::CPUI_INT_MULT);
+            let newmultvn = match data.new_unique_out(size(data, extvn), newmultop) {
                 Ok(v) => v,
                 Err(_) => return 0,
             };
@@ -1914,10 +1819,8 @@ impl Rule for RuleDivTermAdd {
             if shiftopc == OpCode::CPUI_MAX {
                 shiftopc = OpCode::CPUI_INT_RIGHT;
             }
-            if set_opcode_typed(data, newshiftop, shiftopc).is_err() {
-                return 0;
-            }
-            let newshiftvn = match new_unique_out_typed(data, size(data, extvn), newshiftop) {
+            set_opcode(data, newshiftop, shiftopc);
+            let newshiftvn = match data.new_unique_out(size(data, extvn), newshiftop) {
                 Ok(v) => v,
                 Err(_) => return 0,
             };
@@ -1926,9 +1829,7 @@ impl Rule for RuleDivTermAdd {
             data.op_set_input(newshiftop, nc, 1).expect("RuleDivTermAdd: opSetInput");
             data.op_insert_before(newshiftop, op);
 
-            if set_opcode_typed(data, addop, OpCode::CPUI_SUBPIECE).is_err() {
-                return 0;
-            }
+            set_opcode(data, addop, OpCode::CPUI_SUBPIECE);
             data.op_set_input(addop, newshiftvn, 0).expect("RuleDivTermAdd: opSetInput");
             let c0 = data.new_constant(4, 0);
             data.op_set_input(addop, c0, 1).expect("RuleDivTermAdd: opSetInput");
@@ -2058,10 +1959,8 @@ impl Rule for RuleDivTermAdd2 {
             mult_const = sum;
 
             let newmultop = data.new_op(2, op_addr(data, op));
-            if set_opcode_typed(data, newmultop, OpCode::CPUI_INT_MULT).is_err() {
-                return 0;
-            }
-            let newmultvn = match new_unique_out_typed(data, size(data, zextvn), newmultop) {
+            set_opcode(data, newmultop, OpCode::CPUI_INT_MULT);
+            let newmultvn = match data.new_unique_out(size(data, zextvn), newmultop) {
                 Ok(v) => v,
                 Err(_) => return 0,
             };
@@ -2075,10 +1974,8 @@ impl Rule for RuleDivTermAdd2 {
             data.op_insert_before(newmultop, op);
 
             let newshiftop = data.new_op(2, op_addr(data, op));
-            if set_opcode_typed(data, newshiftop, OpCode::CPUI_INT_RIGHT).is_err() {
-                return 0;
-            }
-            let newshiftvn = match new_unique_out_typed(data, size(data, zextvn), newshiftop) {
+            set_opcode(data, newshiftop, OpCode::CPUI_INT_RIGHT);
+            let newshiftvn = match data.new_unique_out(size(data, zextvn), newshiftop) {
                 Ok(v) => v,
                 Err(_) => return 0,
             };
@@ -2087,9 +1984,7 @@ impl Rule for RuleDivTermAdd2 {
             data.op_set_input(newshiftop, nc, 1).expect("RuleDivTermAdd2: opSetInput");
             data.op_insert_before(newshiftop, op);
 
-            if set_opcode_typed(data, addop, OpCode::CPUI_SUBPIECE).is_err() {
-                return 0;
-            }
+            set_opcode(data, addop, OpCode::CPUI_SUBPIECE);
             data.op_set_input(addop, newshiftvn, 0).expect("RuleDivTermAdd2: opSetInput");
             let c0 = data.new_constant(4, 0);
             data.op_set_input(addop, c0, 1).expect("RuleDivTermAdd2: opSetInput");
@@ -2166,7 +2061,7 @@ impl RuleDivOpt {
             (is_const(data, divisor) && offset(data, divisor) == 3).then(|| out_vn(data, div_op))
         });
         let Some(quotient) = quotient else { return false };
-        data.op_set_opcode(op, typeop_for(OpCode::CPUI_INT_MULT));
+        set_opcode(data, op, OpCode::CPUI_INT_MULT);
         data.op_set_input(op, quotient, 0).expect("divopt: quotient input");
         let two = data.new_constant(8, 2);
         data.op_set_input(op, two, 1).expect("divopt: scale input");
@@ -2480,10 +2375,8 @@ impl Rule for RuleDivOpt {
         if size(data, in_vn0) < out_size {
             // Do we need an extension to get to final size
             let in_ext = data.new_op(1, op_addr(data, op));
-            if set_opcode_typed(data, in_ext, ext_opc).is_err() {
-                return 0;
-            }
-            let ext_out = match new_unique_out_typed(data, out_size, in_ext) {
+            set_opcode(data, in_ext, ext_opc);
+            let ext_out = match data.new_unique_out(out_size, in_ext) {
                 Ok(v) => v,
                 Err(_) => return 0,
             };
@@ -2496,17 +2389,13 @@ impl Rule for RuleDivOpt {
             // truncation SUBPIECE.
             let newop = data.new_op(2, op_addr(data, op));
             // This gets changed immediately, but need it for opInsert
-            if set_opcode_typed(data, newop, OpCode::CPUI_INT_ADD).is_err() {
-                return 0;
-            }
-            let res_vn = match new_unique_out_typed(data, size(data, in_vn0), newop) {
+            set_opcode(data, newop, OpCode::CPUI_INT_ADD);
+            let res_vn = match data.new_unique_out(size(data, in_vn0), newop) {
                 Ok(v) => v,
                 Err(_) => return 0,
             };
             data.op_insert_before(newop, op);
-            if set_opcode_typed(data, op, OpCode::CPUI_SUBPIECE).is_err() {
-                return 0;
-            }
+            set_opcode(data, op, OpCode::CPUI_SUBPIECE);
             data.op_set_input(op, res_vn, 0).expect("RuleDivOpt: opSetInput");
             let c0 = data.new_constant(4, 0);
             data.op_set_input(op, c0, 1).expect("RuleDivOpt: opSetInput");
@@ -2519,18 +2408,14 @@ impl Rule for RuleDivOpt {
             data.op_set_input(op, in_vn0, 0).expect("RuleDivOpt: opSetInput");
             let dvn = data.new_constant(out_size, divisor);
             data.op_set_input(op, dvn, 1).expect("RuleDivOpt: opSetInput");
-            if set_opcode_typed(data, op, OpCode::CPUI_INT_DIV).is_err() {
-                return 0;
-            }
+            set_opcode(data, op, OpCode::CPUI_INT_DIV);
         } else {
             // Sign division
             let opout = out_vn(data, op);
             Self::move_sign_bit_extraction(data, opout, in_vn0);
             let divop = data.new_op(2, op_addr(data, op));
-            if set_opcode_typed(data, divop, OpCode::CPUI_INT_SDIV).is_err() {
-                return 0;
-            }
-            let newout = match new_unique_out_typed(data, out_size, divop) {
+            set_opcode(data, divop, OpCode::CPUI_INT_SDIV);
+            let newout = match data.new_unique_out(out_size, divop) {
                 Ok(v) => v,
                 Err(_) => return 0,
             };
@@ -2540,10 +2425,8 @@ impl Rule for RuleDivOpt {
             data.op_insert_before(divop, op);
             // Build the sign value correction
             let sgnop = data.new_op(2, op_addr(data, op));
-            if set_opcode_typed(data, sgnop, OpCode::CPUI_INT_SRIGHT).is_err() {
-                return 0;
-            }
-            let sgnvn = match new_unique_out_typed(data, out_size, sgnop) {
+            set_opcode(data, sgnop, OpCode::CPUI_INT_SRIGHT);
+            let sgnvn = match data.new_unique_out(out_size, sgnop) {
                 Ok(v) => v,
                 Err(_) => return 0,
             };
@@ -2554,9 +2437,7 @@ impl Rule for RuleDivOpt {
             // Add the correction into the division op
             data.op_set_input(op, newout, 0).expect("RuleDivOpt: opSetInput");
             data.op_set_input(op, sgnvn, 1).expect("RuleDivOpt: opSetInput");
-            if set_opcode_typed(data, op, OpCode::CPUI_INT_ADD).is_err() {
-                return 0;
-            }
+            set_opcode(data, op, OpCode::CPUI_INT_ADD);
         }
         1
     }

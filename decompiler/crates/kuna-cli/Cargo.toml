@@ -39,6 +39,8 @@ object = { workspace = true, features = ["archive"] }
 # without knowing an address first. Already a workspace dependency (kuna-decomp,
 # kuna-console); this adds an edge, not a crate.
 regex.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
 
 [dev-dependencies]
 object = { workspace = true, features = ["write"] }

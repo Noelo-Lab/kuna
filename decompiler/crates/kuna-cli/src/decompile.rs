@@ -25,6 +25,7 @@ use std::process::Command;
 use kuna_console::engine::{ArmIsa, EntrySelector, ARM_ISA_ENV};
 use kuna_console::kuna_buildstamp;
 
+use crate::args::take_value;
 use crate::decompile_all::{self, Args as AllArgs, DriverDefaults};
 use crate::paths;
 
@@ -1084,7 +1085,7 @@ pub fn run(args: &DecompileArgs) -> i32 {
 /// Entry point for `kuna decompile`: parse the command line, then render either
 /// the text surface ([`run`], a `decomp_dbg` subprocess) or, with `--json`, the
 /// `decompile-all` record shape for the one selected function ([`run_json`]).
-pub fn main(argv: &[String]) -> i32 {
+pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut binary: Option<String> = None;
     let mut target: Option<String> = None;
     let mut addr = false;
@@ -1120,136 +1121,64 @@ pub fn main(argv: &[String]) -> i32 {
             "--json" => json = true,
             "--raw" => raw = true,
             "--raw-image" => raw_image = true,
-            "--base" => match take_value(argv, &mut i, "--base") {
-                Some(value) => match parse_cli_address(&value) {
-                    Ok(value) => base = Some(value),
-                    Err(error) => {
-                        eprintln!("error: {error}");
-                        return 2;
-                    }
-                },
-                None => return 2,
-            },
+            "--base" => base = Some(parse_cli_address(&take_value(argv, &mut i, "--base")?)?),
             "--regions" => regions = true,
-            "--slice" => slice = take_value(argv, &mut i, "--slice"),
-            "--isa" => match take_value(argv, &mut i, "--isa") {
-                Some(value) => match ArmIsa::parse(&value) {
-                    Ok(value) => {
-                        isa = value;
-                        forwarded.push("--isa".into());
-                        forwarded.push(isa.map_or("auto", ArmIsa::as_str).into());
-                    }
-                    Err(error) => {
-                        eprintln!("error: {error}");
-                        return 2;
-                    }
-                },
-                None => return 2,
-            },
-            "--target" => {
-                bfd_target = take_value(argv, &mut i, "--target");
+            "--slice" => slice = Some(take_value(argv, &mut i, "--slice")?),
+            "--isa" => {
+                isa = ArmIsa::parse(&take_value(argv, &mut i, "--isa")?)?;
+                forwarded.push("--isa".into());
+                forwarded.push(isa.map_or("auto", ArmIsa::as_str).into());
             }
+            "--target" => bfd_target = Some(take_value(argv, &mut i, "--target")?),
             "--option" => {
-                // nargs=2
-                if i + 2 >= argv.len() {
-                    eprintln!("error: --option requires NAME VALUE");
-                    return 2;
-                }
-                if let Err(msg) = crate::optname::check(&argv[i + 1]) {
-                    eprintln!("error: {msg}");
-                    return 2;
-                }
-                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
-                forwarded.extend(argv[i..i + 3].iter().cloned());
-                i += 2;
+                options.push(crate::args::take_option(argv, &mut i)?);
+                forwarded.extend(argv[i - 2..=i].iter().cloned());
             }
-            // (kuna outlang) `--language` is the first-class surface for the
-            // output language; it lowers to the upstream `setlanguage` option, so
-            // it reaches every downstream consumer (the console script here, the
-            // in-process option applier in decompile-all) with no new plumbing.
-            // Pushed in argv order, so a later `--option setlanguage` still wins.
-            "--language" => match take_value(argv, &mut i, "--language") {
-                Some(value) => {
-                    match decompile_all::parse_language_flag(&value) {
-                        Ok(Some(lang)) => options.push(("setlanguage".into(), lang.into())),
-                        Ok(None) => {}
-                        Err(msg) => {
-                            eprintln!("error: {msg}");
-                            return 2;
-                        }
-                    }
-                    forwarded.push("--language".into());
-                    forwarded.push(value);
-                    saw_language = true;
+            "--language" => {
+                let value = take_value(argv, &mut i, "--language")?;
+                if let Some(lang) = decompile_all::parse_language_flag(&value)? {
+                    options.push(("setlanguage".into(), lang.into()));
                 }
-                None => return 2,
-            },
-            "--mode" => match take_value(argv, &mut i, "--mode") {
-                Some(value) => mode = Some(value),
-                None => return 2,
-            },
-            "--kassert" => {
-                if let Some(v) = take_value(argv, &mut i, "--kassert") {
-                    kasserts.push(v);
-                }
+                forwarded.push("--language".into());
+                forwarded.push(value);
+                saw_language = true;
             }
-            "--define-function" => match take_value(argv, &mut i, "--define-function") {
-                Some(value) => match crate::funcdecl::parse_flag(&value) {
-                    Ok(decls) => {
-                        func_decls.extend(decls);
-                        forwarded.push("--define-function".into());
-                        forwarded.push(value);
-                    }
-                    Err(msg) => {
-                        eprintln!("error: {msg}");
-                        return 2;
-                    }
-                },
-                None => return 2,
-            },
-            "--assert" => match take_value(argv, &mut i, "--assert") {
-                Some(value) => match crate::assertdecl::parse_flag(&value) {
-                    Ok(parsed) => {
-                        assertions.extend(parsed);
-                        forwarded.push("--assert".into());
-                        forwarded.push(value);
-                    }
-                    Err(msg) => {
-                        eprintln!("error: {msg}");
-                        return 2;
-                    }
-                },
-                None => return 2,
-            },
+            "--mode" => mode = Some(take_value(argv, &mut i, "--mode")?),
+            "--kassert" => kasserts.push(take_value(argv, &mut i, "--kassert")?),
+            "--define-function" => {
+                let value = take_value(argv, &mut i, "--define-function")?;
+                func_decls.extend(crate::funcdecl::parse_flag(&value)?);
+                forwarded.push("--define-function".into());
+                forwarded.push(value);
+            }
+            "--assert" => {
+                let value = take_value(argv, &mut i, "--assert")?;
+                assertions.extend(crate::assertdecl::parse_flag(&value)?);
+                forwarded.push("--assert".into());
+                forwarded.push(value);
+            }
             "--assert-strict" => {
                 assert_strict = true;
                 forwarded.push("--assert-strict".into());
             }
-            "--decomp-dbg" => decomp_dbg = take_value(argv, &mut i, "--decomp-dbg"),
-            "--engine" => engine = take_value(argv, &mut i, "--engine"),
-            "--sleighpath" => sleighpath = take_value(argv, &mut i, "--sleighpath"),
+            "--decomp-dbg" => decomp_dbg = Some(take_value(argv, &mut i, "--decomp-dbg")?),
+            "--engine" => engine = Some(take_value(argv, &mut i, "--engine")?),
+            "--sleighpath" => sleighpath = Some(take_value(argv, &mut i, "--sleighpath")?),
             "-h" | "--help" => {
                 usage();
-                return 0;
+                return Ok(0);
             }
             "--timeout" => {
-                // Accepted for compatibility; the in-process child has no timeout
-                // wall (the Python timeout guarded a hung subprocess — out of scope
-                // here, but we must consume the value so it isn't read as a positional).
-                let _ = take_value(argv, &mut i, "--timeout");
+                take_value(argv, &mut i, "--timeout")?;
             }
-            s if s.starts_with("--") => {
-                eprintln!("error: unknown option {s}");
-                return 2;
-            }
+            s if s.starts_with("--") => return Err(format!("unknown option {s}")),
             _ => {
                 if binary.is_none() {
                     binary = Some(a.to_string());
                 } else if target.is_none() {
                     target = Some(a.to_string());
                 } else {
-                    eprintln!("error: unexpected argument {a:?}");
-                    return 2;
+                    return Err(format!("unexpected argument {a:?}"));
                 }
             }
         }
@@ -1259,8 +1188,7 @@ pub fn main(argv: &[String]) -> i32 {
     let (binary, target) = match (binary, target) {
         (Some(b), Some(t)) => (b, t),
         _ => {
-            eprintln!("error: decompile requires <binary> and <func>");
-            return 2;
+            return Err("decompile requires <binary> and <func>".into());
         }
     };
     // Honor `--engine cpp|rust` like the Python tools: set `KUNA_ENGINE`.  In the
@@ -1273,26 +1201,24 @@ pub fn main(argv: &[String]) -> i32 {
     addr |= looks_like_addr(&target);
 
     if raw_image {
-        if bfd_target.as_deref().is_none_or(|value| value.trim().is_empty()) {
-            eprintln!("error: --raw-image requires --target <SLEIGH-language-id>");
-            return 2;
+        if bfd_target
+            .as_deref()
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            return Err("--raw-image requires --target <SLEIGH-language-id>".into());
         }
         if base.is_none() {
-            eprintln!("error: --raw-image requires --base <address>");
-            return 2;
+            return Err("--raw-image requires --base <address>".into());
         }
         if parse_cli_address(&target).is_err() {
-            eprintln!("error: --raw-image requires a numeric entry address");
-            return 2;
+            return Err("--raw-image requires a numeric entry address".into());
         }
         if slice.is_some() {
-            eprintln!("error: --slice does not apply to --raw-image input");
-            return 2;
+            return Err("--slice does not apply to --raw-image input".into());
         }
         addr = true;
     } else if base.is_some() {
-        eprintln!("error: --base requires --raw-image");
-        return 2;
+        return Err("--base requires --raw-image".into());
     }
 
     if json {
@@ -1306,11 +1232,10 @@ pub fn main(argv: &[String]) -> i32 {
             ("--decomp-dbg", decomp_dbg.is_some()),
         ] {
             if requested {
-                eprintln!("error: {flag} is not supported with --json");
-                return 2;
+                return Err(format!("{flag} is not supported with --json"));
             }
         }
-        return run_json(&JsonRequest {
+        return Ok(run_json(&JsonRequest {
             binary: &binary,
             target: &target,
             by_address: addr,
@@ -1321,7 +1246,7 @@ pub fn main(argv: &[String]) -> i32 {
             sleighpath: sleighpath.as_deref(),
             raw_image,
             base,
-        });
+        }));
     }
 
     // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
@@ -1336,18 +1261,12 @@ pub fn main(argv: &[String]) -> i32 {
     // Omitted mode is the size-driven `auto` policy. Preset overrides are
     // prepended so explicit `--option` pairs remain last-write-wins in the
     // generated console script.
-    match decompile_all::mode_options_for_binary(mode.as_deref(), &binary, options) {
-        Ok(merged) => options = merged,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return 2;
-        }
-    }
+    options = decompile_all::mode_options_for_binary(mode.as_deref(), &binary, options)?;
     if addr && !explicit_fast_funcdisc {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
 
-    run(&DecompileArgs {
+    Ok(run(&DecompileArgs {
         binary,
         target,
         by_address: addr,
@@ -1365,18 +1284,7 @@ pub fn main(argv: &[String]) -> i32 {
         isa,
         raw_image,
         base,
-    })
-}
-
-/// Consume the value following a flag at `argv[i]`, advancing `i` past it.
-fn take_value(argv: &[String], i: &mut usize, flag: &str) -> Option<String> {
-    if *i + 1 < argv.len() {
-        *i += 1;
-        Some(argv[*i].clone())
-    } else {
-        eprintln!("error: {flag} requires a value");
-        None
-    }
+    }))
 }
 
 fn usage() {

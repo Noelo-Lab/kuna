@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 
 use object::{Object, ObjectSection, ObjectSegment, SectionKind};
 
+use crate::args::take_value as take;
 use crate::cryptosig::{self, Hit, Kind, Region};
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
 use crate::jsonfmt::{dumps_indent2, Json};
@@ -339,14 +340,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<CryptoArgs, String> {
             "--algorithm" => algorithm = Some(take(argv, &mut i, "--algorithm")?),
             "--section" => section = Some(take(argv, &mut i, "--section")?),
             "--no-xrefs" => no_xrefs = true,
-            "--option" => {
-                if i + 2 >= argv.len() {
-                    return Err("--option requires NAME VALUE".into());
-                }
-                crate::optname::check(&argv[i + 1])?;
-                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
-                i += 2;
-            }
+            "--option" => options.push(crate::args::take_option(argv, &mut i)?),
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
             "--isa" => isa = kuna_console::engine::ArmIsa::parse(&take(argv, &mut i, "--isa")?)?,
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
@@ -367,15 +361,6 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<CryptoArgs, String> {
         return Err("--isa has no effect with --no-xrefs (no code is decoded)".into());
     }
     Ok(CryptoArgs { binary, json, algorithm, section, no_xrefs, options, mode, slice, target, sleighpath, isa })
-}
-
-fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
-    if *i + 1 < argv.len() {
-        *i += 1;
-        Ok(argv[*i].clone())
-    } else {
-        Err(format!("{flag} requires a value"))
-    }
 }
 
 fn usage() {

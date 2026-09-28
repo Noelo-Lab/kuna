@@ -36,14 +36,26 @@ fn source(topic: &str) -> String {
     std::fs::read_to_string(repo_root().join(format!("docs/{topic}.md"))).unwrap()
 }
 
+fn assert_document(topic: &str, actual: &[u8]) {
+    let expected = source(topic);
+    let expected = expected.as_bytes();
+    assert!(
+        actual == expected,
+        "stale embedded {topic}: {} bytes, expected {}; first difference at byte {}",
+        actual.len(),
+        expected.len(),
+        actual
+            .iter()
+            .zip(expected)
+            .position(|(a, b)| a != b)
+            .unwrap_or(actual.len().min(expected.len()))
+    );
+}
+
 #[test]
 fn embedded_docs_match_the_files_on_disk() {
     for topic in REQUIRED {
-        assert_eq!(
-            docs(&[topic]),
-            source(topic),
-            "stale embedded {topic}; rebuild kuna-cli"
-        );
+        assert_document(topic, docs(&[topic]).as_bytes());
     }
 }
 
@@ -132,18 +144,15 @@ fn the_binary_carries_its_docs_out_of_the_repo() {
         .env_remove("KUNA_DECOMP_DBG")
         .output()
         .expect("run relocated kuna");
+    let file_count = std::fs::read_dir(&sandbox).unwrap().count();
+    std::fs::remove_dir_all(&sandbox).unwrap();
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(output.stdout, source("cli").as_bytes());
-    assert_eq!(
-        std::fs::read_dir(&sandbox).unwrap().count(),
-        1,
-        "docs left files behind"
-    );
-    std::fs::remove_dir_all(&sandbox).unwrap();
+    assert_document("cli", &output.stdout);
+    assert_eq!(file_count, 1, "docs left files behind");
 }
 
 #[cfg(unix)]
