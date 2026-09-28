@@ -150,27 +150,51 @@ fn cpp_mangled() -> String {
         .to_string()
 }
 
-/// Parse the `"count": N` field out of the decompile-all `--json` header.
 fn json_count(stdout: &str) -> Option<usize> {
-    let i = stdout.find("\"count\":")? + "\"count\":".len();
-    stdout[i..].trim_start().split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
+    let document: serde_json::Value = serde_json::from_str(stdout).expect("valid CLI JSON");
+    document
+        .get("count")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
 }
 
-/// Every entry address in a `functions` / `decompile-all` `--json` document, in
-/// document (address) order.  `"address_hex"` is a different key, so the `":"` in
-/// the pattern is what keeps it out.
 fn json_addresses(stdout: &str) -> Vec<u64> {
-    stdout
-        .match_indices("\"address\":")
-        .filter_map(|(i, m)| {
-            stdout[i + m.len()..]
-                .trim_start()
-                .split(|c: char| !c.is_ascii_digit())
-                .next()?
-                .parse()
-                .ok()
+    let document: serde_json::Value = serde_json::from_str(stdout).expect("valid CLI JSON");
+    document
+        .get("functions")
+        .and_then(serde_json::Value::as_array)
+        .expect("function array")
+        .iter()
+        .map(|function| {
+            function.get("address").and_then(serde_json::Value::as_u64)
+                .expect("numeric function address")
         })
         .collect()
+}
+
+#[test]
+fn json_helpers_use_function_fields_and_preserve_raw_records() {
+    let document = r#"{"metadata":{"count":99,"address":99,"size":99},"count":2,"functions":[
+  {"name":"a\"b","address":1,"size":4,"variables":[{"size":32}]},
+  {"name":"second","address":2,"size":8}
+]}"#;
+    assert_eq!(json_count(document), Some(2));
+    assert_eq!(json_addresses(document), [1, 2]);
+    assert_eq!(json_sizes(document), [4, 8]);
+    let records = json_records(document);
+    assert_eq!(records.len(), 2);
+    assert_eq!(record_name(records[0]), "a\"b");
+    assert_eq!(
+        records[0],
+        r#"{"name":"a\"b","address":1,"size":4,"variables":[{"size":32}]}"#
+    );
+}
+
+#[test]
+fn json_helpers_reject_malformed_documents() {
+    for document in [r#"{"count":2garbage}"#, r#"{"count":2} trailing"#] {
+        assert!(std::panic::catch_unwind(|| json_count(document)).is_err());
+    }
 }
 
 /// Run `kuna <cmd> <bin> --mode reliable --json` and return its entry addresses.
@@ -1867,17 +1891,15 @@ fn raw_image_rejects_missing_metadata_and_object_only_surfaces() {
     std::fs::remove_file(path).unwrap();
 }
 
-/// Every `"size": N` in a `--json` document, in document order.
 fn json_sizes(stdout: &str) -> Vec<u64> {
-    stdout
-        .match_indices("\"size\":")
-        .filter_map(|(i, key)| {
-            stdout[i + key.len()..]
-                .trim_start()
-                .split(|c: char| !c.is_ascii_digit())
-                .next()?
-                .parse()
-                .ok()
+    let document: serde_json::Value = serde_json::from_str(stdout).expect("valid CLI JSON");
+    document
+        .get("functions")
+        .and_then(serde_json::Value::as_array)
+        .expect("function array")
+        .iter()
+        .map(|function| {
+            function.get("size").and_then(serde_json::Value::as_u64).expect("numeric function size")
         })
         .collect()
 }
@@ -1964,18 +1986,7 @@ fn functions_and_decompile_all_agree_on_size() {
     // Both documents are address-ordered over the same entry set, so the size
     // columns line up positionally.
     let want = json_sizes(&inventory);
-    // `decompile-all` also emits a `size` per recovered VARIABLE; keep only the
-    // per-function ones by pairing each with the entry address that precedes it.
-    let got: Vec<u64> = json_addresses(&decompiled)
-        .iter()
-        .map(|addr| {
-            let rec = decompiled
-                .split(&format!("\"address\": {addr},"))
-                .nth(1)
-                .expect("each entry address must open a record");
-            json_sizes(rec).first().copied().expect("each record must carry `size`")
-        })
-        .collect();
+    let got = json_sizes(&decompiled);
     assert_eq!(
         want, got,
         "the inventory and the whole-binary run disagree on function extents"
@@ -3091,15 +3102,20 @@ fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
 
 // --- `--jobs N`: a dead worker costs one function --------------------------
 
-/// `decompile-all --json` records, split at their own indentation, so a record
-/// can be compared whole and named without a JSON parser.
+/// Parse records while retaining their original bytes for equality checks.
 fn json_records(doc: &str) -> Vec<&str> {
-    doc.split("\n    {\n").skip(1).map(|r| r.split("\n    }").next().unwrap_or(r)).collect()
+    #[derive(serde::Deserialize)]
+    struct Records<'a> {
+        #[serde(borrow)]
+        functions: Vec<&'a serde_json::value::RawValue>,
+    }
+    let document: Records<'_> = serde_json::from_str(doc).expect("valid function records");
+    document.functions.into_iter().map(|record| record.get()).collect()
 }
 
-fn record_name(record: &str) -> &str {
-    let at = record.find("\"name\": \"").expect("a record has a name") + "\"name\": \"".len();
-    &record[at..at + record[at..].find('"').expect("a terminated name")]
+fn record_name(record: &str) -> String {
+    let record: serde_json::Value = serde_json::from_str(record).expect("valid function record");
+    record.get("name").and_then(serde_json::Value::as_str).expect("function name").to_owned()
 }
 
 /// The count a `[kuna <tag>] N function(s) left unfinished ... recovered.` line
@@ -3157,7 +3173,7 @@ fn assert_only_lost_differ(serial: &str, pooled: &str, lost: &[&str]) {
     assert_eq!(got.len(), want.len(), "one record per target:\n{pooled}");
     for (w, g) in want.iter().zip(&got) {
         assert_eq!(record_name(w), record_name(g), "target order moved");
-        if !lost.contains(&record_name(w)) {
+        if !lost.contains(&record_name(w).as_str()) {
             assert_eq!(g, w, "{} is not the serial record", record_name(w));
         }
     }
@@ -3266,10 +3282,10 @@ fn jobs_a_stalled_worker_loses_only_the_function_that_stalled() {
     assert_only_lost_differ(&serial, &got, &lost);
     let stalled =
         "\"error\": \"worker stalled past the per-function watchdog (1s); the worker was killed";
-    for r in json_records(&got).into_iter().filter(|r| lost.contains(&record_name(r))) {
+    for r in json_records(&got).into_iter().filter(|r| lost.contains(&record_name(r).as_str())) {
         assert!(r.contains(stalled), "{r}");
         let marked = r.contains("; not re-run: two functions re-run from its chunk stalled\"");
-        assert_eq!(marked, not_rerun.contains(&record_name(r)), "{r}");
+        assert_eq!(marked, not_rerun.contains(&record_name(r).as_str()), "{r}");
     }
     for addr in ["0x4006fd", "0x400530", "0x400550"] {
         let fired = stderr.matches(&format!("KUNA_JOBS_FAULT: injected stall at {addr}")).count();

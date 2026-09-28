@@ -10,6 +10,8 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::process::Command;
 
+use serde_json::Value;
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
@@ -46,47 +48,20 @@ fn run(args: &[&str]) -> (String, String) {
     (String::from_utf8_lossy(&output.stdout).into_owned(), stderr.into_owned())
 }
 
-/// One `"key": value` of a rendered object, unquoted — enough to walk this
-/// document without a JSON dependency the CLI does not have.
-fn field(object: &str, key: &str) -> Option<String> {
-    let at = object.find(&format!("\"{key}\":"))? + key.len() + 3;
-    let rest = object[at..].trim_start();
-    if let Some(body) = rest.strip_prefix('"') {
-        return Some(body[..body.find('"')?].to_string());
+fn rows(document: &str, array: &str) -> Vec<Value> {
+    let mut document: Value = serde_json::from_str(document).expect("valid graph JSON");
+    match document.as_object_mut().expect("graph object").remove(array).expect("graph array") {
+        Value::Array(rows) => rows,
+        _ => panic!("{array} must be an array"),
     }
-    let end = rest.find([',', '\n', '}']).unwrap_or(rest.len());
-    Some(rest[..end].trim().to_string())
-}
-
-/// Split the `functions` / `edges` arrays into their top-level objects. The
-/// documents are `dumps_indent2`-rendered, so a row starts at a `    {` line and
-/// ends at the matching `    }`.
-fn rows(document: &str, array: &str) -> Vec<String> {
-    let start = document.find(&format!("\"{array}\": [")).expect("array present");
-    let body = &document[start..];
-    let mut out = Vec::new();
-    let mut current: Option<String> = None;
-    for line in body.lines().skip(1) {
-        if line == "    {" {
-            current = Some(String::new());
-        } else if line == "    }" || line == "    }," {
-            if let Some(row) = current.take() {
-                out.push(row);
-            }
-        } else if line == "  ]," || line == "  ]" {
-            break;
-        } else if let Some(row) = current.as_mut() {
-            row.push_str(line);
-            row.push('\n');
-        }
-    }
-    out
 }
 
 #[test]
 fn the_document_carries_the_schema_and_both_arrays() {
     let stdout = graph(&[&fixture("fauxware"), "--label", "fixture-label"]);
-    assert!(stdout.starts_with("{\n"), "not JSON: {stdout}");
+    let parsed: Value = serde_json::from_str(&stdout).expect("valid graph JSON");
+    assert_eq!(parsed.get("schemaVersion").and_then(Value::as_u64), Some(4));
+    assert_eq!(parsed.pointer("/binary/label").and_then(Value::as_str), Some("fixture-label"));
     for key in [
         "\"schemaVersion\": 4",
         "\"label\": \"fixture-label\"",
@@ -137,26 +112,26 @@ fn a_file_export_writes_nothing_to_stdout() {
 fn a_pe_import_slot_gets_a_label_not_a_body() {
     let stdout = graph(&[&fixture("pe_imports.exe")]);
     let rows = rows(&stdout, "functions");
-    let imports: Vec<&String> =
-        rows.iter().filter(|r| field(r, "kind").as_deref() == Some("import")).collect();
+    let imports: Vec<&Value> =
+        rows.iter().filter(|r| r.get("kind").and_then(Value::as_str) == Some("import")).collect();
     assert!(
-        !rows.iter().any(|r| field(r, "kind").as_deref() == Some("data")),
+        !rows.iter().any(|r| r.get("kind").and_then(Value::as_str) == Some("data")),
         "every bodyless row in this fixture is a named import, not a data symbol"
     );
     assert!(!imports.is_empty(), "the fixture's import slots vanished from the inventory");
     for row in &imports {
-        assert_eq!(field(row, "codeC").as_deref(), Some("null"), "invented a body:\n{row}");
-        assert_eq!(field(row, "assembly").as_deref(), Some("null"), "invented a listing:\n{row}");
-        assert_eq!(field(row, "error").as_deref(), Some("null"), "reported a failure:\n{row}");
+        assert_eq!(row.get("codeC"), Some(&Value::Null), "invented a body:\n{row}");
+        assert_eq!(row.get("assembly"), Some(&Value::Null), "invented a listing:\n{row}");
+        assert_eq!(row.get("error"), Some(&Value::Null), "reported a failure:\n{row}");
     }
     assert!(
-        imports.iter().any(|r| field(r, "name").as_deref() == Some("DeleteCriticalSection")),
+        imports.iter().any(|r| r.get("name").and_then(Value::as_str) == Some("DeleteCriticalSection")),
         "DeleteCriticalSection is a KERNEL32 import slot, not a function of this program"
     );
     // Every other row's body and listing arrive together.
     for row in &rows {
-        if field(row, "codeC").as_deref() != Some("null") {
-            assert_ne!(field(row, "assembly").as_deref(), Some("null"), "C without asm:\n{row}");
+        if row.get("codeC") != Some(&Value::Null) {
+            assert_ne!(row.get("assembly"), Some(&Value::Null), "C without asm:\n{row}");
         }
     }
 }
@@ -167,15 +142,17 @@ fn a_pe_import_slot_gets_a_label_not_a_body() {
 fn every_edge_endpoint_is_a_function_row() {
     for name in ["pe_imports.exe", "fauxware", "plt_ppc64le"] {
         let stdout = graph(&[&fixture(name)]);
-        let known: BTreeSet<String> =
-            rows(&stdout, "functions").iter().filter_map(|r| field(r, "address")).collect();
+        let known: BTreeSet<u64> = rows(&stdout, "functions")
+            .iter()
+            .map(|row| row.get("address").and_then(Value::as_u64).expect("numeric function address"))
+            .collect();
         for edge in rows(&stdout, "edges") {
             for end in ["callerAddress", "calleeAddress"] {
-                let address = field(&edge, end).expect("edge endpoint");
+                let address = edge.get(end).and_then(Value::as_u64).expect("edge endpoint");
                 assert!(known.contains(&address), "{name}: {end} {address} is not a function");
             }
             assert!(
-                matches!(field(&edge, "kind").as_deref(), Some("call" | "jump" | "data")),
+                matches!(edge.get("kind").and_then(Value::as_str), Some("call" | "jump" | "data")),
                 "{name}: unknown edge kind in {edge}"
             );
         }
@@ -219,19 +196,19 @@ fn an_address_taken_callee_is_still_an_edge() {
     let address = |name: &str| {
         functions
             .iter()
-            .find(|r| field(r, "name").as_deref() == Some(name))
-            .and_then(|r| field(r, "address"))
+            .find(|r| r.get("name").and_then(Value::as_str) == Some(name))
+            .and_then(|r| r.get("address").and_then(Value::as_u64))
             .unwrap_or_else(|| panic!("{name} is not a row"))
     };
     let (start, main) = (address("_start"), address("main"));
     let edge = rows(&stdout, "edges")
         .into_iter()
         .find(|e| {
-            field(e, "callerAddress").as_deref() == Some(&start)
-                && field(e, "calleeAddress").as_deref() == Some(&main)
+            e.get("callerAddress").and_then(Value::as_u64) == Some(start)
+                && e.get("calleeAddress").and_then(Value::as_u64) == Some(main)
         })
         .expect("_start -> main is not in the edge list");
-    assert_eq!(field(&edge, "kind").as_deref(), Some("data"), "wrong kind: {edge}");
+    assert_eq!(edge.get("kind").and_then(Value::as_str), Some("data"), "wrong kind: {edge}");
 }
 
 /// `forwardsTo` and the edge list are two views of one recovered veneer
@@ -246,49 +223,47 @@ fn forwarding_veneers_are_jump_edges_to_import_rows_on_pe_and_elf() {
         ("aif_gap_x86_64", 0x1030, 0x3ff8),
     ] {
         let stdout = graph(&[&fixture(binary)]);
-        let veneer = veneer.to_string();
-        let slot = slot.to_string();
         let functions = rows(&stdout, "functions");
         let row = functions
             .iter()
-            .find(|r| field(r, "address").as_deref() == Some(veneer.as_str()))
+            .find(|r| r.get("address").and_then(Value::as_u64) == Some(veneer))
             .unwrap_or_else(|| panic!("{binary}: import veneer row"));
         assert_eq!(
-            field(row, "forwardsTo").as_deref(),
-            Some(slot.as_str()),
+            row.get("forwardsTo").and_then(Value::as_u64),
+            Some(slot),
             "{binary}: wrong forwarding row: {row}"
         );
         let slot_row = functions
             .iter()
-            .find(|r| field(r, "address").as_deref() == Some(slot.as_str()))
+            .find(|r| r.get("address").and_then(Value::as_u64) == Some(slot))
             .unwrap_or_else(|| panic!("{binary}: import slot row"));
-        assert_eq!(field(slot_row, "kind").as_deref(), Some("import"), "{binary}: {slot_row}");
+        assert_eq!(slot_row.get("kind").and_then(Value::as_str), Some("import"), "{binary}: {slot_row}");
 
         let edge = rows(&stdout, "edges")
             .into_iter()
             .find(|e| {
-                field(e, "callerAddress").as_deref() == Some(veneer.as_str())
-                    && field(e, "calleeAddress").as_deref() == Some(slot.as_str())
+                e.get("callerAddress").and_then(Value::as_u64) == Some(veneer)
+                    && e.get("calleeAddress").and_then(Value::as_u64) == Some(slot)
             })
             .unwrap_or_else(|| panic!("{binary}: veneer -> import slot edge"));
-        assert_eq!(field(&edge, "kind").as_deref(), Some("jump"), "{binary}: {edge}");
+        assert_eq!(edge.get("kind").and_then(Value::as_str), Some("jump"), "{binary}: {edge}");
 
         if binary == "aif_gap_x86_64" {
-            let plt0 = 0x1020u64.to_string();
-            let plt0_slot = 0x3fd0u64.to_string();
+            let plt0 = 0x1020u64;
+            let plt0_slot = 0x3fd0u64;
             let row = functions
                 .iter()
-                .find(|r| field(r, "address").as_deref() == Some(plt0_slot.as_str()))
+                .find(|r| r.get("address").and_then(Value::as_u64) == Some(plt0_slot))
                 .expect("ELF PLT0 fixed-slot target row");
-            assert_eq!(field(row, "kind").as_deref(), Some("data"), "PLT0 target: {row}");
+            assert_eq!(row.get("kind").and_then(Value::as_str), Some("data"), "PLT0 target: {row}");
             let edge = rows(&stdout, "edges")
                 .into_iter()
                 .find(|e| {
-                    field(e, "callerAddress").as_deref() == Some(plt0.as_str())
-                        && field(e, "calleeAddress").as_deref() == Some(plt0_slot.as_str())
+                    e.get("callerAddress").and_then(Value::as_u64) == Some(plt0)
+                        && e.get("calleeAddress").and_then(Value::as_u64) == Some(plt0_slot)
                 })
                 .expect("ELF PLT0 -> fixed-slot data edge");
-            assert_eq!(field(&edge, "kind").as_deref(), Some("jump"), "PLT0 edge: {edge}");
+            assert_eq!(edge.get("kind").and_then(Value::as_str), Some("jump"), "PLT0 edge: {edge}");
         }
     }
 }
@@ -300,8 +275,8 @@ fn forwarding_veneers_are_jump_edges_to_import_rows_on_pe_and_elf() {
 fn an_explicitly_named_import_slot_still_gets_no_body() {
     let (stdout, stderr) = run(&[&fixture("pe_imports.exe"), "--addr", "0x14000d1dc"]);
     for row in rows(&stdout, "functions") {
-        assert_eq!(field(&row, "codeC").as_deref(), Some("null"), "invented a body:\n{row}");
-        assert_eq!(field(&row, "assembly").as_deref(), Some("null"), "invented a listing:\n{row}");
+        assert_eq!(row.get("codeC"), Some(&Value::Null), "invented a body:\n{row}");
+        assert_eq!(row.get("assembly"), Some(&Value::Null), "invented a listing:\n{row}");
     }
     assert!(
         stderr.contains("is not executable content"),
@@ -339,8 +314,7 @@ fn a_rust_binary_is_still_exported_as_c() {
     let stdout = graph(&[&fixture("rust_hello_x86_64")]);
     let bodies: Vec<String> = rows(&stdout, "functions")
         .into_iter()
-        .filter_map(|r| field(&r, "codeC"))
-        .filter(|c| c != "null")
+        .filter_map(|r| r.get("codeC").and_then(Value::as_str).map(str::to_owned))
         .collect();
     assert!(!bodies.is_empty(), "the fixture rendered no bodies at all");
     for body in bodies {
@@ -356,8 +330,8 @@ fn a_macho_entry_point_row_is_flagged() {
     let document = graph(&[&fixture("macho_stripped_main")]);
     let flagged: Vec<String> = rows(&document, "functions")
         .into_iter()
-        .filter(|row| field(row, "isEntryPoint").as_deref() == Some("true"))
-        .filter_map(|row| field(&row, "name"))
+        .filter(|row| row.get("isEntryPoint").and_then(Value::as_bool) == Some(true))
+        .filter_map(|row| row.get("name").and_then(Value::as_str).map(str::to_owned))
         .collect();
     assert_eq!(flagged, vec!["main".to_string()], "exactly the LC_MAIN entry: {document}");
 }

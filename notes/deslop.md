@@ -82,6 +82,13 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   unrelated helpers from `decompile_all`. Inventory storage stays private to
   the graph; its caller-completeness query retains the conservative read-failure
   policy. The command module also loses its obsolete introductory narrative.
+- Remaining CLI test JSON scanners use the standard parser and explicit field
+  paths. Function records and project index fields retain their raw tokens for
+  byte-equality checks; semantic name checks decode escapes. Numeric fields must
+  belong to the requested object, not a nested record with the same key.
+- SLEIGH encoding borrows constructor templates without cloning their arena.
+  The mutable template callback now serves decoding only. Sparse section IDs,
+  section ordering and invalid-handle errors have direct regression checks.
 
 ## Evidence
 
@@ -187,13 +194,32 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   406/435 ms wall medians and a 1.012 median paired ratio, again with identical
   output; the variation does not establish a small speedup or slowdown.
 
+- Two JSON-helper regressions fail with the former scanners: nested metadata
+  supplied the wrong count, and malformed JSON was accepted. They pass with the
+  standard parser, including escaped names and unchanged raw-record bytes.
+  The initial affected CLI run found four incorrect summary paths in the new
+  helpers; those tests were corrected to read `summary.reachable_from_entry`.
+  An earlier graph assertion similarly needed `binary.label`.
+- The integrated template change passes 360 compiler/SLEIGH release tests,
+  including the unchanged 44-spec binary oracle and new sparse-section/error
+  tests. Independent allocation and speed measurements are recorded in
+  `notes/deslop-slacomp.md`.
+- The frozen JSON-test/template snapshot passes all four gates: 7,379 workspace
+  tests with 38 existing ignores and no warnings, 675/675 upstream assertions,
+  1467/1467 stage assertions, and spec checks. All 268 CLI probes, 16 Python
+  tests, 56 Ghidra tests, and catalog checks pass. All 44 pinned C++ XML hashes
+  also remain unchanged. A focused project run overlapped replacing its own
+  executable and failed worker spawning with `No such file or directory` in
+  every retained error record; the unchanged project and triage suites then
+  passed 34/34 and 16/16. The complete workspace run passed without that failure.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
 
 | Area | Evidence / next check |
 |---|---|
-| CLI test structure | Private module copies and missing-command/spec skips are removed; the full workspace passes. Other suites still contain ad hoc JSON field extraction and duplicate process helpers. |
+| CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers now use explicit field paths and preserve raw bytes where required. Duplicate process helpers and conditional assertions still need review. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. Numerous per-option modules repeat boolean parsing. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |

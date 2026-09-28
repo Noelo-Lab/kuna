@@ -37,20 +37,7 @@ explicit_branch_assertion_pe_i386.exe",
         .into_owned()
 }
 
-fn json_string_field<'a>(doc: &'a str, key: &str) -> Option<&'a str> {
-    let at = doc.find(&format!("\"{key}\":"))? + key.len() + 3;
-    let body = doc[at..].trim_start().strip_prefix('"')?;
-    let mut escaped = false;
-    for (i, ch) in body.char_indices() {
-        match ch {
-            _ if escaped => escaped = false,
-            '\\' => escaped = true,
-            '"' => return Some(&body[..i]),
-            _ => {}
-        }
-    }
-    None
-}
+
 
 /// A refused assertion exits nonzero but still prints the function, so return
 /// its exit status for the caller to check.
@@ -73,7 +60,8 @@ fn decompile_at(entry: &str, extra: &[&str]) -> Run {
         .expect("spawn kuna");
     let doc = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    let code = json_string_field(&doc, "code")
+    let parsed: serde_json::Value = serde_json::from_str(&doc).expect("valid decompile JSON");
+    let code = parsed.pointer("/functions/0/code").and_then(serde_json::Value::as_str)
         .unwrap_or_else(|| panic!("JSON result has no function code: {stderr}\n{doc}"))
         .to_string();
     Run {

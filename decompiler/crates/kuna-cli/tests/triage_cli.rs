@@ -65,24 +65,20 @@ fn listing_names(stdout: &str) -> Vec<String> {
     listing_rows(stdout).into_iter().map(|(_, name)| name).collect()
 }
 
-/// A top-level integer field of a `--json` document (`count`, `total`, …).
-fn json_field(stdout: &str, key: &str) -> Option<u64> {
-    let pat = format!("\"{key}\":");
-    let i = stdout.find(&pat)? + pat.len();
-    stdout[i..].trim_start().split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
+fn json_field(stdout: &str, pointer: &str) -> Option<u64> {
+    let document: serde_json::Value = serde_json::from_str(stdout).expect("valid CLI JSON");
+    document.pointer(pointer).and_then(serde_json::Value::as_u64)
 }
 
-/// Every `"size": N` in document order.
 fn json_sizes(stdout: &str) -> Vec<u64> {
-    stdout
-        .match_indices("\"size\":")
-        .filter_map(|(i, m)| {
-            stdout[i + m.len()..]
-                .trim_start()
-                .split(|c: char| !c.is_ascii_digit())
-                .next()?
-                .parse()
-                .ok()
+    let document: serde_json::Value = serde_json::from_str(stdout).expect("valid CLI JSON");
+    document
+        .get("functions")
+        .and_then(serde_json::Value::as_array)
+        .expect("function array")
+        .iter()
+        .map(|function| {
+            function.get("size").and_then(serde_json::Value::as_u64).expect("numeric function size")
         })
         .collect()
 }
@@ -120,13 +116,17 @@ fn a_malformed_filter_is_a_usage_error() {
 fn size_bounds_are_inclusive_and_ordered() {
     let (out, err, code) = run_kuna(&["functions", &fauxware(), "--min-size", "100", "--json"]);
     assert_eq!(code, 0, "{err}");
-    assert!(json_sizes(&out).iter().all(|&s| s >= 100), "{out}");
-    assert!(json_field(&out, "count").unwrap() < json_field(&out, "total").unwrap());
+    let sizes = json_sizes(&out);
+    assert!(!sizes.is_empty(), "the fixture must exercise the lower bound");
+    assert!(sizes.iter().all(|&s| s >= 100), "{out}");
+    assert!(json_field(&out, "/count").unwrap() < json_field(&out, "/total").unwrap());
 
     let (bounded, _, code) =
         run_kuna(&["functions", &fauxware(), "--min-size", "32", "--max-size", "44", "--json"]);
     assert_eq!(code, 0);
-    assert!(json_sizes(&bounded).iter().all(|&s| (32..=44).contains(&s)), "{bounded}");
+    let sizes = json_sizes(&bounded);
+    assert!(!sizes.is_empty(), "the fixture must exercise both bounds");
+    assert!(sizes.iter().all(|&s| (32..=44).contains(&s)), "{bounded}");
 
     let (_, err, code) =
         run_kuna(&["functions", &fauxware(), "--min-size", "100", "--max-size", "10"]);
@@ -141,8 +141,8 @@ fn sort_and_limit_answer_the_three_biggest_question() {
     let (out, err, code) =
         run_kuna(&["functions", &fauxware(), "--sort", "size", "--limit", "3", "--json"]);
     assert_eq!(code, 0, "{err}");
-    assert_eq!(json_field(&out, "count"), Some(3));
-    assert_eq!(json_field(&out, "total"), Some(21), "the count before narrowing");
+    assert_eq!(json_field(&out, "/count"), Some(3));
+    assert_eq!(json_field(&out, "/total"), Some(21), "the count before narrowing");
     let sizes = json_sizes(&out);
     assert_eq!(sizes.len(), 3, "{out}");
     assert!(sizes.windows(2).all(|w| w[0] >= w[1]), "largest first: {sizes:?}");
@@ -243,7 +243,7 @@ fn summary_orients_without_emitting_the_inventory() {
     }
     assert!(out.contains("\"name\": \"_start\""), "the ELF entry point: {out}");
     assert!(out.contains("\"name\": \"main\""), "main is the largest function: {out}");
-    assert_eq!(json_field(&out, "total"), Some(21));
+    assert_eq!(json_field(&out, "/total"), Some(21));
     assert!(!out.contains("\"code\":"), "a summary never carries pseudocode: {out}");
 
     let (full, _, code) = run_kuna(&["functions", &fauxware(), "--json"]);
@@ -283,10 +283,10 @@ fn decompile_all_narrows_the_run_not_the_output() {
         "2",
     ]);
     assert_eq!(code, 0, "{err}");
-    assert_eq!(json_field(&out, "count"), Some(2));
+    assert_eq!(json_field(&out, "/count"), Some(2));
     // `total` is the pre-narrowing target count, so a capped answer can never be
     // mistaken for the whole program.
-    assert!(json_field(&out, "total").unwrap() > 2, "{out}");
+    assert!(json_field(&out, "/total").unwrap() > 2, "{out}");
     assert!(out.contains("\"name\": \"main\""), "{out}");
     assert!(out.contains("\"name\": \"authenticate\""), "{out}");
     assert!(!out.contains("\"name\": \"_start\""), "{out}");
@@ -306,7 +306,7 @@ fn decompile_all_narrows_the_run_not_the_output() {
     let (filtered, _, code) =
         run_kuna(&["decompile-all", &fauxware(), "--json", "--filter", "^authenticate$"]);
     assert_eq!(code, 0);
-    assert_eq!(json_field(&filtered, "count"), Some(1));
+    assert_eq!(json_field(&filtered, "/count"), Some(1));
     assert!(filtered.contains("\"code\":"), "a narrowed run still decompiles: {filtered}");
 }
 
@@ -323,7 +323,7 @@ fn an_arm_thumb_entry_resolves_to_its_even_address() {
     let (out, err, code) = run_kuna(&["functions", &arm, "--summary", "--json"]);
     assert_eq!(code, 0, "{err}");
     assert!(out.contains("\"address_hex\": \"0x3dc\""), "the even entry: {out}");
-    let reachable = json_field(&out, "reachable_from_entry");
+    let reachable = json_field(&out, "/summary/reachable_from_entry");
     assert!(reachable.is_some_and(|n| n > 0), "the entry must reach something: {out}");
 
     let (odd, _, code) = run_kuna(&["functions", &arm, "--reachable-from", "0x3dd"]);
@@ -349,7 +349,7 @@ fn a_macho_lc_main_entry_is_reported_as_a_vma() {
     assert!(out.contains("\"address_hex\": \"0x1000005b0\""), "__TEXT.vmaddr + entryoff: {out}");
     assert!(!out.contains("\"address_hex\": \"0x5b0\""), "the raw entryoff must be gone: {out}");
     assert!(out.contains("\"name\": \"main\""), "the entry names a function: {out}");
-    let reachable = json_field(&out, "reachable_from_entry");
+    let reachable = json_field(&out, "/summary/reachable_from_entry");
     assert!(reachable.is_some_and(|n| n > 0), "the entry must reach something: {out}");
 }
 
@@ -368,19 +368,19 @@ fn a_universal_macho_summarizes_the_slice_the_inventory_loaded() {
         .to_string();
     let (plain, err, code) = run_kuna(&["functions", &fat, "--json"]);
     assert_eq!(code, 0, "{err}");
-    let inventory = json_field(&plain, "count").expect("the plain inventory reports a count");
+    let inventory = json_field(&plain, "/count").expect("the plain inventory reports a count");
 
     let (out, err, code) = run_kuna(&["functions", &fat, "--summary", "--json"]);
     assert_eq!(code, 0, "{err}");
     assert!(!err.contains("Unsupported file format"), "{err}");
     assert_eq!(
-        json_field(&out, "count"),
+        json_field(&out, "/count"),
         Some(inventory),
         "the summary counts what the inventory found: {out}"
     );
     assert!(out.contains("\"address_hex\": \"0x1000005b0\""), "the x86-64 slice's _main: {out}");
     assert!(
-        json_field(&out, "reachable_from_entry").is_some_and(|n| n > 0),
+        json_field(&out, "/summary/reachable_from_entry").is_some_and(|n| n > 0),
         "the entry must reach something: {out}"
     );
 
@@ -414,7 +414,7 @@ fn a_repaired_header_still_reports_the_summary_entry() {
         assert_eq!(code, 0, "{name}: {err}");
         assert!(out.contains(entry), "{name}: the entry must be reported: {out}");
         assert!(
-            json_field(&out, "reachable_from_entry").is_some_and(|n| n > 0),
+            json_field(&out, "/summary/reachable_from_entry").is_some_and(|n| n > 0),
             "{name}: and it must reach something: {out}"
         );
         let warnings = out.split("\"warnings\": [").nth(1).and_then(|w| w.split(']').next());
@@ -482,7 +482,7 @@ fn an_inventory_of_only_imports_is_still_a_failed_run() {
         .to_string();
     let (out, err, code) = run_kuna(&["functions", &imports_only, "--json"]);
     assert_eq!(code, 1, "{err}");
-    assert_eq!(json_field(&out, "count"), Some(3), "the import names must survive: {out}");
+    assert_eq!(json_field(&out, "/count"), Some(3), "the import names must survive: {out}");
     for name in ["GetProcAddress", "GetModuleHandleA", "LoadLibraryA"] {
         assert!(out.contains(name), "{name} must still be listed: {out}");
     }
@@ -504,6 +504,6 @@ fn an_inventory_of_only_imports_is_still_a_failed_run() {
         "0x402001-0x40200c=entry",
     ]);
     assert_eq!(code, 0, "a declared body is a discovered body: {err}");
-    assert_eq!(json_field(&declared, "count"), Some(4), "{declared}");
+    assert_eq!(json_field(&declared, "/count"), Some(4), "{declared}");
     assert!(declared.contains("\"error\": null"), "{declared}");
 }

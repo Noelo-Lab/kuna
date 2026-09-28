@@ -801,6 +801,13 @@ every SLA element and attribute once and supplies the complete XML registration
 list. Existing `sla` import paths re-export that table. `SleighBase::registry`
 builds its XML name lookup on demand; binary decoding uses numeric IDs directly.
 
+Encoding borrows the existing constructor-template slice through the symbol
+table, symbols and constructors. It preserves main-section and named-section
+order, skips absent sections without renumbering later sections, and reports
+invalid handles before reading a template. The mutable `SleighBaseTrans`
+callback is used only while decoding new templates. Encoding therefore needs
+neither a mutable adapter nor a copy of the template collection.
+
 (kuna) **Mixed builds.** The engine binary `kuna` runs can come from a different
 build than `kuna` itself (an override naming another install, or a sibling left
 behind when only `kuna` was rebuilt), and nothing in the output shows it. So every

@@ -923,19 +923,11 @@ fn stream_project(fixture_name: &str, tag: &str, extra: &[&str]) -> PathBuf {
     dir
 }
 
-/// The raw token a compact-JSON field carries (`"name":"main"` -> `"main"`).
+/// Return a required top-level field's original JSON bytes.
 fn json_field<'a>(line: &'a str, key: &str) -> &'a str {
-    let needle = format!("\"{key}\":");
-    let at = line
-        .find(&needle)
-        .unwrap_or_else(|| panic!("index line has no {key}: {line}"))
-        + needle.len();
-    let rest = &line[at..];
-    let end = match rest.strip_prefix('"') {
-        Some(body) => body.find('"').expect("unterminated string") + 2,
-        None => rest.find([',', '}']).expect("unterminated value"),
-    };
-    &rest[..end]
+    let fields: std::collections::BTreeMap<String, &serde_json::value::RawValue> =
+        serde_json::from_str(line).expect("valid project JSON");
+    fields.get(key).copied().unwrap_or_else(|| panic!("missing {key}: {line}")).get()
 }
 
 /// The `// Function:` blocks of a `.c`, as a sorted multiset.
@@ -981,8 +973,8 @@ fn assert_stream_matches_serial(
     for line in &lines {
         let offset: usize = json_field(line, "c_offset").parse().unwrap();
         let len: usize = json_field(line, "c_len").parse().unwrap();
-        let name = json_field(line, "name").trim_matches('"');
-        let addr = json_field(line, "addr").trim_matches('"');
+        let name: String = serde_json::from_str(json_field(line, "name")).unwrap();
+        let addr: String = serde_json::from_str(json_field(line, "addr")).unwrap();
         let block = &c[offset..offset + len];
         assert!(
             block.starts_with(&format!("// Function: {name} @ {addr}")),
@@ -1099,7 +1091,7 @@ fn streamed_blocks_follow_the_entry_point_not_the_address_order() {
     let index = std::fs::read_to_string(dir.join("index.jsonl")).unwrap();
     let order: Vec<String> = index
         .lines()
-        .map(|l| json_field(l, "name").trim_matches('"').to_string())
+        .map(|line| serde_json::from_str(json_field(line, "name")).unwrap())
         .collect();
     let at = |name: &str| {
         order

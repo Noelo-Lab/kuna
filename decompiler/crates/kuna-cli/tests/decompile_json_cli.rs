@@ -48,28 +48,9 @@ fn run_kuna(args: &[&str]) -> (String, String, Option<i32>) {
     )
 }
 
-/// The string value of a top-level `"key": "..."` / `"key": null` field, without
-/// a JSON dependency (the documents are the CLI's own controlled output).
-///
-/// The value is JSON-escaped, so the terminator is the first quote that is not
-/// itself escaped — the reported reason quotes the selector it could not find.
-fn json_field<'a>(doc: &'a str, key: &str) -> Option<&'a str> {
-    let at = doc.find(&format!("\"{key}\":"))? + key.len() + 3;
-    let rest = doc[at..].trim_start();
-    if rest.starts_with("null") {
-        return None;
-    }
-    let body = rest.strip_prefix('"')?;
-    let mut escaped = false;
-    for (i, c) in body.char_indices() {
-        match c {
-            _ if escaped => escaped = false,
-            '\\' => escaped = true,
-            '"' => return Some(&body[..i]),
-            _ => {}
-        }
-    }
-    None
+fn json_field(doc: &str, key: &str) -> Option<String> {
+    let document: serde_json::Value = serde_json::from_str(doc).expect("valid CLI JSON");
+    document.get(key).and_then(serde_json::Value::as_str).map(str::to_owned)
 }
 
 /// Write `bytes` to a private scratch file and return its path.

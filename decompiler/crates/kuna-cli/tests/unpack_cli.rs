@@ -384,8 +384,10 @@ fn reheaded_fixture(method: u8, to: &str) {
     std::fs::write(to, &bytes).expect("write the re-headed fixture");
 }
 
-/// Parse the `"count": N` field out of a `--json` document.
 fn json_count(stdout: &str) -> Option<usize> {
-    let i = stdout.find("\"count\":")? + "\"count\":".len();
-    stdout[i..].trim_start().split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
+    let document: serde_json::Value = serde_json::from_str(stdout).expect("valid CLI JSON");
+    document
+        .get("count")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
 }

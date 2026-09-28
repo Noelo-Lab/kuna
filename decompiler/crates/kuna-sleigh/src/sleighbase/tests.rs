@@ -25,7 +25,7 @@ fn xml_symbol_table_decodes_named_opcodes() {
 
     let mut decoder = XmlDecode::new_with_root(base.manager(), &registry, symbols, 0);
     let mut templates = Vec::new();
-    let mut trans = SlaTrans {
+    let mut trans = TemplateDecoder {
         const_space: base.manager().get_constant_space().unwrap().clone(),
         templates: &mut templates,
     };

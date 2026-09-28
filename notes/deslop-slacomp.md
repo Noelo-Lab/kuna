@@ -115,3 +115,37 @@ links to private or renamed items; no visibility was widened.
 The independent decoder/ID cleanup snapshot passed all four gates: 675 upstream
 and 1,467 stage assertions, 7,701 workspace tests with 38 existing ignores, and
 the spec check. The option catalog passed; no baseline expectations changed.
+
+Constructor encoding now borrows the template slice owned by `SleighBase`.
+The old shared encode/decode adapter required mutable storage and forced a deep
+copy solely to encode it. The callback now serves decoding only; symbol-table,
+symbol and constructor encoders take `&[ConstructTpl]`. Section ordering, sparse
+named-section indices and invalid-handle errors are preserved. Direct Rust
+callers of those encoders pass their template slice instead of an adapter.
+The nearby symbol-system documentation now describes the working compiler,
+removing obsolete claims that its construction and serialization were unported.
+
+Allocation profiling around `encode_to_sla_bytes` measured the following
+allocation/reallocation requests and requested bytes. These are cumulative
+requests during encoding, not peak or resident memory:
+
+| Spec | Requests before → after | Bytes requested before → after |
+| --- | ---: | ---: |
+| Toy builder | 337 → 27 | 548,493 → 474,989 |
+| x86-64 | 42,922 → 39 | 19,647,757 → 9,765,725 |
+| AARCH64 | 37,024 → 39 | 18,562,013 → 9,765,725 |
+| Hexagon | 14,030 → 37 | 8,130,037 → 5,046,621 |
+
+Six interleaved rounds of instrumented encoding measured median changes of
+-3.8% for x86-64 and -2.7% for AARCH64. Separate, uninstrumented compiler runs
+used 12 alternating before/after samples after warmup: Toy 10.419 → 7.644 ms,
+x86-64 480.585 → 475.848 ms, AARCH64 566.650 → 441.893 ms, and Hexagon
+229.681 → 228.010 ms. These are local measurements on a shared host, not a
+general speed guarantee. Every measured binary output was byte-identical.
+All 44 selected binary oracle checks and all 44 pinned C++ XML comparisons
+remain unchanged.
+
+The independent template-borrowing snapshot passed all four gates: 675 upstream
+and 1,467 stage assertions, 7,701 workspace tests with 38 existing ignores, and
+the spec check. The option catalog passed, Rust documentation had no warnings,
+and no baseline expectations changed.

@@ -1,82 +1,21 @@
-//! Port of `decompiler/cpp/slghsymbol.{hh,cc}` (item `w2-sleigh-symbol`) —
-//! the SLEIGH symbol system as decoded from a compiled `.sla` file.
+//! SLEIGH symbols, constructor patterns and runtime instruction dispatch.
 //!
-//! ## What is ported
+//! Port of `decompiler/cpp/slghsymbol.{hh,cc}`. [`SleighSymbol`] pairs a
+//! name/id/scope header with a [`SymbolKind`]. [`SymbolTable`] owns symbols
+//! and scopes; constructor and operand references use IDs resolved through
+//! that table rather than C++ pointers.
 //!
-//! - The `SleighSymbol` hierarchy as [`SleighSymbol`] (name/id/scope header)
-//!   wrapping a [`SymbolKind`] enum mirroring the C++ subclasses:
-//!   Space/Token/UserOp/Epsilon/Value/ValueMap/Name/Varnode/Context/
-//!   VarnodeList/Operand/Start/End/Next2/FlowDest/FlowRef/Subtable.
-//! - [`Constructor`] with print pieces (`print`/`print_mnemonic`/
-//!   `print_body`, the flow-through rule) and context commands.
-//! - [`DecisionNode`] runtime dispatch (`resolve`) and its decode.
-//! - [`SymbolTable`] with [`SymbolScope`] chains and the two-pass `.sla`
-//!   restore: header shells first (`decode_symbol_header`), then the
-//!   per-kind content decode in stream order.
-//! - The `encode`/`encodeHeader` writers for every decodable kind (used by
-//!   the round-trip tests; the writer side of `.sla` otherwise belongs to
-//!   the unported compiler, LOSS-001).
+//! The compiler builds patterns and decision trees here, then purges and
+//! renumbers the table for serialization. Decoding restores symbol headers
+//! before their contents so cross-references can be validated.
 //!
-//! ## What is NOT ported (SLEIGH compiler side, LOSS-001)
+//! Constructor p-code uses handles into the template arena. Encoding borrows
+//! the templates; decoding adds them through [`SleighBaseTrans`]. Runtime
+//! pattern resolution and context changes use [`SymbolWalker`] and
+//! [`SymbolWalkerChange`].
 //!
-//! Everything reachable only from `slgh_compile`: `SymbolTable::purge`/
-//! `renumber`/`replaceSymbol`, `Constructor::buildPattern`/`orderOperands`/
-//! `addEquation`/`setMainSection`/`setNamedSection`/
-//! `markSubtableOperands`/`isRecursive`/`setError`/`isError`/
-//! `collectLocalExports` (the pure print-piece builders `addOperand`/
-//! `addInvisibleOperand`/`addSyntax`/`removeTrailingSpace`/`addContext`
-//! ARE ported — tests build constructors with them),
-//! `SubtableSymbol::buildPattern`/`buildDecisionTree`/
-//! `collectLocalValues` (+ the `beingbuilt`/`errors` flags),
-//! `DecisionNode::split`/`orderPatterns`/`chooseOptimalField`/`getScore`/
-//! `getNumFixed`/`getMaximumLength`/`consistentValues`/`addConstructorPair`,
-//! `DecisionProperties`, `OperandSymbol::setCodeAddress`/
-//! `setOffsetIrrelevant`/mark handling (`defineOperand` IS ported),
-//! and the Macro/Label/Section/Bitrange
-//! symbol classes ([`SymbolType`] keeps their discriminants so `getType`
-//! comparisons stay transcribable).  The `TokenPattern *pattern` and
-//! `PatternEquation *pateq` members are compiler state and are dropped.
-//! The `getVarnode()` virtuals (returning `VarnodeTpl`, semantics.hh) are
-//! deferred with the semantics wave: their only callers are in the unported
-//! pcode compiler.
-//!
-//! ## Pointer-web representation
-//!
-//! C++ resolves symbol ids to raw pointers at decode time
-//! (`trans->findSymbol(id)`, unchecked casts).  The port stores the **ids**
-//! (`u32`, C++ `uintm`) and resolves through the owning [`SymbolTable`] at
-//! use time; methods that C++ ran on a bare pointer take a `&SymbolTable`
-//! parameter.  Where a C++ unchecked downcast would be UB on a
-//! wrongly-typed id, the port returns a `KunaError` (documented at each
-//! site; same policy as the `OperandValueResolver` boundary contract in
-//! [`crate::slghpatexpress`]).  `DecisionNode::parent` is dropped: its only
-//! consumer is the compiler-side `split()`.
-//!
-//! ## Boundaries
-//!
-//! - [`SymbolWalker`] extends the [`PatternExpressionContext`] boundary from
-//!   [`crate::slghpatexpress`] with exactly the additional `ParserWalker`
-//!   surface slghsymbol.cc touches (operand push/pop, current constructor,
-//!   fixed handles, spaces, flow addresses, bit reads).  Implemented by the
-//!   sleigh decode-engine wave; tests implement it synthetically.
-//! - [`SymbolWalkerChange`] mirrors `ParserWalkerChange` for the
-//!   context-command `apply` path (`setContextWord`/`addCommit`).
-//! - [`SleighBaseTrans`] stands in for the `SleighBase *trans` decode
-//!   argument, reduced to what the symbol decode actually pulls from it
-//!   beyond id storage: the constant space and `ConstructTpl`
-//!   (semantics.hh) decode/encode, which belongs to the unported semantics
-//!   wave.  Constructors hold opaque [`ConstructTplHandle`]s.
-//! - [`SymbolTable`] itself implements
-//!   [`crate::slghpatexpress::OperandValueResolver`], closing the loop the
-//!   pattern wave left open (`OperandValue::decode` validation), and
-//!   provides `OperandValue::isConstructorRelative`/`getName` (C++
-//!   slghpatexpress.cc:800-812) as
-//!   [`SymbolTable::operand_value_is_constructor_relative`] /
-//!   [`SymbolTable::operand_value_name`].
-//!
-//! Names and print pieces are byte strings (marshal convention); printed
-//! output goes to a `String` with names converted lossily (`.sla`
-//! identifiers are ASCII).
+//! Names and print pieces are byte strings. Printed output converts names
+//! lossily to UTF-8 (`.sla` identifiers are ASCII).
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -165,7 +104,7 @@ pub trait SymbolWalkerChange: SymbolWalker {
 pub type ConstructTplHandle = usize;
 
 /// Supplies the constant space and constructor-template storage for symbol
-/// decoding and encoding. Symbol-id resolution stays inside [`SymbolTable`].
+/// decoding. Symbol-id resolution stays inside [`SymbolTable`].
 pub trait SleighBaseTrans {
     /// C++ `trans->getConstantSpace()`.
     fn get_constant_space(&self) -> Rc<AddrSpace>;
@@ -177,14 +116,6 @@ pub trait SleighBaseTrans {
         &mut self,
         decoder: &mut dyn OpcodeDecoder,
     ) -> KunaResult<(i32, ConstructTplHandle)>;
-    /// C++ `templ->encode(encoder, section_id)` inside `Constructor::encode`
-    /// (`section_id == -1` for the main section).
-    fn encode_construct_tpl(
-        &self,
-        handle: ConstructTplHandle,
-        section_id: i32,
-        encoder: &mut dyn OpcodeEncoder,
-    ) -> KunaResult<()>;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,17 +154,17 @@ pub enum SymbolType {
     Next2,
     /// C++ `subtable_symbol`
     Subtable,
-    /// C++ `macro_symbol` (class not ported, LOSS-001)
+    /// C++ `macro_symbol`
     Macro,
-    /// C++ `section_symbol` (class not ported, LOSS-001)
+    /// C++ `section_symbol`
     Section,
-    /// C++ `bitrange_symbol` (class not ported, LOSS-001)
+    /// C++ `bitrange_symbol`
     Bitrange,
     /// C++ `context_symbol`
     Context,
     /// C++ `epsilon_symbol`
     Epsilon,
-    /// C++ `label_symbol` (class not ported, LOSS-001)
+    /// C++ `label_symbol`
     Label,
     /// C++ `flowdest_symbol`
     FlowDest,
@@ -1216,7 +1147,7 @@ pub struct Constructor {
     printpiece: Vec<Vec<u8>>,
     /// Context commands.
     context: Vec<ContextChange>,
-    /// The main p-code section (held through the [`SleighBaseTrans`] boundary).
+    /// The main p-code section, indexed in the constructor-template arena.
     templ: Option<ConstructTplHandle>,
     /// Other named p-code sections.
     namedtempl: Vec<Option<ConstructTplHandle>>,
@@ -1629,7 +1560,7 @@ impl Constructor {
     pub fn encode(
         &self,
         encoder: &mut dyn OpcodeEncoder,
-        trans: &dyn SleighBaseTrans,
+        templates: &[ConstructTpl],
     ) -> KunaResult<()> {
         encoder.open_element(&sla::ELEM_CONSTRUCTOR);
         // C++ dereferences parent unconditionally
@@ -1661,14 +1592,18 @@ impl Constructor {
         for change in &self.context {
             change.encode(encoder)?;
         }
-        if let Some(handle) = self.templ {
-            trans.encode_construct_tpl(handle, -1, encoder)?;
-        }
-        for (i, named) in self.namedtempl.iter().enumerate() {
-            if let Some(handle) = named {
-                // Some sections may be NULL (skipped); usize -> int4 section
-                // index as in the C++ loop variable
-                trans.encode_construct_tpl(*handle, i as i32, encoder)?;
+        let sections = std::iter::once((-1, self.templ)).chain(
+            self.namedtempl
+                .iter()
+                .enumerate()
+                .map(|(i, handle)| (i as i32, *handle)),
+        );
+        for (section_id, handle) in sections {
+            if let Some(handle) = handle {
+                templates
+                    .get(handle)
+                    .ok_or_else(|| KunaError::sleigh("bad ConstructTpl handle"))?
+                    .encode(encoder, section_id);
             }
         }
         encoder.close_element(&sla::ELEM_CONSTRUCTOR);
@@ -3361,7 +3296,7 @@ impl SleighSymbol {
     pub fn encode(
         &self,
         encoder: &mut dyn OpcodeEncoder,
-        trans: &dyn SleighBaseTrans,
+        templates: &[ConstructTpl],
     ) -> KunaResult<()> {
         match &self.kind {
             SymbolKind::UserOp(v) => {
@@ -3503,7 +3438,7 @@ impl SleighSymbol {
                 // size_t -> intb
                 encoder.write_signed_integer(&sla::ATTRIB_NUMCT, v.construct.len() as i64);
                 for ct in &v.construct {
-                    ct.encode(encoder, trans)?;
+                    ct.encode(encoder, templates)?;
                 }
                 v.decisiontree
                     .as_ref()
@@ -3599,9 +3534,7 @@ impl SymbolScope {
     }
 }
 
-/// C++ `SymbolTable`: all symbols (`symbollist`, indexed by symbol id) and
-/// all scopes (`table`, indexed by scope id).  Compiler-only maintenance
-/// (`purge`/`renumber`/`replaceSymbol`) is not ported (LOSS-001).
+/// Owns symbols and scopes, with lookup, compiler transformations and serialization.
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     symbollist: Vec<Option<SleighSymbol>>,
@@ -4631,7 +4564,7 @@ impl SymbolTable {
     pub fn encode(
         &self,
         encoder: &mut dyn OpcodeEncoder,
-        trans: &dyn SleighBaseTrans,
+        templates: &[ConstructTpl],
     ) -> KunaResult<()> {
         encoder.open_element(&sla::ELEM_SYMBOL_TABLE);
         // size_t -> intb counts as in C++ writeSignedInteger(..., size())
@@ -4662,7 +4595,7 @@ impl SymbolTable {
         // Now save the content of each symbol (must save IN ORDER)
         for sym in &self.symbollist {
             let sym = sym.as_ref().expect("checked in header loop");
-            sym.encode(encoder, trans)?;
+            sym.encode(encoder, templates)?;
         }
         encoder.close_element(&sla::ELEM_SYMBOL_TABLE);
         Ok(())
@@ -5261,8 +5194,7 @@ mod tests {
         Rc::clone(manager.get_constant_space().unwrap())
     }
 
-    /// [`SleighBaseTrans`] over the test manager; no ConstructTpl support
-    /// (the symbol tests never include p-code sections).
+    /// [`SleighBaseTrans`] for symbol fixtures without p-code sections.
     struct TestTrans {
         cspace: Rc<AddrSpace>,
     }
@@ -5284,15 +5216,6 @@ mod tests {
             &mut self,
             _decoder: &mut dyn OpcodeDecoder,
         ) -> KunaResult<(i32, ConstructTplHandle)> {
-            Err(KunaError::sleigh("no ConstructTpl in symbol tests"))
-        }
-
-        fn encode_construct_tpl(
-            &self,
-            _handle: ConstructTplHandle,
-            _section_id: i32,
-            _encoder: &mut dyn OpcodeEncoder,
-        ) -> KunaResult<()> {
             Err(KunaError::sleigh("no ConstructTpl in symbol tests"))
         }
     }
@@ -5625,6 +5548,45 @@ mod tests {
         assert_eq!(walker.commits, vec![(5, 1, 0xff, true)]);
     }
 
+    #[test]
+    fn constructor_encoding_preserves_sparse_section_ids() {
+        let mut constructor = Constructor::new();
+        constructor.parent = Some(0);
+        constructor.set_main_section(0);
+        constructor.set_named_section(0, 1);
+        constructor.set_named_section(0, 3);
+        let templates = [ConstructTpl::new()];
+        let mut bytes = Vec::new();
+        constructor.encode(&mut PackedEncode::new(&mut bytes), &templates).unwrap();
+
+        let manager = test_manager();
+        let mut decoder = PackedDecode::new(&manager);
+        decoder.ingest_stream(&bytes).unwrap();
+        decoder.open_element_id(&sla::ELEM_CONSTRUCTOR).unwrap();
+        let mut sections = Vec::new();
+        while decoder.peek_element().unwrap() != 0 {
+            sections.push(ConstructTpl::new().decode(&mut decoder).unwrap());
+        }
+        decoder.close_element(sla::ELEM_CONSTRUCTOR.get_id()).unwrap();
+        assert_eq!(sections, [-1, 1, 3]);
+    }
+
+    #[test]
+    fn constructor_encoding_rejects_invalid_template_handles() {
+        for named in [false, true] {
+            let mut constructor = Constructor::new();
+            constructor.parent = Some(0);
+            if named {
+                constructor.set_named_section(0, 2);
+            } else {
+                constructor.set_main_section(0);
+            }
+            let mut bytes = Vec::new();
+            let error = constructor.encode(&mut PackedEncode::new(&mut bytes), &[]).unwrap_err();
+            assert_eq!(error.explain(), "bad ConstructTpl handle");
+        }
+    }
+
     // -- full symbol-table decode / round-trip ----------------------------------
 
     fn enc_head(enc: &mut PackedEncode, elem: &kuna_base::marshal::ElementId, name: &[u8], id: u64) {
@@ -5825,11 +5787,10 @@ mod tests {
             Some(PatternValue::TokenField(_))
         ));
         // re-encode is byte identical to the hand-built (C++-shaped) stream
-        let trans = TestTrans::new(&manager);
         let mut reenc = Vec::new();
         {
             let mut enc = PackedEncode::new(&mut reenc);
-            table.encode(&mut enc, &trans).unwrap();
+            table.encode(&mut enc, &[]).unwrap();
         }
         assert_eq!(reenc, buf);
     }
@@ -6342,4 +6303,3 @@ mod tests {
         }
     }
 }
-

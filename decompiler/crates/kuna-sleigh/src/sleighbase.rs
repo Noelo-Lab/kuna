@@ -17,8 +17,8 @@
 //!   register map.  Because the lookup is shared by `Rc`, the register map is
 //!   built once after decode and stored behind a clone-on-read accessor.
 //! - The `SleighBaseTrans` boundary needed by `SymbolTable::decode`
-//!   (`getConstantSpace` + `ConstructTpl` decode/encode) is satisfied by a
-//!   short-lived `SlaTrans` borrowing the constant space and the template
+//!   (`getConstantSpace` + `ConstructTpl` decode) is satisfied by a
+//!   short-lived `TemplateDecoder` borrowing the constant space and the template
 //!   store, so it stays disjoint from the `&mut symtab` borrow.
 
 use std::cell::OnceCell;
@@ -480,7 +480,10 @@ impl SleighBase {
         let mut symtab = std::mem::take(&mut self.symtab);
         let mut templates = std::mem::take(&mut self.templates);
         let decode_res = {
-            let mut trans = SlaTrans { const_space: const_space.clone(), templates: &mut templates };
+            let mut trans = TemplateDecoder {
+                const_space,
+                templates: &mut templates,
+            };
             symtab.decode(decoder, &mut trans)
         };
         self.symtab = symtab;
@@ -583,18 +586,10 @@ impl SleighBase {
         }
         encoder.close_element(&sla::ELEM_SPACES);
 
-        // SymbolTable::encode needs the SleighBaseTrans boundary (for the per-section
-        // ConstructTpl encode).  The boundary borrows the template store; encode only
-        // reads it, but SlaTrans holds `&mut`, so clone the store to satisfy the
-        // signature (encode never mutates the templates).
-        let const_space = self
-            .manager
+        self.manager
             .get_constant_space()
-            .cloned()
             .ok_or_else(|| KunaError::sleigh("constant space not registered"))?;
-        let mut templates = self.templates.clone();
-        let trans = SlaTrans { const_space, templates: &mut templates };
-        self.symtab.encode(encoder, &trans)?;
+        self.symtab.encode(encoder, &self.templates)?;
 
         encoder.close_element(&sla::ELEM_SLEIGH);
         Ok(())
@@ -751,16 +746,13 @@ impl RegisterLookup for SnapshotRegisterLookup {
     }
 }
 
-/// Short-lived [`SleighBaseTrans`] boundary used during `SymbolTable::decode`:
-/// supplies the constant space and decodes/encodes `ConstructTpl` sections
-/// into the template store.  Borrows the store mutably so it stays disjoint
-/// from the `&mut symtab` borrow.
-struct SlaTrans<'a> {
+/// Decodes constructor templates into the arena during symbol-table restore.
+struct TemplateDecoder<'a> {
     const_space: Rc<AddrSpace>,
     templates: &'a mut Vec<ConstructTpl>,
 }
 
-impl SleighBaseTrans for SlaTrans<'_> {
+impl SleighBaseTrans for TemplateDecoder<'_> {
     fn get_constant_space(&self) -> Rc<AddrSpace> {
         Rc::clone(&self.const_space)
     }
@@ -774,20 +766,6 @@ impl SleighBaseTrans for SlaTrans<'_> {
         let handle = self.templates.len();
         self.templates.push(tpl);
         Ok((sectionid, handle))
-    }
-
-    fn encode_construct_tpl(
-        &self,
-        handle: ConstructTplHandle,
-        section_id: i32,
-        encoder: &mut dyn OpcodeEncoder,
-    ) -> KunaResult<()> {
-        let tpl = self
-            .templates
-            .get(handle)
-            .ok_or_else(|| KunaError::sleigh("bad ConstructTpl handle"))?;
-        tpl.encode(encoder, section_id);
-        Ok(())
     }
 }
 
