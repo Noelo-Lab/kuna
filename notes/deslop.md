@@ -106,6 +106,15 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   source metadata instead of maintaining a separate location map. Both public
   constructor builders now share the complete finalizer; the parser entry point
   takes ownership of its section vector before delegating.
+- Ranked backlog parsing distinguishes missing files from corrupt or unusable
+  data. Selection validates the fields it consumes while retaining optional
+  defaults, extra metadata, ranking, filters and shell/JSON rendering.
+- Pipeline dispatch distinguishes empty work, retryable claim/disk pauses and
+  fatal selector/state errors. Errors retain their diagnostics and stop dispatch;
+  already-running workers finish before the driver returns failure.
+- Finalized compiler macro definitions are shared immutably by symbols and the
+  expansion table. Each invocation still owns its rewritten operations; the
+  existing owned setter and borrowed getter retain their signatures.
 
 ## Evidence
 
@@ -282,6 +291,27 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   the median paired wall ratio was 1.002, with identical output. Concurrent
   workspace activity means this does not establish a small speed difference.
 
+- Corrupt JSON, invalid text, unusable row fields and a corrupt secondary
+  backlog fail selection explicitly. Six driver regressions fail on the old
+  script: selector, claim and reaper errors; claim races; disk pauses; and error
+  shutdown with a live worker. A held-worker test now verifies that shutdown
+  really waits, and an end-to-end case runs the real selector against corrupt
+  temporary data. Git, GitHub and actual agent workers are never invoked.
+- The 34 Python tests pass. Before the final end-to-end case was added, the
+  33-test suite passed ten consecutive repetitions. Across 200 valid backlogs
+  and six CLI modes, 1,200 output/status comparisons match the old selector.
+  Sixty alternating reads of 1,000 rows after warmup measured 2.228 → 3.856 ms
+  medians: validation adds roughly 1.6 ms to this local file-read workload.
+- Macro sharing passes the existing 365 compiler/SLEIGH release tests and two
+  new API checks for cloned-symbol replacement, shared borrowing and independent
+  template copies. Compiler allocation and timing evidence is recorded in
+  `notes/deslop-slacomp.md`.
+- The frozen dispatch/macro snapshot passes all four gates: 7,389 workspace
+  tests with 38 existing ignores and no warnings, 675/675 upstream and 1467/1467
+  stage assertions, and spec checks. All 268 CLI probes, 34 Python tests,
+  56 Ghidra checks, 367 compiler/SLEIGH tests and catalog validation pass.
+  All 45 pinned C++ XML outputs and the 14 saved CLI cases remain unchanged.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -294,7 +324,7 @@ These are investigation targets, not a claim that the repository review is done.
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
 | Collection policy | The release engine-library Clippy check still reports 216 collection-policy errors. Declaration naming now uses one reviewed lookup-only table. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Ninety engine files still contain wave-era STUB notes. |
-| Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory corruption fails closed and Python text writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
+| Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 
 Before each commit: `make test`, `make test-stages`, `make rust-test`,
 `make check-spec`. Also run the catalog check and relevant CLI probes. Preserve

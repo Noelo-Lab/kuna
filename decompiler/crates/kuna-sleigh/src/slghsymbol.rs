@@ -2340,7 +2340,7 @@ pub struct MacroSymbol {
     /// C++ `index`: the macro's slot in the macro table.
     index: i32,
     /// C++ `ConstructTpl *construct`: the macro body (set by `buildMacro`).
-    construct: Option<ConstructTpl>,
+    construct: Option<Rc<ConstructTpl>>,
     /// C++ `vector<OperandSymbol *> operands`: parameter operand symbol ids.
     operands: Vec<u32>,
 }
@@ -2360,11 +2360,15 @@ impl MacroSymbol {
     }
     /// C++ `MacroSymbol::setConstruct`.
     pub fn set_construct(&mut self, ct: ConstructTpl) {
+        self.set_shared_construct(Rc::new(ct));
+    }
+    /// Shares a finalized macro body with the compiler's expansion table.
+    pub fn set_shared_construct(&mut self, ct: Rc<ConstructTpl>) {
         self.construct = Some(ct);
     }
     /// C++ `MacroSymbol::getConstruct`.
     pub fn get_construct(&self) -> Option<&ConstructTpl> {
-        self.construct.as_ref()
+        self.construct.as_deref()
     }
     /// C++ `MacroSymbol::addOperand`.
     pub fn add_operand(&mut self, sym: u32) {

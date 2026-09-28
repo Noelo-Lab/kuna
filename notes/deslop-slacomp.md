@@ -227,3 +227,36 @@ upstream and 1,467 stage assertions, 7,706 workspace tests with 38 existing
 ignores, and the spec check. The option catalog passed, and all 45 XML outputs
 still match the pinned C++ reference. No baseline or existing oracle expectation
 changed.
+
+The compiler copied each macro definition into its symbol and copied the whole
+definition again for every invocation. Symbols and the expansion table now share
+one immutable definition. The builder still creates independent output operations
+for each invocation's parameter and label substitutions. The existing public
+owned setter and borrowed getter are preserved. The expansion table no longer
+uses optional slots, since completed definitions are only appended and never
+removed. Contradictory arena documentation and unsupported claims of complete
+macro test coverage were corrected alongside this change.
+
+A temporary allocator counter measured full compilation, including allocation
+and reallocation requests, with identical compiled output before and after:
+
+| Spec | Requests before → after | Bytes requested before → after |
+| --- | ---: | ---: |
+| Toy builder | 26,410 → 26,216 | 2,874,354 → 2,842,066 |
+| x86-64 | 3,737,622 → 3,725,907 | 317,842,112 → 315,315,352 |
+| Hexagon | 883,974 → 883,423 | 83,298,700 → 83,176,868 |
+
+These are cumulative requested bytes, not peak or resident memory. Separate
+uninstrumented runs pinned to CPU 40 measured Toy-builder wall time at 6.2641 →
+6.2496 ms (-0.23%, 110 samples per version), x86-64 at 497.3401 → 501.0246 ms
+(+0.74%, 12 samples), and Hexagon at 150.0395 → 151.0557 ms (+0.68%, 12 samples).
+Child CPU time changed by -0.20%, +0.74%, and +0.67%. Runs alternated order after
+warmup, and every measured output was identical. These are local shared-host
+measurements.
+
+The independent macro-sharing snapshot passed all four gates: 675 upstream and
+1,467 stage assertions, 7,706 workspace tests with 38 existing ignores, and the
+spec check. All 363 compiler and SLEIGH release tests pass, including 45 binary
+oracle cases, and all 45 XML outputs match the pinned C++ reference. The option
+catalog passed and Rust documentation had no warnings. No baseline or existing
+oracle expectation changed.

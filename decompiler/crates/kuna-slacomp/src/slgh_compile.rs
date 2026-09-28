@@ -249,16 +249,7 @@ pub struct SleighCompile {
     /// The driver-owned pattern-expression arena (the WS2 `pexp_*` ids index it).
     patexp: Vec<PatternExpression>,
 
-    // --- p-code section RTL arenas (WS4c) ---
-    //
-    // The WS2 parser threads `u32` ids for the heterogeneous bison semantic
-    // values of the p-code grammar (`SLEIGHSTYPE`): `VarnodeTpl *`,
-    // `ExprTree *`, `vector<OpTpl *> *`, `StarQuality *`, `ConstructTpl *`
-    // (sections), and `SectionVector *`.  Each gets its own driver-owned arena
-    // of `Option<T>` slots so an id can be *consumed* (the C++ pointer-move
-    // semantics) by taking the slot.
-    /// One arena for every heterogeneous p-code grammar semantic value, so ids
-    /// are globally unique across kinds (see the accessor helpers).
+    /// Parser semantic values share one arena; taking a slot consumes its value.
     rtl_arena: Vec<Option<RtlValue>>,
     /// `ContextChange *` arena (`context_mod`/`context_set` vec elements).
     contextchange_arena: Vec<Option<ContextChange>>,
@@ -266,8 +257,8 @@ pub struct SleighCompile {
     /// (the C++ `ConsistencyChecker::unnecessarypcode`; bumped by
     /// `deal_with_unnecessary_*`, read after `test_size_restrictions`).
     cc_unnecessary: i32,
-    /// The macro bodies (`vector<ConstructTpl *> macrotable`); index = macro id.
-    macro_bodies: Vec<Option<ConstructTpl>>,
+    /// Finalized macro bodies shared with their symbols; index = macro id.
+    macro_bodies: Vec<Rc<ConstructTpl>>,
     /// `maxdelayslotbytes` (slgh_compile.hh): largest delay slot seen.
     maxdelayslotbytes: u32,
     /// `unique_allocatemask` (slgh_compile.hh): set when a crossbuild needs the
@@ -2877,13 +2868,14 @@ impl SleighCompile {
             return;
         }
         let _ = kuna_sleigh::pcodecompile::propagate_size(&mut body); // as much as possible
+        let body = Rc::new(body);
         if let Some(s) = self.base.symtab_mut().find_symbol_by_id_mut(sym) {
             if let Some(m) = s.as_macro_mut() {
-                m.set_construct(body.clone());
+                m.set_shared_construct(Rc::clone(&body));
             }
         }
         self.base.symtab_mut().pop_scope(); // Pop local macro variables
-        self.macro_bodies.push(Some(body));
+        self.macro_bodies.push(body);
     }
 
     /// C++ `SleighCompile::createMacroUse(MacroSymbol *sym,vector<ExprTree *> *param)`
@@ -3194,16 +3186,9 @@ impl SleighCompile {
         for op in oldops {
             if op.get_opcode() == MACROBUILD {
                 let index = op.get_in(0).get_offset().get_real() as usize;
-                if index >= self.macro_bodies.len() {
+                let Some(macro_tpl) = self.macro_bodies.get(index).cloned() else {
                     *ctpl.get_opvec_mut() = newvec;
                     return false;
-                }
-                let macro_tpl = match &self.macro_bodies[index] {
-                    Some(m) => m.clone(),
-                    None => {
-                        *ctpl.get_opvec_mut() = newvec;
-                        return false;
-                    }
                 };
                 let labelbase = ctpl.num_labels();
                 let haserror = {

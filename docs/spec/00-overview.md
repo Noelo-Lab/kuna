@@ -826,6 +826,13 @@ Finalization borrows this local vector while validating its sections, then
 attaches valid templates and context changes. Scope cleanup runs after either
 success or a validation error, including constructors without semantic sections.
 
+Finalized macro templates are shared immutably between their symbols and the
+compiler's expansion table. Expanding a macro borrows this shared definition
+and creates independent output operations for parameter substitution and label
+adjustment. It does not copy the entire definition first. The expansion table
+contains only completed definitions; an invalid macro index still rejects the
+expansion.
+
 (kuna) **Mixed builds.** The engine binary `kuna` runs can come from a different
 build than `kuna` itself (an override naming another install, or a sibling left
 behind when only `kuna` was rebuilt), and nothing in the output shows it. So every
