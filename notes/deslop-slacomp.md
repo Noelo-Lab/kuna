@@ -522,6 +522,51 @@ and 1,467 stage assertions, 7,711 workspace tests with 38 existing ignores, and
 the spec check. The option catalog passed, and all 47 XML outputs still match
 pinned C++. No baseline or existing oracle expectation changed.
 
+Decision-tree construction now sorts terminal pattern indices, checks conflicts
+against the original patterns, then moves the owned patterns into their final
+order. This removes two copies of every terminal pattern list, the search to
+recover an original index by value, and an empty pointer-comparison branch.
+Insertion order and conflict resolution by pattern value and constructor id
+are preserved. Branch expansion also consumes compatible values from an
+iterator instead of building a temporary list. The production path shrank by
+41 lines; public APIs and diagnostic-pair deduplication are unchanged.
+
+The 11-line `terminal_patterns.slaspec` fixture covers an overlap resolved by
+its intersection, a disjunction, and nested specializations. Its digest was
+generated with pinned C++ at the repository path before changing the ordering
+code; the independent manifest now covers 48 specs, with all previous entries
+unchanged. Default, strict and XML output agree with pinned C++. The existing
+compiler/SLEIGH release suite passes all 371 tests.
+
+A separate comparison extracts the final ordering function and the original
+implementation into a standalone driver. Across 50,000 deterministic lists of
+instruction, context and combined patterns, including repeated constructor
+ids, offsets and constant patterns, the exact pattern order and both diagnostic
+pair lists agree. Another 286 CLI cases preserve complete before/after status,
+stdout, stderr, and raw/decoded images. The broader C++ differences documented
+above remain unchanged.
+
+A full-compilation allocator counter measured these cumulative requests on each
+of three repetitions, with identical output before and after:
+
+| Spec | Requests before → after | Bytes requested before → after |
+| --- | ---: | ---: |
+| Toy builder | 22,760 → 21,461 | 2,827,889 → 2,804,625 |
+| x86-64 | 3,443,134 → 3,332,858 | 314,678,714 → 312,500,330 |
+| Hexagon | 778,303 → 762,392 | 82,743,710 → 82,475,694 |
+
+These are requested-byte totals, not peak or resident memory. Alternating
+uninstrumented runs pinned to CPU 40 measured Toy-builder wall time at
+6.6912 → 6.6356 ms (-0.83%, 110 samples per version), x86-64 at 476.2450 →
+475.8762 ms (-0.08%, 12 samples), and Hexagon at 151.6542 → 152.5819 ms
+(+0.61%, 12 samples). Child CPU changes were -1.02%, -0.09%, and +0.63%.
+Every output was identical. Measurements followed warmups on the shared host.
+
+The decision-tree snapshot passed all four gates: 675 upstream and 1,467 stage
+assertions, 7,714 workspace tests with 38 existing ignores, and the spec check.
+The option catalog passed, and all 48 XML outputs match pinned C++. No baseline
+or existing oracle expectation changed.
+
 Pattern-building errors were collected and then discarded, leaving invalid
 specifications with only `No output produced`. Decision-tree errors discarded
 the constructor identities and printed one generic message. They also shared

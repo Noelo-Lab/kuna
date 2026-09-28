@@ -903,6 +903,14 @@ constructor's changes. Each decision node still owns its simplified patterns,
 moving the simplifier's result directly into the node. Source patterns and
 context changes remain owned by their constructors.
 
+Decision nodes enumerate compatible branch values in ascending order without
+building a temporary list. Terminal nodes sort pattern indices by specialization
+while retaining the original patterns for conflict checks. The sorted prefix
+determines each insertion point; conflict resolution still identifies entries
+by matching pattern values and constructor ids. Once checking finishes,
+patterns move into their final order. Sorting does not copy pattern trees or
+search copies to recover their indices.
+
 Pattern-building failures report the accumulated reasons. Subtable errors
 identify the table at its source location, and unreferenced-table warnings
 include its name. Decision-tree errors retain both constructors' table-qualified
@@ -2494,7 +2502,8 @@ can be compared on any binary.
 The pipeline's execution order is not the folder order. Every per-function run
 executes a single declarative pass tree, `universal_sched`
 (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs (universal_sched)`,
-a transcription of upstream `ActionDatabase::universalAction`). The tree is built
+based on upstream `ActionDatabase::universalAction`, with kuna-specific passes).
+The tree is built
 once per engine as `SchedNode` values (Action leaf / Pool of rules / Group /
 RestartGroup), *filtered* by the root variant's enabled group list
 (`decompiler/crates/kuna-decomp/src/infra/action.rs (build_default_groups,
@@ -2561,10 +2570,15 @@ cursor is a map iterator whose `++` is O(1); kuna models it as the last consumed
 successors per tree descent rather than one search per op, discarding the run
 whenever the optree epoch above moves — any op created or destroyed by anything
 other than the pool's own consumption of the op it just left. The visit order is
-the search's, one buffered value at a time. The
-materialized `decompile` tree's listing is byte-equal to the C++ oracle dump
-(`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
-(UNPORTED_ALLOWLIST)` — empty).
+the search's, one buffered value at a time.
+
+The `decompile` listing is checked byte-for-byte against a maintained kuna
+schedule snapshot, including its added passes, flags, numbering and separators.
+It is not an independent C++ oracle. The tests separately pin pass presence and
+adjacency, root-filter behavior and the empty `UNPORTED_ALLOWLIST`
+(`decompiler/crates/kuna-decomp/src/infra/universalaction.rs`). Snapshot changes
+require an intentional schedule change; matching it alone does not prove
+decompilation parity, which remains covered by the output regression suites.
 
 Flow-follow itself runs *before* the tree (the upstream `followFlow` →
 `startProcessing` order), bounded by the P0 flow options — decode-error policy

@@ -692,6 +692,52 @@ of the new compiler-probe subprocess tests passed all 60 checks. The tracked
 diff and both new test files retained their frozen hashes through the last
 suite exit. The preceding commit's six CodeQL analyses and parity CI passed.
 
+## Nineteenth checkpoint: schedule provenance and decision-tree ownership
+
+The schedule fixture called a raw C++ oracle had accumulated kuna-only passes
+such as `structsynth`, `constspaceload` and `callpush`. It is now named
+`list_action_decompile_snapshot.txt`, with its origin and update policy stated
+accurately. The rename preserves all 285 lines and SHA-256
+`33d651474dbf5a12c7bd3aedda5bad87afa75668ec037156b621e94d2af72aa3`.
+The two byte comparisons, empty-allowlist assertions, pass-presence checks,
+adjacency checks and other-root tests are unchanged. All 15 focused integration
+tests pass. Obsolete claims about stripping passes, an unchanged upstream tree
+and current C++ recapture commands have been removed from active documentation;
+archived feature histories are left alone.
+
+SLEIGH's crate, expression and p-code builder headers now describe the existing
+compiler/runtime boundary instead of saying the compiler is unported. They
+retain the actual context-free operand-evaluation limitation and its existing
+error string. Stripping comment-only lines confirms the edited production
+files and schedule unit tests otherwise match their previous contents.
+Rustdoc succeeds; correcting two existing schedule links leaves 435 warnings
+elsewhere in the engine documentation, so this is not a clean documentation
+lint result. No schedule, assertion expectation or production behavior changes
+in this part of the cleanup.
+
+The compiler's decision-tree contribution sorts original pattern indices,
+checks conflicts without losing identity, then moves the owned patterns into
+the final order. Branch values are streamed instead of first collected. The
+production path loses 41 lines and two deep copies of each terminal list;
+public APIs and existing diagnostic suppression semantics are preserved.
+An 11-line fixture adds independently captured binary/XML coverage for overlap
+resolution, disjunction and specialization; all 47 previous entries are intact.
+
+Root verification confirms the model's old/new functions exactly match the
+before/after production source. Its 50,000 pattern-list comparisons pass, as do
+all 375 compiler/SLEIGH release tests and 286 direct compiler comparisons of
+status, stdout, stderr and raw/decoded bytes. The new fixture is compiled from
+this worktree's path as well. Independent full-compilation allocation and timing
+measurements are recorded in `notes/deslop-slacomp.md`; output is unchanged and
+the measured wall-time deltas remain within -0.83% to +0.61%.
+
+Final frozen-tree checks passed: 675 upstream and 1467 stage assertions,
+7427 workspace tests (38 ignored, no warnings), spec/catalog checks, 268 CLI
+probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
+CLI comparisons. The tracked diff and both new paths retained their frozen
+hashes through the final suite exit. The preceding commit's six CodeQL analyses
+and parity CI also passed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -703,7 +749,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
 | Collection policy | The release engine-library Clippy check still reports 211 collection-policy errors; the CLI-only check finds 17 errors and 22 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
-| Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Ninety engine files still contain wave-era STUB notes. |
+| Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 
 Before each commit: `make test`, `make test-stages`, `make rust-test`,

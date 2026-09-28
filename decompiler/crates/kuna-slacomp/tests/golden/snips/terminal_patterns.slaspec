@@ -1,0 +1,11 @@
+define endian=little;
+define space ram type=ram_space size=4 default;
+define space register type=register_space size=4;
+define register offset=0 size=4 r0;
+define token instr(16) lo=(0,3) hi=(4,7) opcode=(8,15);
+:low is opcode=0 & lo=1 { r0=1; }
+:high is opcode=0 & hi=2 { r0=2; }
+:intersection is opcode=0 & lo=1 & hi=2 { r0=3; }
+:either is opcode=1 & (lo=1 | hi=2) { r0=4; }
+:general is opcode=2 & lo=1 { r0=5; }
+:special is opcode=2 & lo=1 & hi=2 { r0=6; }

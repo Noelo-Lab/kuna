@@ -1,70 +1,19 @@
-//! Port of `decompiler/cpp/slghpatexpress.{hh,cc}` (item `w2-sleigh-pattern`)
-//! — the SLEIGH pattern-expression tree.
+//! SLEIGH pattern expressions and compile-time equations, based on
+//! `decompiler/cpp/slghpatexpress.{hh,cc}`.
 //!
-//! ## What is ported
+//! [`PatternValue`] and [`PatternExpression`] represent owned expression trees
+//! with boxed children. Runtime evaluation uses [`PatternExpressionContext`],
+//! implemented by the walkers in [`crate::sleigh`]. Encoded operand references
+//! carry table and constructor IDs, validated through [`OperandValueResolver`].
 //!
-//! The full runtime `PatternExpression` tree: the `PatternValue` leaves
-//! ([`TokenField`], [`ContextField`], [`ConstantValue`], [`OperandValue`],
-//! [`StartInstructionValue`], [`EndInstructionValue`],
-//! [`Next2InstructionValue`]) and the operator nodes (Plus/Sub/Mult/
-//! LeftShift/RightShift/And/Or/Xor/Div binary, Minus/Not unary), with
+//! [`TokenPattern`] builds token-aligned patterns. [`PatternEquation`] nodes
+//! live in an [`EquationArena`] and refer to children by [`EqId`]; the compiler
+//! driver supplies token and symbol state. [`TokenField`] retains token size
+//! and identity for pattern generation, unlike fields decoded from `.sla`.
 //!
-//! - `getValue` evaluation against parser-walker state,
-//! - `minValue` / `maxValue`,
-//! - `listValues` / `getMinMax` / `getSubValue`,
-//! - `encode`, the per-class `decode` methods, and the
-//!   [`PatternExpression::decode_expression`] factory keyed by sla
-//!   ElementIds (defined in [`crate::slghpattern::sla`]).
-//!
-//! The C++ class hierarchy (virtual dispatch + `dynamic_cast`) maps onto two
-//! enums mirroring the C++ split: [`PatternValue`] (the `PatternValue`
-//! subclasses) wrapped by [`PatternExpression`] (`PatternValue` plus the
-//! `BinaryExpression`/`UnaryExpression` operators).  The C++ intrusive
-//! refcount (`refcount`/`layClaim`/`release`) is replaced by plain ownership
-//! (`Box` children): decoded expression trees are never shared in the
-//! consumer-side code paths this crate ports.
-//!
-//! ## What is NOT ported (SLEIGH compiler side)
-//!
-//! `TokenPattern` (the Token-aligned pattern builder), the whole
-//! `PatternEquation` hierarchy (`OperandEquation`, `UnconstrainedEquation`,
-//! `ValExpressEquation` and its comparison subclasses, `EquationAnd`/`Or`/
-//! `Cat`, the ellipsis equations, `OperandResolve`), the pattern-generation
-//! virtuals `genPattern` / `genMinPattern`, and the static helpers
-//! `buildPattern` / `advance_combo`.  All of these exist only to *compile* a
-//! `.slaspec`; the Rust port reads compiled `.sla` files and the compiler
-//! stays C++ (see the crate docs).  `Token` itself is unported; the one
-//! ported constructor that needs it, `TokenField(Token*,bool,int4,int4)`,
-//! becomes [`TokenField::new`] taking the two Token properties the C++
-//! constructor reads (`getSize()`, `isBigEndian()`).
-//!
-//! ## The ParserWalker hook ([`PatternExpressionContext`])
-//!
-//! Evaluation in C++ runs against a `ParserWalker` (context.hh/sleigh.hh),
-//! which does not exist yet at this point in the port DAG.
-//! [`PatternExpressionContext`] is the minimal trait mirroring exactly the
-//! `ParserWalker` surface that slghpatexpress.cc and slghpattern.cc touch:
-//! `getInstructionBytes`, `getContextBytes`, `getAddr`, `getNaddr`,
-//! `getN2addr`, plus one method standing in for the body of
-//! `OperandValue::getValue` (see [`PatternExpressionContext::operand_value`]).
-//! The sleigh-core wave implements this trait for its `ParserWalker`.
-//!
-//! ## The decode hook ([`OperandValueResolver`])
-//!
-//! `OperandValue::decode` in C++ resolves its cached `Constructor*` through
-//! the `Translate*` (really `SleighBase*`) passed to `decodeExpression`:
-//! `findSymbol(tabid)` -> `SubtableSymbol` -> `getNumConstructors()` /
-//! `getConstructor(ctid)`.  The symbol table is not ported yet, so the Rust
-//! [`OperandValue`] stores the raw `(table_id, ct_id)` pair and the decode
-//! validation goes through the [`OperandValueResolver`] hook, implemented by
-//! the slghsymbol/sleighbase wave.  Two C++ `OperandValue` methods that
-//! consult the symbol table at runtime — `isConstructorRelative()` and
-//! `getName()` (used by `ContextOp::validate` in slghsymbol.cc) — are left
-//! to that wave, which can reach them through the exposed
-//! [`OperandValue::index`]/[`OperandValue::table_id`]/[`OperandValue::ct_id`]
-//! accessors.  `OperandValue::getSubValue` (which evaluates the operand's
-//! *defining expression*, again through the symbol table) is only reachable
-//! from the unported compiler equations and returns a `Sleigh` error here.
+//! The context-free [`OperandValue::get_sub_value`] entry point cannot evaluate
+//! an operand's defining expression without symbol state and still returns an
+//! error. This limitation does not mean the equation compiler is absent.
 
 use kuna_base::address::{byte_swap_inplace, sign_extend, zero_extend, Address};
 use kuna_base::error::{KunaError, KunaResult};
@@ -80,10 +29,8 @@ use crate::slghpattern::{
 // PatternExpressionContext — the ParserWalker hook
 // ---------------------------------------------------------------------------
 
-/// The minimal `ParserWalker` surface needed to evaluate patterns and
-/// pattern expressions (see module docs).  Implemented by the sleigh-core
-/// wave's `ParserWalker`; tests implement it over synthetic byte/context
-/// providers.
+/// Walker state needed to evaluate patterns and expressions. Runtime walkers
+/// and synthetic test providers implement the same interface.
 pub trait PatternExpressionContext {
     /// C++ `ParserWalker::getInstructionBytes(int4 byteoff,int4 numbytes)`:
     /// packed big-endian instruction bytes, `byteoff` relative to the
@@ -196,10 +143,8 @@ fn context_bytes(
 // PatternValue leaves
 // ---------------------------------------------------------------------------
 
-/// C++ `TokenField`: a value extracted from a bit range of an instruction
-/// token.  The C++ `Token *tok` member is only consulted by the unported
-/// compiler-side `genPattern`/`genMinPattern` (and is nulled by the C++
-/// decode anyway), so it is dropped here.
+/// A bit range within an instruction token. Compilation retains token size and
+/// identity for pattern generation; runtime decoding leaves both unset (-1).
 #[derive(Debug, Clone)]
 pub struct TokenField {
     bigendian: bool,
@@ -585,7 +530,7 @@ impl EndInstructionValue {
 /// C++ `Next2InstructionValue`: the address of the instruction after the
 /// next.  NOTE: like upstream, the [`PatternExpression::decode_expression`]
 /// factory does NOT recognize `next2_exp` (the C++ factory omits it); the
-/// symbol-table wave constructs this value directly when decoding a
+/// symbol table constructs this value directly when decoding a
 /// `Next2Symbol`.
 #[derive(Debug, Clone, Default)]
 pub struct Next2InstructionValue;
@@ -689,10 +634,8 @@ impl OperandValue {
         Err(KunaError::sleigh("Operand used in pattern expression"))
     }
 
-    /// C++ `OperandValue::getSubValue` evaluates the operand's *defining
-    /// expression* (`sym->getDefiningExpression()->getSubValue(...)`), which
-    /// requires the symbol table.  It is only reachable from the unported
-    /// SLEIGH-compiler equations, so the port reports an error instead.
+    /// This entry point lacks the symbol state needed to evaluate the operand's
+    /// defining expression and reports an error.
     pub fn get_sub_value(&self, _replace: &[i64], _listpos: &mut i32) -> KunaResult<i64> {
         Err(KunaError::sleigh(
             "OperandValue::getSubValue requires the SLEIGH compiler symbol table (not ported)",

@@ -1,27 +1,7 @@
-//! Adversarial verification tests for `w8-fw-universalaction` (round 1).
-//!
-//! These land with the verifier's verdict
-//! (`docs/rust-port/reviews/w8-fw-universalaction.md`).  They target the spots
-//! the hunt list flagged as most fragile for the keystone-schedule port that the
-//! item gate (`universalaction_listing`, decompile root only) cannot reach:
-//!
-//!   * the **clone(grouplist) drop semantics** for roots *other* than decompile
-//!     (the gate only exercises the decompile filter, where every nested
-//!     container has a surviving sibling so blanks never stack),
-//!   * the **C++ `ActionGroup::print` newline discipline** — the trailing
-//!     `s << endl` after *every* surviving child, which makes a chain of
-//!     last-child containers emit *stacked* blank lines,
-//!   * the **whole-tree registration order** (not just the decompile subset),
-//!   * **whole-tree drop** when no group is enabled, and
-//!   * the **allowlist <-> tree** consistency the renumbering gate silently
-//!     trusts.
-//!
-//! Every expectation below is re-derived by hand from
-//! `decompiler/cpp/coreaction.cc` `ActionDatabase::universalAction`
-//! (`coreaction.cc:5722`) + `decompiler/cpp/action.cc` `Action::print` (132),
-//! `ActionGroup::print` (428), `ActionPool::print` (753), and the
-//! `clone(grouplist)` family (391 / 529 / 899) — independent of the captured
-//! decomp_dbg oracle fixture.
+//! Schedule checks beyond the decompile snapshot: other root filters,
+//! container formatting, full-tree order and formerly unported passes.
+//! The firstpass expectation retains its original C++ capture; the full tree
+//! includes kuna-specific additions.
 
 use std::collections::BTreeSet;
 
@@ -44,31 +24,13 @@ const ALL_GROUPS: &[&str] = &[
 
 /// The pass name on a `list action` line is the final whitespace-separated
 /// token (Action/Rule names never contain spaces); the leading columns are the
-/// `{:>4}` index, the ` repeat `/blank, the `!`/`S`/`A` flags, and the indent.
+/// zero-padded width-4 index, the ` repeat `/blank, the `!`/`S`/`A` flags, and the indent.
 fn name_of(line: &str) -> &str {
     line.split_whitespace().last().unwrap_or("")
 }
 
-// ---------------------------------------------------------------------------
-// 1. firstpass root: {base}.  The deepest-nesting drop case — exercises both the
-//    clone-drop of pools/groups with no surviving member AND the stacked
-//    trailing blanks that the decompile oracle never produces (it has only
-//    single blanks).
-//
-//    Re-pinned to the C++ ORACLE: this byte expectation is the verbatim
-//    `list action` dump of the firstpass root captured from the main-tree
-//    decomp_dbg (group `firstpass` is `{ "base" }`, coreaction.cc:5715):
-//
-//        printf 'load file /tmp/t.out\nread symbols\nload function main\n
-//                option setaction firstpass\nlist action\nquit\n' \
-//          | SLEIGHHOME="$(pwd)/specs" ./decompiler/cpp/decomp_dbg 2>/dev/null \
-//          | awk '/^\[decomp\]> list action$/{f=1;next}
-//                 /^\[decomp\]> quit$/{f=0} f'
-//
-//    The Rust `list_action_dump(["base"])` is byte-identical to that capture
-//    (verified): B0 already proves the decompile tree byte-equal, and firstpass
-//    is just the group-filtered {base} subset of the same tree.
-// ---------------------------------------------------------------------------
+// The firstpass root keeps only the base group. Its original C++ capture pins
+// stacked container separators as well as pass order.
 #[test]
 fn w8_fw_universalaction_firstpass_drop_and_stacked_blanks_match_cpp() {
     let f = ActionListFilter::from_names(["base"]);
@@ -78,7 +40,7 @@ fn w8_fw_universalaction_firstpass_drop_and_stacked_blanks_match_cpp() {
     // that transitively hold one (universal / fullloop / mainloop / stackstall).
     // oppool1 (no base rule) and every non-base leaf are dropped by
     // clone(grouplist).  Indices are zero-padded (`0000`…) to match the C++
-    // oracle's sticky `setfill('0')` — the same padding the B0 decompile gate
+    // console's sticky `setfill('0')` — the same padding the decompile snapshot
     // compares against.
     //
     // The three blank lines after `lanedivide` are load-bearing: lanedivide is
@@ -146,34 +108,7 @@ fn w8_fw_universalaction_empty_or_unmatched_filter_drops_whole_tree() {
     assert_eq!(none2, "", "unmatched filter must render nothing");
 }
 
-// ---------------------------------------------------------------------------
-// 3. Whole-tree order + count with EVERY group enabled (the strongest
-//    order-determinism check — covers the 4 leaves the decompile filter drops:
-//    normalizesetup(normalanalysis), funclink_outonly(noproto),
-//    directwrite(protorecovery_b), normalizebranches).
-//
-//    C++ universalAction registers 252 addAction/addRule calls.  Every one is
-//    now ported (UNPORTED_ALLOWLIST empty), so all 252 leaves render.  Plus the
-//    1 kuna leaf (gotoreduce, after finalstructure) and the 7 container headers
-//    (universal, fullloop, mainloop, stackstall, oppool1, oppool2, cleanup)
-//    => 260 non-blank lines.
-//
-//    Re-pinned to the C++ ORACLE: 259 is the non-blank `list action` line count
-//    of the FULL universal tree captured from the main-tree decomp_dbg by taking
-//    the decompile root and toggling ON the only 4 groups it omits — exactly the
-//    ALL_GROUPS minus DECOMPILE_GROUPS difference:
-//
-//        ...\nload function main\n
-//        option currentaction decompile normalanalysis on\n
-//        option currentaction decompile noproto on\n
-//        option currentaction decompile protorecovery_b on\n
-//        option currentaction decompile normalizebranches on\n
-//        list action\nquit\n
-//
-//    That capture is 259 non-blank lines (252 leaves + 7 headers) and is
-//    byte-identical to this Rust `list_action_dump(ALL_GROUPS)` (verified).  The
-//    head and tail are pinned exactly.
-// ---------------------------------------------------------------------------
+// All groups include registrations omitted from the decompile snapshot.
 #[test]
 fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     let f = ActionListFilter::from_names(ALL_GROUPS.iter().copied());
@@ -181,38 +116,6 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     let lines: Vec<&str> = dump.lines().collect();
     let nonblank = lines.iter().filter(|l| !l.is_empty()).count();
 
-    // All universalAction passes are ported: the allowlist is empty, so every
-    // one of the 252 C++ leaves renders.  (+7 kuna-only leaves: `branchflip`,
-    // option-gated default-off, registered after the second `prefercomplement`;
-    // `gotoreduce`, option-gated default-off, after `finalstructure`; `taildup`,
-    // option-gated default-off, right after `gotoreduce`;
-    // `ifelseflatten`, option-gated default-off, after `taildup`;
-    // `crossjumprevert`, option-gated default-off, right after `ifelseflatten`;
-    // `dedupitetail`, option-gated default-off, right after `crossjumprevert`; and
-    // `returndup`, option-gated default-off, in the `returnsplit` group right after
-    // `returnsplit` (angr SAILR gotoless ReturnDuplicatorHigh, decbench F4); and
-    // `switchreturn`, option-gated default-off, right after `earlyreturn` in the
-    // `returnsplit` group (the continuation of earlyreturn to the wide switch-phi);
-    // and `iteboolean`, right after `iteregion` (short-circuit 0/1 select ->
-    // boolean assignment, DIV-51); and `paramcopyhoist`, option-gated default-off,
-    // LAST of all (P6 parameter copy-shadow entry-block anchor -- it runs after the
-    // structured tree is final so no structuring decision can be perturbed);
-    // and `cleanupcode`, option-gated default-ON, at the TOP of mainloop (S2 Rust
-    // drop/deallocate call removal in the pre-SSA window, DIV-81); and
-    // `linuxsyscall`, option-gated default-off, directly after `constbase` (S2
-    // 32-bit Linux `int 0x80` naming: it reads the RAW p-code and its call spec
-    // is input-locked, so it has to precede `funclink`); and `x64syscall`,
-    // option-gated default-off, directly after it (S2 x86-64 SYSCALL ABI
-    // effects: also read off the RAW p-code, and adding a register read or
-    // write is only legal before heritage); and `pebnames`, option-gated
-    // default `auto`, directly after that (P5 Windows TEB segment-base type
-    // lock: the Symbol it maps must exist before heritage creates the input); and
-    // `msvcstrappend`, option-gated default-off, directly after that (S2 inlined
-    // MSVC std::string append collapse: proved over the RAW p-code, and its call
-    // spec is input-locked); and `structsynth`, option-gated default `param`,
-    // directly after `infertypes` inside mainloop (P5 structure synthesis from
-    // constant-offset dereferences: it needs the settled lattice infertypes
-    // leaves and the pointer-arithmetic pools below it to render the fields).)
     assert_eq!(
         UNPORTED_ALLOWLIST.len(),
         0,
@@ -220,13 +123,10 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     );
     assert_eq!(
         nonblank, 284,
-        "full universal tree must render 252 C++ leaves + 25 kuna leaves (branchflip + cleanupcode + linuxsyscall + x64syscall + pebnames + msvcstrappend + structsynth + outline + gotoreduce + taildup + ifelseflatten + crossjumprevert + dedupitetail + returndup + iteregion + iteboolean + earlyreturn + switchreturn + paramcopyhoist + removesecuritycheck + stripmsvcstackguard + rodatastringcopy + simdshufflelane + constspaceload + callpush) + 7 container headers"
+        "full kuna schedule registration count changed"
     );
 
-    // Head: the universal restart-group prelude, in C++ order.  Note
-    // `normalizesetup` (normalanalysis) and `funclink_outonly` (noproto) are
-    // PRESENT here but absent in the decompile oracle — the part of the order
-    // the gate never sees.
+    // These setup passes include groups absent from the decompile snapshot.
     let head: Vec<&str> = lines.iter().take(14).map(|l| name_of(l)).collect();
     assert_eq!(
         head,
@@ -237,14 +137,6 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
         ]
     );
 
-    // Tail: the S9 fixation/naming/cast suffix, ending at `stop`.
-    // (kuna) ActionGotoReduce is registered after ActionFinalStructure, then
-    // ActionTailDup, then ActionIfElseFlatten, then ActionCrossJumpReverter, then
-    // ActionDedupIteTail, then ActionIteRegion, then ActionIteBoolean, then
-    // ActionParamCopyHoist, so the S9-tail kuna leaves sit between finalstructure and
-    // prototypewarnings (finalstructure -> gotoreduce -> taildup -> ifelseflatten ->
-    // crossjumprevert -> dedupitetail -> iteregion -> iteboolean -> paramcopyhoist;
-    // returndup is an earlier S8 leaf, mid-list). Only the last 10 are checked here.
     let tail: Vec<&str> =
         lines.iter().rev().take(10).map(|l| name_of(l)).collect::<Vec<_>>().into_iter().rev().collect();
     assert_eq!(
@@ -260,27 +152,13 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     assert_eq!(dw, 4, "all four ActionDirectWrite registrations must render");
 }
 
-// ---------------------------------------------------------------------------
-// 4. Allowlist is empty + the ten formerly-allowlisted passes now render.
-//
-//    The allowlist closed in `w8x-universalaction-wire`: every pass named by
-//    `universalAction` is ported, so UNPORTED_ALLOWLIST is empty and the B0 gate
-//    byte-compares the decompile tree against the raw C++ oracle with no line
-//    stripping.  This test is the guard that no NEW allowlist entry silently
-//    reappears (which would make the gate skip lines and pass spuriously), and
-//    that the ten passes that just landed actually render in the full tree at
-//    their C++ groups — re-derived from the C++ source positions in
-//    coreaction.cc `universalAction`.
-// ---------------------------------------------------------------------------
+// Keep formerly unported passes registered, with no allowlisted omissions.
 #[test]
 fn w8_fw_universalaction_allowlist_empty_and_formerly_unported_passes_render() {
-    // The allowlist must be empty: all universalAction passes are ported.  A new
-    // entry here would silently shrink the B0 oracle comparison.
     let names: BTreeSet<&str> = UNPORTED_ALLOWLIST.iter().map(|e| e.name).collect();
     assert!(
         UNPORTED_ALLOWLIST.is_empty(),
         "UNPORTED_ALLOWLIST must stay empty (all universalAction passes ported); \
-         a new entry would make the B0 gate strip lines and pass spuriously. \
          Still listed: {names:?}"
     );
 

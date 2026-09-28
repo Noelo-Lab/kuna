@@ -1963,25 +1963,17 @@ impl DecisionNode {
         }
     }
 
-    /// C++ `DecisionNode::consistentValues(vector<uint4> &bins,
-    /// DisjointPattern *pat)`.
-    fn consistent_values(&self, bins: &mut Vec<u32>, pat: &DisjointPattern) {
+    /// Compatible branch values in ascending order (`DecisionNode::consistentValues`).
+    fn consistent_values(&self, pat: &DisjointPattern) -> impl Iterator<Item = u32> {
         let mut m: u32 = if self.bitsize == 32 { 0 } else { 1u32 << self.bitsize };
         m = m.wrapping_sub(1);
         let common_mask = m & pat.get_mask(self.startbit, self.bitsize, self.contextdecision);
         let common_value = common_mask & pat.get_value(self.startbit, self.bitsize, self.contextdecision);
         let dont_care_mask = m ^ common_mask;
 
-        let mut i: u32 = 0;
-        loop {
-            if (i & dont_care_mask) == i {
-                bins.push(common_value | i);
-            }
-            if i == dont_care_mask {
-                break;
-            }
-            i += 1;
-        }
+        (0..=dont_care_mask)
+            .filter(move |&i| (i & dont_care_mask) == i)
+            .map(move |i| common_value | i)
     }
 
     /// C++ `DecisionNode::split(DecisionProperties &props)`.
@@ -1995,20 +1987,14 @@ impl DecisionNode {
             self.order_patterns(props);
             return;
         }
-        // C++ guard: a child cannot keep as many patterns as the parent (the
-        // recursion would not terminate).  The parent check uses parent->num;
-        // here `self.num` already equals the parent's count at split time.
         let num_children = 1usize << self.bitsize;
         let mut children: Vec<DecisionNode> = Vec::with_capacity(num_children);
         for _ in 0..num_children {
             children.push(DecisionNode::new_child());
         }
-        // Move each pattern into every consistent bin.
         let list = std::mem::take(&mut self.list);
         for (pat, ct) in &list {
-            let mut vals: Vec<u32> = Vec::new();
-            self.consistent_values(&mut vals, pat);
-            for &v in &vals {
+            for v in self.consistent_values(pat) {
                 children[v as usize].add_constructor_pair(pat, *ct);
             }
         }
@@ -2018,11 +2004,11 @@ impl DecisionNode {
         }
     }
 
-    /// C++ `DecisionNode::orderPatterns(DecisionProperties &props)`.
+    /// Order terminal patterns by specialization, retaining their original indices
+    /// until conflicts are checked (`DecisionNode::orderPatterns`).
     fn order_patterns(&mut self, props: &mut DecisionProperties) {
-        let mut conflictlist: Vec<(usize, usize)> = Vec::new();
+        let mut conflicts = Vec::new();
 
-        // Check for identical patterns.
         for i in 0..self.list.len() {
             for j in 0..i {
                 if self.list[i].0.identical(&self.list[j].0) {
@@ -2031,74 +2017,47 @@ impl DecisionNode {
             }
         }
 
-        // Insertion-sort by specialization (most specialized first), tracking
-        // conflicts.  Faithful to C++ `orderPatterns`: the break-point `j` is
-        // computed by comparing the ORIGINAL item `i` (`newlist[i]`) against the
-        // PARTIALLY-SORTED current list (`list[j]`), not against the original
-        // item `j` — the in-place shift-and-insert keeps `list` sorted as it
-        // goes.  (Comparing against the original `j` reorders ties differently.)
-        let original = self.list.clone();
-        let mut sorted: Vec<(DisjointPattern, u32)> = Vec::with_capacity(original.len());
-        for i in 0..original.len() {
-            let ipat = &original[i].0;
-            let iconst = original[i].1;
-            let mut j = 0usize;
-            while j < sorted.len() {
-                let jpat = &sorted[j].0;
-                let jconst = sorted[j].1;
-                if ipat.specializes(jpat) {
+        let mut order: Vec<usize> = Vec::with_capacity(self.list.len());
+        for i in 0..self.list.len() {
+            let (pattern, constructor) = &self.list[i];
+            let mut j = 0;
+            while j < order.len() {
+                let (other, other_constructor) = &self.list[order[j]];
+                if pattern.specializes(other) {
                     break;
                 }
-                if !jpat.specializes(ipat) {
-                    // potential conflict (record the original-list indices so
-                    // the resolve loop below matches the C++ pat/const pairs)
-                    if iconst != jconst {
-                        // map sorted[j] back to its original index by value+const
-                        let oj = original
-                            .iter()
-                            .position(|(p, c)| p.identical(jpat) && *c == jconst)
-                            .unwrap_or(j);
-                        conflictlist.push((i, oj));
-                    }
+                if !other.specializes(pattern) && constructor != other_constructor {
+                    conflicts.push((i, order[j]));
                 }
                 j += 1;
             }
-            // insert original[i] at position j in the sorted list
-            sorted.insert(j, original[i].clone());
+            order.insert(j, i);
         }
-        self.list = sorted;
 
-        // Check if intersection patterns resolve each conflict.
-        let mut k = 0;
-        while k < conflictlist.len() {
-            let (i, j) = conflictlist[k];
-            let pat1 = &original[i].0;
-            let const1 = original[i].1;
-            let pat2 = &original[j].0;
-            let const2 = original[j].1;
+        for (i, j) in conflicts {
+            let (left, left_constructor) = &self.list[i];
+            let (right, right_constructor) = &self.list[j];
             let mut resolved = false;
-            for (tpat, tconst) in &self.list {
-                if std::ptr::eq(tpat, pat1) {}
-                // C++ compares pointer identity (tpat==pat1 && tconst==const1)
-                // to detect "ran out of specializations".  After the sort the
-                // patterns are clones, so identity is lost; mirror the C++
-                // semantics by value+constructor identity instead.
-                if tpat.identical(pat1) && *tconst == const1 {
+            for &index in &order {
+                let (pattern, constructor) = &self.list[index];
+                if (pattern.identical(left) && constructor == left_constructor)
+                    || (pattern.identical(right) && constructor == right_constructor)
+                {
                     break;
                 }
-                if tpat.identical(pat2) && *tconst == const2 {
-                    break;
-                }
-                if tpat.resolves_intersect(pat1, pat2) {
+                if pattern.resolves_intersect(left, right) {
                     resolved = true;
                     break;
                 }
             }
             if !resolved {
-                props.conflicting_pattern(const1, const2);
+                props.conflicting_pattern(*left_constructor, *right_constructor);
             }
-            k += 1;
         }
+        let mut original: Vec<_> = self.list.drain(..).map(Some).collect();
+        self.list.extend(order.into_iter().map(|index| {
+            original[index].take().expect("each pattern is ordered once")
+        }));
     }
 
     /// C++ `DecisionNode::encode`.
