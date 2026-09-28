@@ -37,7 +37,9 @@ use std::process::ExitCode;
 use crate::args::take_value;
 use test::{Mode, TestArgs};
 
-const COMMANDS: &[(&str, fn(&[String]) -> i32)] = &[
+type CommandHandler = fn(&[String]) -> i32;
+
+const COMMANDS: &[(&str, CommandHandler)] = &[
     ("decompile", |args| args::report(decompile::main(args))),
     ("decompile-all", decompile_all::run),
     ("decompile-project", decompile_project::run),

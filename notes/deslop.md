@@ -1782,6 +1782,87 @@ the last terminal success. Logs use `/tmp/kuna-deslop-pattern-normalization-fina
 with the unchanged browser retry at `pattern-normalization-verified-web.log`.
 No baseline moved.
 
+### CLI lint contracts and shared image relocation
+
+The CLI now passes Clippy with warnings denied. `make lint-cli` checks this
+crate in release mode without linting dependencies; CI installs the Clippy
+component and runs the target after the native build. This replaces the CLI's
+16 collection-policy errors and 20 warnings with a checked gate, not a claim
+that the other crates are lint-clean.
+
+Narrow collection expectations record reviewed ordering contracts. Membership
+sets preserve ordered target traversals; lookup maps retain ordered pattern
+buckets or are consumed by requested address. The synthesized-structure cache
+writes distinct result slots, and its count is order-independent. Serialized
+tables come from the ordered replay, not the name lookup map. No collection
+implementation changes, and there is no crate-level lint suppression. A new
+persistent test pins target order, last-produced duplicate selection, one-time
+consumption and missing-record errors; it passes on the original implementation.
+
+Redundant dereferences and a forwarding closure are removed. Command handlers
+and budget admission have local type names; resolved mode names and their
+ordered options have named fields instead of positional tuple access. The
+catalog and workflow headers describe current behavior without migration
+narratives. Source checks account for all 425 CLI function bodies using only
+the reviewed substitutions. A parsed workflow comparison permits only Clippy
+installation and the new lint step.
+
+The gate also passes on CI's Rust 1.98.1, installed separately from the local
+1.90 default with an isolated build directory. That check exposed three more
+mechanical cleanups: a stable key sort, a while-let loop and an unused final
+wire-reader cursor advance. The record decoder's checked slice reads bound
+that advance by the remaining frame; accepted frames and trailing bytes are
+unchanged. A fourth lint incorrectly treats reordered short-circuit callbacks
+as identical. Its narrow allowance preserves greedy/lazy matching and budget
+accounting. A persistent six-case test pins callback order, early success and
+remaining budget, and passes before the annotation. The newer compiler also
+reports an existing unused SLEIGH assignment; it is not a CLI warning and is
+left intact because removing its subtraction changes checked-overflow behavior
+on malformed bit ranges. No dependency-wide warning suppression was added.
+
+XML chunks and symbols share ordered relocation, removing 14 implementation
+lines and two temporary reference-count increments/decrements. Root models
+match 92,160 outcomes in each overflow mode, including collisions, aliased
+space indices, stale cursors, read-only markers, reads, XML and panic state.
+All sixteen complete public-API XML images match. Two compiler ownership
+documentation files lose 33 comment lines with executable bytes unchanged;
+the root's earlier tests remain intact. The mutable-symbol lookup description
+says "empty slot", since removal as well as incomplete decoding can leave one.
+
+All 628 focused tests pass without warnings, including 252 CLI units. The 36
+CLI comparisons preserve stdout, stderr and status across queries, modes and
+catalog formats; saved before binaries include the matching console executable.
+All 286 compiler cases and 48 XML comparisons match. Strict compiler/SLEIGH
+rustdoc passes without warnings. The native build passes in 100 seconds,
+including time waiting for concurrent release checks. Artifacts are under
+`/tmp/kuna-deslop-cli-lint.0Hs47O3b`.
+
+Across 66 balanced CPU-41 public-API runs, aggregate relocation time falls
+4.08% (paired 4.39%). Empty/small/medium/large cases change
++3.19%/-4.57%/-2.25%/-7.56%, all within the 5% slowdown budget. No allocation
+or peak-memory improvement is claimed. Thirty measured CLI pairs per fixture,
+each running function inventory, graph export and crypto scanning, change
+median wall time -0.66%/-0.88%/-0.70% for fauxware/protoorder/C++ inputs
+on the final CI-compatible source.
+Every timed command checks output, diagnostics and status against the saved
+baseline. These small command differences are not general speedup claims.
+
+After the additional CI-toolchain fixes, all 705 release CLI tests pass across
+47 groups with no warnings. The native rebuild takes 6.92 seconds. All 36 CLI
+comparisons still match exactly, and eighteen pooled runs match saved stdout
+and stderr apart from elapsed time and optional ETA. Missing/spaced temporary
+parents are created and left empty. The original and updated timing samples
+are retained separately.
+
+All nine gates pass on the frozen source: 7,456 workspace tests, 38 existing
+ignores, 439 groups and no warnings; 675/675 upstream and 1,467/1,467 stage
+assertions retain parity. The 268 CLI probes, 42 Python tests, 56 Ghidra tests,
+48 XML comparisons, 17 saved CLI comparisons and eleven browser probes pass,
+as do spec/catalog checks and `make lint-cli`. Diff hash `1fbad77d` remained
+unchanged through the last terminal success. Logs use
+`/tmp/kuna-deslop-cli-lint-final-`. Prior remote CI and CodeQL also pass. No
+baseline moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1792,7 +1873,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Archive member and console output files have scoped cleanup. Loading/configuration and the remaining pool module still combine several lifecycle policies. |
-| Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; CLI finds 16 errors/20 warnings and analysis 215 errors/64 warnings. Declaration naming, rendered-signature dedup, FID dedup/database indices, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
+| Collection policy | The CLI has a strict warning-clean Clippy gate. The release engine-library check last reported 211 collection-policy errors, and analysis 215 errors/64 warnings. Reviewed lookup-only collections and explicitly ordered reports preserve existing implementations where iteration cannot affect output. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and extend enforcement. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Public and private analysis rustdoc links now resolve; other documentation warnings and stale migration narratives remain. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. Two CI runs have timed out during Chrome startup; monitor the retry and inspect readiness diagnostics. |
 

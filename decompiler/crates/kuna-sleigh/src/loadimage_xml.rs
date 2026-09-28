@@ -50,6 +50,19 @@ fn addr_space(a: &Address) -> &Rc<AddrSpace> {
     a.get_space().expect("LoadImageXml: address with null space pointer (C++ UB)")
 }
 
+/// Move entries in address order using the signed i32 byte adjustment.
+/// Address ordering uses only the immutable space index and offset.
+#[allow(clippy::mutable_key_type)]
+fn relocate_entries(entries: &mut BTreeMap<Address, Vec<u8>>, adjust: i64) {
+    let mut relocated = BTreeMap::new();
+    for (addr, bytes) in std::mem::take(entries) {
+        let offset =
+            AddrSpace::address_to_byte(adjust as u64, addr_space(&addr).get_word_size()) as i32;
+        relocated.insert(&addr + i64::from(offset), bytes);
+    }
+    *entries = relocated;
+}
+
 /// `istream::get()` over an in-memory byte string, truncated to `char` as in
 /// the C++ hex-content loop: returns the next byte as a *signed* char (high
 /// bit set comes back negative, terminating the caller's `> 0` loop), or -1
@@ -401,35 +414,8 @@ impl LoadImage for LoadImageXml {
     }
 
     fn adjust_vma(&mut self, adjust: i64) {
-        // mutable_key_type: AddrSpace's interior-mutable fields
-        // (flags/shortcut Cells) do not participate in Address's Ord, which
-        // reads only the immutable space index and the offset — the key
-        // order cannot change while a key is in the map.
-        #[allow(clippy::mutable_key_type)]
-        let mut newchunk: BTreeMap<Address, Vec<u8>> = BTreeMap::new();
-        #[allow(clippy::mutable_key_type)] // see newchunk's note
-        let mut newsymbol: BTreeMap<Address, Vec<u8>> = BTreeMap::new();
-
-        // (C++ copies entries into the new maps and assigns over the old;
-        // draining the old map first is observationally identical)
-        for (a, v) in std::mem::take(&mut self.chunk) {
-            let spc = Rc::clone(addr_space(&a));
-            // addressToByte: the long argument converts to uintb
-            // (sign-extension) and the uintb result truncates into the int4
-            let off = AddrSpace::address_to_byte(adjust as u64, spc.get_word_size()) as i32;
-            let newaddr = &a + i64::from(off); // int4 sign-extends into operator+
-            newchunk.insert(newaddr, v);
-        }
-        self.chunk = newchunk;
-        for (a, nm) in std::mem::take(&mut self.addrtosymbol) {
-            let spc = Rc::clone(addr_space(&a));
-            // (same conversion chain as above)
-            let off = AddrSpace::address_to_byte(adjust as u64, spc.get_word_size()) as i32;
-            let newaddr = &a + i64::from(off);
-            newsymbol.insert(newaddr, nm);
-        }
-        self.addrtosymbol = newsymbol;
-        // (C++ does NOT re-key readonlyset — transcribed faithfully)
+        relocate_entries(&mut self.chunk, adjust);
+        relocate_entries(&mut self.addrtosymbol, adjust);
     }
 }
 

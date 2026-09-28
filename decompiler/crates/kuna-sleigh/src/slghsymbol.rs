@@ -176,9 +176,7 @@ fn name_text(name: &[u8]) -> Cow<'_, str> {
     String::from_utf8_lossy(name)
 }
 
-/// (WS4b renumber) remap the `OperandValue` subtable-id inside a `PatternValue`,
-/// if any (the table-driven family symbols carry no subtable id; an
-/// `OperandValue` does).
+/// Remap an operand value's owning-subtable id within a pattern value.
 fn remap_patval_table(pv: Option<&mut PatternValue>, map: &impl Fn(u32) -> u32) {
     if let Some(PatternValue::OperandValue(ov)) = pv {
         ov.set_table_id(map(ov.table_id()));
@@ -711,11 +709,8 @@ impl OperandSymbol {
         }
     }
 
-    /// (WS4c) Remap operand-value indices embedded in this operand's defining
-    /// expression through `handmap` (`original_index -> new_index`).  C++ shares
-    /// the operand `localexp` pointers, so a single `changeIndex` updates every
-    /// reference; the kuna port clones, so the defexp's references are remapped
-    /// separately after `order_operands`.
+    /// Remap this operand's owned defining expression separately from its local
+    /// expression, using `handmap[original_index] = new_index`.
     pub fn remap_defexp_operand_index(&mut self, handmap: &[i32]) {
         if let Some(de) = self.defexp.as_mut() {
             de.remap_operand_index(handmap);
@@ -853,8 +848,7 @@ impl SubtableSymbol {
             .ok_or_else(|| KunaError::sleigh("constructor id out of range (C++ indexes unchecked)"))
     }
 
-    /// Mutable constructor access for the WS4b driver (`getConstructor`,
-    /// build side).
+    /// Mutable access to a constructor by its index in this subtable.
     pub fn get_constructor_mut(&mut self, id: u32) -> Option<&mut Constructor> {
         self.construct.get_mut(id as usize)
     }
@@ -916,16 +910,14 @@ impl ContextOp {
         })
     }
 
-    /// (WS4c) Remap the embedded operand-value indices after `order_operands`
-    /// (C++ shares the operand's `localexp` pointer; the kuna port clones, so
-    /// the ContextOp's own copy must be remapped through the handmap).
+    /// Remap operand indices in this context operation's owned expression.
     pub fn remap_operand_index(&mut self, handmap: &[i32]) {
         if let Some(pe) = self.patexp.as_mut() {
             pe.remap_operand_index(handmap);
         }
     }
 
-    /// (WS4c renumber) Remap the embedded operand-value `table_id`s.
+    /// Remap the embedded operand values' owning-subtable ids.
     pub fn remap_table_id(&mut self, remap: &dyn Fn(u32) -> u32) {
         if let Some(pe) = self.patexp.as_mut() {
             pe.remap_table_id(remap);
@@ -1046,7 +1038,7 @@ impl ContextCommit {
     pub fn get_sym(&self) -> u32 {
         self.sym
     }
-    /// Renumber the committed-to symbol id (WS4c purge/renumber).
+    /// Update the committed-to symbol id during symbol-table compaction.
     pub fn set_sym(&mut self, sym: u32) {
         self.sym = sym;
     }
@@ -1163,11 +1155,8 @@ pub struct Constructor {
     pattern: Option<TokenPattern>,
     /// (kuna build side) C++ `mutable bool inerror`.
     inerror: bool,
-    /// (kuna build side, WS4b boundary) the operand handle re-index map computed
-    /// by `SymbolTable::order_operands` (`handmap[original_index] =
-    /// new_index`).  C++ applies `templ->changeHandleIndex(handmap)` inline,
-    /// but the kuna `ConstructTpl` arena is owned by the WS4b driver, so the
-    /// map is stashed here for the driver to apply.  Empty until ordered.
+    /// Operand reordering map: `handmap[original_index] = new_index`. The
+    /// compiler applies it to template sections; empty until operands are ordered.
     handmap: Vec<i32>,
 }
 
@@ -1193,11 +1182,9 @@ impl Constructor {
         self.pateq
     }
 
-    /// (kuna build side, WS4b boundary) the operand handle re-index map computed
-    /// during `SymbolTable::order_operands`.  `handmap[original_index] =
-    /// new_index`.  The WS4b driver applies it to the constructor's
-    /// `ConstructTpl` sections via `change_handle_index` (the C++ inline
-    /// `templ->changeHandleIndex(handmap)`).  Empty if no reorder ran.
+    /// Map original operand indices to their reordered indices. The compiler
+    /// applies this map to template sections with `change_handle_index`.
+    /// Empty if no operand ordering ran.
     pub fn get_handmap(&self) -> &[i32] {
         &self.handmap
     }
@@ -1207,8 +1194,7 @@ impl Constructor {
         self.pattern.as_ref()
     }
 
-    /// Inject a pre-built [`TokenPattern`] (golden tests / WS4b that build the
-    /// pattern out of band).
+    /// Set a prebuilt [`TokenPattern`].
     pub fn set_built_pattern_for_test(&mut self, tp: TokenPattern) {
         self.pattern = Some(tp);
     }
@@ -1365,9 +1351,8 @@ impl Constructor {
         &self.operands
     }
 
-    /// C++ `Constructor::setMainSection(ConstructTpl *tpl)` (slghsymbol.cc):
-    /// the section ConstructTpl is owned by the WS4c driver's section arena and
-    /// added to the base template arena; the resulting handle is stored here.
+    /// Store the main section's handle. The template remains owned by the
+    /// `SleighBase` template arena.
     pub fn set_main_section(&mut self, handle: ConstructTplHandle) {
         self.templ = Some(handle);
     }
@@ -2034,11 +2019,9 @@ impl DecisionNode {
     }
 }
 
-/// C++ `DecisionProperties`: collects the identical/conflicting constructor
-/// pairs found by `DecisionNode::orderPatterns`.  C++ keys these by
-/// `Constructor*` and flips `Constructor::setError` directly; here they are
-/// recorded as `(constructor index in subtable)` pairs and the driver (WS4b)
-/// reports them / flips the error flag.
+/// Identical and conflicting constructor pairs found during pattern ordering.
+/// Each pair contains constructor indices within a subtable; the compiler
+/// reports the collected errors.
 #[derive(Debug, Clone, Default)]
 pub struct DecisionProperties {
     identerrors: Vec<(u32, u32)>,
@@ -2587,7 +2570,7 @@ impl SleighSymbol {
         }
     }
 
-    /// Mutable subtable access (WS4b build side).
+    /// Mutable access to the subtable payload, if this is a subtable symbol.
     pub fn as_subtable_mut(&mut self) -> Option<&mut SubtableSymbol> {
         match &mut self.kind {
             SymbolKind::Subtable(v) => Some(v),
@@ -2601,10 +2584,8 @@ impl SleighSymbol {
         &mut self.kind
     }
 
-    /// (WS4b purge/renumber) re-point every encoded symbol-id cross-reference
-    /// inside this symbol's content through `remap` (`old_id -> Some(new_id)`,
-    /// `None` if the referenced symbol was purged).  C++ keeps these as
-    /// pointers (immune to renumber); the kuna port stores ids and must remap.
+    /// Remap symbol references after compaction. Ids without a replacement in
+    /// `remap` retain their original value.
     fn remap_symbol_refs(&mut self, remap: &[Option<u32>]) {
         let map = |id: u32| remap.get(id as usize).copied().flatten().unwrap_or(id);
         match &mut self.kind {
@@ -2704,7 +2685,7 @@ impl SleighSymbol {
             _ => None,
         }
     }
-    /// Mutable macro access (WS4c build side: `setConstruct`/`addOperand`).
+    /// Mutable access to the macro payload, if this is a macro symbol.
     pub fn as_macro_mut(&mut self) -> Option<&mut MacroSymbol> {
         match &mut self.kind {
             SymbolKind::Macro(m) => Some(m),
@@ -3549,8 +3530,8 @@ impl SymbolTable {
         self.symbollist.get(id as usize).and_then(|s| s.as_ref())
     }
 
-    /// Mutable `findSymbol(uintm id)` for the WS4b build side (`setIndex`,
-    /// `markAsContext`, `addConstructor`, operand mutators, ...).
+    /// Look up a symbol id for mutation. Returns `None` for an out-of-range id
+    /// or an empty slot.
     pub fn find_symbol_by_id_mut(&mut self, id: u32) -> Option<&mut SleighSymbol> {
         self.symbollist.get_mut(id as usize).and_then(|s| s.as_mut())
     }
@@ -4160,9 +4141,6 @@ impl SymbolTable {
                 op.remap_operand_index(&handmap);
             }
         }
-        // Stash the handmap for WS4b: ConstructTpl handle-index fix-up
-        // (templ->changeHandleIndex) is performed by WS4b's driver, which
-        // owns the ConstructTpl arena (freeze-interface for WS4b).
         ct.handmap = handmap;
         Ok(())
     }

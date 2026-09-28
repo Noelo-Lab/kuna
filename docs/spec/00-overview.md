@@ -990,6 +990,13 @@ signed-byte stopping rules and permissive digit arithmetic, skipping whitespace
 only before each pair. These rules are implemented in
 `decompiler/crates/kuna-sleigh/src/loadimage_xml.rs`.
 
+XML image relocation uses the same ordered operation for byte chunks and
+symbols. The signed adjustment is scaled by each address space's word size,
+truncated to a signed 32-bit byte offset, then added with address wrapping.
+Colliding keys keep the last value visited in the original address order.
+Chunks are relocated before symbols; read-only markers and the symbol cursor
+keep their existing addresses.
+
 Named register bit ranges with byte-aligned ends use ordinary varnodes at the
 appropriate byte offset for the declared endianness. Other ranges register a
 compiler-only bitrange symbol holding the parent register, least-significant
@@ -1458,6 +1465,12 @@ order. A worker flushes each completed function's result, and the parent keeps
 every complete frame before a truncated tail. Wire counts reserve no more
 storage than the remaining bytes can justify. Literal-byte tests pin both
 formats independently of their decoders.
+
+Worker-result reconciliation indexes produced records by byte address and
+then walks the requested targets in order. The last produced record for an
+address wins, and each stored record is consumed once; missing records become
+errors without moving neighboring results. Lookup-table iteration cannot
+determine output order.
 
 Scratch storage is owned by `decompiler/crates/kuna-cli/src/jobs/scratch.rs`.
 The session holds a temporary-directory guard through inventory, worker and

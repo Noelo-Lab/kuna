@@ -37,7 +37,7 @@ impl CallGraph {
         measured: bool,
     ) -> Result<CallGraph, String> {
         let bytes = image_bytes(binary, pref)?;
-        let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
+        let file = kuna_analysis::loadimage_object::parse_object(&bytes)
             .map_err(|e| format!("could not parse {binary}: {e}"))?;
         Ok(CallGraph::walk(prog, &file, measured))
     }
@@ -295,7 +295,7 @@ impl CallGraph {
         image_bytes(binary, pref)
             .ok()
             .and_then(|bytes| {
-                let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
+                let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
                 Some(open_function_entries(&file, &bytes, &seeds))
             })
             .unwrap_or_else(|| seeds.iter().copied().collect())
@@ -404,6 +404,7 @@ fn image_loads(section: &object::Section) -> bool {
 
 /// (kuna `calleevote`) The function entries found stored so far.
 struct StoredScan {
+    #[expect(clippy::disallowed_types, reason = "Membership only; the separate BTreeSet orders the results.")]
     wanted: std::collections::HashSet<u64>,
     out: BTreeSet<u64>,
 }

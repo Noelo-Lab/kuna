@@ -451,8 +451,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
     let synth = match r.u8()? {
         0 => None,
         1 => {
-            let (record, used) = FunctionRecord::decode(&body[r.pos..])?;
-            r.pos += used;
+            let (record, _) = FunctionRecord::decode(&body[r.pos..])?;
             Some(record)
         }
         _ => return None,

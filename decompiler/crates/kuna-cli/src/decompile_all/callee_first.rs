@@ -276,6 +276,7 @@ fn open_callee_votes(
     targets: &[FunctionEntry],
 ) -> BTreeMap<(i32, u64), Vec<u64>> {
     let mut expected = BTreeMap::new();
+    #[expect(clippy::disallowed_types, reason = "Membership only; the ledger reads closed through contains.")]
     let mut closed = std::collections::HashSet::new();
     for t in targets {
         let Some(key) = vote_key(t) else { continue };
@@ -345,6 +346,7 @@ fn callee_vote_rounds(
         if changed.is_empty() {
             break;
         }
+        #[expect(clippy::disallowed_types, reason = "Membership only; the ordered plan determines redo order.")]
         let changed: std::collections::HashSet<(i32, u64)> = changed.into_iter().collect();
         let queue: Vec<(usize, (i32, u64))> = plan
             .iter()
@@ -394,6 +396,12 @@ fn callee_vote_rounds(
     prog.arch_mut().kuna_calleevote.recording = false;
 }
 
+#[expect(clippy::disallowed_types, reason = "Admitted membership is unordered; declined charges retain sorted order.")]
+type BudgetAdmission = (
+    std::collections::HashSet<(i32, u64)>,
+    Vec<(usize, (i32, u64))>,
+);
+
 /// (kuna `calleevote`) Split this round's candidates -- one `(charge, key)` pair
 /// per function the decision changed, charged the lines its first decompile
 /// printed -- into the ones the pass decompiles again and the ones it declines.
@@ -410,11 +418,9 @@ fn admit_within_budget(
     mut queue: Vec<(usize, (i32, u64))>,
     budget: &mut usize,
     spent: &mut usize,
-) -> (
-    std::collections::HashSet<(i32, u64)>,
-    Vec<(usize, (i32, u64))>,
-) {
+) -> BudgetAdmission {
     queue.sort_unstable();
+    #[expect(clippy::disallowed_types, reason = "Membership only; queue sorting determines admission and decline order.")]
     let mut admitted = std::collections::HashSet::new();
     let mut declined = Vec::new();
     for (charge, key) in queue {

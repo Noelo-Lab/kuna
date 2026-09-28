@@ -535,7 +535,7 @@ impl Session {
             b.kind == named.kind && (named.kind != SynthWorker::Force || Some(b.table) == table)
         };
         let blocks = std::mem::take(&mut *self.blocks.lock().unwrap_or_else(|e| e.into_inner()));
-        let (full, other): (Vec<RetiredBlocks>, Vec<RetiredBlocks>) = blocks.into_iter().partition(|b| speaks(b));
+        let (full, other): (Vec<RetiredBlocks>, Vec<RetiredBlocks>) = blocks.into_iter().partition(speaks);
         // A worker that numbered structures of its own and could not say what
         // it held without them says nothing.
         let rest = other.into_iter().filter_map(|b| match b.kind {
@@ -617,8 +617,7 @@ fn run_pool_with(
                     let done = completed.fetch_add(indices.len(), Ordering::SeqCst) + indices.len();
                     progress.report(worker_id, done, start);
                 };
-                loop {
-                    let Some(indices) = source.next_chunk() else { break };
+                while let Some(indices) = source.next_chunk() {
                     pool.serve_with_retries(&mut worker, targets, &indices, &deliver);
                     // Recycling returns a worker to the memory floor a process
                     // cannot reach on its own; it costs a whole program load, so
@@ -1561,6 +1560,7 @@ fn merge_chunk(
     produced: Vec<FuncResult>,
     reason: &str,
 ) -> (Vec<FuncResult>, Vec<bool>) {
+    #[expect(clippy::disallowed_types, reason = "Lookup only; chunk order determines output and duplicate targets consume once.")]
     let mut by_addr: std::collections::HashMap<u64, FuncResult> =
         produced.into_iter().map(|r| (r.byte_address, r)).collect();
     chunk
@@ -2288,6 +2288,39 @@ mod tests {
         assert_eq!(none.len(), 3);
         assert_eq!(delivered, vec![false; 3]);
         assert!(none.iter().all(|r| r.error.as_deref() == Some("boom")));
+    }
+
+    #[test]
+    fn worker_records_follow_target_order_and_last_duplicate_wins() {
+        fn record(addr: u64, name: &str) -> FuncResult {
+            let mut result = sample_result();
+            result.address = addr;
+            result.byte_address = addr;
+            result.name = name.into();
+            result
+        }
+        let chunk: Vec<_> = [0x3000, 0x1000, 0x3000, 0x2000].into_iter().map(target).collect();
+        for reverse in [false, true] {
+            let mut produced = vec![
+                record(0x3000, "first"),
+                record(0x9000, "unrequested"),
+                record(0x1000, "one"),
+                record(0x3000, "last"),
+            ];
+            if reverse {
+                produced.reverse();
+            }
+            let (merged, delivered) = merge_chunk(&chunk, produced, "missing");
+            assert_eq!(delivered, [true, true, false, false]);
+            assert_eq!(merged.iter().map(|r| r.byte_address).collect::<Vec<_>>(),
+                       [0x3000, 0x1000, 0x3000, 0x2000]);
+            assert_eq!(merged[0].name, if reverse { "first" } else { "last" });
+            assert_eq!(merged[1].name, "one");
+            for missing in &merged[2..] {
+                assert_eq!(missing.error.as_deref(), Some("missing"));
+                assert!(missing.code.is_none());
+            }
+        }
     }
 
     fn died(stalled: bool, started: bool, warm: bool) -> Ending {

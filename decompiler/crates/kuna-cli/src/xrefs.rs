@@ -212,7 +212,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         &args.binary,
         kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
     )?;
-    let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
+    let file = kuna_analysis::loadimage_object::parse_object(&bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
     let prog = load_program(&load, DriverDefaults::Query)?;
 

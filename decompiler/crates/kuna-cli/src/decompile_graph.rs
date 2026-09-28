@@ -133,7 +133,7 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
     // before anything is loaded or decompiled for nothing.
     crate::decompile_all::warn_protoorder_inert(&args.options, "decompile-graph");
     let bytes = crate::image::image_bytes(&args.binary, args.slice_pref())?;
-    let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
+    let file = kuna_analysis::loadimage_object::parse_object(&bytes)
         .map_err(|error| format!("could not parse {}: {error}", args.binary))?;
     let load_started = std::time::Instant::now();
     let mut prog = load_program(args, DriverDefaults::Decompile)?;

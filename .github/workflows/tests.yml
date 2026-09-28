@@ -1,33 +1,7 @@
 name: Tests
 
-# Runs the repository's own gates -- the checks AGENTS.md requires green before
-# every commit -- on pull requests and on every push to main:
-#
-#   make test              datatest corpus vs docs/baseline.json          (PARITY OK)
-#   make test-stages       stage corpus vs docs/baseline-stages.json      (PARITY OK)
-#   make check-spec        docs/spec/ anchors + phase-folder ownership
-#   make test-cli          the RE-friction loop's promoted regression probes
-#   kuna catalog --check   docs/options.md documents exactly the registered options
-#   make rust-test         the full cargo workspace suite
-#
-# Until this workflow existed the only automated checks on a PR were GitHub's
-# default CodeQL scan (the "Analyze (...)" jobs). CodeQL never builds the
-# engine and never evaluates a single decompiler assertion, so a change that
-# regressed every datatest still presented an all-green PR.
-#
-# The gates are split across two jobs that run in parallel: the parity gates
-# answer in minutes and catch the common regression, while the workspace suite
-# (the full test-profile build and test run) is the long pole.
-#
-# The parity gates run on EVERY event. The workspace suite is scoped -- see the
-# `if:` on that job: an internal PR (a branch in this repo, i.e. the automated
-# agent PRs, whose author runs `make rust-test` locally before pushing) skips it
-# and gets the answer at merge instead, on the push to main. A fork PR is the
-# case nobody ran locally, so it always runs. The reason is runner supply: one
-# push fans out ~10 concurrent jobs (2 here + CodeQL's 8 configured languages),
-# and on 2026-08-06 that exhausted the pool -- four jobs sat 98-101 minutes
-# without ever being assigned a runner and were swept, presenting as a red PR
-# that had executed no code at all.
+# Parity and integration gates run on every event. The workspace suite runs
+# for forks, main, manual dispatch, or an internal PR carrying full-ci.
 
 on:
   pull_request:
@@ -79,7 +53,7 @@ jobs:
 
       - name: Install Rust (stable) + wasm32-wasip1 target
         run: |
-          rustup toolchain install stable --profile minimal
+          rustup toolchain install stable --profile minimal --component clippy
           rustup default stable
           rustup target add wasm32-wasip1
 
@@ -91,6 +65,9 @@ jobs:
 
       - name: Build binaries and compile the SLEIGH specs
         run: make binaries specs
+
+      - name: Lint the CLI
+        run: make lint-cli
 
       # `.sla` files are gitignored build artifacts and EVERY datatest decodes
       # through them. `make test` would bootstrap them on demand, but asserting

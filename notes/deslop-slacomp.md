@@ -1467,3 +1467,55 @@ changes; no timing repetition is needed for this documentation patch.
 All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
 assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
 across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### Shared XML image relocation
+
+Byte chunks and symbols use one relocation helper. It retains the unsigned
+word-size scaling, signed 32-bit byte-offset truncation, address wrapping and
+ordered overwrite behavior. Chunks move before symbols; read-only markers and
+the symbol cursor retain their addresses. Both maps keep the existing partial
+state if relocation panics. The change removes 14 source lines and two temporary
+address-space reference-count increments/decrements; public interfaces and
+payload ownership are unchanged.
+
+The actual-module differential probe matches 92,160 outcomes with overflow
+checks both enabled and disabled. It covers 1,024 maps and ten signed adjustments,
+inverse retries, wrap collisions, distinct spaces with equal indices, stale
+cursors, read-only markers, reads, XML encoding, and missing-space panic payloads
+and partial state. All 371 focused tests pass.
+
+The public-API probe opens real XML images containing 0/1/16/256 source chunks
+and symbols across byte-addressed and word-addressed spaces. All 16 complete
+XML outputs match after four adjustments. Across 66 balanced CPU-pinned runs
+with 30 measured samples per version, aggregate median relocation time improves
+4.3530% (paired 4.4523%). The individual changes are +2.3111%, -5.5181%,
+-1.3188%, and -7.2525%, so the empty-image control also stays within the 5%
+budget. Image setup and XML checksums are outside the timed section; each sample
+performs 1,000,000/200,000/20,000/2,000 alternating relocations respectively.
+No allocation reduction is claimed. Probe sources, full outputs, hashes, raw
+samples and logs use `/tmp/kuna-deslop-image-relocation-`.
+
+All four required gates passed: `make test` (675/675), `make test-stages`
+(1,467/1,467), `make rust-test` (7,714 passed, 38 ignored across 433 groups),
+and `make check-spec`. Both parity gates report `PARITY OK`; the option
+catalog and whitespace checks also pass. Neither baseline changed.
+
+### Compiler symbol ownership documentation
+
+`slghsymbol.rs` and `sleighbase.rs` now describe their remapping and arena
+ownership contracts without migration-stage labels. Operand expressions own
+independent references that need remapping, constructor sections store handles
+into the base's template arena, and missing symbol replacements retain their
+original ids. Source-file decoding extends the index range used for encoding.
+The two files lose 33 comment lines; every noncomment, nonblank source line is
+identical before and after. Public signatures and runtime behavior are unchanged.
+
+Rustdoc passes with broken intra-doc links denied for `kuna-sleigh` and
+`kuna-slacomp`. Source identity evidence and build/check logs use the local
+`/tmp/kuna-deslop-symbol-ownership-docs-` prefix.
+
+All four required gates passed: `make test` (675/675), `make test-stages`
+(1,467/1,467), `make rust-test` (7,714 passed, 38 ignored across 433 groups),
+and `make check-spec`. Both parity gates report `PARITY OK`; the option
+catalog and whitespace checks also pass. Neither baseline changed.

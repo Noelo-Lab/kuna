@@ -82,6 +82,7 @@ impl SourceFileIndexer {
     }
 
     /// C++ `SourceFileIndexer::decode`.
+    /// Decode names and extend the index range used for encoding.
     pub fn decode(&mut self, decoder: &mut dyn Decoder) -> KunaResult<()> {
         let el = decoder.open_element_id(&sla::ELEM_SOURCEFILES)?;
         while decoder.peek_element()? == sla::ELEM_SOURCEFILE {
@@ -91,14 +92,6 @@ impl SourceFileIndexer {
             decoder.close_element(subel)?;
             self.file_to_index.insert(filename.clone(), index);
             self.index_to_file.insert(index, filename);
-            // C++ `decode` does not touch `leastUnusedIndex`; that is harmless
-            // upstream because `encode` only ever runs on a compiler-populated
-            // indexer (built via `index()`).  kuna's WS5 round-trip *does*
-            // re-encode a decoded indexer, and `encode` iterates
-            // `0..leastUnusedIndex` -- so keep the one-up count consistent with
-            // the restored indices (the contiguous `0..=max` invariant the
-            // compiler maintains).  This re-establishes the invariant without
-            // altering any compiler-path behavior. (kuna)
             if index >= self.least_unused_index {
                 self.least_unused_index = index + 1;
             }
@@ -792,9 +785,7 @@ impl SleighBase {
 }
 
 // ---------------------------------------------------------------------------
-// Compile-side build API (the WS4b `SleighCompile` driver drives `SleighBase`
-// through these — the C++ `SleighBase`/`AddrSpaceManager`/`Translate` build
-// surface the compiler inherits).  Additive: the decode path is untouched.
+// Compiler-facing symbol and template construction.
 // ---------------------------------------------------------------------------
 impl SleighBase {
     /// Read access to the symbol table (`SleighBase::symtab`).
@@ -822,9 +813,7 @@ impl SleighBase {
         &self.templates
     }
 
-    /// Mutable access to one `ConstructTpl` by handle (for the WS4b
-    /// `changeHandleIndex`/`shiftUnique` fix-ups, which mutate handles owned by
-    /// this arena).
+    /// Mutable access to an arena-owned template by its handle.
     pub fn template_mut(&mut self, handle: ConstructTplHandle) -> Option<&mut ConstructTpl> {
         self.templates.get_mut(handle)
     }

@@ -158,6 +158,7 @@ impl Matcher<'_> {
         }
     }
 
+    #[allow(clippy::if_same_then_else, reason = "Short-circuit order controls callbacks and backtracking budget.")]
     fn repeat(
         &self,
         repetition: &Repetition,
@@ -469,6 +470,38 @@ mod tests {
         assert!(!hit("\\d{3}-\\d{5}", "call 555-1234 now"));
         assert!(hit("[^a-z]+", "ABC"));
         assert!(!hit("^[^a-z]+$", "AbC"));
+    }
+
+    #[test]
+    fn repetition_preserves_callback_order_and_short_circuiting() {
+        for (greedy, accept, expected, remaining) in [
+            (true, None, vec![3, 2, 1, 0], 93),
+            (false, None, vec![0, 1, 2, 3], 93),
+            (true, Some(2), vec![3, 2], 93),
+            (false, Some(2), vec![0, 1, 2], 95),
+            (true, Some(3), vec![3], 93),
+            (false, Some(0), vec![0], 99),
+        ] {
+            let matcher = Matcher {
+                text: &['a', 'a', 'a'],
+                icase: false,
+                budget: std::cell::Cell::new(100),
+            };
+            let repetition = Repetition {
+                node: Box::new(Node::Char('a')),
+                min: 0,
+                max: 3,
+                greedy,
+            };
+            let mut visited = Vec::new();
+            let matched = matcher.repeat(&repetition, 0, 0, &mut |pos| {
+                visited.push(pos);
+                accept == Some(pos)
+            });
+            assert_eq!(matched, accept.is_some());
+            assert_eq!(visited, expected);
+            assert_eq!(matcher.budget.get(), remaining);
+        }
     }
 
     #[test]

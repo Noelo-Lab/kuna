@@ -1463,7 +1463,7 @@ pub(crate) fn driver_default_options(
         .ok()
         .filter(|bytes| !kuna_analysis::loadimage_te::is_te_image(bytes))
         .and_then(|bytes| {
-            kuna_analysis::loadimage_object::parse_object(&*bytes)
+            kuna_analysis::loadimage_object::parse_object(&bytes)
                 .ok()
                 .map(|file| file.architecture() != object::Architecture::X86_64)
         })
@@ -1687,6 +1687,7 @@ fn resolve_targets_with_policy(
     // Dedup the explicitly-selected targets by entry offset: `--addr 0xX` and
     // `--functions f` can resolve to the same function, and decompiling it twice
     // just wastes work + duplicates the JSON entry.
+    #[expect(clippy::disallowed_types, reason = "Membership only; retain keeps explicit targets in input order.")]
     let mut seen = std::collections::HashSet::new();
     targets.retain(|e| seen.insert(e.addr.get_offset()));
 
@@ -1715,7 +1716,7 @@ fn resolve_targets_with_policy(
 /// one away.
 pub fn detected_output_language(binary: &str) -> Option<&'static str> {
     let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).ok()?;
-    let file = kuna_analysis::loadimage_object::parse_object(&*bytes).ok()?;
+    let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
     match kuna_analysis::sourcelang::detect_compiler(&file, &bytes) {
         kuna_analysis::sourcelang::Compiler::Rustc => Some("rust-language"),
         _ => None,
@@ -2326,18 +2327,23 @@ pub(crate) fn mode_options_for_binary(
     binary: &str,
     explicit: Vec<(String, String)>,
 ) -> Result<Vec<(String, String)>, String> {
-    Ok(mode_and_options_for_binary(mode, binary, explicit)?.1)
+    Ok(mode_and_options_for_binary(mode, binary, explicit)?.options)
+}
+
+struct ResolvedMode {
+    name: &'static str,
+    options: Vec<(String, String)>,
 }
 
 fn mode_and_options_for_binary(
     mode: Option<&str>,
     binary: &str,
     explicit: Vec<(String, String)>,
-) -> Result<(&'static str, Vec<(String, String)>), String> {
+) -> Result<ResolvedMode, String> {
     let concrete = concrete_mode_for_binary(mode, binary)?;
     let mut merged = mode_override_pairs(concrete)?;
     merged.extend(explicit);
-    Ok((concrete, merged))
+    Ok(ResolvedMode { name: concrete, options: merged })
 }
 
 fn concrete_mode_for_binary(
@@ -2619,7 +2625,7 @@ pub(crate) fn parse_args_with_filters(
     // auto-inject skips, `apply_runtime_options`) reads `args.options`, so this
     // is the single wire point for decompile-all, decompile-project, and
     // functions.
-    let (concrete_mode, merged) =
+    let ResolvedMode { name: concrete_mode, options: merged } =
         mode_and_options_for_binary(mode.as_deref(), &binary, options)?;
     options = merged;
     if names.is_none() && !addrs.is_empty() && !explicit_fast_funcdisc {
