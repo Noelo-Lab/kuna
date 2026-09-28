@@ -53,15 +53,12 @@ mod filter;
 use filter::Regex;
 
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
-use kuna_analysis::listing::xrefs::XrefIndex;
 use kuna_analysis::strings::kuna_stringinv::{self, FoundString, Termination};
-use kuna_base::address::Address;
-use kuna_console::engine::ConsoleProgram;
 
 use crate::args::take_value as take;
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
+use crate::function_info::{function_json, function_name, owning_function};
 use crate::jsonfmt::{dumps_indent2, Json};
 
 /// The parsed command line.
@@ -263,26 +260,6 @@ fn attribute(
         .collect())
 }
 
-/// The entry of the function `vma` lies in — the walk's own attribution first
-/// (it knows which descent reached the instruction), then the engine's inventory.
-pub(crate) fn owning_function(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<u64> {
-    index.function_containing(vma).or_else(|| prog.find_entry_at(vma).map(|e| e.addr.get_offset()))
-}
-
-/// The display name for a function entry, falling back to the engine's own
-/// placeholder (`sub_<addr>`) so a row is never nameless.
-pub(crate) fn function_name(prog: &ConsoleProgram, inventory: &BTreeMap<u64, String>, entry: u64) -> String {
-    inventory
-        .get(&entry)
-        .cloned()
-        .or_else(|| prog.find_entry_at(entry).map(|e| e.name))
-        .or_else(|| prog.function_named_at(entry))
-        .unwrap_or_else(|| match prog.arch().manage().get_default_code_space() {
-            Some(space) => prog.arch().name_function(&Address::new(Rc::clone(space), entry)),
-            None => format!("sub_{entry:x}"),
-        })
-}
-
 // --- rendering ---------------------------------------------------------------
 
 /// Render `text` on one line: the recognizer admits TAB/CR/LF, which would break
@@ -299,16 +276,6 @@ fn escape_text(text: &str) -> String {
         }
     }
     out
-}
-
-/// The `{name, address, address_hex}` triple — the house address shape `xrefs`
-/// and `decompile-all` already emit.
-fn function_json(name: &str, addr: u64) -> Json {
-    Json::Object(vec![
-        ("name".into(), Json::Str(name.to_string())),
-        ("address".into(), Json::Number(addr.to_string())),
-        ("address_hex".into(), Json::Str(format!("0x{addr:x}"))),
-    ])
 }
 
 fn optional_str(value: Option<&str>) -> Json {

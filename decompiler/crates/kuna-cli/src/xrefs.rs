@@ -24,14 +24,13 @@
 //! `--json` emits the machine-readable document; without it, one tab-separated
 //! row per reference under a `#` header line.
 
-use std::rc::Rc;
 
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
-use kuna_base::address::Address;
 use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
 
 use crate::args::take_value as take;
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
+use crate::function_info::{default_function_name, function_json};
 use crate::jsonfmt::{dumps_indent2, Json};
 
 /// Which way the query runs.
@@ -344,14 +343,7 @@ fn name_at(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<String>
         // follows the call graph out of its seeds), and a row that names one must
         // still name it rather than answer `null`.
         .or_else(|| {
-            index.is_function_entry(vma).then(|| {
-                match prog.arch().manage().get_default_code_space() {
-                    Some(space) => {
-                        prog.arch().name_function(&Address::new(Rc::clone(space), vma))
-                    }
-                    None => format!("sub_{vma:x}"),
-                }
-            })
+            index.is_function_entry(vma).then(|| default_function_name(prog, vma))
         })
         .or_else(|| {
             prog.global_data_symbols()
@@ -365,34 +357,17 @@ fn name_at(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<String>
 /// first (it knows which entry's descent reached the instruction), then the
 /// engine's inventory for an address the walk never decoded.
 fn owning_function(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<(u64, String)> {
-    let entry = index
-        .function_containing(vma)
-        .or_else(|| prog.find_entry_at(vma).map(|e| e.addr.get_offset()))?;
+    let entry = crate::function_info::owning_function(prog, index, vma)?;
     Some((entry, function_name(prog, index, entry)))
 }
 
 /// The display name for a function entry, falling back to the engine's own
 /// placeholder (`sub_<addr>`) so a row is never nameless.
 fn function_name(prog: &ConsoleProgram, index: &XrefIndex, entry: u64) -> String {
-    name_at(prog, index, entry).unwrap_or_else(|| {
-        match prog.arch().manage().get_default_code_space() {
-            Some(space) => prog.arch().name_function(&Address::new(Rc::clone(space), entry)),
-            None => format!("sub_{entry:x}"),
-        }
-    })
+    name_at(prog, index, entry).unwrap_or_else(|| default_function_name(prog, entry))
 }
 
 // --- rendering ---------------------------------------------------------------
-
-/// An `{name, address, address_hex}` triple — the house address shape, used for
-/// the query target and for each row's owning function.
-fn function_json(name: &str, addr: u64) -> Json {
-    Json::Object(vec![
-        ("name".into(), Json::Str(name.to_string())),
-        ("address".into(), Json::Number(addr.to_string())),
-        ("address_hex".into(), Json::Str(format!("0x{addr:x}"))),
-    ])
-}
 
 fn optional_function_json(f: Option<(u64, String)>) -> Json {
     match f {

@@ -14,6 +14,7 @@ mod disassemble;
 mod fid;
 mod assertdecl;
 mod funcdecl;
+mod function_info;
 mod image;
 mod jobs;
 mod jsonfmt;

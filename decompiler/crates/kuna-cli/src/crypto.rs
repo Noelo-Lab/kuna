@@ -19,6 +19,7 @@ use object::{Object, ObjectSection, ObjectSegment, SectionKind};
 use crate::args::take_value as take;
 use crate::cryptosig::{self, Hit, Kind, Region};
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
+use crate::function_info::function_json;
 use crate::jsonfmt::{dumps_indent2, Json};
 
 pub(crate) struct CryptoArgs {
@@ -200,7 +201,7 @@ fn attribute(args: &CryptoArgs, file: &object::File, hits: Vec<Hit>) -> Result<V
     let mut name_of = |entry: u64| {
         names
             .entry(entry)
-            .or_insert_with(|| crate::strings::function_name(&prog, &inventory, entry))
+            .or_insert_with(|| crate::function_info::function_name(&prog, &inventory, entry))
             .clone()
     };
     Ok(hits
@@ -217,7 +218,7 @@ fn attribute(args: &CryptoArgs, file: &object::File, hits: Vec<Hit>) -> Result<V
                 for vma in hit.addr..hit.addr + hit.byte_len as u64 {
                     for r in index.refs_to(vma) {
                         xrefs_count += 1;
-                        let Some(entry) = crate::strings::owning_function(&prog, &index, r.from) else {
+                        let Some(entry) = crate::function_info::owning_function(&prog, &index, r.from) else {
                             continue;
                         };
                         if !functions.iter().any(|(e, _)| *e == entry) {
@@ -230,14 +231,6 @@ fn attribute(args: &CryptoArgs, file: &object::File, hits: Vec<Hit>) -> Result<V
             Row { hit, xrefs_count, functions }
         })
         .collect())
-}
-
-fn function_json(name: &str, addr: u64) -> Json {
-    Json::Object(vec![
-        ("name".into(), Json::Str(name.to_string())),
-        ("address".into(), Json::Number(addr.to_string())),
-        ("address_hex".into(), Json::Str(format!("0x{addr:x}"))),
-    ])
 }
 
 fn optional_str(value: Option<&str>) -> Json {

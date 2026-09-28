@@ -167,6 +167,14 @@ and the first record's metadata without cloning names. Different names or
 specific hashes remain separate records. Database serialization and command
 diagnostics are unchanged.
 
+Inventory queries share function attribution and address records through
+`decompiler/crates/kuna-cli/src/function_info.rs`. Attribution prefers the
+reference walk, then the engine's inventory. String and constant rows prefer
+their canonical inventory names before entry, symbol and generated-name
+fallbacks. Cross-reference queries retain their separate target/global-name
+precedence but share the generated-name fallback and ordered function JSON
+record. No query command depends on another command's implementation.
+
 Browser smoke tests use `integrations/web/test/cdp-client.mjs` as a checked
 process boundary: spawn, exit and port-deadline failures retain bounded stderr
 diagnostics and clean up the owned profile. Availability skips remain the
@@ -935,6 +943,16 @@ Queued p-code operations pass borrowed varnode slices to the emitter, retaining
 stored space-index constants. An unimplemented template is reported from the
 failing context's base constructor, with that context's address and the total
 instruction length including delay slots.
+
+XML load images prune redundant chunks in address order, comparing space
+identity and wrapping inclusive endpoints. Each surviving original chunk gets
+up to 512 zero bytes of padding, bounded by the next chunk and the end of its
+space; newly inserted pads are not visited again in the same pass. Encoding
+writes lowercase hex directly into the content string, with a leading newline,
+a newline after every twentieth byte and a final newline. Decoding retains its
+signed-byte stopping rules and permissive digit arithmetic, skipping whitespace
+only before each pair. These rules are implemented in
+`decompiler/crates/kuna-sleigh/src/loadimage_xml.rs`.
 
 Named register bit ranges with byte-aligned ends use ordinary varnodes at the
 appropriate byte offset for the declared endianness. Other ranges register a

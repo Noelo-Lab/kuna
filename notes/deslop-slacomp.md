@@ -1202,3 +1202,54 @@ There is no executable-code change to benchmark.
 The independent branch passes all four gates: 675/675 upstream and 1,467/1,467
 stage assertions, 7,714 workspace tests with 38 ignores across 433 groups,
 and spec/catalog checks. Root integration totals are recorded in `deslop.md`.
+
+
+### XML load-image buffers
+
+XML image encoding writes hex directly into its content string. Decoding shares
+one helper for the existing permissive digit arithmetic. Redundant chunks are
+removed in address order without collecting their keys or repeatedly searching
+the map, and padding is appended in one batch. The second pass retains a key
+snapshot because it inserts new chunks that must not be visited during that
+pass. Source is 26 lines shorter, including the corrected padding contract.
+
+The full before/after module implementations match 90,984 outcomes with
+overflow checks enabled and disabled. The cases cover 1,024 maps, all 65,536
+byte pairs and 1,024 longer content streams, including repeated padding, empty
+and overlapping chunks, wrapping endpoints, aliased spaces, partial reads,
+XML encoding and partial state on panics. All 371 focused tests pass, including
+the independent compiler and lift oracles.
+
+A public-API allocation probe opens and encodes the XML images used by the
+16 lift fixtures, with three independent images per fixture. Each repetition
+has identical counts. Opening changes from 388 allocation requests and 46,001
+cumulative requested bytes to 258 requests and 35,089 bytes. Encoding changes
+from 10,920 requests and 238,388 bytes to 520 requests and 155,188 bytes. All
+26,106 encoded bytes match. Counts isolate opening and encoding; they exclude
+SLA initialization, XML-tree parsing and image construction and are allocation
+traffic, not peak memory.
+
+A separate uninstrumented benchmark measures 200 repetitions per phase and
+fixture, including image construction/destruction for opening and fresh output
+buffers for encoding. Sixty-six balanced runs on CPU 40 provide 30 measured
+samples per version. Median opening time changes -29.26% (paired -29.29%) and
+encoding time -42.80% (paired -42.77%). These are isolated phase measurements.
+
+Full p-code timing also passes 66 balanced runs over all 16 independent
+fixtures. Median wall time changes from 420.3024 ms to 416.1230 ms (-0.9944%;
+paired -0.8273%) and CPU time changes -0.8186% (paired -0.6052%), within the
+5% budget. This workload includes initialization.
+
+The assembly workload passes 66 runs at all 1,171 locations through both public
+APIs, with identical output and zero decode errors. Median wall time changes
+-0.0530% (paired -0.3198%) and CPU time -0.0646% (paired -0.2768%), also within
+the budget.
+
+Artifacts use `/tmp/kuna-deslop-imagexml-`: `model.py`, `model.rs`, `model.log`,
+`cost-comparison.json`, the `cost-{before,after}-output/` XML files,
+`isolated-verified/`, `runtime-verified/`, `assembly-verified/` and build/check
+logs. The phase benchmark is `speed.rs`; allocation measurements use `cost.rs`.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.

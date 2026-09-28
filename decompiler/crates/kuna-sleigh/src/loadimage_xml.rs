@@ -28,6 +28,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write;
 use std::ops::Bound;
 use std::rc::Rc;
 
@@ -77,6 +78,17 @@ fn istream_get(content: &[u8], pos: &mut usize) -> i8 {
     let b = content[*pos];
     *pos += 1;
     b as i8 // cast: C++ assigns the int from get() into a (signed) char
+}
+
+/// Apply the C++ hex-digit arithmetic without validating the input.
+fn hex_digit(c: i8) -> i8 {
+    if c <= b'9' as i8 {
+        c.wrapping_sub(b'0' as i8)
+    } else if c <= b'F' as i8 {
+        c.wrapping_add(10).wrapping_sub(b'A' as i8)
+    } else {
+        c.wrapping_add(10).wrapping_sub(b'a' as i8)
+    }
 }
 
 /// `is >> ws`: skip the classic-locale whitespace characters.
@@ -157,7 +169,7 @@ impl LoadImageXml {
             // byte and a trailing '\n'
             let mut s = String::from("\n");
             for (i, b) in vec.iter().enumerate() {
-                s.push_str(&format!("{b:02x}"));
+                write!(s, "{b:02x}").expect("writing to a String cannot fail");
                 if i % 20 == 19 {
                     s.push('\n');
                 }
@@ -227,26 +239,7 @@ impl LoadImageXml {
                 let mut c1 = istream_get(&content, &mut pos);
                 let mut c2 = istream_get(&content, &mut pos);
                 while c1 > 0 && c2 > 0 {
-                    // The C++ digit conversion does no validation: chars in
-                    // ('9','F'] are treated as upper-case hex, everything
-                    // above 'F' as lower-case.  Arithmetic happens in int
-                    // and truncates back to char on assignment (wrapping_*).
-                    if c1 <= b'9' as i8 {
-                        c1 = c1.wrapping_sub(b'0' as i8);
-                    } else if c1 <= b'F' as i8 {
-                        c1 = c1.wrapping_add(10).wrapping_sub(b'A' as i8);
-                    } else {
-                        c1 = c1.wrapping_add(10).wrapping_sub(b'a' as i8);
-                    }
-                    if c2 <= b'9' as i8 {
-                        c2 = c2.wrapping_sub(b'0' as i8);
-                    } else if c2 <= b'F' as i8 {
-                        c2 = c2.wrapping_add(10).wrapping_sub(b'A' as i8);
-                    } else {
-                        c2 = c2.wrapping_add(10).wrapping_sub(b'a' as i8);
-                    }
-                    // int4 val = c1*16 + c2 (char promotes to int)
-                    let val: i32 = i32::from(c1) * 16 + i32::from(c2);
+                    let val = i32::from(hex_digit(c1)) * 16 + i32::from(hex_digit(c2));
                     vec.push(val as u8); // cast: (uint1)val truncation
                     skip_ws(&content, &mut pos); // is >> ws
                     c1 = istream_get(&content, &mut pos);
@@ -271,37 +264,20 @@ impl LoadImageXml {
         self.addrtosymbol.clear();
     }
 
-    /// Make sure every chunk is followed by at least 512 bytes of pad
+    /// Prune covered chunks in address order, then pad each surviving chunk
+    /// by up to 512 bytes without crossing the next chunk or the space boundary.
     fn pad(&mut self) {
-        // Search for completely redundant chunks
-        if self.chunk.is_empty() {
-            return;
-        }
-        // C++ walks (lastiter, iter) pairs, erasing `iter` when its chunk
-        // ends at or before the end of `lastiter`'s chunk.  Erasure during
-        // iteration is reproduced over a pre-collected key list: after an
-        // erase, `iter = lastiter; ++iter` is exactly the next key in the
-        // original order.
-        let keys: Vec<Address> = self.chunk.keys().cloned().collect();
-        let mut lastkey: Address = keys[0].clone();
-        for key in keys.iter().skip(1) {
-            if Rc::ptr_eq(addr_space(&lastkey), addr_space(key)) {
-                // end = offset + size - 1 in wrapping uintb arithmetic
-                let end1 = lastkey
-                    .get_offset()
-                    .wadd(self.chunk[&lastkey].len() as u64) // cast: size_t chunk length
-                    .wsub(1);
-                let end2 = key
-                    .get_offset()
-                    .wadd(self.chunk[key].len() as u64) // cast: size_t chunk length
-                    .wsub(1);
-                if end1 >= end2 {
-                    self.chunk.remove(key);
-                    continue; // lastiter unchanged
+        let mut previous: Option<(Address, u64)> = None;
+        self.chunk.retain(|key, bytes| {
+            let end = key.get_offset().wadd(bytes.len() as u64).wsub(1);
+            if let Some((last, last_end)) = &previous {
+                if Rc::ptr_eq(addr_space(last), addr_space(key)) && *last_end >= end {
+                    return false;
                 }
             }
-            lastkey = key.clone();
-        }
+            previous = Some((key.clone(), end));
+            true
+        });
 
         // C++ inserts pad chunks *while* iterating; every insertion lands
         // strictly between the current and the next original chunk (or
@@ -335,9 +311,7 @@ impl LoadImageXml {
             // operator[] creates the entry if absent (it can hit the
             // current chunk itself when its size is 0)
             let vec = self.chunk.entry(endaddr).or_default();
-            for _i in 0..maxsize {
-                vec.push(0);
-            }
+            vec.extend(std::iter::repeat(0).take(maxsize.max(0) as usize));
         }
     }
 }

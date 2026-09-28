@@ -1387,6 +1387,64 @@ oracles, 17 saved CLI comparisons, and all eleven browser scripts against fresh
 WASM. The tracked diff hash is unchanged through the final gate. Logs use
 `/tmp/kuna-deslop-fid-final-*.log`; no baseline expectation moved.
 
+## Shared query function records and XML-image buffers
+
+`function_info` owns function attribution, inventory display names, the engine's
+generated-name fallback and the ordered function JSON record. `crypto` no longer
+depends on the `strings` command's implementation; strings, constants and
+cross-references share the identical record shape. Cross-reference target and
+global-name precedence remains separate. Source checks pin 39 retained function
+and test bodies, all three old JSON helpers, the ownership helper and the
+expanded inventory-name helper. Four parent functions contain only the checked
+forwarding substitutions. Each installed query file matches its candidate.
+
+The new exact-byte JSON regression passes before the move and after it. It
+checks field order, Unicode/control-character escaping, zero, an address above
+2^53, and `u64::MAX`. All 50 real query comparisons preserve stdout, stderr and
+status, including ARM string ownership, crypto-constant ownership, PE import
+aliases, empty queries and errors in text/JSON modes. The 243 CLI and 375
+compiler/runtime focused tests pass without warnings. All 286 compiler CLI
+cases retain exact status, diagnostics and raw/decoded hashes. Clippy remains
+an open audit at 16 errors and 20 warnings, not a passing gate.
+
+XML-image encoding writes hex directly into the content buffer; decoding shares
+the existing permissive signed-byte conversion. The first padding pass retains
+chunks in address order without collecting their keys or repeating map lookups.
+The second pass still snapshots keys because it inserts pads that must not be
+visited again. Padding is appended in one batch. The installed complete module
+matches the reviewed candidate. Both root overflow-mode models match 90,984
+outcomes, including all byte pairs, aliased spaces, wrapping endpoints, repeated
+padding, partial reads, XML output and partial state after panics. The supplied
+probe had only an older padding comment; the root copy was corrected before
+verifying complete-module prefixes and identical probe suffixes.
+
+The root public-API probe opens and encodes all 16 lift-fixture XML images three
+times. Each repetition gives the same counts. Opening allocation requests fall
+388 to 258 and cumulative requested bytes 46,001 to 35,089; encoding requests
+fall 10,920 to 520 and bytes 238,388 to 155,188. All 26,106 encoded bytes match.
+These isolated phase counts exclude initialization and XML parsing, and do not
+measure peak memory. Both assembly APIs retain the saved output at all 1,171
+instruction locations with zero errors.
+
+CPU-41-pinned isolated open/encode timing changes -28.69%/-42.64%, over 66
+balanced runs with 200 repetitions per phase and fixture. Full lift and assembly
+wall medians change -1.06%/-0.38%, with all fixture outputs retained on every
+run. Twenty measured real query pairs change -0.61%/-0.20%/-0.04% for strings,
+crypto and cross-references (paired -0.55%/-0.29%/-0.04%). Every timing remains
+within the 5% budget; small query differences are not claimed as speedups.
+
+Root artifacts are under `/tmp/kuna-deslop-query-functions.L47PEIBK`. The final
+native build is warning-free and takes 7.48 seconds
+(`/tmp/kuna-deslop-query-final-build-clean.log`).
+
+The frozen final tree passes 675/675 upstream and 1,467/1,467 stage assertions,
+7,441 workspace tests (38 ignored, 438 groups, zero warnings), and spec checks.
+All 268 CLI probes, 42 Python tests, 56 Ghidra tests, 48 compiler XML oracles,
+17 saved CLI comparisons and eleven browser scripts against freshly built
+WASM also pass. The tracked diff and new module hashes remain unchanged through
+the last gate. Final logs use `/tmp/kuna-deslop-query-final-*.log`; no baseline
+expectation moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1396,7 +1454,7 @@ These are investigation targets, not a claim that the repository review is done.
 | CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Compiler probes reject broken tools, and required native runs check both status and output. The two fixture-launch false skips now retain spelling checks on non-native hosts. Other platform gates and conditional assertions still need review. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
-| CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering and callee-first feedback have separate owners. Loading/configuration and the remaining pool module still combine several lifecycle policies; review the next meaningful boundary. |
+| CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback and query function metadata have separate owners. Loading/configuration and the remaining pool module still combine several lifecycle policies. Archive staging and console output lifetimes need review. |
 | Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 16 errors and 20 warnings. Declaration naming, rendered-signature dedup, FID dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
