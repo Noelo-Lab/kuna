@@ -2045,6 +2045,82 @@ and CLI linting pass. Frozen diff hash `1fb76f96` remained unchanged through the
 last terminal success. Logs use `/tmp/kuna-deslop-varnode-keys-final-`. The prior
 published checkpoint's CI and CodeQL also pass. No baseline moved.
 
+### Borrowed block queries and smaller operand-walker state
+
+Common-subexpression and earliest-use queries borrow the Varnode's descendant
+sequence instead of copying it. Both are read-only. The first still chooses
+the first eligible equal op in descendant order; the second chooses the lowest
+within-block order. Cutoff and stale-identifier checks retain their evaluation
+order, including for empty descendant lists. The neighboring mutating query
+keeps its snapshot.
+
+Two persistent tests pin these ordering and validation contracts. All 45
+op-manipulation tests pass before and after. The actual two method bodies,
+exported through an immutable wrapper, agree with each other and the rebuilt
+root-library methods on 131,072 outcomes per overflow mode across 2,048 IR
+graphs. Each mode includes 8,489 matches and 50,534 matching panics; all Varnode
+flags remain unchanged. The probe checks these methods, not the entire engine.
+
+Ten actual-library allocation cases cover both queries with empty, self-only,
+eight-reader, 64-reader and other-block lists. Three fresh-process samples agree
+per case. Empty queries already allocate nothing; each of the other eight
+queries drops its one temporary allocation, for eight fewer requests and
+2,240 fewer cumulatively requested bytes across one of each case. All ten now
+allocate zero during the query. This is not a peak-memory measurement.
+
+Operand evaluation retains only the synthetic instruction offset it uses.
+An optional offset replaces the unused constructor/length state, and the
+fallback reuses one walker construction. Explicit defining expressions are
+borrowed; symbol-produced expressions remain owned. Current parser ownership,
+cursor rebasing and instruction-mask snapshot contracts replace stale and
+repeated port commentary. The preceding private-documentation link fixes remain.
+
+The unchanged offset-helper bodies agree on 368,640 modeled outcomes per overflow
+mode over 8,192 contexts: 4,753 offsets, 84,960 fallbacks, 104,366 errors and
+174,561 panics. This substitutes private context/cursor probes, not the full
+expression evaluator. Real runtime probes separately match 1,080 complete
+p-code/context records, 144 error/retry outcomes and sixteen fixture hashes.
+Standard instruction allocations remain 1,412 requests and 802,088 requested
+bytes per 1,171 calls; no allocation improvement is claimed for this refactor.
+
+The native build takes 47.38 seconds without warnings. All 376 focused
+compiler/SLEIGH tests, strict public/private rustdoc, 36 CLI comparisons,
+286 compiler comparisons, 48 XML outputs and two option-off/on stage transcripts
+pass. CI's CLI lint gate passes with its existing dependency warning; engine
+Clippy totals remain 208 errors and 97 warnings. Exact source proofs cover five
+candidate files. Artifacts use `/tmp/kuna-deslop-block-queries.0XQu4vPw`.
+
+Balanced query timings use thirty measured samples per version after three
+warmup pairs. All ten cases improve: empty CSE/earliest-use queries change
+-0.42%/-10.91%; self-only -48.59%/-50.15%; eight-reader -42.19%/-51.40%;
+64-reader -51.01%/-39.35%; and other-block -19.61%/-20.95%. Every result is
+checked, with fixture setup outside the timer and no allocation instrumentation.
+
+The initial sixty-six-run instruction timing changes +1.08% in aggregate
+(paired +0.81%), but `lzcount` is +10.38% (paired +7.72%) and the x86-16
+fixture +5.37% (paired +0.70%). Those adverse results remain recorded.
+A larger balanced recheck of all sixteen fixtures uses ninety measured samples
+per version: aggregate -0.46% (paired -0.46%), `lzcount` -1.76% (paired -2.27%)
+and x86-16 -0.36% (paired -0.40%). The largest individual increase is +1.09%
+(paired +1.51%). All complete result records match in both runs. No instruction
+speed improvement is claimed; the larger run does not reproduce the overruns.
+
+Whole lift-oracle wall/CPU changes are +1.49%/+1.61% (paired +0.19%/+0.35%),
+with all sixteen oracles passing in each of sixty-six runs. Two full stage
+workloads change +0.18%/+0.22% (paired +0.30%/+0.40%), preserving exact stdout,
+stderr and exit status on every run. These full workloads remain within budget.
+
+All nine gates pass on the frozen source: 7,459 workspace tests, 38 existing
+ignores across 439 groups and no warnings; 675/675 upstream and 1,467/1,467
+stage assertions retain parity. Python, Ghidra, XML, saved CLI, browser,
+spec/catalog and strict CLI-lint checks pass. The first concurrent CLI run
+passed 267/268 probes: the 40-instruction disassembly probe's fastest sample
+was 670 ms against its unchanged 600 ms bound. After the builds finished,
+the complete CLI suite passed 268/268, followed by another successful run of
+that named probe. Both logs remain; no threshold or expectation changed.
+Frozen diff hash `7561e5ce` remained unchanged through the last terminal
+success. Logs use `/tmp/kuna-deslop-block-queries-final-`; no baseline moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.

@@ -1044,6 +1044,14 @@ Runtime handle resolution borrows operand expressions and result templates from
 its immutable SLEIGH tables. It writes computed handles to the parser context;
 if evaluation fails, earlier handle updates remain in place.
 
+Operand-value evaluation borrows explicit defining expressions and owns the
+expressions returned by defining symbols. Its synthetic walker stores only an
+instruction offset: the referenced operand's offset when its constructor is
+on the current path, otherwise the current node's offset. Instruction reads
+use that offset; context reads retain the local parser context, and address
+values use the cross context when supplied. Missing definitions evaluate to
+zero; nested operand references from the synthetic walker are rejected.
+
 Constructor operand patterns use the defining symbol when present. Otherwise,
 pattern generation borrows the operand's defining expression without copying
 its tree. The operand retains ownership of the expression throughout the build.
@@ -2393,6 +2401,12 @@ the "is an equivalent varnode already present" lookup and the insertion that
 follows it are the same search, because the `insert` flag set afterwards is
 outside the `(input|written)` mask the key is built from and so cannot move the
 entry.
+
+Read-only block queries walk the stored Varnode descendants without copying
+them. Common-subexpression lookup returns the first eligible equal op in that
+sequence; earliest-use lookup instead compares block-local op order. The common
+subexpression query still checks its op, Varnode and optional cutoff before
+walking descendants, including when the descendant list is empty.
 
 Every cross-arena mutation routes through `Funcdata` — Rust cannot hold two
 `&mut` arenas through a method on one of them, so the op-in-block primitives the

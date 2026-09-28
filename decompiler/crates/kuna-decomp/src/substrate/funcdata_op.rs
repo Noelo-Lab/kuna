@@ -1270,8 +1270,8 @@ impl Funcdata {
         earliest: Option<OpId>,
     ) -> Option<OpId> {
         let outvn1 = self.obank().get(op).expect("cse_find_in_block: stale op").get_out();
-        let descend: Vec<OpId> =
-            self.vbank().get(vn).expect("cse_find_in_block: stale vn").descend_iter().collect();
+        let descend =
+            self.vbank().get(vn).expect("cse_find_in_block: stale vn").descend_iter();
         let early_order = earliest.map(|e| {
             self.obank().get(e).expect("cse_find_in_block: stale earliest").get_seq_num().get_order()
         });
@@ -1321,8 +1321,8 @@ impl Funcdata {
     /// (C++ `BlockBasic::earliestUse`, `block.cc:2826`).  Returns `None` if no
     /// descendant of `vn` lies in `bl`.
     pub fn block_earliest_use(&self, bl: crate::context::BlockId, vn: VarnodeId) -> Option<OpId> {
-        let descend: Vec<OpId> =
-            self.vbank().get(vn).expect("block_earliest_use: stale vn").descend_iter().collect();
+        let descend =
+            self.vbank().get(vn).expect("block_earliest_use: stale vn").descend_iter();
         let mut res: Option<OpId> = None;
         for op in descend {
             if self.obank().get(op).expect("block_earliest_use: stale op").get_parent() != Some(bl) {

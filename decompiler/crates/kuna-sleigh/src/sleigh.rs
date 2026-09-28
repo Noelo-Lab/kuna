@@ -13,6 +13,7 @@
 //! methods can take `&self`. Checked-out parser contexts use distinct storage,
 //! including nested `inst_next2` and delay-slot decodes.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
@@ -30,7 +31,7 @@ use crate::globalcontext::{ContextCache, ContextDatabase};
 use crate::loadimage::{ImageBytes, LoadImage};
 use crate::semantics::{ConstructTpl, OpTpl, PcodeBuilder, VField, VarnodeTpl};
 use crate::sleighbase::{exact_register_name_from_xref, register_name_from_xref, SleighBase};
-use crate::slghpatexpress::{PatternExpression, PatternExpressionContext};
+use crate::slghpatexpress::PatternExpressionContext;
 use crate::slghpattern::DisjointPattern;
 use crate::slghsymbol::{
     ConstructorRef, SymbolKind, SymbolTable, SymbolType, SymbolWalker, SymbolWalkerChange,
@@ -71,17 +72,8 @@ struct ConstructState {
     length: i32,
     /// Absolute offset from start of instruction (C++ `offset`).
     offset: u32,
-    /// kuna-only (not in C++): the specific `DisjointPattern` leaf whose
-    /// `is_match` succeeded when this node's constructor was chosen during
-    /// decode.  Captured at the resolution point, where the per-node context
-    /// (the multi-phase parser context — REX/prefix `instrPhase` etc.) is the
-    /// one that actually selected the constructor.  Read back by
-    /// [`Sleigh::instruction_mask`] to compute the fixed-bit mask without
-    /// re-walking the decision tree post-decode (the post-decode re-walk reads
-    /// the *final* context and so misresolves multi-phase encodings — the FID
-    /// PR1 bug this captures around).  Purely additive: it retains a pattern
-    /// the decode already computed and never affects which constructor is
-    /// chosen, the length, the handles, or any p-code.
+    /// Matched decode leaf used by [`Sleigh::instruction_mask`]. Capture it
+    /// before later context changes can select a different constructor.
     matched_pattern: Option<DisjointPattern>,
 }
 
@@ -436,8 +428,6 @@ impl ParserContext {
     }
 }
 
-// (continued in subsequent edits)
-
 // ---------------------------------------------------------------------------
 // ParserWalker / ParserWalkerChange (context.hh/.cc)
 // ---------------------------------------------------------------------------
@@ -532,23 +522,20 @@ impl<'a> ParserWalker<'a> {
         self.cross.unwrap_or(self.ctx)
     }
 
-    /// C++ `setOutOfBandState`: simulate a single-node tree so a TokenField
-    /// behaves as if just parsed (used by the `operand_value` hook).  Returns
-    /// the temp node placed into a scratch slot of the context-local arena —
-    /// here, since the walker borrows the context immutably, the temp node is
-    /// returned by value and stored on `self` via [`OobWalker`].
+    /// Operand offset for a synthetic walker, or `None` when its constructor
+    /// is outside the current path (`setOutOfBandState`).
     fn out_of_band(
         &self,
         ct: ConstructorRef,
         index: i32,
-    ) -> KunaResult<OobState> {
+    ) -> KunaResult<Option<u32>> {
         // Walk back from the current point to the node whose ct == ct.
         let mut pt = self.point();
         let mut curdepth = self.cur.depth;
         while self.ctx.state[pt].ct != Some(ct) {
             if curdepth <= 0 {
                 // C++ returns with point unchanged (a degenerate walk).
-                return Ok(OobState { offset: 0, ct, length: 0, valid: false });
+                return Ok(None);
             }
             curdepth -= 1;
             pt = self.ctx.state[pt]
@@ -571,25 +558,9 @@ impl<'a> ParserWalker<'a> {
                 .ok_or_else(|| KunaError::sleigh("out-of-band: operand not resolved"))?;
             self.ctx.state[child].offset
         };
-        Ok(OobState { offset, ct, length: self.ctx.state[pt].length, valid: true })
+        Ok(Some(offset))
     }
 }
-
-/// The simulated single-node tree state produced by [`ParserWalker::out_of_band`]
-/// (C++ `setOutOfBandState`'s `tempstate`).  `ct`/`length` are recorded
-/// faithfully (the C++ tempstate sets `tempstate->ct`/`tempstate->length`); the
-/// pattern leaves evaluated against an out-of-band walker — TokenField,
-/// ContextField — read only the synthetic offset, so those two fields are
-/// carried but not consulted here.
-#[allow(dead_code)] // ct/length mirror the C++ tempstate (see doc comment)
-#[derive(Debug, Clone)]
-struct OobState {
-    offset: u32,
-    ct: ConstructorRef,
-    length: i32,
-    valid: bool,
-}
-
 
 impl PatternExpressionContext for ParserWalker<'_> {
     fn get_instruction_bytes(&self, byteoff: i32, numbytes: i32) -> KunaResult<u32> {
@@ -621,43 +592,29 @@ impl PatternExpressionContext for ParserWalker<'_> {
         };
         // patexp = sym->getDefiningExpression(); if null, the defining
         // symbol's pattern expression; if still null, return 0.
-        let patexp: PatternExpression = match op.get_defining_expression() {
-            Some(pe) => pe.clone(),
+        let patexp = match op.get_defining_expression() {
+            Some(pe) => Cow::Borrowed(pe),
             None => match op.get_defining_symbol() {
                 Some(defid) => {
                     let defsym = self.table.find_symbol_by_id(defid).ok_or_else(|| {
                         KunaError::sleigh("operand_value: defining symbol undefined")
                     })?;
                     match defsym.get_pattern_expression()? {
-                        Some(pe) => pe,
+                        Some(pe) => Cow::Owned(pe),
                         None => return Ok(0),
                     }
                 }
                 None => return Ok(0),
             },
         };
-        let oob = self.out_of_band(ct, index)?;
-        if !oob.valid {
-            // C++ leaves point unchanged; evaluating then reads the original
-            // point's offset.  Fall back to the current node.
-            let fallback = OobWalker {
-                ctx: self.ctx,
-                cross: self.cross,
-                engine: self.engine,
-                state: OobState {
-                    offset: self.ctx.state[self.point()].offset,
-                    ct,
-                    length: self.ctx.state[self.point()].length,
-                    valid: true,
-                },
-            };
-            return patexp.get_value(&fallback);
-        }
+        let offset = self
+            .out_of_band(ct, index)?
+            .unwrap_or_else(|| self.ctx.state[self.point()].offset);
         let oobwalker = OobWalker {
             ctx: self.ctx,
             cross: self.cross,
             engine: self.engine,
-            state: oob,
+            offset,
         };
         patexp.get_value(&oobwalker)
     }
@@ -717,8 +674,7 @@ impl<'a> ParserWalkerChange<'a> {
         ParserWalkerChange { ctx, table, engine, cur: WalkCursor::new() }
     }
 
-    /// Build a read-only `ParserWalker` view sharing this cursor (for the
-    /// boundary methods that only read — `applyContext`/`resolve` evaluation).
+    /// Read-only context view with an independent copy of the current cursor.
     fn as_reader(&self) -> ParserWalker<'_> {
         ParserWalker {
             ctx: self.ctx,
@@ -780,9 +736,7 @@ impl<'a> ParserWalkerChange<'a> {
         self.ctx.state[p].ct = Some(c);
     }
 
-    /// kuna-only: stash the matched `DisjointPattern` leaf for the current
-    /// node, captured at decode time (correct per-node context).  Read back by
-    /// [`Sleigh::instruction_mask`].  Additive — no decode effect.
+    /// Retain the decode-time leaf for [`Sleigh::instruction_mask`].
     fn set_matched_pattern(&mut self, pat: DisjointPattern) {
         let p = self.point();
         self.ctx.state[p].matched_pattern = Some(pat);
@@ -828,16 +782,8 @@ impl<'a> ParserWalkerChange<'a> {
             return Err(KunaError::lowlevel("SLEIGH parser out of state space"));
         }
         if self.ctx.alloc < 0 {
-            // C++ `ParserContext::expandState` does `state.insert(state.begin(),
-            // amount, ...)`, front-inserting `amount` nodes. In C++ the walker's
-            // `point`/`parent`/`resolve`/`base_state` are raw pointers into the
-            // heap `ConstructState` objects, so this vector reshuffle never
-            // invalidates them. kuna models those references as Vec indices, so
-            // `expand_state` already rebases the ones it owns (parent/resolve/
-            // base_state/alloc) by `amount`. The live walker cursor `self.cur.
-            // point` is the one index it can't reach — rebase it here so the
-            // in-progress parse (deep operand trees, e.g. ARM NEON `{d16-d31}`
-            // reg lists) keeps pointing at the same node after the growth.
+            // The arena rebases its node references; the live cursor is outside
+            // that storage and needs the same shift.
             let before = self.ctx.state.len();
             self.ctx.expand_state(STATE_GROWTH);
             let amount = self.ctx.state.len() - before;
@@ -877,20 +823,19 @@ impl<'a> ParserWalkerChange<'a> {
 }
 
 
-/// The out-of-band single-node walker built by [`ParserWalker::out_of_band`]
-/// (C++ `setOutOfBandState`'s `tempstate` + a fresh `ParserWalker`).  Only the
-/// `PatternExpressionContext` surface is needed: a `TokenField`/`ContextField`
-/// reads instruction/context bytes against the synthetic node's offset.
+/// Pattern-expression walker using a synthetic instruction offset.
+/// Context and flow addresses still come from the checked-out parser context.
+/// Nested operand references through this walker return an error.
 struct OobWalker<'a> {
     ctx: &'a ParserContext,
     cross: Option<&'a ParserContext>,
     engine: &'a Sleigh,
-    state: OobState,
+    offset: u32,
 }
 
 impl PatternExpressionContext for OobWalker<'_> {
     fn get_instruction_bytes(&self, byteoff: i32, numbytes: i32) -> KunaResult<u32> {
-        self.ctx.get_instruction_bytes(byteoff, numbytes, self.state.offset)
+        self.ctx.get_instruction_bytes(byteoff, numbytes, self.offset)
     }
     fn get_context_bytes(&self, byteoff: i32, numbytes: i32) -> KunaResult<u32> {
         self.ctx.get_context_bytes(byteoff, numbytes)
@@ -905,12 +850,6 @@ impl PatternExpressionContext for OobWalker<'_> {
         self.engine.compute_n2addr(self.cross.unwrap_or(self.ctx))
     }
     fn operand_value(&self, index: i32, table_id: u32, ct_id: u32) -> KunaResult<i64> {
-        // Nested out-of-band operand evaluation: build a ParserWalker over the
-        // same context positioned at the simulated node, and recurse.  Since
-        // setOutOfBandState resets to a single node tree, a nested operand
-        // reference would re-derive from the same point; faithful enough for
-        // the (rare) chained case, otherwise unreachable for token/context
-        // patterns.
         let _ = (index, table_id, ct_id);
         Err(KunaError::sleigh("nested out-of-band operand value not supported"))
     }
@@ -1536,21 +1475,13 @@ pub struct Sleigh {
     /// Reusable parser arenas. Checked-out contexts are removed from the pool,
     /// so nested `inst_next2` and delay-slot decodes receive distinct storage.
     parser_contexts: Rc<RefCell<Vec<ParserContext>>>,
-    /// The reusable p-code build arena. `one_instruction` filled four fresh
-    /// `Vec`s per decode and grew each of them as the instruction's ops issued;
-    /// parking the cacher here reuses that capacity across the whole program.
-    /// Taken (not borrowed) for the duration of a decode, so a nested decode
-    /// simply builds its own.
+    /// Reusable p-code arena, moved out during decoding so nested calls can
+    /// use a separate arena.
     pcode_cacher: RefCell<PcodeCacher>,
-    /// Whether a decode should stash each node's matched [`DisjointPattern`].
-    ///
-    /// Only [`Sleigh::instruction_mask`] ever reads them, and it re-decodes
-    /// under this flag, so an ordinary decode does not pay for them: the clone
-    /// is a deep copy of the leaf's pattern blocks at every constructor node and
-    /// was 55% of every heap allocation the program made while disassembling.
+    /// Enabled by [`Sleigh::instruction_mask`] while resolving constructors.
+    /// Ordinary decoding avoids copying the matched patterns.
     capture_patterns: std::cell::Cell<bool>,
-    /// The reusable delay-slot context vector (`one_instruction` needs one
-    /// entry per decode, and all but a delay-slot architecture need exactly one).
+    /// Reusable storage for the main instruction and its delay-slot contexts.
     ctx_vec: RefCell<Vec<ResolvedCtx>>,
 }
 
@@ -1558,16 +1489,12 @@ pub struct Sleigh {
 // Instruction-mask accessor (FID / AIF fingerprinting prerequisite)
 // ---------------------------------------------------------------------------
 
-/// A decoded instruction's *fixed-bit mask*: which encoding bits SLEIGH pins to
-/// a constant (opcode / addressing-mode bits) versus which carry operand values
-/// (immediates, displacements, register selectors).  Produced by
-/// [`Sleigh::instruction_mask`]; consumed by FID-family operand-independent
-/// fingerprinting.
+/// Instruction bytes, fixed encoding bits and operand classifications from
+/// [`Sleigh::instruction_mask`].
 ///
-/// Invariant: `fixed_mask.len() == bytes.len() == length as usize`.  The FID
-/// "full mask" of byte `i` is `bytes[i] & fixed_mask[i]`; the operand (variable)
-/// mask is `!fixed_mask[i]`.  This is purely an *accessor* — it does not alter
-/// the decode in any way.
+/// `fixed_mask.len() == bytes.len() == length as usize`. For fingerprinting,
+/// `bytes[i] & fixed_mask[i]` selects fixed bits; `!fixed_mask[i]` selects
+/// unpinned bits.
 #[derive(Debug, Clone)]
 pub struct InsnMask {
     /// The raw instruction bytes (length `length`).
@@ -1584,8 +1511,8 @@ pub struct InsnMask {
 /// One operand of a decoded instruction, as seen by the mask accessor.
 #[derive(Debug, Clone)]
 pub struct OperandView {
-    /// Byte mask (length = instruction length) selecting this operand's value
-    /// bits — the bits SLEIGH did *not* pin within the operand's byte span.
+    /// Per-byte operand mask at the containing constructor's visit. Inside the
+    /// operand span it complements the fixed bits known then; elsewhere it is zero.
     pub value_mask: Vec<u8>,
     /// The classified objects the operand resolves to (a register, a scalar
     /// immediate, or a code/data address).
@@ -1822,11 +1749,7 @@ impl Sleigh {
         let mut walker = ParserWalkerChange::new(pos, table, self);
         walker.deallocate_state();
         walker.set_offset(0);
-        // ct = root->resolve(walker).  We use the `resolve_matched` variant
-        // (identical decision walk) so we can ALSO capture the matched
-        // DisjointPattern leaf here, where the per-node context is the one that
-        // selected the constructor — and stash it on this node for the FID
-        // instruction-mask accessor.  The chosen constructor is unchanged.
+        // Capture the matched leaf under the context that selected it.
         let subtable = subtable_ref(table, root)?;
         let capture = self.capture_patterns.get();
         let (root_ct_id, root_pat) = {
@@ -2240,25 +2163,14 @@ impl Sleigh {
         Ok(pos.get_length())
     }
 
-    /// Decode the instruction at `baseaddr` and return its *fixed-bit mask*
-    /// (the FID / AIF fingerprinting prerequisite).  This re-uses the proven
-    /// decode (`obtain_context`) verbatim — it adds no decode behavior and
-    /// changes none — and then *reads* the resolved constructor tree to compute
-    /// which encoding bits SLEIGH pinned to a constant (opcode/addressing-mode)
-    /// versus which carry operand values.
+    /// Decode an instruction's fixed bits and classify its operand handles.
+    /// Matched patterns are captured before later context changes can affect
+    /// constructor selection; context-only bits do not enter the byte mask.
     ///
-    /// `fixed_mask[i]` has a 1 wherever a matched constructor pattern fixes a
-    /// bit; `operand_mask = !fixed_mask`.  The operand views carry, per operand,
-    /// the operand's value-bit mask and the classified [`OpObject`]s (register /
-    /// scalar / address) from the resolved [`FixedHandle`]s.
-    ///
-    /// Must live on `Sleigh` because `obtain_context`/`ParserContext`/
-    /// `ConstructState`/`ParserWalker` are all private to this module.
+    /// Each [`OperandView`] snapshots the fixed bits available when its containing
+    /// constructor is visited, before traversal of that constructor's children.
     pub fn instruction_mask(&self, baseaddr: &Address) -> KunaResult<InsnMask> {
-        // Pcode state so operand handles are resolved (classification reads
-        // them); the fixed-mask tree walk works at either parse state.
-        // The stashed patterns exist only for this accessor, so the decode that
-        // produces them is the one that asks for them.
+        // Operand classification requires resolved handles.
         self.capture_patterns.set(true);
         let pos = self.obtain_context(baseaddr, ParseState::Pcode);
         self.capture_patterns.set(false);
@@ -2270,27 +2182,11 @@ impl Sleigh {
             )));
         }
         let ulen = len as usize;
-        // The raw bytes are already in the context buffer (loadFill'd by
-        // `resolve`); copy from there rather than re-reading the loadimage.
         let bytes: Vec<u8> = pos.buf[..ulen].to_vec();
 
         let table = &self.base.symtab;
         let mut fixed = vec![0u8; ulen];
 
-        // --- Tree walk: OR each matched constructor's fixed bits into the mask.
-        // Iterate the resolved ConstructState arena reachable from base_state
-        // (each populated node holds the constructor that matched, its absolute
-        // byte `offset`, and — captured DURING decode under the correct per-node
-        // multi-phase context — its matched `DisjointPattern` leaf).  For every
-        // such node we read the stashed pattern and OR its fixed bits.  Context
-        // bits are NEVER folded in (`context=false`), since the context stream
-        // has no instruction-byte position.
-        //
-        // Reading the decode-time pattern (rather than re-walking the decision
-        // tree post-decode) is the FID PR1 fix: the post-decode re-walk reads
-        // the *final* parser context (`instrPhase` already advanced past the
-        // x86 REX / prefix phases) and misresolves multi-phase encodings; the
-        // stashed pattern is the leaf decode actually matched.
         let mut stack = vec![pos.base_state];
         let mut operands: Vec<OperandView> = Vec::new();
         while let Some(node_idx) = stack.pop() {
@@ -2301,9 +2197,7 @@ impl Sleigh {
             let dp = node.matched_pattern.as_ref().ok_or_else(|| {
                 KunaError::sleigh("instruction_mask: node has no captured pattern")
             })?;
-            // Pattern length is relative to the node start (already offset-
-            // resolved by decode); OR byte-by-byte, capping at the instruction
-            // length (multi-word patterns return <=32 bits per get_mask call).
+            // Pattern offsets are relative to this node.
             let patlen = dp.get_length(false); // false == instruction stream only
             let mut b = 0i32;
             while b < patlen {
@@ -2311,15 +2205,11 @@ impl Sleigh {
                 if abs >= ulen {
                     break; // never write past the decoded instruction
                 }
-                // get_mask(startbit,size,context): startbit is bit position
-                // relative to the node start; context=false reads the
-                // instruction-byte mask. Take 8 bits per byte.
                 let m = dp.get_mask(b * 8, 8, false) as u8;
                 fixed[abs] |= m;
                 b += 1;
             }
 
-            // --- Operand classification for this constructor's operands.
             let ct = table.get_constructor(ctref)?;
             let numoper = ct.get_num_operands();
             for oper in 0..numoper {
@@ -2331,11 +2221,8 @@ impl Sleigh {
                     return Err(KunaError::sleigh("instruction_mask: not an operand symbol"));
                 };
 
-                // Compute the operand's byte span within the instruction.  An
-                // operand defined by a subtable lives in its own child node (we
-                // visit that child separately for the fixed bits); the operand
-                // *value* span is [child.offset, child.offset+child.length) when
-                // resolved, else the constructor-relative [node_off+rel, +min).
+                // Use the child span when resolved; otherwise approximate from
+                // the operand's constructor-relative offset and minimum length.
                 let child_idx = node.resolve.get(oper as usize).copied().flatten();
                 let (span_off, span_len) = match child_idx {
                     Some(ci) => {
@@ -2343,20 +2230,11 @@ impl Sleigh {
                         (c.offset as usize, c.length.max(0) as usize)
                     }
                     None => {
-                        // A local/expression operand (no resolved child node):
-                        // approximate its span as constructor-relative
-                        // [node_off + reloffset, +minimumLength).  This feeds
-                        // FID's operand sub-hash; the fixed_mask (above) is the
-                        // load-bearing output.
                         let off = node_off + op.get_relative_offset() as usize;
                         (off, op.get_minimum_length().max(0) as usize)
                     }
                 };
 
-                // The operand's value mask = bits in its span NOT pinned fixed.
-                // (We defer the actual fixed bits of sub-constructor operands to
-                // their own node visit; here we expose the complement over the
-                // span, which is what FID's operand sub-hash consumes.)
                 let mut value_mask = vec![0u8; ulen];
                 for i in 0..span_len {
                     let abs = span_off + i;
@@ -2365,7 +2243,6 @@ impl Sleigh {
                     }
                 }
 
-                // Classify the resolved handle (Pcode state) into an OpObject.
                 let mut objects: Vec<OpObject> = Vec::new();
                 if let Some(ci) = child_idx {
                     let hand = &pos.state[ci].hand;
@@ -2374,7 +2251,6 @@ impl Sleigh {
                 operands.push(OperandView { value_mask, objects });
             }
 
-            // Descend into resolved children (subtable operands).
             for child in node.resolve.iter().flatten() {
                 stack.push(*child);
             }

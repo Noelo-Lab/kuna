@@ -962,3 +962,62 @@ fn vfy_w10_forloop_unknown_special_op_blocks_move() {
         "an unhandled special op (CALLOTHER) in the path blocks the move (default reject)"
     );
 }
+
+#[test]
+fn read_only_block_queries_keep_their_distinct_orderings() {
+    let mut fd = build_fd();
+    let block = mk_block(&mut fd);
+    let other = mk_block(&mut fd);
+    let empty = mk_block(&mut fd);
+    let input = mk_vn(&mut fd, 0x100);
+    let input = fd.set_input_varnode(input).unwrap();
+    let mut ops = Vec::new();
+    for (index, (parent, output)) in [(block, true), (block, true), (block, true), (other, true), (block, false)].into_iter().enumerate() {
+        let op = mk_op(&mut fd, 1, 0x1000 + index as u64, OpCode::CPUI_COPY);
+        fd.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
+        if output {
+            fd.new_unique_out(4, op).unwrap();
+        }
+        fd.op_set_input(op, input, 0).unwrap();
+        fd.op_insert(op, parent, None);
+        ops.push(op);
+    }
+    for (&op, order) in ops.iter().zip([20, 15, 5, 1, 0]) {
+        fd.obank_mut().get_mut(op).unwrap().set_order(order);
+    }
+    let flags: Vec<_> = fd.vbank().iter_loc().map(|id| fd.vbank().get(id).unwrap().get_flags()).collect();
+    for _ in 0..3 {
+        assert_eq!(fd.cse_find_in_block(ops[0], input, block, None), Some(ops[1]));
+        assert_eq!(fd.cse_find_in_block(ops[0], input, block, Some(ops[2])), Some(ops[2]));
+        assert_eq!(fd.cse_find_in_block(ops[0], input, block, Some(ops[4])), None);
+        assert_eq!(fd.cse_find_in_block(ops[4], input, block, None), None);
+        assert_eq!(fd.cse_find_in_block(ops[0], input, other, None), Some(ops[3]));
+        assert_eq!(fd.cse_find_in_block(ops[0], input, empty, None), None);
+        assert_eq!(fd.block_earliest_use(block, input), Some(ops[4]));
+        assert_eq!(fd.block_earliest_use(other, input), Some(ops[3]));
+        assert_eq!(fd.block_earliest_use(empty, input), None);
+    }
+    assert_eq!(flags, fd.vbank().iter_loc().map(|id| fd.vbank().get(id).unwrap().get_flags()).collect::<Vec<_>>());
+}
+
+#[test]
+fn cse_query_checks_identifiers_before_walking_empty_descendants() {
+    let mut fd = build_fd();
+    let block = mk_block(&mut fd);
+    let input = mk_vn(&mut fd, 0x100);
+    let input = fd.set_input_varnode(input).unwrap();
+    let op = mk_op(&mut fd, 0, 0x1000, OpCode::CPUI_COPY);
+    for (query_op, query_vn, expected) in [
+        (OpId::default(), input, "cse_find_in_block: stale op"),
+        (op, VarnodeId::default(), "cse_find_in_block: stale vn"),
+        (op, input, "cse_find_in_block: stale earliest"),
+    ] {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            fd.cse_find_in_block(query_op, query_vn, block, Some(OpId::default()))
+        }));
+        let panic = result.expect_err("invalid identifiers must still be checked");
+        let message = panic.downcast_ref::<String>().map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied()).unwrap();
+        assert_eq!(message, expected);
+    }
+}

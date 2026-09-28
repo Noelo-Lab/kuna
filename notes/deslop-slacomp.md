@@ -1659,3 +1659,48 @@ All four required gates passed: `make test` (675/675), `make test-stages`
 (1,467/1,467), `make rust-test` (7,714 passed, 38 ignored across 433 groups),
 and `make check-spec`. Both parity gates report `PARITY OK`; the option
 catalog and whitespace checks also pass. Neither baseline changed.
+
+### Synthetic operand walker state
+
+Operand-value evaluation now keeps only the synthetic instruction offset it
+uses. An optional offset replaces `OobState` and its unused constructor/length
+fields; one walker construction handles both a resolved operand offset and the
+current-node fallback. Explicit defining expressions are borrowed, while
+symbol-produced expressions retain ownership through `Cow`. Public APIs and
+existing error paths are unchanged. The code refactor removes 39 source lines.
+
+The actual offset-helper bodies agree on 368,640 outcomes per overflow-checking
+mode over 8,192 immutable contexts: 4,753 offsets, 84,960 fallbacks, 104,366
+errors and 174,561 panics. The model substitutes field-compatible private
+context/cursor probes, uses the real symbol table, and normalizes the old
+valid/offset result to an option; it is not a full-module or full expression
+evaluator model. A public-API probe separately matches 1,080 complete p-code
+and context records across direct, fallback and defining-symbol paths in both
+byte orders. It covers nested-reference rejection, context-time `inst_next2`
+refusal, missing definitions, arithmetic panics, delay slots and retries.
+An additional 144 runtime error/retry outcomes and all 16 standard runtime
+fixture statuses, p-code counts and hashes match. All 371 focused tests pass.
+
+Allocation totals on the standard fixtures are unchanged: 1,412 requests and
+802,088 requested bytes per 1,171 instruction calls, with three stable samples
+per fixture. No allocation reduction or peak-memory improvement is claimed.
+In 66 balanced CPU-pinned runs, 30 measured per version, median instruction
+time changes +0.567% (paired +0.687%); individual deltas range from -4.299%
+to +3.619%. Whole lift-oracle median wall/CPU times change -0.356%/-0.295%
+(paired -0.303%/-0.342%). All workloads stay within the 5% budget; each of the
+66 whole-fixture runs passes all 16 oracles. Sources, hashes, model adaptations,
+native probes, complete outputs and raw timing samples use the local
+`/tmp/kuna-deslop-runtime-operand-eval-` prefix.
+
+A subsequent documentation-only pass removes another 85 comment lines while
+preserving every noncomment source line of the measured implementation.
+It states that reader cursors are copied, explains arena cursor rebasing and
+decode-time pattern capture, and describes operand masks as snapshots taken
+before visiting the containing constructor's children. Stale migration notes
+and repeated implementation narration are removed. The source proof links the
+measured algorithm snapshot to the final documented source.
+
+Final rustdoc passes with broken intra-doc links denied. All four required gates
+passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
+(7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
+gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.
