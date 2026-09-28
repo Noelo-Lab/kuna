@@ -899,3 +899,50 @@ The shared-evaluator snapshot passed all four gates: 675 upstream and 1,467
 stage assertions, 7,714 workspace tests with 38 existing ignores, and the spec
 check. The option catalog passed. No baseline, test count or oracle expectation
 changed.
+
+Expression table-id and operand-index remapping now share a private, left-to-right
+operand visitor. Table callbacks still run separately for each reference, and
+updates completed before a callback panic remain in place. Index remapping uses
+a checked slice lookup with the same signed-to-unsigned conversion, preserving
+negative and out-of-range indices. Public signatures are unchanged. This removes
+24 production lines, including stale comments about an optional mapper result.
+
+Actual-module comparisons agree on 196,864 outcomes across 12,304 trees in both
+overflow-check modes. They include all binary operators, mixed trees, callback
+order, interrupted updates, boundary indices and repeated index remaps. The
+applied source matches the compared candidate. All 371 targeted release tests,
+286 CLI cases and 48 binary/XML compiler oracles pass unchanged. Allocation
+request counts and requested-byte totals match in three full-compilation
+repetitions on Toy builder, x86-64 and Hexagon.
+
+Alternating uninstrumented runs pinned to CPU 40 measured Toy-builder wall time
+at 6.3405 → 6.3717 ms (+0.49%, 110 samples per version), x86-64 at 432.8713 →
+439.9308 ms (+1.63%, 12 samples), and Hexagon at 144.1154 → 144.1817 ms
+(+0.05%, 12 samples). Paired wall-time medians changed +0.47%, +1.62% and
+-0.02%; paired child CPU medians changed +0.52%, +1.62% and -0.08%. These
+results fit the 5% budget; every output image is identical. Measurements
+followed warmups on the shared host.
+
+The operand-remapping snapshot passed all four gates: 675 upstream and 1,467
+stage assertions, 7,714 workspace tests with 38 existing ignores, and the spec
+check. The option catalog passed. No baseline, test count or oracle expectation
+changed.
+
+A broader compiler comparison reruns the saved build from before macro-template
+sharing against the operand-remapping snapshot. This baseline follows the
+initial compiler fixes; it is not the original PR base. All three complete
+output images still match. Three allocation repetitions reproduce these totals:
+
+| Spec | Allocation requests before → now | Bytes requested before → now |
+| --- | ---: | ---: |
+| Toy builder | 26,410 → 16,835 (-36.26%) | 2,874,354 → 2,331,153 (-18.90%) |
+| x86-64 | 3,737,622 → 2,724,101 (-27.12%) | 317,842,112 → 239,646,482 (-24.60%) |
+| Hexagon | 883,974 → 689,014 (-22.05%) | 83,298,700 → 76,750,658 (-7.86%) |
+
+These measure allocation/reallocation requests and requested bytes, not peak
+or resident memory. Balanced CPU-40 timing measures Toy at 6.7870 → 6.3528 ms
+(-6.40%, 110 samples per version), x86-64 at 474.1347 → 440.2971 ms (-7.14%,
+12 samples), and Hexagon at 149.4232 → 144.1632 ms (-3.52%, 12 samples).
+Paired wall medians are -6.42%, -7.17% and -3.24%; paired child CPU medians are
+-6.88%, -7.18% and -3.25%. This comparison checks the accumulated compiler
+changes, including the later refactors whose individual timings increased.

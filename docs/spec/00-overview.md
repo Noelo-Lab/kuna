@@ -914,6 +914,12 @@ its assigned slot while the original scope binding stays intact. Replacing a
 symbol updates that binding directly, including when the replaced slot came
 from a rejected insertion; its id and scope are preserved.
 
+Expression copies in operands and context changes remap embedded operand
+references after symbol compaction or constructor operand reordering. Both
+remappers use one left-to-right walk. Table-id callbacks run once per reference;
+completed updates remain if a later callback panics. Index remapping leaves
+negative and out-of-range indices unchanged.
+
 Pattern construction borrows completed constructor patterns while folding their
 common subpattern and populating decision nodes. Context validation borrows the
 constructor's changes. Each decision node still owns its simplified patterns,

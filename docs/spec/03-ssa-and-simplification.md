@@ -611,6 +611,14 @@ carry unreachable failure branches around it. Fresh unique outputs use
 `Funcdata::new_unique_out` directly and retain their allocation-error handling.
 These ownership changes do not alter rule guards, opcode flags, or rewrite order.
 
+The boolean/arithmetic and bit-piece families in `ruleaction_3.rs` and
+`ruleaction_4.rs` also allocate unique outputs through `Funcdata::new_unique_out`.
+New outputs therefore receive high variables when high-level state is enabled,
+including public rule calls after that transition, and matching lane-storage
+records while lane collection is active. Rule matching and graph-edit order are
+unchanged. The addressed-output and output-reassignment helpers in
+`ruleaction_4.rs` remain separate; this change does not alter their alias handling.
+
 For the 64-bit unsigned divide-by-three reciprocal, GCC can share one wide
 multiply between the quotient and remainder. After `RuleDivOpt` recovers
 `x / 3`, the sibling `(high64(x * 0xaaaaaaaaaaaaaaab) & ~1)` is exactly twice

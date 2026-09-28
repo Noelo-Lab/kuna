@@ -1014,6 +1014,51 @@ CLI comparisons. All eight gate processes exited zero; the tracked diff and
 new startup test retained their frozen hashes. No baseline or existing output
 expectation changed.
 
+## Twenty-seventh checkpoint: rule factories and operand remapping
+
+The remaining unique-output factory copies in `ruleaction_3.rs` and
+`ruleaction_4.rs` now use `Funcdata::new_unique_out` at all nineteen production
+call sites. Their two copied implementations and stale module descriptions are
+removed. The addressed-output and output-reassignment helpers are unchanged;
+their aliasing and register-lane behavior needs a separate review.
+
+Two existing rule tests now exercise high-level state both off and on while
+retaining their graph assertions. Before the production change, both fail only
+at the new high-variable check. The edited engine passes all 3068 release
+library tests, including both regressions, without warnings. Root AST checks
+confirm that all 206 remaining production function bodies retain every
+non-comment token except the nineteen redirected allocation calls. Rule guards,
+registration, opcode metadata and graph-edit order are unchanged.
+
+Two independent public-rule probes also change from 0/2 to 2/2; a follow-up
+checks that each new output is recorded at the correct lane-storage address in
+both high-level states. Forty ELF/PE whole-binary cases keep identical output
+across worker counts and forced replay/fallback modes. All 286 compiler CLI
+comparisons are exact, and the native release build is warning-free.
+
+Twenty alternating project-export pairs after warmups, pinned to CPU 41,
+preserve all four artifacts. Separate median wall time is 458.18 → 458.31 ms;
+the paired median changes -0.02%, within the 5% budget. The preceding published
+commit passed the complete CI job and all CodeQL checks.
+
+Compiler operand remappers share a private left-to-right visitor, removing
+24 production lines. Root comparisons in both overflow modes agree on 196,864
+outcomes across 12,304 trees, including callback order, interrupted updates and
+repeated index remaps. Both actual modules match the compared sources' AST
+tokens. All 375 compiler/SLEIGH release tests pass without warnings. Allocation
+counts are unchanged and compiler timing remains within the 5% budget. The
+broader compiler comparison in `notes/deslop-slacomp.md` records lower allocation
+counts and faster compilation against the saved pre-macro-sharing build; that
+baseline follows the initial fixes and is not the original PR base.
+
+Final frozen-tree checks passed: 675 upstream and 1467 stage assertions,
+7432 workspace tests (38 ignored, no warnings), spec/catalog checks, 268 CLI
+probes, 42 Python tests, 56 Ghidra tests, 48 pinned XML comparisons and 17 saved
+CLI comparisons. All eight processes exited zero. A fresh warning-free WASM
+build and all eleven web scripts, including the real-browser suite, also pass.
+The tracked diff retained its frozen hash through the last check. No baseline
+or existing output expectation changed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1025,7 +1070,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay and object-file views have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
 | Collection policy | The release engine-library Clippy check still reports 211 collection-policy errors; the CLI-only check finds 17 errors and 22 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
-| Engine boundaries | Carry-chain and array-stride output creation now uses the shared factory, with high-level-state regressions. `ruleaction_3` and `ruleaction_4` still duplicate it, and the latter also copies the addressed-output factory; review their bookkeeping before replacing them. Wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
+| Engine boundaries | Carry-chain, array-stride and ruleaction unique outputs now use the shared factory, with high-level-state regressions. `ruleaction_4` still copies the addressed-output and output-reassignment helpers; review alias handling and register-lane bookkeeping before replacing them. Wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 
 Before each commit: `make test`, `make test-stages`, `make rust-test`,

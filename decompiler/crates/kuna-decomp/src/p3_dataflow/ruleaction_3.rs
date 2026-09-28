@@ -1,72 +1,20 @@
-//! Port of `decompiler/cpp/ruleaction.cc` lines 2819-4292 (W5, batch 3): the 22
-//! [`Rule`] classes `RuleBooleanDedup` .. `RuleAddMultCollapse`.
+//! Boolean normalization, phi/INDIRECT collapse, constant folding and reassociation.
+//! Port of `decompiler/cpp/ruleaction.cc` lines 2819-4292.
 //!
-//! Each rule is a faithful transcription of its C++ `applyOp`/`getOpList` body:
-//! the same guard order, the same op-graph edits in the same sequence, the same
-//! constants and tie-breakers (rule bodies are the decompiler's *output*).  The
-//! engine-owned per-rule state (name/group/flags) lives in the
-//! [`RuleState`](crate::action::RuleState) the owning pool holds; the rule
-//! structs here are zero-sized markers, exactly as the C++ rules carry no
-//! per-instance data beyond the base.
-//!
-//! The C++ definition order (the order `specs()` returns, which W8 feeds to
-//! `universalAction`) is:
-//! `booleandedup, booleannegate, boolzext, logic2bool, indirectcollapse,
-//! multicollapse, sborrow, scarry, trivialshift, signshift, testsign,
-//! identityel, shift2mult, shiftpiece, collapseconstants, transformcpool,
-//! propagatecopy, 2comp2mult, carryelim, sub2add, xorcollapse, addmultcollapse`.
-//!
-//! # Cross-wave stubs (recorded as losses)
-//!
-//! Several rules reach subsystems that are not yet ported.  Where a rule hits
-//! such a stub it transcribes every surrounding guard faithfully and returns `0`
-//! ("rule did not apply", the conservative value the C++ also returns on every
-//! early-out) at the precise stub point, with a `// STUB(...)` note:
-//!
-//! * `STUB(expression)` — `expression.cc` is a *separate* W5 file (still a stub):
-//!   `BooleanMatch::evaluate` (RuleBooleanDedup), `AddExpression`
-//!   (RuleSborrow/RuleScarry), `functionalEquality`/`cseFindInBlock` (the
-//!   functional-equality branch of RuleMultiCollapse).
-//! * `STUB(W6)` — the `TypeFactory`/`OpBehavior`/cpool surfaces:
-//!   `op->collapse`/`getArch()->getConstant`/`collapseConstantSymbol`
-//!   (RuleCollapseConstants), the cpool record lookup (RuleTransformCpool),
-//!   `Varnode::getSymbolEntry`/`copySymbolIfValid`/`updateType` (the symbol-copy
-//!   tails of RuleXorCollapse / RuleAddMultCollapse).
-//! * `STUB(W4)` — `data.warning` (the partial-INDIRECT note in
-//!   RuleIndirectCollapse), `getStoreGuard`/`LoadGuard` (the STORE-guard branch
-//!   of RuleIndirectCollapse).
-//!
-//! Two infrastructure shims live in this file (not "type behavior" — the fixed
-//! pcode-op property bits and the unique-output factory):
-//!
-//! * [`set_opcode`] resolves an [`OpCode`] to its [`TypeOp`] through the
-//!   canonical `inst[]` table ([`crate::typeop::seam_type_op_for`]) and calls
-//!   `opSetOpcode`.  This is the `glb->inst[opc]` resolution; the flag word is
-//!   load-bearing (downstream `isMarker`/`isCommutative`/... read the op's
-//!   cached flags), and the table answers for every op-code.
-//! * [`new_unique_out`] replicates `Funcdata::newUniqueOut`
-//!   (`funcdata_varnode.cc:131`): `vbank.createDefUnique` + `op->setOutput`.  The
-//!   `Funcdata`-level `newUniqueOut`/`opSetOutput` surface is blocked on a
-//!   `banks_mut()` split-borrow accessor the serial-chain `funcdata` owner must
-//!   add (documented in `funcdata_op.rs`), but the *unique* path needs no xref
-//!   unification, so it is done here at the bank level (assignHigh is the W7
-//!   no-op stub; checkForLanedRegister is skipped — STUB(W7)).
-
-use std::rc::Rc;
+//! Registration retains upstream definition order; the action pool owns rule
+//! state. Opcode changes use canonical TypeOp metadata, and unique outputs use
+//! the Funcdata factory so high-variable bookkeeping follows the function state.
 
 use kuna_base::address::calc_mask;
-use kuna_base::error::KunaResult;
 use kuna_base::space::spacetype;
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
-use crate::dtype::{type_metatype, Datatype};
 use crate::expression::AddExpression;
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use crate::context::{OpId, VarnodeId};
-use crate::varnode::DefOpInfo;
 
 // =============================================================================
 // inst-table resolution: OpCode -> TypeOp (canonical typeop.cc table)
@@ -77,34 +25,6 @@ use crate::varnode::DefOpInfo;
 /// [`Funcdata::op_set_opcode`].
 fn set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
     data.op_set_opcode(op, crate::typeop::seam_type_op_for(opc));
-}
-
-/// `data.newUniqueOut(s, op)` (C++ `Funcdata::newUniqueOut`,
-/// `funcdata_varnode.cc:131`): create a fresh unique Varnode as the output of
-/// `op`.
-///
-/// `Datatype *ct = glb->types->getBase(s,TYPE_UNKNOWN);` (STUB(W6), built as the
-/// unknown-base skeleton exactly as the funcdata_varnode factories do);
-/// `vn = vbank.createDefUnique(s,ct,op); op->setOutput(vn);`.  The fresh uniqid
-/// guarantees `createDefUnique`'s xref never unifies, so the replace-reads
-/// callback is the no-op (matching the C++, where a brand-new unique has no
-/// pre-existing equivalent).  `assignHigh` is the W7 no-op stub and the
-/// `checkForLanedRegister` laned-register probe is skipped (STUB(W7); it affects
-/// only later analysis, never the op graph this rule edits).
-fn new_unique_out(data: &mut Funcdata, s: int4, op: OpId) -> VarnodeId {
-    let ct: Rc<Datatype> = Rc::new(Datatype::new(s, type_metatype::TYPE_UNKNOWN));
-    let seqnum = data.obank().get(op).expect("new_unique_out: stale op").get_seq_num().clone();
-    let def = DefOpInfo { id: op, seqnum };
-    let mut no_replace = |_: &mut crate::varnode::VarnodeBank,
-                          _: VarnodeId,
-                          _: VarnodeId|
-     -> KunaResult<()> { Ok(()) };
-    let vn = data
-        .vbank_mut()
-        .create_def_unique(s, ct, def, &mut no_replace)
-        .expect("new_unique_out: createDefUnique on a fresh uniqid cannot collide");
-    data.obank_mut().get_mut(op).expect("new_unique_out: stale op").set_output(Some(vn));
-    vn
 }
 
 // =============================================================================
@@ -343,7 +263,7 @@ impl Rule for RuleBooleanDedup {
         }
         let opaddr = data.obank().get(op).expect("RuleBooleanDedup: stale op").get_addr().clone();
         let bc_op = data.new_op(2, opaddr);
-        let tmp = new_unique_out(data, 1, bc_op);
+        let tmp = data.new_unique_out(1, bc_op).expect("newUniqueOut");
         set_opcode(data, bc_op, bc_opc);
         data.op_set_input(bc_op, left_o, 0).expect("RuleBooleanDedup: opSetInput");
         data.op_set_input(bc_op, right_o, 1).expect("RuleBooleanDedup: opSetInput");
@@ -471,7 +391,7 @@ impl Rule for RuleBoolZext {
                     let opaddr = data.obank().get(op).expect("RuleBoolZext: stale op").get_addr().clone();
                     let newop = data.new_op(1, opaddr);
                     set_opcode(data, newop, OpCode::CPUI_BOOL_NEGATE); // Negate the boolean
-                    let vn = new_unique_out(data, 1, newop);
+                    let vn = data.new_unique_out(1, newop).expect("newUniqueOut");
                     data.op_set_input(newop, bool_vn1, 0).expect("RuleBoolZext: opSetInput");
                     data.op_insert_before(newop, op);
                     data.op_set_input(op, vn, 0).expect("RuleBoolZext: opSetInput");
@@ -554,14 +474,14 @@ impl Rule for RuleBoolZext {
                 let aoaddr =
                     data.obank().get(actionop).expect("RuleBoolZext: stale actionop").get_addr().clone();
                 let newop = data.new_op(2, aoaddr.clone());
-                let newres = new_unique_out(data, 1, newop);
+                let newres = data.new_unique_out(1, newop).expect("newUniqueOut");
                 set_opcode(data, newop, opc);
                 data.op_set_input(newop, bool_vn1, 0).expect("RuleBoolZext: opSetInput");
                 data.op_set_input(newop, bool_vn2, 1).expect("RuleBoolZext: opSetInput");
                 data.op_insert_before(newop, actionop);
 
                 let newzext = data.new_op(1, aoaddr);
-                let newzout = new_unique_out(data, size, newzext);
+                let newzout = data.new_unique_out(size, newzext).expect("newUniqueOut");
                 set_opcode(data, newzext, OpCode::CPUI_INT_ZEXT);
                 data.op_set_input(newzext, newres, 0).expect("RuleBoolZext: opSetInput");
                 data.op_insert_before(newzext, actionop);
@@ -1277,7 +1197,7 @@ impl Rule for RuleSignShift {
         let opaddr = data.obank().get(op).expect("RuleSignShift: stale op").get_addr().clone();
         let shift_op = data.new_op(2, opaddr);
         set_opcode(data, shift_op, OpCode::CPUI_INT_SRIGHT);
-        let unique_vn = new_unique_out(data, vn_size(data, in_vn), shift_op);
+        let unique_vn = data.new_unique_out(vn_size(data, in_vn), shift_op).expect("newUniqueOut");
         data.op_set_input(op, unique_vn, 0).expect("RuleSignShift: opSetInput");
         let mask = data.new_constant(vn_size(data, in_vn), calc_mask(vn_size(data, in_vn)));
         data.op_set_input(op, mask, 1).expect("RuleSignShift: opSetInput");
@@ -1629,7 +1549,7 @@ impl Rule for RuleShiftPiece {
         } else {
             let opaddr = data.obank().get(op).expect("RuleShiftPiece: stale op").get_addr().clone();
             let newop = data.new_op(2, opaddr);
-            new_unique_out(data, concatsize / 8, newop);
+            data.new_unique_out(concatsize / 8, newop).expect("newUniqueOut");
             set_opcode(data, newop, OpCode::CPUI_PIECE);
             data.op_set_input(newop, vn1, 0).expect("RuleShiftPiece: opSetInput");
             data.op_set_input(newop, vn2, 1).expect("RuleShiftPiece: opSetInput");
@@ -2066,7 +1986,7 @@ impl Rule for RuleSub2Add {
         let opaddr = data.obank().get(op).expect("RuleSub2Add: stale op").get_addr().clone();
         let newop = data.new_op(2, opaddr);
         set_opcode(data, newop, OpCode::CPUI_INT_MULT);
-        let newvn = new_unique_out(data, vn_size(data, vn), newop);
+        let newvn = data.new_unique_out(vn_size(data, vn), newop).expect("newUniqueOut");
         data.op_set_input(op, newvn, 1).expect("RuleSub2Add: opSetInput"); // Replace vn's reference first
         data.op_set_input(newop, vn, 0).expect("RuleSub2Add: opSetInput");
         let negone = data.new_constant(vn_size(data, vn), calc_mask(vn_size(data, vn)));
@@ -2228,7 +2148,7 @@ impl Rule for RuleAddMultCollapse {
                 let opaddr = data.obank().get(op).expect("RuleAddMultCollapse: stale op").get_addr().clone();
                 let newop = data.new_op(2, opaddr);
                 set_opcode(data, newop, OpCode::CPUI_INT_ADD);
-                let newout = new_unique_out(data, c0sz, newop);
+                let newout = data.new_unique_out(c0sz, newop).expect("newUniqueOut");
                 data.op_set_input(newop, basevn, 0).expect("RuleAddMultCollapse: opSetInput");
                 data.op_set_input(newop, newvn, 1).expect("RuleAddMultCollapse: opSetInput");
                 data.op_insert_before(newop, op);
@@ -2315,6 +2235,7 @@ pub fn specs() -> Vec<RuleSpec> {
 mod tests {
     use super::*;
     use std::rc::Rc;
+    use kuna_base::error::KunaResult;
 
     /// Regression: the opcode seam must cover the equality comparisons (a
     /// `markLabelBumpUp`-hoisted loop-head `==`/`!=` guard re-set its opcode
@@ -2492,7 +2413,7 @@ mod tests {
         for (i, &vn) in ins.iter().enumerate() {
             wire(fd, op, vn, i as int4);
         }
-        let out = new_unique_out(&mut fd.fd, outsize, op);
+        let out = fd.fd.new_unique_out(outsize, op).expect("newUniqueOut");
         (op, out)
     }
 
@@ -2820,23 +2741,28 @@ mod tests {
 
     #[test]
     fn sub_to_add_inserts_mult_neg_one() {
-        let mut fd = build_fd();
-        let a = make_input(&mut fd, 0x100, 4);
-        let b = make_input(&mut fd, 0x104, 4);
-        let op = mk_op(&mut fd, 2, OpCode::CPUI_INT_SUB);
-        wire(&mut fd, op, a, 0);
-        wire(&mut fd, op, b, 1);
-        assert_eq!(RuleSub2Add.apply_op(op, &mut fd), 1);
-        // op is now INT_ADD; slot1 is the output of a new INT_MULT(b, -1).
-        assert_eq!(op_code(&fd, op), OpCode::CPUI_INT_ADD);
-        assert_eq!(op_in(&fd, op, 0), Some(a));
-        let newvn = op_in(&fd, op, 1).unwrap();
-        let multop = vn_def(&fd, newvn).unwrap();
-        assert_eq!(op_code(&fd, multop), OpCode::CPUI_INT_MULT);
-        assert_eq!(op_in(&fd, multop, 0), Some(b));
-        let negone = op_in(&fd, multop, 1).unwrap();
-        assert!(vn_is_constant(&fd, negone));
-        assert_eq!(vn_offset(&fd, negone), calc_mask(4));
+        for high in [false, true] {
+            let mut fd = build_fd();
+            let a = make_input(&mut fd, 0x100, 4);
+            let b = make_input(&mut fd, 0x104, 4);
+            let op = mk_op(&mut fd, 2, OpCode::CPUI_INT_SUB);
+            wire(&mut fd, op, a, 0);
+            wire(&mut fd, op, b, 1);
+            if high {
+                fd.set_high_level();
+            }
+            assert_eq!(RuleSub2Add.apply_op(op, &mut fd), 1);
+            assert_eq!(op_code(&fd, op), OpCode::CPUI_INT_ADD);
+            assert_eq!(op_in(&fd, op, 0), Some(a));
+            let newvn = op_in(&fd, op, 1).unwrap();
+            assert_eq!(fd.vbank().get(newvn).unwrap().get_high().is_some(), high);
+            let multop = vn_def(&fd, newvn).unwrap();
+            assert_eq!(op_code(&fd, multop), OpCode::CPUI_INT_MULT);
+            assert_eq!(op_in(&fd, multop, 0), Some(b));
+            let negone = op_in(&fd, multop, 1).unwrap();
+            assert!(vn_is_constant(&fd, negone));
+            assert_eq!(vn_offset(&fd, negone), calc_mask(4));
+        }
     }
 
     // --- RuleXorCollapse --------------------------------------------------
@@ -3324,7 +3250,7 @@ mod tests {
         let op = mk_op(&mut fd, 2, OpCode::CPUI_INT_OR);
         wire(&mut fd, op, shout, 0);
         wire(&mut fd, op, zw, 1);
-        let _out = new_unique_out(&mut fd.fd, 4, op);
+        let _out = fd.fd.new_unique_out(4, op).expect("newUniqueOut");
 
         assert_eq!(RuleShiftPiece.apply_op(op, &mut fd), 1);
         // concatsize = 8 + 8 = 16 < 32 => op becomes ZEXT(newpiece), where
@@ -3358,7 +3284,7 @@ mod tests {
         let op = mk_op(&mut fd, 2, OpCode::CPUI_INT_OR);
         wire(&mut fd, op, shout, 0);
         wire(&mut fd, op, zw, 1);
-        let out = new_unique_out(&mut fd.fd, 4, op);
+        let out = fd.fd.new_unique_out(4, op).expect("newUniqueOut");
         let _ = out;
 
         assert_eq!(RuleShiftPiece.apply_op(op, &mut fd), 1);
@@ -3384,7 +3310,7 @@ mod tests {
         let op = mk_op(&mut fd, 2, OpCode::CPUI_INT_OR);
         wire(&mut fd, op, zw, 0);
         wire(&mut fd, op, shout, 1);
-        let _out = new_unique_out(&mut fd.fd, 4, op);
+        let _out = fd.fd.new_unique_out(4, op).expect("newUniqueOut");
 
         assert_eq!(RuleShiftPiece.apply_op(op, &mut fd), 1);
         assert_eq!(op_code(&fd, op), OpCode::CPUI_PIECE);

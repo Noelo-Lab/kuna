@@ -1,49 +1,10 @@
-//! Port of `decompiler/cpp/ruleaction.cc` lines 4293-5526 (W5, item
-//! `w5-s3-rules-4`): the 19 simplification [`Rule`]s `RuleLoadVarnode` ..
-//! `RuleCondNegate`.
+//! Bit-piece, extension and stack-variable simplification rules.
+//! Port of `decompiler/cpp/ruleaction.cc` lines 4293-5526.
 //!
-//! Each rule is transcribed statement-for-statement from the upstream
-//! `applyOp`/`getOpList` bodies — the rule bodies *are* the decompiler's output,
-//! so iteration order, tie-breakers, and the exact sequence of graph mutations
-//! are load-bearing (a transposed condition changes datatest text).  The C++
-//! semantic comments are carried verbatim.
-//!
-//! ## Registration (W8 reads [`specs`])
-//!
-//! [`specs`] lists every rule in **C++ definition order** (the order the classes
-//! appear in `ruleaction.cc`), so the W8 `universalAction` builder can splice
-//! these into the right [`ActionPool`]s.  Each [`RuleSpec`]'s `group` is the
-//! stage group the rule belongs to; see `docs/history/stage-mapping.md`.  17 of these
-//! rules live in the `"analysis"` group; `RuleLoadVarnode`/`RuleStoreVarnode`
-//! are the exceptions — the C++ registers them in `actprop2` under the
-//! `"stackvars"` group (`coreaction.cc:5939-5940`).
-//!
-//! ## Cross-wave stubs
-//!
-//! The W3 IR data-model that these rules drive is itself mid-port; several
-//! `Funcdata` methods the upstream bodies call are not yet available to this
-//! parallel item (it owns only `ruleaction_4.rs`).  Where a method is missing the
-//! body is still transcribed and the missing call is routed through a local
-//! `// STUB`-noted shim; the affected rules are listed in this item's losses.
-//! The notable stubs:
-//!
-//!   - **`opSetOpcode(op, OpCode)`** resolves `glb->inst[opc]` (the W6 `TypeOp`
-//!     table) to cache the op's property flags.  That table is W6's; [`set_opcode`]
-//!     builds a minimal [`TypeOp`] with the branch/return flag bits that matter
-//!     to later passes (the only flags any of these rules' new opcodes carry).
-//!     STUB(W6).
-//!   - **`newUniqueOut`/`newVarnodeOut`** (the output-Varnode factories) are the
-//!     funcdata_varnode wave's; `Funcdata::opSetOutput` itself is deferred on a
-//!     `banks_mut()` split-borrow accessor.  [`new_unique_out`]/[`new_varnode_out`]
-//!     compose the public `VarnodeBank::create_def*` primitives directly — exact
-//!     for a fresh unique output (which never unifies), with a `// STUB(W3)` note
-//!     for the register-address unification corner of `new_varnode_out`.
-//!   - **W4 `Architecture`/`Scope` surfaces** — `getSpaceBySpacebase`,
-//!     `Varnode::getSpaceFromConst`, `getCallSpecs`, `getScopeLocal`,
-//!     `findJumpTable`, `opNormalizeFlip`/`opFlipCondition` — are not ported.
-//!     The rules that depend on them (`RuleLoadVarnode`, `RuleStoreVarnode`,
-//!     `RuleSwitchSingle`, `RuleCondNegate`) transcribe the body but short-circuit
-//!     at the missing call (returning the C++ early-out) with a `// STUB` note.
+//! Registration retains upstream definition order. Opcode changes use canonical
+//! TypeOp metadata, and unique outputs use the Funcdata factory. Addressed
+//! outputs and output reassignment still have local helpers; remaining
+//! architecture-dependent limitations are documented at their call sites.
 
 use kuna_base::address::{calc_mask, leastsigbit_set, sign_extend_sized, Address, SeqNum};
 use kuna_base::types::{int4, uintb, Wrap};
@@ -57,7 +18,7 @@ use crate::context::{OpId, VarnodeId};
 use crate::varnode::DefOpInfo;
 
 // =============================================================================
-// Shared local shims (W3/W6 stubs — see module docs)
+// Local opcode and addressed-output helpers
 // =============================================================================
 
 /// `data.opSetOpcode(op, opc)` — resolves the [`OpCode`] to a [`TypeOp`] and
@@ -78,26 +39,6 @@ fn set_opcode(data: &mut Funcdata, op: OpId, opc: OpCode) {
 /// directly, exactly as the funcdata_varnode factories do.
 fn type_base_unknown(s: int4) -> Rc<Datatype> {
     Rc::new(Datatype::new(s, type_metatype::TYPE_UNKNOWN))
-}
-
-/// `data.newUniqueOut(s, op)` (C++ `funcdata_varnode.cc:131`): allocate a fresh
-/// \e unique-space Varnode as the output of `op`.
-///
-/// Composed from the public `VarnodeBank::create_def_unique` primitive — a fresh
-/// unique Varnode is never unified by `xref`, so the `replace_reads` callback is
-/// a no-op (the genuine `Funcdata::opSetOutput` defers only because *register*
-/// outputs may unify).  The C++ `assignHigh`/`checkForLanedRegister` tail is a
-/// W7/W4 no-op at this wave.
-fn new_unique_out(data: &mut Funcdata, s: int4, op: OpId) -> VarnodeId {
-    let seqnum = data.obank().get(op).expect("new_unique_out: stale op").get_seq_num().clone();
-    let def = DefOpInfo { id: op, seqnum };
-    let ct = type_base_unknown(s);
-    let vn = data
-        .vbank_mut()
-        .create_def_unique(s, ct, def, &mut |_, _, _| Ok(()))
-        .expect("new_unique_out: createDefUnique");
-    data.obank_mut().get_mut(op).expect("new_unique_out: stale op").set_output(Some(vn));
-    vn
 }
 
 /// `data.newVarnodeOut(s, m, op)` (C++ `funcdata_varnode.cc:106`): allocate a
@@ -554,7 +495,7 @@ impl Rule for RuleSubExtComm {
             let opaddr = addr_of(data, op);
             let newop = data.new_op(2, opaddr);
             set_opcode(data, newop, OpCode::CPUI_SUBPIECE);
-            newvn = new_unique_out(data, invn_size - subcut, newop);
+            newvn = data.new_unique_out(invn_size - subcut, newop).expect("newUniqueOut");
             let csize = size_of(data, in_vn(data, op, 1));
             let cvn = data.new_constant(csize, subcut as uintb);
             data.op_set_input(newop, cvn, 1).expect("RuleSubExtComm: opSetInput");
@@ -652,7 +593,7 @@ impl RuleSubCommute {
         }
         data.op_unset_output(longform);
         // Truncated longform output.
-        let outvn = new_unique_out(data, max_size, longform);
+        let outvn = data.new_unique_out(max_size, longform).expect("newUniqueOut");
         data.op_set_input(longform, ext0_in, 0).expect("cancel_extensions: opSetInput");
         data.op_set_input(longform, ext1_in, 1).expect("cancel_extensions: opSetInput");
         data.op_set_input(sub_op, outvn, 0).expect("cancel_extensions: opSetInput");
@@ -862,7 +803,7 @@ impl Rule for RuleSubCommute {
                         let opaddr = addr_of(data, op);
                         let newsub = data.new_op(2, opaddr); // Commuted SUBPIECE op
                         set_opcode(data, newsub, OpCode::CPUI_SUBPIECE);
-                        let nv = new_unique_out(data, outsize, newsub);
+                        let nv = data.new_unique_out(outsize, newsub).expect("newUniqueOut");
                         new_vn = Some(nv);
                         data.op_set_input(longform, nv, i).expect("RuleSubCommute: opSetInput");
                         // vn may be free, set as input after setting newVn
@@ -974,7 +915,7 @@ impl Rule for RuleConcatCommute {
             let opaddr = addr_of(data, op);
             let newconcat = data.new_op(2, opaddr);
             set_opcode(data, newconcat, OpCode::CPUI_PIECE);
-            let newvn = new_unique_out(data, outsz, newconcat);
+            let newvn = data.new_unique_out(outsz, newconcat).expect("newUniqueOut");
             data.op_set_input(newconcat, hi, 0).expect("RuleConcatCommute: opSetInput");
             data.op_set_input(newconcat, lo, 1).expect("RuleConcatCommute: opSetInput");
             data.op_insert_before(newconcat, op);
@@ -1043,7 +984,7 @@ impl Rule for RuleConcatZext {
         let opaddr = addr_of(data, op);
         let newconcat = data.new_op(2, opaddr);
         set_opcode(data, newconcat, OpCode::CPUI_PIECE);
-        let newvn = new_unique_out(data, size_of(data, hi) + size_of(data, lo), newconcat);
+        let newvn = data.new_unique_out(size_of(data, hi) + size_of(data, lo), newconcat).expect("newUniqueOut");
         data.op_set_input(newconcat, hi, 0).expect("RuleConcatZext: opSetInput");
         data.op_set_input(newconcat, lo, 1).expect("RuleConcatZext: opSetInput");
         data.op_insert_before(newconcat, op);
@@ -1109,7 +1050,7 @@ impl Rule for RuleZextCommute {
         let opaddr = addr_of(data, op);
         let newop = data.new_op(2, opaddr);
         set_opcode(data, newop, OpCode::CPUI_INT_RIGHT);
-        let newout = new_unique_out(data, size_of(data, zextin), newop);
+        let newout = data.new_unique_out(size_of(data, zextin), newop).expect("newUniqueOut");
         data.op_remove_input(op, 1);
         data.op_set_input(op, newout, 0).expect("RuleZextCommute: opSetInput");
         set_opcode(data, op, OpCode::CPUI_INT_ZEXT);
@@ -1198,7 +1139,7 @@ impl Rule for RuleZextShiftZext {
         let opaddr = addr_of(data, op);
         let newop = data.new_op(1, opaddr);
         set_opcode(data, newop, OpCode::CPUI_INT_ZEXT);
-        let outvn = new_unique_out(data, size_of(data, out_vn(data, op)), newop);
+        let outvn = data.new_unique_out(size_of(data, out_vn(data, op)), newop).expect("newUniqueOut");
         data.op_set_input(newop, rootvn, 0).expect("RuleZextShiftZext: opSetInput");
         set_opcode(data, op, OpCode::CPUI_INT_LEFT);
         data.op_set_input(op, outvn, 0).expect("RuleZextShiftZext: opSetInput");
@@ -1352,7 +1293,7 @@ impl Rule for RuleConcatZero {
         let highvn = in_vn(data, op, 0);
         let opaddr = addr_of(data, op);
         let newop = data.new_op(1, opaddr);
-        let outvn = new_unique_out(data, size_of(data, out_vn(data, op)), newop);
+        let outvn = data.new_unique_out(size_of(data, out_vn(data, op)), newop).expect("newUniqueOut");
         set_opcode(data, newop, OpCode::CPUI_INT_ZEXT);
         set_opcode(data, op, OpCode::CPUI_INT_LEFT);
         data.op_set_input(op, outvn, 0).expect("RuleConcatZero: opSetInput");
@@ -1439,7 +1380,7 @@ impl Rule for RuleConcatLeftShift {
         let opaddr = addr_of(data, op);
         let newop = data.new_op(2, opaddr);
         set_opcode(data, newop, OpCode::CPUI_PIECE);
-        let newout = new_unique_out(data, size_of(data, vn1) + size_of(data, b), newop);
+        let newout = data.new_unique_out(size_of(data, vn1) + size_of(data, b), newop).expect("newUniqueOut");
         data.op_set_input(newop, vn1, 0).expect("RuleConcatLeftShift: opSetInput");
         data.op_set_input(newop, b, 1).expect("RuleConcatLeftShift: opSetInput");
         data.op_insert_before(newop, op);
@@ -2026,7 +1967,7 @@ impl Rule for RuleHumptyOr {
             let opaddr = addr_of(data, op);
             let new_or_op = data.new_op(2, opaddr);
             set_opcode(data, new_or_op, OpCode::CPUI_INT_OR);
-            let or_vn = new_unique_out(data, size_of(data, a), new_or_op);
+            let or_vn = data.new_unique_out(size_of(data, a), new_or_op).expect("newUniqueOut");
             data.op_set_input(new_or_op, b, 0).expect("RuleHumptyOr: opSetInput");
             data.op_set_input(new_or_op, c, 1).expect("RuleHumptyOr: opSetInput");
             data.op_insert_before(new_or_op, op);
@@ -2146,7 +2087,7 @@ impl Rule for RuleCondNegate {
         let opaddr = addr_of(data, op);
         let newop = data.new_op(1, opaddr);
         set_opcode(data, newop, OpCode::CPUI_BOOL_NEGATE);
-        let outvn = new_unique_out(data, 1, newop); // Flipped version of varnode
+        let outvn = data.new_unique_out(1, newop).expect("newUniqueOut"); // Flipped version of varnode
         data.op_set_input(newop, vn, 0).expect("RuleCondNegate: opSetInput");
         data.op_set_input(op, outvn, 1).expect("RuleCondNegate: opSetInput");
         data.op_insert_before(newop, op);

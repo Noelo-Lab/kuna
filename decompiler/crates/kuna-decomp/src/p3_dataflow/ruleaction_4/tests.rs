@@ -106,7 +106,7 @@ fn mk_def(
         fd.op_set_input(op, v, i as int4).unwrap();
     }
     fd.op_insert(op, bl, None);
-    let out = new_unique_out(fd, s, op);
+    let out = fd.new_unique_out(s, op).expect("newUniqueOut");
     (op, out)
 }
 
@@ -262,7 +262,7 @@ fn attach_copy(fd: &mut Funcdata, input: VarnodeId, off: u64) {
     fd.op_set_input(copy, input, 0).unwrap();
     fd.op_insert(copy, bl, None);
     let size = fd.vbank().get(input).unwrap().get_size();
-    let _copy_out = new_unique_out(fd, size, copy);
+    let _copy_out = fd.new_unique_out(size, copy).expect("newUniqueOut");
 }
 
 fn build_extension_shift_subpiece(fd: &mut Funcdata, extension: OpCode) -> (OpId, OpId) {
@@ -613,7 +613,7 @@ fn subcancel_and_total_cancel() {
     fd.op_set_input(subop, andout, 0).unwrap();
     fd.op_set_input(subop, off0, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 2, subop);
+    let _subout = fd.new_unique_out(2, subop).expect("newUniqueOut");
 
     let res = RuleSubCancel::new().apply_op(subop, &mut fd);
     assert_eq!(res, 1);
@@ -635,7 +635,7 @@ fn subcancel_zext_total_elimination_to_copy() {
     fd.op_set_input(subop, zout, 0).unwrap();
     fd.op_set_input(subop, off0, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 4, subop);
+    let _subout = fd.new_unique_out(4, subop).expect("newUniqueOut");
 
     let res = RuleSubCancel::new().apply_op(subop, &mut fd);
     assert_eq!(res, 1);
@@ -657,7 +657,7 @@ fn subcancel_zext_offset_past_input_yields_zero() {
     fd.op_set_input(subop, zout, 0).unwrap();
     fd.op_set_input(subop, off4, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 2, subop);
+    let _subout = fd.new_unique_out(2, subop).expect("newUniqueOut");
 
     let res = RuleSubCancel::new().apply_op(subop, &mut fd);
     assert_eq!(res, 1);
@@ -681,7 +681,7 @@ fn subcancel_rejects_other_def() {
     fd.op_set_input(subop, addout, 0).unwrap();
     fd.op_set_input(subop, off0, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 4, subop);
+    let _subout = fd.new_unique_out(4, subop).expect("newUniqueOut");
     assert_eq!(RuleSubCancel::new().apply_op(subop, &mut fd), 0);
 }
 
@@ -702,7 +702,7 @@ fn shiftsub_rewrites_offset() {
     fd.op_set_input(subop, shout, 0).unwrap();
     fd.op_set_input(subop, c, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 4, subop); // outsize 4; c+out=1+4=5<=8 ok
+    let _subout = fd.new_unique_out(4, subop).expect("newUniqueOut"); // outsize 4; c+out=1+4=5<=8 ok
 
     let res = RuleShiftSub::new().apply_op(subop, &mut fd);
     assert_eq!(res, 1);
@@ -725,7 +725,7 @@ fn shiftsub_rejects_non_byte_shift() {
     fd.op_set_input(subop, shout, 0).unwrap();
     fd.op_set_input(subop, c, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 4, subop);
+    let _subout = fd.new_unique_out(4, subop).expect("newUniqueOut");
     assert_eq!(RuleShiftSub::new().apply_op(subop, &mut fd), 0);
 }
 
@@ -742,7 +742,7 @@ fn shiftsub_rejects_negative_offset() {
     fd.op_set_input(subop, shout, 0).unwrap();
     fd.op_set_input(subop, c, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 4, subop);
+    let _subout = fd.new_unique_out(4, subop).expect("newUniqueOut");
     assert_eq!(RuleShiftSub::new().apply_op(subop, &mut fd), 0);
 }
 
@@ -767,7 +767,7 @@ fn humptydumpty_whole_to_copy() {
     fd.op_set_input(cat, sub1out, 0).unwrap();
     fd.op_set_input(cat, sub2out, 1).unwrap();
     fd.op_insert(cat, bl, None);
-    let _catout = new_unique_out(&mut fd, 8, cat);
+    let _catout = fd.new_unique_out(8, cat).expect("newUniqueOut");
 
     let res = RuleHumptyDumpty::new().apply_op(cat, &mut fd);
     assert_eq!(res, 1);
@@ -791,7 +791,7 @@ fn humptydumpty_partial_to_subpiece() {
     fd.op_set_input(cat, sub1out, 0).unwrap();
     fd.op_set_input(cat, sub2out, 1).unwrap();
     fd.op_insert(cat, bl, None);
-    let _catout = new_unique_out(&mut fd, 6, cat);
+    let _catout = fd.new_unique_out(6, cat).expect("newUniqueOut");
 
     let res = RuleHumptyDumpty::new().apply_op(cat, &mut fd);
     assert_eq!(res, 1);
@@ -816,7 +816,7 @@ fn humptydumpty_rejects_different_roots() {
     fd.op_set_input(cat, sub1out, 0).unwrap();
     fd.op_set_input(cat, sub2out, 1).unwrap();
     fd.op_insert(cat, bl, None);
-    let _catout = new_unique_out(&mut fd, 8, cat);
+    let _catout = fd.new_unique_out(8, cat).expect("newUniqueOut");
     assert_eq!(RuleHumptyDumpty::new().apply_op(cat, &mut fd), 0);
 }
 
@@ -837,7 +837,7 @@ fn dumptyhump_offset0_eliminates() {
     fd.op_set_input(subop, catout, 0).unwrap();
     fd.op_set_input(subop, off0, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 4, subop); // out size == vn2 size
+    let _subout = fd.new_unique_out(4, subop).expect("newUniqueOut"); // out size == vn2 size
 
     let res = RuleDumptyHump::new().apply_op(subop, &mut fd);
     assert_eq!(res, 1);
@@ -859,7 +859,7 @@ fn dumptyhump_offset_into_vn1() {
     fd.op_set_input(subop, catout, 0).unwrap();
     fd.op_set_input(subop, off4, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 4, subop); // out size == vn1 size -> COPY
+    let _subout = fd.new_unique_out(4, subop).expect("newUniqueOut"); // out size == vn1 size -> COPY
 
     let res = RuleDumptyHump::new().apply_op(subop, &mut fd);
     assert_eq!(res, 1);
@@ -880,7 +880,7 @@ fn dumptyhump_rejects_straddle() {
     fd.op_set_input(subop, catout, 0).unwrap();
     fd.op_set_input(subop, off2, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 4, subop);
+    let _subout = fd.new_unique_out(4, subop).expect("newUniqueOut");
     assert_eq!(RuleDumptyHump::new().apply_op(subop, &mut fd), 0);
 }
 
@@ -902,7 +902,7 @@ fn humptyor_constants_cover_all_to_copy() {
     fd.op_set_input(orop, and1out, 0).unwrap();
     fd.op_set_input(orop, and2out, 1).unwrap();
     fd.op_insert(orop, bl, None);
-    let _orout = new_unique_out(&mut fd, 2, orop);
+    let _orout = fd.new_unique_out(2, orop).expect("newUniqueOut");
 
     let res = RuleHumptyOr::new().apply_op(orop, &mut fd);
     assert_eq!(res, 1);
@@ -925,7 +925,7 @@ fn humptyor_partial_to_and() {
     fd.op_set_input(orop, and1out, 0).unwrap();
     fd.op_set_input(orop, and2out, 1).unwrap();
     fd.op_insert(orop, bl, None);
-    let _orout = new_unique_out(&mut fd, 2, orop);
+    let _orout = fd.new_unique_out(2, orop).expect("newUniqueOut");
 
     let res = RuleHumptyOr::new().apply_op(orop, &mut fd);
     assert_eq!(res, 1);
@@ -950,7 +950,7 @@ fn humptyor_rejects_no_shared_operand() {
     fd.op_set_input(orop, and1out, 0).unwrap();
     fd.op_set_input(orop, and2out, 1).unwrap();
     fd.op_insert(orop, bl, None);
-    let _orout = new_unique_out(&mut fd, 2, orop);
+    let _orout = fd.new_unique_out(2, orop).expect("newUniqueOut");
     assert_eq!(RuleHumptyOr::new().apply_op(orop, &mut fd), 0);
 }
 
@@ -975,7 +975,7 @@ fn subextcomm_commutes_to_zext() {
     fd.op_set_input(subop, zout, 0).unwrap();
     fd.op_set_input(subop, off0, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 4, subop); // out size 4
+    let _subout = fd.new_unique_out(4, subop).expect("newUniqueOut"); // out size 4
 
     let res = RuleSubExtComm::new().apply_op(subop, &mut fd);
     assert_eq!(res, 1);
@@ -998,7 +998,7 @@ fn subextcomm_misses_extbits_to_copy() {
     fd.op_set_input(subop, zout, 0).unwrap();
     fd.op_set_input(subop, off0, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 4, subop); // out(4)+0 <= invn(4) -> misses ext bits
+    let _subout = fd.new_unique_out(4, subop).expect("newUniqueOut"); // out(4)+0 <= invn(4) -> misses ext bits
 
     let res = RuleSubExtComm::new().apply_op(subop, &mut fd);
     assert_eq!(res, 1);
@@ -1020,7 +1020,7 @@ fn subextcomm_rejects_non_extension() {
     fd.op_set_input(subop, addout, 0).unwrap();
     fd.op_set_input(subop, off0, 1).unwrap();
     fd.op_insert(subop, bl, None);
-    let _subout = new_unique_out(&mut fd, 4, subop);
+    let _subout = fd.new_unique_out(4, subop).expect("newUniqueOut");
     assert_eq!(RuleSubExtComm::new().apply_op(subop, &mut fd), 0);
 }
 
@@ -1040,7 +1040,7 @@ fn concatzext_commutes() {
     fd.op_set_input(cat, zout, 0).unwrap();
     fd.op_set_input(cat, w, 1).unwrap();
     fd.op_insert(cat, bl, None);
-    let _catout = new_unique_out(&mut fd, 8, cat);
+    let _catout = fd.new_unique_out(8, cat).expect("newUniqueOut");
 
     let res = RuleConcatZext::new().apply_op(cat, &mut fd);
     assert_eq!(res, 1);
@@ -1069,7 +1069,7 @@ fn concatzext_rejects_non_zext() {
     fd.op_set_input(cat, addout, 0).unwrap();
     fd.op_set_input(cat, w, 1).unwrap();
     fd.op_insert(cat, bl, None);
-    let _catout = new_unique_out(&mut fd, 8, cat);
+    let _catout = fd.new_unique_out(8, cat).expect("newUniqueOut");
     assert_eq!(RuleConcatZext::new().apply_op(cat, &mut fd), 0);
 }
 
@@ -1080,26 +1080,31 @@ fn concatzext_rejects_non_zext() {
 // `concat(V, 0)  =>  zext(V) << (8*size0)`.
 #[test]
 fn concatzero_to_zext_shift() {
-    let mut fd = build_fd();
-    let bl = mk_block(&mut fd);
-    let v = mk_vn(&mut fd, 4, 0x10); // high
-    let zero = fd.new_constant(2, 0); // low, size 2 -> sa = 16
-    let cat = mk_op(&mut fd, 2, 0x30, OpCode::CPUI_PIECE);
-    fd.op_set_input(cat, v, 0).unwrap();
-    fd.op_set_input(cat, zero, 1).unwrap();
-    fd.op_insert(cat, bl, None);
-    let _catout = new_unique_out(&mut fd, 6, cat);
+    for high in [false, true] {
+        let mut fd = build_fd();
+        let bl = mk_block(&mut fd);
+        let v = mk_vn(&mut fd, 4, 0x10);
+        let zero = fd.new_constant(2, 0);
+        let cat = mk_op(&mut fd, 2, 0x30, OpCode::CPUI_PIECE);
+        fd.op_set_input(cat, v, 0).unwrap();
+        fd.op_set_input(cat, zero, 1).unwrap();
+        fd.op_insert(cat, bl, None);
+        let _catout = fd.new_unique_out(6, cat).expect("newUniqueOut");
+        if high {
+            fd.set_high_level();
+        }
 
-    let res = RuleConcatZero::new().apply_op(cat, &mut fd);
-    assert_eq!(res, 1);
-    // op becomes INT_LEFT; slot0 = new ZEXT out, slot1 = const 16.
-    assert_eq!(fd.obank().get(cat).unwrap().code(), OpCode::CPUI_INT_LEFT);
-    let saconst = fd.obank().get(cat).unwrap().get_in(1).unwrap();
-    assert_eq!(fd.vbank().get(saconst).unwrap().get_offset(), 16);
-    let zin = fd.obank().get(cat).unwrap().get_in(0).unwrap();
-    let zop = fd.vbank().get(zin).unwrap().get_def().unwrap();
-    assert_eq!(fd.obank().get(zop).unwrap().code(), OpCode::CPUI_INT_ZEXT);
-    assert_eq!(fd.obank().get(zop).unwrap().get_in(0), Some(v));
+        let res = RuleConcatZero::new().apply_op(cat, &mut fd);
+        assert_eq!(res, 1);
+        assert_eq!(fd.obank().get(cat).unwrap().code(), OpCode::CPUI_INT_LEFT);
+        let saconst = fd.obank().get(cat).unwrap().get_in(1).unwrap();
+        assert_eq!(fd.vbank().get(saconst).unwrap().get_offset(), 16);
+        let zin = fd.obank().get(cat).unwrap().get_in(0).unwrap();
+        assert_eq!(fd.vbank().get(zin).unwrap().get_high().is_some(), high);
+        let zop = fd.vbank().get(zin).unwrap().get_def().unwrap();
+        assert_eq!(fd.obank().get(zop).unwrap().code(), OpCode::CPUI_INT_ZEXT);
+        assert_eq!(fd.obank().get(zop).unwrap().get_in(0), Some(v));
+    }
 }
 
 // Early-out: the low piece is not the constant 0.
@@ -1113,7 +1118,7 @@ fn concatzero_rejects_nonzero_const() {
     fd.op_set_input(cat, v, 0).unwrap();
     fd.op_set_input(cat, lo, 1).unwrap();
     fd.op_insert(cat, bl, None);
-    let _catout = new_unique_out(&mut fd, 6, cat);
+    let _catout = fd.new_unique_out(6, cat).expect("newUniqueOut");
     assert_eq!(RuleConcatZero::new().apply_op(cat, &mut fd), 0);
 }
 
@@ -1133,7 +1138,7 @@ fn zextcommute_pushes_shift_inside() {
     fd.op_set_input(shr, zout, 0).unwrap();
     fd.op_set_input(shr, c, 1).unwrap();
     fd.op_insert(shr, bl, None);
-    let _shrout = new_unique_out(&mut fd, 8, shr);
+    let _shrout = fd.new_unique_out(8, shr).expect("newUniqueOut");
 
     let res = RuleZextCommute::new().apply_op(shr, &mut fd);
     assert_eq!(res, 1);
@@ -1165,7 +1170,7 @@ fn subzext_offset0_to_and_mask() {
     let zop = mk_op(&mut fd, 1, 0x30, OpCode::CPUI_INT_ZEXT);
     fd.op_set_input(zop, subout, 0).unwrap();
     fd.op_insert(zop, bl, None);
-    let _zout = new_unique_out(&mut fd, 4, zop);
+    let _zout = fd.new_unique_out(4, zop).expect("newUniqueOut");
 
     let res = RuleSubZext::new().apply_op(zop, &mut fd);
     assert_eq!(res, 1);
@@ -1187,7 +1192,7 @@ fn subzext_rejects_size_mismatch() {
     let zop = mk_op(&mut fd, 1, 0x30, OpCode::CPUI_INT_ZEXT);
     fd.op_set_input(zop, subout, 0).unwrap();
     fd.op_insert(zop, bl, None);
-    let _zout = new_unique_out(&mut fd, 4, zop); // out 4 != base 8
+    let _zout = fd.new_unique_out(4, zop).expect("newUniqueOut"); // out 4 != base 8
     assert_eq!(RuleSubZext::new().apply_op(zop, &mut fd), 0);
 }
 
@@ -1211,7 +1216,7 @@ fn concatleftshift_rejoins() {
     fd.op_set_input(cat, v, 0).unwrap();
     fd.op_set_input(cat, shout, 1).unwrap();
     fd.op_insert(cat, bl, None);
-    let _catout = new_unique_out(&mut fd, 4, cat); // out size 4
+    let _catout = fd.new_unique_out(4, cat).expect("newUniqueOut"); // out size 4
 
     let res = RuleConcatLeftShift::new().apply_op(cat, &mut fd);
     assert_eq!(res, 1);
@@ -1243,7 +1248,7 @@ fn zextshiftzext_collapses_double_zext() {
     let outer = mk_op(&mut fd, 1, 0x30, OpCode::CPUI_INT_ZEXT);
     fd.op_set_input(outer, innerout, 0).unwrap();
     fd.op_insert(outer, bl, None);
-    let _outerout = new_unique_out(&mut fd, 8, outer);
+    let _outerout = fd.new_unique_out(8, outer).expect("newUniqueOut");
 
     let res = RuleZextShiftZext::new().apply_op(outer, &mut fd);
     assert_eq!(res, 1);
@@ -1263,7 +1268,7 @@ fn zextshiftzext_rejects_other_inner() {
     let outer = mk_op(&mut fd, 1, 0x30, OpCode::CPUI_INT_ZEXT);
     fd.op_set_input(outer, addout, 0).unwrap();
     fd.op_insert(outer, bl, None);
-    let _outerout = new_unique_out(&mut fd, 8, outer);
+    let _outerout = fd.new_unique_out(8, outer).expect("newUniqueOut");
     assert_eq!(RuleZextShiftZext::new().apply_op(outer, &mut fd), 0);
 }
 
@@ -1284,7 +1289,7 @@ fn concatcommute_or_lower() {
     fd.op_set_input(cat, v, 0).unwrap();
     fd.op_set_input(cat, orout, 1).unwrap();
     fd.op_insert(cat, bl, None);
-    let _catout = new_unique_out(&mut fd, 4, cat);
+    let _catout = fd.new_unique_out(4, cat).expect("newUniqueOut");
 
     let res = RuleConcatCommute::new().apply_op(cat, &mut fd);
     assert_eq!(res, 1);
@@ -1320,7 +1325,7 @@ fn loadvarnode_stub_noop() {
     fd.op_set_input(load, spc, 0).unwrap();
     fd.op_set_input(load, ptr, 1).unwrap();
     fd.op_insert(load, bl, None);
-    let _out = new_unique_out(&mut fd, 4, load);
+    let _out = fd.new_unique_out(4, load).expect("newUniqueOut");
     assert_eq!(RuleLoadVarnode::new().apply_op(load, &mut fd), 0);
 }
 

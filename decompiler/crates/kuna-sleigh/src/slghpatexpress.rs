@@ -1037,48 +1037,24 @@ impl PatternExpression {
         }
     }
 
-    /// (WS4c renumber) Remap every embedded [`OperandValue`]'s `table_id`
-    /// through `remap` (`old_id -> Some(new_id)`).  C++ keeps these as
-    /// `Constructor *` pointers (immune to renumber); the kuna port stores ids,
-    /// so a defining expression that embeds operand references must be remapped.
+    /// Remap operand table ids after symbol compaction.
     pub fn remap_table_id(&mut self, remap: &dyn Fn(u32) -> u32) {
-        match self {
-            PatternExpression::Value(PatternValue::OperandValue(ov)) => {
-                ov.set_table_id(remap(ov.table_id()));
-            }
-            PatternExpression::Value(_) => {}
-            PatternExpression::Plus(b)
-            | PatternExpression::Sub(b)
-            | PatternExpression::Mult(b)
-            | PatternExpression::LeftShift(b)
-            | PatternExpression::RightShift(b)
-            | PatternExpression::And(b)
-            | PatternExpression::Or(b)
-            | PatternExpression::Xor(b)
-            | PatternExpression::Div(b) => {
-                b.get_left_mut().remap_table_id(remap);
-                b.get_right_mut().remap_table_id(remap);
-            }
-            PatternExpression::Minus(u) | PatternExpression::Not(u) => {
-                u.get_unary_mut().remap_table_id(remap);
-            }
-        }
+        self.visit_operands_mut(&mut |operand| operand.set_table_id(remap(operand.table_id())));
     }
 
-    /// (WS4c) Remap every embedded [`OperandValue`]'s operand index through
-    /// `handmap` (`original_index -> new_index`).  C++ shares the operand's
-    /// `localexp` pointer between the operand symbol and any expression that
-    /// references it (e.g. inside a `ContextOp`), so a single `changeIndex`
-    /// updates both; the kuna port clones the expression, so an expression that
-    /// outlives `order_operands` must be remapped separately.
+    /// Remap cloned operand references after constructor operand ordering.
     pub fn remap_operand_index(&mut self, handmap: &[i32]) {
-        match self {
-            PatternExpression::Value(PatternValue::OperandValue(ov)) => {
-                let idx = ov.index();
-                if (idx as usize) < handmap.len() {
-                    ov.change_index(handmap[idx as usize]);
-                }
+        self.visit_operands_mut(&mut |operand| {
+            if let Some(&index) = handmap.get(operand.index() as usize) {
+                operand.change_index(index);
             }
+        });
+    }
+
+    /// Visit operand references from left to right.
+    fn visit_operands_mut(&mut self, visit: &mut impl FnMut(&mut OperandValue)) {
+        match self {
+            PatternExpression::Value(PatternValue::OperandValue(operand)) => visit(operand),
             PatternExpression::Value(_) => {}
             PatternExpression::Plus(b)
             | PatternExpression::Sub(b)
@@ -1089,11 +1065,11 @@ impl PatternExpression {
             | PatternExpression::Or(b)
             | PatternExpression::Xor(b)
             | PatternExpression::Div(b) => {
-                b.get_left_mut().remap_operand_index(handmap);
-                b.get_right_mut().remap_operand_index(handmap);
+                b.get_left_mut().visit_operands_mut(visit);
+                b.get_right_mut().visit_operands_mut(visit);
             }
             PatternExpression::Minus(u) | PatternExpression::Not(u) => {
-                u.get_unary_mut().remap_operand_index(handmap);
+                u.get_unary_mut().visit_operands_mut(visit);
             }
         }
     }
