@@ -514,18 +514,14 @@ fn decompiling_name(out: &str) -> Option<String> {
     })
 }
 
-/// A unique temp path under the system temp dir (no external dep; mirrors
-/// `tempfile.NamedTemporaryFile(delete=False)`'s role — a private scratch file we
-/// delete in the `finally`).
-fn temp_path(prefix: &str, suffix: &str) -> PathBuf {
-    let mut dir = std::env::temp_dir();
-    let pid = std::process::id();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    dir.push(format!("{prefix}{pid}_{nanos}{suffix}"));
-    dir
+/// Owns a private output file, closing its handle before the console opens it.
+fn temp_path(prefix: &str, suffix: &str) -> Result<tempfile::TempPath, String> {
+    tempfile::Builder::new()
+        .prefix(prefix)
+        .suffix(suffix)
+        .tempfile()
+        .map(|file| file.into_temp_path())
+        .map_err(|error| format!("could not create temporary output file: {error}"))
 }
 
 /// One `kuna decompile` run: the rendered C, the optional `--regions` dump, and
@@ -576,9 +572,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         by_address = true;
     }
 
-    let out_path = temp_path("kuna_c_", ".c");
+    let out_path = temp_path("kuna_c_", ".c")?;
     let regions_path = if args.regions {
-        Some(temp_path("kuna_regions_", ".txt"))
+        Some(temp_path("kuna_regions_", ".txt")?)
     } else {
         None
     };
@@ -758,13 +754,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             base.iter().chain(discovery.iter()).copied().collect();
         result = attempt(&widened);
     }
-    let result = result.map_err(|(message, _)| message);
-
-    let _ = std::fs::remove_file(&out_path);
-    if let Some(rp) = &regions_path {
-        let _ = std::fs::remove_file(rp);
-    }
-    result
+    result.map_err(|(message, _)| message)
 }
 
 /// Python `str.strip("\n")`: trim leading/trailing newline characters only.
@@ -1229,6 +1219,41 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn temporary_output_paths_have_independent_owned_lifetimes() {
+        let first = super::temp_path("kuna_c_test_", ".c").unwrap();
+        let second = super::temp_path("kuna_c_test_", ".c").unwrap();
+        let first_path = first.to_path_buf();
+        let second_path = second.to_path_buf();
+        assert_ne!(first_path, second_path);
+        assert_eq!(first.extension().unwrap(), "c");
+        assert_eq!(std::fs::read(&first).unwrap(), b"");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&first).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        std::fs::write(&first, b"rendered C").unwrap();
+        assert_eq!(std::fs::read(&first).unwrap(), b"rendered C");
+        drop(first);
+        assert!(!first_path.exists());
+        assert!(second_path.exists());
+        drop(second);
+        assert!(!second_path.exists());
+    }
+
+    #[test]
+    fn temporary_output_path_is_removed_on_unwind() {
+        let output = super::temp_path("kuna_regions_test_", ".txt").unwrap();
+        let path = output.to_path_buf();
+        let result = std::panic::catch_unwind(move || {
+            let _output = output;
+            panic!("test output cleanup");
+        });
+        assert!(result.is_err());
+        assert!(!path.exists());
+    }
+
     use super::{
         arch_failure_reason, check_errors, command_failure,
         decompile_all, decompile_command_failure, decompiling_name, find_pipeline_failure,

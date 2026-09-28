@@ -1294,3 +1294,69 @@ Artifacts use `/tmp/kuna-deslop-context-buffer-`: the actual-module `model.py`,
 All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
 assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
 across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### Borrowed memory-state access
+
+Memory-state register setters borrow the varnode's address-space handle while
+writing the value, removing two transient `Rc` clones. Bank lookup uses one
+checked vector lookup and retains the existing unmapped-space behavior. The
+implementation is seven lines shorter; public interfaces and error strings stay
+unchanged.
+
+The complete-module comparison matches 8,794 outcome rows (854,281 bytes) in
+each overflow mode, and the native library produces those same rows. The driver
+covers 2,048 memory actions per byte order, named and varnode register access,
+missing registers, null spaces, aliased/negative/out-of-range bank indices and
+held-bank borrow failures. An additional 512 snippet programs per byte order
+exercise arithmetic, loads, branches, retries and partial failures as collateral
+coverage. All 371 focused tests pass.
+
+An isolated benchmark measures 200,000 memory rounds and 200,000 snippet runs
+per byte order, excluding environment construction. Memory rounds perform a
+named write, a varnode write and a varnode read. Sixty-six balanced runs on CPU
+40 provide 30 measured samples per version. Median register-access time changes
+-4.4141% for little endian (paired -4.0389%) and -5.3379% for big endian (paired
+-5.7443%). The unchanged snippet workload changes -1.7811% and -1.7357% (paired
+-2.0858% and -1.9080%). Every result checksum matches. These are workload timings,
+not an allocation or whole-decompiler speed claim.
+
+A broader candidate removed transient snippet-operation and behavior clones as
+well. Its follow-up timings exceeded the 5% budget (+5.2153% little endian and
++5.0769% big endian, paired +5.1381%/+5.0473%), so that part is excluded. The
+final patch changes only `MemoryState`; snippet implementation bytes are unchanged.
+
+Full p-code timing passes all 16 independent fixtures in each of 66 balanced
+runs. Median wall time changes -0.9886% (paired +0.6725%) and CPU time -0.9747%
+(paired +0.6890%), within budget. The final native benchmark executable matches
+the hash of the measured executable.
+
+Artifacts use `/tmp/kuna-deslop-emulation-borrow-`: `workload.rs`, `model.py`,
+`model-final.log`, native before/after output, `isolated-verified/timing.json`,
+`runtime-verified/timing.json` and build/check logs. Excluded variants and their
+timing results remain in the `initial` and `refined` artifacts.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### Runtime API documentation
+
+Five runtime modules now describe their implemented interfaces directly. Symbol
+payload documentation includes the existing compiler-only variants, and the
+snippet-language interface identifies its actual `SleighBase` implementation.
+Builder and walker descriptions no longer refer to unfinished porting waves.
+The emulation and memory headers retain ownership, callback re-entry and
+memory-page edge cases while removing repeated migration details.
+
+The change removes 77 comment lines. Every non-comment, nonblank source line is
+identical, including all error strings; hashes are recorded in
+`/tmp/kuna-deslop-runtime-api-docs-source-proof.json`. Rustdoc passes with broken
+intra-doc links denied. The candidate and rustdoc log use the same
+`/tmp/kuna-deslop-runtime-api-docs-` prefix. No behavior, interface or option
+changes, so runtime benchmarks do not need repeating.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.

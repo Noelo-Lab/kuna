@@ -941,6 +941,85 @@ fn a_prototype_address_that_starts_no_function_is_rejected() {
     );
 }
 
+#[test]
+fn unavailable_output_directory_fails_before_the_console_starts() {
+    let scratch = tempfile::tempdir().unwrap();
+    let stub = scratch.path().join("console");
+    let marker = scratch.path().join("started");
+    std::fs::write(&stub, "#!/bin/sh\nprintf started > \"$KUNA_STUB_MARKER\"\n").unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let missing = scratch.path().join("missing");
+    let result = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["decompile", &fauxware(), "main", "--decomp-dbg"])
+        .arg(&stub)
+        .arg("--sleighpath").arg(repo_root().join("specs"))
+        .env("TMPDIR", &missing).env("TMP", &missing).env("TEMP", &missing)
+        .env("KUNA_STUB_MARKER", &marker)
+        .output().expect("run text decompilation");
+    assert_eq!(result.status.code(), Some(1));
+    assert!(result.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&result.stderr)
+        .contains("could not create temporary output file"));
+    assert!(!marker.exists());
+    assert!(!missing.exists());
+}
+
+#[test]
+fn console_output_files_are_removed_after_success_empty_output_and_failure() {
+    let scratch = tempfile::tempdir().unwrap();
+    let staging = scratch.path().join("outputs");
+    std::fs::create_dir(&staging).unwrap();
+    let stub = scratch.path().join("console");
+    std::fs::write(&stub, r#"#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    'openfile write '*)
+      out=${line#openfile write }
+      out=${out#\"}
+      out=${out%\"}
+      if [ "$KUNA_STUB_WRITE" = 1 ]; then
+        printf '%s\n' 'int main(void) { return 0; }' > "$out"
+      fi
+      ;;
+  esac
+done
+printf '%s\n' "$KUNA_STUB_TRANSCRIPT"
+"#).unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o700)).unwrap();
+    for regions in [false, true] {
+        for (write, transcript, status, error) in [
+            ("1", "Decompiling main", 0, ""),
+            ("0", "Decompiling main", 1, "no C output"),
+            ("1", "Decompiling main\nSkipping main: test pipeline failure", 1,
+             "decompilation failed for main"),
+        ] {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            command.args(["decompile", &fauxware(), "main", "--decomp-dbg"])
+                .arg(&stub)
+                .arg("--sleighpath").arg(repo_root().join("specs"))
+                .env("TMPDIR", &staging).env("TMP", &staging).env("TEMP", &staging)
+                .env("KUNA_STUB_WRITE", write).env("KUNA_STUB_TRANSCRIPT", transcript);
+            if regions {
+                command.arg("--regions");
+            }
+            let result = command.output().expect("run text decompilation");
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            assert_eq!(result.status.code(), Some(status), "{stderr}");
+            if error.is_empty() {
+                assert!(stderr.is_empty(), "{stderr}");
+            } else {
+                assert!(stderr.contains(error), "{stderr}");
+            }
+            if write == "1" {
+                assert!(String::from_utf8_lossy(&result.stdout).contains("int main(void)"));
+            } else {
+                assert!(result.stdout.is_empty());
+            }
+            assert!(std::fs::read_dir(&staging).unwrap().next().is_none());
+        }
+    }
+}
+
 /// RE-need `prototype-assertion-rejects-explicit`: a directive may name the
 /// address this run was pointed at.
 ///

@@ -175,6 +175,13 @@ simultaneous ingests have independent member files. Non-object members are
 still skipped, bootstrap failures retain the archive/member warning, and
 record order and cross-input deduplication remain unchanged.
 
+Text decompilation owns its C and optional region-output files for the entire
+console run, including a discovery retry. Each file is privately created and
+its initial writing handle is closed before launching the console. Scope exit
+removes both files on success, error or unwind; file-creation failures return
+a driver error before spawning the console. Script ordering, empty-output
+handling and recovered pipeline diagnostics remain unchanged.
+
 Inventory queries share function attribution and address records through
 `decompiler/crates/kuna-cli/src/function_info.rs`. Attribution prefers the
 reference walk, then the engine's inventory. String and constant rows prefer
@@ -957,6 +964,10 @@ Queued p-code operations pass borrowed varnode slices to the emitter, retaining
 stored space-index constants. An unimplemented template is reported from the
 failing context's base constructor, with that context's address and the total
 instruction length including delay slots.
+
+Memory-state register setters borrow the varnode's address-space handle for the
+write. Bank lookup checks the space index once; absent, negative and out-of-range
+indices remain unmapped, and constants still read as their own offsets.
 
 XML load images prune redundant chunks in address order, comparing space
 identity and wrapping inclusive endpoints. Each surviving original chunk gets

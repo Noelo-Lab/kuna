@@ -1504,6 +1504,67 @@ All nine final gates pass on the frozen source: 7,445 workspace tests with
 The tracked diff and both new-file hashes remain unchanged through the last
 terminal success. Logs use `/tmp/kuna-deslop-archive-final-`. No baseline moved.
 
+## Console output ownership and runtime API cleanup
+
+Text decompilation now owns its C and optional region-output files with
+`TempPath` guards instead of generating unowned names and manually removing
+them at the end. Creation is private; the writing handle closes before the
+console opens the file. Both guards remain alive across discovery retries and
+clean up on success, error or unwind. An unavailable output directory now
+returns a direct driver error before spawning the console. No option, script
+ordering, retry decision or output format changes.
+
+A six-case real-CLI regression covers success, empty output and pipeline
+failure with and without regions. It passes against the original driver and
+after the change. Two unit tests cover independent lifetimes, readable/writable
+files, private Unix permissions and unwind cleanup; another CLI test checks
+the early creation failure. Source checks preserve 69 other function/test
+bodies and all 33 existing integration helpers/tests. The decompile body differs
+only in its two fallible path acquisitions and removal of manual cleanup.
+
+All 35 saved text-command cases retain stdout, status and diagnostics, excluding
+only the three-line build-identity warning from pairing the saved CLI with the
+current console. Their temporary directory contains spaces and is empty after
+every command. All 286 compiler cases retain status, diagnostics and raw/decoded
+hashes. The final native build completes in 19.03 seconds without warnings.
+Focused validation passes 248 CLI units, 25 text integration tests and 375
+compiler/runtime tests, also warning-free. An earlier focused run used a stale
+console and failed two build-identity assertions; rebuilding all native binaries
+together resolves them. The scoped CLI Clippy audit remains 16 errors and 20
+warnings; an unscoped attempt also encountered the known dependency lint debt.
+
+Memory-state setters borrow address-space handles instead of cloning them, and
+bank lookup uses one checked vector access. Complete-module models match 8,794
+rows / 854,281 bytes in both overflow modes and against both native libraries.
+Coverage includes both byte orders, bank aliases and missing indices, named and
+varnode writes, borrow errors and bounded snippet programs. The snippet module
+itself is unchanged; the broader snippet candidate remains excluded.
+
+Five runtime modules lose 77 stale comment lines. The documented symbol
+variants, snippet-language implementation and ownership boundaries now match
+the code. Checks apply only the reviewed comment substitutions to the root
+sources, preserving earlier symbol tests and documentation corrections; every
+non-comment source line is unchanged by this documentation portion. Rustdoc
+passes with broken intra-doc links denied.
+
+Across 66 CPU-41-pinned runs, median memory-workload times change -4.30%/-4.14%
+for little/big endian. Unchanged snippet workloads vary -4.14%/-4.40%; those
+figures are collateral measurements, not a snippet optimization claim. Every
+checksum matches. Full lifting changes +0.17% wall / +0.15% CPU. Twenty measured
+text-command pairs change 97.133 to 97.204 ms (+0.07%, paired +0.05%), with exact
+outputs and diagnostics. All are within the 5% budget. Root comparisons,
+source proofs and timings are under
+`/tmp/kuna-deslop-console-temp.0KbxK2Hh`; the native build log is
+`/tmp/kuna-deslop-console-output-final-build.log`.
+
+All nine final gates pass with tracked diff hash `6717a4fb` unchanged through
+the last terminal success: 7,449 workspace tests, 38 existing ignores, 439
+groups and no warnings. Upstream/stage parity remains 675/675 and 1,467/1,467.
+The 268 CLI probes, 42 Python tests, 56 Ghidra tests, 48 XML comparisons,
+17 saved CLI comparisons and 11 browser probes pass, including a fresh WASM
+build. Spec/catalog checks pass. Logs use
+`/tmp/kuna-deslop-console-output-final-`; no baseline moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1513,7 +1574,7 @@ These are investigation targets, not a claim that the repository review is done.
 | CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Compiler probes reject broken tools, and required native runs check both status and output. The two fixture-launch false skips now retain spelling checks on non-native hosts. Other platform gates and conditional assertions still need review. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
-| CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Loading/configuration and the remaining pool module still combine several lifecycle policies. Archive member files are now owned; console output lifetimes still need review. |
+| CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Archive member and console output files have scoped cleanup. Loading/configuration and the remaining pool module still combine several lifecycle policies. |
 | Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 16 errors and 20 warnings. Declaration naming, rendered-signature dedup, FID dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |

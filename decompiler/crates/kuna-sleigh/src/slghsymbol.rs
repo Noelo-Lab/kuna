@@ -57,11 +57,9 @@ pub struct ConstructorRef {
     pub ct_id: u32,
 }
 
-/// The additional `ParserWalker` surface (context.hh/sleigh.hh) used by
-/// slghsymbol.cc beyond the [`PatternExpressionContext`] boundary: operand
-/// traversal for printing, fixed-handle lookup, address spaces, flow
-/// addresses, and the raw bit reads `DecisionNode::resolve` dispatches on.
-/// Implemented by the sleigh decode-engine wave.
+/// Walker operations used by symbol resolution and printing: operand traversal,
+/// resolved handles, address spaces, flow addresses and instruction/context bits.
+/// Runtime parser walkers implement this extension of [`PatternExpressionContext`].
 pub trait SymbolWalker: PatternExpressionContext {
     /// C++ `ParserWalker::pushOperand(int4 i)`.
     fn push_operand(&mut self, i: i32) -> KunaResult<()>;
@@ -122,10 +120,8 @@ pub trait SleighBaseTrans {
 // SymbolType + small helpers
 // ---------------------------------------------------------------------------
 
-/// C++ `SleighSymbol::symbol_type`.  All discriminants are kept, including
-/// the compiler-only classes that have no ported [`SymbolKind`] variant
-/// (Macro/Section/Bitrange/Label/Dummy), so `getType()` comparisons
-/// transcribe one-to-one.
+/// Symbol categories matching C++ `SleighSymbol::symbol_type`, including
+/// compiler-only symbols and the reserved `Dummy` category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SymbolType {
     /// C++ `space_symbol`
@@ -2119,11 +2115,8 @@ impl OperandResolveSink for ConstructorOperandSink<'_> {
 // ---------------------------------------------------------------------------
 // Compiler-only symbol kinds (Macro / Section / Bitrange / Label)
 //
-// These four C++ classes (`slghsymbol.hh`) exist only during compilation; they
-// are removed from the symbol table by `SymbolTable::purge` before encode, so
-// none of them has an `encode`/`decode`.  WS4c adds them so the p-code section
-// path (macro definitions, named p-code sections, `define bitrange`, branch
-// labels) can build into the real symbol table.
+// These compiler-only symbols are removed by `SymbolTable::purge` before
+// encoding and have no runtime encode/decode methods.
 // ---------------------------------------------------------------------------
 
 /// C++ `SectionSymbol` (slghsymbol.hh:120): a named p-code section.
@@ -2305,8 +2298,8 @@ impl LabelTableSymbol {
 // SleighSymbol
 // ---------------------------------------------------------------------------
 
-/// The C++ `SleighSymbol` subclass payloads as an enum (see module docs;
-/// compiler-only classes have no variant).
+/// Runtime and compiler symbol payloads. [`SymbolTable::purge`] removes the
+/// compiler-only variants before encoding.
 #[derive(Debug, Clone)]
 pub enum SymbolKind {
     /// C++ `SpaceSymbol`.

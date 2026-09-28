@@ -242,10 +242,8 @@ pub fn get_varnode_tpl(
 // The language boundary (SleighBase, reduced to what PcodeSnippet uses)
 // ---------------------------------------------------------------------------
 
-/// Stand-in for `const SleighBase *sleigh`, reduced to the surface
-/// `PcodeSnippet` pulls from it (`sleighbase.rs` is still a stub; W1/W2 boundary
-/// convention). Implemented by the decode-engine wave's `SleighBase` and by
-/// tests.
+/// Symbols and address spaces needed by [`PcodeSnippet`], supplied by
+/// [`crate::sleighbase::SleighBase`] or a test language.
 pub trait SnippetLanguage {
     /// C++ `sleigh->findSymbol(name)`, classified into a [`SnippetSymbol`].
     /// Returns `None` for an unknown name, OR for a symbol whose type is not

@@ -1,43 +1,19 @@
-//! Port of `decompiler/cpp/emulate.hh` + `emulate.cc` (W2, item
-//! `w2-sleigh-emulate`): classes for emulating p-code.
+//! P-code execution and breakpoints, from `decompiler/cpp/emulate.{hh,cc}`.
 //!
-//! Paradigm mapping (each noted again at its use site):
+//! [`EmulateCore`] stores halt and current-behavior state; [`Emulate`] provides
+//! dispatch and requires operation handlers. [`EmulateMemory`] exposes shared
+//! memory and the current operation, with reusable handlers in [`emulate_memory`].
+//! Concrete engines delegate to those handlers or supply their own behavior.
 //!
-//! - The C++ abstract class `Emulate` splits into [`EmulateCore`] (the
-//!   concrete data members `emu_halted` / `currentBehave`) and the
-//!   [`Emulate`] trait — the protected virtuals as required methods plus the
-//!   non-virtual `setHalt`/`getHalt`/`executeCurrentOp` as provided methods
-//!   (the `TranslateBase`/`Translate` boundary precedent).
-//! - The C++ intermediate class `EmulateMemory` becomes the
-//!   [`EmulateMemory`] trait (accessors for its data members `memstate` /
-//!   `currentOp`, plus the manager boundary below) together with the
-//!   [`emulate_memory`] module holding its method bodies as free functions;
-//!   a concrete engine implements `Emulate::execute_*` by delegating there
-//!   — that delegation *is* the C++ inheritance edge, and an engine
-//!   overriding a method (as `EmulatePcodeCache` does for `executeBranch` /
-//!   `executeCallother`) simply provides its own body instead.
-//! - **Manager boundary**: C++ `Translate` *is an* `AddrSpaceManager`, and
-//!   `executeLoad`/`executeStore` reach the space table through
-//!   `getSpaceFromConst()` (a reinterpreted pointer).  The port stores a
-//!   manager index in the constant (see `kuna_num::pcoderaw`), so the
-//!   emulator carries an explicit `Rc<AddrSpaceManager>` handle
-//!   ([`EmulateMemory::addr_space_manager`]).
-//! - **Breakpoint back-pointers**: C++ `BreakCallBack::setEmulate` /
-//!   `BreakTable::setEmulate` store a raw `Emulate *` that callbacks reach
-//!   back through while the emulator is mid-execution.  Rust cannot hold
-//!   that mutable back-pointer, so the emulator is passed *into* the
-//!   callback at invocation time (`&mut dyn EmulateMemory` parameters on
-//!   [`BreakTable`]/[`BreakCallBack`]); the `setEmulate` plumbing disappears
-//!   with identical observable association.  A callback that re-enters its
-//!   own break table (C++ would allow it) panics on the `RefCell` borrow.
-//! - `PcodeOpRaw *` handles into the op cache are `Rc<PcodeOpRaw>` (the
-//!   ops are immutable once cached).  The C++ `varcache` of `VarnodeData *`
-//!   disappears: the Rust `PcodeOpRaw` owns its varnodes by value (decision
-//!   recorded in `kuna_num::pcoderaw` module docs), so [`PcodeEmitCache`]
-//!   manages only the op cache.
-//! - Errors (ADR 0004): every C++ throw becomes `Result` with the same
-//!   explain string; `executeCurrentOp`'s dispatch errors propagate to the
-//!   caller exactly where the C++ exception would.
+//! Address-space constants contain manager indices. The emulator keeps an
+//! explicit `Rc<AddrSpaceManager>` to resolve them. Cached operations are
+//! immutable `Rc<PcodeOpRaw>` values and own their varnodes, so [`PcodeEmitCache`]
+//! only manages the operation list.
+//!
+//! Breakpoint callbacks receive `&mut dyn EmulateMemory` during invocation rather
+//! than storing an emulator back-pointer. Re-entering the same break table from
+//! a callback panics on its active `RefCell` borrow. Operation and callback errors
+//! propagate as `KunaResult` with their original messages.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -772,10 +748,7 @@ impl PcodeEmit for PcodeEmitCache<'_> {
 // EmulatePcodeCache
 // ---------------------------------------------------------------------------
 
-/// Adapter giving [`register_instructions`] the one slice of [`Translate`]
-/// it needs.  (C++ passes the `Translate *` directly; the W1 port
-/// parameterized the float behaviors by [`FloatFormatProvider`] — see
-/// kuna-num opbehavior.rs module docs.)
+/// Exposes a translator's floating-point formats to instruction behaviors.
 pub struct TranslateFloatFormats(pub Rc<dyn Translate>);
 
 impl FloatFormatProvider for TranslateFloatFormats {

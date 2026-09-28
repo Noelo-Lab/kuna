@@ -1437,14 +1437,10 @@ impl ConstructTpl {
 // PcodeBuilder
 // ---------------------------------------------------------------------------
 
-/// C++ `PcodeBuilder`: SLEIGH-specific p-code generator.  The C++ abstract
-/// class becomes a trait: the pure virtuals (`dump`, `appendBuild`,
-/// `delaySlot`, `setLabel`, `appendCrossBuild`) and accessors for the C++
-/// private `labelbase`/`labelcount` fields are required methods backed by
-/// implementor state (initialize both to the C++ constructor's `lbcnt`);
-/// `build` is the C++ concrete dispatch loop.  The C++ protected
-/// `ParserWalker *walker` member and `getCurrentWalker()` live with the
-/// implementor (the sleigh decode-engine wave).
+/// SLEIGH template dispatch, implemented by the runtime builder in
+/// [`crate::sleigh`] and the macro builder in `kuna-slacomp`. Implementors own
+/// their walker and label state, initialize both label counters to the starting
+/// count, and provide the operation handlers used by [`PcodeBuilder::build`].
 pub trait PcodeBuilder {
     /// C++ `getLabelBase`.
     fn get_label_base(&self) -> u32;
