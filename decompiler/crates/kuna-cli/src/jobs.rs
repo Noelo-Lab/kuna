@@ -11,7 +11,7 @@
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -460,9 +460,8 @@ fn name_structs_serially(
     let held = base.held();
 
     // Every kept first and sweep decompile, with the answers it was given.
-    let mut firsts: HashMap<usize, (AnswerKey, FuncResult)> = HashMap::new();
+    let mut firsts: HashMap<usize, KeptFirst> = HashMap::new();
     let mut sweeps: HashMap<usize, (AnswerKey, FuncResult)> = HashMap::new();
-    let mut renamed: HashSet<usize> = HashSet::new();
     let mut forced = 0usize;
     let mut round = 0;
     let plan = loop {
@@ -471,23 +470,27 @@ fn name_structs_serially(
             Err(why) => return fallback(run, &why),
         };
         for &i in &askers {
-            let first = plan.first_key(i);
-            if firsts.get(&i).is_none_or(|(key, _)| *key != first) {
+            if firsts.get(&i).is_none_or(|kept| !plan.matches(&plan.first[i], &kept.key)) {
+                let first = plan.first_key(i);
                 if let Some(r) = rename_result(&run.results[i], own[i].as_deref(), &first, &held) {
-                    firsts.insert(i, (first, r));
-                    renamed.insert(i);
+                    firsts.insert(i, KeptFirst { key: first, result: r, renamed: true });
                 }
             }
-            let Some(key) = plan.sweep_key(i).filter(|_| plan.redo_predicted(i)) else { continue };
-            if sweeps.get(&i).is_none_or(|(kept, _)| *kept != key) {
+            let Some(answers) = plan.sweep[i].as_ref().filter(|_| plan.redo_predicted(i)) else { continue };
+            if sweeps.get(&i).is_none_or(|(kept, _)| !plan.matches(answers, kept)) {
+                let key = plan.key(answers);
                 if let Some(r) = rename_result(&run.results[i], own[i].as_deref(), &key, &held) {
                     sweeps.insert(i, (key, r));
                 }
             }
         }
-        let stale_first = |i: usize| firsts.get(&i).is_none_or(|(key, _)| *key != plan.first_key(i));
+        let stale_first = |i: usize| {
+            firsts.get(&i).is_none_or(|kept| !plan.matches(&plan.first[i], &kept.key))
+        };
         let stale_sweep = |i: usize| {
-            plan.redo_predicted(i) && sweeps.get(&i).is_none_or(|(key, _)| Some(key) != plan.sweep_key(i).as_ref())
+            plan.redo_predicted(i) && sweeps.get(&i).is_none_or(|(key, _)| {
+                plan.sweep[i].as_ref().is_none_or(|answers| !plan.matches(answers, key))
+            })
         };
         let list: Vec<(usize, bool)> = askers
             .iter()
@@ -512,8 +515,7 @@ fn name_structs_serially(
                 if sweep {
                     sweeps.insert(i, (plan.sweep_key(i).unwrap_or_default(), r));
                 } else {
-                    firsts.insert(i, (plan.first_key(i), r));
-                    renamed.remove(&i);
+                    firsts.insert(i, KeptFirst { key: plan.first_key(i), result: r, renamed: false });
                 }
                 continue;
             }
@@ -522,15 +524,15 @@ fn name_structs_serially(
                     asked[i] = rec.requests;
                     own[i] = None;
                     firsts.remove(&i);
-                    renamed.remove(&i);
                 }
                 _ => return fallback(run, "a function asked the ledger something new in the sweep"),
             }
         }
     };
-    let renamed = renamed.len();
-    for (i, (_, r)) in firsts.drain() {
-        run.results[i] = r;
+    let mut renamed = 0;
+    for (i, kept) in firsts {
+        renamed += usize::from(kept.renamed);
+        run.results[i] = kept.result;
     }
 
     // The serial sweep: decided on the first-pass text, then each redo in
@@ -547,7 +549,9 @@ fn name_structs_serially(
             None => return fallback(run, "the convergence sweep would mint a structure"),
             Some(s) if *s == plan.first[i] => {}
             Some(_) => match sweeps.remove(&i) {
-                Some((key, r)) if Some(&key) == plan.sweep_key(i).as_ref() => again.push((i, r)),
+                Some((key, r)) if plan.sweep[i].as_ref().is_some_and(|answers| plan.matches(answers, &key)) => {
+                    again.push((i, r));
+                }
                 _ => leftover.push((i, true)),
             },
         }
@@ -648,6 +652,12 @@ const SYNTH_ROUNDS: usize = 4;
 /// itself), so a kept decompile is reused only when both still hold.
 type AnswerKey = Vec<shard::Answer>;
 
+struct KeptFirst {
+    key: AnswerKey,
+    result: FuncResult,
+    renamed: bool,
+}
+
 /// The replayed ledger of one run: the answers each function's first decompile
 /// gets, the answers its redo would get, the superseded names, and the table
 /// every forced worker installs.
@@ -719,6 +729,15 @@ impl SynthPlan {
 
     fn first_key(&self, i: usize) -> AnswerKey {
         self.key(&self.first[i])
+    }
+
+    fn matches(&self, answers: &[Option<String>], key: &[shard::Answer]) -> bool {
+        answers
+            .iter()
+            .map(|answer| answer.as_deref().map(|name| (name, self.minted.get(name))))
+            .eq(key.iter().map(|answer| {
+                answer.as_ref().map(|(name, request)| (name.as_str(), request.as_ref()))
+            }))
     }
 
     fn sweep_key(&self, i: usize) -> Option<AnswerKey> {
@@ -2544,6 +2563,10 @@ fn hms(seconds: f64) -> String {
         format!("{s}s")
     }
 }
+
+#[cfg(test)]
+#[path = "jobs/replay_tests.rs"]
+mod replay_tests;
 
 #[cfg(test)]
 mod tests {

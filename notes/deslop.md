@@ -594,6 +594,60 @@ All 47 pinned C++ XML outputs and 17 saved CLI comparison cases remain
 identical. Frozen tracked and new-file hashes match after the final process
 exits. CodeQL and parity CI passed on the preceding commit `8474451f6`.
 
+## Seventeenth checkpoint: replay cache and compiler pattern ownership
+
+The replay cache no longer tracks renamed results in a separate set. Each
+retained first-pass result carries its provenance; replacing or invalidating
+that result updates the eventual rename count automatically. Results remain
+sparse by target index, and first-pass and sweep results remain distinct.
+Staleness checks compare borrowed answer names and full definitions, allocating
+owned snapshots only when a result must be retained. A sweep that is not
+predicted no longer constructs an unused key.
+
+Four new conformance tests pass with the old comparison and with the new one.
+They pin answer count, missing answers, held versus minted names, definition
+changes under an unchanged name, and 15,360 mutated key comparisons. All 236
+CLI unit tests pass. A separate extracted-production comparison checks 100,000
+cases using actual `SynthRequest` values. Forty old/new whole-binary CLI cases
+preserve stdout and successful status across four ELF/PE fixtures, text/JSON,
+two/four workers, forced recompilation, serial fallback and failed installation.
+The relevant diagnostic markers are required on each path; interleaved worker
+stderr is not claimed byte-identical.
+
+Thirty alternating rounds of 1,000 helper comparisons after three warmups,
+pinned to CPU 41, measured matching keys of 1, 8 and 32 answers at 461 → 84,
+4,894 → 628 and 12,700 → 1,953 ns. An initial mismatch measured 423 → 36,
+3,283 → 30 and 11,492 → 24 ns, respectively. Each generated definition has
+eight named fields. Separate allocator runs report 11 → 0, 81 → 0 and 321 → 0
+requests, with 792 → 0, 6,336 → 0 and 25,542 → 0 cumulative requested bytes,
+for either outcome. These are isolated comparison costs, not whole-engine
+speed or peak-memory measurements.
+
+Twenty alternating two-worker project-export pairs after two warmup pairs,
+pinned to CPUs 41–43, preserve all four artifacts on every run. Median wall
+time is 457.777 → 453.712 ms, but the paired median ratio is 1.0004; child CPU
+time is 489.556 → 490.308 ms. The shared-host run does not establish a
+whole-command performance change. The CLI-only Clippy count falls from 20 to
+17 existing errors, with 22 warnings; it is still not a passing gate.
+
+Compiler insertion moves one owned name into its scope map and reads duplicate
+diagnostics from the stored symbol. Replacement updates the binding directly,
+retaining rejected-insertion slot behavior. Pattern folding, context validation
+and decision-tree setup borrow their constructor-owned inputs. Decision nodes
+still own their simplified patterns, without copying the simplifier's result
+again. All 372 compiler/SLEIGH release tests pass. Twenty direct root compiler
+comparisons preserve complete stdout, stderr, status and encoded bytes across
+default and strict pattern handling. Independent allocation, timing and public
+API evidence is in `notes/deslop-slacomp.md`. No baseline or oracle changed.
+
+Final seventeenth checkpoint validation: all four required gates pass. The full
+workspace reports 7,421 passed, zero failed, 38 existing ignores across 437
+groups, and no warnings. Upstream/stage parity remains 675/675 and 1467/1467;
+268 CLI probes, 42 Python tests, 56 Ghidra tests, spec and catalog checks pass.
+All 47 pinned C++ XML outputs and 17 saved CLI cases remain identical. Frozen
+source and new-test hashes match after the final test process exits. CodeQL
+and parity CI passed on the preceding commit `589d4c4ba`.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -604,7 +658,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling and object-file views now have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
-| Collection policy | The release engine-library Clippy check still reports 211 collection-policy errors; the CLI-only check finds 20 errors and 22 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
+| Collection policy | The release engine-library Clippy check still reports 211 collection-policy errors; the CLI-only check finds 17 errors and 22 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Ninety engine files still contain wave-era STUB notes. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 

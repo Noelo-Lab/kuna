@@ -1829,9 +1829,10 @@ impl DecisionNode {
 
     /// C++ `DecisionNode::addConstructorPair`.
     fn add_constructor_pair(&mut self, pat: &DisjointPattern, ct: u32) {
-        // C++ clones via simplifyClone so the node owns its pattern.
-        let clone = expect_disjoint_clone(&pat.simplify_clone());
-        self.list.push((clone, ct));
+        let Pattern::Disjoint(pattern) = pat.simplify_clone() else {
+            panic!("addConstructorPair: simplifyClone of a DisjointPattern is not disjoint (C++ UB)");
+        };
+        self.list.push((pattern, ct));
         self.num += 1;
     }
 
@@ -2200,25 +2201,13 @@ impl DecisionProperties {
     }
 }
 
-/// The C++ `(DisjointPattern *)pat->simplifyClone()` cast: a result that is
-/// not disjoint is UB upstream, an error/clone-panic here (ADR 0004).
-fn expect_disjoint(p: &Pattern) -> KunaResult<DisjointPattern> {
+/// Borrow a disjoint pattern, rejecting an invalid C++ downcast.
+fn expect_disjoint(p: &Pattern) -> KunaResult<&DisjointPattern> {
     match p {
-        Pattern::Disjoint(d) => Ok(d.clone()),
+        Pattern::Disjoint(d) => Ok(d),
         Pattern::Or(_) => Err(KunaError::sleigh(
             "decision tree: expected a DisjointPattern (C++ UB cast)",
         )),
-    }
-}
-
-/// `(DisjointPattern *)pat->simplifyClone()` where the C++ result is known to
-/// be disjoint (the input was a `DisjointPattern`); panics otherwise.
-fn expect_disjoint_clone(p: &Pattern) -> DisjointPattern {
-    match p {
-        Pattern::Disjoint(d) => d.clone(),
-        Pattern::Or(_) => {
-            panic!("addConstructorPair: simplifyClone of a DisjointPattern is not disjoint (C++ UB)")
-        }
     }
 }
 
@@ -3635,16 +3624,11 @@ impl SymbolTable {
         let name = sym.name.clone();
         // C++ pushes onto symbollist before the duplicate check throws
         self.symbollist.push(Some(sym));
-        let scope = self
-            .table
-            .first_mut()
-            .and_then(|s| s.as_mut())
-            .expect("checked above");
-        let res = scope.add_symbol(name.clone(), id);
+        let res = scope.add_symbol(name, id);
         if res != id {
             return Err(KunaError::sleigh(format!(
                 "Duplicate symbol name '{}'",
-                name_text(&name)
+                name_text(self.symbol(id)?.get_name())
             )));
         }
         Ok(id)
@@ -3668,11 +3652,11 @@ impl SymbolTable {
             .get_mut(curid as usize)
             .and_then(|s| s.as_mut())
             .ok_or_else(|| KunaError::sleigh("current scope is undefined"))?;
-        let res = scope.add_symbol(name.clone(), id);
+        let res = scope.add_symbol(name, id);
         if res != id {
             return Err(KunaError::sleigh(format!(
                 "Duplicate symbol name: {}",
-                name_text(&name)
+                name_text(self.symbol(id)?.get_name())
             )));
         }
         Ok(id)
@@ -4011,13 +3995,13 @@ impl SymbolTable {
                     self.subtable_symbol_mut(table_id)?.errors = true;
                 }
             }
-            let ctpat = self
+            acc = self
                 .subtable_symbol(table_id)?
                 .construct[i]
                 .pattern
-                .clone()
-                .unwrap_or_else(TokenPattern::new_true);
-            acc = ctpat.common_sub_pattern(&acc)?;
+                .as_ref()
+                .unwrap_or(&TokenPattern::new_true())
+                .common_sub_pattern(&acc)?;
         }
         let sub = self.subtable_symbol_mut(table_id)?;
         sub.pattern = Some(acc);
@@ -4179,12 +4163,11 @@ impl SymbolTable {
         }
 
         // Make sure context expressions are valid.
-        let context = self
+        let context = &self
             .subtable_symbol(table_id)?
             .get_constructor(ct_id)?
-            .context
-            .clone();
-        for change in &context {
+            .context;
+        for change in context {
             change.validate(self)?;
         }
 
@@ -4339,22 +4322,20 @@ impl SymbolTable {
         table_id: u32,
         props: &mut DecisionProperties,
     ) -> KunaResult<()> {
-        // Pattern not fully formed?
-        if self.subtable_symbol(table_id)?.pattern.is_none() {
+        let table = self.subtable_symbol(table_id)?;
+        if table.pattern.is_none() {
             return Ok(());
         }
-        let numct = self.subtable_symbol(table_id)?.construct.len();
         let mut tree = DecisionNode::new_root();
-        for i in 0..numct {
-            // the inner Pattern of the constructor's TokenPattern
-            let pat: Pattern = match self.subtable_symbol(table_id)?.construct[i].get_pattern() {
-                Some(tp) => tp.get_pattern().clone(),
+        for (i, constructor) in table.construct.iter().enumerate() {
+            let pat = match constructor.get_pattern() {
+                Some(tp) => tp.get_pattern(),
                 None => continue,
             };
             let ndisjoint = pat.num_disjoint();
             if ndisjoint == 0 {
-                let dp = expect_disjoint(&pat)?;
-                tree.add_constructor_pair(&dp, i as u32);
+                let dp = expect_disjoint(pat)?;
+                tree.add_constructor_pair(dp, i as u32);
             } else {
                 for j in 0..ndisjoint {
                     let dp = pat.get_disjoint(j).ok_or_else(|| {
@@ -4379,13 +4360,10 @@ impl SymbolTable {
             let a = self.symbol(a_id)?;
             (a.name.clone(), a.scopeid)
         };
-        // C++ walks scopes from the back looking for the symbol by name; the
-        // resident scope is `a`'s scopeid (the tree keys by name).
         if let Some(scope) = self.table.get_mut(scopeid as usize).and_then(|s| s.as_mut()) {
-            scope.remove_symbol(&name);
             b.id = a_id;
             b.scopeid = scopeid;
-            scope.add_symbol(name, a_id);
+            scope.tree.insert(name, a_id);
         }
         self.symbollist[a_id as usize] = Some(b);
         Ok(())
@@ -5431,6 +5409,22 @@ mod tests {
             .add_symbol(SleighSymbol::new_userop(b"dup"))
             .expect_err("duplicate must fail");
         assert!(format!("{err2}").contains("Duplicate symbol name: dup"));
+        assert_eq!(table.num_symbols(), 3);
+        assert_eq!(table.find_global_symbol(b"dup").unwrap().get_id(), 0);
+        for id in 0..3 {
+            assert_eq!(table.find_symbol_by_id(id).unwrap().get_name(), b"dup");
+        }
+
+        table
+            .replace_symbol(2, SleighSymbol::new_subtable(b"dup"))
+            .unwrap();
+        let replacement = table.find_global_symbol(b"dup").unwrap();
+        assert_eq!(replacement.get_id(), 2);
+        assert_eq!(replacement.get_scope_id(), 0);
+        assert_eq!(replacement.get_type(), SymbolType::Subtable);
+        assert_eq!(table.num_symbols(), 3);
+        let ids: Vec<_> = table.get_global_scope().unwrap().symbol_ids().collect();
+        assert_eq!(ids, [2]);
     }
 
     #[test]

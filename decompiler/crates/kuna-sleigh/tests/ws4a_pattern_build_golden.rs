@@ -1,21 +1,7 @@
-//! GOLDEN GATE for WS4a (the SLEIGH-compiler pattern-BUILD machinery): the
-//! patterns/equations/decision-trees the Rust build side produces must match
-//! the C++ `sleigh_opt` oracle.
-//!
-//! The golden strings below are the `XmlEncode` dumps of the built
-//! `Pattern`/`DecisionNode` from an INSTRUMENTED `/tmp` copy of the byte-
-//! untouched C++ tree (`KUNA_DUMP_PATTERNS=<file> sleigh_opt <spec>`, a hook
-//! added in `SubtableSymbol::buildDecisionTree` that XML-encodes the inner
-//! `Pattern` of every constructor and the decision tree).  The vendored
-//! `decompiler/cpp/**` is NOT touched.
-//!
-//! The Rust side builds the same objects from a programmatically-constructed
-//! grammar (the WS2 parser is stubbed, so we feed the arena/symbols
-//! directly), encodes them with the same `XmlEncode`, and asserts byte
-//! equality.  Because `Pattern::encode`/`DecisionNode::encode` are the shared
-//! decode-side encoders the `.sla` round-trip already exercised, matching the
-//! XML proves the BUILD side produced the identical mask/value bit vectors,
-//! disjoint list, and decision-node partition.
+//! Pattern-building fixtures captured from upstream Ghidra's `sleigh_opt` by
+//! XML-encoding constructor patterns and decision trees in `buildDecisionTree`.
+//! These tests build grammars through the public pattern and symbol APIs, then
+//! compare their XML with the captured output.
 
 use kuna_base::marshal::XmlEncode;
 use kuna_sleigh::slghpatexpress::{
@@ -240,13 +226,8 @@ fn mini_four_constructor_decision_tree() {
 /// returning its XML dump.  Uses the public `SymbolTable` build seam.
 fn build_single_constructor_decision(tp: TokenPattern) -> String {
     use kuna_sleigh::slghsymbol::{
-        Constructor, DecisionProperties, OperandSymbol, SleighSymbol, SubtableSymbol, SymbolKind,
-        SymbolTable,
+        Constructor, DecisionProperties, SleighSymbol, SubtableSymbol, SymbolKind, SymbolTable,
     };
-    let _ = (
-        std::any::type_name::<OperandSymbol>(),
-        std::any::type_name::<SleighSymbol>(),
-    );
     let mut table = SymbolTable::new();
     table.add_scope(); // global scope
     let mut sub = SubtableSymbol::default();

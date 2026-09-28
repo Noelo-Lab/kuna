@@ -891,6 +891,18 @@ symbols stay in place until compaction. The compacted ids update scope name
 bindings as well as parent scopes and symbol references, so name lookup and
 scope iteration remain consistent with numeric lookup after repeated cleanup.
 
+Symbol insertion gives the scope map one owned name and borrows the stored
+symbol's name when reporting a duplicate. A rejected duplicate still occupies
+its assigned slot while the original scope binding stays intact. Replacing a
+symbol updates that binding directly, including when the replaced slot came
+from a rejected insertion; its id and scope are preserved.
+
+Pattern construction borrows completed constructor patterns while folding their
+common subpattern and populating decision nodes. Context validation borrows the
+constructor's changes. Each decision node still owns its simplified patterns,
+moving the simplifier's result directly into the node. Source patterns and
+context changes remain owned by their constructors.
+
 Finalized macro templates are shared immutably between their symbols and the
 compiler's expansion table. Expanding a macro borrows this shared definition
 and creates independent output operations for parameter substitution and label
@@ -1310,6 +1322,15 @@ answers do change what it asks next is the real exception: its questions up to
 the first difference were answered as the serial run answers them, so the parent
 takes the corrected record, replays again and renames or decompiles only the
 functions whose answers moved.
+
+Replay cache checks borrow the answer names and current definitions instead of
+constructing temporary owned keys. A match requires equal answer count, absent
+answer positions, names and full definitions; a held name with no minted
+definition differs from a newly minted name. Owned keys remain attached to
+retained results across replay rounds. Each retained first-pass result also
+owns its rename provenance, so replacement and invalidation update the result
+and its reported rename count together. The cache stays sparse over functions
+that asked the ledger; sweep results remain separate from first-pass results.
 
 A structure can travel only if another process can rebuild every field type,
 and a named type counts only if the worker's load created it

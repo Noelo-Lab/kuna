@@ -521,3 +521,77 @@ The independent symbol-compaction snapshot passed all four gates: 675 upstream
 and 1,467 stage assertions, 7,711 workspace tests with 38 existing ignores, and
 the spec check. The option catalog passed, and all 47 XML outputs still match
 pinned C++. No baseline or existing oracle expectation changed.
+
+Pattern construction now borrows completed constructor patterns for common
+subpattern folding and decision-tree setup, and borrows context changes while
+validating them. Decision nodes retain ownership of their simplified patterns
+by moving the simplifier's result directly into the node. This removes a
+private clone-only extractor and 14 production lines. Pattern ownership,
+missing-pattern handling, public APIs and diagnostics are unchanged. The
+pattern-building tests also lose an unused type-name placeholder and a stale
+header that described the parser as a stub. No fixture expectation changed.
+
+All 368 compiler/SLEIGH release tests passed, including the 47 binary oracles.
+Twenty CLI probes preserve complete Rust diagnostics, statuses and output
+images: all six declaration orders of two overlapping patterns and their
+intersection, an unresolved overlap, identical patterns, a same-constructor
+disjunction and nested specialization, each with default settings and `-l`.
+Accepted images match pinned C++; three failing cases retain the preexisting
+generic Rust errors instead of C++'s paired source-location diagnostics.
+
+A full-compilation allocator counter measured these cumulative requests on each
+of three repetitions, with identical output before and after:
+
+| Spec | Requests before → after | Bytes requested before → after |
+| --- | ---: | ---: |
+| Toy builder | 25,593 → 22,760 | 2,840,249 → 2,827,889 |
+| x86-64 | 3,683,498 → 3,443,118 | 316,008,316 → 314,678,216 |
+| Hexagon | 860,478 → 778,303 | 83,111,390 → 82,743,710 |
+
+These are requested-byte totals, not peak or resident memory. Alternating
+uninstrumented runs pinned to CPU 40 measured Toy-builder wall time at
+6.2010 → 6.1455 ms (-0.90%, 110 samples per version), x86-64 at 481.6017 →
+479.2046 ms (-0.50%, 12 samples), and Hexagon at 150.9999 → 149.8060 ms
+(-0.79%, 12 samples). Child CPU changes were -1.06%, -0.50%, and -0.80%.
+Every output was identical. Measurements followed warmups on the shared host.
+
+The independent pattern-ownership snapshot passed all four gates: 675 upstream
+and 1,467 stage assertions, 7,711 workspace tests with 38 existing ignores, and
+the spec check. The option catalog passed, and all 47 XML outputs still match
+pinned C++. No baseline or existing oracle expectation changed.
+
+Symbol insertion now moves its owned name into the scope map instead of copying
+it again. Duplicate diagnostics read the name from the stored symbol, and
+global insertion keeps its validated scope borrow across the independent symbol
+append. Replacement updates the name binding directly instead of removing and
+reinserting a map node. Public signatures and insertion/error ordering stay the
+same. The production path shrank by eight lines.
+
+The existing duplicate-name test now checks that rejected insertions keep their
+slots without changing the original binding, and that explicitly replacing a
+rejected slot rebinds its name. Those assertions pass before and after. A
+standalone public-API probe also preserves complete results, errors and table
+state for missing and invalid scopes, nested insertion, replacement, and an
+undefined symbol id. All 368 compiler/SLEIGH release tests pass, including the
+47 binary oracle cases.
+
+A full-compilation allocator counter measured these cumulative requests on each
+of three repetitions, with identical output before and after:
+
+| Spec | Requests before → after | Bytes requested before → after |
+| --- | ---: | ---: |
+| Toy builder | 25,854 → 25,593 | 2,841,316 → 2,840,249 |
+| x86-64 | 3,705,594 → 3,683,498 | 316,197,430 → 316,008,316 |
+| Hexagon | 871,393 → 860,478 | 83,189,763 → 83,111,390 |
+
+These are requested-byte totals, not peak or resident memory. Alternating
+uninstrumented runs pinned to CPU 40 measured Toy-builder wall time at
+6.1958 → 6.1448 ms (-0.82%, 110 samples per version), x86-64 at 487.6291 →
+488.3288 ms (+0.14%, 12 samples), and Hexagon at 182.8576 → 187.1021 ms
+(+2.32%, 12 samples). Child CPU changes were -0.63%, +0.14%, and +2.30%.
+Every output was identical. Measurements followed warmups on the shared host.
+
+The independent symbol-insertion snapshot passed all four gates: 675 upstream
+and 1,467 stage assertions, 7,711 workspace tests with 38 existing ignores, and
+the spec check. The option catalog passed, and all 47 XML outputs still match
+pinned C++. No baseline or existing oracle expectation changed.
