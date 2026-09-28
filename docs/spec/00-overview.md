@@ -167,6 +167,13 @@ and the first record's metadata without cloning names. Different names or
 specific hashes remain separate records. Database serialization and command
 diagnostics are unchanged.
 
+The database serializer visits full-hash buckets in ascending hash order and
+retains insertion order within each bucket. Names are interned on first
+encounter through one entry lookup, and repeated names reuse the same byte
+offset. Both hash maps are private lookup indices; the serialization traversal
+sets record and string-blob order explicitly. The flat format, version and
+reader behavior are unchanged.
+
 Archive-member loading is owned by
 `decompiler/crates/kuna-cli/src/fid/archive.rs`. Each object member is written to
 a privately created temporary file whose guard removes it after loading or on

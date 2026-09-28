@@ -1565,6 +1565,60 @@ The 268 CLI probes, 42 Python tests, 56 Ghidra tests, 48 XML comparisons,
 build. Spec/catalog checks pass. Logs use
 `/tmp/kuna-deslop-console-output-final-`; no baseline moved.
 
+## FID serialization lookup and format documentation
+
+Name interning now uses one entry lookup instead of a contains-then-insert
+sequence. The full-hash buckets, sorted traversal, insertion order inside each
+bucket, first-encounter string offsets and reader are unchanged. The module
+header describes the implemented database/interface and removes obsolete
+future-PR claims. Four narrow collection expectations cover six lint sites:
+the private full-hash index is sorted before serialization, and the name-offset
+map is used only for lookup while the ordered records determine blob order.
+
+A persistent format test pins the header, hash order, collision-bucket order,
+shared/empty-name offsets and exact string blob. It passes on both original and
+changed complete modules, alongside all nine existing database tests. Installed
+source checks retain every other executable line and existing test. Actual
+complete-module comparisons in both overflow modes match 8,192 databases,
+519,571 records and 14,260,990 serialized bytes, including repeated serialization,
+indexed queries and reserialization. Names include empty, shared, distinct,
+Unicode and embedded-NUL strings; metadata retains the original byte behavior.
+
+Three samples per five 4,096-record workloads retain identical serialization
+allocation traffic and all 15 full output files. Unique/collision/long-name
+workloads each make 44 allocation requests, repeated-name workloads 29, and
+empty-name workloads 19. This change removes redundant lookup work, not memory
+allocation; the counter measures cumulative requests/bytes, not peak memory.
+Across 66 balanced CPU-41 runs, each measuring 128 serializations per workload,
+median times change -9.04%/+2.86%/-2.25%/-15.18%/+0.61% for unique, repeated,
+collision, long and empty names. Paired changes are -9.02%/+2.82%/-13.86%/-15.16%/
++0.53%; all remain within the 5% slowdown budget.
+
+All 15 saved FID CLI cases retain status, diagnostics and database bytes; the
+default success cases also retain the vendored database exactly. All 286
+compiler cases match. Thirty measured command pairs per workload change
+-1.17%/-1.28%/-1.33% for single, eight-repeated-object and archive inputs, with
+every timed output and diagnostic checked. These small command differences are
+not claimed as general decompiler speedups.
+
+Focused checks pass 905 analysis tests, 248 CLI units and the FID integration
+test without warnings. The native build takes 18.11 seconds and is warning-free.
+Scoped analysis Clippy falls from 221 to 215 errors, with 64 warnings unchanged;
+none remain in this module, but the crate is not lint-clean. Direct rustdoc of
+the original and installed database modules passes with broken links denied and
+no warnings. The broader analysis documentation check fails on 18 links in
+unchanged files and reports 110 warnings; that separate cleanup remains open.
+Artifacts are under `/tmp/kuna-deslop-fid-serialize.7t7ktkH9`; the native build
+log is `/tmp/kuna-deslop-fid-serialize-final-build.log`.
+
+All nine final gates pass: 7,450 workspace tests with 38 existing ignores
+across 439 groups and no warnings; 675/675 upstream and 1,467/1,467 stage
+assertions retain parity. The 268 CLI probes, 42 Python tests, 56 Ghidra tests,
+48 XML comparisons, 17 saved CLI comparisons and all 11 browser probes pass,
+including a fresh WASM build. Spec/catalog checks pass. Tracked diff hash
+`a52fd8ea` remains unchanged through the final terminal success. Logs use
+`/tmp/kuna-deslop-fid-serialize-final-`; no baseline moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1575,9 +1629,9 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Archive member and console output files have scoped cleanup. Loading/configuration and the remaining pool module still combine several lifecycle policies. |
-| Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 16 errors and 20 warnings. Declaration naming, rendered-signature dedup, FID dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
+| Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; CLI finds 16 errors/20 warnings and analysis 215 errors/64 warnings. Declaration naming, rendered-signature dedup, FID dedup/database indices, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
-| Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
+| Analysis, SLEIGH, Python, integrations | Broader review remains open, including 18 unresolved analysis rustdoc links and stale format-dispatch claims. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 
 Before each commit: `make test`, `make test-stages`, `make rust-test`,
 `make check-spec`. Also run the catalog check and relevant CLI probes. Preserve
