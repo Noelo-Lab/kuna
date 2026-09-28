@@ -137,6 +137,16 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   architecture-loading failure, and the dead-writer check loses its always-true
   skip wrapper. The CLI manifest no longer describes obsolete subprocess-only
   behavior or promises unverified byte equality.
+- Dashboard artifact and asset lookups match request identifiers against directory
+  entries, extending the boundary already used by agent logs. Identifier checks
+  match the whole string. Asset containment, recorded-report precedence and the
+  documented need-record symlink policy remain in place. The module introduction
+  no longer describes finished modules as under construction or promises every
+  route returns 200.
+- The compiler's existing local-collision check now reports shared temporary
+  exports. The existing `-c` flag adds operand names and source locations;
+  summary warnings remain nonfatal and do not change compiled images. A private
+  detector borrows the templates and preserves constructor/operand order.
 
 ## Evidence
 
@@ -387,13 +397,40 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   tests, 56 Ghidra checks and catalog validation pass. All 45 pinned C++ XML
   outputs and 17 saved CLI comparisons remain unchanged.
 
+- Eight offline dashboard tests cover complete identifiers, valid asset and
+  artifact lookup, source precedence, missing/unreadable directories and the
+  existing link policies. The complete-identifier check fails before the change
+  because a trailing newline was accepted. No live server or external service
+  was used. The first test setup used a Python 3.11-only unittest helper; it was
+  corrected to `ExitStack` for the installed Python 3.10 before the comparison.
+- All 42 Python tooling tests pass. Across 960 before/after probe reads, result
+  dictionaries are identical. Forty alternating rounds measured 74.7 → 92.2 µs
+  per lookup with 32 files, 74.5 → 323.2 µs with 512, and 76.2 → 1773.9 µs with
+  4,096. These local warm-directory measurements include JSON reading and cover
+  early, middle, late and missing names. The explicit listing adds work; this is
+  not a performance improvement or a whole-dashboard throughput measurement.
+- The collision-warning regression fails against the saved old compiler; its
+  no-collision controls already pass. All 370 compiler/SLEIGH release tests pass
+  after restoration, including 45 pinned binary oracles. The compiler library
+  Clippy check passes; the new visited set has a narrow, fulfilled membership-only
+  expectation. Independent diagnostic, XML and timing evidence is recorded in
+  `notes/deslop-slacomp.md`.
+
+Final thirteenth checkpoint validation: all four required gates pass. The full
+workspace reports 7,399 passed, zero failed, 38 existing ignores across 436
+groups, and no warnings. Upstream and stage parity remain 675/675 and 1467/1467;
+268 CLI probes, 42 Python tests, 56 Ghidra tests, spec and catalog checks pass.
+All 45 pinned C++ XML outputs and the 17 saved CLI comparison cases remain
+unchanged. Source and new-file hashes were checked again after the final test
+process exited. The fresh CodeQL result is still pending publication.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
 
 | Area | Evidence / next check |
 |---|---|
-| CodeQL | The PR's aggregate check flags four path-expression flows in the existing RE dashboard readers and asset routes. Analyzer jobs and parity CI succeed. Review the validation boundaries before treating these as defects or false positives; do not dismiss the alerts without evidence. |
+| CodeQL | The PR's aggregate check flagged four path-expression flows in existing dashboard readers and asset routes. Directory-based lookup now extends the existing agent-log boundary; valid behavior is checked offline. A fresh CI result is still required before claiming the alerts are resolved. |
 | CLI test structure | Private module copies and missing-command/spec skips are removed. JSON helpers use explicit field paths and preserve raw bytes. Fault-test process handling is shared; optional-tool failures are explicit. Remaining native-platform gates and conditional assertions still need review. |
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |

@@ -1,46 +1,12 @@
-"""The RE-friction loop's live dashboard: one refresher thread, many viewers.
+"""Read-only dashboard for the RE-friction loop.
 
     PYTHONPATH=<repo> python3 -m scripts.repipe.webui --port 8787 --bind 127.0.0.1
     PYTHONPATH=<repo> python3 -m scripts.repipe.webui --json     # one snapshot, no server
 
-Stdlib only (http.server), loopback, no auth, and READ-ONLY by design: the STOP control
-displays the path to ``touch`` rather than posting anything, so a stray browser tab can
-never stop a run.
-
-Why a refresher thread instead of collecting per request
---------------------------------------------------------
-``scripts.pipeline.status.collect()`` shells out to ``git worktree list`` AND ``gh api``.
-A cold ``collect()`` measured **10.65 s** on this repo. At SSE cadence, or with three
-browser tabs open, per-request collection is a fork bomb and a GitHub rate-limit incident.
-So exactly one background thread owns every expensive read, publishes an in-memory payload
-plus ``.kuna-repipe/webui-cache.json`` (atomic, monotonic ``seq``), and **request handlers
-never shell out** — they slice the cache. N viewers cost what one costs.
-
-The per-source TTLs are ``status.py``'s own cache, not a second one: ``status.collect()``
-already holds ``git worktree list`` for ``KUNA_PIPELINE_WORKTREE_TTL`` (20 s) and the open-PR
-``gh api`` for ``KUNA_PIPELINE_PR_TTL`` (60 s), so wrapping the whole call at a 1 s TTL gives
-inventory 1 s / worktrees 20 s / PRs 60 s in one place. Check-runs (60 s, and only for PRs the
-inventory believes are in flight) and ``du`` (60 s) go through the same ``status._cached``.
-A failed fetch is cached as ``None`` with ``stale_since`` and rendered "(gh unavailable)",
-exactly as ``status.py`` renders it today. Every subprocess this module starts gets
-``timeout=20``.
-
-``seq`` advances only when the payload actually changes: elapsed/stale counters are derived
-in the browser from ``started_at``/``updated_at`` so a quiet pipeline produces no churn, and
-an SSE client that sees ``{"seq": N}`` knows a refetch is worth making.
-
-State dir binding
------------------
-``scripts.pipeline.state`` is multi-pipeline through ``KUNA_PIPELINE_STATE_DIR``; the RE loop
-points it at ``.kuna-repipe``. This module sets that binding (plus ``status.py``'s worktree
-and branch match seams) before it reads anything, so the inventory it shows is the RE loop's,
-not the angr fleet's.
-
-Degradation is the normal case, not the error case
---------------------------------------------------
-``needs.py`` / ``verify.py`` / ``sample.py`` are siblings under construction and are imported
-defensively; ``.kuna-repipe/`` may not exist at all. Every route answers 200 with an empty
-shape rather than 500, because "the pipeline has never run" is the state this is booted in.
+One background refresher collects status and publishes cached snapshots. Detail
+routes read local artifacts; filename requests select directory entries rather
+than supply paths. Missing pipeline data produces empty views. The server has no
+authentication and binds to loopback by default.
 """
 from __future__ import annotations
 
@@ -62,8 +28,6 @@ from . import config as rconfig
 from ..pipeline import status as pstatus
 from ..atomic import atomic_text_writer
 
-# Siblings written in parallel with this file. A dashboard that 500s because a module it
-# wants does not exist yet is worse than one that shows an empty pane.
 try:
     from . import needs as needs_mod
 except Exception:
@@ -269,9 +233,7 @@ def _lexically_under(root, candidate):
     return c == r or c.startswith(r + os.sep)
 
 
-# An id may only ever be these characters. No separator, no dot-dot, no NUL, nothing that can
-# leave a directory -- so a tainted URL component cannot reach a filesystem path at all. This
-# is deliberately stricter than _safe_under, which stays as defence in depth.
+# URI component grammar; file selection separately matches directory entries.
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 
@@ -279,7 +241,19 @@ def safe_id(value):
     """The id if it is well-formed, else None. Applied at every route that names a file."""
     if not isinstance(value, str) or ".." in value:
         return None
-    return value if _ID_RE.match(value) else None
+    return value if _ID_RE.fullmatch(value) else None
+
+
+def _listed_child(directory, name):
+    """Select a filesystem-produced path by name; callers set the symlink policy."""
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.name == name:
+                    return Path(entry.path)
+    except OSError:
+        pass
+    return None
 
 
 def _safe_under(root, candidate):
@@ -513,7 +487,7 @@ def _collect_agents(state_dir, snap, gh_repo, want_checks=True):
         updated = w.get("updated_at") or started
         held = sorted(res for res, l in leases.items() if l.get("holder") == wid)
         sidecar = _read_json(state_dir / "agents" / ("%s.json" % wid), {}) or {} \
-            if AGENT_ID_RE.match(wid) else {}
+            if AGENT_ID_RE.fullmatch(wid) else {}
         rec = {
             "id": wid,
             "role": role,
@@ -1182,11 +1156,11 @@ class Refresher(threading.Thread):
 
 def read_need(need_id):
     """The full record: front-matter + the fixed ## sections. Rejected pile included."""
-    if not NEED_ID_RE.match(need_id or "") or ".." in need_id:
+    if not NEED_ID_RE.fullmatch(need_id or "") or ".." in need_id:
         return None
     for directory in (rconfig.needs_dir(), rconfig.rejected_dir()):
-        path = directory / ("%s.md" % need_id)
-        if not _lexically_under(rconfig.needs_dir(), path) or not path.is_file():
+        path = _listed_child(directory, "%s.md" % need_id)
+        if path is None or not _lexically_under(rconfig.needs_dir(), path) or not path.is_file():
             continue
         try:
             text = path.read_text(errors="replace")
@@ -1228,13 +1202,13 @@ def read_probe(state_dir, probe_id, replays=40):
     round's acceptance.json, so an acceptance probe shows its per-round history even when
     no replay log exists yet.
     """
-    if not PROBE_ID_RE.match(probe_id or ""):
+    if not PROBE_ID_RE.fullmatch(probe_id or ""):
         return None
     doc = None
     origin = None
-    for cand in (state_dir / "probes" / ("%s.json" % probe_id),
-                 rconfig.needs_dir() / "probes" / ("%s.json" % probe_id)):
-        if cand.is_file():
+    for directory in (state_dir / "probes", rconfig.needs_dir() / "probes"):
+        cand = _listed_child(directory, "%s.json" % probe_id)
+        if cand is not None and cand.is_file():
             doc = _read_json(cand)
             origin = str(cand)
             break
@@ -1251,7 +1225,8 @@ def read_probe(state_dir, probe_id, replays=40):
                 origin = "verify.py"
             except Exception:
                 doc = None
-    history = _jsonl(state_dir / "replays" / ("%s.jsonl" % probe_id), limit=replays)
+    replay = _listed_child(state_dir / "replays", "%s.jsonl" % probe_id)
+    history = _jsonl(replay, limit=replays) if replay is not None else []
     for num, path in _round_dirs(state_dir):
         for row in _acceptance_rows(_read_json(path / "acceptance.json")):
             pid = row.get("probe_id") or row.get("acceptance_id") or row.get("id")
@@ -1268,7 +1243,7 @@ def read_probe(state_dir, probe_id, replays=40):
 
 def read_agent_report(state_dir, agent_id, agents):
     """A tester's report.json, found through the arena its inventory record names."""
-    if not AGENT_ID_RE.match(agent_id or ""):
+    if not AGENT_ID_RE.fullmatch(agent_id or ""):
         return None
     rec = next((a for a in agents if a["id"] == agent_id), None)
     cands = []
@@ -1277,7 +1252,9 @@ def read_agent_report(state_dir, agent_id, agents):
     if rec and rec.get("challenge"):
         for num, _ in _round_dirs(state_dir):
             cands.append(state_dir / "arena" / str(num) / rec["challenge"] / "report.json")
-    cands.append(state_dir / "reports" / ("%s.json" % agent_id))
+    fallback = _listed_child(state_dir / "reports", "%s.json" % agent_id)
+    if fallback is not None:
+        cands.append(fallback)
     for cand in cands:
         if not cand.is_absolute():
             cand = state_dir / cand
@@ -1403,13 +1380,14 @@ class Handler(BaseHTTPRequestHandler):
         return self.api(segs[1:], query, payload, seq, state_dir)
 
     def serve_site_file(self, kind, name):
-        # Charset-gate first: a tainted component must never reach a path at all, whatever
-        # _safe_under would have said about the result.
         name = safe_id(name)
-        if name is None or kind not in ("fonts", "img", "css", "js"):
+        directories = {"fonts": SITE_FONTS, "img": SITE_ASSETS / "img",
+                       "css": SITE_ASSETS / "css", "js": SITE_ASSETS / "js"}
+        directory = directories.get(kind)
+        if name is None or directory is None:
             return self._err(400, "bad asset name")
-        cand = SITE_ASSETS / kind / name
-        if not _safe_under(SITE_ASSETS, cand) or not cand.is_file():
+        cand = _listed_child(directory, name)
+        if cand is None or not _safe_under(SITE_ASSETS, cand) or not cand.is_file():
             return self._err(404, "not found")
         return self._file(cand)
 
@@ -1424,15 +1402,20 @@ class Handler(BaseHTTPRequestHandler):
             name = safe_id(rest[1])
             if name is None:
                 return self._err(400, "bad asset name")
-            cand = SITE_FONTS / name
-            if not _safe_under(SITE_FONTS, cand) or not cand.is_file():
+            cand = _listed_child(SITE_FONTS, name)
+            if cand is None or not _safe_under(SITE_FONTS, cand) or not cand.is_file():
                 return self._err(404, "not found")
             return self._file(cand)
         parts = [safe_id(x) for x in rest]
         if any(x is None for x in parts):
             return self._err(400, "bad asset path")
-        cand = WEBUI_DIR / "assets" / Path(*parts)
-        if not _safe_under(WEBUI_DIR / "assets", cand) or not cand.is_file():
+        root = WEBUI_DIR / "assets"
+        cand = root
+        for part in parts:
+            cand = _listed_child(cand, part)
+            if cand is None or not _safe_under(root, cand):
+                return self._err(404, "not found")
+        if not cand.is_file():
             return self._err(404, "not found")
         return self._file(cand)
 
@@ -1467,7 +1450,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self.filter_needs(payload, query, seq))
 
         if head == "need" and len(rest) == 2:
-            if not NEED_ID_RE.match(rest[1]) or ".." in rest[1]:
+            if not NEED_ID_RE.fullmatch(rest[1]) or ".." in rest[1]:
                 return self._err(400, "invalid need id")
             rec = read_need(rest[1])
             if rec is None:
@@ -1475,7 +1458,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(rec)
 
         if head == "probe" and len(rest) == 2:
-            if not PROBE_ID_RE.match(rest[1]):
+            if not PROBE_ID_RE.fullmatch(rest[1]):
                 return self._err(400, "probe id must match ^[pa]-[0-9a-f]{12}$")
             rec = read_probe(state_dir, rest[1])
             if rec is None:
@@ -1492,7 +1475,7 @@ class Handler(BaseHTTPRequestHandler):
             agent_id = safe_id(rest[1])
             if agent_id is None:
                 return self._err(400, "bad agent id")
-            if not AGENT_ID_RE.match(agent_id):
+            if not AGENT_ID_RE.fullmatch(agent_id):
                 return self._err(400, "invalid agent id")
             if rest[2] == "report":
                 rec = read_agent_report(state_dir, agent_id, payload.get("agents", []))

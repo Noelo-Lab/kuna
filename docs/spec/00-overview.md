@@ -832,6 +832,15 @@ existing records in increasing offset order, without copying their keys into
 a separate collection. Only a selected rule is copied out of the read-only
 search; applying it retains the owned varnode copy needed to rewrite an operation.
 
+After consistency checking, the compiler checks whether different operands of a
+constructor can export the same temporary storage. It follows subtable exports
+and re-exports, including the temporary used by a dynamic export, while ignoring
+constant and register exports. Each operand traversal visits a symbol once.
+Constructors without a main template, with fewer than two operands, or containing
+only build directives are skipped. The compiler reports at most one collision
+per constructor and a total count; `slacomp -c` adds the conflicting operand names
+and constructor location. These warnings do not change the compiled image.
+
 Both compiler constructor-building entry points use the same complete
 finalizer. The entry point accepting a section vector owns it directly; the
 parser-arena entry point takes the vector from its slot before delegating.

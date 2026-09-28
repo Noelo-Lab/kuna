@@ -1470,8 +1470,51 @@ impl SleighCompile {
         Ok(())
     }
 
-    /// `checkLocalCollisions` (slgh_compile.cc:2250) -- no exports in the landed subset.
-    fn check_local_collisions(&mut self) {}
+    /// Warn about operands sharing exported temporaries
+    /// (`checkLocalCollisions`, slgh_compile.cc:2250).
+    fn check_local_collisions(&mut self) {
+        let Some(root) = self.base.get_root() else {
+            return;
+        };
+        let mut count = 0usize;
+        for table_index in 0..=self.tables.len() {
+            let table = if table_index == 0 {
+                root
+            } else {
+                self.tables[table_index - 1]
+            };
+            for ct_idx in 0..self.constructor_count(table) {
+                let collision = crate::local_collisions::find_collision(
+                    &self.base,
+                    self.constructor(table, ct_idx),
+                );
+                if let Some((first, second)) = collision {
+                    count += 1;
+                    if self.warnalllocalcollisions {
+                        let loc = self.constructor_location(table, ct_idx);
+                        let first = self.symbol_name(first);
+                        let second = self.symbol_name(second);
+                        self.report_warning_loc(
+                            Some(&loc),
+                            &format!(
+                                "Possible operand collision between symbols '{}' and '{}'",
+                                String::from_utf8_lossy(&first),
+                                String::from_utf8_lossy(&second),
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+        if count > 0 {
+            self.report_warning(&format!(
+                "{count} constructors with local collisions between operands"
+            ));
+            if !self.warnalllocalcollisions {
+                self.report_warning("Use -c switch to list each individually");
+            }
+        }
+    }
 
     /// `checkNops` (slgh_compile.cc:2277).
     fn check_nops(&mut self) {

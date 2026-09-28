@@ -322,3 +322,38 @@ The independent checker-borrowing snapshot passed all four gates: 675 upstream
 and 1,467 stage assertions, 7,707 workspace tests with 38 existing ignores, and
 the spec check. The option catalog passed, and all 45 XML outputs still match
 the pinned C++ reference. No baseline or existing oracle expectation changed.
+
+The compiler accepted `-c` but called an empty local-collision check, whose
+comment incorrectly claimed exported values were unsupported. Reusing a subtable's
+exported temporary through two constructor operands therefore produced no warning.
+The existing check now follows exported storage through subtable alternatives and
+re-exports, including dynamic-export temporaries. It visits each symbol once per
+operand and stops after the first collision in each constructor. Default output
+reports the count and a `-c` hint; `-c` adds the operand names and source location.
+The detector lives in a private compiler module and only borrows the symbol and
+template data. Existing compiled images are unchanged.
+
+Two parameterized CLI regressions cover direct and dynamic collisions, build-only
+constructors, distinct temporaries, register exports and constant exports, each
+with and without `-c`. The warning regression fails before the fix. All 12 case/flag
+combinations match the pinned C++ compiler's complete diagnostics, exit status and
+decoded image; the Rust images are byte-identical before and after the change.
+All 366 compiler and SLEIGH release tests pass, including the 45 existing binary
+oracle cases.
+
+Alternating compiler runs pinned to CPU 40 measured Toy-builder wall time at
+6.2421 → 6.2882 ms (+0.74%, 110 samples per version), x86-64 at 481.6968 →
+480.3967 ms (-0.27%, 12 samples), and Hexagon at 150.7768 → 153.3527 ms
+(+1.71%, 12 samples). Child CPU times changed by +0.80%, -0.27%, and +1.73%.
+Every measured output was identical. These local measurements followed warmups
+and include process startup.
+
+The restored pass also received 12 alternating timing samples per version on
+AArch64 and ARM8, pinned to the same CPU after warmup. AArch64 wall time was
+436.5198 → 439.6371 ms (+0.71%) and ARM8 was 317.3761 → 312.1483 ms (-1.65%);
+child CPU changes were +0.74% and -1.74%. All outputs were identical.
+
+The independent collision-warning snapshot passed all four gates: 675 upstream
+and 1,467 stage assertions, 7,709 workspace tests with 38 existing ignores, and
+the spec check. The option catalog passed, and all 45 XML outputs still match
+the pinned C++ reference. No baseline or existing oracle expectation changed.
