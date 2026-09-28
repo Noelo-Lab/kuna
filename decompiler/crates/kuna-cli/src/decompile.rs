@@ -17,17 +17,19 @@
 //! That path loads the binary in-process rather than spawning `decomp_dbg`,
 //! which is why the `decomp_dbg`-only flags are refused rather than ignored.
 
-use std::borrow::Cow;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
-use kuna_console::engine::{ArmIsa, EntrySelector, ARM_ISA_ENV};
+use kuna_console::engine::{ArmIsa, ARM_ISA_ENV};
 use kuna_console::kuna_buildstamp;
 
 use crate::args::take_value;
 use crate::decompile_all::{self, Args as AllArgs, DriverDefaults};
 use crate::paths;
+
+mod script;
+use script::{build_script_for_input, reject_unquotable};
 
 /// Options parsed for a `decompile` invocation.
 pub struct DecompileArgs {
@@ -62,36 +64,10 @@ pub struct DecompileArgs {
     pub base: Option<u64>,
 }
 
-/// Whether an `--option` value selects the "on" state (the `on_or_off` token set
-/// the console accepts), used to decide whether `macho-arm64e` exports its
-/// load-time env gate.
-
 /// A 0x-prefixed token auto-selects address mode (a bare hex-looking token is a
 /// function name; use `--addr` for bare numeric addresses) — `_looks_like_addr`.
 pub(crate) fn looks_like_addr(target: &str) -> bool {
     target.starts_with("0x") || target.starts_with("0X")
-}
-
-/// The VMA a by-address run selected, or `None` when the target is an
-/// object-file coordinate (`.text+0x10`) or does not parse as an address.
-///
-/// The number grammar is `--addr`'s own — `0x`-prefixed or bare hex — which is
-/// the same one [`build_script_for_input`] uses to spell the `load addr` line.
-fn selected_vma(target: &str, by_address: bool) -> Option<u64> {
-    if !by_address {
-        return None;
-    }
-    if matches!(
-        EntrySelector::parse(target),
-        EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. }
-    ) {
-        return None;
-    }
-    let digits = target.strip_prefix("0x").or_else(|| target.strip_prefix("0X")).unwrap_or(target);
-    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    u64::from_str_radix(digits, 16).ok()
 }
 
 fn parse_cli_address(value: &str) -> Result<u64, String> {
@@ -101,221 +77,6 @@ fn parse_cli_address(value: &str) -> Result<u64, String> {
         .or_else(|| value.strip_prefix("0X"))
         .unwrap_or(value);
     u64::from_str_radix(digits, 16).map_err(|_| format!("invalid address {value:?}"))
-}
-
-/// Quote a path for the console script when — and only when — it needs it.
-///
-/// The console reads a filename with `CommandStream::read_filename`, which
-/// tokenizes on whitespace unless the argument opens with `"`. An unquoted path
-/// containing a space therefore splits into two arguments: `load file` loads the
-/// wrong file, and `openfile write` truncates a file at the split point.
-///
-/// Quoting is conditional so that every path that works today keeps producing a
-/// byte-identical script — the corpus transcripts, and any older `decomp_dbg`
-/// reached through `--decomp-dbg`, which would not understand a quote. The
-/// [`Cow`] says so in the type: borrowed (and unallocated) for every path that
-/// needs no quoting, which is nearly all of them.
-///
-/// The scan is byte-wise because the console's own splitter is
-/// (`CommandStream::is_ws` is the ASCII set): the producer tests exactly the
-/// bytes the consumer would split on.
-fn console_path(path: &str) -> Cow<'_, str> {
-    if !path.as_bytes().iter().any(|b| b.is_ascii_whitespace() || *b == b'"') {
-        return Cow::Borrowed(path);
-    }
-    Cow::Owned(format!("\"{}\"", path.replace('\\', "\\\\").replace('"', "\\\"")))
-}
-
-/// A newline is the one whitespace character quoting cannot rescue: the script
-/// is fed to `decomp_dbg` as lines, so an embedded `\n` ends the command no
-/// matter how it is quoted, and the console answers with a load failure that
-/// reads like a defect in the binary.
-///
-/// Legal on unix and vanishingly rare. Diagnose it here rather than emit a
-/// script that cannot mean what it says.
-fn reject_unquotable(what: &str, path: &str) -> Result<(), String> {
-    match path.find(['\n', '\r']) {
-        None => Ok(()),
-        Some(_) => Err(format!(
-            "{what} contains a newline, which the decomp_dbg console script \
-             (one command per line) cannot carry: {path:?}"
-        )),
-    }
-}
-
-/// Build the stdin script fed to `decomp_dbg` — port of `_build_script`.
-fn build_script_for_input(
-    binary: &str,
-    target: &str,
-    by_address: bool,
-    bfd_target: Option<&str>,
-    raw_image: bool,
-    base: Option<u64>,
-    raw: bool,
-    out_path: &Path,
-    injected: &[(&'static str, &'static str)],
-    options: &[(String, String)],
-    kasserts: &[String],
-    func_decls: &[crate::funcdecl::FuncDecl],
-    assertions: &[kuna_console::assertions::Directive],
-    regions_path: Option<&Path>,
-) -> String {
-    let mut lines: Vec<String> = Vec::new();
-    // The function this run selected, when it was named rather than addressed:
-    // a directive qualified with it binds to the selection, and one qualified
-    // with any other function does not (`crate::assertdecl::console_form`).
-    let selected = if by_address { None } else { Some(target) };
-    // The console lines of one slot, in the order the caller gave them.  A
-    // directive that does not bind this run has no line and is reported by
-    // `assertion_outcomes` instead.
-    let forms = |slot| {
-        assertions
-            .iter()
-            .filter_map(|d| crate::assertdecl::console_form(d, selected).ok())
-            .filter(move |f| f.slot == slot)
-    };
-    let image = console_path(binary);
-    if raw_image {
-        let language = bfd_target.expect("raw parser requires --target");
-        let base = base.expect("raw parser requires --base");
-        lines.push(format!("load raw {language} 0x{base:x} {target} {image}"));
-    } else {
-        match bfd_target {
-            Some(t) if !t.is_empty() => lines.push(format!("load file {t} {image}")),
-            _ => lines.push(format!("load file {image}")),
-        }
-    }
-    // `option` lines MUST precede `read symbols`: the kuna_analysis passes are
-    // committed (gated by the per-pass `--option <id> on|off` flags) inside
-    // `read symbols` (IfcReadSymbols -> commit_pending_analysis). Emitting the
-    // options first lets a per-run pass gate take effect; an option after the
-    // commit would be a no-op (the analysis-port conflict #4 ordering fix). The
-    // upstream/printer options here are order-independent w.r.t. `read symbols`.
-    //
-    // The driver defaults this attempt takes, from the shared table
-    // (`decompile_all::driver_default_options`) — the DIV-15 Listing always, and
-    // the DIV-20/DIV-68 non-x86-64 discovery bundle only on the retry (see
-    // `decompile`).
-    for (name, value) in injected {
-        lines.push(format!("option {name} {value}"));
-    }
-    // (kuna `--assert`) A `readonly` range is inert unless read-only propagation
-    // is on, and that option is default-off; asserting the range turns it on.
-    // Emitted BEFORE the caller's own `--option` lines so an explicit
-    // `--option readonly off` still wins.
-    if kuna_console::assertions::implies_readonly_propagation(assertions) {
-        lines.push("option readonly on".into());
-    }
-    for (name, value) in options {
-        lines.push(format!("option {name} {value}"));
-    }
-    // (kuna `--assert`) IMAGE-scoped directives -- a read-only or volatile
-    // memory range -- must precede `read symbols`: mapping a symbol folds the
-    // range property into its SymbolEntry and never looks at the range again.
-    for form in forms(crate::assertdecl::Slot::Image) {
-        lines.push(form.line);
-    }
-    lines.push("read symbols".into());
-    // `--define-function` AFTER the analysis commit and BEFORE the load: a
-    // caller-declared boundary is an assertion that outranks whatever discovery
-    // decided about the same address, and the load below is what consults the
-    // declared extent (`ConsoleProgram::declared_extent`).
-    for decl in func_decls {
-        lines.push(decl.console_line());
-    }
-    // (kuna, RE-need `prototype-assertion-rejects-explicit`) A by-address run
-    // ensures that a function symbol exists where it points: `load addr` follows flow
-    // from the address without installing a `FunctionSymbol`, so a directive
-    // naming the very address this run decompiles was answered `no function
-    // starts at 0x…` while the body was emitted in full.  This is the same
-    // install `--define-function <start>` performs — skipped when the caller
-    // already declared that start, whose extent a second bare declaration would
-    // clear.
-    if let Some(vma) = selected_vma(target, by_address) {
-        if !func_decls.iter().any(|decl| decl.start == vma) {
-            lines.push(format!("function symbol {vma:#x}"));
-        }
-    }
-    // (kuna `--assert`) The PROGRAM-scoped directives -- a parsed type, a
-    // declared prototype, a named global -- go here, after the analysis commit
-    // and before the selection, so the function is loaded against them.
-    for form in forms(crate::assertdecl::Slot::Program) {
-        lines.push(form.line);
-    }
-    if by_address {
-        match EntrySelector::parse(target) {
-            EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. } => {
-                lines.push(format!("load function {target}"));
-            }
-            _ => {
-                let addr = if target.starts_with("0x") || target.starts_with("0X") {
-                    target.to_string()
-                } else {
-                    format!("0x{target}")
-                };
-                lines.push(format!("load addr {addr}"));
-            }
-        }
-    } else {
-        lines.push(format!("load function {target}"));
-    }
-    // FUNCTION-scoped directives need a loaded function and are consumed at flow
-    // time, so they precede the first `decompile`.
-    for form in forms(crate::assertdecl::Slot::Function) {
-        lines.push(form.line);
-    }
-    for ka in kasserts {
-        lines.push(format!("kassert {ka}"));
-    }
-    lines.push("decompile".into());
-    // SYMBOL-scoped directives name a LOCAL, which does not exist until a
-    // decompile has produced it (`rename v2 buf` before the first one answers
-    // `No symbol named: v2`), so they run between two decompiles. The second
-    // `decompile` is emitted ONLY when there is such a directive, so every other
-    // invocation keeps its current cost.
-    if crate::assertdecl::needs_second_pass(assertions, selected) {
-        for form in forms(crate::assertdecl::Slot::Symbol) {
-            lines.push(form.line);
-        }
-        lines.push("decompile".into());
-    }
-    let out_display = out_path.display().to_string();
-    lines.push(format!("openfile write {}", console_path(&out_display)));
-    lines.push("print C".into());
-    if raw {
-        lines.push("print raw".into());
-    }
-    lines.push("closefile".into());
-    if let Some(rp) = regions_path {
-        let rp_display = rp.display().to_string();
-        lines.push(format!("openfile write {}", console_path(&rp_display)));
-        lines.push("region blocks".into());
-        lines.push("region tree".into());
-        lines.push("closefile".into());
-    }
-    lines.push("quit".into());
-    lines.join("\n") + "\n"
-}
-
-#[cfg(test)]
-fn build_script(
-    binary: &str,
-    target: &str,
-    by_address: bool,
-    bfd_target: Option<&str>,
-    raw: bool,
-    out_path: &Path,
-    injected: &[(&'static str, &'static str)],
-    options: &[(String, String)],
-    kasserts: &[String],
-    func_decls: &[crate::funcdecl::FuncDecl],
-    assertions: &[kuna_console::assertions::Directive],
-    regions_path: Option<&Path>,
-) -> String {
-    build_script_for_input(
-        binary, target, by_address, bfd_target, false, None, raw, out_path, injected, options,
-        kasserts, func_decls, assertions, regions_path,
-    )
 }
 
 /// The console prompt `decomp_dbg` writes before echoing each command; a
@@ -858,20 +619,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     let selected: Option<&str> = if by_address { None } else { Some(args.target.as_str()) };
     let attempt = |injected: &[(&'static str, &'static str)]| {
         let script = build_script_for_input(
-            &binary,
-            &args.target,
-            by_address,
-            args.bfd_target.as_deref(),
-            args.raw_image,
-            args.base,
-            args.raw,
-            &out_path,
-            injected,
-            &args.options,
-            &args.kasserts,
-            &args.func_decls,
-            &args.assertions,
-            regions_path.as_deref(),
+            args, &binary, by_address, &out_path, injected, regions_path.as_deref(),
         );
 
 
@@ -1482,7 +1230,7 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
 #[cfg(test)]
 mod tests {
     use super::{
-        arch_failure_reason, build_script, check_errors, command_failure, console_path,
+        arch_failure_reason, check_errors, command_failure,
         decompile_all, decompile_command_failure, decompiling_name, find_pipeline_failure,
         is_unknown_function, option_failure, pipeline_refusal, read_symbols_failure,
         reject_unquotable,
@@ -1503,6 +1251,45 @@ mod tests {
         ("aif", "on"),
     ];
     use std::path::Path;
+    use super::script::console_path;
+
+    fn script_args(binary: &str, target: &str) -> super::DecompileArgs {
+        super::DecompileArgs {
+            binary: binary.into(),
+            target: target.into(),
+            by_address: false,
+            bfd_target: None,
+            raw: false,
+            regions: false,
+            options: Vec::new(),
+            kasserts: Vec::new(),
+            func_decls: Vec::new(),
+            assertions: Vec::new(),
+            assert_strict: false,
+            decomp_dbg: None,
+            sleighpath: None,
+            slice: None,
+            isa: None,
+            raw_image: false,
+            base: None,
+        }
+    }
+
+    fn build_script(
+        args: &super::DecompileArgs,
+        out_path: &Path,
+        injected: &[(&'static str, &'static str)],
+        regions_path: Option<&Path>,
+    ) -> String {
+        super::build_script_for_input(
+            args,
+            &args.binary,
+            args.by_address,
+            out_path,
+            injected,
+            regions_path,
+        )
+    }
 
     /// Recorded `decomp_dbg` transcript: the empty-scope load failure DIV-88's
     /// `symbolnamerepair` guards (`--option symbolnamerepair off`).
@@ -1869,17 +1656,13 @@ Decompilation complete
     fn build_script_declares_boundaries_between_read_symbols_and_the_load() {
         let decls = crate::funcdecl::parse_flag("0x1400-0x1480=decrypt").expect("parses");
         let script = build_script(
-            "/tmp/a.out",
-            "0x1400",
-            true,
-            None,
-            false,
+            &super::DecompileArgs {
+                by_address: true,
+                func_decls: decls.clone(),
+                ..script_args("/tmp/a.out", "0x1400")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &decls,
-            &[],
             None,
         );
         let line = |needle: &str| {
@@ -1889,9 +1672,8 @@ Decompilation complete
                 .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
         };
         assert!(
-            line("read symbols")
-                < line("function bounds 0x1400 0x1480 as decrypt")
-                    && line("function bounds 0x1400 0x1480 as decrypt") < line("load addr 0x1400"),
+            line("read symbols") < line("function bounds 0x1400 0x1480 as decrypt")
+                && line("function bounds 0x1400 0x1480 as decrypt") < line("load addr 0x1400"),
             "wrong order in:\n{script}"
         );
     }
@@ -1901,22 +1683,19 @@ Decompilation complete
     /// `prototype 0x…` for the very address being decompiled was rejected.
     #[test]
     fn build_script_symbols_the_entry_a_by_address_run_selected() {
-        let directives = vec![crate::assertdecl::parse_one(
-            "prototype 0x401571 void decrypt(unsigned int key)",
-        )
-        .expect("parses")];
+        let directives =
+            vec![
+                crate::assertdecl::parse_one("prototype 0x401571 void decrypt(unsigned int key)")
+                    .expect("parses"),
+            ];
         let script = build_script(
-            "/tmp/a.out",
-            "0x401571",
-            true,
-            None,
-            false,
+            &super::DecompileArgs {
+                by_address: true,
+                assertions: directives.clone(),
+                ..script_args("/tmp/a.out", "0x401571")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &directives,
             None,
         );
         let line = |needle: &str| {
@@ -1940,17 +1719,12 @@ Decompilation complete
     fn only_an_addressed_selection_gets_an_implicit_symbol() {
         let script = |target: &str, by_address: bool| {
             build_script(
-                "/tmp/a.out",
-                target,
-                by_address,
-                None,
-                false,
+                &super::DecompileArgs {
+                    by_address,
+                    ..script_args("/tmp/a.out", target)
+                },
                 Path::new("/tmp/kuna.c"),
                 LISTING,
-                &[],
-                &[],
-                &[],
-                &[],
                 None,
             )
         };
@@ -1966,21 +1740,20 @@ Decompilation complete
     fn a_declared_start_is_not_re_declared_without_its_extent() {
         let decls = crate::funcdecl::parse_flag("0x1400-0x1480=decrypt").expect("parses");
         let script = build_script(
-            "/tmp/a.out",
-            "0x1400",
-            true,
-            None,
-            false,
+            &super::DecompileArgs {
+                by_address: true,
+                func_decls: decls.clone(),
+                ..script_args("/tmp/a.out", "0x1400")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &decls,
-            &[],
             None,
         );
         assert_eq!(
-            script.lines().filter(|l| l.starts_with("function bounds")).count(),
+            script
+                .lines()
+                .filter(|l| l.starts_with("function bounds"))
+                .count(),
             1,
             "the declared extent was re-declared away:\n{script}"
         );
@@ -2002,17 +1775,12 @@ Decompilation complete
         .map(|spec| crate::assertdecl::parse_one(spec).expect("parses"))
         .collect();
         let script = build_script(
-            "/tmp/a.out",
-            "authenticate",
-            false,
-            None,
-            false,
+            &super::DecompileArgs {
+                assertions: directives.clone(),
+                ..script_args("/tmp/a.out", "authenticate")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &directives,
             None,
         );
         let line = |needle: &str| {
@@ -2043,23 +1811,21 @@ Decompilation complete
     /// need it.
     #[test]
     fn build_script_emits_one_decompile_without_a_symbol_scoped_assertion() {
-        let directives = vec![crate::assertdecl::parse_one("data 0x601048 char *pw")
-            .expect("parses")];
+        let directives = vec![crate::assertdecl::parse_one("data 0x601048 char *pw").expect("parses")];
         let script = build_script(
-            "/tmp/a.out",
-            "main",
-            false,
-            None,
-            false,
+            &super::DecompileArgs {
+                assertions: directives.clone(),
+                ..script_args("/tmp/a.out", "main")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &directives,
             None,
         );
-        assert_eq!(script.lines().filter(|l| *l == "decompile").count(), 1, "{script}");
+        assert_eq!(
+            script.lines().filter(|l| *l == "decompile").count(),
+            1,
+            "{script}"
+        );
         assert!(script.contains("map address 0x601048 char *pw"), "{script}");
     }
 
@@ -2101,17 +1867,9 @@ Execution error: No symbol named: v9
     #[test]
     fn build_script_without_declarations_emits_no_boundary_lines() {
         let script = build_script(
-            "/tmp/a.out",
-            "main",
-            false,
-            None,
-            false,
+            &script_args("/tmp/a.out", "main"),
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[],
             None,
         );
         assert!(!script.contains("function bounds"), "got:\n{script}");
@@ -2123,17 +1881,9 @@ Execution error: No symbol named: v9
     #[test]
     fn build_script_quotes_spaced_paths() {
         let script = build_script(
-            "/home/u/test dir/a.out",
-            "main",
-            false,
-            None,
-            false,
+            &script_args("/home/u/test dir/a.out", "main"),
             Path::new("/tmp/out dir/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[],
             Some(Path::new("/tmp/out dir/kuna.txt")),
         );
         assert!(
@@ -2155,23 +1905,42 @@ Execution error: No symbol named: v9
     #[test]
     fn build_script_quotes_the_path_after_a_bfd_target() {
         let script = build_script(
-            "/home/u/test dir/a.out",
-            "main",
-            false,
-            Some("x86:LE:64:default"),
-            false,
+            &super::DecompileArgs {
+                bfd_target: Some("x86:LE:64:default".into()),
+                ..script_args("/home/u/test dir/a.out", "main")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[],
             None,
         );
         assert!(
             script.contains("load file x86:LE:64:default \"/home/u/test dir/a.out\"\n"),
             "got:\n{script}"
         );
+    }
+
+    #[test]
+    fn build_script_for_raw_input_preserves_load_and_output_order() {
+        let script = build_script(
+            &super::DecompileArgs {
+                by_address: true,
+                raw: true,
+                raw_image: true,
+                base: Some(0x4000),
+                bfd_target: Some("x86:LE:64:default".into()),
+                ..script_args("/tmp/raw image.bin", "0x4000")
+            },
+            Path::new("/tmp/out dir/kuna.c"),
+            LISTING,
+            Some(Path::new("/tmp/out dir/regions.txt")),
+        );
+        assert_eq!(script, concat!(
+                "load raw x86:LE:64:default 0x4000 0x4000 \"/tmp/raw image.bin\"\n",
+                "option errortoomanyinstructions off\noption listing on\nread symbols\n",
+                "function symbol 0x4000\nload addr 0x4000\ndecompile\n",
+                "openfile write \"/tmp/out dir/kuna.c\"\nprint C\nprint raw\nclosefile\n",
+                "openfile write \"/tmp/out dir/regions.txt\"\nregion blocks\nregion tree\nclosefile\nquit\n",
+            ));
     }
 
     /// A checked-in fixture path, so the architecture classification behind the
@@ -2232,22 +2001,21 @@ Execution error: No symbol named: v9
     #[test]
     fn the_widened_script_puts_the_bundle_before_the_commit() {
         let script = build_script(
-            &fixture("entrymain_arm"),
-            "sub_410",
-            false,
-            None,
-            false,
+            &script_args(&fixture("entrymain_arm"), "sub_410"),
             Path::new("/tmp/kuna.c"),
             WIDENED,
-            &[],
-            &[],
-            &[],
-            &[],
             None,
         );
         let (before, after) = script.split_once("read symbols").expect("read symbols");
-        for line in ["option listing on", "option funcstart_patterns on", "option aif on"] {
-            assert!(before.contains(&format!("{line}\n")), "missing {line}:\n{script}");
+        for line in [
+            "option listing on",
+            "option funcstart_patterns on",
+            "option aif on",
+        ] {
+            assert!(
+                before.contains(&format!("{line}\n")),
+                "missing {line}:\n{script}"
+            );
         }
         assert!(after.contains("load function sub_410"), "got:\n{script}");
     }
@@ -2269,22 +2037,23 @@ Execution error: No symbol named: v9
     #[test]
     fn build_script_is_unchanged_for_ordinary_paths() {
         let script = build_script(
-            "/home/u/a.out",
-            "main",
-            false,
-            None,
-            false,
+            &script_args("/home/u/a.out", "main"),
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[],
             None,
         );
-        assert!(script.contains("load file /home/u/a.out\n"), "got:\n{script}");
-        assert!(script.contains("openfile write /tmp/kuna.c\n"), "got:\n{script}");
-        assert!(!script.contains('"'), "no quoting where none is needed:\n{script}");
+        assert!(
+            script.contains("load file /home/u/a.out\n"),
+            "got:\n{script}"
+        );
+        assert!(
+            script.contains("openfile write /tmp/kuna.c\n"),
+            "got:\n{script}"
+        );
+        assert!(
+            !script.contains('"'),
+            "no quoting where none is needed:\n{script}"
+        );
     }
 
     /// Quoting cannot rescue a newline — the transport is one command per line —
@@ -2346,20 +2115,16 @@ Execution error: No symbol named: v9
     #[test]
     fn a_range_directive_precedes_read_symbols_and_turns_readonly_on() {
         let script = build_script(
-            "/tmp/a.out",
-            "sample",
-            false,
-            None,
-            false,
+            &super::DecompileArgs {
+                options: vec![("readonly".into(), "off".into())],
+                assertions: vec![
+                    crate::assertdecl::parse_one("readonly 0x404028+8").unwrap(),
+                    crate::assertdecl::parse_one("volatile 0x50000000+4").unwrap(),
+                ],
+                ..script_args("/tmp/a.out", "sample")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[("readonly".into(), "off".into())],
-            &[],
-            &[],
-            &[
-                crate::assertdecl::parse_one("readonly 0x404028+8").unwrap(),
-                crate::assertdecl::parse_one("volatile 0x50000000+4").unwrap(),
-            ],
             None,
         );
         let at = |needle: &str| {
@@ -2368,11 +2133,18 @@ Execution error: No symbol named: v9
                 .position(|l| l == needle)
                 .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
         };
-        assert!(at("option readonly on") < at("option readonly off"), "{script}");
+        assert!(
+            at("option readonly on") < at("option readonly off"),
+            "{script}"
+        );
         assert!(at("readonly 0x404028 8") < at("read symbols"), "{script}");
         assert!(at("volatile 0x50000000 4") < at("read symbols"), "{script}");
         // No symbol-scoped directive ⇒ still exactly one `decompile`.
-        assert_eq!(script.lines().filter(|l| *l == "decompile").count(), 1, "{script}");
+        assert_eq!(
+            script.lines().filter(|l| *l == "decompile").count(),
+            1,
+            "{script}"
+        );
     }
 
     /// With no range directive the script is untouched — no `option readonly`
@@ -2380,17 +2152,12 @@ Execution error: No symbol named: v9
     #[test]
     fn no_range_directive_leaves_the_readonly_option_alone() {
         let script = build_script(
-            "/tmp/a.out",
-            "sample",
-            false,
-            None,
-            false,
+            &super::DecompileArgs {
+                assertions: vec![crate::assertdecl::parse_one("name v2 buf").unwrap()],
+                ..script_args("/tmp/a.out", "sample")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[crate::assertdecl::parse_one("name v2 buf").unwrap()],
             None,
         );
         assert!(!script.contains("option readonly"), "{script}");
@@ -2405,27 +2172,25 @@ Execution error: No symbol named: v9
 
         let original = "/home/u/test dir/a.out";
         let script = build_script(
-            original,
-            "main",
-            false,
-            None,
-            false,
+            &script_args(original, "main"),
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[],
             None,
         );
-        let line = script.lines().next().expect("the script opens with load file");
+        let line = script
+            .lines()
+            .next()
+            .expect("the script opens with load file");
 
         let mut s = CommandStream::new(line);
         assert_eq!(s.read_token(), "load");
         assert_eq!(s.read_token(), "file");
         let filename = s.read_filename();
         s.skip_ws();
-        assert!(s.eof(), "the path must exhaust the line, not leave a second argument");
+        assert!(
+            s.eof(),
+            "the path must exhaust the line, not leave a second argument"
+        );
         assert_eq!(filename, original);
     }
 }

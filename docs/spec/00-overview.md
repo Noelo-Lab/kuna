@@ -106,7 +106,7 @@ the read-symbols boundary is a no-op — the facts were already committed or
 dropped, and the drained stash means a second `read symbols` re-commits nothing.
 Every driver therefore emits option lines strictly between `load file` and
 `read symbols` (`decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`,
-`decompiler/crates/kuna-cli/src/decompile.rs (build_script_for_input)`).
+`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input)`).
 
 The commit is also not transactional. Its arms mutate the architecture in place
 and in order, so an arm that fails leaves the earlier ones applied and abandons
@@ -157,7 +157,7 @@ Four front-ends drive one engine assembly:
   (`decompiler/crates/kuna-harness/src/bin/decomp_test_dbg.rs`), which drives the
   same bootstrap over the XML corpus. This is the parity surface: it never arms
   the watchdog and (on the XML path) never runs tier one.
-- (kuna) **`kuna decompile`** (`decompiler/crates/kuna-cli/src/decompile.rs
+- (kuna) **`kuna decompile`** (`decompiler/crates/kuna-cli/src/decompile/script.rs
   (build_script_for_input)`) — subprocess-per-function: it scripts a fresh `decomp_dbg` for
   each request, so every invocation re-parses the SLEIGH spec and re-runs the
   whole-binary analysis. It injects `option listing on` by default (unless the
@@ -985,6 +985,18 @@ walk. The matched leaf supplies both the constructor id and the precise pattern
 needed for instruction masking. Id-only callers borrow the leaf without cloning
 its pattern. Non-subtable symbols use the same index validation in both APIs.
 
+Syntax construction examines the last display piece once. Standalone whitespace
+chunks normalize to one space, adjacent literals coalesce, and operand pieces
+keep their boundaries. Empty chunks are ignored; the first-whitespace index is
+recorded before deciding whether a chunk merges with the previous piece.
+
+Constructor printing shares literal and operand-piece handling across full
+text, mnemonic and body output. Each entry point retains its piece boundaries
+and flow-through operand dispatch. Literals retain lossy UTF-8 conversion;
+operand references retain the existing validation. Constructor-level failures
+keep partial text and walker progress. The public assembly string wrapper
+still clears both output strings when an error is returned.
+
 Pattern-building failures report the accumulated reasons. Subtable errors
 identify the table at its source location, and unreferenced-table warnings
 include its name. Decision-tree errors retain both constructors' table-qualified
@@ -1139,10 +1151,17 @@ on stderr while the `Compiling <spec>:` line that attributes them is on stdout,
 and capturing both would print every warning of a run ahead of every progress
 line (DIV-89).
 
+Script construction borrows the parsed single-function request. The subprocess
+driver supplies its resolved binary path, effective address mode, output paths
+and per-attempt defaults separately; retries and transcript diagnostics remain
+in that driver. The script module owns command ordering and path quoting. Raw
+and object-image loads retain their distinct spellings, explicit options follow
+injected defaults, and each assertion keeps its existing application slot.
+
 (kuna) **The console's filename grammar.** `kuna decompile` is the one front-end
 that reaches the engine through a console *script* rather than an in-process
 call: it writes `load file <path>` / `openfile write <path>` into `decomp_dbg`'s
-stdin (`decompiler/crates/kuna-cli/src/decompile.rs (build_script_for_input)`), where the
+stdin (`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input)`), where the
 other three read the image with `bootstrap_from_object` and never tokenize the
 path at all. Upstream reads every path with `s >> filename`, a pure whitespace
 scan, so a path containing a space arrived as two arguments: `load file` took the
@@ -1155,7 +1174,7 @@ which accepts an optional double-quoted argument (`\"` and `\\` are escapes
 inside quotes; any other backslash is literal, so a Windows path survives either
 spelling) and is byte-identical to `read_token` for unquoted input, so the
 vendored corpus and every script written before quoting existed parse exactly as
-before. The two producers — `decompile.rs (console_path)` and its mirror in
+before. The two producers — `decompile/script.rs (console_path)` and its mirror in
 `scripts/decompile.py` — quote only a path that needs it, which keeps the emitted
 script byte-identical for every path that works today, including for an older
 `decomp_dbg` reached through `--decomp-dbg` (DIV-100).
@@ -1233,7 +1252,7 @@ touches the engine default or the console/datatest surfaces.
 Single-function `kuna decompile` reads the same table, and that is why the table
 is shared rather than duplicated: it builds a `decomp_dbg` script instead of
 loading in-process, so it applies the pairs as `option` lines ahead of
-`read symbols` (`decompiler/crates/kuna-cli/src/decompile.rs (build_script_for_input)`).
+`read symbols` (`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input)`).
 What it does differently is *when*. It injects the Listing up front and holds the
 discovery half back for a **second attempt**, made only when the console answers
 a by-name selection with `no function matches`.
@@ -1782,7 +1801,7 @@ applies them to the first pass's `Funcdata` (`assertions::apply_symbol_scoped`),
 and decompiles again with the mutated local scope carried across as
 `mapped_symbols`. That second pass is emitted only when such a directive bound to
 the function, so every run without one costs exactly what it did before. The
-script surface (`decompiler/crates/kuna-cli/src/decompile.rs (build_script_for_input)`)
+script surface (`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input)`)
 emits the same facts at the same three slots, with the same conditional second
 `decompile`.
 
@@ -1888,7 +1907,7 @@ while the identical directive bound the moment the same run selected the functio
 BY NAME. Pointing `--addr` at an address claims a lift entry, but does not
 override loader knowledge that the address is an import pointer. The generated
 script ensures a symbol exists
-(`decompiler/crates/kuna-cli/src/decompile.rs (build_script_for_input, selected_vma)` ->
+(`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input, selected_vma)` ->
 `function symbol <vma>` -> `ConsoleProgram::ensure_function_symbol`) between the
 caller's own `--define-function` declarations and the program-scoped directives.
 It is the symbol-table half of `--define-function <start>`, and it is skipped

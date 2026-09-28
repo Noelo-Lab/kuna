@@ -1303,20 +1303,14 @@ impl Constructor {
         if self.firstwhitespace == -1 && syntrim == b" " {
             self.firstwhitespace = self.printpiece.len() as i32; // size_t -> int4 as in C++
         }
-        if self.printpiece.is_empty() {
-            self.printpiece.push(syntrim.to_vec());
-        } else if self.printpiece.last().expect("non-empty") == b" " && syntrim == b" " {
-            // Don't add more whitespace
-        } else if self.printpiece.last().expect("non-empty").first() == Some(&b'\n')
-            || self.printpiece.last().expect("non-empty") == b" "
-            || syntrim == b" "
-        {
-            self.printpiece.push(syntrim.to_vec());
-        } else {
-            self.printpiece
-                .last_mut()
-                .expect("non-empty")
-                .extend_from_slice(syntrim);
+        match self.printpiece.last_mut() {
+            Some(last) if last.as_slice() == b" " && syntrim == b" " => {}
+            Some(last)
+                if last.first() != Some(&b'\n') && last.as_slice() != b" " && syntrim != b" " =>
+            {
+                last.extend_from_slice(syntrim);
+            }
+            _ => self.printpiece.push(syntrim.to_vec()),
         }
     }
 
@@ -1419,31 +1413,27 @@ impl Constructor {
         table: &SymbolTable,
     ) -> KunaResult<()> {
         for piece in &self.printpiece {
-            // C++ `(*piter)[0] == '\n'`: indexing an empty std::string at
-            // size() yields '\0', i.e. the else branch.
-            if piece.first() == Some(&b'\n') {
-                let index = i32::from(piece[1]) - i32::from(b'A');
-                self.print_operand(s, walker, table, index)?;
-            } else {
-                s.push_str(&String::from_utf8_lossy(piece));
-            }
+            self.print_piece(s, walker, table, piece)?;
         }
         Ok(())
     }
 
-    /// Shared body of the three print loops: `operands[index]->print(s,
-    /// walker)` (C++ indexes `operands` unchecked; an error here).
-    fn print_operand(
+    /// Write a literal display piece or its encoded operand reference.
+    fn print_piece(
         &self,
         s: &mut String,
         walker: &mut dyn SymbolWalker,
         table: &SymbolTable,
-        index: i32,
+        piece: &[u8],
     ) -> KunaResult<()> {
-        let opid = self.get_operand(index)?;
-        // C++ holds OperandSymbol* and virtual-dispatches print; the enum
-        // dispatch through the symbol table is the same call.
-        table.symbol(opid)?.print(s, walker, table)
+        if piece.first() == Some(&b'\n') {
+            let index = i32::from(piece[1]) - i32::from(b'A');
+            let opid = self.get_operand(index)?;
+            table.symbol(opid)?.print(s, walker, table)?;
+        } else {
+            s.push_str(&String::from_utf8_lossy(piece));
+        }
+        Ok(())
     }
 
     /// C++ `Constructor::printMnemonic`.
@@ -1453,8 +1443,6 @@ impl Constructor {
         walker: &mut dyn SymbolWalker,
         table: &SymbolTable,
     ) -> KunaResult<()> {
-        // C++: flowthruindex test + a dynamic_cast<SubtableSymbol*> null-check;
-        // the && short-circuits identically
         if self.flowthruindex != -1 && self.flowthru_subtable(table)?.is_some() {
             walker.push_operand(self.flowthruindex)?;
             let ctref = walker.get_constructor()?;
@@ -1471,12 +1459,7 @@ impl Constructor {
         };
         for i in 0..endind {
             let piece = &self.printpiece[i as usize];
-            if piece.first() == Some(&b'\n') {
-                let index = i32::from(piece[1]) - i32::from(b'A');
-                self.print_operand(s, walker, table, index)?;
-            } else {
-                s.push_str(&String::from_utf8_lossy(piece));
-            }
+            self.print_piece(s, walker, table, piece)?;
         }
         Ok(())
     }
@@ -1488,8 +1471,6 @@ impl Constructor {
         walker: &mut dyn SymbolWalker,
         table: &SymbolTable,
     ) -> KunaResult<()> {
-        // C++ nested flowthruindex/dynamic_cast tests (&& short-circuits
-        // identically)
         if self.flowthruindex != -1 && self.flowthru_subtable(table)?.is_some() {
             walker.push_operand(self.flowthruindex)?;
             let ctref = walker.get_constructor()?;
@@ -1505,12 +1486,7 @@ impl Constructor {
         // i sign-extends to 64-bit unsigned (i is >= 0 here in practice).
         while (i as i64 as u64) < self.printpiece.len() as u64 {
             let piece = &self.printpiece[i as usize];
-            if piece.first() == Some(&b'\n') {
-                let index = i32::from(piece[1]) - i32::from(b'A');
-                self.print_operand(s, walker, table, index)?;
-            } else {
-                s.push_str(&String::from_utf8_lossy(piece));
-            }
+            self.print_piece(s, walker, table, piece)?;
             i += 1;
         }
         Ok(())

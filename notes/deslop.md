@@ -1158,6 +1158,63 @@ baseline moved. The diff hash remained
 `8b6a28289eae00bb554cc4ce33f2bc9eb5ca54572345891b4da6a4a9de2104ad`
 through the final gate. Logs use `/tmp/kuna-deslop-output-final-`.
 
+## Thirtieth checkpoint: a borrowed console request and shared display pieces
+
+The single-function script builder took fourteen positional arguments, most
+already stored in the parsed request. A private `decompile/script.rs` now owns
+command construction and path quoting. It borrows `DecompileArgs`, while the
+subprocess driver supplies the resolved input, effective address selection,
+per-attempt defaults and output paths. Retry and transcript handling stay in
+the driver. The test adapter likewise takes a request rather than repeating
+twelve positional fields. An orphaned comment describing a removed boolean
+parser is deleted.
+
+The new raw-image regression pins the complete script, including spaced paths,
+symbol installation, raw output and region output. It and all 42 existing
+single-function unit tests pass before the move. Afterward all 237 CLI unit
+tests pass with no warnings. Source checks preserve all 25 retained production
+bodies except the one checked forwarding call, all four installed helper
+bodies match the model, and all 44 existing test/fixture bodies preserve their
+statements outside request construction. Each overflow-mode differential run
+matches 11,324 complete scripts and 676 invalid-input panics across 12,000 cases.
+
+Thirty-five real text-mode comparisons preserve stdout, exit status and engine
+diagnostics: 32 successful requests plus missing-function, invalid-option and
+strict-assertion failures. They include two targets, ordinary/spaced input
+paths, raw/region output, declarations and directives. Both versions deliberately
+use the same current engine; only its three-line build-identity warning is
+excluded from diagnostic comparison. Forty whole-binary ELF/PE cases and all
+286 compiler CLI cases remain exact. The refreshed CLI-only Clippy check has
+17 collection-policy errors and 21 warnings, with no single-function module
+diagnostics; it remains an open gate, not a passing one.
+
+Constructor syntax construction examines the last piece once, and its three
+printers share literal/operand emission. Public signatures, whitespace and
+operand boundaries, flow-through dispatch, failure state and partial text stay
+unchanged. The complete-module models retain the production tokens and match
+245,760 outcomes across 4,096 cases in each overflow mode. Root-only pre-existing
+unit tests are preserved. All 375 compiler/SLEIGH tests pass. Both public
+assembly APIs agree at all 1,171 instruction locations from 16 lift fixtures,
+with zero errors and strings identical to the saved Rust output. Those strings
+are before/after evidence, not independent C++ assembly oracles.
+
+CPU-41-pinned compiler measurements retain identical SLA images. Wall medians
+change +3.21%/+3.06%/+1.12% for Toy/x86-64/Hexagon; paired medians change
+-1.83%/+2.57%/+1.56%, and CPU medians change +0.59%/+1.45%/+0.57%.
+The short Toy wall samples are noisy; no speedup is claimed. Sixty-six assembly
+runs preserve every output byte (+0.55% median wall time), and 66 lift runs pass
+all 16 independent fixtures (+0.45%). Twenty alternating text-command pairs
+preserve output and diagnostics (+0.31% paired wall time); twenty project-export
+pairs preserve all four artifacts (+0.41%). All deltas fit the 5% budget.
+Root artifacts are under `/tmp/kuna-deslop-console-script.NABIGGZz`.
+
+The frozen tree passes all nine final gates: 7,435 workspace tests, 38 existing
+ignores across 438 groups and no warnings; 675/675 upstream and 1,467/1,467
+stage assertions retain parity. All 268 CLI, 42 Python and 56 Ghidra tests,
+48 binary/XML comparisons, 17 saved CLI comparisons, spec/catalog checks,
+and the fresh WASM build with all 11 browser scripts pass. Tracked and new-file
+hashes are unchanged through the final gate. No baseline expectation moved.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -1168,7 +1225,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay and object-file views have separate owners. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
-| Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 17 errors and 23 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
+| Collection policy | The release engine-library Clippy check last reported 211 collection-policy errors; the refreshed CLI-only check finds 17 errors and 21 warnings. Declaration naming, rendered-signature dedup, profiling and worker headers use reviewed lookup-only collections or explicitly sorted reports. Replay rename provenance no longer needs a separate set. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
 | Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 

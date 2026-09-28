@@ -1028,3 +1028,49 @@ and model/build/check logs.
 All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
 assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
 across 433 groups. Spec and catalog checks pass. No baseline moved.
+
+
+### Constructor display construction and printing
+
+`Constructor::add_syntax` inspects the last display piece once when normalizing
+whitespace or joining adjacent literals. Full-text, mnemonic and body printers
+share literal/operand-piece handling, while retaining their existing index
+ranges and flow-through dispatch. Redundant commentary and repeated branches
+are removed: 24 fewer production lines, with public signatures unchanged.
+
+A differential model compiles both actual symbol modules against the runtime
+library. With overflow checks enabled and disabled, all 245,760 outcomes across
+4,096 cases agree in each mode. The model mixes syntax insertion, operand
+insertion and trailing-space removal, checks intermediate display state, and
+compares printing results, partial text, operand stacks and callback traces.
+It includes malformed pieces, empty and invalid UTF-8 strings, boundary indices,
+flow-through lookup failures, and injected callback errors and panics.
+
+All 371 focused tests pass, including the 48 pinned binary compiler oracles.
+The 286 CLI cases and 48 corresponding XML fixtures are unchanged. A separate
+runtime probe disassembles all 1,171 instruction locations from the 16 lift
+fixtures through both public assembly APIs. Both APIs agree, with zero decode
+errors, and all strings match the saved Rust baseline. The assembly strings
+are before/after comparisons; the independent C++ fixtures supply the locations
+and expected p-code, not assembly text.
+
+CPU-40-pinned, balanced compiler measurements remain within the 5% budget:
+median wall time changes +0.5246% for Toy (110 samples per version), +0.8922%
+for x86-64 (12 samples) and +0.2058% for Hexagon (12 samples). Paired medians
+change +0.4167%, +0.6858% and +0.1234%; compiled images are identical.
+
+All 66 assembly benchmark runs preserve the complete output hash. With 30
+measured samples per version, median wall time changes from 345.5080 to
+347.0425 ms (+0.4441%; paired +0.3705%); CPU time changes +0.4112%
+(paired +0.3727%). A separate 66-run p-code benchmark passes all 16 independent
+fixtures each time: median wall time changes -0.5558% (paired -0.1760%) and
+CPU time -0.5591% (paired -0.1877%). These full workloads include initialization.
+
+Artifacts use `/tmp/kuna-deslop-constructor-print-`: `compiler-verified/`,
+`assembly-verified/`, `runtime-verified/`, `verified/` and model/build/check
+logs. The assembly driver and timing runner are `/tmp/kuna-deslop-assembly-probe.rs`
+and `/tmp/kuna-deslop-assembly-timing.py`.
+
+All four repository gates pass: 675/675 upstream and 1,467/1,467 stage
+assertions retain parity; 7,714 workspace tests pass with 38 existing ignores
+across 433 groups. Spec and catalog checks pass. No baseline moved.
