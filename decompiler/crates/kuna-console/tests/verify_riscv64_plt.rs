@@ -23,13 +23,6 @@
 //! `0x2028`); both are `R_RISCV_JUMP_SLOT` relocations in `.rela.plt` naming
 //! `puts`/`printf`. The PLT stubs are the standard 16-byte
 //! `auipc t3; ld t3,lo(t3); jalr t1,t3; nop` veneer the decoder recognizes.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built RISC-V `riscv.lp64d.sla` under `specs/`
-//! (gitignored; `make specs`). When absent the bootstrap fails; the test prints
-//! that and returns early (a specs-less CI is a visible skip, never a false
-//! green).
 
 use std::path::PathBuf;
 
@@ -53,24 +46,12 @@ fn riscv64_plt_calls_are_named_in_decompiled_c() {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = plt_riscv64();
-    let bin = match bin.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
     // The arch is auto-detected from the ELF machine (RISC-V64); the loader picks
     // the `RISCV:LE:64:default` language and bootstrap resolves `riscv.lp64d.sla`.
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_riscv64_plt: skipping (bootstrap failed, build the RISC-V `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The PLT imports are resolvable as functions (the elf_plt RISC-V markup), and
     // the local `.symtab` `main` resolves.

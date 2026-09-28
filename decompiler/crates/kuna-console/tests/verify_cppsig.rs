@@ -20,12 +20,6 @@
 //! --strip-all`ped, so there is no DWARF and no `.symtab` — the mangled `.dynsym`
 //! names are the only signature source in the file, which is exactly the
 //! situation the feature exists for.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -37,29 +31,19 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the stripped C++ fixture with `cppsig` set to `mode`, commit the
-/// analysis facts under that gate, decompile `func` and return the captured C.
-/// `None` => specs-less skip.
-fn decompile(func: &str, mode: &str) -> Option<String> {
+/// Bootstrap the stripped C++ fixture with `cppsig` set to `mode`, commit the analysis
+/// facts under that gate, decompile `func` and return the captured C.
+fn decompile(func: &str, mode: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let path = root
         .join("decompiler/crates/kuna-analysis/tests/fixtures/cppsig_x86_64.so")
-        .to_str()?
+        .to_str().expect("UTF-8 fixture path")
         .to_string();
-    let mut prog = match bootstrap_from_object(&path, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_cppsig: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // The gate is read at the analysis COMMIT boundary (the producing pass runs
     // at `load file`, upstream of any `option` command), so it must be set here.
     prog.arch_mut().set_kuna_option("cppsig", mode).expect("cppsig is a registered option");
@@ -78,20 +62,20 @@ fn decompile(func: &str, mode: &str) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// The headline, and the default: a **destructor** cannot be static, so the
 /// mangling entails an implicit object parameter. `_ZN3sig7AccountD1Ev`.
 #[test]
 fn destructor_recovers_the_class_typed_this_at_the_default() {
-    let Some(off) = decompile("sig::Account::~Account", "off") else { return };
+    let off = decompile("sig::Account::~Account", "off");
     assert!(
         off.contains("sig::Account::~Account(unsigned int *a0)"),
         "gate off must reproduce the untyped `a0` signature, got:\n{off}"
     );
 
-    let on = decompile("sig::Account::~Account", "proven").expect("second pass bootstraps");
+    let on = decompile("sig::Account::~Account", "proven");
     assert!(
         on.contains("sig::Account::~Account(Account *this)"),
         "the default (`proven`) must recover `Account *this`, got:\n{on}"
@@ -101,13 +85,13 @@ fn destructor_recovers_the_class_typed_this_at_the_default() {
 /// A **constructor** (`C1`/`C2`), likewise entailed, plus its declared parameter.
 #[test]
 fn constructor_recovers_this_and_the_declared_parameter() {
-    let Some(off) = decompile("sig::Account::Account", "off") else { return };
+    let off = decompile("sig::Account::Account", "off");
     assert!(
         off.contains("sig::Account::Account(unsigned int *a0,unsigned int a1)"),
         "gate off signature, got:\n{off}"
     );
 
-    let on = decompile("sig::Account::Account", "proven").expect("second pass bootstraps");
+    let on = decompile("sig::Account::Account", "proven");
     assert!(
         on.contains("sig::Account::Account(Account *this,int4 a1)"),
         "`proven` must recover `Account *this` plus the declared `int`, got:\n{on}"
@@ -124,13 +108,13 @@ fn constructor_recovers_this_and_the_declared_parameter() {
 /// `DemangledFunction.resolveReturnType` returns null for the same reason).
 #[test]
 fn const_member_is_proven_and_keeps_its_recovered_return_type() {
-    let Some(off) = decompile("sig::Account::balance", "off") else { return };
+    let off = decompile("sig::Account::balance", "off");
     assert!(
         off.contains("sig::Account::balance(unsigned int *a0)"),
         "gate off signature, got:\n{off}"
     );
 
-    let on = decompile("sig::Account::balance", "proven").expect("second pass bootstraps");
+    let on = decompile("sig::Account::balance", "proven");
     assert!(
         on.contains("sig::Account::balance(Account *this)"),
         "a `const` member's `this` is entailed by the mangling, got:\n{on}"
@@ -147,13 +131,13 @@ fn const_member_is_proven_and_keeps_its_recovered_return_type() {
 /// decides it from class evidence and gets it right.
 #[test]
 fn plain_member_needs_inferred_and_then_types_every_parameter() {
-    let Some(default) = decompile("sig::Account::deposit", "proven") else { return };
+    let default = decompile("sig::Account::deposit", "proven");
     assert!(
         default.contains("sig::Account::deposit(int4 *a0,unsigned int a1,int4 a2)"),
         "the default must NOT guess a `this` on an ambiguous nested name, got:\n{default}"
     );
 
-    let inferred = decompile("sig::Account::deposit", "inferred").expect("second pass bootstraps");
+    let inferred = decompile("sig::Account::deposit", "inferred");
     assert!(
         inferred.contains("sig::Account::deposit(Account *this,Ledger *a1,int4 a2)"),
         "`inferred` must recover `this` AND both declared parameter types, got:\n{inferred}"
@@ -166,13 +150,13 @@ fn plain_member_needs_inferred_and_then_types_every_parameter() {
 /// applies the declared type at position 0.
 #[test]
 fn namespaced_free_function_gets_no_this() {
-    let Some(off) = decompile("sig::combine", "off") else { return };
+    let off = decompile("sig::combine", "off");
     assert!(
         off.contains("sig::combine(unsigned int a0,int4 a1)"),
         "gate off signature, got:\n{off}"
     );
 
-    let inferred = decompile("sig::combine", "inferred").expect("second pass bootstraps");
+    let inferred = decompile("sig::combine", "inferred");
     assert!(
         inferred.contains("sig::combine(Account *a0,int4 a1)"),
         "a namespaced free function must keep its parameters in place, got:\n{inferred}"
@@ -199,7 +183,8 @@ fn dwarf_wins_over_the_demangled_signature() {
         .unwrap()
         .to_string();
     for mode in ["off", "proven", "inferred"] {
-        let Ok(mut prog) = bootstrap_from_object(&path, "", &spec_roots) else { return };
+        let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+            .expect("bootstrap fixture with built processor specs");
         prog.arch_mut().set_kuna_option("cppsig", mode).unwrap();
         prog.arch_mut().set_kuna_option("cppproto", "on").unwrap();
         prog.commit_pending_analysis().expect("analysis commit succeeds");
@@ -236,13 +221,13 @@ fn dwarf_wins_over_the_demangled_signature() {
 /// 0.9278 vs 1.0000 for `proven`), which is why `proven` is the default.
 #[test]
 fn static_member_is_refused_by_proven_and_mis_typed_by_inferred() {
-    let Some(default) = decompile("sig::Account::rate", "proven") else { return };
+    let default = decompile("sig::Account::rate", "proven");
     assert!(
         default.contains("sig::Account::rate(int4 a0)"),
         "`proven` must refuse a static member outright, got:\n{default}"
     );
 
-    let inferred = decompile("sig::Account::rate", "inferred").expect("second pass bootstraps");
+    let inferred = decompile("sig::Account::rate", "inferred");
     assert!(
         inferred.contains("sig::Account::rate(Account *this,int4 a1)"),
         "`inferred`'s known cost: a spurious `this` on a static member, got:\n{inferred}"

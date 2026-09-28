@@ -38,12 +38,6 @@
 //! The `.obj` loads through the default `load file` dispatch with no flag — multi-
 //! format support is unconditional. The COFF magic routes straight to the object
 //! loader (no XML "not recognized" rejection), the same as ELF.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling console gates, bootstrapping needs the built `x86` `.sla`
-//! under `specs/` (gitignored; `make specs`). If absent the bootstrap fails and
-//! the test prints that and returns early (a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -82,25 +76,15 @@ fn decompile_func(prog: ConsoleProgram, func_cmd: &str) -> String {
     status.optr.clone()
 }
 
-/// Bootstrap the MSVC COFF object (multi-format loading is unconditional),
-/// returning `None` (a visible skip) when the `.sla` is absent.
-fn boot() -> Option<ConsoleProgram> {
+/// Bootstrap the MSVC COFF object (multi-format loading is unconditional).
+fn boot() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("msvc_mangled.obj");
     assert!(path.exists(), "missing fixture {path:?}");
 
-    match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_msvc_demangle: skipping (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// The headline: an MSVC-mangled COFF `.obj` loads, its `?`-mangled symbols are
@@ -112,19 +96,10 @@ fn msvc_coff_demangles_and_decompiles() {
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("msvc_mangled.obj");
 
-    // (default-on proof) The binary loads through the *default* `load file`
-    // dispatch with no flag — multi-format support is unconditional. A `.sla`-
-    // absent environment surfaces as a load error; here we only assert the
-    // dispatch ROUTES to the object loader (no XML "not recognized" rejection).
-    if let Err(e) = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots) {
-        let msg = e.explain();
-        assert!(
-            !msg.contains("Unable to recognize") && !msg.contains("XML"),
-            "default-on: the binary must route to the object loader (got: {msg})"
-        );
-    }
+    kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots)
+        .expect("default dispatch loads object with built processor specs");
 
-    let Some(prog) = boot() else { return };
+    let prog = boot();
 
     // Loads with the Windows x86-64 spec (MSVC-flavored COFF).
     let desc = prog.description().to_string();

@@ -771,6 +771,28 @@ to is not an answer on a machine that has no checkout, and a missing SLEIGH tree
 is reported where it is resolved rather than as the engine's downstream
 `No sleigh specification` — which reads as a problem with the binary.
 
+(kuna) **Compiler filenames.** The single-file `slacomp` command accepts one input
+and at most one output filename. It appends `.slaspec` or `.sla` when the filename
+has no extension; dots in parent directories do not count. Explicit matching
+suffixes, including the filenames `.slaspec` and `.sla`, are accepted unchanged,
+while other filename extensions are rejected. With no output argument it writes
+the input's sibling `.sla`. Extra positional arguments fail before compilation.
+Both filename arguments use the same normalization rule
+(`decompiler/crates/kuna-slacomp/src/bin/slacomp.rs (with_extension)`).
+
+The compiler's `-y` flag selects the XML debug encoding in both single-file and
+recursive (`-a`) modes. After successful parsing and compilation, the driver
+chooses the XML encoder or the default compressed binary encoder according to
+that flag; filename selection and write-error handling are the same in both
+modes (`decompiler/crates/kuna-slacomp/src/slgh_compile.rs (run_compilation)`,
+`decompiler/crates/kuna-slacomp/src/encode.rs (encode_to_xml_bytes)`).
+The symbol and constructor encoding path retains the `OpcodeEncoder` interface
+so each encoder chooses its own opcode representation: names in XML, signed
+integer values in binary. Treating every encoder as binary would produce numeric
+XML attributes where Ghidra expects names
+(`decompiler/crates/kuna-sleigh/src/sleighbase.rs (encode)`,
+`decompiler/crates/kuna-sleigh/src/slghsymbol.rs (SleighBaseTrans)`).
+
 (kuna) **Mixed builds.** The engine binary `kuna` runs can come from a different
 build than `kuna` itself (an override naming another install, or a sibling left
 behind when only `kuna` was rebuilt), and nothing in the output shows it. So every

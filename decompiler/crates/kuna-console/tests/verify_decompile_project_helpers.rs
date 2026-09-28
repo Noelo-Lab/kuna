@@ -11,13 +11,6 @@
 //! Drives them against the real vendored `fauxware` ELF (x86-64, non-PIE,
 //! dynamically linked, non-stripped) after the exact `decompile-all` load shape
 //! (`bootstrap_from_object` + `commit_pending_analysis`).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling loader gates, bootstrapping needs the built `x86` `.sla`
-//! under `specs/` (gitignored; `make specs`).  When it is absent the bootstrap
-//! fails; the test prints that and returns early (a specs-less CI is a visible
-//! skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -52,22 +45,10 @@ const LOAD_BASE: u64 = 0x400000;
 fn export_helpers_report_sections_disasm_bytes_and_globals() {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = match fauxware().to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = fauxware().to_str().expect("UTF-8 fixture path").to_string();
 
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_decompile_project_helpers: skipping (bootstrap failed, build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
 
     // (1) sections(): the loader's section map must be non-empty and contain at
@@ -170,23 +151,14 @@ fn entry_named(prog: &kuna_console::engine::ConsoleProgram, name: &str) -> Funct
         .unwrap_or_else(|| panic!("{name} is not in the fauxware inventory"))
 }
 
-fn loaded_fauxware() -> Option<kuna_console::engine::ConsoleProgram> {
+fn loaded_fauxware() -> kuna_console::engine::ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = fauxware().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_decompile_project_helpers: skipping (bootstrap failed, build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fauxware().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
-    Some(prog)
+    prog
 }
 
 /// `--stream`'s scheduling frontier: the entry point reaches `main` (which it
@@ -194,7 +166,7 @@ fn loaded_fauxware() -> Option<kuna_console::engine::ConsoleProgram> {
 /// reaches the function it calls.
 #[test]
 fn callee_hints_carry_direct_calls_and_address_taken_callees() {
-    let Some(mut prog) = loaded_fauxware() else { return };
+    let mut prog = loaded_fauxware();
 
     let start = entry_named(&prog, "_start");
     let main = entry_named(&prog, "main");
@@ -250,7 +222,7 @@ fn callee_hints_carry_direct_calls_and_address_taken_callees() {
 /// chops it up, and the same bytes `build_asm` writes before its data tail.
 #[test]
 fn resumable_asm_sweep_matches_the_one_shot_sweep() {
-    let Some(mut prog) = loaded_fauxware() else { return };
+    let mut prog = loaded_fauxware();
 
     let targets: Vec<FunctionEntry> = prog
         .function_entries_executable()
@@ -413,7 +385,7 @@ fn streaming_readme_renders_pending_facts_then_the_streamed_layout() {
     assert!(failed_late.contains("| Functions written | 4 of 10 (0 failed) |\n"));
     assert!(failed_late.contains("While `.streaming` exists the export is incomplete"));
 
-    let Some(prog) = loaded_fauxware() else { return };
+    let prog = loaded_fauxware();
     let facts = ReadmeFacts::snapshot(&fauxware(), "/tmp/fauxware", "fauxware", &prog);
     assert!(facts.description.is_some());
     assert!(facts.entry.is_some());

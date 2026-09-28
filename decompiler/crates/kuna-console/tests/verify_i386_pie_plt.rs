@@ -23,12 +23,6 @@
 //!
 //! The fix ships **default-on** (`option i386_pie_plt`, the loader-fidelity
 //! default), so this test bootstraps with no option override.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`).  When absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -59,22 +53,10 @@ fn i386_pie_plt_calls_named_and_no_spurious_loop() {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = i386_pie_nl();
-    let bin = match bin.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_i386_pie_plt: skipping (bootstrap failed, build the x86 `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The i386-PIE PLT imports are resolvable as functions (the loader markup
     // the FF A3 decode now feeds), and the local `.symtab` `usage` still resolves.

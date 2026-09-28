@@ -20,14 +20,6 @@
 //! was built with `aarch64-linux-gnu-gcc -O0 -no-pie plt_aarch64.c -o ...`
 //! (gcc 11.4.0).  Load-bearing addresses are pinned below from
 //! `objdump`/`readelf` (they shift across toolchains).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling x86 gate, bootstrapping needs the built `AARCH64` `.sla`
-//! under `specs/` (gitignored; `make specs`, or just
-//! `slacomp specs/Ghidra/Processors/AARCH64/data/languages/AARCH64.slaspec`).
-//! When it is absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -58,22 +50,10 @@ fn aarch64_plt_calls_are_named_in_decompiled_c() {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = plt_aarch64();
-    let bin = match bin.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_aarch64_plt: skipping (bootstrap failed, build the AARCH64 `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The PLT imports are resolvable as functions (the loader markup), and the
     // local `.symtab` `main` still resolves.

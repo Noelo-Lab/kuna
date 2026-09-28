@@ -12,12 +12,6 @@
 //! `use_rows` keeps a `char (*)[16]` local and a `char (*[2])[16]` stack array,
 //! `get_names` returns `char *(*)[3]`. `use_names` keeps a `char *[2]` array of
 //! pointers, the mirror type that must stay unparenthesised.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -31,9 +25,8 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture, decompile `func`, and return the captured C (`None` ⇒
-/// specs-less skip).
-fn decompile(func: &str) -> Option<String> {
+/// Bootstrap the fixture, decompile `func`, and return the captured C.
+fn decompile(func: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -41,19 +34,10 @@ fn decompile(func: &str) -> Option<String> {
     let path = root
         .join("decompiler/crates/kuna-analysis/tests/fixtures")
         .join(FIXTURE)
-        .to_str()?
+        .to_str().expect("UTF-8 fixture path")
         .to_string();
-    let mut prog = match bootstrap_from_object(&path, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_ptrarray_declarators: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let cmds = vec![format!("load function {func}"), "decompile".to_string(), "print C".to_string()];
     let count = cmds.len();
@@ -68,7 +52,7 @@ fn decompile(func: &str) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// Every line outside its `//` comment opens as many parentheses as it closes.
@@ -83,7 +67,7 @@ fn assert_balanced(code: &str) {
 
 #[test]
 fn a_pointer_to_array_return_type_closes_after_the_parameters() {
-    let Some(code) = decompile("get_row") else { return };
+    let code = decompile("get_row");
 
     let proto = code.lines().find(|l| l.contains("get_row(")).unwrap_or("");
     assert!(
@@ -95,7 +79,7 @@ fn a_pointer_to_array_return_type_closes_after_the_parameters() {
 
 #[test]
 fn a_pointer_to_array_of_pointers_return_type_closes_after_the_parameters() {
-    let Some(code) = decompile("get_names") else { return };
+    let code = decompile("get_names");
 
     assert!(
         code.contains("char *(* get_names(void))[3]"),
@@ -106,7 +90,7 @@ fn a_pointer_to_array_of_pointers_return_type_closes_after_the_parameters() {
 
 #[test]
 fn pointer_to_array_locals_keep_their_suffix() {
-    let Some(code) = decompile("use_rows") else { return };
+    let code = decompile("use_rows");
 
     assert!(
         code.contains("char (*pair [2])[16];"),
@@ -123,7 +107,7 @@ fn pointer_to_array_locals_keep_their_suffix() {
 /// declaration is unchanged.
 #[test]
 fn an_array_of_pointers_local_is_not_grouped() {
-    let Some(code) = decompile("use_names") else { return };
+    let code = decompile("use_names");
 
     assert!(
         code.contains("char *first [2];"),

@@ -353,7 +353,11 @@ impl SleighCompile {
             self.process()?;
         }
         if parseres == 0 && self.num_errors() == 0 {
-            let bytes = crate::encode::encode_to_sla_bytes(&self.base)?;
+            let bytes = if self.debugoutput {
+                crate::encode::encode_to_xml_bytes(&self.base)?
+            } else {
+                crate::encode::encode_to_sla_bytes(&self.base)?
+            };
             if std::fs::write(fileout, &bytes).is_err() {
                 eprintln!("Unable to open output file: {fileout}");
                 return Ok(2);

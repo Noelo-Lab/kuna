@@ -14,12 +14,6 @@
 //! two symbol tables and the engine installs each as a named `undefined<size>`
 //! global, gated by `--option datasyms on|off` (default ON, DIV-76, GH-184) at
 //! the `read symbols` commit — the off arm below pins that contract.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -43,26 +37,16 @@ fn faillog() -> PathBuf {
     repo_root().join("tests/bug-repro/faillog")
 }
 
-/// Bootstrap `bin`, optionally flip `--option datasyms off`, commit the analysis
-/// facts, run `load_cmd` + decompile, and return the captured C (`None` ⇒
-/// specs-less skip).
-fn decompile_bin(bin: &PathBuf, load_cmd: &str, datasyms_off: bool) -> Option<String> {
+/// Bootstrap `bin`, optionally flip `--option datasyms off`, commit the analysis facts, run
+/// `load_cmd` + decompile, and return the captured C.
+fn decompile_bin(bin: &PathBuf, load_cmd: &str, datasyms_off: bool) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = bin.to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_loader_data_symbols: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     if datasyms_off {
         // The live CLI shape: the `option` line runs after `load file` and
         // before `read symbols`, where the commit consults the flag (DIV-76).
@@ -84,7 +68,7 @@ fn decompile_bin(bin: &PathBuf, load_cmd: &str, datasyms_off: bool) -> Option<St
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// `fmt/main` reads `optind` (4 bytes, `.dynsym`+`.symtab` `STT_OBJECT` at
@@ -92,13 +76,13 @@ fn decompile_bin(bin: &PathBuf, load_cmd: &str, datasyms_off: bool) -> Option<St
 /// imported libc objects — absent from the program's DWARF — so before the loader
 /// read the data half of the symbol table each rendered `dat_<addr>`.
 /// Decompile `func` from the fmt fixture with the default (datasyms-on) config.
-fn decompile(func: &str) -> Option<String> {
+fn decompile(func: &str) -> String {
     decompile_bin(&fixture(), &format!("load function {func}"), false)
 }
 
 #[test]
 fn libc_extern_globals_render_by_symbol_name() {
-    let Some(code) = decompile("main") else { return }; // specs-less skip
+    let code = decompile("main");
 
     for name in ["optind", "stdin", "stdout", "optarg"] {
         assert!(
@@ -121,7 +105,7 @@ fn libc_extern_globals_render_by_symbol_name() {
 /// `verify_data_global_symbols`.
 #[test]
 fn dwarf_named_globals_survive_the_loader_arm() {
-    let Some(code) = decompile("main") else { return }; // specs-less skip
+    let code = decompile("main");
 
     for name in ["max_width", "goal_width", "prefix_length"] {
         assert!(
@@ -137,7 +121,7 @@ fn dwarf_named_globals_survive_the_loader_arm() {
 /// longer render raw.
 #[test]
 fn faillog_stderr_renders_by_name_by_default() {
-    let Some(code) = decompile_bin(&faillog(), "load addr 0x3320", false) else { return };
+    let code = decompile_bin(&faillog(), "load addr 0x3320", false);
 
     assert!(
         code.contains("stderr"),
@@ -156,7 +140,7 @@ fn faillog_stderr_renders_by_name_by_default() {
 /// path `kuna decompile-all --option datasyms off` drives.
 #[test]
 fn option_datasyms_off_restores_dat_addr() {
-    let Some(code) = decompile_bin(&faillog(), "load addr 0x3320", true) else { return };
+    let code = decompile_bin(&faillog(), "load addr 0x3320", true);
 
     assert!(
         code.contains("dat_61a0"),

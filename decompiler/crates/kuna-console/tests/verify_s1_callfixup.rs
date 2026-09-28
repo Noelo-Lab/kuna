@@ -16,13 +16,6 @@
 //! the one place the "inject machinery is inherited" assumption is actually
 //! proven end-to-end — the analyzer-driven tag flows all the way to a dissolved
 //! call.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_s1_entry`/`verify_w11_elf_plt_names` gates,
-//! bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored;
-//! `make specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -48,22 +41,10 @@ fn mcount_call_is_dissolved_by_the_applied_fixup() {
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = match mcount_fixture().to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = mcount_fixture().to_str().expect("UTF-8 fixture path").to_string();
 
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_s1_callfixup: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // `main` is a real `.symtab` function in this fixture (the call-fixup is tagged
     // on its `mcount` callee, not on `main`).

@@ -7,8 +7,7 @@
 //! `verify_relocrebase.rs` — cargo runs each integration-test target as its own
 //! binary, which is exactly the isolation this needs.
 //!
-//! See `verify_relocrebase.rs` for the defect this option governs and for the
-//! `.sla` precondition.
+//! See `verify_relocrebase.rs` for the defect this option governs.
 
 use std::path::PathBuf;
 
@@ -23,27 +22,16 @@ fn fixture(name: &str) -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name)
 }
 
-/// Bootstrap a fixture and run the analysis commit (`read symbols`), returning
-/// `None` (a visible skip) when the `.sla` is absent.
-fn boot(name: &str) -> Option<ConsoleProgram> {
+/// Bootstrap a fixture and run the analysis commit (`read symbols`).
+fn boot(name: &str) -> ConsoleProgram {
     let path = fixture(name);
     assert!(path.exists(), "missing fixture {path:?}");
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(mut prog) => {
-            prog.commit_pending_analysis().expect("analysis commit");
-            Some(prog)
-        }
-        Err(e) => {
-            eprintln!(
-                "verify_relocrebase: skipping {name} (bootstrap failed; build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    let mut prog = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
+    prog.commit_pending_analysis().expect("analysis commit");
+    prog
 }
 
 /// The whole inventory of a bootstrapped program, as `(vma, name)`.
@@ -65,12 +53,10 @@ fn relocrebase_gate_governs_the_pre_link_phantoms() {
     use kuna_decomp::kuna_relocrebase::{set_relocrebase_env, RELOCREBASE_ENV};
 
     set_relocrebase_env(false);
-    let off = boot("ptx.o").map(|p| inventory(&p));
+    let off = inventory(&boot("ptx.o"));
     set_relocrebase_env(true);
-    let on = boot("ptx.o").map(|p| inventory(&p));
+    let on = inventory(&boot("ptx.o"));
     std::env::remove_var(RELOCREBASE_ENV);
-
-    let (Some(off), Some(on)) = (off, on) else { return };
 
     let below = |inv: &[(u64, String)]| -> Vec<(u64, String)> {
         inv.iter().filter(|(a, _)| *a < RELOC_BASE).cloned().collect()
@@ -90,4 +76,3 @@ fn relocrebase_gate_governs_the_pre_link_phantoms() {
     let real_off: Vec<_> = off.iter().filter(|(a, _)| *a >= RELOC_BASE).cloned().collect();
     assert_eq!(real_off, on, "the real (rebased) entries must be untouched by the option");
 }
-

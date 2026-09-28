@@ -15,53 +15,35 @@ fn repo_root() -> PathBuf {
         .unwrap()
 }
 
-fn boot_fixture(name: &str) -> Option<ConsoleProgram> {
+fn boot_fixture(name: &str) -> ConsoleProgram {
     let root = repo_root();
     let fixture = root
         .join("decompiler/crates/kuna-analysis/tests/fixtures")
         .join(name);
     let roots = vec![root.join("specs").to_string_lossy().into_owned()];
-    match bootstrap_from_object(fixture.to_str().unwrap(), "", &roots) {
-        Ok(program) => Some(program),
-        Err(error) => {
-            eprintln!(
-                "verify_entry_selectors: skipping (bootstrap failed; build `.sla` with make specs): {}",
-                error.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(fixture.to_str().unwrap(), "", &roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// [`boot_fixture`] plus the gated analysis commit `read symbols` performs, so
 /// the inventory a selector sees is the one every front-end sees.
-fn boot_committed(name: &str) -> Option<ConsoleProgram> {
-    let mut program = boot_fixture(name)?;
+fn boot_committed(name: &str) -> ConsoleProgram {
+    let mut program = boot_fixture(name);
     program.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(program)
+    program
 }
 
-fn boot_xml_fixture(name: &str) -> Option<ConsoleProgram> {
+fn boot_xml_fixture(name: &str) -> ConsoleProgram {
     let root = repo_root();
     let fixture = root.join("tests/datatests").join(name);
     let roots = vec![root.join("specs").to_string_lossy().into_owned()];
-    match bootstrap_from_file(fixture.to_str().unwrap(), "", &roots) {
-        Ok(program) => Some(program),
-        Err(error) => {
-            eprintln!(
-                "verify_entry_selectors: skipping XML bootstrap (build `.sla` with make specs): {}",
-                error.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_file(fixture.to_str().unwrap(), "", &roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 #[test]
 fn numeric_selectors_probe_sectionless_xml_mappings() {
-    let Some(program) = boot_xml_fixture("condmulti.xml") else {
-        return;
-    };
+    let program = boot_xml_fixture("condmulti.xml");
     assert!(program.sections().is_empty());
 
     let entry = program
@@ -89,29 +71,21 @@ fn exact_address_selection_preserves_nondefault_space() {
     let document = store
         .parse_document(
             br#"<binaryimage arch="8051:BE:16:default:default">
-<bytechunk space="CODE" offset="0x100">22</bytechunk>
-<bytechunk space="INTMEM" offset="0x100">22</bytechunk>
-<symbol space="CODE" offset="0x100" name="code_entry"/>
-<symbol space="INTMEM" offset="0x100" name="intmem_entry"/>
+<bytechunk space="CODE" offset="0x40">22</bytechunk>
+<bytechunk space="INTMEM" offset="0x40">22</bytechunk>
+<symbol space="CODE" offset="0x40" name="code_entry"/>
+<symbol space="INTMEM" offset="0x40" name="intmem_entry"/>
 </binaryimage>"#,
         )
         .expect("parse synthetic multi-space XML");
-    let program = match bootstrap_from_root(&document.get_root().clone(), &specs) {
-        Ok(program) => program,
-        Err(error) => {
-            eprintln!(
-                "verify_entry_selectors: skipping multi-space bootstrap (build `.sla` with make specs): {}",
-                error.explain()
-            );
-            return;
-        }
-    };
+    let program = bootstrap_from_root(&document.get_root().clone(), &specs)
+        .expect("bootstrap fixture with built processor specs");
     let intmem = program
         .arch()
         .manage()
         .get_space_by_name("INTMEM")
         .expect("8051 INTMEM space");
-    let requested = Address::new(std::rc::Rc::clone(intmem), 0x100);
+    let requested = Address::new(std::rc::Rc::clone(intmem), 0x40);
     let selected = program
         .resolve_address(&requested)
         .expect("mapped non-default address must resolve in its parsed space");
@@ -121,9 +95,7 @@ fn exact_address_selection_preserves_nondefault_space() {
 
 #[test]
 fn name_section_and_unique_raw_offset_resolve_the_same_definition() {
-    let Some(program) = boot_fixture("ptx.o") else {
-        return;
-    };
+    let program = boot_fixture("ptx.o");
 
     let by_name = program
         .resolve_entry(&EntrySelector::Name("fix_output_parameters".into()))
@@ -147,9 +119,7 @@ fn name_section_and_unique_raw_offset_resolve_the_same_definition() {
 
 #[test]
 fn duplicate_raw_offsets_are_reported_instead_of_guessed() {
-    let Some(program) = boot_fixture("ptx.o") else {
-        return;
-    };
+    let program = boot_fixture("ptx.o");
 
     let error = program
         .resolve_entry(&EntrySelector::Numeric(0))
@@ -176,9 +146,7 @@ fn duplicate_raw_offsets_are_reported_instead_of_guessed() {
 
 #[test]
 fn only_undefined_symbols_have_external_provenance() {
-    let Some(program) = boot_fixture("ptx.o") else {
-        return;
-    };
+    let program = boot_fixture("ptx.o");
 
     let external = program
         .resolve_entry(&EntrySelector::Name("strlen".into()))
@@ -199,9 +167,7 @@ fn only_undefined_symbols_have_external_provenance() {
 
 #[test]
 fn duplicate_local_names_are_ambiguous_and_section_selectors_are_exact() {
-    let Some(program) = boot_fixture("entry_selectors_x86_64.o") else {
-        return;
-    };
+    let program = boot_fixture("entry_selectors_x86_64.o");
 
     let error = program
         .resolve_entry(&EntrySelector::Name("duplicate_local".into()))
@@ -243,9 +209,7 @@ fn duplicate_local_names_are_ambiguous_and_section_selectors_are_exact() {
 
 #[test]
 fn section_index_selectors_are_exact_and_enforce_section_bounds() {
-    let Some(program) = boot_fixture("entry_selectors_x86_64.o") else {
-        return;
-    };
+    let program = boot_fixture("entry_selectors_x86_64.o");
 
     let a = program
         .resolve_entry(&EntrySelector::parse("4:0x0"))
@@ -294,9 +258,7 @@ fn section_index_selectors_are_exact_and_enforce_section_bounds() {
 
 #[test]
 fn arm_thumb_symbols_keep_raw_object_coordinates_and_normalized_entry_vmas() {
-    let Some(program) = boot_fixture("arm_thumb_le32.o") else {
-        return;
-    };
+    let program = boot_fixture("arm_thumb_le32.o");
 
     let by_name = program
         .resolve_entry(&EntrySelector::Name("thumb_add".into()))
@@ -335,9 +297,7 @@ fn arm_thumb_symbols_keep_raw_object_coordinates_and_normalized_entry_vmas() {
 /// the address it spells and land on exactly the entry the numeric selector does.
 #[test]
 fn a_generated_placeholder_name_resolves_to_the_address_it_spells() {
-    let Some(program) = boot_fixture("tailcallframe_x86_64") else {
-        return;
-    };
+    let program = boot_fixture("tailcallframe_x86_64");
     assert!(
         program.find_entry_at(0x1170).is_none(),
         "fixture no longer reproduces: 0x1170 is a discovered entry"
@@ -369,9 +329,7 @@ fn a_generated_placeholder_name_resolves_to_the_address_it_spells() {
 /// `func_0x000015dc`.
 #[test]
 fn a_placeholder_resolves_in_every_naming_style() {
-    let Some(program) = boot_fixture("tailcallframe_x86_64") else {
-        return;
-    };
+    let program = boot_fixture("tailcallframe_x86_64");
     // The default (angr) style is active, so the other two vocabularies' names
     // are the ones a style flip would put in an agent's hands.
     for name in ["sub_1170", "func_0x00001170", "FUN_00001170"] {
@@ -394,9 +352,7 @@ fn a_placeholder_resolves_in_every_naming_style() {
 /// take `sub_1170` out of the resolvable set entirely.
 #[test]
 fn a_default_style_name_survives_a_namestyle_flip() {
-    let Some(mut program) = boot_fixture("tailcallframe_x86_64") else {
-        return;
-    };
+    let mut program = boot_fixture("tailcallframe_x86_64");
     let default_style_name = "sub_1170";
     program.arch_mut().name_style_angr = false;
     assert_eq!(
@@ -418,9 +374,7 @@ fn a_default_style_name_survives_a_namestyle_flip() {
 /// address with no bytes behind it all still miss.
 #[test]
 fn a_placeholder_name_is_not_read_as_an_address_unless_this_build_would_mint_it() {
-    let Some(program) = boot_fixture("tailcallframe_x86_64") else {
-        return;
-    };
+    let program = boot_fixture("tailcallframe_x86_64");
     // `func_00001170` misses on its `0x`: the upstream style prints
     // `func_0x00001170`, and `FUN_` is the only style without the prefix.
     for miss in ["sub_deadbeef", "FUN_1170", "func_00001170", "handler_1170", "sub_"] {
@@ -444,9 +398,7 @@ fn a_placeholder_name_is_not_read_as_an_address_unless_this_build_would_mint_it(
 /// ever carries — so the narrowing is at selection, not in the enumeration.
 #[test]
 fn a_macho_import_name_resolves_to_its_stub_without_losing_the_slot() {
-    let Some(program) = boot_fixture("macho_imports") else {
-        return;
-    };
+    let program = boot_fixture("macho_imports");
 
     let entry = program
         .resolve_entry(&EntrySelector::Name("printf".into()))
@@ -474,9 +426,7 @@ fn a_macho_import_name_resolves_to_its_stub_without_losing_the_slot() {
 /// neither can be silently guessed.
 #[test]
 fn same_named_code_definitions_are_still_ambiguous() {
-    let Some(program) = boot_fixture("entry_selectors_x86_64.o") else {
-        return;
-    };
+    let program = boot_fixture("entry_selectors_x86_64.o");
     let error = program
         .resolve_entry(&EntrySelector::Name("duplicate_local".into()))
         .expect_err("two .text definitions are both executable");
@@ -488,9 +438,7 @@ fn same_named_code_definitions_are_still_ambiguous() {
 /// selects anyway, and reaches the same entry the decorated spelling does.
 #[test]
 fn a_macho_c_name_resolves_through_the_platform_underscore() {
-    let Some(program) = boot_committed("macho_imports") else {
-        return;
-    };
+    let program = boot_committed("macho_imports");
     for (bare, decorated) in [("main", "_main"), ("compute", "_compute")] {
         let carried = program
             .resolve_entry(&EntrySelector::Name(decorated.into()))
@@ -508,9 +456,7 @@ fn a_macho_c_name_resolves_through_the_platform_underscore() {
 /// there however many `_start`s the image has.
 #[test]
 fn an_elf_name_is_never_read_through_an_underscore() {
-    let Some(program) = boot_committed("fauxware") else {
-        return;
-    };
+    let program = boot_committed("fauxware");
     let main = program
         .resolve_entry(&EntrySelector::Name("main".into()))
         .expect("fauxware names main");
@@ -530,9 +476,7 @@ fn an_elf_name_is_never_read_through_an_underscore() {
 /// leaves nothing for a front-end to read as "this binary is stripped".
 #[test]
 fn a_name_miss_reports_what_the_image_does_carry() {
-    let Some(program) = boot_committed("fauxware") else {
-        return;
-    };
+    let program = boot_committed("fauxware");
     let error = program
         .resolve_entry(&EntrySelector::Name("zork".into()))
         .expect_err("no function is spelled zork");
@@ -551,9 +495,7 @@ fn a_name_miss_reports_what_the_image_does_carry() {
 /// leaves a front-end its by-address advice.
 #[test]
 fn a_stripped_image_reports_no_names_at_all() {
-    let Some(program) = boot_committed("argclobber_x86_64") else {
-        return;
-    };
+    let program = boot_committed("argclobber_x86_64");
     let error = program
         .resolve_entry(&EntrySelector::Name("zork".into()))
         .expect_err("a stripped image answers no name");
@@ -571,9 +513,7 @@ fn a_stripped_image_reports_no_names_at_all() {
 /// is.
 #[test]
 fn a_linked_image_ambiguity_offers_the_address_form() {
-    let Some(program) = boot_committed("macho_dup_main") else {
-        return;
-    };
+    let program = boot_committed("macho_dup_main");
     let error = program
         .resolve_entry(&EntrySelector::Name("_main".into()))
         .expect_err("two definitions are spelled _main");
@@ -600,9 +540,7 @@ fn a_linked_image_ambiguity_offers_the_address_form() {
 /// really are synthetic, and the section-qualified selector really does work.
 #[test]
 fn a_relocatable_ambiguity_keeps_the_section_form() {
-    let Some(program) = boot_committed("entry_selectors_x86_64.o") else {
-        return;
-    };
+    let program = boot_committed("entry_selectors_x86_64.o");
     let error = program
         .resolve_entry(&EntrySelector::Name("duplicate_local".into()))
         .expect_err("two .text definitions are both executable");

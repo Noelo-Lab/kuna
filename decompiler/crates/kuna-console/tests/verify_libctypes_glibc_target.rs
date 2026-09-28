@@ -25,12 +25,6 @@
 //!    `sizeof(struct group)` is not 32 — and since the aggregate WIDTHS are
 //!    x86-64's too, the declaration mints no `group` at all there
 //!    (`AnalysisOutput::libctypes_refused`).
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `.sla` files under `specs/` (gitignored; `make
-//! specs`). When one is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -53,42 +47,32 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap `fixture` with `libctypes` asking for `glibc`, declare `getgrnam` at
-/// `entry`, and hand back the `group` the declaration minted, if any. `None` ⇒ a
-/// specs-less skip.
-fn declared_group(fixture: &str, entry: u64) -> Option<Option<Rc<kuna_decomp::dtype::Datatype>>> {
+/// Bootstrap `fixture` with `libctypes` asking for `glibc`, declare `getgrnam` at `entry`,
+/// and hand back the `group` the declaration minted, if any.
+fn declared_group(fixture: &str, entry: u64) -> Option<Rc<kuna_decomp::dtype::Datatype>> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(fixture);
     // The named shells are interned inside `load file`, upstream of every `option`
     // command, so the value has to be in the environment before the bootstrap.
     std::env::set_var(LIBCTYPES_ENV, "glibc");
-    let mut prog: ConsoleProgram = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_libctypes_glibc_target: skipping (bootstrap failed, build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            std::env::remove_var(LIBCTYPES_ENV);
-            return None;
-        }
-    };
+    let mut prog: ConsoleProgram = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .inspect_err(|_| std::env::remove_var(LIBCTYPES_ENV))
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     let space = prog.arch().manage().get_default_code_space().expect("code space").clone();
     prog.declare_function(Address::new(Rc::clone(&space), entry), Some("getgrnam"), 0)
         .expect("the declaration lands");
     let held = prog.arch().types().find_by_name("group").expect("type lookup");
     std::env::remove_var(LIBCTYPES_ENV);
-    Some(held)
+    held
 }
 
 /// The gate accepts: the declared `getgrnam` returns the published layout.
 #[test]
 fn an_accepted_target_mints_the_published_group() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(group) = declared_group("libctypes_glibc_x86_64", X86_64_ENTRY) else { return };
+    let group = declared_group("libctypes_glibc_x86_64", X86_64_ENTRY);
     let group = group.expect("an x86-64 glibc ELF takes the named declaration");
     assert!(!group.is_incomplete(), "an x86-64 glibc ELF takes the fields");
     assert_eq!(group.get_size(), 32, "the published width");
@@ -103,7 +87,7 @@ fn an_accepted_target_mints_the_published_group() {
 #[test]
 fn a_mips32_glibc_image_cannot_reach_the_layouts() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(group) = declared_group("libctypes_mips32_glibc_le32", MIPS_ENTRY) else { return };
+    let group = declared_group("libctypes_mips32_glibc_le32", MIPS_ENTRY);
     assert!(
         group.is_none(),
         "a refused target mints no `group`, whatever its own debug info says"

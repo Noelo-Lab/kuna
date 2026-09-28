@@ -61,6 +61,18 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   forced-warning build. String/fill modules no longer suppress dead-code
   warnings, and fill-model fixture helpers live with tests. Input registration
   uses the canonical prototype-effect constants without an always-true switch.
+- Console, SLEIGH and Ghidra regression tests fail when required fixtures cannot
+  be loaded. Setup helpers return their actual values without skip-only `Option`
+  wrappers. An 8051 context test that normally skipped now exercises `TMode` on
+  the existing ARM fixture. CI no longer needs log-grep canaries to detect
+  passing tests that did no work; processor builds and completeness checks stay.
+- Compiler parity compares the same 44 specs with pinned C++ output hashes,
+  independent of locally built `.sla` files. Per-run temporary output replaces
+  shared scratch filenames. Compiler CLI filename normalization is shared and
+  accepts extensionless files beneath dotted directories; excess filenames fail.
+- Compiler XML output honors `-y`. The symbol/constructor boundary preserves
+  the opcode encoder's format-specific behavior instead of forcing binary
+  integer attributes through XML. Default binary output is unchanged.
 
 ## Evidence
 
@@ -124,6 +136,26 @@ expectations. Commit verified milestones; do not re-pin baselines to hide failur
   with 38 existing ignores and no warnings, 675/675 upstream assertions,
   1467/1467 stage assertions, and spec checks. All 268 CLI probes, 16 Python
   tests, and catalog checks pass. The full workspace run took 428 seconds.
+- Required-fixture negative controls: with only this worktree's x86-64 spec link
+  withheld, the prior console no-return, SLEIGH alignment-NOP and Ghidra faillog
+  tests all passed without their assertions. The changed executables each exit
+  101 with the spec missing and pass after restoring it. The ARM context test
+  and context-commit checks across 149 languages pass. The pinned compiler hash
+  test passes all 44 source cases; the previous four wrapper tests are replaced
+  by one manifest-driven test without reducing spec coverage.
+- The first strict-fixture workspace run exposed an invalid existing test image:
+  `exact_address_selection_preserves_nondefault_space` placed a symbol at 0x100
+  in the 8051's one-byte INTMEM address space. Previously it reported a setup
+  skip. The fixture now uses 0x40 in both spaces, retaining both name and exact
+  address-space assertions. All other tests in that run passed.
+- The corrected, combined snapshot passed all four gates: 7,372 workspace tests
+  with 38 existing ignores and no warnings in 434 seconds; 675/675 upstream and
+  1467/1467 stage assertions; and spec checks. All 268 CLI probes, 16 Python
+  tests, catalog checks, and 56 Ghidra release tests (including the normally
+  ignored breadth case) pass. The focused compiler/SLEIGH run passed 357 tests.
+  This build also reproduced all 44 pinned C++ XML hashes. Fourteen CLI cases
+  covering graph exports, summaries, reachability, Mach-O slices, image readers,
+  and callee ordering match the original baseline's stdout, stderr and status.
 
 ## Audit still open
 
@@ -137,7 +169,7 @@ These are investigation targets, not a claim that the repository review is done.
 | CLI responsibilities | The worker codec is isolated and byte-pinned. `decompile_all.rs` and the remaining pool module still combine several lifecycle policies; review the next meaningful ownership boundary. |
 | Collection policy | `cargo clippy --workspace --lib --bins` stops in `kuna-decomp` with 222 denied `HashMap`/`HashSet` findings. Removed its missing-ADR reference. Review iteration semantics and lookup costs before replacing collections, then check the remaining crates and enforce the gate. |
 | Engine boundaries | `kuna_addcarrychain`, `kuna_arraystride`, `ruleaction_3`, and `ruleaction_4` duplicate `new_unique_out`. The real method additionally assigns high variables and checks register lanes, so replacing these requires behavioral tests. Ninety engine files still contain wave-era STUB notes. |
-| Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory corruption fails closed and Python text writers share atomic publication. Compiler stale-code suppression is removed. Read-only audit found setup-failure skips in 138 console test files, six SLEIGH runtime tests, and the Ghidra simulation helper; replace them with direct failures for required fixtures. |
+| Analysis, SLEIGH, Python, integrations | Broader review remains open. Inventory corruption fails closed and Python text writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. |
 
 Before each commit: `make test`, `make test-stages`, `make rust-test`,
 `make check-spec`. Also run the catalog check and relevant CLI probes. Preserve

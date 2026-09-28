@@ -33,33 +33,24 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// The index `kuna xrefs` answers out of, or `None` as a visible skip.
-fn index() -> Option<XrefIndex> {
+/// The index `kuna xrefs` answers out of.
+fn index() -> XrefIndex {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fauxware");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(prog) => prog,
-        Err(e) => {
-            eprintln!(
-                "verify_indirect_callers: skipping (bootstrap failed, build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     let bytes = std::fs::read(&bin).expect("fixture readable");
     let file = object::File::parse(&*bytes).expect("fixture parses");
     let seeds: Vec<u64> =
         prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect();
-    Some(xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds))
+    xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds)
 }
 
 #[test]
 fn a_computed_call_is_reported() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     assert!(
         idx.has_indirect_calls(COMPUTED_CALL),
         "__do_global_ctors_aux's `CALL RAX` was not reported"
@@ -77,7 +68,7 @@ fn a_computed_call_is_reported() {
 
 #[test]
 fn direct_calls_alone_are_not_reported() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     assert!(
         !idx.has_indirect_calls(DIRECT_CALLS_ONLY),
         "main's nine call sites are all direct"
@@ -92,7 +83,7 @@ fn direct_calls_alone_are_not_reported() {
 
 #[test]
 fn an_indirect_branch_is_not_a_computed_call() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     assert!(
         !idx.has_indirect_calls(FORWARDING_VENEER),
         "the puts PLT stub's `JMP qword ptr [...]` was read as a computed call"

@@ -40,13 +40,6 @@
 //! carries the empty `.text`/`.data`/`.bss` placeholders and an
 //! `IMAGE_SCN_LNK_REMOVE` `.llvm_addrsig` section, so the layout's
 //! "memory-resident only" and "skip empty" filters are exercised too.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling console gates, the decompile half needs the built `x86`
-//! `.sla` under `specs/` (gitignored; `make specs`).  If it is absent the
-//! bootstrap fails and that half prints a visible skip.  The loader half needs no
-//! `.sla` and always runs.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -117,22 +110,12 @@ fn coff_comdat_loads_every_function() {
     assert_eq!(sorted.len(), 3, "the three functions must occupy distinct VMAs, got {addrs:x?}");
 }
 
-/// Bootstrap the object, returning `None` (a visible skip) when the `.sla` is
-/// absent.
-fn boot() -> Option<ConsoleProgram> {
+/// Bootstrap the object.
+fn boot() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    match bootstrap_from_object(fixture().to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_coff_comdat: skipping (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(fixture().to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// Run `load function <name>` → `decompile` → `print C` and return the C.
@@ -161,7 +144,7 @@ fn decompile_func(prog: ConsoleProgram, name: &str) -> String {
 /// (`DIR32`) addend the COFF relocation carries in the patched field itself.
 #[test]
 fn coff_comdat_second_section_decompiles() {
-    let Some(prog) = boot() else { return };
+    let prog = boot();
     let out = decompile_func(prog, "_beta");
     assert!(out.contains("_beta"), "expected the function to be named `_beta`, got:\n{out}");
     assert!(

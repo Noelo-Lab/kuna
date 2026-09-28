@@ -13,13 +13,6 @@
 //! every row that differs was spelled `char` and is now `undefined1` at an
 //! unchanged `size` of 1, and that the parameter/stack sections are the only
 //! place it happens.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling gates, bootstrapping needs the built `x86` `.sla` under
-//! `specs/` (gitignored; `make specs`).  When it is absent the bootstrap fails;
-//! the test prints that and returns early (a specs-less CI is a visible skip,
-//! never a false green).
 
 use std::path::PathBuf;
 
@@ -38,21 +31,12 @@ fn fauxware() -> PathBuf {
 
 /// Every function's `extract_variables` output, plus its emitted C, for one
 /// setting of `bytehonest`.
-fn variables_for(byte_honest: bool) -> Option<Vec<(String, Vec<VarInfo>)>> {
+fn variables_for(byte_honest: bool) -> Vec<(String, Vec<VarInfo>)> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = fauxware().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_bytehonest: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fauxware().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
     prog.arch_mut().byte_honest = byte_honest;
 
@@ -68,13 +52,13 @@ fn variables_for(byte_honest: bool) -> Option<Vec<(String, Vec<VarInfo>)>> {
         };
         out.push((name, extract_variables(prog.arch(), &fd)));
     }
-    Some(out)
+    out
 }
 
 #[test]
 fn bytehonest_reports_an_uncommitted_byte_by_width_and_changes_nothing_else() {
-    let Some(off) = variables_for(false) else { return };
-    let Some(on) = variables_for(true) else { return };
+    let off = variables_for(false);
+    let on = variables_for(true);
     assert_eq!(off.len(), on.len(), "the two arms must decompile the same functions");
 
     let mut respelled = 0usize;

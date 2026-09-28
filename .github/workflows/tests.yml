@@ -17,7 +17,7 @@ name: Tests
 #
 # The gates are split across two jobs that run in parallel: the parity gates
 # answer in minutes and catch the common regression, while the workspace suite
-# (a debug build of the whole workspace plus ~4300 tests) is the long pole.
+# (the full test-profile build and test run) is the long pole.
 #
 # The parity gates run on EVERY event. The workspace suite is scoped -- see the
 # `if:` on that job: an internal PR (a branch in this repo, i.e. the automated
@@ -161,23 +161,10 @@ jobs:
       # release profile over the deps `make binaries` already built (~2 min
       # compile, seconds of runtime). `--include-ignored` picks up the heavier
       # sort/grep breadth test that the dev-profile workspace run skips.
-      # The grep guards against the visible-skip trap: with specs missing these
-      # tests print a skip notice and pass vacuously (same canary pattern as the
-      # rust-test job).
-      # `tee` (not `out=$(…)`) so a FAILING run still prints its diagnostics:
-      # under `bash -e` a command substitution aborts the step before any
-      # `echo "$out"`, which would leave a red step with zero output exactly
-      # when the pins fire. pipefail (set by the explicit bash shell above)
-      # preserves cargo's exit code through the pipe.
       - name: ghidra-sim differential harness (kuna-ghidra, release)
         run: |
           cd decompiler
-          cargo test -p kuna-ghidra --release -- --include-ignored --nocapture 2>&1 \
-            | tee "$RUNNER_TEMP/ghidra-sim.log"
-          if grep -qE 'skipping \(.*(\.sla|make specs|specs tree)' "$RUNNER_TEMP/ghidra-sim.log"; then
-            echo "::error::ghidra-sim tests skipped for missing/unusable SLEIGH specs -- the harness would be a false green"
-            exit 1
-          fi
+          cargo test -p kuna-ghidra --release -- --include-ignored --nocapture
 
       # Node 22 for its global WebSocket, which the /decompile2 browser smoke
       # drives headless Chrome with (the runner image ships google-chrome).
@@ -242,14 +229,7 @@ jobs:
           workspaces: decompiler
           key: rust-test
 
-      # THIS STEP IS LOAD-BEARING, not a convenience. ~55 tests across the
-      # kuna-console/kuna-analysis suites bootstrap a real binary, and when no
-      # `.sla` is present they print "skipping (bootstrap failed, build `.sla`
-      # with `make specs`)" and return early -- by design, so a specs-less
-      # checkout is a visible skip rather than a false failure. But cargo
-      # CAPTURES the output of a passing test, so without `--nocapture` that
-      # notice is invisible: the suite reports "ok" in 0.05 s instead of doing
-      # the work. Compiling the specs first is what makes those tests real.
+      # Missing or unusable required processor specs fail the tests.
       - name: Compile the SLEIGH specs
         run: make specs
 
@@ -260,22 +240,6 @@ jobs:
           echo "compiled $got of $want .slaspec"
           if [ "$got" -ne "$want" ] || [ "$got" -eq 0 ]; then
             echo "::error::compiled $got .sla for $want .slaspec -- the spec tree is incomplete"
-            exit 1
-          fi
-
-      # The canary for the trap described above: run one engine-bootstrapping
-      # suite with output shown and fail if it announces a spec-related skip.
-      # The completeness check above should already guarantee this; this catches
-      # the case where the tree is fully built but the engine still cannot
-      # resolve a language id, which would otherwise silently hollow out the
-      # whole run. Cheap -- the binary is built by the suite step regardless.
-      - name: Canary -- engine e2e tests must not skip
-        run: |
-          cd decompiler
-          out=$(cargo test -p kuna-console --test verify_decompile_all -- --nocapture 2>&1)
-          echo "$out"
-          if grep -qE 'skipping \(.*(\.sla|make specs|specs tree)' <<<"$out"; then
-            echo "::error::engine e2e tests skipped for missing/unusable SLEIGH specs -- the suite would be a false green"
             exit 1
           fi
 

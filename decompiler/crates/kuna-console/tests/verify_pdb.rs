@@ -33,12 +33,6 @@
 //!
 //! Everything runs on the real-PE path (loading an actual PE), so the XML
 //! datatest 675/158 oracles never reach this.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -126,14 +120,14 @@ fn name_at_compute(prog: &ConsoleProgram) -> String {
     }
 }
 
-/// Bootstrap the run, commit the (gated) PDB facts, and return the symbol-table
-/// name at `COMPUTE_VMA`. `None` ⇒ a specs-less skip.
+/// Bootstrap the run, commit the (gated) PDB facts, and return the symbol-table name at
+/// `COMPUTE_VMA`.
 ///
-/// The `.pdb` is located by the pass at LOAD (the facts are stashed during
-/// bootstrap), so `kuna_pdb_path` is set BEFORE `bootstrap_from_object` and always
-/// cleared after, so runs do not leak into one another. The `option` line is
-/// applied before the deferred commit, matching live-CLI ordering.
-fn run(r: Run) -> Option<String> {
+/// The `.pdb` is located by the pass at LOAD (the facts are stashed during bootstrap), so
+/// `kuna_pdb_path` is set BEFORE `bootstrap_from_object` and always cleared after, so runs
+/// do not leak into one another. The `option` line is applied before the deferred commit,
+/// matching live-CLI ordering.
+fn run(r: Run) -> String {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     assert!(r.exe.exists(), "missing fixture {:?}", r.exe);
@@ -145,23 +139,14 @@ fn run(r: Run) -> Option<String> {
     let prog = bootstrap_from_object(r.exe.to_str().unwrap(), "", &spec_roots);
     std::env::remove_var(PDB_PATH_ENV);
 
-    let mut prog = match prog {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_pdb: skipping (bootstrap failed, build `.sla` with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = prog.expect("bootstrap fixture with built processor specs");
 
     if r.force_off {
         prog.arch_mut().set_kuna_option("pdb", "off").expect("pdb flips off");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
-    Some(name_at_compute(&prog))
+    name_at_compute(&prog)
 }
 
 /// Is `name` an engine-generated placeholder (`FUN_*`/`sub_*`/`func_*`/`LAB_*`)?
@@ -178,10 +163,8 @@ fn is_placeholder(name: &str) -> bool {
 #[test]
 fn pdb_sidecar_names_the_function_by_default() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(on) = run(Run::fixture()) else {
-        return; // specs-less skip
-    };
-    let off = run(Run::fixture().option_off()).expect("second bootstrap succeeds if the first did");
+    let on = run(Run::fixture());
+    let off = run(Run::fixture().option_off());
 
     eprintln!("==== 0x{COMPUTE_VMA:x}  default: {on:>24}   option off: {off:>24} ====");
 
@@ -205,11 +188,8 @@ fn pdb_sidecar_names_the_function_by_default() {
 #[test]
 fn pdb_name_follows_the_sidecar_file() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(alone) = run(Run::isolated("alone")) else {
-        return; // specs-less skip
-    };
-    let beside = run(Run::isolated("beside").with_sidecar(&fixtures().join("pdb_prog.pdb")))
-        .expect("bootstrap succeeds if the first did");
+    let alone = run(Run::isolated("alone"));
+    let beside = run(Run::isolated("beside").with_sidecar(&fixtures().join("pdb_prog.pdb")));
 
     eprintln!("==== EXE alone: {alone:>24}   EXE + .pdb: {beside:>24} ====");
 
@@ -226,9 +206,7 @@ fn pdb_fingerprint_gate_rejects_a_stale_sidecar() {
     let mismatch = fixtures().join("pdb_prog_mismatch.pdb");
     assert!(mismatch.exists(), "missing mismatch fixture {mismatch:?}");
 
-    let Some(stale) = run(Run::isolated("stale").with_sidecar(&mismatch)) else {
-        return; // specs-less skip
-    };
+    let stale = run(Run::isolated("stale").with_sidecar(&mismatch));
 
     eprintln!("==== stale sidecar: {stale:>24} ====");
 
@@ -252,15 +230,12 @@ fn pdb_explicit_path_is_tried_first_and_falls_through() {
     let mismatch = fixtures().join("pdb_prog_mismatch.pdb");
 
     // No sidecar anywhere near the EXE: only the env var can supply the `.pdb`.
-    let Some(explicit) = run(Run::isolated("explicit").env(matching.clone())) else {
-        return; // specs-less skip
-    };
+    let explicit = run(Run::isolated("explicit").env(matching.clone()));
     // An explicit path that does not match, with a matching sidecar present.
-    let fell_through = run(Run::fixture().env(mismatch.clone()))
-        .expect("bootstrap succeeds if the first did");
+    let fell_through = run(Run::fixture().env(mismatch.clone()));
     // An explicit path that does not match, with nothing else to fall back to.
     let nothing_left =
-        run(Run::isolated("nofallback").env(mismatch)).expect("bootstrap succeeds if the first did");
+        run(Run::isolated("nofallback").env(mismatch));
 
     eprintln!(
         "==== env only: {explicit:>24}   env mismatch + sidecar: {fell_through:>24}   env mismatch alone: {nothing_left:>24} ===="

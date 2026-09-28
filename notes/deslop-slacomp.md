@@ -23,3 +23,67 @@ revision `cef869af04c4740a71ad31a55704045b1b0d1644`. Both compilers compiled all
 44 selected specs into temporary files. Their decompressed element streams
 matched byte-for-byte for every spec. Neither the installed `.sla` files nor
 the vendored sources were modified.
+
+The independent oracle is now persistent: `tests/golden/compiler.sha256` records
+those 44 C++ output digests, and `tests/compiler_parity.rs` compiles every listed
+source against them. This replaces four historical test groups and their
+repeated fixture list with one manifest-driven check. Each run owns a temporary
+directory, avoiding the shared `/tmp/ws4b_<name>.sla` filenames.
+
+Two concurrent test processes passed with all 149 worktree `.sla` symlinks
+temporarily absent. A deliberately incorrect expected digest failed, and the
+restored manifest passed. The documented C++ regeneration command reproduced
+the manifest exactly. Hashing and temporary-file dependencies are test-only;
+the compiler's production dependency graph is unchanged.
+
+Compiler CLI parsing now shares filename suffix handling. Previously an omitted
+extension was rejected whenever any parent directory contained a dot, including
+the leading `./` in this command:
+
+```sh
+decompiler/target/release/slacomp ./decompiler/crates/kuna-slacomp/tests/golden/snips/data_le_64 /tmp/data.sla
+```
+
+The unpatched compiler reports `Unknown input file type:` followed by the input
+path. Both input and output now inspect only the filename. Existing explicit
+suffixes, dotfiles and unknown-extension errors are preserved. Single-file mode
+also rejects extra positional arguments instead of silently ignoring them; the
+usage header no longer advertises unsupported flags.
+
+Five CLI tests cover these cases. The two omitted-extension regressions and the
+extra-argument regression fail before the fix; all five pass afterward. Nine
+command comparisons against the pinned C++ compiler agree on exit status and
+decompressed output bytes, and previously accepted cases retain identical
+compiled output. Fifty interleaved timing samples after warmup measured median
+compilation times of 4.280 ms before and 4.246 ms after (-0.8%, within noise).
+
+The independent CLI cleanup snapshot passed all four gates: 675 upstream and
+1,467 stage assertions, 7,699 workspace tests with 38 existing ignores, and the
+spec check. The option catalog also passed. No baseline expectations changed.
+
+The compiler also accepted `-y` without selecting XML output. Wiring that flag
+to the existing XML encoder exposed a second defect: a binary-only opcode
+adapter replaced names such as `BUILD` with numbers. The encoding path now
+retains `OpcodeEncoder` through the symbol table and constructor templates,
+removing the adapter and its forwarding implementation. Both encoders use their
+existing opcode representation. Rust callers supplying custom encoders to this
+path must implement `OpcodeEncoder`; the workspace's XML and packed encoders
+already do.
+
+The XML fixture comes from the pinned C++ compiler and includes `BUILD` and
+`INT_ADD`. Its CLI regression checks single-file and recursive modes; the
+preserved pre-fix binary demonstrates both ignored `-y` and numeric XML opcodes.
+All 44 selected specs now produce XML identical to C++ byte-for-byte, while
+the same 44 default binary-output digests remain unchanged. The 357 compiler
+and SLEIGH release tests passed. The encoding round-trip tests also shed an
+unneeded decompression wrapper and obsolete claims that locally built specs
+were independent C++ fixtures.
+
+Fifty interleaved samples after warmup measured Toy-builder default compilation
+at 8.646 ms before and 7.681 ms after (-11.2% on this fixture and host). The
+complete binary output was identical. This is a local measurement, not a claim
+about other specs or machines.
+
+The independent XML cleanup snapshot passed all four gates: 675 upstream and
+1,467 stage assertions, 7,700 workspace tests with 38 existing ignores, and the
+spec check. The option catalog passed, and no baseline expectations changed.

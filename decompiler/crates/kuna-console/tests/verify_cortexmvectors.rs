@@ -45,12 +45,6 @@
 //! decompiles to its real constant (`movs r0,#7 ; bx lr` → `return 7;`). Decoding
 //! those bytes as A32 does not produce that, so the arithmetic IS the Thumb-paint
 //! proof.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built ARM `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -79,31 +73,21 @@ const SYSTICK_HANDLER: &str = "sub_800800c";
 /// (`movs r0,#0 ; bx lr`). Its C body is the Thumb-paint witness.
 const START: &str = "sub_8008010";
 
-/// Bootstrap the fixture, optionally flip `cortexmvectors` on (before the
-/// deferred commit, the live-CLI ordering), commit, and hand back the program.
-/// `None` ⇒ specs-less skip.
-fn bootstrap(on: bool) -> Option<kuna_console::engine::ConsoleProgram> {
+/// Bootstrap the fixture, optionally flip `cortexmvectors` on (before the deferred commit,
+/// the live-CLI ordering), commit, and hand back the program.
+fn bootstrap(on: bool) -> kuna_console::engine::ConsoleProgram {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_cortexmvectors: skipping (bootstrap failed, build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     if on {
         prog.arch_mut()
             .set_kuna_option("cortexmvectors", "on")
             .expect("cortexmvectors flips on");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Decompile `func` in an already-bootstrapped program and return the captured C.
@@ -129,9 +113,7 @@ fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
 /// registered and the whole firmware is one undecodable function.
 #[test]
 fn default_misses_the_ccm_relocated_vector_table() {
-    let Some(off) = bootstrap(false) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(false);
     for h in [RESET_HANDLER, NMI_HANDLER, HARDFAULT_HANDLER, SYSTICK_HANDLER] {
         assert!(
             off.lookup_symbol(h).is_none(),
@@ -157,9 +139,7 @@ fn default_misses_the_ccm_relocated_vector_table() {
 /// makes each of them decompile to its real constant.
 #[test]
 fn cortexmvectors_recovers_the_handlers_and_paints_thumb() {
-    let Some(on) = bootstrap(true) else {
-        return; // specs-less skip
-    };
+    let on = bootstrap(true);
     for (h, want) in [
         (RESET_HANDLER, "return 1;"),
         (NMI_HANDLER, "return 7;"),
@@ -170,7 +150,7 @@ fn cortexmvectors_recovers_the_handlers_and_paints_thumb() {
             on.lookup_symbol(h).is_some(),
             "cortexmvectors must discover the vector handler {h} (it did not)"
         );
-        let Some(prog) = bootstrap(true) else { return };
+        let prog = bootstrap(true);
         let body = decompile(prog, h);
         eprintln!("---- {h} (cortexmvectors on) ----\n{body}");
         assert!(
@@ -181,7 +161,7 @@ fn cortexmvectors_recovers_the_handlers_and_paints_thumb() {
     }
     // The pre-existing `e_entry` function now decodes too — the region paint is
     // what a per-entry paint cannot supply.
-    let Some(prog) = bootstrap(true) else { return };
+    let prog = bootstrap(true);
     let body = decompile(prog, START);
     eprintln!("---- {START} (cortexmvectors on) ----\n{body}");
     assert!(

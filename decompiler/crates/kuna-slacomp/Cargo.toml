@@ -17,6 +17,8 @@ kuna-sleigh.workspace = true
 [dev-dependencies]
 # Compare decompressed .sla element streams in the encoding tests.
 flate2.workspace = true
+sha2 = "0.11"
+tempfile = "3.27"
 
 [lints]
 workspace = true

@@ -27,13 +27,6 @@
 //! with `r_offset` equal to the entry address. The `.plt` is the standard
 //! 32-byte `sethi %hi(...),%g1; b,a %xcc,<resolver>; nop*6` veneer the decoder
 //! recognizes (a 4-slot / 0x80-byte reserved PLT0 header precedes the imports).
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built SPARC `sparc.default.sla` under `specs/`
-//! (gitignored; `make specs`). When absent the bootstrap fails; the test prints
-//! that and returns early (a specs-less CI is a visible skip, never a false
-//! green).
 
 use std::path::PathBuf;
 
@@ -57,25 +50,13 @@ fn sparc_plt_calls_are_named_in_decompiled_c() {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = plt_sparc64();
-    let bin = match bin.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
     // The arch is auto-detected from the ELF machine (SPARC v9, ELF64, BE); the
     // loader picks the `sparc:BE:64:default` language and bootstrap resolves the
     // SPARC `.sla`.
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_sparc_plt: skipping (bootstrap failed, build the SPARC `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The PLT imports are resolvable as functions (the elf_plt SPARC markup), and
     // the local `.symtab` `main` resolves.

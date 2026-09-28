@@ -21,13 +21,6 @@
 //!
 //! The ASCII argument is the control: it must render identically on both arms, so
 //! the width the pass already had is untouched.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_*` gates, bootstrapping needs the built `x86` `.sla`
-//! under `specs/` (gitignored; `make specs`). When it is absent the bootstrap
-//! fails; the test prints that and returns early (a specs-less CI is a visible
-//! skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -43,31 +36,22 @@ fn fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/widestrings_x86_64.exe")
 }
 
-/// Bootstrap the fixture, set `widestrings`, commit the analysis facts and return
-/// the C of the entry function — `None` when the `.sla` is not built.
-fn decompile_entry(widestrings: bool) -> Option<String> {
+/// Bootstrap the fixture, set `widestrings`, commit the analysis facts and return the C of
+/// the entry function.
+fn decompile_entry(widestrings: bool) -> String {
     decompile_entry_with(widestrings, false)
 }
 
 /// The same, with the `operand_refs` scalar-markup pass forced on — the shape a
 /// default `kuna decompile` runs (`auto` -> `aggressive`).
-fn decompile_entry_with(widestrings: bool, operand_refs: bool) -> Option<String> {
+fn decompile_entry_with(widestrings: bool, operand_refs: bool) -> String {
     let root = repo_root();
     let specs = root.join("specs");
-    let spec_roots = vec![specs.to_str()?.to_string()];
-    let bin = fixture().to_str()?.to_string();
+    let spec_roots = vec![specs.to_str().expect("UTF-8 specs path").to_string()];
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
 
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_widestrings: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().analysis_widestrings = widestrings;
     prog.arch_mut().analysis_operand_refs = operand_refs;
     prog.commit_pending_analysis().expect("analysis commit succeeds");
@@ -85,12 +69,12 @@ fn decompile_entry_with(widestrings: bool, operand_refs: bool) -> Option<String>
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 #[test]
 fn wide_literal_renders_whole_with_the_width_on() {
-    let Some(out) = decompile_entry(true) else { return };
+    let out = decompile_entry(true);
     assert!(
         out.contains(r#"LoadLibraryW(L"ntdll.dll")"#),
         "expected the whole wide literal `LoadLibraryW(L\"ntdll.dll\")`, got:\n{out}"
@@ -108,7 +92,7 @@ fn wide_literal_renders_whole_with_the_width_on() {
 
 #[test]
 fn wide_literal_is_unmarked_with_the_width_off() {
-    let Some(out) = decompile_entry(false) else { return };
+    let out = decompile_entry(false);
     assert!(
         !out.contains("ntdll.dll"),
         "off must mark up nothing at 2-byte width, got:\n{out}"
@@ -130,13 +114,13 @@ fn wide_literal_is_unmarked_with_the_width_off() {
 /// wins the shared commit stream, which is the ordering half of the fix.
 #[test]
 fn the_width_outranks_the_scalar_markup_that_read_one_character() {
-    let Some(off) = decompile_entry_with(false, true) else { return };
+    let off = decompile_entry_with(false, true);
     assert!(
         off.contains(r#"LoadLibraryW("n")"#),
         "expected the recorded defect `LoadLibraryW(\"n\")` with operand_refs on \
          and the width off, got:\n{off}"
     );
-    let Some(on) = decompile_entry_with(true, true) else { return };
+    let on = decompile_entry_with(true, true);
     assert!(
         on.contains(r#"LoadLibraryW(L"ntdll.dll")"#),
         "the 2-byte width must outrank the scalar markup's one-character read, \
@@ -154,10 +138,8 @@ fn the_commit_plants_a_symbol_at_the_wide_literal() {
     let bin = fixture().to_str().unwrap().to_string();
 
     for (on, want) in [(true, true), (false, false)] {
-        let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-            Ok(p) => p,
-            Err(_) => return, // no `.sla`: the sibling tests already report the skip
-        };
+        let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+            .expect("bootstrap fixture with built processor specs");
         prog.arch_mut().analysis_widestrings = on;
         prog.commit_pending_analysis().expect("analysis commit succeeds");
         let arch = prog.arch();

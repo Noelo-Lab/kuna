@@ -29,12 +29,6 @@
 //! fixture is re-homed to x86-64. The byte-exact PR2 hasher, the `.fid` format,
 //! the generator, and the rebasing are all architecture-agnostic.
 //!
-//! # `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
-
 use std::path::PathBuf;
 
 use kuna_analysis::loadimage_object::ObjectLoadImage;
@@ -57,43 +51,33 @@ fn fixture_fid() -> PathBuf {
 const LANG: &str = "x86:LE:64:default";
 const CSPEC: &str = "gcc";
 
-/// Build the FID records for the fixture `.o` in-process, or `None` on a
-/// specs-less skip.
-fn records_for_fixture() -> Option<Vec<kuna_analysis::fid::db::FidRecord>> {
+/// Build the FID records for the fixture `.o` in-process.
+fn records_for_fixture() -> Vec<kuna_analysis::fid::db::FidRecord> {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture_o().to_str()?.to_string();
+    let bin = fixture_o().to_str().expect("UTF-8 fixture path").to_string();
     // The fixture is x86-64; pass the language explicitly so the bootstrap
     // resolves `x86:LE:64:default` (the `.o`'s machine is EM_X86_64, which
     // derives to the same id — the explicit target just pins it).
-    let prog = match bootstrap_from_object(&bin, LANG, &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_fid_build: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, LANG, &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     let arch = prog.arch();
 
     let bytes = std::fs::read(&bin).expect("read fixture .o");
     let image = ObjectLoadImage::from_bytes(&bin, &bytes).expect("open loadimage");
-    Some(build_records(
+    build_records(
         &bytes,
         &image,
         arch,
         arch.translate().as_sleigh().expect("standalone Sleigh engine"),
-    ))
+    )
 }
 
 #[test]
 fn generator_recovers_the_three_functions_by_name() {
-    let Some(records) = records_for_fixture() else { return };
+    let records = records_for_fixture();
 
     let names: Vec<&str> = records.iter().map(|r| r.name.as_str()).collect();
     assert!(
@@ -126,7 +110,7 @@ fn generator_recovers_the_three_functions_by_name() {
 
 #[test]
 fn generator_records_round_trip_through_the_db() {
-    let Some(records) = records_for_fixture() else { return };
+    let records = records_for_fixture();
 
     // Build a DB from the freshly generated records, serialize, reload, and
     // assert every record is recoverable by its full hash, field-for-field.
@@ -145,7 +129,7 @@ fn generator_records_round_trip_through_the_db() {
 
 #[test]
 fn fresh_generate_matches_the_vendored_fid() {
-    let Some(records) = records_for_fixture() else { return };
+    let records = records_for_fixture();
 
     // The vendored `.fid` is the committed output of `kuna fid build` over the
     // same `.o`. A fresh in-process generate must reproduce the SAME records —

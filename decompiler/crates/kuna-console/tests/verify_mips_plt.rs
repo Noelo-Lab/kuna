@@ -28,12 +28,6 @@
 //! (`0x400700`) calls `puts` (GOT slot `0x411040` → stub `0x400800`) and `printf`
 //! (GOT slot `0x411044` → stub `0x4007f0`); there are no PLT relocations — the
 //! names come from the dynamic-symbol GOT layout.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built MIPS `mips32be.sla` under `specs/` (gitignored;
-//! `make specs`). When absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -57,24 +51,12 @@ fn mips32_imports_are_named_in_decompiled_c() {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = plt_mips32();
-    let bin = match bin.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
     // The arch is auto-detected from the ELF machine (MIPS, big-endian); the loader
     // picks `MIPS:BE:32:default:default` and bootstrap resolves `mips32be.sla`.
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_mips_plt: skipping (bootstrap failed, build the MIPS `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The imports are resolvable as functions (the elf_plt MIPS markup), and the
     // local `.symtab` `main` resolves.
@@ -100,9 +82,6 @@ fn mips32_imports_are_named_in_decompiled_c() {
     }
     let out = status.optr.clone();
 
-    // This must be a REAL decode, not a skip: if the MIPS `.sla` were missing the
-    // bootstrap would have returned early above; reaching here means the engine
-    // actually decoded the big-endian MIPS instruction stream of `main`.
     assert!(out.contains("main"), "expected a decompiled `main` body, got:\n{out}");
 
     // The library calls are named (the `$gp`-relative GOT load was folded to the

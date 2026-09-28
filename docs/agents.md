@@ -55,6 +55,11 @@ the suite starts on the label alone. (It also always runs pre-merge on a fork PR
 *Run workflow*.) Run all four locally regardless: the workspace suite is the long pole in
 CI, so local failures are found far sooner.
 
+The workspace integration tests require built processor specs. Missing or
+unusable specs are failures, not skips; use the worktree symlink procedure below
+when reusing another checkout's build. Tests for optional external toolchains may
+skip when the tool is absent, but a failed build with an installed tool is an error.
+
 Python tooling unit tests run with `make test-tools` and are also required by CI.
 They use temporary state directories, not the live pipeline inventory.
 

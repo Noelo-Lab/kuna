@@ -541,7 +541,7 @@ impl SleighBase {
     /// `SymbolTable::encode`, and the per-symbol/pattern/semantics `encode`
     /// methods underneath) was already ported for the decoder round-trip and is
     /// reused verbatim.
-    pub fn encode(&self, encoder: &mut dyn Encoder) -> KunaResult<()> {
+    pub fn encode(&self, encoder: &mut dyn OpcodeEncoder) -> KunaResult<()> {
         encoder.open_element(&sla::ELEM_SLEIGH);
         encoder.write_signed_integer(&sla::ATTRIB_VERSION, i64::from(sla::FORMAT_VERSION));
         encoder.write_bool(&sla::ATTRIB_BIGENDIAN, self.base.is_big_endian());
@@ -789,14 +789,13 @@ impl SleighBaseTrans for SlaTrans<'_> {
         &self,
         handle: ConstructTplHandle,
         section_id: i32,
-        encoder: &mut dyn Encoder,
+        encoder: &mut dyn OpcodeEncoder,
     ) -> KunaResult<()> {
         let tpl = self
             .templates
             .get(handle)
             .ok_or_else(|| KunaError::sleigh("bad ConstructTpl handle"))?;
-        let mut shim = OpcodeEncodeShim { inner: encoder };
-        tpl.encode(&mut shim, section_id);
+        tpl.encode(encoder, section_id);
         Ok(())
     }
 }
@@ -829,20 +828,6 @@ impl OpcodeDecoder for OpcodeShim<'_, '_> {
         attrib_id: &kuna_base::marshal::AttributeId,
     ) -> KunaResult<OpCode> {
         opcode_from_packed_integer(self.inner.read_signed_integer_id(attrib_id)?)
-    }
-}
-
-/// Encoder counterpart of [`OpcodeShim`] (the packed `writeOpcode` body:
-/// a signed integer holding the raw enum value).
-struct OpcodeEncodeShim<'a, 'b> {
-    inner: &'a mut (dyn Encoder + 'b),
-}
-
-impl OpcodeEncoder for OpcodeEncodeShim<'_, '_> {
-    fn write_opcode(&mut self, attrib_id: &kuna_base::marshal::AttributeId, opc: OpCode) {
-        // marshal.cc `PackedEncode::writeOpcode`: write the enum as a signed
-        // integer.
-        self.inner.write_signed_integer(attrib_id, opc as i64);
     }
 }
 
@@ -951,39 +936,6 @@ macro_rules! forward_decoder {
 }
 
 forward_decoder!(OpcodeShim<'_, '_>);
-
-// Forward the Encoder surface from the encode shim to the inner encoder.
-impl Encoder for OpcodeEncodeShim<'_, '_> {
-    fn open_element(&mut self, elem_id: &kuna_base::marshal::ElementId) {
-        self.inner.open_element(elem_id)
-    }
-    fn close_element(&mut self, elem_id: &kuna_base::marshal::ElementId) {
-        self.inner.close_element(elem_id)
-    }
-    fn write_bool(&mut self, attrib_id: &kuna_base::marshal::AttributeId, val: bool) {
-        self.inner.write_bool(attrib_id, val)
-    }
-    fn write_signed_integer(&mut self, attrib_id: &kuna_base::marshal::AttributeId, val: i64) {
-        self.inner.write_signed_integer(attrib_id, val)
-    }
-    fn write_unsigned_integer(&mut self, attrib_id: &kuna_base::marshal::AttributeId, val: u64) {
-        self.inner.write_unsigned_integer(attrib_id, val)
-    }
-    fn write_string(&mut self, attrib_id: &kuna_base::marshal::AttributeId, val: &[u8]) {
-        self.inner.write_string(attrib_id, val)
-    }
-    fn write_string_indexed(
-        &mut self,
-        attrib_id: &kuna_base::marshal::AttributeId,
-        index: u32,
-        val: &[u8],
-    ) {
-        self.inner.write_string_indexed(attrib_id, index, val)
-    }
-    fn write_space(&mut self, attrib_id: &kuna_base::marshal::AttributeId, spc: &AddrSpace) {
-        self.inner.write_space(attrib_id, spc)
-    }
-}
 
 impl SleighBase {
     /// Convenience: the manager owning the spaces (for the engine).

@@ -27,13 +27,6 @@
 //! * **determinism** — two loads of the same bytes produce the same folded
 //!   spelling, which a `DefaultHasher`/`RandomState` fold would not;
 //! * **`off`** — byte-for-byte the pre-fix behavior.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_symbolnamerepair` gate, bootstrapping needs the built
-//! `x86` `.sla` under `specs/` (gitignored; `make specs`). When it is absent the
-//! bootstrap fails; the test prints that and returns early (a specs-less CI is a
-//! visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -102,16 +95,8 @@ fn load(bin: &str, bound: Option<&str>) -> Result<Loaded, String> {
     out.map_err(|e| e.explain().to_string())
 }
 
-/// Whether the `.sla` is present, so a bootstrap failure means what it says.
-/// Returns `false` (and prints) when it is not — a visible skip.
-fn specs_available() -> bool {
-    match load(&fixture("deep_scope_x86_64"), None) {
-        Err(e) if e.contains("sleigh specification") || e.contains(".sla") => {
-            eprintln!("verify_symbolnamebound: skipping (no `.sla`, build with `make specs`): {e}");
-            false
-        }
-        _ => true,
-    }
+fn require_specs() {
+    load(&fixture("deep_scope_x86_64"), None).expect("load required fixture with built processor specs");
 }
 
 /// The deep name, as each arm installed it.
@@ -132,9 +117,7 @@ fn depth(name: &str) -> usize {
 /// the resource the issue is about — measured as allocated `Scope`s.
 #[test]
 fn the_bound_holds_and_off_restores_the_unbounded_behavior() {
-    if !specs_available() {
-        return;
-    }
+    require_specs();
     let bin = fixture("deep_scope_x86_64");
 
     let on = load(&bin, None).expect("the fixture must load at the shipped default");
@@ -176,9 +159,7 @@ fn the_bound_holds_and_off_restores_the_unbounded_behavior() {
 /// mode this test exists to make impossible to reintroduce.
 #[test]
 fn the_original_name_still_resolves_through_the_fold() {
-    if !specs_available() {
-        return;
-    }
+    require_specs();
     let bin = fixture("deep_scope_x86_64");
 
     let on = load(&bin, None).expect("load at the default");
@@ -210,9 +191,7 @@ fn the_original_name_still_resolves_through_the_fold() {
 /// digits across processes.
 #[test]
 fn the_folded_spelling_is_deterministic() {
-    if !specs_available() {
-        return;
-    }
+    require_specs();
     let bin = fixture("deep_scope_x86_64");
     let a = deep_name(&load(&bin, None).expect("load"));
     let b = deep_name(&load(&bin, None).expect("load"));
@@ -236,9 +215,7 @@ fn the_folded_spelling_is_deterministic() {
 /// not asserted.
 #[test]
 fn a_real_cpp_binary_is_byte_identical_with_the_bound_on_and_off() {
-    if !specs_available() {
-        return;
-    }
+    require_specs();
     let bin = fixture("anon_namespace_x86_64");
     let on = load(&bin, None).expect("a real C++ binary must load at the default");
     let off = load(&bin, Some("off")).expect("and unbounded");

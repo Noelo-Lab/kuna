@@ -88,6 +88,7 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::{Decoder, Encoder};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::Wrap;
+use kuna_num::opcodes::OpcodeEncoder;
 use kuna_num::pcoderaw::VarnodeData;
 
 use crate::context::{FixedHandle, Token};
@@ -237,12 +238,8 @@ pub trait SymbolWalkerChange: SymbolWalker {
 /// storage).
 pub type ConstructTplHandle = usize;
 
-/// Boundary standing in for the `SleighBase *trans` argument of the symbol
-/// decode/encode methods, reduced to what slghsymbol.cc pulls from it
-/// beyond symbol-id storage: `trans->getConstantSpace()` and the
-/// `ConstructTpl` (semantics.hh) decode/encode, which belongs to the
-/// unported semantics wave.  Symbol-id resolution (`trans->findSymbol`)
-/// stays inside [`SymbolTable`].
+/// Supplies the constant space and constructor-template storage for symbol
+/// decoding and encoding. Symbol-id resolution stays inside [`SymbolTable`].
 pub trait SleighBaseTrans {
     /// C++ `trans->getConstantSpace()`.
     fn get_constant_space(&self) -> Rc<AddrSpace>;
@@ -260,7 +257,7 @@ pub trait SleighBaseTrans {
         &self,
         handle: ConstructTplHandle,
         section_id: i32,
-        encoder: &mut dyn Encoder,
+        encoder: &mut dyn OpcodeEncoder,
     ) -> KunaResult<()>;
 }
 
@@ -1703,7 +1700,11 @@ impl Constructor {
     }
 
     /// C++ `Constructor::encode`.
-    pub fn encode(&self, encoder: &mut dyn Encoder, trans: &dyn SleighBaseTrans) -> KunaResult<()> {
+    pub fn encode(
+        &self,
+        encoder: &mut dyn OpcodeEncoder,
+        trans: &dyn SleighBaseTrans,
+    ) -> KunaResult<()> {
         encoder.open_element(&sla::ELEM_CONSTRUCTOR);
         // C++ dereferences parent unconditionally
         let parent = self
@@ -3431,7 +3432,11 @@ impl SleighSymbol {
     /// C++ virtual `encode` (symbol content).  Kinds without a content
     /// encode throw the base `LowlevelError`; `SubtableSymbol::encode` is
     /// silently skipped when not fully formed, as upstream.
-    pub fn encode(&self, encoder: &mut dyn Encoder, trans: &dyn SleighBaseTrans) -> KunaResult<()> {
+    pub fn encode(
+        &self,
+        encoder: &mut dyn OpcodeEncoder,
+        trans: &dyn SleighBaseTrans,
+    ) -> KunaResult<()> {
         match &self.kind {
             SymbolKind::UserOp(v) => {
                 encoder.open_element(&sla::ELEM_USEROP);
@@ -4697,7 +4702,11 @@ impl SymbolTable {
     }
 
     /// C++ `SymbolTable::encode`.
-    pub fn encode(&self, encoder: &mut dyn Encoder, trans: &dyn SleighBaseTrans) -> KunaResult<()> {
+    pub fn encode(
+        &self,
+        encoder: &mut dyn OpcodeEncoder,
+        trans: &dyn SleighBaseTrans,
+    ) -> KunaResult<()> {
         encoder.open_element(&sla::ELEM_SYMBOL_TABLE);
         // size_t -> intb counts as in C++ writeSignedInteger(..., size())
         encoder.write_signed_integer(&sla::ATTRIB_SCOPESIZE, self.table.len() as i64);
@@ -5356,7 +5365,7 @@ mod tests {
             &self,
             _handle: ConstructTplHandle,
             _section_id: i32,
-            _encoder: &mut dyn Encoder,
+            _encoder: &mut dyn OpcodeEncoder,
         ) -> KunaResult<()> {
             Err(KunaError::sleigh("no ConstructTpl in symbol tests"))
         }
@@ -6407,6 +6416,5 @@ mod tests {
         }
     }
 }
-
 
 

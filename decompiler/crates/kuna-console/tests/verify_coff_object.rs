@@ -42,13 +42,6 @@
 //! confirms the `.obj` routes through the default `load file` dispatch to the
 //! object loader (the byte-identical-dispatch proof shared with
 //! `verify_object_formats` / `verify_pe_imports`).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling console gates, bootstrapping needs the built `x86` `.sla`
-//! under `specs/` (gitignored; `make specs`). If it is absent the bootstrap fails
-//! and the test prints that and returns early (a visible skip, never a false
-//! green).
 
 use std::path::PathBuf;
 
@@ -87,25 +80,15 @@ fn decompile_func(prog: ConsoleProgram, func_cmd: &str) -> String {
     status.optr.clone()
 }
 
-/// Bootstrap the COFF object, returning `None` (a visible skip) when the `.sla`
-/// is absent.
-fn boot() -> Option<ConsoleProgram> {
+/// Bootstrap the COFF object.
+fn boot() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("coff_obj.obj");
     assert!(path.exists(), "missing fixture {path:?}");
 
-    match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_coff_object: skipping (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// The headline: a pre-link COFF `.obj` loads, its defined function `compute`
@@ -116,23 +99,10 @@ fn coff_object_decompiles_named_function() {
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("coff_obj.obj");
 
-    // (default-on proof) The object loads through the *default* `load file`
-    // dispatch with no flag — multi-format support is unconditional. (A `.sla`-
-    // absent environment surfaces as a load error; the main body's skip covers
-    // that, so here we only assert the dispatch ROUTES to the object loader, i.e.
-    // it does not fail with the XML "not recognized" error.)
-    let dflt = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots);
-    if let Err(e) = &dflt {
-        // Only acceptable failure is a missing-`.sla` bootstrap error, never an
-        // "unrecognized format" rejection (that would mean the magic wasn't admitted).
-        let msg = e.explain();
-        assert!(
-            !msg.contains("Unable to recognize") && !msg.contains("XML"),
-            "default-on: the object must route to the object loader (got: {msg})"
-        );
-    }
+    kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots)
+        .expect("default dispatch loads object with built processor specs");
 
-    let Some(prog) = boot() else { return };
+    let prog = boot();
 
     // Loads with the Windows x86-64 spec (COFF objects are MSVC-flavored).
     let desc = prog.description().to_string();
@@ -181,7 +151,7 @@ fn coff_object_decompiles_named_function() {
 /// symbol-source table), not just the first.
 #[test]
 fn coff_object_decompiles_second_named_function() {
-    let Some(prog) = boot() else { return };
+    let prog = boot();
 
     let out = decompile_func(prog, "load function run");
 

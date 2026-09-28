@@ -36,13 +36,6 @@
 //! elements and never construct an `ObjectLoadImage`, so a `.symtab`-gated defect
 //! is invisible to `make test` and `make test-stages` in both directions. The
 //! whole coverage burden is here.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling loader gates, bootstrapping needs the built `x86` `.sla`
-//! under `specs/` (gitignored; `make specs`). When it is absent the bootstrap
-//! fails; the test prints that and returns early (a specs-less CI is a visible
-//! skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -65,8 +58,8 @@ fn fixture(name: &str) -> String {
         .to_string()
 }
 
-/// What one fixture load produced: the C for `main`, and the names the symbol
-/// table installed. `None` is the specs-less skip.
+/// What one fixture load produced: the C for `main`, and the names the symbol table
+/// installed.
 struct Loaded {
     code: String,
     names: Vec<String>,
@@ -77,22 +70,13 @@ struct Loaded {
 /// `commit_pending_analysis` is the exact call `kuna functions` /
 /// `decompile-all` / `decompile-project` make, and it is where every failure
 /// mode above surfaced — a panic here fails the test as loudly as an `Err`.
-fn load(name: &str) -> Option<Loaded> {
+fn load(name: &str) -> Loaded {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = fixture(name);
 
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_hostile_symbol_sizes: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis()
         .unwrap_or_else(|e| panic!("`read symbols` must survive `{name}`: {}", e.explain()));
 
@@ -112,7 +96,7 @@ fn load(name: &str) -> Option<Loaded> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(Loaded { code: status.optr.clone(), names })
+    Loaded { code: status.optr.clone(), names }
 }
 
 /// Every fixture is the same two-line program (`main` returns `g_a`) and differs
@@ -120,7 +104,7 @@ fn load(name: &str) -> Option<Loaded> {
 /// survives, `main` is in the symbol table, and the read of `0x402000` renders by
 /// the recovered name `g_a` rather than the anonymous `dat_402000`.
 fn assert_recovered(name: &str) {
-    let Some(Loaded { code, names }) = load(name) else { return }; // specs-less skip
+    let Loaded { code, names } = load(name);
 
     assert!(
         names.iter().any(|n| n == "main"),

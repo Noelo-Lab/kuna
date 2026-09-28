@@ -21,13 +21,6 @@
 //!    `int accumulator`/`int counter` instead of `local_10`/`local_c`. (cet_pie's
 //!    own locals are write-once spill slots the engine eliminates, so they never
 //!    render — the dedicated fixture is what proves the install path.)
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_w11_*` gates, bootstrapping needs the built `x86`
-//! `.sla` under `specs/` (gitignored; `make specs`). When it is absent the
-//! bootstrap fails; the test prints that and returns early (a specs-less CI is a
-//! visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -44,8 +37,8 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 /// Bootstrap a fixture and drive `load function <fn>` -> `decompile` -> `print C`,
-/// returning the captured C output (or `None` if the `.sla` is absent — a skip).
-fn decompile_c(fixture_name: &str, func: &str) -> Option<String> {
+/// returning the captured C output.
+fn decompile_c(fixture_name: &str, func: &str) -> String {
     decompile_c_with(fixture_name, func, &[])
 }
 
@@ -53,25 +46,16 @@ fn decompile_c(fixture_name: &str, func: &str) -> Option<String> {
 /// `load function` (the analysis commit is deferred to `load function`/`read
 /// symbols`, so a gate must be flipped before then). Each `pre_options` entry is
 /// a full console command, e.g. `"option dwarf_lines on"`.
-fn decompile_c_with(fixture_name: &str, func: &str, pre_options: &[&str]) -> Option<String> {
+fn decompile_c_with(fixture_name: &str, func: &str, pre_options: &[&str]) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = fixture(fixture_name);
-    let bin = bin.to_str()?.to_string();
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_s1_dwarf: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let mut cmds: Vec<String> = pre_options.iter().map(|s| s.to_string()).collect();
     cmds.extend([format!("load function {func}"), "decompile".into(), "print C".into()]);
@@ -86,7 +70,7 @@ fn decompile_c_with(fixture_name: &str, func: &str, pre_options: &[&str]) -> Opt
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 #[test]
@@ -94,9 +78,7 @@ fn dwarf_stripped_recovers_function_name() {
     // The .symtab FUNC names are stripped; only DWARF names `add_values`. The
     // function must be loadable + decompilable by its DWARF name, and its body
     // must not render as a `FUN_`/`sub_` placeholder for itself.
-    let Some(out) = decompile_c("dwarf_stripped_x86_64", "add_values") else {
-        return;
-    };
+    let out = decompile_c("dwarf_stripped_x86_64", "add_values");
     // The DWARF name resolved (the header names the function, not a placeholder).
     assert!(
         out.contains("add_values"),
@@ -113,9 +95,7 @@ fn cet_pie_typed_signature_has_char_ptr() {
     // cet_pie is NOT stripped, so the name already comes from .symtab; the DWARF
     // win is the TYPED parameter `char *binary`. The decompiled signature must
     // carry a `char *` (the DWARF type), not the engine's default undefined8/long.
-    let Some(out) = decompile_c("cet_pie_x86_64", "elaborate_debug_symbol") else {
-        return;
-    };
+    let out = decompile_c("cet_pie_x86_64", "elaborate_debug_symbol");
     assert!(
         out.contains("elaborate_debug_symbol"),
         "expected the function name in the output, got:\n{out}"
@@ -131,9 +111,7 @@ fn stacklocal_renders_dwarf_named_typed_locals() {
     // subtask 3: compute_sum's `accumulator` is address-taken (passed to scanf), so
     // it survives as an addrtied stack slot — the DWARF name+type must bind, naming
     // the local `accumulator` (an `int`) rather than the engine's `local_*`.
-    let Some(out) = decompile_c("stacklocal_x86_64", "compute_sum") else {
-        return;
-    };
+    let out = decompile_c("stacklocal_x86_64", "compute_sum");
     assert!(
         out.contains("compute_sum"),
         "expected the function name in the output, got:\n{out}"
@@ -172,11 +150,8 @@ fn dwarf_lines_annotate_source_locations() {
     // surviving op to hang on and `CommentSorter` excises it (the same reason
     // cet_pie's write-once locals never render, see the typed-signature test). We
     // assert a body line (124) that maps to a surviving statement instead.
-    let Some(on) =
-        decompile_c_with("cet_pie_x86_64", "elaborate_debug_symbol", &["option dwarf_lines on"])
-    else {
-        return;
-    };
+    let on =
+        decompile_c_with("cet_pie_x86_64", "elaborate_debug_symbol", &["option dwarf_lines on"]);
     assert!(
         on.contains("elaborate_debug_symbol"),
         "expected the function name in the output, got:\n{on}"
@@ -194,9 +169,7 @@ fn dwarf_lines_annotate_source_locations() {
 
     // Default-OFF parity: the same function with the gate OFF (the default) carries
     // NO source-line comment — the output is byte-identical to pre-feature.
-    let Some(off) = decompile_c("cet_pie_x86_64", "elaborate_debug_symbol") else {
-        return;
-    };
+    let off = decompile_c("cet_pie_x86_64", "elaborate_debug_symbol");
     assert!(
         !off.contains("debug_symbol.c:"),
         "default (gate off) must NOT add source-line comments, got:\n{off}"

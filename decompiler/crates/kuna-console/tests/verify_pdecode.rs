@@ -17,12 +17,6 @@
 //! constructors carry `globalset`, so a decode at one address can change how
 //! another decodes and the gate must decline. Byte-identity there rests entirely
 //! on that, so it is asserted rather than assumed.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -103,20 +97,11 @@ struct Loaded {
 }
 
 /// Bootstrap `name` and collect the seed set the live path walks with.
-fn load(name: &str) -> Option<Loaded> {
+fn load(name: &str) -> Loaded {
     let bin = fixture(name);
     let path = bin.to_str().expect("fixture path").to_string();
-    let prog = match bootstrap_from_object(&path, "", &spec_roots()) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_pdecode: skipping {name} (bootstrap failed, build the `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let prog = bootstrap_from_object(&path, "", &spec_roots())
+        .expect("bootstrap fixture with built processor specs");
     let bytes = std::fs::read(&bin).expect("read fixture bytes");
     let file = object::File::parse(&*bytes).expect("parse fixture");
     // The entry oracles alone reach ~2 addresses on a symbol-carrying fixture;
@@ -129,14 +114,14 @@ fn load(name: &str) -> Option<Loaded> {
     }
     seeds.sort_unstable();
     seeds.dedup();
-    Some(Loaded { prog, bytes, path, seeds })
+    Loaded { prog, bytes, path, seeds }
 }
 
 /// Walk `name` serially, then on every (lanes, intervals-per-lane, detail) cell,
 /// and assert each parallel Listing equals the serial one. Returns the number of
 /// instructions the serial walk decoded.
 fn lanes_agree_everywhere(name: &str) -> usize {
-    let Some(loaded) = load(name) else { return 0 };
+    let loaded = load(name);
     let file = object::File::parse(&*loaded.bytes).expect("parse fixture");
     let image =
         kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(&loaded.path, &loaded.bytes)
@@ -228,7 +213,7 @@ fn decode_lanes_produce_the_serial_listing() {
 #[test]
 fn a_context_committing_language_is_refused() {
     for name in ["arm_thumb_linked_le32", "plt_mips32", "plt_ppc64le"] {
-        let Some(loaded) = load(name) else { continue };
+        let loaded = load(name);
         let plan = WalkPlan::for_lanes(loaded.prog.arch(), 8, 32, NO_SIZE_FLOOR);
         assert_eq!(
             plan.declined(),
@@ -243,7 +228,7 @@ fn a_context_committing_language_is_refused() {
 /// schedule is not the output, so a repeat must be identical too.
 #[test]
 fn repeated_lane_runs_are_identical() {
-    let Some(loaded) = load("mcount_x86_64") else { return };
+    let loaded = load("mcount_x86_64");
     let file = object::File::parse(&*loaded.bytes).expect("parse fixture");
     let image =
         kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(&loaded.path, &loaded.bytes)
@@ -278,7 +263,7 @@ fn repeated_lane_runs_are_identical() {
 /// `from_symbol` even where a CALL in another interval also targets it.
 #[test]
 fn seed_names_survive_the_merge() {
-    let Some(loaded) = load("fauxware") else { return };
+    let loaded = load("fauxware");
     let file = object::File::parse(&*loaded.bytes).expect("parse fixture");
     let image =
         kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes(&loaded.path, &loaded.bytes)

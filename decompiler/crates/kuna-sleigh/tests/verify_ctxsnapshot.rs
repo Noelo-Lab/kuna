@@ -5,11 +5,6 @@
 //! ascending. What must survive is exactly what a decode reads — the blob in
 //! force at each address — and that is what these gates pin, on x86-64 (a
 //! handful of split points) and on ARM after several `TMode` paints (many).
-//!
-//! ## `.sla` precondition
-//!
-//! The `.sla` files are build artifacts (gitignored; `make specs`). When one is
-//! absent the test prints that and returns rather than failing green.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -45,13 +40,13 @@ fn repo_root() -> PathBuf {
         .unwrap()
 }
 
-fn engine(rel: &str) -> Option<(Sleigh, Rc<AddrSpace>)> {
+fn engine(rel: &str) -> (Sleigh, Rc<AddrSpace>) {
     let path = repo_root().join("specs/Ghidra/Processors").join(rel);
-    let bytes = std::fs::read(&path).ok()?;
+    let bytes = std::fs::read(&path).expect("read compiled processor spec");
     let mut sleigh = Sleigh::new(Box::new(DummyImg), Box::new(ContextInternal::new()));
-    sleigh.initialize_from_sla(&bytes).ok()?;
-    let space = Rc::clone(sleigh.base().manager().get_default_code_space()?);
-    Some((sleigh, space))
+    sleigh.initialize_from_sla(&bytes).expect("initialize processor spec");
+    let space = Rc::clone(sleigh.base().manager().get_default_code_space().expect("default code space"));
+    (sleigh, space)
 }
 
 /// The blob in force at each probe address, as the decoder would read it.
@@ -75,7 +70,7 @@ fn round_trip(
     let snap = sleigh.with_context_db_mut(|db| snapshot_context(db, space));
     let want = probe(sleigh, space, probes);
 
-    let (other, other_space) = engine(rel).expect("second engine");
+    let (other, other_space) = engine(rel);
     other
         .with_context_db_mut(|db| restore_context(db, &snap, &other_space))
         .expect("restore a valid snapshot");
@@ -100,10 +95,7 @@ fn round_trip(
 #[test]
 fn x86_64_context_values_survive_a_copy() {
     let rel = "x86/data/languages/x86-64.sla";
-    let Some((sleigh, space)) = engine(rel) else {
-        eprintln!("verify_ctxsnapshot: skipping (no x86-64.sla; `make specs`)");
-        return;
-    };
+    let (sleigh, space) = engine(rel);
 
     // A freshly decoded .sla has no splits at all: one region, the default.
     let bare = sleigh.with_context_db_mut(|db| snapshot_context(db, &space));
@@ -143,10 +135,7 @@ fn x86_64_context_values_survive_a_copy() {
 #[test]
 fn arm_tmode_paints_survive_a_copy() {
     let rel = "ARM/data/languages/ARM7_le.sla";
-    let Some((sleigh, space)) = engine(rel) else {
-        eprintln!("verify_ctxsnapshot: skipping (no ARM7_le.sla; `make specs`)");
-        return;
-    };
+    let (sleigh, space) = engine(rel);
 
     // Alternating Thumb/A32 runs, the shape the ARM marker scan paints.
     let invalid = Address::new_invalid();
@@ -181,10 +170,7 @@ fn arm_tmode_paints_survive_a_copy() {
 #[test]
 fn malformed_snapshots_are_rejected_before_mutation() {
     let rel = "x86/data/languages/x86-64.sla";
-    let Some((sleigh, space)) = engine(rel) else {
-        eprintln!("verify_ctxsnapshot: skipping (no x86-64.sla; `make specs`)");
-        return;
-    };
+    let (sleigh, space) = engine(rel);
     let before = sleigh.with_context_db_mut(|db| snapshot_context(db, &space));
     let mut malformed = before.clone();
     malformed.words += 1;

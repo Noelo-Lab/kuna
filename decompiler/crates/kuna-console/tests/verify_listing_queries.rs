@@ -14,13 +14,6 @@
 //!
 //! It reuses the PR0 fixture and bootstrap (`fauxware`, a non-PIE x86-64 with a
 //! `main` that calls `authenticate` exactly once, a CBRANCH, and a `ret`).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_*` gates and `verify_listing_core.rs`, bootstrapping
-//! needs the built x86 `.sla` under `specs/` (gitignored; `make specs`). When it
-//! is absent the bootstrap fails; the test prints that and returns early (a
-//! specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -52,22 +45,10 @@ fn listing_query_surface_partition_functions_and_xrefs() {
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = match fauxware().to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = fauxware().to_str().expect("UTF-8 fixture path").to_string();
 
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_listing_queries: skipping (bootstrap failed, build the x86 `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let bytes = std::fs::read(&bin).expect("read fixture bytes");
     let file = object::File::parse(&*bytes).expect("parse fixture ELF");
@@ -305,20 +286,9 @@ fn a_partition_only_listing_walks_identically_and_files_no_references() {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
 
-    let bin = match fauxware().to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_listing_queries: skipping (bootstrap failed, `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let bin = fauxware().to_str().expect("UTF-8 fixture path").to_string();
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let bytes = std::fs::read(&bin).expect("read fixture bytes");
     let file = object::File::parse(&*bytes).expect("parse fixture ELF");

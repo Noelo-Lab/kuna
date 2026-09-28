@@ -13,12 +13,6 @@
 //! the entry as an external symbol in another module. Now the edge is refused
 //! the way a target outside a declared extent already was: a halt stub, a
 //! `flows into unmapped memory` warning, and the rest of the body.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -34,25 +28,16 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn boot() -> Option<ConsoleProgram> {
+fn boot() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = root
         .join("decompiler/crates/kuna-analysis/tests/fixtures/unmapped_branch_x86_64");
     assert!(path.exists(), "missing fixture {path:?}");
-    let mut prog = match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_unmappedbranch: skipping (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn entry_at(prog: &ConsoleProgram, vma: u64) -> kuna_console::engine::FunctionEntry {
@@ -66,7 +51,7 @@ fn entry_at(prog: &ConsoleProgram, vma: u64) -> kuna_console::engine::FunctionEn
 /// real decode of the mapped bytes can produce.
 #[test]
 fn a_function_that_branches_into_unmapped_memory_still_decompiles() {
-    let Some(mut prog) = boot() else { return };
+    let mut prog = boot();
 
     let target = entry_at(&prog, ENTRY);
     let out = decompile_targets(&mut prog, vec![target], true, false, false);
@@ -91,7 +76,7 @@ fn a_function_that_branches_into_unmapped_memory_still_decompiles() {
 /// The edge is not silently dropped: the body says where flow left the image.
 #[test]
 fn the_lost_edge_is_reported_at_its_branch_site() {
-    let Some(mut prog) = boot() else { return };
+    let mut prog = boot();
 
     let target = entry_at(&prog, ENTRY);
     let out = decompile_targets(&mut prog, vec![target], true, false, false);
@@ -110,7 +95,7 @@ fn the_lost_edge_is_reported_at_its_branch_site() {
 /// classifying the selection as an external was reading someone else's failure.
 #[test]
 fn the_entry_itself_is_mapped_and_the_branch_target_is_not() {
-    let Some(prog) = boot() else { return };
+    let prog = boot();
     assert!(prog.vma_bytes_mapped(ENTRY), "the entry has bytes behind it");
     assert!(prog.vma_bytes_mapped(BRANCH_SITE), "so does the branch instruction");
     assert!(!prog.vma_bytes_mapped(0), "the branch target does not");

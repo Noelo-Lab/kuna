@@ -20,13 +20,6 @@
 //! readonly char-printable array symbol through the same `pushPtrCharConstant`
 //! literal path the constant arm uses (C++ `PrintC::pushConstant`,
 //! printc.cc:1842-1880).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_s1_*` gates, bootstrapping needs the built `x86`
-//! `.sla` under `specs/` (gitignored; `make specs`). When it is absent the
-//! bootstrap fails; the test prints that and returns early (a specs-less CI is a
-//! visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -71,22 +64,10 @@ fn planted_string_symbol_and_literal_coexist() {
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = match fauxware().to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = fauxware().to_str().expect("UTF-8 fixture path").to_string();
 
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_s1_strings: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // (kuna) Analysis facts now commit at `read symbols` (gated by `--option`),
     // not eagerly at bootstrap — trigger the commit (what `IfcReadSymbols` does)

@@ -5,7 +5,7 @@
 //! instruction inside the function's listing ([`kuna_console::inspect::function_rows`])
 //! starts a row of it.
 //!
-//! Needs the built `.sla` specs; without them each fixture prints a skip.
+//! Requires built `.sla` specs for each fixture.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -20,29 +20,24 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn load(binary: &str, language: Option<&str>) -> Option<ConsoleProgram> {
+fn load(binary: &str, language: Option<&str>) -> ConsoleProgram {
     let specs = vec![repo_root().join("specs").to_string_lossy().into_owned()];
-    let mut prog = match bootstrap_from_image(binary, "", &specs) {
-        Ok(prog) => prog,
-        Err(e) => {
-            eprintln!("verify_srcmap: skipping {binary}: {}", e.explain());
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_image(binary, "", &specs)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().apply_mode("aggressive").expect("aggressive mode");
     if let Some(language) = language {
         prog.arch_mut().set_print_language_checked(language).expect("output language");
     }
     prog.commit_pending_analysis().expect("analysis commit");
-    Some(prog)
+    prog
 }
 
 fn batch(
     binary: &str,
     language: Option<&str>,
     want_tokens: bool,
-) -> Option<(ConsoleProgram, Vec<FuncResult>)> {
-    let mut prog = load(binary, language)?;
+) -> (ConsoleProgram, Vec<FuncResult>) {
+    let mut prog = load(binary, language);
     let targets = prog.function_entries_executable();
     let opts = DecompileOptions {
         want_tokens,
@@ -50,15 +45,12 @@ fn batch(
         ..DecompileOptions::default()
     };
     let out = decompile_targets_with(&mut prog, targets, &opts);
-    Some((prog, out))
+    (prog, out)
 }
 
 fn check(binary: &str, language: Option<&str>) -> usize {
-    let (Some((_, plain)), Some((prog, mapped))) =
-        (batch(binary, language, false), batch(binary, language, true))
-    else {
-        return 0;
-    };
+    let ((_, plain), (prog, mapped)) =
+        (batch(binary, language, false), batch(binary, language, true));
     assert_eq!(plain.len(), mapped.len(), "{binary}: batch sizes differ");
     let mut checked = 0;
     for (p, m) in plain.iter().zip(&mapped) {
@@ -131,7 +123,7 @@ fn tokens_rebuild_every_fixture_function_in_c_and_rust() {
 fn sample_tokens_name_callees_parameters_and_values() {
     let root = repo_root();
     let path = root.join("integrations/web/test/fixtures/sample.elf");
-    let Some((_, out)) = batch(path.to_str().unwrap(), None, true) else { return };
+    let (_, out) = batch(path.to_str().unwrap(), None, true);
     let find = |name: &str| out.iter().find(|f| f.name == name).unwrap_or_else(|| panic!("{name}"));
     let (main, sum_to) = (find("main"), find("sum_to"));
     let tokens = &main.detail.as_deref().expect("detail").tokens;
@@ -160,17 +152,14 @@ fn an_indent_increment_survives_every_render_of_a_batch() {
     let root = repo_root();
     let path = root.join("integrations/web/test/fixtures/sample.elf");
     let render = |want_provenance: bool, want_tokens: bool| {
-        let mut prog = load(path.to_str()?, None)?;
+        let mut prog = load(path.to_str().expect("UTF-8 fixture path"), None);
         prog.arch_mut().print_mut().set_indent_increment(4);
         let targets = prog.function_entries_executable();
         let opts = DecompileOptions { want_provenance, want_tokens, ..DecompileOptions::default() };
-        Some(decompile_targets_with(&mut prog, targets, &opts))
+        decompile_targets_with(&mut prog, targets, &opts)
     };
-    let (Some(plain), Some(provenance), Some(tokens)) =
-        (render(false, false), render(true, false), render(false, true))
-    else {
-        return;
-    };
+    let (plain, provenance, tokens) =
+        (render(false, false), render(true, false), render(false, true));
     let bodies = plain.iter().filter(|f| f.code.is_some()).count();
     assert!(bodies >= 2, "the batch must hold more than one function");
     for (p, (q, t)) in plain.iter().zip(provenance.iter().zip(&tokens)) {

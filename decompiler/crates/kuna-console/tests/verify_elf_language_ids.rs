@@ -18,8 +18,7 @@
 //!
 //! Resolution matches against the language **descriptions** parsed from the
 //! vendored `.ldefs` (not the built `.sla`), so this gate does NOT require
-//! `make specs`. If the specs tree is absent the DB load fails; the test prints
-//! that and returns early (a visible skip, never a false green).
+//! `make specs`. The vendored description files are required.
 
 use std::path::PathBuf;
 
@@ -50,13 +49,7 @@ fn every_elf_language_id_resolves_in_the_database() {
     let registry = build_registry();
     let mut db = LanguageDatabase::new();
     db.scan_for_sleigh_directories(specs.to_str().unwrap());
-    if let Err(e) = db.get_descriptions(&registry) {
-        eprintln!(
-            "verify_elf_language_ids: skipping (no specs tree / .ldefs load failed): {}",
-            e.explain()
-        );
-        return;
-    }
+    db.get_descriptions(&registry).expect("load required processor descriptions");
 
     let ids = kuna_analysis::loadimage_object::elf_language_ids();
     assert!(!ids.is_empty(), "the ELF id producer must enumerate at least one id");
@@ -98,13 +91,7 @@ fn every_object_format_language_id_resolves_in_the_database() {
     let registry = build_registry();
     let mut db = LanguageDatabase::new();
     db.scan_for_sleigh_directories(specs.to_str().unwrap());
-    if let Err(e) = db.get_descriptions(&registry) {
-        eprintln!(
-            "verify_object_language_ids: skipping (no specs tree / .ldefs load failed): {}",
-            e.explain()
-        );
-        return;
-    }
+    db.get_descriptions(&registry).expect("load required processor descriptions");
 
     // (primary, fallback) per format. A format passes if, for every pair, the
     // primary resolves OR the fallback resolves (the §2.2 retry path).

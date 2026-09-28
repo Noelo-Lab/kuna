@@ -1,0 +1,106 @@
+
+<sleigh version="4" bigendian="false" align="1" uniqbase="0x100">
+  <sourcefiles>
+    <sourcefile name="xml_ops.slaspec" index="0"/>
+  </sourcefiles>
+  <spaces defaultspace="ram">
+    <space_other name="OTHER" index="1" bigendian="false" delay="0" size="8" physical="false"/>
+    <space_unique name="unique" index="2" bigendian="false" delay="0" size="4" physical="true"/>
+    <space name="ram" index="3" bigendian="false" delay="1" size="4" physical="true"/>
+    <space name="register" index="4" bigendian="false" delay="0" size="4" physical="true"/>
+  </spaces>
+  <symbol_table scopesize="2" symbolsize="9">
+    <scope id="0x0" parent="0x0"/>
+    <scope id="0x1" parent="0x0"/>
+    <subtable_sym_head name="instruction" id="0x0" scope="0x0"/>
+    <start_sym_head name="inst_start" id="0x1" scope="0x0"/>
+    <end_sym_head name="inst_next" id="0x2" scope="0x0"/>
+    <next2_sym_head name="inst_next2" id="0x3" scope="0x0"/>
+    <varnode_sym_head name="r0" id="0x4" scope="0x0"/>
+    <varnode_sym_head name="r1" id="0x5" scope="0x0"/>
+    <value_sym_head name="op" id="0x6" scope="0x0"/>
+    <subtable_sym_head name="operand" id="0x7" scope="0x0"/>
+    <operand_sym_head name="operand" id="0x8" scope="0x1"/>
+    <subtable_sym id="0x0" numct="1">
+      <constructor parent="0x0" first="1" length="1" source="0" line="9">
+        <oper id="0x8"/>
+        <print piece="inc"/>
+        <print piece=" "/>
+        <opprint id="0"/>
+        <construct_tpl>
+          <null/>
+          <op_tpl code="BUILD">
+            <null/>
+            <varnode_tpl>
+              <const_spaceid space="const"/>
+              <const_real val="0x0"/>
+              <const_real val="0x4"/>
+            </varnode_tpl>
+          </op_tpl>
+          <op_tpl code="INT_ADD">
+            <varnode_tpl>
+              <const_spaceid space="register"/>
+              <const_real val="0x4"/>
+              <const_real val="0x4"/>
+            </varnode_tpl>
+            <varnode_tpl>
+              <const_handle val="0" s="0"/>
+              <const_handle val="0" s="1"/>
+              <const_handle val="0" s="2"/>
+            </varnode_tpl>
+            <varnode_tpl>
+              <const_spaceid space="const"/>
+              <const_real val="0x1"/>
+              <const_real val="0x4"/>
+            </varnode_tpl>
+          </op_tpl>
+        </construct_tpl>
+      </constructor>
+      <decision number="1" context="false" startbit="0" size="0">
+        <pair id="0">
+          <instruct_pat>
+            <pat_block off="0" nonzero="1">
+              <mask_word mask="0xff000000" val="0x1000000"/>
+            </pat_block>
+          </instruct_pat>
+        </pair>
+      </decision>
+    </subtable_sym>
+    <start_sym id="0x1"/>
+    <end_sym id="0x2"/>
+    <next2_sym id="0x3"/>
+    <varnode_sym id="0x4" space="register" off="0x0" size="4"/>
+    <varnode_sym id="0x5" space="register" off="0x4" size="4"/>
+    <value_sym id="0x6">
+      <tokenfield bigendian="false" signbit="false" startbit="0" endbit="7" startbyte="0" endbyte="0" shift="0"/>
+    </value_sym>
+    <subtable_sym id="0x7" numct="1">
+      <constructor parent="0x7" first="1" length="1" source="0" line="8">
+        <print piece="r0"/>
+        <construct_tpl>
+          <handle_tpl>
+            <const_spaceid space="register"/>
+            <const_real val="0x4"/>
+            <const_real val="0x0"/>
+            <const_real val="0x0"/>
+            <const_real val="0x0"/>
+            <const_real val="0x0"/>
+            <const_real val="0x0"/>
+          </handle_tpl>
+        </construct_tpl>
+      </constructor>
+      <decision number="1" context="false" startbit="0" size="0">
+        <pair id="0">
+          <instruct_pat>
+            <pat_block off="0" nonzero="1">
+              <mask_word mask="0xff000000" val="0x1000000"/>
+            </pat_block>
+          </instruct_pat>
+        </pair>
+      </decision>
+    </subtable_sym>
+    <operand_sym id="0x8" subsym="0x7" off="0" base="-1" minlen="1" index="0">
+      <operand_exp index="0" table="0x0" ct="0x0"/>
+    </operand_sym>
+  </symbol_table>
+</sleigh>

@@ -78,7 +78,7 @@ impl SleighBaseTrans for TestTrans {
         &self,
         _handle: ConstructTplHandle,
         _section_id: i32,
-        _encoder: &mut dyn Encoder,
+        _encoder: &mut dyn kuna_num::opcodes::OpcodeEncoder,
     ) -> KunaResult<()> {
         Err(KunaError::sleigh("no ConstructTpl in verifier tests"))
     }

@@ -16,12 +16,6 @@
 //!    nothing else.
 //!  - **declared, default**: `ptrace(2,v1,NULL,(void *)0x804a004)` — the signature
 //!    typed the third and fourth arguments.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -39,28 +33,19 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture with `declaredlibcproto` set to `on`. `None` ⇒ specs-less skip.
-fn load(option_on: bool) -> Option<ConsoleProgram> {
+/// Bootstrap the fixture with `declaredlibcproto` set to `on`.
+fn load(option_on: bool) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin =
         root.join("decompiler/crates/kuna-analysis/tests/fixtures/declaredlibcproto_i386");
-    let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_declaredlibcproto: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut()
         .set_kuna_option("declaredlibcproto", if option_on { "on" } else { "off" })
         .expect("the option is settable");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn code_addr(prog: &ConsoleProgram, vma: u64) -> Address {
@@ -69,8 +54,8 @@ fn code_addr(prog: &ConsoleProgram, vma: u64) -> Address {
 }
 
 /// Declare the wrapper as `ptrace`, then render the caller.
-fn caller_body(option_on: bool) -> Option<String> {
-    let mut prog = load(option_on)?;
+fn caller_body(option_on: bool) -> String {
+    let mut prog = load(option_on);
     let wrapper = code_addr(&prog, WRAPPER);
     let name = prog.declare_function(wrapper, Some("ptrace"), 0).expect("the declaration lands");
     assert_eq!(name, "ptrace");
@@ -86,13 +71,13 @@ fn caller_body(option_on: bool) -> Option<String> {
         &[],
     );
     let fd = step.result.expect("the caller decompiles");
-    Some(kuna_decomp::decompile_drive::print_c(prog.arch_mut(), &fd))
+    kuna_decomp::decompile_drive::print_c(prog.arch_mut(), &fd)
 }
 
 /// Default: the declared name carries its signature to every call site.
 #[test]
 fn a_declared_libc_name_types_the_call_it_names() {
-    let Some(body) = caller_body(true) else { return };
+    let body = caller_body(true);
     // The last argument is typed `void *` either way: as a cast, or (`globalref`,
     // default on) as the address of the global it names.
     assert!(
@@ -106,7 +91,7 @@ fn a_declared_libc_name_types_the_call_it_names() {
 /// the need recorded, so the fix cannot be mistaken for something discovery did.
 #[test]
 fn with_the_option_off_the_name_arrives_without_the_signature() {
-    let Some(body) = caller_body(false) else { return };
+    let body = caller_body(false);
     assert!(body.contains("ptrace("), "the declared name still renders, got:\n{body}");
     assert!(
         !body.contains("NULL"),
@@ -118,7 +103,7 @@ fn with_the_option_off_the_name_arrives_without_the_signature() {
 /// invent a prototype for `stage1`.
 #[test]
 fn a_name_the_tables_do_not_know_parks_nothing() {
-    let Some(mut prog) = load(true) else { return };
+    let mut prog = load(true);
     let wrapper = code_addr(&prog, WRAPPER);
     prog.declare_function(wrapper, Some("stage1"), 0).expect("the declaration lands");
 

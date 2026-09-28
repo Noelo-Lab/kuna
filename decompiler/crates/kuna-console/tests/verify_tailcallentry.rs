@@ -31,12 +31,6 @@
 //! All four are reached ONLY by an unconditional `B`, so the naive tail-call
 //! rule — the one the proposal measured at 39% precision — accepts every one of
 //! them.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built ARM `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -72,24 +66,14 @@ const NON_TERMINATING: &str = "sub_8008060";
 /// [`TAIL`]'s VMA — the one entry the pass is expected to accept here.
 const TAIL_VMA: u64 = 0x0800_8020;
 
-/// Bootstrap the fixture with the Listing tier on, optionally flipping
-/// `tailcallentry` on before the deferred commit (the live-CLI ordering).
-/// `None` ⇒ specs-less skip.
-fn bootstrap(on: bool) -> Option<kuna_console::engine::ConsoleProgram> {
+/// Bootstrap the fixture with the Listing tier on, optionally flipping `tailcallentry` on
+/// before the deferred commit (the live-CLI ordering).
+fn bootstrap(on: bool) -> kuna_console::engine::ConsoleProgram {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_tailcallentry: skipping (bootstrap failed, build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
     prog.arch_mut()
         .set_kuna_option("funcstart_patterns", "on")
@@ -100,7 +84,7 @@ fn bootstrap(on: bool) -> Option<kuna_console::engine::ConsoleProgram> {
             .expect("tailcallentry flips on");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Decompile `func` in an already-bootstrapped program and return the captured C.
@@ -126,9 +110,7 @@ fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
 /// it has no entry, and its body is emitted as part of `_start`.
 #[test]
 fn default_absorbs_the_tail_called_routine() {
-    let Some(off) = bootstrap(false) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(false);
     assert!(
         off.lookup_symbol(TAIL).is_none(),
         "default (tailcallentry off) must NOT discover {TAIL}: the walk makes a \
@@ -147,14 +129,12 @@ fn default_absorbs_the_tail_called_routine() {
 /// the routine becomes its own function, and it decompiles to its real constant.
 #[test]
 fn tailcallentry_recovers_the_tail_called_routine() {
-    let Some(on) = bootstrap(true) else {
-        return; // specs-less skip
-    };
+    let on = bootstrap(true);
     assert!(
         on.lookup_symbol(TAIL).is_some(),
         "tailcallentry must discover the tail-called routine {TAIL} (it did not)"
     );
-    let Some(prog) = bootstrap(true) else { return };
+    let prog = bootstrap(true);
     let body = decompile(prog, TAIL);
     eprintln!("---- {TAIL} (tailcallentry on) ----\n{body}");
     assert!(
@@ -168,9 +148,7 @@ fn tailcallentry_recovers_the_tail_called_routine() {
 /// rejected by exactly one guard.
 #[test]
 fn containment_rejects_the_near_misses() {
-    let Some(on) = bootstrap(true) else {
-        return; // specs-less skip
-    };
+    let on = bootstrap(true);
     assert!(
         on.lookup_symbol(IN_REGION).is_none(),
         "{IN_REGION} stays inside its caller's entry-ordered region, so the \
@@ -195,10 +173,8 @@ fn containment_rejects_the_near_misses() {
 /// other consumer's input — is byte-identical. Pinned here as a strict superset.
 #[test]
 fn tailcallentry_only_adds_entries() {
-    let Some(off) = bootstrap(false) else {
-        return; // specs-less skip
-    };
-    let Some(on) = bootstrap(true) else { return };
+    let off = bootstrap(false);
+    let on = bootstrap(true);
     for f in [START, HELPER] {
         assert!(
             off.lookup_symbol(f).is_some() && on.lookup_symbol(f).is_some(),
@@ -222,21 +198,9 @@ fn tailcallentry_only_adds_entries() {
 fn a_partition_only_listing_yields_no_tail_call_entries() {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = match fixture().to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_tailcallentry: skipping (bootstrap failed, build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            return; // specs-less skip
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let bytes = std::fs::read(&bin).expect("read fixture bytes");
     let file = object::File::parse(&*bytes).expect("parse fixture ELF");

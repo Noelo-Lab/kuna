@@ -19,13 +19,6 @@
 //! directly through the engine's real `Translate` by `verify_listing_core.rs`'s
 //! `listing_build_through_engine_driver_seeds`. Either way the output is
 //! byte-identical: nothing consumes the Listing.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_*` gates, bootstrapping needs the built `x86` `.sla`
-//! under `specs/` (gitignored; `make specs`). When it is absent the bootstrap
-//! fails; the test prints that and returns early (a specs-less CI is a visible
-//! skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -52,25 +45,16 @@ enum ListingMode {
     OnAfterBootstrap,
 }
 
-/// Bootstrap fauxware, optionally enable `listing`, decompile `main`, and return
-/// the captured C (`None` ⇒ specs-less skip).
-fn decompile_main(mode: ListingMode) -> Option<String> {
+/// Bootstrap fauxware, optionally enable `listing`, decompile `main`, and return the
+/// captured C.
+fn decompile_main(mode: ListingMode) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fauxware().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_listing_parity: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fauxware().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     if let ListingMode::OnAfterBootstrap = mode {
         prog.arch_mut()
@@ -91,7 +75,7 @@ fn decompile_main(mode: ListingMode) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// The key PR2 proof: `--option listing on` is byte-identical to the default
@@ -99,11 +83,8 @@ fn decompile_main(mode: ListingMode) -> Option<String> {
 /// there is zero behavior change.
 #[test]
 fn listing_on_is_byte_identical_to_off() {
-    let Some(off) = decompile_main(ListingMode::Off) else {
-        return; // specs-less skip
-    };
-    let on = decompile_main(ListingMode::OnAfterBootstrap)
-        .expect("second bootstrap succeeds if the first did");
+    let off = decompile_main(ListingMode::Off);
+    let on = decompile_main(ListingMode::OnAfterBootstrap);
 
     assert!(!off.trim().is_empty(), "expected non-empty C for fauxware main");
     assert!(off.contains("main") || off.contains("undefined"), "expected a function body:\n{off}");

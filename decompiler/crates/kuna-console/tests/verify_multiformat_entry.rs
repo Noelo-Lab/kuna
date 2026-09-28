@@ -30,12 +30,6 @@
 //! with no flag. The ELF entry path (`verify_s1_entry`) is untouched: the
 //! discovery oracles are no-ops on ELF (format-dispatched), so the 675/675 +
 //! stage gates are structurally immune.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling console gates, bootstrapping needs the built `x86` `.sla`
-//! under `specs/` (gitignored; `make specs`). When absent the bootstrap fails and
-//! the test prints that and returns early (a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -53,30 +47,20 @@ fn fixtures() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures")
 }
 
-/// Bootstrap a fixture (multi-format loading is unconditional), commit the
-/// analysis facts (so the discovered entries become visible symbols), and return
-/// the program — `None` (a visible skip) when the `.sla` is absent.
-fn boot_committed(name: &str) -> Option<ConsoleProgram> {
+/// Bootstrap a fixture (multi-format loading is unconditional), commit the analysis facts
+/// (so the discovered entries become visible symbols), and return the program.
+fn boot_committed(name: &str) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join(name);
     assert!(path.exists(), "missing fixture {path:?}");
 
-    let mut prog = match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_multiformat_entry: skipping {name} (bootstrap failed; build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // The discovered entries are committed at `read symbols`, gated by the per-pass
     // `--option` flags — a direct `bootstrap_from_object` consumer must trigger it.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Drive `<func_cmd>` → `decompile` → `print C` (no `--addr`) and return the C.
@@ -104,7 +88,7 @@ fn decompile_func(prog: ConsoleProgram, func_cmd: &str) -> String {
 /// (the CRT startup's `__initenv` store precedes the call).
 #[test]
 fn pe_stripped_discovers_main_without_addr() {
-    let Some(prog) = boot_committed("pe_imports_stripped.exe") else { return };
+    let prog = boot_committed("pe_imports_stripped.exe");
 
     // `main`@0x140001592 is `.pdata`-covered and named by `pemain`.
     // (No `.symtab` symbol exists in this stripped PE — discovery is the ONLY source.)
@@ -139,7 +123,7 @@ fn pe_stripped_discovers_main_without_addr() {
 /// `sub_100000590` resolves and decompiles with NO supplied address.
 #[test]
 fn macho_stripped_discovers_helper_via_function_starts() {
-    let Some(prog) = boot_committed("macho_func_starts_stripped") else { return };
+    let prog = boot_committed("macho_func_starts_stripped");
 
     // `helper`@0x100000590 has NO symbol (stripped); only LC_FUNCTION_STARTS lists
     // it. The angr-style discovered name is `sub_100000590`.
@@ -160,10 +144,7 @@ fn macho_stripped_discovers_helper_via_function_starts() {
 }
 
 /// Multi-format is the default: a bare `load file` of a stripped PE / Mach-O
-/// routes to the object loader with no flag (the ELF arm and the 675/158 oracles
-/// are structurally immune to the new entry oracles). A `.sla`-absent environment
-/// surfaces as a load error; we only assert the dispatch ROUTES to the object
-/// loader (no XML "not recognized" rejection).
+/// routes to the object loader with no flag.
 #[test]
 fn default_on_loads_stripped_pe_and_macho() {
     let root = repo_root();
@@ -171,14 +152,7 @@ fn default_on_loads_stripped_pe_and_macho() {
 
     for name in ["pe_imports_stripped.exe", "macho_func_starts_stripped"] {
         let path = fixtures().join(name);
-        if let Err(e) =
-            kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots)
-        {
-            let msg = e.explain();
-            assert!(
-                !msg.contains("Unable to recognize") && !msg.contains("XML"),
-                "default-on: {name} must route to the object loader (got: {msg})"
-            );
-        }
+        kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots)
+            .expect("default dispatch loads object with built processor specs");
     }
 }

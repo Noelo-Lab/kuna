@@ -26,12 +26,6 @@
 //! ground truth) and (2) the decompiled C (the name renders in the header). Both run
 //! on the real-Mach-O path (loading an actual Mach-O), so the XML datatest 675/158
 //! oracles never reach this.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -100,24 +94,16 @@ fn name_at_imp(prog: &ConsoleProgram, imp_vma: u64) -> String {
     }
 }
 
-/// Bootstrap the fixture, (optionally) enable the ObjC pass, then resolve +
-/// decompile the IMP at the fixture's IMP VMA. `None` ⇒ specs-less skip.
-fn run(fx: Fixture, mode: Mode) -> Option<Run> {
+/// Bootstrap the fixture, (optionally) enable the ObjC pass, then resolve + decompile the
+/// IMP at the fixture's IMP VMA.
+fn run(fx: Fixture, mode: Mode) -> Run {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = fixtures().join(fx.bin);
     assert!(bin.exists(), "missing fixture {bin:?}");
 
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_objc: skipping (bootstrap failed, build `.sla` with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // Live-CLI ordering: the `option` line precedes the deferred commit. Flip the
     // flag on the live arch BEFORE committing so the gated objc facts are applied.
@@ -160,18 +146,15 @@ fn run(fx: Fixture, mode: Mode) -> Option<Run> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(Run { name, body: status.optr.clone() })
+    Run { name, body: status.optr.clone() }
 }
 
 /// The shared two-state proof for one fixture: the IMP is a generic `sub_<addr>`
 /// placeholder by default, and becomes `-[Greeter greet:]` only when the ObjC pass
-/// is on — recovered purely by the `__objc_*` metadata walk. Returns `false` on a
-/// specs-less skip.
-fn assert_two_state_recovery(fx: Fixture) -> bool {
-    let Some(off) = run(fx, Mode::Off) else {
-        return false; // specs-less skip
-    };
-    let on = run(fx, Mode::On).expect("second bootstrap succeeds if the first did");
+/// is on — recovered purely by the `__objc_*` metadata walk.
+fn assert_two_state_recovery(fx: Fixture) {
+    let off = run(fx, Mode::Off);
+    let on = run(fx, Mode::On);
 
     eprintln!(
         "==== {} 0x{:x} symbol  OFF: {:>20}   ON: {:>20} ====",
@@ -233,7 +216,6 @@ fn assert_two_state_recovery(fx: Fixture) -> bool {
         "[{}] objc must change the IMP's name (the placeholder -> {GREET_NAME} rename)",
         fx.bin
     );
-    true
 }
 
 /// THE HEADLINE (x86-64): the IMP at `0x100000640` in the stripped Mach-O is a
@@ -259,9 +241,7 @@ fn objc_recovers_arm64_chained_fixup_imp_method_name() {
 /// flag the IMP stays a `sub_<addr>` placeholder (the pass never fires by default).
 #[test]
 fn objc_off_is_the_today_baseline() {
-    let Some(off) = run(X86_64, Mode::Off) else {
-        return; // specs-less skip
-    };
+    let off = run(X86_64, Mode::Off);
     assert!(
         is_placeholder(&off.name),
         "default name must be a placeholder, got `{}`",

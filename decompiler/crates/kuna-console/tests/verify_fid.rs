@@ -27,12 +27,6 @@
 //! ground truth) and (2) the decompiled C (the name renders in the body). Both run
 //! on the real-ELF path (loading an actual ELF), so the XML datatest 675/158 oracles
 //! never reach this.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -89,15 +83,15 @@ fn name_at_crc32(prog: &ConsoleProgram) -> String {
     }
 }
 
-/// Bootstrap the stripped `prog`, (optionally) enable FID + point it at the DB,
-/// resolve + decompile the function at `KUNA_CRC32_VMA`. `None` ⇒ specs-less skip.
-fn run(mode: Mode) -> Option<Run> {
+/// Bootstrap the stripped `prog`, (optionally) enable FID + point it at the DB, resolve +
+/// decompile the function at `KUNA_CRC32_VMA`.
+fn run(mode: Mode) -> Run {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = fixture_dir().join("prog");
-    let bin = bin.to_str()?.to_string();
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
     // The DB env var (`kuna_fid_db`) is read by `FidPass::run` at the deferred
     // commit. Set it ONLY for the On run; clear it for Off so the default path is
@@ -110,17 +104,8 @@ fn run(mode: Mode) -> Option<Run> {
         Mode::Off => std::env::remove_var("kuna_fid_db"),
     }
 
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_fid: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // Live-CLI ordering: the `option` lines precede `read symbols` (the deferred
     // commit). Set the flags on the live arch BEFORE committing so the deferred
@@ -161,7 +146,7 @@ fn run(mode: Mode) -> Option<Run> {
         execute(&mut status);
     }
     let dur = t0.elapsed();
-    Some(Run { name, body: status.optr.clone(), dur })
+    Run { name, body: status.optr.clone(), dur }
 }
 
 /// THE PAYOFF: the function at `0x4017c0` in the STRIPPED `prog` is a generic
@@ -169,10 +154,8 @@ fn run(mode: Mode) -> Option<Run> {
 /// on — recovered purely by full-hash fingerprint match against `lib.fid`.
 #[test]
 fn fid_reidentifies_stripped_crc32_by_fingerprint() {
-    let Some(off) = run(Mode::Off) else {
-        return; // specs-less skip
-    };
-    let on = run(Mode::On).expect("second bootstrap succeeds if the first did");
+    let off = run(Mode::Off);
+    let on = run(Mode::On);
 
     eprintln!(
         "==== 0x{KUNA_CRC32_VMA:x} symbol  OFF: {:>16}   ON: {:>16} ====",
@@ -223,9 +206,7 @@ fn fid_reidentifies_stripped_crc32_by_fingerprint() {
 /// flags the function stays a placeholder (the FID consumer never fires by default).
 #[test]
 fn fid_off_is_the_today_baseline() {
-    let Some(off) = run(Mode::Off) else {
-        return; // specs-less skip
-    };
+    let off = run(Mode::Off);
     assert!(is_placeholder(&off.name), "default name must be a placeholder, got `{}`", off.name);
     assert_ne!(off.name, "kuna_crc32", "default must not re-identify the stripped function");
     assert!(!off.body.trim().is_empty(), "expected a non-empty body for the crc32 function");

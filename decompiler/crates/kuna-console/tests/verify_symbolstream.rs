@@ -6,12 +6,6 @@
 //! stream backing it is indexed by name rather than rescanned, so this checks
 //! the indexed stream against a plain-`Vec` model of the same contract, driven
 //! through the public API on a real image.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -23,19 +17,14 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn load() -> Option<ConsoleProgram> {
+fn load() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/regglobal_fmt_x86_64");
-    let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("verify_symbolstream: skipping (bootstrap failed): {}", e.explain());
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn stream(prog: &ConsoleProgram) -> Vec<(String, u64)> {
@@ -56,7 +45,7 @@ fn code_addr(prog: &ConsoleProgram, vma: u64) -> Address {
 /// enough times to reclaim its tombstones must all leave the same stream.
 #[test]
 fn registration_matches_the_retain_and_push_model() {
-    let Some(mut prog) = load() else { return };
+    let mut prog = load();
     let mut model = stream(&prog);
     assert!(model.len() > 100, "the fixture must carry enough symbols to be worth scanning");
 
@@ -91,7 +80,7 @@ fn registration_matches_the_retain_and_push_model() {
 /// answer the linear scan gave.
 #[test]
 fn lookup_answers_with_the_first_record_of_a_name() {
-    let Some(prog) = load() else { return };
+    let prog = load();
     let records = stream(&prog);
     for (name, vma) in &records {
         let first = records.iter().find(|(n, _)| n == name).map(|(_, v)| *v).unwrap();

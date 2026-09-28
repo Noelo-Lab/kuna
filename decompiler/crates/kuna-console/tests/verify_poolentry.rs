@@ -51,12 +51,6 @@
 //!
 //! **On** — `sub_800014a` is replaced by `sub_800014c`, and `sub_800015e` survives
 //! untouched because nothing replaces it.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built ARM `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -91,25 +85,15 @@ const F: &str = "sub_8000170";
 /// Listing never decoded `F`'s first word.
 const F_PLUS_4: &str = "sub_8000174";
 
-/// Bootstrap the fixture with the discovery set `decompile-all` / `kuna functions`
-/// inject on non-x86-64 plus `aif` (the pass `poolentry` reads), optionally
-/// flipping `poolentry` on before the deferred commit — the live-CLI ordering.
-/// `None` ⇒ specs-less skip.
-fn bootstrap(on: bool) -> Option<kuna_console::engine::ConsoleProgram> {
+/// Bootstrap the fixture with the discovery set `decompile-all` / `kuna functions` inject
+/// on non-x86-64 plus `aif` (the pass `poolentry` reads), optionally flipping `poolentry`
+/// on before the deferred commit — the live-CLI ordering.
+fn bootstrap(on: bool) -> kuna_console::engine::ConsoleProgram {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_poolentry: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
     prog.arch_mut()
         .set_kuna_option("funcstart_patterns", "on")
@@ -127,7 +111,7 @@ fn bootstrap(on: bool) -> Option<kuna_console::engine::ConsoleProgram> {
         prog.arch_mut().set_kuna_option("poolentry", "on").expect("poolentry flips on");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Decompile `func` in an already-bootstrapped program and return the captured C.
@@ -155,9 +139,7 @@ fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
 /// decompiler then folds through the body.
 #[test]
 fn default_plants_the_entry_inside_the_literal_pool() {
-    let Some(off) = bootstrap(false) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(false);
     assert!(off.lookup_symbol(RESET).is_some(), "the reset vector is always found");
     assert!(off.lookup_symbol(A).is_some(), "the walk always follows the BL to A");
     assert!(
@@ -186,9 +168,7 @@ fn default_plants_the_entry_inside_the_literal_pool() {
 /// MOVE, not a delete.
 #[test]
 fn poolentry_moves_the_entry_to_the_pool_end() {
-    let Some(on) = bootstrap(true) else {
-        return; // specs-less skip
-    };
+    let on = bootstrap(true);
     assert!(
         on.lookup_symbol(B).is_some(),
         "poolentry must emit an entry at the end of POOL1, which is {B}"
@@ -198,7 +178,7 @@ fn poolentry_moves_the_entry_to_the_pool_end() {
         "and must drop the {PHANTOM} accept, since the pool it sits in now carries \
          a replacement entry at its end"
     );
-    let Some(prog) = bootstrap(true) else { return };
+    let prog = bootstrap(true);
     let body = decompile(prog, B);
     eprintln!("---- {B} (poolentry on) ----\n{body}");
     assert!(
@@ -216,9 +196,7 @@ fn poolentry_moves_the_entry_to_the_pool_end() {
 #[test]
 fn poolentry_keeps_an_unpaired_phantom() {
     for on in [false, true] {
-        let Some(prog) = bootstrap(on) else {
-            return; // specs-less skip
-        };
+        let prog = bootstrap(on);
         assert!(
             prog.lookup_symbol(UNPAIRED).is_some(),
             "poolentry (on = {on}) must KEEP {UNPAIRED}: nothing replaces it at the \
@@ -241,9 +219,7 @@ fn poolentry_keeps_an_unpaired_phantom() {
 /// should go from 1 to 0.
 #[test]
 fn poolentry_split_residue_is_pinned() {
-    let Some(off) = bootstrap(false) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(false);
     assert!(off.lookup_symbol(F).is_some(), "AIF finds F at its real entry today");
     assert!(off.lookup_symbol(F_PLUS_4).is_none());
     let body = decompile(off, F);
@@ -253,7 +229,7 @@ fn poolentry_split_residue_is_pinned() {
         "F's real body loads r0 = 7 and r1 = 8, got:\n{body}"
     );
 
-    let Some(on) = bootstrap(true) else { return };
+    let on = bootstrap(true);
     assert!(
         on.lookup_symbol(F_PLUS_4).is_some(),
         "KNOWN RESIDUE: the entry moves to {F_PLUS_4}, four bytes into F"
@@ -275,12 +251,11 @@ fn poolentry_split_residue_is_pinned() {
 fn poolentry_is_inert_without_aif() {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let Some(bin) = fixture().to_str().map(str::to_string) else { return };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
     let mut sets = Vec::new();
     for on in [false, true] {
-        let Ok(mut prog) = bootstrap_from_object(&bin, "", &spec_roots) else {
-            return; // specs-less skip
-        };
+        let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+            .expect("bootstrap fixture with built processor specs");
         prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
         prog.arch_mut()
             .set_kuna_option("funcstart_patterns", "on")

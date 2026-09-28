@@ -17,13 +17,6 @@
 //! function `sub_401130` is discovered and decompiles by name; with the option
 //! **off (default)** it is NOT registered — proving the gate is genuinely
 //! output-changing and the default run is unperturbed.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_s1_entry`/`verify_w11_elf_plt_names` gates, the
-//! bootstrap needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -56,25 +49,16 @@ enum Mode {
     On,
 }
 
-/// Bootstrap the fixture, (optionally) enable the pass, commit the analysis, and
-/// return the program. `None` ⇒ specs-less skip.
-fn bootstrap(mode: Mode) -> Option<kuna_console::engine::ConsoleProgram> {
+/// Bootstrap the fixture, (optionally) enable the pass, commit the analysis, and return the
+/// program.
+fn bootstrap(mode: Mode) -> kuna_console::engine::ConsoleProgram {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_funcstart_patterns: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // The live-CLI ordering: the `option` line precedes `read symbols` (the
     // deferred commit). Flip the gate on the live arch BEFORE committing so the
     // gated commit keeps the pass's facts.
@@ -84,7 +68,7 @@ fn bootstrap(mode: Mode) -> Option<kuna_console::engine::ConsoleProgram> {
             .expect("funcstart_patterns flips on");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// THE PAYOFF: default-off, `widget` (`sub_401130`) is NOT discovered; with the
@@ -92,9 +76,7 @@ fn bootstrap(mode: Mode) -> Option<kuna_console::engine::ConsoleProgram> {
 /// whole point of the gate.
 #[test]
 fn full_patterns_discover_extra_function_when_enabled() {
-    let Some(off) = bootstrap(Mode::Off) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(Mode::Off);
     // Default-off: the full-pattern-only `widget` is NOT registered (the minimal
     // oracle misses it; nothing else covers it). This is the byte-identical
     // baseline contract.
@@ -105,7 +87,7 @@ fn full_patterns_discover_extra_function_when_enabled() {
 
     // Option on: the full byte-pattern pass discovers `widget` and the commit seam
     // registers it as `sub_401130`.
-    let on = bootstrap(Mode::On).expect("second bootstrap succeeds if the first did");
+    let on = bootstrap(Mode::On);
     assert!(
         on.lookup_symbol("sub_401130").is_some(),
         "with --option funcstart_patterns on, widget (sub_401130) must be discovered"

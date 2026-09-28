@@ -27,12 +27,6 @@
 //! function at all and the park would be a silent no-op. Both arms are otherwise
 //! run with `fast_funcdisc` on, so the first three tests compare prototypes
 //! rather than discovery.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -49,28 +43,19 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn bootstrap(entrymainproto: bool, fast_funcdisc: bool) -> Option<ConsoleProgram> {
+fn bootstrap(entrymainproto: bool, fast_funcdisc: bool) -> ConsoleProgram {
     bootstrap_with(entrymainproto, fast_funcdisc, false)
 }
 
 /// `pemain` names the same callee `main`; the tests above isolate the prototype
 /// under the fixture's `sub_<addr>` name, so they run with it off.
-fn bootstrap_with(entrymainproto: bool, fast_funcdisc: bool, pemain: bool) -> Option<ConsoleProgram> {
+fn bootstrap_with(entrymainproto: bool, fast_funcdisc: bool, pemain: bool) -> ConsoleProgram {
     let bin =
         repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/crtmain_x86_64.exe");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_entrymainproto: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut()
         .set_kuna_option("fast_funcdisc", if fast_funcdisc { "on" } else { "off" })
         .expect("fast_funcdisc flips");
@@ -79,7 +64,7 @@ fn bootstrap_with(entrymainproto: bool, fast_funcdisc: bool, pemain: bool) -> Op
         .expect("entrymainproto flips");
     prog.arch_mut().set_kuna_option("pemain", if pemain { "on" } else { "off" }).expect("pemain flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn decompile(prog: ConsoleProgram, name: &str) -> String {
@@ -103,9 +88,7 @@ fn decompile(prog: ConsoleProgram, name: &str) -> String {
 /// BEFORE (`--option entrymainproto off`): the entry function takes nothing.
 #[test]
 fn entry_function_takes_no_parameters_with_the_option_off() {
-    let Some(prog) = bootstrap(false, true) else {
-        return;
-    };
+    let prog = bootstrap(false, true);
     let body = decompile(prog, MAIN);
     assert!(
         body.contains(&format!("{MAIN}(void)")),
@@ -118,9 +101,7 @@ fn entry_function_takes_no_parameters_with_the_option_off() {
 /// the accessor that produced each and typed at the width of that slot.
 #[test]
 fn entry_function_declares_the_crt_arguments_by_default() {
-    let Some(prog) = bootstrap(true, true) else {
-        return;
-    };
+    let prog = bootstrap(true, true);
     let body = decompile(prog, MAIN);
     assert!(
         !body.contains(&format!("{MAIN}(void)")),
@@ -146,9 +127,7 @@ fn entry_function_declares_the_crt_arguments_by_default() {
 /// retyped.
 #[test]
 fn named_functions_keep_their_own_signatures() {
-    let (Some(off), Some(on)) = (bootstrap(false, true), bootstrap(true, true)) else {
-        return;
-    };
+    let (off, on) = (bootstrap(false, true), bootstrap(true, true));
     let named: Vec<String> = off
         .function_entries_canonical()
         .into_iter()
@@ -175,9 +154,7 @@ fn named_functions_keep_their_own_signatures() {
 /// parked by name on a function that does not exist would be a silent no-op.
 #[test]
 fn the_entry_function_is_registered_even_with_no_recursive_discovery() {
-    let (Some(off), Some(on)) = (bootstrap(false, false), bootstrap(true, false)) else {
-        return;
-    };
+    let (off, on) = (bootstrap(false, false), bootstrap(true, false));
     assert!(
         off.lookup_symbol(MAIN).is_none(),
         "the fixture must not find main through the always-on oracles alone, or this \
@@ -195,9 +172,7 @@ fn the_entry_function_is_registered_even_with_no_recursive_discovery() {
 /// callee `main`.
 #[test]
 fn the_prototype_composes_with_pemain() {
-    let Some(prog) = bootstrap_with(true, true, true) else {
-        return;
-    };
+    let prog = bootstrap_with(true, true, true);
     assert!(prog.lookup_symbol(MAIN).is_none(), "pemain renames the callee");
     let body = decompile(prog, "main");
     for want in ["main(", "argc", "argv", "envp"] {

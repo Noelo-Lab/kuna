@@ -12,12 +12,6 @@
 //! [0x140005038]` puts the slot in the flow op's own operand and stays a read:
 //! that jump is the import's other half, which the index already folds into one
 //! callable, not a call site of it.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -40,30 +34,20 @@ fn repo_root() -> PathBuf {
 }
 
 /// Bootstrap the fixture and build the index `kuna xrefs` answers out of.
-/// `None` is a visible skip when the `.sla` is missing.
-fn index() -> Option<XrefIndex> {
+fn index() -> XrefIndex {
     let bin =
         repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(FIXTURE);
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_iatcall: skipping {FIXTURE} (bootstrap failed, build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let bytes = std::fs::read(&bin).expect("fixture readable");
     let file = object::File::parse(&*bytes).expect("fixture parses");
     let seeds: Vec<u64> =
         prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect();
-    Some(xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds))
+    xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds)
 }
 
 /// The defect: `CALL qword ptr [__imp_ExitProcess]` is a call site of the
@@ -71,7 +55,7 @@ fn index() -> Option<XrefIndex> {
 /// lands. It used to come back as a read, which is not a call-graph edge.
 #[test]
 fn a_call_through_an_iat_slot_is_a_call_edge_to_the_import() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     let refs: Vec<(u64, XrefKind)> =
         idx.refs_to(SLOT).iter().map(|r| (r.from, r.kind)).collect();
     for (func, site) in CALL_SITES {
@@ -91,7 +75,7 @@ fn a_call_through_an_iat_slot_is_a_call_edge_to_the_import() {
 /// sites are there under either address and neither is a read.
 #[test]
 fn both_ends_of_the_import_answer_with_two_call_sites() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     for target in [SLOT, VENEER] {
         let mut rows: Vec<(u64, XrefKind)> =
             idx.refs_to_unified(target).iter().map(|r| (r.from, r.kind)).collect();
@@ -109,7 +93,7 @@ fn both_ends_of_the_import_answer_with_two_call_sites() {
 /// direct call, which never went through a slot at all, remains a call.
 #[test]
 fn the_forwarding_veneer_is_a_jump_and_the_direct_call_stays_a_call() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     let jump: Vec<(u64, XrefKind)> =
         idx.refs_from_instruction(VENEER).iter().map(|r| (r.to, r.kind)).collect();
     assert_eq!(jump, vec![(SLOT, XrefKind::Jump)]);

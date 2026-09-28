@@ -25,12 +25,6 @@
 //! (`dat_215110 = (dat_215120 * 0xbb) / 200;`, `dat_21511c = (int4)strlen(v15);`).
 //!
 //! Before the fix `main` leaks a dozen such tokens; after it, zero.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`).  When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -47,26 +41,17 @@ fn fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/regglobal_fmt_x86_64")
 }
 
-/// Bootstrap the fixture and decompile `func`, returning the captured C
-/// (`None` ⇒ specs-less skip).  Console defaults (Listing off) — the same path
-/// `kuna decompile` drives; the render bug is independent of the analysis tier.
-fn decompile(func: &str) -> Option<String> {
+/// Bootstrap the fixture and decompile `func`, returning the captured C.  Console defaults
+/// (Listing off) — the same path `kuna decompile` drives; the render bug is independent of
+/// the analysis tier.
+fn decompile(func: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture().to_str()?.to_string();
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_global_regmerge: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let cmds: Vec<String> =
         [format!("load function {func}"), "decompile".into(), "print C".into()].to_vec();
@@ -81,7 +66,7 @@ fn decompile(func: &str) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// A word-boundary regex matching a raw general-purpose register token used as a
@@ -102,7 +87,7 @@ fn register_leak_re() -> Regex {
 /// `dat_<addr>`, exactly as Ghidra renders them (`goal_width`/`max_width`/…).
 #[test]
 fn fmt_main_has_no_register_or_unique_variable_leaks() {
-    let Some(code) = decompile("main") else { return }; // specs-less skip
+    let code = decompile("main");
 
     let re = register_leak_re();
     let leaks: Vec<&str> = code

@@ -19,12 +19,6 @@
 //! * `sub_110` stops at the end of the executable segment — 6 bytes;
 //! * the non-executable segments never become a container, which is what keeps
 //!   a data address from acquiring a body.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -40,28 +34,15 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// `None` is a visible skip when the `.sla` is missing.
-fn bootstrap(name: &str) -> Option<ConsoleProgram> {
+fn bootstrap(name: &str) -> ConsoleProgram {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name);
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(mut prog) => {
-            // The recursive discovery `kuna functions` runs, so the inventory
-            // here is the one the CLI reports.
-            prog.arch_mut().set_kuna_option("fast_funcdisc", "on").expect("fast_funcdisc flips");
-            prog.commit_pending_analysis().expect("analysis commit succeeds");
-            Some(prog)
-        }
-        Err(e) => {
-            eprintln!(
-                "verify_sectionlessextent: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
+    prog.arch_mut().set_kuna_option("fast_funcdisc", "on").expect("fast_funcdisc flips");
+    prog.commit_pending_analysis().expect("analysis commit succeeds");
+    prog
 }
 
 fn sizes(prog: &ConsoleProgram) -> Vec<(String, u64)> {
@@ -72,9 +53,7 @@ fn sizes(prog: &ConsoleProgram) -> Vec<(String, u64)> {
 /// section-keyed clip has nothing to work with.
 #[test]
 fn the_fixture_publishes_no_sections_and_three_segments() {
-    let Some(prog) = bootstrap("noshdr_x86_64") else {
-        return;
-    };
+    let prog = bootstrap("noshdr_x86_64");
     assert_eq!(prog.sections(), Vec::new(), "e_shoff is zero — there is no section table");
     let segments = prog.segments();
     assert_eq!(segments.len(), 3, "the three PT_LOADs are the whole story; got {segments:?}");
@@ -94,9 +73,7 @@ fn the_fixture_publishes_no_sections_and_three_segments() {
 /// clip, the same two arms a sectioned image already gets from its sections.
 #[test]
 fn a_sectionless_image_still_reports_function_extents() {
-    let Some(prog) = bootstrap("noshdr_x86_64") else {
-        return;
-    };
+    let prog = bootstrap("noshdr_x86_64");
     assert_eq!(
         sizes(&prog),
         vec![(FIRST.to_string(), 16), (SECOND.to_string(), 6)],
@@ -110,9 +87,7 @@ fn a_sectionless_image_still_reports_function_extents() {
 /// segment still has no extent — the sentinel keeps meaning what it says.
 #[test]
 fn the_single_address_path_agrees_and_data_keeps_no_extent() {
-    let Some(prog) = bootstrap("noshdr_x86_64") else {
-        return;
-    };
+    let prog = bootstrap("noshdr_x86_64");
     assert_eq!(prog.function_extent_at(0x110), 6, "the last entry runs to the segment end");
     assert_eq!(prog.function_extent_at(0x108), 8, "an interior address clips at the next entry");
     assert_eq!(prog.function_extent_at(0x120), 0, "the data segment is not a body");
@@ -123,9 +98,7 @@ fn the_single_address_path_agrees_and_data_keeps_no_extent() {
 /// one, so the fallback cannot loosen an extent that was already tight.
 #[test]
 fn a_sectioned_image_keeps_clipping_against_its_sections() {
-    let Some(prog) = bootstrap("fauxware") else {
-        return;
-    };
+    let prog = bootstrap("fauxware");
     assert!(!prog.sections().is_empty(), "fauxware has a section table");
     let main = sizes(&prog)
         .into_iter()
