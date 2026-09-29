@@ -15,8 +15,8 @@
   "repeat": 1,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/passthroughpair_x86_64",
-    "binary_sha256": "ce28d3c70cfa09f1c70192a72a7182d8299cd0673c0268af2d022c260a2d344d",
-    "binary_size": 5024,
+    "binary_sha256": "5eeb7c86ed6e16631b8e3e2978ca6ae149dc30df26cceba11208f968972e0090",
+    "binary_size": 5120,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/passthroughpair_x86_64",
     "selector": "fwd_wide",
@@ -41,8 +41,9 @@
       "void fwd_wide\\(",
       "void fwd_wide2\\(",
       "void callfwd_wide\\(",
-      "undefined16 lofwd\\("
+      "undefined16 lofwd\\(",
+      "return swapd\\("
     ]
   },
-  "notes": "fwd_wide/fwd_wide2 jmp to a callee returning rdx:rax and callfwd_wide calls it then returns: each hands back the pair, like fwd_narrow does its rax. lofwd writes rdx after the call, so it is not given the pair; notfwd uses the result itself."
+  "notes": "fwd_wide/fwd_wide2 jmp to a callee returning rdx:rax and callfwd_wide calls it then returns: each hands back the pair, like fwd_narrow does its rax. Controls: lofwd writes rdx after the call, notfwd uses the result itself, and fwd_swapd forwards a struct{double,double} whose xmm1 the call does not kill, so it must not return half of it."
 }

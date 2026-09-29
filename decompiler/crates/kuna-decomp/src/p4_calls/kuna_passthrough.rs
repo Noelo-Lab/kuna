@@ -116,7 +116,8 @@
 //! (`claim_tail_return`). Upstream's `ancestorOpUse` refuses an INDIRECT creation
 //! at a RETURN, so [`returns_tail_result`] accepts the one planted at a claimed
 //! call, whose output then takes the callee's recovered return type
-//! ([`tail_return_type`]).
+//! ([`tail_return_type`]). A register pair is kept whole or not at all
+//! ([`keep_tail_return_whole`]).
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -636,6 +637,35 @@ pub fn returns_tail_result(data: &Funcdata, vn: VarnodeId, addr: &Address, size:
     data.kuna_passthrough_claims()
         .iter()
         .any(|c| c.addr == *addr && c.size == size && c.ret_owners.contains(&call))
+}
+
+/// Is `[addr, addr+size)` a register of a tail call's result this pass claimed
+/// as the function's return value?
+fn is_tail_return_piece(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    data.kuna_passthrough_claims().iter().any(|c| c.addr == *addr && c.size == size && !c.ret_owners.is_empty())
+}
+
+/// Take a claimed return value whole or not at all, once `ActionReturnRecovery`
+/// has scored its trials for the last time.
+///
+/// Every register of a claimed pair must have been accepted as the tail call's
+/// result ([`returns_tail_result`]). One the callee's model does not kill -- the
+/// `xmm1` of a `struct { double, double }` on the x86-64 gcc model -- reaches
+/// the RETURN through an ordinary INDIRECT instead, and keeping the other
+/// register alone would return half the callee's value as the whole of the
+/// function's. Inert with the option off, and for a one-register claim.
+pub fn keep_tail_return_whole(data: &Funcdata, active: &mut crate::fspec::ParamActive) {
+    if !data.get_arch().pass_through {
+        return;
+    }
+    let claimed: Vec<int4> = (0..active.get_num_trials())
+        .filter(|&i| is_tail_return_piece(data, active.get_trial(i).get_address(), active.get_trial(i).get_size()))
+        .collect();
+    if claimed.iter().any(|&i| !active.get_trial(i).is_active()) {
+        for i in claimed {
+            active.get_trial_mut(i).mark_inactive();
+        }
+    }
 }
 
 /// The type a tail call this pass claimed hands back: the callee's own

@@ -24,6 +24,9 @@ Layout (one R-X PT_LOAD, .text at 0x401000):
   0x401080  callfwd_wide: call wide; ret                     the same without a tail jump
   0x4010a0  lofwd:        call wide; xor edx,edx; ret        writes rdx: no claim
   0x4010c0  notfwd:       call wide; rax += 1; ret           uses the result itself
+  0x4010e0  swapd:        xmm0,xmm1 = xmm1,xmm0; ret         struct { double, double }
+  0x4010f0  fwd_swapd:    jmp swapd                          xmm1 is not killed by the
+                                                             call: no half return
 """
 
 import os
@@ -33,7 +36,7 @@ BASE = 0x401000
 
 
 def build_text():
-    code = bytearray(b"\xcc" * 0xe0)
+    code = bytearray(b"\xcc" * 0x100)
 
     def put(off, hexs):
         b = bytes.fromhex(hexs)
@@ -52,10 +55,13 @@ def build_text():
     put(0x80, "4883ec08"); rel(0xE8, 0x84, 0x00); put(0x89, "4883c408c3")
     put(0xA0, "4883ec08"); rel(0xE8, 0xA4, 0x00); put(0xA9, "31d24883c408c3")
     put(0xC0, "4883ec08"); rel(0xE8, 0xC4, 0x00); put(0xC9, "4883c0014883c408c3")
+    put(0xE0, "660f28d0660f28c1660f28cac3")
+    rel(0xE9, 0xF0, 0xE0)
     syms = {
         "wide": 0x00, "fwd_wide": 0x10, "wide2": 0x20, "fwd_wide2": 0x30,
         "narrow": 0x40, "fwd_narrow": 0x50, "use_wide": 0x60,
         "callfwd_wide": 0x80, "lofwd": 0xA0, "notfwd": 0xC0,
+        "swapd": 0xE0, "fwd_swapd": 0xF0,
     }
     return code, syms
 

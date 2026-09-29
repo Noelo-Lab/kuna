@@ -2713,16 +2713,31 @@ scores a claimed trial before the ancestor walk that sets that mark, and skips
 the walk for it. Without this an x86-64 `jmp wide` to an `undefined16 wide(...)`
 rendered `void fwd_wide(a0,a1) { wide(a0,a1); }`; it now renders `undefined16
 fwd_wide(a0,a1) { return wide(a0,a1); }`, and a caller of `fwd_wide` reads the
-pair it always read. The witnesses are `passthroughpair_x86_64` and
-`passthroughpair_le32` under `tests/cli/passthrough-returns-a-register-pair-a-tail-call-leaves.json`
-and its ARM twin; a forwarder that writes `rdx` after the call is their control.
-Over the decbench O2 and O2-noinline corpora (500 binaries, x86-64, i386 and
-ARM) the pair arm changes three coreutils wrappers, each in three binaries:
-`get_stat_btime`, a `jmp get_stat_mtime`, now returns the `struct timespec`
-DWARF gives it, and `strintcmp`, a `jmp numcompare`, goes from `void` to the
-`undefined16` its callee is recovered with. DWARF says `int` for both of those:
-the callee's own recovery invents the `rdx` half, and the wrapper repeats it,
-as it repeats any stated return.
+pair it always read.
+
+A pair is taken whole or not at all (`keep_tail_return_whole`, run once the
+trials are scored for the last time): if any register of it was not accepted as
+the call's result, none is. The x86-64 gcc model kills `rax`, `rdx` and `xmm0`
+at a call but not `xmm1`, so the `xmm1` of a `struct { double, double }` return
+reaches the RETURN through an ordinary INDIRECT, not the call's creation; keeping
+`xmm0` alone rendered `unsigned long fwd_mkd(double a0,double a1)` -- half of the
+callee's value, as an integer -- and spread to its callers. Such a forwarder
+keeps the option-off `void`.
+
+The witnesses are `passthroughpair_x86_64` and `passthroughpair_le32` under
+`tests/cli/passthrough-returns-a-register-pair-a-tail-call-leaves.json` and its
+ARM twin; a forwarder that writes `rdx` after the call and the `xmm0:xmm1`
+forwarder are their controls. Over the decbench O2 and O2-noinline corpora (500
+binaries, x86-64, i386 and ARM) the pair arm changes two coreutils wrappers,
+each in three binaries (6 functions). `get_stat_btime`, a `jmp get_stat_mtime`,
+now returns the `struct timespec` DWARF gives it. `strintcmp`, a `jmp
+numcompare`, goes from `void` to the `undefined16` its callee is recovered
+with, where DWARF says `int`: the callee's own recovery invents the `rdx` half,
+and the wrapper repeats it, as it repeats any stated return. The bytes cannot
+tell a second limit apart either: a wrapper that truncates the pair its callee
+returns -- `int lo(int a,int b) { return (int)wide(a,b); }`, or `return
+mkp(a,b).a;` -- compiles to the same `jmp` or `call; ret` as a real forwarder,
+and is given the whole pair.
 
 A callee states a return at all only where its own body computed one. `protoorder`
 passes the callee's `Funcdata` to `recovered_output`, which asks
