@@ -1,0 +1,49 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_callfwd_x86_64",
+    "binary_sha256": "30e1c39851d0336f1037b9338849a11b506fa66eed47e85a43554d51cdc264f2",
+    "binary_size": 5304,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_callfwd_x86_64",
+    "selector": "pass_fwd_call",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "long pass_fwd_call\\(long a0,long a1\\)",
+      "return fwd_call\\(a0,a1\\) \\* 2;",
+      "long pass_fwd_call2\\(long a0,long a1\\)",
+      "return fwd_call2\\(a0,a1\\) \\* 2;",
+      "long pass_fwd_clob\\(long a0\\)",
+      "return fwd_clob\\(a0\\) \\* 2;",
+      "long pass_fwd\\(long a0,long a1\\)"
+    ],
+    "stdout_absent": [
+      "pass_fwd_clob\\(long a0,long",
+      "fwd_clob\\(a0,a1",
+      "pass_fwd_ind\\(long",
+      "fwd_ind\\(a0",
+      "pass_cyc_a\\(long",
+      "cyc_a\\(a0"
+    ]
+  },
+  "notes": "fwd_call forwards rdi and rsi to narrow by a call (sub rsp,8; call; add rsp,8; ret), fwd_call2 by a call to fwd_call: their callers pass both on, as the caller of the jmp-forwarder fwd does. fwd_clob writes esi before its call, so its caller passes rdi only. Controls gain nothing: fwd_ind calls through a pointer, cyc_a/cyc_b call each other and read nothing.",
+  "probe_id": "p-d5440a52dddd"
+}

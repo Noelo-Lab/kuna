@@ -361,6 +361,14 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
     >,
+    /// (kuna `passthrough`) The same probes with what each direct call's target
+    /// takes added ([`crate::kuna_calleedeadarg::reads_through_calls`]), for the
+    /// callees `protoorder` stated a prototype for.  Read only by
+    /// [`crate::p4_calls::kuna_passthrough::stated_width`].
+    kuna_callee_entry_through: std::collections::HashMap<
+        (int4, kuna_base::types::uintb),
+        std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
+    >,
     /// (kuna `argclobber`) What a value the caller leaves in a register can reach
     /// once each called callee has it, resolved on the `Architecture` after the
     /// flow build and read at the trial-scoring seam
@@ -549,6 +557,7 @@ impl Funcdata {
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
             kuna_callee_entry_dead: std::collections::HashMap::new(),
+            kuna_callee_entry_through: std::collections::HashMap::new(),
             kuna_callee_forward: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_callret_types: std::collections::HashMap::new(),
@@ -765,6 +774,28 @@ impl Funcdata {
     ) -> Option<&crate::kuna_calleedeadarg::CalleeEntryDead> {
         let sp = entry.get_space()?;
         self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `passthrough`) Record the probe of `entry`'s body with what its
+    /// direct calls' targets take added.
+    pub fn kuna_set_callee_entry_through(
+        &mut self,
+        entry: &Address,
+        facts: std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
+    ) {
+        if let Some(sp) = entry.get_space() {
+            self.kuna_callee_entry_through.insert((sp.get_index(), entry.get_offset()), facts);
+        }
+    }
+
+    /// (kuna `passthrough`) The probe of `entry`'s body with what its direct
+    /// calls' targets take added, if one was taken.
+    pub fn kuna_callee_entry_through(
+        &self,
+        entry: &Address,
+    ) -> Option<&crate::kuna_calleedeadarg::CalleeEntryDead> {
+        let sp = entry.get_space()?;
+        self.kuna_callee_entry_through.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
     }
 
     /// (kuna `argclobber`) Record what a caller's value in a register can reach

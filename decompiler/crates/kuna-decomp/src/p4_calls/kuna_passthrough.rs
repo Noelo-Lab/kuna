@@ -46,6 +46,9 @@
 //! * the callee's own body READS `R` before writing it on some path, for a value
 //!   that reaches something ([`crate::p4_calls::kuna_calleedeadarg`]'s
 //!   `proves_input`), so the parameter is not a recovery artifact of the callee;
+//!   a body that hands `R` unwritten to a direct call whose target takes it
+//!   on these same terms (`call f; ret`) reads it too, up to three calls deep
+//!   ([`crate::p4_calls::kuna_calleedeadarg::reads_through_calls`]);
 //! * that read is for something other than a variadic tail
 //!   ([`crate::p4_calls::kuna_varargtail`]): a callee whose parameter only
 //!   reaches an argument slot the ABI lets a caller leave unset says nothing
@@ -196,7 +199,7 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
         return None;
     }
     let stated_size = stated.inputs.iter().find(|(a, _, _)| a == addr).map(|(_, s, _)| *s)?;
-    let facts = data.kuna_callee_entry_dead(entry)?;
+    let facts = data.kuna_callee_entry_through(entry).or_else(|| data.kuna_callee_entry_dead(entry))?;
     let size = size.min(stated_size);
     if !facts.proves_input(addr, size) {
         return None;

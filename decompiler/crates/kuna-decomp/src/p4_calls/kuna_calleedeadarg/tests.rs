@@ -126,6 +126,98 @@ fn an_unaccounted_transfer_keeps_the_register_unproven() {
     assert!(!free(&incomplete, TargetAnswer::Unaccounted));
 }
 
+/// A forwarder that calls its target reads what the target takes, for the
+/// bytes it has not written by the call; `passthrough` reads this, and only
+/// `proves_input` answers differently for it.
+#[test]
+fn a_call_forwards_what_its_target_takes() {
+    let reg = Rc::new(kuna_base::space::AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false,
+        8,
+        1,
+        3,
+        kuna_base::space::addrspace_flags::hasphysical,
+        1,
+        1,
+    ));
+    let (rdi, rsi) = (Address::new(Rc::clone(&reg), 0x38), Address::new(Rc::clone(&reg), 0x30));
+    let target = Address::new(Rc::clone(&reg), 0x1000);
+    let narrow = Rc::new(vec![(3, 0x38, 8), (3, 0x30, 8)]);
+    let rsi_bytes: Vec<(int4, u64)> = (0x30u64..0x38).map(|b| (3, b)).collect();
+    let forwarder = |written: Vec<(int4, u64)>| {
+        CalleeEntryDead::from_parts(3, Vec::new(), vec![written.clone()], true).with_named_cut(target.clone(), written)
+    };
+    let through = |d: &CalleeEntryDead, t: Option<Rc<Vec<RegRead>>>| match add_reads_through(d, |_| t.clone()) {
+        Some(reads_live) => CalleeEntryDead { reads_live, ..d.clone() },
+        None => d.clone(),
+    };
+
+    let fwd = forwarder(Vec::new());
+    assert!(!fwd.proves_input(&rdi, 8));
+    let t = through(&fwd, Some(Rc::clone(&narrow)));
+    assert!(t.proves_input(&rdi, 8) && t.proves_input(&rsi, 8));
+    assert_eq!(t.live_input_width(&rdi, 8), Some(8));
+    assert!(!t.proves_read(&rdi, 8));
+
+    // A byte written before the call is the forwarder's own value.
+    let t = through(&forwarder(rsi_bytes), Some(Rc::clone(&narrow)));
+    assert!(t.proves_input(&rdi, 8) && !t.proves_input(&rsi, 8));
+
+    // A register the forwarder reads itself keeps the width it reads it at: the
+    // target's wider read of it adds nothing, while `rdi` still comes through.
+    let reads_esi = CalleeEntryDead::from_parts(3, vec![(3, 0x30, 4)], vec![Vec::new()], true)
+        .with_named_cut(target.clone(), Vec::new());
+    assert_eq!(reads_esi.live_input_width(&rsi, 8), Some(4));
+    let t = through(&reads_esi, Some(Rc::clone(&narrow)));
+    assert!(t.proves_input(&rdi, 8));
+    assert_eq!(t.live_input_width(&rsi, 8), Some(4));
+
+    // A target that takes nothing, or an indirect call, adds nothing.
+    assert!(add_reads_through(&fwd, |_| Some(Rc::new(Vec::new()))).is_none());
+    let opaque = CalleeEntryDead::from_parts(3, Vec::new(), vec![Vec::new()], true).with_opaque_cut(Vec::new());
+    assert!(add_reads_through(&opaque, |_| Some(Rc::clone(&narrow))).is_none());
+
+    // An incomplete forwarder proves nothing whatever its targets take.
+    let mut broken = forwarder(Vec::new());
+    broken.complete = false;
+    assert!(add_reads_through(&broken, |_| Some(Rc::clone(&narrow))).is_none());
+}
+
+/// A target's read counts only for a parameter its own statement takes: a
+/// variadic's register-save prologue reads every argument register, and the
+/// ones past its named parameters are nothing a forwarder hands it.
+#[test]
+fn a_target_takes_only_what_it_stated() {
+    let reg = Rc::new(kuna_base::space::AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false,
+        8,
+        1,
+        3,
+        kuna_base::space::addrspace_flags::hasphysical,
+        1,
+        1,
+    ));
+    let long = Rc::new(crate::dtype::Datatype::new(8, crate::dtype::type_metatype::TYPE_INT));
+    let (rdi, rsi) = (Address::new(Rc::clone(&reg), 0x38), Address::new(Rc::clone(&reg), 0x30));
+    let stated = crate::kuna_protoorder::RecoveredTypes {
+        inputs: vec![(rdi.clone(), 8, Rc::clone(&long)), (rsi.clone(), 8, long)],
+        arity_sound: true,
+        output: None,
+        vararg_tail: vec![rsi],
+    };
+    // `edi` is a read of the stated `rdi`.
+    assert!(takes(&stated, &(3, 0x38, 4)));
+    // `rsi` is stated only as a variadic tail, `rcx` not at all.
+    assert!(!takes(&stated, &(3, 0x30, 8)));
+    assert!(!takes(&stated, &(3, 0x08, 8)));
+    // Another space's bytes are not the register.
+    assert!(!takes(&stated, &(4, 0x38, 8)));
+}
+
 /// `xor ecx,ecx`, `and edx,0` and `or rdx,-1` all write a CONSTANT into the
 /// register they read, and their p-code reads it.  The read is formal — the
 /// result does not depend on it — so it is kept out of the

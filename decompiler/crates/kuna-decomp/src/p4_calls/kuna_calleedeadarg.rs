@@ -529,11 +529,7 @@ fn resolve_node(
         return ForwardTransfer::denied(reg_idx);
     }
     *budget -= 1;
-    if !arch.kuna_callee_dead_cache.contains_key(&key) {
-        let probed = probe_callee_entry_dead(arch.translate(), entry, reg_idx);
-        arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
-    }
-    let Some(dead) = arch.kuna_callee_dead_cache.get(&key).cloned() else {
+    let Some(dead) = probe_cached(arch, entry, reg_idx) else {
         return ForwardTransfer::denied(reg_idx);
     };
     visiting.push(key);
@@ -565,6 +561,140 @@ fn declared_accounts_for_its_reads(
         Some(pieces) => pieces.first_var_arg_slot < 0,
         None => false,
     }
+}
+
+/// How many levels of direct calls [`reads_through_calls`] follows.
+const MAX_THROUGH_DEPTH: u32 = 3;
+
+/// One register read, `(space index, offset, size)`.
+type RegRead = (int4, u64, int4);
+
+/// [`reads_through_calls`]'s memo for one caller: what each target, asked at
+/// each remaining depth, is shown to take.
+type ThroughMemo = HashMap<(int4, u64, u32), Rc<Vec<RegRead>>>;
+
+/// (kuna `passthrough`) The probe of `entry`'s body, with what each of its
+/// direct calls hands a target shown to take it.
+///
+/// A forwarder that calls its target (`call f; ret`, or a tail call the spec
+/// models as a call) reads nothing itself, yet what its target takes is what it
+/// was handed. A target's read counts for the register bytes nothing on the
+/// forwarder's path wrote before that call ([`add_reads_through`]), and only
+/// where the target's own `protoorder` statement takes that register on the
+/// terms `passthrough` asks of a callee ([`taken_reads`]): a variadic's
+/// register-save prologue reads every argument register, and a forwarder into
+/// one would otherwise be read as taking them all. Calls are followed
+/// [`MAX_THROUGH_DEPTH`] deep, so a cycle of calls ends. Only
+/// [`CalleeEntryDead::reads_live`] grows, so `proves_dead` and `proves_read`
+/// answer exactly as the plain probe does. Statements accumulate over a run, so
+/// only the probes are cached for the run and the fold is memoized per caller.
+pub fn reads_through_calls(
+    arch: &mut crate::architecture::Architecture,
+    entry: &Address,
+    reg_idx: int4,
+    memo: &mut ThroughMemo,
+) -> Option<Rc<CalleeEntryDead>> {
+    let dead = probe_cached(arch, entry, reg_idx)?;
+    let reads = add_reads_through(&dead, |t| taken_reads(arch, t, reg_idx, MAX_THROUGH_DEPTH - 1, memo));
+    Some(match reads {
+        Some(reads_live) => Rc::new(CalleeEntryDead { reads_live, ..(*dead).clone() }),
+        None => dead,
+    })
+}
+
+/// The live reads of the function at `entry`, its own direct calls followed
+/// `depth` more levels, kept where its statement takes a parameter: an
+/// arity-sound list naming the register, not as a variadic tail. Empty for a
+/// function that stated nothing.
+fn taken_reads(
+    arch: &mut crate::architecture::Architecture,
+    entry: &Address,
+    reg_idx: int4,
+    depth: u32,
+    memo: &mut ThroughMemo,
+) -> Option<Rc<Vec<RegRead>>> {
+    let sp = entry.get_space()?;
+    let key = (sp.get_index(), entry.get_offset());
+    if let Some(r) = memo.get(&(key.0, key.1, depth)) {
+        return Some(Rc::clone(r));
+    }
+    let taken = match arch.kuna_protoorder_types.get(&key).cloned() {
+        Some(stated) if stated.arity_sound => {
+            let dead = probe_cached(arch, entry, reg_idx)?;
+            let through = if depth == 0 {
+                None
+            } else {
+                add_reads_through(&dead, |t| taken_reads(arch, t, reg_idx, depth - 1, memo))
+            };
+            let reads = through.unwrap_or_else(|| dead.reads_live.clone());
+            reads.into_iter().filter(|r| takes(&stated, r)).collect()
+        }
+        _ => Vec::new(),
+    };
+    let out = Rc::new(taken);
+    memo.insert((key.0, key.1, depth), Rc::clone(&out));
+    Some(out)
+}
+
+/// Does `stated` take a parameter that `read` overlaps, other than a variadic tail?
+fn takes(stated: &crate::kuna_protoorder::RecoveredTypes, &(ridx, off, sz): &RegRead) -> bool {
+    let end = off + sz.max(0) as u64;
+    stated.inputs.iter().any(|(a, size, _)| {
+        a.get_space().is_some_and(|s| s.get_index() == ridx)
+            && a.get_offset() < end
+            && off < a.get_offset() + (*size).max(0) as u64
+            && !stated.vararg_tail.contains(a)
+    })
+}
+
+/// The entry-liveness probe of `entry`, from the run's cache or taken now.
+fn probe_cached(
+    arch: &mut crate::architecture::Architecture,
+    entry: &Address,
+    reg_idx: int4,
+) -> Option<Rc<CalleeEntryDead>> {
+    let sp = entry.get_space()?;
+    let key = (sp.get_index(), entry.get_offset());
+    if !arch.kuna_callee_dead_cache.contains_key(&key) {
+        let probed = probe_callee_entry_dead(arch.translate(), entry, reg_idx);
+        arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
+    }
+    arch.kuna_callee_dead_cache.get(&key).cloned()
+}
+
+/// `dead`'s live reads plus what each direct call's target takes of the bytes
+/// still unwritten at that call, or `None` when that adds nothing.
+///
+/// A read that overlaps a byte written before the call is dropped whole, and so
+/// is one that overlaps a byte `dead` reads itself: that register is already
+/// proven an input, and a deeper read could only change how wide it is taken
+/// (openssh `channel_by_id` pushes all of `rsi` for a variadic `%d`, which would
+/// make `channel_send_open(ssh, int id)`'s `id` 64 bits). An incomplete summary
+/// adds nothing, and neither does an indirect transfer, which names no target.
+fn add_reads_through(
+    dead: &CalleeEntryDead,
+    mut target: impl FnMut(&Address) -> Option<Rc<Vec<RegRead>>>,
+) -> Option<Vec<RegRead>> {
+    if !dead.complete || dead.named_cuts.is_empty() {
+        return None;
+    }
+    let idx = dead.reg_idx;
+    let own = dead.read_bytes();
+    let mut reads = dead.reads_live.clone();
+    let before = reads.len();
+    for (t, written) in &dead.named_cuts {
+        let Some(inner) = target(t) else { continue };
+        for &(ridx, off, sz) in inner.iter() {
+            let covered = |b: u64| written.contains(&(idx, b)) || own.contains(&(idx, b));
+            if ridx != idx || (off..off + sz.max(0) as u64).any(covered) {
+                continue;
+            }
+            if !reads.contains(&(ridx, off, sz)) {
+                reads.push((ridx, off, sz));
+            }
+        }
+    }
+    (reads.len() > before).then_some(reads)
 }
 
 /// One decoded p-code op, kept in emission order.
@@ -897,6 +1027,7 @@ pub fn seed_callee_entry_dead(
     if reg_idx < 0 {
         return;
     }
+    let mut through_memo = ThroughMemo::new();
     let mut entries: Vec<Address> = Vec::new();
     // `passthrough` asks this walk of the function's OWN body too: a register it
     // writes before reading is not a parameter it can be carrying, which is what
@@ -915,12 +1046,13 @@ pub fn seed_callee_entry_dead(
     for e in entries {
         let Some(sp) = e.get_space() else { continue };
         let key = (sp.get_index(), e.get_offset());
-        if !arch.kuna_callee_dead_cache.contains_key(&key) {
-            let probed = probe_callee_entry_dead(arch.translate(), &e, reg_idx);
-            arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
+        if let Some(d) = probe_cached(arch, &e, reg_idx) {
+            data.kuna_set_callee_entry_dead(&e, d);
         }
-        if let Some(d) = arch.kuna_callee_dead_cache.get(&key) {
-            data.kuna_set_callee_entry_dead(&e, Rc::clone(d));
+        if pass_through && arch.kuna_protoorder_types.contains_key(&key) {
+            if let Some(t) = reads_through_calls(arch, &e, reg_idx, &mut through_memo) {
+                data.kuna_set_callee_entry_through(&e, t);
+            }
         }
         // `argclobber` also needs what this callee can FORWARD, which is a walk
         // over the bodies it calls in turn and so cannot be answered at the
