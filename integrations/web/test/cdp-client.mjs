@@ -22,7 +22,7 @@ export function findChrome() {
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 /** Launch headless Chrome; resolves `{port, child, close}` once it publishes its DevTools port. */
-export async function launchChrome(chromePath = findChrome(), { width = 1280, height = 860, startupTimeoutMs = 10000 } = {}) {
+export async function launchChrome(chromePath = findChrome(), { width = 1280, height = 860, startupTimeoutMs = 60000 } = {}) {
   if (!chromePath) throw new Error('Chrome executable not found');
   if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs < 0) {
     throw new Error('Chrome startup timeout must be a nonnegative finite number');
