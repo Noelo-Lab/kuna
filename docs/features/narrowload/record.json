@@ -162,78 +162,79 @@
   }
  },
  "speed": {
-  "method": "two pinned release builds (main 632437155 castbench arm, fix), kuna decompile-all --json --max-fn-seconds 120 on O2 fmt/ls/sort/bash, arms interleaved and order-alternated, one warm-up each discarded, min and median-of-ratios of 15 (docs/features/narrowload/speed.py; samples in speed.json); host load 21-55 on 80 cores",
+  "method": "two pinned release builds (main 632437155 castbench arm, this branch with the type-lock walk), kuna decompile-all --json --max-fn-seconds 120 on O2 fmt/ls/sort/bash, arms interleaved and order-alternated, one warm-up each discarded, min and median-of-ratios of 15 (docs/features/narrowload/speed.py; samples in speed.json)",
   "measurements": [
    {
     "label": "fmt_O2",
     "n": 15,
-    "delta_min_pct": 0.05,
-    "delta_median_of_ratios_pct": 2.8,
-    "main_min": 5441.8,
-    "fix_min": 5444.5,
+    "delta_min_pct": 0.06,
+    "delta_median_of_ratios_pct": 1.93,
+    "main_min": 4246.9,
+    "fix_min": 4249.3,
     "loadavg": [
-     55.0,
-     54.4,
-     53.4
+     13.1,
+     15.1,
+     16.9
     ]
    },
    {
     "label": "ls_O2",
     "n": 15,
-    "delta_min_pct": 1.44,
-    "delta_median_of_ratios_pct": 1.52,
-    "main_min": 15201.0,
-    "fix_min": 15419.5,
+    "delta_min_pct": -0.36,
+    "delta_median_of_ratios_pct": 2.16,
+    "main_min": 14715.1,
+    "fix_min": 14661.9,
     "loadavg": [
-     26.2,
-     31.7,
-     42.3
+     18.0,
+     18.2,
+     17.2
     ]
    },
    {
     "label": "sort_O2",
     "n": 15,
-    "delta_min_pct": -5.64,
-    "delta_median_of_ratios_pct": -2.16,
-    "main_min": 17464.4,
-    "fix_min": 16480.0,
+    "delta_min_pct": -1.5,
+    "delta_median_of_ratios_pct": -1.5,
+    "main_min": 15125.6,
+    "fix_min": 14898.7,
     "loadavg": [
-     28.8,
-     30.1,
-     35.9
+     12.3,
+     13.5,
+     15.0
     ]
    },
    {
     "label": "bash_O2",
     "n": 15,
-    "delta_min_pct": -4.74,
-    "delta_median_of_ratios_pct": -1.23,
-    "main_min": 100341.5,
-    "fix_min": 95582.8,
+    "delta_min_pct": -1.73,
+    "delta_median_of_ratios_pct": -1.25,
+    "main_min": 93326.4,
+    "fix_min": 91711.1,
     "loadavg": [
-     21.0,
-     24.6,
-     24.2
+     7.6,
+     8.5,
+     9.8
     ]
    }
   ],
   "budget_pct": 5.0,
-  "worst_delta_min_pct": 1.44,
+  "worst_delta_min_pct": 0.06,
   "within_budget": true,
-  "note": "the fix only removes work (no SUBPIECE is created; the AND form fires on fewer loads); the negative deltas are contention"
+  "note": "the fix only removes work (no SUBPIECE is created; the AND form fires on fewer loads); the type-lock walk runs only for a load that already passed every other AND-form check (at most 8 hops)"
  },
  "gates": {
-  "base": "origin/main 63dfb436c (rebased)",
+  "base": "origin/main 63dfb436c",
   "make test": "675/675 PARITY OK",
-  "make test-stages": "1475/1475 PARITY OK",
+  "make test-stages": "1478/1478 PARITY OK",
   "make check-spec": "OK (lenient mode)",
   "check_spec --strict": "OK (strict mode)",
   "make test-cli": "269/269 passed",
   "kuna catalog --check": "catalog OK",
   "counters --check": "no drift",
   "docs/options.md": "byte-fresh",
-  "make rust-test": "RUST_TEST_RC=0 via rust-test-lane.sh (first run on the pre-rebase base failed only catalog_bytecompat: the elemptr row text changed; fixture recaptured)",
-  "castbench on the rebased build": "all 45 .c byte-identical to the pre-rebase fix arm"
+  "phases.toml": "parses with tomllib",
+  "make rust-test": "RUST_TEST_RC=0 via rust-test-lane.sh, 441 test results ok (run started 05:02:17Z, after the last source and fixture change)",
+  "castbench": "all 45 exports byte-identical to the previous head"
  },
  "files": [
   "decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_narrowload.rs",
@@ -254,5 +255,5 @@
   "decompiler/crates/kuna-analysis/tests/fixtures/narrowload_dwarf_x86_64.c",
   "docs/features/narrowload/hunks-dwarf.txt"
  ],
- "notes": "The castbench shared set moves by one cast: the truncation form and its narrow spelling carry one cast each; the fts flag tests that gain a byte cast (`((unsigned char *)&a0->field_0x48)[1] & 0x20`) are outside the IDA-shared set."
+ "notes": "The castbench shared set moves by one cast: the truncation form and its narrow spelling carry one cast each; the fts flag tests that gain a byte cast (`((unsigned char *)&a0->field_0x48)[1] & 0x20`) are outside the IDA-shared set. A debug build (make rust-test) panics splitting a 16-byte constant in p3_dataflow/subflow.rs (a shift of 64 or more; pre-existing, release wraps the shift); the DWARF fixture avoids 16-byte zero stores so every function exports in both builds."
 }
