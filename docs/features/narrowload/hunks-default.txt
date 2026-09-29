@@ -1,0 +1,413 @@
+## castbench 45 binaries, default options
+
+### O0-tar-tar 0x6ad22
+```
+-    v2 = ((*(uint2 *)((uint1)a0->field_0x0 * 2UL + *(int8 *)__ctype_b_loc()) & 8) || ((char)a0->field_0x0 == '_'));
++    v2 = ((*(uint2 *)(*(uint1 *)&a0->field_0x0 * 2UL + *(int8 *)__ctype_b_loc()) & 8) || (*(char *)&a0->field_0x0 == '_'));
+```
+### O0-tar-tar 0x784e4
+```
+-  v2 = (uint1)a1->field_0x8;
++  v2 = *(uint1 *)&a1->field_0x8;
+```
+### O2-coreutils-cp 0x10840
+```
+-            if (a0->field_0x48 & 0x2000)
++            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)
+-            if (!(a0->field_0x48 & 0x2000))
++            if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20))
+-          if (!(a0->field_0x48 & 0x2000)) {
++          if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20)) {
+```
+### O2-coreutils-cp 0x10fc0
+```
+-  if (a0->field_0x48 & 0x2000) {
++  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {
+-    if (a0->field_0x48 & 0x200) // branch-flip
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) // branch-flip
+```
+### O2-coreutils-du 0xadd0
+```
+-            if (a0->field_0x48 & 0x2000)
++            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)
+-            if (!(a0->field_0x48 & 0x2000))
++            if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20))
+-          if (!(a0->field_0x48 & 0x2000)) {
++          if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20)) {
+```
+### O2-coreutils-du 0xb550
+```
+-  if (a0->field_0x48 & 0x2000) {
++  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {
+-    if (a0->field_0x48 & 0x200) // branch-flip
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) // branch-flip
+```
+### O2-findutils-find 0x7670
+```
+-        if ((a1->field_0x88 & 0xf000) != 0xa000) {
++        if ((*(unsigned int *)&a1->field_0x88 & 0xf000) != 0xa000) {
+```
+### O2-findutils-find 0x19ff0
+```
+-            if (a0->field_0x48 & 0x2000)
++            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)
+-            if (!(a0->field_0x48 & 0x2000))
++            if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20))
+-          if (!(a0->field_0x48 & 0x2000)) {
++          if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20)) {
+```
+### O2-findutils-find 0x1a780
+```
+-  if (a0->field_0x48 & 0x2000) {
++  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {
+-    if (a0->field_0x48 & 0x200) // branch-flip
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) // branch-flip
+```
+### O2-grep-grep 0x18fd0
+```
+-            if (a0->field_0x48 & 0x2000)
++            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)
+-            if (!(a0->field_0x48 & 0x2000))
++            if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20))
+-          if (!(a0->field_0x48 & 0x2000)) {
++          if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20)) {
+```
+### O2-grep-grep 0x19750
+```
+-  if (a0->field_0x48 & 0x2000) {
++  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {
+-    if (a0->field_0x48 & 0x200) // branch-flip
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) // branch-flip
+```
+### O2-noinline-coreutils-cp 0xfc50
+```
+-      if (a0->field_0x48 & 0x100) {
++      if (((unsigned char *)&a0->field_0x48)[1] & 1) {
+-    if (a0->field_0x48 & 0x200) {
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) {
+-        if (((a0->field_0x48 & 0x20) || (v12->field_0x13 != '.')) || ((v12->field_0x14 && (*(short *)&v12->field_0x14 != 0x2e)))) break;
++        if (((*(unsigned char *)&a0->field_0x48 & 0x20) || (v12->field_0x13 != '.')) || ((v12->field_0x14 && (*(short *)&v12->field_0x14 != 0x2e)))) break;
+-          if (!(a0->field_0x48 & 4))
++          if (!(*(unsigned char *)&a0->field_0x48 & 4))
+-    if (a0->field_0x48 & 4) {
++    if (*(unsigned char *)&a0->field_0x48 & 4) {
+-    if (a0->field_0x48 & 4) {
++    if (*(unsigned char *)&a0->field_0x48 & 4) {
+```
+### O2-noinline-coreutils-cp 0x10b30
+```
+-            if (a0->field_0x48 & 0x2000)
++            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)
+-            if (!(a0->field_0x48 & 0x2000))
++            if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20))
+-          if (!(a0->field_0x48 & 0x2000)) {
++          if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20)) {
+```
+### O2-noinline-coreutils-cp 0x111a0
+```
+-  if (a0->field_0x48 & 0x2000) {
++  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {
+-    if (a0->field_0x48 & 0x200) // branch-flip
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) // branch-flip
+```
+### O2-noinline-coreutils-du 0x9c70
+```
+-      if (a0->field_0x48 & 0x100) {
++      if (((unsigned char *)&a0->field_0x48)[1] & 1) {
+-    if (a0->field_0x48 & 0x200) {
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) {
+-        if (((a0->field_0x48 & 0x20) || (v12->field_0x13 != '.')) || ((v12->field_0x14 && (*(short *)&v12->field_0x14 != 0x2e)))) break;
++        if (((*(unsigned char *)&a0->field_0x48 & 0x20) || (v12->field_0x13 != '.')) || ((v12->field_0x14 && (*(short *)&v12->field_0x14 != 0x2e)))) break;
+-          if (!(a0->field_0x48 & 4))
++          if (!(*(unsigned char *)&a0->field_0x48 & 4))
+-    if (a0->field_0x48 & 4) {
++    if (*(unsigned char *)&a0->field_0x48 & 4) {
+-    if (a0->field_0x48 & 4) {
++    if (*(unsigned char *)&a0->field_0x48 & 4) {
+```
+### O2-noinline-coreutils-du 0xab50
+```
+-            if (a0->field_0x48 & 0x2000)
++            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)
+-            if (!(a0->field_0x48 & 0x2000))
++            if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20))
+-          if (!(a0->field_0x48 & 0x2000)) {
++          if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20)) {
+```
+### O2-noinline-coreutils-du 0xb1c0
+```
+-  if (a0->field_0x48 & 0x2000) {
++  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {
+-    if (a0->field_0x48 & 0x200) // branch-flip
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) // branch-flip
+```
+### O2-noinline-findutils-find 0x18c60
+```
+-    if (a0->field_0x48 & 0x200) {
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) {
+-        if (((a0->field_0x48 & 0x20) || (v13->field_0x13 != '.')) || ((v13->field_0x14 && (*(short *)&v13->field_0x14 != 0x2e)))) break;
++        if (((*(unsigned char *)&a0->field_0x48 & 0x20) || (v13->field_0x13 != '.')) || ((v13->field_0x14 && (*(short *)&v13->field_0x14 != 0x2e)))) break;
+-          if (!(a0->field_0x48 & 4))
++          if (!(*(unsigned char *)&a0->field_0x48 & 4))
+-    if (a0->field_0x48 & 4) {
++    if (*(unsigned char *)&a0->field_0x48 & 4) {
+-    if (a0->field_0x48 & 4) {
++    if (*(unsigned char *)&a0->field_0x48 & 4) {
+```
+### O2-noinline-findutils-find 0x19b40
+```
+-            if (a0->field_0x48 & 0x2000)
++            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)
+-            if (!(a0->field_0x48 & 0x2000))
++            if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20))
+-          if (!(a0->field_0x48 & 0x2000)) {
++          if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20)) {
+```
+### O2-noinline-findutils-find 0x1a1c0
+```
+-  if (a0->field_0x48 & 0x2000) {
++  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {
+-    if (a0->field_0x48 & 0x200) // branch-flip
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) // branch-flip
+```
+### O2-noinline-grep-grep 0x16310
+```
+-      if (a0->field_0x48 & 0x100) {
++      if (((unsigned char *)&a0->field_0x48)[1] & 1) {
+-    if (a0->field_0x48 & 0x200) {
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) {
+-        if (((a0->field_0x48 & 0x20) || (v12->field_0x13 != '.')) || ((v12->field_0x14 && (*(short *)&v12->field_0x14 != 0x2e)))) break;
++        if (((*(unsigned char *)&a0->field_0x48 & 0x20) || (v12->field_0x13 != '.')) || ((v12->field_0x14 && (*(short *)&v12->field_0x14 != 0x2e)))) break;
+-          if (!(a0->field_0x48 & 4))
++          if (!(*(unsigned char *)&a0->field_0x48 & 4))
+-    if (a0->field_0x48 & 4) {
++    if (*(unsigned char *)&a0->field_0x48 & 4) {
+-    if (a0->field_0x48 & 4) {
++    if (*(unsigned char *)&a0->field_0x48 & 4) {
+```
+### O2-noinline-grep-grep 0x171f0
+```
+-            if (a0->field_0x48 & 0x2000)
++            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)
+-            if (!(a0->field_0x48 & 0x2000))
++            if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20))
+-          if (!(a0->field_0x48 & 0x2000)) {
++          if (!(((unsigned char *)&a0->field_0x48)[1] & 0x20)) {
+```
+### O2-noinline-grep-grep 0x17860
+```
+-  if (a0->field_0x48 & 0x2000) {
++  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {
+-    if (a0->field_0x48 & 0x200) // branch-flip
++    if (((unsigned char *)&a0->field_0x48)[1] & 2) // branch-flip
+```
+### O2-noinline-tar-tar 0x37190
+```
+-  code *v1;
+-  uint8 v10; // r8
+-  int8 v11;
+-  uint4 v2;
+-  char *v3; // rax
+-  void *v4; // rax
+-  uint8 v5;
+-  void *v6;
+-  int8 v7;
++  uint1 v1;
++  int8 v10;
++  uint8 v11; // r8
++  int8 v12;
++  code *v2;
++  uint4 v3;
++  char *v4; // rax
++  void *v5; // rax
++  uint8 v6;
++  void *v7;
+-  while (v7 = a0->field_0xd0, !v7) {
++  while (v8 = a0->field_0xd0, !v8) {
+-    v2 = a0->field_0x20;
+-    if (!(v2 & 0x20000000)) {
+-      v2 = sub_355d0(a0,1);
++    v3 = a0->field_0x20;
++    if (!(v3 & 0x20000000)) {
++      v3 = sub_355d0(a0,1);
+-    if (v2 & 0x200000) {
+-      v1 = a0->field_0x68;
+-      (*v1)(dcgettext(NULL,"Restarting",5));
++    if (v3 & 0x200000) {
++      v2 = a0->field_0x68;
++      (*v2)(dcgettext(NULL,"Restarting",5));
+-    v2 = sub_36f60(a0,sub_35010(a0));
+-    if (v2)
+-      return v2;
++    v3 = sub_36f60(a0,sub_35010(a0));
++    if (v3)
++      return v3;
+-  v5 = 0;
+-  v9 = 0;
++  v6 = 0;
++  v10 = 0;
+-    v11 = *(int8 *)(v7 + 8);
+-    if (*(uint1 *)(v7 + 0x10) & 0x40) { // branch-flip
+-      v2 = a0->field_0x20;
+-      v10 = v2;
+-      if (v2 & 0x1000) { // branch-flip
+-        if (v2 & 0x800) {
+-          v3 = (char *)sub_34320(a0,v7);
+-          v7 = v11;
+-          if (!(int4)v5) {
+-            v5 = (uint4)*v3;
+-            v8 = v9;
++    v12 = *(int8 *)(v8 + 8);
++    if (*(uint1 *)(v8 + 0x10) & 0x40) { // branch-flip
++      v3 = a0->field_0x20;
++      v11 = v3;
++      if (v3 & 0x1000) { // branch-flip
++        if (v3 & 0x800) {
++          v4 = (char *)sub_34320(a0,v8);
++          v8 = v12;
++          if (!(int4)v6) {
++            v6 = (uint4)*v4;
++            v9 = v10;
+-          if ((int4)*v3 == (int4)v5) goto label_372d0;
+-          v9 += 1;
+-          v5 = 0;
++          if ((int4)*v4 == (int4)v6) goto label_372d0;
++          v10 += 1;
++          v6 = 0;
+-        v7 = v11;
++        v8 = v12;
+-          if (!v7) break;
++          if (!v8) break;
+-      v2 = (uint4)v10;
+-      v8 = v9 + 1;
+-      v7 = v11;
+-      if (v10 & 0x20000000) {
++      v3 = (uint4)v11;
++      v9 = v10 + 1;
++      v8 = v12;
++      if (v11 & 0x20000000) {
+-        if (!v8) goto label_37212;
+-        v5 = v9 + 2;
++        if (!v9) goto label_37212;
++        v6 = v10 + 2;
+-      v9 = (v9 + 1) - (uint8)((int4)v5 == 0);
+-      if ((a0->field_0x24 & 0x80) && (v9 + 1 + a0->field_0x30 == a0->field_0x28)) {
++      v10 = (v10 + 1) - (uint8)((int4)v6 == 0);
++      if ((a0->field_0x24 & 0x80) && (v10 + 1 + a0->field_0x30 == a0->field_0x28)) {
+-        v9 += 1;
++        v10 += 1;
+-      v2 = a0->field_0x20;
+-      v5 = 0;
+-      v8 = v9 + 1;
+-      v7 = v11;
+-      if (v2 & 0x20000000) goto label_37209;
++      v3 = a0->field_0x20;
++      v6 = 0;
++      v9 = v10 + 1;
++      v8 = v12;
++      if (v3 & 0x20000000) goto label_37209;
+-    v9 = v8;
+-  } while (v7);
+-  if (!v9) goto label_37319;
+-  v5 = v9 + 1;
++    v10 = v9;
++  } while (v8);
++  if (!v10) goto label_37319;
++  v6 = v10 + 1;
+-  v2 = sub_355d0(a0,v5);
++  v3 = sub_355d0(a0,v6);
+-  if (v2)
++  if (v3)
+-    v6 = (void *)a0->field_0xd0;
+-    if (!v6) {
+-      v7 = a0->field_0x8;
+-      v9 = a0->field_0x10;
+-      v11 = a0->field_0x0;
++    v7 = (void *)a0->field_0xd0;
++    if (!v7) {
++      v8 = a0->field_0x8;
++      v10 = a0->field_0x10;
++      v12 = a0->field_0x0;
+-    v4 = (void *)sub_34320(a0,v6);
+-    v5 = sub_34af0(v6);
+-    v6 = malloc(v5 + 1);
+-    v9 = a0->field_0x10;
+-    v11 = a0->field_0x0;
+-    v7 = a0->field_0x8;
+-    *(void **)(v7 + (v9 + v11) * 8) = v6;
+-    if (!v6)
++    v5 = (void *)sub_34320(a0,v7);
++    v6 = sub_34af0(v7);
++    v7 = malloc(v6 + 1);
++    v10 = a0->field_0x10;
++    v12 = a0->field_0x0;
++    v8 = a0->field_0x8;
++    *(void **)(v8 + (v10 + v12) * 8) = v7;
++    if (!v7)
+-    v6 = memcpy(v6,v4,v5);
+-    v8 = a0->field_0xd0;
+-    v11 += 1;
+-    ((char *)v6)[v5] = 0;
+-    sub_34390(a0,v8);
++    v7 = memcpy(v7,v5,v6);
++    v9 = a0->field_0xd0;
++    v12 += 1;
++    ((char *)v7)[v6] = 0;
++    sub_34390(a0,v9);
+-    a0->field_0x0 = v11;
+-  } while (!(a0->field_0x20 & 0x20000000));
+-  *(unsigned long *)(v7 + (v9 + v11) * 8) = 0;
++    v1 = ((uint1 *)&a0->field_0x20)[3];
++    a0->field_0x0 = v12;
++  } while (!(v1 & 0x20));
++  *(unsigned long *)(v8 + (v10 + v12) * 8) = 0;
+```
+### O2-noinline-tar-tar 0x3c3a0
+```
+-    if (a0->field_0x1c & 0x20)
++    if (*(uint1 *)&a0->field_0x1c & 0x20)
+```
+### O2-noinline-tar-tar 0x54350
+```
+-      if ((a0->field_0x18 & 0x400000) && (1 < ((int4 *)v5)[0x2d])) {
++      if ((((uint1 *)&a0->field_0x18)[2] & 0x40) && (1 < ((int4 *)v5)[0x2d])) {
+-              if ((a0->field_0x18 & 0x400000) && (2 <= ((int4 *)v5)[0x2d])) {
++              if ((((uint1 *)&a0->field_0x18)[2] & 0x40) && (2 <= ((int4 *)v5)[0x2d])) {
+```
+### O2-tar-tar 0x36e70
+```
+-        v10 = (uint4)a0->field_0x20;
++        v10 = *(uint4 *)&a0->field_0x20;
+-          if (a0->field_0x20 & 0x8000000000) {
++          if (((uint1 *)&a0->field_0x20)[4] & 0x80) {
+-        if ((a0->field_0x20 & 0x8000000000) && (v12 + 1 + a0->field_0x30 == a0->field_0x28)) {
++        if ((((uint1 *)&a0->field_0x20)[4] & 0x80) && (v12 + 1 + a0->field_0x30 == a0->field_0x28)) {
+-        v10 = (uint4)a0->field_0x20;
++        v10 = *(uint4 *)&a0->field_0x20;
+-      v10 = (uint4)a0->field_0x20;
++      v10 = *(uint4 *)&a0->field_0x20;
+-  } while (!(a0->field_0x20 & 0x20000000));
++  } while (!(((uint1 *)&a0->field_0x20)[3] & 0x20));
+```
+### O2-tar-tar 0x3de60
+```
+-    if (a0->field_0x1c & 0x20)
++    if (*(uint1 *)&a0->field_0x1c & 0x20)
+```
+### O2-tar-tar 0x51c00
+```
+-  v2 = (uint1)a1->field_0x8;
++  v2 = *(uint1 *)&a1->field_0x8;
+-      else if ((uint1)a1->field_0x0 != v1)
++      else if (*(uint1 *)&a1->field_0x0 != v1)
+```
+### O2-tar-tar 0x52de0
+```
+-      if ((a0->field_0x18 & 0x400000) && (1 < ((int4 *)v5)[0x2d])) {
++      if ((((uint1 *)&a0->field_0x18)[2] & 0x40) && (1 < ((int4 *)v5)[0x2d])) {
+-              if ((a0->field_0x18 & 0x400000) && (2 <= ((int4 *)v5)[0x2d])) {
++              if ((((uint1 *)&a0->field_0x18)[2] & 0x40) && (2 <= ((int4 *)v5)[0x2d])) {
+```
+
+30 functions changed.
+

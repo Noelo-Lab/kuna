@@ -1,0 +1,22 @@
+shared functions (kuna ∩ ida ∩ base): 4815
+ida    casts  37,821  lines  243,379  stmts  140,143  /kloc  155.4  /100stmt  27.0  vs ida 1.000
+base   casts  32,073  lines  189,081  stmts  118,822  /kloc  169.6  /100stmt  27.0  vs ida 0.848
+kuna   casts  32,074  lines  189,081  stmts  118,822  /kloc  169.6  /100stmt  27.0  vs ida 0.848
+-- O0
+   ida    casts  12,195  lines   72,364  stmts   39,362  /kloc  168.5  /100stmt  31.0  vs ida 1.000
+   base   casts   9,934  lines   59,331  stmts   35,935  /kloc  167.4  /100stmt  27.6  vs ida 0.815
+   kuna   casts   9,934  lines   59,331  stmts   35,935  /kloc  167.4  /100stmt  27.6  vs ida 0.815
+-- O2
+   ida    casts  13,459  lines   87,117  stmts   51,651  /kloc  154.5  /100stmt  26.1  vs ida 1.000
+   base   casts  12,206  lines   64,987  stmts   41,738  /kloc  187.8  /100stmt  29.2  vs ida 0.907
+   kuna   casts  12,207  lines   64,987  stmts   41,738  /kloc  187.8  /100stmt  29.2  vs ida 0.907
+-- O2-noinline
+   ida    casts  12,167  lines   83,898  stmts   49,130  /kloc  145.0  /100stmt  24.8  vs ida 1.000
+   base   casts   9,933  lines   64,763  stmts   41,149  /kloc  153.4  /100stmt  24.1  vs ida 0.816
+   kuna   casts   9,933  lines   64,763  stmts   41,149  /kloc  153.4  /100stmt  24.1  vs ida 0.816
+functions: fewer casts 0 (0 casts)  more casts 1 (+1)  unchanged 4814
+top MORE-cast functions (read every one):
+   +  1  O2/find @0x7670
+top fewer-cast functions:
+shape deltas (type, operand):
+       +1  (u32*) <addr>
