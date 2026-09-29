@@ -3620,3 +3620,48 @@ narrowed by `--addr`, `--functions` or a triage filter, `--jobs N`, a raw image
 and `--option protoorder off`. A single-function decompile therefore still
 prints the conversion that the whole-binary listing leaves out, the same
 property `protoorder`'s argument types have.
+
+### ARM scalar VFP contracts
+
+`armfloatreturn` (off by default) preserves whole scalar VFP return trials when
+an ARM ELF container states the VFP procedure-call convention. A linked EABI5
+image can state it in its float-ABI flags; a relocatable object must supply
+`Tag_ABI_VFP_args=1` in `.ARM.attributes`. Conflicting, malformed, scoped,
+custom, soft-float, or absent attribute evidence is declined. Explicit
+prototypes and return storage retain precedence, including variadic contracts.
+
+The selected per-function model gains overlapping double-register input entries
+and the scalar return entry over s0/d0. Other VFP registers are not scalar return
+storage: a temporary in d1 through d3 must not displace an integer result in r0. A whole double consumes both single-register
+groups, preventing a fictitious hole from discarding the next parameter. Scalar
+four- and eight-byte VFP return trials seed floating types before constant
+folding loses their storage. Before choosing a return width, a bounded walk checks
+whether every normal exit combines a new four-byte result in s0 with upper bytes
+left over from an earlier d0 value. Those trials shrink to s0 regardless of the
+opcode producing the low word: constants, loads, copied inputs and integer bit
+operations do not justify adding the old upper word to a return. Copies and joins
+are checked at both widths. A predicated join may still carry the older d0 value
+alongside the partial writes: that value is accepted only when it is exactly a
+source of their retained upper bytes. A distinct eight-byte result is not treated
+as stale. Reassembling the unchanged halves of the same double
+does not establish a partial write; complete doubles, mixed-width exits and
+incomplete or cyclic proofs retain their trials.
+
+This width inference cannot distinguish a float result from deliberate partial-word
+editing of a double. Such code needs an explicit double output contract, which
+bypasses narrowing and preserves both words. The return/caller contract can also forward a float
+argument that reaches a first direct call unchanged, even when the caller uses
+that register later. A widened double argument at a call needs a declared or
+recovered callee parameter; a live VFP register alone does not make it an
+argument to an unknown call. Canonical-storage checks for recovered nonvariadic VFP
+parameters do not mistake an open recovery prefix for a variadic declaration.
+
+This is scalar inference, not aggregate or vector ABI reconstruction. Such
+contracts require explicit types. The raw stage pins absence of ABI evidence;
+synthetic ELF CLI cases cover single/double constants, a memory return, arithmetic,
+two double parameters, a caller, double-to-float narrowing (arithmetic, memory,
+and conditional exits), float-to-double widening, metadata controls, and explicit
+overrides.
+ABI references: [AAPCS32](https://github.com/ARM-software/abi-aa/blob/main/aapcs32/aapcs32.rst),
+[AAELF32](https://github.com/ARM-software/abi-aa/blob/main/aaelf32/aaelf32.rst), and
+[Addenda32](https://github.com/ARM-software/abi-aa/blob/main/addenda32/addenda32.rst).

@@ -1932,6 +1932,8 @@ pub struct ParamListStandard {
     /// STUB — the output TRIAL recovery keeps the legacy fallback while only the
     /// `assignAddress` (locked-param storage) rule chain is wired.
     use_fillin_fallback: bool,
+    /// `armfloatreturn`: a whole VFP trial occupies every single-register group.
+    whole_float_groups: bool,
 }
 
 impl std::fmt::Debug for ParamListStandard {
@@ -1970,6 +1972,7 @@ impl Clone for ParamListStandard {
             model_rules: self.model_rules.clone(),
             spacebase: self.spacebase.clone(),
             use_fillin_fallback: self.use_fillin_fallback,
+            whole_float_groups: self.whole_float_groups,
         };
         res.populate_resolver();
         res
@@ -2050,7 +2053,12 @@ impl ParamListStandard {
             model_rules: Vec::new(),
             spacebase: None,
             use_fillin_fallback: true,
+            whole_float_groups: false,
         }
+    }
+
+    pub(crate) fn preserve_whole_float_groups(&mut self) {
+        self.whole_float_groups = true;
     }
 
     /// Get the list of parameter entries (C++ `getEntry`).
@@ -2788,12 +2796,13 @@ impl ParamListStandard {
                             int_count += 1;
                         }
                     }
-                    let grp = self.entry[eidx].get_group();
-                    while (hitlist.len() as i32) <= grp {
-                        hitlist.push(None);
-                    }
-                    if hitlist[grp as usize].is_none() {
-                        hitlist[grp as usize] = Some(eidx);
+                    let groups = self.entry[eidx].get_all_groups();
+                    let groups = if self.whole_float_groups && self.entry[eidx].get_type() == type_class::TYPECLASS_FLOAT {
+                        groups.as_slice()
+                    } else { &groups[..1] };
+                    for &grp in groups {
+                        while (hitlist.len() as i32) <= grp { hitlist.push(None); }
+                        if hitlist[grp as usize].is_none() { hitlist[grp as usize] = Some(eidx); }
                     }
                 }
             }

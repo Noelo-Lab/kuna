@@ -1,0 +1,37 @@
+{
+  "base": "a1091b59115b14cf3a8e68822e697e39008c4e10",
+  "option": "armfloatreturn",
+  "default": "off",
+  "fixture": "returns-hard.o",
+  "fixture_source": "fixtures/returns.c",
+  "mode": "aggressive",
+  "measurement": {
+    "method": "Nine alternating off/on invocations; discard the first pair; report medians. Other validation was running on the host. This is a synthetic-case measurement, not a preset benchmark.",
+    "off": {
+      "wall": 0.21636663051322103,
+      "cpu": 0.18938250000000006
+    },
+    "on": {
+      "wall": 0.2166936530265957,
+      "cpu": 0.18075900000000034
+    },
+    "delta_percent": {
+      "wall": 0.151,
+      "cpu": -4.553
+    },
+    "all_invocations_succeeded": true
+  },
+  "datatests": {
+    "off_passed": 675,
+    "on_passed": 675,
+    "baseline_changed": false
+  },
+  "corpus": {
+    "files": 7,
+    "functions": 47,
+    "changed": 7,
+    "diff": "corpus.diff",
+    "review": "analysis.md"
+  },
+  "limitations": "Opt-in; automatic preset promotion deferred. See analysis.md."
+}

@@ -1,0 +1,100 @@
+--- returns-hard.o off
++++ returns-hard.o on
+@@ -1,24 +1,19 @@
+ // Function: scale @ 0x400000
+-unsigned int scale(void)
++double scale(double a0)
+ {
+-  double v1; // d0
+-
+-  return SUB84(v1 * 1.5,0);
++  return a0 * 1.5;
+ }
+
+ // Function: fixed @ 0x40000c
+-unsigned int fixed(void)
++double fixed(void)
+ {
+-  return 0;
++  return 1.5;
+ }
+
+ // Function: wrapper @ 0x400014
+-unsigned int wrapper(void)
++double wrapper(double a0)
+ {
+-  double v1; // d0
+-
+-  scale();
+-  return SUB84(v1 + 0.5,0);
++  return (double)scale(a0) + 0.5;
+ }
+
+ // Function: integer_value @ 0x400028
+@@ -28,16 +23,16 @@
+ }
+
+ // Function: read_double @ 0x400030
+-unsigned int read_double(unsigned int a0)
++double read_double(unsigned int a0)
+ {
+-  unsigned long long v1; // stack - 0x18
++  double v1; // stack - 0x18
+   int v2; // stack - 0xc
+
+   v2 = dat_64;
+-  v1 = 0;
++  v1 = 0.0;
+   sscanf(a0,0x4000b8,&v1,0);
+   if (v2 == dat_38)
+-    return (int)v1;
++    return v1;
+   __stack_chk_fail(); // no-return
+ }
+
+--- fmtlf_armhf off
++++ fmtlf_armhf on
+@@ -55,12 +55,12 @@
+ // Function: main @ 0x4f8
+ unsigned int main(unsigned int a0,unsigned int *a1)
+ {
+-  double v1; // d0
++  char *v1; // r0
+
+   show();
+   show2(a0);
+-  rd((char *)*a1);
+-  return (int)(long long)v1;
++  v1 = (char *)*a1;
++  return (int)(long long)(double)rd(v1);
+ }
+
+ // Function: _start @ 0x540
+@@ -119,22 +119,22 @@
+ }
+
+ // Function: show2 @ 0x670
+-void show2(unsigned int a0)
++void show2(unsigned long long a0,unsigned int a1)
+ {
+-  __printf_chk(2,"n=%d v=%lf\n",a0);
++  __printf_chk(2,"n=%d v=%lf\n",a1,a0);
+ }
+
+ // Function: rd @ 0x69c
+-unsigned int rd(char *a0)
++double rd(char *a0)
+ {
+-  unsigned long long v1; // stack - 0x18
++  double v1; // stack - 0x18
+   int v2; // stack - 0xc
+
+   v2 = *dat_1ff0;
+-  v1 = 0;
++  v1 = 0.0;
+   __isoc99_sscanf(a0,"%lf",&v1,0);
+   if (v2 == *dat_1ff0)
+-    return (int)v1;
++    return v1;
+   __stack_chk_fail(); // no-return
+ }

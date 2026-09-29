@@ -765,6 +765,7 @@ pub struct Architecture {
     /// prototype reads it becomes a parameter (option `passthrough`).  See
     /// [`crate::p4_calls::kuna_passthrough`].
     pub pass_through: bool,
+    pub arm_float_return: bool,
     /// (kuna) Let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (option `calleedeadarg`).
     pub callee_dead_arg: bool,
@@ -2480,6 +2481,7 @@ impl Architecture {
             callee_pop: true,
             callee_proto_stack: true,
             arg_clobber: true, // (kuna) option argclobber; reset_defaults sets the shipped default
+            arm_float_return: false,
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default
             callee_dead_arg: true,
             callee_preserves: true,
@@ -2845,6 +2847,7 @@ impl Architecture {
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
+        self.arm_float_return = false;
         self.pass_through = true; // (kuna) option passthrough default-on: over 574 slices in 25 projects (the 444-slice decbench corpus plus 130 slices of 17 disjoint projects) 4,107 of 4,346 gained parameters are DWARF-confirmed, NONE contradicted, 239 thunks DWARF does not describe, 0 parameters and 0 call arguments lost; the return arm is 5,458 of 5,615 confirmed, its 157 misses all the undecidable `void` tail-call wrapper; docs/features/passthrough/dwarf-confirmation.md
         self.arg_clobber = true; // (kuna) option argclobber default-on: the drop now needs the callee's own RECOVERED prototype to say the register is free (`protoorder` parks it), so it is inert wherever no callee was decompiled first; 0/675 datatest assertions, PARITY OK on stages, no scored type_match change, measured in docs/features/argclobber/record.json
         self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
@@ -3347,7 +3350,11 @@ impl Architecture {
         // Share the prototype-model registry handles (C++ `glb->defaultfp` /
         // `evalfp_current`) so the proto-recovery actions can set the function's
         // model and run output recovery against the real param lists.
-        ctx.defaultfp = self.defaultfp.clone();
+        ctx.arm_float_return = self.arm_float_return && self.archid.starts_with("ARM:")
+            && self.translate.loader_rc().borrow().arm_vfp_args();
+        ctx.defaultfp = self.defaultfp.as_ref().map(|model| {
+            if ctx.arm_float_return { crate::kuna_armfloatreturn::model(model,ctx.manage()) } else {model.clone()}
+        });
         // An explicit `option protoeval <model>` outranks the spec's own
         // `<eval_current_prototype>` nomination, which reaches the function only
         // under `evalcurrentproto` (see `crate::kuna_evalcurrentproto`). With

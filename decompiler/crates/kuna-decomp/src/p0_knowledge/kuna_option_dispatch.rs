@@ -288,6 +288,10 @@ kuna_options! { self, p1;
         self.arg_clobber = val;
         Ok(msg)
     },
+    "armfloatreturn" => {
+        self.arm_float_return = on_or_off(p1)?;
+        Ok(format!("ARM floating return recovery turned {p1}"))
+    },
     "passthrough" => {
         let (val, msg) = crate::p4_calls::kuna_passthrough::OptionPassThrough.apply(p1)?;
         self.pass_through = val;

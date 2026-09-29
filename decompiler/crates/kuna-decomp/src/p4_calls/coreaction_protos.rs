@@ -1665,6 +1665,7 @@ impl Action for ActionReturnRecovery {
 
         if active.is_fully_checked() {
             crate::p4_calls::kuna_passthrough::keep_tail_return_whole(data, &mut active);
+            crate::kuna_armfloatreturn::narrow_returns(data, &mut active);
             let manager_rc = data.get_arch().manage.clone();
             let _ = data.get_func_proto().derive_output_map(&mut active, &manager_rc);
             let return_single = data.get_arch().return_single;
@@ -1678,6 +1679,7 @@ impl Action for ActionReturnRecovery {
                 }
                 Self::build_return_output(&active, op, data, return_single);
             }
+            crate::kuna_armfloatreturn::type_returns(data, &active);
             data.clear_active_output();
             self.base.count += 1;
         } else {

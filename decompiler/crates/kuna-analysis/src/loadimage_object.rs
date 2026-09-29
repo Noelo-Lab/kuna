@@ -432,6 +432,7 @@ struct DataSym {
 pub struct ObjectLoadImage {
     /// Name of the loadimage (the `LoadImage` base-class `filename` member).
     filename: String,
+    arm_vfp_args: bool,
     /// The resolved SLEIGH language id (the `getArchType` payload).
     archtype: Vec<u8>,
     /// The per-arch *default-model* fallback language id (design §2.2): the same
@@ -954,6 +955,7 @@ impl ObjectLoadImage {
 
         Ok(ObjectLoadImage {
             filename: filename.to_string(),
+            arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             archtype,
             fallback_archtype,
             bytes: Arc::new(SegmentBytes { segments }),
@@ -1085,6 +1087,7 @@ impl ObjectLoadImage {
 
         Ok(ObjectLoadImage {
             filename: filename.to_string(),
+            arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             archtype,
             fallback_archtype,
             bytes: Arc::new(SegmentBytes { segments }),
@@ -1308,6 +1311,8 @@ impl ObjectLoadImage {
 }
 
 impl LoadImage for ObjectLoadImage {
+    fn arm_vfp_args(&self) -> bool { self.arm_vfp_args }
+
     fn get_file_name(&self) -> &str {
         &self.filename
     }

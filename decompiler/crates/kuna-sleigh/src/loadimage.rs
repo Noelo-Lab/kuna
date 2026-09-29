@@ -92,6 +92,9 @@ pub trait ImageBytes: Send + Sync + std::fmt::Debug {
 /// Symbols, sections and other metadata populate the decompiler's database
 /// during initialization; byte reads continue during analysis.
 pub trait LoadImage {
+    /// The container explicitly selects the ARM VFP procedure-call standard.
+    fn arm_vfp_args(&self) -> bool { false }
+
     /// Get the name of the LoadImage.
     ///
     /// The loadimage is usually associated with a file. This routine
