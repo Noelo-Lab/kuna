@@ -2437,7 +2437,68 @@ Under #93 the final build would be **2,262 of 10,748 (21.0%)**.
 
 ### L.6 Speed
 
-SPEED_SECTION
+`kuna decompile-all <bin> --json --max-fn-seconds 120` (decbench's own invocation). Every arm is a
+pinned build, or the final build with options switched off; arms run one after another with the order
+rotating every round, min-of-15 unless stated. Driver `final-l/speed10.py`; raw samples, per-round load
+averages and child CPU times in `final-l/speed1*.json` and `final-l/ablate*.json`. Round M's lanes
+shared the box all night (1-minute load 9–90 on 80 hardware threads), so each round waited for the
+load to fall under a threshold and recorded it; every figure over +5% was measured again, and the
+tables give the quieter pass. Every build emits the same functions, none with an error, on every
+binary below (`final-l/fncount10.json`): a delta is cost per function, not more functions.
+
+-O2, the canonical set:
+
+| binary | functions | baseline min | round G min | round I min | **final min** | final vs G | final vs I | final vs baseline |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| coreutils fmt (load 9–11) | 151 | 4,069.7 ms | 4,150.9 ms | 4,115.8 ms | **4,123.0 ms** | −0.67% | +0.17% | +1.31% |
+| coreutils ls (9–23) | 404 | 14,056.0 ms | 14,849.8 ms | 14,425.1 ms | **14,422.2 ms** | −2.88% | −0.02% | +2.61% |
+| coreutils sort (11–32) | 343 | 15,012.0 ms | 15,560.2 ms | 15,686.3 ms | **15,645.4 ms** | +0.55% | −0.26% | +4.22% |
+BASH_ROW
+
+-O2-noinline, the three binaries where `calleevote` broke the budget in round G:
+
+| binary | baseline min | round F min | round G min | round I min | **final min** | final vs G | final vs F | final vs baseline |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| kmod (load 7–12) | 3,508.4 ms | 3,716.0 ms | 3,905.0 ms | 3,904.3 ms | **4,027.2 ms** | +3.13% | +8.37% | **+14.79%** |
+| dpkg dpkg-divert (7–12) | 2,800.7 ms | 3,002.8 ms | 3,171.5 ms | 3,176.2 ms | **3,255.9 ms** | +2.66% | +8.43% | **+16.25%** |
+| cronie crontab (9–22, re-run) | 1,116.7 ms | 1,193.0 ms | 1,218.1 ms | 1,191.4 ms | **1,234.5 ms** | +1.35% | +3.48% | **+10.55%** |
+
+A second pass under heavier load (17–58) reads kmod −1.02% / +17.95% and dpkg-divert −0.25% / +15.81%
+(final vs G / vs baseline); crontab's first pass read +5.06% against round G at load 25 and +1.35% at
+the re-run.
+
+**Since round G** — the options this budget is about: castimplied, castarith, castsign, globalref,
+castindex, castternary, callpush, callbacktype, callrettype, castobject, castwiden, elemptr, and
+#719's redo budget — the final build is within **−2.9% to +3.1%** of round G on six of the seven
+binaries. BASH_SINCE_G
+
+**Against the campaign baseline** the canonical -O2 set stays inside the budget except bash (+1.3%,
++2.6%, +4.2%, BASH_VS_BASE), but the -O2-noinline binaries do not: **+14.8%, +16.3% and +10.6%**. No
+earlier page measured them against the baseline, only against round F, which is itself +5.9% to +7.2%
+over it. Ablated on the final build (how much slower the default is than each arm; min-of-15,
+`final-l/ablate12.json`, loads 12–25 and 9–16):
+
+| arm | kmod | dpkg-divert |
+|---|---:|---:|
+| final vs the baseline build, this run | +15.00% | +15.92% |
+| every campaign option off (29 options) | +13.96% | +16.26% |
+| rounds A–F's options off (15) | +14.31% | +14.64% |
+| **`protoorder off`** | **+11.76%** | **+10.89%** |
+| `protoorder types` in place of `cycles` | −0.05% | +0.31% |
+| `calleevote` and `passthrough` off (round G) | +5.72% | +5.51% |
+| the twelve options since round G off | +2.40% | +2.58% |
+| `callrettype off` | +2.50% | +0.97% |
+
+With every campaign option off the final build runs at the baseline's speed (kmod +0.9%,
+dpkg-divert −0.3%), so the cost is all behind options, and three account for it: **`protoorder`**
+(#669, round C — decompiling callees first; `cycles` on top of it costs nothing) is 11–12% on its own,
+**`calleevote`** and `passthrough` another 5.5%, and rounds I–L's twelve options 2.5%. #669 measured
+`protoorder` at ≤ +4.1% on the canonical set, which is where every later page measured it; on these
+-O2-noinline binaries it is the largest cost the campaign carries. An earlier ablation of 29 single
+options under heavier load (`final-l/ablate11.json`) agrees on the groups and on `protoorder`, and
+cannot separate the rest (±6% on a single option).
+
+BASH_ABLATION
 
 ### L.7 Every round-J/K/L PR and what it measured
 
