@@ -6431,6 +6431,15 @@ fn check_elemptr_round_trip(run_native: bool) {
 /// prints.
 #[test]
 fn a_narrow_read_round_trips_through_the_printed_c() {
+    check_narrowload_round_trip(cfg!(all(target_os = "linux", target_arch = "x86_64")));
+}
+
+#[test]
+fn narrowload_spellings_are_checked_without_native_execution() {
+    check_narrowload_round_trip(false);
+}
+
+fn check_narrowload_round_trip(run_native: bool) {
     let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
     let src = std::fs::read_to_string(fx.join("narrowload_x86_64.c")).unwrap();
     let prelude = src.split("/* prelude */").nth(1).unwrap().split("/* tested */").next().unwrap();
@@ -6444,12 +6453,15 @@ fn a_narrow_read_round_trips_through_the_printed_c() {
         .collect();
     assert_eq!(tested.len(), 17, "{tested:?}");
     let sp = specs();
-    let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
-    let dir = std::env::temp_dir().join(format!("kuna-narrowload-rt-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    if !run_native {
+        eprintln!("narrowload round trip: native execution disabled; checking all spellings");
+    }
+    let dir = common::scratch_file("narrowload-round-trip", "dir");
+    std::fs::create_dir(&dir).unwrap();
     for build in ["gcc_O0", "clang_O0", "gcc_O2", "clang_O2"] {
         let stem = format!("narrowload_{build}_x86_64");
         let bin = fx.join(&stem);
+        let expected = run_native.then(|| process::required_output(&mut Command::new(&bin)));
         for elem in ["on", "off"] {
             let out = dir.join(format!("{build}-{elem}"));
             let (_, stderr, ok) = run_kuna(&[
@@ -6463,10 +6475,6 @@ fn a_narrow_read_round_trips_through_the_printed_c() {
                 "elemptr",
                 elem,
             ]);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("narrowload round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-project failed: {stderr}");
             let code = std::fs::read_to_string(out.join(format!("{stem}.c"))).unwrap();
             let mut bodies = String::new();
@@ -6480,11 +6488,7 @@ fn a_narrow_read_round_trips_through_the_printed_c() {
                 assert!(!bodies.contains(wide), "{build} {elem}: a narrow read printed as `{wide}`:\n{bodies}");
             }
             assert!(!bodies.contains("->field_0x8 & 0x"), "{build} {elem}: a byte test reads the whole field:\n{bodies}");
-            if !runs_here {
-                eprintln!("narrowload round trip: not an x86-64 Linux host, spelling checked only");
-                continue;
-            }
-            let expected = Command::new(&bin).output().expect("run the fixture");
+            let Some(expected) = &expected else { continue };
             std::fs::write(
                 out.join("printed.c"),
                 format!("#include <stddef.h>\n#include <stdlib.h>\n#include \"{stem}.h\"\n{bodies}"),
@@ -6492,7 +6496,7 @@ fn a_narrow_read_round_trips_through_the_printed_c() {
             .unwrap();
             std::fs::write(out.join("harness.c"), format!("{prelude}{main}")).unwrap();
             for cc in ["gcc", "clang"] {
-                if Command::new(cc).arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+                if process::optional_output(Command::new(cc).arg("--version")).is_none() {
                     eprintln!("narrowload round trip: no `{cc}`");
                     continue;
                 }
