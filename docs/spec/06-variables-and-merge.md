@@ -494,17 +494,21 @@ well as the scope (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 ... sequence. Two highs that denote one object are unaffected: they share a
 name through their shared Symbol, never through a recommendation.
 
-Two recommendation paths keep sharing a name and only record it, so a later
-callee name cannot reuse it. A name recommendation recorded for a storage
-location names every high at that storage alike, as the renamed Symbol does
-upstream. A struct passed by value and assembled from register pieces
-(`coreaction_cleanup.rs (bind_proto_partial_piece)`) keeps the callee's
-parameter name on every call's assembled argument, and chapter 09's composite
-collapse declares it once: each such root is built immediately before the call
-that consumes it, and suffixing them would add a declaration per call (ptx's
-`output_one_dumb_line` would declare `BLOCK field` six times). The rest is a
-correctness fix and is unconditional: two distinct variables under one
-identifier make the emitted C read and write the wrong object, and make a
+Two recommendation paths share a name on purpose. A name recommendation
+recorded for a storage location names every high at that storage alike, as the
+renamed Symbol does upstream; it is only recorded, so a later callee name cannot
+reuse it. A struct passed by value and assembled from register pieces
+(`coreaction_cleanup.rs (bind_proto_partial_piece)`) is a root whose fields are
+pieces bound to its name. Roots built for successive calls share the callee's
+parameter name, and chapter 09's composite collapse declares them once: each is
+built immediately before the call that consumes it, and suffixing them would add
+a declaration per call (ptx's `output_one_dumb_line` would declare
+`BLOCK field` six times). A root never shares a name with any other variable,
+though. The spelling is made unique against every name held by a high that is
+not such a root, so `struct P x = *px; struct P y = {c * 7, d * 11}; take(y);
+take(x);` declares `pt` and `pt_00` instead of storing `y`'s fields into `x`.
+This is a correctness fix and is unconditional: two distinct variables under
+one identifier make the emitted C read and write the wrong object, and make a
 `name` assertion ambiguous.
 
 ## 6.2 The stack frame

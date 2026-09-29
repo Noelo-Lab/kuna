@@ -90,9 +90,9 @@ impl DeclIdentity {
 pub struct DeclDedup {
     #[expect(
         clippy::disallowed_types,
-        reason = "Only signature membership is observed; caller order determines declarations"
+        reason = "Only keyed lookup is observed; caller order determines declarations"
     )]
-    seen: std::collections::HashSet<(DeclIdentity, DeclSignature)>,
+    seen: std::collections::HashMap<(DeclIdentity, DeclSignature), HighVariableId>,
 }
 
 /// Allocates declaration identifiers that are unique in one function scope.
@@ -175,12 +175,23 @@ impl DeclDedup {
         Self::default()
     }
 
-    /// Record `sig` for `identity` and report whether it was **already** present —
-    /// i.e. whether the caller should SKIP emitting this (duplicate) declaration.
-    /// The first occurrence returns `false` (emit it); every later identical line
-    /// of the same object returns `true` (suppress it).
-    pub fn is_duplicate(&mut self, identity: DeclIdentity, sig: DeclSignature) -> bool {
-        !self.seen.insert((identity, sig))
+    /// Record `high`'s line `sig` for `identity` and return the earlier high that
+    /// already declares that line of the same object — the caller then SKIPS this
+    /// declaration and renders `high` under the earlier one's name.  The first
+    /// occurrence returns `None` (emit it).
+    pub fn earlier(
+        &mut self,
+        identity: DeclIdentity,
+        sig: DeclSignature,
+        high: HighVariableId,
+    ) -> Option<HighVariableId> {
+        match self.seen.entry((identity, sig)) {
+            std::collections::hash_map::Entry::Occupied(first) => Some(*first.get()),
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(high);
+                None
+            }
+        }
     }
 }
 

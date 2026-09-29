@@ -9,8 +9,8 @@
     store after the inner loop hits the last member instead of the retained
     representative.
 
-    Source (original synthetic C, gcc 13.3 -O2 -fPIC, consume in its own
-    translation unit):
+    visit/consume (0x1100, original synthetic C, gcc 13.3 -O2 -fPIC, consume in
+    its own translation unit):
 
       struct Node { unsigned char skip; unsigned int hits; };
       void consume(struct Node *object) { ++object->hits; }
@@ -33,19 +33,47 @@
     Before the fix every pass printed `object = *v2;` inside the loop and one
     `Node *object;` declaration, so `object->skip = 0` stored through the member.
 
+    The rest (0x401000, gcc 11.4 -O2 -fno-ipa-ra -fno-inline, static non-PIE) is
+    the same defect reached three other ways:
+
+      struct P { long a; long b; };
+      struct P obj = { 100, 200 };
+      void take(struct P pt);  void put(struct P obj, long k);  void touchl(long *q);
+      void k1(struct P *px, long c, long d) {
+          struct P x = *px; struct P y = { c * 7, d * 11 }; take(y); take(x); }
+      long m1(long c, long d) {
+          struct P y = { c * 7, d * 11 }; put(y, 1); return obj.a + obj.b; }
+      long m2(long c, long d) {
+          struct P y = { c * 7, d * 11 }; put(y, 1);
+          struct P z = { c * 3, d * 5 }; put(z, 2); return obj.a + obj.b; }
+      long s4(long n) {
+          long p = n * 3; touchl(&p); long q = n * 5; touchl(&q); return q * 100 + p; }
+
+    k1: `y` is built from registers for the call, so its fields are pieces of
+    one root, and `x` had already taken `take`'s name `pt`; the root reused it
+    and `y`'s field stores printed as stores into `x`.  m1, m2: the local takes
+    `put`'s name `obj`, which the global owns, so its declaration is renamed
+    `obj_1`, but the field stores (pieces with no declaration of their own) and
+    the second call's argument (collapsed onto the first) kept `obj` and wrote
+    the global.  s4: the script renames `v2` to `v1`, two stack slots now share
+    a name, the second is declared `v1_1`, but `&v2` (a reference, not a
+    declaration) kept printing `&v1`; under Ghidra names, which carry no storage
+    comment, the two slots also printed identical `int8 v1;` lines and were
+    collapsed into one variable.
+
     The naming fix: upstream gives every named high its own local Symbol, so
     `lookForFuncParamNames`' `makeNameUnique` sees the first `object` and the
     second becomes `object_00`.  kuna binds these names on the HighVariable
     without a Symbol, so the uniqueness check now also consults the names
-    already bound in the pass.  The declaration fix: the identical-line collapse
-    only merges lines of one object (one bound or referenced Symbol), since a
-    shared name is not evidence of a shared identity.  Neither is a judgment
-    call, so there is no option; `dedupvardecls off` must print the same two
-    variables.
+    already bound in the pass, and a struct root only shares its name with other
+    roots.  The declaration fix: the identical-line collapse only merges lines
+    of one object (one bound or referenced Symbol), and every high printed under
+    another's declaration (a piece, a collapsed duplicate, an `&symbol`
+    reference) follows that declaration's final name.  Neither is a judgment
+    call, so there is no option; `dedupvardecls off` must print the same code.
 
     Pass 1 (default), pass 2 (option dedupvardecls off) and pass 3 (option
-    namestyle ghidra) all declare both variables, keep the member in its own
-    variable, and store the cleared flag through the representative.
+    namestyle ghidra) all print every function correctly.
 -->
 <bytechunk space="ram" offset="0x1100">
 f30f1efa415741564155415455534883ec18488954240885f6746b89f689c84189cd4889fd
@@ -54,23 +82,97 @@ f30f1efa415741564155415455534883ec18488954240885f6746b89f689c84189cd4889fd
 4c39f375e50f1f40004883c50841c60424004c39fd75aa4883c4185b5d415c415d415e415f
 c3662e0f1f84000000000090f30f1efa83470401c3
 </bytechunk>
+<bytechunk space="ram" offset="0x401000" readonly="true">
+488b05093000004801f74801c748893dfc2f0000c366662e0f1f840000000000488b05e9
+2f00004829f74801d74801c748893dd92f0000c30f1f84000000000048830707c366662e
+0f1f84000000000055488d0492534883ec08488b2f488b5f08488d3cf5000000004829f7
+488d3442e88bffffff4883c4084889ef4889de5b5de97affffff662e0f1f840000000000
+4989f8488d04b64883ec08ba01000000488d3cfd00000000488d34464c29c7e86cffffff
+488b054d2f00004803053e2f00004883c408c3660f1f84000000000055488d2cb6ba0100
+0000534889fb488d3cfd00000000488d346e4829df4883ec08e82affffff488d3c5b4889
+eeba02000000e819ffffff488b05fa2e0000480305eb2e00004883c4085b5dc30f1f4000
+53488d047f4889fb4883ec104889e748890424e808ffffff488d049b488d7c2408488944
+2408e8f5feffff488b442408488d0480488d1480488b04244883c4105b488d0490c3662e
+0f1f840000000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x404000">
+6400000000000000c8000000000000000000000000000000
+</bytechunk>
 <symbol space="ram" offset="0x1100" name="visit"/>
 <symbol space="ram" offset="0x11a0" name="consume"/>
+<symbol space="ram" offset="0x401000" name="take"/>
+<symbol space="ram" offset="0x401020" name="put"/>
+<symbol space="ram" offset="0x401040" name="touchl"/>
+<symbol space="ram" offset="0x401050" name="k1"/>
+<symbol space="ram" offset="0x401090" name="m1"/>
+<symbol space="ram" offset="0x4010d0" name="m2"/>
+<symbol space="ram" offset="0x401120" name="s4"/>
 </binaryimage>
 <script>
   <com>parse line struct Node { uint1 skip; uint4 hits; };</com>
   <com>parse line extern void consume(Node *object);</com>
   <com>parse line extern void visit(Node **representatives,uint4 representative_count,Node **members,uint4 member_count);</com>
+  <com>parse line struct P { int8 a; int8 b; };</com>
+  <com>parse line extern void take(P pt);</com>
+  <com>parse line extern void put(P obj,int8 k);</com>
+  <com>parse line extern void touchl(int8 *q);</com>
+  <com>parse line extern void k1(P *px,int8 c,int8 d);</com>
+  <com>parse line extern int8 m1(int8 c,int8 d);</com>
+  <com>parse line extern int8 m2(int8 c,int8 d);</com>
+  <com>parse line extern int8 s4(int8 n);</com>
+  <com>map address r0x404000 P obj</com>
   <com>lo fu visit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu s4</com>
+  <com>decompile</com>
+  <com>rename v2 v1</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option dedupvardecls off</com>
   <com>lo fu visit</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu k1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu s4</com>
+  <com>decompile</com>
+  <com>rename v2 v1</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option dedupvardecls on</com>
   <com>option namestyle ghidra</com>
   <com>lo fu visit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu m2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu s4</com>
+  <com>decompile</com>
+  <com>rename v2 v1</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -86,4 +188,18 @@ if \(!object_00\) goto</stringmatch>
 object-&gt;skip = 0;</stringmatch>
 <stringmatch name="calleenamedlocals #6: a member never overwrites the representative" min="0" max="0">object = \*(v2|Var2);</stringmatch>
 <stringmatch name="calleenamedlocals #7: the cleared flag never lands on a member" min="0" max="0">object_00-&gt;skip = 0;</stringmatch>
+<stringmatch name="calleenamedlocals #8: k1 builds y in its own variable and passes x second" min="3" max="3">pt = \*px;
+pt_00.b = d \* 0xb;
+pt_00.a = c \* 7;
+take\(pt_00\);
+take\(pt\);</stringmatch>
+<stringmatch name="calleenamedlocals #9: k1 never stores y's fields into x" min="0" max="0">^ +pt\.(a|b) = </stringmatch>
+<stringmatch name="calleenamedlocals #10: m1 and m2 build and pass the local, not the global" min="9" max="9">^ +obj_1\.b = d \* (0xb|5);
+obj_1\.a = c \* (7|3);
+put\(obj_1,(1|2)\);</stringmatch>
+<stringmatch name="calleenamedlocals #11: the global is only read, never written or passed" min="0" max="0">^ +obj\.(a|b) = |put\(obj,</stringmatch>
+<stringmatch name="calleenamedlocals #12: both renamed slots are declared in every pass" min="3" max="3">^  int8 v1_1;</stringmatch>
+<stringmatch name="calleenamedlocals #13: the second slot's address follows its new name" min="3" max="3">v1_1 = n \* 5;
+touchl\(&amp;v1_1\);
+return v1 \+ v1_1 \* 100;</stringmatch>
 </decompilertest>

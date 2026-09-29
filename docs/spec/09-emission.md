@@ -1621,6 +1621,21 @@ is keyed by HighVariable and used by every body reference path as well as its
 declaration; existing parameter, user/debug, Ghidra-style, global, and callee
 names remain authoritative.
 
+A suffix must reach every high that prints the renamed object, not only the one
+that kept the declaration line. So each high the walk declares through another
+records that other high as its owner, and a body reference resolves the owner
+chain before reading the spelling (`printc.rs (PrintC::emitted_high_name)`). The
+owners are: the root of a struct piece (a by-value struct argument rebuilt from
+registers has no declaration of its own for each field), the survivor of every
+collapse above, the storage high of the Symbol an `&symbol` reference points at
+(`printc.rs (reference_owner)`), and the whole cover of a scalar partial
+(`printc.rs (whole_sibling_in_group)`). Without it a local struct that took a
+callee's parameter name owned by a global was declared `obj_1` while its field
+stores still printed `obj.a = ...`, writing the global, and after a rename gave
+two stack slots one name, `&v2` kept printing the first slot's address. An
+owner always carries the name of the high that points at it, so nothing changes
+unless the owner is suffixed.
+
 The name allocator stores each spelling once, either reserved for a future
 declaration or assigned with its next suffix counter. It uses only keyed lookup;
 the caller's declaration order, never hash iteration, decides who receives each

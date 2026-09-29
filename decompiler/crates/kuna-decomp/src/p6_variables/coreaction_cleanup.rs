@@ -2020,6 +2020,7 @@ fn bind_proto_partial_piece(
     base: &mut int4,
     recmap: &std::collections::BTreeMap<crate::context::HighVariableId, OpRecommend>,
     taken: &mut std::collections::BTreeSet<String>,
+    root_names: &mut std::collections::BTreeSet<String>,
 ) -> bool {
     let root_vn = data.piece_find_root(piece_vn);
     if root_vn == piece_vn {
@@ -2126,14 +2127,21 @@ fn bind_proto_partial_piece(
             // No mapped container — the whole-value (register-return) path.  Keep the
             // root's own type + already-bound in-symbol offset; allocate `vN` only if
             // unnamed.  A callee-parameter recommendation for this root wins over the
-            // `vN` default and does not consume `base`.
+            // `vN` default and does not consume `base`; roots built for successive
+            // calls share it, but never with a variable that is not such a root.
             let name = match existing_name {
                 Some(n) => n,
                 None => match &root_rec_name {
-                    Some(rec) => data
-                        .get_scope_local_mut()
-                        .map(|lm| lm.make_local_name_unique(rec))
-                        .unwrap_or_else(|| rec.clone()),
+                    Some(rec) => {
+                        let others: std::collections::BTreeSet<String> =
+                            taken.difference(root_names).cloned().collect();
+                        let n = data
+                            .get_scope_local()
+                            .map(|lm| lm.make_local_name_unique_among(rec, &others))
+                            .unwrap_or_else(|| rec.clone());
+                        root_names.insert(n.clone());
+                        n
+                    }
                     None => {
                         let n = format!("v{base}");
                         *base += 1;
@@ -2584,6 +2592,9 @@ fn func_param_name_for_high(
     recmap.get(&high).map(|r| r.name.clone())
 }
 
+/// The `ActionNameVars` walk.  `taken` holds every name a HighVariable already
+/// has, including those no local Symbol records, so a callee's parameter name
+/// never gives two distinct highs one identifier.
 fn name_local_highs_angr(data: &mut Funcdata) {
     use crate::context::HighVariableId;
     // Materialize the recovered/locked parameters as Symbols in the local scope
@@ -2629,9 +2640,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // in location order keeps the lower `vN` (the switchmulti `v1` loop variable).
     data.name_undefined_spacebase_symbols(&mut base);
     let mut seen: std::collections::BTreeSet<HighVariableId> = std::collections::BTreeSet::new();
-    // Every name a HighVariable holds, including those no local Symbol records
-    // (see `ScopeLocal::make_local_name_unique_among`): a callee's parameter
-    // name must not give a second, distinct high an identifier already in use.
+    let mut root_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut taken: std::collections::BTreeSet<String> = data
         .high_bank()
         .iter()
@@ -2695,7 +2704,15 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         // stand-in) and `continue`s, skipping the `vN` allocator below.
         let nr = name_rep.unwrap();
         if data.vbank().get(nr).map(|v| v.is_proto_partial()).unwrap_or(false)
-            && bind_proto_partial_piece(data, nr, high, &mut base, &func_param_recmap, &mut taken)
+            && bind_proto_partial_piece(
+                data,
+                nr,
+                high,
+                &mut base,
+                &func_param_recmap,
+                &mut taken,
+                &mut root_names,
+            )
         {
             continue;
         }
