@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1495,
-    1495
+    1499,
+    1499
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1134,13 +1134,17 @@
     "data:codescalar #4: the cast is gone with it, so the store is a plain assignment",
     "data:codescalar #5: the POINTER keeps its code type in both passes, so the indirect call still renders",
     "data:codescalar #6: the data control is untouched in both passes -- its pointer was never a code pointer",
+    "data:condexeret #10: a threaded merge in front of the sfp body keeps comp void in both passes",
+    "data:condexeret #11: the same merge behind the body keeps comp2 void in both passes",
     "data:condexeret #1: off, twice loses its return value",
     "data:condexeret #2: on, twice returns what once returns",
-    "data:condexeret #3: on, the sum path returns the sum",
-    "data:condexeret #4: on, the set path returns zero",
+    "data:condexeret #3: on, the sum path returns the sum (twice, once, nested)",
+    "data:condexeret #4: on, the set path returns zero (twice, once, nested)",
     "data:condexeret #5: a possible input path keeps differ void in both passes",
     "data:condexeret #6: a possible input path keeps compl void in both passes",
     "data:condexeret #7: merges on different conditions keep sfp void in both passes",
+    "data:condexeret #8: off, nested loses its return value",
+    "data:condexeret #9: on, nested returns 1 when only the second test holds",
     "data:condfold #1: OFF, the fold is declined and the sibling's test becomes a crossing goto (pass 1 only)",
     "data:condfold #2: OFF, the crossing goto needs a label on the shared continuation (pass 1 only)",
     "data:condfold #3: ON, the two conditions fold into one short-circuit OR whose right operand carries the sibling prefix as a comma expression (pass 2 only)",

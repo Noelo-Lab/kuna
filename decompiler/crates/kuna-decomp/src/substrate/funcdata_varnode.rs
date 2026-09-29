@@ -2608,6 +2608,13 @@ pub(crate) struct AncestorRealistic {
     /// (kuna) `condexeret`: the op reading the function input the walk failed
     /// at, when that input ended it.
     input_fail_reader: Option<OpId>,
+    /// (kuna) `condexeret`: walk past a non-directwrite function input instead
+    /// of failing, recording it and its reader in `collected`.
+    collect_inputs: bool,
+    collected: Vec<(OpId, VarnodeId)>,
+    /// (kuna) `condexeret`: storage whose function input fails the walk even
+    /// when it is directwrite.
+    forbidden: Vec<(Address, int4)>,
 }
 
 impl AncestorRealistic {
@@ -2622,6 +2629,9 @@ impl AncestorRealistic {
             set_ind_create_formed: false,
             set_cond_exe_effect: false,
             input_fail_reader: None,
+            collect_inputs: false,
+            collected: Vec::new(),
+            forbidden: Vec::new(),
         }
     }
 
@@ -2629,6 +2639,32 @@ impl AncestorRealistic {
     /// the last [`Self::execute`] failed at, if that is what failed it.
     pub(crate) fn input_fail_reader(&self) -> Option<OpId> {
         self.input_fail_reader
+    }
+
+    /// (kuna) `condexeret`: from now on, pass a non-directwrite function input
+    /// and record it with its reader instead of failing there, so one walk sees
+    /// every such input; any other failure still ends it.
+    pub(crate) fn collect_inputs(&mut self) {
+        self.collect_inputs = true;
+    }
+
+    /// (kuna) `condexeret`: the (reader, input) pairs the last collecting walk
+    /// passed.
+    pub(crate) fn collected(&self) -> &[(OpId, VarnodeId)] {
+        &self.collected
+    }
+
+    /// (kuna) `condexeret`: from now on, fail at any function input overlapping
+    /// one of `ranges`, directwrite or not.
+    pub(crate) fn forbid_inputs(&mut self, ranges: Vec<(Address, int4)>) {
+        self.forbidden = ranges;
+    }
+
+    fn forbids(&self, fd: &Funcdata, vn: VarnodeId) -> bool {
+        !self.forbidden.is_empty()
+            && fd.vbank().get(vn).is_some_and(|v| {
+                v.is_input() && self.forbidden.iter().any(|(a, sz)| v.intersects_range(a, *sz))
+            })
     }
 
     fn mark(&mut self, fd: &mut Funcdata, vn: VarnodeId) {
@@ -2671,6 +2707,9 @@ impl AncestorRealistic {
         if !written {
             let v = fd.vbank().get(state_vn);
             if v.map(|v| v.is_input()).unwrap_or(false) {
+                if self.forbids(fd, state_vn) {
+                    return AncestorCmd::PopFail;
+                }
                 if fd.vbank().get(state_vn).map(|v| v.is_unaffected()).unwrap_or(false) {
                     return AncestorCmd::PopFail;
                 }
@@ -2679,6 +2718,10 @@ impl AncestorRealistic {
                 }
                 if !fd.vbank().get(state_vn).map(|v| v.is_direct_write()).unwrap_or(false) {
                     self.input_fail_reader = Some(state.op);
+                    if self.collect_inputs {
+                        self.collected.push((state.op, state_vn));
+                        return AncestorCmd::PopSuccess;
+                    }
                     return AncestorCmd::PopFail;
                 }
             }
@@ -2765,7 +2808,7 @@ impl AncestorRealistic {
                     if !v_marked && v_input {
                         let unaff = fd.vbank().get(vn).map(|v| v.is_unaffected()).unwrap_or(false);
                         let dw = fd.vbank().get(vn).map(|v| v.is_direct_write()).unwrap_or(false);
-                        if unaff || !dw {
+                        if unaff || !dw || self.forbids(fd, vn) {
                             return AncestorCmd::PopFail;
                         }
                     }
@@ -2814,7 +2857,11 @@ impl AncestorRealistic {
                 loop {
                     let v_marked = fd.vbank().get(curvn).map(|v| v.is_mark()).unwrap_or(false);
                     let v_input = fd.vbank().get(curvn).map(|v| v.is_input()).unwrap_or(false);
-                    if !v_marked && v_input && !fd.vbank().get(curvn).map(|v| v.is_direct_write()).unwrap_or(false) {
+                    if !v_marked
+                        && v_input
+                        && (!fd.vbank().get(curvn).map(|v| v.is_direct_write()).unwrap_or(false)
+                            || self.forbids(fd, curvn))
+                    {
                         return AncestorCmd::PopFail;
                     }
                     let curdef = fd.vbank().get(curvn).and_then(|v| v.get_def());
@@ -2963,6 +3010,7 @@ impl AncestorRealistic {
         self.set_ind_create_formed = false;
         self.set_cond_exe_effect = false;
         self.input_fail_reader = None;
+        self.collected.clear();
         // If the parameter itself is an input, we don't consider this realistic
         // (unless we are re-testing a conditional-execution trial).
         let in_slot = fd.obank().get(op).and_then(|o| o.get_in(slot));
