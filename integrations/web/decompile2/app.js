@@ -116,16 +116,20 @@ function syncButtons() {
   els.progress.hidden = !(active && (active.kind === 'edit' || active.kind === 'function'));
 }
 
+/** Stop the running operation, if any, for one of `kind` (`clearSession`: a new binary replaces the engine's). */
+function supersede(kind, { clearSession = false } = {}) {
+  if (!active) return;
+  const prev = active;
+  active = null;
+  if (clearSession) state.kuna.clear('superseded by a new binary');
+  else state.kuna.cancel('superseded by another operation');
+  if (prev.kind === 'function') state.opening = null;
+  prev.onCancel?.();
+  if (prev.kind === 'project' && kind !== 'project') toast('The C code download was stopped. Start it again from the ⋯ menu.', { kind: 'warn' });
+}
+
 function beginOperation(kind, { clearSession = false } = {}) {
-  if (active) {
-    const prev = active;
-    active = null;
-    if (clearSession) state.kuna.clear('superseded by a new binary');
-    else state.kuna.cancel('superseded by another operation');
-    if (prev.kind === 'function') state.opening = null;
-    prev.onCancel?.();
-    if (prev.kind === 'project' && kind !== 'project') toast('The C code download was stopped. Start it again from the ⋯ menu.', { kind: 'warn' });
-  }
+  supersede(kind, { clearSession });
   active = { id: ++opSeq, kind };
   syncButtons();
   return active;
@@ -2990,11 +2994,13 @@ async function isExampleHash(hash) {
  * the ones stored here. `hash` is its already-checked hash; `slot` 'shared'
  * keeps the session apart from the student's own stored changes to it.
  * `still()` says whether the join still wants it (it may fail meanwhile).
+ * What was running stops first, so an edit it undoes is saved where it belongs.
  */
 async function openShared({ name, bytes, hash, session: shared, mode, open = null, slot = 'own', still = () => true }) {
   const example = await isExampleHash(hash);
   if (example) state.exampleSource = await fetch('./examples/sample.c').then((r) => (r.ok ? r.text() : null)).catch(() => null);
   if (!still()) return false;
+  supersede('load', { clearSession: true });
   if (mode && [...els.mode.options].some((o) => o.value === mode)) els.mode.value = mode;
   state.slot = slot;
   await indexBinary({ name, bytes, hash }, { example, shared, keep: open });

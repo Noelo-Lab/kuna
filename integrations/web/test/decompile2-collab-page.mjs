@@ -928,6 +928,53 @@ try {
     }
   });
 
+  await test('fourth review #7 a program received while an edit of another program is in flight: that edit is undone in its own program\'s store, and nothing is saved as a session\'s copy of it', async () => {
+    const ana = await tab('Ana');
+    await open(ana);
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { other: true, script: DELAY_SHIM });
+    const macho = readFileSync(fixture('sample_macho.o'));
+    const machoHash = 'sha256:' + createHash('sha256').update(macho).digest('hex');
+    await open(ben, { seed: [[OWN_KEY, stored([varRec(MAIN, 'v1', 'bens_own')])], [`kuna.d2.session.${machoHash}`, stored([noteRec('0x0', '0x0', 'bens macho note')])]] });
+    await ben.call((b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const dt = new DataTransfer();
+      dt.items.add(new File([bytes], 'sample_macho.o'));
+      const input = document.getElementById('file');
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }, macho.toString('base64'));
+    await ben.waitFor(`document.getElementById('crumbname')?.textContent === 'sample_macho.o' && document.querySelector('#fnlist .fn')`, { what: 'Ben has another program open', timeout: 60000 });
+    await idle(ben);
+    await ben.call(() => { [...document.querySelectorAll('#fnlist .fn')].find((f) => /sum_to/.test(f.textContent)).click(); return true; });
+    await ben.waitFor(`/sum_to/.test(document.getElementById('vname').textContent) && document.querySelector('#ccode .t[data-sym]') && document.getElementById('cancelbtn').disabled`, { what: 'Ben on its sum_to', timeout: 60000 });
+    await joinByHash(ben, link);
+    await ben.waitFor(`document.querySelector('#d2collab [data-copytext]')?.value.includes('#reply=')`, { what: 'Ben\'s reply link', timeout: 20000 });
+    const reply = await ben.evaluate(`document.querySelector('#d2collab [data-copytext]').value`);
+    await closeDialog(ben);
+    await front(ben);
+    await popover(ben, '#ccode .t[data-sym]', 'n', 'bens_macho_name');
+    await ben.evaluate('window.__kunaDelay = 30000; true');
+    await ben.key('Enter');
+    await sleep(1000);
+    await ben.evaluate('window.__kunaDelay = 0; true');
+    assert.equal(await ben.evaluate(`!document.getElementById('cancelbtn').disabled`), true, 'Ben\'s edit is in flight');
+    assert.match(await ben.evaluate(`localStorage.getItem(${JSON.stringify(`kuna.d2.session.${machoHash}`)}) || ''`), /bens_macho_name/, 'and saved');
+    if (!(await ana.evaluate(`!!document.querySelector('#d2collab input[name=reply]')`))) {
+      await ana.click('#morebtn');
+      await ana.click('#collabbtn');
+      await ana.waitFor(`document.querySelector('#d2collab input[name=reply]')`, { what: 'Ana\'s paste box' });
+    }
+    await ana.call((r) => { const i = document.querySelector('#d2collab input[name=reply]'); i.value = r; i.form.requestSubmit(); return true; }, reply);
+    await ben.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf' && /sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'Ben has the session\'s program', timeout: 60000 });
+    await idle(ben);
+    assert.equal(await ben.evaluate(`localStorage.getItem(${JSON.stringify(`kuna.d2.shared.${machoHash}`)})`), null, 'nothing is saved as a session\'s copy of the other program');
+    const own = await ben.evaluate(`localStorage.getItem(${JSON.stringify(`kuna.d2.session.${machoHash}`)}) || ''`);
+    assert.ok(/bens macho note/.test(own) && !/bens_macho_name/.test(own), 'its own store keeps Ben\'s note, without the undone edit');
+  });
+
   await test('fourth review #1 opening a cached function while another person\'s change is being decompiled stays on it', async () => {
     const { ana, ben } = await pair({ anaScript: DELAY_SHIM });
     await front(ana);
