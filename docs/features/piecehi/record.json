@@ -37,7 +37,8 @@
  "benchmark": {
   "typesweep": "444 slices / 10,748 functions, finalsweep --baseline-only with per-GT-variable decisions (metric pinned to 625e892, final-c/pindb.py), main 632437155 vs fix: PERFECT 1674 -> 1674, aggregate 4032.52 -> 4032.52; per-slice rows (scores + decisions) identical in 444/444 slices",
   "arity_phantom": "variables[] identical for all 60,037 functions of the 143-binary footprint and in all 444 typesweep slices: no argument or variable added or removed",
-  "castbench": "45 binaries x O0/O2/O2-noinline, 4,815 shared functions: casts 32,073 -> 32,073 (0.848x IDA), 27.0 per 100 statements both; all 135 .c files byte-identical to /home/mahaloz/kwt/castbench/main-632437155"
+  "castbench": "45 binaries x O0/O2/O2-noinline, 4,815 shared functions: casts 32,073 -> 32,073 (0.848x IDA), 27.0 per 100 statements both; all 135 .c files byte-identical to /home/mahaloz/kwt/castbench/main-632437155",
+  "arity_vs_dwarf": "the 8 fixture functions x 4 builds against a gcc -O0 -g twin's DW_TAG_formal_parameter counts: main mismatches 15 (gcc -O0 7, clang -O0 6, gcc -O2 1, clang -O2 1: each one argument short); fix matches all 32"
  },
  "speed": null,
  "gates": {},
