@@ -1,10 +1,10 @@
-// decompile2-collab-browser.mjs — live sessions in the real /decompile2/ page,
+// decompile2-collab-browser.mjs — live sessions in the real /decompile/ page,
 // in tabs of one headless Chrome: Ana makes an invite link; Ben opens it in
 // another tab (the tabs meet over BroadcastChannel), receives the program and
 // sees it open by itself; a rename on one page shows on the other; a rename
 // and a retype made at the same moment both survive; a new decompiler effort
 // re-decompiles everyone; Ana's pointer lands on the same line of C in Ben's
-// window at 1440 and 1024 px, in C code and side by side, and hides when Ben
+// window at 1440 and 1024 px, in the code and side by side, and hides when Ben
 // opens another function; an Alt+click pings, and Go there opens it; a third
 // person, in a second Chrome process, joins over WebRTC through the reply-link
 // hand-off (a tab of Ana's browser opens the reply link and hands it to Ana's
@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { findChrome, launchChrome, openPage, openTab } from './cdp-client.mjs';
-import { requireDist, serveStatic } from './worker-harness.mjs';
+import { requireDist, serveStatic, openSample } from './worker-harness.mjs';
 import { decodeCode } from '../decompile/collab/wire.js';
 
 const chromePath = findChrome();
@@ -162,7 +162,6 @@ async function nameAndGo(p, name) {
 async function inviteLink(p, name = null) {
   const open = await p.evaluate(`!!document.getElementById('d2collab')?.open`);
   if (!open) {
-    await p.click('#morebtn');
     await p.click('#collabbtn');
     await p.waitFor(`document.getElementById('d2collab')?.open`, { what: 'collab dialog' });
   }
@@ -185,16 +184,16 @@ const pointer = (p, sel) => p.call((s) => {
 const inside = (pt, r, slack = 2) => !!pt && !!r && pt.x >= r[0] - slack && pt.x <= r[2] + slack && pt.y >= r[1] - slack && pt.y <= r[3] + slack;
 
 try {
-  // ── Ana opens the example and makes an invite link ─────────────────────────
+  // ── Ana opens the sample program and makes an invite link ──────────────────
   const ana = await tab('Ana');
   await ana.navigate(`${server.base}/decompile/`);
   await ready(ana);
   await ana.evaluate(`localStorage.clear(); true`);
-  await ana.click('#examplebtn');
+  await openSample(ana);
   await ana.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'Ana: main', timeout: 60000 });
   await idle(ana);
   const link1 = await inviteLink(ana, 'Ana');
-  assert.match(link1, /\/decompile2\/#join=[A-Za-z0-9_-]+$/, 'an invite is a link to the page');
+  assert.match(link1, /\/decompile\/#join=[A-Za-z0-9_-]+$/, 'an invite is a link to the page');
   assert.ok(link1.length < 600, `short enough to paste anywhere (${link1.length} characters)`);
   assert.match(await text(ana, '#d2collab'), /Send this link to one person/);
   await shot(ana, 'invite');
@@ -213,7 +212,7 @@ try {
   await idle(ben);
   assert.ok((await toasts(ben)).some((t) => /You joined Ana's session/.test(t)));
   await ana.waitFor(`document.querySelectorAll('#d2roster .d2-who').length === 1`, { what: 'Ana sees Ben', timeout: 20000 });
-  assert.match(await ana.evaluate(`document.querySelector('#d2roster .d2-who').title`), /^Ben: main, C code/, 'the roster says where Ben is');
+  assert.match(await ana.evaluate(`document.querySelector('#d2roster .d2-who').title`), /^Ben: main, Code/, 'the roster says where Ben is');
   assert.equal(await text(ben, '#d2roster .d2-who'), 'A', 'initials in the top bar');
   assert.equal(await ben.evaluate(`document.getElementById('d2collab').open`), false, 'the join dialog closes once in');
   await closeDialog(ana);
@@ -299,8 +298,8 @@ try {
   await idle(ben);
   await sleep(1200);
   assert.equal(await pointer(ben, target), null, 'and stays hidden there, though that function has a line 6 too');
-  assert.match(await ana.evaluate(`document.querySelector('#d2roster .d2-who').title`), /^Ben: sum_to, C code/, 'and Ana\'s roster says where he is');
-  await ok('Ana\'s pointer lands on the same name at 1440 and 1024 px, in C code and side by side, and hides elsewhere');
+  assert.match(await ana.evaluate(`document.querySelector('#d2roster .d2-who').title`), /^Ben: sum_to, Code/, 'and Ana\'s roster says where he is');
+  await ok('Ana\'s pointer lands on the same name at 1440 and 1024 px, in the code and side by side, and hides elsewhere');
 
   // ── following ──────────────────────────────────────────────────────────────
   const benTab = () => ben.evaluate(`document.querySelector('#tabs [aria-selected=true]').dataset.tab`);

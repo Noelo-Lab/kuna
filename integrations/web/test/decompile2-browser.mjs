@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { findChrome, launchChrome, openPage } from './cdp-client.mjs';
-import { requireDist, serveStatic, fixture } from './worker-harness.mjs';
+import { requireDist, serveStatic, fixture, openSample } from './worker-harness.mjs';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
@@ -37,16 +37,7 @@ async function noExceptions(step) {
   done.push(step);
 }
 
-/** Open the test fixture through the real file input, as a user would. */
-const loadFixture = () => page.call((b64) => {
-  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  const dt = new DataTransfer();
-  dt.items.add(new File([bytes], 'sample.elf'));
-  const input = document.getElementById('file');
-  input.files = dt.files;
-  input.dispatchEvent(new Event('change', { bubbles: true }));
-  return true;
-}, readFileSync(fixture('sample.elf')).toString('base64'));
+const loadFixture = () => openSample(page);
 const ready = (what = 'page ready') => page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what, timeout: 60000 });
 
 const text = (sel) => page.call((s) => document.querySelector(s)?.textContent ?? '', sel);
