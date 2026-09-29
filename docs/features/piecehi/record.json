@@ -40,8 +40,93 @@
   "castbench": "45 binaries x O0/O2/O2-noinline, 4,815 shared functions: casts 32,073 -> 32,073 (0.848x IDA), 27.0 per 100 statements both; all 135 .c files byte-identical to /home/mahaloz/kwt/castbench/main-632437155",
   "arity_vs_dwarf": "the 8 fixture functions x 4 builds against a gcc -O0 -g twin's DW_TAG_formal_parameter counts: main mismatches 15 (gcc -O0 7, clang -O0 6, gcc -O2 1, clang -O2 1: each one argument short); fix matches all 32"
  },
- "speed": null,
- "gates": {},
+ "speed": {
+  "method": "docs/features/piecehi/speed.py: kuna decompile-all --json --max-fn-seconds 120 on O2 fmt/ls/sort/bash, two frozen release binaries, arms interleaved and order-alternated, one warm-up per arm discarded, min and median-of-ratios of 15",
+  "budget_pct": 5.0,
+  "decompiled_output": "identical on all four binaries (corpus_diff), so the only extra work is two join/offset lookups per RETURN defined by a two-input PIECE",
+  "run1_castbench_main_vs_fix": {
+   "note": "cross-build (castbench bin-632437155 vs this worktree), load 19-52",
+   "fmt": [
+    -3.05,
+    -1.13
+   ],
+   "ls": [
+    -8.27,
+    -3.3
+   ],
+   "sort": [
+    1.1,
+    1.08
+   ],
+   "bash": [
+    5.27,
+    4.71
+   ]
+  },
+  "run2_same_path_ab": {
+   "note": "main = this worktree with the module reverted, built into a separate target dir; load 7-27",
+   "fmt": [
+    4.69,
+    2.02
+   ],
+   "ls": [
+    6.38,
+    -1.24
+   ],
+   "sort": [
+    4.99,
+    2.81
+   ],
+   "bash": [
+    4.43,
+    1.79
+   ]
+  },
+  "run3_quiet_ab": {
+   "note": "same arms as run 2, load 7-13",
+   "fmt": [
+    -1.44,
+    -0.28
+   ],
+   "ls": [
+    0.15,
+    -1.95
+   ],
+   "sort": [
+    1.89,
+    2.7
+   ]
+  },
+  "aa_control": {
+   "note": "the fix binary against a byte-identical copy, load 7-11",
+   "fmt": [
+    0.04,
+    0.38
+   ],
+   "ls": [
+    3.15,
+    3.58
+   ],
+   "sort": [
+    -1.53,
+    -0.01
+   ]
+  },
+  "columns": "[delta_min_pct, delta_median_of_ratios_pct]",
+  "verdict": "within budget: every median-of-ratios is under +5% (largest +4.71 cross-build, +2.81 same-path), the quiet re-run of the >5% min deltas is -1.44..+1.89, and an A/A of identical binaries moves by up to +3.58; signs flip between builds, so the residue is layout and load, not work"
+ },
+ "gates": {
+  "base": "origin/main 632437155; code final at d3d2b4072 (later commits docs/record only)",
+  "make test": "datatests: 675/675 assertions passed; PARITY OK (no datatest assertion moved)",
+  "make test-stages": "datatests: 1477/1477 assertions passed; PARITY OK (+10 kuna-returnpiece keys over main's 1467, none removed)",
+  "make rust-test": "RUST_TEST_RC=0 via rust-test-lane.sh (428 `test result: ok`, 0 failed)",
+  "make test-cli": "tests/cli: 268/268 passed (first run under load 94: 266/268, the two known wall_ms probes cold-load-xref-lookup and disassembling-40-instructions-takes)",
+  "make check-spec": "check-spec OK (lenient mode); check_spec.py --strict: check-spec OK (strict mode)",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh (no option added)",
+  "ci": "PR #755 with full-ci: cargo workspace suite pass (33m23s), parity gates pass"
+ },
  "files": [
   "decompiler/crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed.rs",
   "decompiler/crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed/tests.rs",
