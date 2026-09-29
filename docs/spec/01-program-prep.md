@@ -3515,6 +3515,14 @@ records the declared spelling, and both canonicalizers sort it first); the
 discovered names stay as aliases, so a name-keyed lookup still resolves through
 them.
 
+The ELF loader retains distinct function names from both symbol tables and
+import stubs, including aliases in relocatable objects. Only repeated
+address/name pairs are removed. Raw symbol addresses keep their Thumb state
+until the console groups names at normalized code entries. A local veneer name
+therefore cannot hide a global definition and make its name select a PLT stub;
+definition/import provenance still decides whether a name collision has one
+useful definition or is genuinely ambiguous.
+
 The same `entryoff`-is-not-a-VMA fact is what every *reporting* surface has to
 know, so it is stated once as
 `decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (image_entry_vma)`

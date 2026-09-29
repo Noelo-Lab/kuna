@@ -820,8 +820,8 @@ impl ObjectLoadImage {
             .map(|vma| elfv1.code_address(vma))
             .map(|vma| if arm32_decoder { vma & !1 } else { vma });
 
-        // Snapshot the function symbols.  Three sources, deduped by address so an
-        // import that appears in several tables is registered exactly once:
+        // Snapshot all ELF function names; canonical entry grouping happens later.
+        // Other object formats retain their address-based import deduplication:
         //   1. `.symtab` defined functions (BFD BSF_FUNCTION with a name),
         //   2. PLT stubs → imported library names (the kuna analog of Ghidra's
         //      `ElfDefaultGotPltMarkup`; see [`crate::loader::elf_plt`]),
@@ -874,7 +874,7 @@ impl ObjectLoadImage {
                 continue;
             }
             let name = demangle_funcsym_name(name, namechars);
-            if seen.insert(addr) || !elfv1.0.is_empty() {
+            if is_elf || seen.insert(addr) {
                 funcsyms.push(FuncSym { addr, name });
             }
         }
@@ -885,7 +885,7 @@ impl ObjectLoadImage {
         // `elf_plt::resolve_plt_imports`.
         for p in fmt.resolve_imports(&file, bytes) {
             if is_elf { elf_functions.imports.insert(if arm32_decoder { p.addr & !1 } else { p.addr }); }
-            if seen.insert(p.addr) {
+            if is_elf || seen.insert(p.addr) {
                 funcsyms.push(FuncSym { addr: p.addr, name: demangle_funcsym_name(p.name, namechars) });
             }
         }
@@ -914,12 +914,13 @@ impl ObjectLoadImage {
                 continue;
             }
             let name = demangle_funcsym_name(name, namechars);
-            if seen.insert(addr) || !elfv1.0.is_empty() {
+            if is_elf || seen.insert(addr) {
                 funcsyms.push(FuncSym { addr, name });
             }
         }
 
-        if !elfv1.0.is_empty() {
+        if is_elf {
+            // Keep the raw Thumb bit until the consumer establishes decoder state.
             let mut aliases = HashSet::new();
             funcsyms.retain(|s| aliases.insert((s.addr, s.name.clone())));
         }
@@ -1063,12 +1064,10 @@ impl ObjectLoadImage {
                 .then_some((vma, sec.size()))
         }));
 
-        // Defined functions (rebased) + extern call targets, demangled + deduped
-        // by address — the same `seen`/`demangle_funcsym_name` discipline the
-        // linked path's `.symtab` loop uses.
+        // Keep every rebased alias, removing only repeated names at the same address.
         let namechars = symbolnamechars_mode();
         let mut funcsyms: Vec<FuncSym> = Vec::new();
-        let mut seen: HashSet<u64> = HashSet::new();
+        let mut seen: HashSet<(u64, Vec<u8>)> = HashSet::new();
         for (addr, name) in layout.funcsyms {
             if addr == 0 {
                 continue;
@@ -1078,7 +1077,7 @@ impl ObjectLoadImage {
                 continue;
             }
             let name = demangle_funcsym_name(name, namechars);
-            if seen.insert(addr) {
+            if seen.insert((addr, name.clone())) {
                 funcsyms.push(FuncSym { addr, name });
             }
         }
@@ -1858,6 +1857,14 @@ pub fn coff_language_ids() -> Vec<(String, Option<String>)> {
         ],
     )
 }
+
+#[cfg(test)]
+#[path = "../tests/fixtures/arm_aliases.rs"]
+mod alias_test_fixture;
+
+#[cfg(test)]
+#[path = "loadimage_object/alias_tests.rs"]
+mod alias_tests;
 
 #[cfg(test)]
 mod tests {
