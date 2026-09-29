@@ -142,14 +142,13 @@ export class KunaWorkerClient {
   }
 
   /**
-   * The engine's build id: the SHA-256 of the wasm the first Worker compiled,
-   * worked out on the first call (nothing is hashed until someone asks), and
-   * asked again of the new Worker when a cancel restarts it meanwhile. Every
-   * restarted Worker is handed that compiled module and the spec files the
-   * page has loaded, so the engine, and its id, stay the page's own whatever
-   * the server holds later. A browser that cannot hand the module over
-   * compiles the server's wasm again; the id is then unknown, and `onbuild`
-   * hears of it.
+   * The engine's build id: the SHA-256 of the exact wasm bytes the first
+   * Worker compiled (hashed while they compiled), asked again of the new
+   * Worker when a cancel restarts it meanwhile. Every restarted Worker is
+   * handed that compiled module and the spec files the page has loaded, so
+   * the engine, and its id, stay the page's own whatever the server holds
+   * later. A browser that cannot hand the module over compiles the server's
+   * wasm again; the id is then unknown, and `onbuild` hears of it.
    */
   async buildId() {
     for (;;) {

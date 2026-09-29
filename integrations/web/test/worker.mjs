@@ -209,10 +209,8 @@ try {
   });
   try {
     await hashing.ready();
-    assert.equal(hashing.build, null, 'nothing is hashed while the decompiler starts');
     const wasm = createHash('sha256').update(await readFile(join(dist, 'kuna_wasm.wasm'))).digest('hex');
     assert.equal(await hashing.buildId(), wasm, 'asked for, the build id is the SHA-256 of the wasm the Worker compiled');
-    assert.equal(client.build, null, 'a page that does not ask for it pays nothing');
     const before = wasmRequests;
     hashing.cancel('a new Worker');
     await hashing.ready();
@@ -275,6 +273,27 @@ try {
     wasmOverride = null;
   }
 
+  // The site is deployed again between loading the page and the first
+  // session (no validator, a wasm of the same size): the build id is still
+  // the SHA-256 of the bytes this page compiled.
+  const early = new KunaWorkerClient({
+    workerUrl: pathToFileURL(join(dist, 'kuna-worker.js')),
+    wasmUrl: `${base}/kuna_wasm.wasm`,
+    specRoot: `${base}/specs`,
+    workerFactory: (url) => new BrowserWorker(url),
+  });
+  try {
+    await early.ready();
+    const original = await readFile(join(dist, 'kuna_wasm.wasm'));
+    const later = Buffer.from(original);
+    later[later.length - 1] ^= 0xff;
+    wasmOverride = later;
+    assert.equal(await early.buildId(), createHash('sha256').update(original).digest('hex'), 'the build id describes the engine that runs, not what the server has now');
+  } finally {
+    early.close();
+    wasmOverride = null;
+  }
+
   // A browser that cannot hand a compiled module to the page: a restarted
   // Worker compiles the server's wasm again, so the page hears that its
   // build id is no longer known.
@@ -309,7 +328,7 @@ try {
     `one address decompiled lazily (${inventoryMs} ms inventory + ${bodyMs} ms body), ` +
     'cancellation restarted the Worker, the host event loop stayed live, ' +
     `${project.bytes.length} ZIP bytes transferred, the session language reached the engine, ` +
-    'the build id is the hash of the compiled wasm, worked out only when asked, ' +
+    'the build id is the hash of the exact wasm bytes compiled, ' +
     'and a restarted Worker runs the engine and spec files the page loaded',
   );
 } finally {
