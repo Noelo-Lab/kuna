@@ -38,18 +38,19 @@ export function requireDist() {
 }
 
 /** A path-traversal-safe static server over `root`; resolves `{base, close}`. */
-export async function serveStatic(root = dist, port = 0) {
+export async function serveStatic(root = dist, port = 0, { onRequest = null, headers = null } = {}) {
   const server = createServer(async (req, res) => {
     try {
       let rel = decodeURIComponent(new URL(req.url, 'http://harness.test').pathname);
       if (rel.endsWith('/')) rel += 'index.html';
+      onRequest?.(rel);
       const file = resolve(root, '.' + rel);
       if (!file.startsWith(root)) {
         res.writeHead(403).end();
         return;
       }
       const body = await readFile(file);
-      res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream' });
+      res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream', ...(headers?.(rel) || {}) });
       res.end(body);
     } catch {
       res.writeHead(404).end();

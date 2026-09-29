@@ -27,7 +27,8 @@ export class KunaWorkerClient {
       specRoot: asUrl(specRoot, baseUrl).replace(/\/$/, ''),
     };
     this.build = null;
-    this.validator = undefined;
+    this.engine = null;
+    this.specs = new Map();
     this.onbuild = null;
     if (smallBundleUrl) this.initParams.smallBundleUrl = asUrl(smallBundleUrl, baseUrl);
     this.workerFactory = workerFactory || ((url, options) => new Worker(url, options));
@@ -53,6 +54,10 @@ export class KunaWorkerClient {
     this.fatalError = null;
     let starting = true;
     worker.onmessage = ({ data }) => {
+      if (data?.spec) {
+        if (!this.specs.has(data.spec.rel)) this.specs.set(data.spec.rel, data.spec.bytes);
+        return;
+      }
       if (generation !== this.generation) return;
       const pending = this.pending.get(data?.id);
       if (!pending) return;
@@ -82,20 +87,15 @@ export class KunaWorkerClient {
       );
     };
     const params = { ...this.initParams };
-    if (this.build && this.validator === null) params.hashCompiled = true;
+    if (this.engine) params.engine = { ...this.engine, specs: [...this.specs] };
     this.readyPromise = this.request('init', params).then((info) => {
-      if (generation === this.generation && info && typeof info === 'object') {
-        const first = this.validator === undefined;
-        const validator = info.validator ?? null;
-        const was = this.build;
-        if (!first) {
-          if (info.build) this.build = info.build;
-          else if (validator === null || validator !== this.validator) this.build = null;
-          if (was && this.build !== was) this.onbuild?.(this.build, was);
+      if (generation === this.generation && !params.engine) {
+        if (info?.engine?.module) this.engine = info.engine;
+        else if (this.build) {
+          const was = this.build;
+          this.build = null;
+          this.onbuild?.(null, was);
         }
-        this.validator = validator;
-        if (this.build) this.initParams.prevBuild = { validator, build: this.build };
-        else delete this.initParams.prevBuild;
       }
       return info;
     });
@@ -142,12 +142,14 @@ export class KunaWorkerClient {
   }
 
   /**
-   * The engine's build id: the SHA-256 of the wasm this Worker compiled,
+   * The engine's build id: the SHA-256 of the wasm the first Worker compiled,
    * worked out on the first call (nothing is hashed until someone asks), and
-   * asked again of the new Worker when a cancel restarts it meanwhile. A
-   * restarted Worker keeps it while the server's validator says the wasm is
-   * the same; with no validator it hashes what it compiled itself (no second
-   * download); `onbuild` hears when it changed.
+   * asked again of the new Worker when a cancel restarts it meanwhile. Every
+   * restarted Worker is handed that compiled module and the spec files the
+   * page has loaded, so the engine, and its id, stay the page's own whatever
+   * the server holds later. A browser that cannot hand the module over
+   * compiles the server's wasm again; the id is then unknown, and `onbuild`
+   * hears of it.
    */
   async buildId() {
     for (;;) {
@@ -158,7 +160,6 @@ export class KunaWorkerClient {
         const { build } = await this.request('build');
         if (generation !== this.generation) continue;
         this.build = build;
-        this.initParams.prevBuild = { validator: this.validator, build };
         return build;
       } catch (error) {
         if (error instanceof KunaWorkerCancelledError || generation !== this.generation) continue;

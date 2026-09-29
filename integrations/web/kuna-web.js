@@ -102,17 +102,10 @@ function validatorOf(resp) {
 // Compile the wasm, preferring streaming compilation but falling back to a
 // buffered compile when the server doesn't send `Content-Type: application/wasm`.
 // Returns `{module, validator}`: the validator is what `buildId` checks later.
-// With `hash`, also `build`, the SHA-256 of the very bytes compiled (a copy of
-// the response), for a server that sends no validator.
-async function compileWasm(url, { hash = false } = {}) {
+async function compileWasm(url) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${url}`);
   const validator = validatorOf(resp);
-  if (hash) {
-    const bytes = new Uint8Array(await resp.clone().arrayBuffer());
-    const module = await WebAssembly.compileStreaming(resp).catch(() => WebAssembly.compile(bytes));
-    return { module, validator, build: await sha256Hex(bytes) };
-  }
   try {
     return { module: await WebAssembly.compileStreaming(resp), validator };
   } catch (_) {
@@ -137,15 +130,16 @@ function parseLdefs(text, dir, map) {
 /**
  * Load the decompiler once: compile the wasm and preload the small spec files.
  * `.sla` files are fetched lazily per binary. Returns `{ list, decompile,
- * project, inspect, read, xrefs, formatName, validator, buildId }`; every
- * command takes `{ mode, language, assertions }`. `buildId()` is the engine's
- * build id, the SHA-256 of the wasm compiled here, worked out only when asked
- * (the study view asks when a live session starts): it fetches the wasm again
- * with the cache revalidated, hashes it when the server's validator says it is
- * the same file, and fails when the site changed since (reload the page).
- * `prevBuild` ({validator, build}) reuses the id a restarted Worker had;
- * `hashCompiled` hashes the compiled bytes right away (a restarted Worker
- * whose server sends no validator, when the page already needed the id).
+ * project, inspect, read, xrefs, formatName, validator, engine, buildId }`;
+ * every command takes `{ mode, language, assertions }`. `buildId()` is the
+ * engine's build id, the SHA-256 of the wasm compiled here, worked out only
+ * when asked (the study view asks when a live session starts): it fetches the
+ * wasm again with the cache revalidated, hashes it when the server's validator
+ * says it is the same file, and fails when the site changed since (reload the
+ * page). `engine` ({module, validator, bundle}) is what was loaded; passed back
+ * in (with `specs`, the `.sla` files fetched meanwhile as `[path, bytes]`),
+ * it loads the same engine and spec files again without fetching anything.
+ * `onSpec(path, bytes)` hears of each `.sla` fetched.
  *
  * @param {object} opts
  * @param {string} opts.wasmUrl        URL of kuna_wasm.wasm
@@ -153,17 +147,19 @@ function parseLdefs(text, dir, map) {
  * @param {string} [opts.smallBundleUrl]  URL of specs-small.json (default:
  *                                         `${specRoot}-small.json`)
  */
-export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, prevBuild = null, hashCompiled = false }) {
+export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, engine = null, onSpec = null }) {
   const base = specRoot.replace(/\/$/, '');
   const bundleUrl = smallBundleUrl || `${base}-small.json`;
 
-  const [compiled, bundle] = await Promise.all([
-    compileWasm(wasmUrl, { hash: hashCompiled }),
-    fetch(bundleUrl).then((r) => {
-      if (!r.ok) throw new Error(`spec bundle fetch failed (${r.status}): ${bundleUrl}`);
-      return r.json();
-    }),
-  ]);
+  const [compiled, bundle] = engine
+    ? [{ module: engine.module, validator: engine.validator ?? null }, engine.bundle]
+    : await Promise.all([
+      compileWasm(wasmUrl),
+      fetch(bundleUrl).then((r) => {
+        if (!r.ok) throw new Error(`spec bundle fetch failed (${r.status}): ${bundleUrl}`);
+        return r.json();
+      }),
+    ]);
 
   // Build the virtual /specs tree from the small files, and the lang-id → .sla map.
   const tree = new Map();
@@ -176,6 +172,10 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, prevBuild = 
     }
   }
   const fetchedSla = new Set(); // rel paths already fetched (cache across calls)
+  for (const [rel, bytes] of engine?.specs || []) {
+    insertPath(tree, rel, new File(new Uint8Array(bytes)));
+    fetchedSla.add(rel);
+  }
   const wasmModule = compiled.module;
 
   // Resolve a language id from an engine error (which may carry a trailing
@@ -196,8 +196,10 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, prevBuild = 
     if (fetchedSla.has(rel)) return;
     const r = await fetch(`${base}/${rel}`);
     if (!r.ok) throw new Error(`failed to fetch spec ${rel} (${r.status})`);
-    insertPath(tree, rel, new File(new Uint8Array(await r.arrayBuffer())));
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    insertPath(tree, rel, new File(bytes));
     fetchedSla.add(rel);
+    onSpec?.(rel, bytes);
   }
 
   // One decompiler invocation over the current virtual FS. Instantiation is
@@ -271,11 +273,13 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, prevBuild = 
     );
   }
 
-  let build = compiled.build || (prevBuild && compiled.validator && prevBuild.validator === compiled.validator ? prevBuild.build : null);
+  let build = null;
 
   return {
     /** What the server said identifies the compiled wasm (null when it said nothing). */
     validator: compiled.validator,
+    /** The compiled wasm, the server's validator for it and the small spec files, to load them again. */
+    engine: { module: wasmModule, validator: compiled.validator, bundle },
     /** The SHA-256 of the compiled wasm (see above). */
     async buildId() {
       if (build) return build;

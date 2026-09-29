@@ -34,8 +34,8 @@ function session(params) {
 async function dispatch(method, params) {
   switch (method) {
     case 'init':
-      kuna = await loadKuna(params);
-      return { result: { validator: kuna.validator, build: params.hashCompiled ? await kuna.buildId() : null } };
+      kuna = await loadKuna({ ...params, onSpec: (rel, bytes) => self.postMessage({ spec: { rel, bytes } }) });
+      return { result: params.engine ? {} : { engine: kuna.engine } };
     case 'build':
       return { result: { build: await requireKuna().buildId() } };
     case 'setBinary':
@@ -110,7 +110,12 @@ self.onmessage = async ({ data }) => {
   if (!Number.isSafeInteger(id) || typeof method !== 'string') return;
   try {
     const { result, transfer = [] } = await dispatch(method, params);
-    self.postMessage({ id, ok: true, result }, transfer);
+    try {
+      self.postMessage({ id, ok: true, result }, transfer);
+    } catch (error) {
+      if (!result?.engine) throw error;
+      self.postMessage({ id, ok: true, result: { ...result, engine: null } }, transfer);
+    }
   } catch (error) {
     self.postMessage({
       id,

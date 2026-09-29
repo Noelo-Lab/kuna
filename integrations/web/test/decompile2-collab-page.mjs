@@ -24,7 +24,8 @@
 // cannot be worked out after the connection was made, the back/forward
 // cache, and a session's saved copy offered when its program is opened again.
 // And a fourth review's: opening a cached function while another person's
-// change is being decompiled, a guest that renamed a variable at another
+// change is being decompiled, the site deployed again while a session is on
+// (a Stop restarts the engine), a guest that renamed a variable at another
 // decompiler effort, and a program received while an edit of another program
 // is in flight. Each case runs in fresh tabs (a second Chrome process
 // stands in for another person's computer) and is reported; any failure exits 1.
@@ -47,7 +48,12 @@ if (!chromePath || typeof WebSocket !== 'function') {
 requireDist();
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
-const server = await serveStatic();
+let wasmTag = null;
+let wasmFetches = 0;
+const server = await serveStatic(undefined, 0, {
+  onRequest: (rel) => { if (rel.endsWith('.wasm')) wasmFetches++; },
+  headers: (rel) => (rel.endsWith('.wasm') && wasmTag ? { etag: wasmTag } : {}),
+});
 const flags = ['--disable-features=WebRtcHideLocalIpsWithMdns'];
 const chrome = await launchChrome(chromePath, { flags });
 const chrome2 = await launchChrome(chromePath, { flags });
@@ -890,6 +896,36 @@ try {
       assert.ok(!/bens_fast_total/.test(await code(p) + await rail(p)), `${p.label} holds no rename Ben made in Fast`);
     }
     assert.ok((await toasts(ben)).some((t) => /One of your variables was changed at another decompiler effort/.test(t) && /Automatic/.test(t)), 'Ben is told, and offered his own as a file');
+  });
+
+  await test('fourth review #4 the site is deployed again during a session: a Stop restarts the engine without leaving the session or downloading it again', async () => {
+    wasmTag = '"first"';
+    try {
+      const { ana, ben } = await pair({ anaScript: DELAY_SHIM });
+      wasmTag = '"deployed-again"';
+      const fetched = wasmFetches;
+      const workers = await ana.evaluate('window.__kunaWorkers');
+      await ana.evaluate('window.__kunaDelay = 4000; true');
+      await front(ana);
+      await ana.click(`#fnlist .fn[data-addr="${SUM}"]`);
+      await sleep(1000);
+      assert.equal(await ana.evaluate(`!document.getElementById('cancelbtn').disabled`), true, 'Ana\'s request is in flight');
+      await ana.evaluate(`document.getElementById('cancelbtn').click(); window.__kunaDelay = 0; true`);
+      await ana.waitFor(`window.__kunaWorkers > ${workers}`, { what: 'Ana\'s engine restarted', timeout: 20000 });
+      await idle(ana);
+      await ana.click(`#fnlist .fn[data-addr="${SUM}"]`);
+      await ana.waitFor(`document.getElementById('vname').textContent === 'sum_to' && document.getElementById('cancelbtn').disabled`, { what: 'Ana on sum_to', timeout: 30000 });
+      await sleep(1000);
+      assert.equal(await ana.evaluate(`document.querySelectorAll('#d2roster .d2-who:not(.wait)').length`), 1, 'Ana is still in the session with Ben');
+      assert.ok(!(await toasts(ana)).some((t) => /left the session/.test(t)), 'and was not told she left it');
+      assert.equal(wasmFetches - fetched, 0, 'the restarted engine is the one the page compiled: no download');
+      await front(ben);
+      await popover(ben, '#ccode .t[data-sym="v1"]', 'n', 'after_the_stop');
+      await ben.key('Enter');
+      await ana.waitFor(`/after_the_stop/.test(document.getElementById('sesslist').textContent)`, { what: 'Ana still hears Ben', timeout: 20000 });
+    } finally {
+      wasmTag = null;
+    }
   });
 
   await test('fourth review #1 opening a cached function while another person\'s change is being decompiled stays on it', async () => {

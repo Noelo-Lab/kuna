@@ -769,9 +769,12 @@ this page's engine compiled, worked out only when a session starts or a link is 
 again with the cache revalidated. If the server's validator (ETag, Last-Modified, length)
 is the one it compiled, it hashes the file; otherwise the site changed since the page
 loaded, and the page asks to be reloaded. A cancel that restarts the Worker while it
-works this out asks the new Worker. A restarted Worker keeps the id while the validator
-matches; when the server sends none, it hashes the bytes it compiled (no second download).
-A page whose Worker restarts with a different wasm leaves the session. The page that invited sends the newcomer a welcome (the session,
+works this out asks the new Worker. The engine is the page's for its whole life: the
+first Worker hands the page its compiled `WebAssembly.Module` and the spec files it
+loaded, and every restarted Worker is started from those, downloading nothing. The site
+being deployed again during a session therefore changes neither the engine nor its id.
+(A browser that could not hand the module over would compile the server's wasm again; the
+id is then unknown and the page leaves the session.) The page that invited sends the newcomer a welcome (the session,
 the people in it, the program's name, size and hash), and then the two send each other
 their registers; a link that comes back after a drop does the same, so each side gets
 what the other changed meanwhile (the newer clock wins each field). Until the inviter's
@@ -940,9 +943,11 @@ formats and architectures**:
    ZIP rather than the four-artifact JSON object. The Pages build runs this test.
    It also loads a session with `language: 'rust'` and asserts Rust comes back (the
    Worker used to drop the language), and checks that a client asking for the build id
-   gets the SHA-256 of the exact wasm served, again after a restart (from what the new
-   Worker compiled, since this server sends no validator: no second download), and that a
-   cancel while the id is being worked out asks the new Worker.
+   gets the SHA-256 of the exact wasm served, again after a restart, and that a cancel
+   while the id is being worked out asks the new Worker. With the site deployed again (the
+   same wasm under a new ETag, then another wasm), a restarted Worker downloads neither the
+   wasm nor a spec file, still decompiles, and keeps the id; a Worker that cannot hand its
+   module over makes the id unknown.
 4. **The study view.** Five build-free suites import the page's modules from the source
    tree: **`test/decompile2-render.mjs`** (the shared highlighter's `scan` — `highlight*`
    output pinned byte for byte — token-stream rendering and the per-line fallback,
