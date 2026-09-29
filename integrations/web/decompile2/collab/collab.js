@@ -8,7 +8,7 @@
 import { escapeHtml } from '../../assets/js/highlight-c.js';
 import { bare } from '../addr.js';
 import {
-  MAX_PEERS, encodeCode, decodeCode, codeFrom, randomId, initials, limiter, cleanName, describeFile,
+  MAX_PEERS, encodeCode, decodeCode, codeFrom, randomId, initials, limiter, cleanName, describeFile, quietly,
 } from './wire.js';
 import { Sync } from './sync.js';
 import { makeOffer, takeOffer, holdPresenceLock } from './link.js';
@@ -196,7 +196,7 @@ class Collab {
   #savePrefs() {
     const p = loadCollabPrefs(this.api.storage);
     p.name = this.name;
-    try { this.api.storage?.setItem(PREFS_KEY, JSON.stringify(p)); } catch (_) { /* no storage */ }
+    quietly(() => this.api.storage?.setItem(PREFS_KEY, JSON.stringify(p)));
   }
 
   /** The engine's build id (the SHA-256 of the wasm this page's Worker compiled). */
@@ -369,7 +369,7 @@ class Collab {
   async #handOff(data) {
     if (data?.k !== 'reply' || typeof data.id !== 'string' || typeof data.code !== 'string' || typeof data.from !== 'string') return;
     const inv = this.invites.get(data.id);
-    const post = (msg) => { try { this.replyChannel.postMessage({ ...msg, id: data.id, to: data.from }); } catch (_) { /* closed */ } };
+    const post = (msg) => quietly(() => this.replyChannel.postMessage({ ...msg, id: data.id, to: data.from }));
     if (!inv || inv.state !== 'waiting') {
       if (inv || this.closedInvites.has(data.id)) post({ k: 'used' });
       return;
@@ -382,7 +382,7 @@ class Collab {
 
   #tellReplyTab(inv, state) {
     if (!inv.replyTab) return;
-    try { this.replyChannel?.postMessage({ k: 'state', id: inv.id, to: inv.replyTab, state }); } catch (_) { /* closed */ }
+    quietly(() => this.replyChannel?.postMessage({ k: 'state', id: inv.id, to: inv.replyTab, state }));
   }
 
   // ── joining ──────────────────────────────────────────────────────────────
