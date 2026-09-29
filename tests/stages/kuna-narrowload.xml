@@ -1,0 +1,86 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna strict fix (P3, cleanup pool, RuleExpandLoad; no option).
+
+    A LOAD narrower than its pointer's pointee printed as a read of the whole
+    field or element, truncated or masked: `(uint2)p[1]` for the two bytes at
+    p + 4, `(q[1] & 0x30) != 0x10` for the byte at q + 8.  Compiled, those read
+    four and eight bytes where the program reads two and one, and fault when
+    the object ends at the last byte the program reads, at the end of a page.
+    A narrow read now prints at its own width and offset.  The AND-compare form
+    stays only inside a field of a declared record, where the whole field
+    exists and the compare can use the field's own constants.
+
+    gcc -O2 of (struct rec { char *name; unsigned flags; unsigned short tag;
+    unsigned short pad; long id; }):
+
+      t_low: movzx eax,word [rdi+8] / ret          *(unsigned short *)&r->flags
+      t_bit: movzx eax,byte [rdi+9] / and eax,0x30 / cmp al,0x10 / je sink(7)
+      p_low: movzx eax,word [rdi+4] / ret          through unsigned *p
+      p_bit: movzx eax,word [rdi+4] / and ax,0x300 / cmp ax,0x100 / je sink(7)
+      q_bit: movzx eax,byte [rdi+8] / and eax,0x30 / cmp al,0x10 / je sink(7)
+      s_set: [mov qword [rdi+8],3] / mov byte [rdi+9],dl   (a narrow store)
+
+    One pass, defaults only: t_low, p_low, p_bit and q_bit read at their own
+    width, t_bit keeps the whole-field compare of the declared record, and the
+    store stays one byte wide.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+c366662e0f1f8400000000000f1f4000
+0fb74708c366662e0f1f840000000000
+0fb6470983e0303c107405c30f1f4000
+bf07000000ebc9660f1f840000000000
+0fb74704c366662e0f1f840000000000
+0fb7470466250003663d00017402c390
+bf07000000eb99660f1f840000000000
+0fb6470883e0303c107405c30f1f4000
+bf07000000e976ffffff660f1f440000
+85f6740848c7470803000000885709c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="sink"/>
+<symbol space="ram" offset="0x1010" name="t_low"/>
+<symbol space="ram" offset="0x1020" name="t_bit"/>
+<symbol space="ram" offset="0x1040" name="p_low"/>
+<symbol space="ram" offset="0x1050" name="p_bit"/>
+<symbol space="ram" offset="0x1070" name="q_bit"/>
+<symbol space="ram" offset="0x1090" name="s_set"/>
+</binaryimage>
+<script>
+  <com>parse line struct rec { char *name; uint4 flags; uint2 tag; uint2 pad; int8 id; };</com>
+  <com>parse line extern void sink(int8 x);</com>
+  <com>parse line extern uint8 t_low(rec *r);</com>
+  <com>parse line extern void t_bit(rec *r);</com>
+  <com>parse line extern uint8 p_low(uint4 *p);</com>
+  <com>parse line extern void p_bit(uint4 *p);</com>
+  <com>parse line extern void q_bit(uint8 *q);</com>
+  <com>parse line extern void s_set(uint8 *q, int4 all, uint1 b);</com>
+  <com>lo fu t_low</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t_bit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu p_low</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu p_bit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu q_bit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu s_set</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="narrowload #1: a 2-byte read of a declared record's 4-byte field is 2 bytes wide" min="1" max="1">return \*\(uint2 \*\)&amp;r-&gt;flags;</stringmatch>
+<stringmatch name="narrowload #2: a 2-byte read through a uint4 pointer is 2 bytes wide" min="1" max="1">return \*\(uint2 \*\)&amp;p\[1\];</stringmatch>
+<stringmatch name="narrowload #3: no narrow read is printed as a wider read truncated" min="0" max="0">\(uint[12]\)[rpq](-&gt;flags|\[1\])</stringmatch>
+<stringmatch name="narrowload #4: a masked 2-byte compare through a uint4 pointer reads 2 bytes" min="1" max="1">if \(\(\*\(uint2 \*\)&amp;p\[1\] &amp; 0x300\) != 0x100\)</stringmatch>
+<stringmatch name="narrowload #5: a masked byte compare through a uint8 pointer reads 1 byte" min="1" max="1">if \(\(\*\(uint1 \*\)&amp;q\[1\] &amp; 0x30\) != 0x10\)</stringmatch>
+<stringmatch name="narrowload #6: no masked compare reads a whole element the program reads part of" min="0" max="0">\([pq]\[1\] &amp;</stringmatch>
+<stringmatch name="narrowload #7: a declared record's flag word keeps the whole-field compare" min="1" max="1">if \(\(r-&gt;flags &amp; 0x3000\) != 0x1000\)</stringmatch>
+<stringmatch name="narrowload #8: a byte store into an 8-byte element stays one byte wide" min="1" max="1">\(\(uint1 \*\)q\)\[9\] = b;</stringmatch>
+</decompilertest>

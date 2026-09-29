@@ -6283,15 +6283,12 @@ fn check_elemptr_round_trip(run_native: bool) {
             text
         });
         for arm in ["on", "off"] {
-            // The field sits at the very end of a readable page with the option
-            // on; off, upstream's widened load is kept, so it sits mid-page.
             let harness = dir.join(format!("main-{build}-{arm}.c"));
             std::fs::write(
                 &harness,
                 ELEMPTR_HARNESS
                     .replace("@FIXTURE@", bin.to_str().unwrap())
-                    .replace("@REV@", if rev_broken { "0" } else { "1" })
-                    .replace("@PAGE_END@", if arm == "on" { "6" } else { "600" }),
+                    .replace("@REV@", if rev_broken { "0" } else { "1" }),
             )
             .unwrap();
             let out = dir.join(format!("{build}-{arm}"));
@@ -6314,9 +6311,7 @@ fn check_elemptr_round_trip(run_native: bool) {
             }
             assert!(code.contains("long w_table(int a0)"), "{build} {arm}:\n{code}");
             assert!(!code.contains("w_put(char *a0,char *a1"), "{build} {arm}: the length is a number:\n{code}");
-            if arm == "on" {
-                assert!(!code.contains("(unsigned short)a0[1]"), "{build}: the 2-byte field is read 4 wide:\n{code}");
-            }
+            assert!(!code.contains("(unsigned short)a0[1]"), "{build} {arm}: the 2-byte field is read 4 wide:\n{code}");
             assert!(
                 code.contains("unsigned long w_nexttab(unsigned long a0,"),
                 "{build} {arm}: the returned element is a number:\n{code}"
@@ -6414,6 +6409,121 @@ fn check_elemptr_round_trip(run_native: bool) {
                     want = four(&want);
                 }
                 assert_eq!(got, want, "{build} {arm}/{cc}: the printed witnesses compute something else:\n{printed}");
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A read or a write narrower than the field or element its pointer is typed to
+/// keeps its own width.  `narrowload_x86_64.c` reads the low bytes, one byte and
+/// a masked byte of a record's 4-byte field and of its 8-byte field on a path
+/// that never reads the whole field, the low half of an element one past a
+/// `long` walk, and two bytes past a callee's `unsigned int` element, and writes
+/// one, two and four bytes the same ways.  `main` passes each an object that
+/// ends at the last byte the function touches, at the end of a readable page.
+/// kuna printed `(unsigned short)a0->field_0x8`, `(a0->field_0x8 & 0x2000) != 0`
+/// and `(int)a0[a1]`, which read the whole field or element and fault there.
+/// The round trip exports the gcc and clang -O0 and -O2 builds with `elemptr` on
+/// and off, compiles every function between the fixture's markers exactly as
+/// printed against the export's header, links it with the fixture's own prelude
+/// and `main` compiled on their own, and runs it: it must print what the binary
+/// prints.
+#[test]
+fn a_narrow_read_round_trips_through_the_printed_c() {
+    let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let src = std::fs::read_to_string(fx.join("narrowload_x86_64.c")).unwrap();
+    let prelude = src.split("/* prelude */").nth(1).unwrap().split("/* tested */").next().unwrap();
+    let tested_src = src.split("/* tested */").nth(1).unwrap().split("/* main */").next().unwrap();
+    let main = src.split("/* main */").nth(1).unwrap();
+    let tested: Vec<&str> = tested_src
+        .lines()
+        .filter_map(|l| l.strip_prefix("KEEP "))
+        .filter_map(|l| l.split('(').next())
+        .filter_map(|l| l.rsplit([' ', '*']).next())
+        .collect();
+    assert_eq!(tested.len(), 17, "{tested:?}");
+    let sp = specs();
+    let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
+    let dir = std::env::temp_dir().join(format!("kuna-narrowload-rt-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for build in ["gcc_O0", "clang_O0", "gcc_O2", "clang_O2"] {
+        let stem = format!("narrowload_{build}_x86_64");
+        let bin = fx.join(&stem);
+        for elem in ["on", "off"] {
+            let out = dir.join(format!("{build}-{elem}"));
+            let (_, stderr, ok) = run_kuna(&[
+                "decompile-project",
+                bin.to_str().unwrap(),
+                "-o",
+                out.to_str().unwrap(),
+                "--sleighpath",
+                sp.as_str(),
+                "--option",
+                "elemptr",
+                elem,
+            ]);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("narrowload round trip: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "kuna decompile-project failed: {stderr}");
+            let code = std::fs::read_to_string(out.join(format!("{stem}.c"))).unwrap();
+            let mut bodies = String::new();
+            for w in &tested {
+                let head = format!("// Function: {w} @ ");
+                let at = code.find(&head).unwrap_or_else(|| panic!("{build} {elem}: no `{w}` in the export"));
+                let end = code[at + head.len()..].find("// Function: ").map_or(code.len(), |e| at + head.len() + e);
+                bodies.push_str(&code[at..end]);
+            }
+            for wide in ["(unsigned short)a0->", "(short)a0->", "(unsigned char)a0->", "(int)a0->", "(int)a0["] {
+                assert!(!bodies.contains(wide), "{build} {elem}: a narrow read printed as `{wide}`:\n{bodies}");
+            }
+            assert!(!bodies.contains("->field_0x8 & 0x"), "{build} {elem}: a byte test reads the whole field:\n{bodies}");
+            if !runs_here {
+                eprintln!("narrowload round trip: not an x86-64 Linux host, spelling checked only");
+                continue;
+            }
+            let expected = Command::new(&bin).output().expect("run the fixture");
+            std::fs::write(
+                out.join("printed.c"),
+                format!("#include <stddef.h>\n#include <stdlib.h>\n#include \"{stem}.h\"\n{bodies}"),
+            )
+            .unwrap();
+            std::fs::write(out.join("harness.c"), format!("{prelude}{main}")).unwrap();
+            for cc in ["gcc", "clang"] {
+                if Command::new(cc).arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+                    eprintln!("narrowload round trip: no `{cc}`");
+                    continue;
+                }
+                let exe = out.join(format!("rt-{cc}"));
+                let built = Command::new(cc)
+                    .args([
+                        "-std=gnu11",
+                        "-w",
+                        "-Wno-error=int-conversion",
+                        "-Wno-error=incompatible-pointer-types",
+                        "-O0",
+                        "-fno-builtin",
+                        "-o",
+                        exe.to_str().unwrap(),
+                        "harness.c",
+                        "printed.c",
+                    ])
+                    .current_dir(&out)
+                    .output()
+                    .expect("spawn cc");
+                assert!(
+                    built.status.success(),
+                    "{build} {elem}/{cc}: the printed functions did not compile:\n{}\n{bodies}",
+                    String::from_utf8_lossy(&built.stderr)
+                );
+                let run = Command::new(&exe).output().expect("run the round trip");
+                assert_eq!(
+                    (String::from_utf8_lossy(&run.stdout), run.status.code()),
+                    (String::from_utf8_lossy(&expected.stdout), expected.status.code()),
+                    "{build} {elem}/{cc}: the printed functions compute something else:\n{bodies}"
+                );
             }
         }
     }
@@ -6540,7 +6650,7 @@ int main(void) {
   long t3 = w_tidx(8), t4 = w_tfirst();
   unsigned char *pg = mmap(0, 8192, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   mprotect(pg + 4096, 4096, PROT_NONE);
-  unsigned char *o = pg + 4096 - @PAGE_END@;
+  unsigned char *o = pg + 4096 - 6;
   o[0] = 1, o[1] = 2, o[2] = 3, o[3] = 4, o[4] = 0x34, o[5] = 0x92;
   printf("%ld %ld %ld %ld %ld %ld %ld %ld\n", g1, g2, g3, t1, t2, t3, t4, w_hdr((const unsigned int *)o));
   w_tabinit();

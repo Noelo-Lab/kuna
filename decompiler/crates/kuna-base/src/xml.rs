@@ -1924,6 +1924,7 @@ mod tests {
         // pointer to its element
         // and kuna-returnpiece / a value built in one return register keeps
         // both halves and every argument that feeds it
+        // and kuna-narrowload / a narrow read is never printed as a wider read
         assert_eq!(count, 353, "corpus file count drifted");
     }
 
