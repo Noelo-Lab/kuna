@@ -2,14 +2,14 @@
 
 **kuna.noelo.org** — the project site, its public development visualization, and the
 decompiler that runs **entirely client-side in a web browser**: no server, no backend, no
-upload. Four pages, one static bundle:
+upload. Three pages and a redirect, one static bundle:
 
 | URL | Page |
 |---|---|
 | `/` | **Landing** — what kuna is, a side-by-side compare section, the three project goals. Inert: no wasm, no network. |
 | `/dev-viz/` | **Development record** — phase activity, commit cadence, option provenance, DecBench evidence, and the autonomous improvement loop. Generated from tracked repository evidence at build time. |
-| `/decompile/` | **The decompiler** — load an ELF/PE/Mach-O and read its C, decompiled in the tab. |
-| `/decompile2/` | **The study view** (unlisted for now: no other page links to it) — the same engine for students, full screen, in plain words, in the site's Noelo palette (dark by default, light on a toggle) with its own app type: C, assembly, bytes and the stack frame linked line by line, a hover card showing the instructions behind a C line, an Explain panel for whatever is selected, a *Show hints* checkbox that hides the teaching notes once a student no longer needs them, renames/retypes/prototypes/notes and byte patches the engine applies, a patched-program download, and a changes file the CLI replays. "Try an example" loads a small program and its source; a file can also be dropped anywhere on the page. |
+| `/decompile/` | **The decompiler** — full screen, in plain words, in the site's Noelo palette (dark by default, light on a toggle) with its own app type: open an ELF/PE/Mach-O (the *Open file* button, or drop it anywhere) and read one function as its code (C or Rust), assembly, bytes and stack frame linked line by line, an Explain panel for whatever is selected, renames/retypes/prototypes/notes and byte patches the engine applies, a patched-program download, and a changes file the CLI replays. *Show hints* (off by default; `?student=true` turns it on) adds the teaching notes and the hover cards that explain what the pointer rests on. *Collaborate* starts a live session with no server: up to 8 people on one program, each other's edits, pointers and pings, the program sent to whoever joins (invite link, reply link; tabs of one browser need only the invite). |
+| `/decompile2/` | Its old address: a redirect to `/decompile/` that keeps the query and the `#fragment`, so links and invites made there still open. |
 
 The engine (Ghidra's decompiler, ported to Rust) compiles to `wasm32-wasip1` and runs in
 the page under a pure-JS WASI shim; the SLEIGH specs and the binary you decompile live in
@@ -35,23 +35,18 @@ integrations/web/build.sh --serve       # -> http://localhost:8000
 #   or:  (cd integrations/web/dist && python3 -m http.server 8000)
 ```
 
-Open the landing page, follow **Try it** to `/decompile/`, click **Load binary**, and pick
-any **ELF, PE, or Mach-O** binary. A module Worker inventories the functions without
-blocking the page; click one to decompile just that address and see its C, **syntax
-highlighted** (comments/strings/keywords/types/numbers/calls, plus the kuna type family and
-`dat_<hex>` globals). The sidebar groups **PLT stubs and import thunks** (the engine's
-per-function `kind`) below a divider, in purple, so real code stays on top. The
-**Download Binary Source** button exports the whole binary as a recompile-oriented project
-— `<name>.c` / `<name>.h` / `<name>.asm` / `README.md`, the `kuna decompile-project`
-artifacts — and builds the `<name>.kuna.zip` inside the Worker. Only the final ZIP buffer
-crosses back to the page. It supports whatever the CLI supports — every format and
-architecture kuna has a `.sla` for — with no per-format configuration (the engine resolves
-each binary; the Worker fetches only the one `.sla` it needs). See
+Open the landing page, follow **Try it** to `/decompile/`, click **Open file**, and pick
+any **ELF, PE, or Mach-O** binary (a small one is `integrations/web/test/fixtures/sample.elf`).
+A module Worker inventories the functions without blocking the page and `main` opens by
+itself: click a line to see its instructions, press `Space` for the assembly or `s` for
+side by side, double-click a name to rename it, and `?` for help; add `?student=true` to
+the address for the hints and hover cards. ⋯ → **Download C code (.zip)** exports the
+whole binary as a recompile-oriented project — `<name>.c` / `<name>.h` / `<name>.asm` /
+`README.md`, the `kuna decompile-project` artifacts — built into a ZIP inside the Worker;
+only the final ZIP buffer crosses back to the page. It supports whatever the CLI supports
+— every format and architecture kuna has a `.sla` for — with no per-format configuration
+(the engine resolves each binary; the Worker fetches only the one `.sla` it needs). See
 `docs/web-integration.md` §3.
-
-For the study view, open `/decompile2/` and press **Try an example**: `main` opens by
-itself; hover a C line to see its instructions, press `Space` for the assembly or `s` for
-side by side, double-click a name to rename it, and `?` for help.
 
 WASI execution is synchronous once `wasi.start()` enters the WebAssembly module. The page
 therefore cancels an inventory, function, or project operation by terminating the Worker,
@@ -84,10 +79,10 @@ asset path is relative, so a project subpath just works.
 |---|---|
 | `index.html` | The landing page: hero, the compare section, the three goals. Static — its only script wires the two dropdowns. |
 | `dev-viz/` | The development record. `generate.py` exports full git history plus tracked option, triage, feature, and baseline evidence to `data.json`; `app.js` renders the interactive charts. The generated JSON is ignored in source and assembled into `dist/` by `build.sh`. |
-| `decompile/index.html` | The decompiler application (upload → inventory → lazy highlighted C, stubs grouped, filterable list, cancellable project-zip download). Reaches the worker and shared assets at the bundle root with `../`. |
-| `decompile2/` | The study view: `index.html` + `decompile2.css` (Noelo's palette as dark and light tokens, its own type and layout, no `site.css`) + `app.js` and DOM-free modules for the C and assembly panes (including the easy assembly spelling), the function list's groups, the hover card, the Explain panel, the edit session (`--assert` directives), bytes and patching, the stack frame, instruction notes and help. `docs/web-integration.md` §4.2 has the layout and the module table. |
+| `decompile/` | The decompiler: `index.html` + `decompile2.css` (Noelo's palette as dark and light tokens, its own type and layout, no `site.css`) + `app.js` and DOM-free modules for the code and assembly panes (including the easy assembly spelling), the function list's groups, the hover card, the Explain panel, the edit session (`--assert` directives), bytes and patching, the stack frame, instruction notes and help. `collab/` is *Working together*, loaded only when a session starts or an invite or reply link is opened: the controller and its dialogs, the group protocol, WebRTC and BroadcastChannel links, the shared registers, message checks and codes, pointers and pings. `docs/web-integration.md` §4.2 has the layout, the module table and *Working together*. The files keep the names they had at `/decompile2/`. |
+| `decompile2/index.html` | The redirect from the page's old address to `/decompile/`, keeping `?query` and `#fragment`; a meta refresh and a link for pages without scripts. |
 | `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
-| `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), `js/highlight-c.js` — the one C highlighter both pages use — and `js/fnfilter.js`, the DOM-free matcher/counters behind the /decompile sidebar filter. |
+| `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), `js/highlight-c.js` — the one C highlighter the landing page and the decompiler use — and `js/fnfilter.js`, the DOM-free matcher behind the /decompile function search. |
 | `CNAME` | The custom domain (`kuna.noelo.org`); `build.sh` copies it into `dist/`. Repo *Settings → Pages → Custom domain* must agree. |
 | `kuna-web.js` | The glue: loads the wasm, preloads the small spec bundle, lazily fetches each binary's `.sla` on demand (driven by the engine's own resolution), and runs the decompiler under the WASI shim with the automatic size-based mode policy; `list`/`decompile` return the `decompile-all --json` shape, `project` the whole-binary export. |
 | `kuna-worker.js` | The module Worker: owns the binary and WASI handle, lists first, decompiles one selected address, and builds whole-project ZIPs off the UI thread. |
@@ -113,7 +108,7 @@ python3 integrations/web/dev-viz/generate.py
 node integrations/web/test/dev-viz.mjs ../
 python3 -m http.server 8000 --directory integrations/web
 ```
-| `build.sh` | Builds `kuna_wasm.wasm`, copies the full runtime SLEIGH tree + the shim + the pages + `assets/` into `dist/` (plus `sample.elf`/`sample.c` as `/decompile2/examples/`), and bundles the small spec files into `specs-small.json`. `wasm-opt -Oz` is applied if present. |
+| `build.sh` | Builds `kuna_wasm.wasm`, copies the full runtime SLEIGH tree + the shim + the pages + `assets/` into `dist/`, and bundles the small spec files into `specs-small.json`. `wasm-opt -Oz` is applied if present. |
 | `test/` | Automated gates (below) + committed ELF/Mach-O fixtures. |
 | `dist/` | Assembled output (gitignored — regenerate with `build.sh`). |
 
@@ -123,7 +118,8 @@ build is the parity oracle for the tests.
 
 ## Tests
 
-All run under Node (no browser required for CI):
+All run under Node. A through H need no browser; I and J drive headless Chrome and run
+**locally only** (CI does not run them; each skips, exit 0, without Chrome):
 
 ```bash
 # 0. Prereqs: `make specs`, then `integrations/web/build.sh`, and a native
@@ -153,18 +149,30 @@ node integrations/web/test/worker-errors.mjs
 # F. Sidebar filter query semantics — no build needed.
 node integrations/web/test/fnfilter.mjs
 
-# G. The study view's modules — no build needed.
+# G. The decompiler page's modules — no build needed.
 node integrations/web/test/decompile2-render.mjs
 node integrations/web/test/decompile2-session.mjs
 node integrations/web/test/decompile2-bytes.mjs
 node integrations/web/test/decompile2-learn.mjs
 node integrations/web/test/decompile2-groups.mjs
+node integrations/web/test/decompile2-collab.mjs
+node integrations/web/test/decompile2-collab-cases.mjs
+node integrations/web/test/decompile2-collab-sync.mjs
+node integrations/web/test/decompile2-collab-fuzz.mjs [--runs 2000] [--seed 1]
 
-# H. The study view's commands through the real Worker (inspect, read, --assert).
+# G2. Exported sessions replayed by the native CLI (skips without decompiler/target/release/kuna).
+node integrations/web/test/decompile2-replay.mjs
+
+# H. The decompiler page's commands through the real Worker (inspect, read, --assert).
 node integrations/web/test/decompile2-worker.mjs
 
-# I. The study view in headless Chrome over the DevTools protocol (skips without Chrome).
+# I. The decompiler page in headless Chrome over the DevTools protocol (skips without Chrome).
 node integrations/web/test/decompile2-browser.mjs
+
+# J. Live sessions: tabs of one Chrome, then two Chrome processes over WebRTC.
+node integrations/web/test/decompile2-collab-browser.mjs [--shots DIR]   # COLLAB_TRACE=1 traces links on a failure
+node integrations/web/test/decompile2-collab-page.mjs [--only TEXT]
+node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
 ```
 
 - **`auto-mode.mjs`** pins the argv the glue builds: both `--mode auto` and `--language
@@ -185,7 +193,9 @@ node integrations/web/test/decompile2-browser.mjs
 - **`worker.mjs`** runs the shipped module Worker and RPC client through Node's worker
   threads, proving inventory-first/lazy-address behavior, terminate-and-recreate
   cancellation, session rehydration, and transfer of a complete project ZIP without its
-  intermediate artifact object.
+  intermediate artifact object, and that the build id a client asks for is the SHA-256
+  of the exact wasm served, again after a restart; a restarted Worker runs the engine
+  and spec files the page loaded, even after the site is deployed again.
 - **`worker-errors.mjs`** simulates a content blocker stopping the Worker before its
   initialization reply, and pins the actionable error plus terminal behavior for later
   requests.
@@ -196,7 +206,7 @@ node integrations/web/test/decompile2-browser.mjs
   `Enter`/`Escape`/arrows) needs a browser — see the optional Chrome check below.
 - **`run-wasm.mjs`** is a small reusable CLI runner (used by `parity.mjs`; also handy for
   driving the wasm by hand under `node:wasi`).
-- **`decompile2-render/session/bytes/learn/groups.mjs`** pin the study view's pure
+- **`decompile2-render/session/bytes/learn/groups.mjs`** pin the decompiler page's pure
   modules from the source tree: the shared highlighter (`highlight*` output byte for
   byte), the token stream and its per-line fallback, the index and the assembly rows (as
   comments and as headings, easy and exact spelling), the settings and their migration,
@@ -206,6 +216,34 @@ node integrations/web/test/decompile2-browser.mjs
   instruction notes. Their fixtures (`fixtures/inspect-*.json`, `list-sample.json`) are
   what the native `kuna_wasm` prints; regenerate them with
   `node integrations/web/test/make-inspect-fixtures.mjs`.
+- **`decompile2-collab.mjs`** pins live sessions without a browser: register
+  convergence over the full key set (birth clocks too), the ops another page may not
+  send, sessions as registers and back, the directive order (as made when alone, by birth
+  when shared), undo that leaves what someone changed since, messages, codes and the
+  cut-down SDP, the STUN/TURN setting (off by default), and whole groups over in-memory
+  links (introductions, the program sent and checked, 8 people and no more, another
+  build refused).
+- **`decompile2-collab-cases.mjs`** holds one case per defect a review found in the
+  protocol and the registers (each fails on the code before its fix): joiners sending
+  their registers, undo depth, reverts, per-field apply, a global's halves, the counter
+  bound, UTF-8 batch sizes, the live-register cap, resync after dropped edits, route
+  pruning, names and programs that cannot travel, the same-browser knock, the passive
+  answer.
+- **`decompile2-collab-sync.mjs`** and **`decompile2-collab-fuzz.mjs`** drive the
+  page's real glue (`collab/sync.js`, `group.js`, a real `Session` per page) through
+  `collab-sim.mjs`: in-memory links that can fail with edits in flight, and a virtual
+  clock. The first holds one case per defect a second review found in the glue (a guest
+  with the program open, leaving and joining again, an edit made inside another page's
+  apply batch, an inviter that goes away mid-join, tabs of one browser, the shared
+  order), and a third review's (two joiners bringing one field, a slow open of the
+  received program, a join that fails while it opens). The second runs seeded random
+  sessions and checks that linked pages agree, that each page's Session is what its
+  registers make, that no page sends a change its student did not make, that adding a
+  directive adds one, that applying others' changes keeps the outcomes of records they do
+  not change, and that a page out of a session leaves the shared slot.
+- **`decompile2-replay.mjs`** exports sessions made alone and shared and replays each
+  `.kuna` through the native CLI: a type used by a later type, the later of two
+  prototypes, and a rename chain all apply.
 - **`decompile2-worker.mjs`** runs `inspect`, `read` and `--assert` through the shipped
   Worker (a rename applies, a size-changing retype and an unknown symbol are rejected with
   a body, a `bytes` overlay shows in `read`, a function rename reaches `list`, a qualified
@@ -213,14 +251,35 @@ node integrations/web/test/decompile2-browser.mjs
 
 ### Full-UI check in real Chrome
 
-**`decompile2-browser.mjs`** drives the real pages in headless Chrome through the
+**`decompile2-browser.mjs`** drives the real page in headless Chrome through the
 DevTools protocol, with Node's built-in `WebSocket` (Node 22+) and no `puppeteer`
-(`test/cdp-client.mjs` is the small driver): it checks the welcome screen, loads the
-example through the file input, checks `main` opens by itself and the theme toggle,
-hovers a line, switches to Assembly, renames a variable, patches a byte, checks 1024 and 820 px for horizontal overflow, reloads to see the session
-restored, checks that `/decompile` still renders and its Language control switches
-to Rust, and checks that no other page links to `/decompile2/`. It fails on any uncaught page exception and skips when there is no Chrome (set
-`CHROME=` to point at one). CI runs it when the runner has `google-chrome`. Plain
+(`test/cdp-client.mjs` is the small driver): it checks the welcome screen, that hints
+and hover cards are off by default and on with `?student=true`, that a toggle is
+remembered across reloads, loads the committed fixture through the file input, checks
+`main` opens by itself with only its name in the header, the order of the views, the
+*Collaborate* button's tooltip and dialog, and the theme toggle, hovers a line, switches
+to Assembly, renames a variable, patches a byte, checks 1024 and 820 px for horizontal
+overflow, reloads to see the session restored, checks that `/decompile2/…#join=…`
+redirects with its fragment, and that the nav links to `/decompile/` and nothing to
+`/decompile2/`. It fails on any uncaught page exception and skips when there is no Chrome (set
+`CHROME=` to point at one). It is not run in CI: run it locally, followed by
+**`decompile2-collab-browser.mjs`** (a live session in tabs of one Chrome: joining,
+shared edits, the shared decompiler effort, pointers at two widths, following, pings, a
+third page over WebRTC through the reply-link hand-off, stale replies, undo, junk
+messages, leaving),
+**`decompile2-collab-page.mjs`** (the page's side of the review's defects, one case
+each: cancelled edits, joins after a re-index or a failed join, a newcomer's own changes
+kept apart, following into a loading function, Undo and Cancel during someone else's
+re-decompile, focus, the two-tab demo, connection errors; then a second review's: a guest
+with the program open and changes of its own, leaving and joining again, an edit made
+inside the other page's apply batch, an inviter that closes mid-join, a view setting
+changed while a change waits, Stop during a reload, earlier versions' stored changes; and
+a third review's: an unreadable directive twice without a re-decompile loop, a join that
+fails while the program opens, a queued change behind a replaced open, a join whose build
+id fails after connecting, the back/forward cache, a session's saved copy offered again) and
+**`decompile2-collab-rtc.mjs`** (two Chrome processes over WebRTC; SKIPPED only when
+two peer connections in one page cannot connect on the machine; `--late 60` opens the
+reply a minute late). Plain
 `--headless --virtual-time-budget=… --dump-dom` does not work for these pages: the dump
 happens while the status still reads `loading decompiler…`.
 

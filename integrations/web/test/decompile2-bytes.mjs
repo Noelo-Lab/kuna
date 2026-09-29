@@ -6,9 +6,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   fileOffsetFor, originalByteAt, functionCells, hexRows, applyPatches, parseHex, patchedName, renderHex,
-} from '../decompile2/bytes-view.js';
-import { archFrom, nopFill } from '../decompile2/arch.js';
-import { normalizeInspect } from '../decompile2/render-c.js';
+} from '../decompile/bytes-view.js';
+import { archFrom, nopFill } from '../decompile/arch.js';
+import { normalizeInspect } from '../decompile/render-c.js';
 
 const here = new URL('./fixtures/', import.meta.url);
 const list = JSON.parse(readFileSync(new URL('list-sample.json', here), 'utf8'));

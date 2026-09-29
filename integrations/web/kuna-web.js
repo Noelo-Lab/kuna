@@ -31,6 +31,7 @@ import {
   PreopenDirectory,
   ConsoleStdout,
 } from './vendor/browser_wasi_shim/dist/index.js';
+import { sha256Hex } from './sha256.js';
 
 // Cosmetic only (status label) — NOT used to pick specs (the engine does that).
 export function formatName(bytes) {
@@ -92,15 +93,18 @@ function insertPath(rootMap, path, inode) {
 }
 
 // Compile the wasm, preferring streaming compilation but falling back to a
-// buffered compile when the server doesn't send `Content-Type: application/wasm`.
+// buffered compile of the same bytes when the server doesn't send
+// `Content-Type: application/wasm`. Returns `{module, build}`: the build id is
+// the SHA-256 of the very bytes compiled, hashed while they compile.
 async function compileWasm(url) {
-  try {
-    return await WebAssembly.compileStreaming(fetch(url));
-  } catch (_) {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${url}`);
-    return WebAssembly.compile(await resp.arrayBuffer());
-  }
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${url}`);
+  const bytes = resp.clone().arrayBuffer().then((b) => new Uint8Array(b));
+  const [module, build] = await Promise.all([
+    WebAssembly.compileStreaming(resp).catch(async () => WebAssembly.compile(await bytes)),
+    bytes.then(sha256Hex),
+  ]);
+  return { module, build };
 }
 
 // Extract `id → { slafile, dir }` from an `.ldefs` file's `<language …>` tags.
@@ -118,8 +122,13 @@ function parseLdefs(text, dir, map) {
 /**
  * Load the decompiler once: compile the wasm and preload the small spec files.
  * `.sla` files are fetched lazily per binary. Returns `{ list, decompile,
- * project, inspect, read, xrefs, formatName }`; every command takes
- * `{ mode, language, assertions }`.
+ * project, inspect, read, xrefs, formatName, engine, buildId }`; every
+ * command takes `{ mode, language, assertions }`. `buildId()` is the engine's
+ * build id, the SHA-256 of the exact wasm bytes compiled here. `engine`
+ * ({module, build, bundle}) is what was loaded; passed back in (with `specs`,
+ * the `.sla` files fetched meanwhile as `[path, bytes]`), it loads the same
+ * engine and spec files again without fetching anything. `onSpec(path,
+ * bytes)` hears of each `.sla` fetched.
  *
  * @param {object} opts
  * @param {string} opts.wasmUrl        URL of kuna_wasm.wasm
@@ -127,17 +136,19 @@ function parseLdefs(text, dir, map) {
  * @param {string} [opts.smallBundleUrl]  URL of specs-small.json (default:
  *                                         `${specRoot}-small.json`)
  */
-export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
+export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, engine = null, onSpec = null }) {
   const base = specRoot.replace(/\/$/, '');
   const bundleUrl = smallBundleUrl || `${base}-small.json`;
 
-  const [wasmModule, bundle] = await Promise.all([
-    compileWasm(wasmUrl),
-    fetch(bundleUrl).then((r) => {
-      if (!r.ok) throw new Error(`spec bundle fetch failed (${r.status}): ${bundleUrl}`);
-      return r.json();
-    }),
-  ]);
+  const [compiled, bundle] = engine
+    ? [{ module: engine.module, build: engine.build }, engine.bundle]
+    : await Promise.all([
+      compileWasm(wasmUrl),
+      fetch(bundleUrl).then((r) => {
+        if (!r.ok) throw new Error(`spec bundle fetch failed (${r.status}): ${bundleUrl}`);
+        return r.json();
+      }),
+    ]);
 
   // Build the virtual /specs tree from the small files, and the lang-id → .sla map.
   const tree = new Map();
@@ -150,6 +161,11 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
     }
   }
   const fetchedSla = new Set(); // rel paths already fetched (cache across calls)
+  for (const [rel, bytes] of engine?.specs || []) {
+    insertPath(tree, rel, new File(new Uint8Array(bytes)));
+    fetchedSla.add(rel);
+  }
+  const wasmModule = compiled.module;
 
   // Resolve a language id from an engine error (which may carry a trailing
   // `:compiler`) to its `.sla`, trimming id segments until one matches.
@@ -169,8 +185,10 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
     if (fetchedSla.has(rel)) return;
     const r = await fetch(`${base}/${rel}`);
     if (!r.ok) throw new Error(`failed to fetch spec ${rel} (${r.status})`);
-    insertPath(tree, rel, new File(new Uint8Array(await r.arrayBuffer())));
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    insertPath(tree, rel, new File(bytes));
     fetchedSla.add(rel);
+    onSpec?.(rel, bytes);
   }
 
   // One decompiler invocation over the current virtual FS. Instantiation is
@@ -245,6 +263,12 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl }) {
   }
 
   return {
+    /** The compiled wasm, its build id and the small spec files, to load them again. */
+    engine: { module: wasmModule, build: compiled.build, bundle },
+    /** The SHA-256 of the compiled wasm (see above). */
+    async buildId() {
+      return compiled.build;
+    },
     /** Format label for the status line (ELF / PE / Mach-O / binary). */
     formatName,
     /** Enumerate functions: `{binary, count, functions:[{name, address, address_hex, size}]}`. */

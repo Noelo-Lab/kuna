@@ -1,0 +1,389 @@
+// link.js — the connection between two pages. Across machines it is WebRTC,
+// with the offer and the answer carried by the people (in the invite and
+// reply links) or relayed by another member of the session; between tabs of
+// one browser it is a BroadcastChannel with the same interface. The page that
+// answers an offer knocks on the offer's BroadcastChannel first, and uses
+// WebRTC only when no tab of this browser answers; a knock counts only once
+// the answering page confirms it had not given up waiting. A link has two channels:
+// `edits` (ordered, reliable) and `cursor` (unordered, never resent).
+// Gathering stops after 1.5 s, the ICE servers come from the page's
+// STUN/TURN setting (none by default), and the answer is passive (sdp.js).
+// A link keeps what arrives before the page listens (the other page may say
+// hello first) and hands it over once the page has attached its handler.
+import { compactSdp, expandSdp, passiveAnswer } from './sdp.js';
+import { randomId, quietly } from './wire.js';
+
+const GATHER_MS = 1500;
+const KNOCK_MS = 500;
+const CONFIRM_MS = 1500;
+const OPEN_MS = 20000;
+const EARLY_MAX = 1000;
+
+/** The part of a link that holds messages until someone listens (`onmessage`), then hands them over in order. */
+class Inbox {
+  constructor() {
+    this.handler = null;
+    this.early = [];
+  }
+
+  get onmessage() { return this.handler; }
+
+  set onmessage(fn) {
+    this.handler = fn;
+    if (!fn || !this.early.length) return;
+    queueMicrotask(() => {
+      const early = this.early;
+      this.early = [];
+      for (const [data, channel] of early) this.handler?.(data, channel);
+    });
+  }
+
+  deliver(data, channel) {
+    if (this.handler && !this.early.length) this.handler(data, channel);
+    else if (this.early.length < EARLY_MAX) this.early.push([data, channel]);
+  }
+}
+
+/** Resolve once `pc` has its candidates, or after `ms`. */
+function gathered(pc, ms = GATHER_MS) {
+  return new Promise((done) => {
+    if (pc.iceGatheringState === 'complete') { done(); return; }
+    const timer = setTimeout(done, ms);
+    pc.addEventListener('icegatheringstatechange', () => {
+      if (pc.iceGatheringState === 'complete') { clearTimeout(timer); done(); }
+    });
+  });
+}
+
+class RtcLink extends Inbox {
+  constructor(pc, edits) {
+    super();
+    this.kind = 'rtc';
+    this.pc = pc;
+    this.edits = null;
+    this.cursor = null;
+    this.onclose = null;
+    this.closed = false;
+    this.attach(edits);
+    const watch = () => {
+      const s = pc.connectionState;
+      if (s === 'failed' || s === 'closed') this.close();
+      else if (s === 'disconnected') {
+        clearTimeout(this.lost);
+        this.lost = setTimeout(() => { if (pc.connectionState === 'disconnected') this.close(); }, 6000);
+      }
+    };
+    pc.addEventListener('connectionstatechange', watch);
+  }
+
+  attach(channel) {
+    channel.binaryType = 'arraybuffer';
+    const which = channel.label === 'cursor' ? 'cursor' : 'edits';
+    this[which] = channel;
+    channel.onmessage = ({ data }) => this.deliver(data, which);
+    if (which === 'edits') channel.addEventListener('close', () => this.close());
+  }
+
+  send(text) {
+    if (this.edits?.readyState === 'open') this.edits.send(text);
+  }
+
+  sendCursor(text) {
+    if (this.cursor?.readyState === 'open') this.cursor.send(text);
+  }
+
+  sendBinary(bytes) {
+    if (this.edits?.readyState === 'open') this.edits.send(bytes);
+  }
+
+  buffered() {
+    return this.edits?.bufferedAmount || 0;
+  }
+
+  drain(threshold) {
+    return new Promise((done) => {
+      const ch = this.edits;
+      if (!ch || ch.readyState !== 'open' || ch.bufferedAmount <= threshold) { done(); return; }
+      ch.bufferedAmountLowThreshold = threshold;
+      const finish = () => {
+        ch.removeEventListener('bufferedamountlow', finish);
+        ch.removeEventListener('close', finish);
+        done();
+      };
+      ch.addEventListener('bufferedamountlow', finish);
+      ch.addEventListener('close', finish);
+    });
+  }
+
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    clearTimeout(this.lost);
+    quietly(() => this.edits?.close());
+    quietly(() => this.cursor?.close());
+    quietly(() => this.pc.close());
+    this.onclose?.();
+  }
+}
+
+/**
+ * Is the page `peer` still open? Every page holds a Web Lock named after
+ * itself until it goes away, and a tab linked to it asks for that lock: it is
+ * granted only when the page is gone. The browser can take a moment to grant
+ * a page its own lock, and a request that arrives first would be granted at
+ * once, as if the page had gone, so a page offers or answers a link only once
+ * its own lock is held (or PRESENCE_MS has passed).
+ */
+const lockName = (peer) => `kuna.d2.peer.${peer}`;
+const PRESENCE_MS = 5000;
+let heldFor = null;
+let held = null;
+let isHeld = false;
+
+/** Hold this page's own lock (once), so tabs linked to it over BroadcastChannel notice when it is gone. */
+export function holdPresenceLock(me) {
+  if (heldFor || !globalThis.navigator?.locks) return held;
+  heldFor = me;
+  held = new Promise((granted) => {
+    const done = () => {
+      isHeld = true;
+      granted();
+    };
+    navigator.locks.request(lockName(me), () => {
+      done();
+      return new Promise(() => {});
+    }).catch(done);
+  });
+  return held;
+}
+
+/** Resolves once this page's own lock is held (see above). */
+function present() {
+  if (!held || isHeld) return Promise.resolve();
+  let timer;
+  return Promise.race([held, new Promise((done) => { timer = setTimeout(done, PRESENCE_MS); })]).finally(() => clearTimeout(timer));
+}
+
+class BcLink extends Inbox {
+  constructor(channel, me, peer) {
+    super();
+    this.kind = 'bc';
+    this.ch = channel;
+    this.me = me;
+    this.peer = peer;
+    this.onclose = null;
+    this.closed = false;
+    channel.onmessage = ({ data }) => {
+      if (data?.k === 'knock' && typeof data.from === 'string') {
+        quietly(() => channel.postMessage({ k: 'taken', to: data.from }));
+        return;
+      }
+      if (!data || data.from !== peer || (data.to && data.to !== me)) return;
+      if (data.k === 'm') this.deliver(data.d, data.c === 'c' ? 'cursor' : 'edits');
+      else if (data.k === 'x') this.close(false);
+    };
+    this.bye = () => this.close();
+    addEventListener('pagehide', this.bye);
+    if (globalThis.navigator?.locks) {
+      this.watch = new AbortController();
+      navigator.locks.request(lockName(peer), { signal: this.watch.signal }, () => this.close(false)).catch(() => {});
+    }
+  }
+
+  post(c, d) {
+    if (!this.closed) quietly(() => this.ch.postMessage({ k: 'm', from: this.me, to: this.peer, c, d }));
+  }
+
+  send(text) { this.post('e', text); }
+
+  sendCursor(text) { this.post('c', text); }
+
+  sendBinary(bytes) {
+    const copy = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.slice().buffer;
+    this.post('e', copy);
+  }
+
+  buffered() { return 0; }
+
+  drain() { return Promise.resolve(); }
+
+  close(tell = true) {
+    if (this.closed) return;
+    if (tell) quietly(() => this.ch.postMessage({ k: 'x', from: this.me, to: this.peer }));
+    this.closed = true;
+    removeEventListener('pagehide', this.bye);
+    quietly(() => this.watch?.abort());
+    quietly(() => this.ch.close());
+    this.onclose?.();
+  }
+}
+
+/**
+ * Start a link: an offer to hand to one other page. Resolves `{id, sdp,
+ * ready, answer(sdp), cancel(), onstate}`: `ready` settles with the link once
+ * the other page answers (a confirmed knock from a tab of this browser, or
+ * `answer` with its WebRTC reply), or fails.
+ */
+export async function makeOffer({ me, iceServers = [] } = {}) {
+  await present();
+  const id = randomId(10);
+  const pc = new RTCPeerConnection({ iceServers });
+  const edits = pc.createDataChannel('edits', { ordered: true });
+  const cursor = pc.createDataChannel('cursor', { ordered: false, maxRetransmits: 0 });
+  let settle;
+  let fail;
+  const ready = new Promise((resolve, reject) => { settle = resolve; fail = reject; });
+  ready.catch(() => {});
+  let done = false;
+  let channel = null;
+  const offer = { id, ready, onstate: null, answered: false };
+  const finish = (link) => {
+    if (done) return;
+    done = true;
+    clearTimeout(offer.timer);
+    settle(link);
+  };
+  const stop = (why) => {
+    if (done) return;
+    done = true;
+    clearTimeout(offer.timer);
+    quietly(() => pc.close());
+    quietly(() => channel?.close());
+    fail(new Error(why));
+  };
+  edits.addEventListener('open', () => {
+    quietly(() => channel?.close());
+    const link = new RtcLink(pc, edits);
+    link.attach(cursor);
+    finish(link);
+  });
+  pc.addEventListener('iceconnectionstatechange', () => {
+    offer.onstate?.(pc.iceConnectionState);
+    if (pc.iceConnectionState === 'failed') stop('failed');
+  });
+  try {
+    await pc.setLocalDescription(await pc.createOffer());
+    await gathered(pc);
+  } catch (e) {
+    stop('failed');
+    throw e;
+  }
+  offer.sdp = compactSdp(pc.localDescription.sdp);
+  if (!offer.sdp) {
+    stop('no description');
+    throw new Error('this browser gave no usable connection details');
+  }
+  if (globalThis.BroadcastChannel) {
+    channel = new BroadcastChannel(`kuna.d2.link.${id}`);
+    let knocked = null;
+    let expire = 0;
+    channel.onmessage = ({ data }) => {
+      if (typeof data?.from !== 'string') return;
+      if (data.k === 'knock') {
+        if (done || offer.answered || knocked) {
+          quietly(() => channel.postMessage({ k: 'taken', to: data.from }));
+          return;
+        }
+        knocked = data.from;
+        quietly(() => channel.postMessage({ k: 'ack', from: me, to: data.from }));
+        expire = setTimeout(() => { knocked = null; }, CONFIRM_MS);
+      } else if (data.from === knocked && data.to === me && (data.k === 'yes' || data.k === 'no')) {
+        clearTimeout(expire);
+        knocked = null;
+        if (data.k === 'no' || done || offer.answered) return;
+        offer.answered = true;
+        const link = new BcLink(channel, me, data.from);
+        quietly(() => pc.close());
+        finish(link);
+      }
+    };
+  }
+  offer.answer = async (compact) => {
+    if (done || offer.answered) throw new Error('used');
+    offer.answered = true;
+    try {
+      await pc.setRemoteDescription({ type: 'answer', sdp: expandSdp(compact, 'answer') });
+    } catch (e) {
+      stop('failed');
+      throw e;
+    }
+    if (!done) offer.timer = setTimeout(() => stop('timeout'), OPEN_MS);
+  };
+  offer.cancel = () => stop('cancelled');
+  return offer;
+}
+
+/**
+ * Answer an offer: `{sdp, ready, cancel(), onstate}`. When a tab of this
+ * browser made the offer, the pages meet over BroadcastChannel: `sdp` is null
+ * and `ready` has the link already; otherwise `sdp` is the WebRTC answer to
+ * send back. Throws Error('used') when the offer was taken.
+ */
+export async function takeOffer({ me, id, sdp, iceServers = [] } = {}) {
+  await present();
+  if (globalThis.BroadcastChannel) {
+    const channel = new BroadcastChannel(`kuna.d2.link.${id}`);
+    const reply = await new Promise((done) => {
+      let over = false;
+      const timer = setTimeout(() => { over = true; done(null); }, KNOCK_MS);
+      channel.onmessage = ({ data }) => {
+        if (data?.to !== me) return;
+        if (data.k === 'ack' && typeof data.from === 'string') {
+          quietly(() => channel.postMessage({ k: over ? 'no' : 'yes', from: me, to: data.from }));
+          if (over) return;
+          clearTimeout(timer);
+          done(data);
+        }
+        if (data.k === 'taken' && !over) { clearTimeout(timer); done({ k: 'taken' }); }
+      };
+      channel.postMessage({ k: 'knock', from: me });
+    });
+    if (reply?.k === 'ack') {
+      const link = new BcLink(channel, me, reply.from);
+      return { sdp: null, ready: Promise.resolve(link), cancel: () => link.close(), onstate: null };
+    }
+    setTimeout(() => quietly(() => channel.close()), CONFIRM_MS);
+    if (reply?.k === 'taken') throw new Error('used');
+  }
+  const pc = new RTCPeerConnection({ iceServers });
+  let settle;
+  let fail;
+  const ready = new Promise((resolve, reject) => { settle = resolve; fail = reject; });
+  ready.catch(() => {});
+  const res = { ready, onstate: null };
+  let link = null;
+  pc.addEventListener('datachannel', ({ channel }) => {
+    if (channel.label === 'edits') {
+      const open = () => {
+        link = new RtcLink(pc, channel);
+        if (res.pendingCursor) link.attach(res.pendingCursor);
+        settle(link);
+      };
+      if (channel.readyState === 'open') open();
+      else channel.addEventListener('open', open, { once: true });
+    } else if (channel.label === 'cursor') {
+      if (link) link.attach(channel);
+      else res.pendingCursor = channel;
+    }
+  });
+  pc.addEventListener('iceconnectionstatechange', () => res.onstate?.(pc.iceConnectionState));
+  res.cancel = () => {
+    quietly(() => pc.close());
+    fail(new Error('cancelled'));
+  };
+  try {
+    await pc.setRemoteDescription({ type: 'offer', sdp: expandSdp(sdp, 'offer') });
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription({ type: 'answer', sdp: passiveAnswer(answer.sdp) });
+    await gathered(pc);
+  } catch (e) {
+    res.cancel();
+    throw e;
+  }
+  res.sdp = compactSdp(pc.localDescription.sdp);
+  if (!res.sdp) {
+    res.cancel();
+    throw new Error('this browser gave no usable connection details');
+  }
+  return res;
+}

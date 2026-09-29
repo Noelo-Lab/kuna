@@ -26,6 +26,10 @@ export class KunaWorkerClient {
       wasmUrl: asUrl(wasmUrl, baseUrl),
       specRoot: asUrl(specRoot, baseUrl).replace(/\/$/, ''),
     };
+    this.build = null;
+    this.engine = null;
+    this.specs = new Map();
+    this.onbuild = null;
     if (smallBundleUrl) this.initParams.smallBundleUrl = asUrl(smallBundleUrl, baseUrl);
     this.workerFactory = workerFactory || ((url, options) => new Worker(url, options));
     this.pending = new Map();
@@ -50,6 +54,10 @@ export class KunaWorkerClient {
     this.fatalError = null;
     let starting = true;
     worker.onmessage = ({ data }) => {
+      if (data?.spec) {
+        if (!this.specs.has(data.spec.rel)) this.specs.set(data.spec.rel, data.spec.bytes);
+        return;
+      }
       if (generation !== this.generation) return;
       const pending = this.pending.get(data?.id);
       if (!pending) return;
@@ -78,7 +86,19 @@ export class KunaWorkerClient {
         worker,
       );
     };
-    this.readyPromise = this.request('init', this.initParams);
+    const params = { ...this.initParams };
+    if (this.engine) params.engine = { ...this.engine, specs: [...this.specs] };
+    this.readyPromise = this.request('init', params).then((info) => {
+      if (generation === this.generation && !params.engine) {
+        if (info?.engine?.module) this.engine = info.engine;
+        else if (this.build) {
+          const was = this.build;
+          this.build = null;
+          this.onbuild?.(null, was);
+        }
+      }
+      return info;
+    });
     this.readyPromise.catch(() => {});
   }
 
@@ -119,6 +139,32 @@ export class KunaWorkerClient {
 
   async ready() {
     return this.readyPromise;
+  }
+
+  /**
+   * The engine's build id: the SHA-256 of the exact wasm bytes the first
+   * Worker compiled (hashed while they compiled), asked again of the new
+   * Worker when a cancel restarts it meanwhile. Every restarted Worker is
+   * handed that compiled module and the spec files the page has loaded, so
+   * the engine, and its id, stay the page's own whatever the server holds
+   * later. A browser that cannot hand the module over compiles the server's
+   * wasm again; the id is then unknown, and `onbuild` hears of it.
+   */
+  async buildId() {
+    for (;;) {
+      await this.ready();
+      if (this.build) return this.build;
+      const generation = this.generation;
+      try {
+        const { build } = await this.request('build');
+        if (generation !== this.generation) continue;
+        this.build = build;
+        return build;
+      } catch (error) {
+        if (error instanceof KunaWorkerCancelledError || generation !== this.generation) continue;
+        throw error;
+      }
+    }
   }
 
   checkGeneration(generation) {
@@ -230,5 +276,7 @@ export class KunaWorkerClient {
     this.worker.terminate();
     this.rejectPending(new KunaWorkerCancelledError('decompiler worker closed'));
     this.session = null;
+    this.engine = null;
+    this.specs.clear();
   }
 }

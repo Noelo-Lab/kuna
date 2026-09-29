@@ -5,11 +5,53 @@
 // directive, and writing a byte back to its original value removes the patch.
 // The same records export as a `.kuna` file the native CLI replays verbatim:
 //   kuna decompile <binary> <function> --assert @<binary>.kuna
-// DOM-free.
+// Directives go out grouped by kind, each kind in the order its records were
+// first made (a later edit keeps a record's place), since some depend on
+// earlier ones: a type definition on another, the later of two raw
+// directives winning, a rename that frees a name another takes. In a live
+// session `orderOf` gives that order from the shared registers instead, so
+// every page sends the same list. DOM-free.
 import { cDeclare, parseParam } from './ctype.js';
 
 const ORDER = ['typedef', 'data', 'fn', 'proto', 'bytes', 'raw', 'var', 'comment'];
-const UNDO_MAX = 100;
+export const UNDO_MAX = 100;
+
+/** How long a value in a directive may be, by what it is. */
+export const TEXT_LIMITS = Object.freeze({ name: 200, type: 512, decl: 2048, typedef: 8192, comment: 4096, raw: 4096 });
+
+/** A control character or a line break (U+2028, U+2029 included). */
+export const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+
+/**
+ * Why `text` cannot go into a directive, or null: it is too long, holds a
+ * control character or a line break (it would start a second directive in a
+ * .kuna file), or a `#` at its start or after a space (the .kuna reader cuts
+ * the line there).
+ */
+export function directiveTextProblem(text, max = TEXT_LIMITS.raw) {
+  const t = String(text ?? '');
+  if (t.length > max) return `that is too long (at most ${max} characters)`;
+  if (CONTROL.test(t)) return 'a directive cannot hold a line break or a control character';
+  if (/(^|\s)#/.test(t)) return 'a directive cannot hold " #" or start with # (the .kuna file reads that as a comment)';
+  return null;
+}
+
+/** The same for a C declaration (a type or a signature), which also never holds `@`. */
+export function declarationProblem(text, max = TEXT_LIMITS.decl) {
+  return directiveTextProblem(text, max) || (String(text ?? '').includes('@') ? 'a C declaration cannot hold @' : null);
+}
+
+/** Order two directives of one kind by `orderOf` (records it does not know yet come last). */
+function byBirth(orderOf) {
+  return (a, b) => {
+    const x = orderOf(a.key);
+    const y = orderOf(b.key);
+    if (x && y && (x[0] !== y[0] || x[1] !== y[1])) return x[0] !== y[0] ? x[0] - y[0] : (x[1] < y[1] ? -1 : 1);
+    if (x && !y) return -1;
+    if (!x && y) return 1;
+    return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+  };
+}
 
 /** Strip a `#` comment the way the CLI's `@FILE` reader does (` #`, or a leading `#`). */
 export function stripComment(line) {
@@ -67,10 +109,10 @@ export class Session {
     this.bytes = new Map();
     this.outcomes = new Map();
     this.refused = new Set();
-    this.sent = new Map();
     this.undoStack = [];
     this.redoStack = [];
     this.rawSeq = 0;
+    this.orderOf = null;
   }
 
   get size() {
@@ -118,6 +160,11 @@ export class Session {
     return key;
   }
 
+  /** Set (or with empty `text`, remove) the raw directive under `key` (another page's, in a live session). */
+  setRaw(key, text, func = null) {
+    return this.#set(key, text ? { kind: 'raw', text: text.trim(), ...(func ? { func } : {}) } : null);
+  }
+
   /** Replace a record with whatever `text` parses to (a rail edit of one directive). */
   replaceWith(key, text, options = {}) {
     this.remove(key);
@@ -129,14 +176,14 @@ export class Session {
     const a = BigInt(addr);
     if (value === original) this.bytes.delete(a);
     else this.bytes.set(a, value & 0xff);
-    this.#touchBytes();
+    this.touchBytes();
   }
 
   remove(key) {
     if (key.startsWith('bytes:')) {
       const run = this.byteRuns().find((r) => `bytes:${hex(r.addr)}` === key);
       for (let i = 0; i < (run?.values.length || 0); i++) this.bytes.delete(run.addr + BigInt(i));
-      this.#touchBytes();
+      this.touchBytes();
       return;
     }
     this.records.delete(key);
@@ -163,7 +210,8 @@ export class Session {
     this.refused.delete(key);
   }
 
-  #touchBytes() {
+  /** Patched bytes changed: the byte runs' old outcomes no longer describe them. */
+  touchBytes() {
     for (const key of [...this.outcomes.keys(), ...this.refused]) {
       if (key.startsWith('bytes:')) this.#touch(key);
     }
@@ -238,10 +286,31 @@ export class Session {
         groups.get(rec.kind).push({ key, text: recordDirective(rec, null) });
       }
     }
+    if (this.orderOf) for (const list of groups.values()) list.sort(byBirth(this.orderOf));
     groups.set('bytes', this.#bytesDirectives().filter((d) => includeRefused || !this.refused.has(d.key)));
-    const out = ORDER.flatMap((k) => groups.get(k));
-    for (const d of out) this.sent.set(d.text, d.key);
-    return out;
+    return ORDER.flatMap((k) => groups.get(k));
+  }
+
+  /**
+   * One request's directives (`texts`), with which records produced each
+   * text, captured when the request is made: its outcomes and refusals are
+   * resolved against this, never against what the session sends later.
+   * `func` and `qualify` as for `assertionsFor` / `allAssertions`.
+   */
+  prepare({ func = null, qualify = null } = {}) {
+    const out = this.#directives({ func, qualify });
+    const byText = new Map();
+    for (const d of out) {
+      const keys = byText.get(d.text);
+      if (keys) keys.push(d.key);
+      else byText.set(d.text, [d.key]);
+    }
+    return { texts: out.map((d) => d.text), byText, func, qualify };
+  }
+
+  /** Each record's text now, in the scope of request `req` (`key → text`). */
+  #textsNow(req) {
+    return new Map(this.#directives({ func: req.func, qualify: req.qualify, includeRefused: true }).map((d) => [d.key, d.text]));
   }
 
   /** Directives for one `inspect`: every global one, plus this function's, unqualified. */
@@ -259,11 +328,27 @@ export class Session {
     return this.#directives({ qualify: nameOf }).map((d) => d.text);
   }
 
-  /** Attach the engine's `assertions[]` rows to the records that produced them. */
-  recordOutcomes(rows) {
-    for (const row of rows || []) {
-      const key = this.sent.get((row.directive || '').trim());
-      if (key) this.outcomes.set(key, { status: row.status, detail: row.detail || null, fatal: !!row.fatal });
+  /**
+   * The records (their keys) that produced the directive `text` in request
+   * `req` (from `prepare`) and still produce it: two records can give the
+   * same text, and one changed since the request is not described by it.
+   */
+  keysOf(text, req, now = null) {
+    const t = String(text || '').trim();
+    const keys = req?.byText?.get(t) || [];
+    if (!keys.length) return [];
+    const texts = now || this.#textsNow(req);
+    return keys.filter((key) => texts.get(key) === t);
+  }
+
+  /** Attach the engine's `assertions[]` rows, from request `req`, to the records that produced them. */
+  recordOutcomes(rows, req) {
+    if (!rows?.length || !req) return;
+    const now = this.#textsNow(req);
+    for (const row of rows) {
+      for (const key of this.keysOf(row.directive, req, now)) {
+        this.outcomes.set(key, { status: row.status, detail: row.detail || null, fatal: !!row.fatal });
+      }
     }
   }
 
@@ -272,15 +357,18 @@ export class Session {
   }
 
   /**
-   * The engine could not parse `directive` (the request failed on it): stop
-   * sending it until it is edited, and show why. Returns its key, or null.
+   * The engine could not parse `directive` (request `req` failed on it): stop
+   * sending it until it is edited, and show why. Every record of that request
+   * that still produces the text is marked, since the retry leaves out all of
+   * them. Returns their keys.
    */
-  markRefused(directive, detail) {
-    const key = this.sent.get(directive.trim());
-    if (!key) return null;
-    this.refused.add(key);
-    this.outcomes.set(key, { status: 'refused', detail: detail || null, fatal: false });
-    return key;
+  markRefused(directive, detail, req) {
+    const keys = this.keysOf(directive, req);
+    for (const key of keys) {
+      this.refused.add(key);
+      this.outcomes.set(key, { status: 'refused', detail: detail || null, fatal: false });
+    }
+    return keys;
   }
 
   /** The session as rail rows: `[{key, kind, text, status, detail}]`, in replay order. */
@@ -314,7 +402,7 @@ export class Session {
     for (const key of new Set([...before.keys(), ...this.records.keys()])) {
       if (before.get(key) !== JSON.stringify(this.records.get(key))) this.#touch(key);
     }
-    if (bytesBefore !== JSON.stringify([...this.bytes].map(([a, v]) => [a.toString(16), v]))) this.#touchBytes();
+    if (bytesBefore !== JSON.stringify([...this.bytes].map(([a, v]) => [a.toString(16), v]))) this.touchBytes();
   }
 
   /** What is in the session now, to discard later if it is still unchanged. */
@@ -335,7 +423,7 @@ export class Session {
     for (const [a, v] of mark.bytes) {
       if (this.bytes.get(a) === v) { this.bytes.delete(a); bytes++; }
     }
-    if (bytes) this.#touchBytes();
+    if (bytes) this.touchBytes();
     return n + bytes;
   }
 
@@ -363,11 +451,27 @@ export class Session {
     return true;
   }
 
+  /** The records in the order their directives are sent (see the file header). */
+  orderedRecords() {
+    const list = [...this.records].map(([key, rec]) => ({ key, rec }));
+    if (this.orderOf) {
+      const kind = (e) => ORDER.indexOf(e.rec.kind);
+      const birth = byBirth(this.orderOf);
+      list.sort((a, b) => kind(a) - kind(b) || birth(a, b));
+    }
+    return list;
+  }
+
+  /** Keep the records in that order from now on (a page leaving a live session keeps the session's order). */
+  reorder() {
+    this.records = new Map(this.orderedRecords().map(({ key, rec }) => [key, rec]));
+  }
+
   /** The records as plain JSON (what the page persists per binary). */
   toJSON() {
     return {
       v: 1,
-      records: [...this.records].map(([k, v]) => [k, { ...v }]),
+      records: this.orderedRecords().map(({ key, rec }) => [key, { ...rec }]),
       bytes: [...this.bytes].map(([a, v]) => [hex(a), v]),
       rawSeq: this.rawSeq,
     };

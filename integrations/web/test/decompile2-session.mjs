@@ -4,11 +4,11 @@
 // `prototype`), byte runs, the `.kuna` file round trip, outcomes, undo, the
 // C declarators behind it, and the localStorage store.
 import assert from 'node:assert/strict';
-import { Session, stripComment, shellQuote, cliCommand, isGlobalRaw } from '../decompile2/session.js';
+import { Session, stripComment, shellQuote, cliCommand, isGlobalRaw } from '../decompile/session.js';
 import {
   validateIdent, validateCType, cDeclare, parseSignature, buildPrototype, typeSize, knownTypes, normalizeType,
-} from '../decompile2/ctype.js';
-import { SessionStore, fnv1a32, hashBytes } from '../decompile2/persist.js';
+} from '../decompile/ctype.js';
+import { SessionStore, fnv1a32, hashBytes, legacyKey } from '../decompile/persist.js';
 
 const checks = [];
 const MAIN = '0x1198';
@@ -157,7 +157,7 @@ checks.push('cDeclare/validate/typeSize');
   s.recordOutcomes([
     { directive: 'name v1 total', status: 'applied', detail: null, fatal: false },
     { directive: 'name v999 nope', status: 'rejected', detail: 'No symbol named: v999', fatal: false },
-  ]);
+  ], s.prepare({ func: MAIN }));
   assert.equal(s.statusOf(k1), 'applied');
   assert.equal(s.statusOf(k2), 'rejected');
   const rows = s.entries((a) => names.get(a));
@@ -173,29 +173,29 @@ checks.push('cDeclare/validate/typeSize');
   const s = new Session();
   const k = s.setVar(MAIN, 'v1', { name: 'total' });
   s.assertionsFor(MAIN);
-  s.recordOutcomes([{ directive: 'name v1 total', status: 'applied' }]);
+  s.recordOutcomes([{ directive: 'name v1 total', status: 'applied' }], s.prepare({ func: MAIN }));
   assert.equal(s.statusOf(k), 'applied');
   s.setVar(MAIN, 'v1', { name: 'sum' });
   assert.equal(s.statusOf(k), 'pending', 'a changed record is pending again');
   s.assertionsFor(MAIN);
-  s.recordOutcomes([{ directive: 'name v1 sum', status: 'rejected', detail: 'x' }]);
+  s.recordOutcomes([{ directive: 'name v1 sum', status: 'rejected', detail: 'x' }], s.prepare({ func: MAIN }));
   s.setVar(MAIN, 'v1', { name: null, type: null });
   s.setVar(MAIN, 'v1', { name: 'again' });
   assert.equal(s.statusOf(k), 'pending', 'a deleted then re-created record starts pending');
   s.setByte(0x11e1n, 0x90, 0xe8);
   s.globalAssertions();
-  s.recordOutcomes([{ directive: 'bytes 0x11e1 90', status: 'applied' }]);
+  s.recordOutcomes([{ directive: 'bytes 0x11e1 90', status: 'applied' }], s.prepare());
   assert.equal(s.statusOf('bytes:0x11e1'), 'applied');
   s.remove('bytes:0x11e1');
   s.setByte(0x11e1n, 0x90, 0xe8);
   assert.equal(s.statusOf('bytes:0x11e1'), 'pending', 'a re-created patch starts pending');
-  s.recordOutcomes([{ directive: 'bytes 0x11e1 90', status: 'applied' }]);
+  s.recordOutcomes([{ directive: 'bytes 0x11e1 90', status: 'applied' }], s.prepare());
   s.setByte(0x11e1n, 0xe8, 0xe8);
   s.setByte(0x11e1n, 0x90, 0xe8);
   assert.equal(s.statusOf('bytes:0x11e1'), 'pending', 'reverting a byte forgets its outcome');
   const c = s.setComment(MAIN, '0x11b5', 'a');
   s.assertionsFor(MAIN);
-  s.recordOutcomes([{ directive: 'comment 0x11b5 a', status: 'applied' }]);
+  s.recordOutcomes([{ directive: 'comment 0x11b5 a', status: 'applied' }], s.prepare({ func: MAIN }));
   const snap = s.snapshot();
   s.setComment(MAIN, '0x11b5', 'b');
   s.recordOutcomes([]);
@@ -233,8 +233,8 @@ checks.push('cDeclare/validate/typeSize');
   const good = s.setVar(MAIN, 'v1', { name: 'total' });
   const bad = s.addRaw('bytes 0x10 zz');
   assert.deepEqual(s.assertionsFor(MAIN), ['bytes 0x10 zz', 'name v1 total']);
-  assert.equal(s.markRefused('bytes 0x10 zz', 'error: --assert "bytes 0x10 zz": not hex'), bad);
-  assert.equal(s.markRefused('never sent', 'x'), null);
+  assert.deepEqual(s.markRefused('bytes 0x10 zz', 'error: --assert "bytes 0x10 zz": not hex', s.prepare({ func: MAIN })), [bad]);
+  assert.deepEqual(s.markRefused('never sent', 'x', s.prepare({ func: MAIN })), []);
   assert.deepEqual(s.assertionsFor(MAIN), ['name v1 total'], 'refused directives are not sent');
   assert.deepEqual(s.allAssertions((a) => names.get(a)), ['name main::v1 total'], 'nor exported as directives');
   assert.deepEqual(s.entries((a) => names.get(a)).map((e) => [e.text, e.status]), [['bytes 0x10 zz', 'refused'], ['name main::v1 total', 'pending']], 'the rail still lists it');
@@ -242,7 +242,67 @@ checks.push('cDeclare/validate/typeSize');
   s.replaceWith(bad, 'bytes 0x10 90');
   assert.deepEqual(s.assertionsFor(MAIN), ['bytes 0x10 90', 'name v1 total'], 'an edit makes it eligible again');
   assert.equal(s.statusOf(good), 'pending');
+  const twice = new Session();
+  const first = twice.addRaw('readonly 0x2000');
+  const second = twice.addRaw('readonly 0x2000');
+  assert.deepEqual(twice.globalAssertions(), ['readonly 0x2000', 'readonly 0x2000']);
+  assert.deepEqual(twice.markRefused('readonly 0x2000', 'no size', twice.prepare()), [first, second], 'two records with one refused text: both are refused');
+  assert.deepEqual(twice.globalAssertions(), [], 'so what the page sends matches what the request sent (no re-inspect loop)');
+  twice.globalAssertions();
+  twice.refused.clear();
+  twice.globalAssertions();
+  twice.recordOutcomes([{ directive: 'readonly 0x2000', status: 'rejected' }], twice.prepare());
+  assert.deepEqual([twice.statusOf(first), twice.statusOf(second)], ['rejected', 'rejected'], 'an outcome reaches every record with that text');
   checks.push('refused directives');
+}
+
+// ── an outcome belongs to the request that produced it ─────────────────────
+{
+  const s = new Session();
+  const a = s.setVar('0x1000', 'local_10', { name: 'i' });
+  const b = s.setVar('0x2000', 'local_10', { name: 'i' });
+  s.assertionsFor('0x1000');
+  assert.deepEqual(s.assertionsFor('0x2000'), ['name local_10 i']);
+  s.recordOutcomes([{ directive: 'name local_10 i', status: 'rejected' }], s.prepare({ func: '0x2000' }));
+  assert.deepEqual([s.statusOf(a), s.statusOf(b)], ['pending', 'rejected'], 'inspecting 0x2000 says nothing of 0x1000\'s record with the same text');
+  s.assertionsFor('0x1000');
+  assert.deepEqual(s.markRefused('name local_10 i', 'no', s.prepare({ func: '0x1000' })), [a], 'and a refusal marks only the records of that request');
+  const g = s.addRaw('readonly 0x2000+8');
+  s.globalAssertions();
+  s.recordOutcomes([{ directive: 'readonly 0x2000+8', status: 'applied' }], s.prepare());
+  assert.equal(s.statusOf(g), 'applied', 'a global directive, in the request that listed the program');
+  const many = new Session();
+  for (let i = 0; i < 3000; i++) many.setByte(BigInt(0x10000 + i * 4), 0x90, 0);
+  const all = many.prepare();
+  const rows = all.texts.map((directive) => ({ directive, status: 'applied' }));
+  const t0 = performance.now();
+  many.recordOutcomes(rows, all);
+  assert.ok(performance.now() - t0 < 300, `3000 patched runs: their outcomes are recorded without re-sorting the bytes per row (${Math.round(performance.now() - t0)} ms)`);
+  assert.equal(many.statusOf('bytes:0x10004'), 'applied');
+  checks.push('outcomes scoped to their request');
+}
+
+// ── a request's refusals and outcomes are resolved against what it sent ─────
+{
+  const s = new Session();
+  s.setRaw('raw:ana00000:1', 'bytes 0x10 zz');
+  s.setComment(MAIN, '0x11b5', 'note');
+  const req = s.prepare({ func: MAIN });
+  s.setRaw('raw:ana00000:1', 'bytes 0x10 90');
+  assert.deepEqual(s.markRefused('bytes 0x10 zz', 'bad hex', req), [], 'a record changed while the request was out is not marked with its old text\'s refusal');
+  assert.ok(s.assertionsFor(MAIN).includes('bytes 0x10 90'), 'so its new text is still sent');
+  s.recordOutcomes([{ directive: 'bytes 0x10 zz', status: 'rejected' }, { directive: 'comment 0x11b5 note', status: 'applied' }], req);
+  assert.deepEqual([s.statusOf('raw:ana00000:1'), s.statusOf(`comment:${MAIN}:0x11b5`)], ['pending', 'applied'], 'nor given its old text\'s outcome');
+  const t = new Session();
+  t.setRaw('raw:ana00000:1', 'bytes 0x10 zz');
+  const inFlight = t.prepare({ func: MAIN });
+  t.setComment(MAIN, '0x11b5', 'added meanwhile');
+  t.prepare({ func: MAIN });
+  t.setComment(MAIN, '0x11b5', null);
+  t.addRaw('bytes 0x10 zz');
+  t.prepare({ func: MAIN });
+  assert.deepEqual(t.markRefused('bytes 0x10 zz', 'bad hex', inFlight), ['raw:ana00000:1'], 'a refusal marks the records that request sent, not ones listed since');
+  checks.push('a request\'s refusals and outcomes resolved against what it sent');
 }
 
 // ── discarding a restored session keeps what was edited after it ──────────
@@ -352,7 +412,8 @@ assert.equal(fnv1a32(new TextEncoder().encode('foobar')), 'bf9cf968');
 if (globalThis.crypto?.subtle) {
   assert.match(await hashBytes(new TextEncoder().encode('abc')), /^sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad$/);
 }
-assert.match(await hashBytes(new TextEncoder().encode('abc'), null), /^fnv:[0-9a-f]{16}-3$/, 'no WebCrypto: FNV fallback');
+assert.equal(await hashBytes(new TextEncoder().encode('abc'), null), 'sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 'no WebCrypto: the same SHA-256, computed in JS');
+assert.match(legacyKey(new TextEncoder().encode('abc')), /^fnv:[0-9a-f]{16}-3$/, 'the key earlier versions used without WebCrypto, to find what they stored');
 {
   const mem = new Map();
   let quota = Infinity;
@@ -384,6 +445,44 @@ assert.match(await hashBytes(new TextEncoder().encode('abc'), null), /^fnv:[0-9a
   assert.equal(throwing.load('x'), null);
   assert.deepEqual(throwing.index(), []);
   checks.push('store LRU/quota + FNV/SHA-256');
+}
+
+// ── the student's own sessions come before a session's copies ─────────────
+{
+  const mem = new Map();
+  let quota = Infinity;
+  const storage = {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+    setItem: (k, v) => {
+      const used = [...mem].filter(([key]) => key !== k).reduce((n, [key, val]) => n + key.length + val.length, 0);
+      if (used + k.length + v.length > quota) throw new Error('QuotaExceededError');
+      mem.set(k, v);
+    },
+    removeItem: (k) => mem.delete(k),
+    key: (i) => [...mem.keys()][i] ?? null,
+    get length() { return mem.size; },
+  };
+  const shared = new SessionStore(storage, { max: 5, prefix: 'kuna.d2.shared.', indexKey: 'kuna.d2.shared.index' });
+  const own = new SessionStore(storage, { spare: shared });
+  own.save('a', 'a.elf', 'my work on a'.padEnd(200, '.'));
+  own.save('b', 'b.elf', 'my work on b'.padEnd(200, '.'));
+  shared.save('c', 'c.elf', 'a session on c'.padEnd(200, '.'));
+  shared.save('d', 'd.elf', 'a session on d'.padEnd(200, '.'));
+  quota = [...mem].reduce((n, [k, v]) => n + k.length + v.length, 0) + 50;
+  assert.ok(own.save('e', 'e.elf', 'my work on e'.padEnd(200, '.')), 'the new save fits');
+  assert.ok(own.load('a') && own.load('b') && own.load('e'), 'no own session was evicted for it');
+  assert.equal(shared.index().length < 2, true, 'a session\'s copy made room first');
+  const big = new Uint8Array(64 << 20);
+  const t0 = performance.now();
+  assert.equal(own.loadMoving('f', big, 'f.elf'), null);
+  assert.ok(performance.now() - t0 < 50, `a first-time open with nothing stored reads no bytes (${(performance.now() - t0).toFixed(1)} ms)`);
+  const bytes = new TextEncoder().encode('an old program');
+  mem.set(`kuna.d2.session.${legacyKey(bytes)}`, 'saved by an earlier version');
+  quota = Infinity;
+  assert.equal(own.loadMoving('g', bytes, 'g.elf'), 'saved by an earlier version', 'an earlier version\'s entry is still found');
+  assert.equal(own.load('g'), 'saved by an earlier version', 'and moved to the current key');
+  assert.equal(mem.has(`kuna.d2.session.${legacyKey(bytes)}`), false);
+  checks.push('own sessions before a session\'s copies; the old key worked out only when one is stored');
 }
 
 console.log(`DECOMPILE2 SESSION OK — ${checks.join('; ')}`);

@@ -2,7 +2,7 @@
 // in a Node worker thread, the way test/worker.mjs does, for the tests that
 // drive the RPC client end to end.
 import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,6 +12,19 @@ import { KunaWorkerClient } from '../kuna-worker-client.js';
 const here = dirname(fileURLToPath(import.meta.url));
 export const dist = resolve(here, '../dist');
 export const fixture = (name) => join(here, 'fixtures', name);
+
+/** Open a test fixture in a /decompile/ page (a CDP page) through its file input, as a student would. */
+export function openSample(page, name = 'sample.elf') {
+  return page.call((b64, n) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], n));
+    const input = document.getElementById('file');
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }, readFileSync(fixture(name)).toString('base64'), name);
+}
 
 const MIME = {
   '.wasm': 'application/wasm',
@@ -38,18 +51,19 @@ export function requireDist() {
 }
 
 /** A path-traversal-safe static server over `root`; resolves `{base, close}`. */
-export async function serveStatic(root = dist, port = 0) {
+export async function serveStatic(root = dist, port = 0, { onRequest = null, headers = null } = {}) {
   const server = createServer(async (req, res) => {
     try {
       let rel = decodeURIComponent(new URL(req.url, 'http://harness.test').pathname);
       if (rel.endsWith('/')) rel += 'index.html';
+      onRequest?.(rel);
       const file = resolve(root, '.' + rel);
       if (!file.startsWith(root)) {
         res.writeHead(403).end();
         return;
       }
       const body = await readFile(file);
-      res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream' });
+      res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream', ...(headers?.(rel) || {}) });
       res.end(body);
     } catch {
       res.writeHead(404).end();

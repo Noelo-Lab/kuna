@@ -21,8 +21,12 @@ export function findChrome() {
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-/** Launch headless Chrome; resolves `{port, child, close}` once it publishes its DevTools port. */
-export async function launchChrome(chromePath = findChrome(), { width = 1280, height = 860, startupTimeoutMs = 60000 } = {}) {
+/**
+ * Launch headless Chrome (with any extra `flags`); resolves `{port, child,
+ * close}` once it publishes its DevTools port. A cold start on a busy CI
+ * runner can take well over ten seconds, so it waits up to a minute.
+ */
+export async function launchChrome(chromePath = findChrome(), { width = 1280, height = 860, flags = [], startupTimeoutMs = 60000 } = {}) {
   if (!chromePath) throw new Error('Chrome executable not found');
   if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs < 0) {
     throw new Error('Chrome startup timeout must be a nonnegative finite number');
@@ -44,7 +48,7 @@ export async function launchChrome(chromePath = findChrome(), { width = 1280, he
       '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run',
       '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars',
       '--remote-debugging-port=0', `--user-data-dir=${profile}`,
-      `--window-size=${width},${height}`, 'about:blank',
+      `--window-size=${width},${height}`, ...flags, 'about:blank',
     ], { stdio: ['ignore', 'ignore', 'pipe'] });
     child.once('close', cleanup);
     child.stderr.setEncoding('utf8');
@@ -81,10 +85,15 @@ export async function launchChrome(chromePath = findChrome(), { width = 1280, he
   }
 }
 
-/** Attach to the first page target; resolves a small session API. */
-export async function openPage(port, { onException } = {}) {
-  const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-  const page = targets.find((t) => t.type === 'page');
+/** Attach to a page target (the first, or `targetId`); resolves a small session API. */
+export async function openPage(port, { onException, targetId = null } = {}) {
+  let page = null;
+  for (let tries = 0; !page && tries < 100; tries++) {
+    if (tries) await sleep(100);
+    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+    page = targets.find((t) => t.type === 'page' && (!targetId || t.id === targetId));
+  }
+  if (!page) throw new Error('Chrome listed no page to attach to');
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((done, fail) => { ws.onopen = done; ws.onerror = fail; });
   let seq = 0;
@@ -103,7 +112,14 @@ export async function openPage(port, { onException } = {}) {
   };
   const send = (method, params = {}) => new Promise((resolve, reject) => {
     const id = ++seq;
-    pending.set(id, { resolve, reject });
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error(`DevTools did not answer ${method} within 90 s (is the page busy?)`));
+    }, 90000);
+    pending.set(id, {
+      resolve: (v) => { clearTimeout(timer); resolve(v); },
+      reject: (e) => { clearTimeout(timer); reject(e); },
+    });
     ws.send(JSON.stringify({ id, method, params }));
   });
   const on = (method, fn) => {
@@ -149,10 +165,11 @@ export async function openPage(port, { onException } = {}) {
     throw new Error(`timed out waiting for: ${what}`);
   }
 
+  /** Go to `url` and wait for its load event (a change of the #fragment alone loads nothing, so it returns at once). */
   async function navigate(url) {
     const loaded = new Promise((done) => on('Page.loadEventFired', done));
-    await send('Page.navigate', { url });
-    await loaded;
+    const res = await send('Page.navigate', { url });
+    if (res.loaderId || res.errorText) await loaded;
   }
 
   async function center(selector) {
@@ -209,7 +226,18 @@ export async function openPage(port, { onException } = {}) {
     return Buffer.from(data, 'base64');
   }
 
-  return { send, on, evaluate, call, waitFor, navigate, click, hover, key, type, viewport, screenshot, exceptions, close: () => ws.close() };
+  const closeTab = async () => {
+    ws.close();
+    await fetch(`http://127.0.0.1:${port}/json/close/${page.id}`).catch(() => {});
+  };
+  return { send, on, evaluate, call, waitFor, navigate, click, hover, key, type, viewport, screenshot, exceptions, close: () => ws.close(), closeTab };
+}
+
+/** Open another tab in the same browser (same profile: tabs share storage and BroadcastChannel). */
+export async function openTab(port, options = {}) {
+  const res = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' });
+  const target = await res.json();
+  return openPage(port, { ...options, targetId: target.id });
 }
 
 const VK = { Enter: 13, Escape: 27, ' ': 32, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Tab: 9, Backspace: 8 };

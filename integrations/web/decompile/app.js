@@ -3,11 +3,13 @@
 // linked views (C code, side by side, assembly, bytes, stack) with an Explain
 // panel. Every engine string is escaped by the pure renderers this module
 // mounts; this file owns the DOM, the operation model and the keyboard.
+// Working together (collab/) is loaded only when a live session starts or
+// an invite or reply link is opened.
 import {
   KunaWorkerCancelledError,
   KunaWorkerClient,
 } from '../kuna-worker-client.js';
-import { escapeHtml, highlightC } from '../assets/js/highlight-c.js';
+import { escapeHtml } from '../assets/js/highlight-c.js';
 import { compileQuery, searchKey } from '../assets/js/fnfilter.js';
 import {
   normalizeInspect,
@@ -17,12 +19,12 @@ import {
   localDecls,
   changedLines,
 } from './render-c.js';
-import { loadPrefs, savePrefs, cycle, DEFAULT_PREFS } from './prefs.js';
+import { loadPrefs, savePrefs, cycle, hintsOn, DEFAULT_PREFS } from './prefs.js';
 import { groupFunctions, groupOf, firstFunction } from './groups.js';
 import { renderAsm, renderInsnRows, formatAddr, spacedBytes, inferLines, spellInsn } from './asm-view.js';
 import { createHover } from './hover.js';
 import { createSync } from './sync.js';
-import { Session, cliCommand } from './session.js';
+import { Session, cliCommand, TEXT_LIMITS, directiveTextProblem, declarationProblem } from './session.js';
 import {
   validateIdent, validateCType, parseSignature, parseRustSignature, buildPrototype, typeSize, knownTypes, normalizeType,
 } from './ctype.js';
@@ -42,18 +44,19 @@ import { helpHtml } from './help.js';
 const $ = (id) => document.getElementById(id);
 const els = {
   status: $('status'), cancel: $('cancelbtn'), dl: $('dlbtn'), patch: $('patchbtn'), patchWhy: $('patchwhy'),
-  mode: $('mode'), lang: $('lang'), example: $('examplebtn'), pick: $('pick'), file: $('file'),
+  mode: $('mode'), lang: $('lang'), pick: $('pick'), file: $('file'),
   help: $('helpbtn'), keys: $('keysbtn'), more: $('morebtn'), moreMenu: $('moremenu'), theme: $('themebtn'), hintsBox: $('hintsbox'),
+  collab: $('collabbtn'), modeNote: $('modenote'),
   crumb: $('crumb'), crumbName: $('crumbname'), crumbCount: $('crumbcount'), fnsBtn: $('fnsbtn'),
   progress: $('progress'), work: $('work'), codearea: $('codearea'), tip: $('tip'), tipBtn: $('tipbtn'),
   narrow: $('narrownote'), list: $('fnlist'), filter: $('fnfilter'), none: $('fnnone'),
   empty: $('empty'), drop: $('dropzone'), dropVeil: $('dropveil'),
-  welcomeOpen: $('welcomeopen'), welcomeExample: $('welcomeexample'),
-  vhead: $('vhead'), vname: $('vname'), vmeta: $('vmeta'), explain: $('explainbtn'),
+  welcomeOpen: $('welcomeopen'),
+  vhead: $('vhead'), vname: $('vname'), explain: $('explainbtn'),
   back: $('backbtn'), fwd: $('fwdbtn'), fnRename: $('fnrenamebtn'), proto: $('protobtn'),
   tabbar: $('tabbar'), tabs: $('tabs'), split: $('splitbtn'), viewBtn: $('viewbtn'), viewMenu: $('viewmenu'),
   panes: $('panes'), ccode: $('ccode'), asmcode: $('asmcode'), bytesbar: $('bytesbar'),
-  hexdump: $('hexdump'), stackframe: $('stackframe'), srccode: $('srccode'), hint: $('hint'),
+  hexdump: $('hexdump'), stackframe: $('stackframe'), hint: $('hint'),
   rail: $('rail'), railBody: $('railbody'), railBtn: $('railbtn'),
   card: $('d2card'), pop: $('d2pop'), toasts: $('d2toasts'), helpDialog: $('help'),
 };
@@ -74,10 +77,15 @@ const state = {
   current: null,
   cache: new Map(),
   caps: { inspect: null, assert: null },
-  exampleSource: null,
   hist: { index: 0, max: 0 },
   view: 'c',
   rendered: new Set(),
+  opening: null,
+  offerShared: false,
+  slot: 'own',
+  remoteQueued: false,
+  remoteTimer: 0,
+  remoteLabel: '',
 };
 const CACHE_MAX = 32;
 
@@ -100,22 +108,32 @@ let active = null;
 let opSeq = 0;
 const idleQueue = [];
 
+const COLLAB_TIP = 'Work on this program with others in real time: share an invite link and see each other\'s renames, notes and pointers. Runs browser-to-browser, with no server.';
+
 function syncButtons() {
   els.cancel.disabled = !active;
   els.cancel.hidden = !active;
   els.dl.disabled = !state.inventory || !!active;
   els.progress.hidden = !(active && (active.kind === 'edit' || active.kind === 'function'));
+  const canCollab = !!state.binary || !!collab?.active;
+  els.collab.disabled = !canCollab;
+  els.collab.title = canCollab ? COLLAB_TIP : 'Open a program first';
+}
+
+/** Stop the running operation, if any, for one of `kind` (`clearSession`: a new binary replaces the engine's). */
+function supersede(kind, { clearSession = false } = {}) {
+  if (!active) return;
+  const prev = active;
+  active = null;
+  if (clearSession) state.kuna.clear('superseded by a new binary');
+  else state.kuna.cancel('superseded by another operation');
+  if (prev.kind === 'function') state.opening = null;
+  prev.onCancel?.();
+  if (prev.kind === 'project' && kind !== 'project') toast('The C code download was stopped. Start it again from the ⋯ menu.', { kind: 'warn' });
 }
 
 function beginOperation(kind, { clearSession = false } = {}) {
-  if (active) {
-    const prev = active;
-    active = null;
-    if (clearSession) state.kuna.clear('superseded by a new binary');
-    else state.kuna.cancel('superseded by another operation');
-    prev.onCancel?.();
-    if (prev.kind === 'project' && kind !== 'project') toast('The C code download was stopped. Start it again from the ⋯ menu.', { kind: 'warn' });
-  }
+  supersede(kind, { clearSession });
   active = { id: ++opSeq, kind };
   syncButtons();
   return active;
@@ -146,16 +164,25 @@ els.cancel.addEventListener('click', () => {
   const cancelled = active;
   active = null;
   opSeq++;
+  if (cancelled.kind === 'function') state.opening = null;
   if (cancelled.kind === 'load') {
     state.kuna.clear('cancelled by user');
+    if (collab?.active) collab.leave({ why: 'You stopped opening the program, so you left the session.' });
     resetBinary();
   } else {
     state.kuna.cancel('cancelled by user');
   }
+  cancelled.explicit = true;
   cancelled.onCancel?.();
+  const refresh = state.remoteQueued && cancelled.kind !== 'remote' && cancelled.kind !== 'edit';
   idleQueue.length = 0;
+  state.remoteQueued = false;
   syncButtons();
   setStatus(state.inventory ? `Stopped. ${state.binary.name} is still open` : 'Stopped', state.inventory ? 'ok' : '');
+  if (refresh) scheduleRemoteInspect();
+  else if (collab?.shared && state.current && state.current.key !== cacheKey(state.current.data.address_hex)) {
+    setStatus('Stopped. The code shown does not have the latest changes yet', 'ok');
+  }
 });
 
 // ── engine calls with graceful degradation ─────────────────────────────────
@@ -186,20 +213,24 @@ function refusedDirective(e, sent) {
   return sent.find((d) => text.includes(`--assert ${JSON.stringify(d)}:`)) || null;
 }
 
+/** A request with no directives (an engine that cannot take them). */
+const NO_DIRECTIVES = { texts: [], byText: new Map(), func: null, qualify: null };
+
 /**
- * Run `call(directives)`; a directive the engine cannot parse is marked
- * refused (the rail says why and it is no longer sent) and the call is
- * retried without it.
+ * Run `call(directives)` with the directives of request `req` (from
+ * `session.prepare`); a directive the engine cannot parse is marked refused
+ * (the rail says why and it is no longer sent) and the call is retried
+ * without it.
  */
-async function withDirectives(call, directives) {
-  let list = directives;
+async function withDirectives(call, req) {
+  let list = req.texts;
   for (;;) {
     try {
       return await call(list);
     } catch (e) {
       const bad = e instanceof KunaWorkerCancelledError ? null : refusedDirective(e, list);
       if (!bad) throw e;
-      session.markRefused(bad, errorLine(e));
+      session.markRefused(bad, errorLine(e), req);
       toast('One of your changes could not be read, so it is no longer applied.', { kind: 'err', detail: `${bad} — ${errorLine(e)}` });
       list = list.filter((d) => d !== bad);
       renderRail();
@@ -212,20 +243,32 @@ function directivesFor(addrHex) {
   return state.caps.assert ? session.assertionsFor(addrHex) : [];
 }
 
-/** Inspect one function, or plainly decompile it on an engine without `inspect`. */
+/**
+ * Inspect one function, or plainly decompile it on an engine without
+ * `inspect`: `{doc, key, req}` (the cache key of what it sent, and the
+ * request its outcomes belong to).
+ */
 async function fetchFunction(fn) {
-  return withDirectives(
-    (list) => (state.caps.inspect
-      ? state.kuna.inspect(fn.address_hex, { assertions: list })
-      : state.kuna.decompile(fn.address_hex, { assertions: list })),
-    directivesFor(fn.address_hex),
+  let used = [];
+  const req = state.caps.assert ? session.prepare({ func: fn.address_hex }) : NO_DIRECTIVES;
+  const doc = await withDirectives(
+    (list) => {
+      used = list;
+      return state.caps.inspect
+        ? state.kuna.inspect(fn.address_hex, { assertions: list })
+        : state.kuna.decompile(fn.address_hex, { assertions: list });
+    },
+    req,
   );
+  return { doc, key: `${fn.address_hex}\n${used.join('\n')}`, req };
 }
 
 // ── the session: the student's edits as --assert directives ───────────────
 
 let session = new Session();
-const store = new SessionStore(storage);
+const sharedStore = new SessionStore(storage, { max: 5, prefix: 'kuna.d2.shared.', indexKey: 'kuna.d2.shared.index' });
+const store = new SessionStore(storage, { spare: sharedStore });
+let collab = null;
 
 /** A function's name as the student sees it (their rename, else the engine's). */
 function displayName(fn) {
@@ -234,11 +277,13 @@ function displayName(fn) {
 
 const nameOfAddr = (addrHex) => displayName(state.byAddr.get(addrHex) || { address_hex: addrHex, name: addrHex });
 
+/** Save the session: the student's own, or (`state.slot` 'shared') a live session joined from someone else, kept apart. */
 function persist() {
   const hash = state.binary?.hash;
   if (!hash) return;
-  if (session.size) store.save(hash, state.binary.name, JSON.stringify(session.toJSON()));
-  else store.remove(hash);
+  const where = state.slot === 'shared' ? sharedStore : store;
+  if (session.size) where.save(hash, state.binary.name, JSON.stringify(session.toJSON()));
+  else where.remove(hash);
 }
 
 // ── startup ────────────────────────────────────────────────────────────────
@@ -246,11 +291,9 @@ function persist() {
 try {
   state.kuna = new KunaWorkerClient({ wasmUrl: '../kuna_wasm.wasm', specRoot: '../specs' });
   await state.kuna.ready();
-  setStatus('Ready. Open a program or try an example', 'ok');
+  setStatus('Ready. Open a program', 'ok');
   els.pick.removeAttribute('aria-disabled');
-  els.example.disabled = false;
   els.welcomeOpen.disabled = false;
-  els.welcomeExample.disabled = false;
 } catch (e) {
   setStatus('The decompiler could not start', 'err', e.message);
   toast('The decompiler could not start.', { kind: 'err', detail: e.message });
@@ -417,7 +460,7 @@ function markSelectedRow(addrHex) {
  * Load `source` (a File, or `{name, bytes}`) and list its functions. `keep`
  * reopens the function that was showing (a mode/language change).
  */
-async function indexBinary(source, { example = false, keep = null } = {}) {
+async function indexBinary(source, { keep = null, shared = null } = {}) {
   if (!source || !state.kuna) return;
   const op = beginOperation('load', { clearSession: true });
   const name = source.name || 'binary';
@@ -429,31 +472,40 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
   state.cache.clear();
   let bytes;
   let inventory;
+  let globals = NO_DIRECTIVES;
   const t0 = performance.now();
   try {
     bytes = source.bytes || new Uint8Array(await source.arrayBuffer());
-    const hash = await hashBytes(bytes);
+    const hash = source.hash || await hashBytes(bytes);
     if (!isCurrent(op)) return;
-    if (hash !== state.binary?.hash) {
-      session = restoreSession(hash);
+    state.offerShared = false;
+    if (shared) {
+      session = shared;
+      state.restored = null;
+    } else if (hash !== state.binary?.hash) {
+      session = restoreSession(hash, bytes, name);
+      state.slot = 'own';
       state.restored = session.size ? { count: session.size, mark: session.mark(), toasted: false } : null;
+      state.offerShared = true;
     } else {
       state.restored = null;
     }
-    state.binary = { name, bytes, example, format: null, hash };
+    state.binary = { name, bytes, format: null, hash };
     setStatus(`Finding the functions in ${name}…`, 'busy', `${bytes.length.toLocaleString()} bytes`);
     const load = (assertions) => state.kuna.load(bytes, {
       fileName: name, mode: els.mode.value, language: els.lang.value, assertions,
     });
-    const globals = listAssertions();
+    globals = listAssertions();
     try {
       inventory = await withDirectives(load, globals);
     } catch (e) {
-      if (!globals.length || e instanceof KunaWorkerCancelledError || !isCurrent(op)) throw e;
+      const without = globals.texts;
+      if (!without.length || e instanceof KunaWorkerCancelledError || !isCurrent(op)) throw e;
       inventory = await load([]);
+      globals = NO_DIRECTIVES;
       if (capsFrom(inventory).assert) {
-        toast(`Opened ${name} without ${globals.length} of your saved change${globals.length === 1 ? '' : 's'}.`, {
-          kind: 'warn', detail: `${errorLine(e)} — ${globals.join(' · ')}`,
+        toast(`Opened ${name} without ${without.length} of your saved change${without.length === 1 ? '' : 's'}.`, {
+          kind: 'warn', detail: `${errorLine(e)} — ${without.join(' · ')}`,
         });
       }
     }
@@ -475,7 +527,7 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
   }
   state.binary.format = inventory.format;
   state.inventory = inventory;
-  session.recordOutcomes(inventory.assertions);
+  session.recordOutcomes(inventory.assertions, globals);
   syncPatchButton();
   state.byAddr.clear();
   state.byName.clear();
@@ -486,7 +538,6 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
     for (const alias of fn.aliases || []) if (!state.byName.has(alias)) state.byName.set(alias, fn);
   }
   buildSidebar(inventory.functions);
-  $('tab-src').hidden = !(example && state.exampleSource);
   els.crumb.hidden = false;
   els.crumbName.textContent = name;
   els.crumbCount.textContent = `${inventory.functions.length} function${inventory.functions.length === 1 ? '' : 's'}`;
@@ -498,6 +549,17 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
     state.restored.toasted = true;
     toast(`Restored ${state.restored.count} change${state.restored.count === 1 ? '' : 's'} you made to ${name} before.`);
   }
+  if (state.offerShared) {
+    state.offerShared = false;
+    const copy = collab?.active ? null : sharedCopy(state.binary.hash);
+    if (copy && JSON.stringify(copy.toJSON()) !== JSON.stringify(session.toJSON())) {
+      const hash = state.binary.hash;
+      toast(`There are also ${copy.size} change${copy.size === 1 ? '' : 's'} to ${name} from a live session you were in.`, {
+        ms: 15000, detail: 'They are saved apart from yours.',
+        action: { label: 'Use those instead', run: () => useSharedCopy(copy, hash) },
+      });
+    }
+  }
   const dt = Math.round(performance.now() - t0);
   setStatus(`Opened ${name}`, 'ok', `${inventory.format} · ${inventory.functions.length} functions found in ${dt} ms`);
   finishOperation(op);
@@ -506,12 +568,24 @@ async function indexBinary(source, { example = false, keep = null } = {}) {
   if (first) openFunction(first, { replace: true });
 }
 
-function restoreSession(hash) {
+/** The student's own stored session for a binary (moving one an earlier version stored under its FNV key). */
+function restoreSession(hash, bytes = null, name = 'binary') {
   try {
-    const text = store.load(hash);
+    const text = store.loadMoving(hash, bytes, name);
     return text ? Session.fromJSON(JSON.parse(text)) : new Session();
   } catch (_) {
     return new Session();
+  }
+}
+
+/** A live session's copy saved for a binary (kept apart from the student's own), or null. */
+function sharedCopy(hash) {
+  try {
+    const text = sharedStore.load(hash);
+    const copy = text ? Session.fromJSON(JSON.parse(text)) : null;
+    return copy?.size ? copy : null;
+  } catch (_) {
+    return null;
   }
 }
 
@@ -520,13 +594,15 @@ function restoreSession(hash) {
  * the sidebar overlays itself so the inventory keeps the engine's own names.
  */
 function listAssertions() {
-  if (state.caps.assert === false || !session.size) return [];
-  return session.globalAssertions().filter((d) => !d.startsWith('function '));
+  if (state.caps.assert === false || !session.size) return NO_DIRECTIVES;
+  const req = session.prepare({ func: null });
+  return { ...req, texts: req.texts.filter((d) => !d.startsWith('function ')) };
 }
 
 /** Read a picked or dropped file, then open it. Reading comes first: see the input handler. */
 async function openFile(f) {
   if (!f || !state.kuna) return;
+  if (collab && !(await collab.confirmLeave(f.name))) return;
   try {
     const bytes = new Uint8Array(await f.arrayBuffer());
     indexBinary({ name: f.name, bytes });
@@ -581,31 +657,14 @@ window.addEventListener('drop', (e) => {
 });
 
 const reindex = () => {
-  if (state.binary) indexBinary(state.binary, { example: state.binary.example, keep: state.current?.fn.address_hex });
+  if (state.binary) indexBinary(state.binary, { keep: state.current?.fn.address_hex });
 };
-els.mode.addEventListener('change', reindex);
+els.mode.addEventListener('change', () => {
+  collab?.modeChanged(els.mode.value);
+  reindex();
+});
 els.lang.addEventListener('change', reindex);
 
-async function openExample() {
-  els.example.disabled = true;
-  try {
-    const [elf, src] = await Promise.all([
-      fetch('./examples/sample.elf').then((r) => {
-        if (!r.ok) throw new Error(`the example is not in this build (${r.status})`);
-        return r.arrayBuffer();
-      }),
-      fetch('./examples/sample.c').then((r) => (r.ok ? r.text() : null)).catch(() => null),
-    ]);
-    state.exampleSource = src;
-    await indexBinary({ name: 'sample.elf', bytes: new Uint8Array(elf) }, { example: true });
-  } catch (e) {
-    toast('Could not load the example.', { kind: 'err', detail: e.message });
-  } finally {
-    els.example.disabled = false;
-  }
-}
-els.example.addEventListener('click', openExample);
-els.welcomeExample.addEventListener('click', openExample);
 
 // ── opening a function ─────────────────────────────────────────────────────
 
@@ -626,8 +685,8 @@ function cacheGet(addrHex) {
   return hit;
 }
 
-function cacheSet(addrHex, data) {
-  const key = cacheKey(addrHex);
+/** Cache a body under the key of the directives it was made with (by default, the session's now). */
+function cacheSet(addrHex, data, key = cacheKey(addrHex)) {
   state.cache.delete(key);
   state.cache.set(key, data);
   while (state.cache.size > CACHE_MAX) state.cache.delete(state.cache.keys().next().value);
@@ -681,30 +740,33 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
       opSeq++;
       state.kuna.cancel('superseded by a cached function');
       syncButtons();
+      queueMicrotask(drainIdle);
     }
-    showFunction(fn, cached, { focusAddr });
+    state.opening = null;
+    showFunction(fn, cached, { focusAddr, key: cacheKey(fn.address_hex) });
     if (!active) setStatus(cached.error ? `Could not decompile ${displayName(fn)}` : `Showing ${displayName(fn)}`, cached.error ? 'err' : 'ok');
     return;
   }
   const op = beginOperation('function');
+  state.opening = fn;
   const label = displayName(fn);
   setStatus(`Decompiling ${label}…`);
   if (!keepView) {
     state.current = null;
     els.vname.textContent = label;
-    els.vmeta.textContent = '';
-    els.vmeta.title = fn.address_hex;
+    els.vname.title = fn.address_hex;
     els.ccode.innerHTML = `<div class="d2note">Decompiling ${escapeHtml(label)}…</div>`;
     for (const pane of [els.asmcode, els.hexdump, els.stackframe]) pane.innerHTML = '';
   }
   const t0 = performance.now();
   try {
-    const doc = await fetchFunction(fn);
+    const { doc, key, req } = await fetchFunction(fn);
     if (!isCurrent(op)) return;
     const data = normalizeInspect(doc);
-    session.recordOutcomes(data.assertions);
-    cacheSet(fn.address_hex, data);
-    showFunction(fn, data, { focusAddr });
+    session.recordOutcomes(data.assertions, req);
+    cacheSet(fn.address_hex, data, key);
+    showFunction(fn, data, { focusAddr, key });
+    if (collab?.shared && key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
     const dt = Math.round(performance.now() - t0);
     setStatus(data.error ? `Could not decompile ${label}` : `Showing ${label}`, data.error ? 'err' : 'ok',
       `${fn.address_hex} · decompiled in ${dt} ms`);
@@ -714,6 +776,7 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
     setStatus(`Could not decompile ${label}`, 'err', e.message);
     console.error(e);
   } finally {
+    if (state.opening === fn) state.opening = null;
     finishOperation(op);
   }
 }
@@ -721,17 +784,7 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
 // ── rendering ──────────────────────────────────────────────────────────────
 
 /** The header's one muted line: the signature, then sizes in words; the address in its tooltip. */
-function fnMeta(fn, data) {
-  const parts = [];
-  if (data.proto) parts.push(`<code>${escapeHtml(data.proto)}</code>`);
-  if (data.hasInstructions) parts.push(`${data.instructions.length} instruction${data.instructions.length === 1 ? '' : 's'}`);
-  if (data.size) parts.push(`${data.size} bytes`);
-  if (isStub(fn)) parts.push(fn.kind === 'plt' ? 'imported from a library' : 'a jump to another function');
-  if (data.error) parts.push('could not be decompiled');
-  return parts.join(' · ');
-}
-
-function showFunction(fn, data, { focusAddr = null, keep = false } = {}) {
+function showFunction(fn, data, { focusAddr = null, keep = false, key = null } = {}) {
   const { segs } = lineSegments(data);
   const arch = archFrom(data.target || state.inventory?.target, data.instructions);
   const inferred = state.prefs.asmInfer && data.hasInstructions ? inferLines(data.instructions, arch.family || 'x86') : null;
@@ -739,7 +792,7 @@ function showFunction(fn, data, { focusAddr = null, keep = false } = {}) {
   const frame = data.hasInstructions ? frameModel(data, arch) : null;
   if (frame?.supported) Object.assign(index, slotIndex(frame));
   state.current = {
-    fn, data, segs, index, arch, frame, inferred,
+    fn, data, segs, index, arch, frame, inferred, key: key ?? (state.current?.data === data ? state.current.key : cacheKey(fn.address_hex)),
     decls: localDecls(data.code),
     codeLines: data.code.split('\n'),
     rust: /rust/i.test(data.language || ''),
@@ -752,8 +805,6 @@ function showFunction(fn, data, { focusAddr = null, keep = false } = {}) {
   sync.setIndex(index);
   els.vname.textContent = displayName(fn);
   els.vname.title = fn.address_hex;
-  els.vmeta.innerHTML = fnMeta(fn, data);
-  els.vmeta.title = `${fn.address_hex}${data.size ? ` · ${data.size} bytes` : ''}`;
   const row = state.rows.find((r) => r.fn === fn)?.row;
   row?.classList.toggle('bad', !!data.error);
   els.tip.hidden = state.prefs.tipSeen;
@@ -762,6 +813,7 @@ function showFunction(fn, data, { focusAddr = null, keep = false } = {}) {
   renderRail();
   if (state.refsOpen) loadRefs();
   if (focusAddr) selectTarget({ addr: focusAddr }, null);
+  collab?.whereChanged();
 }
 
 const DEFAULT_HINT = 'Tip: hover a line to see its assembly';
@@ -777,7 +829,7 @@ els.tipBtn.addEventListener('click', () => {
 });
 
 function paneFor(tab) {
-  return { c: 'pane-c', asm: 'pane-asm', bytes: 'pane-bytes', stack: 'pane-stack', src: 'pane-src' }[tab];
+  return { c: 'pane-c', asm: 'pane-asm', bytes: 'pane-bytes', stack: 'pane-stack' }[tab];
 }
 
 const narrowView = window.matchMedia('(max-width: 899px)');
@@ -795,6 +847,7 @@ function renderVisible() {
     state.rendered.add(tab);
     RENDER[tab]?.();
   }
+  collab?.redraw();
 }
 
 function needsInspect(what) {
@@ -843,9 +896,6 @@ const RENDER = {
     }
     els.stackframe.innerHTML = renderFrame(frame, { selectedSym: state.sel?.sym || null });
     sync.refresh('stack');
-  },
-  src() {
-    els.srccode.innerHTML = state.exampleSource ? highlightC(state.exampleSource) : '';
   },
 };
 
@@ -1270,13 +1320,13 @@ const hover = createHover({
   roots: [els.ccode, els.asmcode],
   card: els.card,
   delay: () => state.prefs.hoverDelay,
-  resolve: resolveHover,
+  resolve: (el) => (showHints() ? resolveHover(el) : null),
 });
 
 /** Select a target in every pane; `from` is the pane that asked (not scrolled). */
-function selectTarget(target, from, tokEl = null) {
+function selectTarget(target, from, tokEl = null, { reveal = true } = {}) {
   state.sel = target;
-  const sets = sync.select(target, { from });
+  const sets = sync.select(target, { from, reveal });
   setCursor(tokEl);
   rail.markVars(sets ? sets.syms : new Set());
   const active = target?.addr ? 'a-' + target.addr : Number.isInteger(target?.line) ? 'c-L' + target.line : null;
@@ -1452,23 +1502,23 @@ function paneKey(e) {
 
 // ── views, view options ────────────────────────────────────────────────────
 
-/** Switch the view: `c`, `split` (C beside the assembly), `asm`, `bytes`, `stack` or `src`. */
+/** Switch the view: `c` (the code), `split` (the code beside the assembly), `asm`, `bytes` or `stack`. */
 function setView(view) {
-  if (view === 'src' && $('tab-src').hidden) return;
   state.view = view;
-  if (view !== 'src') updatePrefs({ view });
+  updatePrefs({ view });
   const shown = visibleTabs();
   for (const btn of els.tabs.querySelectorAll('[role=tab]')) {
     const on = btn.dataset.tab === view;
     btn.setAttribute('aria-selected', String(on));
     btn.tabIndex = on ? 0 : -1;
   }
-  for (const t of ['c', 'asm', 'bytes', 'stack', 'src']) $(paneFor(t)).hidden = !shown.includes(t);
+  for (const t of ['c', 'asm', 'bytes', 'stack']) $(paneFor(t)).hidden = !shown.includes(t);
   els.panes.classList.toggle('split', shown.length > 1);
   els.narrow.hidden = !(view === 'split' && shown.length === 1);
   if (state.asmRendered && state.asmRendered !== (inSplit() ? 'split' : 'asm')) state.rendered.delete('asm');
   applyPaneClasses();
   renderVisible();
+  collab?.whereChanged();
 }
 const setTab = setView;
 
@@ -1554,7 +1604,7 @@ els.viewMenu.addEventListener('change', (e) => {
   else value = input.value;
   updatePrefs({ [key]: value });
   applyPaneClasses();
-  if (key === 'asmInfer' && state.current) showFunction(state.current.fn, state.current.data, { keep: true });
+  if (key === 'asmInfer' && state.current) showFunction(state.current.fn, state.current.data, { keep: true, key: state.current.key });
   else if (['asmCMode', 'asmArrows', 'cLineAddrs'].includes(key)) rerender('asm', 'c');
   else if (key === 'asmSpelling') {
     rerender('asm');
@@ -1563,9 +1613,12 @@ els.viewMenu.addEventListener('change', (e) => {
 });
 els.viewMenu.addEventListener('click', (e) => {
   if (!e.target.closest('[data-act=reset]')) return;
-  updatePrefs({ ...DEFAULT_PREFS, view: state.view, theme: state.prefs.theme, hints: state.prefs.hints, tipSeen: state.prefs.tipSeen, rail: state.prefs.rail });
+  updatePrefs({
+    ...DEFAULT_PREFS, view: state.view, theme: state.prefs.theme, hints: state.prefs.hints, hintsSet: state.prefs.hintsSet,
+    tipSeen: state.prefs.tipSeen, rail: state.prefs.rail,
+  });
   applyPaneClasses();
-  if (state.current) showFunction(state.current.fn, state.current.data, { keep: true });
+  if (state.current) showFunction(state.current.fn, state.current.data, { keep: true, key: state.current.key });
   renderViewMenu();
 });
 
@@ -1607,13 +1660,22 @@ els.theme.addEventListener('click', () => {
 });
 applyTheme();
 
-/** "Show hints": tips, key hints and the notes that teach; the facts stay. */
+/**
+ * "Show hints": tips, key hints, the notes that teach and the hover cards; the
+ * facts stay. Off unless `?student=true` or the student turned them on (an
+ * explicit toggle is remembered and wins over the URL for the rest of the load).
+ */
+let hintsSearch = location.search;
+const showHints = () => hintsOn(state.prefs, hintsSearch);
 function applyHints() {
-  document.documentElement.dataset.hints = state.prefs.hints ? 'on' : 'off';
-  els.hintsBox.checked = state.prefs.hints;
+  const on = showHints();
+  document.documentElement.dataset.hints = on ? 'on' : 'off';
+  els.hintsBox.checked = on;
+  if (!on) hover.hide();
 }
 els.hintsBox.addEventListener('change', () => {
-  updatePrefs({ hints: els.hintsBox.checked });
+  hintsSearch = '';
+  updatePrefs({ hints: els.hintsBox.checked, hintsSet: true });
   applyHints();
 });
 applyHints();
@@ -1765,6 +1827,11 @@ document.addEventListener('keydown', (e) => {
       e.preventDefault();
       openRefs();
       break;
+    case 'p':
+      if (!collab?.active) return;
+      e.preventDefault();
+      collab.ping();
+      break;
     default:
       return;
   }
@@ -1872,7 +1939,7 @@ function currentSize(name) {
   return decl ? typeSize(decl.type, sizeModel()) : null;
 }
 
-const noHash = (v) => (/\s#/.test(v) || /[\r\n]/.test(v) ? 'a directive cannot hold a newline or " #" (the .kuna file reads that as a comment)' : null);
+const noteProblem = (v) => directiveTextProblem(v, TEXT_LIMITS.comment);
 
 async function renameSelected() {
   const target = selectedTarget();
@@ -1963,7 +2030,7 @@ async function protoDialog(addr, anchorEl) {
     note: 'What the function takes and returns, written in C. Input names and types are used; the function keeps its name.',
     fields: [{
       name: 'decl', label: 'Signature', value, textarea: true,
-      validate: (v) => (parseSignature(v) ? noHash(v) : 'Write it like: long sum_to(int count)'),
+      validate: (v) => (parseSignature(v) ? declarationProblem(v, TEXT_LIMITS.decl) : 'Write it like: long sum_to(int count)'),
     }],
     submitLabel: 'Save signature',
   });
@@ -2006,7 +2073,7 @@ async function commentSelected() {
   const res = await dialogs.openPopover({
     anchorEl: anchor, title: `Note at ${bare(addr)}`,
     note: 'The note appears in the C code above this instruction. Leave it empty to remove it.',
-    fields: [{ name: 'text', label: 'Note', value: session.comment(data.address_hex, addr) || '', validate: noHash }],
+    fields: [{ name: 'text', label: 'Note', value: session.comment(data.address_hex, addr) || '', validate: noteProblem }],
     submitLabel: 'Save note',
   });
   if (!res) return;
@@ -2036,6 +2103,7 @@ async function goToDialog() {
  * caches need no flush: their keys carry the directives a body depends on.
  */
 function sessionChanged() {
+  collab?.localChanged();
   persist();
   bytesState.version++;
   syncPatchButton();
@@ -2066,12 +2134,13 @@ function flash(lines) {
  * Apply one edit: snapshot, `mutate` the session, save, drop caches, and
  * re-inspect the open function while the old render stays up. A failed or
  * cancelled request restores the snapshot; a rejected directive stays in the
- * session, marked, with the engine's reason in a toast.
+ * session, marked, with the engine's reason in a toast. In a live session
+ * there is no snapshot: the edit is shared at once, and Undo is the session's.
  */
 async function applyEdit(mutate, { label = 'edit', reselect = null, done = '' } = {}) {
   const addr = state.current?.data.address_hex ?? null;
   const before = new Set(addr ? session.assertionsFor(addr) : []);
-  const snap = session.snapshot();
+  const snap = collab?.shared ? null : session.snapshot();
   try {
     mutate();
   } catch (e) {
@@ -2081,21 +2150,31 @@ async function applyEdit(mutate, { label = 'edit', reselect = null, done = '' } 
   const fresh = addr ? session.assertionsFor(addr).filter((d) => !before.has(d)) : [];
   sessionChanged();
   if (!state.current || !state.caps.assert) {
-    session.pushUndo(snap);
+    if (snap && !collab?.shared) session.pushUndo(snap);
     renderRail();
     if (state.current && session.size) toast('Change kept but not applied: this version of the decompiler cannot apply changes.', { kind: 'warn' });
     return true;
   }
-  return reinspect({ snap, fresh, label, reselect, done });
+  return reinspect({ snap, edit: true, fresh, label, reselect, done });
 }
 
-async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = null, done = '' } = {}) {
+/**
+ * Re-decompile the function on screen with the session as it is now. The
+ * result is cached, and shown only if that function is still on screen (the
+ * student may have opened another meanwhile).
+ */
+async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit', reselect = null, done = '', remote = false } = {}) {
   const fn = state.current.fn;
   const oldCode = state.current.data.code;
   const scroll = captureScroll();
   const keepSel = reselect || state.sel;
-  const op = beginOperation('edit');
+  const op = beginOperation(remote ? 'remote' : 'edit');
   op.onCancel = () => {
+    if (collab?.shared) {
+      if (op.explicit && edit) toast('Stopped. Your change is kept for everyone in the session.', { kind: 'warn', detail: 'Undo takes it back.' });
+      else if (!op.explicit && !remote) scheduleRemoteInspect();
+      return;
+    }
     if (!snap) return;
     session.restore(snap);
     sessionChanged();
@@ -2104,18 +2183,21 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
   setStatus('Updating the code…');
   const t0 = performance.now();
   try {
-    const doc = await fetchFunction(fn);
+    const { doc, key, req } = await fetchFunction(fn);
     if (!isCurrent(op)) return false;
     const data = normalizeInspect(doc);
     const wasApplied = new Set([...session.outcomes].filter(([, o]) => o.status === 'applied').map(([k]) => k));
-    session.recordOutcomes(data.assertions);
-    if (snap) session.pushUndo(snap);
+    session.recordOutcomes(data.assertions, req);
+    if (snap && !collab?.shared) session.pushUndo(snap);
     persist();
-    cacheSet(fn.address_hex, data);
-    showFunction(fn, data, { keep: true });
-    restoreScroll(scroll);
-    if (keepSel) selectTarget(keepSel, null);
-    flash(changedLines(oldCode, data.code));
+    cacheSet(fn.address_hex, data, key);
+    if (state.current?.fn === fn) {
+      showFunction(fn, data, { keep: true, key });
+      if (collab?.shared && key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
+      restoreScroll(scroll);
+      if (keepSel) selectTarget(keepSel, null, null, { reveal: !remote });
+      flash(changedLines(oldCode, data.code));
+    }
     if (!state.caps.assert) {
       setStatus('Change kept but not applied', 'err', 'This version of the decompiler cannot apply changes');
       renderRail();
@@ -2126,11 +2208,11 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
       toast('That change could not be applied.', { kind: 'err', detail: `${row.detail || 'The decompiler refused it.'} (${row.directive})` });
     }
     const broke = data.assertions.filter((r) => r.status === 'rejected' && !fresh.includes(r.directive) &&
-      wasApplied.has(session.sent.get(r.directive)));
+      session.keysOf(r.directive, req).some((k) => wasApplied.has(k)));
     for (const row of broke) {
       toast('An earlier change no longer applies.', {
         kind: 'warn',
-        detail: `${row.directive}: ${row.detail || 'the code changed under it'}. Edit or remove it under Your changes.`,
+        detail: `${row.directive}: ${row.detail || 'the code changed under it'}. Edit or remove it under ${collab?.shared ? 'Changes' : 'Your changes'}.`,
       });
     }
     if (data.assertions.some((r) => r.fatal)) {
@@ -2143,6 +2225,13 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
     return !bad;
   } catch (e) {
     if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return false;
+    if (collab?.shared) {
+      toast(remote ? 'Could not update the code with the others\' changes.' : 'Could not update the code.', {
+        kind: 'err', detail: `${errorLine(e)}${edit ? ' Your change is kept for everyone in the session; Undo takes it back.' : ''}`,
+      });
+      setStatus('Could not update the code', 'err', e.message);
+      return false;
+    }
     if (snap) {
       session.restore(snap);
       sessionChanged();
@@ -2155,16 +2244,56 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
   }
 }
 
+/** Undo (in a live session: this page's own last change, where nobody has changed it since). */
 function undo() {
-  if (active?.kind === 'edit' || !session.undo()) return;
+  if (active?.kind === 'edit' || !(collab?.shared ? collab.undo() : session.undo())) return;
   sessionChanged();
   if (state.current && state.caps.assert) reinspect({ label: 'undo' });
 }
 
 function redo() {
-  if (active?.kind === 'edit' || !session.redo()) return;
+  if (active?.kind === 'edit' || !(collab?.shared ? collab.redo() : session.redo())) return;
   sessionChanged();
   if (state.current && state.caps.assert) reinspect({ label: 'redo' });
+}
+
+/**
+ * Another person's changes reached the session: refresh what shows it, and
+ * re-decompile the open function once no request is running, only if they
+ * touch it (a new decompiler effort re-lists the program). No undo step.
+ */
+function remoteChanged({ inspect = false, mode = null, label = '' } = {}) {
+  sessionChanged();
+  if (mode) {
+    els.mode.value = mode;
+    reindex();
+    if (label) toast(label + '.', { detail: 'The decompiler effort is shared by everyone in the session.' });
+    return;
+  }
+  if (inspect) scheduleRemoteInspect(label);
+  else if (label) setStatus(label, 'ok');
+}
+
+/**
+ * One re-inspect for a burst of remote changes, 300 ms after the last, queued
+ * once, and skipped when the code on screen already has the session's
+ * directives for its function.
+ */
+function scheduleRemoteInspect(label = '') {
+  if (label) state.remoteLabel = label;
+  clearTimeout(state.remoteTimer);
+  state.remoteTimer = setTimeout(() => {
+    if (state.remoteQueued && idleQueue.includes(state.remoteQueued)) return;
+    const task = () => {
+      if (state.remoteQueued === task) state.remoteQueued = false;
+      if (!state.current || !state.caps.assert || state.current.key === cacheKey(state.current.data.address_hex)) return;
+      const done = state.remoteLabel || 'Updated the code';
+      state.remoteLabel = '';
+      reinspect({ label: 'another person\'s change', done, remote: true });
+    };
+    state.remoteQueued = task;
+    whenIdle(task);
+  }, 300);
 }
 
 /**
@@ -2232,11 +2361,13 @@ function changeLabel(entry) {
 }
 
 function renderRail() {
-  const edits = session.entries(nameOfAddr).map((e) => ({ ...e, label: changeLabel(e) }));
+  const shared = !!collab?.shared;
+  const edits = session.entries(nameOfAddr).map((e) => ({ ...e, label: changeLabel(e), author: shared ? collab.authorOf(e.key) : null }));
   const base = {
     edits,
-    canUndo: session.canUndo,
-    canRedo: session.canRedo,
+    shared,
+    canUndo: shared ? collab.canUndo : session.canUndo,
+    canRedo: shared ? collab.canRedo : session.canRedo,
     restored: state.restored?.count || 0,
     assertSupported: state.caps.assert,
     selectedHtml: selectedCard(),
@@ -2282,10 +2413,12 @@ importEl.addEventListener('change', async () => {
   }
 });
 
-function exportSession() {
+/** Download a session as a `.kuna` file, its function-scoped directives qualified with that session's own names. */
+function exportSession(s = session) {
   if (!state.binary) return;
-  const target = state.current ? displayName(state.current.fn) : 'main';
-  const text = session.toFileText({ binary: state.binary.name, hash: state.binary.hash, target, nameOf: nameOfAddr });
+  const nameOf = (a) => s.functionName(a) || state.byAddr.get(a)?.name || a;
+  const target = state.current ? nameOf(state.current.data.address_hex) : 'main';
+  const text = s.toFileText({ binary: state.binary.name, hash: state.binary.hash, target, nameOf });
   download(new Blob([text], { type: 'text/plain' }), `${state.binary.name}.kuna`);
 }
 
@@ -2313,7 +2446,7 @@ async function editEntry(key) {
   if (rec.kind === 'comment') {
     const res = await dialogs.openPopover({
       anchorEl, title: `Note at ${bare(rec.addr)}${where}`, note: 'Leave it empty to remove it.',
-      fields: [{ name: 'text', label: 'Note', value: rec.text, validate: noHash }], submitLabel: 'Save note',
+      fields: [{ name: 'text', label: 'Note', value: rec.text, validate: noteProblem }], submitLabel: 'Save note',
     });
     if (!res) return;
     return applyEdit(() => session.setComment(rec.func, rec.addr, res.text.trim() || null), { label: 'note', done: 'Saved the note' });
@@ -2332,7 +2465,7 @@ async function editEntry(key) {
   const text = session.entries(nameOfAddr).find((x) => x.key === key)?.text || '';
   const res = await dialogs.openPopover({
     anchorEl, title: 'Edit this change', note: 'Written the way the command line takes it (one --assert line).',
-    fields: [{ name: 'text', label: 'directive', value: text, validate: (v) => (v.trim() ? noHash(v) : 'empty') }],
+    fields: [{ name: 'text', label: 'directive', value: text, validate: (v) => (v.trim() ? directiveTextProblem(v, TEXT_LIMITS.raw) : 'empty') }],
   });
   if (!res) return;
   const bindTo = rec.func ?? state.current?.data.address_hex ?? null;
@@ -2378,7 +2511,9 @@ const rail = createRail({
         break;
       }
       case 'clear':
-        if (await dialogs.confirmBox(`Remove all ${session.size} of your changes to ${state.binary.name}?`, { confirmLabel: 'Clear all' })) {
+        if (await dialogs.confirmBox(collab?.shared
+          ? `Remove all ${session.size} changes to ${state.binary.name}, for everyone in the session?`
+          : `Remove all ${session.size} of your changes to ${state.binary.name}?`, { confirmLabel: 'Clear all' })) {
           applyEdit(() => session.clear(), { label: 'clear', done: 'Cleared all your changes' });
         }
         break;
@@ -2627,7 +2762,7 @@ function hexKey(e) {
 }
 
 function startBurst() {
-  if (!bytesState.burst) bytesState.burst = { snap: session.snapshot(), before: new Set(session.globalAssertions()) };
+  if (!bytesState.burst) bytesState.burst = { snap: collab?.shared ? null : session.snapshot(), before: new Set(session.globalAssertions()) };
 }
 
 /** One burst of typed bytes becomes one edit, sent 700 ms after the last key. */
@@ -2651,7 +2786,7 @@ function flushBytes({ send = true } = {}) {
   bytesState.burst = null;
   if (!burst || !state.current) return;
   const fresh = session.globalAssertions().filter((d) => !burst.before.has(d));
-  session.pushUndo(burst.snap);
+  if (burst.snap && !collab?.shared) session.pushUndo(burst.snap);
   sessionChanged();
   if (!send || !state.caps.assert) return;
   const fn = state.current.fn;
@@ -2740,7 +2875,7 @@ function loadRefs() {
     try {
       const res = await withDirectives(
         (list) => state.kuna.xrefs(addr, { assertions: list }),
-        state.caps.assert ? session.globalAssertions() : [],
+        state.caps.assert ? session.prepare({ func: null }) : NO_DIRECTIVES,
       );
       if (!isCurrent(op)) return;
       html = renderXrefs(res, { nameOf: refsNameOf });
@@ -2798,7 +2933,7 @@ els.dl.addEventListener('click', async () => {
   try {
     const project = await withDirectives(
       (list) => state.kuna.project(state.binary.name, { assertions: list }),
-      state.caps.assert ? session.allAssertions(nameOfAddr) : [],
+      state.caps.assert ? session.prepare({ qualify: nameOfAddr }) : NO_DIRECTIVES,
     );
     if (!isCurrent(op)) return;
     download(new Blob([project.bytes], { type: 'application/zip' }), project.downloadName);
@@ -2824,3 +2959,167 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// ── working together (collab/, loaded on demand) ───────────────────────────
+
+/**
+ * Open a program another person sent, with the session's changes rather than
+ * the ones stored here. `hash` is its already-checked hash; `slot` 'shared'
+ * keeps the session apart from the student's own stored changes to it.
+ * `still()` says whether the join still wants it (it may fail meanwhile).
+ * What was running stops first, so an edit it undoes is saved where it belongs.
+ */
+async function openShared({ name, bytes, hash, session: shared, mode, open = null, slot = 'own', still = () => true }) {
+  if (!still()) return false;
+  supersede('load', { clearSession: true });
+  if (mode && [...els.mode.options].some((o) => o.value === mode)) els.mode.value = mode;
+  state.slot = slot;
+  await indexBinary({ name, bytes, hash }, { shared, keep: open });
+  return state.binary?.bytes === bytes && !!state.inventory;
+}
+
+/**
+ * A live session ended on this page. A session kept apart from the student's
+ * own changes gives way to them again, unless there were none (then its
+ * changes become theirs); the session's copy stays saved, and the toast
+ * offers it back. A program still being opened with the session's changes
+ * is opened again with the student's.
+ */
+function endShared() {
+  session.orderOf = null;
+  const wasShared = state.slot === 'shared';
+  state.slot = 'own';
+  if (!wasShared || !state.binary) return;
+  const { hash, bytes, name } = state.binary;
+  const own = restoreSession(hash, bytes, name);
+  if (!own.size) {
+    persist();
+    sharedStore.remove(hash);
+    return;
+  }
+  const kept = session;
+  session = own;
+  sessionChanged();
+  if (active?.kind === 'load') indexBinary({ name, bytes, hash }, { shared: own });
+  else if (state.current && state.caps.assert) reinspect({ label: 'your own changes', done: 'Your own changes are back' });
+  toast(`Your own changes to ${name} are back.`, {
+    ms: 15000, detail: 'The session\'s changes are kept apart.',
+    action: { label: 'Use the session\'s changes instead', run: () => useSharedCopy(kept, hash) },
+  });
+}
+
+/** Replace the student's own changes to the program with `hash` by a live session's `kept` (asked first). */
+async function useSharedCopy(kept, hash) {
+  const still = () => state.binary?.hash === hash && !collab?.active;
+  if (!still()) {
+    toast(state.binary?.hash === hash ? 'Leave the session first.' : 'Those were the session\'s changes to another program.', { kind: 'warn' });
+    return;
+  }
+  if (!(await dialogs.confirmBox(`Replace your own ${session.size} change${session.size === 1 ? '' : 's'} to ${state.binary.name} with the session's ${kept.size}? You can save yours first with Export changes.`, { confirmLabel: 'Replace mine' }))) return;
+  if (!still()) return;
+  sharedStore.remove(hash);
+  session = kept;
+  session.orderOf = null;
+  sessionChanged();
+  if (state.current && state.caps.assert) reinspect({ label: 'the session\'s changes', done: 'Using the session\'s changes' });
+}
+
+/** Open a function in the view that shows an anchor (`c:6`, `a:0x11b5`, …). */
+async function goToAnchor(fnAddr, anchor) {
+  const fn = state.byAddr.get(fnAddr);
+  if (!fn) return;
+  const want = { c: 'c', h: 'asm', a: 'asm', b: 'bytes', s: 'stack' }[anchor[0]];
+  if (!(state.view === 'split' && (want === 'c' || want === 'asm') && isShown(want))) setView(want);
+  if (state.current?.fn !== fn) await openFunction(fn);
+}
+
+/** The selection as an anchor, for a ping. */
+function selectionAnchor() {
+  const sel = state.sel;
+  if (!sel || !state.current) return null;
+  if (sel.addr) return `a:${sel.addr}`;
+  if (Number.isInteger(sel.line)) return `c:${sel.line}`;
+  if (Number.isInteger(sel.slot)) return `s:${sel.slot}`;
+  const lines = sel.sym ? [...(state.current.index.symToLines.get(sel.sym) || [])] : [];
+  return lines.length ? `c:${Math.min(...lines)}` : null;
+}
+
+function syncCollabMenu() {
+  els.modeNote.hidden = !collab?.active;
+}
+
+const collabApi = {
+  els,
+  storage,
+  toast,
+  session: () => session,
+  binary: () => state.binary,
+  mode: () => els.mode.value,
+  /** Bytes are being typed and not yet sent (a burst goes out as one edit when it ends). */
+  typing: () => !!bytesState.burst,
+  current: () => ({ fn: state.current?.data.address_hex ?? null, view: state.view }),
+  /** The function on screen, or the one being opened. */
+  target: () => state.opening?.address_hex ?? state.current?.data.address_hex ?? null,
+  nameOf: nameOfAddr,
+  /** The engine's build id: the SHA-256 of the wasm the Worker compiled (worked out when a session first needs it). */
+  build: () => state.kuna.buildId(),
+  onBuild: (fn) => { state.kuna.onbuild = fn; },
+  clearUndo: () => {
+    session.undoStack = [];
+    session.redoStack = [];
+  },
+  /** A live session starts on this page: what was restored from storage is now shared, not something to discard. */
+  shareStarted: () => {
+    state.restored = null;
+    renderRail();
+  },
+  endShared,
+  refresh: () => {
+    renderRail();
+    syncCollabMenu();
+  },
+  remoteChanged,
+  confirm: (text, confirmLabel) => dialogs.confirmBox(text, { confirmLabel }),
+  status: (text) => setStatus(text, 'ok'),
+  openShared,
+  openFunction: (addr, { view = null } = {}) => {
+    const fn = state.byAddr.get(addr);
+    if (view) setView(view);
+    return fn ? openFunction(fn) : null;
+  },
+  setView,
+  goTo: goToAnchor,
+  selectionAnchor,
+  /** The student's own stored changes to the program with `hash` (its `bytes` find what an earlier version stored); null when there are none. */
+  ownSession: (hash, bytes = null, name = 'binary') => {
+    const own = restoreSession(hash, bytes, name);
+    return own.size ? own : null;
+  },
+  exportSession,
+};
+
+let collabLoading = null;
+
+function loadCollab() {
+  collabLoading ||= import('./collab/collab.js')
+    .then((m) => m.createCollab(collabApi))
+    .then((c) => (collab = c))
+    .catch((e) => {
+      collabLoading = null;
+      toast('Working together could not start.', { kind: 'err', detail: e.message });
+      console.error(e);
+      return null;
+    });
+  return collabLoading;
+}
+
+els.collab.addEventListener('click', async () => (await loadCollab())?.open());
+
+/** An invite (`#join=`) or reply (`#reply=`) link: hand it to collab and take the code out of the address. */
+async function collabFromHash() {
+  const hash = location.hash;
+  if (!/^#(join|reply)=/.test(hash)) return;
+  history.replaceState(history.state, '', location.pathname + location.search);
+  (await loadCollab())?.handleHash(hash);
+}
+window.addEventListener('hashchange', collabFromHash);
+collabFromHash();

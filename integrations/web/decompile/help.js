@@ -4,8 +4,8 @@
 
 const TOP_KEYS = [
   ['/', 'Search functions'],
-  ['Space', 'Switch between C code and assembly'],
-  ['1 – 4', 'C code · Assembly · Bytes · Stack'],
+  ['Space', 'Switch between the code and assembly'],
+  ['1 – 4', 'Code · Assembly · Bytes · Stack'],
   ['s', 'Side by side'],
   ['n', 'Rename what is selected'],
   ['y', 'Change its type'],
@@ -15,13 +15,13 @@ const TOP_KEYS = [
 
 const KEYS = [
   ['/', 'search functions'],
-  ['Space', 'switch between C code and assembly'],
-  ['1 2 3 4', 'C code · Assembly · Bytes · Stack'],
-  ['s', 'side by side (C next to the assembly)'],
+  ['Space', 'switch between the code and assembly'],
+  ['1 2 3 4', 'Code · Assembly · Bytes · Stack'],
+  ['s', 'side by side (the code next to the assembly)'],
   ['o', 'addresses: full · offset from the function start · both'],
   ['b', 'show or hide instruction bytes'],
   ['↑ ↓', 'move through lines or instructions'],
-  ['← →', 'move between names on a C line'],
+  ['← →', 'move between names on a line of code'],
   ['Enter', 'open the function under the cursor'],
   ['n', 'rename the selected variable or function'],
   ['y', 'change its type (on a function name: its signature)'],
@@ -31,6 +31,8 @@ const KEYS = [
   ['u · Ctrl+Z', 'undo'],
   ['Ctrl+Shift+Z', 'redo'],
   ['Alt+← Alt+→', 'back and forward between functions'],
+  ['p', 'when working together: point the others to what the mouse is over'],
+  ['Alt+click', 'the same, on a line, an instruction, a byte or a stack slot'],
   ['?', 'this help'],
   ['Esc', 'close the card, then a dialog, then clear the selection'],
 ];
@@ -65,9 +67,10 @@ export function helpHtml() {
   return '<div class="hh"><h2 id="helptitle">How to use Kuna</h2>' +
     '<button class="d2-iconbtn small" data-act="help-close" aria-label="Close" title="Close">×</button></div>' +
     '<div class="hb2">' +
-    '<p>Pick a function on the left. Hover over a line of C to see the assembly it becomes; click a name to learn about it, and double-click to rename it. Your changes are kept in this browser.</p>' +
+    '<p>Pick a function on the left. Click a line of code to see the assembly it becomes; click a name to learn about it, and double-click to rename it. Turn on <b>Show hints</b> for tips and for cards that explain what the pointer rests on. Your changes are kept in this browser.</p>' +
     `<h3>Keyboard</h3><table>${rows(TOP_KEYS)}</table>` +
     `<details id="helpall"><summary>All shortcuts</summary><table>${rows(KEYS)}</table></details>` +
+    '<h3>Working together</h3><p><b>Collaborate</b> makes an invite link. The person who opens it sends you a reply link; open it and you are in the same session: you see each other\'s changes and pointers, and anyone can change anything. Alt+click a line (or press <kbd>p</kbd>) to point the others to it.</p>' +
     '<h3>Words you\'ll see</h3><dl>' + GLOSSARY.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>' +
     '<details><summary>What the colours mean</summary><dl>' +
     LEGEND.map(([c, v]) => `<dt><span class="d2sw" style="background:${c}"></span></dt><dd>${v}</dd>`).join('') + '</dl></details>' +

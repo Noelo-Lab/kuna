@@ -1,5 +1,6 @@
 // worker.mjs — exercise the shipped module Worker and its RPC client in Node.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -31,17 +32,24 @@ const MIME = {
   '.dwarf': 'application/octet-stream',
 };
 
+let wasmRequests = 0;
+let specRequests = 0;
+let etag = null;
+let wasmOverride = null;
 const server = createServer(async (req, res) => {
   try {
     const rel = decodeURIComponent(new URL(req.url, 'http://worker.test').pathname);
+    if (rel.endsWith('.wasm')) wasmRequests++;
+    if (rel.includes('/specs')) specRequests++;
     const file = resolve(dist, '.' + rel);
     if (!file.startsWith(dist)) {
       res.writeHead(403).end();
       return;
     }
-    const body = await readFile(file);
+    const body = rel.endsWith('.wasm') && wasmOverride ? wasmOverride : await readFile(file);
     res.writeHead(200, {
       'content-type': MIME[extname(file)] || 'application/octet-stream',
+      ...(etag ? { etag } : {}),
     });
     res.end(body);
   } catch {
@@ -193,11 +201,138 @@ try {
   assert.ok(backToC.functions.length > 0);
   assert.doesNotMatch((await client.decompile('main')).functions[0].code, /let mut/, 'C session renders C');
 
+  const hashing = new KunaWorkerClient({
+    workerUrl: pathToFileURL(join(dist, 'kuna-worker.js')),
+    wasmUrl: `${base}/kuna_wasm.wasm`,
+    specRoot: `${base}/specs`,
+    workerFactory: (url) => new BrowserWorker(url),
+  });
+  try {
+    await hashing.ready();
+    const wasm = createHash('sha256').update(await readFile(join(dist, 'kuna_wasm.wasm'))).digest('hex');
+    assert.equal(await hashing.buildId(), wasm, 'asked for, the build id is the SHA-256 of the wasm the Worker compiled');
+    const before = wasmRequests;
+    hashing.cancel('a new Worker');
+    await hashing.ready();
+    assert.equal(await hashing.buildId(), wasm, 'and a respawned Worker has the same one');
+    assert.equal(wasmRequests - before, 0, 'the new Worker runs the engine the page compiled, so it downloads nothing');
+    const racing = new KunaWorkerClient({
+      workerUrl: pathToFileURL(join(dist, 'kuna-worker.js')),
+      wasmUrl: `${base}/kuna_wasm.wasm`,
+      specRoot: `${base}/specs`,
+      workerFactory: (url) => new BrowserWorker(url),
+    });
+    try {
+      await racing.ready();
+      const asked = racing.buildId();
+      await new Promise((done) => setTimeout(done, 5));
+      racing.cancel('a new Worker');
+      assert.equal(await asked, wasm, 'a cancel while the build id was being worked out asks the new Worker');
+    } finally {
+      racing.close();
+    }
+  } finally {
+    hashing.close();
+  }
+
+  // The site is deployed again while the page is open: the same wasm under a
+  // new validator, then another wasm. A restarted Worker keeps running the
+  // engine and the spec files this page loaded, so the build id stays.
+  etag = '"one"';
+  const pinned = new KunaWorkerClient({
+    workerUrl: pathToFileURL(join(dist, 'kuna-worker.js')),
+    wasmUrl: `${base}/kuna_wasm.wasm`,
+    specRoot: `${base}/specs`,
+    workerFactory: (url) => new BrowserWorker(url),
+  });
+  const heard = [];
+  pinned.onbuild = (build, was) => heard.push([build, was]);
+  try {
+    await pinned.load(binary, { fileName: 'sample.elf' });
+    await pinned.decompile(main.address_hex);
+    const wasm = createHash('sha256').update(await readFile(join(dist, 'kuna_wasm.wasm'))).digest('hex');
+    assert.equal(await pinned.buildId(), wasm);
+    const [wasmBefore, specsBefore] = [wasmRequests, specRequests];
+    etag = '"two"';
+    pinned.cancel('a new Worker');
+    await pinned.ready();
+    assert.equal(wasmRequests - wasmBefore, 0, 'the same wasm deployed again: a restarted Worker downloads nothing');
+    assert.deepEqual(heard, [], 'and the page does not hear of a new build');
+    assert.equal(await pinned.buildId(), wasm);
+    wasmOverride = Buffer.concat([await readFile(join(dist, 'kuna_wasm.wasm')), Buffer.from([0, 5, 4, 0x6e, 0x65, 0x77, 0x21])]);
+    etag = '"three"';
+    pinned.cancel('another Worker');
+    assert.match((await pinned.decompile(main.address_hex)).functions[0].code, /sum_to\(add\(/, 'the restarted Worker decompiles');
+    assert.equal(wasmRequests - wasmBefore, 0, 'another wasm deployed: still nothing downloaded');
+    assert.equal(specRequests - specsBefore, 0, 'nor any spec file');
+    assert.deepEqual(heard, []);
+    assert.equal(await pinned.buildId(), wasm, 'the build id is the engine this page runs');
+    assert.deepEqual([...pinned.specs.keys()], ['Ghidra/Processors/x86/data/languages/x86-64.sla'], 'the page keeps the spec files its program needed, for a restart');
+    pinned.close();
+    assert.equal(pinned.specs.size + (pinned.engine ? 1 : 0), 0, 'and lets them go when the client closes');
+  } finally {
+    pinned.close();
+    etag = null;
+    wasmOverride = null;
+  }
+
+  // The site is deployed again between loading the page and the first
+  // session (no validator, a wasm of the same size): the build id is still
+  // the SHA-256 of the bytes this page compiled.
+  const early = new KunaWorkerClient({
+    workerUrl: pathToFileURL(join(dist, 'kuna-worker.js')),
+    wasmUrl: `${base}/kuna_wasm.wasm`,
+    specRoot: `${base}/specs`,
+    workerFactory: (url) => new BrowserWorker(url),
+  });
+  try {
+    await early.ready();
+    const original = await readFile(join(dist, 'kuna_wasm.wasm'));
+    const later = Buffer.from(original);
+    later[later.length - 1] ^= 0xff;
+    wasmOverride = later;
+    assert.equal(await early.buildId(), createHash('sha256').update(original).digest('hex'), 'the build id describes the engine that runs, not what the server has now');
+  } finally {
+    early.close();
+    wasmOverride = null;
+  }
+
+  // A browser that cannot hand a compiled module to the page: a restarted
+  // Worker compiles the server's wasm again, so the page hears that its
+  // build id is no longer known.
+  class NoModuleWorker extends BrowserWorker {
+    constructor(url) {
+      super(url);
+      this.node.removeAllListeners('message');
+      this.node.on('message', (data) => this.onmessage?.({ data: data?.result?.engine ? { ...data, result: { ...data.result, engine: null } } : data }));
+    }
+  }
+  const unpinned = new KunaWorkerClient({
+    workerUrl: pathToFileURL(join(dist, 'kuna-worker.js')),
+    wasmUrl: `${base}/kuna_wasm.wasm`,
+    specRoot: `${base}/specs`,
+    workerFactory: (url) => new NoModuleWorker(url),
+  });
+  const lost = [];
+  unpinned.onbuild = (build, was) => lost.push([build, was]);
+  try {
+    const wasm = createHash('sha256').update(await readFile(join(dist, 'kuna_wasm.wasm'))).digest('hex');
+    assert.equal(await unpinned.buildId(), wasm);
+    unpinned.cancel('a new Worker');
+    await unpinned.ready();
+    assert.deepEqual(lost, [[null, wasm]], 'the page hears the id is no longer known');
+    assert.equal(await unpinned.buildId(), wasm, 'and asks for it again');
+  } finally {
+    unpinned.close();
+  }
+
   console.log(
     `WORKER OK — ${inventory.functions.length} functions inventoried, ` +
     `one address decompiled lazily (${inventoryMs} ms inventory + ${bodyMs} ms body), ` +
     'cancellation restarted the Worker, the host event loop stayed live, ' +
-    `${project.bytes.length} ZIP bytes transferred, the session language reached the engine`,
+    `${project.bytes.length} ZIP bytes transferred, the session language reached the engine, ` +
+    'the build id is the hash of the exact wasm bytes compiled, ' +
+    'and a restarted Worker runs the engine and spec files the page loaded',
   );
 } finally {
   client.close();
