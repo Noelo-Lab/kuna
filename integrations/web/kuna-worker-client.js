@@ -276,5 +276,7 @@ export class KunaWorkerClient {
     this.worker.terminate();
     this.rejectPending(new KunaWorkerCancelledError('decompiler worker closed'));
     this.session = null;
+    this.engine = null;
+    this.specs.clear();
   }
 }

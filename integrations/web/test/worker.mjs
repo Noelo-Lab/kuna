@@ -267,6 +267,9 @@ try {
     assert.equal(specRequests - specsBefore, 0, 'nor any spec file');
     assert.deepEqual(heard, []);
     assert.equal(await pinned.buildId(), wasm, 'the build id is the engine this page runs');
+    assert.deepEqual([...pinned.specs.keys()], ['Ghidra/Processors/x86/data/languages/x86-64.sla'], 'the page keeps the spec files its program needed, for a restart');
+    pinned.close();
+    assert.equal(pinned.specs.size + (pinned.engine ? 1 : 0), 0, 'and lets them go when the client closes');
   } finally {
     pinned.close();
     etag = null;
