@@ -3024,14 +3024,15 @@ async function openShared({ name, bytes, hash, session: shared, mode, open = nul
  * A live session ended on this page. A session kept apart from the student's
  * own changes gives way to them again, unless there were none (then its
  * changes become theirs); the session's copy stays saved, and the toast
- * offers it back.
+ * offers it back. A program still being opened with the session's changes
+ * is opened again with the student's.
  */
 function endShared() {
   session.orderOf = null;
   const wasShared = state.slot === 'shared';
   state.slot = 'own';
   if (!wasShared || !state.binary) return;
-  const { hash, bytes, name } = state.binary;
+  const { hash, bytes, name, example } = state.binary;
   const own = restoreSession(hash, bytes, name);
   if (!own.size) {
     persist();
@@ -3041,7 +3042,8 @@ function endShared() {
   const kept = session;
   session = own;
   sessionChanged();
-  if (state.current && state.caps.assert) reinspect({ label: 'your own changes', done: 'Your own changes are back' });
+  if (active?.kind === 'load') indexBinary({ name, bytes, hash }, { example, shared: own });
+  else if (state.current && state.caps.assert) reinspect({ label: 'your own changes', done: 'Your own changes are back' });
   toast(`Your own changes to ${name} are back.`, {
     ms: 15000, detail: 'The session\'s changes are kept apart.',
     action: { label: 'Use the session\'s changes instead', run: () => useSharedCopy(kept, hash) },

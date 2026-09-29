@@ -103,6 +103,16 @@ const COUNT_CALLS = `(() => {
   };
 })();`;
 
+/** The directives of every \`list\` request the page makes, in \`window.__lists\`. */
+const LIST_ARGS = `(() => {
+  window.__lists = [];
+  const post = Worker.prototype.postMessage;
+  Worker.prototype.postMessage = function (m, t) {
+    if (m && m.method === 'list') window.__lists.push(m.params.assertions);
+    return post.call(this, m, t);
+  };
+})();`;
+
 /** The engine cannot say which build it is (as when the site changed after the page loaded). */
 const BUILD_FAILS = `(() => {
   const Real = window.Worker;
@@ -997,6 +1007,29 @@ try {
     await sleep(1000);
     const said = await toasts(ben);
     assert.ok(!said.some((t) => /from a live session you were in/.test(t)), `no offer of an old session's copy while in this one: ${JSON.stringify(said)}`);
+  });
+
+  await test('fifth review #6 a join that fails while the received program is being listed lists it again with the student\'s own changes', async () => {
+    const ana = await tab('Ana');
+    await open(ana, { seed: [[OWN_KEY, stored([rawRec(1, 'readonly 0x2000+8')])]] });
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { other: true, script: DELAY_SHIM + LIST_ARGS });
+    await open(ben, { seed: [[OWN_KEY, stored([varRec(MAIN, 'v1', 'bens_own'), rawRec(1, 'volatile 0x3000+4')])]] });
+    await ben.navigate(link);
+    await nameAndGo(ben, 'Ben');
+    await ben.evaluate('window.__kunaDelay = 4000; true');
+    await carryReply(ana, ben);
+    await ben.waitFor(`/Finding the functions in sample.elf/.test(document.getElementById('status').textContent)`, { what: 'Ben lists the program', timeout: 20000 });
+    await ana.closeTab();
+    tabs = tabs.filter((t) => t !== ana);
+    await ben.waitFor(`/closed the connection|stopped answering/.test((document.getElementById('d2collab')?.textContent || '') + [...document.querySelectorAll('.d2-toast')].map((t) => t.textContent).join(' '))`, { what: 'Ben is told', timeout: 30000 });
+    await ben.evaluate('window.__kunaDelay = 0; true');
+    await closeDialog(ben);
+    await ben.waitFor(`/bens_own/.test(document.getElementById('ccode').textContent)`, { what: 'Ben\'s own changes show', timeout: 30000 });
+    await idle(ben);
+    const last = (await ben.evaluate('window.__lists')).at(-1);
+    assert.ok(last.includes('volatile 0x3000+4') && !last.includes('readonly 0x2000+8'), `the list shown is the one for Ben's own changes: ${JSON.stringify(last)}`);
   });
 
   await test('fourth review #10 in a session, an edit or a burst of typed bytes keeps no copy of the whole session for the solo Undo', async () => {
