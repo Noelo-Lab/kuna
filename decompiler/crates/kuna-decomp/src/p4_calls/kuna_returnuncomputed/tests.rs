@@ -206,3 +206,98 @@ fn the_strict_walk_stops_at_an_operation_that_produces_a_value() {
         "arithmetic over leftover is still a value the function computed",
     );
 }
+
+// --- the pair repair on a value held in ONE return register -----------------
+
+fn build_fd_with_blocks() -> (Funcdata, crate::context::BlockId) {
+    let mut m = build_manager();
+    m.insert_space(Rc::new(AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "breg",
+        true,
+        8,
+        1,
+        3,
+        0,
+        1,
+        1,
+    )))
+    .unwrap();
+    let glb = Rc::new(ArchContext::new(m));
+    let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    let mut fd = Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x1000_0000, 0x40).unwrap();
+    let root = fd.bblocks_ref().root.expect("bblocks root");
+    let bl = fd.bblocks_mut().new_block_basic(root);
+    (fd, bl)
+}
+
+/// A live `out = <opc>(inputs...)` in `bl`, `out` sized `size` at ram `out_off`.
+fn live_def(fd: &mut Funcdata, bl: crate::context::BlockId, opc: OpCode, inputs: &[VarnodeId], out_off: u64, size: int4) -> VarnodeId {
+    let r = ram(fd);
+    let op = fd.new_op(inputs.len() as int4, Address::new(Rc::clone(&r), out_off));
+    fd.op_set_opcode(op, TypeOp::new(opc, 0, format!("{opc:?}")));
+    for (i, &vn) in inputs.iter().enumerate() {
+        fd.op_set_input(op, vn, i as int4);
+    }
+    fd.op_insert(op, bl, None);
+    fd.new_varnode_out(size, &Address::new(r, out_off), op).expect("varnode out")
+}
+
+/// `return <value>;` as a live RETURN in `bl`.
+fn live_return(fd: &mut Funcdata, bl: crate::context::BlockId, value: VarnodeId) -> OpId {
+    let r = ram(fd);
+    let op = fd.new_op(2, Address::new(r, 0x1ff0));
+    fd.op_set_opcode(op, TypeOp::new(OpCode::CPUI_RETURN, 0, "RETURN"));
+    let k = fd.new_constant(8, 0);
+    fd.op_set_input(op, k, 0);
+    fd.op_set_input(op, value, 1);
+    fd.op_insert(op, bl, None);
+    op
+}
+
+#[test]
+fn each_half_of_one_register_sits_in_its_own_bytes() {
+    let (mut fd, _) = build_fd_with_blocks();
+    let r = ram(&fd);
+    let whole = fd.new_varnode(8, &Address::new(Rc::clone(&r), 0x3000), None);
+    assert_eq!(slot_storage(&fd, whole, 0, 4), Some(Address::new(Rc::clone(&r), 0x3000)), "little-endian low half");
+    assert_eq!(slot_storage(&fd, whole, 4, 4), Some(Address::new(Rc::clone(&r), 0x3004)), "little-endian high half");
+    assert!(!spans_two_locations(&fd, whole), "one register is one location");
+
+    let be = Rc::clone(fd.get_arch().manage().get_space_by_name("breg").unwrap());
+    let whole_be = fd.new_varnode(8, &Address::new(Rc::clone(&be), 0x100), None);
+    assert_eq!(slot_storage(&fd, whole_be, 0, 4), Some(Address::new(Rc::clone(&be), 0x104)), "big-endian low half");
+    assert_eq!(slot_storage(&fd, whole_be, 4, 4), Some(Address::new(be, 0x100)), "big-endian high half");
+}
+
+#[test]
+fn a_never_written_high_half_of_one_register_is_still_dropped() {
+    // `RAX = PIECE(<RAX's own high bytes, never written>, EAX = a + b)`: the
+    // function computed only the low half into its return register.
+    let (mut fd, bl) = build_fd_with_blocks();
+    let r = ram(&fd);
+    let leftover = fd.new_varnode(4, &Address::new(Rc::clone(&r), 0x3004), None);
+    let a = unwritten(&mut fd, 0x2000, 4);
+    let b = unwritten(&mut fd, 0x2008, 4);
+    let sum = live_def(&mut fd, bl, OpCode::CPUI_INT_ADD, &[a, b], 0x3000, 4);
+    let whole = live_def(&mut fd, bl, OpCode::CPUI_PIECE, &[leftover, sum], 0x3000, 8);
+    let ret = live_return(&mut fd, bl, whole);
+    assert!(strip_uncomputed_return_piece(&mut fd));
+    assert_eq!(fd.obank().get(ret).unwrap().get_in(1), Some(sum), "the return narrows to the computed low half");
+}
+
+#[test]
+fn the_high_half_of_one_register_is_never_returned_alone() {
+    // `RAX = PIECE(a + b, <EAX, never written>)`: returning the sum by itself
+    // would hand back the high 32 bits as the whole value.
+    let (mut fd, bl) = build_fd_with_blocks();
+    let r = ram(&fd);
+    let a = unwritten(&mut fd, 0x2000, 4);
+    let b = unwritten(&mut fd, 0x2008, 4);
+    let sum = live_def(&mut fd, bl, OpCode::CPUI_INT_ADD, &[a, b], 0x3100, 4);
+    let leftover = fd.new_varnode(4, &Address::new(Rc::clone(&r), 0x3000), None);
+    let whole = live_def(&mut fd, bl, OpCode::CPUI_PIECE, &[sum, leftover], 0x3000, 8);
+    let ret = live_return(&mut fd, bl, whole);
+    assert!(!strip_uncomputed_return_piece(&mut fd), "nothing is dropped from a value built in one register");
+    assert_eq!(fd.obank().get(ret).unwrap().get_in(1), Some(whole), "the return keeps all eight bytes");
+}
