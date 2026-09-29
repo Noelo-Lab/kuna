@@ -16,7 +16,8 @@ end, and the raw rows are in `final-l/`.
 | `ptr_char` / `ptr_void` / `ptr_ptr` | 20.6% / 1.5% / 18.3% | **39.3% / 18.8% / 36.8%** | 1st, 1st, 2nd (binja 36.8% / 12.8%; ida 38.3% on `ptr_ptr`) |
 | `bool` / `struct_val` / `ptr_struct` | 21.6% / 0.0% / 0.0% | **42.5% / 28.5% / 4.1%** | 1st, 2nd (ghidra 30.6%), 1st |
 | decbench#93 counterfactual (credit any struct pointer) | 848 | **2,262** (21.0%), mean .4599 | +588 functions over the final build's own count |
-| **casts**, the 4,815 functions kuna and IDA both emit | 40,583 — **1.073× IDA**, 211.6 / kloc, 33.4 / 100 statements | **32,073 — 0.848× IDA**, 169.6 / kloc, **27.0 / 100 statements** | −21.0%, after peaking at 45,126 (1.193×) in round G; fewer than IDA at every opt level (O0 0.815×, O2 0.907×, O2-noinline 0.816×); per statement exactly IDA's density (26.99), per line 1.09×, at -O2 1.12× per statement |
+| **casts**, the 4,815 functions kuna and IDA both emit | 40,583 — **1.073× IDA** | **32,073 — 0.848× IDA** | −21.0%, after peaking at 45,126 (1.193×) in round G; fewer than IDA at every opt level (O0 0.815×, O2 0.907×, O2-noinline 0.816×) |
+| cast density on the same functions, per 100 statements / per 1,000 lines (IDA 26.99 / 155.4) | 33.4 / 211.6 | **27.0 / 169.6** | per statement exactly IDA's density (peak 37.5 in round G), per line 1.09×; by level O0 27.6 (IDA 31.0), O2-noinline 24.1 (IDA 24.8), and **O2 29.2 against IDA's 26.1 (1.12×)**, the one level still denser |
 | goal 2: declarations, fmt/ls/sort/du O0+O2 | 7,085; 151 `[16]` blobs; 11 phantom `// rdx` | **6,956; 65; 7** | −1.8%, −57%; `fmt::main` calls `sub_3700` with 2/2/2 arguments (was 1/2/3) and declares no phantom |
 | goal 3: TRex mean, pooled O0 / O2 | 3.638 / 1.579 | **4.508 / 1.967** | +24% / +25%; GT struct parameters typed as a struct 0 → 173 of 538 (O0), 0 → 95 of 297 (O2) |
 | goal 3: layout, fields only (P / R / F1) | none (no records) | **.8713 / .0932 / .1684** | nesting F1 0 → .0036 |
