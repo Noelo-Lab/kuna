@@ -1542,6 +1542,8 @@ pub struct PrintC {
     /// same-named unique whole owner exists. Their references are relative to
     /// their own declared object, not the overlap group's synthetic symbol.
     local_name_standalones: std::collections::HashSet<crate::context::HighVariableId>,
+    /// Final C declarations, including storage and symbol overrides.
+    pointer_decls: crate::kuna_pointerargs::Declarations,
     /// (kuna `signedness`) The declared-signedness decision for the function
     /// being emitted: which integer locals the operation set says to declare
     /// signed or unsigned, and which of those declarations actually got written
@@ -1588,6 +1590,7 @@ impl PrintC {
             local_name_overrides: std::collections::HashMap::new(),
             local_name_aliases: std::collections::HashMap::new(),
             local_name_standalones: std::collections::HashSet::new(),
+            pointer_decls: crate::kuna_pointerargs::Declarations::default(),
             sign_plan: crate::kuna_typeround::SignPlan::default(),
             cast_implied: crate::kuna_castimplied::ImpliedCasts::default(),
             stmt_op: None,
@@ -2428,6 +2431,10 @@ impl PrintC {
         self.local_name_overrides.clear();
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
+        self.pointer_decls.clear();
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            arch.kuna_pointerargs.borrow_mut().definition(fd);
+        }
         // (kuna `signedness`) Round the declared signedness of this function's
         // integer locals from the operations applied to them.  Computed before
         // any declaration is written and consumed by
@@ -2786,6 +2793,7 @@ impl PrintC {
                     Some(ty) => {
                         let (front, back) = declarator_parts(ty, self.rt_ctx);
                         self.cast_implied.record_param(name, format!("{front}{back}"));
+                        self.pointer_decls.record(name, &front, &back, false);
                         // C++ `pushTypeStart(type, noident)`: the separating token is
                         // `type_expr_nospace` only when there is no identifier AND no
                         // declarator modifier (`noident && typestack.size()==1`); else
@@ -3296,6 +3304,7 @@ impl PrintC {
             if array_count.is_none() {
                 self.cast_implied.record_local(*high, format!("{decl_type}{decl_back}"));
             }
+            self.pointer_decls.record(name, &decl_type, &decl_back, array_count.is_some());
             self.emit.tag_line();
             let id = self.emit.begin_var_decl(&markup);
             match self.lang().forms.decl {
@@ -6779,7 +6788,18 @@ impl PrintC {
             }
             for i in 1..nin {
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
+                    let cast = if self.out_lang == crate::kuna_lang::OutLang::C {
+                        crate::kuna_pointerargs::argument_cast(&PointerView { pc: self, fd }, fd, arch, op, i)
+                    } else {
+                        None
+                    };
+                    if let Some(ct) = &cast {
+                        self.push_cast_open(ct, op);
+                    }
                     self.push_vn_ir(fd, arch, vn, op);
+                    if let Some(ct) = &cast {
+                        self.push_cast_close(ct);
+                    }
                 }
             }
         } else {
@@ -10161,6 +10181,33 @@ impl IntegerLiteral {
 fn cast_strategy_for(arch: &Architecture) -> Option<CastStrategyC> {
     let tlst = arch.types_rc() as std::rc::Rc<dyn crate::dtype::TypeFactory>;
     Some(CastStrategyC::new(tlst))
+}
+
+struct PointerView<'a> {
+    pc: &'a PrintC,
+    fd: &'a Funcdata,
+}
+
+impl crate::kuna_pointerargs::PrintedPointers for PointerView<'_> {
+    fn spell(&self, ty: &std::rc::Rc<crate::dtype::Datatype>) -> String {
+        let (front, back) = declarator_parts(ty, self.pc.rt_ctx);
+        front + &back
+    }
+
+    fn address(&self, high: crate::context::HighVariableId) -> Option<String> {
+        let h = self.fd.high_bank().get(high)?;
+        if h.kuna_symbol_type().is_some_and(|t| matches!(t.get_metatype(),
+            crate::dtype::type_metatype::TYPE_ARRAY | crate::dtype::type_metatype::TYPE_STRUCT | crate::dtype::type_metatype::TYPE_UNION)) {
+            return None;
+        }
+        let (name, offset, _) = self.pc.emitted_high_symbol(self.fd, high)?;
+        if offset > 0 {
+            return None;
+        }
+        self.pc.pointer_decls.address(&name)
+    }
+
+
 }
 
 /// (kuna `castimplied`) The printer's answers to what

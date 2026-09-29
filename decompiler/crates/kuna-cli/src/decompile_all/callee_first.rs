@@ -80,6 +80,7 @@ pub(crate) fn decompile_callee_first(
         ledger.recording = true;
     }
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
+    prog.arch().kuna_pointerargs.borrow_mut().start();
     kuna_decomp::kuna_elemptr::start(prog.arch_mut(), true);
     for &(index, park) in &plan {
         slots[index] = Some(decompile_planned(prog, &targets[index], park, &base));
@@ -96,7 +97,10 @@ pub(crate) fn decompile_callee_first(
     }
     converge_element_globals_callee_first(prog, &targets, &plan, &base, &mut slots);
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
-    slots.into_iter().flatten().collect()
+    let mut out: Vec<_> = slots.into_iter().flatten().collect();
+    kuna_console::project::converge_pointer_arguments(prog, &base, &targets, &mut out);
+    prog.arch().kuna_pointerargs.borrow_mut().stop();
+    out
 }
 
 /// (kuna `elemptr`) [`kuna_console::project::converge_element_globals`] in plan

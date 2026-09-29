@@ -1323,6 +1323,7 @@ pub struct Architecture {
     /// (kuna `protoorder types`) The recovered parameter types each callee stated
     /// for the callers decompiled after it, keyed by `(space index, entry
     /// offset)`.  Copied per function by `seed_protoorder_types`.
+    pub kuna_pointerargs: RefCell<crate::kuna_pointerargs::Batch>,
     pub kuna_protoorder_types: std::collections::HashMap<
         (int4, uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
@@ -2569,6 +2570,7 @@ impl Architecture {
             kuna_callee_write_cache: std::collections::HashMap::new(),
             kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
+            kuna_pointerargs: RefCell::new(crate::kuna_pointerargs::Batch::default()),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),

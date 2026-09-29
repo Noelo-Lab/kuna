@@ -300,7 +300,7 @@ pub(crate) fn run_pool(
         return Ok(PoolOutput { results: Vec::new(), types: None });
     }
     let jobs = affordable_jobs(cfg, JOBS_TAG);
-    let session = Session::open(cfg, inventory)?;
+    let mut session = Session::open(cfg, inventory)?;
     let first = Phase {
         synth: if cfg.synth_base.is_some() { SynthWorker::Record } else { SynthWorker::Off },
         table: None,
@@ -318,10 +318,22 @@ pub(crate) fn run_pool(
         )
     };
     let mut run = run_planned(cfg, &session, jobs, targets, plan, &first, &banner)?;
-    let named = match &cfg.synth_base {
+    let mut named = match &cfg.synth_base {
         Some(base) => name_structs_serially(cfg, &session, jobs, targets, base.clone(), &mut run)?,
         None => Named { kind: first.synth, table: None },
     };
+    let records: std::collections::BTreeMap<_, _> = run.results.iter()
+        .filter_map(|r| r.pointerargs.as_ref()).map(|r| (r.entry, r)).collect();
+    if records.values().any(|r| r.needs_reprint(&records)) {
+        drop(records);
+        let _ = session.close(cfg, &named);
+        session = Session::open(cfg, inventory)?;
+        let phase = Phase { synth: SynthWorker::Serial, table: None };
+        let banner = |_: &[Vec<usize>], _: usize| String::from(
+            "[kuna --jobs] reconciling scalar pointer declarations in one ordered worker");
+        run = run_planned(cfg, &session, 1, targets, vec![(0..total).collect()], &phase, &banner)?;
+        named = Named { kind: SynthWorker::Serial, table: None };
+    }
     let blocks = session.close(cfg, &named);
     let PlannedRun { results, retries } = run;
     warn_about_anomalies(&results, cfg.max_fn_seconds, retries);
@@ -1600,6 +1612,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         object_location: t.object_location.clone(),
         callee_hints: Vec::new(),
         synth: None,
+        pointerargs: None,
         detail: None,
     }
 }
@@ -2033,6 +2046,7 @@ mod tests {
             }),
             callee_hints: vec![0x401200, 0x401340, 0xffff_ffff_ffff_fff0],
             synth: None,
+            pointerargs: None,
             detail: None,
         }
     }
@@ -2048,6 +2062,8 @@ mod tests {
             && a.aliases == b.aliases
             && a.object_location == b.object_location
             && a.callee_hints == b.callee_hints
+            && a.synth == b.synth
+            && a.pointerargs == b.pointerargs
             && a.line_mappings == b.line_mappings
             && a.globals == b.globals
             && a.types.len() == b.types.len()
@@ -2088,7 +2104,18 @@ mod tests {
     fn result_frames_round_trip_byte_exactly() {
         let dir = ScratchDir::create().unwrap();
         let path = dir.path().join("r.bin").to_string_lossy().into_owned();
-        let a = sample_result();
+        let mut a = sample_result();
+        a.synth = Some(Default::default());
+        a.pointerargs = Some(kuna_decomp::kuna_pointerargs::Record {
+            entry: (2, a.byte_address),
+            parameters: vec![None, Some(kuna_decomp::kuna_pointerargs::Parameter {
+                storage: ((3, 0x38), 8), spelling: "unsigned char *".into(),
+            })],
+            calls: vec![kuna_decomp::kuna_pointerargs::Call {
+                callee: (2, 0x1000), index: 1, storage: ((3, 0x38), 8),
+                actual: "unsigned long *".into(), printed: Some("unsigned char *".into()),
+            }],
+        });
         let b = FuncResult {
             name: "sub_1234".into(),
             address: 0x1234,
@@ -2105,6 +2132,7 @@ mod tests {
             object_location: None,
             callee_hints: Vec::new(),
             synth: None,
+            pointerargs: None,
             detail: None,
         };
         {
@@ -2125,7 +2153,7 @@ mod tests {
     }
 
     #[test]
-    fn result_encoding_matches_the_version_four_wire_layout() {
+    fn result_encoding_matches_the_version_five_wire_layout() {
         let dir = ScratchDir::create().unwrap();
         let path = dir.path().join("wire.bin").to_string_lossy().into_owned();
         let result = FuncResult {
@@ -2144,14 +2172,15 @@ mod tests {
             object_location: None,
             callee_hints: Vec::new(),
             synth: None,
+            pointerargs: None,
             detail: None,
         };
-        let expected = b"KUNAJOBRES04\x01\x3f\0\0\0\
+        let expected = b"KUNAJOBRES05\x01\x40\0\0\0\
             \x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0\
             \xff\xff\xff\xff\xff\xff\xff\xff\
             \x01\0\0\0f\0\x01\x01\0\0\0e\0\0\
             \0\0\0\0\0\0\0\0\0\0\0\0\
-            \0\0\0\0\0\0\0\0\0\0\0\0\0";
+            \0\0\0\0\0\0\0\0\0\0\0\0\0\0";
         ResultWriter::create(&path).unwrap().push(&result).unwrap();
         assert_eq!(std::fs::read(path).unwrap(), expected);
         let decoded = decode_results(expected).unwrap();
@@ -2541,6 +2570,7 @@ mod tests {
             object_location: None,
             callee_hints: Vec::new(),
             synth: None,
+            pointerargs: None,
             detail: None,
         };
         let results = vec![

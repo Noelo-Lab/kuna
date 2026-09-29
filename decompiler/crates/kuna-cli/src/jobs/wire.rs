@@ -14,7 +14,7 @@ use kuna_decomp::kuna_structsynth::shard::FunctionRecord;
 use super::TargetSpec;
 
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC3";
-pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES04";
+pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES05";
 
 /// Result-stream frame kind.  One kind today; the envelope is what lets a
 /// truncated tail be dropped rather than guessed.
@@ -328,6 +328,7 @@ impl ResultWriter {
             }
             None => body.push(0),
         }
+        encode_pointer_record(&mut body, r.pointerargs.as_ref());
         self.frame(FRAME_RESULT, &body)
     }
 
@@ -451,11 +452,13 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
     let synth = match r.u8()? {
         0 => None,
         1 => {
-            let (record, _) = FunctionRecord::decode(&body[r.pos..])?;
+            let (record, used) = FunctionRecord::decode(&body[r.pos..])?;
+            r.take(used)?;
             Some(record)
         }
         _ => return None,
     };
+    let pointerargs = decode_pointer_record(&mut r)?;
     Some(FuncResult {
         name,
         address,
@@ -472,6 +475,48 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         object_location,
         callee_hints,
         synth,
+        pointerargs,
         detail: None,
     })
+}
+
+fn encode_pointer_record(body: &mut Vec<u8>, record: Option<&kuna_decomp::kuna_pointerargs::Record>) {
+    use kuna_decomp::kuna_pointerargs::{Entry, Storage};
+    fn key(body: &mut Vec<u8>, key: Entry) { put_u32(body, key.0 as u32); put_u64(body, key.1); }
+    fn storage(body: &mut Vec<u8>, value: Storage) { key(body, value.0); put_u32(body, value.1 as u32); }
+    let Some(record) = record else { body.push(0); return; };
+    body.push(1); key(body, record.entry);
+    put_u32(body, record.parameters.len() as u32);
+    for p in &record.parameters {
+        if let Some(p) = p { body.push(1); storage(body, p.storage); put_str(body, &p.spelling); }
+        else { body.push(0); }
+    }
+    put_u32(body, record.calls.len() as u32);
+    for c in &record.calls {
+        key(body, c.callee); put_u64(body, c.index as u64); storage(body, c.storage);
+        put_str(body, &c.actual); put_opt_str(body, c.printed.as_deref());
+    }
+}
+
+fn decode_pointer_record(r: &mut Reader<'_>) -> Option<Option<kuna_decomp::kuna_pointerargs::Record>> {
+    use kuna_decomp::kuna_pointerargs::{Call, Entry, Parameter, Record, Storage};
+    fn key(r: &mut Reader<'_>) -> Option<Entry> { Some((r.u32()? as i32, r.u64()?)) }
+    fn storage(r: &mut Reader<'_>) -> Option<Storage> { Some((key(r)?, r.u32()? as i32)) }
+    match r.u8()? { 0 => return Some(None), 1 => {}, _ => return None }
+    let entry = key(r)?;
+    let n = r.u32()? as usize;
+    let mut parameters = r.sized(n);
+    for _ in 0..n {
+        parameters.push(match r.u8()? {
+            0 => None,
+            1 => Some(Parameter { storage: storage(r)?, spelling: r.string()? }),
+            _ => return None,
+        });
+    }
+    let n = r.u32()? as usize;
+    let mut calls = r.sized(n);
+    for _ in 0..n {
+        calls.push(Call { callee: key(r)?, index: r.u64()? as usize, storage: storage(r)?, actual: r.string()?, printed: r.opt_string()? });
+    }
+    Some(Some(Record { entry, parameters, calls }))
 }

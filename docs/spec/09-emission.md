@@ -33,6 +33,20 @@ normalization defaults (DIV-34 brace placement, DIV-35 NULL printing,
 DIV-36 compound assignments, DIV-37 truthy conditions, DIV-38 single-statement
 brace elision, DIV-39 inline warning slugs) in `docs/history.md`.
 
+Buffered batches check addresses of scalar locals against the character pointer
+parameters in the callee definitions they actually print (`kuna_pointerargs.rs`).
+The check uses final local declarations and requires a parameter to match both
+its position and finalized ABI storage. A call to a byte-writing callee casts
+the address of an eight-byte local; it never shrinks that local. Character
+pointers can access the object representation without violating C aliasing rules. Arrays,
+composite objects, retained casts and existing pointer expressions keep their
+conversion policy. A caller printed before a conflicting declaration is rendered
+again after the batch. Worker results carry these emission facts; if independent
+workers disagree, the batch is replayed in order by one fresh worker, including
+structure convergence. These definitions affect only emission, so `protoorder
+off` still disables interprocedural type inference. Calls outside a buffered
+batch, trials and call-site-only overrides supply no batch declaration.
+
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
 — a comparison against zero carries no information beyond the value's own
