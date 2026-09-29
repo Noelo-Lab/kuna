@@ -6557,3 +6557,113 @@ int main(void) {
   return 0;
 }
 "#;
+
+/// A 64-bit value a function builds in its one return register from two 32-bit
+/// halves is returned whole, and both arguments that feed it stay parameters.
+/// The return-pair repair read an argument register in the returned value as
+/// whatever the caller had left there: `join_lo_hi` (`((u64)hi << 32) | lo`)
+/// printed `unsigned int join_lo_hi(unsigned int a0) { return a0; }` at -O0,
+/// and `join_hi_sum` (`((u64)(a + 1) << 32) | b`) printed `return a0 + 1;` at
+/// -O2.  The round trip compiles the printed functions with gcc and clang at -O0
+/// and -O2 and checks each build prints what the fixture prints.
+#[test]
+fn a_value_built_in_one_return_register_round_trips_through_the_printed_c() {
+    const FUNCS: &str =
+        "join_lo_hi,join_third,join_sixth,join_signed,join_hi_sum,join_lo_sum,join_after_call,join_hi_lo";
+    const ARITY: [(&str, usize); 8] = [
+        ("join_lo_hi", 2),
+        ("join_third", 3),
+        ("join_sixth", 6),
+        ("join_signed", 2),
+        ("join_hi_sum", 2),
+        ("join_lo_sum", 2),
+        ("join_after_call", 2),
+        ("join_hi_lo", 2),
+    ];
+    const WANT: &str = "1234567800000005 fedcba98ffffffff\n2222222211111111 800000007fffffff\n\
+                        6666666655555555 fffffffe00000001\nfffffffe00000005 ffffffff80000000\n\
+                        1234567900000005 ffffffff00000000\n1234567800000006 fedcba9800000000\n\
+                        1234567800000005 fedcba98ffffffff\n0000000512345678 fffffffffedcba98\n";
+    const MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+typedef unsigned long u64;
+int main(void) {
+  printf("%016lx %016lx\n", F(u64, join_lo_hi)(5u, 0x12345678u), F(u64, join_lo_hi)(0xffffffffu, 0xfedcba98u));
+  printf("%016lx %016lx\n", F(u64, join_third)(9u, 0x11111111u, 0x22222222u), F(u64, join_third)(0u, 0x7fffffffu, 0x80000000u));
+  printf("%016lx %016lx\n", F(u64, join_sixth)(1u, 2u, 3u, 4u, 0x55555555u, 0x66666666u),
+         F(u64, join_sixth)(1u, 2u, 3u, 4u, 1u, 0xfffffffeu));
+  printf("%016lx %016lx\n", (u64)F(long, join_signed)(5, -2), (u64)F(long, join_signed)((int)0x80000000u, -1));
+  printf("%016lx %016lx\n", F(u64, join_hi_sum)(0x12345678u, 5u), F(u64, join_hi_sum)(0xfffffffeu, 0u));
+  printf("%016lx %016lx\n", F(u64, join_lo_sum)(5u, 0x12345678u), F(u64, join_lo_sum)(0xffffffffu, 0xfedcba98u));
+  printf("%016lx %016lx\n", F(u64, join_after_call)(5u, 0x12345678u), F(u64, join_after_call)(0xffffffffu, 0xfedcba98u));
+  printf("%016lx %016lx\n", F(u64, join_hi_lo)(5u, 0x12345678u), F(u64, join_hi_lo)(0xffffffffu, 0xfedcba98u));
+  return 0;
+}
+"#;
+    let sp = specs();
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .collect();
+    for fixture in ["piecehi_gcc_O0_x86_64", "piecehi_clang_O0_x86_64", "piecehi_gcc_O2_x86_64", "piecehi_clang_O2_x86_64"] {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        let (stdout, stderr, ok) =
+            run_kuna(&["decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str()]);
+        if !ok && is_specs_skip(&stderr) {
+            eprintln!("piecehi round trip: skipping (no `.sla`; run `make specs`)");
+            return;
+        }
+        assert!(ok, "kuna decompile-all failed on {fixture}: {stderr}");
+        for (name, arity) in ARITY {
+            let decl = stdout
+                .lines()
+                .find(|l| !l.starts_with(' ') && l.contains(&format!(" {name}(")) && l.ends_with(')'))
+                .unwrap_or_else(|| panic!("{fixture}: no declaration of {name}:\n{stdout}"));
+            let params = decl.split_once('(').unwrap().1.trim_end_matches(')');
+            assert_eq!(params.split(',').count(), arity, "{fixture}: {name} lost an argument: `{decl}`");
+            assert!(
+                decl.starts_with("unsigned long ") || decl.starts_with("long "),
+                "{fixture}: {name} returns less than the eight bytes it computes: `{decl}`"
+            );
+        }
+        for cc in &compilers {
+            for level in ["-O0", "-O2"] {
+                let dir = std::env::temp_dir()
+                    .join(format!("kuna-piecehi-rt-{}-{fixture}-{cc}{level}", std::process::id()));
+                std::fs::create_dir_all(&dir).unwrap();
+                let src = dir.join("rt.c");
+                let exe = dir.join("rt");
+                std::fs::write(
+                    &src,
+                    format!(
+                        "#include <stdio.h>\n#include <sys/wait.h>\n\
+                         #define CONCAT44(h, l) ((unsigned long)(unsigned int)(h) << 32 | (unsigned int)(l))\n\
+                         {stdout}\n{MAIN}"
+                    ),
+                )
+                .unwrap();
+                let out = Command::new(cc)
+                    .args(["-std=gnu11", "-w", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .output()
+                    .expect("spawn the C compiler");
+                assert!(
+                    out.status.success(),
+                    "{cc} {level} rejected the printed C ({fixture}):\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                let run = Command::new(&exe).output().expect("run the round trip");
+                let _ = std::fs::remove_dir_all(&dir);
+                assert_eq!(
+                    String::from_utf8_lossy(&run.stdout),
+                    WANT,
+                    "{fixture} printed and built by {cc} {level} computes a different value:\n{stdout}"
+                );
+            }
+        }
+    }
+}
