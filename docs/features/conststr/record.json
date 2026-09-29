@@ -98,7 +98,22 @@
     "note": "on this corpus the strings kuna did not render never carried a cast"
   },
   "benchmark": {
-    "status": "rerun on the final build: see below"
+    "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow at O0, O2, O2-noinline; metric pinned to decbench 625e892 (final-c/pindb.py, DECBENCH_PIN=_final-c/db625), DECBENCH_NO_CACHE=1",
+    "metric": "type_match",
+    "arms": "on = default build, off = --option conststr off, same binary (main 63dfb436c + branch)",
+    "functions": 10748,
+    "perfect_off": 1674,
+    "perfect_on": 1674,
+    "moved_onto_perfect": 0,
+    "moved_off_perfect": 0,
+    "improved": 0,
+    "worsened": 0,
+    "aggregate": [
+      4032.52,
+      4032.52
+    ],
+    "byte_identical_variables": 10748,
+    "arity_phantom": "variables[] byte-identical in all 10,748 functions: no argument or variable added or removed"
   },
   "corpus_sweep": {
     "instrument": "docs/features/conststr/hunks.py (every changed line must be a read-only pointer becoming a string literal, or a (T *)0x<a> -> &dat_<a> substitution)",
@@ -124,7 +139,15 @@
       ]
     }
   },
-  "parity": {},
+  "parity": {
+    "datatests": "675/675 PARITY OK (no assertion moved: the XML corpus has no section table, so the program-data bound makes the option inert there)",
+    "stages": "1475/1475 PARITY OK; 8 new kuna-conststr keys, no other key moved; kuna-globalref.xml pins conststr off (w_glyph is a GB18030 string)",
+    "test_cli": "269/269",
+    "rust_test": "RUST_TEST_RC=0, 7,474 passed, 0 failed (lane script, main 63dfb436c + branch)",
+    "ghidra_sim": "cargo test -p kuna-ghidra --release -- --include-ignored: all ok",
+    "lint": "make lint ok",
+    "test_tools": "42 ok"
+  },
   "soundness": {
     "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_constant_string_round_trips_through_the_printed_c (+ conststr_spellings_are_checked_without_native_execution): conststr_{gcc,clang}_{O0,O2}_x86_64 exported with conststr on and off, the seven witness functions compiled as printed by gcc and clang against the export's header with each dat_<addr> placed at <addr> and the fixture's data mapped at its own addresses; all print the binary's output (hashes of \"\" and \"tab\\there\\n\", the GB18030 bytes a10765/a1af, the controls)",
     "stage": "tests/stages/kuna-conststr.xml: 8 assertions, two passes (off = the bug, default = the fix), 4 controls in both",
