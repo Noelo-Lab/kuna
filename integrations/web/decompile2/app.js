@@ -209,20 +209,24 @@ function refusedDirective(e, sent) {
   return sent.find((d) => text.includes(`--assert ${JSON.stringify(d)}:`)) || null;
 }
 
+/** A request with no directives (an engine that cannot take them). */
+const NO_DIRECTIVES = { texts: [], byText: new Map(), func: null, qualify: null };
+
 /**
- * Run `call(directives)`; a directive the engine cannot parse is marked
- * refused (the rail says why and it is no longer sent) and the call is
- * retried without it.
+ * Run `call(directives)` with the directives of request `req` (from
+ * `session.prepare`); a directive the engine cannot parse is marked refused
+ * (the rail says why and it is no longer sent) and the call is retried
+ * without it.
  */
-async function withDirectives(call, directives, func = null) {
-  let list = directives;
+async function withDirectives(call, req) {
+  let list = req.texts;
   for (;;) {
     try {
       return await call(list);
     } catch (e) {
       const bad = e instanceof KunaWorkerCancelledError ? null : refusedDirective(e, list);
       if (!bad) throw e;
-      session.markRefused(bad, errorLine(e), func);
+      session.markRefused(bad, errorLine(e), req);
       toast('One of your changes could not be read, so it is no longer applied.', { kind: 'err', detail: `${bad} — ${errorLine(e)}` });
       list = list.filter((d) => d !== bad);
       renderRail();
@@ -235,9 +239,14 @@ function directivesFor(addrHex) {
   return state.caps.assert ? session.assertionsFor(addrHex) : [];
 }
 
-/** Inspect one function, or plainly decompile it on an engine without `inspect`: `{doc, key}` (the cache key of what it sent). */
+/**
+ * Inspect one function, or plainly decompile it on an engine without
+ * `inspect`: `{doc, key, req}` (the cache key of what it sent, and the
+ * request its outcomes belong to).
+ */
 async function fetchFunction(fn) {
   let used = [];
+  const req = state.caps.assert ? session.prepare({ func: fn.address_hex }) : NO_DIRECTIVES;
   const doc = await withDirectives(
     (list) => {
       used = list;
@@ -245,10 +254,9 @@ async function fetchFunction(fn) {
         ? state.kuna.inspect(fn.address_hex, { assertions: list })
         : state.kuna.decompile(fn.address_hex, { assertions: list });
     },
-    directivesFor(fn.address_hex),
-    fn.address_hex,
+    req,
   );
-  return { doc, key: `${fn.address_hex}\n${used.join('\n')}` };
+  return { doc, key: `${fn.address_hex}\n${used.join('\n')}`, req };
 }
 
 // ── the session: the student's edits as --assert directives ───────────────
@@ -462,6 +470,7 @@ async function indexBinary(source, { example = false, keep = null, shared = null
   state.cache.clear();
   let bytes;
   let inventory;
+  let globals = NO_DIRECTIVES;
   const t0 = performance.now();
   try {
     bytes = source.bytes || new Uint8Array(await source.arrayBuffer());
@@ -483,15 +492,17 @@ async function indexBinary(source, { example = false, keep = null, shared = null
     const load = (assertions) => state.kuna.load(bytes, {
       fileName: name, mode: els.mode.value, language: els.lang.value, assertions,
     });
-    const globals = listAssertions();
+    globals = listAssertions();
     try {
       inventory = await withDirectives(load, globals);
     } catch (e) {
-      if (!globals.length || e instanceof KunaWorkerCancelledError || !isCurrent(op)) throw e;
+      const without = globals.texts;
+      if (!without.length || e instanceof KunaWorkerCancelledError || !isCurrent(op)) throw e;
       inventory = await load([]);
+      globals = NO_DIRECTIVES;
       if (capsFrom(inventory).assert) {
-        toast(`Opened ${name} without ${globals.length} of your saved change${globals.length === 1 ? '' : 's'}.`, {
-          kind: 'warn', detail: `${errorLine(e)} — ${globals.join(' · ')}`,
+        toast(`Opened ${name} without ${without.length} of your saved change${without.length === 1 ? '' : 's'}.`, {
+          kind: 'warn', detail: `${errorLine(e)} — ${without.join(' · ')}`,
         });
       }
     }
@@ -513,7 +524,7 @@ async function indexBinary(source, { example = false, keep = null, shared = null
   }
   state.binary.format = inventory.format;
   state.inventory = inventory;
-  session.recordOutcomes(inventory.assertions, null);
+  session.recordOutcomes(inventory.assertions, globals);
   syncPatchButton();
   state.byAddr.clear();
   state.byName.clear();
@@ -581,8 +592,9 @@ function sharedCopy(hash) {
  * the sidebar overlays itself so the inventory keeps the engine's own names.
  */
 function listAssertions() {
-  if (state.caps.assert === false || !session.size) return [];
-  return session.globalAssertions().filter((d) => !d.startsWith('function '));
+  if (state.caps.assert === false || !session.size) return NO_DIRECTIVES;
+  const req = session.prepare({ func: null });
+  return { ...req, texts: req.texts.filter((d) => !d.startsWith('function ')) };
 }
 
 /** Read a picked or dropped file, then open it. Reading comes first: see the input handler. */
@@ -768,10 +780,10 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
   }
   const t0 = performance.now();
   try {
-    const { doc, key } = await fetchFunction(fn);
+    const { doc, key, req } = await fetchFunction(fn);
     if (!isCurrent(op)) return;
     const data = normalizeInspect(doc);
-    session.recordOutcomes(data.assertions, fn.address_hex);
+    session.recordOutcomes(data.assertions, req);
     cacheSet(fn.address_hex, data, key);
     showFunction(fn, data, { focusAddr, key });
     if (collab?.shared && key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
@@ -2195,11 +2207,11 @@ async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit
   setStatus('Updating the code…');
   const t0 = performance.now();
   try {
-    const { doc, key } = await fetchFunction(fn);
+    const { doc, key, req } = await fetchFunction(fn);
     if (!isCurrent(op)) return false;
     const data = normalizeInspect(doc);
     const wasApplied = new Set([...session.outcomes].filter(([, o]) => o.status === 'applied').map(([k]) => k));
-    session.recordOutcomes(data.assertions, fn.address_hex);
+    session.recordOutcomes(data.assertions, req);
     if (snap && !collab?.shared) session.pushUndo(snap);
     persist();
     cacheSet(fn.address_hex, data, key);
@@ -2220,7 +2232,7 @@ async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit
       toast('That change could not be applied.', { kind: 'err', detail: `${row.detail || 'The decompiler refused it.'} (${row.directive})` });
     }
     const broke = data.assertions.filter((r) => r.status === 'rejected' && !fresh.includes(r.directive) &&
-      session.keysOf(r.directive, fn.address_hex).some((k) => wasApplied.has(k)));
+      session.keysOf(r.directive, req).some((k) => wasApplied.has(k)));
     for (const row of broke) {
       toast('An earlier change no longer applies.', {
         kind: 'warn',
@@ -2887,7 +2899,7 @@ function loadRefs() {
     try {
       const res = await withDirectives(
         (list) => state.kuna.xrefs(addr, { assertions: list }),
-        state.caps.assert ? session.globalAssertions() : [],
+        state.caps.assert ? session.prepare({ func: null }) : NO_DIRECTIVES,
       );
       if (!isCurrent(op)) return;
       html = renderXrefs(res, { nameOf: refsNameOf });
@@ -2945,8 +2957,7 @@ els.dl.addEventListener('click', async () => {
   try {
     const project = await withDirectives(
       (list) => state.kuna.project(state.binary.name, { assertions: list }),
-      state.caps.assert ? session.allAssertions(nameOfAddr) : [],
-      '*',
+      state.caps.assert ? session.prepare({ qualify: nameOfAddr }) : NO_DIRECTIVES,
     );
     if (!isCurrent(op)) return;
     download(new Blob([project.bytes], { type: 'application/zip' }), project.downloadName);

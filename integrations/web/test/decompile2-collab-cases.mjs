@@ -559,8 +559,8 @@ await test('third review #9 applying registers leaves a record whose value did n
   r.set('byte:0x11e1', '90');
   const s = new S.Session();
   R.applyRegisters(s, r, [...r.regs.keys()]);
-  s.assertionsFor(MAIN);
-  s.recordOutcomes(s.assertionsFor(MAIN).map((directive) => ({ directive, status: 'applied' })), MAIN);
+  const req = s.prepare({ func: MAIN });
+  s.recordOutcomes(req.texts.map((directive) => ({ directive, status: 'applied' })), req);
   const before = [...s.outcomes.keys()].sort();
   assert.ok(before.length >= 4);
   R.applyRegisters(s, r, [...r.regs.keys()]);

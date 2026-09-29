@@ -109,7 +109,6 @@ export class Session {
     this.bytes = new Map();
     this.outcomes = new Map();
     this.refused = new Set();
-    this.sent = new Map();
     this.undoStack = [];
     this.redoStack = [];
     this.rawSeq = 0;
@@ -289,17 +288,29 @@ export class Session {
     }
     if (this.orderOf) for (const list of groups.values()) list.sort(byBirth(this.orderOf));
     groups.set('bytes', this.#bytesDirectives().filter((d) => includeRefused || !this.refused.has(d.key)));
-    const out = ORDER.flatMap((k) => groups.get(k));
-    if (!includeRefused) {
-      const sent = new Map();
-      for (const d of out) {
-        const keys = sent.get(d.text);
-        if (keys) keys.push(d.key);
-        else sent.set(d.text, [d.key]);
-      }
-      this.sent.set(qualify ? '*' : func, sent);
+    return ORDER.flatMap((k) => groups.get(k));
+  }
+
+  /**
+   * One request's directives (`texts`), with which records produced each
+   * text, captured when the request is made: its outcomes and refusals are
+   * resolved against this, never against what the session sends later.
+   * `func` and `qualify` as for `assertionsFor` / `allAssertions`.
+   */
+  prepare({ func = null, qualify = null } = {}) {
+    const out = this.#directives({ func, qualify });
+    const byText = new Map();
+    for (const d of out) {
+      const keys = byText.get(d.text);
+      if (keys) keys.push(d.key);
+      else byText.set(d.text, [d.key]);
     }
-    return out;
+    return { texts: out.map((d) => d.text), byText, func, qualify };
+  }
+
+  /** Each record's text now, in the scope of request `req` (`key → text`). */
+  #textsNow(req) {
+    return new Map(this.#directives({ func: req.func, qualify: req.qualify, includeRefused: true }).map((d) => [d.key, d.text]));
   }
 
   /** Directives for one `inspect`: every global one, plus this function's, unqualified. */
@@ -318,19 +329,24 @@ export class Session {
   }
 
   /**
-   * The records (their keys) that produced the directive `text` in the last
-   * request for `func` (the function's address, or null for the directives
-   * that describe no single function): two records can give the same text.
+   * The records (their keys) that produced the directive `text` in request
+   * `req` (from `prepare`) and still produce it: two records can give the
+   * same text, and one changed since the request is not described by it.
    */
-  keysOf(text, func) {
-    const keys = this.sent.get(func ?? null)?.get(String(text || '').trim()) || [];
-    return keys.filter((key) => this.records.has(key) || key.startsWith('bytes:'));
+  keysOf(text, req, now = null) {
+    const t = String(text || '').trim();
+    const keys = req?.byText?.get(t) || [];
+    if (!keys.length) return [];
+    const texts = now || this.#textsNow(req);
+    return keys.filter((key) => texts.get(key) === t);
   }
 
-  /** Attach the engine's `assertions[]` rows, from the request for `func`, to the records that produced them. */
-  recordOutcomes(rows, func) {
-    for (const row of rows || []) {
-      for (const key of this.keysOf(row.directive, func)) {
+  /** Attach the engine's `assertions[]` rows, from request `req`, to the records that produced them. */
+  recordOutcomes(rows, req) {
+    if (!rows?.length || !req) return;
+    const now = this.#textsNow(req);
+    for (const row of rows) {
+      for (const key of this.keysOf(row.directive, req, now)) {
         this.outcomes.set(key, { status: row.status, detail: row.detail || null, fatal: !!row.fatal });
       }
     }
@@ -341,13 +357,13 @@ export class Session {
   }
 
   /**
-   * The engine could not parse `directive` (the request for `func` failed on
-   * it): stop sending it until it is edited, and show why. Every record of
-   * that request that produces the text is marked, since the retry leaves out
-   * all of them. Returns their keys.
+   * The engine could not parse `directive` (request `req` failed on it): stop
+   * sending it until it is edited, and show why. Every record of that request
+   * that still produces the text is marked, since the retry leaves out all of
+   * them. Returns their keys.
    */
-  markRefused(directive, detail, func) {
-    const keys = this.keysOf(directive, func);
+  markRefused(directive, detail, req) {
+    const keys = this.keysOf(directive, req);
     for (const key of keys) {
       this.refused.add(key);
       this.outcomes.set(key, { status: 'refused', detail: detail || null, fatal: false });
