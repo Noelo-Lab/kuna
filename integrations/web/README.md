@@ -174,7 +174,7 @@ node integrations/web/test/decompile2-worker.mjs
 node integrations/web/test/decompile2-browser.mjs
 
 # J. Live sessions: tabs of one Chrome, then two Chrome processes over WebRTC.
-node integrations/web/test/decompile2-collab-browser.mjs [--shots DIR]
+node integrations/web/test/decompile2-collab-browser.mjs [--shots DIR]   # COLLAB_TRACE=1 traces links on a failure
 node integrations/web/test/decompile2-collab-page.mjs [--only TEXT]
 node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
 ```

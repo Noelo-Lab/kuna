@@ -126,15 +126,42 @@ class RtcLink extends Inbox {
   }
 }
 
-/** Is the page `peer` still open? Every page holds a Web Lock named after itself until it goes away. */
+/**
+ * Is the page `peer` still open? Every page holds a Web Lock named after
+ * itself until it goes away, and a tab linked to it asks for that lock: it is
+ * granted only when the page is gone. The browser can take a moment to grant
+ * a page its own lock, and a request that arrives first would be granted at
+ * once, as if the page had gone, so a page offers or answers a link only once
+ * its own lock is held (or PRESENCE_MS has passed).
+ */
 const lockName = (peer) => `kuna.d2.peer.${peer}`;
+const PRESENCE_MS = 5000;
 let heldFor = null;
+let held = null;
+let isHeld = false;
 
 /** Hold this page's own lock (once), so tabs linked to it over BroadcastChannel notice when it is gone. */
 export function holdPresenceLock(me) {
-  if (heldFor || !globalThis.navigator?.locks) return;
+  if (heldFor || !globalThis.navigator?.locks) return held;
   heldFor = me;
-  navigator.locks.request(lockName(me), () => new Promise(() => {})).catch(() => {});
+  held = new Promise((granted) => {
+    const done = () => {
+      isHeld = true;
+      granted();
+    };
+    navigator.locks.request(lockName(me), () => {
+      done();
+      return new Promise(() => {});
+    }).catch(done);
+  });
+  return held;
+}
+
+/** Resolves once this page's own lock is held (see above). */
+function present() {
+  if (!held || isHeld) return Promise.resolve();
+  let timer;
+  return Promise.race([held, new Promise((done) => { timer = setTimeout(done, PRESENCE_MS); })]).finally(() => clearTimeout(timer));
 }
 
 class BcLink extends Inbox {
@@ -198,6 +225,7 @@ class BcLink extends Inbox {
  * `answer` with its WebRTC reply), or fails.
  */
 export async function makeOffer({ me, iceServers = [] } = {}) {
+  await present();
   const id = randomId(10);
   const pc = new RTCPeerConnection({ iceServers });
   const edits = pc.createDataChannel('edits', { ordered: true });
@@ -282,6 +310,7 @@ export async function makeOffer({ me, iceServers = [] } = {}) {
  * send back. Throws Error('used') when the offer was taken.
  */
 export async function takeOffer({ me, id, sdp, iceServers = [] } = {}) {
+  await present();
   if (globalThis.BroadcastChannel) {
     const channel = new BroadcastChannel(`kuna.d2.link.${id}`);
     const reply = await new Promise((done) => {

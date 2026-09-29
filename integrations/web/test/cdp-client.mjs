@@ -87,8 +87,13 @@ export async function launchChrome(chromePath = findChrome(), { width = 1280, he
 
 /** Attach to a page target (the first, or `targetId`); resolves a small session API. */
 export async function openPage(port, { onException, targetId = null } = {}) {
-  const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-  const page = targets.find((t) => t.type === 'page' && (!targetId || t.id === targetId));
+  let page = null;
+  for (let tries = 0; !page && tries < 100; tries++) {
+    if (tries) await sleep(100);
+    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+    page = targets.find((t) => t.type === 'page' && (!targetId || t.id === targetId));
+  }
+  if (!page) throw new Error('Chrome listed no page to attach to');
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((done, fail) => { ws.onopen = done; ws.onerror = fail; });
   let seq = 0;

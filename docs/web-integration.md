@@ -841,7 +841,10 @@ send each other all their registers, which merge harmlessly. The ninth person is
 the others; a page that loses a link tries again through the others, and someone no
 longer reachable through anyone leaves the roster. A link keeps what arrives before the
 page listens on it, so a page that is still working out its build id loses nothing the
-other page sent first.
+other page sent first. A data channel can still lose what one side sends the moment it
+opens (seen on busy machines), so each page repeats its hello every second until the
+other page shows it got one by sending anything else, and holds what arrives before the
+other page's hello to read once it comes.
 
 *Presence.* The top bar shows the others as initials in their colours; the tooltip says
 where each one is ("Ben: sum_to, Assembly") and a click follows them until you click or
@@ -989,7 +992,8 @@ formats and architectures**:
    goes away mid-join, a join that stops hearing, a tab of the same browser keeping a
    student's changes apart, the shared order; and a third review's: two joiners bringing
    the same field, a slow open of the received program while another person edits, a
-   join that fails while the program opens. The fuzz test runs seeded random sessions
+   join that fails while the program opens. The fuzz test also loses the first message
+   one side sends on some links, and checks that no join is left hanging. The fuzz test runs seeded random sessions
    (400 by default; `--runs`, `--seed`) of 3 to 5 pages: edits of every kind, joins and
    joins again, leaves, undo and redo, effort changes, failing links. Once they settle it
    checks that linked pages hold the same registers and send the same directives in the
@@ -1033,7 +1037,8 @@ formats and architectures**:
    group, a reply link opened twice or pasted into another invite refused, the top bar
    without overflow at 1024 and 820 px, undo leaving what someone changed since,
    malformed and hostile messages from a same-origin tab dropped, and leaving
-   (`--shots DIR` saves screenshots).
+   (`--shots DIR` saves screenshots; on a failure it prints every toast and dialog of each page,
+   and with `COLLAB_TRACE=1` each link's handshake, data channels and Web Locks).
    **`test/decompile2-collab-page.mjs`** drives the page's side of a session through the
    same defects, one case each in fresh tabs (a second Chrome stands in for another
    computer; the Worker's answers can be delayed so a request is caught in flight): a

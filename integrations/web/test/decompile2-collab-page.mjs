@@ -113,6 +113,13 @@ const BUILD_FAILS = `(() => {
   window.Worker.prototype = Real.prototype;
 })();`;
 
+/** The browser takes 4 s to register each of this page's Web Lock requests (as it can on a busy machine). */
+const LOCKS_LATE = `(() => {
+  if (!navigator.locks) return;
+  const request = navigator.locks.request.bind(navigator.locks);
+  navigator.locks.request = (...args) => new Promise((resolve, reject) => setTimeout(() => request(...args).then(resolve, reject), 4000));
+})();`;
+
 const OWN_KEY = `kuna.d2.session.${SAMPLE_HASH}`;
 const stored = (records) => JSON.stringify({ v: 1, rawSeq: 0, bytes: [], records });
 const MAIN = '0x1198';
@@ -815,6 +822,21 @@ try {
     await ben.evaluate(`dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); true`);
     await ben.waitFor(`/left the session when you went to another page/.test([...document.querySelectorAll('.d2-toast')].map((t) => t.textContent).join(' '))`, { what: 'Ben is told', timeout: 10000 });
     assert.match(await text(ben, '#railchanges h3'), /^Your changes/, 'the page is back to working alone');
+  });
+
+  await test('a tab whose browser is slow to grant it its own presence lock still stays linked to the tab that invited it', async () => {
+    const ana = await tab('Ana');
+    await open(ana);
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { script: LOCKS_LATE });
+    await ben.navigate(link);
+    await nameAndGo(ben, 'Ben');
+    await ben.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf'`, { what: 'Ben joined', timeout: 30000 });
+    await ana.waitFor(`document.querySelectorAll('#d2roster .d2-who:not(.wait)').length === 1`, { what: 'Ana sees Ben', timeout: 20000 });
+    await sleep(6000);
+    assert.equal(await ana.evaluate(`document.querySelectorAll('#d2roster .d2-who').length`), 1, 'Ana still sees Ben');
+    assert.ok(!(await toasts(ana)).some((t) => /Lost the connection/.test(t)), JSON.stringify(await toasts(ana)));
   });
 
   await test('third review #11 a session\'s copy kept apart is offered again when its program is opened later', async () => {
