@@ -33,6 +33,13 @@ normalization defaults (DIV-34 brace placement, DIV-35 NULL printing,
 DIV-36 compound assignments, DIV-37 truthy conditions, DIV-38 single-statement
 brace elision, DIV-39 inline warning slugs) in `docs/history.md`.
 
+An address-only local is declared from its mapped object's type
+(`kuna_addressdecl.rs`), rather than the pointer-width constant used to reference
+it. Thus a four-byte scalar reached through a saved `int *` remains an `int`,
+even on a 64-bit target. Real storage representatives still determine their
+own declarations, including wider and overlapping accesses. This corrects the
+declaration without extending `castobject`'s permission to retype escaped locals.
+
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
 — a comparison against zero carries no information beyond the value's own

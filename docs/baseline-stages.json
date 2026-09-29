@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1568,
-    1568
+    1571,
+    1571
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -34,6 +34,9 @@
     "data:ARRAYSUBFIELD #5: the reported reproducer writes the low half of the 16-byte return container at its real width",
     "data:ARRAYSUBFIELD #6: and the high half likewise",
     "data:ARRAYSUBFIELD #7: honest about what is NOT fixed: the whole-container shift is upstream-faithful and still not valid C",
+    "data:Address-only local #1: both passes declare the four-byte object",
+    "data:Address-only local #2: the saved pointer reaches that object",
+    "data:Address-only local #3: the address width is never the object width",
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
     "data:BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)",
     "data:BRANCHFLIP #3: the flip is logged so its effect is observable",

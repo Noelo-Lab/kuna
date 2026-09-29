@@ -18,6 +18,7 @@ pub mod kuna_castsign; // (kuna) signed declarations for frame locals and the re
 pub mod kuna_typeround; // (kuna) the declared-signedness rounding decision
 pub mod kuna_dedupvardecls;
 pub mod kuna_paramrefdecl;
+pub mod kuna_addressdecl;
 pub mod kuna_truthycond;
 pub mod kuna_braceelide;
 pub mod kuna_warnstyle;

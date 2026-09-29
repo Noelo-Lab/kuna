@@ -232,6 +232,36 @@ mod stack_pointer_high_leaf {
     }
 
     #[test]
+    fn address_only_locals_use_the_object_type_and_storage_locals_keep_their_width() {
+        for (reference, object_size, want) in [(true, 4, "int4"), (true, 8, "int8"), (false, 4, "int8")] {
+            let (mut fd, register) = build_fd();
+            let named_int = |size| {
+                let mut t = Datatype::new(size, type_metatype::TYPE_INT);
+                t.name = format!("int{size}");
+                t.display_name = t.name.clone();
+                Rc::new(t)
+            };
+            let vn = if reference {
+                let vn = fd.new_constant(8, 0xffff_ffff_ffff_fff0);
+                fd.vbank_mut().get_mut(vn).unwrap().update_type(named_int(8));
+                vn
+            } else {
+                fd.new_varnode(8, &Address::new(register, 0x20), Some(named_int(8)))
+            };
+            fd.set_high_level();
+            let high = fd.vbank().get(vn).unwrap().get_high().unwrap();
+            let h = fd.high_bank_mut().get_mut(high).unwrap();
+            h.set_kuna_name("local");
+            h.set_symbol_type(named_int(object_size));
+            h.set_symbol_offset(0);
+            let p = PrintC::new();
+            let (front, back, array, _) = p.rendered_local_decl(&fd, &bare_arch(), high);
+            assert_eq!(front, want, "reference={reference}, object_size={object_size}");
+            assert!(back.is_empty() && array.is_none());
+        }
+    }
+
+    #[test]
     fn constant_symbol_reference_is_not_a_scalar_whole_storage_sibling() {
         let (mut fd, register) = build_fd();
         let partial = fd.new_varnode(

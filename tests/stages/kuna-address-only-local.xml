@@ -1,0 +1,29 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- Synthetic assembly: read_escaped saves &amp;status in a stack pointer,
+     calls write_word(x, p, 0), then reads the four-byte status through p.
+     write_word stores x &lt;&lt; 8 and returns x. A negative return yields -1;
+     otherwise the caller returns the low byte of x. The referenced object
+     used to be declared int8 because its address offset occupied eight bytes.
+     The saved pointer prevents castobject from retyping the escaped object.
+     Handwritten x86-64 SysV code; no external fixture is required. -->
+<bytechunk space="ram" offset="0x1000">89f8c1e00889068d0417c3554889e54883ec20897de4488d45ec488945f0488b4df08b45e4ba000000004889ce89c7e8ccffffff85c07810488b45f08b00c1f80825ff000000c9c3b8ffffffffc9c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="write_word"/>
+<symbol space="ram" offset="0x100b" name="read_escaped"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 write_word(int4 x, int4 *p, int4 o);</com>
+  <com>parse line extern int4 read_escaped(int4 x);</com>
+  <com>option castobject off</com>
+  <com>load function read_escaped</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option castobject on</com>
+  <com>load function read_escaped</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Address-only local #1: both passes declare the four-byte object" min="2" max="2">^  int4 v1;$</stringmatch>
+<stringmatch name="Address-only local #2: the saved pointer reaches that object" min="2" max="2">v2 = &amp;v1;</stringmatch>
+<stringmatch name="Address-only local #3: the address width is never the object width" min="0" max="0">int8 v1;</stringmatch>
+</decompilertest>
