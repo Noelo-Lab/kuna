@@ -35,7 +35,9 @@ async function dispatch(method, params) {
   switch (method) {
     case 'init':
       kuna = await loadKuna(params);
-      return { result: { build: kuna.build, validator: kuna.validator } };
+      return { result: { validator: kuna.validator } };
+    case 'build':
+      return { result: { build: await requireKuna().buildId() } };
     case 'setBinary':
       requireKuna();
       binary = params.bytes instanceof Uint8Array ? params.bytes : new Uint8Array(params.bytes);

@@ -199,16 +199,16 @@ try {
     wasmUrl: `${base}/kuna_wasm.wasm`,
     specRoot: `${base}/specs`,
     workerFactory: (url) => new BrowserWorker(url),
-    hashWasm: true,
   });
   try {
     await hashing.ready();
+    assert.equal(hashing.build, null, 'nothing is hashed while the decompiler starts');
     const wasm = createHash('sha256').update(await readFile(join(dist, 'kuna_wasm.wasm'))).digest('hex');
-    assert.equal(hashing.build, wasm, 'the build id is the SHA-256 of the wasm the Worker compiled');
+    assert.equal(await hashing.buildId(), wasm, 'asked for, the build id is the SHA-256 of the wasm the Worker compiled');
     assert.equal(client.build, null, 'a page that does not ask for it pays nothing');
     hashing.cancel('a new Worker');
     await hashing.ready();
-    assert.equal(hashing.build, wasm, 'and a respawned Worker reports it again');
+    assert.equal(await hashing.buildId(), wasm, 'and a respawned Worker has the same one');
   } finally {
     hashing.close();
   }
@@ -218,7 +218,7 @@ try {
     `one address decompiled lazily (${inventoryMs} ms inventory + ${bodyMs} ms body), ` +
     'cancellation restarted the Worker, the host event loop stayed live, ' +
     `${project.bytes.length} ZIP bytes transferred, the session language reached the engine, ` +
-    'the build id is the hash of the compiled wasm',
+    'the build id is the hash of the compiled wasm, worked out only when asked',
   );
 } finally {
   client.close();

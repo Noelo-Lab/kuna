@@ -92,35 +92,27 @@ function insertPath(rootMap, path, inode) {
   map.set(parts[parts.length - 1], inode);
 }
 
+/** What the server says identifies a response's bytes (ETag, Last-Modified, length), or null when it says nothing. */
+function validatorOf(resp) {
+  const h = resp.headers;
+  const parts = ['etag', 'last-modified', 'content-length'].map((k) => h.get(k) || '');
+  return parts.some(Boolean) ? parts.join('|') : null;
+}
+
 // Compile the wasm, preferring streaming compilation but falling back to a
 // buffered compile when the server doesn't send `Content-Type: application/wasm`.
-// With `hash`, also returns the SHA-256 of the very bytes compiled (a copy of
-// the same response), which the study view's live sessions compare as the
-// engine's build id; `prev` ({validator, build}) skips hashing a response the
-// server marks as unchanged.
-async function compileWasm(url, { hash = false, prev = null } = {}) {
-  if (!hash) {
-    try {
-      return { module: await WebAssembly.compileStreaming(fetch(url)) };
-    } catch (_) {
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${url}`);
-      return { module: await WebAssembly.compile(await resp.arrayBuffer()) };
-    }
-  }
+// Returns `{module, validator}`: the validator is what `buildId` checks later.
+async function compileWasm(url) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${url}`);
-  const h = resp.headers;
-  const validator = h.get('etag') || h.get('last-modified') ? `${h.get('etag') || ''}|${h.get('last-modified') || ''}|${h.get('content-length') || ''}` : null;
-  const same = !!validator && prev?.validator === validator && typeof prev.build === 'string';
-  const copy = same ? null : resp.clone();
-  const [streamed, bytes] = await Promise.all([
-    WebAssembly.compileStreaming(resp).catch(() => null),
-    copy ? copy.arrayBuffer() : null,
-  ]);
-  const module = streamed || await WebAssembly.compile(bytes || await (await fetch(url)).arrayBuffer());
-  const build = same ? prev.build : await sha256Hex(new Uint8Array(bytes));
-  return { module, build, validator };
+  const validator = validatorOf(resp);
+  try {
+    return { module: await WebAssembly.compileStreaming(resp), validator };
+  } catch (_) {
+    const again = await fetch(url);
+    if (!again.ok) throw new Error(`wasm fetch failed (${again.status}): ${url}`);
+    return { module: await WebAssembly.compile(await again.arrayBuffer()), validator };
+  }
 }
 
 // Extract `id → { slafile, dir }` from an `.ldefs` file's `<language …>` tags.
@@ -138,10 +130,13 @@ function parseLdefs(text, dir, map) {
 /**
  * Load the decompiler once: compile the wasm and preload the small spec files.
  * `.sla` files are fetched lazily per binary. Returns `{ list, decompile,
- * project, inspect, read, xrefs, formatName, build, validator }`; every command
- * takes `{ mode, language, assertions }`. With `hashWasm`, `build` is the
- * SHA-256 of the compiled wasm (reused from `prevBuild` when the server marks
- * the response unchanged).
+ * project, inspect, read, xrefs, formatName, validator, buildId }`; every
+ * command takes `{ mode, language, assertions }`. `buildId()` is the engine's
+ * build id, the SHA-256 of the wasm compiled here, worked out only when asked
+ * (the study view asks when a live session starts): it fetches the wasm again
+ * with the cache revalidated, hashes it when the server's validator says it is
+ * the same file, and fails when the site changed since (reload the page).
+ * `prevBuild` ({validator, build}) reuses the id a restarted Worker had.
  *
  * @param {object} opts
  * @param {string} opts.wasmUrl        URL of kuna_wasm.wasm
@@ -149,12 +144,12 @@ function parseLdefs(text, dir, map) {
  * @param {string} [opts.smallBundleUrl]  URL of specs-small.json (default:
  *                                         `${specRoot}-small.json`)
  */
-export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, hashWasm = false, prevBuild = null }) {
+export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, prevBuild = null }) {
   const base = specRoot.replace(/\/$/, '');
   const bundleUrl = smallBundleUrl || `${base}-small.json`;
 
   const [compiled, bundle] = await Promise.all([
-    compileWasm(wasmUrl, { hash: hashWasm, prev: prevBuild }),
+    compileWasm(wasmUrl),
     fetch(bundleUrl).then((r) => {
       if (!r.ok) throw new Error(`spec bundle fetch failed (${r.status}): ${bundleUrl}`);
       return r.json();
@@ -267,10 +262,22 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, hashWasm = f
     );
   }
 
+  let build = prevBuild && compiled.validator && prevBuild.validator === compiled.validator ? prevBuild.build : null;
+
   return {
-    /** The SHA-256 of the compiled wasm, when asked for (`hashWasm`), else null. */
-    build: compiled.build || null,
-    validator: compiled.validator || null,
+    /** What the server said identifies the compiled wasm (null when it said nothing). */
+    validator: compiled.validator,
+    /** The SHA-256 of the compiled wasm (see above). */
+    async buildId() {
+      if (build) return build;
+      const resp = await fetch(wasmUrl, { cache: 'no-cache' });
+      if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${wasmUrl}`);
+      if (compiled.validator && validatorOf(resp) !== compiled.validator) {
+        throw new Error('the site was updated after this page loaded; reload the page');
+      }
+      build = await sha256Hex(new Uint8Array(await resp.arrayBuffer()));
+      return build;
+    },
     /** Format label for the status line (ELF / PE / Mach-O / binary). */
     formatName,
     /** Enumerate functions: `{binary, count, functions:[{name, address, address_hex, size}]}`. */

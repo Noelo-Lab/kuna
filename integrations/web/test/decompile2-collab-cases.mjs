@@ -67,7 +67,7 @@ await test('#2 shared, pages that applied the same registers in other orders sen
   const pages = [a, b].map((r) => {
     const s = new S.Session();
     R.applyRegisters(s, r, [...r.regs.keys()].reverse());
-    s.orderOf = R.birthOrder(s, r);
+    s.orderOf = R.birthOrder(r);
     return s;
   });
   assert.deepEqual(pages[1].allAssertions((x) => x), pages[0].allAssertions((x) => x));
@@ -84,7 +84,7 @@ await test('#2 shared, a later edit keeps a record\'s place, and a newcomer lear
   assert.deepEqual(late.birth('typedef:point'), a.birth('typedef:point'));
   const s = new S.Session();
   R.applyRegisters(s, late, ['typedef:line', 'typedef:point']);
-  s.orderOf = R.birthOrder(s, late);
+  s.orderOf = R.birthOrder(late);
   assert.match(s.globalAssertions()[0], /struct point \{ int x; int y; \}/);
 });
 await test('#2 leaving keeps the session\'s order for the page on its own (and in what it saves)', () => {
@@ -93,7 +93,7 @@ await test('#2 leaving keeps the session\'s order for the page on its own (and i
   r.set('typedef:line', 'struct line { struct point a; } line;');
   const s = new S.Session();
   R.applyRegisters(s, r, ['typedef:line', 'typedef:point']);
-  s.orderOf = R.birthOrder(s, r);
+  s.orderOf = R.birthOrder(r);
   assert.deepEqual(s.toJSON().records.map(([k]) => k), ['typedef:point', 'typedef:line'], 'saved in birth order');
   s.reorder();
   s.orderOf = null;
@@ -107,7 +107,7 @@ await test('#2 births merge as a grow-only minimum, in any order', () => {
   x.receive(oy);
   y.receive(ox);
   assert.deepEqual(x.birth('fn:0x10'), y.birth('fn:0x10'));
-  assert.deepEqual(x.birth('fn:0x10'), [1, 'ana00000']);
+  assert.deepEqual(x.birth('fn:0x10'), [2, 'ana00000']);
 });
 
 // ── Undo in a live session ─────────────────────────────────────────────────
@@ -159,16 +159,19 @@ await test('#9 a global goes back whole or not at all', () => {
   assert.deepEqual(res.skipped.map((x) => x.by), ['ben00000', 'ben00000']);
   assert.equal(a.value('data:0x4010:type'), 'int');
 });
-await test('#9 a half written null keeps the other half\'s record', () => {
+await test('second review #10 a global with a half written null is gone on every page, whatever each page held before', () => {
   const r = new R.Replica('ana00000');
   r.set('data:0x4010:type', 'int');
   r.set('data:0x4010:name', 'total');
-  const s = new S.Session();
-  R.applyRegisters(s, r, ['data:0x4010:type']);
+  const held = new S.Session();
+  R.applyRegisters(held, r, ['data:0x4010:type', 'data:0x4010:name']);
+  const fresh = new S.Session();
   r.set('data:0x4010:type', null);
-  R.applyRegisters(s, r, ['data:0x4010:type']);
-  assert.ok(s.records.get('data:0x4010'), 'the global is still there');
-  assert.equal(s.records.get('data:0x4010').name, 'total');
+  r.set('data:0x4010:name', 'renamed');
+  for (const s of [held, fresh]) R.applyRegisters(s, r, ['data:0x4010:type', 'data:0x4010:name']);
+  assert.deepEqual([...held.records.keys()], [...fresh.records.keys()], 'both pages make the same Session from the same registers');
+  assert.equal(held.records.get('data:0x4010'), undefined, 'a global needs both halves');
+  assert.deepEqual([...R.registersOf(held)], [], 'and its registers read back as nothing to send');
 });
 
 // ── merging and sharing ────────────────────────────────────────────────────
@@ -183,12 +186,13 @@ await test('#7 another page\'s retype of a local keeps this page\'s rename of it
 await test('#11 a value the others refuse is tried again, and a later valid value of the field is shared', () => {
   const s = new S.Session();
   const r = new R.Replica('ana00000');
+  const base = new Map();
   s.setComment(MAIN, '0x11b5', '#hot');
-  const first = R.diffSession(s, r);
+  const first = R.localChanges(R.changedBetween(base, R.registersOf(s)), r);
   assert.deepEqual(first.changes, []);
   assert.equal(first.refused.length, 1);
   s.setComment(MAIN, '0x11b5', 'hot path');
-  assert.deepEqual(R.diffSession(s, r).changes, [{ key: `comment:${MAIN}:0x11b5`, value: 'hot path' }]);
+  assert.deepEqual(R.localChanges(R.changedBetween(base, R.registersOf(s)), r).changes, [{ key: `comment:${MAIN}:0x11b5`, value: 'hot path' }]);
   assert.equal(S.directiveTextProblem('#hot') !== null, true, 'and the page\'s own note dialog refuses it too');
 });
 await test('#16 a counter far past this page\'s is refused, so one op cannot stop everyone', () => {
@@ -232,7 +236,7 @@ function linkPair() {
     buffered() { return 0; },
     drain() { return Promise.resolve(); },
     deliver(data, channel) {
-      if (this.closed) return;
+      if (this.closed || this.lossy) return;
       const to = this.other;
       setImmediate(() => { if (!to.closed) { delivered++; to.onmessage?.(data, channel); } });
     },
@@ -272,7 +276,7 @@ function connector(me) {
     },
   };
 }
-function member(peer, name, { file = null, bytes = null, replica = null } = {}) {
+function member(peer, name, { file = null, bytes = null, replica = null, group = {} } = {}) {
   const p = {
     name, file, bytes, events: [],
     fileMeta() { return this.file; }, fileBytes() { return this.bytes; }, isExample() { return false; },
@@ -281,7 +285,7 @@ function member(peer, name, { file = null, bytes = null, replica = null } = {}) 
     event(kind, info) { this.events.push([kind, info.name]); },
   };
   const r = replica || new R.Replica(peer);
-  const g = new G.Group({ me: peer, name, build: BUILD, replica: r, connect: connector(peer), page: p });
+  const g = new G.Group({ me: peer, name, build: BUILD, replica: r, connect: connector(peer), page: p, ...group });
   return { g, p, replica: r, peer };
 }
 function invite(host, guest) {
@@ -421,6 +425,73 @@ await test('D an edit crosses a full mesh once per page, not once per pair', asy
   assert.ok(same(ana, ben, cy, dee));
   assert.equal(copies, 3, `copies delivered: ${copies}`);
   for (const m of [ana, ben, cy, dee]) m.g.leave();
+});
+
+// ── a second review: what is passed on, and pages comparing notes ──────────
+await test('second review #5 a newer write of the same value is passed on, so a later write in between cannot split the pages', async () => {
+  blocked.add('bbbbbbbb-cccccccc');
+  const quiet = { sumMs: 1e8 };
+  const ana = member('aaaaaaaa', 'Ana', { file: FILE, bytes: FILE_BYTES, group: quiet });
+  ana.g.create();
+  const ben = member('bbbbbbbb', 'Ben', { group: quiet });
+  const cy = member('cccccccc', 'Cy', { group: quiet });
+  try {
+    invite(ana, ben);
+    await settle(150);
+    invite(ana, cy);
+    await settle(400);
+    assert.ok(!ben.g.peers.has('cccccccc'), 'Ben and Cy cannot link: Cy hears Ben only through Ana');
+    const K = 'fn:0x5555';
+    ben.g.local([ben.replica.set(K, 'x')]);
+    await settle(150);
+    ben.replica.counter += 10;
+    ben.g.local([ben.replica.set(K, 'x')]);
+    await settle(150);
+    assert.deepEqual(cy.replica.clock(K), ben.replica.clock(K), 'Cy has Ben\'s newer clock, passed on by Ana');
+    const between = [ben.replica.clock(K)[0] - 5, 'cccccccc'];
+    const op = { k: K, v: 'y', c: between, b: between };
+    cy.replica.apply(op);
+    cy.g.local([op]);
+    await settle(200);
+    assert.deepEqual([ana, ben, cy].map((m) => m.replica.value(K)), ['x', 'x', 'x'], 'every page holds the same value');
+  } finally {
+    blocked.delete('bbbbbbbb-cccccccc');
+    for (const m of [ana, ben, cy]) m.g.leave();
+  }
+});
+await test('second review #6 an edit lost on a link that dies reaches that page through the others', async () => {
+  const fast = { sumMs: 300, quietMs: 100 };
+  const ana = member('aaaaaaaa', 'Ana', { file: FILE, bytes: FILE_BYTES, group: fast });
+  ana.g.create();
+  const ben = member('bbbbbbbb', 'Ben', { group: fast });
+  const cy = member('cccccccc', 'Cy', { group: fast });
+  try {
+    invite(ana, ben);
+    await settle(150);
+    invite(ana, cy);
+    await settle(600);
+    assert.ok(ben.g.peers.get('cccccccc')?.member, 'a full mesh');
+    const ab = ana.g.peers.get('bbbbbbbb').link;
+    ab.lossy = true;
+    ab.other.lossy = true;
+    const K = 'comment:0x1198:0x11b5';
+    ana.g.local([ana.replica.set(K, 'lost on the way to Ben')]);
+    await settle(150);
+    assert.equal(cy.replica.value(K), 'lost on the way to Ben');
+    assert.equal(ben.replica.value(K), null, 'Ben did not get it: the link to Ana was already failing');
+    blocked.add('aaaaaaaa-bbbbbbbb');
+    ab.close();
+    let got = false;
+    for (let i = 0; i < 40 && !got; i++) {
+      await sleep(100);
+      got = ben.replica.value(K) === 'lost on the way to Ben';
+    }
+    assert.ok(got, 'Ben has the edit, from Cy');
+    assert.ok(same(ana, ben, cy));
+  } finally {
+    blocked.delete('aaaaaaaa-bbbbbbbb');
+    for (const m of [ana, ben, cy]) m.g.leave();
+  }
 });
 
 // ── the BroadcastChannel knock ─────────────────────────────────────────────

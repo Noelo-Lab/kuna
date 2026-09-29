@@ -19,16 +19,15 @@ export class KunaWorkerClient {
     smallBundleUrl,
     baseUrl = globalThis.document?.baseURI || import.meta.url,
     workerFactory,
-    hashWasm = false,
   }) {
     if (!wasmUrl || !specRoot) throw new Error('wasmUrl and specRoot are required');
     this.workerUrl = asUrl(workerUrl, baseUrl);
     this.initParams = {
       wasmUrl: asUrl(wasmUrl, baseUrl),
       specRoot: asUrl(specRoot, baseUrl).replace(/\/$/, ''),
-      hashWasm,
     };
     this.build = null;
+    this.validator = undefined;
     this.onbuild = null;
     if (smallBundleUrl) this.initParams.smallBundleUrl = asUrl(smallBundleUrl, baseUrl);
     this.workerFactory = workerFactory || ((url, options) => new Worker(url, options));
@@ -84,10 +83,16 @@ export class KunaWorkerClient {
     };
     this.readyPromise = this.request('init', this.initParams).then((info) => {
       if (generation === this.generation && info && typeof info === 'object') {
-        const was = this.build;
-        this.build = info.build || null;
-        if (info.build) this.initParams.prevBuild = { validator: info.validator, build: info.build };
-        if (was && info.build && was !== info.build) this.onbuild?.(info.build, was);
+        const first = this.validator === undefined;
+        const changed = !first && (info.validator ?? null) !== this.validator;
+        this.validator = info.validator ?? null;
+        if (changed || (!first && this.validator === null)) {
+          const was = this.build;
+          this.build = null;
+          delete this.initParams.prevBuild;
+          if (was && changed) this.onbuild?.(null, was);
+          else if (was) this.buildId().then((now) => { if (now !== was) this.onbuild?.(now, was); }).catch(() => {});
+        }
       }
       return info;
     });
@@ -131,6 +136,22 @@ export class KunaWorkerClient {
 
   async ready() {
     return this.readyPromise;
+  }
+
+  /**
+   * The engine's build id: the SHA-256 of the wasm this Worker compiled,
+   * worked out on the first call (nothing is hashed until someone asks). A
+   * restarted Worker that compiled a different wasm calls `onbuild`.
+   */
+  async buildId() {
+    await this.ready();
+    if (this.build) return this.build;
+    const generation = this.generation;
+    const { build } = await this.request('build');
+    if (generation !== this.generation) return this.buildId();
+    this.build = build;
+    this.initParams.prevBuild = { validator: this.validator, build };
+    return build;
   }
 
   checkGeneration(generation) {

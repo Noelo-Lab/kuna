@@ -83,7 +83,7 @@ function round(peers, n, lateJoiner) {
   const sessions = reps.map((r) => {
     const s = new Session();
     applyRegisters(s, r, [...r.regs.keys()].reverse());
-    s.orderOf = birthOrder(s, r);
+    s.orderOf = birthOrder(r);
     return s;
   });
   const want = JSON.stringify(sessions[0].allAssertions((a) => a));
@@ -166,7 +166,7 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   const shared = (session) => {
     const r = new Replica('ana00000');
     for (const [k, v] of registersOf(build('abcdefghijk'))) r.set(k, v);
-    session.orderOf = birthOrder(session, r);
+    session.orderOf = birthOrder(r);
     return session;
   };
   assert.notDeepEqual(two.allAssertions(nameOf), one.allAssertions(nameOf), 'on its own, a page sends its directives in the order it made them');
@@ -253,6 +253,8 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
     { t: 'cur', off: true },
     { t: 'full' },
     { t: 'bye' },
+    { t: 'resync' },
+    { t: 'sum', h: '12:0123456789abcdef' },
   ];
   for (const m of good) assert.ok(validMessage(m), `valid: ${JSON.stringify(m)}`);
   const bad = [
@@ -273,6 +275,9 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
     { t: 'cur', off: true, fn: '0x1198' },
     { t: 'relay', to: 'ben00000', from: 'ana00000', kind: 'offer', id: 'abcdefghij', d: { u: 'abcd', p: 'x'.repeat(24), f: 'A'.repeat(64), c: ['1.2.3.4 5 hu 1\r\na=x'] } },
     { t: 'ops', ops: [] },
+    { t: 'sum', h: '12:0123456789ABCDEF' },
+    { t: 'sum', h: 'x'.repeat(40) },
+    { t: 'sum', h: '1:0123456789abcdef', extra: 1 },
   ];
   for (const m of bad) assert.equal(validMessage(m), false, `invalid: ${JSON.stringify(m)}`);
   assert.deepEqual(readMessage('{"t":"bye"}'), { t: 'bye' });

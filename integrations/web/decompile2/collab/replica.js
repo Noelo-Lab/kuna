@@ -8,13 +8,16 @@
 // they arrived in; a deletion is a write of null. Each register also keeps its
 // birth clock, the smallest clock any page has written it with (merged as a
 // grow-only minimum, sent along with every op), which orders the session's
-// directives the same way on every page.
+// directives the same way on every page. A replica keeps a digest of all its
+// registers (order-free, updated with each write), so two pages can tell
+// cheaply whether they hold the same session.
 //
-// `registersOf` reads a Session as registers, `diffSession` finds what a page
-// changed since, and `applyRegisters` writes registers back into a Session,
-// field by field. Ops from other pages pass `validOp` first: a key of a known
-// shape, a value of its kind's shape (the same text rules as the page's own
-// dialogs, from session.js), and a clock within bounds. DOM-free.
+// `registersOf` reads a Session as registers, `changedBetween` and
+// `localChanges` find what a page changed since a base, and `applyRegisters`
+// writes registers back into a Session, field by field. Ops from other pages
+// pass `validOp` first: a key of a known shape, a value of its kind's shape
+// (the same text rules as the page's own dialogs, from session.js), and a
+// clock within bounds. DOM-free.
 import { addrHex } from '../addr.js';
 import { TEXT_LIMITS, UNDO_MAX, directiveTextProblem, declarationProblem } from '../session.js';
 
@@ -24,6 +27,9 @@ const COUNTER_WINDOW = 2 ** 24;
 
 /** Whether clock `a` is later than clock `b`. */
 export const newer = (a, b) => (a[0] !== b[0] ? a[0] > b[0] : a[1] > b[1]);
+
+/** The clock of a write older than any a page makes (`[1, peer]`: every page's own writes start at 2). */
+export const oldestClock = (peer) => [1, peer];
 
 const HEX = '0x[0-9a-f]{1,16}';
 const SYM = '[A-Za-z_][A-Za-z0-9_]{0,199}';
@@ -47,11 +53,23 @@ const KINDS = [
   [/^setting:mode$/, (v) => MODES.includes(v)],
 ];
 
+/** FNV-1a of `text` from `seed`, 32 bits. */
+function fnv(text, seed) {
+  let h = seed;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+const hex8 = (n) => n.toString(16).padStart(8, '0');
+
 const clockOk = (c) => Array.isArray(c) && c.length === 2 && Number.isSafeInteger(c[0]) && c[0] >= 1 && c[0] <= MAX_COUNTER &&
   typeof c[1] === 'string' && /^[a-z0-9]{1,16}$/.test(c[1]);
 
 /** Whether `value` may be written to `key` (the check every op from another page passes). */
-function validValue(key, value) {
+export function validValue(key, value) {
   if (typeof key !== 'string' || key.length > 300) return false;
   const kind = KINDS.find(([re]) => re.test(key));
   return !!kind && (value === null || (typeof value === 'string' && kind[1](value)));
@@ -69,9 +87,22 @@ export function validOp(op) {
 export class Replica {
   constructor(peer) {
     this.peer = peer;
-    this.counter = 0;
+    this.counter = 1;
     this.regs = new Map();
     this.live = 0;
+    this.sum = [0, 0];
+  }
+
+  /** Fold one register into (or out of) the digest: XOR, so order does not matter. */
+  #mix(key, r) {
+    const text = `${key}\u0000${r.v === null ? '\u0001' : r.v}\u0000${r.c[0]}.${r.c[1]}\u0000${r.b[0]}.${r.b[1]}`;
+    this.sum[0] = (this.sum[0] ^ fnv(text, 0x811c9dc5)) >>> 0;
+    this.sum[1] = (this.sum[1] ^ fnv(text, 0x050c5d1f)) >>> 0;
+  }
+
+  /** The same text on two pages when they hold the same registers (values, clocks and births). */
+  digest() {
+    return `${this.regs.size}:${hex8(this.sum[0])}${hex8(this.sum[1])}`;
   }
 
   value(key) {
@@ -91,7 +122,7 @@ export class Replica {
     return this.regs.get(key)?.b ?? null;
   }
 
-  /** A local write; returns the op to send. */
+  /** A local write (its counter is always past 1, which is kept for `OLDEST`); returns the op to send. */
   set(key, value) {
     const c = [++this.counter, this.peer];
     const op = { k: key, v: value, c, b: this.regs.get(key)?.b || c };
@@ -109,28 +140,35 @@ export class Replica {
     return this.apply(op);
   }
 
-  /** Apply a local or already-checked op; true when it changed the register's value or birth. */
+  /**
+   * Apply a local or already-checked op; true when the register took it (a
+   * newer clock, even with the same value, or an earlier birth). A page passes
+   * on every op its register took, so the pages it forwards to end with the
+   * same clocks, not only the same values.
+   */
   apply(op) {
     if (op.c[0] > this.counter) this.counter = op.c[0];
     const cur = this.regs.get(op.k);
     const b = op.b || op.c;
     if (!cur) {
-      this.regs.set(op.k, { v: op.v, c: [op.c[0], op.c[1]], b: [b[0], b[1]] });
+      const r = { v: op.v, c: [op.c[0], op.c[1]], b: [b[0], b[1]] };
+      this.regs.set(op.k, r);
+      this.#mix(op.k, r);
       if (op.v !== null) this.live++;
       return true;
     }
-    let changed = false;
-    if (newer(cur.b, b)) {
-      cur.b = [b[0], b[1]];
-      changed = true;
-    }
-    if (newer(op.c, cur.c)) {
-      changed = changed || cur.v !== op.v;
+    const earlier = newer(cur.b, b);
+    const later = newer(op.c, cur.c);
+    if (!earlier && !later) return false;
+    this.#mix(op.k, cur);
+    if (earlier) cur.b = [b[0], b[1]];
+    if (later) {
       this.live += (op.v !== null) - (cur.v !== null);
       cur.v = op.v;
       cur.c = [op.c[0], op.c[1]];
     }
-    return changed;
+    this.#mix(op.k, cur);
+    return true;
   }
 
   /** Every register as an op, for a page catching up. */
@@ -195,31 +233,49 @@ export function registersOf(session) {
 }
 
 /**
- * What this page changed since the registers last matched its Session:
- * `{changes: [{key, value}], refused: [{key, value}]}`. A value another page
- * would refuse, or a new register past `maxLive`, is refused (and tried again
- * next time, so a later valid value is shared); a register the Session no
- * longer has is written null. The decompiler effort is not a Session field.
+ * The registers that differ from `base` to `now` (two `registersOf` maps), as
+ * `key → value` (null where `now` no longer has one): what a student changed
+ * since the Session last matched the registers. The decompiler effort is not
+ * a Session field.
  */
-export function diffSession(session, replica, { maxLive = Infinity } = {}) {
-  const regs = registersOf(session);
+export function changedBetween(base, now) {
+  const out = new Map();
+  for (const [key, value] of now) if (base.get(key) !== value) out.set(key, value);
+  for (const key of base.keys()) if (!now.has(key) && !key.startsWith('setting:')) out.set(key, null);
+  return out;
+}
+
+/**
+ * Which of the writes `want` (`key → value`) to send: `{changes, same,
+ * refused}`. One the registers already hold is `same`; a value another page
+ * would refuse, or a new register past `maxLive` live ones, is refused (and
+ * tried again at the next change, so a later valid value is shared).
+ */
+export function localChanges(want, replica, { maxLive = Infinity } = {}) {
   const changes = [];
+  const same = [];
   const refused = [];
   let live = replica.liveCount();
-  for (const [key, value] of regs) {
-    if (replica.value(key) === value) continue;
-    const fresh = replica.value(key) === null;
-    if (!validValue(key, value) || (fresh && live >= maxLive)) {
-      refused.push({ key, value, why: validValue(key, value) ? 'full' : 'invalid' });
+  for (const [key, value] of want) {
+    const had = replica.value(key);
+    if (had === value) {
+      same.push(key);
       continue;
     }
-    if (fresh) live++;
+    if (value !== null && !validValue(key, value)) {
+      refused.push({ key, value, why: 'invalid' });
+      continue;
+    }
+    if (value !== null && had === null) {
+      if (live >= maxLive) {
+        refused.push({ key, value, why: 'full' });
+        continue;
+      }
+      live++;
+    }
     changes.push({ key, value });
   }
-  for (const [key, r] of replica.regs) {
-    if (r.v !== null && !key.startsWith('setting:') && !regs.has(key)) changes.push({ key, value: null });
-  }
-  return { changes, refused };
+  return { changes, same, refused };
 }
 
 /** The session record key a register lives in (`bytes` for a byte). */
@@ -239,7 +295,10 @@ export function recordKeyOf(register) {
  * Write the registers `keys` (from `replica`) into `session`, field by field:
  * a register the replica has never held leaves its field alone, so applying
  * another page's retype of a local keeps this page's rename of it. A global
- * needs a type and a name: a half written null keeps the other half's record.
+ * is a type and a name together: it exists only while both hold a value (a
+ * half written null, as when one page deletes a global another renames at the
+ * same time, removes it), so every page makes the same Session from the same
+ * registers whatever it held before.
  */
 export function applyRegisters(session, replica, keys) {
   const done = new Set();
@@ -262,11 +321,10 @@ export function applyRegisters(session, replica, keys) {
         const addr = parts[1];
         if (done.has('data:' + addr)) break;
         done.add('data:' + addr);
-        const rec = session.records.get(`data:${addr}`);
         const type = field(`data:${addr}:type`);
         const name = field(`data:${addr}:name`);
-        if (type === null && name === null) session.setData(addr, null, null);
-        else session.setData(addr, type ?? rec?.type ?? null, name ?? rec?.name ?? null);
+        if (type === undefined && name === undefined) break;
+        session.setData(addr, type || null, name || null);
         break;
       }
       case 'typedef': session.setTypedef(parts[1], v); break;
@@ -292,18 +350,32 @@ export function applyRegisters(session, replica, keys) {
 }
 
 /**
- * The order of a session's records in a live session: each record's birth,
- * the earliest of its registers' birth clocks (null for a record the
- * registers do not hold yet, which then comes last).
+ * Each record's place and author in the registers: `recordKey → {birth,
+ * clock}`, the earliest birth of its registers and the newest write that
+ * holds a value (null when every register of it is deleted).
  */
-export function birthOrder(session, replica) {
-  const cache = new Map();
+export function recordIndex(replica) {
+  const index = new Map();
   for (const [key, r] of replica.regs) {
     const rk = recordKeyOf(key);
-    const b = cache.get(rk);
-    if (!b || newer(b, r.b)) cache.set(rk, r.b);
+    const e = index.get(rk);
+    if (!e) index.set(rk, { birth: r.b, clock: r.v === null ? null : r.c });
+    else {
+      if (newer(e.birth, r.b)) e.birth = r.b;
+      if (r.v !== null && (!e.clock || newer(r.c, e.clock))) e.clock = r.c;
+    }
   }
-  return (recordKey) => cache.get(recordKey) || null;
+  return index;
+}
+
+/**
+ * The order of a session's records in a live session (`Session.orderOf`):
+ * each record's birth, from `recordIndex` of a replica (or an index already
+ * made); null for a record the registers do not hold yet, which then comes last.
+ */
+export function birthOrder(source) {
+  const index = source instanceof Map ? source : recordIndex(source);
+  return (recordKey) => index.get(recordKey)?.birth || null;
 }
 
 /** What a register change did, in words, for "Ben … after you" (`prev`: the value it replaced). */

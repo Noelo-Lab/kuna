@@ -121,6 +121,7 @@ function beginOperation(kind, { clearSession = false } = {}) {
     active = null;
     if (clearSession) state.kuna.clear('superseded by a new binary');
     else state.kuna.cancel('superseded by another operation');
+    if (prev.kind === 'function') state.opening = null;
     prev.onCancel?.();
     if (prev.kind === 'project' && kind !== 'project') toast('The C code download was stopped. Start it again from the ⋯ menu.', { kind: 'warn' });
   }
@@ -154,8 +155,10 @@ els.cancel.addEventListener('click', () => {
   const cancelled = active;
   active = null;
   opSeq++;
+  if (cancelled.kind === 'function') state.opening = null;
   if (cancelled.kind === 'load') {
     state.kuna.clear('cancelled by user');
+    if (collab?.active) collab.leave({ why: 'You stopped opening the program, so you left the session.' });
     resetBinary();
   } else {
     state.kuna.cancel('cancelled by user');
@@ -268,7 +271,7 @@ function persist() {
 // ── startup ────────────────────────────────────────────────────────────────
 
 try {
-  state.kuna = new KunaWorkerClient({ wasmUrl: '../kuna_wasm.wasm', specRoot: '../specs', hashWasm: true });
+  state.kuna = new KunaWorkerClient({ wasmUrl: '../kuna_wasm.wasm', specRoot: '../specs' });
   await state.kuna.ready();
   setStatus('Ready. Open a program or try an example', 'ok');
   els.pick.removeAttribute('aria-disabled');
@@ -721,6 +724,7 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
       state.kuna.cancel('superseded by a cached function');
       syncButtons();
     }
+    state.opening = null;
     showFunction(fn, cached, { focusAddr, key: cacheKey(fn.address_hex) });
     if (!active) setStatus(cached.error ? `Could not decompile ${displayName(fn)}` : `Showing ${displayName(fn)}`, cached.error ? 'err' : 'ok');
     return;
@@ -781,7 +785,7 @@ function showFunction(fn, data, { focusAddr = null, keep = false, key = null } =
   const frame = data.hasInstructions ? frameModel(data, arch) : null;
   if (frame?.supported) Object.assign(index, slotIndex(frame));
   state.current = {
-    fn, data, segs, index, arch, frame, inferred, key: key ?? cacheKey(fn.address_hex),
+    fn, data, segs, index, arch, frame, inferred, key: key ?? (state.current?.data === data ? state.current.key : cacheKey(fn.address_hex)),
     decls: localDecls(data.code),
     codeLines: data.code.split('\n'),
     rust: /rust/i.test(data.language || ''),
@@ -1599,7 +1603,7 @@ els.viewMenu.addEventListener('change', (e) => {
   else value = input.value;
   updatePrefs({ [key]: value });
   applyPaneClasses();
-  if (key === 'asmInfer' && state.current) showFunction(state.current.fn, state.current.data, { keep: true });
+  if (key === 'asmInfer' && state.current) showFunction(state.current.fn, state.current.data, { keep: true, key: state.current.key });
   else if (['asmCMode', 'asmArrows', 'cLineAddrs'].includes(key)) rerender('asm', 'c');
   else if (key === 'asmSpelling') {
     rerender('asm');
@@ -1610,7 +1614,7 @@ els.viewMenu.addEventListener('click', (e) => {
   if (!e.target.closest('[data-act=reset]')) return;
   updatePrefs({ ...DEFAULT_PREFS, view: state.view, theme: state.prefs.theme, hints: state.prefs.hints, tipSeen: state.prefs.tipSeen, rail: state.prefs.rail });
   applyPaneClasses();
-  if (state.current) showFunction(state.current.fn, state.current.data, { keep: true });
+  if (state.current) showFunction(state.current.fn, state.current.data, { keep: true, key: state.current.key });
   renderViewMenu();
 });
 
@@ -2973,10 +2977,11 @@ async function openShared({ name, bytes, hash, session: shared, mode, open = nul
  */
 function endShared() {
   session.orderOf = null;
-  if (state.slot !== 'shared' || !state.binary) return;
-  const hash = state.binary.hash;
-  const own = restoreSession(hash);
+  const wasShared = state.slot === 'shared';
   state.slot = 'own';
+  if (!wasShared || !state.binary) return;
+  const { hash, bytes, name } = state.binary;
+  const own = restoreSession(hash, bytes, name);
   if (!own.size) {
     persist();
     sharedStore.remove(hash);
@@ -2986,16 +2991,22 @@ function endShared() {
   session = own;
   sessionChanged();
   if (state.current && state.caps.assert) reinspect({ label: 'your own changes', done: 'Your own changes are back' });
-  toast(`Your own changes to ${state.binary.name} are back.`, {
+  toast(`Your own changes to ${name} are back.`, {
     ms: 15000, detail: 'The session\'s changes are kept apart.',
-    action: { label: 'Use the session\'s changes instead', run: () => useSharedCopy(kept) },
+    action: { label: 'Use the session\'s changes instead', run: () => useSharedCopy(kept, hash) },
   });
 }
 
-/** Replace the student's own changes with a live session's (asked first). */
-async function useSharedCopy(kept) {
-  if (!state.binary || !(await dialogs.confirmBox(`Replace your own ${session.size} change${session.size === 1 ? '' : 's'} to ${state.binary.name} with the session's ${kept.size}? You can save yours first with Export changes.`, { confirmLabel: 'Replace mine' }))) return;
-  sharedStore.remove(state.binary.hash);
+/** Replace the student's own changes to the program with `hash` by a live session's `kept` (asked first). */
+async function useSharedCopy(kept, hash) {
+  const still = () => state.binary?.hash === hash && !collab?.active;
+  if (!still()) {
+    toast(state.binary?.hash === hash ? 'Leave the session first.' : 'Those were the session\'s changes to another program.', { kind: 'warn' });
+    return;
+  }
+  if (!(await dialogs.confirmBox(`Replace your own ${session.size} change${session.size === 1 ? '' : 's'} to ${state.binary.name} with the session's ${kept.size}? You can save yours first with Export changes.`, { confirmLabel: 'Replace mine' }))) return;
+  if (!still()) return;
+  sharedStore.remove(hash);
   session = kept;
   session.orderOf = null;
   sessionChanged();
@@ -3037,11 +3048,8 @@ const collabApi = {
   /** The function on screen, or the one being opened. */
   target: () => state.opening?.address_hex ?? state.current?.data.address_hex ?? null,
   nameOf: nameOfAddr,
-  /** The engine's build id: the SHA-256 of the wasm the Worker compiled. */
-  build: async () => {
-    await state.kuna.ready();
-    return state.kuna.build;
-  },
+  /** The engine's build id: the SHA-256 of the wasm the Worker compiled (worked out when a session first needs it). */
+  build: () => state.kuna.buildId(),
   onBuild: (fn) => { state.kuna.onbuild = fn; },
   clearUndo: () => {
     session.undoStack = [];
@@ -3069,9 +3077,9 @@ const collabApi = {
   setView,
   goTo: goToAnchor,
   selectionAnchor,
-  /** The student's own stored changes to the program with `hash` (null when there are none). */
-  ownSession: (hash) => {
-    const own = restoreSession(hash);
+  /** The student's own stored changes to the program with `hash` (its `bytes` find what an earlier version stored); null when there are none. */
+  ownSession: (hash, bytes = null, name = 'binary') => {
+    const own = restoreSession(hash, bytes, name);
     return own.size ? own : null;
   },
   exportSession,

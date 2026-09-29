@@ -65,6 +65,7 @@ const CHECKS = {
   relay: (m) => only(m, ['t', 'to', 'from', 'kind', 'id', 'd']) && isPeer(m.to) && isPeer(m.from) &&
     (m.kind === 'offer' || m.kind === 'answer') && typeof m.id === 'string' && ID.test(m.id) && validSdp(m.d),
   resync: (m) => only(m, ['t']),
+  sum: (m) => only(m, ['t', 'h']) && typeof m.h === 'string' && /^\d{1,7}:[0-9a-f]{16}$/.test(m.h),
   cur: (m) => (only(m, ['t', 'off']) && m.off === true) ||
     (only(m, ['t', 'fn', 'view', 'anchor', 'fx', 'fy', 'col']) && isAddr(m.fn) && VIEWS.includes(m.view) && validAnchor(m.anchor) &&
       unit(m.fx) && unit(m.fy) && (m.col === undefined || (typeof m.col === 'number' && Number.isFinite(m.col) && m.col >= -64 && m.col <= 4096))),

@@ -46,7 +46,7 @@ function shared(edit) {
   for (const [k, v] of R.registersOf(alone)) r.set(k, v);
   const s = new Session();
   R.applyRegisters(s, r, [...r.regs.keys()].reverse());
-  s.orderOf = R.birthOrder(s, r);
+  s.orderOf = R.birthOrder(r);
   return s;
 }
 

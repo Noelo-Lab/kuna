@@ -14,8 +14,16 @@
 // UTF-8 bytes (what a data channel counts), and the others cannot grow the
 // registers past MAX_REGISTERS live ones.
 //
+// An edit can still go missing (a link that dies while it carries one, a
+// member reached only through others), so pages also compare digests of their
+// registers: every SUM_MS, and soon after anyone joins or leaves, each page
+// tells each page it is linked to its digest once its own edits have been
+// quiet for a moment, and two pages that differ send each other all their
+// registers (merging them is harmless, the newer write wins).
+//
 // `connect` makes links for introductions ({offer(), answer({id, sdp})});
-// `page` is how the group tells the page what happened. A link is
+// `page` is how the group tells the page what happened; `timers` and `hash`
+// can be replaced (tests run the protocol on a clock of their own). A link is
 // {send(text), sendCursor(text), sendBinary(bytes), buffered(), drain(n),
 // close(), onmessage(data, channel), onclose()}.
 import { PROTOCOL, MAX_PEERS, MAX_MESSAGE, COLORS, readMessage, limiter, randomId, utf8Length } from './wire.js';
@@ -30,6 +38,14 @@ const RETRY_MS = 6000;
 const MAX_TRIES = 3;
 const FLUSH_MS = 50;
 const RESYNC_MS = 5000;
+const SUM_MS = 10000;
+const SUM_SOON_MS = 1500;
+const QUIET_MS = 2000;
+const TIMERS = {
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (id) => clearTimeout(id),
+  now: () => Date.now(),
+};
 
 /** Members with distinct colours: of two that share one, the larger id takes the first free colour. */
 export function resolveColors(members) {
@@ -55,13 +71,20 @@ const quietly = (fn) => {
 };
 
 export class Group {
-  constructor({ me, name, build, replica, connect, page }) {
+  constructor({ me, name, build, replica, connect, page, timers = TIMERS, hash = sha256Hex, sumMs = SUM_MS, quietMs = QUIET_MS }) {
     this.me = me;
     this.name = name;
     this.build = build;
     this.replica = replica;
     this.connect = connect;
     this.page = page;
+    this.timers = timers;
+    this.hash = hash;
+    this.sumMs = sumMs;
+    this.quietMs = quietMs;
+    this.sumTimer = 0;
+    this.soonTimer = 0;
+    this.lastActivity = 0;
     this.sid = null;
     this.color = null;
     this.links = new Set();
@@ -79,6 +102,7 @@ export class Group {
   create() {
     this.sid = randomId(12);
     this.color = COLORS[0];
+    this.#sumEvery();
   }
 
   get active() {
@@ -111,9 +135,10 @@ export class Group {
     const rec = {
       link, peer, joining, member: false, hello: false, name: '', color: null, where: null, listed: new Set(),
       lim: {
-        ops: limiter(20, 20), snap: limiter(200, 400), cur: limiter(30, 45), ping: limiter(1, 2), other: limiter(20, 40),
+        ops: limiter(20, 20, this.timers.now), snap: limiter(200, 400, this.timers.now), cur: limiter(30, 45, this.timers.now),
+        ping: limiter(1, 2, this.timers.now), other: limiter(20, 40, this.timers.now),
       },
-      out: limiter(18, 18), rx: null, dropped: 0, gone: false, resyncAt: 0,
+      out: limiter(18, 18, this.timers.now), rx: null, dropped: 0, gone: false, resyncAt: 0, snapAt: 0, sumAt: 0,
     };
     this.links.add(rec);
     link.onmessage = (data, channel) => this.#receive(rec, data, channel);
@@ -148,14 +173,16 @@ export class Group {
   leave() {
     if (this.closed) return;
     this.closed = true;
-    clearTimeout(this.flushTimer);
-    clearTimeout(this.rosterTimer);
+    this.timers.clearTimeout(this.flushTimer);
+    this.timers.clearTimeout(this.rosterTimer);
+    this.timers.clearTimeout(this.sumTimer);
+    this.timers.clearTimeout(this.soonTimer);
     for (const rec of this.links) {
       this.#send(rec, { t: 'bye' });
       rec.gone = true;
     }
     const links = [...this.links];
-    setTimeout(() => { for (const rec of links) quietly(() => rec.link.close()); }, 250);
+    this.timers.setTimeout(() => { for (const rec of links) quietly(() => rec.link.close()); }, 250);
     for (const intro of this.intros.values()) quietly(() => intro.cancel?.());
     this.links.clear();
     this.peers.clear();
@@ -194,7 +221,8 @@ export class Group {
       case 'welcome': this.#welcome(rec, m); break;
       case 'snap': this.#ops(rec, m.ops, m.last); break;
       case 'ops': this.#ops(rec, m.ops, null); break;
-      case 'resync': if (rec.member) this.#sendSnap(rec); break;
+      case 'resync': this.#resync(rec); break;
+      case 'sum': this.#sum(rec, m.h); break;
       case 'file': this.#file(rec, m); break;
       case 'roster': this.#roster(rec, m); break;
       case 'where':
@@ -223,10 +251,64 @@ export class Group {
 
   /** Ask a page for all its registers again (after this page had to drop some of its edits). */
   #askResync(rec) {
-    const now = Date.now();
+    const now = this.timers.now();
     if (!rec.member || now < rec.resyncAt) return;
     rec.resyncAt = now + RESYNC_MS;
-    setTimeout(() => { if (!rec.gone && !this.closed) this.#send(rec, { t: 'resync' }); }, 1000);
+    this.timers.setTimeout(() => { if (!rec.gone && !this.closed) this.#send(rec, { t: 'resync' }); }, 1000);
+  }
+
+  /** A page asked for all of this page's registers: at most once per RESYNC_MS each. */
+  #resync(rec) {
+    const now = this.timers.now();
+    if (!rec.member || !this.replica || now < rec.snapAt) return;
+    rec.snapAt = now + RESYNC_MS;
+    this.#sendSnap(rec);
+  }
+
+  // ── digests: do two pages hold the same registers? ───────────────────────
+
+  #activity() {
+    this.lastActivity = this.timers.now();
+  }
+
+  /** Nothing of this page's is waiting to go out, and no edit came or went for a moment. */
+  #quiet() {
+    return !this.outbox.size && this.timers.now() - this.lastActivity >= this.quietMs;
+  }
+
+  #sumEvery() {
+    this.timers.clearTimeout(this.sumTimer);
+    this.sumTimer = this.timers.setTimeout(() => {
+      this.sumTimer = 0;
+      if (!this.active) return;
+      this.#sumRound();
+      this.#sumEvery();
+    }, this.sumMs);
+  }
+
+  /** Someone joined or left: compare digests soon rather than at the next round. */
+  #sumSoon() {
+    if (this.soonTimer || !this.active) return;
+    this.soonTimer = this.timers.setTimeout(() => {
+      this.soonTimer = 0;
+      this.#sumRound();
+    }, SUM_SOON_MS);
+  }
+
+  #sumRound() {
+    if (!this.active || !this.replica || !this.#quiet()) return;
+    const h = this.replica.digest();
+    for (const rec of this.peers.values()) if (rec.member) this.#send(rec, { t: 'sum', h });
+  }
+
+  /** Another page's digest: when it differs (and both pages are quiet), send ours and ask for theirs. */
+  #sum(rec, h) {
+    if (!rec.member || !this.replica || !this.#quiet() || h === this.replica.digest()) return;
+    const now = this.timers.now();
+    if (now < rec.sumAt) return;
+    rec.sumAt = now + this.sumMs;
+    this.#sendSnap(rec);
+    this.#send(rec, { t: 'resync' });
   }
 
   #hello(rec, m) {
@@ -265,13 +347,13 @@ export class Group {
     if (!file) {
       this.#send(rec, { t: 'bye' });
       this.peers.delete(m.peer);
-      setTimeout(() => this.#drop(rec), 250);
+      this.timers.setTimeout(() => this.#drop(rec), 250);
       return;
     }
     if (this.size() >= MAX_PEERS) {
       this.#send(rec, { t: 'full' });
       this.peers.delete(m.peer);
-      setTimeout(() => this.#drop(rec), 250);
+      this.timers.setTimeout(() => this.#drop(rec), 250);
       return;
     }
     const taken = new Set(this.members().map((x) => x.color));
@@ -298,9 +380,11 @@ export class Group {
     this.color = m.color;
     rec.listed = new Set(m.roster.map((x) => x.peer));
     for (const x of m.roster) if (x.peer !== this.me && x.peer !== rec.peer) this.#know(x, rec.peer);
-    this.page.welcomed({ from: rec.peer, name: rec.name, file: m.file, example: m.example, send: m.send });
+    this.page.welcomed({ from: rec.peer, name: rec.name, file: m.file, example: m.example, send: m.send, sid: m.sid });
+    if (this.closed || rec.gone) return;
     this.#sendSnap(rec);
     this.#sendWhere(rec);
+    this.#sumEvery();
     this.#rosterChanged();
   }
 
@@ -321,11 +405,16 @@ export class Group {
         continue;
       }
       if (!r) continue;
-      fresh.push(op);
-      changes.push({ key: op.k, value: op.v, by: op.c[1], prev: prev ? prev.v : null, prevBy: prev ? prev.by : null });
+      const now = this.replica.regs.get(op.k);
+      fresh.push({ k: op.k, v: now.v, c: [now.c[0], now.c[1]], b: [now.b[0], now.b[1]] });
+      changes.push({ key: op.k, value: now.v, by: now.c[1], prev: prev ? prev.v : null, prevBy: prev ? prev.by : null });
     }
-    if (fresh.length) this.#queue(fresh, rec);
+    if (fresh.length) {
+      this.#activity();
+      this.#queue(fresh, rec);
+    }
     if (changes.length) this.page.changed(changes, rec.peer);
+    if (this.closed || rec.gone) return;
     if (last === true && rec.sponsor && !rec.caughtUp) {
       rec.caughtUp = true;
       this.page.caughtUp(rec.peer);
@@ -360,7 +449,8 @@ export class Group {
     if (rx.got < rx.meta.size) return;
     rec.rx = null;
     rec.gotFile = true;
-    sha256Hex(rx.buf).then((hash) => {
+    Promise.resolve(this.hash(rx.buf)).then((hash) => {
+      if (this.closed || rec.gone) return;
       if (hash === rx.meta.hash) this.page.fileArrived(rx.buf, rx.meta);
       else this.page.fileFailed('hash');
     });
@@ -377,6 +467,7 @@ export class Group {
     }
     this.page.roster();
     this.#mesh();
+    this.#sumSoon();
   }
 
   #know(x, via) {
@@ -409,7 +500,7 @@ export class Group {
 
   #mesh() {
     if (!this.active) return;
-    const now = Date.now();
+    const now = this.timers.now();
     for (const [peer, k] of this.known) {
       if (this.peers.has(peer) || this.intros.has(peer) || this.me > peer || k.tries >= MAX_TRIES || now < k.retryAt) continue;
       const via = [...k.via].map((p) => this.peers.get(p)).find((r) => r?.member);
@@ -430,7 +521,7 @@ export class Group {
   async #pair(peer, via, start) {
     const intro = { id: null, answer: null, cancel: null };
     this.intros.set(peer, intro);
-    const timer = setTimeout(() => this.#introFailed(peer, intro), INTRO_MS);
+    const timer = this.timers.setTimeout(() => this.#introFailed(peer, intro), INTRO_MS);
     const current = () => this.intros.get(peer) === intro && !this.closed;
     try {
       const half = await start();
@@ -445,11 +536,11 @@ export class Group {
         quietly(() => link.close());
         return;
       }
-      clearTimeout(timer);
+      this.timers.clearTimeout(timer);
       this.intros.delete(peer);
       this.addLink(link, { peer });
     } catch (_) {
-      clearTimeout(timer);
+      this.timers.clearTimeout(timer);
       this.#introFailed(peer, intro);
     }
   }
@@ -459,8 +550,8 @@ export class Group {
     this.intros.delete(peer);
     quietly(() => intro.cancel?.());
     const k = this.known.get(peer);
-    if (k) k.retryAt = Date.now() + RETRY_MS;
-    setTimeout(() => this.#mesh(), RETRY_MS + 50);
+    if (k) k.retryAt = this.timers.now() + RETRY_MS;
+    this.timers.setTimeout(() => this.#mesh(), RETRY_MS + 50);
   }
 
   #drop(rec) {
@@ -499,10 +590,11 @@ export class Group {
     const k = this.known.get(rec.peer);
     if (k) {
       k.tries = 0;
-      k.retryAt = Date.now() + RETRY_MS;
-      setTimeout(() => this.#mesh(), RETRY_MS + 50);
+      k.retryAt = this.timers.now() + RETRY_MS;
+      this.timers.setTimeout(() => this.#mesh(), RETRY_MS + 50);
     }
     this.page.event(rec.bye ? 'left' : 'lost', { peer: rec.peer, name: rec.name, reachable: !!k });
+    if (this.closed) return;
     this.#rosterChanged();
   }
 
@@ -516,8 +608,9 @@ export class Group {
 
   #rosterChanged() {
     this.page.roster();
+    this.#sumSoon();
     if (this.rosterTimer) return;
-    this.rosterTimer = setTimeout(() => {
+    this.rosterTimer = this.timers.setTimeout(() => {
       this.rosterTimer = 0;
       if (this.closed) return;
       const members = this.#rosterList();
@@ -583,7 +676,8 @@ export class Group {
       }
       if (box) this.outbox.set(rec, box);
     }
-    if (!this.flushTimer && this.outbox.size) this.flushTimer = setTimeout(() => this.#flush(), FLUSH_MS);
+    this.#activity();
+    if (!this.flushTimer && this.outbox.size) this.flushTimer = this.timers.setTimeout(() => this.#flush(), FLUSH_MS);
   }
 
   /** Send what is queued, at most as fast as the others' rate limit takes it. */
@@ -600,6 +694,6 @@ export class Group {
       if (sent === messages.length) this.outbox.delete(rec);
       else this.outbox.set(rec, box.slice(ops));
     }
-    if (this.outbox.size) this.flushTimer = setTimeout(() => this.#flush(), 100);
+    if (this.outbox.size) this.flushTimer = this.timers.setTimeout(() => this.#flush(), 100);
   }
 }

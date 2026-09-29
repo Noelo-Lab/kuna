@@ -1,24 +1,16 @@
 // collab.js — "Work together", loaded by the study view only when a session
-// starts or an invite or reply link is opened. It keeps the page's Session
-// and the group's registers in step: this page's edits go out as register
-// ops; the others' come back, a batch per frame, through the page's remote
-// path, which re-decompiles only what they touch; in a session the Session
-// sends its directives in the registers' birth order. It runs the invite,
-// join and reply dialogs, shows who is here in the top bar, hands the program
-// to a newcomer who does not have it, and draws the others' pointers and
-// pings. A session joined from someone else is saved apart from this page's
-// own changes to that program, which come back when it leaves. group.js runs
-// the protocol, link.js the connections, presence.js the pointers.
+// starts or an invite or reply link is opened: the invite, join and reply
+// dialogs, who is here in the top bar, following, and the others' pointers
+// and pings. The data half is sync.js (the page's Session and the group's
+// registers kept in step, joining and leaving), which runs the protocol
+// (group.js) over the connections link.js makes; presence.js draws the
+// pointers.
 import { escapeHtml } from '../../assets/js/highlight-c.js';
-import { Session } from '../session.js';
 import { bare } from '../addr.js';
-import {
-  Replica, History, applyRegisters, adoptRawKeys, describeRegister, recordKeyOf, diffSession, newer,
-} from './replica.js';
 import {
   MAX_PEERS, encodeCode, decodeCode, codeFrom, randomId, initials, limiter, cleanName, describeFile,
 } from './wire.js';
-import { Group, MAX_REGISTERS } from './group.js';
+import { Sync } from './sync.js';
 import { makeOffer, takeOffer, holdPresenceLock } from './link.js';
 import { createPresence, anchorAt, findAnchor } from './presence.js';
 
@@ -58,13 +50,6 @@ export function iceServersFrom(prefs) {
   return out;
 }
 
-/** Does a change to register `key` change the directives of the function at `fn`? */
-function touchesFunction(key, fn) {
-  const p = key.split(':');
-  if (p[0] === 'var' || p[0] === 'comment' || p[0] === 'rawf') return p[1] === fn;
-  return p[0] !== 'setting';
-}
-
 const sizeWords = (n) => (n < 1024 ? `${n} bytes` : n < 1 << 20 ? `${Math.round(n / 1024)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 const statusLine = (text, cls = '') => `<p class="cb-status ${cls}" data-status>${escapeHtml(text || '')}</p>`;
 
@@ -79,16 +64,7 @@ class Collab {
     this.api = api;
     this.me = randomId(8);
     this.name = cleanName(loadCollabPrefs(api.storage).name);
-    this.group = null;
-    this.replica = null;
-    this.replicaHash = null;
-    this.history = new History();
-    this.shared = false;
-    this.holdDiff = false;
-    this.applying = false;
-    this.slot = 'own';
-    this.aside = null;
-    this.refusedShown = new Set();
+    this.sync = new Sync({ me: this.me, app: this.#syncApp(), ui: this.#syncUi() });
     this.invites = new Map();
     this.closedInvites = new Set();
     this.current = null;
@@ -99,10 +75,6 @@ class Collab {
     this.lastFn = null;
     this.desc = null;
     this.descBytes = null;
-    this.index = null;
-    this.runs = null;
-    this.pending = [];
-    this.pendingTimer = 0;
     this.pointer = null;
     this.pointerAt = 0;
     this.pointerTimer = 0;
@@ -154,7 +126,46 @@ class Collab {
   }
 
   get active() {
-    return !!this.group?.active;
+    return this.sync.active;
+  }
+
+  get group() {
+    return this.sync.group;
+  }
+
+  get shared() {
+    return this.sync.shared;
+  }
+
+  /** What sync.js needs from the page: the study view's api, and the program as peers describe it. */
+  #syncApp() {
+    return { ...this.api, fileMeta: () => this.#fileMetaNow() };
+  }
+
+  /** What sync.js tells this page's dialogs, roster and pointers. */
+  #syncUi() {
+    return {
+      nameOf: (peer) => this.#nameOf(peer),
+      remember: (peer) => this.#remember(peer),
+      welcomed: (info) => this.#welcomed(info),
+      fileProgress: (got, size) => this.#progress(got, size),
+      fileOpening: () => {
+        if (!this.join) return;
+        this.join.state = 'opening';
+        this.#render();
+      },
+      joined: (info) => this.#joinDone(info),
+      joinFailed: (reason, info) => this.#joinFailed(this.#failText(reason, info)),
+      mergeReplaced: ({ count, copy }) => this.api.toast(`The session's changes replaced ${count} of yours, where you both changed the same thing.`, {
+        kind: 'warn', ms: 15000, detail: 'Everything else you had changed is now part of the session.',
+        action: { label: 'Save yours as a file', run: () => this.api.exportSession(copy) },
+      }),
+      roster: () => this.#rosterChanged(),
+      where: () => this.#whereOf(),
+      cursor: (peer, m) => this.#cursor(peer, m),
+      ping: (peer, m) => this.#pinged(peer, m),
+      event: (kind, info) => this.#event(kind, info),
+    };
   }
 
   ice() {
@@ -191,31 +202,12 @@ class Collab {
 
   // ── the group ────────────────────────────────────────────────────────────
 
-  #newGroup(build) {
-    this.group?.leave();
-    this.group = new Group({
-      me: this.me, name: this.name, build, replica: this.replica,
-      connect: {
-        offer: () => makeOffer({ me: this.me, iceServers: this.ice() }),
-        answer: ({ id, sdp }) => takeOffer({ me: this.me, id, sdp, iceServers: this.ice() }),
-      },
-      page: {
-        fileMeta: () => this.#fileMetaNow(),
-        fileBytes: () => this.api.binary()?.bytes || null,
-        isExample: () => !!this.api.binary()?.example,
-        welcomed: (info) => this.#welcomed(info),
-        caughtUp: () => this.#caughtUp(),
-        changed: (changes) => this.#changed(changes),
-        fileProgress: (got, size) => this.#progress(got, size),
-        fileArrived: (bytes, meta) => this.#fileArrived(bytes, meta),
-        fileFailed: (why) => this.#fileFailed(why),
-        roster: () => this.#rosterChanged(),
-        where: () => this.#whereOf(),
-        cursor: (peer, m) => this.#cursor(peer, m),
-        ping: (peer, m) => this.#pinged(peer, m),
-        event: (kind, info) => this.#event(kind, info),
-      },
-    });
+  /** How the group links two members through a third (an introduction). */
+  #connect() {
+    return {
+      offer: () => makeOffer({ me: this.me, iceServers: this.ice() }),
+      answer: ({ id, sdp }) => takeOffer({ me: this.me, id, sdp, iceServers: this.ice() }),
+    };
   }
 
   /** Start a session as its first member, with this page's changes as its registers. */
@@ -226,60 +218,15 @@ class Collab {
     if (desc.problem) throw new Error(`${this.api.binary().name} cannot be shared: ${desc.problem}`);
     const build = await this.build();
     if (this.active) return true;
-    const file = desc.meta;
-    if (this.replicaHash !== file.hash) {
-      this.replica = new Replica(this.me);
-      this.replicaHash = file.hash;
-    }
-    this.#newGroup(build);
-    this.group.create();
-    this.slot = 'own';
-    this.#share();
-    this.#diff({ record: false });
-    if (this.replica.value('setting:mode') !== this.api.mode()) this.group.local([this.replica.set('setting:mode', this.api.mode())]);
+    this.sync.start({ build, name: this.name, connect: this.#connect() });
     this.group.setWhere(this.#where());
     this.#rosterChanged();
     return true;
   }
 
-  #share() {
-    this.shared = true;
-    this.refusedShown.clear();
-    this.history.clear();
-    this.#dirty();
-    this.api.clearUndo();
-    this.api.session().orderOf = (key) => this.#indexOf(key)?.birth || null;
-    this.api.shareStarted();
-    this.api.refresh();
-  }
-
-  #dirty() {
-    this.index = null;
-    this.runs = null;
-  }
-
-  /** A record's place and author in the registers: `{birth, clock}` (the earliest birth, the latest write). */
-  #indexOf(recordKey) {
-    if (!this.index) {
-      this.index = new Map();
-      for (const [key, r] of this.replica?.regs || []) {
-        const rk = recordKeyOf(key);
-        const e = this.index.get(rk);
-        if (!e) this.index.set(rk, { birth: r.b, clock: r.v === null ? null : r.c });
-        else {
-          if (newer(e.birth, r.b)) e.birth = r.b;
-          if (r.v !== null && (!e.clock || newer(r.c, e.clock))) e.clock = r.c;
-        }
-      }
-    }
-    return this.index.get(recordKey) || null;
-  }
-
-  /** Leave: close every link and stop a join in progress. The page keeps what it shows (see endShared). */
+  /** Leave: close every link and stop a join in progress. The page keeps what it shows (see sync.js). */
   leave({ quiet = false, why = null } = {}) {
     const was = this.active;
-    this.group?.leave();
-    this.group = null;
     for (const inv of this.invites.values()) {
       inv.offer?.cancel?.();
       this.closedInvites.add(inv.id);
@@ -287,19 +234,8 @@ class Collab {
     this.invites.clear();
     this.current = null;
     this.#endJoin();
-    clearTimeout(this.pendingTimer);
-    this.pending = [];
-    this.pendingTimer = 0;
-    if (this.shared) {
-      this.api.session().reorder();
-      this.shared = false;
-      this.api.endShared();
-    }
-    this.holdDiff = false;
+    this.sync.leave();
     this.following = null;
-    this.aside = null;
-    this.history.clear();
-    this.api.clearUndo();
     this.presence.clear();
     this.#rosterChanged();
     if (!quiet && (was || why)) this.api.toast(why || 'You left the session. Its changes stay on this page.', { kind: why ? 'err' : 'ok' });
@@ -318,106 +254,22 @@ class Collab {
 
   // ── this page's edits ────────────────────────────────────────────────────
 
-  #write(key, value) {
-    const prev = this.replica.value(key);
-    const op = this.replica.set(key, value);
-    return { key, prev, op };
-  }
-
-  /** Compare the page's Session with the registers and send what this page changed. */
-  #diff({ record = true } = {}) {
-    if (!this.shared || this.holdDiff || this.applying || !this.replica) return;
-    const session = this.api.session();
-    adoptRawKeys(session, this.me);
-    const { changes, refused } = diffSession(session, this.replica, { maxLive: MAX_REGISTERS });
-    const fresh = refused.filter((r) => !this.refusedShown.has(`${r.key}\n${r.value}`));
-    if (fresh.length) {
-      for (const r of fresh) this.refusedShown.add(`${r.key}\n${r.value}`);
-      const full = fresh.some((r) => r.why === 'full');
-      this.api.toast(full ? 'This session holds as many changes as it can, so this one stays on this page.' : 'One of your changes stays on this page only.', {
-        kind: 'warn', detail: full ? `A session holds at most ${MAX_REGISTERS.toLocaleString()} changes.`
-          : 'It reads a file or holds text the others\' pages do not accept, so it is not shared.',
-      });
-    }
-    if (!changes.length) return;
-    const written = changes.map(({ key, value }) => this.#write(key, value));
-    this.#dirty();
-    this.group?.local(written.map((w) => w.op));
-    if (record) this.history.record(written);
-  }
-
   /** The page's session changed (an edit, an undo, a byte burst). */
   localChanged() {
-    this.#diff();
+    this.sync.local();
   }
 
   modeChanged(mode) {
-    if (this.shared && this.replica.value('setting:mode') !== mode) this.group?.local([this.replica.set('setting:mode', mode)]);
+    this.sync.modeChanged(mode);
   }
 
-  get canUndo() { return this.history.canUndo; }
+  get canUndo() { return this.sync.canUndo; }
 
-  get canRedo() { return this.history.canRedo; }
+  get canRedo() { return this.sync.canRedo; }
 
-  undo() { return this.#step('undo'); }
+  undo() { return this.sync.undo(); }
 
-  redo() { return this.#step('redo'); }
-
-  #step(which) {
-    if (!this.shared) return false;
-    const res = this.history[which](this.replica);
-    if (!res) return false;
-    if (res.skipped.length) {
-      const names = [...new Set(res.skipped.map((s) => this.#nameOf(s.by)))].join(' and ');
-      this.api.toast(res.ops.length ? `${which === 'undo' ? 'Undone' : 'Redone'}, except what ${names} changed after you.`
-        : `${names} changed that after you, so it was not ${which === 'undo' ? 'undone' : 'redone'}.`, { kind: 'warn' });
-    }
-    if (!res.ops.length) {
-      this.api.refresh();
-      return false;
-    }
-    this.#dirty();
-    applyRegisters(this.api.session(), this.replica, res.ops.map((op) => op.k));
-    this.group?.local(res.ops);
-    return true;
-  }
-
-  // ── the others' edits ────────────────────────────────────────────────────
-
-  #changed(changes) {
-    this.#dirty();
-    for (const c of changes) this.pending.push(c);
-    if (!this.pendingTimer) this.pendingTimer = setTimeout(() => this.#applyPending(), 16);
-  }
-
-  /** Apply a frame's worth of the others' changes to the page at once. */
-  #applyPending() {
-    this.pendingTimer = 0;
-    const changes = this.pending;
-    this.pending = [];
-    for (const by of new Set(changes.map((c) => c.by))) this.#remember(by);
-    if (!this.shared || !changes.length) return;
-    const words = (c) => `${this.#nameOf(c.by)} ${describeRegister(c.key, c.value, c.prev, this.api.nameOf)}`;
-    const values = changes.filter((c) => c.value !== c.prev);
-    const first = values.find((c) => c.by !== this.me);
-    const replaced = values.filter((c) => c.prevBy === this.me && c.by !== this.me);
-    const keys = [...new Set(changes.map((c) => c.key))].filter((k) => !k.startsWith('setting:'));
-    const fn = this.api.target();
-    const mode = changes.some((c) => c.key === 'setting:mode') ? this.replica.value('setting:mode') : null;
-    if (replaced.length) {
-      const more = replaced.length - 1;
-      this.api.toast(`${words(replaced[0])} after you`, { kind: 'warn', detail: more ? `and ${more} more of your change${more === 1 ? '' : 's'}` : '' });
-    }
-    this.applying = true;
-    try {
-      if (keys.length) applyRegisters(this.api.session(), this.replica, keys);
-      this.api.remoteChanged({
-        inspect: keys.some((k) => touchesFunction(k, fn)), mode: mode && mode !== this.api.mode() ? mode : null, label: first ? words(first) : '',
-      });
-    } finally {
-      this.applying = false;
-    }
-  }
+  redo() { return this.sync.redo(); }
 
   // ── inviting ─────────────────────────────────────────────────────────────
 
@@ -441,7 +293,7 @@ class Collab {
           return;
         }
         inv.state = 'open';
-        this.group.addLink(link);
+        this.sync.addLink(link);
         this.#inviteStatus(inv);
         this.#tellReplyTab(inv, 'open');
       }).catch((e) => {
@@ -560,7 +412,6 @@ class Collab {
     }
     join.res = res;
     if (res.sdp === null) {
-      join.sameBrowser = true;
       res.ready.then((link) => this.#joined(join, link, build));
       return;
     }
@@ -589,14 +440,8 @@ class Collab {
       link.close();
       return;
     }
-    const desc = this.describe();
-    if (!(this.replica && desc?.meta && this.replicaHash === desc.meta.hash)) {
-      this.replica = new Replica(this.me);
-      this.replicaHash = null;
-    }
-    this.#newGroup(build);
     join.state = 'joining';
-    this.group.addLink(link, { joining: true });
+    this.sync.beginJoin({ build, name: this.name, connect: this.#connect(), link });
     join.timer = setTimeout(() => {
       if (this.join === join && join.state === 'joining') this.#joinFailed(`${join.inv.n}'s page did not answer. Ask for a new invite link.`);
     }, JOIN_MS);
@@ -609,17 +454,13 @@ class Collab {
     if (!j) return;
     clearTimeout(j.timer);
     if (j.state !== 'done') j.res?.cancel?.();
+    if (this.sync.joining) this.sync.stop();
     this.join = null;
   }
 
   #joinFailed(text) {
     const j = this.join;
-    if (this.shared) this.leave({ quiet: true });
-    else {
-      this.group?.leave();
-      this.group = null;
-    }
-    this.holdDiff = false;
+    if (this.sync.joining) this.sync.stop();
     if (j) {
       clearTimeout(j.timer);
       j.res?.cancel?.();
@@ -632,37 +473,30 @@ class Collab {
     else this.api.toast(text, { kind: 'err' });
   }
 
+  /** Why a join failed, in words (`reason` from sync.js). */
+  #failText(reason, info = {}) {
+    const who = info.name || this.join?.sponsorName || this.join?.inv?.n || 'The other person';
+    switch (reason) {
+      case 'full': return 'This session is full (8 people).';
+      case 'mismatch': return `${who}'s page is a different version of Kuna; reload both.`;
+      case 'closed': return `${who}'s page closed the connection before you joined. Ask for a new invite link.`;
+      case 'sponsor': return `${who}'s page closed the connection before you finished joining. Ask for a new invite link.`;
+      case 'stalled': return `${who}'s page stopped answering while you were joining. Ask for a new invite link.`;
+      case 'hash': return 'The program did not arrive intact. Ask for a new invite link and try again.';
+      case 'lost': return 'The connection closed while the program was on its way. Ask for a new invite link and try again.';
+      case 'open': return `Could not open ${info.name || 'the program'}.`;
+      default: return 'The program on this page changed while you were joining. Ask for a new invite link.';
+    }
+  }
+
   #welcomed({ from, name, file, example, send }) {
     const j = this.join;
     if (!j) return;
     clearTimeout(j.timer);
     Object.assign(j, { sponsor: from, sponsorName: name, file, send, example, state: send ? 'receiving' : 'merging' });
-    this.#remember(from);
-    if (this.replicaHash !== file.hash) {
-      if (this.replica.regs.size) {
-        this.replica = new Replica(this.me);
-        this.group.replica = this.replica;
-      }
-      this.replicaHash = file.hash;
-      this.holdDiff = true;
-    }
-    const mine = this.#fileMetaNow();
-    if (mine && mine.hash === file.hash) {
-      this.slot = 'own';
-      this.#share();
-      this.#diff({ record: false });
-    }
     this.group.setWhere(this.#where());
     this.#rosterChanged();
     this.#render();
-  }
-
-  #caughtUp() {
-    const held = this.holdDiff;
-    this.holdDiff = false;
-    if (!this.shared) return;
-    if (held) this.#diff({ record: false });
-    this.#joinDone();
   }
 
   #progress(got, size) {
@@ -677,56 +511,23 @@ class Collab {
     }
   }
 
-  async #fileArrived(bytes, meta) {
+  /** sync.js finished the join: go where the inviter is, and say so. */
+  #joinDone({ sponsor, aside }) {
     const j = this.join;
-    if (!j || this.shared || !this.group) return;
-    j.state = 'opening';
-    this.#render();
-    const hash = `sha256:${meta.hash}`;
-    const own = j.sameBrowser ? null : this.api.ownSession(hash);
-    const session = new Session();
-    applyRegisters(session, this.replica, [...this.replica.regs.keys()]);
-    session.orderOf = (key) => this.#indexOf(key)?.birth || null;
-    this.slot = own ? 'shared' : 'own';
-    const open = this.group.who(j.sponsor)?.where?.fn || null;
-    const ok = await this.api.openShared({
-      name: meta.name, bytes, hash, session, mode: this.replica.value('setting:mode'), open, slot: this.slot,
-    });
-    if (this.join !== j || !this.group) return;
-    if (!ok) {
-      this.#joinFailed(`Could not open ${meta.name}.`);
-      return;
-    }
-    this.aside = own ? { count: own.size, hash, name: meta.name } : null;
-    this.#share();
-    const opened = JSON.stringify(this.api.session().toJSON());
-    applyRegisters(this.api.session(), this.replica, [...this.replica.regs.keys()]);
-    const moved = JSON.stringify(this.api.session().toJSON()) !== opened;
-    const lateMode = this.replica.value('setting:mode') !== this.api.mode() ? this.replica.value('setting:mode') : null;
-    if (moved || lateMode) this.api.remoteChanged({ inspect: true, mode: lateMode, label: '' });
-    if (own) {
-      this.api.toast(`Your own ${own.size} change${own.size === 1 ? '' : 's'} to ${meta.name} are kept as they were.`, {
+    if (!j || j.state === 'done') return;
+    j.state = 'done';
+    clearTimeout(j.timer);
+    const where = this.group?.who(sponsor)?.where;
+    if (where?.fn && this.api.target() && where.fn !== this.api.target()) this.api.openFunction(where.fn);
+    this.api.toast(`You joined ${j.sponsorName}'s session.`, { detail: 'Their changes and yours now appear on every page.' });
+    if (aside) {
+      this.api.toast(`Your own ${aside.count} change${aside.count === 1 ? '' : 's'} to ${aside.name} are kept as they were.`, {
         ms: 10000, detail: 'This session is saved apart from them, and they come back when you leave. The session dialog can save them as a file.',
       });
     }
-    this.#joinDone();
-  }
-
-  #fileFailed(why) {
-    this.#joinFailed(why === 'hash' ? 'The program did not arrive intact. Ask for a new invite link and try again.'
-      : 'The connection closed while the program was on its way. Ask for a new invite link and try again.');
-  }
-
-  #joinDone() {
-    const j = this.join;
-    if (!j || j.state === 'done' || !this.shared || !this.group) return;
-    j.state = 'done';
-    clearTimeout(j.timer);
-    const where = this.group.who(j.sponsor)?.where;
-    if (where?.fn && this.api.target() && where.fn !== this.api.target()) this.api.openFunction(where.fn);
-    this.api.toast(`You joined ${j.sponsorName}'s session.`, { detail: 'Their changes and yours now appear on every page.' });
     if (this.view?.kind === 'join') this.close();
     this.join = null;
+    this.group?.setWhere(this.#where());
     this.#rosterChanged();
   }
 
@@ -805,9 +606,9 @@ class Collab {
     return m ? { name: m.name, color: m.color } : this.seen.get(peer) || { name: 'Someone', color: '#a39894' };
   }
 
-  /** Where this page is: the function on screen or being opened, and the view. */
+  /** Where this page is, as the others see it: the function on screen (not one still opening), and the view. */
   #where() {
-    return { fn: this.api.target(), view: this.api.current().view };
+    return this.api.current();
   }
 
   whereChanged() {
@@ -1020,29 +821,14 @@ class Collab {
 
   /** The author of a record in the Changes list (whoever wrote its newest register): `{name, color, me}` or null. */
   authorOf(key) {
-    if (!this.shared || !this.replica) return null;
-    const clock = key.startsWith('bytes:') ? this.#runClock(key) : this.#indexOf(key)?.clock || null;
+    const clock = this.sync.clockOf(key);
     if (!clock) return null;
     const mine = clock[1] === this.me;
     const who = mine ? { name: this.name, color: this.group?.color || this.#member(this.me).color } : this.#member(clock[1]);
     return { name: who.name, color: who.color, me: mine };
   }
 
-  #runClock(key) {
-    if (!this.runs) {
-      this.runs = new Map();
-      for (const run of this.api.session().byteRuns()) {
-        let best = null;
-        for (let i = 0; i < run.values.length; i++) {
-          const c = this.replica.clock(`byte:0x${(run.addr + BigInt(i)).toString(16)}`);
-          if (c && (!best || newer(c, best))) best = c;
-        }
-        this.runs.set(`bytes:0x${run.addr.toString(16)}`, best);
-      }
-    }
-    return this.runs.get(key) || null;
-  }
-
+  /** Someone joined, left or was lost (a join's own failures come through #joinFailed). */
   #event(kind, info) {
     const name = info?.name || 'Someone';
     switch (kind) {
@@ -1061,15 +847,8 @@ class Collab {
         this.api.toast(`Lost the connection to ${name}.`, { kind: 'warn', detail: info.reachable ? 'Trying again through the others…' : '' });
         this.presence.forget(info.peer);
         break;
-      case 'full':
-        this.#joinFailed('This session is full (8 people).');
-        break;
       case 'mismatch':
-        if (this.join && this.join.state !== 'done') this.#joinFailed(`${name}'s page is a different version of Kuna; reload both.`);
-        else this.api.toast(`${name}'s page is a different version of Kuna; reload both.`, { kind: 'err' });
-        break;
-      case 'closed':
-        if (this.join && this.join.state !== 'done') this.#joinFailed(`${name}'s page closed the connection before you joined. Ask for a new invite link.`);
+        this.api.toast(`${name}'s page is a different version of Kuna; reload both.`, { kind: 'err' });
         break;
       default: break;
     }
@@ -1228,7 +1007,7 @@ class Collab {
 
   /** While in a session joined with the program: this page's own earlier changes to it, kept apart. */
   #asideHtml() {
-    const a = this.aside;
+    const a = this.sync.aside;
     if (!a) return '';
     return `<p class="cb-note">Your own ${a.count} change${a.count === 1 ? '' : 's'} to ${escapeHtml(a.name)} from before are kept as they were; they come back when you leave. ` +
       '<button type="button" class="d2-link" data-act="save-aside">Save them as a file</button></p>';
@@ -1305,7 +1084,7 @@ class Collab {
       this.#follow(e.target.closest('[data-peer]').dataset.peer);
     } else if (act === 'copy') this.#copy(e.target.closest('.cb-copy')?.querySelector('[data-copytext]'));
     else if (act === 'save-aside') {
-      const own = this.aside && this.api.ownSession(this.aside.hash);
+      const own = this.sync.aside && this.api.ownSession(this.sync.aside.hash);
       if (own) this.api.exportSession(own);
     } else if (act === 'leave') {
       this.leave();
