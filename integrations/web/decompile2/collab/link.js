@@ -8,6 +8,8 @@
 // `edits` (ordered, reliable) and `cursor` (unordered, never resent).
 // Gathering stops after 1.5 s, the ICE servers come from the page's
 // STUN/TURN setting (none by default), and the answer is passive (sdp.js).
+// A link keeps what arrives before the page listens (the other page may say
+// hello first) and hands it over once the page has attached its handler.
 import { compactSdp, expandSdp, passiveAnswer } from './sdp.js';
 import { randomId } from './wire.js';
 
@@ -18,6 +20,32 @@ const OPEN_MS = 20000;
 const quietly = (fn) => {
   try { return fn(); } catch (_) { return undefined; }
 };
+const EARLY_MAX = 1000;
+
+/** The part of a link that holds messages until someone listens (`onmessage`), then hands them over in order. */
+class Inbox {
+  constructor() {
+    this.handler = null;
+    this.early = [];
+  }
+
+  get onmessage() { return this.handler; }
+
+  set onmessage(fn) {
+    this.handler = fn;
+    if (!fn || !this.early.length) return;
+    queueMicrotask(() => {
+      const early = this.early;
+      this.early = [];
+      for (const [data, channel] of early) this.handler?.(data, channel);
+    });
+  }
+
+  deliver(data, channel) {
+    if (this.handler && !this.early.length) this.handler(data, channel);
+    else if (this.early.length < EARLY_MAX) this.early.push([data, channel]);
+  }
+}
 
 /** Resolve once `pc` has its candidates, or after `ms`. */
 function gathered(pc, ms = GATHER_MS) {
@@ -30,13 +58,13 @@ function gathered(pc, ms = GATHER_MS) {
   });
 }
 
-class RtcLink {
+class RtcLink extends Inbox {
   constructor(pc, edits) {
+    super();
     this.kind = 'rtc';
     this.pc = pc;
     this.edits = null;
     this.cursor = null;
-    this.onmessage = null;
     this.onclose = null;
     this.closed = false;
     this.attach(edits);
@@ -55,7 +83,7 @@ class RtcLink {
     channel.binaryType = 'arraybuffer';
     const which = channel.label === 'cursor' ? 'cursor' : 'edits';
     this[which] = channel;
-    channel.onmessage = ({ data }) => this.onmessage?.(data, which);
+    channel.onmessage = ({ data }) => this.deliver(data, which);
     if (which === 'edits') channel.addEventListener('close', () => this.close());
   }
 
@@ -112,13 +140,13 @@ export function holdPresenceLock(me) {
   navigator.locks.request(lockName(me), () => new Promise(() => {})).catch(() => {});
 }
 
-class BcLink {
+class BcLink extends Inbox {
   constructor(channel, me, peer) {
+    super();
     this.kind = 'bc';
     this.ch = channel;
     this.me = me;
     this.peer = peer;
-    this.onmessage = null;
     this.onclose = null;
     this.closed = false;
     channel.onmessage = ({ data }) => {
@@ -127,7 +155,7 @@ class BcLink {
         return;
       }
       if (!data || data.from !== peer || (data.to && data.to !== me)) return;
-      if (data.k === 'm') this.onmessage?.(data.d, data.c === 'c' ? 'cursor' : 'edits');
+      if (data.k === 'm') this.deliver(data.d, data.c === 'c' ? 'cursor' : 'edits');
       else if (data.k === 'x') this.close(false);
     };
     this.bye = () => this.close();

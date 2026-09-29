@@ -196,7 +196,7 @@ export class Sync {
     this.phase = 'joining';
     const session = this.app.session();
     adoptRawKeys(session, this.me);
-    this.join = { sponsor: null, file: null, send: false, have: false, anchor: registersOf(session), timer: 0 };
+    this.join = { sponsor: null, file: null, send: false, have: false, session, anchor: registersOf(session), timer: 0 };
     this.group.addLink(link, { joining: true });
   }
 
@@ -301,7 +301,7 @@ export class Sync {
     let want;
     if (this.base) want = changedBetween(this.base, now);
     else {
-      const anchor = j.anchor || new Map();
+      const anchor = session === j.session ? j.anchor : now;
       want = changedBetween(anchor, now);
       for (const [key, value] of anchor) if (!want.has(key)) older.push([key, value]);
     }
@@ -351,6 +351,7 @@ export class Sync {
     const apart = !!own && !holdsAll(session, own);
     this.slot = apart ? 'shared' : 'own';
     const open = this.group.who(j.sponsor)?.where?.fn || null;
+    const opened = registersOf(session);
     let ok = false;
     try {
       ok = await this.app.openShared({
@@ -365,11 +366,15 @@ export class Sync {
       return;
     }
     const s = this.app.session();
+    adoptRawKeys(s, this.me);
+    const { written, refused } = this.#writeAll(changedBetween(opened, registersOf(s)));
     this.#share();
     this.aside = apart ? { count: own.size, hash, name: meta.name } : null;
     const before = JSON.stringify(s.toJSON());
     applyRegisters(s, this.replica, [...this.replica.regs.keys()]);
     this.base = registersOf(s);
+    for (const r of refused) setBase(this.base, r.key, this.replica.value(r.key));
+    if (written.length) this.group.local(written.map((w) => w.op));
     const moved = JSON.stringify(s.toJSON()) !== before;
     const mode = this.#lateMode();
     this.#joined();

@@ -196,6 +196,24 @@ Where the build departs from the design above, and why:
 - **In a session, a change is never rolled back by a failed or cancelled
   request.** The others already have it; the page says so and Undo takes it
   back. The design's "no snapshot restore" held for remote changes only.
+- **A page's own changes are found against a base, not the registers.** The
+  design diffed the Session against the replica after every edit. The replica
+  runs ahead of the Session while the others' changes wait to be applied, so a
+  second review found that diff sending other people's changes back as
+  deletions (on a join with the program open, on a rejoin, inside the apply
+  batch). The page now keeps the Session's registers as they were when they
+  last matched (`collab/sync.js`), and a seeded fuzz test of the real glue
+  checks that no page sends a change its student did not make.
+- **A joiner's earlier changes are written with the oldest clock** (`[1,
+  page]`; a page's own writes start at 2), so "the session's value wins where
+  both changed a field" holds on every page, not only as far as the inviter
+  knows.
+- **Pages compare digests of their registers** (every 10 s and when someone
+  joins or leaves) and swap them on a mismatch. LWW alone does not converge
+  when an edit is lost on a link that dies, or not passed on.
+- **The build id is worked out only when a session starts**, from a fresh,
+  revalidated fetch whose server validator must match the compiled one,
+  instead of hashing the wasm on every page load.
 - **SHA-256 has a plain-JavaScript fallback**, since a page served over plain
   HTTP on a local network has no `crypto.subtle`.
 - **One PR with milestone commits**, rather than one PR per milestone.

@@ -547,7 +547,7 @@ source tree):
 | `bytes-view.js` / `arch.js` | the hex dump and the patched file; no-op fills |
 | `mnemonics.js` / `stack-frame.js` / `xrefs-view.js` / `help.js` | instruction notes and idioms; the frame diagram; calls and callers in words; the help dialog |
 | `prefs.js` / `addr.js` | view settings (`kuna.d2.prefs`, v2 with the v1 migration); addresses as hex strings and BigInt |
-| `collab/` | *Working together* (below), loaded with a dynamic `import()` only when a session starts or an invite or reply link is opened: `collab.js` (the controller: dialogs, roster, the Session ⇄ register sync, file hand-over), `group.js` (the protocol: hello, snapshots, relayed introductions, file transfer, limits), `link.js` (WebRTC and BroadcastChannel links), `replica.js` (registers, `validOp`, the register-based undo), `wire.js` (messages and their checks, invite and reply codes), `sdp.js`, `presence.js` (pointers and pings), `sha256.js`, `collab.css`; all but `collab.js`, `link.js` and `presence.js` are DOM-free |
+| `collab/` | *Working together* (below), loaded with a dynamic `import()` only when a session starts or an invite or reply link is opened: `collab.js` (dialogs, the roster, following), `sync.js` (the page's side: the Session ⇄ register sync, joining and leaving, where a session is stored), `group.js` (the protocol: hello, snapshots, relayed introductions, file transfer, digests, limits), `link.js` (WebRTC and BroadcastChannel links), `replica.js` (registers, `validOp`, digests, the register-based undo), `wire.js` (messages and their checks, invite and reply codes), `sdp.js`, `presence.js` (pointers and pings), `collab.css`; all but `collab.js`, `link.js` and `presence.js` are DOM-free (SHA-256 is `../sha256.js`, shared with the page) |
 
 **Linking.** Every pane shares one index: a C line's instructions are the union of the
 engine's `instructions[].lines`, `line_mappings` and the addresses on that line's tokens
@@ -737,54 +737,96 @@ written it with. It is merged as a grow-only minimum and sent with every op, so 
 page sends the engine the same list, and a later edit of a type does not move it
 behind the types that use it. Leaving a session keeps the order the session had.
 
-*Edits.* A page's own edits are compared with the registers after each change and sent
-as register ops; the others' are applied together, once per frame, through the page's
-remote path. That path re-decompiles the open function only when they touch it (once per
-burst, 300 ms after the last, when no request is running) and adds no undo step. A
-shared change is never taken back behind someone's back: when this page's request for
+*Edits.* A page sends only what its student changed. After each change the page compares
+its Session's registers with a **base**, the registers the Session held when it last
+matched the replica, not with the replica itself. The replica runs ahead of the Session
+while the others' changes wait to be applied, and comparing against it would send their
+changes back as this page's deletions. The others' changes are applied together, once per
+frame (16 ms), through the page's remote path, and the base moves with them. That path
+re-decompiles the open function only when they touch it (once per burst, 300 ms after
+the last, when no request is running) and adds no undo step. The glue is
+`collab/sync.js`, DOM-free and tested on a virtual clock. A shared change is never taken
+back behind someone's back: when this page's request for
 it fails or is cancelled, the change stays (the others already have it), the page says
 so, and Undo takes it back; the engine refusing a directive marks it ✗ as when working
 alone. When someone's change replaces yours, a toast says so ("Ben renamed total to count
 after you"). *Your changes* becomes *Changes*, each row in its author's colour. **Undo**
 takes back this page's own changes, one per step, newest first (up to 100 steps), and
 leaves any field someone else changed since ("Ben changed that after you, so it was not
-undone"); a global's type and name are one step, undone together.
+undone"); a global's type and name are one step, undone together. A global exists only
+while both its type and its name hold a value: if one page deletes a global while another
+renames it, it is gone on every page, rather than half kept on some.
 
 *Joining.* On every link the pages exchange a hello (protocol version, build id,
 program SHA-256, name, colour); a different protocol or build is refused with "Ben's page
 is a different version of Kuna; reload both". The build id is the SHA-256 of the wasm
-bytes this page's engine compiled: the Worker hashes exactly what it compiles, and again
-after each restart, and a page whose engine changes during a session leaves it. The page
-that invited sends the newcomer a welcome (the session, the people in it, the program's
-name, size and hash), and then the two send each other their registers. That happens on
-every join, so a page that joins again merges what it changed while its link was down
-(the newer clock wins each field). A newcomer without the program receives it (64 KiB
-chunks, paced by the channel's `bufferedAmount`, at most 64 MiB), checks its SHA-256 and
-opens it without a prompt, opening the function the inviter is on. A newcomer who already
-has the same program open is not sent it again, and what it had changed joins the
-session (the session's value wins where both changed a field). A join that gets no
-welcome within 20 seconds, or whose inviter leaves first, says so and can be tried again
-with a new link.
+this page's engine compiled, worked out only when a session starts or a link is opened
+(nothing is hashed for a student who never works together). The Worker fetches the wasm
+again with the cache revalidated. If the server's validator (ETag, Last-Modified, length)
+is the one it compiled, it hashes the file; otherwise the site changed since the page
+loaded, and the page asks to be reloaded. A page whose Worker restarts with a different
+wasm leaves the session. The page that invited sends the newcomer a welcome (the session,
+the people in it, the program's name, size and hash), and then the two send each other
+their registers; a link that comes back after a drop does the same, so each side gets
+what the other changed meanwhile (the newer clock wins each field). Until the inviter's
+registers have all arrived, nothing of the newcomer's is sent.
+
+A newcomer without the program receives it (64 KiB chunks, paced by the channel's
+`bufferedAmount`, at most 64 MiB), checks its SHA-256 and opens it without a prompt,
+opening the function the inviter is on. A newcomer who already has the program open is
+not sent it again, and brings what it had. Those earlier changes are written with the
+oldest clock there is (`[1, page]`; every page's own writes start at 2). So a field anyone
+in the session has ever written or deleted keeps the session's value on every page, even
+one the inviter had not heard of yet, and only a field the session never held takes the
+newcomer's value. What the newcomer changed after pressing *Join* is newest. When the
+session replaced some of the newcomer's changes, a toast says how many and offers *Save
+yours as a file*. A page that left a session and joins the same one again (the same
+program still open, with the same changes object) sends only what it changed since
+leaving, as new writes, so its newer changes win.
+
+A join fails with a message, and can be tried again with a new link, when it gets no
+welcome within 20 seconds, when the inviter's page goes away before the join is done
+("Ana's page closed the connection before you finished joining", or "The connection
+closed while the program was on its way"), or when nothing arrives for 20 seconds after
+the welcome. Stopping a load (the Stop button while the program is opened again, as a
+new decompiler effort does) leaves the session, since the page no longer has the
+program.
 
 *Where a session is stored.* The inviter, and a newcomer who had the program open, keep
 the session as their own (`kuna.d2.session.<hash>`). A newcomer who receives the program
-while having changes of their own stored for it keeps the two apart: the session is
-saved under `kuna.d2.shared.<hash>` (at most 5 programs, least recently used evicted,
-indexed in `kuna.d2.shared.index`) and never over the newcomer's own. The session dialog offers
-*Save them as a file* (a `.kuna` qualified with their own function names). On leaving,
-their own changes come back, and a toast offers to keep the session's changes instead. A
-newcomer with nothing stored keeps the session as their own. Two tabs of one browser
-share their storage, so joining a tab of the same browser sets nothing apart.
+while having changes of their own stored for it, which the session does not already hold
+all of, keeps the two apart. The session is saved under `kuna.d2.shared.<hash>` (at most
+5 programs, least recently used evicted, indexed in `kuna.d2.shared.index`) and never
+over the newcomer's own. The session dialog offers *Save them as a file* (a `.kuna`
+qualified with their own function names). On leaving, their own changes come back, and a
+toast offers to keep the session's changes instead; that offer does nothing once another
+program is open, or while the page is in a session again. A newcomer with nothing stored,
+or whose stored changes the session holds already, keeps the session as their own. Tabs
+of one browser share their storage, so the same rule decides for them. A tab joining the
+inviter's tab of the same browser sets nothing apart when that tab keeps the session as
+its own, and keeps the student's changes apart when that tab does. Changes an earlier
+version stored under its FNV-1a key are found and moved first, so they are kept apart
+like any others.
 
 *Groups.* Up to 8 people, each page linked to every other. A newcomer needs one invite
 from anyone in the session; the pages gossip who is linked to whom, and for each pair not
 yet linked, the page with the smaller id makes an offer that a page linked to both
 relays, with the answer, so the group introduces the newcomer to everyone. A page
 forwards an edit only to the people it knows are not linked to its author, so a pair that
-cannot link directly still converges, and a full mesh sends each edit once per link. The
-ninth person is told "This session is full (8 people)". Leaving (the session dialog, or
-closing the tab) tells the others; a page that loses a link tries again through the
-others, and someone no longer reachable through anyone leaves the roster.
+cannot link directly still converges, and a full mesh sends each edit once per link. A
+register that takes a newer write of the value it already holds passes that on too, so
+pages agree on clocks as well as values (otherwise a later write in between would win on
+some pages and lose on others). An edit can still go missing on a link that dies while it
+carries it. So pages also compare digests of their registers (an order-free hash of every
+key, value, clock and birth, kept up to date with each write). Every 10 seconds, and soon
+after anyone joins or leaves, each page sends its digest to each page it is linked to,
+once its own edits have been quiet for 2 seconds. Two quiet pages whose digests differ
+send each other all their registers, which merge harmlessly. The ninth person is told
+"This session is full (8 people)". Leaving (the session dialog, or closing the tab) tells
+the others; a page that loses a link tries again through the others, and someone no
+longer reachable through anyone leaves the roster. A link keeps what arrives before the
+page listens on it, so a page that is still working out its build id loses nothing the
+other page sent first.
 
 *Presence.* The top bar shows the others as initials in their colours; the tooltip says
 where each one is ("Ben: sum_to, Assembly") and a click follows them until you click or
@@ -895,7 +937,26 @@ formats and architectures**:
    refused value retried, a join whose inviter leaves first, routes pruned when someone
    leaves, the counter bound, UTF-8 batch sizes, names and programs that cannot travel,
    the live-register cap on both sides and the resync after dropped edits, a very large
-   snapshot, the same-browser knock answered late, and the passive answer.
+   snapshot, the same-browser knock answered late, and the passive answer; and, from a
+   second review, a newer write of the same value passed on, an edit lost on a dying link
+   reaching that page through the others (digests), and a global with a half deleted gone
+   on every page. **`test/decompile2-collab-sync.mjs`** and
+   **`test/decompile2-collab-fuzz.mjs`** (build-free) drive the page's real glue
+   (`collab/sync.js` with `group.js` and a real `Session` per page) through
+   `test/collab-sim.mjs`: in-memory links with latency, links that fail with edits in
+   flight, pairs that cannot link, and a virtual clock that runs every timer the protocol
+   sets. The first holds one case per defect the second review found in the glue: a guest
+   with the program open and changes of its own, leaving and joining again (kept apart or
+   not), an edit made while another person's change waits to be applied, an inviter that
+   goes away mid-join, a join that stops hearing, a tab of the same browser keeping a
+   student's changes apart, the shared order. The fuzz test runs seeded random sessions
+   (400 by default; `--runs`, `--seed`) of 3 to 5 pages: edits of every kind, joins and
+   joins again, leaves, undo and redo, effort changes, failing links. Once they settle it
+   checks that linked pages hold the same registers and send the same directives in the
+   same order, that every page's Session is exactly what its registers make, and that no
+   page ever sent a write for a field its student did not change (a joiner's earlier
+   fields, written with the oldest clock, are the one exception, since they cannot replace
+   anyone's write).
    **`test/decompile2-replay.mjs`** exports sessions (made alone, and shared with the
    birth order) and replays each file through the native CLI (`kuna decompile … --assert
    @file`): a type used by a later type, two prototypes of one function (the later
@@ -938,7 +999,15 @@ formats and architectures**:
    function that is still loading, a new invite after a failed join, Undo and Cancel
    during someone else's re-decompile, opening a program while a join waits, the restored
    banner, roster focus, two tabs without a false warning, a connection that cannot be
-   made, and a name with a line separator.
+   made, and a name with a line separator. Then the second review's: a guest in another
+   browser that has the program open with changes of its own (the inviter's rename and note
+   stay on both pages), leaving and joining again with the guest's changes kept apart and
+   without, an edit made inside the other page's apply batch (the batch widened to 1.5 s),
+   an inviter whose tab closes before the program arrives, following someone who opens a
+   function they had open, a view setting changed while another person's change waits,
+   the "use the session's changes" offer after opening another program, a tab joining a
+   tab of its own browser that keeps the student's changes apart, Stop during a reload in
+   a session, and changes stored under an earlier version's key.
    **`test/decompile2-collab-rtc.mjs`** runs two Chrome processes over real WebRTC with
    the links carried by the script and raw host candidates
    (`--disable-features=WebRtcHideLocalIpsWithMdns`, since runners lack the multicast

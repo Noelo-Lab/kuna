@@ -295,6 +295,11 @@ function invite(host, guest) {
   return [a, b];
 }
 const settle = async (ms = 60) => { for (let i = 0; i < 6; i++) await sleep(ms / 6); };
+/** Wait until `ok()` (checked every 50 ms), at most `ms`; returns whether it came true. */
+const until = async (ok, ms = 5000) => {
+  for (const end = Date.now() + ms; Date.now() < end; await sleep(50)) if (ok()) return true;
+  return ok();
+};
 const same = (...ms) => ms.every((m) => JSON.stringify([...m.replica.regs].sort()) === JSON.stringify([...ms[0].replica.regs].sort()));
 
 await test('#3 a page that joins again sends what it changed while it was away', async () => {
@@ -437,22 +442,24 @@ await test('second review #5 a newer write of the same value is passed on, so a 
   const cy = member('cccccccc', 'Cy', { group: quiet });
   try {
     invite(ana, ben);
-    await settle(150);
+    await until(() => ana.g.peers.get('bbbbbbbb')?.member && ben.g.sid);
     invite(ana, cy);
-    await settle(400);
+    await until(() => cy.g.members().length === 3 && ben.g.members().length === 3);
+    await settle(300);
     assert.ok(!ben.g.peers.has('cccccccc'), 'Ben and Cy cannot link: Cy hears Ben only through Ana');
     const K = 'fn:0x5555';
     ben.g.local([ben.replica.set(K, 'x')]);
-    await settle(150);
+    await until(() => cy.replica.value(K) === 'x');
     ben.replica.counter += 10;
     ben.g.local([ben.replica.set(K, 'x')]);
-    await settle(150);
+    await until(() => ana.replica.clock(K)?.[0] === ben.replica.clock(K)[0]);
+    await settle(300);
     assert.deepEqual(cy.replica.clock(K), ben.replica.clock(K), 'Cy has Ben\'s newer clock, passed on by Ana');
     const between = [ben.replica.clock(K)[0] - 5, 'cccccccc'];
     const op = { k: K, v: 'y', c: between, b: between };
     cy.replica.apply(op);
     cy.g.local([op]);
-    await settle(200);
+    await settle(300);
     assert.deepEqual([ana, ben, cy].map((m) => m.replica.value(K)), ['x', 'x', 'x'], 'every page holds the same value');
   } finally {
     blocked.delete('bbbbbbbb-cccccccc');
@@ -460,33 +467,30 @@ await test('second review #5 a newer write of the same value is passed on, so a 
   }
 });
 await test('second review #6 an edit lost on a link that dies reaches that page through the others', async () => {
-  const fast = { sumMs: 300, quietMs: 100 };
+  const fast = { sumMs: 1e8, quietMs: 100 };
   const ana = member('aaaaaaaa', 'Ana', { file: FILE, bytes: FILE_BYTES, group: fast });
   ana.g.create();
   const ben = member('bbbbbbbb', 'Ben', { group: fast });
   const cy = member('cccccccc', 'Cy', { group: fast });
   try {
     invite(ana, ben);
-    await settle(150);
+    await until(() => ana.g.peers.get('bbbbbbbb')?.member && ben.g.sid);
     invite(ana, cy);
-    await settle(600);
-    assert.ok(ben.g.peers.get('cccccccc')?.member, 'a full mesh');
+    assert.ok(await until(() => ben.g.peers.get('cccccccc')?.member && cy.g.peers.get('bbbbbbbb')?.member), 'a full mesh');
+    await settle(300);
     const ab = ana.g.peers.get('bbbbbbbb').link;
     ab.lossy = true;
     ab.other.lossy = true;
     const K = 'comment:0x1198:0x11b5';
     ana.g.local([ana.replica.set(K, 'lost on the way to Ben')]);
-    await settle(150);
+    await until(() => cy.replica.value(K) === 'lost on the way to Ben');
+    await settle(300);
     assert.equal(cy.replica.value(K), 'lost on the way to Ben');
     assert.equal(ben.replica.value(K), null, 'Ben did not get it: the link to Ana was already failing');
     blocked.add('aaaaaaaa-bbbbbbbb');
     ab.close();
-    let got = false;
-    for (let i = 0; i < 40 && !got; i++) {
-      await sleep(100);
-      got = ben.replica.value(K) === 'lost on the way to Ben';
-    }
-    assert.ok(got, 'Ben has the edit, from Cy');
+    assert.ok(await until(() => ben.replica.value(K) === 'lost on the way to Ben', 15000), 'Ben has the edit, from Cy, once they compared digests after Ana\'s link went');
+    await until(() => same(ana, ben, cy));
     assert.ok(same(ana, ben, cy));
   } finally {
     blocked.delete('aaaaaaaa-bbbbbbbb');

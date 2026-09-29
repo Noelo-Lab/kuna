@@ -25,6 +25,7 @@ const arg = (name, fallback) => {
 const RUNS = arg('--runs', 400);
 const SEED = arg('--seed', 1);
 const VERBOSE = process.argv.includes('--verbose');
+const TRACE = process.argv.includes('--trace');
 
 const IDS = ['p0aaaaaa', 'p1bbbbbb', 'p2cccccc', 'p3dddddd', 'p4eeeeee'];
 const FNS = ['0x1000', FN, '0x1200'];
@@ -78,18 +79,28 @@ async function runOne(seed) {
   host.start();
   await sim.run(rng.int(200));
   const steps = 30 + rng.int(40);
+  const log = (...a) => { if (TRACE) console.log(`${sim.clock.now()} ms`, ...a); };
   for (let step = 0; step < steps; step++) {
     const r = rng();
     const shared = pages.filter((p) => p.sync.shared);
     if (r < 0.42) {
       const p = rng.pick(pages.filter((x) => x.program));
-      p.edit((s) => mutate(rng, s));
+      const keys = p.edit((s) => mutate(rng, s));
+      log(p.id, p.sync.phase, 'edit', [...keys].join(' '));
     } else if (r < 0.56) {
       const solo = pages.filter((p) => p.sync.phase === 'solo');
-      if (solo.length && shared.length) rng.pick(solo).joinVia(rng.pick(shared));
+      if (solo.length && shared.length) {
+        const [p, h] = [rng.pick(solo), rng.pick(shared)];
+        log(p.id, 'joins via', h.id, 'program', !!p.program);
+        p.joinVia(h);
+      }
     } else if (r < 0.61) {
       const guests = shared.filter((p) => p !== host);
-      if (guests.length) rng.pick(guests).leave();
+      if (guests.length) {
+        const p = rng.pick(guests);
+        log(p.id, 'leaves');
+        p.leave();
+      }
     } else if (r < 0.66) {
       const live = [...sim.net.links].filter((l) => !l.dead);
       if (live.length) sim.net.fail(rng.pick(live));

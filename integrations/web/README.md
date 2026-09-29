@@ -161,6 +161,8 @@ node integrations/web/test/decompile2-learn.mjs
 node integrations/web/test/decompile2-groups.mjs
 node integrations/web/test/decompile2-collab.mjs
 node integrations/web/test/decompile2-collab-cases.mjs
+node integrations/web/test/decompile2-collab-sync.mjs
+node integrations/web/test/decompile2-collab-fuzz.mjs [--runs 2000] [--seed 1]
 
 # G2. Exported sessions replayed by the native CLI (skips without decompiler/target/release/kuna).
 node integrations/web/test/decompile2-replay.mjs
@@ -230,6 +232,15 @@ node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
   bound, UTF-8 batch sizes, the live-register cap, resync after dropped edits, route
   pruning, names and programs that cannot travel, the same-browser knock, the passive
   answer.
+- **`decompile2-collab-sync.mjs`** and **`decompile2-collab-fuzz.mjs`** drive the
+  page's real glue (`collab/sync.js`, `group.js`, a real `Session` per page) through
+  `collab-sim.mjs`: in-memory links that can fail with edits in flight, and a virtual
+  clock. The first holds one case per defect a second review found in the glue (a guest
+  with the program open, leaving and joining again, an edit made inside another page's
+  apply batch, an inviter that goes away mid-join, tabs of one browser, the shared
+  order). The second runs seeded random sessions and checks that linked pages agree,
+  that each page's Session is what its registers make, and that no page sends a change
+  its student did not make.
 - **`decompile2-replay.mjs`** exports sessions made alone and shared and replays each
   `.kuna` through the native CLI: a type used by a later type, the later of two
   prototypes, and a rename chain all apply.
@@ -255,7 +266,10 @@ messages, leaving),
 **`decompile2-collab-page.mjs`** (the page's side of the review's defects, one case
 each: cancelled edits, joins after a re-index or a failed join, a newcomer's own changes
 kept apart, following into a loading function, Undo and Cancel during someone else's
-re-decompile, focus, the two-tab demo, connection errors) and
+re-decompile, focus, the two-tab demo, connection errors; then a second review's: a guest
+with the program open and changes of its own, leaving and joining again, an edit made
+inside the other page's apply batch, an inviter that closes mid-join, a view setting
+changed while a change waits, Stop during a reload, earlier versions' stored changes) and
 **`decompile2-collab-rtc.mjs`** (two Chrome processes over WebRTC; SKIPPED only when
 two peer connections in one page cannot connect on the machine; `--late 60` opens the
 reply a minute late). Plain

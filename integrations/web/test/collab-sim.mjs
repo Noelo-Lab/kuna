@@ -5,8 +5,10 @@
 // stands in for app.js the way the study view drives Sync: every edit is
 // followed by `sessionChanged` (Sync.local, then saving), the others' changes
 // come back through `remoteChanged`, a program another page sends is opened
-// with `openShared`, and leaving gives a session kept apart back to the
-// student's own changes (`endShared`). Links deliver in order with a latency,
+// with `openShared` (the Session is swapped at once and the load finishes a
+// moment later, false when a later open replaced it, as in app.js), and
+// leaving gives a session kept apart back to the student's own changes
+// (`endShared`). Links deliver in order with a latency,
 // can fail (what was in flight is lost, and each side notices later), and
 // some pairs of pages can be made unable to link directly.
 //
@@ -291,6 +293,7 @@ export class Page {
     this.store = browser?.store || new Map();
     this.sharedStore = browser?.sharedStore || new Map();
     this.touched = new Set();
+    this.opening = 0;
     this.events = [];
     this.joinFailures = [];
     this.replacedCopies = [];
@@ -327,15 +330,16 @@ export class Page {
         const own = this.#restore(hash);
         return own.size ? own : null;
       },
-      openShared: ({ session, slot, mode }) => new Promise((done) => {
-        this.sim.clock.setTimeout(() => {
-          this.program = PROGRAM;
-          this.session = session;
-          this.slot = slot;
-          if (mode) this.mode = mode;
-          done(true);
-        }, this.sim.rng.int(200));
-      }),
+      openShared: ({ session, slot, mode }) => {
+        this.program = PROGRAM;
+        this.session = session;
+        this.slot = slot;
+        if (mode) this.mode = mode;
+        const open = ++this.opening;
+        return new Promise((done) => {
+          this.sim.clock.at(this.sim.rng.int(200), () => done(this.opening === open), this.id);
+        });
+      },
     };
   }
 

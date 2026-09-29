@@ -8,9 +8,18 @@
 // keeping it queued; opening a program during a pending join; the restored-
 // changes banner once a session starts; keyboard focus in the roster; two
 // tabs of one browser without a false warning; a connection that cannot be
-// made; a name with a line separator. Each case runs in fresh tabs (a second
-// Chrome process stands in for another person's computer) and is reported;
-// any failure exits 1.
+// made; a name with a line separator. Then a second review's (numbered as it
+// numbers them): a guest that has the program open with changes of its own;
+// leaving and joining again, with the guest's own changes kept apart or not;
+// an edit made while another person's change waits to be applied; an inviter
+// whose tab closes in the middle of a join; following someone who opens a
+// function they had open before; a view setting changed while another
+// person's change waits; the "use the session's changes" offer after opening
+// another program; a tab joining a tab of its own browser that keeps a
+// student's changes apart; Stop while a new decompiler effort reloads the
+// program; changes stored by an earlier version. Each case runs in fresh tabs
+// (a second Chrome process stands in for another person's computer) and is
+// reported; any failure exits 1.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 // `--only TEXT` runs the cases whose name contains TEXT.
@@ -20,6 +29,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { findChrome, launchChrome, openPage, openTab } from './cdp-client.mjs';
 import { requireDist, serveStatic, fixture } from './worker-harness.mjs';
+import { legacyKey } from '../decompile2/persist.js';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
@@ -33,7 +43,7 @@ const server = await serveStatic();
 const flags = ['--disable-features=WebRtcHideLocalIpsWithMdns'];
 const chrome = await launchChrome(chromePath, { flags });
 const chrome2 = await launchChrome(chromePath, { flags });
-const guard = setTimeout(() => { console.error('DECOMPILE2 COLLAB PAGE FAIL — timed out'); chrome.close(); chrome2.close(); process.exit(1); }, 900000);
+const guard = setTimeout(() => { console.error('DECOMPILE2 COLLAB PAGE FAIL — timed out'); chrome.close(); chrome2.close(); process.exit(1); }, 2400000);
 const SAMPLE_HASH = 'sha256:' + createHash('sha256').update(readFileSync(fixture('sample.elf'))).digest('hex');
 
 /** Worker answers arrive `window.__kunaDelay` ms late, so an engine request can be caught in flight; `__kunaWorkers` counts engine starts. */
@@ -51,6 +61,29 @@ const DELAY_SHIM = `(() => {
   };
   window.Worker.prototype = Real.prototype;
 })();`;
+
+/** The page's apply batch (a 16 ms timer) waits 6 s instead, so an edit can be made inside it. */
+const WIDE_APPLY = `(() => {
+  const real = window.setTimeout;
+  window.setTimeout = function (fn, ms, ...rest) { return real.call(this, fn, ms === 16 ? 6000 : ms, ...rest); };
+})();`;
+
+/** The program, and the message announcing it, sent between tabs of this browser never arrive. */
+const DROP_FILE = `(() => {
+  const post = BroadcastChannel.prototype.postMessage;
+  BroadcastChannel.prototype.postMessage = function (m) {
+    if (m && m.k === 'm' && (m.d instanceof ArrayBuffer || (typeof m.d === 'string' && m.d.startsWith('{"t":"file"')))) return undefined;
+    return post.call(this, m);
+  };
+})();`;
+
+const OWN_KEY = `kuna.d2.session.${SAMPLE_HASH}`;
+const stored = (records) => JSON.stringify({ v: 1, rawSeq: 0, bytes: [], records });
+const MAIN = '0x1198';
+const SUM = '0x1161';
+const fnRec = (addr, name) => [`fn:${addr}`, { kind: 'fn', addr, name }];
+const varRec = (func, sym, name) => [`var:${func}:${sym}`, { kind: 'var', func, sym, name, type: null }];
+const noteRec = (func, addr, text) => [`comment:${func}:${addr}`, { kind: 'comment', func, addr, text }];
 
 let tabs = [];
 let firstUsed = { 1: false, 2: false };
@@ -89,7 +122,7 @@ async function open(p, { seed = null } = {}) {
 
 async function example(p) {
   await p.click('#examplebtn');
-  await p.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { what: `${p.label}: main`, timeout: 60000 });
+  await p.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf' && document.getElementById('ccode').textContent.includes('add(')`, { what: `${p.label}: main`, timeout: 60000 });
   await idle(p);
 }
 
@@ -135,6 +168,30 @@ async function pair({ other = false, anaScript = null, benScript = null, benSeed
   return { ana, ben };
 }
 
+/** Open `link`'s invite in `ben`, a page that is already open (only the #fragment changes). */
+async function joinByHash(ben, link) {
+  await ben.evaluate(`location.hash = ${JSON.stringify('#join=' + link.split('#join=')[1])}; true`);
+  await nameAndGo(ben, 'Ben');
+}
+
+/** Ben (another browser) made a reply link: Ana pastes it into her invite. */
+async function carryReply(ana, ben) {
+  await ben.waitFor(`document.querySelector('#d2collab [data-copytext]')?.value.includes('#reply=')`, { what: 'Ben\'s reply link', timeout: 20000 });
+  const reply = await ben.evaluate(`document.querySelector('#d2collab [data-copytext]').value`);
+  if (!(await ana.evaluate(`!!document.querySelector('#d2collab input[name=reply]')`))) {
+    await ana.click('#morebtn');
+    await ana.click('#collabbtn');
+    await ana.waitFor(`document.querySelector('#d2collab input[name=reply]')`, { what: 'Ana\'s paste box' });
+  }
+  await ana.call((r) => { const i = document.querySelector('#d2collab input[name=reply]'); i.value = r; i.form.requestSubmit(); return true; }, reply);
+}
+
+const joinedBoth = async (ana, ben, n = 1) => {
+  await ben.waitFor(`document.querySelectorAll('#d2roster .d2-who:not(.wait)').length === ${n} && !document.getElementById('d2collab')?.open`, { what: 'Ben joined', timeout: 30000 });
+  await ana.waitFor(`document.querySelectorAll('#d2roster .d2-who:not(.wait)').length === ${n}`, { what: 'Ana sees Ben', timeout: 20000 });
+};
+const rail = (p) => text(p, '#sesslist');
+
 async function popover(p, selector, key, value) {
   await p.click(selector);
   await p.key(key);
@@ -148,6 +205,7 @@ const SUMMARY = `JSON.stringify({
   status: document.getElementById('status')?.textContent, busy: !document.getElementById('cancelbtn')?.disabled,
   code: (document.getElementById('ccode')?.textContent || '').slice(0, 80),
   toasts: [...document.querySelectorAll('.d2-toast')].map((t) => t.textContent.slice(0, 90)),
+  dialog: document.getElementById('d2collab')?.open ? document.getElementById('d2collab').textContent.slice(0, 160) : null,
 })`;
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 const CASE_MS = 150000;
@@ -399,6 +457,242 @@ try {
     await ana.click('#collabbtn');
     await nameAndGo(ana, 'A\u2028na');
     await ana.waitFor(`document.querySelector('#d2collab [data-copytext]')?.value.includes('#join=')`, { what: 'an invite link', timeout: 10000 });
+  });
+
+  // ── a second review ──────────────────────────────────────────────────────
+
+  await test('second review #1 a guest that has the program open with changes of its own joins: nothing of the inviter\'s is lost', async () => {
+    const ana = await tab('Ana');
+    await open(ana, { seed: [[OWN_KEY, stored([fnRec(SUM, 'summation'), noteRec(MAIN, '0x11b5', 'ana note')])]] });
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { other: true });
+    await open(ben, { seed: [[OWN_KEY, stored([fnRec(SUM, 'bens_sum'), varRec(MAIN, 'v1', 'bens_total')])]] });
+    await example(ben);
+    await joinByHash(ben, link);
+    await carryReply(ana, ben);
+    await joinedBoth(ana, ben);
+    for (const p of [ana, ben]) {
+      await p.waitFor(`/summation\\(add/.test(document.getElementById('ccode').textContent) && /bens_total/.test(document.getElementById('ccode').textContent)`, { what: `${p.label} shows Ana's rename and Ben's`, timeout: 30000 });
+      await p.waitFor(`/ana note/.test(document.getElementById('sesslist').textContent)`, { what: `${p.label} keeps Ana's note`, timeout: 10000 });
+      assert.ok(!/bens_sum/.test(await code(p) + await rail(p)), `the session's name for sum_to wins on ${p.label}'s page`);
+    }
+    assert.ok((await toasts(ben)).some((t) => /replaced 1 of yours/.test(t)), 'Ben is told, and offered his own as a file');
+  });
+
+  await test('second review #2 a guest whose own changes were kept apart leaves, then joins again with the program open: the session is not erased', async () => {
+    const ana = await tab('Ana');
+    await open(ana, { seed: [[OWN_KEY, stored([fnRec(SUM, 'summation'), noteRec(MAIN, '0x11b5', 'ana note')])]] });
+    await example(ana);
+    const first = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { other: true });
+    await open(ben, { seed: [[OWN_KEY, stored([varRec(MAIN, 'v1', 'bens_own')])]] });
+    await ben.navigate(first);
+    await nameAndGo(ben, 'Ben');
+    await carryReply(ana, ben);
+    await ben.waitFor(`/summation\\(add/.test(document.getElementById('ccode').textContent)`, { what: 'Ben has the session', timeout: 30000 });
+    await idle(ben);
+    await closeDialog(ana);
+    await ben.click('#d2roster [data-act=collab-open]');
+    await ben.waitFor(`document.querySelector('#d2collab [data-act=leave]')`, { what: 'the session dialog' });
+    await ben.click('#d2collab [data-act=leave]');
+    await ben.waitFor(`/bens_own/.test(document.getElementById('ccode').textContent) && !/summation/.test(document.getElementById('ccode').textContent)`, { what: 'Ben\'s own changes are back', timeout: 30000 });
+    await idle(ben);
+    await ana.waitFor(`document.querySelectorAll('#d2roster .d2-who').length === 0`, { what: 'Ana sees Ben leave', timeout: 20000 });
+    const again = await inviteLink(ana);
+    await joinByHash(ben, again);
+    await carryReply(ana, ben);
+    await joinedBoth(ana, ben);
+    for (const p of [ana, ben]) {
+      await p.waitFor(`/summation\\(add/.test(document.getElementById('ccode').textContent) && /bens_own/.test(document.getElementById('ccode').textContent)`, { what: `${p.label} has the session and Ben's own rename`, timeout: 30000 });
+      await p.waitFor(`/ana note/.test(document.getElementById('sesslist').textContent)`, { what: `${p.label} keeps Ana's note`, timeout: 10000 });
+    }
+  });
+
+  await test('second review #2 a guest leaves, both go on alone, and it joins the same session again: both sides\' changes meet', async () => {
+    const { ana, ben } = await pair();
+    await ben.click('#d2roster [data-act=collab-open]');
+    await ben.waitFor(`document.querySelector('#d2collab [data-act=leave]')`, { what: 'the session dialog' });
+    await ben.click('#d2collab [data-act=leave]');
+    await ana.waitFor(`document.querySelectorAll('#d2roster .d2-who').length === 0`, { what: 'Ana sees Ben leave', timeout: 20000 });
+    await front(ana);
+    await popover(ana, '#ccode .t[data-sym="argc"]', 'n', 'while_away');
+    await ana.key('Enter');
+    await idle(ana);
+    await front(ben);
+    await popover(ben, '#ccode .t[data-sym="v1"]', 'n', 'bens_alone');
+    await ben.key('Enter');
+    await idle(ben);
+    const again = await inviteLink(ana);
+    await closeDialog(ben);
+    await joinByHash(ben, again);
+    await joinedBoth(ana, ben);
+    for (const p of [ana, ben]) {
+      await p.waitFor(`/while_away/.test(document.getElementById('ccode').textContent) && /bens_alone/.test(document.getElementById('ccode').textContent)`, { what: `${p.label} has both`, timeout: 30000 });
+    }
+  });
+
+  await test('second review #3 an edit made while another person\'s change waits to be applied keeps that change', async () => {
+    const { ana, ben } = await pair({ benScript: WIDE_APPLY });
+    await front(ana);
+    await popover(ana, '#ccode .t[data-sym="v1"]', 'n', 'anas_name');
+    await ana.key('Enter');
+    await sleep(600);
+    assert.ok(!/anas_name/.test(await code(ben)), 'Ben\'s page has not applied it yet');
+    await front(ben);
+    await popover(ben, '#ccode .t[data-sym="argc"]', 'n', 'bens_name');
+    await ben.key('Enter');
+    for (const p of [ana, ben]) {
+      await p.waitFor(`/anas_name/.test(document.getElementById('ccode').textContent) && /bens_name/.test(document.getElementById('ccode').textContent)`, { what: `${p.label} has both`, timeout: 30000 });
+    }
+    await sleep(2000);
+    for (const p of [ana, ben]) assert.match(await code(p), /anas_name/, `${p.label} still has Ana's rename`);
+  });
+
+  await test('second review #4 the inviter\'s tab closes after the welcome, before the program arrives: the join fails and says so', async () => {
+    const ana = await tab('Ana', { script: DROP_FILE });
+    await open(ana);
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben');
+    await ben.navigate(link);
+    await nameAndGo(ben, 'Ben');
+    await ben.waitFor(`/Receiving/.test(document.getElementById('d2collab')?.textContent || '')`, { what: 'Ben waits for the program', timeout: 20000 });
+    await ana.closeTab();
+    tabs = tabs.filter((t) => t !== ana);
+    await ben.waitFor(`/closed/.test((document.getElementById('d2collab')?.textContent || '') + [...document.querySelectorAll('.d2-toast')].map((t) => t.textContent).join(' '))`, { what: 'Ben is told', timeout: 20000 });
+    await closeDialog(ben);
+    await ben.click('#examplebtn');
+    await ben.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'Ben opens a program without being asked to stop a join', timeout: 60000 });
+  });
+
+  await test('second review #7 following someone who opens a function they had open before: the follower lands where they are', async () => {
+    const { ana, ben } = await pair({ anaScript: DELAY_SHIM });
+    await ben.click('#d2roster .d2-who');
+    await front(ana);
+    await ana.evaluate('window.__kunaDelay = 3000; true');
+    await ana.click(`#fnlist .fn[data-addr="${SUM}"]`);
+    await sleep(400);
+    await ana.click(`#fnlist .fn[data-addr="${MAIN}"]`);
+    await ana.evaluate('window.__kunaDelay = 0; true');
+    await sleep(3500);
+    assert.equal(await text(ana, '#vname'), 'main');
+    assert.equal(await text(ben, '#vname'), 'main', 'Ben follows Ana to main, not to the function she stopped opening');
+    assert.match(await ben.evaluate(`document.querySelector('#d2roster .d2-who')?.title || ''`), /Ana: main/);
+  });
+
+  await test('second review #8 a view setting changed while another person\'s change waits: the change still reaches the code', async () => {
+    const { ana, ben } = await pair({ anaScript: DELAY_SHIM });
+    await front(ana);
+    await ana.evaluate('window.__kunaDelay = 10000; true');
+    await ana.click('#ccode');
+    await ana.key('x');
+    await ana.waitFor(`!document.getElementById('cancelbtn').disabled`, { what: 'Ana is busy', timeout: 10000 });
+    await front(ben);
+    await popover(ben, '#ccode .t[data-sym="v1"]', 'n', 'bens_name');
+    await ben.key('Enter');
+    await front(ana);
+    await ana.waitFor(`/bens_name/.test(document.getElementById('sesslist').textContent)`, { what: 'Ben\'s change reached Ana\'s session', timeout: 10000 });
+    await sleep(600);
+    await ana.evaluate(`(() => {
+      document.getElementById('viewbtn').click();
+      const i = document.querySelector('#viewmenu input[name=asmInfer]');
+      i.checked = !i.checked;
+      i.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    })()`);
+    assert.equal(await ana.evaluate(`!document.getElementById('cancelbtn').disabled`), true, 'the re-decompile is still waiting for Ana\'s request');
+    assert.ok(!/bens_name/.test(await code(ana)), 'and the code does not have Ben\'s change yet');
+    await ana.evaluate('window.__kunaDelay = 0; true');
+    await ana.waitFor(`/bens_name/.test(document.getElementById('ccode').textContent)`, { what: 'Ana\'s code shows Ben\'s rename', timeout: 30000 });
+  });
+
+  await test('second review #9 "use the session\'s changes" after opening another program does not touch that program', async () => {
+    const ana = await tab('Ana');
+    await open(ana, { seed: [[OWN_KEY, stored([fnRec(SUM, 'summation')])]] });
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { other: true });
+    await open(ben, { seed: [[OWN_KEY, stored([varRec(MAIN, 'v1', 'bens_own')])]] });
+    await ben.navigate(link);
+    await nameAndGo(ben, 'Ben');
+    await carryReply(ana, ben);
+    await ben.waitFor(`/summation\\(add/.test(document.getElementById('ccode').textContent)`, { what: 'Ben has the session', timeout: 30000 });
+    await idle(ben);
+    await ben.click('#d2roster [data-act=collab-open]');
+    await ben.waitFor(`document.querySelector('#d2collab [data-act=leave]')`, { what: 'the session dialog' });
+    await ben.click('#d2collab [data-act=leave]');
+    await ben.waitFor(`[...document.querySelectorAll('.d2-toast button')].some((b) => /session's changes instead/.test(b.textContent))`, { what: 'the offer', timeout: 20000 });
+    await idle(ben);
+    await ben.call((b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const dt = new DataTransfer();
+      dt.items.add(new File([bytes], 'sample_macho.o'));
+      const input = document.getElementById('file');
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }, readFileSync(fixture('sample_macho.o')).toString('base64'));
+    await ben.waitFor(`document.getElementById('crumbname')?.textContent === 'sample_macho.o'`, { what: 'another program', timeout: 60000 });
+    await idle(ben);
+    await ben.call(() => { [...document.querySelectorAll('.d2-toast button')].find((b) => /session's changes instead/.test(b.textContent)).click(); return true; });
+    await sleep(800);
+    assert.ok(!/Replace mine/.test(await ben.evaluate(`document.getElementById('d2pop')?.hidden ? '' : document.getElementById('d2pop')?.textContent || ''`)), 'no offer to replace the other program\'s changes');
+    assert.ok((await toasts(ben)).some((t) => /another program/.test(t)), 'it says why');
+  });
+
+  await test('second review #11 a tab joining a tab of its own browser keeps the student\'s own changes apart when that tab does', async () => {
+    const hana = await tab('Hana', { other: true });
+    await open(hana);
+    await example(hana);
+    const link = await inviteLink(hana, 'Hana');
+    const own = stored([varRec(MAIN, 'v1', 'students_own')]);
+    const ana = await tab('Ana');
+    await open(ana, { seed: [[OWN_KEY, own]] });
+    await ana.navigate(link);
+    await nameAndGo(ana, 'Ana');
+    await carryReply(hana, ana);
+    await ana.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf' && /kept as they were/.test([...document.querySelectorAll('.d2-toast')].map((t) => t.textContent).join(' '))`, { what: 'Ana keeps her own apart', timeout: 30000 });
+    await idle(ana);
+    const second = await inviteLink(ana);
+    const cy = await tab('Cy');
+    await cy.navigate(second);
+    await nameAndGo(cy, 'Cy');
+    await cy.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf' && /sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'Cy joined', timeout: 30000 });
+    await idle(cy);
+    await front(cy);
+    await popover(cy, '#ccode .t[data-sym="argc"]', 'n', 'cys_name');
+    await cy.key('Enter');
+    await idle(cy);
+    await sleep(500);
+    assert.equal(await cy.evaluate(`localStorage.getItem(${JSON.stringify(OWN_KEY)})`), own, 'the student\'s own stored changes are untouched');
+  });
+
+  await test('second review #12 Stop while a new decompiler effort reloads the program leaves the session cleanly', async () => {
+    const { ana, ben } = await pair({ anaScript: DELAY_SHIM });
+    await ana.evaluate('window.__kunaDelay = 5000; true');
+    await setSelect(ben, 'mode', 'fast');
+    await ana.waitFor(`document.getElementById('mode').value === 'fast' && !document.getElementById('cancelbtn').disabled`, { what: 'Ana reloads the program', timeout: 20000 });
+    await ana.evaluate(`document.getElementById('cancelbtn').click(); window.__kunaDelay = 0; true`);
+    await ana.waitFor(`(() => { const r = document.getElementById('d2roster'); return !r || r.hidden; })()`, { what: 'Ana is out of the session', timeout: 10000 });
+    assert.ok((await toasts(ana)).some((t) => /left the session/.test(t)));
+    await ben.waitFor(`document.querySelectorAll('#d2roster .d2-who').length === 0`, { what: 'Ben sees Ana go', timeout: 20000 });
+  });
+
+  await test('second review #13 changes stored by an earlier version (under its old key) are kept apart like any others', async () => {
+    const ana = await tab('Ana');
+    await open(ana);
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { other: true });
+    const old = `kuna.d2.session.${legacyKey(readFileSync(fixture('sample.elf')))}`;
+    await open(ben, { seed: [[old, stored([varRec(MAIN, 'v1', 'from_before')])]] });
+    await ben.navigate(link);
+    await nameAndGo(ben, 'Ben');
+    await carryReply(ana, ben);
+    await ben.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf'`, { what: 'Ben joined', timeout: 30000 });
+    await ben.waitFor(`/kept as they were/.test([...document.querySelectorAll('.d2-toast')].map((t) => t.textContent).join(' '))`, { what: 'Ben\'s earlier changes are kept apart', timeout: 10000 });
+    assert.match(await ben.evaluate(`localStorage.getItem(${JSON.stringify(OWN_KEY)}) || ''`), /from_before/, 'and moved to the current key');
   });
 } finally {
   clearTimeout(guard);
