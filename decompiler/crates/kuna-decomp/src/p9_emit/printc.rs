@@ -7774,6 +7774,9 @@ impl PrintC {
                             } else {
                                 None
                             };
+                            // (kuna `conststr`) The constant is a library
+                            // function's string argument.
+                            let string_arg = arch.const_str && crate::kuna_conststr::string_argument(fd, op, vn);
                             if self.push_ptr_char_constant_ir(
                                 arch,
                                 off,
@@ -7783,6 +7786,7 @@ impl PrintC {
                                 op,
                                 vn,
                                 bound,
+                                string_arg,
                             ) {
                                 return;
                             }
@@ -8503,6 +8507,8 @@ impl PrintC {
                                     .get(op)
                                     .map(|o| o.get_addr().clone())
                                     .unwrap_or_default();
+                                let string_arg = arch.const_str
+                                    && crate::kuna_conststr::string_argument(fd, op, in1.unwrap_or_default());
                                 if self.push_ptr_char_constant_ir(
                                     arch,
                                     in1const,
@@ -8512,6 +8518,7 @@ impl PrintC {
                                     op,
                                     in1.unwrap_or_default(),
                                     None,
+                                    string_arg,
                                 ) {
                                     return;
                                 }
@@ -9019,6 +9026,7 @@ impl PrintC {
         op: OpId,
         vn: VarnodeId,
         indexed: Option<Option<uintb>>,
+        string_arg: bool,
     ) -> bool {
         let spc = match arch.manage().get_default_data_space() {
             Some(s) => std::rc::Rc::clone(s),
@@ -9046,8 +9054,12 @@ impl PrintC {
         let mut s = String::new();
         let mut chars_emitted: int4 = 0;
         if !self.print_character_constant(arch, &mut s, &stringaddr, subct, &mut chars_emitted) {
-            // (kuna `conststr`) A byte string the UTF-8 check rejects prints by value.
-            match self.conststr_byte_literal(arch, &stringaddr, subct, ptr_size) {
+            // (kuna `conststr`) A byte string the UTF-8 check rejects prints by
+            // value where a library function reads it only as a string.
+            if !string_arg {
+                return false;
+            }
+            match self.conststr_byte_literal(arch, &stringaddr, subct) {
                 Some((lit, n)) => {
                     s = lit;
                     chars_emitted = n;
@@ -9083,7 +9095,7 @@ impl PrintC {
                 true,
                 chars_emitted,
                 if readable { Some(&window[..]) } else { None },
-            ) && !self.conststr_empty_tail(arch, &stringaddr)
+            ) && !(string_arg && Self::conststr_fixed_bytes(arch, &stringaddr, 1))
             {
                 return false;
             }
@@ -9098,22 +9110,28 @@ impl PrintC {
         true
     }
 
+    /// (kuna `conststr`) Are the `len` bytes at `addr` the ones a run reads:
+    /// inside program data and in no dynamic-relocation slot? See
+    /// [`crate::kuna_conststr`].
+    fn conststr_fixed_bytes(arch: &Architecture, addr: &Address, len: u64) -> bool {
+        let (lo, hi) = (addr.get_offset(), addr.get_offset().saturating_add(len.max(1) - 1));
+        crate::kuna_globalref::in_ranges(&arch.globalref_ranges, lo)
+            && crate::kuna_globalref::in_ranges(&arch.globalref_ranges, hi)
+            && !crate::kuna_conststr::overlaps(&arch.dynreloc_const, lo, hi)
+    }
+
     /// (kuna `conststr`) The literal of a byte string at `addr` that the UTF-8
     /// check rejected, and its character count: C output, one-byte characters,
     /// a NUL within the string manager's limit, and every byte through the NUL
-    /// read-only. A pointer-aligned address whose pointer-sized word is the
-    /// address of program data or code holds a pointer table, not a string.
-    /// See [`crate::kuna_conststr`].
+    /// read-only and fixed ([`Self::conststr_fixed_bytes`]). See
+    /// [`crate::kuna_conststr`].
     fn conststr_byte_literal(
         &self,
         arch: &Architecture,
         addr: &Address,
         char_type: &std::rc::Rc<crate::dtype::Datatype>,
-        ptr_size: int4,
     ) -> Option<(String, int4)> {
-        if !arch.const_str
-            || !crate::kuna_globalref::in_ranges(&arch.globalref_ranges, addr.get_offset())
-            || char_type.get_size() != 1
+        if char_type.get_size() != 1
             || char_type.is_opaque_string()
             || self.lang().forms.string_escape != crate::kuna_lang::StringEscape::CEscapes
         {
@@ -9134,53 +9152,16 @@ impl PrintC {
                 len = bytes[at..at + n].iter().position(|&b| b == 0).map(|p| at + p);
                 at += n;
             }
-            let len = len?;
-            let width = usize::try_from(ptr_size).ok().filter(|w| (1..=8).contains(w))?;
-            if addr.get_offset() % width as u64 == 0 {
-                let mut word = [0u8; 8];
-                if loader.load_fill(&mut word[..width], addr).is_ok()
-                    && crate::kuna_conststr::is_image_pointer(
-                        &word[..width],
-                        arch.translate().is_big_endian(),
-                        &arch.globalref_ranges,
-                        &arch.litpool_const,
-                    )
-                {
-                    return None;
-                }
-            }
-            len
+            len?
         };
         let gscope = arch.symboltab.get_global_scope()?;
-        if !arch.symboltab.is_read_only(gscope, addr, len as int4 + 1, &Address::new_invalid()) {
+        if !Self::conststr_fixed_bytes(arch, addr, len as u64 + 1)
+            || !arch.symboltab.is_read_only(gscope, addr, len as int4 + 1, &Address::new_invalid())
+        {
             return None;
         }
         let lit = crate::kuna_conststr::byte_literal(&bytes[..len])?;
         Some((lit, len as int4))
-    }
-
-    /// (kuna `conststr`) Is the NUL at `addr` the terminator of the string
-    /// before it, so a zero-character literal there is a genuine `""`?
-    fn conststr_empty_tail(&self, arch: &Architecture, addr: &Address) -> bool {
-        use crate::kuna_conststr::{terminates_string, TAIL_WINDOW};
-        if !arch.const_str || !crate::kuna_globalref::in_ranges(&arch.globalref_ranges, addr.get_offset()) {
-            return false;
-        }
-        let loader_rc = arch.translate().loader_rc();
-        let mut loader = loader_rc.borrow_mut();
-        let mut before: Vec<u8> = Vec::with_capacity(TAIL_WINDOW);
-        for back in 1..=TAIL_WINDOW.min(addr.get_offset() as usize) {
-            let mut b = [0u8; 1];
-            if loader.load_fill(&mut b, &(addr + -(back as i64))).is_err() {
-                break;
-            }
-            before.push(b[0]);
-            if b[0] == 0 {
-                break;
-            }
-        }
-        before.reverse();
-        terminates_string(&before)
     }
 
     /// Render readonly character data at `addr` as a quoted C string literal —

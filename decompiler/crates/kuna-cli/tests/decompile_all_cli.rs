@@ -5522,16 +5522,22 @@ int main(void) {
 }
 "#;
 
-/// `conststr`: a character-pointer constant prints as the string it addresses.
-/// The fixture (gcc and clang, -O0 and -O2) passes a tail-merged `""` and
-/// returns gnulib's GB18030 quote `"\xa1\ae"`; controls pass a writable buffer,
-/// hand an unknown-pointee callee the address of a `long` and a `char *` the
-/// caller then reads directly (the cast stays: C would not convert `&dat_<addr>`
-/// to that parameter's type), and read storage back at another width. Each
-/// build is exported with the option on and off, the witness functions are
-/// compiled exactly as printed against the export's header with each
-/// `dat_<addr>` placed at `<addr>` and the fixture's data mapped where the
-/// binary keeps it, and both arms must print what the binary prints.
+/// `conststr`: a character-pointer constant a C library function reads only
+/// as a string prints as that string. The fixture (gcc and clang, -O0 and -O2)
+/// hands `strcmp` the NUL that ends `"0123456789abcde"`, `strcspn` a set that
+/// is not UTF-8, and `strlen` overlong UTF-8, which must print as `""` and as
+/// literals holding every byte. The same kinds of bytes keep their address
+/// where the use is not a library string parameter: `count` compares that NUL
+/// as an end pointer (a `""` is another object and the loop runs away),
+/// `hsum` reads a table with a zero byte by length, `take` reads the overlong
+/// bytes and gcc's tail-merged `""`, and `w_quote` returns gnulib's GB18030
+/// quotes. Controls pass a writable buffer, hand an unknown-pointee callee the
+/// address of a `long` and a `char *` the caller then reads directly, and read
+/// storage back at another width. Each build is exported with the option on
+/// and off, the witness functions are compiled exactly as printed against the
+/// export's header with each `dat_<addr>` placed at `<addr>` and the fixture's
+/// data mapped where the binary keeps it, and both arms must print what the
+/// binary prints.
 #[test]
 fn a_constant_string_round_trips_through_the_printed_c() {
     check_conststr_round_trip(cfg!(all(target_os = "linux", target_arch = "x86_64")));
@@ -5545,7 +5551,9 @@ fn conststr_spellings_are_checked_without_native_execution() {
 fn check_conststr_round_trip(run_native: bool) {
     let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
     let sp = specs();
-    let witnesses = ["w_empty", "w_quote", "w_word", "w_name", "w_blob", "w_buf", "w_wide"];
+    let witnesses = [
+        "w_empty", "w_quote", "w_count", "w_end", "w_hsum", "w_ov", "w_set", "w_word", "w_name", "w_blob", "w_buf", "w_wide",
+    ];
     let builds = ["conststr_gcc_O0_x86_64", "conststr_gcc_O2_x86_64", "conststr_clang_O0_x86_64", "conststr_clang_O2_x86_64"];
     if !run_native {
         eprintln!("conststr round trip: native execution disabled; checking all spellings");
@@ -5557,11 +5565,16 @@ fn check_conststr_round_trip(run_native: bool) {
         let expected = run_native.then(|| {
             let output = process::required_output(&mut Command::new(&bin));
             let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            assert_eq!(text, "286768771227614 a10765 a1af 42 -1 12 7 9064 2", "{build}: the fixture itself");
+            assert_eq!(
+                text,
+                "286768771227614 a10765 a1af 42 -1 12 7 9064 2\n27 1 1 -1089340474 10162536894517629 10 15",
+                "{build}: the fixture itself"
+            );
             text
         });
         let harness = dir.join(format!("{build}-main.c"));
         std::fs::write(&harness, CONSTSTR_HARNESS.replace("@FIXTURE@", bin.to_str().unwrap())).unwrap();
+        let mut controls: Vec<Vec<String>> = Vec::new();
         for arm in ["on", "off"] {
             let out = dir.join(format!("{build}-{arm}"));
             let (_, stderr, ok) = run_kuna(&[
@@ -5584,16 +5597,36 @@ fn check_conststr_round_trip(run_native: bool) {
                 let end = code[at + head.len()..].find("// Function: ").map_or(code.len(), |e| at + head.len() + e);
                 printed.push_str(&code[at..end]);
             }
-            let literal = printed.contains("\"\\xa1\\ae\"") && printed.contains("\"\\xa1\\xaf\"");
-            assert_eq!(literal, arm == "on", "{build} {arm}: the GB18030 quotes\n{printed}");
+            let on = arm == "on";
+            let body = |w: &str| {
+                let at = printed.find(&format!("// Function: {w} @ ")).unwrap();
+                let end = printed[at + 13..].find("// Function: ").map_or(printed.len(), |e| at + 13 + e);
+                printed[at..end].to_string()
+            };
+            let cases = [
+                ("w_end", "strcmp(a0,\"\")"),
+                ("w_set", "strcspn(a0,\"\\x81\\x88\")"),
+                ("w_ov", "strlen(\"\\xa1\\xc1\\x81\\xe0\\x81\\x81\\xed\\xa0\\x80z\")"),
+            ];
+            for (w, literal) in cases {
+                assert_eq!(body(w).contains(literal), on, "{build} {arm}: `{literal}` in {w}\n{printed}");
+            }
+            for (w, kept) in [("w_count", "count(a0,(char *)0x"), ("w_hsum", "hsum(&dat_")] {
+                assert!(body(w).contains(kept), "{build} {arm}: `{kept}` keeps its address\n{printed}");
+            }
+            assert!(!body("w_ov").contains("take(\""), "{build} {arm}: a user function's argument\n{printed}");
+            let unchanged = ["w_quote", "w_count", "w_hsum", "w_word", "w_name", "w_blob", "w_buf", "w_wide"];
+            let mut kept: Vec<String> = unchanged.iter().map(|w| body(w)).collect();
+            kept.extend(body("w_empty").lines().filter(|l| l.contains("take(")).map(str::to_string));
+            controls.push(kept);
+            assert!(
+                !printed.contains("\"\\xa1\\ae\"") && !printed.contains("\"\\xa1\\xaf\""),
+                "{build} {arm}: a returned string keeps its address\n{printed}"
+            );
             for callee in ["set_slot((unsigned long *)0x", "set_name((unsigned long *)0x"] {
                 assert!(printed.contains(callee), "{build} {arm}: `{callee}` keeps its cast\n{printed}");
             }
             assert!(printed.contains("take(\"tab\\there\\n\")"), "{build} {arm}\n{printed}");
-            if build == "conststr_gcc_O2_x86_64" {
-                let tail = if arm == "on" { "take(\"\");" } else { "take((char *)0x3000200d);" };
-                assert!(printed.contains(tail), "{build} {arm}: expected `{tail}`\n{printed}");
-            }
             assert!(
                 !printed.contains("take(\"H") && !printed.contains("take(\"hi"),
                 "{build} {arm}: a writable buffer printed as a literal\n{printed}"
@@ -5655,21 +5688,26 @@ fn check_conststr_round_trip(run_native: bool) {
                 assert_eq!(got, *expected, "{build} {arm}/{cc}: the printed functions compute something else:\n{printed}");
             }
         }
+        assert_eq!(controls[0], controls[1], "{build}: a function with no library string argument moved");
     }
 }
 
 /// The `conststr` round trip's `main`: map the fixture's non-executable load
 /// segments at their own addresses, then call the printed witnesses as the
 /// fixture's own `main` does.
-const CONSTSTR_HARNESS: &str = r#"#include <elf.h>
+const CONSTSTR_HARNESS: &str = r#"#define _GNU_SOURCE
+#include <elf.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
 long w_empty(const char *); const char *w_quote(const char *); long w_word(long); long w_name(char *);
 long w_blob(void); long w_buf(void); long w_wide(long);
+int w_count(const char *); int w_end(const char *); int w_hsum(void); long w_ov(void); long w_set(const char *);
 int main(void) {
   int fd = open("@FIXTURE@", O_RDONLY);
+  const char *digits = 0;
   Elf64_Ehdr eh; pread(fd, &eh, sizeof eh, 0);
   for (int i = 0; i < eh.e_phnum; i++) {
     Elf64_Phdr ph; pread(fd, &ph, sizeof ph, eh.e_phoff + i * sizeof ph);
@@ -5677,7 +5715,9 @@ int main(void) {
     unsigned long lo = ph.p_vaddr & ~0xfffUL, hi = (ph.p_vaddr + ph.p_memsz + 0xfff) & ~0xfffUL;
     if (mmap((void *)lo, hi - lo, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) != (void *)lo) return 2;
     pread(fd, (void *)ph.p_vaddr, ph.p_filesz, ph.p_offset);
+    if (!digits) digits = memmem((void *)ph.p_vaddr, ph.p_filesz, "0123456789abcde", 16);
   }
+  if (!digits) return 3;
   const char *q = w_quote("`");
   const char *r = w_quote("'");
   long a = w_empty("x");
@@ -5685,6 +5725,8 @@ int main(void) {
   long g = w_wide(0x100000002L);
   printf("%ld %02x%02x%02x %02x%02x %ld %ld %ld %ld %ld %ld\n", a, (unsigned char)q[0], (unsigned char)q[1],
          (unsigned char)q[2], (unsigned char)r[0], (unsigned char)r[1], b, c, d, e, f, g);
+  printf("%d %d %d %d %ld %ld %ld\n", w_count(digits), w_end(""), w_end("x") > 1, w_hsum(), w_ov(),
+         w_set("ab\x88"), w_set("abc"));
   return 0;
 }
 "#;

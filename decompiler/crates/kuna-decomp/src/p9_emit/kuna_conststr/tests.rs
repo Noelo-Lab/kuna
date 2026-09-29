@@ -2,26 +2,26 @@
 
 use super::*;
 
-/// The linker's tail merge: `""` is the NUL that ends `"tab\there\n"`.
 #[test]
-fn the_nul_ending_a_string_is_a_real_empty_string() {
-    let mut before = vec![0x02, 0xff, 0x00];
-    before.extend_from_slice(b"tab\there\n");
-    assert!(terminates_string(&before));
-    let long = vec![b'x'; TAIL_WINDOW];
-    assert!(terminates_string(&long), "a string longer than the window");
+fn the_string_parameter_table_is_sorted_for_its_binary_search() {
+    assert!(STRING_PARAMS.windows(2).all(|w| w[0].0 < w[1].0), "STRING_PARAMS is not sorted by name");
 }
 
-/// A zero byte after binary, a lone character, or a window that could not be
-/// read back to the string's start is not a string's terminator.
+/// A parameter that reads its argument only as a string, and one that keeps a
+/// pointer into it (`strchr`'s subject, `strtol`'s), or a user function.
 #[test]
-fn a_zero_after_binary_is_not_a_string_end() {
-    assert!(!terminates_string(&[]));
-    assert!(!terminates_string(&[0x00]));
-    assert!(!terminates_string(&[0x00, b'A']), "one character");
-    assert!(!terminates_string(&[0x00, 0x77, 0xdf, 0x01, 0x02]));
-    assert!(!terminates_string(&[b'o', b'k']), "a short read that never reached a NUL");
-    assert!(!terminates_string(&[0x00, b'h', 0x07, b'i']), "a control byte in the run");
+fn only_a_parameter_read_as_a_string_is_listed() {
+    assert!(reads_only_as_string("setlocale", 1));
+    assert!(!reads_only_as_string("setlocale", 0), "the category");
+    assert!(reads_only_as_string("strcmp", 0) && reads_only_as_string("strcmp", 1));
+    assert!(reads_only_as_string("strpbrk", 1), "the set");
+    assert!(!reads_only_as_string("strpbrk", 0), "the result points into the subject");
+    assert!(reads_only_as_string("__printf_chk", 1), "the format after the flag");
+    assert!(reads_only_as_string("nanf", 0));
+    assert!(!reads_only_as_string("strchr", 0));
+    assert!(!reads_only_as_string("strtol", 0), "the end pointer points into it");
+    assert!(!reads_only_as_string("memcpy", 1), "read by length");
+    assert!(!reads_only_as_string("count", 1), "a user function");
 }
 
 #[test]
@@ -49,16 +49,27 @@ fn an_escaped_multibyte_character_keeps_its_bytes() {
     assert_eq!(byte_literal(b"\xc2\x80\xff").as_deref(), Some("\"\\xc2\\x80\\xff\""));
 }
 
-/// kmod's command table: the eight bytes at the constant are the address of a
-/// `.rodata` string (`ba b1 01 00 ...` = 0x1b1ba), so they are a pointer, not
-/// the string `"\xba\xb1\x01"`; gnulib's GB18030 quotes are not.
+/// An overlong form (`c1 81` and `e0 81 81` both decode to `A`) or a surrogate
+/// (`ed a0 80`, U+D800) is not the encoding of the character it decodes to, so
+/// each byte is escaped and the literal keeps all ten bytes.
 #[test]
-fn a_word_that_addresses_the_image_is_a_pointer() {
-    let data = [(0x1a000u64, 0x1c3ffu64), (0x28000u64, 0x2a0ffu64)];
-    let code = [(0x3000u64, 0x18fffu64)];
-    assert!(is_image_pointer(&[0xba, 0xb1, 0x01, 0, 0, 0, 0, 0], false, &data, &code));
-    assert!(is_image_pointer(&[0x70, 0x3e, 0, 0, 0, 0, 0, 0], false, &data, &code), "a code pointer");
-    assert!(!is_image_pointer(&[0xa1, 0x07, 0x65, 0, 0xa1, 0xaf, 0, 0], false, &data, &code));
-    assert!(!is_image_pointer(&[0; 8], false, &data, &code), "null");
-    assert!(is_image_pointer(&[0, 0x01, 0xb1, 0xba], true, &data, &code), "big-endian");
+fn an_overlong_or_surrogate_sequence_keeps_its_bytes() {
+    assert_eq!(byte_literal(b"\xc1\x81").as_deref(), Some("\"\\xc1\\x81\""));
+    assert_eq!(byte_literal(b"\xe0\x81\x81").as_deref(), Some("\"\\xe0\\x81\\x81\""));
+    assert_eq!(byte_literal(b"\xed\xa0\x80").as_deref(), Some("\"\\xed\\xa0\\x80\""));
+    assert_eq!(
+        byte_literal(b"\xa1\xc1\x81\xe0\x81\x81\xed\xa0\x80z").as_deref(),
+        Some("\"\\xa1\\xc1\\x81\\xe0\\x81\\x81\\xed\\xa0\\x80z\"")
+    );
+}
+
+#[test]
+fn a_relocated_slot_anywhere_in_the_bytes_is_found() {
+    let slots = [(0x100u64, 0x107u64), (0x200u64, 0x207u64)];
+    assert!(overlaps(&slots, 0x0f0, 0x100));
+    assert!(overlaps(&slots, 0x107, 0x110));
+    assert!(overlaps(&slots, 0x1f0, 0x300));
+    assert!(!overlaps(&slots, 0x108, 0x1ff));
+    assert!(!overlaps(&slots, 0x208, 0x300));
+    assert!(!overlaps(&[], 0, u64::MAX));
 }

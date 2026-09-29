@@ -1,31 +1,35 @@
 <decompilertest>
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
-    Cast campaign, lever `conststr`: a character-pointer constant prints as
-    the string it addresses where upstream's literal falls through to the
-    address.
+    Cast campaign, lever `conststr`: a character-pointer constant passed to a
+    C library function that reads it only as a string prints as that string
+    where upstream's literal falls through to the address.
 
-        w_empty: take("") + strcmp(s, "")
-                 gcc -O2 stores "" as the terminating NUL of "tab\there\n"
-                 (a linker tail merge), and emptystrconst declined the empty
-                 literal because the bytes AFTER it are not string data
-        w_quote: return "\xa1\ae";
-                 gnulib's GB18030 quote: not valid UTF-8, so the string
-                 manager refuses it and globalref names it &dat_3000200e
+        w_end: strcmp(s, digits + 15) + 1
+               the NUL that ends "0123456789abcde", followed by a table, so
+               emptystrconst declined the empty literal; strcmp reads ""
+        w_set: strcspn(s, "\x81\x88") * 5
+               not valid UTF-8, so the string manager refused it
+        w_ov:  take(ov) + strlen(ov)
+               ov holds overlong and surrogate UTF-8 (c1 81, e0 81 81,
+               ed a0 80); strlen's literal spells all ten bytes, and take, a
+               user function, keeps the address
 
-    Three controls keep their form in both passes: w_buf passes a writable
-    .data buffer to a char * parameter (never a literal); w_word and w_name
-    hand a callee whose parameter points at an unknown word the address of a
-    long and of a char * they then read directly, and C would not convert
-    &dat_<addr> to that parameter's type by itself, so the cast stays; and
-    w_wide reads the storage it passes at another width.
+    The same kinds of bytes keep their address in both passes where the use
+    is not a library string parameter: w_count (clang -O2) passes digits + 15
+    to a user function that compares it as an end pointer, so a "" would be
+    another object; w_hsum passes a table with a zero byte to a (char *, len)
+    user function; w_quote returns gnulib's GB18030 quotes. Four more
+    controls: w_buf passes a writable .data buffer; w_word and w_name hand a
+    callee whose parameter points at an unknown word the address of a long
+    and of a char * they then read directly; w_wide reads the storage it
+    passes at another width.
 
-    The fixture is a non-PIE x86-64 ELF whose file-scope data has no symbol
-    (linked with -x). The callees' prototypes are declared with `parse line`
-    (set_slot and set_name at a pointer to the unknown word, as a callee-first
-    run recovers them) so the constants' types do not depend on the order of
-    decompilation. Pass 1 (`option conststr off`) is the bug and pass 2 the
-    default.
+    The fixtures are non-PIE x86-64 ELFs whose file-scope data has no symbol
+    (linked with -x); each pass loads the gcc -O2 build, then the clang -O2
+    one. The user callees' prototypes are declared with `parse line` so the
+    constants' types do not depend on the order of decompilation. Pass 1
+    (`option conststr off`) is the bug and pass 2 the default.
 
     Source: decompiler/crates/kuna-analysis/tests/fixtures/conststr_x86_64.c
 -->
@@ -40,9 +44,20 @@ c3
   <com>option conststr off</com>
   <com>read symbols</com>
   <com>parse line extern long take(char *s);</com>
+  <com>parse line extern int count(char *p, char *end);</com>
+  <com>parse line extern int hsum(char *p, int n);</com>
   <com>parse line extern void set_slot(xunknown8 *slot, long v);</com>
   <com>parse line extern void set_name(xunknown8 *slot, char *v);</com>
-  <com>lo fu w_empty</com>
+  <com>lo fu w_end</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_set</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_ov</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_hsum</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu w_quote</com>
@@ -61,12 +76,35 @@ c3
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/conststr_clang_O2_x86_64</com>
+  <com>option conststr off</com>
+  <com>read symbols</com>
+  <com>parse line extern long take(char *s);</com>
+  <com>parse line extern int count(char *p, char *end);</com>
+  <com>parse line extern int hsum(char *p, int n);</com>
+  <com>parse line extern void set_slot(xunknown8 *slot, long v);</com>
+  <com>parse line extern void set_name(xunknown8 *slot, char *v);</com>
+  <com>lo fu w_count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/conststr_gcc_O2_x86_64</com>
   <com>read symbols</com>
   <com>parse line extern long take(char *s);</com>
+  <com>parse line extern int count(char *p, char *end);</com>
+  <com>parse line extern int hsum(char *p, int n);</com>
   <com>parse line extern void set_slot(xunknown8 *slot, long v);</com>
   <com>parse line extern void set_name(xunknown8 *slot, char *v);</com>
-  <com>lo fu w_empty</com>
+  <com>lo fu w_end</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_set</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_ov</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w_hsum</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu w_quote</com>
@@ -84,14 +122,31 @@ c3
   <com>lo fu w_wide</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/conststr_clang_O2_x86_64</com>
+  <com>read symbols</com>
+  <com>parse line extern long take(char *s);</com>
+  <com>parse line extern int count(char *p, char *end);</com>
+  <com>parse line extern int hsum(char *p, int n);</com>
+  <com>parse line extern void set_slot(xunknown8 *slot, long v);</com>
+  <com>parse line extern void set_name(xunknown8 *slot, char *v);</com>
+  <com>lo fu w_count</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="KUNA-CONSTSTR #1: off, the empty tail string is a cast integer" min="1" max="1">take\(\(char \*\)0x3000200d\);</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #2: on, it is the empty literal" min="1" max="1">take\(""\);</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #3: off, the GB18030 quote is the address of a global" min="1" max="1">return &amp;dat_3000200e;</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #4: on, it is the literal of its bytes" min="1" max="1">return "\\xa1\\ae";</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #5: a writable buffer is never a literal, in both passes" min="2" max="2">take\(\(char \*\)0x30004040\);</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #6: an unknown-pointee object read as a long keeps its cast, in both passes" min="2" max="2">set_slot\(\(unsigned long \*\)0x30004060,a0\);</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #7: and one read as a char pointer, in both passes" min="2" max="2">set_name\(\(unsigned long \*\)0x30004058,a0\);</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #8: storage also read at another width keeps the cast, in both passes" min="2" max="2">set_slot\(\(unsigned long \*\)0x30004050,a0\);</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #1: off, the string end passed to strcmp is a cast integer" min="1" max="1">return strcmp\(a0,\(char \*\)0x300020cf\) \+ 1;</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #2: on, strcmp reads it as the empty literal" min="1" max="1">return strcmp\(a0,""\) \+ 1;</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #3: off, a set strcspn reads that is not UTF-8 is the address of a global" min="1" max="1">return strcspn\(a0,&amp;dat_30002015\) \* 5;</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #4: on, it is the literal of its bytes" min="1" max="1">return strcspn\(a0,"\\x81\\x88"\) \* 5;</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #5: off, strlen of overlong UTF-8 is the address of a global" min="1" max="1">return strlen\(&amp;dat_30002080\) \+ v1;</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #6: on, the literal spells every byte" min="1" max="1">return strlen\("\\xa1\\xc1\\x81\\xe0\\x81\\x81\\xed\\xa0\\x80z"\) \+ v1;</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #7: a user function reading the same bytes keeps the address, in both passes" min="2" max="2">v1 = take\(&amp;dat_30002080\);</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #8: an end pointer a user function compares keeps its address, in both passes" min="2" max="2">return count\(a0,\(char \*\)0x300020df\) \* 3;</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #9: a table with a zero byte read by length keeps its address, in both passes" min="2" max="2">hsum\(&amp;dat_300020a0,8\);</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #10: a returned string keeps its address, in both passes" min="2" max="2">return &amp;dat_3000200e;</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #11: a writable buffer is never a literal, in both passes" min="2" max="2">take\(\(char \*\)0x30004048\);</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #12: an unknown-pointee object read as a long keeps its cast, in both passes" min="2" max="2">set_slot\(\(unsigned long \*\)0x30004068,a0\);</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #13: and one read as a char pointer, in both passes" min="2" max="2">set_name\(\(unsigned long \*\)0x30004060,a0\);</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #14: storage also read at another width keeps the cast, in both passes" min="2" max="2">set_slot\(\(unsigned long \*\)0x30004058,a0\);</stringmatch>
 </decompilertest>
