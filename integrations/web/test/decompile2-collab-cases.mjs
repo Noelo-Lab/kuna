@@ -8,7 +8,7 @@
 // travel; the register cap and resync; huge local batches; a late
 // BroadcastChannel knock; forwarding only where needed; the shared session
 // kept apart in storage; a program over 32 MB sent to a page that lost the
-// inviter's first hello. Every case runs and is reported; any failure exits 1.
+// inviter's first hello; a connection that cannot be set up. Every case runs and is reported; any failure exits 1.
 //   node integrations/web/test/decompile2-collab-cases.mjs
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
@@ -612,6 +612,29 @@ await test('#29 a guest that gets an ack too late says so, and goes on with WebR
   assert.deepEqual(said, ['no']);
   assert.match(FakePC.made.at(-1).localDescription.sdp, /a=setup:passive\r\n/, '#28 and the answer it uses is passive');
   res.cancel?.();
+});
+
+await test('fourth review #8 a connection that cannot be set up is closed, on either side, and the invite with it', async () => {
+  class FailingPC extends FakePC {
+    close() { this.closed = true; }
+    async setRemoteDescription() { throw new Error('the description was refused'); }
+  }
+  globalThis.RTCPeerConnection = FailingPC;
+  const L = await import('../decompile2/collab/link.js');
+  await assert.rejects(L.takeOffer({ me: 'bbbbbbbb', id: W.randomId(10), sdp: { u: 'abcd', p: 'x'.repeat(24), f: 'A'.repeat(64), c: [] } }));
+  assert.equal(FakePC.made.at(-1).closed, true, 'the guest closes its connection');
+  const offer = await L.makeOffer({ me: 'aaaaaaaa' });
+  const pc = FakePC.made.at(-1);
+  await assert.rejects(offer.answer({ u: 'abcd', p: 'x'.repeat(24), f: 'A'.repeat(64), c: ['127.0.0.1 40001 hu 2113937151'] }));
+  assert.equal(pc.closed, true, 'the inviter closes its connection');
+  await assert.rejects(offer.ready, 'and the offer is over');
+  const ch = new BroadcastChannel(`kuna.d2.link.${offer.id}`);
+  const heard = [];
+  ch.onmessage = ({ data }) => { if (data?.k !== 'knock') heard.push(data?.k); };
+  ch.postMessage({ k: 'knock', from: 'cccccccc' });
+  await sleep(500);
+  ch.close();
+  assert.deepEqual(heard, [], 'nothing listens for its tabs any more');
 });
 
 delete globalThis.RTCPeerConnection;

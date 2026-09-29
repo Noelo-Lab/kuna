@@ -261,8 +261,13 @@ export async function makeOffer({ me, iceServers = [] } = {}) {
     offer.onstate?.(pc.iceConnectionState);
     if (pc.iceConnectionState === 'failed') stop('failed');
   });
-  await pc.setLocalDescription(await pc.createOffer());
-  await gathered(pc);
+  try {
+    await pc.setLocalDescription(await pc.createOffer());
+    await gathered(pc);
+  } catch (e) {
+    stop('failed');
+    throw e;
+  }
   offer.sdp = compactSdp(pc.localDescription.sdp);
   if (!offer.sdp) {
     stop('no description');
@@ -296,8 +301,13 @@ export async function makeOffer({ me, iceServers = [] } = {}) {
   offer.answer = async (compact) => {
     if (done || offer.answered) throw new Error('used');
     offer.answered = true;
-    await pc.setRemoteDescription({ type: 'answer', sdp: expandSdp(compact, 'answer') });
-    offer.timer = setTimeout(() => stop('timeout'), OPEN_MS);
+    try {
+      await pc.setRemoteDescription({ type: 'answer', sdp: expandSdp(compact, 'answer') });
+    } catch (e) {
+      stop('failed');
+      throw e;
+    }
+    if (!done) offer.timer = setTimeout(() => stop('timeout'), OPEN_MS);
   };
   offer.cancel = () => stop('cancelled');
   return offer;
@@ -357,15 +367,20 @@ export async function takeOffer({ me, id, sdp, iceServers = [] } = {}) {
     }
   });
   pc.addEventListener('iceconnectionstatechange', () => res.onstate?.(pc.iceConnectionState));
-  await pc.setRemoteDescription({ type: 'offer', sdp: expandSdp(sdp, 'offer') });
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription({ type: 'answer', sdp: passiveAnswer(answer.sdp) });
-  await gathered(pc);
-  res.sdp = compactSdp(pc.localDescription.sdp);
   res.cancel = () => {
     quietly(() => pc.close());
     fail(new Error('cancelled'));
   };
+  try {
+    await pc.setRemoteDescription({ type: 'offer', sdp: expandSdp(sdp, 'offer') });
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription({ type: 'answer', sdp: passiveAnswer(answer.sdp) });
+    await gathered(pc);
+  } catch (e) {
+    res.cancel();
+    throw e;
+  }
+  res.sdp = compactSdp(pc.localDescription.sdp);
   if (!res.sdp) {
     res.cancel();
     throw new Error('this browser gave no usable connection details');
