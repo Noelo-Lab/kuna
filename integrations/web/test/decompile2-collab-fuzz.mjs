@@ -3,7 +3,8 @@
 // collab-sim.mjs), on a virtual clock: 3 to 5 pages, some with the program
 // open and changes of their own, some that must receive it; random edits of
 // every kind, joins (and joins again after leaving), leaves, undo and redo,
-// decompiler-effort changes (also by pages working alone, which join later), links that fail with edits in flight, and pairs
+// decompiler-effort changes (also by pages working alone, which join later),
+// students moving about quickly, links that fail with edits in flight, and pairs
 // of pages that cannot link directly, links that lose the first message one
 // side sends; every action followed by a random wait,
 // so edits land inside the others' 16 ms apply batch, during joins and while a
@@ -19,7 +20,9 @@
 //     variable change made at another decompiler effort than the session's;
 //   - a change the others' pages refuse stays on its page, and its student is
 //     told (also for a joiner's earlier changes); no page takes another for
-//     one whose clock races ahead;
+//     one whose clock races ahead; moving about quickly never makes a page
+//     drop another's messages for going too fast (only edits may be, and
+//     they are asked for again);
 //   - adding a directive always adds one (never replaces another of the
 //     page's own); applying the others' changes never clears what the engine
 //     said of a record they did not change; a page out of any session never
@@ -133,6 +136,8 @@ async function runOne(seed) {
     } else if (r < 0.84) {
       const can = pages.filter((p) => p.sync.phase !== 'joining');
       if (can.length) rng.pick(can).setMode(rng.pick(MODES));
+    } else if (r < 0.88) {
+      if (shared.length) rng.pick(shared).moveAbout(20 + rng.int(60));
     } else {
       await sim.run(rng.int(400));
     }

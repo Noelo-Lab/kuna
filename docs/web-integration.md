@@ -871,8 +871,10 @@ there**.
 
 *Limits.* Every message from another page is checked before the page acts on it: a known
 type, each field in its expected shape and a size cap (`wire.js` `readMessage`), then a
-rate limit per page (edits 20 a second, pings 1, pointers 30); what fails is dropped and
-the link goes on. Each register op passes `validOp`: a key of a known shape, a value of
+rate limit per page (edits 20 a second, pings 1, pointers 30, where each person is 10,
+everything else 20); what fails is dropped and the link goes on. A page says where its
+student is at most five times a second (the latest place wins), and that has a budget of
+its own, so moving about quickly never crowds out an introduction, a roster or a goodbye. Each register op passes `validOp`: a key of a known shape, a value of
 its kind's shape, and a clock whose counter is at most 2^48 and not more than 2^24 ahead
 of the page's own (so one bad clock cannot push every page's counter past what the others
 accept). Over time, each link may move the page's counter on by at most 2^24 a minute,

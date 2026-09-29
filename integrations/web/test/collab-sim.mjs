@@ -473,7 +473,13 @@ export class Page {
   }
 
   leave() {
+    this.sim.limited(this);
     this.sim.act(this, new Set(), () => this.sync.leave());
+  }
+
+  /** The student moves about quickly: `n` places in a row. */
+  moveAbout(n) {
+    for (let i = 0; i < n; i++) this.sync.group?.setWhere({ fn: FNS_WHERE[i % FNS_WHERE.length], view: i % 2 ? 'c' : 'asm' });
   }
 
   /** The directives this page sends, in order (every function qualified by address). */
@@ -561,8 +567,19 @@ export class Sim {
     return out;
   }
 
+  /** A page may drop only edits for going too fast (they are asked for again), never a message that holds the session together. */
+  limited(page) {
+    for (const rec of page.sync.group?.links || []) {
+      for (const [t, n] of Object.entries(rec.limited || {})) {
+        if (t !== 'ops' && t !== 'snap') this.violations.push(`${page.id} dropped ${n} '${t}' message(s) from ${rec.peer} for going too fast`);
+      }
+      rec.limited = {};
+    }
+  }
+
   /** What must hold once everything settled; returns the problems found. */
   problems() {
+    for (const p of this.pages.values()) this.limited(p);
     const out = [...this.violations];
     for (const p of this.pages.values()) {
       if (p.sync.phase === 'joining') out.push(`${p.id} is still joining after everything settled`);
@@ -602,6 +619,8 @@ export class Sim {
     return out;
   }
 }
+
+const FNS_WHERE = ['0x1000', '0x1100', '0x1200'];
 
 /** A value the others' pages refuse (a directive that reads a file): it stays on its page. */
 const pageOnly = (key, value) => !validOp({ k: key, v: value, c: [2, 'a'] });

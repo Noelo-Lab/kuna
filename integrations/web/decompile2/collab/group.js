@@ -56,6 +56,8 @@ const SUM_SOON_MS = 1500;
 const QUIET_MS = 2000;
 /** How fast one link may move this page's clock on: COUNTER_WINDOW per RAISE_MS, at most COUNTER_WINDOW at once. */
 const RAISE_MS = 60000;
+/** Where this page is goes out at most once per WHERE_MS (the latest wins). */
+const WHERE_MS = 200;
 /** The real clock (tests pass one of their own). */
 export const TIMERS = {
   setTimeout: (fn, ms) => setTimeout(fn, ms),
@@ -108,6 +110,8 @@ export class Group {
     this.outbox = new Map();
     this.flushTimer = 0;
     this.rosterTimer = 0;
+    this.whereTimer = 0;
+    this.whereAt = -Infinity;
     this.where = { fn: null, view: 'c' };
     this.closed = false;
   }
@@ -150,9 +154,9 @@ export class Group {
       link, peer, joining, invite, member: false, hello: false, name: '', color: null, where: null, listed: new Set(),
       lim: {
         ops: limiter(20, 20, this.timers.now), snap: limiter(200, 400, this.timers.now), cur: limiter(30, 45, this.timers.now),
-        ping: limiter(1, 2, this.timers.now), other: limiter(20, 40, this.timers.now),
+        ping: limiter(1, 2, this.timers.now), where: limiter(10, 20, this.timers.now), other: limiter(20, 40, this.timers.now),
       },
-      out: limiter(18, 18, this.timers.now), rx: null, dropped: 0, gone: false, resyncAt: 0, snapAt: 0, sumAt: 0,
+      out: limiter(18, 18, this.timers.now), rx: null, dropped: 0, limited: {}, gone: false, resyncAt: 0, snapAt: 0, sumAt: 0,
       early: [], acked: false, told: false, waiting: [], onAck: [], raise: { room: COUNTER_WINDOW, at: this.timers.now() },
     };
     this.links.add(rec);
@@ -202,8 +206,18 @@ export class Group {
     if (ops.length) this.#queue(ops, null);
   }
 
+  /** Tell the others where this page is: at once, or (moving about quickly) the latest place WHERE_MS after the last. */
   setWhere(where) {
     this.where = { fn: where.fn, view: where.view };
+    if (this.whereTimer || this.closed) return;
+    const wait = this.whereAt + WHERE_MS - this.timers.now();
+    if (wait <= 0) this.#whereNow();
+    else this.whereTimer = this.timers.setTimeout(() => { this.whereTimer = 0; this.#whereNow(); }, wait);
+  }
+
+  #whereNow() {
+    if (this.closed) return;
+    this.whereAt = this.timers.now();
     for (const rec of this.peers.values()) if (rec.member) this.#sendWhere(rec);
   }
 
@@ -224,6 +238,7 @@ export class Group {
     this.timers.clearTimeout(this.rosterTimer);
     this.timers.clearTimeout(this.sumTimer);
     this.timers.clearTimeout(this.soonTimer);
+    this.timers.clearTimeout(this.whereTimer);
     for (const rec of this.links) {
       this.#send(rec, { t: 'bye' });
       rec.gone = true;
@@ -275,6 +290,7 @@ export class Group {
     if (m.t !== 'hello') this.#acked(rec);
     if (!rec.lim[m.t in rec.lim ? m.t : 'other'].take()) {
       rec.dropped++;
+      rec.limited[m.t] = (rec.limited[m.t] || 0) + 1;
       if (m.t === 'ops' || m.t === 'snap') this.#askResync(rec);
       return;
     }

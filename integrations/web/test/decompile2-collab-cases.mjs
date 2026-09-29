@@ -708,6 +708,23 @@ await test('fourth review #9 a page whose clock races ahead is cut off and the s
   ben.g.leave();
 });
 
+await test('fifth review #4 moving about quickly never crowds out the messages that hold the session together', async () => {
+  const ana = member('aaaaaaaa', 'Ana', { file: FILE, bytes: FILE_BYTES });
+  ana.g.create();
+  const ben = member('bbbbbbbb', 'Ben', { file: FILE, bytes: FILE_BYTES });
+  const [a] = invite(ana, ben);
+  await settle(150);
+  const before = a.other.texts.length;
+  for (let i = 0; i < 80; i++) ben.g.setWhere({ fn: `0x${(0x1000 + i).toString(16)}`, view: i % 2 ? 'c' : 'asm' });
+  ben.g.leave();
+  await settle(400);
+  const wheres = a.other.texts.slice(before).filter((t) => t.startsWith('{"t":"where"')).length;
+  assert.ok(wheres <= 5, `Ben's page sent ${wheres} position updates for one burst of moving about`);
+  assert.ok(ana.p.events.some(([k, n]) => k === 'left' && n === 'Ben'), `Ana hears that Ben left (${JSON.stringify(ana.p.events)})`);
+  assert.equal(ana.g.who('bbbbbbbb'), null);
+  ana.g.leave();
+});
+
 const failed = results.filter(([ok]) => !ok);
 for (const [ok, name, why] of results) console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ` — ${why}`}`);
 if (failed.length) {
