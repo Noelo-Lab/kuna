@@ -2494,7 +2494,11 @@ dpkg-divert −0.3%), so the cost is all behind options, and three account for i
 (#669, round C — decompiling callees first; `cycles` on top of it costs nothing) is 11–12% on its own,
 **`calleevote`** and `passthrough` another 5.5%, and rounds I–L's twelve options 2.5%. #669 measured
 `protoorder` at ≤ +4.1% on the canonical set, which is where every later page measured it; on these
--O2-noinline binaries it is the largest cost the campaign carries. An earlier ablation of 29 single
+-O2-noinline binaries it is the largest cost the campaign carries. The ordering itself is cheap:
+building the call graph costs about 3 ms on kmod (one function decompiled with the option named and
+with it off, 354 against 351 ms), and every arm emits the same 541 functions, so the time is spent
+inside the decompiles themselves, not the schedule (461 of kmod's 541 functions state a prototype
+their callers then read, `KUNA_PROTOORDER_TRACE=1`); that is where a profile should look. An earlier ablation of 29 single
 options under heavier load (`final-l/ablate11.json`) agrees on the groups and on `protoorder`, and
 cannot separate the rest (±6% on a single option).
 
