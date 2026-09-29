@@ -157,7 +157,7 @@ checks.push('cDeclare/validate/typeSize');
   s.recordOutcomes([
     { directive: 'name v1 total', status: 'applied', detail: null, fatal: false },
     { directive: 'name v999 nope', status: 'rejected', detail: 'No symbol named: v999', fatal: false },
-  ]);
+  ], MAIN);
   assert.equal(s.statusOf(k1), 'applied');
   assert.equal(s.statusOf(k2), 'rejected');
   const rows = s.entries((a) => names.get(a));
@@ -173,29 +173,29 @@ checks.push('cDeclare/validate/typeSize');
   const s = new Session();
   const k = s.setVar(MAIN, 'v1', { name: 'total' });
   s.assertionsFor(MAIN);
-  s.recordOutcomes([{ directive: 'name v1 total', status: 'applied' }]);
+  s.recordOutcomes([{ directive: 'name v1 total', status: 'applied' }], MAIN);
   assert.equal(s.statusOf(k), 'applied');
   s.setVar(MAIN, 'v1', { name: 'sum' });
   assert.equal(s.statusOf(k), 'pending', 'a changed record is pending again');
   s.assertionsFor(MAIN);
-  s.recordOutcomes([{ directive: 'name v1 sum', status: 'rejected', detail: 'x' }]);
+  s.recordOutcomes([{ directive: 'name v1 sum', status: 'rejected', detail: 'x' }], MAIN);
   s.setVar(MAIN, 'v1', { name: null, type: null });
   s.setVar(MAIN, 'v1', { name: 'again' });
   assert.equal(s.statusOf(k), 'pending', 'a deleted then re-created record starts pending');
   s.setByte(0x11e1n, 0x90, 0xe8);
   s.globalAssertions();
-  s.recordOutcomes([{ directive: 'bytes 0x11e1 90', status: 'applied' }]);
+  s.recordOutcomes([{ directive: 'bytes 0x11e1 90', status: 'applied' }], null);
   assert.equal(s.statusOf('bytes:0x11e1'), 'applied');
   s.remove('bytes:0x11e1');
   s.setByte(0x11e1n, 0x90, 0xe8);
   assert.equal(s.statusOf('bytes:0x11e1'), 'pending', 'a re-created patch starts pending');
-  s.recordOutcomes([{ directive: 'bytes 0x11e1 90', status: 'applied' }]);
+  s.recordOutcomes([{ directive: 'bytes 0x11e1 90', status: 'applied' }], null);
   s.setByte(0x11e1n, 0xe8, 0xe8);
   s.setByte(0x11e1n, 0x90, 0xe8);
   assert.equal(s.statusOf('bytes:0x11e1'), 'pending', 'reverting a byte forgets its outcome');
   const c = s.setComment(MAIN, '0x11b5', 'a');
   s.assertionsFor(MAIN);
-  s.recordOutcomes([{ directive: 'comment 0x11b5 a', status: 'applied' }]);
+  s.recordOutcomes([{ directive: 'comment 0x11b5 a', status: 'applied' }], MAIN);
   const snap = s.snapshot();
   s.setComment(MAIN, '0x11b5', 'b');
   s.recordOutcomes([]);
@@ -233,8 +233,8 @@ checks.push('cDeclare/validate/typeSize');
   const good = s.setVar(MAIN, 'v1', { name: 'total' });
   const bad = s.addRaw('bytes 0x10 zz');
   assert.deepEqual(s.assertionsFor(MAIN), ['bytes 0x10 zz', 'name v1 total']);
-  assert.deepEqual(s.markRefused('bytes 0x10 zz', 'error: --assert "bytes 0x10 zz": not hex'), [bad]);
-  assert.deepEqual(s.markRefused('never sent', 'x'), []);
+  assert.deepEqual(s.markRefused('bytes 0x10 zz', 'error: --assert "bytes 0x10 zz": not hex', MAIN), [bad]);
+  assert.deepEqual(s.markRefused('never sent', 'x', MAIN), []);
   assert.deepEqual(s.assertionsFor(MAIN), ['name v1 total'], 'refused directives are not sent');
   assert.deepEqual(s.allAssertions((a) => names.get(a)), ['name main::v1 total'], 'nor exported as directives');
   assert.deepEqual(s.entries((a) => names.get(a)).map((e) => [e.text, e.status]), [['bytes 0x10 zz', 'refused'], ['name main::v1 total', 'pending']], 'the rail still lists it');
@@ -246,11 +246,39 @@ checks.push('cDeclare/validate/typeSize');
   const first = twice.addRaw('readonly 0x2000');
   const second = twice.addRaw('readonly 0x2000');
   assert.deepEqual(twice.globalAssertions(), ['readonly 0x2000', 'readonly 0x2000']);
-  assert.deepEqual(twice.markRefused('readonly 0x2000', 'no size'), [first, second], 'two records with one refused text: both are refused');
+  assert.deepEqual(twice.markRefused('readonly 0x2000', 'no size', null), [first, second], 'two records with one refused text: both are refused');
   assert.deepEqual(twice.globalAssertions(), [], 'so what the page sends matches what the request sent (no re-inspect loop)');
-  twice.recordOutcomes([{ directive: 'readonly 0x2000', status: 'rejected' }]);
+  twice.globalAssertions();
+  twice.refused.clear();
+  twice.globalAssertions();
+  twice.recordOutcomes([{ directive: 'readonly 0x2000', status: 'rejected' }], null);
   assert.deepEqual([twice.statusOf(first), twice.statusOf(second)], ['rejected', 'rejected'], 'an outcome reaches every record with that text');
   checks.push('refused directives');
+}
+
+// ── an outcome belongs to the request that produced it ─────────────────────
+{
+  const s = new Session();
+  const a = s.setVar('0x1000', 'local_10', { name: 'i' });
+  const b = s.setVar('0x2000', 'local_10', { name: 'i' });
+  s.assertionsFor('0x1000');
+  assert.deepEqual(s.assertionsFor('0x2000'), ['name local_10 i']);
+  s.recordOutcomes([{ directive: 'name local_10 i', status: 'rejected' }], '0x2000');
+  assert.deepEqual([s.statusOf(a), s.statusOf(b)], ['pending', 'rejected'], 'inspecting 0x2000 says nothing of 0x1000\'s record with the same text');
+  s.assertionsFor('0x1000');
+  assert.deepEqual(s.markRefused('name local_10 i', 'no', '0x1000'), [a], 'and a refusal marks only the records of that request');
+  const g = s.addRaw('readonly 0x2000+8');
+  s.globalAssertions();
+  s.recordOutcomes([{ directive: 'readonly 0x2000+8', status: 'applied' }], null);
+  assert.equal(s.statusOf(g), 'applied', 'a global directive, in the request that listed the program');
+  const many = new Session();
+  for (let i = 0; i < 3000; i++) many.setByte(BigInt(0x10000 + i * 4), 0x90, 0);
+  const rows = many.globalAssertions().map((directive) => ({ directive, status: 'applied' }));
+  const t0 = performance.now();
+  many.recordOutcomes(rows, null);
+  assert.ok(performance.now() - t0 < 300, `3000 patched runs: their outcomes are recorded without re-sorting the bytes per row (${Math.round(performance.now() - t0)} ms)`);
+  assert.equal(many.statusOf('bytes:0x10004'), 'applied');
+  checks.push('outcomes scoped to their request');
 }
 
 // ── discarding a restored session keeps what was edited after it ──────────

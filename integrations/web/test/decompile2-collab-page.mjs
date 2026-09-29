@@ -23,8 +23,10 @@
 // queued behind an open a cached function replaced, a join whose build id
 // cannot be worked out after the connection was made, the back/forward
 // cache, and a session's saved copy offered when its program is opened again.
-// Each case runs in fresh tabs (a second Chrome process stands in for another
-// person's computer) and is reported; any failure exits 1.
+// And a fourth review's: opening a cached function while another person's
+// change is being decompiled, and a program received while an edit of another
+// program is in flight. Each case runs in fresh tabs (a second Chrome process
+// stands in for another person's computer) and is reported; any failure exits 1.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 // `--only TEXT` runs the cases whose name contains TEXT.
@@ -863,6 +865,30 @@ try {
     await ben.waitFor(`!document.getElementById('d2pop').hidden && /Replace mine/.test(document.getElementById('d2pop').textContent)`, { what: 'asked first', timeout: 10000 });
     await ben.evaluate(`document.querySelector('#d2pop form').requestSubmit(); true`);
     await ben.waitFor(`/summation\\(add/.test(document.getElementById('ccode').textContent)`, { what: 'the session\'s changes are Ben\'s now', timeout: 30000 });
+  });
+
+  // ── a fourth review ──────────────────────────────────────────────────────
+
+  await test('fourth review #1 opening a cached function while another person\'s change is being decompiled stays on it', async () => {
+    const { ana, ben } = await pair({ anaScript: DELAY_SHIM });
+    await front(ana);
+    await ana.click(`#fnlist .fn[data-addr="${SUM}"]`);
+    await ana.waitFor(`document.getElementById('vname').textContent === 'sum_to' && document.getElementById('cancelbtn').disabled`, { what: 'Ana on sum_to', timeout: 30000 });
+    await ana.click(`#fnlist .fn[data-addr="${MAIN}"]`);
+    await ana.waitFor(`document.getElementById('vname').textContent === 'main' && document.getElementById('cancelbtn').disabled`, { what: 'Ana back on main', timeout: 30000 });
+    await ana.evaluate('window.__kunaDelay = 4000; true');
+    await front(ben);
+    await popover(ben, '#ccode .t[data-sym="v1"]', 'n', 'bens_name');
+    await ben.key('Enter');
+    await front(ana);
+    await ana.waitFor(`!document.getElementById('cancelbtn').disabled`, { what: 'Ana decompiles main again for Ben\'s change', timeout: 10000 });
+    await ana.click(`#fnlist .fn[data-addr="${SUM}"]`);
+    assert.equal(await text(ana, '#vname'), 'sum_to');
+    await ana.evaluate('window.__kunaDelay = 0; true');
+    await sleep(5000);
+    assert.equal(await text(ana, '#vname'), 'sum_to', 'the view stays on the function Ana opened');
+    assert.match(await ana.evaluate('location.hash'), /0x1161/);
+    assert.match(await ben.evaluate(`document.querySelector('#d2roster .d2-who')?.title || ''`), /Ana: sum_to/, 'and the others see her there');
   });
 } finally {
   clearTimeout(guard);

@@ -210,7 +210,7 @@ function refusedDirective(e, sent) {
  * refused (the rail says why and it is no longer sent) and the call is
  * retried without it.
  */
-async function withDirectives(call, directives) {
+async function withDirectives(call, directives, func = null) {
   let list = directives;
   for (;;) {
     try {
@@ -218,7 +218,7 @@ async function withDirectives(call, directives) {
     } catch (e) {
       const bad = e instanceof KunaWorkerCancelledError ? null : refusedDirective(e, list);
       if (!bad) throw e;
-      session.markRefused(bad, errorLine(e));
+      session.markRefused(bad, errorLine(e), func);
       toast('One of your changes could not be read, so it is no longer applied.', { kind: 'err', detail: `${bad} — ${errorLine(e)}` });
       list = list.filter((d) => d !== bad);
       renderRail();
@@ -242,6 +242,7 @@ async function fetchFunction(fn) {
         : state.kuna.decompile(fn.address_hex, { assertions: list });
     },
     directivesFor(fn.address_hex),
+    fn.address_hex,
   );
   return { doc, key: `${fn.address_hex}\n${used.join('\n')}` };
 }
@@ -508,7 +509,7 @@ async function indexBinary(source, { example = false, keep = null, shared = null
   }
   state.binary.format = inventory.format;
   state.inventory = inventory;
-  session.recordOutcomes(inventory.assertions);
+  session.recordOutcomes(inventory.assertions, null);
   syncPatchButton();
   state.byAddr.clear();
   state.byName.clear();
@@ -766,7 +767,7 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
     const { doc, key } = await fetchFunction(fn);
     if (!isCurrent(op)) return;
     const data = normalizeInspect(doc);
-    session.recordOutcomes(data.assertions);
+    session.recordOutcomes(data.assertions, fn.address_hex);
     cacheSet(fn.address_hex, data, key);
     showFunction(fn, data, { focusAddr, key });
     if (collab?.shared && key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
@@ -2164,6 +2165,11 @@ async function applyEdit(mutate, { label = 'edit', reselect = null, done = '' } 
   return reinspect({ snap, fresh, label, reselect, done });
 }
 
+/**
+ * Re-decompile the function on screen with the session as it is now. The
+ * result is cached, and shown only if that function is still on screen (the
+ * student may have opened another meanwhile).
+ */
 async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = null, done = '', remote = false } = {}) {
   const fn = state.current.fn;
   const oldCode = state.current.data.code;
@@ -2188,15 +2194,17 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
     if (!isCurrent(op)) return false;
     const data = normalizeInspect(doc);
     const wasApplied = new Set([...session.outcomes].filter(([, o]) => o.status === 'applied').map(([k]) => k));
-    session.recordOutcomes(data.assertions);
+    session.recordOutcomes(data.assertions, fn.address_hex);
     if (snap) session.pushUndo(snap);
     persist();
     cacheSet(fn.address_hex, data, key);
-    showFunction(fn, data, { keep: true, key });
-    if (collab?.shared && key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
-    restoreScroll(scroll);
-    if (keepSel) selectTarget(keepSel, null, null, { reveal: !remote });
-    flash(changedLines(oldCode, data.code));
+    if (state.current?.fn === fn) {
+      showFunction(fn, data, { keep: true, key });
+      if (collab?.shared && key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
+      restoreScroll(scroll);
+      if (keepSel) selectTarget(keepSel, null, null, { reveal: !remote });
+      flash(changedLines(oldCode, data.code));
+    }
     if (!state.caps.assert) {
       setStatus('Change kept but not applied', 'err', 'This version of the decompiler cannot apply changes');
       renderRail();
@@ -2207,7 +2215,7 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
       toast('That change could not be applied.', { kind: 'err', detail: `${row.detail || 'The decompiler refused it.'} (${row.directive})` });
     }
     const broke = data.assertions.filter((r) => r.status === 'rejected' && !fresh.includes(r.directive) &&
-      session.keysOf(r.directive).some((k) => wasApplied.has(k)));
+      session.keysOf(r.directive, fn.address_hex).some((k) => wasApplied.has(k)));
     for (const row of broke) {
       toast('An earlier change no longer applies.', {
         kind: 'warn',
@@ -2933,6 +2941,7 @@ els.dl.addEventListener('click', async () => {
     const project = await withDirectives(
       (list) => state.kuna.project(state.binary.name, { assertions: list }),
       state.caps.assert ? session.allAssertions(nameOfAddr) : [],
+      '*',
     );
     if (!isCurrent(op)) return;
     download(new Blob([project.bytes], { type: 'application/zip' }), project.downloadName);

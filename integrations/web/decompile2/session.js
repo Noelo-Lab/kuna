@@ -290,10 +290,14 @@ export class Session {
     if (this.orderOf) for (const list of groups.values()) list.sort(byBirth(this.orderOf));
     groups.set('bytes', this.#bytesDirectives().filter((d) => includeRefused || !this.refused.has(d.key)));
     const out = ORDER.flatMap((k) => groups.get(k));
-    for (const d of out) {
-      let keys = this.sent.get(d.text);
-      if (!keys) this.sent.set(d.text, (keys = new Set()));
-      keys.add(d.key);
+    if (!includeRefused) {
+      const sent = new Map();
+      for (const d of out) {
+        const keys = sent.get(d.text);
+        if (keys) keys.push(d.key);
+        else sent.set(d.text, [d.key]);
+      }
+      this.sent.set(qualify ? '*' : func, sent);
     }
     return out;
   }
@@ -313,16 +317,20 @@ export class Session {
     return this.#directives({ qualify: nameOf }).map((d) => d.text);
   }
 
-  /** The records (their keys) that produce the directive `text`: two records can give the same text. */
-  keysOf(text) {
-    const has = (key) => this.records.has(key) || (key.startsWith('bytes:') && this.byteRuns().some((r) => `bytes:${hex(r.addr)}` === key));
-    return [...(this.sent.get(String(text || '').trim()) || [])].filter(has);
+  /**
+   * The records (their keys) that produced the directive `text` in the last
+   * request for `func` (the function's address, or null for the directives
+   * that describe no single function): two records can give the same text.
+   */
+  keysOf(text, func) {
+    const keys = this.sent.get(func ?? null)?.get(String(text || '').trim()) || [];
+    return keys.filter((key) => this.records.has(key) || key.startsWith('bytes:'));
   }
 
-  /** Attach the engine's `assertions[]` rows to the records that produced them. */
-  recordOutcomes(rows) {
+  /** Attach the engine's `assertions[]` rows, from the request for `func`, to the records that produced them. */
+  recordOutcomes(rows, func) {
     for (const row of rows || []) {
-      for (const key of this.keysOf(row.directive)) {
+      for (const key of this.keysOf(row.directive, func)) {
         this.outcomes.set(key, { status: row.status, detail: row.detail || null, fatal: !!row.fatal });
       }
     }
@@ -333,13 +341,13 @@ export class Session {
   }
 
   /**
-   * The engine could not parse `directive` (the request failed on it): stop
-   * sending it until it is edited, and show why. Every record that produces
-   * that text is marked, since the request leaves out all of them. Returns
-   * their keys.
+   * The engine could not parse `directive` (the request for `func` failed on
+   * it): stop sending it until it is edited, and show why. Every record of
+   * that request that produces the text is marked, since the retry leaves out
+   * all of them. Returns their keys.
    */
-  markRefused(directive, detail) {
-    const keys = this.keysOf(directive);
+  markRefused(directive, detail, func) {
+    const keys = this.keysOf(directive, func);
     for (const key of keys) {
       this.refused.add(key);
       this.outcomes.set(key, { status: 'refused', detail: detail || null, fatal: false });
