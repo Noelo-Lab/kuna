@@ -52,13 +52,13 @@ __attribute__((noipa))
 #endif
 struct rec *src(int k)
 {
-    unsigned char b[32] = {0};
-    b[8] = 0x80, b[9] = 0x80 + k;
-    return (struct rec *)page_end(10, b);
+    unsigned char *p = page_end(10, (const unsigned char *)"\0\0\0\0\0\0\0\0\x80");
+    p[9] = 0x80 + k;
+    return (struct rec *)p;
 }
 int main(void)
 {
-    unsigned char b[32] = {0};
+    static unsigned char b[32];
     b[8] = 0x80;
     unsigned char *last = page_end(9, b);
     b[8] = 0x01;
@@ -67,7 +67,7 @@ int main(void)
     b[8] = 0x81;
     memcpy(b + 24, &mid, 8);
     unsigned char *first = page_end(32, b);
-    unsigned char h[32] = {0};
+    static unsigned char h[32];
     h[8] = 0x80, h[9] = 0x80;
     unsigned char *tail = page_end(10, h);
     memcpy(h + 24, &tail, 8);
