@@ -25,11 +25,12 @@
 // cache, and a session's saved copy offered when its program is opened again.
 // And a fourth review's: opening a cached function while another person's
 // change is being decompiled, the site deployed again while a session is on
-// (a Stop restarts the engine), no solo undo copies in a session, no offer of
-// an old session's copy to a page joining a new one, a guest
-// that renamed a variable at another
-// decompiler effort, and a program received while an edit of another program
-// is in flight. Each case runs in fresh tabs (a second Chrome process
+// (a Stop restarts the engine), no solo undo copies in a session, a guest
+// that renamed a variable at another decompiler effort, and a program
+// received while an edit of another program is in flight. And a fifth
+// review's: an old session's copy never offered to a page joining a new one,
+// a join that fails while the program is listed, an invite made while the
+// program closes. Each case runs in fresh tabs (a second Chrome process
 // stands in for another person's computer) and is reported; any failure exits 1.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).

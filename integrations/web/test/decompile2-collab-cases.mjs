@@ -9,7 +9,8 @@
 // BroadcastChannel knock; forwarding only where needed; the shared session
 // kept apart in storage; a program over 32 MB sent to a page that lost the
 // inviter's first hello; a connection that cannot be set up; a page whose
-// clock races ahead. Every case runs and is reported; any failure exits 1.
+// clock races ahead; moving about quickly, a session larger than the
+// channel's send queue, registers that stay different. Every case runs and is reported; any failure exits 1.
 //   node integrations/web/test/decompile2-collab-cases.mjs
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
