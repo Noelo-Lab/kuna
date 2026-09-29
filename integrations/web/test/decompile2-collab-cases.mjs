@@ -499,6 +499,31 @@ await test('second review #6 an edit lost on a link that dies reaches that page 
 });
 
 // ── a third review ─────────────────────────────────────────────────────────
+await test('a hello lost as the channel opens is sent again, whichever side lost it, and the join completes', async () => {
+  for (const lost of ['joiner', 'inviter']) {
+    const ana = member('aaaaaaaa', 'Ana', { file: FILE, bytes: FILE_BYTES });
+    ana.g.create();
+    ana.g.local([ana.replica.set('fn:0x1149', 'adder')]);
+    const ben = member('bbbbbbbb', 'Ben');
+    const [a, b] = linkPair();
+    const end = lost === 'joiner' ? b : a;
+    const send = end.send;
+    let first = true;
+    end.send = function sendButLoseTheFirst(text) {
+      if (first) {
+        first = false;
+        return;
+      }
+      send.call(this, text);
+    };
+    ana.g.addLink(a);
+    ben.g.addLink(b, { joining: true });
+    assert.ok(await until(() => ben.replica.value('fn:0x1149') === 'adder', 8000), `Ben joined although the ${lost}'s hello was lost`);
+    assert.ok(await until(() => ana.g.peers.get('bbbbbbbb')?.member));
+    ana.g.leave();
+    ben.g.leave();
+  }
+});
 await test('third review #14 a message over the channel\'s limit in UTF-8 bytes is not sent, even under it in characters', async () => {
   const big = { name: '€'.repeat(90000), size: 100, hash: 'a'.repeat(64) };
   const ana = member('aaaaaaaa', 'Ana', { file: big, bytes: new Uint8Array(100) });

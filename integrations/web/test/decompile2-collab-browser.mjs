@@ -53,6 +53,58 @@ const TOAST_LOG = `(() => {
   }).observe(document, { childList: true, subtree: true });
 })();`;
 
+/** COLLAB_TRACE=1: also log each link's handshake and close messages and the page's Web Lock requests (`window.__linkLog`). */
+const LINK_LOG = `(() => {
+  window.__linkLog = [];
+  const t0 = performance.now();
+  const log = (...a) => window.__linkLog.push([Math.round(performance.now() - t0), ...a].join(' '));
+  const Real = BroadcastChannel;
+  window.BroadcastChannel = function (name) {
+    const ch = new Real(name);
+    ch.addEventListener('message', ({ data }) => { if (data && data.k !== 'm') log('recv', name.slice(-10), JSON.stringify(data)); });
+    const post = ch.postMessage.bind(ch);
+    ch.postMessage = (m) => { if (m && m.k !== 'm') log('send', name.slice(-10), JSON.stringify(m)); return post(m); };
+    const close = ch.close.bind(ch);
+    ch.close = () => { log('close', name.slice(-10)); return close(); };
+    return ch;
+  };
+  window.BroadcastChannel.prototype = Real.prototype;
+  const RealPC = window.RTCPeerConnection;
+  let pcs = 0;
+  const watch = (ch, id, side) => {
+    log('dc', id, side, ch.label, ch.readyState);
+    ch.addEventListener('open', () => log('dc', id, ch.label, 'open'));
+    ch.addEventListener('close', () => log('dc', id, ch.label, 'close'));
+    if (ch.label !== 'edits') return;
+    let got = 0;
+    ch.addEventListener('message', (e) => { if (got++ < 6) log('dc', id, 'got', typeof e.data === 'string' ? e.data.slice(0, 30) : 'bytes'); });
+    const send = ch.send.bind(ch);
+    let sent = 0;
+    ch.send = (d) => { if (sent++ < 6) log('dc', id, 'sent', ch.readyState, typeof d === 'string' ? d.slice(0, 30) : 'bytes'); return send(d); };
+  };
+  if (RealPC) {
+    window.RTCPeerConnection = function (...args) {
+      const pc = new RealPC(...args);
+      const id = ++pcs;
+      log('pc', id, 'new');
+      pc.addEventListener('connectionstatechange', () => log('pc', id, pc.connectionState));
+      pc.addEventListener('datachannel', ({ channel }) => watch(channel, id, 'remote'));
+      const create = pc.createDataChannel.bind(pc);
+      pc.createDataChannel = (label, o) => { const ch = create(label, o); watch(ch, id, 'local'); return ch; };
+      return pc;
+    };
+    window.RTCPeerConnection.prototype = RealPC.prototype;
+  }
+  if (navigator.locks) {
+    const request = navigator.locks.request.bind(navigator.locks);
+    navigator.locks.request = (name, ...rest) => {
+      const fn = rest.pop();
+      log('lock?', name);
+      return request(name, ...rest, (lock) => { log('lock!', name); return fn(lock); });
+    };
+  }
+})();`;
+
 /** A tab in the first browser, or (`other`) the first page of a second browser: another person's computer. */
 async function tab(name, width = 1280, { other = false } = {}) {
   if (other) chrome2 ||= await launchChrome(chromePath, { flags });
@@ -60,6 +112,7 @@ async function tab(name, width = 1280, { other = false } = {}) {
   page.label = name;
   await page.viewport(width, 860);
   await page.send('Page.addScriptToEvaluateOnNewDocument', { source: TOAST_LOG });
+  if (process.env.COLLAB_TRACE) await page.send('Page.addScriptToEvaluateOnNewDocument', { source: LINK_LOG });
   pages.push(page);
   return page;
 }
@@ -418,6 +471,7 @@ try {
     await shot(p, `fail-${p.label.replace(/\W+/g, '-')}`).catch(() => {});
     console.error(`${p.label}: status "${await text(p, '#status').catch(() => '?')}", toasts ${JSON.stringify(await toasts(p).catch(() => []))}`);
     console.error(`  every toast: ${JSON.stringify(await p.evaluate('window.__toastLog || []').catch(() => '?'))}`);
+    if (process.env.COLLAB_TRACE) console.error(`  links: ${JSON.stringify(await p.evaluate('window.__linkLog || []').catch(() => '?'))}`);
     console.error(`  dialog: ${JSON.stringify(await p.evaluate(`document.getElementById('d2collab')?.open ? document.getElementById('d2collab').textContent.slice(0, 300) : null`).catch(() => '?'))}`);
   }
   console.error(`DECOMPILE2 COLLAB BROWSER FAIL after: ${done.join('; ')}`);

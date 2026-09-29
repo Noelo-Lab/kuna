@@ -8,6 +8,10 @@
 // happen. A page forwards an edit only to members its author has no direct
 // link to, so a pair that could not link directly still converges. A
 // newcomer without the program receives it in chunks and checks its SHA-256.
+// A data channel can lose what one side sends the moment it opens (the
+// other side may not be listening yet), so each page repeats its hello until
+// the other page shows it got it (by sending anything else), and holds what
+// arrives before the other's hello, to read it once the hello comes.
 // Every message from another page passes `readMessage` (shape and size) and a
 // per-page rate limit first; a page that had to drop edits asks for the
 // sender's registers again. This page sends within the same limits, sized in
@@ -39,6 +43,9 @@ const MAX_TRIES = 3;
 const FLUSH_MS = 50;
 const RESYNC_MS = 5000;
 const SUM_MS = 10000;
+const HELLO_MS = 1000;
+const HELLO_TRIES = 30;
+const EARLY_MAX = 500;
 const SUM_SOON_MS = 1500;
 const QUIET_MS = 2000;
 /** The real clock (tests pass one of their own). */
@@ -137,15 +144,23 @@ export class Group {
         ping: limiter(1, 2, this.timers.now), other: limiter(20, 40, this.timers.now),
       },
       out: limiter(18, 18, this.timers.now), rx: null, dropped: 0, gone: false, resyncAt: 0, snapAt: 0, sumAt: 0,
+      early: [], acked: false,
     };
     this.links.add(rec);
     link.onmessage = (data, channel) => this.#receive(rec, data, channel);
     link.onclose = () => this.#drop(rec);
+    this.#sayHello(rec, 0);
+    return rec;
+  }
+
+  /** Send this page's hello, and again every HELLO_MS until the other page shows it got one. */
+  #sayHello(rec, tries) {
+    if (rec.gone || rec.failed || rec.acked || this.closed) return;
     this.#send(rec, {
       t: 'hello', proto: PROTOCOL, build: this.build, peer: this.me, name: this.name,
-      color: this.color, sid: joining ? null : this.sid, file: this.page.fileMeta(),
+      color: this.color, sid: rec.joining ? null : this.sid, file: this.page.fileMeta(),
     });
-    return rec;
+    if (tries < HELLO_TRIES) this.timers.setTimeout(() => this.#sayHello(rec, tries + 1), HELLO_MS);
   }
 
   /** This page's own register ops, for every page it is linked to. */
@@ -201,21 +216,30 @@ export class Group {
   #receive(rec, data, channel) {
     if (this.closed || rec.gone) return;
     if (typeof data !== 'string') {
-      this.#chunk(rec, data);
+      if (rec.hello) this.#chunk(rec, data);
+      else this.#hold(rec, data, channel);
       return;
     }
     const m = readMessage(data, channel);
-    if (!m || (!rec.hello && m.t !== 'hello')) {
+    if (!m) {
       rec.dropped++;
       return;
     }
+    if (!rec.hello && m.t !== 'hello') {
+      if (channel === 'edits') this.#hold(rec, data, channel);
+      return;
+    }
+    if (m.t !== 'hello') rec.acked = true;
     if (!rec.lim[m.t in rec.lim ? m.t : 'other'].take()) {
       rec.dropped++;
       if (m.t === 'ops' || m.t === 'snap') this.#askResync(rec);
       return;
     }
     switch (m.t) {
-      case 'hello': this.#hello(rec, m); break;
+      case 'hello':
+        this.#hello(rec, m);
+        if (rec.hello && !rec.gone && !rec.failed) this.#replay(rec);
+        break;
       case 'welcome': this.#welcome(rec, m); break;
       case 'snap': this.#ops(rec, m.ops, m.last); break;
       case 'ops': this.#ops(rec, m.ops, null); break;
@@ -245,6 +269,18 @@ export class Group {
         break;
       default: break;
     }
+  }
+
+  /** Something the other page sent before its hello arrived: kept, to read once it does. */
+  #hold(rec, data, channel) {
+    if (rec.early.length < EARLY_MAX) rec.early.push([data, channel]);
+    else rec.dropped++;
+  }
+
+  #replay(rec) {
+    const early = rec.early;
+    rec.early = [];
+    for (const [data, channel] of early) this.#receive(rec, data, channel);
   }
 
   /** Ask a page for all its registers again (after this page had to drop some of its edits). */

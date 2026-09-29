@@ -4,12 +4,14 @@
 // open and changes of their own, some that must receive it; random edits of
 // every kind, joins (and joins again after leaving), leaves, undo and redo,
 // decompiler-effort changes, links that fail with edits in flight, and pairs
-// of pages that cannot link directly; every action followed by a random wait,
+// of pages that cannot link directly, links that lose the first message one
+// side sends; every action followed by a random wait,
 // so edits land inside the others' 16 ms apply batch, during joins and while a
 // program is being opened. Once everything has settled it checks that:
 //   - pages linked to each other hold the same registers and send the engine
 //     the same directives in the same order;
-//   - every page's Session is exactly what its registers make;
+//   - every page's Session is exactly what its registers make, and no join is
+//     left hanging;
 //   - no page ever sent a write for a field its student did not change in
 //     that action (or, when joining, ever), except a joiner's earlier fields
 //     written with the oldest clock, which cannot replace anyone's write, and
@@ -74,7 +76,7 @@ function mutate(rng, s) {
 }
 
 async function runOne(seed) {
-  const sim = new Sim(seed, { latency: [1, 40], noticeMs: [100, 6000] });
+  const sim = new Sim(seed, { latency: [1, 40], noticeMs: [100, 6000], loseFirst: 0.15 });
   const { rng } = sim;
   const n = 3 + rng.int(3);
   const pages = IDS.slice(0, n).map((id, i) => {

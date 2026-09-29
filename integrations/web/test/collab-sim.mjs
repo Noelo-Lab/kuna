@@ -9,8 +9,9 @@
 // moment later, false when a later open replaced it, as in app.js), and
 // leaving gives a session kept apart back to the student's own changes
 // (`endShared`). Links deliver in order with a latency,
-// can fail (what was in flight is lost, and each side notices later), and
-// some pairs of pages can be made unable to link directly.
+// can fail (what was in flight is lost, and each side notices later), can
+// lose the first message one side sends (as a data channel may as it opens),
+// and some pairs of pages can be made unable to link directly.
 //
 // Used by decompile2-collab-sync.mjs (scripted cases) and
 // decompile2-collab-fuzz.mjs (random runs).
@@ -143,11 +144,12 @@ export class Clock {
 
 /** The network: link pairs with latency and failures, and which pairs of pages can link directly. */
 export class Net {
-  constructor(clock, rng, { latency = [1, 30], noticeMs = [50, 6000] } = {}) {
+  constructor(clock, rng, { latency = [1, 30], noticeMs = [50, 6000], loseFirst = 0 } = {}) {
     this.clock = clock;
     this.rng = rng;
     this.latency = latency;
     this.noticeMs = noticeMs;
+    this.loseFirst = loseFirst;
     this.blocked = new Set();
     this.links = new Set();
     this.offers = new Map();
@@ -187,12 +189,17 @@ export class Net {
     a.pair = pair;
     b.pair = pair;
     pair.ends = [a, b];
+    if (this.loseFirst && this.rng.chance(this.loseFirst)) (this.rng.chance(0.5) ? a : b).loseNext = true;
     this.links.add(pair);
     return [a, b];
   }
 
   #deliver(pair, from, data) {
     if (pair.dead || from.closed) return;
+    if (from.loseNext) {
+      from.loseNext = false;
+      return;
+    }
     const to = pair.ends[0] === from ? pair.ends[1] : pair.ends[0];
     const at = Math.max(this.clock.now() + this.#lat(), from.lastAt);
     from.lastAt = at;
@@ -547,6 +554,7 @@ export class Sim {
   problems() {
     const out = [...this.violations];
     for (const p of this.pages.values()) {
+      if (p.sync.phase === 'joining') out.push(`${p.id} is still joining after everything settled`);
       if (p.sync.phase !== 'solo') continue;
       if (p.slot === 'shared') out.push(`${p.id} is out of any session but still saves into the shared slot`);
       if (p.session.orderOf) out.push(`${p.id} is out of any session but still orders its directives by a session's births`);
