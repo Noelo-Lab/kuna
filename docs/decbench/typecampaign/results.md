@@ -2229,8 +2229,8 @@ there are 28 (+52); rounds J and K add none. Per step:
 - `callrettype`, 25 functions, +30: a callee's recovered pointer return now reaches a caller whose
   storage is an integer — `(long)sub_1563d(...)` stored into a record field typed `long`,
   `(int8)xrealloc(...)` into an 8-byte integer slot in tar, `(long)last_component(a0) - (long)a0`
-  where `a0` is `void *` (a difference `castindex` keeps in integers) — plus `find` -O2 `sub_f400`, whose static result buffer is now used at
-  two pointee types, so `globalref` declines to name it (+2). The type is the callee's; typing the
+  where `a0` is `void *` (a difference `castindex` keeps in integers) — plus `find` -O2 `sub_f400`,
+  whose static result buffer is now used at two pointee types, so `globalref` declines to name it (+2). The type is the callee's; typing the
   caller's storage is the next step, not removing the return type.
 - `elemptr`, 18 functions, +26: an element pointer receives a callee's pointer of another element type
   (`(uint1 *)sub_4ac50(a1)` in tar), and two gzip -O2 tables are now read at two pointee types, so
@@ -2261,7 +2261,8 @@ v2 = *(unsigned long *)((long)a0 * 8 + 0x10200);                v2 = *(unsigned 
 
 `file_position`'s other three tables keep their integer form: `elemptr` types a table only where every
 function of the batch agrees, and other functions of `cmp` name their first elements directly
-(`dat_10200`, `dat_100b0`), which blocks the array. IDA names all four (`qword_10220[a1] = lseek(dword_100B0[a1], qword_10200[a1], 1)`).
+(`dat_10200`, `dat_100b0`), which blocks the array. IDA names all four
+(`qword_10220[a1] = lseek(dword_100B0[a1], qword_10200[a1], 1)`).
 
 What is left against IDA, by cast family (the census counter's shapes, signedness merged — IDA's
 `_QWORD` and `__int64` and kuna's `unsigned long` and `long` are one cast; `final-l/shapes9.py`):
@@ -2278,8 +2279,8 @@ What is left against IDA, by cast family (the census counter's shapes, signednes
 The four families kuna still prints more of: widenings `castwiden` declines (a comparison, a shift, a
 unary minus, `(unsigned long)c + l` beside a signed `long`, an operand whose type is unknown), led by
 `(long)v` +1,331 and `(long)(expr)` +443; addresses taken at another type, `(int *)&x` +431,
-`(long *)&x` +275 and `(char **)&x` +264, which `elemptr`'s narrow-load spelling raised by 263 and
-`castobject` reaches only for locked out-parameters; a call's pointer result, `(char *)f()` +201 (was
+`(long *)&x` +275 and `(char **)&x` +264 — `elemptr`'s step raised the family by 263 with its narrow-load
+spelling, and `castobject` reaches only locked out-parameters; a call's pointer result, `(char *)f()` +201 (was
 +822; `callrettype`) and `(long *)f()` +186, now mostly a right return meeting integer storage; and
 constant addresses, which rose by 114 in round L where `elemptr` and `callrettype` gave one static two
 pointee types and `globalref` refused it. What IDA pays and kuna does not: `(long *)(expr)` −3,557
@@ -2449,7 +2450,7 @@ SPEED_SECTION
 | #718 | `callbacktype` — 23 libc callback slots; the parked function alone is decompiled again | `on` | typesweep 1,615 → 1,625, 29 up / 0 down; `ptr_void` +35 TP; casts +21 (`sort`'s thread routine) |
 | #729 | `callrettype` | `on` | typesweep 1,625 → 1,631, 23 up / 2 down (L.3); casts −780 (393 fewer, 25 more) |
 | #743 | `castobject` | `on` | casts −16 (6 fewer); typesweep identical |
-| #744 | `castwiden` | `literal` | casts −1,524 (482 fewer, 0 more), of which the `literal` suffix is −928; typesweep identical |
+| #744 | `castwiden` | `literal` | casts −1,524 (482 fewer, 0 more; the `literal` suffix alone is −928 on the final build); typesweep identical |
 | #731 | `elemptr` — globals and tables typed only where the whole batch agrees | `on` | typesweep 1,631 → 1,674, 189 up / 0 down; `ptr_char` +109, `ptr_ptr` +71, `ptr_prim` +63 TP; casts −1,216 (301 fewer, 18 more); the witness 33 → 7 |
 
 Nothing the cast plan or round I left open is still open: #723, #720 and #718 landed with the rest.
@@ -2458,8 +2459,8 @@ Nothing the cast plan or round I left open is still open: #723, #720 and #718 la
 
 The campaign-wide list is in the summary at the top of this page. What these rounds change in it:
 `structheadless closed` joins the opt-in list; `castwiden on` keeps every literal unsuffixed, at +928
-casts against the default `literal`; the cast residue is re-ranked by family against IDA (L.1), and -O2 density
-is the one place kuna still prints more casts per statement than IDA.
+casts against the default `literal`; the cast residue is re-ranked by family against IDA (L.1); and
+-O2 is the one level where kuna still prints more casts per statement than IDA.
 
 ## Reproduce
 
