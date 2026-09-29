@@ -1,0 +1,37 @@
+{
+  "base": "a1091b59115b14cf3a8e68822e697e39008c4e10",
+  "option": "wrapperreturn",
+  "default": "off",
+  "fixture": "wrapper.o",
+  "fixture_source": "fixtures/wrapper.s",
+  "mode": "aggressive",
+  "measurement": {
+    "method": "Nine alternating off/on invocations; discard the first pair; report medians. Other validation was running on the host. This is a synthetic-case measurement, not a preset benchmark.",
+    "off": {
+      "wall": 0.06462693648063578,
+      "cpu": 0.04753450000000005
+    },
+    "on": {
+      "wall": 0.06465767449117266,
+      "cpu": 0.04802250000000001
+    },
+    "delta_percent": {
+      "wall": 0.048,
+      "cpu": 1.027
+    },
+    "all_invocations_succeeded": true
+  },
+  "datatests": {
+    "off_passed": 675,
+    "on_passed": 675,
+    "baseline_changed": false
+  },
+  "corpus": {
+    "files": 7,
+    "functions": 47,
+    "changed": 2,
+    "diff": "corpus.diff",
+    "review": "analysis.md"
+  },
+  "limitations": "Opt-in; automatic preset promotion deferred. See analysis.md."
+}

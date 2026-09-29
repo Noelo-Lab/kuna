@@ -3620,3 +3620,32 @@ narrowed by `--addr`, `--functions` or a triage filter, `--jobs N`, a raw image
 and `--option protoorder off`. A single-function decompile therefore still
 prints the conversion that the whole-binary listing leaves out, the same
 property `protoorder`'s argument types have.
+
+### Caller-supported ARM wrapper returns
+
+`wrapperreturn` (off by default) lets a serial, callee-first whole-program run
+retry an ARM function when a direct caller actually consumes its result. Every
+normal exit must preserve the same register from a direct call whose recovered
+return is already supported by its body or by a previously proved wrapper.
+Unused results, indirect calls, uncertain joins, cycles without a producing
+leaf, clobbers, conflicting producer types, and declared prototypes provide no
+new inference. Identity copies in an ARM pop epilogue preserve the result.
+
+The ledger propagates a demand through wrappers, with at most 128 recovery
+attempts and four attempts per selected function in the aggregate. After a
+contract changes, affected callers are refreshed once in callee order. A failed
+retry keeps the previous result. Argument registers are forwarded only when the
+callee consumes them and every incoming path reaches the first call without a
+write; subsequent uses keep their ordinary return trials. This feedback requires
+`protoorder` and `passthrough`; a single-function console run or a parallel worker
+has no caller ledger and remains conservative. Explicit prototypes still win.
+The synthetic CLI regression covers the complete chain; the stage regression
+pins absence of caller evidence on the console surface.
+
+Wrapper return evidence also accepts a declared non-void producer, with its
+actual forwarded inputs; a declared void producer still blocks recovery.
+Identity copies and contiguous register pieces must trace to the same producing
+call. Only an unambiguous consuming caller lets this proof override the heuristic
+that rejects an unexplained call-created return value. This preserves a complete
+VFP result when combined with ABI-aware scalar return recovery, without using an
+unused call result as caller evidence.

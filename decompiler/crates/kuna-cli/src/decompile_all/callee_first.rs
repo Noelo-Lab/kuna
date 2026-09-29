@@ -79,6 +79,11 @@ pub(crate) fn decompile_callee_first(
         *ledger = kuna_decomp::kuna_callbacktype::Ledger::default();
         ledger.recording = true;
     }
+    if prog.arch().wrapper_return && prog.arch().archid.starts_with("ARM:") {
+        let mut ledger = prog.arch().kuna_wrapperreturn.borrow_mut();
+        *ledger = Default::default();
+        ledger.recording = true;
+    }
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
     kuna_decomp::kuna_elemptr::start(prog.arch_mut(), true);
     for &(index, park) in &plan {
@@ -87,6 +92,7 @@ pub(crate) fn decompile_callee_first(
     if let Some(expected) = expected {
         callee_vote_rounds(prog, &targets, &plan, &base, &mut slots, &expected);
     }
+    wrapper_return_rounds(prog, &targets, &plan, &base, &mut slots);
     converge_callee_first(prog, &targets, &plan, &base, &mut slots);
     prog.arch_mut().kuna_callbacktype.recording = false;
     if let (Ok(graph), Some(open)) = (&graph, &open) {
@@ -97,6 +103,107 @@ pub(crate) fn decompile_callee_first(
     converge_element_globals_callee_first(prog, &targets, &plan, &base, &mut slots);
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
     slots.into_iter().flatten().collect()
+}
+
+/// Retry only functions for which a consumed result gained new evidence.
+fn wrapper_return_rounds(
+    prog: &mut ConsoleProgram,
+    targets: &[FunctionEntry],
+    plan: &[(usize, bool)],
+    base: &kuna_console::project::DecompileOptions,
+    slots: &mut [Option<FuncResult>],
+) {
+    if !prog.arch().kuna_wrapperreturn.borrow().recording {
+        return;
+    }
+    let mut attempts = std::collections::BTreeMap::new();
+    let mut remaining = targets.len().saturating_mul(4).min(128);
+    let mut changed = std::collections::BTreeSet::new();
+    loop {
+        let start = prog.arch().kuna_wrapperreturn.borrow().generation;
+        let pending: Vec<_> = plan
+            .iter()
+            .copied()
+            .filter(|&(i, _)| {
+                let addr = &targets[i].addr;
+                let key = (
+                    addr.get_space().map(|s| s.get_index()).unwrap_or(-1),
+                    addr.get_offset(),
+                );
+                let ledger = prog.arch().kuna_wrapperreturn.borrow();
+                ledger.demands.contains_key(&key)
+                    && ledger.outputs.get(&key) == Some(&None)
+                    && attempts.get(&key) != Some(&ledger.generation)
+            })
+            .collect();
+        if pending.is_empty() || remaining == 0 {
+            break;
+        }
+        for (index, park) in pending {
+            if remaining == 0 {
+                break;
+            }
+            remaining -= 1;
+            let addr = &targets[index].addr;
+            let key = (
+                addr.get_space().map(|s| s.get_index()).unwrap_or(-1),
+                addr.get_offset(),
+            );
+            attempts.insert(key, prog.arch().kuna_wrapperreturn.borrow().generation);
+            let opts = kuna_console::project::DecompileOptions {
+                park_recovered_proto: park,
+                ..*base
+            };
+            let result =
+                kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
+            if prog
+                .arch()
+                .kuna_wrapperreturn
+                .borrow()
+                .outputs
+                .get(&key)
+                .is_some_and(|o| o.is_some())
+            {
+                changed.insert(key);
+            }
+            if result.error.is_none() {
+                slots[index] = Some(result);
+            }
+        }
+        if prog.arch().kuna_wrapperreturn.borrow().generation == start {
+            break;
+        }
+    }
+    // Refresh only the callers affected by a changed contract, in callee order.
+    let mut affected = changed;
+    loop {
+        let before = affected.len();
+        for (caller, callees) in &prog.arch().kuna_wrapperreturn.borrow().calls {
+            if callees.iter().any(|callee| affected.contains(callee)) {
+                affected.insert(*caller);
+            }
+        }
+        if affected.len() == before {
+            break;
+        }
+    }
+    for &(index, park) in plan {
+        let Some(key) = vote_key(&targets[index]) else {
+            continue;
+        };
+        if !affected.contains(&key) {
+            continue;
+        }
+        let opts = kuna_console::project::DecompileOptions {
+            park_recovered_proto: park,
+            ..*base
+        };
+        let result = kuna_console::project::decompile_entry(prog, targets[index].clone(), &opts);
+        if result.error.is_none() {
+            slots[index] = Some(result);
+        }
+    }
+    prog.arch().kuna_wrapperreturn.borrow_mut().recording = false;
 }
 
 /// (kuna `elemptr`) [`kuna_console::project::converge_element_globals`] in plan

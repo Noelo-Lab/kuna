@@ -167,6 +167,8 @@ pub struct PassThroughClaim {
     /// The CALL ops that own a RETURN-VALUE trial for it: the tail calls whose
     /// result every RETURN of the function hands back.
     pub ret_owners: Vec<OpId>,
+    /// The body independently reads or writes this range.
+    pub body_touches: bool,
 }
 
 /// How many bytes of `[addr, addr+size)` the callee of `fc` takes as a
@@ -201,7 +203,7 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
     let stated_size = stated.inputs.iter().find(|(a, _, _)| a == addr).map(|(_, s, _)| *s)?;
     let facts = data.kuna_callee_entry_through(entry).or_else(|| data.kuna_callee_entry_dead(entry))?;
     let size = size.min(stated_size);
-    if !facts.proves_input(addr, size) {
+    if !facts.proves_input(addr, size) && !crate::kuna_wrapperreturn::forwarded_input(data,entry,addr,size) {
         return None;
     }
     let width = facts.live_input_width(addr, size).unwrap_or(size);
@@ -399,7 +401,9 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
     if variadic {
         return;
     }
-    let returned_call_result = stated_tail_return(data);
+    let returned_call_result = crate::kuna_wrapperreturn::claim(data)
+        .map(|(addr, size, producers)| (vec![(addr, size)], producers))
+        .or_else(|| stated_tail_return(data));
     let vararg: Vec<OpId> = (0..data.num_calls())
         .filter(|&i| set_up_as_variadic(data, i))
         .map(|i| data.get_call_specs(i).get_op())
@@ -426,9 +430,11 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
                 continue;
             }
             let claimed = claims.iter().any(|c| c.addr == addr && c.size == size);
-            if !claimed && touched(data, &addr, stated_size) {
+            if !claimed && touched(data, &addr, stated_size)
+                && !(data.get_arch().wrapper_return && crate::kuna_wrapperreturn::input_reaches_call(data, op, &addr, stated_size)) {
                 continue;
             }
+            let body_touches = touched(data, &addr, stated_size);
             let nin = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
             let vn = data.new_varnode(size, &addr, None);
             if data.op_insert_input(op, vn, nin).is_err() {
@@ -440,7 +446,7 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
             ai.get_trial_mut(t).set_slot(nin);
             match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
                 Some(c) => c.arg_owners.push(op),
-                None => claims.push(PassThroughClaim { addr, size, arg_owners: vec![op], ret_owners: Vec::new() }),
+                None => claims.push(PassThroughClaim { body_touches, addr, size, arg_owners: vec![op], ret_owners: Vec::new() }),
             }
         }
     }
@@ -611,7 +617,7 @@ fn claim_tail_return(
         }
         match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
             Some(c) => c.ret_owners.extend(producers.iter().copied()),
-            None => claims.push(PassThroughClaim { addr, size, arg_owners: Vec::new(), ret_owners: producers.clone() }),
+            None => claims.push(PassThroughClaim { addr, size, arg_owners: Vec::new(), ret_owners: producers.clone(), body_touches: false }),
         }
     }
 }
@@ -630,6 +636,9 @@ pub fn returns_tail_result(data: &Funcdata, vn: VarnodeId, addr: &Address, size:
     let Some(v) = data.vbank().get(vn) else { return false };
     if v.get_addr() != addr || v.get_size() != size {
         return false;
+    }
+    if data.get_arch().wrapper_return {
+        return crate::kuna_wrapperreturn::returns_claimed_result(data, vn, addr, size);
     }
     let Some(def) = v.get_def().and_then(|d| data.obank().get(d)) else { return false };
     if !def.is_indirect_creation() {
@@ -681,6 +690,14 @@ pub fn tail_return_type(data: &Funcdata, op: OpId, size: int4) -> Option<std::rc
         return None;
     }
     let fc = (0..data.num_calls()).map(|i| data.get_call_specs(i)).find(|fc| fc.get_op() == op)?;
+    if data.get_arch().wrapper_return && fc.proto().is_output_locked() {
+        let out = fc.proto().get_output();
+        let ty = out.get_type()?;
+        let claimed = data.kuna_passthrough_claims().iter().any(|claim| {
+            claim.ret_owners.contains(&op) && out.get_address() == claim.addr && claim.size == size
+        });
+        return (claimed && out.get_size() == size && ty.get_size() == size).then(|| ty.clone());
+    }
     let (_, osize, ct) = data.kuna_protoorder_types(fc.get_entry_address())?.output.as_ref()?;
     (*osize == size && ct.get_size() == size).then(|| std::rc::Rc::clone(ct))
 }
@@ -698,7 +715,9 @@ pub fn tail_return_type(data: &Funcdata, op: OpId, size: int4) -> Option<std::rc
 /// visited, and an earlier call keeps the return value a later read of the
 /// range asks for (a Cortex-M `double` returned in r0:r1).
 pub fn suppresses_return_trial(data: &Funcdata, addr: &Address, size: int4) -> bool {
-    overlaps_claim(data.kuna_passthrough_claims(), addr, size)
+    data.kuna_passthrough_claims().iter().any(|c| {
+        (!c.body_touches || !c.ret_owners.is_empty()) && overlaps_claim(std::slice::from_ref(c), addr, size)
+    })
 }
 
 /// Does `[addr, addr+size)` share a byte with any claimed range?

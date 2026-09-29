@@ -31,6 +31,7 @@ fn op(n: u64) -> OpId {
 
 fn claim(sp: &Rc<AddrSpace>, off: u64, size: int4, args: &[u64], rets: &[u64]) -> PassThroughClaim {
     PassThroughClaim {
+        body_touches: false,
         addr: Address::new(Rc::clone(sp), off),
         size,
         arg_owners: args.iter().map(|&n| op(n)).collect(),

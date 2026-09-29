@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1519,
-    1519
+    1521,
+    1521
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1517,6 +1517,8 @@
     "data:whiledo-complex #3: the bound check is a proper if statement in the loop body",
     "data:whiledo-complex #4: the loop exit is a proper break statement",
     "data:whiledo-complex #5: the bound-check return is a statement, not condition text",
+    "data:wrapperreturn #1: no caller evidence means no invented result",
+    "data:wrapperreturn #2: the call is kept in both passes",
     "data:x64syscall #1: with the option off the user-op reads nothing, so it prints with empty parens in both syscall-bearing functions -- the bug",
     "data:x64syscall #2: and nothing redefines RAX, so kernel_call returns the RAX:RDX pair it was handed instead of a result",
     "data:x64syscall #3: on, kernel_call recovers the number and all three arguments, and returns the syscall's own result",
