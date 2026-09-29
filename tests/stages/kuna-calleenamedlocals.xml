@@ -1,0 +1,89 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue #762 (P6 variables, naming-policy; P9 emission, declaration
+    emission).  Two distinct pointer locals both took the name `object` from
+    the parameter of the callee they are passed to, and `dedupvardecls` then
+    collapsed their two identical declarations into one, so the emitted C read
+    and wrote one variable where the binary keeps two.  The C compiles, but the
+    store after the inner loop hits the last member instead of the retained
+    representative.
+
+    Source (original synthetic C, gcc 13.3 -O2 -fPIC, consume in its own
+    translation unit):
+
+      struct Node { unsigned char skip; unsigned int hits; };
+      void consume(struct Node *object) { ++object->hits; }
+      void visit(struct Node **representatives, unsigned int representative_count,
+                 struct Node **members, unsigned int member_count) {
+          for (unsigned int i = 0; i < representative_count; ++i) {
+              struct Node *representative = representatives[i];
+              consume(representative);
+              representative->skip = 1;
+              for (unsigned int j = 0; j < member_count; ++j) {
+                  struct Node *member = members[j];
+                  if (!member) break;
+                  if (!member->skip) consume(member);
+              }
+              representative->skip = 0;
+          }
+      }
+
+    The representative lives in r12 across the inner loop, the member in rdi.
+    Before the fix every pass printed `object = *v2;` inside the loop and one
+    `Node *object;` declaration, so `object->skip = 0` stored through the member.
+
+    The naming fix: upstream gives every named high its own local Symbol, so
+    `lookForFuncParamNames`' `makeNameUnique` sees the first `object` and the
+    second becomes `object_00`.  kuna binds these names on the HighVariable
+    without a Symbol, so the uniqueness check now also consults the names
+    already bound in the pass.  The declaration fix: the identical-line collapse
+    only merges lines of one object (one bound or referenced Symbol), since a
+    shared name is not evidence of a shared identity.  Neither is a judgment
+    call, so there is no option; `dedupvardecls off` must print the same two
+    variables.
+
+    Pass 1 (default), pass 2 (option dedupvardecls off) and pass 3 (option
+    namestyle ghidra) all declare both variables, keep the member in its own
+    variable, and store the cleared flag through the representative.
+-->
+<bytechunk space="ram" offset="0x1100">
+f30f1efa415741564155415455534883ec18488954240885f6746b89f689c84189cd4889fd
+4c8d3cf74c8d34c20f1f004c8b65004c89e7e86400000041c60424014585ed7432488b5c24
+08eb0c0f1f004883c3084c39f3741f488b3b4885ff7417803f0075eae8350000004883c308
+4c39f375e50f1f40004883c50841c60424004c39fd75aa4883c4185b5d415c415d415e415f
+c3662e0f1f84000000000090f30f1efa83470401c3
+</bytechunk>
+<symbol space="ram" offset="0x1100" name="visit"/>
+<symbol space="ram" offset="0x11a0" name="consume"/>
+</binaryimage>
+<script>
+  <com>parse line struct Node { uint1 skip; uint4 hits; };</com>
+  <com>parse line extern void consume(Node *object);</com>
+  <com>parse line extern void visit(Node **representatives,uint4 representative_count,Node **members,uint4 member_count);</com>
+  <com>lo fu visit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dedupvardecls off</com>
+  <com>lo fu visit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dedupvardecls on</com>
+  <com>option namestyle ghidra</com>
+  <com>lo fu visit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleenamedlocals #1: the representative is declared in every pass" min="3" max="3">^  Node \*object;$</stringmatch>
+<stringmatch name="calleenamedlocals #2: the member is declared under its own name in every pass" min="3" max="3">^  Node \*object_00;$</stringmatch>
+<stringmatch name="calleenamedlocals #3: the representative is loaded, consumed and flagged" min="3" max="3">object = \*representatives;
+consume\(object\);
+object-&gt;skip = 1;</stringmatch>
+<stringmatch name="calleenamedlocals #4: the inner loop loads each member into the member variable" min="3" max="3">object_00 = \*(v2|Var2);
+if \(!object_00\) goto</stringmatch>
+<stringmatch name="calleenamedlocals #5: the flag is cleared through the representative after the loop" min="3" max="3">representatives = &amp;representatives\[1\];
+object-&gt;skip = 0;</stringmatch>
+<stringmatch name="calleenamedlocals #6: a member never overwrites the representative" min="0" max="0">object = \*(v2|Var2);</stringmatch>
+<stringmatch name="calleenamedlocals #7: the cleared flag never lands on a member" min="0" max="0">object_00-&gt;skip = 0;</stringmatch>
+</decompilertest>

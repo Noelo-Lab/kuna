@@ -17,6 +17,10 @@ fn apply_rejects_garbage() {
     assert!(OptionDedupVarDecls.apply("maybe").is_err());
 }
 
+fn obj(n: u32) -> DeclIdentity {
+    DeclIdentity::High(HighVariableId(n))
+}
+
 #[test]
 fn dedup_suppresses_only_repeats() {
     let mut d = DeclDedup::new();
@@ -24,10 +28,10 @@ fn dedup_suppresses_only_repeats() {
         (t.to_string(), String::new(), n.to_string(), None, Some(("stack".to_string(), off)))
     };
     // First occurrence: emit (not a duplicate).
-    assert!(!d.is_duplicate(sig("int4", "option_index", 0x3c)));
+    assert!(!d.is_duplicate(obj(0), sig("int4", "option_index", 0x3c)));
     // Identical signature: suppress.
-    assert!(d.is_duplicate(sig("int4", "option_index", 0x3c)));
-    assert!(d.is_duplicate(sig("int4", "option_index", 0x3c)));
+    assert!(d.is_duplicate(obj(0), sig("int4", "option_index", 0x3c)));
+    assert!(d.is_duplicate(obj(0), sig("int4", "option_index", 0x3c)));
 }
 
 #[test]
@@ -37,11 +41,11 @@ fn dedup_keeps_distinct_signatures() {
         (t.to_string(), String::new(), n.to_string(), None, Some(("stack".to_string(), off)))
     };
     // Same name + type, DIFFERENT storage slot -> distinct -> both emit.
-    assert!(!d.is_duplicate(sig("int4", "v1", 0x10)));
-    assert!(!d.is_duplicate(sig("int4", "v1", 0x20)));
+    assert!(!d.is_duplicate(obj(0), sig("int4", "v1", 0x10)));
+    assert!(!d.is_duplicate(obj(0), sig("int4", "v1", 0x20)));
     // Same name + slot, DIFFERENT type -> distinct -> both emit.
-    assert!(!d.is_duplicate(sig("char *", "v2", 0x30)));
-    assert!(!d.is_duplicate(sig("int8", "v2", 0x30)));
+    assert!(!d.is_duplicate(obj(0), sig("char *", "v2", 0x30)));
+    assert!(!d.is_duplicate(obj(0), sig("int8", "v2", 0x30)));
 }
 
 #[test]
@@ -53,9 +57,9 @@ fn dedup_handles_array_adornment() {
         ("int2".into(), String::new(), "arr".into(), Some(("int2".into(), 32)), None);
     let s3: DeclSignature =
         ("int2".into(), String::new(), "arr".into(), Some(("int2".into(), 16)), None);
-    assert!(!d.is_duplicate(s1));
-    assert!(d.is_duplicate(s2)); // identical array -> suppress
-    assert!(!d.is_duplicate(s3)); // different count -> keep
+    assert!(!d.is_duplicate(obj(0), s1));
+    assert!(d.is_duplicate(obj(0), s2)); // identical array -> suppress
+    assert!(!d.is_duplicate(obj(0), s3)); // different count -> keep
 }
 
 #[test]
@@ -64,9 +68,20 @@ fn dedup_keeps_distinct_declarator_suffixes() {
     let sig = |back: &str| -> DeclSignature {
         ("char (*".into(), back.into(), "p".into(), None, Some(("rax".into(), 0)))
     };
-    assert!(!d.is_duplicate(sig(")[16]")));
-    assert!(d.is_duplicate(sig(")[16]")));
-    assert!(!d.is_duplicate(sig(")[8]")));
+    assert!(!d.is_duplicate(obj(0), sig(")[16]")));
+    assert!(d.is_duplicate(obj(0), sig(")[16]")));
+    assert!(!d.is_duplicate(obj(0), sig(")[8]")));
+}
+
+#[test]
+fn dedup_keeps_identical_lines_of_distinct_objects() {
+    let mut d = DeclDedup::new();
+    let sig = || -> DeclSignature { ("Node *".into(), String::new(), "object".into(), None, None) };
+    assert!(!d.is_duplicate(obj(1), sig()));
+    assert!(!d.is_duplicate(obj(2), sig()));
+    let slot = DeclIdentity::Symbol(SymbolId::default());
+    assert!(!d.is_duplicate(slot, sig()));
+    assert!(d.is_duplicate(slot, sig()));
 }
 
 #[test]

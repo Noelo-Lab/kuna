@@ -1,13 +1,16 @@
 //! Declaration deduplication and function-scope name allocation.
 //!
-//! The printer uses rendered signatures to collapse identical declaration lines
-//! when `dedupvardecls` is enabled. Name allocation reserves existing identifiers
+//! The printer collapses identical declaration lines of one object when
+//! `dedupvardecls` is enabled. Name allocation reserves existing identifiers
 //! and future local spellings, then assigns collision suffixes in caller order.
 //! Symbol and overlap-group collapsing remain in [`crate::printc`].
 
 use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 
+use crate::context::HighVariableId;
+use crate::database::SymbolId;
+use crate::funcdata::Funcdata;
 use crate::options::on_or_off;
 
 /// Marshaling element `<dedupvardecls>` (kuna, 4000+ id range; next free after
@@ -59,7 +62,28 @@ pub type DeclSignature = (
     Option<(String, u64)>,
 );
 
-/// Tracks the rendered signatures already emitted so duplicates can be suppressed.
+/// The object a local declaration denotes: the local Symbol its HighVariable was
+/// bound to by naming (or, for an `&symbol` reference, points at), else the
+/// HighVariable itself.  Two highs that render the same line but share no Symbol
+/// are distinct objects, whatever their names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DeclIdentity {
+    Symbol(SymbolId),
+    High(HighVariableId),
+}
+
+impl DeclIdentity {
+    /// The identity of `high`'s declaration in `fd`.
+    pub fn of(fd: &Funcdata, high: HighVariableId) -> Self {
+        fd.high_bank()
+            .get(high)
+            .and_then(|h| h.kuna_ref_symbol().or(h.kuna_link_symbol()).or(h.kuna_dynamic_symbol()))
+            .map_or(Self::High(high), Self::Symbol)
+    }
+}
+
+/// Tracks the declarations already emitted so a repeat of one object's line can be
+/// suppressed.
 ///
 /// Used by `emit_local_var_decls` only when `Architecture::dedup_var_decls` is set.
 #[derive(Debug, Default)]
@@ -68,7 +92,7 @@ pub struct DeclDedup {
         clippy::disallowed_types,
         reason = "Only signature membership is observed; caller order determines declarations"
     )]
-    seen: std::collections::HashSet<DeclSignature>,
+    seen: std::collections::HashSet<(DeclIdentity, DeclSignature)>,
 }
 
 /// Allocates declaration identifiers that are unique in one function scope.
@@ -151,12 +175,12 @@ impl DeclDedup {
         Self::default()
     }
 
-    /// Record `sig` and report whether it was **already** present — i.e. whether the
-    /// caller should SKIP emitting this (duplicate) declaration.  The first
-    /// occurrence of a signature returns `false` (emit it); every later identical
-    /// one returns `true` (suppress it).
-    pub fn is_duplicate(&mut self, sig: DeclSignature) -> bool {
-        !self.seen.insert(sig)
+    /// Record `sig` for `identity` and report whether it was **already** present —
+    /// i.e. whether the caller should SKIP emitting this (duplicate) declaration.
+    /// The first occurrence returns `false` (emit it); every later identical line
+    /// of the same object returns `true` (suppress it).
+    pub fn is_duplicate(&mut self, identity: DeclIdentity, sig: DeclSignature) -> bool {
+        !self.seen.insert((identity, sig))
     }
 }
 

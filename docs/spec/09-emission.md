@@ -1584,11 +1584,19 @@ than a faithful one.
 *By rendered line.* A declaration is then suppressed when its fully rendered
 signature — final declarator type and its post-name suffix, name, array
 adornment, and (under angr naming) the storage comment — is byte-identical to
-one already emitted
+one already emitted *for the same object*
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_dedupvardecls.rs
-(DeclDedup)`). Keying on the rendered bytes makes this step provably lossless:
-two same-named locals at different slots or types differ in signature and both
-survive.
+(DeclDedup)`). The object is the local Symbol the naming pass bound the high to,
+or, for an `&symbol` reference high whose only storage is the `PTRSUB` offset
+constant, the Symbol it points at; a high bound to neither is its own object
+(`kuna_dedupvardecls.rs (DeclIdentity::of)`). The references are what this
+step still collapses: two `&v30` operands of one stack slot are two highs that
+the storage query of the symbol step cannot see, and suffixing one would make
+the body take the address of a second object. Identical text alone is not
+enough. Two register or temporary highs that took the same name from a
+recommendation are two variables, and one declaration for both made the body
+write through whichever was assigned last (#762). Keyed on identity, the lines
+survive and the uniquifier below suffixes the second.
 
 *By overlap group.* Register aliases can form a `VariableGroup` without any
 mapped `ScopeLocal` Symbol: for example, separate AL and AH highs plus the AX
@@ -1641,8 +1649,8 @@ step alone left one stack slot declared twice under one name with two types
 whenever two of its live ranges did not merge and recovered different types
 (DIV-52), which is not compilable C and which no rendered-line key can catch.
 No collapse can remove the last declaration of a referenced name: the symbol
-step requires the identifier to match, the line step requires the whole line to
-match, and the overlap step requires a declared unique whole owner. `option
+step requires the identifier to match, the line step requires the whole line and
+the object to match, and the overlap step requires a declared unique whole owner. `option
 dedupvardecls off` restores the one-line-per-HighVariable behavior for the two
 option-controlled collapses; overlap-owner collapsing and collision suffixing
 remain active because unique, correctly bound C identifiers are an output

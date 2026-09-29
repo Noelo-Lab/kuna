@@ -3123,8 +3123,9 @@ impl PrintC {
         } else {
             std::collections::HashMap::new()
         };
-        // Run the lossless rendered-line collapse before unique spellings make
-        // genuinely distinct declarations differ by construction.
+        // Run the rendered-line collapse before unique spellings make genuinely
+        // distinct declarations differ by construction.  It is lossless only
+        // within one object: a shared name is not evidence of shared identity.
         if arch.dedup_var_decls {
             let mut dedup = crate::kuna_dedupvardecls::DeclDedup::new();
             decls.retain(|(high, name)| {
@@ -3141,7 +3142,8 @@ impl PrintC {
                 } else {
                     None
                 };
-                !dedup.is_duplicate((decl_type, decl_back, name.clone(), array_sig, comment_sig))
+                let identity = crate::kuna_dedupvardecls::DeclIdentity::of(fd, *high);
+                !dedup.is_duplicate(identity, (decl_type, decl_back, name.clone(), array_sig, comment_sig))
             });
         }
         // A VariableGroup can describe AL/AH/AX-style overlap without a mapped

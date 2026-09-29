@@ -2019,6 +2019,7 @@ fn bind_proto_partial_piece(
     piece_high: crate::context::HighVariableId,
     base: &mut int4,
     recmap: &std::collections::BTreeMap<crate::context::HighVariableId, OpRecommend>,
+    taken: &mut std::collections::BTreeSet<String>,
 ) -> bool {
     let root_vn = data.piece_find_root(piece_vn);
     if root_vn == piece_vn {
@@ -2140,6 +2141,7 @@ fn bind_proto_partial_piece(
                     }
                 },
             };
+            taken.insert(name.clone());
             let cur_off = data.high_bank().get(root_high).map(|h| h.get_symbol_offset()).unwrap_or(-1);
             let rep_ty = data.vbank().get(root_rep).map(|v| v.get_type().clone());
             (name, cur_off, rep_ty)
@@ -2627,6 +2629,14 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // in location order keeps the lower `vN` (the switchmulti `v1` loop variable).
     data.name_undefined_spacebase_symbols(&mut base);
     let mut seen: std::collections::BTreeSet<HighVariableId> = std::collections::BTreeSet::new();
+    // Every name a HighVariable holds, including those no local Symbol records
+    // (see `ScopeLocal::make_local_name_unique_among`): a callee's parameter
+    // name must not give a second, distinct high an identifier already in use.
+    let mut taken: std::collections::BTreeSet<String> = data
+        .high_bank()
+        .iter()
+        .filter_map(|(_, h)| h.kuna_name().map(str::to_string))
+        .collect();
     for vn in vlist {
         // C++ `if (curvn->isFree()) continue;` (coreaction.cc:3058) — runs ahead of
         // both the per-space spacebase rename and the body-high naming.
@@ -2685,7 +2695,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         // stand-in) and `continue`s, skipping the `vN` allocator below.
         let nr = name_rep.unwrap();
         if data.vbank().get(nr).map(|v| v.is_proto_partial()).unwrap_or(false)
-            && bind_proto_partial_piece(data, nr, high, &mut base, &func_param_recmap)
+            && bind_proto_partial_piece(data, nr, high, &mut base, &func_param_recmap, &mut taken)
         {
             continue;
         }
@@ -2728,6 +2738,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 .get_scope_local()
                 .map(|lm| lm.make_local_name_unique(&rec_name))
                 .unwrap_or(rec_name);
+            taken.insert(unique.clone());
             if let Some(h) = data.high_bank_mut().get_mut(high) {
                 h.set_kuna_name(unique);
             }
@@ -2873,7 +2884,11 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 // default for an undefined whole-symbol cover (the spill struct local
                 // renders `dvar`).
                 let rec_name =
-                    func_param_name_for_high(data, &func_param_recmap, high, name_rep.unwrap());
+                    func_param_name_for_high(data, &func_param_recmap, high, name_rep.unwrap())
+                        .map(|rec| match data.get_scope_local() {
+                            Some(lm) => lm.make_local_name_unique_among(&rec, &taken),
+                            None => rec,
+                        });
                 let resolved = data.get_scope_local_mut().and_then(|lm| {
                     lm.resolve_default_name_override(&v_addr, v_size, &mut base, rec_name.as_deref())
                 });
@@ -3009,8 +3024,8 @@ fn name_local_highs_angr(data: &mut Funcdata) {
         let name = match func_param_name_for_high(data, &func_param_recmap, high, name_rep.unwrap())
         {
             Some(rec) => data
-                .get_scope_local_mut()
-                .map(|lm| lm.make_local_name_unique(&rec))
+                .get_scope_local()
+                .map(|lm| lm.make_local_name_unique_among(&rec, &taken))
                 .unwrap_or(rec),
             None => {
                 // C++ `Scope::buildDefaultName`'s local arm (database.cc:1786 ->
@@ -3022,6 +3037,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 kuna_default_local_name(data.get_arch(), rep_ty.as_deref(), &mut base)
             }
         };
+        taken.insert(name.clone());
         if let Some(h) = data.high_bank_mut().get_mut(high) {
             h.set_kuna_name(name);
         }
