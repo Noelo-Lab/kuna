@@ -82,7 +82,10 @@
 //! the move-only set, so the walk stops there and reports computed. Only a half
 //! that is pure leftover — never written, or a callee's clobber — is dropped.
 
+use std::rc::Rc;
+
 use kuna_base::address::Address;
+use kuna_base::space::{spacetype, AddrSpace};
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{OpId, VarnodeId};
@@ -260,6 +263,48 @@ pub fn every_return_computes_with(data: &Funcdata, globals: bool) -> bool {
     true
 }
 
+/// The storage locations `vn` occupies, most significant first: the pieces of
+/// a join, or `vn`'s own storage.
+fn storage_pieces(data: &Funcdata, vn: VarnodeId) -> Option<Vec<(Rc<AddrSpace>, u64, i32)>> {
+    let v = data.vbank().get(vn)?;
+    let addr = v.get_addr();
+    let space = addr.get_space()?;
+    if space.get_type() != spacetype::IPTR_JOIN {
+        return Some(vec![(Rc::clone(space), addr.get_offset(), v.get_size())]);
+    }
+    let rec = data.get_arch().manage().find_join(addr.get_offset()).ok()?;
+    (0..rec.num_pieces())
+        .map(|i| {
+            let p = rec.get_piece(i);
+            p.space.clone().map(|s| (s, p.offset, p.size as i32))
+        })
+        .collect()
+}
+
+/// Is `vn` stored across two or more locations (a register pair's join)?
+fn spans_two_locations(data: &Funcdata, vn: VarnodeId) -> bool {
+    storage_pieces(data, vn).is_some_and(|p| p.len() > 1)
+}
+
+/// Where the `width` bytes of `whole` starting `lsb` bytes above its least
+/// significant byte are stored: the return register (or register of a pair) a
+/// half of the returned value sits in. `None` when they straddle two pieces.
+fn slot_storage(data: &Funcdata, whole: VarnodeId, lsb: i32, width: i32) -> Option<Address> {
+    let mut lsb = lsb;
+    for (space, off, size) in storage_pieces(data, whole)?.into_iter().rev() {
+        if lsb < size {
+            if lsb + width > size {
+                return None;
+            }
+            let rel = if space.is_big_endian() { size - lsb - width } else { lsb };
+            let at = space.wrap_offset(off.wrapping_add(rel as u64));
+            return Some(Address::new(space, at));
+        }
+        lsb -= size;
+    }
+    None
+}
+
 /// Repair a RETURN whose value is a return-recovery register **pair** with an
 /// uncomputed half: rewrite it to the half that carries a value, and destroy the
 /// now-dead concatenation.
@@ -288,16 +333,25 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
         if piece.code() != OpCode::CPUI_PIECE || piece.num_input() != 2 {
             continue;
         }
-        let (Some(hi), Some(lo)) = (piece.get_in(0), piece.get_in(1)) else { continue };
-        let (hi_addr, lo_addr) = match (data.vbank().get(hi), data.vbank().get(lo)) {
-            (Some(h), Some(l)) => (h.get_addr().clone(), l.get_addr().clone()),
+        let (Some(hi), Some(lo), Some(whole)) = (piece.get_in(0), piece.get_in(1), piece.get_out())
+        else {
+            continue;
+        };
+        let (hi_addr, hi_size, lo_addr, lo_size) = match (data.vbank().get(hi), data.vbank().get(lo)) {
+            (Some(h), Some(l)) => (h.get_addr().clone(), h.get_size(), l.get_addr().clone(), l.get_size()),
             _ => continue,
         };
-        let hi_real = computes_from(data, hi, 0, Some(&hi_addr));
-        let lo_real = computes_from(data, lo, 0, Some(&lo_addr));
+        let hi_slot = slot_storage(data, whole, lo_size, hi_size).unwrap_or(hi_addr);
+        let lo_slot = slot_storage(data, whole, 0, lo_size).unwrap_or(lo_addr);
+        let hi_real = computes_from(data, hi, 0, Some(&hi_slot));
+        let lo_real = computes_from(data, lo, 0, Some(&lo_slot));
         let keep = match (hi_real, lo_real) {
             // Both halves carry a value: a genuine wide return. Leave it alone.
             (true, true) => continue,
+            // One return register holds both halves, so its high bits are not a
+            // return value of their own: handing them back alone would return
+            // them in place of the whole register.
+            (true, false) if !spans_two_locations(data, whole) => continue,
             (true, false) => hi,
             // Only the low half is real — the common case, a callee-saved restore
             // in the high register.
