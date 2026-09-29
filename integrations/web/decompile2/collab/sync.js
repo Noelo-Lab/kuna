@@ -15,7 +15,9 @@
 // it had: a field the registers already hold (a value or a deletion) keeps
 // the session's, and one they do not is written with the oldest clock there
 // is, so it still loses to any write another page makes of it that this page
-// had not heard of yet; what the student changed while joining is newest. A page that left a session and
+// had not heard of yet; what the student changed while joining is newest. A
+// joiner at another decompiler effort than the session's brings no variable
+// change (the engine numbers variables per effort). A page that left a session and
 // joins the same one again sends what it changed since it left. A joiner that receives the program opens it with
 // the session's changes; if it had its own stored changes to that program,
 // and the session does not already hold all of them, the session is saved
@@ -44,6 +46,17 @@ function holdsAll(session, own) {
   const raw = (s) => [...s.records.values()].filter((r) => r.kind === 'raw').map((r) => `${r.func || ''}\n${r.text}`);
   const texts = new Set(raw(session));
   return raw(own).every((t) => texts.has(t));
+}
+
+/** Clear every variable field of `session` the registers do not hold (a joiner's, made at another decompiler effort). */
+function dropUnheldVars(session, replica) {
+  for (const rec of [...session.records.values()]) {
+    if (rec.kind !== 'var') continue;
+    const id = `var:${rec.func}:${rec.sym}`;
+    const name = rec.name && !replica.regs.has(`${id}:name`) ? null : undefined;
+    const type = rec.type && !replica.regs.has(`${id}:type`) ? null : undefined;
+    if (name === null || type === null) session.setVar(rec.func, rec.sym, { name, type });
+  }
 }
 
 const setBase = (base, key, value) => (value === null || value === undefined ? base.delete(key) : base.set(key, value));
@@ -299,6 +312,7 @@ export class Sync {
     const session = this.app.session();
     adoptRawKeys(session, this.me);
     const now = registersOf(session);
+    const mode = this.#lateMode();
     const older = [];
     let want;
     if (this.base) want = changedBetween(this.base, now);
@@ -307,15 +321,17 @@ export class Sync {
       want = changedBetween(anchor, now);
       for (const [key, value] of anchor) if (!want.has(key)) older.push([key, value]);
     }
-    const replaced = older.filter(([key, value]) => this.replica.regs.has(key) && this.replica.value(key) !== value).length;
+    const apart = mode ? this.#effortApart(want, older) : new Set();
+    const mine = older.filter(([key]) => !(mode && key.startsWith('var:')));
+    const replaced = mine.filter(([key, value]) => this.replica.regs.has(key) && this.replica.value(key) !== value).length;
     const ops = [];
-    const unheld = new Map(older.filter(([key]) => !this.replica.regs.has(key)));
+    const unheld = new Map(mine.filter(([key]) => !this.replica.regs.has(key)));
     const { changes } = localChanges(unheld, this.replica, { maxLive: MAX_REGISTERS });
     for (const { key, value } of changes) {
       const op = { k: key, v: value, c: oldestClock(this.me), b: oldestClock(this.me) };
       if (this.replica.apply(op)) ops.push(op);
     }
-    const copy = replaced ? Session.fromJSON(JSON.parse(JSON.stringify(session.toJSON()))) : null;
+    const copy = replaced || apart.size ? Session.fromJSON(JSON.parse(JSON.stringify(session.toJSON()))) : null;
     const { written, refused } = this.#writeAll(want);
     for (const w of written) ops.push(w.op);
     this.kept = null;
@@ -323,16 +339,31 @@ export class Sync {
     this.applying = true;
     try {
       applyRegisters(session, this.replica, [...this.replica.regs.keys()]);
+      if (mode) dropUnheldVars(session, this.replica);
     } finally {
       this.applying = false;
     }
     this.base = registersOf(session);
     for (const r of refused) setBase(this.base, r.key, this.replica.value(r.key));
     if (ops.length) this.group.local(ops);
-    const mode = this.#lateMode();
     this.#joined();
-    if (copy) this.ui.mergeReplaced?.({ count: replaced, copy });
+    if (copy) this.ui.mergeReplaced?.({ count: replaced, apart: apart.size, mode: this.replica.value('setting:mode'), copy });
     this.app.remoteChanged({ inspect: true, mode, label: '' });
+  }
+
+  /**
+   * A joiner at another decompiler effort than the session's brings no
+   * variable change (the engine numbers variables per effort, so the same
+   * `v1` is another variable there): take them out of `want`, and return the
+   * variables whose fields differ from the session's.
+   */
+  #effortApart(want, older) {
+    const apart = new Set();
+    for (const [key, value] of [...older, ...want]) {
+      if (key.startsWith('var:') && this.replica.value(key) !== value) apart.add(key.split(':').slice(0, 3).join(':'));
+    }
+    for (const key of [...want.keys()]) if (key.startsWith('var:')) want.delete(key);
+    return apart;
   }
 
   /** The session's decompiler effort, when this page's is another. */
@@ -373,18 +404,23 @@ export class Sync {
     }
     const s = this.app.session();
     adoptRawKeys(s, this.me);
-    const { written, refused } = this.#writeAll(changedBetween(opened, registersOf(s)));
+    const mode = this.#lateMode();
+    const want = changedBetween(opened, registersOf(s));
+    const late = mode ? this.#effortApart(want, []) : new Set();
+    const copy = late.size ? Session.fromJSON(JSON.parse(JSON.stringify(s.toJSON()))) : null;
+    const { written, refused } = this.#writeAll(want);
     this.kept = null;
     this.#share();
     this.aside = apart ? { count: own.size, hash, name: meta.name } : null;
     const before = JSON.stringify(s.toJSON());
     applyRegisters(s, this.replica, [...this.replica.regs.keys()]);
+    if (mode) dropUnheldVars(s, this.replica);
     this.base = registersOf(s);
     for (const r of refused) setBase(this.base, r.key, this.replica.value(r.key));
     if (written.length) this.group.local(written.map((w) => w.op));
     const moved = JSON.stringify(s.toJSON()) !== before;
-    const mode = this.#lateMode();
     this.#joined();
+    if (copy) this.ui.mergeReplaced?.({ count: 0, apart: late.size, mode: this.replica.value('setting:mode'), copy });
     this.app.remoteChanged({ inspect: moved, mode, label: '' });
   }
 

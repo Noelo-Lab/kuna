@@ -8,7 +8,8 @@
 // applied, an inviter that goes away in the middle of a join, a tab of the
 // same browser keeping a guest's own changes apart, the shared order; then a
 // third review's: two joiners bringing the same field, a slow open of the
-// received program, a join that fails while the program opens. Each
+// received program, a join that fails while the program opens; and a fourth
+// review's: a guest's variable changes made at another decompiler effort. Each
 // case also checks that no page sent a change its student did not make, and
 // that the pages agree once settled. Needs no build.
 //   node integrations/web/test/decompile2-collab-sync.mjs
@@ -310,6 +311,60 @@ await test('third review #4 a join that fails while the received program opens g
   assert.equal(ben.slot, 'own', 'Ben saves into his own slot again');
   assert.ok(shows(ben, 'bens_own') && !shows(ben, 'session_name'), 'and sees his own changes');
   assert.equal(ben.session.orderOf, null);
+  settled(sim);
+});
+
+// ── a fourth review ────────────────────────────────────────────────────────
+
+await test('fourth review #3 a guest\'s variable changes made at another decompiler effort stay out of the session', async () => {
+  const sim = new Sim(31);
+  const ana = sim.page(ANA, { own: (s) => s.setVar(FN, 'v2', { name: 'anas_v2' }) });
+  const ben = sim.page(BEN, {
+    own: (s) => {
+      s.setFunctionName(FN, 'bens_fn');
+      s.setComment(FN, '0x1104', 'bens note');
+      s.setVar(FN, 'v1', { name: 'bens_fast_v1' });
+      s.setVar(FN, 'v2', { type: 'long' });
+    },
+  });
+  ben.mode = 'fast';
+  ana.start();
+  await sim.run(50);
+  ben.joinVia(ana);
+  await sim.run(1);
+  ben.edit((s) => s.setVar(FN, 'v3', { name: 'renamed_while_joining' }));
+  await sim.run(3000);
+  assert.equal(ben.sync.phase, 'shared');
+  assert.equal(ben.mode, 'auto', 'Ben now runs the session\'s effort');
+  for (const p of [ana, ben]) {
+    assert.ok(shows(p, 'function 0x1100=bens_fn') && shows(p, 'bens note'), `${p.name} has Ben's function name and note (they do not depend on the effort)`);
+    assert.ok(shows(p, 'anas_v2'), `${p.name} keeps Ana's rename`);
+    assert.ok(!shows(p, 'bens_fast_v1') && !shows(p, 'renamed_while_joining') && !shows(p, 'long'),
+      `${p.name} holds none of the variable changes Ben made in Fast (at Automatic they would change other variables)`);
+  }
+  assert.equal(ben.merges.length, 1, 'Ben is told');
+  assert.equal(ben.merges[0].apart, 3, 'three of his variables stayed out');
+  assert.equal(ben.merges[0].mode, 'auto');
+  const copy = ben.merges[0].copy.allAssertions((a) => a);
+  assert.ok(copy.includes('name 0x1100::v1 bens_fast_v1') && copy.includes('name 0x1100::v3 renamed_while_joining'), 'and offered his own changes as they were');
+  await sim.run(60000);
+  settled(sim);
+});
+
+await test('fourth review #3 at the same effort a guest\'s variable changes join the session as before', async () => {
+  const sim = new Sim(32);
+  const ana = sim.page(ANA, {});
+  const ben = sim.page(BEN, { own: (s) => s.setVar(FN, 'v1', { name: 'bens_v1' }) });
+  ben.mode = 'fast';
+  ana.start();
+  await sim.run(50);
+  ana.setMode('fast');
+  await sim.run(50);
+  ben.joinVia(ana);
+  await sim.run(3000);
+  for (const p of [ana, ben]) assert.ok(shows(p, 'bens_v1'), `${p.name} has Ben's rename`);
+  assert.deepEqual(ben.merges, [], 'nothing to tell Ben');
+  await sim.run(60000);
   settled(sim);
 });
 

@@ -18,6 +18,7 @@ export const PREFS_KEY = 'kuna.d2.collab';
 const STUN = 'stun:stun.l.google.com:19302';
 const JOIN_MS = 20000;
 const VIEW_WORDS = { c: 'C code', split: 'Side by side', asm: 'Assembly', bytes: 'Bytes', stack: 'Stack', src: 'Original source' };
+const EFFORTS = { auto: 'Automatic', fast: 'Fast', reliable: 'Reliable', aggressive: 'Thorough' };
 const PEOPLE = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6" cy="5.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
   '<path d="M1.8 13.5c.5-2.4 2.2-3.7 4.2-3.7s3.7 1.3 4.2 3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
   '<circle cx="11.3" cy="6" r="1.9" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M11 9.6c1.7 0 2.9 1.1 3.3 3.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
@@ -170,10 +171,16 @@ class Collab {
       },
       joined: (info) => this.#joinDone(info),
       joinFailed: (reason, info) => this.#joinFailed(this.#failText(reason, info)),
-      mergeReplaced: ({ count, copy }) => this.api.toast(`The session's changes replaced ${count} of yours, where you both changed the same thing.`, {
-        kind: 'warn', ms: 15000, detail: 'Everything else you had changed is now part of the session.',
-        action: { label: 'Save yours as a file', run: () => this.api.exportSession(copy) },
-      }),
+      mergeReplaced: ({ count, apart = 0, mode = null, copy }) => {
+        const replaced = `The session's changes replaced ${count} of yours, where you both changed the same thing.`;
+        const title = apart
+          ? `${apart === 1 ? 'One of your variables was' : `${apart} of your variables were`} changed at another decompiler effort, so ${apart === 1 ? 'it stays' : 'they stay'} out of the session.`
+          : replaced;
+        const detail = apart
+          ? `The session runs at ${EFFORTS[mode] || mode}, where the same variable names can be other variables.${count ? ` ${replaced}` : ''} Everything else you had changed is now part of the session.`
+          : 'Everything else you had changed is now part of the session.';
+        this.api.toast(title, { kind: 'warn', ms: 15000, detail, action: { label: 'Save yours as a file', run: () => this.api.exportSession(copy) } });
+      },
       roster: () => this.#rosterChanged(),
       where: () => this.#whereOf(),
       cursor: (peer, m) => this.#cursor(peer, m),

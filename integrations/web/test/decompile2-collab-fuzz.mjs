@@ -3,7 +3,7 @@
 // collab-sim.mjs), on a virtual clock: 3 to 5 pages, some with the program
 // open and changes of their own, some that must receive it; random edits of
 // every kind, joins (and joins again after leaving), leaves, undo and redo,
-// decompiler-effort changes, links that fail with edits in flight, and pairs
+// decompiler-effort changes (also by pages working alone, which join later), links that fail with edits in flight, and pairs
 // of pages that cannot link directly, links that lose the first message one
 // side sends; every action followed by a random wait,
 // so edits land inside the others' 16 ms apply batch, during joins and while a
@@ -15,7 +15,8 @@
 //   - no page ever sent a write for a field its student did not change in
 //     that action (or, when joining, ever), except a joiner's earlier fields
 //     written with the oldest clock, which cannot replace anyone's write, and
-//     those only where the registers held nothing;
+//     those only where the registers held nothing; a joiner brings no
+//     variable change made at another decompiler effort than the session's;
 //   - adding a directive always adds one (never replaces another of the
 //     page's own); applying the others' changes never clears what the engine
 //     said of a record they did not change; a page out of any session never
@@ -82,7 +83,9 @@ async function runOne(seed) {
   const pages = IDS.slice(0, n).map((id, i) => {
     const program = i === 0 || rng.chance(0.6);
     const edits = rng.chance(0.5) ? 1 + rng.int(4) : 0;
-    return sim.page(id, { program, own: edits ? (s) => { for (let e = 0; e < edits; e++) mutate(rng, s); } : null });
+    const page = sim.page(id, { program, own: edits ? (s) => { for (let e = 0; e < edits; e++) mutate(rng, s); } : null });
+    if (i && rng.chance(0.3)) page.mode = rng.pick(MODES);
+    return page;
   });
   const [host] = pages;
   for (let i = 1; i < n; i++) for (let j = i + 1; j < n; j++) if (rng.chance(0.2)) sim.net.block(IDS[i], IDS[j]);
@@ -123,7 +126,8 @@ async function runOne(seed) {
     } else if (r < 0.81) {
       if (shared.length) rng.pick(shared).redo();
     } else if (r < 0.84) {
-      if (shared.length) rng.pick(shared).setMode(rng.pick(MODES));
+      const can = pages.filter((p) => p.sync.phase !== 'joining');
+      if (can.length) rng.pick(can).setMode(rng.pick(MODES));
     } else {
       await sim.run(rng.int(400));
     }

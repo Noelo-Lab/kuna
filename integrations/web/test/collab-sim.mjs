@@ -305,6 +305,7 @@ export class Page {
     this.events = [];
     this.joinFailures = [];
     this.replacedCopies = [];
+    this.merges = [];
     if (own) {
       own(this.session);
       adoptRawKeys(this.session, id);
@@ -362,7 +363,10 @@ export class Page {
         this.joinFailures.push(reason);
       },
       event: (kind) => this.events.push(kind),
-      mergeReplaced: ({ copy }) => this.replacedCopies.push(copy),
+      mergeReplaced: (info) => {
+        this.replacedCopies.push(info.copy);
+        this.merges.push(info);
+      },
     };
   }
 
@@ -523,7 +527,13 @@ export class Sim {
     for (const op of ops) {
       let ok = false;
       if (ctx?.kind === 'act' && ctx.page === page) ok = ctx.allow.has(op.k);
-      else if (ctx?.kind === 'deliver' && ctx.page === page && ctx.joining) ok = page.touched.has(op.k) || (op.c[0] === 1 && op.b?.[0] === 1);
+      else if (ctx?.kind === 'deliver' && ctx.page === page && ctx.joining) {
+        ok = page.touched.has(op.k) || (op.c[0] === 1 && op.b?.[0] === 1);
+        const at = page.sync.replica?.value('setting:mode');
+        if (op.k.startsWith('var:') && at && page.mode !== at) {
+          this.violations.push(`${me} brought ${op.k}=${JSON.stringify(op.v)}, a variable change made at ${page.mode}, into a session at ${at}`);
+        }
+      }
       if (!ok) this.violations.push(`${me} sent ${op.k}=${JSON.stringify(op.v)} (${ctx?.kind || 'outside'}${ctx?.page && ctx.page !== page ? ` of ${ctx.page.id}` : ''}) at ${this.clock.now()} ms`);
     }
   }

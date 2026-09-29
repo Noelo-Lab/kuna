@@ -24,8 +24,9 @@
 // cannot be worked out after the connection was made, the back/forward
 // cache, and a session's saved copy offered when its program is opened again.
 // And a fourth review's: opening a cached function while another person's
-// change is being decompiled, and a program received while an edit of another
-// program is in flight. Each case runs in fresh tabs (a second Chrome process
+// change is being decompiled, a guest that renamed a variable at another
+// decompiler effort, and a program received while an edit of another program
+// is in flight. Each case runs in fresh tabs (a second Chrome process
 // stands in for another person's computer) and is reported; any failure exits 1.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
@@ -868,6 +869,28 @@ try {
   });
 
   // ── a fourth review ──────────────────────────────────────────────────────
+
+  await test('fourth review #3 a guest who renamed a variable at another decompiler effort joins: the rename stays out of the session, and the guest is told', async () => {
+    const ana = await tab('Ana');
+    await open(ana);
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { other: true });
+    await open(ben, { seed: [[OWN_KEY, stored([fnRec(SUM, 'bens_sum'), varRec(MAIN, 'v1', 'bens_fast_total')])]] });
+    await example(ben);
+    await ben.call(() => { const m = document.getElementById('mode'); m.value = 'fast'; m.dispatchEvent(new Event('change', { bubbles: true })); return true; });
+    await idle(ben);
+    await joinByHash(ben, link);
+    await carryReply(ana, ben);
+    await joinedBoth(ana, ben);
+    await ben.waitFor(`document.getElementById('mode').value === 'auto'`, { what: 'Ben runs the session\'s effort', timeout: 20000 });
+    for (const p of [ana, ben]) {
+      await p.waitFor(`/bens_sum/.test(document.getElementById('sesslist').textContent)`, { what: `${p.label} has Ben's function name`, timeout: 30000 });
+      await idle(p);
+      assert.ok(!/bens_fast_total/.test(await code(p) + await rail(p)), `${p.label} holds no rename Ben made in Fast`);
+    }
+    assert.ok((await toasts(ben)).some((t) => /One of your variables was changed at another decompiler effort/.test(t) && /Automatic/.test(t)), 'Ben is told, and offered his own as a file');
+  });
 
   await test('fourth review #1 opening a cached function while another person\'s change is being decompiled stays on it', async () => {
     const { ana, ben } = await pair({ anaScript: DELAY_SHIM });

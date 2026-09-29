@@ -786,7 +786,10 @@ written with the oldest clock there is (`[1, page]`; every page's own writes sta
 so it still loses to any write of that field the inviter had not heard of yet. What the
 newcomer changed after pressing *Join* is newest. When the
 session replaced some of the newcomer's changes, a toast says how many and offers *Save
-yours as a file*. A page that left a session and joins the same one again (the same
+yours as a file*. A newcomer whose decompiler effort is not the session's brings none of
+its variable renames and retypes, since the engine numbers variables per effort and the
+same `v1` would be another variable at the session's: they leave its page, and a toast
+says how many and offers the same file. Everything else it changed joins as above. A page that left a session and joins the same one again (the same
 program still open, with the same changes object) sends only what it changed since
 leaving, as new writes, so its newer changes win.
 
