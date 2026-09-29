@@ -2404,10 +2404,11 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
     assert!(!converts_v1("(int)v1", false), "`(int)v1` printed:\n{stdout}");
     assert!(!converts_v1("(unsigned int)v1", true), "`(unsigned int)v1` printed:\n{stdout}");
 
-    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
-        eprintln!("protoorder float-in-GPR round trip: no `cc`, spelling checked only");
-        return;
-    }
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "protoorder float-in-GPR round trip requires a C compiler");
     let printed = printed_functions(&stdout, &["g3 ", "g5 ", "g6 ", "g9 ", "g20 ", "g22 ", "g24 "]);
     let dir = std::env::temp_dir().join(format!("kuna-protoorder-floatgpr-rt-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -2416,10 +2417,13 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
     std::fs::write(
         &src,
         format!(
-            "#include <stdio.h>\n#include <string.h>\n\
+            "#include <stddef.h>\n#include <stdio.h>\n#include <string.h>\n\
              static float hs(int k, float x) {{ return x * 2.5f + (float)k; }}\n\
              static float h(int k, int bits) {{ float x; memcpy(&x, &bits, 4); return hs(k, x); }}\n\
              {printed}\n\
+             _Static_assert(sizeof(struct_1) == 2 * sizeof(int), \"g24 output size\");\n\
+             _Static_assert(offsetof(struct_1, field_0x0) == 0, \"g24 first field\");\n\
+             _Static_assert(offsetof(struct_1, field_0x4) == sizeof(int), \"g24 second field\");\n\
              static float fb(int b) {{ float f; memcpy(&f, &b, 4); return f; }}\n\
              static int s3(int k, int *p) {{ int b = p[3]; return (int)hs(k, fb(b)) + b + 3; }}\n\
              static int s5(int k, int *p) {{ int b = p[3]; return (int)hs(k, fb(b)) + (b < 0x3fc00000); }}\n\
@@ -2439,7 +2443,9 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
              unsigned short s = 0; char c[2] = {{0, 0}}; int q[2] = {{0, 0}}; int r20, r22, r24;\n  \
              if (use_printed) {{\n    \
              printf(\"%d %d %d %u \", g3(7, a), g5(7, a), g6(7, a), (unsigned)g9(7, a));\n    \
-             r20 = g20(7, b, &s); r22 = g22(7, b, c); r24 = (int)g24(7, b, q);\n  \
+             struct_1 out = {{0, 0}};\n    \
+             r20 = g20(7, b, &s); r22 = g22(7, b, c); r24 = (int)g24(7, b, &out);\n    \
+             memcpy(q, &out, sizeof(q));\n  \
              }} else {{\n    \
              printf(\"%d %d %d %u \", s3(7, arr), s5(7, arr), s6(7, arr), s9(7, (unsigned *)arr));\n    \
              r20 = s20(7, bits, &s); r22 = s22(7, bits, c); r24 = (int)s24(7, bits, q);\n  \
@@ -2451,17 +2457,27 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
         ),
     )
     .unwrap();
-    let cc = Command::new("cc")
-        .args(["-std=gnu11", "-w", "-fno-pie", "-no-pie", "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
-        .output()
-        .expect("spawn cc");
-    assert!(cc.status.success(), "the printed callers did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-    let run = process::required_output(&mut Command::new(&exe));
-    let got = String::from_utf8_lossy(&run.stdout).to_string();
+    for cc in &compilers {
+        for level in ["-O0", "-O2"] {
+            let compiled = Command::new(cc)
+                .args(["-std=gnu11", "-w", "-fno-pie", "-no-pie", level])
+                .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                .output()
+                .expect("spawn the C compiler");
+            assert!(
+                compiled.status.success(),
+                "{cc} {level} rejected the printed callers:\n{}",
+                String::from_utf8_lossy(&compiled.stderr)
+            );
+            let run = Command::new(&exe).output().expect("run the round trip");
+            assert!(run.status.success(), "{cc} {level}: round trip failed");
+            let got = String::from_utf8_lossy(&run.stdout);
+            let lines: Vec<&str> = got.lines().collect();
+            assert_eq!(lines.len(), 2, "{cc} {level}: {got}");
+            assert_eq!(lines[0], lines[1], "{cc} {level}: printed callers compute different values:\n{printed}");
+        }
+    }
     let _ = std::fs::remove_dir_all(&dir);
-    let lines: Vec<&str> = got.lines().collect();
-    assert_eq!(lines.len(), 2, "{got}");
-    assert_eq!(lines[0], lines[1], "the printed callers compute different values:\n{printed}");
 }
 
 /// `dsum`, `norm` and `use` read their argument as `double *`, `struct P *` and
@@ -6178,18 +6194,17 @@ fn a_call_result_typed_by_its_callee_round_trips_through_the_printed_c() {
     const WANT: &str =
         "202 205 2\n104 -1\n1 0 -2\n1 -1 0\n7 6 6\n10 21 9\n50000 4294967293 -12\n2147483646 2147483646 2147483647\n";
     const MAIN: &str = r#"
-#define F(ret, f) ((ret (*)())(void (*)())f)
 int main(void) {
   char buf[] = "  AbC";
   char buf2[] = "xyzw";
   char buf3[] = "Hi!Hi!!";
-  printf("%ld %ld %ld\n", F(long, upper_after_blanks)(buf), F(long, upper_of_rest)(buf),
-         (long)(F(char *, skip_blanks)(buf) - buf));
-  printf("%d %d\n", F(int, first_char)(buf2 + 1, 3L) - 17, F(int, first_char)(buf2, 0L));
-  printf("%d %d %ld\n", F(int, is_behind)(3L, 9L), F(int, is_behind)(9L, 3L), F(long, clamp_delta)(1L, 9L));
-  printf("%d %d %d\n", F(int, pick)("ab", "cd", 1), F(int, pick)("ab", "cd", 0), F(int, pick)("ab", "ab", 0));
-  printf("%ld %ld %ld\n", F(long, name_len)(NULL), F(long, name_len)("key:value"), F(long, name_len)("plain"));
-  printf("%d %d %ld\n", F(int, stream_no)(0), F(int, stream_no)(1), F(long, marked_len)(buf3));
+  printf("%ld %ld %ld\n", (long)upper_after_blanks((long)buf), (long)upper_of_rest(buf),
+         (long)((char *)skip_blanks(buf) - buf));
+  printf("%d %d\n", (int)first_char((unsigned long)(buf2 + 1), 3L) - 17, (int)first_char((unsigned long)buf2, 0L));
+  printf("%d %d %ld\n", (int)is_behind(3L, 9L), (int)is_behind(9L, 3L), (long)clamp_delta(1L, 9L));
+  printf("%d %d %d\n", (int)pick("ab", "cd", 1), (int)pick("ab", "cd", 0), (int)pick("ab", "ab", 0));
+  printf("%ld %ld %ld\n", (long)name_len(NULL), (long)name_len("key:value"), (long)name_len("plain"));
+  printf("%d %d %ld\n", (int)stream_no(0), (int)stream_no(1), (long)marked_len(buf3));
   printf("%ld %lu %ld\n", (long)use_s16_as_u(50), (unsigned long)use_neg_as_unsigned(1), (long)widen_signed(4));
   printf("%lu %lu %lu\n", (unsigned long)keep_widened(1) >> 1, (unsigned long)keep_across(1) >> 1,
          (unsigned long)pass_widened(1));
@@ -6199,15 +6214,14 @@ int main(void) {
     const O2_WANT: &str =
         "104 -1\n1 0 -2\n1 -1 0\n7 6 6\n10 21 9\n50000 4294967293 -12\n2147483646 2147483646 2147483647\n";
     const O2_MAIN: &str = r#"
-#define F(ret, f) ((ret (*)())(void (*)())f)
 int main(void) {
   char buf2[] = "xyzw";
   char buf3[] = "Hi!Hi!!";
-  printf("%d %d\n", F(int, first_char)(buf2 + 1, 3L) - 17, F(int, first_char)(buf2, 0L));
-  printf("%d %d %ld\n", F(int, is_behind)(3L, 9L), F(int, is_behind)(9L, 3L), F(long, clamp_delta)(1L, 9L));
-  printf("%d %d %d\n", F(int, pick)("ab", "cd", 1), F(int, pick)("ab", "cd", 0), F(int, pick)("ab", "ab", 0));
-  printf("%ld %ld %ld\n", F(long, name_len)(NULL), F(long, name_len)("key:value"), F(long, name_len)("plain"));
-  printf("%d %d %ld\n", F(int, stream_no)(0), F(int, stream_no)(1), F(long, marked_len)(buf3));
+  printf("%d %d\n", (int)first_char((unsigned long)(buf2 + 1), 3L) - 17, (int)first_char((unsigned long)buf2, 0L));
+  printf("%d %d %ld\n", (int)is_behind(3L, 9L), (int)is_behind(9L, 3L), (long)clamp_delta(1L, 9L));
+  printf("%d %d %d\n", (int)pick("ab", "cd", 1), (int)pick("ab", "cd", 0), (int)pick("ab", "ab", 0));
+  printf("%ld %ld %ld\n", (long)name_len(NULL), (long)name_len("key:value"), (long)name_len("plain"));
+  printf("%d %d %ld\n", (int)stream_no(0), (int)stream_no(1), (long)marked_len(buf3));
   printf("%ld %lu %ld\n", (long)use_s16_as_u(50), (unsigned long)use_neg_as_unsigned(1), (long)widen_signed(4));
   printf("%lu %lu %lu\n", (unsigned long)keep_widened(1) >> 1, (unsigned long)keep_across(1) >> 1,
          (unsigned long)pass_widened(1));
@@ -6294,6 +6308,7 @@ int main(void) {
         .into_iter()
         .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
+    assert!(!compilers.is_empty(), "callrettype round trip requires a C compiler");
     for (fixture, funcs, main, want, lines, kept) in cases {
         let bin = repo_root()
             .join("decompiler/crates/kuna-analysis/tests/fixtures")
