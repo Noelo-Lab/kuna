@@ -1,0 +1,151 @@
+{
+ "opportunity": "A 64-bit value a function builds in its one return register from two 32-bit halves lost a half and the argument that fed it: `((u64)hi << 32) | lo` at gcc/clang -O0 printed `unsigned int join_lo_hi(unsigned int a0) { return a0; }`, and `((u64)(a + 1) << 32) | b` at -O2 printed `int join_hi_sum(int a0) { return a0 + 1; }` (the high half returned as the whole value).",
+ "test_name": "tests/stages/kuna-returnpiece.xml (10 assertions; 9 fail on main, the control passes on both) + kuna-cli/tests/decompile_all_cli.rs a_value_built_in_one_return_register_round_trips_through_the_printed_c + kuna_returnuncomputed/tests.rs (3 new unit tests)",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/piecehi_{gcc,clang}_{O0,O2}_x86_64 built from piecehi_x86_64.c",
+ "selector": "join_lo_hi",
+ "func_addr": "0x1189 (gcc -O0)",
+ "option": null,
+ "flag": null,
+ "change_kind": "strict correctness fix (no option: it only stops the return-pair repair from dropping bits the function computes into its return register)",
+ "tier": "core",
+ "source_decompiler": "kuna",
+ "inspiration": "kuna_returnuncomputed (the (ida) uncomputed-half repair) and kuna_retinputhalf's placement test",
+ "default_on": true,
+ "ablation_changed": 0,
+ "parity": "OK",
+ "root_cause": "strip_uncomputed_return_piece (ActionOutputPrototype) took any two-input PIECE defining a RETURN's value for the RDX:RAX pair return recovery joins, and judged each half by whether its move-only source sat at the half's OWN address. `((u64)hi << 32) | lo` becomes `RAX:8 = PIECE(ESI, EDI)`, whose halves are the argument registers themselves, so both read as the caller's leftover: the RETURN was cut to EDI and ESI lost its only reader. With a computed high half and an argument low half the (true,false) arm kept the HIGH half alone. Found by tracing the RETURN input after every action apply: PIECE through markimplied, the bare low half right after outputprototype.",
+ "fix": "Each half is judged against the storage it occupies in the returned value (its register of a join, from the join record; or its bytes of the one register, endian-aware); the high half of a value held in one location is never kept alone. A never-written high half at its own slot (RAX's upper half after a callee returning int; 241 firings in a 45-binary survey) is still dropped.",
+ "class_coverage": {
+  "x86_64": "gcc/clang -O0: join from two args, from the 3rd and 6th arg, signed, computed hi + arg lo, arg hi + computed lo, lo after waitpid(&lo); -O2: computed hi + arg lo. All fixed; join_hi_lo control unchanged.",
+  "other_arches": "clang objects, functions changed main -> fix: AArch64 -O0 5, ARM -O0 2 / -O2 3 (incl. a copy-propagated r0:r1 pair half), MIPSel -O0 5 / -O2 6, PPC64LE -O0 2, RISC-V64 -O0 5, i386 -O0/-O2 2 each (EDX:EAX join); each now returns all 8 bytes, with every argument that feeds them, in the right half order (all little-endian).",
+  "big_endian_note": "Separate pre-existing defect, not fixed here: a big-endian two-register return is joined with the first register as the low word (build_return_output and build_call_output_pair assume trial 0 is low), so PPC32/MIPS-BE pairs print swapped on main (clang -O2 `long long wide_mul(int,int)` -> CONCAT44(low, high)). PPC32 join_lo_hi/join_lo_sum/join_keep_lo move from one half kept (wrong) to both halves kept and printed swapped (wrong for that reason)."
+ },
+ "roundtrip": {
+  "method": "decompile-all the four fixture builds (--functions of the 8 join_ functions), assert source arity and an 8-byte return, compile the printed C with gcc and clang at -O0 and -O2 (CONCAT44 defined in the harness) against a driver that calls each through the source's return type, compare stdout with the fixture's",
+  "main_632437155": "arity check fails first (`unsigned int join_lo_hi(unsigned int a0)`); compiled, every build differs: gcc -O0 fixture 7/8 lines wrong, clang -O0 6/8, gcc -O2 and clang -O2 1/8 (join_hi_sum `0000000012345679` for `1234567900000005`)",
+  "fix": "16/16 builds match (also without -w and with -Werror=int-conversion)"
+ },
+ "corpus_diff": {
+  "method": "kuna decompile-all <bin> --json --max-fn-seconds 120, main 632437155 (castbench bin-632437155) vs fix, every function's code, variables and signature compared",
+  "binaries": 143,
+  "set": "castbench 45 (fmt ls sort du cp tail wc grep gzip cmp diff diff3 sdiff tar find x O0/O2/O2-noinline) + 34 disjoint (coreutils cat chmod date head join md5sum od pr seq split tr uniq, bzip2, shadow chage chfn faillog, dash, kmod; O0/O2) + 64 disjoint (e2fsprogs openssh-portable gnutls zlib libexpat libselinux dpkg iproute2 rsyslog bash libbsd libacl cronie sysvinit base-passwd libedit dash kmod; O0/O2)",
+  "functions": 60037,
+  "changed": 0,
+  "nonzero_rc": "bash.id0/bash.id1 (IDA database files, rc=1 on both arms)",
+  "classification": "no function changed; the shape is a return value folded from an argument register, which none of these gcc-built programs return"
+ },
+ "benchmark": {
+  "typesweep": "444 slices / 10,748 functions, finalsweep --baseline-only with per-GT-variable decisions (metric pinned to 625e892, final-c/pindb.py), main 632437155 vs fix: PERFECT 1674 -> 1674, aggregate 4032.52 -> 4032.52; per-slice rows (scores + decisions) identical in 444/444 slices",
+  "arity_phantom": "variables[] identical for all 60,037 functions of the 143-binary footprint and in all 444 typesweep slices: no argument or variable added or removed",
+  "castbench": "45 binaries x O0/O2/O2-noinline, 4,815 shared functions: casts 32,073 -> 32,073 (0.848x IDA), 27.0 per 100 statements both; all 135 .c files byte-identical to /home/mahaloz/kwt/castbench/main-632437155",
+  "arity_vs_dwarf": "the 8 fixture functions x 4 builds against a gcc -O0 -g twin's DW_TAG_formal_parameter counts: main mismatches 15 (gcc -O0 7, clang -O0 6, gcc -O2 1, clang -O2 1: each one argument short); fix matches all 32"
+ },
+ "speed": {
+  "method": "docs/features/piecehi/speed.py: kuna decompile-all --json --max-fn-seconds 120 on O2 fmt/ls/sort/bash, two frozen release binaries, arms interleaved and order-alternated, one warm-up per arm discarded, min and median-of-ratios of 15",
+  "budget_pct": 5.0,
+  "decompiled_output": "identical on all four binaries (corpus_diff), so the only extra work is two join/offset lookups per RETURN defined by a two-input PIECE",
+  "run1_castbench_main_vs_fix": {
+   "note": "cross-build (castbench bin-632437155 vs this worktree), load 19-52",
+   "fmt": [
+    -3.05,
+    -1.13
+   ],
+   "ls": [
+    -8.27,
+    -3.3
+   ],
+   "sort": [
+    1.1,
+    1.08
+   ],
+   "bash": [
+    5.27,
+    4.71
+   ]
+  },
+  "run2_same_path_ab": {
+   "note": "main = this worktree with the module reverted, built into a separate target dir; load 7-27",
+   "fmt": [
+    4.69,
+    2.02
+   ],
+   "ls": [
+    6.38,
+    -1.24
+   ],
+   "sort": [
+    4.99,
+    2.81
+   ],
+   "bash": [
+    4.43,
+    1.79
+   ]
+  },
+  "run3_quiet_ab": {
+   "note": "same arms as run 2, load 7-13",
+   "fmt": [
+    -1.44,
+    -0.28
+   ],
+   "ls": [
+    0.15,
+    -1.95
+   ],
+   "sort": [
+    1.89,
+    2.7
+   ]
+  },
+  "aa_control": {
+   "note": "the fix binary against a byte-identical copy, load 7-11",
+   "fmt": [
+    0.04,
+    0.38
+   ],
+   "ls": [
+    3.15,
+    3.58
+   ],
+   "sort": [
+    -1.53,
+    -0.01
+   ]
+  },
+  "columns": "[delta_min_pct, delta_median_of_ratios_pct]",
+  "verdict": "within budget: every median-of-ratios is under +5% (largest +4.71 cross-build, +2.81 same-path), the quiet re-run of the >5% min deltas is -1.44..+1.89, and an A/A of identical binaries moves by up to +3.58; signs flip between builds, so the residue is layout and load, not work"
+ },
+ "gates": {
+  "base": "origin/main 63dfb436c (#748) after rebase; measurements (footprint, typesweep, castbench, speed) taken on 632437155",
+  "make test": "datatests: 675/675 assertions passed; PARITY OK (no datatest assertion moved)",
+  "make test-stages": "datatests: 1477/1477 assertions passed; PARITY OK (+10 kuna-returnpiece keys over main's 1467, none removed; re-recorded after the rebase, identical)",
+  "make rust-test": "RUST_TEST_RC=0 via rust-test-lane.sh (441 `test result: ok`, 0 failed)",
+  "make test-cli": "tests/cli: 269/269 passed",
+  "make lint": "RC=0",
+  "make test-tools": "OK",
+  "make check-spec": "check-spec OK (lenient mode); check_spec.py --strict: check-spec OK (strict mode)",
+  "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
+  "counters --check": "no drift: every hard-coded site agrees with the derived truth",
+  "docs/options.md": "byte-fresh (no option added)",
+  "ci": "PR #755 with full-ci, pre-rebase head: cargo workspace suite pass (33m23s), parity gates pass"
+ },
+ "files": [
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed.rs",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed/tests.rs",
+  "decompiler/crates/kuna-decomp/src/p4_calls/kuna_retinputhalf.rs",
+  "decompiler/crates/kuna-cli/tests/decompile_all_cli.rs",
+  "decompiler/crates/kuna-analysis/tests/fixtures/piecehi_x86_64.c",
+  "decompiler/crates/kuna-analysis/tests/fixtures/piecehi_gcc_O0_x86_64",
+  "decompiler/crates/kuna-analysis/tests/fixtures/piecehi_clang_O0_x86_64",
+  "decompiler/crates/kuna-analysis/tests/fixtures/piecehi_gcc_O2_x86_64",
+  "decompiler/crates/kuna-analysis/tests/fixtures/piecehi_clang_O2_x86_64",
+  "decompiler/crates/kuna-analysis/tests/fixtures/README.md",
+  "decompiler/crates/kuna-base/src/xml.rs",
+  "tests/stages/kuna-returnpiece.xml",
+  "docs/baseline-stages.json",
+  "docs/spec/04-calls-and-prototypes.md",
+  "docs/features/piecehi/plan.md",
+  "docs/features/piecehi/record.json",
+  "docs/features/piecehi/speed.py"
+ ]
+}

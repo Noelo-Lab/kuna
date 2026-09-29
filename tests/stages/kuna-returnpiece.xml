@@ -1,0 +1,101 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna: a 64-bit value a function builds in its one return register from two
+    32-bit halves is returned whole, and every argument that feeds it stays a
+    parameter.
+
+    Stage / sub-stage: P4 call and prototype model, output-prototype (the
+    return-pair repair in kuna_returnuncomputed).  A strict fix: no option.
+
+    Source (x86-64 SysV, bytes verbatim below; the fixture binaries and the
+    compiled round trip are kuna-analysis/tests/fixtures/piecehi_*):
+
+        typedef unsigned long u64;
+        u64 join_lo_hi(unsigned lo, unsigned hi) { return ((u64)hi << 32) | lo; }
+        u64 join_third(unsigned a, unsigned b, unsigned c) { return ((u64)c << 32) | b; }
+        u64 join_sixth(unsigned a, unsigned b, unsigned c, unsigned d, unsigned e,
+                       unsigned f) { return ((u64)f << 32) | e; }
+        long join_signed(int lo, int hi) { return ((long)hi << 32) | (unsigned)lo; }
+        u64 join_hi_sum(unsigned a, unsigned b) { return ((u64)(a + 1) << 32) | b; }
+        u64 join_lo_sum(unsigned a, unsigned b) { return ((u64)b << 32) | (a + 1); }
+        u64 join_hi_lo(unsigned hi, unsigned lo) { return ((u64)hi << 32) | lo; }
+
+    gcc -O0 for all of them at 0x1189 and 0x12cd; gcc -O2 join_hi_sum at 0x2410:
+    endbr64 ; lea 0x1(%rdi),%eax ; mov %esi,%esi ; shl $0x20,%rax ; or %rsi,%rax ; ret
+
+    The bug: the return-pair repair, which drops a half of a two-register
+    return the function never wrote, read these one-register values as such a
+    pair and judged each half by whether its source sat at the half's OWN
+    address.  An argument register folded straight into the value (ESI in
+    RAX's high half) always does, so it counted as the caller's leftover: the
+    half was dropped, the return narrowed to four bytes, and the argument lost
+    its only reader.  join_lo_hi printed `uint4 join_lo_hi(uint4 a0)` returning
+    a0; join_hi_sum at -O2 printed `return a0 + 1;`, the high half alone.
+    join_hi_lo, whose high half is the first argument, was already right.
+
+    The fix: a half is judged against the bytes of the return register it
+    occupies, and the high half of one register is never returned by itself.
+-->
+<bytechunk space="ram" offset="0x1189" readonly="true">
+f30f1efa554889e5897dfc8975f88b45f848c1e0204889c28b45fc4809d05dc3
+f30f1efa554889e5897dfc8975f88955f48b45f448c1e0204889c28b45f84809
+d05dc3f30f1efa554889e5897dfc8975f88955f4894df0448945ec44894de88b
+45e848c1e0204889c28b45ec4809d05dc3f30f1efa554889e5897dfc8975f88b
+45f8489848c1e0204889c28b45fc89c04809d05dc3f30f1efa554889e5897dfc
+8975f88b45fc83c00189c048c1e0204889c28b45f84809d05dc3f30f1efa5548
+89e5897dfc8975f88b45f848c1e0204889c28b45fc83c00189c04809d05dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x12cd" readonly="true">
+f30f1efa554889e5897dfc8975f88b45fc48c1e0204889c28b45f84809d05dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x2410" readonly="true">
+f30f1efa8d470189f648c1e0204809f0c3
+</bytechunk>
+<symbol space="ram" offset="0x1189" name="join_lo_hi"/>
+<symbol space="ram" offset="0x11a9" name="join_third"/>
+<symbol space="ram" offset="0x11cc" name="join_sixth"/>
+<symbol space="ram" offset="0x11fa" name="join_signed"/>
+<symbol space="ram" offset="0x121e" name="join_hi_sum"/>
+<symbol space="ram" offset="0x1243" name="join_lo_sum"/>
+<symbol space="ram" offset="0x12cd" name="join_hi_lo"/>
+<symbol space="ram" offset="0x2410" name="join_hi_sum_o2"/>
+</binaryimage>
+<script>
+  <com>lo fu join_lo_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu join_third</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu join_sixth</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu join_signed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu join_hi_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu join_lo_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu join_hi_lo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu join_hi_sum_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RETURNPIECE #1: both arguments of join_lo_hi stay and the return is eight bytes" min="1" max="1">unsigned long join_lo_hi\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="RETURNPIECE #2: the high half from the third argument keeps it" min="1" max="1">unsigned long join_third\(unsigned long a0,unsigned int a1,unsigned int a2\)</stringmatch>
+<stringmatch name="RETURNPIECE #3: the high half from the sixth argument keeps it" min="1" max="1">unsigned long join_sixth\(unsigned long a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned int a4,unsigned int a5\)</stringmatch>
+<stringmatch name="RETURNPIECE #4: a signed high half keeps its argument" min="1" max="1">unsigned long join_signed\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="RETURNPIECE #5: an argument in the low half and one in the high half both reach the return (join_lo_hi, join_signed)" min="2" max="2">return CONCAT44\(a1,a0\);</stringmatch>
+<stringmatch name="RETURNPIECE #6: a computed high half keeps the argument in the low half, at -O0 and at -O2" min="2" max="2">return CONCAT44\(a0 \+ 1,a1\);</stringmatch>
+<stringmatch name="RETURNPIECE #7: an argument in the high half beside a computed low half" min="1" max="1">return CONCAT44\(a1,a0 \+ 1\);</stringmatch>
+<stringmatch name="RETURNPIECE #8: the control whose high half is the first argument is unchanged" min="1" max="1">unsigned long join_hi_lo\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="RETURNPIECE #9: no function returns only four of the eight bytes it computes" min="0" max="0">(unsigned int|int4) join_</stringmatch>
+<stringmatch name="RETURNPIECE #10: the high half is never returned by itself" min="0" max="0">return a0 \+ 1;</stringmatch>
+</decompilertest>
