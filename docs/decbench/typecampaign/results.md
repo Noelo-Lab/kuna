@@ -3,9 +3,10 @@
 ## Campaign summary — baseline → final (2026-09-16 → 2026-09-27)
 
 Twelve rounds (A–L), about sixty merged PRs (#646 → #744). The campaign baseline is main `809712e9`;
-the final build is main `632437155`. Every row is re-measured on the same instrument under the pinned
-metric (decbench `625e892`, decisions §12); round-by-round detail follows, rounds J, K and L are at the
-end, and the raw rows are in `final-l/`.
+the final build is main `632437155` (round M's first wrong-output fixes, #755, #756 and #765, landed
+while this page was measured and are not in it). Every row is re-measured on the same instrument
+under the pinned metric (decbench `625e892`, decisions §12); round-by-round detail follows, rounds J,
+K and L are at the end, and the raw rows are in `final-l/`.
 
 | instrument | baseline | **final** | change |
 |---|---|---|---|
@@ -2150,6 +2151,10 @@ instrument below they move nothing (L.1, L.3).
 |---|---|---|
 | **final** | `/home/mahaloz/kwt/castbench/bin-632437155/kuna` (pinned copy) | main `632437155` (2026-09-27, #731) |
 
+Main has since gained #748 (a configuration refactor), #746 and #742 (web), and round M's first
+strict fixes (#755, #756, #765), which landed while this page was measured; the final build stays
+`632437155` throughout.
+
 Metric pin unchanged (decisions §12); `scripts/decbench/` is byte-identical between `b3878d32e` and
 `632437155`. Controls: the round-I binary re-run on this tree reproduces round I on every instrument
 (0 of 10,748 typesweep values differ; goal 2 6,970 / 65 / 7; TRex 4.4770 / 1.9597; layout .8713 /
@@ -2711,8 +2716,10 @@ python3 final-l/morecasts.py <armA> <armB>                                     #
 python3 final-l/castpick9.py 25     # short functions whose casts fell most; castshow.py prints one beside IDA
 python3 final-l/sstable9.py         # structscore round I vs final
 python3 final-l/fncount10.py         # the functions every speed arm emits, per binary (fncount10.json)
+python3 final-l/speed9.py 11 <speed9.json>          # the first, quiet pass: baseline / round I / final, fmt ls sort bash
 SPEED_LOAD_MAX=14 python3 final-l/speed10.py 15 <speed.json> fmt,ls,sort,bash base,G,I,L       # -O2: baseline / G / I / final
 SPEED_LOAD_MAX=14 python3 final-l/speed10.py 15 <extra.json> kmod-O2ni,dpkg-divert-O2ni,crontab-O2ni base,F,G,I,L
 python3 final-l/speed10.py 15 <ablate.json> kmod-O2ni,dpkg-divert-O2ni base,L,L-protoorder,L-calleevote+passthrough,...   # option arms
+python3 final-l/speed10.py 9 <ablate-bash.json> bash "$(cat final-l/ablate-bash-arms.txt)"   # bash option arms
 python3 final-l/speedtable10.py canon|trio <json>... ; python3 final-l/speedtable10.py ablate <json>   # the L.6 tables
 ```
