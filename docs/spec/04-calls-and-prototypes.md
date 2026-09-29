@@ -1233,6 +1233,12 @@ needs the return register and the first argument register to be the same storage
 so it is an ARM/AArch64 finding in practice; with the gate off the check is
 upstream's, rejecting on every competing call use.
 
+The output container normally gets a single pass (its budget is 0 unless the
+model has a delayed heritage space), and that pass runs before
+`ActionConditionalExe` in the same mainloop iteration. The (kuna) `condexeret`
+gate adds at most one more pass for trials that failed only on a path that
+pass can remove — §4.4.
+
 ### Fixating the function's own prototype
 
 In the one-shot tail, after merge has built HighVariables:
@@ -1559,6 +1565,81 @@ found 3 of the 675 upstream assertions legitimately need the join — a global
 `single` default would truncate real wide returns. Flip it per function on the
 CONCAT-return symptom; the symptom table and flip guidance live in
 [`docs/options.md`](../options.md#returnpair).
+
+### (kuna) `condexeret` — a return register tested on the same condition twice
+
+`AncestorRealistic` fails a return trial as soon as one MULTIEQUAL input is
+the function's own register on entry and not directwrite, so one path that
+leaves the register untouched is enough to make the function `void`. A register
+written under a condition and then branched on by the same condition again has
+such a path — the first branch taken, the second taken too — that cannot run:
+
+```text
+twice:  cmp rdi,rsi; jae 1f; mov eax,0; 1: jb 2f; lea rax,[rdi+rsi]; 2: ret
+```
+
+`ActionConditionalExe` threads the merge block at `1:` and the path is gone,
+but it runs at the end of mainloop, after `ActionReturnRecovery` has already
+spent the output container's only pass, so `twice` printed `void twice(void)`
+while the one-branch spelling of the same logic returned a value. Upstream has
+the same order.
+
+With `condexeret on` (the default), when the walk fails at a non-directwrite
+function input read by op `m`
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
+(AncestorRealistic::input_fail_reader)`), and `m` is a MULTIEQUAL in a block
+`ActionConditionalExe` could thread — two in-edges that lead back through
+straight-line blocks to one block ending in a CBRANCH, two out-edges, and a
+CBRANCH on the same condition as that block or its complement
+(`BooleanExpressionMatch`), i.e. `ConditionalExecution::verify` short of its
+op-removability test
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_condexeret.rs
+(threadable_block)`) — a second walk runs from the same RETURN
+(`kuna_condexeret.rs (remember)`). That walk is put in *collect* mode
+(`funcdata_varnode.rs (AncestorRealistic::collect_inputs)`): a non-directwrite
+function input is recorded and passed instead of failing there, so one walk
+reaches the end and sees every such input on every path. The trial is
+remembered — with the merge blocks that read those inputs, and the inputs'
+storage — only if that walk otherwise succeeds and every input it recorded is
+read in a threadable block. So a failure that is *not* a same-condition merge,
+anywhere on any path, stops the trial from being remembered at all: in the
+counterexample below the sfp body's writes sit behind merges on unrelated bit
+tests, so `comp` is never remembered.
+
+At the end of the last normal pass (`kuna_condexeret.rs (end_pass)`), if a
+remembered trial is still unchecked, the budget grows by one and the container
+stays open into the next mainloop iteration
+(`kuna_condexeret.rs (remembering)` marks that one pass). That pass re-walks a
+remembered (trial, RETURN) pair only once *all* of its merge blocks are gone
+from the graph (`kuna_condexeret.rs (check)`), and the re-walk runs in *strict*
+mode: every function input overlapping the recorded storage fails the walk
+whether or not it has become directwrite in the meantime
+(`funcdata_varnode.rs (AncestorRealistic::forbid_inputs)`). Everything else the
+first walk met already passed it, and the recorded inputs are exactly the
+places it would have to pass now, so the re-walk can succeed only where
+threading has left no path from the register's entry value to the RETURN. It
+cannot pass for an unrelated reason — a later rewrite that makes the register
+directwrite does not help, because the strict mode ignores directwrite on the
+recorded storage. This is why a bare merge-gone gate is not enough: a fresh
+whole-graph walk on the later IR can pass this function for a reason unrelated
+to the removed path (kuna's own `__sfp_handle_exceptions` did), and the
+collect/strict pair ties the retry to the threading itself.
+
+The container then closes, so the extra pass happens at most once per recovery.
+Call-site trials never get it. With the gate off the container closes after
+its normal budget, as upstream.
+
+Holding the container open one iteration longer means the mainloop tail runs
+while every RETURN still reads all output trial registers. `ActionConditionalConst`
+assumed a RETURN's slot 1 is its value and wrote a constant known for another
+trial register there; that is fixed at its root in chapter 03 (Conditional
+constants), for every open container, not only this one.
+
+`passthrough` (§ above) claims a tail call's result before the ancestor walk
+and skips the walk for that trial, so a claimed trial never reaches the
+remember step; in the extra pass only remembered (trial, RETURN) pairs are
+looked at, and `keep_tail_return_whole` still runs once, just before
+`derive_output_map`, which with a pending retry happens after the extra pass.
 
 ### (ida) The uncomputed half of a recovered return pair
 

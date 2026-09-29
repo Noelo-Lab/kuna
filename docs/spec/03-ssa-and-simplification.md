@@ -1019,6 +1019,20 @@ but only when excising that edge leaves no alternate data-flow path rejoining
 the original value (`condconst.rs (handle_phi_nodes)`; multiple disconnected
 edges that flow together downstream get one shared placement).
 
+A RETURN cannot take a constant input, so a dominated read by a RETURN gets
+the constant through a COPY placed just before it, written at the varnode's own
+storage. Upstream then stores that COPY in the RETURN's slot 1, which is the
+return value only once return recovery has trimmed the RETURN to its address
+and value. While the function's output trials are still open, a RETURN reads
+every trial register — rax in slot 1, rdx in slot 2 on x86-64 — and a constant
+known for rdx then replaced the rax slot: a function with a second RETURN
+reached only when `rdx == 0` printed `return 0;` there instead of the entry
+value. That happens whenever the output container outlives the first mainloop
+iteration (a model with a delayed heritage space, or the `condexeret` extra
+pass, 04 §4.4). kuna stores the COPY in the slot that actually reads the
+varnode (`condconst.rs (propagate_constant)`); on a trimmed RETURN that is slot
+1, as upstream.
+
 A block whose last op is a CBRANCH is read as a two-way branch, so
 `condconst.rs (condconst_apply)` skips one carrying fewer than two out-edges rather
 than indexing off the end of its edge list. The `funcboundflow` truncation used to

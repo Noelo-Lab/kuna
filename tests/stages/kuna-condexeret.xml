@@ -1,0 +1,184 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-747: a return register written under a condition, then tested on the
+    same condition again, lost the return value.
+
+      twice:  cmp rdi,rsi; jae 1f; mov eax,0; 1: jb 2f; lea rax,[rdi+rsi]; 2: ret
+      once:   the same logic with one branch
+      differ: twice with a DIFFERENT second test (cmp rdx,rcx; jb)
+      compl:  twice with the second test inverted (jae)
+
+    The path "jae taken, then jb taken" reaches the RETURN with rax still the
+    function's input.  It cannot run, but ActionReturnRecovery walks it before
+    ActionConditionalExe threads the merge block away, and output trials get one
+    pass, so twice printed void twice(void).  In differ and compl the input path
+    CAN run (a0 >= a1 with a2 < a3, and a0 >= a1), so both must stay void with
+    the option on.
+
+    sfp is libgcc's void __sfp_handle_exceptions(int) from the mcount_x86_64
+    fixture: xmm0 is written under bit tests of edi that are all different, so
+    no merge branches on the condition that opened it and none is threaded.  A
+    retry that re-judged the trial whatever happened to the merge found xmm0
+    realistic on the next iteration (a later rewrite of its data-flow, not a
+    removed path) and printed a value-returning sfp.
+
+    comp puts the reporter's shape (test dil,0x40 / je / xorps xmm0 / jne ret)
+    in FRONT of the same body, and comp2 puts it after the body.  The merge in
+    comp is threaded, but with none of 0x40|0x1|0x4|0x20 set xmm0 still
+    reaches the ret untouched, so both must stay void.  The retry is scheduled
+    only when a walk that passes every such input finds all of them read in
+    merges ActionConditionalExe can thread (in comp the body's merges are
+    not), and the late walk fails at any input overlapping the recorded ones.
+    comp and comp2 are relocated from 0x401000 to 0x501000 with their rodata.
+
+    nested has two same-condition pairs in a row, so two merges must go before
+    it returns 0, 1 or a0 + a1.
+
+    tworet7 (and tworet, with 0 for 7) has two RETURNs: the reporter's shape
+    ends at one, and the other is reached when a2 == 0 with rax still its
+    entry value.  tworet1 is its one-branch spelling, which upstream prints
+    as `if (!a2) return v1;`.  While return recovery is held open for the
+    extra pass, each RETURN still reads every output trial register, and
+    ActionConditionalConst's RETURN arm (a2 == 0 there, so rdx is 0) wrote its
+    constant copy into slot 1 (the rax slot) instead of the rdx slot, so
+    tworet7 printed `return 0;` on that path.  condconst now replaces the slot
+    that actually reads the constant's varnode, and all three print the entry
+    value there.  tworet* are relocated from 0x401000 to 0x601000.
+
+    Stage / sub-stage: P4 "output-prototype", option condexeret.  Pass 1 pins
+    off (the bug), pass 2 the default.
+-->
+<bytechunk space="ram" offset="0x401000">
+4839f77305b8000000007204488d0437c3cccccccccccccccccccccccccccccc
+4839f77306b800000000c3488d0437c34839f77305b8000000004839ca720448
+8d0437c3cccccccccccccccccccccccc4839f77305b8000000007304488d0437
+c3cccccc
+</bytechunk>
+<bytechunk space="ram" offset="0x4914c0">
+f30f1efa40f6c7017408660fefc0f30f5ec040f6c702740fd97424d866834c24
+dc02d96424d89b40f6c7047410f30f10059b320200f30f5e050baf000040f6c7
+08740fd97424d866834c24dc08d96424d89b40f6c710740fd97424d866834c24
+dc10d96424d89b83e7207410f30f10055c320200f30f5e0558320200c3
+</bytechunk>
+<bytechunk space="ram" offset="0x401100">
+4839f77305b80000000072104839ca7305b8010000007204488d0437c3
+</bytechunk>
+<bytechunk space="ram" offset="0x501000">
+40f6c7017408660fefc0f30f5ec040f6c702740fd97424d866834c24dc02d964
+24d89b40f6c7047410f30f1005cf0f0000f30f5e05cb0f000040f6c708740fd9
+7424d866834c24dc08d96424d89b40f6c710740fd97424d866834c24dc10d964
+24d89b83e7207410f30f1005900f0000f30f5e05900f0000c340f6c74074030f
+57c0757840f6c7017408660fefc0f30f5ec040f6c702740fd97424d866834c24
+dc02d96424d89b40f6c7047410f30f10054b0f0000f30f5e05470f000040f6c7
+08740fd97424d866834c24dc08d96424d89b40f6c710740fd97424d866834c24
+dc10d96424d89b83e7207410f30f10050c0f0000f30f5e050c0f0000c389fe40
+f6c7017408660fefc0f30f5ec040f6c702740fd97424d866834c24dc02d96424
+d89b40f6c7047410f30f1005d00e0000f30f5e05cc0e000040f6c708740fd974
+24d866834c24dc08d96424d89b40f6c710740fd97424d866834c24dc10d96424
+d89b83e720741cf30f1005910e0000f30f5e05910e000040f6c64074030f57c0
+750190c3
+</bytechunk>
+<bytechunk space="ram" offset="0x502000">
+0000803f0000000000004040
+</bytechunk>
+<bytechunk space="ram" offset="0x601000">
+4885d274114839f77305b8000000007204488d0437c3c34885d274104839f773
+06b800000000c3488d0437c3c34885d274114839f77305b8070000007204488d
+0437c3c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="twice"/>
+<symbol space="ram" offset="0x401020" name="once"/>
+<symbol space="ram" offset="0x401030" name="differ"/>
+<symbol space="ram" offset="0x401050" name="compl"/>
+<symbol space="ram" offset="0x4914c0" name="sfp"/>
+<symbol space="ram" offset="0x401100" name="nested"/>
+<symbol space="ram" offset="0x501079" name="comp"/>
+<symbol space="ram" offset="0x5010fd" name="comp2"/>
+<symbol space="ram" offset="0x601000" name="tworet"/>
+<symbol space="ram" offset="0x601017" name="tworet1"/>
+<symbol space="ram" offset="0x60102d" name="tworet7"/>
+</binaryimage>
+<script>
+  <com>option condexeret off</com>
+  <com>lo fu twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu differ</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu compl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sfp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nested</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu comp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu comp2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tworet</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tworet1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tworet7</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condexeret on</com>
+  <com>lo fu twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu once</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu differ</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu compl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sfp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu nested</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu comp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu comp2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tworet</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tworet1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tworet7</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="condexeret #1: off, twice loses its return value" min="1" max="1">void twice\(void\)</stringmatch>
+<stringmatch name="condexeret #2: on, twice returns what once returns" min="2" max="2">int8 (twice|once)\(uint8 a0,uint8 a1\)</stringmatch>
+<stringmatch name="condexeret #3: the sum path returns the sum (tworet1 off; twice, once, nested, tworet, tworet1, tworet7 on)" min="7" max="7">return a0 \+ a1;</stringmatch>
+<stringmatch name="condexeret #4: the set path returns zero (tworet1 off; twice, once, nested, tworet, tworet1 on)" min="6" max="6">return 0;</stringmatch>
+<stringmatch name="condexeret #5: a possible input path keeps differ void in both passes" min="2" max="2">void differ\(void\)</stringmatch>
+<stringmatch name="condexeret #6: a possible input path keeps compl void in both passes" min="2" max="2">void compl\(void\)</stringmatch>
+<stringmatch name="condexeret #7: merges on different conditions keep sfp void in both passes" min="2" max="2">void sfp\(void\)</stringmatch>
+<stringmatch name="condexeret #8: off, nested loses its return value" min="1" max="1">void nested\(void\)</stringmatch>
+<stringmatch name="condexeret #9: on, nested returns 1 when only the second test holds" min="1" max="1">return 1;</stringmatch>
+<stringmatch name="condexeret #10: a threaded merge in front of the sfp body keeps comp void in both passes" min="2" max="2">void comp\(void\)</stringmatch>
+<stringmatch name="condexeret #11: the same merge behind the body keeps comp2 void in both passes" min="2" max="2">void comp2\(void\)</stringmatch>
+<stringmatch name="condexeret #12: off, tworet and tworet7 lose their return value" min="2" max="2">void tworet7?\(</stringmatch>
+<stringmatch name="condexeret #13: on, tworet7 returns 7 on the path that writes it" min="1" max="1">return 7;</stringmatch>
+<stringmatch name="condexeret #14: the a2 == 0 path returns the entry value, never a made-up constant (tworet1 off; tworet, tworet1, tworet7 on)" min="4" max="4">return v1;</stringmatch>
+</decompilertest>

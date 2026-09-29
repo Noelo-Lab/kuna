@@ -1296,6 +1296,9 @@ pub struct ParamActive {
     /// SITE's argument list when the next slot is on the stack?  Set by
     /// `ActionActiveParam`; see [`crate::p4_calls::kuna_stackarggap`].
     stack_arg_gap: bool,
+    /// (kuna) `condexeret`: where the output trials stand with respect to the one
+    /// retry pass; see [`crate::p4_calls::kuna_condexeret`].
+    cond_exe_retry: crate::p4_calls::kuna_condexeret::CondExeRetry,
 }
 
 impl ParamActive {
@@ -1314,6 +1317,7 @@ impl ParamActive {
             vararg_stack_split: false, // (kuna) varargstackargs
             own_input_gap: false,      // (kuna) inputparamgap
             stack_arg_gap: false,      // (kuna) stackarggap
+            cond_exe_retry: Default::default(), // (kuna) condexeret
         }
     }
 
@@ -1325,6 +1329,7 @@ impl ParamActive {
         self.numpasses = 0;
         self.isfullychecked = false;
         self.join_reverse = false;
+        self.cond_exe_retry = Default::default();
     }
 
     /// Add a new trial to the container (C++ `registerTrial`).
@@ -1443,6 +1448,14 @@ impl ParamActive {
     /// property of the call, not of one pass.
     pub fn set_stack_arg_gap(&mut self, val: bool) {
         self.stack_arg_gap = val;
+    }
+    /// (kuna) `condexeret`: the state of the retry pass.
+    pub fn cond_exe_retry(&self) -> &crate::p4_calls::kuna_condexeret::CondExeRetry {
+        &self.cond_exe_retry
+    }
+    /// (kuna) `condexeret`: move the retry pass to `state`.
+    pub fn set_cond_exe_retry(&mut self, state: crate::p4_calls::kuna_condexeret::CondExeRetry) {
+        self.cond_exe_retry = state;
     }
     /// Are these trials for a call to a sub-function (C++ `isRecoverSubcall`).
     pub fn is_recover_subcall(&self) -> bool {
