@@ -34,11 +34,15 @@
     `Node *object;` declaration, so `object->skip = 0` stored through the member.
 
     The rest (0x401000, gcc 11.4 -O2 -fno-ipa-ra -fno-inline, static non-PIE) is
-    the same defect reached three other ways:
+    the same defect reached other ways, plus two globals a renamed local must
+    not capture:
 
       struct P { long a; long b; };
+      struct Item { unsigned char skip; unsigned int hits; };
       struct P obj = { 100, 200 };
+      struct Item node[8];
       void take(struct P pt);  void put(struct P obj, long k);  void touchl(long *q);
+      void release(struct Item *node);
       void k1(struct P *px, long c, long d) {
           struct P x = *px; struct P y = { c * 7, d * 11 }; take(y); take(x); }
       long m1(long c, long d) {
@@ -48,6 +52,12 @@
           struct P z = { c * 3, d * 5 }; put(z, 2); return obj.a + obj.b; }
       long s4(long n) {
           long p = n * 3; touchl(&p); long q = n * 5; touchl(&q); return q * 100 + p; }
+      void gc(struct Item **reps, unsigned n) {
+          for (unsigned i = 0; i < n; ++i) {
+              struct Item *r = reps[i]; release(r); node[i & 7].hits += 3; r->skip = 1; } }
+
+    stackreturn (0x100020) is tests/datatests/stackreturn.xml with its stack
+    slot mapped under the name of the global `perf_ret`.
 
     k1: `y` is built from registers for the call, so its fields are pieces of
     one root, and `x` had already taken `take`'s name `pt`; the root reused it
@@ -59,7 +69,11 @@
     a name, the second is declared `v1_1`, but `&v2` (a reference, not a
     declaration) kept printing `&v1`; under Ghidra names, which carry no storage
     comment, the two slots also printed identical `int8 v1;` lines and were
-    collapsed into one variable.
+    collapsed into one variable.  gc: the local takes `release`'s name `node`
+    and is declared `node_1`; the `node[...]` array accesses are references to
+    the global and must keep its name.  stackreturn: the slot is declared
+    `perf_ret_1`, and its 2- and 4-byte views must follow it rather than read
+    the global.
 
     The naming fix: upstream gives every named high its own local Symbol, so
     `lookForFuncParamNames`' `makeNameUnique` sees the first `object` and the
@@ -83,30 +97,52 @@ f30f1efa415741564155415455534883ec18488954240885f6746b89f689c84189cd4889fd
 c3662e0f1f84000000000090f30f1efa83470401c3
 </bytechunk>
 <bytechunk space="ram" offset="0x401000" readonly="true">
-488b05093000004801f74801c748893dfc2f0000c366662e0f1f840000000000488b05e9
-2f00004829f74801d74801c748893dd92f0000c30f1f84000000000048830707c366662e
-0f1f84000000000055488d0492534883ec08488b2f488b5f08488d3cf5000000004829f7
-488d3442e88bffffff4883c4084889ef4889de5b5de97affffff662e0f1f840000000000
-4989f8488d04b64883ec08ba01000000488d3cfd00000000488d34464c29c7e86cffffff
-488b054d2f00004803053e2f00004883c408c3660f1f84000000000055488d2cb6ba0100
-0000534889fb488d3cfd00000000488d346e4829df4883ec08e82affffff488d3c5b4889
-eeba02000000e819ffffff488b05fa2e0000480305eb2e00004883c4085b5dc30f1f4000
-53488d047f4889fb4883ec104889e748890424e808ffffff488d049b488d7c2408488944
-2408e8f5feffff488b442408488d0480488d1480488b04244883c4105b488d0490c3662e
-0f1f840000000000c3
+488b05593000004801f74801c748893d4c300000c366662e0f1f840000000000488b0539
+3000004829f74801d74801c748893d29300000c30f1f84000000000048830707c366662e
+0f1f84000000000083470401c366662e0f1f84000000000055488d0492534883ec08488b
+2f488b5f08488d3cf5000000004829f7488d3442e87bffffff4883c4084889ef4889de5b
+5de96affffff662e0f1f8400000000004989f8488d04b64883ec08ba01000000488d3cfd
+00000000488d34464c29c7e85cffffff488b053d2f00004803052e2f00004883c408c366
+0f1f84000000000055488d2cb6ba01000000534889fb488d3cfd00000000488d346e4829
+df4883ec08e81affffff488d3c5b4889eeba02000000e809ffffff488b05ea2e00004803
+05db2e00004883c4085b5dc30f1f400053488d047f4889fb4883ec104889e748890424e8
+f8feffff488d049b488d7c24084889442408e8e5feffff488b442408488d0480488d1480
+488b04244883c4105b488d0490c3662e0f1f84000000000085f6744c41554989fd415441
+89f4555331db660f1f440000498b6cdd004889efe8abfeffff4889d84883c30183e00783
+04c52440400003c64500014c39e375d85b5d415c415dc3660f1f840000000000c366662e
+0f1f8400000000000f1f4000c3
 </bytechunk>
 <bytechunk space="ram" offset="0x404000">
-6400000000000000c8000000000000000000000000000000
+6400000000000000c8000000000000000000000000000000000000000000000000000000
+000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000
 </bytechunk>
 <symbol space="ram" offset="0x1100" name="visit"/>
 <symbol space="ram" offset="0x11a0" name="consume"/>
 <symbol space="ram" offset="0x401000" name="take"/>
 <symbol space="ram" offset="0x401020" name="put"/>
 <symbol space="ram" offset="0x401040" name="touchl"/>
-<symbol space="ram" offset="0x401050" name="k1"/>
-<symbol space="ram" offset="0x401090" name="m1"/>
-<symbol space="ram" offset="0x4010d0" name="m2"/>
-<symbol space="ram" offset="0x401120" name="s4"/>
+<symbol space="ram" offset="0x401050" name="release"/>
+<symbol space="ram" offset="0x401060" name="k1"/>
+<symbol space="ram" offset="0x4010a0" name="m1"/>
+<symbol space="ram" offset="0x4010e0" name="m2"/>
+<symbol space="ram" offset="0x401130" name="s4"/>
+<symbol space="ram" offset="0x401180" name="gc"/>
+<!-- tests/datatests/stackreturn.xml -->
+<bytechunk space="ram" offset="0x100020" readonly="true">
+4883ec18bf6400000066e8f300488b44
+24086748a340011000bf01000000be14
+00000066e8da008b4424089067a35001
+100090bf02000000be1e00000066e8c1
+00488b4424086748a358011000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100120" readonly="true">
+c3c3c3
+</bytechunk>
+<symbol space="ram" offset="0x100020" name="stackreturn"/>
+<symbol space="ram" offset="0x100120" name="perfect"/>
+<symbol space="ram" offset="0x100121" name="small"/>
+<symbol space="ram" offset="0x100122" name="big"/>
 </binaryimage>
 <script>
   <com>parse line struct Node { uint1 skip; uint4 hits; };</com>
@@ -120,7 +156,20 @@ eeba02000000e819ffffff488b05fa2e0000480305eb2e00004883c4085b5dc30f1f4000
   <com>parse line extern int8 m1(int8 c,int8 d);</com>
   <com>parse line extern int8 m2(int8 c,int8 d);</com>
   <com>parse line extern int8 s4(int8 n);</com>
+  <com>parse line struct Item { uint1 skip; uint4 hits; };</com>
+  <com>parse line extern void release(Item *node);</com>
+  <com>parse line extern void gc(Item **reps,uint4 n);</com>
   <com>map address r0x404000 P obj</com>
+  <com>map address r0x404020 uint1 node[64]</com>
+  <com>map addr r0x100140 int8 perf_ret</com>
+  <com>map addr r0x100150 int4 small_ret</com>
+  <com>map addr r0x100158 int8 big_ret</com>
+  <com>lo fu perfect</com>
+  <com>map return s0x10 int8</com>
+  <com>lo fu small</com>
+  <com>map return s0x10 int8</com>
+  <com>lo fu big</com>
+  <com>map return s0x12 int2</com>
   <com>lo fu visit</com>
   <com>decompile</com>
   <com>print C</com>
@@ -136,6 +185,13 @@ eeba02000000e819ffffff488b05fa2e0000480305eb2e00004883c4085b5dc30f1f4000
   <com>lo fu s4</com>
   <com>decompile</com>
   <com>rename v2 v1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stackreturn</com>
+  <com>map addr s0xfffffffffffffff0 int8 perf_ret</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option dedupvardecls off</com>
@@ -156,6 +212,13 @@ eeba02000000e819ffffff488b05fa2e0000480305eb2e00004883c4085b5dc30f1f4000
   <com>rename v2 v1</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu gc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stackreturn</com>
+  <com>map addr s0xfffffffffffffff0 int8 perf_ret</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option dedupvardecls on</com>
   <com>option namestyle ghidra</com>
   <com>lo fu visit</com>
@@ -173,6 +236,13 @@ eeba02000000e819ffffff488b05fa2e0000480305eb2e00004883c4085b5dc30f1f4000
   <com>lo fu s4</com>
   <com>decompile</com>
   <com>rename v2 v1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stackreturn</com>
+  <com>map addr s0xfffffffffffffff0 int8 perf_ret</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -202,4 +272,11 @@ put\(obj_1,(1|2)\);</stringmatch>
 <stringmatch name="calleenamedlocals #13: the second slot's address follows its new name" min="3" max="3">v1_1 = n \* 5;
 touchl\(&amp;v1_1\);
 return v1 \+ v1_1 \* 100;</stringmatch>
+<stringmatch name="calleenamedlocals #14: gc declares the local under a suffix and passes it" min="3" max="3">^  Item \*node_1;$</stringmatch>
+<stringmatch name="calleenamedlocals #15: gc's array accesses keep the global's name" min="3" max="3">\*\(int4 \*\)&amp;node\[\(\(uint4\)(v1|uVar1) &amp; 7\) \* 8UL \+ 4\] = \*\(int4 \*\)&amp;node\[</stringmatch>
+<stringmatch name="calleenamedlocals #16: the global is never indexed through the local" min="0" max="0">node_1\[</stringmatch>
+<stringmatch name="calleenamedlocals #17: the slot's narrow views follow its renamed declaration" min="3" max="3">perf_ret_1 = small\(1,0x14\);
+small_ret = \(int4\)perf_ret_1;
+perf_ret_1\._2_2_ = big\(2,0x1e\);
+big_ret = CONCAT44\(perf_ret_1\._4_4_,\(unsigned int\)perf_ret_1\);</stringmatch>
 </decompilertest>

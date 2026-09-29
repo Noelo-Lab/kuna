@@ -1623,16 +1623,27 @@ names remain authoritative.
 
 A suffix must reach every high that prints the renamed object, not only the one
 that kept the declaration line. So each high the walk declares through another
-records that other high as its owner, and a body reference resolves the owner
-chain before reading the spelling (`printc.rs (PrintC::emitted_high_name)`). The
-owners are: the root of a struct piece (a by-value struct argument rebuilt from
-registers has no declaration of its own for each field), the survivor of every
-collapse above, the storage high of the Symbol an `&symbol` reference points at
-(`printc.rs (reference_owner)`), and the whole cover of a scalar partial
-(`printc.rs (whole_sibling_in_group)`). Without it a local struct that took a
-callee's parameter name owned by a global was declared `obj_1` while its field
-stores still printed `obj.a = ...`, writing the global, and after a rename gave
-two stack slots one name, `&v2` kept printing the first slot's address. An
+records that other high as its owner, and before suffixing, every owner chain is
+followed to the declaration that finally survived
+(`printc.rs (PrintC::settle_local_name_aliases)`); body references then read that
+declaration's spelling (`printc.rs (PrintC::emitted_high_name)`). The owners are:
+the survivor of every collapse above; for a struct piece (a by-value struct
+argument rebuilt from registers has no declaration per field), the root in its
+VariableGroup; for a scalar partial view, the high in its VariableGroup that
+covers the whole Symbol at full width (`printc.rs (owner_in_group)`); and for an
+`&symbol` reference, the storage high bound to the local Symbol it points at
+(`printc.rs (reference_owner)`). An owner is never a global's high, and a
+reference with no local Symbol, which is a reference to a global, has no owner,
+so a global's accesses keep the global's name even when a local of the same
+name is suffixed. A piece, a partial view and a reference each point at a high
+of another kind (a root, a full-width whole, a storage high), and a collapsed
+declaration points at one that survived the same collapse, so a chain never
+revisits a high; if one did, its highs would keep their own names rather than
+borrow another's. Without the
+owners, a local struct named like a global was declared `obj_1` while its field
+stores still printed `obj.a = ...` and wrote the global, a stack slot declared
+`perf_ret_1` was still read as `(int4)perf_ret`, the global, and after a rename
+gave two stack slots one name `&v2` kept printing the other slot's address. An
 owner always carries the name of the high that points at it, so nothing changes
 unless the owner is suffixed.
 

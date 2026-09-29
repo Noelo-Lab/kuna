@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1502,
-    1502
+    1519,
+    1519
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1009,6 +1009,23 @@
     "data:calleedeadarg #1: option off passes the previous call's return value to a callee that never reads it (bug reproduced)",
     "data:calleedeadarg #2: option on drops the argument the callee's own body proves it never reads",
     "data:calleedeadarg #3: with the argument gone the producer call stands on its own (only the fixed pass)",
+    "data:calleenamedlocals #10: m1 and m2 build and pass the local, not the global",
+    "data:calleenamedlocals #11: the global is only read, never written or passed",
+    "data:calleenamedlocals #12: both renamed slots are declared in every pass",
+    "data:calleenamedlocals #13: the second slot's address follows its new name",
+    "data:calleenamedlocals #14: gc declares the local under a suffix and passes it",
+    "data:calleenamedlocals #15: gc's array accesses keep the global's name",
+    "data:calleenamedlocals #16: the global is never indexed through the local",
+    "data:calleenamedlocals #17: the slot's narrow views follow its renamed declaration",
+    "data:calleenamedlocals #1: the representative is declared in every pass",
+    "data:calleenamedlocals #2: the member is declared under its own name in every pass",
+    "data:calleenamedlocals #3: the representative is loaded, consumed and flagged",
+    "data:calleenamedlocals #4: the inner loop loads each member into the member variable",
+    "data:calleenamedlocals #5: the flag is cleared through the representative after the loop",
+    "data:calleenamedlocals #6: a member never overwrites the representative",
+    "data:calleenamedlocals #7: the cleared flag never lands on a member",
+    "data:calleenamedlocals #8: k1 builds y in its own variable and passes x second",
+    "data:calleenamedlocals #9: k1 never stores y's fields into x",
     "data:callretmulti #1: one helper assignment in each pass",
     "data:callretmulti #2: helper is never duplicated into the low-word sinks",
     "data:callretmulti #3: same-block fan-out evaluates helper2 once per pass",
