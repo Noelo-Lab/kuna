@@ -1629,6 +1629,18 @@ The container then closes, so the extra pass happens at most once per recovery.
 Call-site trials never get it. With the gate off the container closes after
 its normal budget, as upstream.
 
+Holding the container open one iteration longer means the mainloop tail runs
+while every RETURN still reads all output trial registers. `ActionConditionalConst`
+assumed a RETURN's slot 1 is its value and wrote a constant known for another
+trial register there; that is fixed at its root in chapter 03 (Conditional
+constants), for every open container, not only this one.
+
+`passthrough` (§ above) claims a tail call's result before the ancestor walk
+and skips the walk for that trial, so a claimed trial never reaches the
+remember step; in the extra pass only remembered (trial, RETURN) pairs are
+looked at, and `keep_tail_return_whole` still runs once, just before
+`derive_output_map`, which with a pending retry happens after the extra pass.
+
 ### (ida) The uncomputed half of a recovered return pair
 
 The same passive-pair symptom, decided on evidence instead of by fiat, and

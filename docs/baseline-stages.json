@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1499,
-    1499
+    1502,
+    1502
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1136,10 +1136,13 @@
     "data:codescalar #6: the data control is untouched in both passes -- its pointer was never a code pointer",
     "data:condexeret #10: a threaded merge in front of the sfp body keeps comp void in both passes",
     "data:condexeret #11: the same merge behind the body keeps comp2 void in both passes",
+    "data:condexeret #12: off, tworet and tworet7 lose their return value",
+    "data:condexeret #13: on, tworet7 returns 7 on the path that writes it",
+    "data:condexeret #14: the a2 == 0 path returns the entry value, never a made-up constant (tworet1 off; tworet, tworet1, tworet7 on)",
     "data:condexeret #1: off, twice loses its return value",
     "data:condexeret #2: on, twice returns what once returns",
-    "data:condexeret #3: on, the sum path returns the sum (twice, once, nested)",
-    "data:condexeret #4: on, the set path returns zero (twice, once, nested)",
+    "data:condexeret #3: the sum path returns the sum (tworet1 off; twice, once, nested, tworet, tworet1, tworet7 on)",
+    "data:condexeret #4: the set path returns zero (tworet1 off; twice, once, nested, tworet, tworet1 on)",
     "data:condexeret #5: a possible input path keeps differ void in both passes",
     "data:condexeret #6: a possible input path keeps compl void in both passes",
     "data:condexeret #7: merges on different conditions keep sfp void in both passes",

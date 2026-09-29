@@ -594,7 +594,12 @@ fn propagate_constant(data: &mut Funcdata, points: &mut Vec<ConstPoint>, use_mul
                     };
                     data.new_varnode_out(var_size, &var_addr, copy_before_ret).expect("propagateConstant: newVarnodeOut");
                     let cb_out = data.obank().get(copy_before_ret).expect("propagateConstant: stale copy").get_out().unwrap();
-                    data.op_set_input(op, cb_out, 1).expect("propagateConstant: opSetInput RETURN2");
+                    // (kuna) Upstream writes slot 1, the return value once return
+                    // recovery has trimmed the RETURN; while its output trials are
+                    // still open the RETURN reads every trial register, so replace
+                    // the slot that actually reads `var_vn`.
+                    let slot = data.obank().get(op).expect("propagateConstant: stale op").get_slot(var_vn);
+                    data.op_set_input(op, cb_out, slot).expect("propagateConstant: opSetInput RETURN2");
                     data.op_insert_before(copy_before_ret, op);
                 } else {
                     let slot = data.obank().get(op).expect("propagateConstant: stale op").get_slot(var_vn);
