@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_widthfwd_x86_64",
+    "binary_sha256": "fe172c4af4e7828150710e68490dfb22a469c4b377afde2663c7ac59a375e264",
+    "binary_size": 16240,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/passthrough_widthfwd_x86_64",
+    "selector": "use_send",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int send_open\\([^,()]*a0,unsigned int a1\\)",
+      "int use_send\\([^,()]*a0,unsigned int a1\\)",
+      "return send_open\\(a0,a1\\) \\* 3;"
+    ],
+    "stdout_absent": [
+      "int send_open\\([^()]*unsigned long a1\\)",
+      "int use_send\\([^()]*unsigned long a1\\)",
+      "\"send_open\",3,0,3,0,\"%d: bad id\",a1 & 0xffffffff"
+    ]
+  },
+  "notes": "use_send calls send_open, which calls lookup, which calls by_id: each forwards rdi by a call, so use_send and send_open gain the struct pointer. send_open and lookup read esi themselves, so the argument stays the int they read; by_id's push %rsi for a variadic %d reads all of rsi and must not widen it to unsigned long two calls up.",
+  "probe_id": "p-b4e02b47a9c0"
+}

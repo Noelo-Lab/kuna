@@ -165,6 +165,15 @@ fn a_call_forwards_what_its_target_takes() {
     let t = through(&forwarder(rsi_bytes), Some(Rc::clone(&narrow)));
     assert!(t.proves_input(&rdi, 8) && !t.proves_input(&rsi, 8));
 
+    // A register the forwarder reads itself keeps the width it reads it at: the
+    // target's wider read of it adds nothing, while `rdi` still comes through.
+    let reads_esi = CalleeEntryDead::from_parts(3, vec![(3, 0x30, 4)], vec![Vec::new()], true)
+        .with_named_cut(target.clone(), Vec::new());
+    assert_eq!(reads_esi.live_input_width(&rsi, 8), Some(4));
+    let t = through(&reads_esi, Some(Rc::clone(&narrow)));
+    assert!(t.proves_input(&rdi, 8));
+    assert_eq!(t.live_input_width(&rsi, 8), Some(4));
+
     // A target that takes nothing, or an indirect call, adds nothing.
     assert!(add_reads_through(&fwd, |_| Some(Rc::new(Vec::new()))).is_none());
     let opaque = CalleeEntryDead::from_parts(3, Vec::new(), vec![Vec::new()], true).with_opaque_cut(Vec::new());

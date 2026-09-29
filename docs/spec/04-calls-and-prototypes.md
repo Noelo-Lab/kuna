@@ -2595,20 +2595,24 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
   8-byte reads of every argument register: dash's `or(int,union yystype *,int,
   int)` calls `and`, whose `binop` calls `sh_error(const char *,...)`, and
   `or`'s fourth parameter came out `unsigned long` with `(unsigned int)` casts at
-  its uses. A read overlapping a byte written first is dropped whole, and a
-  target the walk cannot fully cover, one that stated nothing, or an indirect
-  call adds nothing. Only this check reads the widened set; `calleedeadarg`,
+  its uses. A read overlapping a byte written first is dropped whole, and so is
+  one overlapping a byte the callee reads itself: that register is already
+  proven an input, and a deeper read could only change how wide it is taken.
+  openssh `channel_by_id` pushes all of `rsi` for a variadic `%d`, and without
+  this `channel_send_open(ssh, int id)` and every other caller of
+  `channel_lookup`, which reads `esi` itself, took a 64-bit `id`. A target the
+  walk cannot fully cover, one that stated nothing, or an indirect call adds
+  nothing. Only this check reads the widened set; `calleedeadarg`,
   `calleearitybody` and the arity claim above see the plain walk. The probes are
   cached for the run; the fold reads statements, which accumulate as the run
   goes, so it is memoized for one caller at a time, and a call cycle ends when
   the depth runs out. Over 266 stripped x86-64 -O2 binaries of 25 projects
   (92,275 functions) this gives 111 functions 179 parameters, every one with a
   DWARF twin confirmed (110; one has none), and 163 calls arguments their
-  callee's DWARF prototype takes; nothing loses an argument. The width follows
-  the target's read as it does the callee's own, which moved 28 parameter widths
-  toward DWARF's and 15 away, mostly where a target pushes a 4-byte value's
-  whole register as a variadic stack argument (openssh `channel_by_id`'s
-  `push %rsi` makes `channel_send_open`'s `int id` a `uint8`);
+  callee's DWARF prototype takes; nothing loses an argument. Parameter widths
+  move toward DWARF's in 28 places and away in 2: gnulib `mkstemp_len` and
+  `mkdtemp_len` hand their `size_t suff_len` to `gen_tempname_len`'s `int
+  suffixlen`, and the argument is the `int` the callee reads;
 - the caller did not set the call up as variadic. A register that carries no
   argument but the return value, written and not read again between the call and
   the call or block start before it, is SysV's vector-register count (`xor
@@ -2808,7 +2812,10 @@ it must keep two, while the `jmp`-forwarding control beside it still gains its
 its option-off arm: the callers of a one-deep and a two-deep call forwarder pass
 `rdi` and `rsi` on, the caller of one that writes `esi` first passes `rdi` alone,
 and the callers of an indirect-call forwarder and of a two-function call cycle
-gain nothing.
+gain nothing. `passthrough_widthfwd_x86_64` (built from the `.c` beside it) under
+`tests/cli/passthrough-a-call-forwarder-keeps-the-width-it-reads.json` is the
+openssh shape above: `send_open` and `use_send` gain the structure pointer their
+chain of call forwarders hands to `by_id`, and keep `int id`.
 
 **Default.** On, on the strength of the parameter arm. Every function that gains
 something was checked against its unstripped twin's DWARF prototype over two

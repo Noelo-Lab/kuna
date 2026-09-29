@@ -529,11 +529,7 @@ fn resolve_node(
         return ForwardTransfer::denied(reg_idx);
     }
     *budget -= 1;
-    if !arch.kuna_callee_dead_cache.contains_key(&key) {
-        let probed = probe_callee_entry_dead(arch.translate(), entry, reg_idx);
-        arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
-    }
-    let Some(dead) = arch.kuna_callee_dead_cache.get(&key).cloned() else {
+    let Some(dead) = probe_cached(arch, entry, reg_idx) else {
         return ForwardTransfer::denied(reg_idx);
     };
     visiting.push(key);
@@ -669,9 +665,12 @@ fn probe_cached(
 /// `dead`'s live reads plus what each direct call's target takes of the bytes
 /// still unwritten at that call, or `None` when that adds nothing.
 ///
-/// A read that overlaps a byte written before the call is dropped whole. An
-/// incomplete summary adds nothing, and neither does an indirect transfer,
-/// which names no target.
+/// A read that overlaps a byte written before the call is dropped whole, and so
+/// is one that overlaps a byte `dead` reads itself: that register is already
+/// proven an input, and a deeper read could only change how wide it is taken
+/// (openssh `channel_by_id` pushes all of `rsi` for a variadic `%d`, which would
+/// make `channel_send_open(ssh, int id)`'s `id` 64 bits). An incomplete summary
+/// adds nothing, and neither does an indirect transfer, which names no target.
 fn add_reads_through(
     dead: &CalleeEntryDead,
     mut target: impl FnMut(&Address) -> Option<Rc<Vec<RegRead>>>,
@@ -680,12 +679,14 @@ fn add_reads_through(
         return None;
     }
     let idx = dead.reg_idx;
+    let own = dead.read_bytes();
     let mut reads = dead.reads_live.clone();
     let before = reads.len();
     for (t, written) in &dead.named_cuts {
         let Some(inner) = target(t) else { continue };
         for &(ridx, off, sz) in inner.iter() {
-            if ridx != idx || (off..off + sz.max(0) as u64).any(|b| written.contains(&(idx, b))) {
+            let covered = |b: u64| written.contains(&(idx, b)) || own.contains(&(idx, b));
+            if ridx != idx || (off..off + sz.max(0) as u64).any(covered) {
                 continue;
             }
             if !reads.contains(&(ridx, off, sz)) {
@@ -1045,12 +1046,8 @@ pub fn seed_callee_entry_dead(
     for e in entries {
         let Some(sp) = e.get_space() else { continue };
         let key = (sp.get_index(), e.get_offset());
-        if !arch.kuna_callee_dead_cache.contains_key(&key) {
-            let probed = probe_callee_entry_dead(arch.translate(), &e, reg_idx);
-            arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
-        }
-        if let Some(d) = arch.kuna_callee_dead_cache.get(&key) {
-            data.kuna_set_callee_entry_dead(&e, Rc::clone(d));
+        if let Some(d) = probe_cached(arch, &e, reg_idx) {
+            data.kuna_set_callee_entry_dead(&e, d);
         }
         if pass_through && arch.kuna_protoorder_types.contains_key(&key) {
             if let Some(t) = reads_through_calls(arch, &e, reg_idx, &mut through_memo) {
