@@ -756,6 +756,23 @@ await test('fifth review #7 a session larger than the channel\'s send queue reac
   ben.g.leave();
 });
 
+await test('fifth review #11 two pages whose registers stay different swap them once per check, less and less often', async () => {
+  const opts = { group: { sumMs: 100, quietMs: 20 } };
+  const ana = member('aaaaaaaa', 'Ana', { file: FILE, bytes: FILE_BYTES, ...opts });
+  ana.g.create();
+  const ben = member('bbbbbbbb', 'Ben', { file: FILE, bytes: FILE_BYTES, ...opts });
+  const [a, b] = invite(ana, ben);
+  await settle(300);
+  ana.replica.apply({ k: `comment:${MAIN}:0x11b5`, v: 'bad\u0001note', c: [ana.replica.counter + 1, 'aaaaaaaa'] });
+  const before = a.texts.length + b.texts.length;
+  await sleep(3000);
+  const snaps = [...a.texts, ...b.texts].slice(before).filter((t) => t.startsWith('{"t":"snap"')).length;
+  assert.ok(snaps <= 20, `${snaps} snapshots in 3 s for a difference that cannot go away (one check every 100 ms)`);
+  assert.ok(snaps >= 2, 'they did compare and swap');
+  ana.g.leave();
+  ben.g.leave();
+});
+
 const failed = results.filter(([ok]) => !ok);
 for (const [ok, name, why] of results) console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ` — ${why}`}`);
 if (failed.length) {

@@ -397,12 +397,23 @@ export class Group {
     for (const rec of this.peers.values()) if (rec.member) this.#send(rec, { t: 'sum', h });
   }
 
-  /** Another page's digest: when it differs (and both pages are quiet), send ours and ask for theirs. */
+  /**
+   * Another page's digest: when it differs (and both pages are quiet), send
+   * ours and ask for theirs, once (the resync this page is sent back is not
+   * answered with a second copy). A difference that outlasts the exchange is
+   * looked at half as often each time, up to 32 checks apart.
+   */
   #sum(rec, h) {
-    if (!rec.member || !this.replica || !this.#quiet() || h === this.replica.digest()) return;
+    if (!rec.member || !this.replica || !this.#quiet()) return;
+    if (h === this.replica.digest()) {
+      rec.sumMiss = 0;
+      return;
+    }
     const now = this.timers.now();
     if (now < rec.sumAt) return;
-    rec.sumAt = now + this.sumMs;
+    rec.sumMiss = (rec.sumMiss || 0) + 1;
+    rec.sumAt = now + this.sumMs * 2 ** Math.min(rec.sumMiss - 1, 5);
+    rec.snapAt = now + RESYNC_MS;
     this.#sendSnap(rec);
     this.#send(rec, { t: 'resync' });
   }

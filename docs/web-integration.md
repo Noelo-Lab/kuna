@@ -843,7 +843,10 @@ carries it. So pages also compare digests of their registers (an order-free hash
 key, value, clock and birth, kept up to date with each write). Every 10 seconds, and soon
 after anyone joins or leaves, each page sends its digest to each page it is linked to,
 once its own edits have been quiet for 2 seconds. Two quiet pages whose digests differ
-send each other all their registers, which merge harmlessly. The ninth person is told
+send each other all their registers once, which merge harmlessly. A difference that
+outlasts the exchange (a page at the register cap cannot take more) is checked half as
+often each time, down to once every 320 seconds, and checked at the usual pace again once
+the digests match. The ninth person is told
 "This session is full (8 people)". Leaving (the session dialog, or closing the tab) tells
 the others; a page that loses a link tries again through the others, and someone no
 longer reachable through anyone leaves the roster. A link keeps what arrives before the
