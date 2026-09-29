@@ -145,8 +145,80 @@
    }
   }
  },
- "speed": null,
- "gates": null,
+ "speed": {
+  "method": "two pinned release builds (main 632437155 castbench arm, fix), kuna decompile-all --json --max-fn-seconds 120 on O2 fmt/ls/sort/bash, arms interleaved and order-alternated, one warm-up each discarded, min and median-of-ratios of 15 (docs/features/narrowload/speed.py; samples in speed.json); host load 21-55 on 80 cores",
+  "measurements": [
+   {
+    "label": "fmt_O2",
+    "n": 15,
+    "delta_min_pct": 0.05,
+    "delta_median_of_ratios_pct": 2.8,
+    "main_min": 5441.8,
+    "fix_min": 5444.5,
+    "loadavg": [
+     55.0,
+     54.4,
+     53.4
+    ]
+   },
+   {
+    "label": "ls_O2",
+    "n": 15,
+    "delta_min_pct": 1.44,
+    "delta_median_of_ratios_pct": 1.52,
+    "main_min": 15201.0,
+    "fix_min": 15419.5,
+    "loadavg": [
+     26.2,
+     31.7,
+     42.3
+    ]
+   },
+   {
+    "label": "sort_O2",
+    "n": 15,
+    "delta_min_pct": -5.64,
+    "delta_median_of_ratios_pct": -2.16,
+    "main_min": 17464.4,
+    "fix_min": 16480.0,
+    "loadavg": [
+     28.8,
+     30.1,
+     35.9
+    ]
+   },
+   {
+    "label": "bash_O2",
+    "n": 15,
+    "delta_min_pct": -4.74,
+    "delta_median_of_ratios_pct": -1.23,
+    "main_min": 100341.5,
+    "fix_min": 95582.8,
+    "loadavg": [
+     21.0,
+     24.6,
+     24.2
+    ]
+   }
+  ],
+  "budget_pct": 5.0,
+  "worst_delta_min_pct": 1.44,
+  "within_budget": true,
+  "note": "the fix only removes work (no SUBPIECE is created; the AND form fires on fewer loads); the negative deltas are contention"
+ },
+ "gates": {
+  "base": "origin/main 63dfb436c (rebased)",
+  "make test": "675/675 PARITY OK",
+  "make test-stages": "1475/1475 PARITY OK",
+  "make check-spec": "OK (lenient mode)",
+  "check_spec --strict": "OK (strict mode)",
+  "make test-cli": "269/269 passed",
+  "kuna catalog --check": "catalog OK",
+  "counters --check": "no drift",
+  "docs/options.md": "byte-fresh",
+  "make rust-test": "RUST_TEST_RC=0 via rust-test-lane.sh (first run on the pre-rebase base failed only catalog_bytecompat: the elemptr row text changed; fixture recaptured)",
+  "castbench on the rebased build": "all 45 .c byte-identical to the pre-rebase fix arm"
+ },
  "files": [
   "decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_narrowload.rs",
   "decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs",
