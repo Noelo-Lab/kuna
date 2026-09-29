@@ -36,14 +36,14 @@ const TIMERS = {
 };
 
 /** Does a change to register `key` change the directives of the function at `fn`? */
-export function touchesFunction(key, fn) {
+function touchesFunction(key, fn) {
   const p = key.split(':');
   if (p[0] === 'var' || p[0] === 'comment' || p[0] === 'rawf') return p[1] === fn;
   return p[0] !== 'setting';
 }
 
 /** Does `session` already hold everything `own` holds (so keeping `own` apart would keep nothing)? */
-export function holdsAll(session, own) {
+function holdsAll(session, own) {
   const regs = registersOf(session);
   for (const [key, value] of registersOf(own)) if (regs.get(key) !== value) return false;
   const raw = (s) => [...s.records.values()].filter((r) => r.kind === 'raw').map((r) => `${r.func || ''}\n${r.text}`);
@@ -305,7 +305,6 @@ export class Sync {
       want = changedBetween(anchor, now);
       for (const [key, value] of anchor) if (!want.has(key)) older.push([key, value]);
     }
-    const copy = session.size ? Session.fromJSON(JSON.parse(JSON.stringify(session.toJSON()))) : null;
     const ops = [];
     const { changes } = localChanges(new Map(older), this.replica, { maxLive: MAX_REGISTERS });
     for (const { key, value } of changes) {
@@ -313,6 +312,7 @@ export class Sync {
       if (this.replica.apply(op)) ops.push(op);
     }
     const replaced = older.filter(([key, value]) => this.replica.value(key) !== value).length;
+    const copy = replaced ? Session.fromJSON(JSON.parse(JSON.stringify(session.toJSON()))) : null;
     const { written, refused } = this.#writeAll(want);
     for (const w of written) ops.push(w.op);
     this.kept = null;
@@ -328,7 +328,7 @@ export class Sync {
     if (ops.length) this.group.local(ops);
     const mode = this.#lateMode();
     this.#joined();
-    if (replaced && copy) this.ui.mergeReplaced?.({ count: replaced, copy });
+    if (copy) this.ui.mergeReplaced?.({ count: replaced, copy });
     this.app.remoteChanged({ inspect: true, mode, label: '' });
   }
 
@@ -368,6 +368,7 @@ export class Sync {
     const s = this.app.session();
     adoptRawKeys(s, this.me);
     const { written, refused } = this.#writeAll(changedBetween(opened, registersOf(s)));
+    this.kept = null;
     this.#share();
     this.aside = apart ? { count: own.size, hash, name: meta.name } : null;
     const before = JSON.stringify(s.toJSON());

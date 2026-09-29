@@ -69,7 +69,7 @@ const clockOk = (c) => Array.isArray(c) && c.length === 2 && Number.isSafeIntege
   typeof c[1] === 'string' && /^[a-z0-9]{1,16}$/.test(c[1]);
 
 /** Whether `value` may be written to `key` (the check every op from another page passes). */
-export function validValue(key, value) {
+function validValue(key, value) {
   if (typeof key !== 'string' || key.length > 300) return false;
   const kind = KINDS.find(([re]) => re.test(key));
   return !!kind && (value === null || (typeof value === 'string' && kind[1](value)));
