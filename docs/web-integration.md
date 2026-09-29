@@ -944,8 +944,9 @@ from stderr closure, since a descendant may retain the pipe after the browser
 dies. Closing the launcher also releases its stderr stream; exit status and
 captured diagnostics are retained even when the pipe would remain open.
 
-Five layers, all but the last runnable without a browser in CI, spanning **multiple
-formats and architectures**:
+Five layers, spanning **multiple formats and architectures**. The first four need no
+browser and run in CI; the last drives headless Chrome and runs **locally only** (CI
+skips it as too costly):
 
 1. **`test/parity.mjs`** — runs the wasm under `node:wasi` (the same WASI preview1 ABI the
    browser shim implements) and asserts its output is **byte-identical to the native
@@ -1072,7 +1073,7 @@ formats and architectures**:
    query and the fragment intact (and serves a meta refresh), and that `/` and
    `/dev-viz/` link to `/decompile/` while nothing links to `/decompile2/`. Any uncaught page
    exception fails it; steps an older engine cannot serve assert the page's fallback and
-   are listed as skipped. CI runs it when the runner has `google-chrome`.
+   are listed as skipped.
    **`test/decompile2-collab-browser.mjs`** drives live sessions in tabs of one headless
    Chrome: an invite opened in another tab (the pages meet over `BroadcastChannel`), the
    program received and opened by itself, a rename shown on the other page, a rename and a
@@ -1113,8 +1114,18 @@ formats and architectures**:
    (`--disable-features=WebRtcHideLocalIpsWithMdns`, since runners lack the multicast
    `.local` names need). It first connects two peer connections inside one page, and
    prints SKIPPED only when that gathers no candidate or cannot connect; after that any
-   failure fails the test. `--late 60` applies the reply a minute after it was made. CI
-   runs these after the smoke test.
+   failure fails the test. `--late 60` applies the reply a minute after it was made.
+   None of these four runs in CI. Run them locally before a change to the page lands
+   (each skips, exit 0, when there is no Chrome; `CHROME=` picks one):
+
+   ```bash
+   integrations/web/build.sh
+   node integrations/web/test/decompile2-browser.mjs
+   node integrations/web/test/decompile2-collab-browser.mjs
+   node integrations/web/test/decompile2-collab-page.mjs
+   node integrations/web/test/decompile2-collab-rtc.mjs
+   node integrations/web/test/decompile2-collab-rtc.mjs --late 60
+   ```
    The filter's DOM half was verified the same way during development (raw CDP): 16
    checks on `sample.elf` — row hiding is `display:none` and not the `.fn` flex rule,
    header and stub-divider counts, the invalid-regex report, `/`-to-focus, `Escape`,

@@ -118,7 +118,8 @@ build is the parity oracle for the tests.
 
 ## Tests
 
-All run under Node (no browser required for CI):
+All run under Node. A through H need no browser; I and J drive headless Chrome and run
+**locally only** (CI does not run them; each skips, exit 0, without Chrome):
 
 ```bash
 # 0. Prereqs: `make specs`, then `integrations/web/build.sh`, and a native
@@ -261,7 +262,7 @@ to Assembly, renames a variable, patches a byte, checks 1024 and 820 px for hori
 overflow, reloads to see the session restored, checks that `/decompile2/…#join=…`
 redirects with its fragment, and that the nav links to `/decompile/` and nothing to
 `/decompile2/`. It fails on any uncaught page exception and skips when there is no Chrome (set
-`CHROME=` to point at one). CI runs it when the runner has `google-chrome`, followed by
+`CHROME=` to point at one). It is not run in CI: run it locally, followed by
 **`decompile2-collab-browser.mjs`** (a live session in tabs of one Chrome: joining,
 shared edits, the shared decompiler effort, pointers at two widths, following, pings, a
 third page over WebRTC through the reply-link hand-off, stale replies, undo, junk

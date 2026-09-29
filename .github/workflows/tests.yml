@@ -143,18 +143,18 @@ jobs:
           cd decompiler
           cargo test -p kuna-ghidra --release -- --include-ignored --nocapture
 
-      # Node 22 for its global WebSocket, which the /decompile browser tests
-      # drive headless Chrome with (the runner image ships google-chrome). The
-      # live-session tests run tabs of one Chrome over BroadcastChannel, then two
-      # Chrome processes over WebRTC (SKIPPED, not failed, only when two peer
-      # connections inside one page cannot connect on the runner).
+      # Node 22: the web suites below are written for (and only run on) a
+      # current Node; the runner's default Node is not pinned. The suites that
+      # drive headless Chrome (decompile2-browser, -collab-browser, -collab-page,
+      # -collab-rtc) are not run in CI, which is too costly for them; run them
+      # locally (integrations/web/README.md -> Tests).
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
       # The study view's pure modules need no build; run them before the
       # wasm build so a renderer or session regression answers in seconds.
-      - name: Test the /decompile2 study view modules
+      - name: Test the /decompile page's modules
         run: |
           node integrations/web/test/cdp-client-startup.mjs
           node integrations/web/test/decompile2-render.mjs
@@ -175,14 +175,6 @@ jobs:
           node integrations/web/test/dev-viz.mjs
           node integrations/web/test/decompile2-worker.mjs
           node integrations/web/test/decompile2-replay.mjs
-          if command -v google-chrome >/dev/null; then
-            node integrations/web/test/decompile2-browser.mjs
-            node integrations/web/test/decompile2-collab-browser.mjs
-            node integrations/web/test/decompile2-collab-page.mjs
-            node integrations/web/test/decompile2-collab-rtc.mjs
-          else
-            echo "decompile2 browser tests skipped: no google-chrome on this runner"
-          fi
 
   rust-test:
     name: cargo workspace suite
