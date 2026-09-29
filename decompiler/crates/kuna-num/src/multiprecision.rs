@@ -5,7 +5,6 @@
 //! behavior.
 
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::types::Wrap;
 
 /// Multi-precision logical left shift by a constant amount.
 ///
@@ -51,66 +50,34 @@ pub fn leftshift128(in_: &[u64; 2], out: &mut [u64; 2], sa: i32) {
     leftshift(2, in_, out, sa);
 }
 
-/// Compare two multi-precision unsigned integers.
-///
-/// -1, 0, or 1 is returned depending on if the first integer is less than,
-/// equal to, or greater than the second integer.
-fn ucompare(num: i32, in1: &[u64], in2: &[u64]) -> i32 {
-    let mut i = num - 1;
-    while i >= 0 {
-        if in1[i as usize] != in2[i as usize] {
-            return if in1[i as usize] < in2[i as usize] { -1 } else { 1 };
-        }
-        i -= 1;
-    }
-    0
+fn from_limbs(value: &[u64; 2]) -> u128 {
+    u128::from(value[0]) | (u128::from(value[1]) << 64)
+}
+
+fn to_limbs(value: u128) -> [u64; 2] {
+    [value as u64, (value >> 64) as u64]
 }
 
 /// 128-bit INT_LESS operation: true if the first value is less than the
 /// second value.
 pub fn uless128(in1: &[u64; 2], in2: &[u64; 2]) -> bool {
-    ucompare(2, in1, in2) < 0
+    from_limbs(in1) < from_limbs(in2)
 }
 
 /// 128-bit INT_LESSEQUAL operation: true if the first value is less than or
 /// equal to the second value.
 pub fn ulessequal128(in1: &[u64; 2], in2: &[u64; 2]) -> bool {
-    ucompare(2, in1, in2) <= 0
+    from_limbs(in1) <= from_limbs(in2)
 }
 
-/// Multi-precision add operation: `out = in1 + in2` over `num` words.
-fn add(num: i32, in1: &[u64], in2: &[u64], out: &mut [u64]) {
-    let mut carry: u64 = 0;
-    for i in 0..num {
-        let i = i as usize;
-        let tmp = in2[i].wadd(carry);
-        let tmp2 = in1[i].wadd(tmp);
-        out[i] = tmp2;
-        carry = u64::from(tmp < in2[i] || tmp2 < tmp);
-    }
-}
-
-/// 128-bit INT_ADD operation: `out` holds the 128-bit result of
-/// `in1 + in2` (each as 2 64-bit words).
+/// 128-bit INT_ADD operation: `out` holds the wrapping sum of `in1` and `in2`.
 pub fn add128(in1: &[u64; 2], in2: &[u64; 2], out: &mut [u64; 2]) {
-    add(2, in1, in2, out);
+    *out = to_limbs(from_limbs(in1).wrapping_add(from_limbs(in2)));
 }
 
-/// Multi-precision subtract operation: `out = in1 - in2` over `num` words.
-fn subtract(num: i32, in1: &[u64], in2: &[u64], out: &mut [u64]) {
-    let mut borrow: u64 = 0;
-    for i in 0..num {
-        let i = i as usize;
-        let tmp = in2[i].wadd(borrow);
-        borrow = u64::from(tmp < in2[i] || in1[i] < tmp);
-        out[i] = in1[i].wsub(tmp);
-    }
-}
-
-/// 128-bit INT_SUB operation: `out` holds the 128-bit result of
-/// `in1 - in2` (each as 2 64-bit words).
+/// 128-bit INT_SUB operation: `out` holds the wrapping difference of `in1` and `in2`.
 pub fn subtract128(in1: &[u64; 2], in2: &[u64; 2], out: &mut [u64; 2]) {
-    subtract(2, in1, in2, out);
+    *out = to_limbs(from_limbs(in1).wrapping_sub(from_limbs(in2)));
 }
 
 /// Divide two little-endian 128-bit values, writing quotient and remainder.
@@ -139,8 +106,8 @@ fn udiv128_wide(
     quotient_res: &mut [u64; 2],
     remainder_res: &mut [u64; 2],
 ) -> KunaResult<()> {
-    let n = u128::from(numer[0]) | (u128::from(numer[1]) << 64);
-    let d = u128::from(denom[0]) | (u128::from(denom[1]) << 64);
+    let n = from_limbs(numer);
+    let d = from_limbs(denom);
     if d == 0 {
         return Err(KunaError::lowlevel("divide by 0"));
     }
@@ -151,8 +118,8 @@ fn udiv128_wide(
     }
     let quotient = n / d;
     let remainder = n % d;
-    *quotient_res = [quotient as u64, (quotient >> 64) as u64];
-    *remainder_res = [remainder as u64, (remainder >> 64) as u64];
+    *quotient_res = to_limbs(quotient);
+    *remainder_res = to_limbs(remainder);
     Ok(())
 }
 

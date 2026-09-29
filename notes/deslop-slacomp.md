@@ -1862,3 +1862,34 @@ All four required gates
 passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
 (7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
 gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.
+
+
+### Native limb arithmetic and comparison
+
+The remaining generic comparison, addition and subtraction loops are replaced
+by unsigned `u128` comparisons and wrapping arithmetic. Two private conversion
+helpers share the little-endian limb representation with wide division. Public
+signatures and existing tests are unchanged; the module loses 33 lines.
+
+Complete before/after modules agree on 2,259,081 operand pairs for both
+comparisons, addition and subtraction in each overflow mode. Another 324,617
+division cases retain 324,108 successes, 319 errors and 190 panics, including
+failure payloads and result arrays. Arithmetic compares against the original
+limb loops. The division reference already uses native `u128`, so those cases
+check conversion behavior rather than an independent division algorithm.
+The actual rebuilt library passes the same cases against the fixed prior
+module. Focused tests pass: 293 passed, three existing ignored, across 23 groups.
+
+In 66 balanced CPU-pinned native runs, 30 measured per version, aggregate
+median time is 1.018% lower (paired 0.979% lower). All twelve individual medians
+stay within the 5% budget, ranging from 14.058% lower to 0.682% higher. Every
+scenario digest matches on every run. Each run performs 1,572,864 calls;
+fixture construction and reference evaluation stay outside the timers.
+This is a numeric microbenchmark, not an end-to-end decompiler speed claim.
+Source, executable and library hashes, complete model comparisons and raw
+samples are retained under `/tmp/kuna-deslop-limb-arithmetic-`.
+
+Final rustdoc passes with broken intra-doc links denied. All four required gates
+passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
+(7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
+gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.

@@ -2365,11 +2365,13 @@ record is honest.
 Integer bit queries in `decompiler/crates/kuna-base/src/address.rs` use Rust's
 primitive bit operations. Least- and most-significant-set-bit queries return
 `-1` for zero; population count returns zero and leading-zero count returns 64.
-The 128-bit division implementation in
-`decompiler/crates/kuna-num/src/multiprecision.rs` uses native `u128` division
-and remainder, retaining its 64-bit and smaller-numerator shortcuts. A zero
-divisor still panics when the numerator fits in 64 bits and returns the existing
-low-level error for a wider numerator, without modifying the result arrays.
+The 128-bit operations in
+`decompiler/crates/kuna-num/src/multiprecision.rs` convert little-endian limb
+pairs to native `u128` values for unsigned comparisons, wrapping addition and
+subtraction, and division. Division retains its 64-bit and smaller-numerator
+shortcuts. A zero divisor still panics when the numerator fits in 64 bits and
+returns the existing low-level error for a wider numerator, without modifying
+the result arrays.
 
 Floating-point constant evaluation uses `decompiler/crates/kuna-num/src/float.rs`
 (`FloatFormat`). Finite arithmetic uses host `f64`; NaN payloads are canonical.

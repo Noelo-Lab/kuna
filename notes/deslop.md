@@ -2341,6 +2341,56 @@ diff `0d79c382` remained unchanged through the last terminal success. Logs use
 `/tmp/kuna-deslop-engine-contracts-final-`. The preceding commit's CI and CodeQL
 pass. No baseline or threshold changed.
 
+## Native two-limb arithmetic
+
+Two-limb unsigned comparison, addition and subtraction now use native `u128`
+operations through two private little-endian conversion helpers. Wide division
+shares those conversions. The generic limb loops and their wrapping-trait
+import are removed, reducing the module by 33 lines. Public signatures,
+narrow division, shifts and all existing tests are unchanged. The spec records
+the representation and wrapping semantics.
+
+Complete actual-root modules agree on 2,259,081 operand pairs in each overflow
+mode, checking both comparisons and every output limb for addition and
+subtraction against the original loops. Another 324,617 division cases retain
+324,108 successes, 319 errors and 190 panics, with matching failure payloads
+and output arrays. This division reference already uses native `u128`; it
+checks conversion and control-flow preservation, not an independent division
+algorithm. The rebuilt native library independently matches the complete
+original module and verifies all twelve benchmark digests.
+
+The release build takes 49.77 seconds without warnings. All 3,746 focused
+tests pass, with three existing ignores across 58 groups and no warnings.
+Strict base/numeric Clippy passes on Rust 1.90 and CI's 1.98.1, and CLI lint
+passes. Public and private base/numeric documentation pass with broken links
+denied; the two existing opcode private-link warnings remain. Four complete
+stage transcripts, 36 CLI cases, 286 compiler comparisons and 48 XML outputs
+match their saved references. Source proofs cover all three candidates.
+Artifacts use `/tmp/kuna-deslop-limb-ops.appsMtzT`.
+
+Balanced native timings use thirty measured samples per version after three
+warmup pairs, with 1,572,864 calls and all twelve digests checked per run.
+Aggregate median changes -0.87% (paired -0.78%); individual medians range
+from -14.09% to +0.38%, with paired changes from -7.96% to +0.91%. All remain
+within the 5% budget. Fixtures and reference evaluation stay outside timers.
+
+Toy/x86-64/Hexagon compiler wall times change -1.45%/-0.33%/-0.19%, with CPU
+times -1.67%/-0.34%/-0.20%; every generated SLA hash matches. Toy uses 110
+measured samples per version and the larger compilers twelve. Four complete
+call-push, argument-guard, array-cover and stack-alias workloads change
+-0.61%/-1.12%/-0.93%/-0.99% (paired -0.58%/-0.98%/-1.02%/-1.01%), with thirty
+samples per version and exact streams/status in every run. Compiler runs use
+CPU 40, native/stage runs CPU 41. No general decompiler speedup is claimed.
+
+All nine gates pass: 7,464 workspace tests, 38 existing ignores across 439
+groups and no warnings; upstream 675/675 and stages 1,467/1,467 retain parity.
+The isolated CLI run passes all 268 probes on its first try. The 42 Python
+tests, 56 Ghidra tests, 48 XML comparisons, 17 saved CLI comparisons and eleven
+browser probes pass, as do spec/catalog checks and strict CLI lint. Frozen
+diff `9ab48a3e` remained unchanged through the last terminal success. Logs use
+`/tmp/kuna-deslop-limb-ops-final-`. The preceding commit's CI and CodeQL pass.
+No baseline or threshold changed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
