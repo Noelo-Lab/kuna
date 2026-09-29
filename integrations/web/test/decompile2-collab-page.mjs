@@ -41,7 +41,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { findChrome, launchChrome, openPage, openTab } from './cdp-client.mjs';
 import { requireDist, serveStatic, fixture } from './worker-harness.mjs';
-import { legacyKey } from '../decompile2/persist.js';
+import { legacyKey } from '../decompile/persist.js';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
@@ -182,7 +182,7 @@ async function open(p, { seed = null } = {}) {
     for (const [k, v] of entries) localStorage.setItem(k, v);
     return true;
   }, seed || []);
-  await p.navigate(`${server.base}/decompile2/`);
+  await p.navigate(`${server.base}/decompile/`);
   await ready(p);
 }
 
@@ -877,7 +877,7 @@ try {
     await ben.waitFor(`document.querySelector('#d2collab [data-act=leave]')`, { what: 'the session dialog' });
     await ben.click('#d2collab [data-act=leave]');
     await ben.waitFor(`/bens_own/.test(document.getElementById('ccode').textContent)`, { what: 'Ben\'s own changes are back', timeout: 30000 });
-    await ben.navigate(`${server.base}/decompile2/`);
+    await ben.navigate(`${server.base}/decompile/`);
     await ready(ben);
     await example(ben);
     await ben.waitFor(`[...document.querySelectorAll('.d2-toast button')].some((b) => /Use those instead/.test(b.textContent))`, { what: 'the offer', timeout: 10000 });

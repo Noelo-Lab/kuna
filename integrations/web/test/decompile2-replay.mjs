@@ -14,8 +14,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Session } from '../decompile2/session.js';
-import * as R from '../decompile2/collab/replica.js';
+import { Session } from '../decompile/session.js';
+import * as R from '../decompile/collab/replica.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const kuna = join(root, 'decompiler/target/release/kuna');

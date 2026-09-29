@@ -8,17 +8,17 @@ import { highlight, highlightC, highlightRust, scan, escapeHtml } from '../asset
 import {
   normalizeInspect, tokenLines, fallbackLines, lineSegments, buildIndex, renderC,
   changedLines, localDecls, storageLabel, bandOf,
-} from '../decompile2/render-c.js';
-import { addrHex, signedHex } from '../decompile2/addr.js';
-import { normalizePrefs, cycle, DEFAULT_PREFS, loadPrefs, savePrefs } from '../decompile2/prefs.js';
+} from '../decompile/render-c.js';
+import { addrHex, signedHex } from '../decompile/addr.js';
+import { normalizePrefs, cycle, DEFAULT_PREFS, loadPrefs, savePrefs } from '../decompile/prefs.js';
 import {
   formatAddr, groupRuns, linkOperands, branchArrows, renderAsm, renderInsnRows, stackOperand,
   isBranch, isCall, spacedBytes, inferLines, easyOperands, spellInsn,
-} from '../decompile2/asm-view.js';
-import { entryOffset } from '../decompile2/addr.js';
-import { parseRustSignature } from '../decompile2/ctype.js';
-import { placeOverlay } from '../decompile2/hover.js';
-import { expand } from '../decompile2/sync.js';
+} from '../decompile/asm-view.js';
+import { entryOffset } from '../decompile/addr.js';
+import { parseRustSignature } from '../decompile/ctype.js';
+import { placeOverlay } from '../decompile/hover.js';
+import { expand } from '../decompile/sync.js';
 
 /** The text a browser would show for our own renderer's markup: tags dropped, the five escapes decoded. */
 function visibleText(markup) {

@@ -73,7 +73,7 @@ let skipped = null;
 try {
   const [ana, ben] = await Promise.all(chromes.map((c) => openPage(c.port)));
   for (const p of [ana, ben]) await p.viewport(1280, 860);
-  await ana.navigate(`${server.base}/decompile2/`);
+  await ana.navigate(`${server.base}/decompile/`);
   await ready(ana);
   skipped = await ana.call(PROBE);
   if (skipped) throw Object.assign(new Error(skipped), { skip: true });

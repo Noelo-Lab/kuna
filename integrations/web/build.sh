@@ -42,8 +42,9 @@ WASM="$ENGINE/target/$TARGET/$PROFILE/kuna_wasm.wasm"
 echo ">> assembling $DIST"
 rm -rf "$DIST"
 mkdir -p "$DIST/specs"
-# The site: the landing page at /, the decompiler application at /decompile/,
-# the study view at /decompile2/, and the shared design system (css/fonts/images/highlighter) under /assets/.
+# The site: the landing page at /, the decompiler at /decompile/, a redirect
+# from its old address /decompile2/ (links made there, invites included, keep
+# working), and the shared design system (css/fonts/images/highlighter) under /assets/.
 # The decompiler glue, Worker, client, zip.js, sha256.js, wasm, and specs stay at the root
 # — /decompile/ reaches them with '../', and the Node tests serve dist/ the same
 # way a browser does.
@@ -53,11 +54,7 @@ cp "$HERE/index.html" "$HERE/compare-samples.js" "$HERE/kuna-web.js" \
    "$HERE/CNAME" "$DIST/"
 cp -r "$HERE/assets" "$DIST/assets"
 cp -r "$HERE/decompile" "$DIST/decompile"
-# The study view at /decompile2/, with the example its "Try the example" button
-# loads: the committed x86-64 fixture and the C it was compiled from.
 cp -r "$HERE/decompile2" "$DIST/decompile2"
-mkdir -p "$DIST/decompile2/examples"
-cp "$HERE/test/fixtures/sample.elf" "$HERE/test/fixtures/sample.c" "$DIST/decompile2/examples/"
 cp -r "$HERE/vendor" "$DIST/vendor"
 mkdir -p "$DIST/dev-viz"
 cp "$HERE/dev-viz/index.html" "$HERE/dev-viz/app.js" \

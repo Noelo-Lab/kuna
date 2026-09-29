@@ -19,7 +19,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { findChrome, launchChrome, openPage, openTab } from './cdp-client.mjs';
 import { requireDist, serveStatic } from './worker-harness.mjs';
-import { decodeCode } from '../decompile2/collab/wire.js';
+import { decodeCode } from '../decompile/collab/wire.js';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
@@ -187,7 +187,7 @@ const inside = (pt, r, slack = 2) => !!pt && !!r && pt.x >= r[0] - slack && pt.x
 try {
   // ── Ana opens the example and makes an invite link ─────────────────────────
   const ana = await tab('Ana');
-  await ana.navigate(`${server.base}/decompile2/`);
+  await ana.navigate(`${server.base}/decompile/`);
   await ready(ana);
   await ana.evaluate(`localStorage.clear(); true`);
   await ana.click('#examplebtn');
@@ -416,7 +416,7 @@ try {
 
   // ── malformed messages from a same-origin tab are dropped ──────────────────
   const spy = await tab('spy');
-  await spy.navigate(`${server.base}/decompile2/`);
+  await spy.navigate(`${server.base}/decompile/`);
   const seen = spy.call((id) => new Promise((resolve) => {
     const ch = new BroadcastChannel(`kuna.d2.link.${id}`);
     ch.onmessage = ({ data }) => { if (data?.k === 'm' && data.from && data.to) resolve({ from: data.from, to: data.to }); };

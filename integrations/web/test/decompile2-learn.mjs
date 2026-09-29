@@ -4,11 +4,11 @@
 // operands, references and the help text.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { explain, idioms, TABLES } from '../decompile2/mnemonics.js';
-import { frameModel, operandSlot, callouts, renderFrame, slotIndex, prologue, belowText } from '../decompile2/stack-frame.js';
-import { renderXrefs, renderLocalCalls, localCallees, joinWords } from '../decompile2/xrefs-view.js';
-import { helpHtml, HELP_KEYS, HELP_GLOSSARY } from '../decompile2/help.js';
-import { normalizeInspect } from '../decompile2/render-c.js';
+import { explain, idioms, TABLES } from '../decompile/mnemonics.js';
+import { frameModel, operandSlot, callouts, renderFrame, slotIndex, prologue, belowText } from '../decompile/stack-frame.js';
+import { renderXrefs, renderLocalCalls, localCallees, joinWords } from '../decompile/xrefs-view.js';
+import { helpHtml, HELP_KEYS, HELP_GLOSSARY } from '../decompile/help.js';
+import { normalizeInspect } from '../decompile/render-c.js';
 
 const fx = (name) => normalizeInspect(JSON.parse(readFileSync(new URL(`./fixtures/inspect-${name}.json`, import.meta.url), 'utf8')));
 const main = fx('main');

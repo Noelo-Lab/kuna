@@ -273,7 +273,7 @@ try {
 
   await page.navigate(`${server.base}/decompile/`);
   await page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what: '/decompile ready', timeout: 60000 });
-  await page.evaluate(LOAD_EXAMPLE.replace('./examples/sample.elf', '../decompile2/examples/sample.elf'));
+  await page.evaluate(LOAD_EXAMPLE.replace('./examples/sample.elf', '../decompile/examples/sample.elf'));
   const clickMain = `(() => { const row = [...document.querySelectorAll('#fnlist .fn')].find((r) => r.querySelector('.nm').textContent === 'main'); row?.click(); return !!row; })()`;
   await page.waitFor(clickMain, { what: '/decompile lists main', timeout: 60000 });
   await page.waitFor(`/sum_to\\(add\\(/.test(document.getElementById('code').textContent)`, { what: '/decompile renders main', timeout: 60000 });

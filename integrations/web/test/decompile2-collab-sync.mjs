@@ -17,7 +17,7 @@
 //   node integrations/web/test/decompile2-collab-sync.mjs
 import assert from 'node:assert/strict';
 import { Sim, FN, PROGRAM } from './collab-sim.mjs';
-import { birthOrder, recordKeyOf } from '../decompile2/collab/replica.js';
+import { birthOrder, recordKeyOf } from '../decompile/collab/replica.js';
 
 const results = [];
 async function test(name, fn) {
