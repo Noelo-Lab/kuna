@@ -18,7 +18,7 @@
 import { Session } from '../decompile2/session.js';
 import { Sync } from '../decompile2/collab/sync.js';
 import { Group } from '../decompile2/collab/group.js';
-import { Replica, adoptRawKeys, applyRegisters, birthOrder, changedBetween, registersOf } from '../decompile2/collab/replica.js';
+import { Replica, validOp, adoptRawKeys, applyRegisters, birthOrder, changedBetween, registersOf } from '../decompile2/collab/replica.js';
 import { sha256Js } from '../sha256.js';
 
 export const BUILD = 'b'.repeat(64);
@@ -306,6 +306,7 @@ export class Page {
     this.joinFailures = [];
     this.replacedCopies = [];
     this.merges = [];
+    this.toasts = [];
     if (own) {
       own(this.session);
       adoptRawKeys(this.session, id);
@@ -326,7 +327,7 @@ export class Page {
       mode: () => this.mode,
       target: () => FN,
       nameOf: (a) => a,
-      toast: () => {},
+      toast: (text) => this.toasts.push(text),
       remoteChanged: ({ mode }) => {
         this.checkOutcomes();
         if (mode) this.mode = mode;
@@ -577,7 +578,7 @@ export class Sim {
       for (const p of rest) {
         if (p.sync.group.sid !== first.sync.group.sid) out.push(`${p.id} and ${first.id} are linked but in different sessions`);
         else if (regs(p) !== regs(first)) out.push(`${p.id} and ${first.id} hold different registers`);
-        else if (JSON.stringify(p.directives()) !== JSON.stringify(first.directives())) out.push(`${p.id} and ${first.id} send different directives`);
+        else if (JSON.stringify(shareable(p.directives())) !== JSON.stringify(shareable(first.directives()))) out.push(`${p.id} and ${first.id} send different directives`);
       }
     }
     for (const p of this.pages.values()) {
@@ -586,15 +587,25 @@ export class Sim {
       const fresh = new Session();
       applyRegisters(fresh, r, [...r.regs.keys()]);
       fresh.orderOf = birthOrder(r);
-      const mine = JSON.stringify([...registersOf(p.session)].sort());
+      const own = [...registersOf(p.session)].filter(([k, v]) => !pageOnly(k, v));
+      const mine = JSON.stringify(own.sort());
       const theirs = JSON.stringify([...registersOf(fresh)].sort());
       if (mine !== theirs) out.push(`${p.id}'s Session is not its registers: ${mine} vs ${theirs}`);
-      else if (JSON.stringify(p.directives()) !== JSON.stringify(fresh.allAssertions((a) => a))) out.push(`${p.id}'s directives are not in the registers' order`);
+      else if (JSON.stringify(shareable(p.directives())) !== JSON.stringify(fresh.allAssertions((a) => a))) out.push(`${p.id}'s directives are not in the registers' order`);
+      const kept = [...registersOf(p.session)].filter(([k, v]) => pageOnly(k, v));
+      if (kept.length && !p.toasts.includes('One of your changes stays on this page only.')) {
+        out.push(`${p.id} keeps ${kept[0][0]} on its page only and was never told`);
+      }
       if (p.mode !== (r.value('setting:mode') || p.mode)) out.push(`${p.id} runs ${p.mode}, the session ${r.value('setting:mode')}`);
     }
     return out;
   }
 }
+
+/** A value the others' pages refuse (a directive that reads a file): it stays on its page. */
+const pageOnly = (key, value) => !validOp({ k: key, v: value, c: [2, 'a'] });
+/** The directives every page of a session sends (those that stay on one page left out). */
+const shareable = (list) => list.filter((d) => !d.split(/\s+/).some((t) => t.startsWith('@')));
 
 /** A joiner's earlier field (the oldest clock, `[1, page]`) is written only where the registers hold nothing. */
 const apply = Replica.prototype.apply;

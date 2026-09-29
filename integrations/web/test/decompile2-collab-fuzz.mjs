@@ -10,13 +10,15 @@
 // program is being opened. Once everything has settled it checks that:
 //   - pages linked to each other hold the same registers and send the engine
 //     the same directives in the same order;
-//   - every page's Session is exactly what its registers make, and no join is
-//     left hanging;
+//   - every page's Session is exactly what its registers make (besides the
+//     changes that stay on it), and no join is left hanging;
 //   - no page ever sent a write for a field its student did not change in
 //     that action (or, when joining, ever), except a joiner's earlier fields
 //     written with the oldest clock, which cannot replace anyone's write, and
 //     those only where the registers held nothing; a joiner brings no
 //     variable change made at another decompiler effort than the session's;
+//   - a change the others' pages refuse stays on its page, and its student is
+//     told (also for a joiner's earlier changes);
 //   - adding a directive always adds one (never replaces another of the
 //     page's own); applying the others' changes never clears what the engine
 //     said of a record they did not change; a page out of any session never
@@ -42,8 +44,10 @@ const NAMES = ['a', 'b', 'count', 'total', 'idx'];
 const TYPES = ['int', 'long', 'char *', 'unsigned int'];
 const RAWS = ['readonly 0x2000+8', 'volatile 0x3000+4', 'readonly 0x2100+4'];
 const MODES = ['auto', 'fast', 'reliable', 'aggressive'];
+/** A directive that reads a file: the others' pages refuse it, so it stays on the page that made it. */
+const PAGE_ONLY = 'readonly @regions.txt';
 
-/** One random edit of any kind (always a valid value); 'addRaw' when it added a directive. */
+/** One random edit of any kind (now and then one the others' pages refuse); 'addRaw' when it added a directive. */
 function mutate(rng, s) {
   const fn = rng.pick(FNS);
   switch (rng.int(9)) {
@@ -67,7 +71,7 @@ function mutate(rng, s) {
       const raws = [...s.records].filter(([, r]) => r.kind === 'raw').map(([k]) => k);
       if (raws.length && rng.chance(0.4)) s.remove(rng.pick(raws));
       else {
-        s.addRaw(rng.pick(RAWS));
+        s.addRaw(rng.chance(0.1) ? PAGE_ONLY : rng.pick(RAWS));
         return 'addRaw';
       }
       break;

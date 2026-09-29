@@ -880,7 +880,9 @@ accept). The value rules are the page's own dialogs' rules, from one function in
 separator would start a second directive in an exported `.kuna` file), no `#` that
 starts a comment, and never a form that makes the engine read a file (`@FILE`, `bytes
 ADDR @FILE`, an `@` in a type). A page's own change that others would refuse stays on
-that page, and it says so; each later value is checked again. A session holds at most
+that page, and it says so; each later value is checked again. The same holds for what a
+newcomer brings when it joins, and a change refused because the session was full is
+tried again at the page's next change. A session holds at most
 100,000 live registers (deletions do not count): a page neither sends nor accepts more.
 When the rate limit drops edits, the page asks their sender for its registers (at most
 every 5 seconds), so nothing dropped stays missing. Messages are measured in UTF-8

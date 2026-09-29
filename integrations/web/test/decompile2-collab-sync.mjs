@@ -9,7 +9,8 @@
 // same browser keeping a guest's own changes apart, the shared order; then a
 // third review's: two joiners bringing the same field, a slow open of the
 // received program, a join that fails while the program opens; and a fourth
-// review's: a guest's variable changes made at another decompiler effort. Each
+// review's: a guest's variable changes made at another decompiler effort, a
+// guest's earlier change the others' pages refuse. Each
 // case also checks that no page sent a change its student did not make, and
 // that the pages agree once settled. Needs no build.
 //   node integrations/web/test/decompile2-collab-sync.mjs
@@ -364,6 +365,27 @@ await test('fourth review #3 at the same effort a guest\'s variable changes join
   await sim.run(3000);
   for (const p of [ana, ben]) assert.ok(shows(p, 'bens_v1'), `${p.name} has Ben's rename`);
   assert.deepEqual(ben.merges, [], 'nothing to tell Ben');
+  await sim.run(60000);
+  settled(sim);
+});
+
+await test('fourth review #6 a guest\'s earlier change the others\' pages refuse stays on its page, it is told, and it is tried again', async () => {
+  const sim = new Sim(33);
+  const ana = sim.page(ANA, {});
+  const ben = sim.page(BEN, { own: (s) => { s.addRaw('readonly @regions.txt'); s.setFunctionName(FN, 'bens_fn'); } });
+  ana.start();
+  await sim.run(50);
+  ben.joinVia(ana);
+  await sim.run(3000);
+  assert.equal(ben.sync.phase, 'shared');
+  assert.ok(shows(ana, 'function 0x1100=bens_fn'), 'Ben\'s other change joined the session');
+  assert.ok(shows(ben, 'readonly @regions.txt') && !shows(ana, '@regions.txt'), 'the one that reads a file stays on Ben\'s page');
+  assert.ok(ben.toasts.includes('One of your changes stays on this page only.'), 'and Ben is told');
+  const key = [...ben.session.records].find(([, r]) => r.kind === 'raw')[0];
+  assert.ok(!ben.sync.base.has(key), 'it is not taken as shared, so the next change tries it again');
+  ben.edit((s) => s.replaceWith(key, 'readonly 0x2000+8'));
+  await sim.run(2000);
+  assert.ok(shows(ana, 'readonly 0x2000+8'), 'made valid, it is shared');
   await sim.run(60000);
   settled(sim);
 });

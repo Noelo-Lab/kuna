@@ -326,7 +326,7 @@ export class Sync {
     const replaced = mine.filter(([key, value]) => this.replica.regs.has(key) && this.replica.value(key) !== value).length;
     const ops = [];
     const unheld = new Map(mine.filter(([key]) => !this.replica.regs.has(key)));
-    const { changes } = localChanges(unheld, this.replica, { maxLive: MAX_REGISTERS });
+    const { changes, refused: earlier } = localChanges(unheld, this.replica, { maxLive: MAX_REGISTERS });
     for (const { key, value } of changes) {
       const op = { k: key, v: value, c: oldestClock(this.me), b: oldestClock(this.me) };
       if (this.replica.apply(op)) ops.push(op);
@@ -344,8 +344,9 @@ export class Sync {
       this.applying = false;
     }
     this.base = registersOf(session);
-    for (const r of refused) setBase(this.base, r.key, this.replica.value(r.key));
+    for (const r of [...earlier, ...refused]) setBase(this.base, r.key, this.replica.value(r.key));
     if (ops.length) this.group.local(ops);
+    this.#tellRefused([...earlier, ...refused]);
     this.#joined();
     if (copy) this.ui.mergeReplaced?.({ count: replaced, apart: apart.size, mode: this.replica.value('setting:mode'), copy });
     this.app.remoteChanged({ inspect: true, mode, label: '' });
@@ -418,6 +419,7 @@ export class Sync {
     this.base = registersOf(s);
     for (const r of refused) setBase(this.base, r.key, this.replica.value(r.key));
     if (written.length) this.group.local(written.map((w) => w.op));
+    this.#tellRefused(refused);
     const moved = JSON.stringify(s.toJSON()) !== before;
     this.#joined();
     if (copy) this.ui.mergeReplaced?.({ count: 0, apart: late.size, mode: this.replica.value('setting:mode'), copy });
@@ -456,6 +458,16 @@ export class Sync {
   /** Write `want` (`key → value`) to the registers: `{written: [{key, prev, op}], refused}`. */
   #writeAll(want) {
     const { changes, refused } = localChanges(want, this.replica, { maxLive: MAX_REGISTERS });
+    const written = changes.map(({ key, value }) => {
+      const prev = this.replica.value(key);
+      return { key, prev, op: this.replica.set(key, value) };
+    });
+    if (written.length) this.#dirty();
+    return { written, refused };
+  }
+
+  /** Say (once per value) that changes the registers refused stay on this page. */
+  #tellRefused(refused) {
     const fresh = refused.filter((r) => !this.refusedShown.has(`${r.key}\n${r.value}`));
     if (fresh.length) {
       for (const r of fresh) this.refusedShown.add(`${r.key}\n${r.value}`);
@@ -465,12 +477,6 @@ export class Sync {
           : 'It reads a file or holds text the others\' pages do not accept, so it is not shared.',
       });
     }
-    const written = changes.map(({ key, value }) => {
-      const prev = this.replica.value(key);
-      return { key, prev, op: this.replica.set(key, value) };
-    });
-    if (written.length) this.#dirty();
-    return { written, refused };
   }
 
   /** The page's Session changed (an edit, an undo, a byte burst): send what the student changed. */
@@ -482,6 +488,7 @@ export class Sync {
     const want = changedBetween(this.base, now);
     if (!want.size) return;
     const { written, refused } = this.#writeAll(want);
+    this.#tellRefused(refused);
     const held = new Set(refused.map((r) => r.key));
     for (const [key, value] of want) if (!held.has(key)) setBase(this.base, key, value);
     if (!written.length) return;
