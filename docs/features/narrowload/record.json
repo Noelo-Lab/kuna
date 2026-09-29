@@ -223,7 +223,7 @@
   "note": "the fix only removes work (no SUBPIECE is created; the AND form fires on fewer loads); the type-lock walk runs only for a load that already passed every other AND-form check (at most 8 hops)"
  },
  "gates": {
-  "base": "origin/main 63dfb436c",
+  "base": "origin/main 4ef437ec3 (rebased; #746 changes only a web doc and a browser-test script, so the engine is byte-identical to the 63dfb436c-based head these measurements were taken on)",
   "make test": "675/675 PARITY OK",
   "make test-stages": "1478/1478 PARITY OK",
   "make check-spec": "OK (lenient mode)",
@@ -233,7 +233,7 @@
   "counters --check": "no drift",
   "docs/options.md": "byte-fresh",
   "phases.toml": "parses with tomllib",
-  "make rust-test": "RUST_TEST_RC=0 via rust-test-lane.sh, 441 test results ok (run started 05:02:17Z, after the last source and fixture change)",
+  "make rust-test": "RUST_TEST_RC=0 via rust-test-lane.sh on the rebased head, 441 test results ok, both narrowload round-trip tests ok (run started 16:41:21Z)",
   "castbench": "all 45 exports byte-identical to the previous head"
  },
  "files": [
@@ -255,5 +255,6 @@
   "decompiler/crates/kuna-analysis/tests/fixtures/narrowload_dwarf_x86_64.c",
   "docs/features/narrowload/hunks-dwarf.txt"
  ],
- "notes": "The castbench shared set moves by one cast: the truncation form and its narrow spelling carry one cast each; the fts flag tests that gain a byte cast (`((unsigned char *)&a0->field_0x48)[1] & 0x20`) are outside the IDA-shared set. A debug build (make rust-test) panics splitting a 16-byte constant in p3_dataflow/subflow.rs (a shift of 64 or more; pre-existing, release wraps the shift); the DWARF fixture avoids 16-byte zero stores so every function exports in both builds."
+ "notes": "The castbench shared set moves by one cast: the truncation form and its narrow spelling carry one cast each; the fts flag tests that gain a byte cast (`((unsigned char *)&a0->field_0x48)[1] & 0x20`) are outside the IDA-shared set. A debug build (make rust-test) panics splitting a 16-byte constant in p3_dataflow/subflow.rs (a shift of 64 or more; pre-existing, release wraps the shift); the DWARF fixture avoids 16-byte zero stores so every function exports in both builds.",
+ "review_r1_fixture": "The reviewer's own -g fixture (a declared record from a call's result and a loop's phi, masked byte compare, object ending mid-field at a page end), gcc/clang -O0 and gcc -O2, printed C compiled with gcc and clang: this fix 6/6 OK with elemptr on and off; main 632437155 6/6 OK on, 6/6 SIGSEGV off. On the 18 DWARF builds every AND-form site this fix takes is one main takes (182 unique sites in 81 functions in both arms; 0 new)."
 }
