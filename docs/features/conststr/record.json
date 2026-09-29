@@ -154,5 +154,35 @@
     "unit": "kuna_conststr/tests.rs: tail rule, byte literal, hex-escape split, byte-exact multibyte, pointer word",
     "value": "a literal holds exactly the image's bytes through the NUL; no cast is removed"
   },
-  "default_on_evaluation": "default on: see parity, benchmark, speed, castbench and corpus_sweep"
+  "default_on_evaluation": "default on: (a) make test 675/675, no assertion moved; (b) stages 1475/1475, 8 new conststr keys, no other key moved (kuna-globalref.xml pins conststr off in both passes); (c) test-cli 269/269, no probe moved; (d) 444-slice typesweep 1,674 = 1,674 perfect, 0 improved, 0 worse, 10,748 byte-identical variables; (e) speed worst +1.08% (ls O2); (f) 45 castbench binaries + 11 others: every changed line an address becoming a literal; (g) modes.rs names no cast or constant-address option, no change; (h) castbench 32,073 = 32,073, 0 fewer / 0 more",
+  "speed": {
+    "method": "interleaved min-of-15 kuna decompile-all --json, conststr off vs the default (on), same binary (docs/features/conststr/speed.py)",
+    "per_binary": {
+      "fmt": {
+        "off_min_ms": 4334.6,
+        "on_min_ms": 4360.5,
+        "delta_min_pct": 0.6,
+        "delta_median_pct": 4.94
+      },
+      "ls": {
+        "off_min_ms": 14386.2,
+        "on_min_ms": 14541.1,
+        "delta_min_pct": 1.08,
+        "delta_median_pct": -4.5
+      },
+      "sort": {
+        "off_min_ms": 15677.0,
+        "on_min_ms": 15798.7,
+        "delta_min_pct": 0.78,
+        "delta_median_pct": -1.81
+      },
+      "bash": {
+        "off_min_ms": 93415.6,
+        "on_min_ms": 94219.8,
+        "delta_min_pct": 0.86,
+        "delta_median_pct": -1.05
+      }
+    },
+    "worst_min_delta_pct": 1.08
+  }
 }
