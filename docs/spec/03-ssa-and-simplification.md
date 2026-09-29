@@ -635,32 +635,44 @@ that quotient. `RuleDivOpt` substitutes `(x / 3) * 2` only when the same
 and `RuleModOpt` rules can then recover `x % 3`. Other masks, reciprocals, widths, wide divisions, and
 multiply-without-a-matching-quotient forms are declined.
 
-The cleanup pool's `RuleExpandLoad` widens a LOAD to the whole element its
-pointer is typed to and takes the loaded bytes back out, either as the
-least-significant truncation or through an AND-and-compare. The truncation form
-needs the loaded value's signedness, because the SUBPIECE it leaves prints as a
-cast to the value's own type. kuna declines it for a value whose type is still
-undefined, where upstream accepts one: `TypeOpSubpiece::getOutputToken` treats
-an undefined output as `int` of its width, which invents a sign. The case that
-shows it is a zero-extended argument: `movzwl 0x68(%rdi),%edi` before a call
-whose parameter is 32 bits wide, read through a pointer the function's other
-uses type `unsigned int *`. Widened, it printed `sink((short)a0[0x1a])`, which C
-sign-extends, so 0x9abc reached `sink` as 4294941372. Declined, the load keeps
-its own width and kuna's unsigned spelling of an undefined value:
-`sink(*(unsigned short *)&a0[0x1a])`. A value whose type is known signed or
-unsigned still takes the truncation form through a declared pointer. That form
-is value-correct but reads the whole element, bytes the program never reads, so
-with `elemptr` on (the default) a pointer whose pointee was inferred from use --
-no type-locked Varnode at the base of its chain of offsets and copies -- keeps
-the load its own width
-(`decompiler/crates/kuna-decomp/src/p5_types/kuna_elemptr.rs (keeps_load_narrow)`).
-`elemptr` supplies such pointees and a prototype carries them to callers: a
-2-byte field at `+4` of a 6-byte object, read through a parameter its callee
-declares `unsigned int *`, printed `(unsigned short)a0[1]`, a 4-byte read that
-faults when the object ends a page, and now prints `*(unsigned short *)&a0[1]`.
-A type-locked pointer keeps upstream's form; the datatest corpus does not move.
-`kuna-tiedphitrim.xml` #13/#14 and `structsynth-locals.xml` #2 pin the narrow
-spelling of a 4-byte field read through an inferred `int8 *`.
+The cleanup pool's `RuleExpandLoad` is upstream's rewrite of a LOAD narrower
+than its pointer's pointee into a LOAD of the whole pointee, with the loaded
+bytes taken back out either as the least-significant truncation or inside the
+`(V & C) == D` compares that are the load's only uses. Both forms read bytes the
+program never reads, and a program may pass an object that ends at the last
+byte it reads. A record parameter whose 4-byte field at `+8` is read whole on
+one path and by its low two bytes (`movzwl 8(%rdi)`) on another printed the
+second read as `(unsigned short)a0->field_0x8`, and a byte test of `+9` as
+`(a0->field_0x8 & 0x2000) != 0`; compiled, each reads four bytes and faults
+when the caller's object ends at `+10` at the end of a page. The same held for a
+2-byte read at `+4` through a pointer a callee reads as `unsigned int *`
+(`(unsigned short)a0[1]`), for the low half of the `long` one past a walk
+(`(int)a0[a1]`), and for a masked byte of an 8-byte element (`(q[1] & 0x30) !=
+0x10`).
+
+kuna never takes the truncation form: the read prints at its own width and
+offset, `*(unsigned short *)&a0->field_0x8`, with the one cast the truncation
+had. The AND form is taken only when the widened pointer is a field of a record
+or union that a declaration laid out -- DWARF, a parsed header, a libc layout --
+and not one `structsynth` minted
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_narrowload.rs (widens_into_declared_field)`).
+There the declaration attests the whole field, and the compare can name the
+field's own enum constants, `(p->flagfield & (HIGH_2|HIGH_1)) != 0`, which a
+byte of the field cannot; that is what `enum.xml` #4 pins. A bare pointer's
+target is attested only at the bytes the program reads, even when the pointer
+is declared, and a synthesized record attests only the accesses it was built
+from, so both keep the narrow read,
+`((unsigned char *)&a0->field_0x8)[1] & 0x20`. A STORE was never widened:
+`TypeOpStore::getInputCast` casts the pointer of a store narrower than its
+pointee. Over the 45 castbench binaries the rule fired at 82 loads in 30
+functions (852 in 276 with `elemptr` off, which had kept an inferred pointee's
+loads narrow); it now fires at none, and the datatest corpus does not move.
+`kuna-narrowload.xml` pins the narrow spellings and the declared record's
+whole-field compare, and `decompile_all_cli.rs`'s
+`a_narrow_read_round_trips_through_the_printed_c` runs the printed functions on
+objects that end at a page boundary. `kuna-tiedphitrim.xml` #13/#14 and
+`structsynth-locals.xml` #2 pin the narrow spelling of a 4-byte field read
+through an inferred `int8 *`.
 
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
 default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
