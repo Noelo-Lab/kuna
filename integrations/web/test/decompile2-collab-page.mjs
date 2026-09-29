@@ -774,7 +774,7 @@ try {
     await nameAndGo(ben, 'Ben');
     await ben.evaluate('window.__kunaDelay = 4000; true');
     await carryReply(ana, ben);
-    await ben.waitFor(`/Opening/.test(document.getElementById('d2collab')?.textContent || '')`, { what: 'Ben opens the program', timeout: 20000 });
+    await ben.waitFor(`/Finding the functions in sample.elf/.test(document.getElementById('status').textContent)`, { what: 'Ben opens the program', timeout: 20000 });
     await ana.closeTab();
     tabs = tabs.filter((t) => t !== ana);
     await ben.waitFor(`/closed the connection|stopped answering/.test((document.getElementById('d2collab')?.textContent || '') + [...document.querySelectorAll('.d2-toast')].map((t) => t.textContent).join(' '))`, { what: 'Ben is told', timeout: 30000 });
