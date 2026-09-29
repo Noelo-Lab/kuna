@@ -45,12 +45,21 @@ const guard = setTimeout(() => {
 const done = [];
 const pages = [];
 
+/** Every toast a page shows, kept in `window.__toastLog`, so a failure can say what was said. */
+const TOAST_LOG = `(() => {
+  window.__toastLog = [];
+  new MutationObserver((list) => {
+    for (const m of list) for (const n of m.addedNodes) if (n.classList?.contains('d2-toast')) window.__toastLog.push(n.textContent);
+  }).observe(document, { childList: true, subtree: true });
+})();`;
+
 /** A tab in the first browser, or (`other`) the first page of a second browser: another person's computer. */
 async function tab(name, width = 1280, { other = false } = {}) {
   if (other) chrome2 ||= await launchChrome(chromePath, { flags });
   const page = other ? await openPage(chrome2.port) : pages.length ? await openTab(chrome.port) : await openPage(chrome.port);
   page.label = name;
   await page.viewport(width, 860);
+  await page.send('Page.addScriptToEvaluateOnNewDocument', { source: TOAST_LOG });
   pages.push(page);
   return page;
 }
@@ -408,6 +417,8 @@ try {
   for (const p of pages) {
     await shot(p, `fail-${p.label.replace(/\W+/g, '-')}`).catch(() => {});
     console.error(`${p.label}: status "${await text(p, '#status').catch(() => '?')}", toasts ${JSON.stringify(await toasts(p).catch(() => []))}`);
+    console.error(`  every toast: ${JSON.stringify(await p.evaluate('window.__toastLog || []').catch(() => '?'))}`);
+    console.error(`  dialog: ${JSON.stringify(await p.evaluate(`document.getElementById('d2collab')?.open ? document.getElementById('d2collab').textContent.slice(0, 300) : null`).catch(() => '?'))}`);
   }
   console.error(`DECOMPILE2 COLLAB BROWSER FAIL after: ${done.join('; ')}`);
   throw e;
