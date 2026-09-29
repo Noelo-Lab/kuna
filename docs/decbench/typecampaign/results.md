@@ -21,7 +21,7 @@ end, and the raw rows are in `final-l/`.
 | goal 2: declarations, fmt/ls/sort/du O0+O2 | 7,085; 151 `[16]` blobs; 11 phantom `// rdx` | **6,956; 65; 7** | −1.8%, −57%; `fmt::main` calls `sub_3700` with 2/2/2 arguments (was 1/2/3) and declares no phantom |
 | goal 3: TRex mean, pooled O0 / O2 | 3.638 / 1.579 | **4.508 / 1.967** | +24% / +25%; GT struct parameters typed as a struct 0 → 173 of 538 (O0), 0 → 95 of 297 (O2) |
 | goal 3: layout, fields only (P / R / F1) | none (no records) | **.8713 / .0932 / .1684** | nesting F1 0 → .0036 |
-| speed, whole-binary `decompile-all` -O2 | — | SUMMARY_SPEED | SUMMARY_SPEED_READING |
+| speed, whole-binary `decompile-all`, min-of-15 against the baseline | — | -O2 fmt / ls / sort / bash **+1.3% / +2.6% / +4.2% / +8.9%**; -O2-noinline kmod / dpkg-divert / crontab **+14.8% / +16.3% / +10.6%** | since round G −2.9% to +4.2% on all seven, but over the +5% budget against the baseline on four: `protoorder` 11–12%, `calleevote` + `passthrough` 5.5%, the cast options 2.5% (bash 4–7%) |
 
 **What each goal achieved.** *Primitives:* `bool` doubled (boolbyte, bytehonest) and kuna is 1st or 2nd
 on every integer and `char` class; the signedness work is real in the C and in TRex but worth zero on a
@@ -66,7 +66,12 @@ variable count and call arity score zero by construction, so every arity change 
    The one measured lever, `structheadless closed`, lifts recall to .1131 and removes 1,420 casts, and
    stays off for its precision (.8298).
 5. **`ptr_ptr`**, the one pointer class a rival still leads by rate: IDA 38.3%, kuna 36.8% (674 TP).
-LEVER6_SPEED
+6. **Speed against the baseline** (L.6). Each round was timed against the one before and came within
+   about +5% of it, but the final build is over the budget against the campaign baseline on bash (+8.9%) and on kmod, dpkg-divert and
+   crontab -O2-noinline (+14.8%, +16.3%, +10.6%). With every campaign option off it runs at the
+   baseline's speed; ablation names `protoorder` (11–12% on its own; its call graph costs 3 ms, so the
+   time is inside the decompiles), `calleevote` with `passthrough` (5.5%) and the cast options (2.5%,
+   bash 4–7%, no single option separable). A profile of `protoorder` on kmod is the first step.
 
 ## Stage 3 — the first re-measure (2026-09-19)
 
@@ -2162,7 +2167,7 @@ Metric pin unchanged (decisions §12); `scripts/decbench/` is byte-identical bet
 | goal 2: variables | varcensus, fmt/ls/sort/du O0+O2 | 6,970 declarations, 65 `[16]` blobs, 7 phantom `// rdx` | **6,956**, 65, 7 | `fmt::main` differs by one `&dat_baa0` |
 | goal 3: structs | TRex pooled O0 / O2; layout P / R; nesting F1 | 4.4770 / 1.9597; .8713 / .0932; .0036 | **4.5081 / 1.9665**; identical; identical | TRex rises on all eight builds |
 | decbench#93 crediting | replay of the same rows | 2,188 (+573), mean .4543 | **2,262** (+588), mean **.4599** | |
-| speed | whole-binary `decompile-all`, interleaved min | — | SPEED_HEADLINE | SPEED_HEADLINE_READING |
+| speed | whole-binary `decompile-all`, interleaved min-of-15 | — | since round G **−2.9% to +4.2%** on seven binaries; bash +2.9% to +6.1% against round I over four passes | the cast rounds fit the budget; against the campaign baseline bash +8.9% and the three -O2-noinline binaries +10.6% to +16.3%, mostly `protoorder` (L.6) |
 
 ### L.1 Casts
 
@@ -2440,10 +2445,10 @@ Under #93 the final build would be **2,262 of 10,748 (21.0%)**.
 `kuna decompile-all <bin> --json --max-fn-seconds 120` (decbench's own invocation). Every arm is a
 pinned build, or the final build with options switched off; arms run one after another with the order
 rotating every round, min-of-15 unless stated. Driver `final-l/speed10.py`; raw samples, per-round load
-averages and child CPU times in `final-l/speed1*.json` and `final-l/ablate*.json`. Round M's lanes
-shared the box all night (1-minute load 9–90 on 80 hardware threads), so each round waited for the
+averages and child CPU times in `final-l/speed*.json` and `final-l/ablate*.json`. Round M's lanes
+shared the box throughout (1-minute load 1–91 on 80 hardware threads), so each round waited for the
 load to fall under a threshold and recorded it; every figure over +5% was measured again, and the
-tables give the quieter pass. Every build emits the same functions, none with an error, on every
+text gives each re-run. Every build emits the same functions, none with an error, on every
 binary below (`final-l/fncount10.json`): a delta is cost per function, not more functions.
 
 -O2, the canonical set:
@@ -2453,7 +2458,7 @@ binary below (`final-l/fncount10.json`): a delta is cost per function, not more 
 | coreutils fmt (load 9–11) | 151 | 4,069.7 ms | 4,150.9 ms | 4,115.8 ms | **4,123.0 ms** | −0.67% | +0.17% | +1.31% |
 | coreutils ls (9–23) | 404 | 14,056.0 ms | 14,849.8 ms | 14,425.1 ms | **14,422.2 ms** | −2.88% | −0.02% | +2.61% |
 | coreutils sort (11–32) | 343 | 15,012.0 ms | 15,560.2 ms | 15,686.3 ms | **15,645.4 ms** | +0.55% | −0.26% | +4.22% |
-BASH_ROW
+| bash (1–42) | 2,538 | 89,604.6 ms | 93,600.3 ms | 91,934.4 ms | **97,571.8 ms** | +4.24% | +6.13% | **+8.89%** |
 
 -O2-noinline, the three binaries where `calleevote` broke the budget in round G:
 
@@ -2470,10 +2475,14 @@ the re-run.
 **Since round G** — the options this budget is about: castimplied, castarith, castsign, globalref,
 castindex, castternary, callpush, callbacktype, callrettype, castobject, castwiden, elemptr, and
 #719's redo budget — the final build is within **−2.9% to +3.1%** of round G on six of the seven
-binaries. BASH_SINCE_G
+binaries. bash, the seventh, reads **+4.24%** (+7.26% in a pass at load 15–91,
+`final-l/speed11-bash.json`), under the line, and it is the one binary where rounds J–L cost something
+against round I: +5.36% on a quiet box (load 1–7, min-of-11, `final-l/speed9.json`), +6.13% in the
+table's run, +4.89% and +2.86% in the two runs below, and +10.08% in the saturated one. Round I was
+1.8% faster than round G on bash (#719's redo budget), which is why the since-G figure sits lower.
 
 **Against the campaign baseline** the canonical -O2 set stays inside the budget except bash (+1.3%,
-+2.6%, +4.2%, BASH_VS_BASE), but the -O2-noinline binaries do not: **+14.8%, +16.3% and +10.6%**. No
++2.6%, +4.2%, and **+8.9%** for bash, +8.7% on the quiet pass), but the -O2-noinline binaries do not: **+14.8%, +16.3% and +10.6%**. No
 earlier page measured them against the baseline, only against round F, which is itself +5.9% to +7.2%
 over it. Ablated on the final build (how much slower the default is than each arm; min-of-15,
 `final-l/ablate12.json`, loads 12–25 and 9–16):
@@ -2502,7 +2511,34 @@ their callers then read, `KUNA_PROTOORDER_TRACE=1`); that is where a profile sho
 options under heavier load (`final-l/ablate11.json`) agrees on the groups and on `protoorder`, and
 cannot separate the rest (±6% on a single option).
 
-BASH_ABLATION
+bash -O2 (`--mode auto` resolves to `reliable` on its 1.3 MB), ablated on the final build: min-of-9 at
+load 1–43 (`final-l/ablate-bash.json`), and a min-of-15 confirmation of the one option that read over
+the line, at load 4–81 (`final-l/speed13-bash.json`):
+
+| arm | bash |
+|---|---:|
+| final vs round I | +4.89% (confirmation +2.86%) |
+| round K vs round I (rounds J and K) | −1.28% |
+| the twelve options since round G off | +7.03% |
+| round L's five options off | +4.28% |
+| `callrettype off` | +5.39% (confirmation **−3.37%**) |
+| `elemptr off` | −1.24% |
+| `callbacktype off` | −1.13% |
+
+Rounds J and K cost bash nothing. The options since round G cost it 4–7% as a group (+7.03% with all
+twelve off, +4.28% for round L's five), and no single option separates from the noise: `callrettype`
+read +5.39% and then −3.37% in its confirmation (#729 measured −0.3% on bash). One bash sample moves by
+up to ±20% under this load, so a figure inside ±3% on one option is not a finding.
+
+**Verdict.** Since round G the budget holds, at the line on bash: the final build is −2.9% to +4.2%
+on all seven binaries, and the cast options (rounds I–L) cost the -O2-noinline binaries 2.5% and bash
+4–7%, of which #719's redo budget gives 1.8% back on bash. Against the campaign baseline it does not hold on
+four of the seven: bash **+8.9%**, and kmod, dpkg-divert and crontab **+14.8%, +16.3% and +10.6%**.
+With every campaign option off the build runs at the baseline's speed, so the cost is behind options,
+and ablation names them: `protoorder` (11–12% on the -O2-noinline pair), `calleevote` with
+`passthrough` (5.5%) and the cast options (2.5% there, about half of bash's). Every earlier page
+compared a round with the one before it, and the -O2-noinline binaries only with round F, so this
+drift was on no page before; it is lever 6 in the summary.
 
 ### L.7 Every round-J/K/L PR and what it measured
 

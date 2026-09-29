@@ -155,3 +155,11 @@
    on the final build, plus the previous round's own builds for its steps; every step here reproduced
    its PR's published cast count and typesweep figure exactly, and the five other-session commits in
    the window (#730, #732, #737, #738, #741) moved 0 casts and 0 typesweep values.
+37. 2026-09-29 the speed budget is read against the campaign baseline as well as the round before.
+   Every round's page timed the final build against the previous round (the -O2-noinline binaries only
+   against round F) and each came within about +5%, while the sum drifted: against the baseline bash is
+   +8.9% and kmod, dpkg-divert and crontab -O2-noinline are +14.8%, +16.3% and +10.6%. With every
+   campaign option off the final build runs at the baseline's speed, so the cost is behind options and
+   ablation names it (`protoorder` 11–12%, `calleevote` + `passthrough` 5.5%, the cast options 2.5%, on
+   bash 4–7%). The breach is carried as open lever 6 rather than absorbed into a re-based budget, and a
+   later page times the baseline beside the previous round on both sets.
