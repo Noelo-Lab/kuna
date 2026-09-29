@@ -1973,6 +1973,26 @@ impl ScopeLocal {
         self.db.public_make_name_unique(self.scope, nm)
     }
 
+    /// [`Self::make_local_name_unique`] that also avoids `taken`, the names already
+    /// bound to HighVariables.  Upstream every named high owns a local Symbol, so
+    /// `makeNameUnique` sees them; here a Symbol-less high's name lives only on the
+    /// high.  A collision with `taken` continues the `_NN` / `_xNNNNN` sequence at
+    /// the first spelling free in both.
+    pub fn make_local_name_unique_among(
+        &self,
+        nm: &str,
+        taken: &std::collections::BTreeSet<String>,
+    ) -> String {
+        let first = self.make_local_name_unique(nm);
+        if !taken.contains(&first) {
+            return first;
+        }
+        (0u32..)
+            .map(|i| if i < 100 { format!("{nm}_{i:02}") } else { format!("{nm}_x{i:05}") })
+            .find(|c| !taken.contains(c) && !self.local_name_used(c))
+            .expect("an unbounded suffix sequence has a free spelling")
+    }
+
     /// The identity and whole data-type of the Symbol a storage location belongs to
     /// — the smallest SymbolEntry containing its **base byte** — or `None` when no
     /// Symbol covers it (a register/unique temp that never reached the local scope).

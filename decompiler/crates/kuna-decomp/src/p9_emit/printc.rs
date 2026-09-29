@@ -2919,6 +2919,9 @@ impl PrintC {
                         })
                 });
             if has_storage_sibling {
+                if let Some(owner) = reference_owner(fd, high, &name) {
+                    self.local_name_aliases.insert(high, owner);
+                }
                 continue;
             }
             // C++ `emitLocalVarDecls` -> `emitScopeVarDecls(fd->getScopeLocal(),
@@ -2935,17 +2938,7 @@ impl PrintC {
             //     `myarray` materialized as a const base address).  A *local*-frame
             //     spacebase reference (`&a`, `&myval.b`, `&c` in passPtrToArray) is
             //     NOT flagged, so its stack-symbol decl still prints.
-            let is_global = fd
-                .high_bank()
-                .get(high)
-                .map(|h| {
-                    h.kuna_global()
-                        || (0..h.num_instances()).any(|i| {
-                            fd.vbank().get(h.get_instance(i)).map(|v| v.is_persist()).unwrap_or(false)
-                        })
-                })
-                .unwrap_or(false);
-            if is_global {
+            if high_is_global(fd, high) {
                 continue;
             }
             // STUB A — C++ `emitScopeVarDecls`: `if (entry->isPiece()) continue;`
@@ -2978,6 +2971,9 @@ impl PrintC {
                     && high_name_has_whole_sibling(fd, high, &name)
             });
             if is_proto_partial_piece {
+                if let Some(root) = owner_in_group(fd, high, &name, |_, h| h.kuna_symbol_offset() == -1) {
+                    self.local_name_aliases.insert(high, root);
+                }
                 continue;
             }
             // STUB A (scalar analogue) — C++ `emitScopeVarDecls` walks the ScopeLocal
@@ -3014,6 +3010,9 @@ impl PrintC {
                 is_strict_partial && high_name_has_scalar_whole_sibling(fd, high, &name)
             });
             if is_scalar_partial_piece {
+                if let Some(whole) = owner_in_group(fd, high, &name, is_scalar_whole) {
+                    self.local_name_aliases.insert(high, whole);
+                }
                 continue;
             }
             // C++ `emitLocalVarDecls` -> `emitScopeVarDecls(scope, no_category)`:
@@ -3094,7 +3093,9 @@ impl PrintC {
         // every scalar local of that type, so `(name, int4-Rc)` would not identify
         // a single Symbol — scalars keep the per-high behavior.
         {
-            let mut seen_sym: std::collections::HashSet<(String, usize)> = std::collections::HashSet::new();
+            let mut seen_sym: std::collections::BTreeMap<(String, usize), crate::context::HighVariableId> =
+                std::collections::BTreeMap::new();
+            let mut collapsed = Vec::new();
             decls.retain(|(high, name)| {
                 let composite_rc = fd.high_bank().get(*high).and_then(|h| {
                     let t = h.kuna_symbol_type()?;
@@ -3102,11 +3103,21 @@ impl PrintC {
                     matches!(t.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION)
                         .then(|| std::rc::Rc::as_ptr(t) as usize)
                 });
-                match composite_rc {
-                    Some(rc) => seen_sym.insert((name.clone(), rc)),
-                    None => true,
+                let Some(rc) = composite_rc else {
+                    return true;
+                };
+                match seen_sym.entry((name.clone(), rc)) {
+                    std::collections::btree_map::Entry::Occupied(first) => {
+                        collapsed.push((*high, *first.get()));
+                        false
+                    }
+                    std::collections::btree_map::Entry::Vacant(slot) => {
+                        slot.insert(*high);
+                        true
+                    }
                 }
             });
+            self.local_name_aliases.extend(collapsed);
         }
         decls.sort_by(|a, b| a.1.cmp(&b.1));
         if decls.is_empty() {
@@ -3123,10 +3134,12 @@ impl PrintC {
         } else {
             std::collections::HashMap::new()
         };
-        // Run the lossless rendered-line collapse before unique spellings make
-        // genuinely distinct declarations differ by construction.
+        // Run the rendered-line collapse before unique spellings make genuinely
+        // distinct declarations differ by construction.  It is lossless only
+        // within one object: a shared name is not evidence of shared identity.
         if arch.dedup_var_decls {
             let mut dedup = crate::kuna_dedupvardecls::DeclDedup::new();
+            let mut collapsed = Vec::new();
             decls.retain(|(high, name)| {
                 let (mut decl_type, mut decl_back, mut array_count, comment) =
                     self.rendered_local_decl(fd, arch, *high);
@@ -3141,8 +3154,17 @@ impl PrintC {
                 } else {
                     None
                 };
-                !dedup.is_duplicate((decl_type, decl_back, name.clone(), array_sig, comment_sig))
+                let identity = crate::kuna_dedupvardecls::DeclIdentity::of(fd, *high);
+                let sig = (decl_type, decl_back, name.clone(), array_sig, comment_sig);
+                match dedup.earlier(identity, sig, *high) {
+                    Some(first) => {
+                        collapsed.push((*high, first));
+                        false
+                    }
+                    None => true,
+                }
             });
+            self.local_name_aliases.extend(collapsed);
         }
         // A VariableGroup can describe AL/AH/AX-style overlap without a mapped
         // ScopeLocal Symbol. After the ordinary Symbol/identity collapses have
@@ -3166,6 +3188,7 @@ impl PrintC {
                 None => true,
             }
         });
+        self.settle_local_name_aliases();
         // If every semantic collapse declined, repeated grouped names are
         // distinct declarations. Their accesses must be relative to their own
         // piece-sized objects; retaining the group's offset/type decoration would
@@ -3323,6 +3346,41 @@ impl PrintC {
         true
     }
 
+    /// Point every declared-through high at the end of its owner chain, so a body
+    /// reference reads the spelling of the declaration that finally survived.  An
+    /// owner is a declared high or a whole the walk declares through, never a high
+    /// that points back, so a chain cannot revisit a high; if one ever did, its
+    /// highs keep their own names rather than borrowing an unrelated one.
+    fn settle_local_name_aliases(&mut self) {
+        let aliases = &self.local_name_aliases;
+        let settled: Vec<(crate::context::HighVariableId, Option<crate::context::HighVariableId>)> =
+            aliases
+                .keys()
+                .map(|&start| {
+                    let mut visited = std::collections::BTreeSet::from([start]);
+                    let mut owner = aliases[&start];
+                    while let Some(&next) = aliases.get(&owner) {
+                        if !visited.insert(owner) {
+                            return (start, None);
+                        }
+                        owner = next;
+                    }
+                    (start, Some(owner))
+                })
+                .collect();
+        for (start, owner) in settled {
+            match owner {
+                Some(owner) => {
+                    self.local_name_aliases.insert(start, owner);
+                }
+                None => {
+                    debug_assert!(false, "declaration owner chain revisits {start:?}");
+                    self.local_name_aliases.remove(&start);
+                }
+            }
+        }
+    }
+
     /// Resolve the emitted spelling of a named HighVariable in this function.
     fn emitted_high_name(
         &self,
@@ -3450,7 +3508,7 @@ impl PrintC {
     /// Symbol), and a declaration smaller than the object the body writes through is a
     /// fresh correctness bug, not a faithful one.
     fn collapse_symbol_decls(
-        &self,
+        &mut self,
         fd: &Funcdata,
         arch: &Architecture,
         decls: &mut Vec<(crate::context::HighVariableId, String)>,
@@ -3504,6 +3562,7 @@ impl PrintC {
             let keep = idxs[0];
             for &i in &idxs[1..] {
                 dropped.insert(i);
+                self.local_name_aliases.insert(decls[i].0, decls[keep].0);
             }
             let rendered: Vec<DeclTypeOverride> = idxs
                 .iter()
@@ -9835,6 +9894,76 @@ fn high_name_has_whole_sibling(
     })
 }
 
+/// A global's high: a `&symbol` reference resolved through the global scope, or
+/// one with persistent storage.  Never declared in the body, never an owner.
+fn high_is_global(fd: &Funcdata, high: crate::context::HighVariableId) -> bool {
+    fd.high_bank().get(high).is_some_and(|h| {
+        h.kuna_global()
+            || (0..h.num_instances())
+                .any(|i| fd.vbank().get(h.get_instance(i)).is_some_and(|v| v.is_persist()))
+    })
+}
+
+/// The same-named, non-global high in `except`'s VariableGroup that satisfies
+/// `whole`: the declaration a skipped piece is printed through.
+fn owner_in_group(
+    fd: &Funcdata,
+    except: crate::context::HighVariableId,
+    name: &str,
+    whole: impl Fn(&Funcdata, &crate::variable::HighVariable) -> bool,
+) -> Option<crate::context::HighVariableId> {
+    fd.high_bank()
+        .iter()
+        .find(|(id, h)| {
+            *id != except
+                && h.kuna_name() == Some(name)
+                && whole(fd, h)
+                && fd.high_bank().is_same_group(*id, except)
+                && !high_is_global(fd, *id)
+        })
+        .map(|(id, _)| id)
+}
+
+/// The non-global storage high that declares the Symbol an `&symbol` reference
+/// high points at, among the same-named siblings the declaration walk skipped it
+/// for.  A reference with no recorded local Symbol has no owner.
+fn reference_owner(
+    fd: &Funcdata,
+    high: crate::context::HighVariableId,
+    name: &str,
+) -> Option<crate::context::HighVariableId> {
+    let sym = fd.high_bank().get(high)?.kuna_ref_symbol()?;
+    fd.high_bank()
+        .iter()
+        .find(|(id, h)| {
+            *id != high
+                && h.kuna_name() == Some(name)
+                && (0..h.num_instances())
+                    .any(|i| fd.vbank().get(h.get_instance(i)).is_some_and(|v| !v.is_constant()))
+                && !high_is_global(fd, *id)
+                && (h.kuna_link_symbol() == Some(sym)
+                    || decl_rep_varnode(fd, *id)
+                        .and_then(|vn| fd.vbank().get(vn))
+                        .and_then(|v| fd.get_scope_local()?.containing_symbol_for_storage(v.get_addr()))
+                        .is_some_and(|(s, _)| s == sym))
+        })
+        .map(|(id, _)| id)
+}
+
+/// Does `h` cover a whole scalar Symbol: storage at offset 0 of exactly the
+/// mapped type's size (the C++ `getFirstWholeMap()` entry)?
+fn is_scalar_whole(fd: &Funcdata, h: &crate::variable::HighVariable) -> bool {
+    let Some(sym_size) = h.kuna_symbol_type().map(|t| t.get_size()) else {
+        return false;
+    };
+    h.kuna_symbol_offset() == 0
+        && h.num_instances() > 0
+        && fd
+            .vbank()
+            .get(h.get_instance(0))
+            .is_some_and(|v| !v.is_constant() && v.get_size() == sym_size)
+}
+
 /// Does another HighVariable share `name` and represent the WHOLE scalar Symbol —
 /// a non-constant storage rep at offset 0 whose size equals the mapped scalar symbol type's size
 /// (the C++ `getFirstWholeMap()` entry that emits the single declaration)?  Used by
@@ -9846,25 +9975,9 @@ fn high_name_has_scalar_whole_sibling(
     except: crate::context::HighVariableId,
     name: &str,
 ) -> bool {
-    fd.high_bank().iter().any(|(id, h)| {
-        if id == except || h.kuna_name() != Some(name) {
-            return false;
-        }
-        if h.kuna_symbol_offset() != 0 {
-            return false;
-        }
-        let sym_size = match h.kuna_symbol_type() {
-            Some(t) => t.get_size(),
-            None => return false,
-        };
-        if h.num_instances() == 0 {
-            return false;
-        }
-        fd.vbank()
-            .get(h.get_instance(0))
-            .map(|v| !v.is_constant() && v.get_size() == sym_size)
-            .unwrap_or(false)
-    })
+    fd.high_bank()
+        .iter()
+        .any(|(id, h)| id != except && h.kuna_name() == Some(name) && is_scalar_whole(fd, h))
 }
 
 /// Whether `spc` should use the kuna angr-style `dat_<addr>` global naming (a

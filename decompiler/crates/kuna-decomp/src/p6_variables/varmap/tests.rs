@@ -1211,3 +1211,25 @@ fn has_isolated_symbols_tracks_set_symbol_isolated() {
     assert!(!sl.database().symbol(sym).is_isolated());
     assert!(sl.has_isolated_symbols());
 }
+
+/// A recommended name already bound to a Symbol-less high is taken even though
+/// no Symbol records it, so a second high gets the next spelling of the
+/// sequence a Symbol collision would have produced (#762).
+#[test]
+fn make_local_name_unique_among_skips_names_held_off_the_symbol_table() {
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let inv = Address::new_invalid();
+    let none = std::collections::BTreeSet::new();
+    assert_eq!(sl.make_local_name_unique_among("object", &none), "object");
+
+    let taken: std::collections::BTreeSet<String> = ["object".to_string()].into();
+    assert_eq!(sl.make_local_name_unique_among("object", &taken), "object_00");
+
+    let addr = Address::new(Rc::clone(&spc), 0xffff_ffff_ffff_ffe4);
+    sl.add_symbol("object", base(8, type_metatype::TYPE_INT), &addr, &inv).expect("addSymbol");
+    assert_eq!(sl.make_local_name_unique_among("object", &none), "object_00");
+    let taken: std::collections::BTreeSet<String> =
+        ["object_00".to_string(), "object_01".to_string()].into();
+    assert_eq!(sl.make_local_name_unique_among("object", &taken), "object_02");
+}

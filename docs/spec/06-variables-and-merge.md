@@ -478,6 +478,39 @@ re-resolve consumes no index at all. No `$$undef` string reaches any surface
 (DIV-58); an identifier containing `$$` is not valid C under any naming policy,
 so this is unconditional rather than a settable.
 
+**Recommended names stay unique.** A local passed to a callee whose prototype
+names that parameter takes the parameter's name instead of a `vN` (upstream
+`lookForFuncParamNames`). Upstream the rename goes through the local scope's
+`makeNameUnique`, and because every named high already owns a local Symbol by
+then, a second argument recommended the same name sees the first and becomes
+`name_00`. kuna binds this name on the HighVariable, and a high that reaches the
+tail of the naming walk has no Symbol at all, so the scope-only check let two
+distinct highs, such as a list element held across an inner loop and the loop's
+current element when both are passed to one `consume(Node *object)`, both
+become `object`. The walk now carries the set of names it has already bound to
+HighVariables, and a callee's parameter name is made unique against that set as
+well as the scope (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
+(ScopeLocal::make_local_name_unique_among)`), continuing the same `_00`, `_01`,
+... sequence. Two highs that denote one object are unaffected: they share a
+name through their shared Symbol, never through a recommendation.
+
+Two recommendation paths share a name on purpose. A name recommendation
+recorded for a storage location names every high at that storage alike, as the
+renamed Symbol does upstream; it is only recorded, so a later callee name cannot
+reuse it. A struct passed by value and assembled from register pieces
+(`coreaction_cleanup.rs (bind_proto_partial_piece)`) is a root whose fields are
+pieces bound to its name. Roots built for successive calls share the callee's
+parameter name, and chapter 09's composite collapse declares them once: each is
+built immediately before the call that consumes it, and suffixing them would add
+a declaration per call (ptx's `output_one_dumb_line` would declare
+`BLOCK field` six times). A root never shares a name with any other variable,
+though. The spelling is made unique against every name held by a high that is
+not such a root, so `struct P x = *px; struct P y = {c * 7, d * 11}; take(y);
+take(x);` declares `pt` and `pt_00` instead of storing `y`'s fields into `x`.
+This is a correctness fix and is unconditional: two distinct variables under
+one identifier make the emitted C read and write the wrong object, and make a
+`name` assertion ambiguous.
+
 ## 6.2 The stack frame
 
 Stack locals do not exist until this phase builds them; before it, the frame
