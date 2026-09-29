@@ -775,15 +775,14 @@ impl OpBehavior for OpBehaviorIntSright {
             return Ok(if signbit_negative(in1, sizein) { calc_mask(sizeout) } else { 0 });
         }
 
-        let res: u64;
-        if signbit_negative(in1, sizein) {
+        let res: u64 = if signbit_negative(in1, sizein) {
             let r = in1.wshr(in2 as u32); // cast: shift count < 8*sizeout here
             let mut mask = calc_mask(sizein);
             mask = mask.wshr(in2 as u32) ^ mask; // cast: shift count < 8*sizeout here
-            res = r | mask;
+            r | mask
         } else {
-            res = in1.wshr(in2 as u32); // cast: shift count < 8*sizeout here
-        }
+            in1.wshr(in2 as u32) // cast: shift count < 8*sizeout here
+        };
         Ok(res)
     }
 

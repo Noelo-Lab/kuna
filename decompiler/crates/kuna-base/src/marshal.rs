@@ -1807,19 +1807,17 @@ impl Decoder for PackedDecode<'_> {
         }
         let type_byte = Self::get_next_byte(&self.in_stream, &mut self.cur_pos)?;
         let type_code = type_byte >> pf::TYPECODE_SHIFT;
-        let res: i64;
-        if type_code == pf::TYPECODE_SIGNEDINT_POSITIVE {
-            res = self.read_integer(Self::read_length_code(type_byte) as i32)? as i64;
+        let res: i64 = if type_code == pf::TYPECODE_SIGNEDINT_POSITIVE {
+            self.read_integer(Self::read_length_code(type_byte) as i32)? as i64
         } else if type_code == pf::TYPECODE_SIGNEDINT_NEGATIVE {
             // Stored in negated form; wrapping negate reproduces the C++
             // `res = -res` (i64::MIN round-trips through its own negation).
-            res = (self.read_integer(Self::read_length_code(type_byte) as i32)? as i64)
-                .wrapping_neg();
+            (self.read_integer(Self::read_length_code(type_byte) as i32)? as i64).wrapping_neg()
         } else {
             self.skip_attribute_remaining(type_byte)?;
             self.attribute_read = true;
             return Err(KunaError::decoder("Expecting signed integer attribute"));
-        }
+        };
         self.attribute_read = true;
         Ok(res)
     }

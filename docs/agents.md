@@ -63,9 +63,8 @@ skip when the tool is absent, but a failed build with an installed tool is an er
 Python tooling unit tests run with `make test-tools` and are also required by CI.
 They use temporary state directories, not the live pipeline inventory.
 
-CI also runs `make lint-cli` and `make lint-base-num`, treating Clippy warnings
-as errors. The latter checks the base and numeric libraries, not the whole
-workspace or their test targets.
+CI also runs `make lint`, treating Clippy warnings as errors in the CLI and the
+base and numeric libraries, not the whole workspace or their test targets.
 
 The Rust test profile uses optimization level 1 for real-image tests, with debug
 assertions and integer-overflow checks enabled. Ordinary development builds retain

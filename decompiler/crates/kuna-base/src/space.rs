@@ -1025,13 +1025,7 @@ impl AddrSpace {
     pub fn num_spacebase(&self) -> i32 {
         match &self.kind {
             // SpacebaseSpace::numSpacebase
-            AddrSpaceKind::Spacebase { state, .. } => {
-                if state.borrow().hasbaseregister {
-                    1
-                } else {
-                    0
-                }
-            }
+            AddrSpaceKind::Spacebase { state, .. } if state.borrow().hasbaseregister => 1,
             _ => 0,
         }
     }
@@ -2970,14 +2964,13 @@ impl AddrSpaceManager {
             ));
         }
 
-        let totalsize: u32;
-        if logicalsize != 0 {
+        let totalsize: u32 = if logicalsize != 0 {
             if pieces.len() != 1 {
                 return Err(KunaError::lowlevel(
                     "Cannot specify logical size for multiple piece join",
                 ));
             }
-            totalsize = logicalsize;
+            logicalsize
         } else {
             // Calculate sum of the sizes of all pieces (uint4 arithmetic)
             let mut sum: u32 = 0;
@@ -2987,8 +2980,8 @@ impl AddrSpaceManager {
             if sum == 0 {
                 return Err(KunaError::lowlevel("Cannot create a zero size join"));
             }
-            totalsize = sum;
-        }
+            sum
+        };
 
         let state = self.join_records()?;
         let testnode = JoinRecord {
