@@ -1,0 +1,121 @@
+{
+ "fmt": {
+  "base": {
+   "functions": 151,
+   "errors": 0,
+   "lines": 3767
+  },
+  "G": {
+   "functions": 151,
+   "errors": 0,
+   "lines": 3718
+  },
+  "L": {
+   "functions": 151,
+   "errors": 0,
+   "lines": 3716
+  }
+ },
+ "ls": {
+  "base": {
+   "functions": 404,
+   "errors": 0,
+   "lines": 12869
+  },
+  "G": {
+   "functions": 404,
+   "errors": 0,
+   "lines": 12833
+  },
+  "L": {
+   "functions": 404,
+   "errors": 0,
+   "lines": 12826
+  }
+ },
+ "sort": {
+  "base": {
+   "functions": 343,
+   "errors": 0,
+   "lines": 10686
+  },
+  "G": {
+   "functions": 343,
+   "errors": 0,
+   "lines": 10708
+  },
+  "L": {
+   "functions": 343,
+   "errors": 0,
+   "lines": 10708
+  }
+ },
+ "bash": {
+  "base": {
+   "functions": 2538,
+   "errors": 0,
+   "lines": 115761
+  },
+  "G": {
+   "functions": 2538,
+   "errors": 0,
+   "lines": 115652
+  },
+  "L": {
+   "functions": 2538,
+   "errors": 0,
+   "lines": 115279
+  }
+ },
+ "kmod-O2ni": {
+  "base": {
+   "functions": 541,
+   "errors": 0,
+   "lines": 13315
+  },
+  "G": {
+   "functions": 541,
+   "errors": 0,
+   "lines": 13366
+  },
+  "L": {
+   "functions": 541,
+   "errors": 0,
+   "lines": 13361
+  }
+ },
+ "dpkg-divert-O2ni": {
+  "base": {
+   "functions": 656,
+   "errors": 0,
+   "lines": 11864
+  },
+  "G": {
+   "functions": 656,
+   "errors": 0,
+   "lines": 11847
+  },
+  "L": {
+   "functions": 656,
+   "errors": 0,
+   "lines": 11856
+  }
+ },
+ "crontab-O2ni": {
+  "base": {
+   "functions": 160,
+   "errors": 0,
+   "lines": 3248
+  },
+  "G": {
+   "functions": 160,
+   "errors": 0,
+   "lines": 3266
+  },
+  "L": {
+   "functions": 160,
+   "errors": 0,
+   "lines": 3265
+  }
+ }
+}

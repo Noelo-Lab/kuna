@@ -2609,6 +2609,9 @@ python3 final-l/shapes9.py i=<arm> k=<arm> l=<arm> --top=60                    #
 python3 final-l/morecasts.py <armA> <armB>                                     # every function with more casts, as diffs
 python3 final-l/castpick9.py 25     # short functions whose casts fell most; castshow.py prints one beside IDA
 python3 final-l/sstable9.py         # structscore round I vs final
-python3 final-l/speed9.py 11 <speed.json>          # baseline / round I / final, fmt ls sort bash -O2
-python3 final-l/speedextra9.py 15 <speed-extra.json>   # kmod, dpkg-divert -O2-noinline: round F / round I / final
+python3 final-l/fncount10.py         # the functions every speed arm emits, per binary (fncount10.json)
+SPEED_LOAD_MAX=14 python3 final-l/speed10.py 15 <speed.json> fmt,ls,sort,bash base,G,I,L       # -O2: baseline / G / I / final
+SPEED_LOAD_MAX=14 python3 final-l/speed10.py 15 <extra.json> kmod-O2ni,dpkg-divert-O2ni,crontab-O2ni base,F,G,I,L
+python3 final-l/speed10.py 15 <ablate.json> kmod-O2ni,dpkg-divert-O2ni base,L,L-protoorder,L-calleevote+passthrough,...   # option arms
+python3 final-l/speedtable10.py canon|trio <json>... ; python3 final-l/speedtable10.py ablate <json>   # the L.6 tables
 ```
