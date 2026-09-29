@@ -208,6 +208,14 @@ probes also use this authoritative map, so a warmed zero-filled loader window ca
 invent a mapped target. This recovers incomplete flow without inferring a
 different ISA or claiming that an unavailable path returns.
 
+**Operand expressions.** A SLEIGH operand's defining expression may reference
+another operand. Evaluation retains the simulated constructor-relative offset
+at each level, the resolved child offsets, and the instruction's context words
+and address context. Nested references are bounded by the parse-depth limit;
+invalid references fail decoding instead of indexing an absent operand. The
+PowerPC rotate-and-mask constructors exercise this path; their lifted values
+and record flags are checked independently of the printed instruction.
+
 **Decode scratch storage.** Every SLEIGH translation checks out a parser
 context from the engine-local pool
 (`decompiler/crates/kuna-sleigh/src/sleigh.rs (Sleigh::checkout_context)`).

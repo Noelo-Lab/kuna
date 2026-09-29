@@ -31,7 +31,7 @@ use crate::globalcontext::{ContextCache, ContextDatabase};
 use crate::loadimage::{ImageBytes, LoadImage};
 use crate::semantics::{ConstructTpl, OpTpl, PcodeBuilder, VField, VarnodeTpl};
 use crate::sleighbase::{exact_register_name_from_xref, register_name_from_xref, SleighBase};
-use crate::slghpatexpress::PatternExpressionContext;
+use crate::slghpatexpress::{PatternExpression, PatternExpressionContext};
 use crate::slghpattern::DisjointPattern;
 use crate::slghsymbol::{
     ConstructorRef, SymbolKind, SymbolTable, SymbolType, SymbolWalker, SymbolWalkerChange,
@@ -39,6 +39,10 @@ use crate::slghsymbol::{
 use crate::translate::{
     storage_from_varnode_data, AssemblyEmit, PcodeEmit, Translate, TranslateBase, UniqueLayout,
 };
+
+#[cfg(test)]
+#[path = "sleigh/operand_tests.rs"]
+mod operand_tests;
 
 // ---------------------------------------------------------------------------
 // ConstructState / ContextSet (context.hh/.cc)
@@ -522,20 +526,19 @@ impl<'a> ParserWalker<'a> {
         self.cross.unwrap_or(self.ctx)
     }
 
-    /// Operand offset for a synthetic walker, or `None` when its constructor
-    /// is outside the current path (`setOutOfBandState`).
+    /// Constructor state and offset for a synthetic operand walker.
     fn out_of_band(
         &self,
         ct: ConstructorRef,
         index: i32,
-    ) -> KunaResult<Option<u32>> {
+    ) -> KunaResult<OobState> {
         // Walk back from the current point to the node whose ct == ct.
         let mut pt = self.point();
         let mut curdepth = self.cur.depth;
         while self.ctx.state[pt].ct != Some(ct) {
             if curdepth <= 0 {
                 // C++ returns with point unchanged (a degenerate walk).
-                return Ok(None);
+                return Ok(OobState { offset: 0, ct, length: 0, point: self.point(), valid: false });
             }
             curdepth -= 1;
             pt = self.ctx.state[pt]
@@ -554,12 +557,56 @@ impl<'a> ParserWalker<'a> {
             // offset is constructor-relative; build it explicitly.
             self.ctx.state[pt].offset.wrapping_add(op.get_relative_offset())
         } else {
-            let child = self.ctx.state[pt].resolve[index as usize]
+            let child = self.ctx.state[pt].resolve.get(index as usize).copied().flatten()
                 .ok_or_else(|| KunaError::sleigh("out-of-band: operand not resolved"))?;
-            self.ctx.state[child].offset
+            self.ctx.state.get(child)
+                .ok_or_else(|| KunaError::sleigh("out-of-band: invalid operand state"))?.offset
         };
-        Ok(Some(offset))
+        Ok(OobState { offset, ct, length: self.ctx.state[pt].length, point: pt, valid: true })
     }
+}
+
+/// The simulated single-node tree state produced by [`ParserWalker::out_of_band`]
+/// (C++ `setOutOfBandState`'s `tempstate`).  `ct`/`length` are recorded
+/// faithfully (the C++ tempstate sets `tempstate->ct`/`tempstate->length`); the
+/// original node is retained for operands with resolved child offsets.
+#[allow(dead_code)] // length mirrors the C++ tempstate
+#[derive(Debug, Clone)]
+struct OobState {
+    offset: u32,
+    ct: ConstructorRef,
+    length: i32,
+    point: usize,
+    valid: bool,
+}
+
+
+fn operand_expression(table: &SymbolTable, ct: ConstructorRef, index: i32) -> KunaResult<Option<Cow<'_, PatternExpression>>> {
+    let sym_id = table.get_constructor(ct)?.get_operand(index)?;
+    let opsym = table
+        .find_symbol_by_id(sym_id)
+        .ok_or_else(|| KunaError::sleigh("operand_value: operand symbol undefined"))?;
+    let SymbolKind::Operand(op) = opsym.kind() else {
+        return Err(KunaError::sleigh("operand_value: not an operand symbol"));
+    };
+    // patexp = sym->getDefiningExpression(); if null, the defining
+    // symbol's pattern expression; if still null, return 0.
+    let patexp = match op.get_defining_expression() {
+        Some(pe) => Cow::Borrowed(pe),
+        None => match op.get_defining_symbol() {
+            Some(defid) => {
+                let defsym = table.find_symbol_by_id(defid).ok_or_else(|| {
+                    KunaError::sleigh("operand_value: defining symbol undefined")
+                })?;
+                match defsym.get_pattern_expression()? {
+                    Some(pe) => Cow::Owned(pe),
+                    None => return Ok(None),
+                }
+            }
+            None => return Ok(None),
+        },
+    };
+    Ok(Some(patexp))
 }
 
 impl PatternExpressionContext for ParserWalker<'_> {
@@ -580,41 +627,35 @@ impl PatternExpressionContext for ParserWalker<'_> {
         self.engine.compute_n2addr(self.addr_ctx())
     }
     fn operand_value(&self, index: i32, table_id: u32, ct_id: u32) -> KunaResult<i64> {
-        // C++ OperandValue::getValue (via setOutOfBandState):
         let ct = ConstructorRef { table_id, ct_id };
-        let sym_id = self.table.get_constructor(ct)?.get_operand(index)?;
-        let opsym = self
-            .table
-            .find_symbol_by_id(sym_id)
-            .ok_or_else(|| KunaError::sleigh("operand_value: operand symbol undefined"))?;
-        let SymbolKind::Operand(op) = opsym.kind() else {
-            return Err(KunaError::sleigh("operand_value: not an operand symbol"));
-        };
-        // patexp = sym->getDefiningExpression(); if null, the defining
-        // symbol's pattern expression; if still null, return 0.
-        let patexp = match op.get_defining_expression() {
-            Some(pe) => Cow::Borrowed(pe),
-            None => match op.get_defining_symbol() {
-                Some(defid) => {
-                    let defsym = self.table.find_symbol_by_id(defid).ok_or_else(|| {
-                        KunaError::sleigh("operand_value: defining symbol undefined")
-                    })?;
-                    match defsym.get_pattern_expression()? {
-                        Some(pe) => Cow::Owned(pe),
-                        None => return Ok(0),
-                    }
-                }
-                None => return Ok(0),
-            },
-        };
-        let offset = self
-            .out_of_band(ct, index)?
-            .unwrap_or_else(|| self.ctx.state[self.point()].offset);
+        let Some(patexp) = operand_expression(self.table, ct, index)? else { return Ok(0) };
+        let oob = self.out_of_band(ct, index)?;
+        if !oob.valid {
+            // C++ leaves point unchanged; evaluating then reads the original
+            // point's offset.  Fall back to the current node.
+            let fallback = OobWalker {
+                ctx: self.ctx,
+                cross: self.cross,
+                engine: self.engine,
+                table: self.table,
+                depth: 1,
+                state: OobState {
+                    offset: self.ctx.state[self.point()].offset,
+                    ct,
+                    length: self.ctx.state[self.point()].length,
+                    point: self.point(),
+                    valid: true,
+                },
+            };
+            return patexp.get_value(&fallback);
+        }
         let oobwalker = OobWalker {
             ctx: self.ctx,
             cross: self.cross,
             engine: self.engine,
-            offset,
+            table: self.table,
+            depth: 1,
+            state: oob,
         };
         patexp.get_value(&oobwalker)
     }
@@ -825,17 +866,19 @@ impl<'a> ParserWalkerChange<'a> {
 
 /// Pattern-expression walker using a synthetic instruction offset.
 /// Context and flow addresses still come from the checked-out parser context.
-/// Nested operand references through this walker return an error.
+/// Nested operands retain constructor and resolved-child context.
 struct OobWalker<'a> {
     ctx: &'a ParserContext,
     cross: Option<&'a ParserContext>,
     engine: &'a Sleigh,
-    offset: u32,
+    state: OobState,
+    table: &'a SymbolTable,
+    depth: i32,
 }
 
 impl PatternExpressionContext for OobWalker<'_> {
     fn get_instruction_bytes(&self, byteoff: i32, numbytes: i32) -> KunaResult<u32> {
-        self.ctx.get_instruction_bytes(byteoff, numbytes, self.offset)
+        self.ctx.get_instruction_bytes(byteoff, numbytes, self.state.offset)
     }
     fn get_context_bytes(&self, byteoff: i32, numbytes: i32) -> KunaResult<u32> {
         self.ctx.get_context_bytes(byteoff, numbytes)
@@ -850,8 +893,33 @@ impl PatternExpressionContext for OobWalker<'_> {
         self.engine.compute_n2addr(self.cross.unwrap_or(self.ctx))
     }
     fn operand_value(&self, index: i32, table_id: u32, ct_id: u32) -> KunaResult<i64> {
-        let _ = (index, table_id, ct_id);
-        Err(KunaError::sleigh("nested out-of-band operand value not supported"))
+        if self.depth >= MAX_DEPTH {
+            return Err(KunaError::sleigh("SLEIGH exceeded maximum operand expression depth"));
+        }
+        let ct = ConstructorRef { table_id, ct_id };
+        let Some(patexp) = operand_expression(self.table, ct, index)? else { return Ok(0) };
+        if ct != self.state.ct {
+            return Err(KunaError::sleigh("out-of-band: operand constructor outside current context"));
+        }
+        let id = self.table.get_constructor(ct)?.get_operand(index)?;
+        let SymbolKind::Operand(op) = self.table.find_symbol_by_id(id)
+            .ok_or_else(|| KunaError::sleigh("out-of-band: operand symbol undefined"))?.kind() else {
+            return Err(KunaError::sleigh("out-of-band: not an operand symbol"));
+        };
+        let offset = if op.get_offset_base() < 0 {
+            self.state.offset.wrapping_add(op.get_relative_offset())
+        } else {
+            let child = self.ctx.state.get(self.state.point)
+                .and_then(|p| p.resolve.get(index as usize)).copied().flatten()
+                .and_then(|child| self.ctx.state.get(child))
+                .ok_or_else(|| KunaError::sleigh("out-of-band: operand not resolved"))?;
+            child.offset
+        };
+        patexp.get_value(&OobWalker {
+            state: OobState { offset, ..self.state.clone() },
+            depth: self.depth + 1,
+            ..*self
+        })
     }
 }
 

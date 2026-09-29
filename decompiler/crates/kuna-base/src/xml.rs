@@ -1929,7 +1929,7 @@ mod tests {
         // tested on the same condition again keeps its return value (GH-747)
         // and kuna-calleenamedlocals / two locals named after one callee
         // parameter stay two variables
-        assert_eq!(count, 356, "corpus file count drifted");
+        assert_eq!(count, 357, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
