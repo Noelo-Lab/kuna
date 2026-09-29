@@ -2605,6 +2605,9 @@ pub(crate) struct AncestorRealistic {
     /// walk; collected here and applied by the caller after `execute`).
     set_ind_create_formed: bool,
     set_cond_exe_effect: bool,
+    /// (kuna) `condexeret`: the op reading the function input the walk failed
+    /// at, when that input ended it.
+    input_fail_reader: Option<OpId>,
 }
 
 impl AncestorRealistic {
@@ -2618,7 +2621,14 @@ impl AncestorRealistic {
             trial_killed_by_call: false,
             set_ind_create_formed: false,
             set_cond_exe_effect: false,
+            input_fail_reader: None,
         }
+    }
+
+    /// (kuna) `condexeret`: the op that read the non-directwrite function input
+    /// the last [`Self::execute`] failed at, if that is what failed it.
+    pub(crate) fn input_fail_reader(&self) -> Option<OpId> {
+        self.input_fail_reader
     }
 
     fn mark(&mut self, fd: &mut Funcdata, vn: VarnodeId) {
@@ -2668,6 +2678,7 @@ impl AncestorRealistic {
                     return AncestorCmd::PopSuccess;
                 }
                 if !fd.vbank().get(state_vn).map(|v| v.is_direct_write()).unwrap_or(false) {
+                    self.input_fail_reader = Some(state.op);
                     return AncestorCmd::PopFail;
                 }
             }
@@ -2951,6 +2962,7 @@ impl AncestorRealistic {
         self.multi_depth = 0;
         self.set_ind_create_formed = false;
         self.set_cond_exe_effect = false;
+        self.input_fail_reader = None;
         // If the parameter itself is an input, we don't consider this realistic
         // (unless we are re-testing a conditional-execution trial).
         let in_slot = fd.obank().get(op).and_then(|o| o.get_in(slot));

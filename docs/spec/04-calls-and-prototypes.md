@@ -1233,6 +1233,12 @@ needs the return register and the first argument register to be the same storage
 so it is an ARM/AArch64 finding in practice; with the gate off the check is
 upstream's, rejecting on every competing call use.
 
+The output container normally gets a single pass (its budget is 0 unless the
+model has a delayed heritage space), and that pass runs before
+`ActionConditionalExe` in the same mainloop iteration. The (kuna) `condexeret`
+gate adds at most one more pass for trials that failed only on a path that
+pass can remove — §4.4.
+
 ### Fixating the function's own prototype
 
 In the one-shot tail, after merge has built HighVariables:
@@ -1559,6 +1565,52 @@ found 3 of the 675 upstream assertions legitimately need the join — a global
 `single` default would truncate real wide returns. Flip it per function on the
 CONCAT-return symptom; the symptom table and flip guidance live in
 [`docs/options.md`](../options.md#returnpair).
+
+### (kuna) `condexeret` — a return register tested on the same condition twice
+
+`AncestorRealistic` fails a return trial as soon as one MULTIEQUAL input is
+the function's own register on entry and not directwrite, so one path that
+leaves the register untouched is enough to make the function `void`. A register
+written under a condition and then branched on by the same condition again has
+such a path — the first branch taken, the second taken too — that cannot run:
+
+```text
+twice:  cmp rdi,rsi; jae 1f; mov eax,0; 1: jb 2f; lea rax,[rdi+rsi]; 2: ret
+```
+
+`ActionConditionalExe` threads the merge block at `1:` and the path is gone,
+but it runs at the end of mainloop, after `ActionReturnRecovery` has already
+spent the output container's only pass, so `twice` printed `void twice(void)`
+while the one-branch spelling of the same logic returned a value. Upstream has
+the same order.
+
+With `condexeret on` (the default), the walk records the op that read the
+input it failed at
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
+(AncestorRealistic::input_fail_reader)`). When that op is a MULTIEQUAL in a
+block `ActionConditionalExe` could thread — two in-edges that lead back
+through straight-line blocks to one block ending in a CBRANCH, two out-edges,
+and a CBRANCH on the same condition as that block or its complement
+(`BooleanExpressionMatch`), i.e. `ConditionalExecution::verify` short of its
+op-removability test
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_condexeret.rs
+(threadable_block)`) — the trial is remembered together with that block. At
+the end of the last normal pass (`kuna_condexeret.rs (end_pass)`), if any
+remembered trial is still unchecked, the budget grows by one and the container
+stays open into the next mainloop iteration. That pass re-checks a remembered
+trial only if its block is gone from the graph, which is what threading does
+to it (`kuna_condexeret.rs (skips)`); every other trial, and a remembered
+trial whose block is still there, keeps its first verdict, so nothing but the
+removal of that merge can change the answer — a trial is not re-judged because
+later simplification rewrote some other part of its data-flow. The container
+then closes, so the extra pass happens at most once per recovery. Where the
+second branch tests something else nothing is remembered and the function
+stays `void`; where `ActionConditionalExe` still declines the block (an op in
+it it cannot move) the block stays and so does the first verdict; and where
+the input path survives threading (`jae` twice in place of `jae`/`jb`) the
+re-check fails again. Call-site trials never get the extra
+pass. With the gate off the container closes after its normal budget, as
+upstream.
 
 ### (ida) The uncomputed half of a recovered return pair
 

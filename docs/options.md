@@ -738,6 +738,10 @@ Three tiers:
 | an alignment push/pop around the body turns a pointer return into undefined16 | [`retpushedhalf`](#retpushedhalf) |
 | the recovered signature ends in an extra argument whose only appearance is `v._8_8_ = aN;` | [`retpushedhalf`](#retpushedhalf) |
 | a prologue PUSH of an argument register and an epilogue POP into a different register invent a 128-bit return | [`retpushedhalf`](#retpushedhalf) |
+| a function whose every path writes the return register renders as void f(void) { return; } | [`condexeret`](#condexeret) |
+| a return value set under a condition disappears when the next branch tests the same condition | [`condexeret`](#condexeret) |
+| declaring the prototype brings the return value back while the recovered one is void | [`condexeret`](#condexeret) |
+| a conditional-execution core (META SUBLS/BLS) loses return 0 / return 1 paths | [`condexeret`](#condexeret) |
 | a Rust Result or Option producer recovers as bool and the payload register is missing from the return | [`rustabi`](#rustabi) |
 | a local commented with a register name is declared and read but never assigned anywhere in the function | [`rustabi`](#rustabi) |
 | a call to a Rust function that returns Result renders with no output at all | [`rustabi`](#rustabi) |
@@ -2549,6 +2553,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: it only ever narrows `retinputhalf`, and only for a register the function pushes and never writes -- the ordinary callee-saved save/restore writes the register in the pop, so it does not qualify. Byte-identical (0/675) on the datatest corpus. Set off to restore the address-only placement test, which is what you want if a function really does hand back an argument it preserved on the stack and popped into another register.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · kuna-alignment-push-pop
 - **Example:** `option retpushedhalf off`
+
+### `condexeret` -- on | off, default `on`
+
+- **Symptoms:** a function whose every path writes the return register renders as void f(void) { return; }; a return value set under a condition disappears when the next branch tests the same condition; declaring the prototype brings the return value back while the recovered one is void; a conditional-execution core (META SUBLS/BLS) loses return 0 / return 1 paths.
+- **What it does:** Give a return register one more look after ActionConditionalExe when the only path that failed it is one a re-tested branch makes impossible. ActionReturnRecovery (coreaction.cc:1954) runs AncestorRealistic on each output trial, and one MULTIEQUAL input that is the function's own register on entry (not directwrite) fails the whole trial. `cmp rdi,rsi; jae 1f; mov eax,0; 1: jb 2f; lea rax,[rdi+rsi]; 2: ret` writes rax on every path that can run, but the path `jae` taken then `jb` taken still reaches the RETURN with rax untouched until ActionConditionalExe threads the merge block, later in the same mainloop iteration; output trials get one pass (maxpass is 0 unless the model has a delayed heritage space), so the function printed `void twice(void) { return; }`. When on, a trial whose walk fails at such an input read by a MULTIEQUAL in a block ActionConditionalExe could thread (two in-edges leading back through straight-line blocks to one CBRANCH block, two out-edges, and a final CBRANCH on the same condition or its complement) is remembered with that block, and if any remembered trial is still unchecked after the last normal pass, the container stays open for one extra pass on the next mainloop iteration. That pass re-checks a remembered trial only if its block is gone from the graph (ActionConditionalExe threaded it); every other trial keeps its verdict, so later simplification elsewhere in the data-flow cannot flip one. The extra pass runs at most once per recovery; where the second branch tests a different condition nothing is remembered, and where the input path survives the threading the trial fails again exactly as before. Call-site trials are untouched.
+- **When to flip:** On by default: the extra pass can only find a trial realistic once the merge block that failed it is gone from the graph, and 0/675 datatest assertions move. Set it off to diff against upstream, or when a function whose return register is written under a condition and then tested on the same condition again should keep upstream's `void` reading. It matters most on cores with conditional execution (a META `SUBLS D0Re0,D0Re0,D0Re0; BLS end`), where the shape is common; on x86-64 compilers rarely emit it.
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · GH-747
+- **Example:** `option condexeret off`
 
 ### `rustabi` -- off | auto | always, default `off`
 

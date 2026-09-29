@@ -383,6 +383,7 @@ kuna_options! { self, p1;
         self.spill_arg_trial = val;
         Ok(msg)
     },
+    "condexeret" => on_off!(cond_exe_ret, "return-trial retry after conditional-execution removal"),
     "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
     "indexaliasguard" => {
         let (val, msg) =

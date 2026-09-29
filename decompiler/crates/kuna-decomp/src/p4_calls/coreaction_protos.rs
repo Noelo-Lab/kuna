@@ -1578,6 +1578,8 @@ impl Action for ActionReturnRecovery {
             None => return 0,
         };
         let maxancestor = data.get_arch().trim_recurse_max;
+        let cond_exe_ret = data.get_arch().cond_exe_ret;
+        let mut cond_failed = Vec::new();
         let return_ops: Vec<crate::context::OpId> =
             data.obank().iter_code(OpCode::CPUI_RETURN).collect();
         for &op in &return_ops {
@@ -1589,7 +1591,9 @@ impl Action for ActionReturnRecovery {
                 continue;
             }
             for i in 0..active.get_num_trials() {
-                if active.get_trial(i).is_checked() {
+                if active.get_trial(i).is_checked()
+                    || crate::p4_calls::kuna_condexeret::skips(&active, i, data)
+                {
                     continue;
                 }
                 let slot = active.get_trial(i).get_slot();
@@ -1624,6 +1628,13 @@ impl Action for ActionReturnRecovery {
                 let (realistic, solid) =
                     ancestor.execute(data, op, slot, trial_size, trial_cond, trial_killed, false);
                 ancestor.apply_trial(active.get_trial_mut(i), realistic, solid);
+                if let Some(bl) = ancestor
+                    .input_fail_reader()
+                    .filter(|_| cond_exe_ret && !realistic)
+                    .and_then(|m| crate::p4_calls::kuna_condexeret::threadable_block(data, m))
+                {
+                    cond_failed.push((i, bl));
+                }
                 if realistic || solid {
                     // The trial's data-flow ancestry is realistic; now test that
                     // the Varnode is only used at this op (ancestorOpUse).
@@ -1639,6 +1650,7 @@ impl Action for ActionReturnRecovery {
             }
         }
 
+        crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_exe_ret, cond_failed);
         active.finish_pass();
         if active.get_num_passes() > active.get_max_pass() {
             active.mark_fully_checked();

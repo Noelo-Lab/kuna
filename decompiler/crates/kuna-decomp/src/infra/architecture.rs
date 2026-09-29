@@ -838,6 +838,11 @@ pub struct Architecture {
     /// `2` = any caller-frame store of the value.  See
     /// [`crate::p4_calls::kuna_spillargtrial`].
     pub spill_arg_trial: int4,
+    /// (kuna) A return trial whose ancestor walk failed only at the function's
+    /// input, read through a merge block that branches again on the condition
+    /// that chose the path, gets one more pass after `ActionConditionalExe`
+    /// (option `condexeret`).  See [`crate::p4_calls::kuna_condexeret`].
+    pub cond_exe_ret: bool,
     /// (kuna) Refine indexed-stack LOAD/STORE guard ranges with the upstream
     /// ValueSet solver at the end of each heritage pass (upstream
     /// `Heritage::analyzeNewLoadGuards`, heritage.cc:834), so
@@ -2492,6 +2497,7 @@ impl Architecture {
             callee_arity_scratch: true,
             call_overlap: 0,
             spill_arg_trial: 0,
+            cond_exe_ret: false, // (kuna) option condexeret; reset_defaults sets the shipped default
             load_guard_range: false, // (kuna) option loadguardrange; reset_defaults sets the shipped default
             index_alias_guard: 0, // (kuna) option indexaliasguard; reset_defaults sets the shipped default
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
@@ -2787,6 +2793,7 @@ impl Architecture {
         self.callee_arity_cut = true; // (kuna) DIV-PENDING default-on: a callee-body argument run that stops short of the last argument register is bounded by that register, so a body whose decode is cut at a nested call still speaks (0/675 ablation)
         self.callee_arity_scratch = true; // (kuna) DIV-PENDING default-on: a boundary register the caller's own trial scoring marked inactive is scratch, not a further argument, so a run that stops at one is still bounded (0/675 ablation)
         self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
+        self.cond_exe_ret = true; // (kuna) option condexeret default-on: a return trial that failed only at the function's input through a merge block ActionConditionalExe can thread is re-checked once that block is gone; 0/675 datatest and 0 stage assertions moved, decompile-all unchanged on 5,422 fixture and 36,464 decbench functions, speed within noise
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
         self.index_alias_guard = crate::p3_dataflow::kuna_indexaliasguard::LEVEL_LOAD; // (kuna) DIV-147 default `load`: restores upstream Heritage::guardLoads (heritage.cc:1570), which kuna shipped behind a hard-coded highPtrPossible == false (0/675 datatest, 0/714 stages ablation); `off` drops it again, `full` adds guardStores
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
@@ -3468,6 +3475,7 @@ impl Architecture {
         ctx.callee_arity_scratch = self.callee_arity_scratch; // calleearityscratch
         ctx.call_overlap = self.call_overlap; // calloverlap
         ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial
+        ctx.cond_exe_ret = self.cond_exe_ret; // condexeret
         ctx.load_guard_range = self.load_guard_range; // loadguardrange
         ctx.index_alias_guard = self.index_alias_guard; // indexaliasguard
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
