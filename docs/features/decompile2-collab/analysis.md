@@ -1,5 +1,8 @@
 # decompile2-collab — analysis
 
+> The page has since moved to `/decompile/` (its code to `integrations/web/decompile/`); the old
+> `/decompile2/` address redirects there, keeping `#join=` links.
+
 The question: can several people work on one program in `/decompile2/` at the
 same time, Google-Docs style — rename, retype, comment and patch together, ping
 a line to draw the others' attention, and see each other's pointers — with no

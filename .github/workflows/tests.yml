@@ -143,7 +143,7 @@ jobs:
           cd decompiler
           cargo test -p kuna-ghidra --release -- --include-ignored --nocapture
 
-      # Node 22 for its global WebSocket, which the /decompile2 browser tests
+      # Node 22 for its global WebSocket, which the /decompile browser tests
       # drive headless Chrome with (the runner image ships google-chrome). The
       # live-session tests run tabs of one Chrome over BroadcastChannel, then two
       # Chrome processes over WebRTC (SKIPPED, not failed, only when two peer

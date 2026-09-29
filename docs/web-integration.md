@@ -277,8 +277,7 @@ The page and Worker communicate through `kuna-worker-client.js`:
 
 ```
 upload bytes → Worker `list` → address-only rows
-click row    → Worker `decompile 0xADDR` → one C body                    (/decompile)
-open fn      → Worker `inspect 0xADDR --assert …` → C, tokens, rows      (/decompile2)
+open fn      → Worker `inspect 0xADDR --assert …` → code, tokens, rows
 edit         → one more directive → Worker `inspect` again, old render kept up
 download     → Worker `project` → Worker `makeZip` → transferred ArrayBuffer
 cancel       → terminate Worker → create Worker → rehydrate binary on next request
@@ -289,9 +288,8 @@ one-function decompilation, and project export all retain `--mode auto`, so the 
 front-end remains the source of truth for the 500 KiB and 2 MiB thresholds.
 
 The Worker session carries the binary, the mode **and the output language** to every
-request. Until the study view was added, `setBinary` stored only the mode, so the
-`/decompile` page's Language control never reached the engine; `test/worker.mjs` now
-loads with `rust` and asserts Rust comes back. Every Worker method (`list`, `decompile`,
+request. `setBinary` once stored only the mode, so the first page's Language control
+never reached the engine; `test/worker.mjs` loads with `rust` and asserts Rust comes back. Every Worker method (`list`, `decompile`,
 `inspect`, `read`, `xrefs`, `project`) also takes an `assertions` list, which
 `wasmCommandArgs` appends as one `--assert <directive>` pair each, after the mode and
 language; an empty list produces exactly the argv the flag's absence always did
@@ -350,9 +348,10 @@ the `specs-small.json` preload bundle. Serve `dist/` with any static file server
 ```
 /                     index.html          landing page: hero, compare, goals
 /dev-viz/             dev-viz/index.html development record: cadence, phases, provenance, evidence
-/decompile/           decompile/index.html the decompiler application (loads the wasm)
-/decompile2/          decompile2/          the study view: linked C/assembly/bytes, edits (loads the wasm)
-/decompile2/examples/ sample.elf, sample.c the "Try an example" program and its source (copied by build.sh)
+/decompile/           decompile/           the decompiler: linked code, assembly, bytes and stack, edits,
+                                           live sessions (loads the wasm; §4.2)
+/decompile2/          decompile2/index.html its old address: a redirect to /decompile/ that keeps the
+                                           ?query and the #fragment, so links and invites made there work
 /assets/              css/site.css · fonts/ · img/ · js/highlight-c.js · js/fnfilter.js
 /compare-samples.js   the compare section's data (samples + rival outputs)
 /CNAME                kuna.noelo.org — the custom domain, copied into the bundle
@@ -360,33 +359,32 @@ the `specs-small.json` preload bundle. Serve `dist/` with any static file server
 /kuna_wasm.wasm /specs/ /specs-small.json /vendor/
 ```
 
-The engine-facing files stay at the **root** — `/decompile/` and `/decompile2/` reach them with `../`, so
+The engine-facing files stay at the **root** — `/decompile/` reaches them with `../`, so
 the Worker is a sibling of `kuna-web.js`/`zip.js`, the existing tests can import the glue
 directly, and a project subpath still works. The RPC client resolves the wasm/spec URLs
 against the document before sending them to the Worker; resolving those `../` paths in
 the root-level Worker would otherwise escape a GitHub Pages project subpath.
 
-**The sidebar filter.** A whole-binary inventory is thousands of rows (the 1.1 MiB PE in
-DIV-53 indexes 3,158), and the sidebar is the only way to reach a function, so the list is
-filterable: `/` from anywhere focuses the box, typing narrows the list live, `Enter` opens
-the first match, `Escape` clears, and the arrow keys walk the visible rows. A query is
+**The function search.** A whole-binary inventory is thousands of rows (the 1.1 MiB PE in
+DIV-53 indexes 3,158), and the function list is the only way to reach a function, so it is
+searchable: `/` from anywhere focuses the box, typing narrows the list live, `Enter` opens
+the first match, `Escape` clears, and `↓` moves to the first visible row. A query is
 either whitespace-separated terms — ALL of which must appear in a row's name, one of its
 aliases, or its address, case-insensitively, so `sub_4e6` and `4e68` and `_dws` all work on
 a stripped binary — or a `/regex/flags` literal (case-insensitive unless it names flags; an
 unparseable one flags the box and reports the error instead of silently emptying the list).
-The header and the `imports & thunks` divider switch to `matched of total` while a filter
-is live. The matcher and both count strings are `assets/js/fnfilter.js`, kept DOM-free so
-`test/fnfilter.mjs` can pin them under Node (§5); the page owns only row visibility and
-focus. `/decompile2/` uses the same matcher over its grouped list (§4.2). Filtering is a single pass over precomputed per-row haystacks — 1.8–3.0 ms per
-keystroke over 3,158 rows in Chrome — and the inventory is built into one
-`DocumentFragment` so a multi-thousand-row list reflows the sidebar once, not per row.
+The matcher is `assets/js/fnfilter.js`, kept DOM-free so `test/fnfilter.mjs` can pin it
+under Node (§5); the page owns row visibility, focus and the group counts (§4.2).
+Filtering is a single pass over precomputed per-row haystacks, and the inventory is built
+into one `DocumentFragment` so a multi-thousand-row list reflows the sidebar once, not per
+row.
 
-The landing page and `/decompile/` share the Noelo Lab site's palette and typefaces
+The landing page and `/dev-viz/` share the Noelo Lab site's palette and typefaces
 (`noelo.org`, BSD-2-Clause; provenance note at the top of `assets/css/site.css`) but not
 its layout: they are tool pages — one display line, then monospace throughout, small
-red-ticked section labels instead of a lab-page rail. One stylesheet serves those two
-(`/decompile2/` has its own stylesheet on the same palette, dark by default, §4.2); `assets/js/highlight-c.js` is
-the single C highlighter shared by the compare panes and the function view. The landing
+red-ticked section labels instead of a lab-page rail. `/decompile/` has its own stylesheet
+on the same palette, dark by default (§4.2); `assets/js/highlight-c.js` is the single C
+highlighter shared by the compare panes and the decompiler. The landing
 page is otherwise inert — no wasm, no network — and `compare-samples.js` is pure data, so
 adding a comparison is a data edit (its header documents the schema; every pane must be
 verbatim tool output).
@@ -426,34 +424,35 @@ Payload: **~1.7 MB** wasm (gzipped, shared) + a **~180 KB** gzipped spec bundle 
 of a small binary is sub-second (≈0.45 s measured in Node `node:wasi` and in headless
 Chrome on the committed fixtures).
 
-### 4.2 The study view (`/decompile2/`)
+### 4.2 The decompiler (`/decompile/`)
 
-A second application page for students: one function as **C, assembly, bytes and its
-stack frame, linked**, with renames, retypes, prototypes, comments and byte patches that
-the engine applies. `/decompile/` is unchanged.
-
-For now it is an **unlisted** page, like `/dev-viz/`: nothing on the landing page,
-`/decompile/` or `/dev-viz/` links to it (no nav entry, button or footer link), and it
-asks search engines not to index it (`<meta name="robots" content="noindex">`). It is
-reached by typing `/decompile2/`.
+The site's decompiler page: one function as **its code, assembly, bytes and stack frame,
+linked**, with renames, retypes, prototypes, comments and byte patches that the engine
+applies, and live sessions with other people. It began as a second page for students at
+`/decompile2/` and replaced the first `/decompile/` page; `/decompile2/` is now a redirect
+to `/decompile/` that keeps the query and the `#fragment`, so bookmarks and invite links
+made before the move still open. The module names, the `kuna.d2.*` storage keys and the
+BroadcastChannel names are unchanged, so saved sessions carry over and tabs on either
+address can join each other. The landing page and `/dev-viz/` link to it from their nav;
+it asks search engines not to index it (`<meta name="robots" content="noindex">`).
 
 It is written for someone who has never used a decompiler, so it is laid out like an
-app: full screen, with its own stylesheet (`decompile2/decompile2.css`). The colours are
+app: full screen, with its own stylesheet (`decompile/decompile2.css`). The colours are
 the Noelo palette of the rest of the site, dark by default — Noelo's dark footer (warm
 near-black ink, warm greys, the mark's red for the accent and the primary button, flat
 1px rules, near-square corners) stretched to a whole app — and the toggle switches to
 Noelo's light paper, where the primary button is ink. The type is the app's own: a
 system UI font, monospace only for code, no uppercase labels. Every text colour passes
-WCAG AA 4.5:1 on each background it sits on. Labels are plain sentence-case words ("C
-code", "Side by side", "Explain", "Your changes"), and whatever a beginner does not need
-at first sight is off by default or one click away.
+WCAG AA 4.5:1 on each background it sits on. Labels are plain sentence-case words
+("Code", "Side by side", "Explain", "Your changes"), and whatever a beginner does not
+need at first sight is off by default or one click away.
 
 ```
-| Kuna › sample.elf  13 functions               [Open file] [Try an example]  ⋯  ?  ☾   |
+| Kuna › sample.elf  13 functions  ☐ Show hints  [Open file] [Collaborate]  ⋯  ?  ☾    |
 |--------------------|-----------------------------------------------|------------------|
 | Search functions   | main                        Rename  Signature | Explain       ›  |
-| ▾ Your program (3) | int main(int argc,char **argv) · 24 instr...  | This function    |
-|    main            | [C code|Side by side|Assembly|Bytes|Stack]    | Takes 2 inputs   |
+| ▾ Your program (3) |                                               | This function    |
+|    main            | [Code|Assembly|Side by side|Bytes|Stack]      | Takes 2 inputs   |
 |    add             |  5 ▌ total = sum_to(add(argc,5));             | Calls and        |
 |    sum_to          |  6 ▌ printf("%ld\n",total);   ┌ Line 5 → 2 ┐  | callers          |
 | ▸ Startup &        |                               │ 11b5 call  │  | Variables        |
@@ -463,20 +462,24 @@ at first sight is off by default or one click away.
 | ● Showing main                      total — press N to rename, Y to change type       |
 ```
 
-![The study view at 1440×900 in its default dark theme: C and assembly side by side, linked by colour bands, with the Explain panel on the right](img/decompile2-split.png)
+![The decompiler at 1440×900 in its default dark theme, with ?student=true: the code and assembly side by side, linked by colour bands, with the Explain panel on the right](img/decompile-split.png)
 
 **Layout.** A top bar, the body and a status bar. The top bar holds the file name and its
-function count, the *Show hints* checkbox, *Open file*, *Try an example*, a ⋯ menu (*Download C code (.zip)*,
+function count, the *Show hints* checkbox, *Open file*, *Collaborate* (the live-session
+dialog, below; its tooltip and accessible description say what it is, and before a
+program is open it is off, saying "Open a program first"), a ⋯ menu (*Download C code (.zip)*,
 *Download patched program*, *Decompiler effort* — Automatic, Fast, Reliable, Thorough for
 `--mode` auto/fast/reliable/aggressive —, *Show code as* — Automatic, C, Rust —,
 *Keyboard shortcuts*, a link home), help, and the light/dark toggle (dark until it is
 pressed; the choice is kept, and a stored "system" from an earlier build reads as
-dark). Before a file is open the body is a welcome screen:
-one sentence on what the page does, a drop zone, the same two buttons, three steps. A
+dark). Before a file is open the body is a welcome screen: **Decompile a binary program**,
+"Open a program to generate source-like code for it running 100% in the web browser
+using WASM", and a drop zone with *Open file*. A
 file dropped anywhere on the page opens too; the page reads the bytes before it clears
 the input, so picking the same file again works. With a file open the body is three
-columns: the function list, the function (name, signature and size, *Rename* and
-*Signature*, the view switch, *View options*), and the Explain panel, which can be
+columns: the function list, the function (its name alone, with its address as the
+tooltip; *Rename* and *Signature*, the view switch, *View options*), and the Explain
+panel, which can be
 closed. Below 1280 px the Explain panel is a drawer; below 900 px the function list is a
 drawer too, and *Side by side* shows one view with a note saying it needs a wider window.
 The status bar says what the page is doing in a sentence ("Decompiling main…", "Showing
@@ -492,8 +495,10 @@ Loading a binary opens `main` (else the program's first function) without a clic
 search box is the §4.1 matcher; while it holds text, a group with matches opens and
 counts `shown of total`, and clearing it puts the groups back the way they were.
 
-**Views and defaults.** *C code*, *Side by side*, *Assembly*, *Bytes*, *Stack*, and
-*Original source* for the example. Every default is chosen for a first look, and every
+**Views and defaults.** *Code* (C, or Rust under ⋯ → *Show code as*), *Assembly*, *Side
+by side* (the code next to its assembly), *Bytes*, *Stack*; keys `1` `2` `3` `4` for
+Code, Assembly, Bytes, Stack and `s` for side by side. Every default is chosen for a
+first look, and every
 one is a control under *View options*: instruction bytes hidden (the single view and
 side by side keep separate settings), the C shown as a heading above its assembly
 ("Function setup" and "Function cleanup" head the prologue and epilogue; *As comments*
@@ -505,20 +510,27 @@ than `[RBP + -0x14]`, for x86, AArch64 and A32; `<symbol>` targets, strings and
 `.byte`/`.word` data are left as they are. Each row's tooltip is the engine's text,
 and every lookup (notes, idioms, stack operands, links) reads the engine's text, so
 *Exactly as decoded* changes the letters and nothing else. The first function shows a
-one-time tip (*Got it*). Settings are `kuna.d2.prefs` version 2; a version-1 record keeps
+one-time tip (*Got it*). Settings are `kuna.d2.prefs` version 3; a version-1 record keeps
 its view and its choices and takes the new defaults for the settings whose default
-changed.
+changed, and a version-2 record keeps everything but its `hints` (see below).
 
-**Show hints.** On by default. Unticking it (kept as the `hints` setting) hides what is
-there to teach rather than to inform, for a student who no longer needs it: the one-time
-tip, the key hints in the status bar, what a mnemonic does and the idiom notes (in the
-hover card, the Explain panel and the assembly rows), "v1 is a name the decompiler made
-up", the hover card's "Click the line…" footer, the Bytes view's how-to line, the Stack
-view's explanation, its notes on the return address and saved registers and its
-overflow/red-zone callouts, and the welcome screen's steps. Facts stay: sizes, offsets,
-types, where a variable lives, which line an instruction came from. Each teaching element
-carries `d2-teach` (or is one of a few named elements), and one CSS rule under
-`:root[data-hints=off]` hides them all, so nothing re-renders.
+**Show hints.** Off by default; **`?student=true`** in the address turns them on for that
+load (a class can hand out `/decompile/?student=true`), and `?student=false` turns them
+off. Otherwise the checkbox decides, and ticking or unticking it is remembered as the
+student's own choice (`hints` with `hintsSet`), which then wins over the address for the
+rest of that load. Versions 1 and 2 of the settings stored `hints: true` as a default,
+not a choice, so version 3 does not carry it over. Hints are what is there to teach
+rather than to inform: the one-time tip, the key hints in the status bar, **the hover
+cards** on the code and on the assembly rows (their content explains), what a mnemonic
+does and the idiom notes (in the Explain panel and the assembly rows), "v1 is a name the
+decompiler made up", the Bytes view's how-to line, the Stack view's explanation, its
+notes on the return address and saved registers and its overflow/red-zone callouts.
+Hovering still marks a line and its instructions in every pane (that is linking, not a
+card). Facts stay: sizes, offsets, types, where a variable lives, which line an
+instruction came from. Each teaching element carries `d2-teach` (or is one of a few
+named elements), and one CSS rule under `:root[data-hints=off]` hides them all, so
+nothing re-renders; a script in the page's head sets that attribute before the page
+draws, so nothing flashes.
 
 **The Explain panel.** Three parts. *What is selected*: a variable (its kind, type,
 which input it is, where it lives in words — "the stack, 28 bytes below the return
@@ -531,7 +543,7 @@ variables only the debug info has and the types. *Your changes*: one plain line 
 ✓/✗/• mark, edit and remove, *Undo* and *Redo*, and a ⋯ menu to export, import, copy the
 command line, or clear.
 
-**Modules** (`integrations/web/decompile2/`; all but `app.js`, `hover.js`'s controller,
+**Modules** (`integrations/web/decompile/`; all but `app.js`, `hover.js`'s controller,
 `sync.js`, `dialogs.js` and `rail.js` are DOM-free, so Node tests import them from the
 source tree):
 
@@ -546,7 +558,7 @@ source tree):
 | `groups.js` | the function list's three groups and the function to open first |
 | `bytes-view.js` / `arch.js` | the hex dump and the patched file; no-op fills |
 | `mnemonics.js` / `stack-frame.js` / `xrefs-view.js` / `help.js` | instruction notes and idioms; the frame diagram; calls and callers in words; the help dialog |
-| `prefs.js` / `addr.js` | view settings (`kuna.d2.prefs`, v2 with the v1 migration); addresses as hex strings and BigInt |
+| `prefs.js` / `addr.js` | view settings (`kuna.d2.prefs`, v3 with the v1 and v2 migrations) and `hintsOn`; addresses as hex strings and BigInt |
 | `collab/` | *Working together* (below), loaded with a dynamic `import()` only when a session starts or an invite or reply link is opened: `collab.js` (dialogs, the roster, following), `sync.js` (the page's side: the Session ⇄ register sync, joining and leaving, where a session is stored), `group.js` (the protocol: hello, snapshots, relayed introductions, file transfer, digests, limits), `link.js` (WebRTC and BroadcastChannel links), `replica.js` (registers, `validOp`, digests, the register-based undo), `wire.js` (messages and their checks, invite and reply codes), `sdp.js`, `presence.js` (pointers and pings), `collab.css`; all but `collab.js`, `link.js` and `presence.js` are DOM-free (SHA-256 is `../sha256.js`, shared with the page) |
 
 **Linking.** Every pane shares one index: a C line's instructions are the union of the
@@ -556,7 +568,7 @@ line and its instructions share a colour band. Hovering marks the other panes wi
 scrolling them; selecting (a line, an instruction, a variable, a stack slot) marks every
 pane, scrolls the others to it and fills the Explain panel's card. The hover card waits
 450 ms by default (View options → Hover delay: Instant, Short 250, Normal, Slow 800,
-Off), switches instantly while open, and hides on pointer-out (120 ms grace), scroll,
+Off; with *Show hints* off there is no card at all), switches instantly while open, and hides on pointer-out (120 ms grace), scroll,
 wheel, blur, mousedown and `Escape`; a touch long-press (500 ms) and arrow-key
 navigation show it too. It shows a C line's instructions ("Line 5 → 2 instructions", up
 to 10), a call's callee and signature, an instruction's size and place in words with its
@@ -688,8 +700,8 @@ says why.
 
 **Working together.** Several people can work on one program at once, with no server:
 each person's page renames, retypes, notes and patches, and everyone sees the others'
-changes, where they are, and their pointers. ⋯ → *Work together…* (the page stays
-unlisted) asks for a name and makes an **invite link**, `/decompile2/#join=<code>`; the
+changes, where they are, and their pointers. *Collaborate* in the top bar asks for a
+name and makes an **invite link**, `/decompile/#join=<code>`; the
 dialog says plainly that whoever opens it receives a copy of the program. The code lives
 in the fragment, which browsers never send to a server, and holds only what the other
 page needs to connect: the inviter's name, the program's name and size, and a compact
@@ -967,7 +979,7 @@ formats and architectures**:
    same wasm under a new ETag, then another wasm), a restarted Worker downloads neither the
    wasm nor a spec file, still decompiles, and keeps the id; a Worker that cannot hand its
    module over makes the id unknown.
-4. **The study view.** Five build-free suites import the page's modules from the source
+4. **The decompiler page.** Five build-free suites import the page's modules from the source
    tree: **`test/decompile2-render.mjs`** (the shared highlighter's `scan` — `highlight*`
    output pinned byte for byte — token-stream rendering and the per-line fallback,
    escaping, the index, the diff, assembly rows as comments and as headings, the easy
@@ -1037,9 +1049,15 @@ formats and architectures**:
    wins) and a rename chain all apply; it skips without `decompiler/target/release/kuna`.
 5. **`test/decompile2-browser.mjs`** — the real page in headless Chrome over the DevTools
    protocol (Node's built-in `WebSocket`, no `puppeteer`; skips when there is no Chrome or
-   the Node has no `WebSocket`): it checks the welcome screen's drop zone, loads the
-   example through the file input with a `DataTransfer`, checks `main` opens without a
-   click and the theme toggle sets `data-theme`, hovers line 5 and checks the card counts
+   the Node has no `WebSocket`): it checks the welcome screen (its two lines of text, the
+   drop zone, no example), that hints start off, that *Collaborate* is in the top bar and
+   off until a program is open, loads the committed fixture through the file input with a
+   `DataTransfer` (`worker-harness.mjs` `openSample`; the site ships no sample program),
+   checks `main` opens without a click with only its name in the header and the views in
+   the order Code · Assembly · Side by side · Bytes · Stack, that hovering a line, a name
+   or an instruction shows no card while hints are off but still marks the line, that
+   *Collaborate* then has its tooltip and opens the dialog, that `?student=true` turns
+   hints on, that the theme toggle sets `data-theme`, hovers line 5 and checks the card counts
    the inferred set-up, switches to Assembly (headings per line, the easy spelling,
    inferred rows dashed, the prologue labelled), renames `v1` to `total`, steps down a
    line from the selected variable, adds a note to a line and edits it from *Your
@@ -1048,9 +1066,11 @@ formats and architectures**:
    horizontal overflow, reloads to see the session restored (and not re-announced when the
    Rust view re-indexes, where a retype says it needs C), loads with a stored directive the
    engine cannot parse (the binary still opens, the directive is marked), and checks that
-   `/decompile` still renders and its Language control switches to Rust, that *Show
-   hints* hides the teaching notes and brings them back, and that `/`,
-   `/decompile/` and `/dev-viz/` do not link to `/decompile2/`. Any uncaught page
+   *Show hints* hides the teaching notes and brings them back, that ticking or unticking
+   it is remembered across reloads without the parameter (and `?student=true` still wins
+   for its load), that `/decompile2/?student=true#join=…` lands on `/decompile/` with the
+   query and the fragment intact (and serves a meta refresh), and that `/` and
+   `/dev-viz/` link to `/decompile/` while nothing links to `/decompile2/`. Any uncaught page
    exception fails it; steps an older engine cannot serve assert the page's fallback and
    are listed as skipped. CI runs it when the runner has `google-chrome`.
    **`test/decompile2-collab-browser.mjs`** drives live sessions in tabs of one headless
@@ -1137,7 +1157,7 @@ benign PE is committed because this environment has no PE linker.
 
 - **An edit costs a load and two decompiles.** Every study-view request re-bootstraps
   the engine (a WASI command), and a `name`/`type` directive makes the engine decompile
-  the function twice (the local does not exist until the first pass). On the example that
+  the function twice (the local does not exist until the first pass). On the test fixture that
   is well under a second; on a large function it is seconds, so the page keeps the
   previous render up and only a thin progress bar moves.
 - **One request at a time.** The Worker runs one synchronous WASI call; a new function,
@@ -1181,8 +1201,10 @@ benign PE is committed because this environment has no PE linker.
 
 - Harness & commands: `integrations/web/README.md`
 - Browser worker boundary: `integrations/web/{kuna-worker.js,kuna-worker-client.js}`
-- The study view: `integrations/web/decompile2/` (module table in §4.2); its tests
-  `integrations/web/test/decompile2-*.mjs`, the CDP driver `test/cdp-client.mjs`, the
+- The decompiler page: `integrations/web/decompile/` (module table in §4.2), and the
+  redirect at `integrations/web/decompile2/index.html`; its tests
+  `integrations/web/test/decompile2-*.mjs` (named for the page's first address), the CDP
+  driver `test/cdp-client.mjs`, the
   fixture generator `test/make-inspect-fixtures.mjs`
 - The crate: `decompiler/crates/kuna-wasm/{Cargo.toml, src/lib.rs, src/main.rs}`
   (the per-function `kind` classifier lives in `kuna-console/src/classify.rs`)
