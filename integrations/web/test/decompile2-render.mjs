@@ -10,7 +10,7 @@ import {
   changedLines, localDecls, storageLabel, bandOf,
 } from '../decompile/render-c.js';
 import { addrHex, signedHex } from '../decompile/addr.js';
-import { normalizePrefs, cycle, DEFAULT_PREFS, loadPrefs, savePrefs } from '../decompile/prefs.js';
+import { normalizePrefs, cycle, hintsOn, DEFAULT_PREFS, loadPrefs, savePrefs } from '../decompile/prefs.js';
 import {
   formatAddr, groupRuns, linkOperands, branchArrows, renderAsm, renderInsnRows, stackOperand,
   isBranch, isCall, spacedBytes, inferLines, easyOperands, spellInsn,
@@ -189,9 +189,18 @@ assert.equal(normalizePrefs({ v: 1, tab: 'src' }).view, 'c', 'the example-only s
 assert.equal(normalizePrefs({ v: 2, asmCMode: 'interleave' }).asmCMode, 'heading', 'the old name of the headings mode still reads');
 assert.deepEqual(normalizePrefs({ v: 2, theme: 'light', tipSeen: true, view: 'nope' }), { ...DEFAULT_PREFS, theme: 'light', tipSeen: true });
 assert.equal(normalizePrefs({ v: 2, theme: 'system' }).theme, 'dark', 'the retired "system" theme reads as the dark default');
-assert.equal(DEFAULT_PREFS.hints, true, 'hints start on');
-assert.equal(normalizePrefs({ v: 2, hints: false }).hints, false, 'turning hints off is kept');
-assert.equal(normalizePrefs({ v: 2, hints: 'no' }).hints, true, 'a malformed value falls back to on');
+assert.equal(DEFAULT_PREFS.hints, false, 'hints start off');
+assert.equal(normalizePrefs({ v: 2, hints: true }).hints, false, 'a version-2 record stored hints on as a default, not a choice');
+assert.equal(normalizePrefs({ v: 2, theme: 'light', hints: true }).theme, 'light', 'its other settings carry over');
+assert.deepEqual([normalizePrefs({ v: 3, hints: true, hintsSet: true }).hints, normalizePrefs({ v: 3, hints: false, hintsSet: true }).hints], [true, false], 'a choice is kept');
+assert.equal(normalizePrefs({ v: 3, hints: true }).hints, false, 'hints on without having chosen them is not');
+assert.equal(normalizePrefs({ v: 3, hints: 'no', hintsSet: true }).hints, false, 'a malformed value falls back to off');
+const chose = (hints) => ({ ...DEFAULT_PREFS, hints, hintsSet: true });
+assert.equal(hintsOn(DEFAULT_PREFS, ''), false, 'off by default');
+assert.equal(hintsOn(DEFAULT_PREFS, '?student=true'), true, '?student=true turns them on for this load');
+assert.equal(hintsOn(chose(false), '?x=1&student=true'), true, 'over the student\'s own choice');
+assert.equal(hintsOn(chose(true), '?student=false'), false, 'and ?student=false off');
+assert.equal(hintsOn(chose(true), ''), true, 'without the switch, the student\'s choice');
 assert.deepEqual([DEFAULT_PREFS.asmBytes, DEFAULT_PREFS.asmBytesSplit, DEFAULT_PREFS.asmCMode, DEFAULT_PREFS.cLineAddrs, DEFAULT_PREFS.theme],
   [false, false, 'heading', false, 'dark'], 'the beginner defaults');
 assert.equal(cycle(DEFAULT_PREFS, 'asmAddr').asmAddr, 'rel');

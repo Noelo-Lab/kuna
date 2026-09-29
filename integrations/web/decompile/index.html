@@ -3,19 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kuna — see how a program looks to the computer</title>
-<meta name="description" content="Open a compiled program to read its C code, its assembly, and how they connect. Rename and retype what you read, patch bytes, and download the result. It runs in your browser; nothing is uploaded.">
+<title>Kuna — decompile a binary program</title>
+<meta name="description" content="Open a program to generate source-like code for it running 100% in the web browser using WASM. Rename and retype what you read, patch bytes, work on it with others, and download the result. Nothing is uploaded.">
 <meta name="color-scheme" content="dark light">
 <meta name="robots" content="noindex">
 <link rel="icon" type="image/png" href="../assets/img/favicon.png">
 <link rel="stylesheet" href="./decompile2.css">
 <script>
+  // Before the page draws: the theme, and whether hints show (off unless
+  // ?student=true, or the student turned them on themselves); see prefs.js.
   document.documentElement.dataset.theme = 'dark';
+  document.documentElement.dataset.hints = 'off';
+  const student = new URLSearchParams(location.search).get('student');
   try {
     const prefs = JSON.parse(localStorage.getItem('kuna.d2.prefs') || '{}');
     if (prefs.theme === 'light') document.documentElement.dataset.theme = 'light';
-    if (prefs.hints === false) document.documentElement.dataset.hints = 'off';
-  } catch (_) { /* no storage: the default dark theme, hints on */ }
+    if (student !== 'false' && (student === 'true' || (prefs.v === 3 && prefs.hintsSet === true && prefs.hints === true))) {
+      document.documentElement.dataset.hints = 'on';
+    }
+  } catch (_) {
+    if (student === 'true') document.documentElement.dataset.hints = 'on';
+  }
 </script>
 </head>
 <body class="d2">
@@ -32,17 +40,16 @@
       <span class="d2-crumbcount" id="crumbcount"></span>
     </span>
     <span class="d2-grow"></span>
-    <label class="d2-hintsbox" title="Tips on using the page, and what instructions and stack slots mean. Turn them off once you know your way around."><input type="checkbox" id="hintsbox" checked>Show hints</label>
+    <label class="d2-hintsbox" title="Tips on using the page, what instructions and stack slots mean, and cards that explain what the pointer rests on."><input type="checkbox" id="hintsbox">Show hints</label>
     <label class="d2-btn primary" id="pick" aria-disabled="true">Open file<input type="file" id="file"></label>
-    <button class="d2-btn" id="examplebtn" disabled>Try an example</button>
+    <button class="d2-btn" id="collabbtn" disabled title="Open a program first" aria-describedby="collabwhat">Collaborate</button>
+    <span class="d2-sr" id="collabwhat">Work on this program with others in real time: share an invite link and see each other's renames, notes and pointers. Runs browser-to-browser, with no server.</span>
     <div class="d2-menuwrap">
       <button class="d2-iconbtn" id="morebtn" aria-haspopup="menu" aria-expanded="false" aria-controls="moremenu" title="More">
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="3" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="13" cy="8" r="1.5"/></svg>
         <span class="d2-sr">More</span>
       </button>
       <div class="d2-menu d2-moremenu" id="moremenu" role="menu" hidden>
-        <button class="d2-mi" id="collabbtn" role="menuitem">Work together…<small>Invite someone to work on this program with you</small></button>
-        <hr>
         <button class="d2-mi" id="dlbtn" role="menuitem" disabled>Download C code (.zip)</button>
         <button class="d2-mi" id="patchbtn" role="menuitem" disabled>Download patched program<small id="patchwhy">Patch some bytes first</small></button>
         <hr>
@@ -91,20 +98,13 @@
     <main class="d2-main" id="main">
       <div class="d2-welcome" id="empty">
         <div class="d2-welcomein">
-          <h1>See how a program looks to the computer</h1>
-          <p class="d2-lede">Open a compiled program to read its C code, its assembly, and how they connect. It runs in your browser — nothing is uploaded.</p>
+          <h1>Decompile a binary program</h1>
+          <p class="d2-lede">Open a program to generate source-like code for it running 100% in the web browser using WASM</p>
           <div class="d2-drop" id="dropzone">
             <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 26V8m0 0-7 7m7-7 7 7M8 26v4a3 3 0 0 0 3 3h18a3 3 0 0 0 3-3v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <p class="d2-droptitle">Drop a program here</p>
-            <p class="d2-dropor"><button class="d2-btn primary" id="welcomeopen" disabled>Open file</button>
-              <span>or <button class="d2-link" id="welcomeexample" disabled>try an example program</button></span></p>
+            <p class="d2-dropor"><button class="d2-btn primary" id="welcomeopen" disabled>Open file</button></p>
           </div>
-          <ol class="d2-steps d2-teach">
-            <li><span class="d2-stepn">1</span><span>Pick a function on the left</span></li>
-            <li><span class="d2-stepn">2</span><span>Hover over a line of C to see its assembly</span></li>
-            <li><span class="d2-stepn">3</span><span>Double-click a name to rename it</span></li>
-          </ol>
-          <p class="d2-formats">ELF, PE and Mach-O · x86, ARM, MIPS, PowerPC and more</p>
         </div>
       </div>
 
@@ -117,7 +117,6 @@
         </button>
         <div class="d2-fntitle">
           <h1 id="vname"></h1>
-          <p id="vmeta"></p>
         </div>
         <span class="d2-grow"></span>
         <button class="d2-btn ghost" id="fnrenamebtn" title="Give this function a new name">
@@ -129,12 +128,11 @@
 
       <div class="d2-viewbar" id="tabbar" hidden>
         <div class="d2-seg" id="tabs" role="tablist" aria-label="Views">
-          <button role="tab" id="tab-c" data-tab="c" aria-controls="pane-c" aria-selected="true">C code</button>
-          <button role="tab" id="splitbtn" data-tab="split" aria-controls="pane-c pane-asm" aria-selected="false">Side by side</button>
+          <button role="tab" id="tab-c" data-tab="c" aria-controls="pane-c" aria-selected="true">Code</button>
           <button role="tab" id="tab-asm" data-tab="asm" aria-controls="pane-asm" aria-selected="false">Assembly</button>
+          <button role="tab" id="splitbtn" data-tab="split" aria-controls="pane-c pane-asm" aria-selected="false">Side by side</button>
           <button role="tab" id="tab-bytes" data-tab="bytes" aria-controls="pane-bytes" aria-selected="false">Bytes</button>
           <button role="tab" id="tab-stack" data-tab="stack" aria-controls="pane-stack" aria-selected="false">Stack</button>
-          <button role="tab" id="tab-src" data-tab="src" aria-controls="pane-src" aria-selected="false" hidden>Original source</button>
         </div>
         <span class="d2-grow"></span>
         <div class="d2-menuwrap">
@@ -153,7 +151,7 @@
         <p class="d2-narrownote" id="narrownote" hidden>Side by side needs a wider window, so the views are shown one at a time.</p>
         <div class="d2panes" id="panes" hidden>
           <div class="d2pane" id="pane-c" role="tabpanel" aria-labelledby="tab-c">
-            <div class="d2code" id="ccode" role="listbox" tabindex="0" aria-label="C code"></div>
+            <div class="d2code" id="ccode" role="listbox" tabindex="0" aria-label="Code"></div>
           </div>
           <div class="d2pane" id="pane-asm" role="tabpanel" aria-labelledby="tab-asm" hidden>
             <div class="d2code" id="asmcode" role="listbox" tabindex="0" aria-label="Assembly"></div>
@@ -164,9 +162,6 @@
           </div>
           <div class="d2pane" id="pane-stack" role="tabpanel" aria-labelledby="tab-stack" hidden>
             <div class="d2code d2prose" id="stackframe" tabindex="0" aria-label="Stack"></div>
-          </div>
-          <div class="d2pane" id="pane-src" role="tabpanel" aria-labelledby="tab-src" hidden>
-            <pre class="d2code d2src" id="srccode" tabindex="0" aria-label="Original C source"></pre>
           </div>
         </div>
       </div>

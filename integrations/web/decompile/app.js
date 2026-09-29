@@ -9,7 +9,7 @@ import {
   KunaWorkerCancelledError,
   KunaWorkerClient,
 } from '../kuna-worker-client.js';
-import { escapeHtml, highlightC } from '../assets/js/highlight-c.js';
+import { escapeHtml } from '../assets/js/highlight-c.js';
 import { compileQuery, searchKey } from '../assets/js/fnfilter.js';
 import {
   normalizeInspect,
@@ -19,7 +19,7 @@ import {
   localDecls,
   changedLines,
 } from './render-c.js';
-import { loadPrefs, savePrefs, cycle, DEFAULT_PREFS } from './prefs.js';
+import { loadPrefs, savePrefs, cycle, hintsOn, DEFAULT_PREFS } from './prefs.js';
 import { groupFunctions, groupOf, firstFunction } from './groups.js';
 import { renderAsm, renderInsnRows, formatAddr, spacedBytes, inferLines, spellInsn } from './asm-view.js';
 import { createHover } from './hover.js';
@@ -44,19 +44,19 @@ import { helpHtml } from './help.js';
 const $ = (id) => document.getElementById(id);
 const els = {
   status: $('status'), cancel: $('cancelbtn'), dl: $('dlbtn'), patch: $('patchbtn'), patchWhy: $('patchwhy'),
-  mode: $('mode'), lang: $('lang'), example: $('examplebtn'), pick: $('pick'), file: $('file'),
+  mode: $('mode'), lang: $('lang'), pick: $('pick'), file: $('file'),
   help: $('helpbtn'), keys: $('keysbtn'), more: $('morebtn'), moreMenu: $('moremenu'), theme: $('themebtn'), hintsBox: $('hintsbox'),
   collab: $('collabbtn'), modeNote: $('modenote'),
   crumb: $('crumb'), crumbName: $('crumbname'), crumbCount: $('crumbcount'), fnsBtn: $('fnsbtn'),
   progress: $('progress'), work: $('work'), codearea: $('codearea'), tip: $('tip'), tipBtn: $('tipbtn'),
   narrow: $('narrownote'), list: $('fnlist'), filter: $('fnfilter'), none: $('fnnone'),
   empty: $('empty'), drop: $('dropzone'), dropVeil: $('dropveil'),
-  welcomeOpen: $('welcomeopen'), welcomeExample: $('welcomeexample'),
-  vhead: $('vhead'), vname: $('vname'), vmeta: $('vmeta'), explain: $('explainbtn'),
+  welcomeOpen: $('welcomeopen'),
+  vhead: $('vhead'), vname: $('vname'), explain: $('explainbtn'),
   back: $('backbtn'), fwd: $('fwdbtn'), fnRename: $('fnrenamebtn'), proto: $('protobtn'),
   tabbar: $('tabbar'), tabs: $('tabs'), split: $('splitbtn'), viewBtn: $('viewbtn'), viewMenu: $('viewmenu'),
   panes: $('panes'), ccode: $('ccode'), asmcode: $('asmcode'), bytesbar: $('bytesbar'),
-  hexdump: $('hexdump'), stackframe: $('stackframe'), srccode: $('srccode'), hint: $('hint'),
+  hexdump: $('hexdump'), stackframe: $('stackframe'), hint: $('hint'),
   rail: $('rail'), railBody: $('railbody'), railBtn: $('railbtn'),
   card: $('d2card'), pop: $('d2pop'), toasts: $('d2toasts'), helpDialog: $('help'),
 };
@@ -77,7 +77,6 @@ const state = {
   current: null,
   cache: new Map(),
   caps: { inspect: null, assert: null },
-  exampleSource: null,
   hist: { index: 0, max: 0 },
   view: 'c',
   rendered: new Set(),
@@ -109,11 +108,16 @@ let active = null;
 let opSeq = 0;
 const idleQueue = [];
 
+const COLLAB_TIP = 'Work on this program with others in real time: share an invite link and see each other\'s renames, notes and pointers. Runs browser-to-browser, with no server.';
+
 function syncButtons() {
   els.cancel.disabled = !active;
   els.cancel.hidden = !active;
   els.dl.disabled = !state.inventory || !!active;
   els.progress.hidden = !(active && (active.kind === 'edit' || active.kind === 'function'));
+  const canCollab = !!state.binary || !!collab?.active;
+  els.collab.disabled = !canCollab;
+  els.collab.title = canCollab ? COLLAB_TIP : 'Open a program first';
 }
 
 /** Stop the running operation, if any, for one of `kind` (`clearSession`: a new binary replaces the engine's). */
@@ -287,11 +291,9 @@ function persist() {
 try {
   state.kuna = new KunaWorkerClient({ wasmUrl: '../kuna_wasm.wasm', specRoot: '../specs' });
   await state.kuna.ready();
-  setStatus('Ready. Open a program or try an example', 'ok');
+  setStatus('Ready. Open a program', 'ok');
   els.pick.removeAttribute('aria-disabled');
-  els.example.disabled = false;
   els.welcomeOpen.disabled = false;
-  els.welcomeExample.disabled = false;
 } catch (e) {
   setStatus('The decompiler could not start', 'err', e.message);
   toast('The decompiler could not start.', { kind: 'err', detail: e.message });
@@ -458,7 +460,7 @@ function markSelectedRow(addrHex) {
  * Load `source` (a File, or `{name, bytes}`) and list its functions. `keep`
  * reopens the function that was showing (a mode/language change).
  */
-async function indexBinary(source, { example = false, keep = null, shared = null } = {}) {
+async function indexBinary(source, { keep = null, shared = null } = {}) {
   if (!source || !state.kuna) return;
   const op = beginOperation('load', { clearSession: true });
   const name = source.name || 'binary';
@@ -488,7 +490,7 @@ async function indexBinary(source, { example = false, keep = null, shared = null
     } else {
       state.restored = null;
     }
-    state.binary = { name, bytes, example, format: null, hash };
+    state.binary = { name, bytes, format: null, hash };
     setStatus(`Finding the functions in ${name}…`, 'busy', `${bytes.length.toLocaleString()} bytes`);
     const load = (assertions) => state.kuna.load(bytes, {
       fileName: name, mode: els.mode.value, language: els.lang.value, assertions,
@@ -536,7 +538,6 @@ async function indexBinary(source, { example = false, keep = null, shared = null
     for (const alias of fn.aliases || []) if (!state.byName.has(alias)) state.byName.set(alias, fn);
   }
   buildSidebar(inventory.functions);
-  $('tab-src').hidden = !(example && state.exampleSource);
   els.crumb.hidden = false;
   els.crumbName.textContent = name;
   els.crumbCount.textContent = `${inventory.functions.length} function${inventory.functions.length === 1 ? '' : 's'}`;
@@ -656,7 +657,7 @@ window.addEventListener('drop', (e) => {
 });
 
 const reindex = () => {
-  if (state.binary) indexBinary(state.binary, { example: state.binary.example, keep: state.current?.fn.address_hex });
+  if (state.binary) indexBinary(state.binary, { keep: state.current?.fn.address_hex });
 };
 els.mode.addEventListener('change', () => {
   collab?.modeChanged(els.mode.value);
@@ -664,27 +665,6 @@ els.mode.addEventListener('change', () => {
 });
 els.lang.addEventListener('change', reindex);
 
-async function openExample() {
-  if (collab && !(await collab.confirmLeave('the example'))) return;
-  els.example.disabled = true;
-  try {
-    const [elf, src] = await Promise.all([
-      fetch('./examples/sample.elf').then((r) => {
-        if (!r.ok) throw new Error(`the example is not in this build (${r.status})`);
-        return r.arrayBuffer();
-      }),
-      fetch('./examples/sample.c').then((r) => (r.ok ? r.text() : null)).catch(() => null),
-    ]);
-    state.exampleSource = src;
-    await indexBinary({ name: 'sample.elf', bytes: new Uint8Array(elf) }, { example: true });
-  } catch (e) {
-    toast('Could not load the example.', { kind: 'err', detail: e.message });
-  } finally {
-    els.example.disabled = false;
-  }
-}
-els.example.addEventListener('click', openExample);
-els.welcomeExample.addEventListener('click', openExample);
 
 // ── opening a function ─────────────────────────────────────────────────────
 
@@ -774,8 +754,7 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
   if (!keepView) {
     state.current = null;
     els.vname.textContent = label;
-    els.vmeta.textContent = '';
-    els.vmeta.title = fn.address_hex;
+    els.vname.title = fn.address_hex;
     els.ccode.innerHTML = `<div class="d2note">Decompiling ${escapeHtml(label)}…</div>`;
     for (const pane of [els.asmcode, els.hexdump, els.stackframe]) pane.innerHTML = '';
   }
@@ -805,16 +784,6 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
 // ── rendering ──────────────────────────────────────────────────────────────
 
 /** The header's one muted line: the signature, then sizes in words; the address in its tooltip. */
-function fnMeta(fn, data) {
-  const parts = [];
-  if (data.proto) parts.push(`<code>${escapeHtml(data.proto)}</code>`);
-  if (data.hasInstructions) parts.push(`${data.instructions.length} instruction${data.instructions.length === 1 ? '' : 's'}`);
-  if (data.size) parts.push(`${data.size} bytes`);
-  if (isStub(fn)) parts.push(fn.kind === 'plt' ? 'imported from a library' : 'a jump to another function');
-  if (data.error) parts.push('could not be decompiled');
-  return parts.join(' · ');
-}
-
 function showFunction(fn, data, { focusAddr = null, keep = false, key = null } = {}) {
   const { segs } = lineSegments(data);
   const arch = archFrom(data.target || state.inventory?.target, data.instructions);
@@ -836,8 +805,6 @@ function showFunction(fn, data, { focusAddr = null, keep = false, key = null } =
   sync.setIndex(index);
   els.vname.textContent = displayName(fn);
   els.vname.title = fn.address_hex;
-  els.vmeta.innerHTML = fnMeta(fn, data);
-  els.vmeta.title = `${fn.address_hex}${data.size ? ` · ${data.size} bytes` : ''}`;
   const row = state.rows.find((r) => r.fn === fn)?.row;
   row?.classList.toggle('bad', !!data.error);
   els.tip.hidden = state.prefs.tipSeen;
@@ -862,7 +829,7 @@ els.tipBtn.addEventListener('click', () => {
 });
 
 function paneFor(tab) {
-  return { c: 'pane-c', asm: 'pane-asm', bytes: 'pane-bytes', stack: 'pane-stack', src: 'pane-src' }[tab];
+  return { c: 'pane-c', asm: 'pane-asm', bytes: 'pane-bytes', stack: 'pane-stack' }[tab];
 }
 
 const narrowView = window.matchMedia('(max-width: 899px)');
@@ -929,9 +896,6 @@ const RENDER = {
     }
     els.stackframe.innerHTML = renderFrame(frame, { selectedSym: state.sel?.sym || null });
     sync.refresh('stack');
-  },
-  src() {
-    els.srccode.innerHTML = state.exampleSource ? highlightC(state.exampleSource) : '';
   },
 };
 
@@ -1356,7 +1320,7 @@ const hover = createHover({
   roots: [els.ccode, els.asmcode],
   card: els.card,
   delay: () => state.prefs.hoverDelay,
-  resolve: resolveHover,
+  resolve: (el) => (showHints() ? resolveHover(el) : null),
 });
 
 /** Select a target in every pane; `from` is the pane that asked (not scrolled). */
@@ -1538,18 +1502,17 @@ function paneKey(e) {
 
 // ── views, view options ────────────────────────────────────────────────────
 
-/** Switch the view: `c`, `split` (C beside the assembly), `asm`, `bytes`, `stack` or `src`. */
+/** Switch the view: `c` (the code), `split` (the code beside the assembly), `asm`, `bytes` or `stack`. */
 function setView(view) {
-  if (view === 'src' && $('tab-src').hidden) return;
   state.view = view;
-  if (view !== 'src') updatePrefs({ view });
+  updatePrefs({ view });
   const shown = visibleTabs();
   for (const btn of els.tabs.querySelectorAll('[role=tab]')) {
     const on = btn.dataset.tab === view;
     btn.setAttribute('aria-selected', String(on));
     btn.tabIndex = on ? 0 : -1;
   }
-  for (const t of ['c', 'asm', 'bytes', 'stack', 'src']) $(paneFor(t)).hidden = !shown.includes(t);
+  for (const t of ['c', 'asm', 'bytes', 'stack']) $(paneFor(t)).hidden = !shown.includes(t);
   els.panes.classList.toggle('split', shown.length > 1);
   els.narrow.hidden = !(view === 'split' && shown.length === 1);
   if (state.asmRendered && state.asmRendered !== (inSplit() ? 'split' : 'asm')) state.rendered.delete('asm');
@@ -1650,7 +1613,10 @@ els.viewMenu.addEventListener('change', (e) => {
 });
 els.viewMenu.addEventListener('click', (e) => {
   if (!e.target.closest('[data-act=reset]')) return;
-  updatePrefs({ ...DEFAULT_PREFS, view: state.view, theme: state.prefs.theme, hints: state.prefs.hints, tipSeen: state.prefs.tipSeen, rail: state.prefs.rail });
+  updatePrefs({
+    ...DEFAULT_PREFS, view: state.view, theme: state.prefs.theme, hints: state.prefs.hints, hintsSet: state.prefs.hintsSet,
+    tipSeen: state.prefs.tipSeen, rail: state.prefs.rail,
+  });
   applyPaneClasses();
   if (state.current) showFunction(state.current.fn, state.current.data, { keep: true, key: state.current.key });
   renderViewMenu();
@@ -1694,13 +1660,22 @@ els.theme.addEventListener('click', () => {
 });
 applyTheme();
 
-/** "Show hints": tips, key hints and the notes that teach; the facts stay. */
+/**
+ * "Show hints": tips, key hints, the notes that teach and the hover cards; the
+ * facts stay. Off unless `?student=true` or the student turned them on (an
+ * explicit toggle is remembered and wins over the URL for the rest of the load).
+ */
+let hintsSearch = location.search;
+const showHints = () => hintsOn(state.prefs, hintsSearch);
 function applyHints() {
-  document.documentElement.dataset.hints = state.prefs.hints ? 'on' : 'off';
-  els.hintsBox.checked = state.prefs.hints;
+  const on = showHints();
+  document.documentElement.dataset.hints = on ? 'on' : 'off';
+  els.hintsBox.checked = on;
+  if (!on) hover.hide();
 }
 els.hintsBox.addEventListener('change', () => {
-  updatePrefs({ hints: els.hintsBox.checked });
+  hintsSearch = '';
+  updatePrefs({ hints: els.hintsBox.checked, hintsSet: true });
   applyHints();
 });
 applyHints();
@@ -2986,22 +2961,6 @@ function download(blob, name) {
 
 // ── working together (collab/, loaded on demand) ───────────────────────────
 
-let exampleHash = null;
-
-/** Is `hash` the hash of the file the example button loads? */
-async function isExampleHash(hash) {
-  try {
-    if (!exampleHash) {
-      const r = await fetch('./examples/sample.elf');
-      if (!r.ok) return false;
-      exampleHash = await hashBytes(new Uint8Array(await r.arrayBuffer()));
-    }
-    return exampleHash === hash;
-  } catch (_) {
-    return false;
-  }
-}
-
 /**
  * Open a program another person sent, with the session's changes rather than
  * the ones stored here. `hash` is its already-checked hash; `slot` 'shared'
@@ -3010,13 +2969,11 @@ async function isExampleHash(hash) {
  * What was running stops first, so an edit it undoes is saved where it belongs.
  */
 async function openShared({ name, bytes, hash, session: shared, mode, open = null, slot = 'own', still = () => true }) {
-  const example = await isExampleHash(hash);
-  if (example) state.exampleSource = await fetch('./examples/sample.c').then((r) => (r.ok ? r.text() : null)).catch(() => null);
   if (!still()) return false;
   supersede('load', { clearSession: true });
   if (mode && [...els.mode.options].some((o) => o.value === mode)) els.mode.value = mode;
   state.slot = slot;
-  await indexBinary({ name, bytes, hash }, { example, shared, keep: open });
+  await indexBinary({ name, bytes, hash }, { shared, keep: open });
   return state.binary?.bytes === bytes && !!state.inventory;
 }
 
@@ -3032,7 +2989,7 @@ function endShared() {
   const wasShared = state.slot === 'shared';
   state.slot = 'own';
   if (!wasShared || !state.binary) return;
-  const { hash, bytes, name, example } = state.binary;
+  const { hash, bytes, name } = state.binary;
   const own = restoreSession(hash, bytes, name);
   if (!own.size) {
     persist();
@@ -3042,7 +2999,7 @@ function endShared() {
   const kept = session;
   session = own;
   sessionChanged();
-  if (active?.kind === 'load') indexBinary({ name, bytes, hash }, { example, shared: own });
+  if (active?.kind === 'load') indexBinary({ name, bytes, hash }, { shared: own });
   else if (state.current && state.caps.assert) reinspect({ label: 'your own changes', done: 'Your own changes are back' });
   toast(`Your own changes to ${name} are back.`, {
     ms: 15000, detail: 'The session\'s changes are kept apart.',

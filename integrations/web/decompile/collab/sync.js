@@ -153,7 +153,6 @@ export class Sync {
       page: {
         fileMeta: () => this.app.fileMeta(),
         fileBytes: () => this.app.binary()?.bytes || null,
-        isExample: () => !!this.app.binary()?.example,
         welcomed: live((info) => this.#welcomed(info)),
         caughtUp: live(() => this.#caughtUp()),
         changed: live((changes) => this.#remote(changes)),
@@ -275,7 +274,7 @@ export class Sync {
     }, STALL_MS);
   }
 
-  #welcomed({ from, name, file, example, send, sid }) {
+  #welcomed({ from, name, file, send, sid }) {
     const j = this.join;
     if (!j || this.phase !== 'joining') return;
     const session = this.app.session();
@@ -292,7 +291,7 @@ export class Sync {
     this.#dirty();
     this.#stall();
     this.ui.remember?.(from);
-    this.ui.welcomed?.({ from, name, file, example, send });
+    this.ui.welcomed?.({ from, name, file, send });
   }
 
   #caughtUp() {

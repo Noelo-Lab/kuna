@@ -12,7 +12,7 @@ export const MAX_PEERS = 8;
 const MAX_FILE = 64 << 20;
 export const MAX_MESSAGE = 240 << 10;
 export const COLORS = ['#e8404e', '#5fb3e8', '#e6ae5c', '#8cc58e', '#b39ddb', '#f28fb3', '#6cc3c3', '#c8a27a'];
-const VIEWS = ['c', 'split', 'asm', 'bytes', 'stack', 'src'];
+const VIEWS = ['c', 'split', 'asm', 'bytes', 'stack'];
 
 const PEER = /^[a-z0-9]{8}$/;
 const SID = /^[a-z0-9]{12}$/;
@@ -52,9 +52,9 @@ const CHECKS = {
     only(m, ['t', 'proto', 'build', 'peer', 'name', 'color', 'sid', 'file', 'seen']) && typeof m.build === 'string' && HASH.test(m.build) &&
     (m.color === null || isColor(m.color)) && (m.sid === null || isSid(m.sid)) && (m.file === null || validFile(m.file)) &&
     (m.seen === undefined || typeof m.seen === 'boolean'))),
-  welcome: (m) => only(m, ['t', 'sid', 'color', 'roster', 'file', 'example', 'send']) && isSid(m.sid) && isColor(m.color) &&
+  welcome: (m) => only(m, ['t', 'sid', 'color', 'roster', 'file', 'send']) && isSid(m.sid) && isColor(m.color) &&
     Array.isArray(m.roster) && m.roster.length < MAX_PEERS && m.roster.every(validMember) && validFile(m.file) &&
-    typeof m.example === 'boolean' && typeof m.send === 'boolean',
+    typeof m.send === 'boolean',
   full: (m) => only(m, ['t']),
   bye: (m) => only(m, ['t']),
   snap: (m) => only(m, ['t', 'ops', 'last']) && ops(m.ops, 4000) && typeof m.last === 'boolean',

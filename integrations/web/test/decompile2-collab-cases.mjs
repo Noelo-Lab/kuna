@@ -282,7 +282,7 @@ function connector(me) {
 function member(peer, name, { file = null, bytes = null, replica = null, group = {} } = {}) {
   const p = {
     name, file, bytes, events: [],
-    fileMeta() { return this.file; }, fileBytes() { return this.bytes; }, isExample() { return false; },
+    fileMeta() { return this.file; }, fileBytes() { return this.bytes; },
     welcomed() {}, caughtUp() {}, changed() {}, fileProgress() {}, fileFailed() {}, roster() {}, where() {}, cursor() {}, ping() {},
     fileArrived(b, m) { this.file = m; this.bytes = b; },
     event(kind, info) { this.events.push([kind, info.name]); },

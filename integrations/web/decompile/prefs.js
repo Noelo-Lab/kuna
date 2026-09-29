@@ -3,11 +3,14 @@
 // The choices of the cycling ones are listed in CHOICES; `hoverDelay` -1 is off.
 // Version 1 records (the first layout) are migrated: the view and the settings a
 // student chose carry over, the columns whose defaults changed take the new ones.
+// Hints are off unless the student turned them on (`hintsSet` records that they
+// chose); version 1 and 2 records stored `hints: true` as a default, not a
+// choice, so it does not carry over. `hintsOn` adds the `?student=` switch.
 
 export const PREFS_KEY = 'kuna.d2.prefs';
 
 export const DEFAULT_PREFS = Object.freeze({
-  v: 2,
+  v: 3,
   view: 'c',
   asmAddr: 'abs',
   asmBytes: false,
@@ -21,7 +24,8 @@ export const DEFAULT_PREFS = Object.freeze({
   hoverDelay: 450,
   rail: true,
   theme: 'dark',
-  hints: true,
+  hints: false,
+  hintsSet: false,
   tipSeen: false,
 });
 
@@ -56,10 +60,25 @@ export function normalizePrefs(raw) {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_PREFS };
   if (raw.v === 1) return fromV1(raw);
   const out = { ...DEFAULT_PREFS };
-  if (raw.v !== 2) return out;
+  if (raw.v !== 2 && raw.v !== 3) return out;
   if (raw.asmCMode === 'interleave') raw = { ...raw, asmCMode: 'heading' };
   for (const key of Object.keys(DEFAULT_PREFS)) if (key !== 'v') pick(out, raw, key);
+  if (raw.v === 2 || !out.hintsSet) {
+    out.hints = false;
+    out.hintsSet = false;
+  }
   return out;
+}
+
+/**
+ * Whether hints show: `?student=true` (or `false`) in the page's `search`
+ * decides for this load; otherwise the student's own choice; otherwise off.
+ */
+export function hintsOn(prefs, search = '') {
+  const student = new URLSearchParams(search).get('student');
+  if (student === 'true') return true;
+  if (student === 'false') return false;
+  return prefs.hintsSet ? prefs.hints : false;
 }
 
 export function loadPrefs(storage) {

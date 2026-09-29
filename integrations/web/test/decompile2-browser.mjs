@@ -1,8 +1,10 @@
-// decompile2-browser.mjs — drive the real /decompile2/ page (and /decompile/)
-// in headless Chrome over the DevTools protocol: load the example through the
+// decompile2-browser.mjs — drive the real /decompile/ page in headless Chrome
+// over the DevTools protocol: the start screen, hints off by default and on
+// with ?student=true (hover cards with them), load the fixture through the
 // file input, open main, hover a line, switch to Assembly, rename a variable,
-// patch a byte, reload to see the session restored, and check the layout at
-// 1024 and 820 px. Any uncaught page exception fails the run.
+// patch a byte, reload to see the session restored, the Collaborate button,
+// the /decompile2/ redirect, and the layout at 1024 and 820 px. Any uncaught
+// page exception fails the run.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 // Steps that need the engine's `inspect`/`--assert` surface assert the page's
@@ -35,16 +37,17 @@ async function noExceptions(step) {
   done.push(step);
 }
 
-/** Load the page's own example through the real file input, as a user would. */
-const LOAD_EXAMPLE = `(async () => {
-  const bytes = await (await fetch('./examples/sample.elf')).arrayBuffer();
+/** Open the test fixture through the real file input, as a user would. */
+const loadFixture = () => page.call((b64) => {
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   const dt = new DataTransfer();
   dt.items.add(new File([bytes], 'sample.elf'));
   const input = document.getElementById('file');
   input.files = dt.files;
   input.dispatchEvent(new Event('change', { bubbles: true }));
   return true;
-})()`;
+}, readFileSync(fixture('sample.elf')).toString('base64'));
+const ready = (what = 'page ready') => page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what, timeout: 60000 });
 
 const text = (sel) => page.call((s) => document.querySelector(s)?.textContent ?? '', sel);
 const count = (sel) => page.call((s) => document.querySelectorAll(s).length, sel);
@@ -61,22 +64,71 @@ const sampleHash = 'sha256:' + createHash('sha256').update(readFileSync(fixture(
 try {
   page = await openPage(chrome.port);
   await page.viewport(1280, 860);
-  await page.navigate(`${server.base}/decompile2/`);
-  await page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what: '#pick enabled', timeout: 60000 });
+  await page.navigate(`${server.base}/decompile/`);
+  await ready('#pick enabled');
   await page.evaluate(`localStorage.clear(); true`);
+  await page.navigate(`${server.base}/decompile/`);
+  await ready();
   assert.ok(await page.call(() => {
     const zone = document.getElementById('dropzone');
     return zone.offsetParent !== null && getComputedStyle(document.getElementById('sidebar')).display === 'none';
   }), 'the welcome screen shows the drop zone, and no function list yet');
-  await noExceptions('page ready (welcome screen with a drop zone)');
+  assert.deepEqual(await page.call(() => [document.querySelector('.d2-welcomein h1').textContent, document.querySelector('.d2-welcomein .d2-lede').textContent]),
+    ['Decompile a binary program', 'Open a program to generate source-like code for it running 100% in the web browser using WASM'], 'the start screen says what the page does');
+  assert.equal(await count('#examplebtn, #welcomeexample, .d2-steps, .d2-formats, #tab-src'), 0, 'no example, steps, formats line or Original source');
+  assert.equal(await text('#welcomeopen'), 'Open file');
+  assert.deepEqual(await page.call(() => { const b = document.getElementById('collabbtn'); return [b.disabled, b.title, b.closest('.d2-top') !== null]; }),
+    [true, 'Open a program first', true], 'Collaborate sits in the top bar, off until a program is open');
+  assert.equal(await page.call(() => document.getElementById('moremenu').querySelector('#collabbtn, [id^=collab]')), null, 'and not in the ⋯ menu');
+  assert.deepEqual(await page.call(() => [document.documentElement.dataset.hints, document.getElementById('hintsbox').checked]), ['off', false], 'hints start off');
+  await noExceptions('page ready: the start screen, Collaborate off, hints off');
 
-  await page.evaluate(LOAD_EXAMPLE);
+  await loadFixture();
   await page.waitFor(`document.querySelectorAll('#fnlist .fn').length > 5`, { what: 'inventory', timeout: 60000 });
   await page.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'main opened without a click', timeout: 60000 });
+  await idle('main open');
   assert.equal(await text('#vname'), 'main', 'main is the open function without a click');
+  assert.equal((await text('.d2-fntitle')).trim(), 'main', 'the header shows only the function name');
+  assert.equal(await count('#vmeta'), 0);
+  assert.deepEqual(await page.evaluate(`[...document.querySelectorAll('#tabs [role=tab]')].map((t) => t.textContent)`),
+    ['Code', 'Assembly', 'Side by side', 'Bytes', 'Stack'], 'the views, in order');
   assert.equal(await count('#fnlist .fn.sel[data-addr="0x1198"]'), 1);
   assert.ok(await count('#ccode .t[data-kind=variable]') > 0, 'variables are tokens');
-  await noExceptions('load the example; main opens by itself');
+  await page.hover('#c-L5 .ct');
+  await sleep(900);
+  assert.equal(await page.evaluate(`document.getElementById('d2card').hidden`), true, 'with hints off, hovering a line shows no card');
+  await page.hover('#c-L5 .t[data-sym="v1"]');
+  await sleep(900);
+  assert.equal(await page.evaluate(`document.getElementById('d2card').hidden`), true, 'nor a name');
+  assert.equal(await count('#c-L5.hl-hover'), 1, 'but the line under the pointer is still highlighted, as its assembly is');
+  await page.key('2');
+  await page.waitFor(`document.getElementById('a-0x11a4')`, { what: 'the assembly', timeout: 30000 });
+  await page.hover('#a-0x11a4');
+  await sleep(900);
+  assert.equal(await page.evaluate(`document.getElementById('d2card').hidden`), true, 'nor an instruction');
+  await page.key('1');
+  assert.equal(await page.call(() => { const t = document.getElementById('tip'); return t.hidden || t.getClientRects().length === 0; }), true, 'and no tip strip');
+  const collab = await page.call(() => {
+    const b = document.getElementById('collabbtn');
+    const said = document.getElementById(b.getAttribute('aria-describedby'))?.textContent;
+    return [b.disabled, b.title, said];
+  });
+  assert.equal(collab[0], false, 'Collaborate is on once a program is open');
+  assert.match(collab[1], /^Work on this program with others in real time: share an invite link/, 'its tooltip says what it is');
+  assert.equal(collab[2], collab[1], 'and so does its accessible description');
+  await page.click('#collabbtn');
+  await page.waitFor(`document.getElementById('d2collab')?.open`, { what: 'the collaboration dialog', timeout: 10000 });
+  await page.key('Escape');
+  await page.waitFor(`!document.getElementById('d2collab')?.open`, { what: 'dialog closed', timeout: 10000 });
+  await noExceptions('open a program: the name alone in the header, the views in order, no hover card, Collaborate opens the dialog');
+
+  await page.navigate(`${server.base}/decompile/?student=true`);
+  await ready('?student=true ready');
+  assert.deepEqual(await page.call(() => [document.documentElement.dataset.hints, document.getElementById('hintsbox').checked]), ['on', true], '?student=true turns hints on');
+  await loadFixture();
+  await page.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'main again', timeout: 60000 });
+  await idle('main open with hints');
+  await noExceptions('?student=true turns hints on');
 
   assert.equal(await page.call(() => document.documentElement.dataset.theme), 'dark', 'the page opens in the dark theme');
   await page.click('#themebtn');
@@ -87,7 +139,7 @@ try {
 
   await page.hover('#c-L5 .ct');
   await sleep(700);
-  assert.equal(await page.evaluate(`!document.getElementById('d2card').hidden`), true, 'the hover card shows');
+  assert.equal(await page.evaluate(`!document.getElementById('d2card').hidden`), true, 'with hints on, the hover card shows');
   assert.match(await text('#d2card'), /^Line 5/);
   const card = await text('#d2card');
   await page.key('Escape');
@@ -190,12 +242,12 @@ try {
   }
 
   const shown = (sel) => page.call((s) => { const el = document.querySelector(s); return !!el && el.getClientRects().length > 0; }, sel);
-  assert.ok(await page.call(() => document.getElementById('hintsbox').checked), '"Show hints" starts on');
+  assert.ok(await page.call(() => document.getElementById('hintsbox').checked), '"Show hints" is on with ?student=true');
   assert.ok(await shown('#hint'), 'the status bar hint shows');
   await page.click('#hintsbox');
   assert.equal(await page.call(() => document.documentElement.dataset.hints), 'off', 'unticking turns hints off');
   assert.ok(!(await shown('#hint')), 'the status bar hint is hidden');
-  assert.equal(await page.call(() => JSON.parse(localStorage.getItem('kuna.d2.prefs')).hints), false, 'and the choice is kept');
+  assert.deepEqual(await page.call(() => { const p = JSON.parse(localStorage.getItem('kuna.d2.prefs')); return [p.hints, p.hintsSet]; }), [false, true], 'and the choice is kept');
   await page.key('4');
   await sleep(200);
   if (await count('#stackframe .d2frame') > 0) {
@@ -220,8 +272,8 @@ try {
   await page.viewport(1280, 860);
   await noExceptions('layout at 1024 and 820 px');
 
-  await page.navigate(`${server.base}/decompile2/`);
-  await page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what: 'reload ready', timeout: 60000 });
+  await page.navigate(`${server.base}/decompile/?student=true`);
+  await ready('reload ready');
   await page.call(() => {
     window.restoredToasts = 0;
     new MutationObserver((changes) => {
@@ -229,7 +281,7 @@ try {
     }).observe(document.getElementById('d2toasts'), { childList: true });
     return true;
   });
-  await page.evaluate(LOAD_EXAMPLE);
+  await loadFixture();
   await page.waitFor(`document.querySelector('.d2banner')`, { what: 'restored-session banner', timeout: 60000 });
   assert.match(await text('.d2banner'), /Restored \d+ changes? from last time/);
   await noExceptions('reload restores the session');
@@ -252,8 +304,8 @@ try {
     await noExceptions('Rust view: no re-toast, C-only edits refused with a hint');
   }
 
-  await page.navigate(`${server.base}/decompile2/`);
-  await page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what: 'reload ready', timeout: 60000 });
+  await page.navigate(`${server.base}/decompile/`);
+  await ready('reload ready');
   await page.call((key, stored) => {
     localStorage.clear();
     localStorage.setItem('kuna.d2.prefs', JSON.stringify({ v: 1, tab: 'c' }));
@@ -261,7 +313,7 @@ try {
     return true;
   }, 'kuna.d2.session.' + sampleHash, JSON.stringify({ v: 1, rawSeq: 1,
     records: [['raw:1', { kind: 'raw', text: 'bytes 0x10 zz' }]], bytes: [] }));
-  await page.evaluate(LOAD_EXAMPLE);
+  await loadFixture();
   await page.waitFor(`document.querySelectorAll('#fnlist .fn').length > 5`, { what: 'inventory despite a bad stored directive', timeout: 60000 });
   if (engineHasInspect) {
     await page.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'main despite a bad stored directive', timeout: 60000 });
@@ -272,21 +324,37 @@ try {
   }
 
   await page.navigate(`${server.base}/decompile/`);
-  await page.waitFor(`document.getElementById('pick').getAttribute('aria-disabled') === null`, { what: '/decompile ready', timeout: 60000 });
-  await page.evaluate(LOAD_EXAMPLE.replace('./examples/sample.elf', '../decompile/examples/sample.elf'));
-  const clickMain = `(() => { const row = [...document.querySelectorAll('#fnlist .fn')].find((r) => r.querySelector('.nm').textContent === 'main'); row?.click(); return !!row; })()`;
-  await page.waitFor(clickMain, { what: '/decompile lists main', timeout: 60000 });
-  await page.waitFor(`/sum_to\\(add\\(/.test(document.getElementById('code').textContent)`, { what: '/decompile renders main', timeout: 60000 });
-  await page.evaluate(`(() => { const s = document.getElementById('lang'); s.value = 'rust'; s.dispatchEvent(new Event('change')); return true; })()`);
-  await page.waitFor(clickMain, { what: '/decompile re-lists main', timeout: 60000 });
-  await page.waitFor(`/fn main|let mut|unsafe/.test(document.getElementById('code').textContent)`, { what: '/decompile Language: Rust', timeout: 60000 });
-  await noExceptions('/decompile still works and its Language control changes the output');
+  await ready('no switch, no choice');
+  assert.equal(await page.call(() => document.documentElement.dataset.hints), 'off', 'a version-1 record (hints on by default then) does not turn hints on');
+  await page.click('#hintsbox');
+  assert.equal(await page.call(() => document.documentElement.dataset.hints), 'on', 'ticking turns them on');
+  await page.navigate(`${server.base}/decompile/`);
+  await ready('reload after ticking');
+  assert.deepEqual(await page.call(() => [document.documentElement.dataset.hints, document.getElementById('hintsbox').checked]), ['on', true], 'the choice is remembered without the parameter');
+  await page.click('#hintsbox');
+  await page.navigate(`${server.base}/decompile/?student=true`);
+  await ready('the switch over a choice');
+  assert.equal(await page.call(() => document.documentElement.dataset.hints), 'on', '?student=true wins over having turned them off');
+  await page.navigate(`${server.base}/decompile/`);
+  await ready('reload after unticking');
+  assert.equal(await page.call(() => document.documentElement.dataset.hints), 'off', 'and turning them off is remembered too');
+  await noExceptions('an explicit toggle is remembered across reloads; ?student=true wins for its load');
 
-  for (const path of ['/', '/decompile/', '/dev-viz/']) {
+  await page.navigate(`${server.base}/decompile2/?student=true#join=kept-as-is`);
+  await page.waitFor(`location.pathname === '/decompile/'`, { what: 'the redirect', timeout: 20000 });
+  assert.deepEqual(await page.call(() => [location.pathname, location.search, location.hash]), ['/decompile/', '?student=true', '#join=kept-as-is'],
+    '/decompile2/ redirects to /decompile/ with the query and the invite fragment intact');
+  const moved = await (await fetch(`${server.base}/decompile2/`)).text();
+  assert.match(moved, /http-equiv="refresh" content="0; url=\.\.\/decompile\/"/, 'with a meta refresh for pages without scripts');
+  await noExceptions('/decompile2/ redirects, keeping #join=');
+
+  for (const path of ['/', '/dev-viz/']) {
     const html = await (await fetch(`${server.base}${path}`)).text();
-    assert.ok(!/decompile2/.test(html), `${path} does not link to the unlisted study view`);
+    assert.ok(/href="\.\.?\/decompile\/"/.test(html), `${path} links to /decompile/`);
+    assert.ok(!/decompile2\//.test(html), `${path} does not link to /decompile2/`);
   }
-  done.push('no other page links to /decompile2');
+  assert.ok(!/decompile2\//.test(await (await fetch(`${server.base}/decompile/`)).text()), '/decompile/ does not link to /decompile2/ either');
+  done.push('the nav links to /decompile/, and nothing to /decompile2/');
 
   console.log(`DECOMPILE2 BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
 } finally {

@@ -324,7 +324,7 @@ export class Page {
   #app() {
     return {
       session: () => this.session,
-      binary: () => (this.program ? { ...this.program, example: false } : null),
+      binary: () => (this.program ? { ...this.program } : null),
       fileMeta: () => (this.program ? { name: this.program.name, size: this.program.bytes.length, hash: this.program.hash.slice(7) } : null),
       mode: () => this.mode,
       typing: () => this.burst.size > 0,

@@ -241,7 +241,7 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   const good = [
     { t: 'hello', proto: PROTOCOL, build: BUILD, peer: 'ana00000', name: 'Ana', color: null, sid: null, file: null },
     { t: 'hello', proto: PROTOCOL + 1, peer: 'ana00000', name: 'Ana', anything: [1, 2] },
-    { t: 'welcome', sid: 'abcdefabcdef', color: COLORS[1], roster: [{ peer: 'ana00000', name: 'Ana', color: COLORS[0] }], file, example: true, send: true },
+    { t: 'welcome', sid: 'abcdefabcdef', color: COLORS[1], roster: [{ peer: 'ana00000', name: 'Ana', color: COLORS[0] }], file, send: true },
     { t: 'snap', ops: [], last: true },
     { t: 'ops', ops: [{ k: 'fn:0x10', v: 'x', c: [1, 'ana00000'] }] },
     { t: 'file', ...file },
@@ -439,7 +439,6 @@ function page(name, { file = null, bytes = null } = {}) {
     name, file, bytes, events: [], pings: [], cursors: [], welcomes: [], progress: 0,
     fileMeta() { return this.file; },
     fileBytes() { return this.bytes; },
-    isExample() { return false; },
     welcomed(info) { this.welcomes.push(info); },
     caughtUp() { this.caught = true; },
     changed() {},
