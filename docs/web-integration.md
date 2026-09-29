@@ -890,7 +890,9 @@ tried again at the page's next change. A session holds at most
 100,000 live registers (deletions do not count): a page neither sends nor accepts more.
 When the rate limit drops edits, the page asks their sender for its registers (at most
 every 5 seconds), so nothing dropped stays missing. Messages are measured in UTF-8
-bytes against the channel's limit and sent at a steady pace. A name loses control
+bytes against the channel's limit and sent at a steady pace, and all of a page's
+registers (a snapshot), queued edits and the program are sent with no more than 1 MiB
+waiting in the channel, since a channel whose send queue fills drops what does not fit. A name loses control
 characters and is cut to 40 characters, and a program that cannot travel (over 64 MiB)
 is refused before any connection is made, with the reason. Remote directives go through
 the same refusal path as the page's own, and names are escaped wherever they are shown.

@@ -786,8 +786,19 @@ export class Group {
     return out;
   }
 
-  #sendSnap(rec) {
-    for (const { text } of this.#messages('{"t":"snap","ops":[', this.replica.snapshot(), true)) this.#send(rec, text);
+  /**
+   * All this page's registers, to one page: streamed like the program, never
+   * past HIGH_WATER bytes waiting in the channel (a full send queue would
+   * drop the rest), and only once the other page has this page's hello.
+   */
+  async #sendSnap(rec) {
+    if (!rec.acked) await new Promise((done) => rec.onAck.push(done));
+    if (rec.gone || this.closed || !this.replica) return;
+    for (const { text } of this.#messages('{"t":"snap","ops":[', this.replica.snapshot(), true)) {
+      while (!rec.gone && rec.link.buffered() > HIGH_WATER) await rec.link.drain(HIGH_WATER / 2);
+      if (rec.gone || this.closed) return;
+      this.#send(rec, text);
+    }
   }
 
   async #sendFile(rec) {
@@ -827,7 +838,7 @@ export class Group {
       const messages = this.#messages('{"t":"ops","ops":[', box, false);
       let sent = 0;
       let ops = 0;
-      while (sent < messages.length && rec.out.take()) {
+      while (sent < messages.length && rec.link.buffered() <= HIGH_WATER && rec.out.take()) {
         this.#send(rec, messages[sent].text);
         ops += messages[sent++].count;
       }

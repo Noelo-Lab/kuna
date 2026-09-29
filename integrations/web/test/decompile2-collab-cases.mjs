@@ -725,6 +725,37 @@ await test('fifth review #4 moving about quickly never crowds out the messages t
   ana.g.leave();
 });
 
+await test('fifth review #7 a session larger than the channel\'s send queue reaches a newcomer whole', async () => {
+  const LIMIT = 4 << 20;
+  const ana = member('aaaaaaaa', 'Ana', { file: FILE, bytes: FILE_BYTES });
+  ana.g.create();
+  for (let i = 0; i < 30000; i++) ana.replica.set(`comment:${MAIN}:0x${(0x10000 + i).toString(16)}`, `note ${i} `.padEnd(300, 'x'));
+  const ben = member('bbbbbbbb', 'Ben', { file: FILE, bytes: FILE_BYTES });
+  const [a, b] = linkPair();
+  for (const end of [a, b]) {
+    end.queued = 0;
+    const deliver = end.deliver;
+    end.send = function send(text) {
+      if (this.queued + text.length > LIMIT) throw new Error('send queue is full');
+      this.queued += text.length;
+      setImmediate(() => { this.queued -= text.length; });
+      deliver.call(this, text, 'edits');
+    };
+    end.buffered = function buffered() { return this.queued; };
+    end.drain = function drain(n) {
+      return new Promise((done) => { const wait = () => (this.queued <= n ? done() : setImmediate(wait)); wait(); });
+    };
+  }
+  let caught = false;
+  ben.p.caughtUp = () => { caught = true; };
+  ana.g.addLink(a);
+  ben.g.addLink(b, { joining: true });
+  assert.ok(await until(() => caught, 20000), 'Ben caught up');
+  assert.equal(ben.replica.regs.size, ana.replica.regs.size, 'with every register');
+  ana.g.leave();
+  ben.g.leave();
+});
+
 const failed = results.filter(([ok]) => !ok);
 for (const [ok, name, why] of results) console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ` — ${why}`}`);
 if (failed.length) {
