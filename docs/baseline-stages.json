@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1477,
-    1477
+    1488,
+    1488
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1174,8 +1174,8 @@
     "data:elemptr #14: with the option on the table a counter is stored into is unsigned and the counter stays int",
     "data:elemptr #15: the stored counter is compared and used as an index with no cast",
     "data:elemptr #16: the counter is never re-declared unsigned and cast back",
-    "data:elemptr #17: with the option off a 2-byte field through a pointer a callee reads as uint4 * is read 4 wide and truncated - the bug",
-    "data:elemptr #18: with the option on the 2-byte field is read 2 wide",
+    "data:elemptr #17: a 2-byte field through a pointer a callee reads as uint4 * is read 2 wide in both passes",
+    "data:elemptr #18: the 2-byte field is never read 4 wide and truncated in either pass",
     "data:elemptr #19: a global stepped by bytes prints the byte step in both passes",
     "data:elemptr #1: with the option off the decoder's input is an integer and its buffer void * - the bug",
     "data:elemptr #20: a table's first element read by name is a scalar in both passes",
@@ -1275,6 +1275,17 @@
     "data:namestyle #5 ghidra restores: argument renders as param_N",
     "data:namestyle #6 ghidra restores: local renders as iVar with no location comment",
     "data:namestyle #7 ghidra restores: unnamed call target renders as func_0x<addr>",
+    "data:narrowload #10: a masked byte compare of a declared field through a loop phi reads 1 byte",
+    "data:narrowload #11: only the declared parameter reads the whole flag word",
+    "data:narrowload #1: a 2-byte read of a declared record's 4-byte field is 2 bytes wide",
+    "data:narrowload #2: a 2-byte read through a uint4 pointer is 2 bytes wide",
+    "data:narrowload #3: no narrow read is printed as a wider read truncated",
+    "data:narrowload #4: a masked 2-byte compare through a uint4 pointer reads 2 bytes",
+    "data:narrowload #5: a masked byte compare through a uint8 pointer reads 1 byte",
+    "data:narrowload #6: no masked compare reads a whole element the program reads part of",
+    "data:narrowload #7: a declared record's flag word keeps the whole-field compare",
+    "data:narrowload #8: a byte store into an 8-byte element stays one byte wide",
+    "data:narrowload #9: a masked byte compare of a declared field through a call result reads 1 byte",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
     "data:opcode-seam #1: the function emits a real body (was: no output, seam panic)",
