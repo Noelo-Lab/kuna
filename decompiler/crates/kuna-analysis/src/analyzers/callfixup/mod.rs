@@ -145,8 +145,8 @@ pub fn call_fixup_name_for_function<'a>(
     None
 }
 
-/// Scan an ELF object's FUNC symbols (`.symtab` + `.dynsym`) for names that match
-/// a registered call-fixup target, emitting a [`CallFixupFact`] per match. The
+/// Scan an object's function symbols for registered call-fixup targets,
+/// emitting a [`CallFixupFact`](crate::pass::CallFixupFact) per match. The
 /// **original installed name** is carried (not the matched fixup name), so the
 /// commit's `query_global_function` resolves the FunctionSymbol that actually
 /// exists and re-derives the fixup the same way (mirrors `noreturn`). Shared by

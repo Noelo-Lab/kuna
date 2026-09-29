@@ -38,12 +38,6 @@
 //! The CONTROL is `err_warn` (`error(0,…)`): status 0 ⇒ `error` returns ⇒ the
 //! recognizer must NOT conclude it (a false positive would drop live caller
 //! code). `compute_warn` therefore never gains a spurious no-return terminator.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -71,25 +65,15 @@ enum Mode {
     ErrorOn,
 }
 
-/// Bootstrap the fixture, set the mode's flags, decompile `func`, return the C
-/// (`None` ⇒ specs-less skip).
-fn decompile(func: &str, mode: Mode) -> Option<String> {
+/// Bootstrap the fixture, set the mode's flags, decompile `func`, return the C.
+fn decompile(func: &str, mode: Mode) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_noreturn_error: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The live-CLI ordering: `option` lines precede `read symbols` (the deferred
     // commit). Build the Listing (`listing on`) and keep `noreturn_propagate` on
@@ -125,7 +109,7 @@ fn decompile(func: &str, mode: Mode) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// THE PAYOFF: with `noreturn_error` on, the `error(2,…)` wrapper is concluded
@@ -134,11 +118,8 @@ fn decompile(func: &str, mode: Mode) -> Option<String> {
 /// on) the wrapper is treated as returning and the dead code remains.
 #[test]
 fn error_nonzero_wrapper_concludes_no_return() {
-    let Some(off) = decompile("compute", Mode::ErrorOff) else {
-        return; // specs-less skip
-    };
-    let on = decompile("compute", Mode::ErrorOn)
-        .expect("second bootstrap succeeds if the first did");
+    let off = decompile("compute", Mode::ErrorOff);
+    let on = decompile("compute", Mode::ErrorOn);
 
     eprintln!("---- compute (noreturn_error OFF) ----\n{off}");
     eprintln!("---- compute (noreturn_error ON) ----\n{on}");
@@ -167,9 +148,7 @@ fn error_nonzero_wrapper_concludes_no_return() {
 /// with `noreturn_error` on. A false positive here would drop live caller code.
 #[test]
 fn error_zero_status_wrapper_is_not_concluded() {
-    let Some(on) = decompile("compute_warn", Mode::ErrorOn) else {
-        return; // specs-less skip
-    };
+    let on = decompile("compute_warn", Mode::ErrorOn);
     eprintln!("---- compute_warn (noreturn_error ON) ----\n{on}");
     assert!(
         !on.contains("// no-return"),
@@ -189,11 +168,9 @@ fn discovered_consumer_does_not_fix_single_site_error_wrapper() {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let Some(bin) = fixture().to_str().map(str::to_string) else { return };
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(_) => return, // specs-less skip
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("listing", "on").expect("listing on");
     prog.arch_mut().set_kuna_option("noreturn_disc", "on").expect("noreturn_disc on");
     prog.arch_mut().set_kuna_option("noreturn_propagate", "off").expect("propagate off");

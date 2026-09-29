@@ -62,6 +62,7 @@ import time
 from pathlib import Path
 
 from . import config, probe
+from ..atomic import atomic_text_writer
 
 SCHEMA = "re-gate/1"
 ROUND_SCHEMA = "re-gate-round/1"
@@ -105,11 +106,9 @@ def head_sha(repo=None):
 def _write_json(path, obj):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = str(path) + ".tmp"
-    with open(tmp, "w") as fh:
+    with atomic_text_writer(path) as fh:
         json.dump(obj, fh, indent=2)
         fh.write("\n")
-    os.replace(tmp, path)
     return path
 
 
@@ -840,11 +839,9 @@ def promote(need_id, force=False):
 
     dest = config.cli_tests_dir() / ("%s.json" % need_id)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = str(dest) + ".tmp"
     body = raw if raw is not None else json.dumps(p, indent=2)
-    with open(tmp, "w") as fh:
+    with atomic_text_writer(dest) as fh:
         fh.write(body if body.endswith("\n") else body + "\n")
-    os.replace(tmp, dest)
     return dest
 
 

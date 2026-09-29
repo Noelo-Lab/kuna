@@ -1,27 +1,9 @@
-//! Port of `decompiler/cpp/kuna_arraynotation.{cc,hh}` — the pointer-notation
-//! (array-indexing) presentation sub-stage.
+//! Array-notation policy for standalone pointer arithmetic.
 //!
-//! This is a kuna-owned policy file (NOT upstream Ghidra).  It exposes the second
-//! GH-558 decision: how a standalone `PTRADD` is rendered.  Upstream
-//! `PrintC::opPtradd` uses array notation only inside a load/store context and
-//! falls back to `base + index` otherwise — a latent S9 "literal/format policy"
-//! decision.  kuna parameterizes it: `option arraynotation on` renders
-//! `&base[index]` instead.
-//!
-//! The toggle itself ([`crate::printc::PrintCOptions::array_notation`], default-on
-//! per the DIV-2 / GH-558 reset) and the `opPtradd` consumer live in
-//! [`crate::printc`].  This module owns only the option struct that flips it
-//! (C++ `OptionArrayNotation`).
-//!
-//! # Apply boundary
-//!
-//! C++ `OptionArrayNotation::apply` does `dynamic_cast<PrintC *>(glb->print)`,
-//! erroring `"Can only set array notation for C language"` when the active
-//! printer is not C, then calls `lng->setArrayNotation(val)`.  Following the
-//! kuna-option idiom (`OptionLowerSwitch::apply`), this `apply` parses + validates
-//! the `on`/`off` value and returns the resolved flag plus the confirmation
-//! message; the caller performs the `PrintC` downcast (and the not-C error) and
-//! calls [`crate::printc::PrintCOptions::set_array_notation`].
+//! `arraynotation on` renders a standalone `PTRADD` as `&base[index]`;
+//! `off` retains upstream `base + index`. Kuna enables it by default.
+//! This module parses the option; the dispatcher applies its result through
+//! [`crate::printc::PrintCOptions::set_array_notation`].
 
 use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
@@ -46,15 +28,9 @@ impl OptionArrayNotation {
     /// The option name (C++ `name = "arraynotation"`).
     pub const NAME: &'static str = "arraynotation";
 
-    /// C++ `OptionArrayNotation::apply`.
-    ///
-    /// Returns the resolved flag plus the confirmation message.  The caller does
-    /// the `dynamic_cast<PrintC *>` (and the `"Can only set array notation for C
-    /// language"` error if the active printer is not C) and calls
-    /// `lng->setArrayNotation(val)` (STUB: W4/W9 option dispatch).
+    /// Validate the toggle and return its value and confirmation message.
     pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
         let val = on_or_off(p1)?;
-        // lng->setArrayNotation(val);  -- left to the caller (STUB(W4/W9)).
         let prop = if val { "on" } else { "off" };
         Ok((val, format!("Array notation for pointer arithmetic turned {prop}")))
     }

@@ -14,12 +14,6 @@
 //!   own terminator, so the prompt it prints has no reader.
 //! * **default (the fix):** `main` is a discovered, named function and its body
 //!   is decompiled — the prompt load and the read that follows it are in it.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `ARM` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -33,26 +27,17 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn bootstrap(fixture: &str, armlibcmain: bool) -> Option<ConsoleProgram> {
+fn bootstrap(fixture: &str, armlibcmain: bool) -> ConsoleProgram {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(fixture);
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_armlibcmain: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut()
         .set_kuna_option("armlibcmain", if armlibcmain { "on" } else { "off" })
         .expect("armlibcmain flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn decompile(prog: ConsoleProgram, name: &str) -> String {
@@ -80,9 +65,7 @@ fn no_function_covers_main_with_the_option_off() {
     for (fixture, entry) in
         [("armlibcmain_le32", "sub_103dc"), ("armlibcmain_got_le32", "sub_10518")]
     {
-        let Some(prog) = bootstrap(fixture, false) else {
-            return;
-        };
+        let prog = bootstrap(fixture, false);
         assert!(
             prog.lookup_symbol("main").is_none(),
             "{fixture}: with armlibcmain off nothing may be named main — the option \
@@ -101,9 +84,7 @@ fn no_function_covers_main_with_the_option_off() {
 #[test]
 fn both_crt1_shapes_recover_main_by_default() {
     for fixture in ["armlibcmain_le32", "armlibcmain_got_le32"] {
-        let Some(prog) = bootstrap(fixture, true) else {
-            return;
-        };
+        let prog = bootstrap(fixture, true);
         assert!(prog.lookup_symbol("main").is_some(), "{fixture}: main must be discovered");
         let body = decompile(prog, "main");
         assert!(
@@ -126,22 +107,16 @@ fn both_crt1_shapes_recover_main_by_default() {
 /// `R_ARM_RELATIVE` table.
 #[test]
 fn exactly_one_entry_is_added_and_none_on_a_pie_image() {
-    let (Some(off), Some(on)) =
-        (bootstrap("armlibcmain_le32", false), bootstrap("armlibcmain_le32", true))
-    else {
-        return;
-    };
+    let (off, on) =
+        (bootstrap("armlibcmain_le32", false), bootstrap("armlibcmain_le32", true));
     assert_eq!(
         on.function_entries_canonical().len(),
         off.function_entries_canonical().len() + 1,
         "armlibcmain must add exactly the one entry it claims"
     );
 
-    let (Some(pie_off), Some(pie_on)) =
-        (bootstrap("entrymain_arm", false), bootstrap("entrymain_arm", true))
-    else {
-        return;
-    };
+    let (pie_off, pie_on) =
+        (bootstrap("entrymain_arm", false), bootstrap("entrymain_arm", true));
     assert_eq!(
         pie_on.function_entries_canonical().len(),
         pie_off.function_entries_canonical().len(),

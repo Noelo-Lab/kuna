@@ -1937,6 +1937,9 @@ therefore the eager batch's, name for name -- the batch a pool can run, which on
 (chapter [04](04-calls-and-prototypes.md)) decides what a function measures and
 no worker can see another worker's callees. Chapter [00](00-overview.md) has the
 pool's side, including the checks that send a run back to one ordered worker.
+The replay exposes its table either by borrow or by consuming ownership. Both
+preserve mint order; consuming the replay transfers its existing table allocation
+and field recipes without copying them.
 
 The `.h` of a project export lists the minted structures after every other
 type, in ascending `N`
@@ -2464,7 +2467,10 @@ gather the sibling writes in the same block, keep the maximal window with no
 interfering LOAD/STORE/CALL between members (`check_interference`), and
 assemble the constants into one byte array by offset with endian-correct
 unpacking, a single NUL allowed, contiguity required, and at least **4**
-elements (`ArraySequence::MINIMUM_SEQUENCE_LENGTH`; upper bound 0x20000). The
+elements (`ArraySequence::MINIMUM_SEQUENCE_LENGTH`; upper bound 0x20000).
+The byte-array range check uses checked addition for each write's end offset.
+An overflowing or out-of-range write is ignored, preserving the contiguous
+valid writes without a debug overflow panic or a release bounds panic. The
 two drivers are `constseq.rs (RuleStringCopy)` — COPY-into-array, requiring
 the destination be an address-tied char array backed by a symbol container —
 and `constseq.rs (RuleStringStore)` — STORE-through-pointer
@@ -2490,6 +2496,11 @@ and a 16-byte minimum footprint** — the guard that keeps a lone string NUL
 terminator from being claimed as a memset (the Stack-string ablation in
 DIV-2). Rewrite: one `builtin_memset(dest, value, count)` CALLOTHER; teardown
 shares the string path's COPY removal. Off restores the per-element stores.
+
+The live rule uses `StringSequence` for collection and replacement. The legacy
+`MemsetSequence` detection model does not collect IR through its direct
+constructor; fixture-only construction and inspection helpers live with its
+unit tests. Both paths use the same fill predicate.
 
 **(kuna) Read-only string block copy —**
 [`rodatastring`](../options.md)**, default on** (DIV-113).

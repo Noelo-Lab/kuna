@@ -17,13 +17,16 @@
 //! A `.a` archive is unpacked member-by-member (each member is bootstrapped as a
 //! standalone object); a `.o`/linked image is bootstrapped directly.
 
-use std::path::Path;
+mod archive;
+
+use archive::records_for_archive;
 
 use kuna_analysis::loadimage_object::ObjectLoadImage;
 use kuna_analysis::fid::build::build_records;
 use kuna_analysis::fid::db::{FidDb, FidRecord};
 use kuna_console::engine::bootstrap_from_object;
 
+use crate::args::take_value;
 use crate::paths;
 
 /// Parsed `kuna fid build` arguments.
@@ -116,10 +119,7 @@ fn cmd_build(argv: &[String]) -> i32 {
         }
     }
 
-    // Cross-input dedup of identical (full, specific, name) rows (a function
-    // defined in two members hashes identically).
-    let mut seen = std::collections::HashSet::new();
-    all.retain(|r| seen.insert((r.full_hash, r.specific_hash, r.name.clone())));
+    dedup_records(&mut all);
 
     let db = FidDb::from_records(lang, cspec, all);
     let bytes = db.serialize();
@@ -133,6 +133,22 @@ fn cmd_build(argv: &[String]) -> i32 {
         bytes.len()
     );
     0
+}
+
+/// Keep the first record for each (full hash, specific hash, name), in input order.
+fn dedup_records(all: &mut Vec<FidRecord>) {
+    let keep: Vec<_> = {
+        #[expect(
+            clippy::disallowed_types,
+            reason = "Membership only; the retain mask preserves input order."
+        )]
+        let mut seen = std::collections::HashSet::new();
+        all.iter()
+            .map(|r| seen.insert((r.full_hash, r.specific_hash, r.name.as_str())))
+            .collect()
+    };
+    let mut keep = keep.into_iter();
+    all.retain(|_| keep.next().expect("one decision per record"));
 }
 
 /// Build the FID records for one input path: a `.a` archive (each member
@@ -171,63 +187,9 @@ fn records_for_object_path(path: &str, spec_roots: &[String]) -> Result<Vec<FidR
     ))
 }
 
-/// Unpack a `.a` archive and build records from every object member. Each member
-/// is written to a temp file (the bootstrap reads from a path) and bootstrapped
-/// as a standalone object.
-fn records_for_archive(
-    archive_path: &str,
-    bytes: &[u8],
-    spec_roots: &[String],
-) -> Result<Vec<FidRecord>, String> {
-    use object::read::archive::ArchiveFile;
-
-    let archive = ArchiveFile::parse(bytes).map_err(|e| format!("not a valid archive: {e}"))?;
-    let stem = Path::new(archive_path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "archive".to_string());
-
-    let mut out: Vec<FidRecord> = Vec::new();
-    let mut idx = 0usize;
-    for member in archive.members() {
-        let member = member.map_err(|e| format!("archive member error: {e}"))?;
-        let data = member.data(bytes).map_err(|e| format!("archive member data error: {e}"))?;
-        // Skip the archive's symbol-index / string-table members (not objects).
-        if !is_object(data) {
-            continue;
-        }
-        // Materialize the member so the bootstrap (which reads a path) can open it.
-        let name = String::from_utf8_lossy(member.name());
-        let tmp = std::env::temp_dir().join(format!("kuna_fid_{stem}_{idx}.o"));
-        idx += 1;
-        std::fs::write(&tmp, data)
-            .map_err(|e| format!("cannot stage member {name}: {e}"))?;
-        let tmp_str = tmp.to_string_lossy().into_owned();
-        let res = records_for_object_path(&tmp_str, spec_roots);
-        let _ = std::fs::remove_file(&tmp);
-        match res {
-            Ok(mut recs) => out.append(&mut recs),
-            // A member that fails to bootstrap (e.g. a non-code object) is skipped
-            // with a warning, not fatal — the rest of the archive still ingests.
-            Err(e) => eprintln!("kuna fid build: {archive_path}({name}): skipped: {e}"),
-        }
-    }
-    Ok(out)
-}
-
 /// Is `bytes` a Unix `ar` archive (the `.a` magic `!<arch>\n`)?
 fn is_archive(bytes: &[u8]) -> bool {
     bytes.starts_with(b"!<arch>\n")
-}
-
-/// Does `bytes` look like a single object file (ELF/Mach-O/PE/COFF magic)?
-fn is_object(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"\x7fELF")            // ELF
-        || bytes.starts_with(&[0xcf, 0xfa, 0xed, 0xfe]) // Mach-O 64 LE
-        || bytes.starts_with(&[0xce, 0xfa, 0xed, 0xfe]) // Mach-O 32 LE
-        || bytes.starts_with(b"MZ")          // PE
-        || (bytes.len() >= 2 && bytes[0] == 0x4c && bytes[1] == 0x01) // COFF x86 (IMAGE_FILE_MACHINE_I386)
-        || (bytes.len() >= 2 && bytes[0] == 0x64 && bytes[1] == 0x86) // COFF x86-64
 }
 
 /// The SLEIGH spec roots (`SLEIGHHOME` then the repo `specs/` dir), matching how
@@ -266,8 +228,54 @@ fn parse_build_args(argv: &[String]) -> Result<BuildArgs, String> {
     Ok(a)
 }
 
-/// Consume the value following a flag at `argv[*i]`, advancing `*i` past it.
-fn take_value(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
-    *i += 1;
-    argv.get(*i).cloned().ok_or_else(|| format!("{flag} requires a value"))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(full_hash: u64, specific_hash: u64, name: &str) -> FidRecord {
+        FidRecord {
+            full_hash,
+            specific_hash,
+            code_unit_size: 4,
+            specific_addl: 2,
+            flags: 0,
+            name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn dedup_preserves_first_metadata_and_input_order() {
+        let first = record(9, 2, "same");
+        let earlier_hash = record(1, 2, "same");
+        let other_specific = record(9, 3, "same");
+        let alias = record(9, 2, "alias");
+        let mut duplicate = first.clone();
+        duplicate.code_unit_size = -1;
+        duplicate.specific_addl = 255;
+        duplicate.flags = 255;
+        let expected = vec![
+            first.clone(),
+            earlier_hash.clone(),
+            other_specific.clone(),
+            alias.clone(),
+        ];
+        let mut records = vec![first, earlier_hash, duplicate, other_specific, alias];
+        records.push(records[1].clone());
+
+        dedup_records(&mut records);
+
+        assert_eq!(records, expected);
+    }
+
+    #[test]
+    fn dedup_handles_empty_and_all_duplicate_inputs() {
+        let mut records = Vec::new();
+        dedup_records(&mut records);
+        assert!(records.is_empty());
+
+        let first = record(u64::MAX, u64::MAX, "");
+        records = vec![first.clone(); 8];
+        dedup_records(&mut records);
+        assert_eq!(records, vec![first]);
+    }
 }

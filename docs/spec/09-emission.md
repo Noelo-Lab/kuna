@@ -1613,6 +1613,18 @@ is keyed by HighVariable and used by every body reference path as well as its
 declaration; existing parameter, user/debug, Ghidra-style, global, and callee
 names remain authoritative.
 
+The name allocator stores each spelling once, either reserved for a future
+declaration or assigned with its next suffix counter. It uses only keyed lookup;
+the caller's declaration order, never hash iteration, decides who receives each
+name. This replaces separate reserved-name, used-name and suffix-counter maps
+without changing the first-free-suffix rule.
+
+Duplicate-name counting borrows the declaration strings and releases those
+borrows before suffix assignment mutates names. The allocator consumes borrowed
+names directly and owns its reserved keys, without an intermediate string-copy
+vector. Rendered-signature deduplication likewise observes only set membership;
+caller order determines which declaration is retained.
+
 Partial covers of a mapped scalar are suppressed only when another
 HighVariable with the same name actually represents the whole storage: its
 first member is non-constant, starts at symbol offset zero, and has the symbol's
@@ -2198,7 +2210,15 @@ Assembly comes from the listing walk
 undecodable byte inside a body is a `.byte` row and not the loss of the whole
 listing. Edges come from the reference index `kuna xrefs` answers with, through
 the same call-graph model `--reachable-from` walks
-(`decompiler/crates/kuna-cli/src/decompile_all.rs (CallGraph::callees_of)`).
+(`decompiler/crates/kuna-cli/src/callgraph.rs (CallGraph::callees_of)`).
+
+The CLI graph module owns inventory containment, reachability and caller
+completeness queries. Its scheduling module,
+`decompiler/crates/kuna-cli/src/callgraph/plan.rs`, owns the iterative SCC walk
+and recursion policy used by callee-first decompilation. Object-file consumers
+share `decompiler/crates/kuna-cli/src/image.rs`: they read the selected Mach-O
+slice and reject TE inputs that have no object-file view. These boundaries are
+shared by the command drivers without changing edge rules or output ordering.
 
 **Both ends of every edge are rows of the same document.** A reference into the
 middle of a body resolves to the body, and one that lands in no discovered
@@ -2513,4 +2533,3 @@ casts; with the option off the output is byte-identical to the build without it.
 On the 4,815 functions kuna and IDA both emit, casts fall from 45,126 to 44,001
 and no function gains one. Variables and types are untouched, so `type_match`
 cannot move (1,609 perfect functions in both arms of the 444-slice sweep).
-

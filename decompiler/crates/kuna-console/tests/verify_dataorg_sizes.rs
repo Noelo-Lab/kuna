@@ -15,10 +15,6 @@
 //! **long-double split** — 10 on x86 ELF (the x87 extended value width, which no
 //! `sizeof` can match) versus 8 under MSVC, where `long double` aliases `double`.
 //!
-//! Bootstrapping needs the built `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
-
 use std::path::PathBuf;
 
 use kuna_console::engine::bootstrap_from_object;
@@ -32,25 +28,15 @@ fn repo_root() -> PathBuf {
 type Widths = (i32, i32, i32, i32, i32, i32, i32, i32, i32);
 
 /// Bootstrap `fixture` and read its decoded data organization.
-/// `None` => specs-less skip.
-fn widths_of(fixture: &str) -> Option<Widths> {
+fn widths_of(fixture: &str) -> Widths {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let path = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(fixture);
-    let prog = match bootstrap_from_object(path.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_dataorg_sizes: skipping {fixture} (bootstrap failed, build \
-                 `.sla` with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let prog = bootstrap_from_object(path.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     let t = prog.arch().types();
-    Some((
+    (
         t.get_size_of_char(),
         t.get_size_of_short(),
         t.get_size_of_int(),
@@ -60,7 +46,7 @@ fn widths_of(fixture: &str) -> Option<Widths> {
         t.get_size_of_float(),
         t.get_size_of_double(),
         t.get_size_of_long_double(),
-    ))
+    )
 }
 
 /// x86-64 System V is LP64: `long` is 8, so an 8-byte integer spells `long`.
@@ -69,7 +55,7 @@ fn widths_of(fixture: &str) -> Option<Widths> {
 /// no `sizeof` assertion on a 10-byte float can ever hold.
 #[test]
 fn x86_64_sysv_is_lp64_with_an_x87_long_double() {
-    let Some(w) = widths_of("fmt_x86_64") else { return };
+    let w = widths_of("fmt_x86_64");
     assert_eq!(w, (1, 2, 4, 8, 8, 8, 4, 8, 10), "x86-64 gcc");
 }
 
@@ -77,7 +63,7 @@ fn x86_64_sysv_is_lp64_with_an_x87_long_double() {
 /// not `long`. Same x87 `long double`.
 #[test]
 fn i386_elf_is_ilp32_so_eight_bytes_is_long_long() {
-    let Some(w) = widths_of("i386_pie_nl") else { return };
+    let w = widths_of("i386_pie_nl");
     assert_eq!(w, (1, 2, 4, 4, 8, 4, 4, 8, 10), "i386 gcc");
 }
 
@@ -87,7 +73,7 @@ fn i386_elf_is_ilp32_so_eight_bytes_is_long_long() {
 /// invent a wider type than the spec claims.
 #[test]
 fn aarch64_is_lp64() {
-    let Some(w) = widths_of("fmt_aarch64") else { return };
+    let w = widths_of("fmt_aarch64");
     assert_eq!((w.0, w.1, w.2, w.3, w.4, w.5), (1, 2, 4, 8, 8, 8), "aarch64 integer widths");
     assert_eq!((w.6, w.7), (4, 8), "aarch64 float/double");
 }
@@ -95,7 +81,7 @@ fn aarch64_is_lp64() {
 /// ARM32 AAPCS: ILP32, so 8 bytes is `long long`.
 #[test]
 fn arm32_is_ilp32() {
-    let Some(w) = widths_of("fmt_arm") else { return };
+    let w = widths_of("fmt_arm");
     assert_eq!((w.0, w.1, w.2, w.3, w.4, w.5), (1, 2, 4, 4, 8, 4), "arm integer widths");
 }
 
@@ -108,7 +94,7 @@ fn long_double_never_decodes_to_zero() {
     for fixture in
         ["fmt_x86_64", "i386_pie_nl", "fmt_arm", "fmt_aarch64", "fmt_riscv64", "mips_gp_le32"]
     {
-        let Some(w) = widths_of(fixture) else { continue };
+        let w = widths_of(fixture);
         assert!(w.8 >= w.7, "{fixture}: long double ({}) must be at least double ({})", w.8, w.7);
         for (name, v) in
             [("char", w.0), ("short", w.1), ("int", w.2), ("long", w.3), ("long long", w.4),

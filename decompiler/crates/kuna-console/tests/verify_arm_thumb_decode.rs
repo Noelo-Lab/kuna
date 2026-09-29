@@ -20,14 +20,6 @@
 //! and the SLEIGH translator decodes Thumb (not A32). A correct Thumb decode of
 //! `compute` computes `x*3 + 7`; an ARM-mode misdecode of the same bytes yields
 //! nonsense — so asserting the arithmetic IS the Thumb-mode proof.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_w11_elf_*` gates, bootstrapping needs the built ARM
-//! `.sla` under `specs/` (gitignored; `make specs`, or just
-//! `slacomp specs/Ghidra/Processors/ARM/data/languages/ARM8_le.slaspec`). When
-//! it is absent the bootstrap fails; the test prints that and returns early (a
-//! specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -85,22 +77,10 @@ fn arm_thumb_compute_decodes_in_thumb_mode() {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = arm_thumb_linked();
-    let bin = match bin.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_arm_thumb_decode: skipping (bootstrap failed, build the ARM `.sla` with \
-                 `make specs` or `slacomp .../ARM8_le.slaspec`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The loader-symbol list (read_loader_symbols) keeps the raw `.symtab`
     // ODD address (`entry|1`) — the Thumb convention — so `lookup_symbol`

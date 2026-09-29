@@ -224,22 +224,13 @@ impl SimOracle {
     /// does in-process: `load file` → the CLI's default options (`listing on` +
     /// the size-resolved mode preset) → `read symbols`.
     ///
-    /// Returns `None` (with the canonical skip message the CI canary greps
-    /// for) when the `.sla` specs are not built.
-    pub fn bootstrap(binary: &Path) -> Option<SimOracle> {
+    /// Required fixtures and compiled processor specs must load successfully.
+    pub fn bootstrap(binary: &Path) -> SimOracle {
         let root = repo_root();
         let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-        let bin = binary.to_str()?.to_string();
-        let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!(
-                    "ghidra_sim: skipping (bootstrap failed, build `.sla` with `make specs`): {}",
-                    e.explain()
-                );
-                return None;
-            }
-        };
+        let bin = binary.to_str().expect("UTF-8 fixture path").to_string();
+        let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+            .expect("bootstrap fixture with built processor specs");
         let size = std::fs::metadata(&bin).map(|m| m.len()).unwrap_or(0);
         apply_cli_default_options(&mut prog, size);
         prog.commit_pending_analysis()
@@ -285,7 +276,7 @@ impl SimOracle {
             .map(|(vma, size, _)| (vma, vma + size.saturating_sub(1)))
             .collect();
 
-        Some(SimOracle {
+        SimOracle {
             prog,
             manager,
             big_endian,
@@ -306,7 +297,7 @@ impl SimOracle {
             tracked_overrides: Vec::new(),
             local_var_overrides: BTreeMap::new(),
             inject_fault: None,
-        })
+        }
     }
 
     /// The primary label the "Java side" knows at an address (a function name

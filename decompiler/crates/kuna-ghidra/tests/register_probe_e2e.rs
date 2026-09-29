@@ -44,24 +44,20 @@ struct Run {
     docs: Vec<ParsedDoc>,
 }
 
-/// Drive the DecompInterface lifecycle against the in-process [`GhidraProcess`]
-/// with the host end answered by the sim oracle.
+/// Drive the DecompInterface lifecycle against the in-process [`GhidraProcess`] with the
+/// host end answered by the sim oracle.
 ///
-/// With a `target` the sequence is the full registerProgram → setAction →
-/// decompileAt → flushNative → decompileAt → deregisterProgram; without one it
-/// is registerProgram → deregisterProgram, so every logged query is one
-/// registerProgram itself issued.
-///
-/// `None` when the `.sla` specs are not built (the visible skip the CI canary
-/// greps for).
+/// With a `target` the sequence is the full registerProgram → setAction → decompileAt →
+/// flushNative → decompileAt → deregisterProgram; without one it is registerProgram →
+/// deregisterProgram, so every logged query is one registerProgram itself issued.
 fn run(
     binary: &Path,
     lang_dir: &str,
     pspec_name: &str,
     cspec_name: &str,
     target: Option<&str>,
-) -> Option<Run> {
-    let oracle = SimOracle::bootstrap(binary)?;
+) -> Run {
+    let oracle = SimOracle::bootstrap(binary);
     let tspec = generate_tspec(&oracle.manager, oracle.big_endian, oracle.unique_base);
     let dir = repo_root().join(lang_dir);
     let pspec = std::fs::read(dir.join(pspec_name)).expect("vendored pspec");
@@ -131,11 +127,11 @@ fn run(
             }
         }
     }
-    Some(Run {
+    Run {
         trace,
         oracle,
         docs,
-    })
+    }
 }
 
 /// GH-388: an ARM:LE:32 program must not make the host throw.  Before the fix
@@ -144,15 +140,13 @@ fn run(
 #[test]
 fn arm32_asks_the_host_for_no_undefined_register() {
     let binary = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fmt_arm");
-    let Some(r) = run(
+    let r = run(
         &binary,
         "specs/Ghidra/Processors/ARM/data/languages",
         "ARMt.pspec",
         "ARM.cspec",
         Some("main"),
-    ) else {
-        return;
-    };
+    );
 
     let failures = &r.oracle.log.register_probe_failures;
     eprintln!(
@@ -187,15 +181,13 @@ fn arm32_asks_the_host_for_no_undefined_register() {
 #[test]
 fn x86_64_folds_the_direction_flag_stride() {
     let binary = repo_root().join("tests/bug-repro/grep");
-    let Some(r) = run(
+    let r = run(
         &binary,
         "specs/Ghidra/Processors/x86/data/languages",
         "x86-64.pspec",
         "x86-64-gcc.cspec",
         Some("sub_17400"),
-    ) else {
-        return;
-    };
+    );
 
     assert!(
         r.oracle.log.register_probe_failures.is_empty(),
@@ -231,15 +223,13 @@ fn x86_64_folds_the_direction_flag_stride() {
 #[test]
 fn x86_32_caches_the_syscall_abi_registers_at_register_program() {
     let binary = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/picbase_i386");
-    let Some(r) = run(
+    let r = run(
         &binary,
         "specs/Ghidra/Processors/x86/data/languages",
         "x86.pspec",
         "x86gcc.cspec",
         None,
-    ) else {
-        return;
-    };
+    );
 
     assert!(
         r.oracle.log.register_probe_failures.is_empty(),

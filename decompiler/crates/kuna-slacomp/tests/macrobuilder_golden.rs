@@ -1,22 +1,6 @@
-//! WS3 golden test for [`MacroBuilder`] (the p-code macro-expansion
-//! `PcodeBuilder`).
-//!
-//! `tests/golden/macrobuilder_expand.txt` is a golden op-template dump produced
-//! by an instrumented /tmp copy of the C++ compiler tree (`decompiler/cpp/**`
-//! stays byte-untouched): a dumper (`/tmp/kunacpp/macrodump.cc`, recorded in
-//! `docs/rust-port/sleigh-compiler/ws3-pcode-actions.md`) builds a representative
-//! macro body (`ConstructTpl` of `OpTpl`s referencing macro handle-parameters),
-//! a `MACROBUILD` invocation supplying two handle args, runs the real C++
-//! `MacroBuilder::build`, and dumps the resulting `OpTpl` list before and after
-//! expansion.  This test builds the *identical* templates, runs the Rust
-//! [`MacroBuilder`], and asserts a byte-identical dump.
-//!
-//! Coverage (every MacroBuilder code path):
-//! - plain handle substitution (`transferOp` -> `VarnodeTpl::transfer`);
-//! - `setLabel` index adjustment by `labelbase` (LABELBUILD / PTRADD);
-//! - `dump`'s relative-operand (label) adjustment by `labelbase`;
-//! - the truncation -> `CPUI_SUBPIECE` insertion path (`getUniqueAddr`/
-//!   `getUniqueSpace`/`getConstantSpace` via the [`CompilerHost`] callbacks).
+//! Macro-expansion regression vectors for parameter substitution, local labels
+//! and truncation. Whole-spec comparisons against the pinned Ghidra compiler
+//! live in `compiler_parity.rs`.
 
 use std::cell::RefCell;
 use std::fmt::Write as _;

@@ -865,18 +865,7 @@ mod tests {
             Some("pdb_prog.exe"),
             Some("fast"),
         );
-        let json = match result {
-            Ok(json) => json,
-            Err(error)
-                if error.contains("could not build an architecture")
-                    || error.contains("SLEIGH")
-                    || error.contains("Could not discover") =>
-            {
-                eprintln!("fast_project_exports_discovered_wasm_bodies: skipping: {error}");
-                return;
-            }
-            Err(error) => panic!("WASM fast project failed: {error}"),
-        };
+        let json = result.expect("WASM fast project");
         assert!(
             json.contains("@ 0x140001000"),
             "hidden direct callee missing: {json}"
@@ -908,14 +897,6 @@ mod tests {
                 Some(selector),
                 Some("reliable"),
             ) {
-                Err(error)
-                    if error.contains("could not build an architecture")
-                        || error.contains("SLEIGH")
-                        || error.contains("Could not discover") =>
-                {
-                    eprintln!("wasm_direct_decompile_iat: skipping: {error}");
-                    return;
-                }
                 Err(error) => {
                     assert!(error.contains(expected), "{selector}: {error}");
                     assert!(!error.contains("CARRY1("), "{selector}: {error}");
@@ -950,19 +931,8 @@ mod tests {
                 Some("reliable"),
             )
         };
-        let skip = |error: &str| {
-            error.contains("could not build an architecture")
-                || error.contains("SLEIGH")
-                || error.contains("Could not discover")
-        };
-        let (list, project) = match (run("list", None), run("project", Some("entrymain_arm"))) {
-            (Ok(list), Ok(project)) => (list, project),
-            (Err(error), _) | (_, Err(error)) if skip(&error) => {
-                eprintln!("reliable_list_inventory_covers_the_project_export: skipping: {error}");
-                return;
-            }
-            (Err(error), _) | (_, Err(error)) => panic!("WASM reliable run failed: {error}"),
-        };
+        let list = run("list", None).expect("WASM reliable list");
+        let project = run("project", Some("entrymain_arm")).expect("WASM reliable project");
 
         let listed: Vec<&str> = list.match_indices("\"address_hex\": \"").map(|(i, m)| {
             let rest = &list[i + m.len()..];
@@ -1005,20 +975,7 @@ mod tests {
                 Some("reliable"),
             )
         };
-        let skip = |error: &str| {
-            error.contains("could not build an architecture")
-                || error.contains("SLEIGH")
-                || error.contains("Could not discover")
-        };
-
-        let list = match run("list", None) {
-            Ok(list) => list,
-            Err(error) if skip(&error) => {
-                eprintln!("relocatable_selectors_and_object_locations_reach_wasm: skipping: {error}");
-                return;
-            }
-            Err(error) => panic!("WASM relocatable list failed: {error}"),
-        };
+        let list = run("list", None).expect("WASM relocatable list");
         assert_eq!(list.matches("\"name\": \"duplicate_local\"").count(), 2);
         assert!(
             list.contains(

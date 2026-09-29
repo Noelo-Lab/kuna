@@ -21,6 +21,8 @@ import argparse
 import json
 import sys
 
+from ..atomic import atomic_text_writer
+
 _JSON_TYPE = {str: "string", bool: "boolean", int: "integer",
               float: "number", type(None): "null"}
 
@@ -92,12 +94,9 @@ def main(argv=None):
         doc = json.load(fh)
     if args.fix:
         doc = strictify(doc)
-        tmp = args.schema + ".tmp"
-        with open(tmp, "w") as fh:
+        with atomic_text_writer(args.schema) as fh:
             json.dump(doc, fh, indent=2)
             fh.write("\n")
-        import os
-        os.replace(tmp, args.schema)
     bad = check(doc)
     if args.json:
         print(json.dumps({"ok": not bad, "problems": [{"path": p, "problem": w} for p, w in bad]},

@@ -13,6 +13,10 @@ use crate::context::{ArchContext, BlockId, TypeOp, VarnodeId};
 use crate::jumptable::JumpTable;
 use crate::p2_lift::kuna_loweredswitch::{new_shared_store, KunaLoweredSwitchRecord};
 
+fn input_is_recorded_value(data: &Funcdata, input: VarnodeId, recorded: &ValueName, size: int4) -> bool {
+    classify_input(data, input, recorded, size) == InputVerdict::Matches
+}
+
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(ConstantSpace::new())).unwrap();

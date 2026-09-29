@@ -15,7 +15,7 @@ use std::fmt::Write as _;
 use kuna_analysis::listing::xrefs::SwitchTable;
 use kuna_console::engine::{ConsoleProgram, FunctionEntry};
 
-use crate::decompile_all::CallGraph;
+use crate::callgraph::CallGraph;
 use crate::jsonfmt::Json;
 
 /// The live budgets and the selected functions over either.

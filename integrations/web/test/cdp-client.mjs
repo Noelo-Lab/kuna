@@ -21,26 +21,64 @@ export function findChrome() {
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-/** Launch headless Chrome; resolves `{browser, close}` once DevTools answers. */
-export async function launchChrome(chromePath = findChrome(), { width = 1280, height = 860 } = {}) {
-  const profile = mkdtempSync(join(tmpdir(), 'kuna-cdp-'));
-  const child = spawn(chromePath, [
-    '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run',
-    '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars',
-    '--remote-debugging-port=0', `--user-data-dir=${profile}`,
-    `--window-size=${width},${height}`, 'about:blank',
-  ], { stdio: 'ignore' });
-  let port = null;
-  for (let i = 0; i < 200 && !port; i++) {
-    await sleep(50);
-    try { port = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]; } catch (_) { /* not yet */ }
+/** Launch headless Chrome; resolves `{port, child, close}` once it publishes its DevTools port. */
+export async function launchChrome(chromePath = findChrome(), { width = 1280, height = 860, startupTimeoutMs = 10000 } = {}) {
+  if (!chromePath) throw new Error('Chrome executable not found');
+  if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs < 0) {
+    throw new Error('Chrome startup timeout must be a nonnegative finite number');
   }
-  const close = () => {
-    try { child.kill('SIGKILL'); } catch (_) { /* gone */ }
-    try { rmSync(profile, { recursive: true, force: true }); } catch (_) { /* busy */ }
+  const profile = mkdtempSync(join(tmpdir(), 'kuna-cdp-'));
+  let child;
+  const cleanup = () => {
+    try { rmSync(profile, { recursive: true, force: true }); } catch (_) { /* retried when the child closes */ }
   };
-  if (!port) { close(); throw new Error('Chrome did not open a DevTools port'); }
-  return { port: Number(port), child, close };
+  const close = () => {
+    try { child?.kill('SIGKILL'); } catch (_) { /* gone */ }
+    child?.stderr?.destroy();
+    cleanup();
+  };
+  let stderr = '';
+  const failure = (message) => new Error(`${message}${stderr.trim() ? `\n${stderr.trim()}` : ''}`);
+  try {
+    child = spawn(chromePath, [
+      '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run',
+      '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars',
+      '--remote-debugging-port=0', `--user-data-dir=${profile}`,
+      `--window-size=${width},${height}`, 'about:blank',
+    ], { stdio: ['ignore', 'ignore', 'pipe'] });
+    child.once('close', cleanup);
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-8192); });
+    let spawnError;
+    let exited;
+    child.once('error', (error) => { spawnError = error; });
+    child.once('exit', (code, signal) => { exited = { code, signal }; });
+    const deadline = Date.now() + startupTimeoutMs;
+    for (;;) {
+      if (spawnError) throw failure(`Could not start Chrome: ${spawnError.message}`);
+      if (exited) {
+        throw failure(`Chrome exited before publishing its DevTools port (${exited.signal ? `signal ${exited.signal}` : `code ${exited.code}`})`);
+      }
+      let portFile = '';
+      try { portFile = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8'); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      const newline = portFile.indexOf('\n');
+      if (newline >= 0 && child.exitCode === null && child.signalCode === null) {
+        const value = portFile.slice(0, newline).trim();
+        const port = /^\d+$/.test(value) ? Number(value) : NaN;
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+          throw failure(`Chrome wrote an invalid DevTools port: ${JSON.stringify(value)}`);
+        }
+        return { port, child, close };
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw failure(`Chrome did not open a DevTools port within ${startupTimeoutMs} ms`);
+      await sleep(Math.min(50, remaining));
+    }
+  } catch (error) {
+    close();
+    throw error;
+  }
 }
 
 /** Attach to the first page target; resolves a small session API. */

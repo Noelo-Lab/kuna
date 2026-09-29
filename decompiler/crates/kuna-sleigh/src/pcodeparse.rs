@@ -1,64 +1,20 @@
-//! Port of `decompiler/cpp/pcodeparse.{cc,hh}` (grammar `pcodeparse.y`)
-//! (item `w2-sleigh-pcodeparse`): the runtime p-code **snippet** parser that
-//! compiles the `<pcode>` injection bodies found in `.cspec`/`.pspec`
-//! constructor/callotherfixup/callfixup definitions.
+//! Runtime p-code snippet parser, from `decompiler/cpp/pcodeparse.{hh,cc}`
+//! and the `pcodeparse.y` grammar. [`PcodeSnippet`] compiles injection bodies
+//! from processor and compiler specifications.
 //!
-//! This is part of the oracle runtime (`decomp_dbg`/`decomp_test_dbg` link
-//! it), not the build-time SLEIGH compiler, so it must reproduce the C++
-//! behavior exactly.
+//! The byte lexer uses two-character lookahead and a NUL end sentinel. The
+//! recursive-descent parser follows the grammar's operator precedence,
+//! associativity and builder-call order, including its disambiguation of sized
+//! integer varnodes and temporary declarations.
 //!
-//! ## Shape of the port
+//! [`SnippetLanguage`] supplies symbols and address spaces; the native
+//! implementation is [`crate::sleighbase::SleighBase`]. [`SnippetSymbol`] is
+//! the parser's projection of a language symbol, and [`get_varnode_tpl`]
+//! converts it to a varnode template using the snippet's constant space.
 //!
-//! - **Lexer** ([`PcodeLexer`]): the C++ hand-written `PcodeLexer` is a
-//!   character-by-character state machine (`moveState`) with a two-character
-//!   lookahead; it is transcribed state-for-state, including the `idents`
-//!   binary-search keyword table and the `s`/`f`-prefixed multi-character
-//!   operator recognition. The lexer reads from a byte slice (the C++
-//!   `istream`); `'\0'` is the end-of-stream sentinel exactly as in C++.
-//! - **Parser** ([`PcodeSnippet::parse_stream`]): the C++ parser is
-//!   bison-generated (`pcodeparse.cc` LALR tables); per **LOSS-006** there is
-//!   no bison in the Rust toolchain, so it is replaced by a hand-written
-//!   recursive-descent parser. The grammar is `pcodeparse.y`; this port
-//!   reproduces (a) the same `PcodeCompile` calls in the same order, (b) the
-//!   operator precedence/associativity from the `%left`/`%right`/`%nonassoc`
-//!   declarations, (c) the two documented shift/reduce conflict resolutions
-//!   (`%expect 3`): `':'` binds to `INTEGER` (integervarnode) by shifting,
-//!   and `STRING` after `=` is a temporary declaration by shifting, and
-//!   (d) the error text emitted by the `yyerror(...)` grammar actions
-//!   wherever it is observable through `firsterror`.
-//! - **`getVarnode()` resolver** ([`get_varnode_tpl`]): the C++
-//!   `SpecificSymbol::getVarnode()` virtuals (VarnodeSymbol / OperandSymbol /
-//!   Start / End / Next2 / FlowDest / FlowRef) were deferred by the symbol
-//!   wave (**LOSS-022**, refined by **LOSS-026**); this item implements them
-//!   as a free function over the resolved [`SnippetSymbol`], matching the
-//!   per-kind `(space, offset, size)` `ConstTpl` triples of slghsymbol.cc.
-//!   The const space the address-symbols (Start/End/Next2/FlowDest/FlowRef)
-//!   carry is, in every construction site (slgh_compile.cc and
-//!   `PcodeSnippet`'s own ctor), `sleigh->getConstantSpace()` — the same
-//!   space the snippet holds — so the resolver uses the snippet constant
-//!   space, byte-equivalent to reading the (private) `const_space` member.
-//!
-//! ## The language boundary
-//!
-//! C++ `PcodeSnippet` holds a `const SleighBase *sleigh` and calls only
-//! `sleigh->findSymbol(name)`, `sleigh->numSpaces()`, `sleigh->getSpace(i)`,
-//! `sleigh->getDefaultCodeSpace()`, `sleigh->getConstantSpace()`,
-//! `sleigh->getUniqueSpace()` on it. `sleighbase.rs` is still a stub, so —
-//! following the W1/W2 boundary convention — those operations are abstracted
-//! behind the [`SnippetLanguage`] trait, implemented by the decode-engine
-//! wave (`SleighBase`) and synthetically by tests. `findSymbol` returns a
-//! resolved [`SnippetSymbol`] (the parser-relevant projection of the C++
-//! `SleighSymbol *` switch in `PcodeSnippet::lex`).
-//!
-//! ## Local symbol scope
-//!
-//! C++ keeps a `SymbolTree tree` of `SleighSymbol *` (temporaries, operands,
-//! and `LabelSymbol`s) sorted by name. The port keeps a `BTreeMap<Vec<u8>,
-//! SnippetLocal>` (the `SymbolTree` comparator is byte-string name order;
-//! see [`crate::slghsymbol`]). It holds the snippet-local definitions: the
-//! `VarnodeSymbol`s `newOutput`/`newLocalDefinition` create, the
-//! `OperandSymbol`s `addOperand` adds, and the `LabelSymbol`s
-//! `defineLabel` creates. `inst_dest`/`inst_ref` are added by the ctor.
+//! Local temporaries, operands and labels live in a byte-name-ordered
+//! `BTreeMap`, separate from the language's symbols. The constructor also
+//! defines the `inst_dest` and `inst_ref` address symbols.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -74,13 +30,11 @@ use crate::semantics::{ConstTpl, ConstType, ConstructTpl, OpTpl, VarnodeTpl};
 use crate::slghsymbol::{SleighSymbol, SymbolType, UserOpSymbol, VarnodeSymbol};
 
 // ---------------------------------------------------------------------------
-// Tokens (mirror of the bison %token set, with carried values)
+// Lexer and symbol-resolution tokens
 // ---------------------------------------------------------------------------
 
-/// A lexed token. Mirrors the bison terminal set of `pcodeparse.y`: the
-/// keyword/operator terminals are unit variants; `INTEGER`/`STRING` carry
-/// their value; the symbol terminals (`SPACESYM`/`USEROPSYM`/`VARSYM`/
-/// `OPERANDSYM`/`JUMPSYM`/`LABELSYM`) carry the resolved [`SnippetSymbol`].
+/// Tokens produced by the byte lexer and symbol classifier. Operators and
+/// keywords are unit variants; integers, names and symbols carry their values.
 /// `Endofstream` is the explicit `ENDOFSTREAM` terminal `rtl` ends on;
 /// `Eof` is the bison "0 = end of file" the parser stops at.
 #[derive(Debug, Clone)]
@@ -128,13 +82,6 @@ enum Token {
     Int2float,
     Float2float,
     Trunc,
-    /// `OP_NEW`: the grammar has `OP_NEW '(' expr ...)` productions, but the
-    /// C++ lexer's `idents[]` table has **no** `"new"` entry, so the token is
-    /// never produced from a snippet (an upstream dead path, faithfully
-    /// preserved: `new` lexes as a STRING/identifier instead). Kept so the
-    /// grammar's OP_NEW reductions are transcribed; unreachable like upstream.
-    #[allow(dead_code)]
-    New,
     // keywords
     BadInteger,
     GotoKey,
@@ -286,10 +233,8 @@ pub fn get_varnode_tpl(
 // The language boundary (SleighBase, reduced to what PcodeSnippet uses)
 // ---------------------------------------------------------------------------
 
-/// Stand-in for `const SleighBase *sleigh`, reduced to the surface
-/// `PcodeSnippet` pulls from it (`sleighbase.rs` is still a stub; W1/W2 boundary
-/// convention). Implemented by the decode-engine wave's `SleighBase` and by
-/// tests.
+/// Symbols and address spaces needed by [`PcodeSnippet`], supplied by
+/// [`crate::sleighbase::SleighBase`] or a test language.
 pub trait SnippetLanguage {
     /// C++ `sleigh->findSymbol(name)`, classified into a [`SnippetSymbol`].
     /// Returns `None` for an unknown name, OR for a symbol whose type is not
@@ -996,13 +941,9 @@ impl<'a> PcodeSnippet<'a> {
         );
     }
 
-    /// C++ `clear`: reset for a new parse against the same language. Keeps the
-    /// SpaceSymbols (and inst_dest/inst_ref, which C++ leaves too — only the
-    /// non-space symbols are erased), drops the rest.
+    /// Clear the result, errors, labels and non-space local symbols, including
+    /// `inst_dest` and `inst_ref`. Space symbols and the temporary base remain.
     pub fn clear(&mut self) {
-        // C++ erases every non-space symbol (this drops inst_dest/inst_ref,
-        // operands, locals, labels — matching the SleighSymbol::space_symbol
-        // guard).
         self.tree
             .retain(|_, v| matches!(v, SnippetLocal::Symbol(SnippetSymbol::Space(_))));
         self.result = None;
@@ -1030,8 +971,7 @@ impl<'a> PcodeSnippet<'a> {
         Token::Str(name.to_vec())
     }
 
-    /// Resolve a label by name from the local tree (used after a label is
-    /// `defineLabel`/`placeLabel`-created and later referenced).
+    /// Clone the snippet's constant-space handle.
     fn snippet_constant_space(&self) -> Rc<AddrSpace> {
         self.constantspace
             .clone()
@@ -1183,7 +1123,7 @@ fn sleigh_symbol_to_snippet(sym: &SleighSymbol) -> Option<SnippetSymbol> {
 // Recursive-descent parser (the bison grammar, hand-written per LOSS-006)
 // ---------------------------------------------------------------------------
 
-/// The hand-written recursive-descent parser. Drives [`PcodeLexer`] for
+/// The hand-written recursive-descent parser. Drives `PcodeLexer` for
 /// tokens and the [`PcodeSnippet`] (`PcodeCompile`) for the semantic actions,
 /// reproducing the bison grammar's reductions in order. A `bool` flag tracks
 /// the bison `YYERROR`/`yyparse()!=0` path: on a grammar error the parse
@@ -2036,8 +1976,7 @@ impl<'p, 'l, 's> Parser<'p, 'l, 's> {
                 }
                 Some(e)
             }
-            // named unary p-code function calls: OP '(' expr ')' (and the
-            // binary/ternary OP_CARRY/OP_SCARRY/OP_SBORROW/OP_NEW forms).
+            // Named unary and binary p-code functions.
             Token::Abs => self.parse_unary_func(OpCode::CPUI_FLOAT_ABS),
             Token::Sqrt => self.parse_unary_func(OpCode::CPUI_FLOAT_SQRT),
             Token::Sext => self.parse_unary_func(OpCode::CPUI_INT_SEXT),
@@ -2058,8 +1997,6 @@ impl<'p, 'l, 's> Parser<'p, 'l, 's> {
                 self.failed = true;
                 None
             }
-            // OP_NEW '(' expr ')' | OP_NEW '(' expr ',' expr ')'
-            Token::New => self.parse_new(),
             // USEROPSYM '(' paramlist ')'  -> createUserOp (with out)
             Token::UserOpSym(sym) => {
                 self.advance();
@@ -2124,27 +2061,6 @@ impl<'p, 'l, 's> Parser<'p, 'l, 's> {
             return None;
         }
         Some(self.pcode.create_op2(opc, a, b))
-    }
-
-    /// `OP_NEW '(' expr ')' | OP_NEW '(' expr ',' expr ')'`.
-    fn parse_new(&mut self) -> Option<ExprTree> {
-        self.advance(); // OP_NEW
-        if !self.expect_char(b'(') {
-            return None;
-        }
-        let a = self.parse_expr(PREC_LOWEST)?;
-        if self.is_char(b',') {
-            self.advance();
-            let b = self.parse_expr(PREC_LOWEST)?;
-            if !self.expect_char(b')') {
-                return None;
-            }
-            return Some(self.pcode.create_op2(OpCode::CPUI_NEW, a, b));
-        }
-        if !self.expect_char(b')') {
-            return None;
-        }
-        Some(self.pcode.create_op(OpCode::CPUI_NEW, a))
     }
 
     /// specificsymbol-leading primaries:

@@ -1,8 +1,5 @@
-//! Unit tests for the universal-action keystone (in-crate, white-box).
-//!
-//! The byte-for-byte `list action` oracle comparison lives in the integration
-//! test `tests/universalaction_listing.rs` (the B0 gate); these cover the
-//! materializer's structural invariants and the install hook.
+//! Structural and installation checks for the universal schedule.
+//! `tests/universalaction_listing.rs` compares its listing with the kuna snapshot.
 
 use super::*;
 use crate::action::{build_default_groups, ActionDatabase};
@@ -43,9 +40,6 @@ fn install_into_database_derives_decompile_root() {
 
 #[test]
 fn unported_allowlist_is_empty() {
-    // B0 empty-allowlist gate (w8x-universalaction-wire): every pass named by the
-    // C++ universalAction is now ported and wired into universal_sched at its
-    // exact registration position, so nothing remains allowlisted-missing.
     assert!(
         UNPORTED_ALLOWLIST.is_empty(),
         "UNPORTED_ALLOWLIST must be empty after wiring (still missing: {:?})",

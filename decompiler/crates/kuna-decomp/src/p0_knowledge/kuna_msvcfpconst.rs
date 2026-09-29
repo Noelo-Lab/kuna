@@ -47,10 +47,7 @@ pub const MSVCFPCONST_ENV: &str = "KUNA_MSVCFPCONST";
 /// Whether MSVC `__real@` constant recovery is enabled for this process.
 /// Default **on**: only an explicit off-token in [`MSVCFPCONST_ENV`] disables it.
 pub fn msvcfpconst_enabled() -> bool {
-    match std::env::var(MSVCFPCONST_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
-        Err(_) => true, // unset => default-on
-    }
+    crate::options::env_toggle(MSVCFPCONST_ENV, true)
 }
 
 /// Bridge a `set_kuna_option("msvcfpconst", val)` toggle to [`MSVCFPCONST_ENV`] so

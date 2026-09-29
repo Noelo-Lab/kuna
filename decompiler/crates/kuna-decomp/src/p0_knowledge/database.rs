@@ -1148,16 +1148,9 @@ impl ScopeResolve {
 // ===========================================================================
 // DuplicateFunctionError (database.hh:434-439)
 // ===========================================================================
-//
-// The C++ `DuplicateFunctionError : public RecovError` carries the address and
-// name of the duplicate function so a handler can recover and pick up the
-// original symbol.  `kuna-base::error::KunaError` does not own this variant
-// (error.rs is not this porter's file; its module docs explicitly defer
-// `DuplicateFunctionError` to this wave).  Until error.rs grows the variant, the
-// payload lives here and maps onto `KunaError::Recov` at the boundary.
 
-/// C++ `DuplicateFunctionError` — a function added more than once to the
-/// database.  Local mapping (see module note); convertible to [`KunaError`].
+/// A duplicate function's address and name. Conversion to [`KunaError`]
+/// discards this payload and returns `Recov("Duplicate Function")`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DuplicateFunctionError {
     /// Address of function causing the error (C++ `address`).

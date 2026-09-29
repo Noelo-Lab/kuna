@@ -23,13 +23,6 @@
 //!    `char *`. Off is the bug this PR fixes, on is the fix.
 //! 2. **Parity** — for BOTH option states the whole-binary loop's rendered C for
 //!    `main` is byte-identical to the console command's.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling gates, bootstrapping needs the built per-arch `.sla` under
-//! `specs/` (gitignored; `make specs`). When it is absent the bootstrap fails;
-//! the test prints that and returns early (a specs-less CI is a visible skip,
-//! never a false green).
 
 use std::path::PathBuf;
 
@@ -47,40 +40,31 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap `fmt_<arch>`, run the analysis commit (`read symbols`), and apply
-/// the `formatstring` gate. `None` is a visible specs-less skip.
-fn load(arch: &str, formatstring_on: bool) -> Option<ConsoleProgram> {
+/// Bootstrap `fmt_<arch>`, run the analysis commit (`read symbols`), and apply the
+/// `formatstring` gate.
+fn load(arch: &str, formatstring_on: bool) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root
         .join("decompiler/crates/kuna-analysis/tests/fixtures")
         .join(format!("fmt_{arch}"))
-        .to_str()?
+        .to_str().expect("UTF-8 fixture path")
         .to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_decompile_all_parity[{arch}]: skipping (bootstrap failed, build \
-                 `.sla` with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     if formatstring_on {
         prog.arch_mut()
             .set_kuna_option("formatstring", "on")
             .expect("formatstring option flips on");
     }
-    Some(prog)
+    prog
 }
 
 /// `main` through the WHOLE-BINARY loop (`decompile_targets`, the
 /// `decompile-all` / `decompile-project` / wasm path).
-fn whole_binary_main(arch: &str, formatstring_on: bool) -> Option<String> {
-    let mut prog = load(arch, formatstring_on)?;
+fn whole_binary_main(arch: &str, formatstring_on: bool) -> String {
+    let mut prog = load(arch, formatstring_on);
     let entry = prog
         .function_entries_canonical()
         .into_iter()
@@ -94,15 +78,15 @@ fn whole_binary_main(arch: &str, formatstring_on: bool) -> Option<String> {
         false,
     );
     assert_eq!(out.len(), 1, "[{arch}] one target in, one result out");
-    Some(out[0].code.clone().unwrap_or_else(|| {
+    out[0].code.clone().unwrap_or_else(|| {
         panic!("[{arch}] main failed to decompile: {:?}", out[0].error)
-    }))
+    })
 }
 
 #[test]
 fn provenance_collection_preserves_the_plain_code_bytes() {
-    let Some(plain) = whole_binary_main("x86_64", false) else { return };
-    let mut prog = load("x86_64", false).expect("the first load found x86 specs");
+    let plain = whole_binary_main("x86_64", false);
+    let mut prog = load("x86_64", false);
     let entry = prog
         .function_entries_canonical()
         .into_iter()
@@ -117,8 +101,8 @@ fn provenance_collection_preserves_the_plain_code_bytes() {
 
 /// `main` through the CONSOLE command (`load function` / `decompile` / `print C`
 /// — what `kuna decompile` drives in its `decomp_dbg` subprocess).
-fn console_main(arch: &str, formatstring_on: bool) -> Option<String> {
-    let prog = load(arch, formatstring_on)?;
+fn console_main(arch: &str, formatstring_on: bool) -> String {
+    let prog = load(arch, formatstring_on);
     let cmds: Vec<String> =
         ["load function main".into(), "decompile".into(), "print C".into()].to_vec();
     let count = cmds.len();
@@ -143,7 +127,7 @@ fn console_main(arch: &str, formatstring_on: bool) -> Option<String> {
         .unwrap_or_else(|| panic!("[{arch}] console decompile did not complete:\n{}", status.optr))
         .1
         .to_string();
-    Some(text.trim_matches('\n').to_string())
+    text.trim_matches('\n').to_string()
 }
 
 /// Property 1, gate OFF — the bug: the whole-binary surface leaves the printf
@@ -151,7 +135,7 @@ fn console_main(arch: &str, formatstring_on: bool) -> Option<String> {
 #[test]
 fn whole_binary_leaves_varargs_untyped_with_formatstring_off() {
     for arch in ARCHES {
-        let Some(c) = whole_binary_main(arch, false) else { continue };
+        let c = whole_binary_main(arch, false);
         assert!(c.contains("printf("), "[{arch}] expected a printf call, got:\n{c}");
         assert!(
             !c.contains("(char *)*a1"),
@@ -166,7 +150,7 @@ fn whole_binary_leaves_varargs_untyped_with_formatstring_off() {
 #[test]
 fn whole_binary_types_varargs_with_formatstring_on() {
     for arch in ARCHES {
-        let Some(c) = whole_binary_main(arch, true) else { continue };
+        let c = whole_binary_main(arch, true);
         assert!(c.contains("printf("), "[{arch}] expected a printf call, got:\n{c}");
         assert!(
             c.contains("(char *)*a1"),
@@ -182,10 +166,7 @@ fn whole_binary_types_varargs_with_formatstring_on() {
 fn whole_binary_matches_console_in_both_option_states() {
     for arch in ARCHES {
         for on in [false, true] {
-            let (Some(w), Some(c)) = (whole_binary_main(arch, on), console_main(arch, on))
-            else {
-                continue;
-            };
+            let (w, c) = (whole_binary_main(arch, on), console_main(arch, on));
             assert_eq!(
                 w, c,
                 "[{arch}] formatstring={on}: decompile-all and console `decompile` \

@@ -37,12 +37,10 @@
 //! it is genuinely *active* on a PE — the Listing builds with functions and the
 //! consumer runs to completion — under `--option listing on --option noreturn_disc on`.
 //!
-//! ## Multi-format is the default + `.sla` precondition
+//! ## Multi-format is the default
 //!
 //! Non-ELF loads unconditionally — the same default `load file` dispatch as ELF,
-//! with no flag. Bootstrapping needs the built `x86`/`AARCH64` `.sla` under
-//! `specs/` (gitignored; `make specs`); when absent the bootstrap fails and the
-//! test prints that and returns early (a visible skip, never a false green).
+//! with no flag.
 
 use std::path::PathBuf;
 
@@ -78,25 +76,15 @@ fn decompile_func(prog: ConsoleProgram, setup: &[&str]) -> String {
     status.optr.clone()
 }
 
-/// Bootstrap a fixture (multi-format loading is unconditional), returning `None`
-/// (a visible skip) when the `.sla` is absent.
-fn boot(name: &str) -> Option<ConsoleProgram> {
+/// Bootstrap a fixture (multi-format loading is unconditional).
+fn boot(name: &str) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join(name);
     assert!(path.exists(), "missing fixture {path:?}");
 
-    match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_multiformat_passes: skipping {name} (bootstrap failed; build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// THE HEADLINE: a PE renders the string literal (`strings`) AND the typed
@@ -104,7 +92,7 @@ fn boot(name: &str) -> Option<ConsoleProgram> {
 /// `puts(0x…)` / `printf(0x…, …)`.
 #[test]
 fn pe_renders_string_literal_and_typed_args() {
-    let Some(prog) = boot("pe_imports.exe") else { return };
+    let prog = boot("pe_imports.exe");
 
     let out = decompile_func(prog, &["load function main", "decompile", "print C"]);
 
@@ -127,7 +115,7 @@ fn pe_renders_string_literal_and_typed_args() {
 /// `printf("%d\n", …)` literal (was `printf(0x1000005ee, …)`).
 #[test]
 fn macho_renders_typed_printf_literal() {
-    let Some(prog) = boot("macho_imports") else { return };
+    let prog = boot("macho_imports");
 
     let out = decompile_func(prog, &["load function _main", "decompile", "print C"]);
 
@@ -143,12 +131,12 @@ fn macho_renders_typed_printf_literal() {
 /// it (the per-pass before/after, on a PE).
 #[test]
 fn pe_exit_eliminates_dead_code_via_noreturn_list() {
-    let Some(prog) = boot("pe_imports.exe") else { return };
+    let prog = boot("pe_imports.exe");
 
     // ON (default): exit is no-return → WARNING terminator, no fall-through after.
     let on = decompile_func(prog, &["load function __tmainCRTStartup", "decompile", "print C"]);
 
-    let Some(prog_off) = boot("pe_imports.exe") else { return };
+    let prog_off = boot("pe_imports.exe");
     // OFF: the dead code after `exit(…)` reappears. (kuna DIV-13/DIV-14/DIV-57/DIV-67)
     // ALL FIVE no-return / bound gates must be disabled: `noreturn_known` (the
     // address-keyed scan), `noreturn_externmatch` (the flow-seam name match, default-on
@@ -194,7 +182,7 @@ fn pe_exit_eliminates_dead_code_via_noreturn_list() {
 /// (not inert) on a non-ELF binary — the format-neutrality claim.
 #[test]
 fn noreturn_disc_runs_on_pe() {
-    let Some(prog) = boot("pe_imports.exe") else { return };
+    let prog = boot("pe_imports.exe");
 
     let out = decompile_func(
         prog,

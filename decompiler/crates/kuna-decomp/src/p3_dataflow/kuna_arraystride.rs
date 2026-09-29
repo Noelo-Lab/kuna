@@ -9,21 +9,9 @@
 //! arch flag `recover_array_stride` (option `arraystride on|off`, shipped default
 //! `on`); inert when off, byte-identical to upstream.
 //!
-//! ## Gate wiring — STUB(W4)
-//!
-//! As in the sibling kuna simplification rules, the C++
-//! `if (!data.getArch()->recover_array_stride) return 0;` gate is resolved at
-//! construction (the boundary `Funcdata::glb` does not carry kuna analysis flags).
-//! W8 threads `Architecture::recover_array_stride`; [`specs`] uses the shipped
-//! default (`on`).
-//!
-//! ## Output-Varnode creation — `newUniqueOut`
-//!
-//! `data.newUniqueOut(size, op)` is reproduced through the public
-//! [`VarnodeBank::create_def_unique`](crate::varnode::VarnodeBank::create_def_unique)
-//! together with [`PcodeOp::set_output`] (the [`Funcdata::op_set_output`] stub
-//! needs a `banks_mut()` split-borrow the funcdata owner has not exposed) — see
-//! the `kuna_addcarrychain` module docs.  Noted in the structured losses.
+//! The registered rule reads the architecture option; constructors can also
+//! enable it directly. Helper outputs use [`Funcdata::new_unique_out`] so the
+//! function owns def-use, high-variable and lane bookkeeping.
 //!
 //! ## Block-op walk
 //!
@@ -31,29 +19,18 @@
 //! uses [`Funcdata::bb_ops`] (the head..tail intrusive-list order, where the
 //! MULTIEQUALs are all first), preserving the `cand->code() != CPUI_MULTIEQUAL ->
 //! break` early-out exactly.
-//!
-//! ## STUB(W6) — opcode-flag resolution
-//!
-//! `opSetOpcode(multop, CPUI_INT_MULT)` resolves `glb->inst[CPUI_INT_MULT]` (the
-//! W6 typeop `inst` table); the op-shell is built with the [`TypeOp`] skeleton
-//! (zero flag word) until W6 lands.  Noted in the structured losses.
 
-use std::rc::Rc;
-
-use kuna_base::error::KunaResult;
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
-use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::context::{BlockId, OpId, TypeOp, VarnodeId};
-use crate::varnode::{DefOpInfo, VarnodeBank};
 
 /// (kuna GH-8724) Re-expose a strided-induction index: rewrite a stride
 /// accumulator phi as `counter * stride` (C++ `RuleArrayStride`).
 pub struct RuleArrayStride {
-    /// Resolved `glb->recover_array_stride` gate (STUB(W4); see module docs).
+    /// Explicit constructor override; otherwise consult the architecture.
     enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
@@ -148,7 +125,7 @@ impl Rule for RuleArrayStride {
         let multop = data.new_op(2, pc);
         // STUB(W6): glb->inst[CPUI_INT_MULT].
         data.op_set_opcode(multop, TypeOp::new(OpCode::CPUI_INT_MULT, 0, "INT_MULT"));
-        let multout = new_unique_out(data, vn_size(data, accout), multop)
+        let multout = data.new_unique_out(vn_size(data, accout), multop)
             .expect("RuleArrayStride: newUniqueOut(mult) (internal invariant)");
         data.op_set_input(multop, cntout, 0)
             .expect("RuleArrayStride: opSetInput multop.0");
@@ -259,20 +236,6 @@ fn kuna_is_induction_phi(
         return None;
     }
     Some((zero_idx, add_idx, foundstep, foundadd.expect("addIdx set => foundadd")))
-}
-
-/// Reproduce `Funcdata::newUniqueOut(size, op)` for a fresh unique output (see
-/// `kuna_addcarrychain` module docs for the `op_set_output` stub rationale).
-fn new_unique_out(data: &mut Funcdata, size: int4, op: OpId) -> KunaResult<VarnodeId> {
-    let ct: Rc<Datatype> = Rc::new(Datatype::new(size, type_metatype::TYPE_UNKNOWN));
-    let seqnum = data.obank().get(op).expect("new_unique_out: stale op").get_seq_num().clone();
-    let info = DefOpInfo { id: op, seqnum };
-    let mut never = |_: &mut VarnodeBank, _: VarnodeId, _: VarnodeId| -> KunaResult<()> {
-        panic!("new_unique_out: xref unified a fresh unique output (internal invariant)")
-    };
-    let vn = data.vbank_mut().create_def_unique(size, ct, info, &mut never)?;
-    data.obank_mut().get_mut(op).expect("new_unique_out: stale op").set_output(Some(vn));
-    Ok(vn)
 }
 
 // --- Local IR read helpers (see kuna_booleanmask for the rationale) ----------

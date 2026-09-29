@@ -36,12 +36,6 @@
 //!
 //! This is the **differential** that justifies a new option over `noreturn_disc`:
 //! the same fixture, with `noreturn_disc on`, is NOT fixed.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -68,25 +62,16 @@ enum Mode {
     Disc,
 }
 
-/// Bootstrap the fixture, (optionally) enable a consumer, decompile `func`, and
-/// return the captured C (`None` ⇒ specs-less skip).
-fn decompile(func: &str, mode: Mode) -> Option<String> {
+/// Bootstrap the fixture, (optionally) enable a consumer, decompile `func`, and return the
+/// captured C.
+fn decompile(func: &str, mode: Mode) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_noreturn_propagate: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The live-CLI ordering: the `option` lines precede `read symbols` (the
     // deferred commit). Set the flags on the live arch BEFORE committing so the
@@ -129,7 +114,7 @@ fn decompile(func: &str, mode: Mode) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// THE PAYOFF: with the propagation consumer on, the custom `my_die` wrapper —
@@ -138,11 +123,8 @@ fn decompile(func: &str, mode: Mode) -> Option<String> {
 /// post-call dead code is eliminated.
 #[test]
 fn propagation_eliminates_dead_code_after_single_call_wrapper() {
-    let Some(off) = decompile("compute", Mode::Off) else {
-        return; // specs-less skip
-    };
-    let on = decompile("compute", Mode::Propagate)
-        .expect("second bootstrap succeeds if the first did");
+    let off = decompile("compute", Mode::Off);
+    let on = decompile("compute", Mode::Propagate);
 
     eprintln!("---- compute (flags OFF / default) ----\n{off}");
     eprintln!("---- compute (noreturn_propagate ON) ----\n{on}");
@@ -179,9 +161,7 @@ fn propagation_eliminates_dead_code_after_single_call_wrapper() {
 /// makes `noreturn_propagate` a genuinely new capability, not a duplicate.
 #[test]
 fn discovered_consumer_does_not_fix_this_fixture() {
-    let Some(disc) = decompile("compute", Mode::Disc) else {
-        return; // specs-less skip
-    };
+    let disc = decompile("compute", Mode::Disc);
     eprintln!("---- compute (noreturn_disc ON) ----\n{disc}");
     assert!(
         !disc.contains("// no-return"),
@@ -195,9 +175,7 @@ fn discovered_consumer_does_not_fix_this_fixture() {
 /// documented (and that the pass marks the wrapper, not only its caller).
 #[test]
 fn wrapper_itself_is_concluded_no_return() {
-    let Some(die) = decompile("my_die.constprop.0", Mode::Propagate) else {
-        return; // specs-less skip
-    };
+    let die = decompile("my_die.constprop.0", Mode::Propagate);
     eprintln!("---- my_die.constprop.0 (noreturn_propagate ON) ----\n{die}");
     assert!(
         die.contains("abort") || die.contains("// no-return"),

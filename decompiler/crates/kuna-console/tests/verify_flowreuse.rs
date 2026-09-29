@@ -22,13 +22,6 @@
 //!    ran in between or when a seed is present.
 //! 2. **It changes nothing**: the C rendered through the adopting path is
 //!    byte-identical to the C rendered through the rebuilding path.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling gates, bootstrapping needs the built per-arch `.sla` under
-//! `specs/` (gitignored; `make specs`). When it is absent the bootstrap fails;
-//! the test prints that and returns early (a specs-less CI is a visible skip,
-//! never a false green).
 
 use std::path::PathBuf;
 
@@ -42,46 +35,36 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the x86-64 `fmt` fixture and run the analysis commit.  `None` is a
-/// visible specs-less skip.
-fn load() -> Option<ConsoleProgram> {
+/// Bootstrap the x86-64 `fmt` fixture and run the analysis commit.
+fn load() -> ConsoleProgram {
     load_fixture("fmt_x86_64")
 }
 
-fn load_fixture(name: &str) -> Option<ConsoleProgram> {
+fn load_fixture(name: &str) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root
         .join("decompiler/crates/kuna-analysis/tests/fixtures")
         .join(name)
-        .to_str()?
+        .to_str().expect("UTF-8 fixture path")
         .to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_flowreuse[{name}]: skipping (bootstrap failed, build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Drive the console with `cmds` and return `(rendered C, adoption count)`.
-fn drive(cmds: &[&str]) -> Option<(String, u64)> {
+fn drive(cmds: &[&str]) -> (String, u64) {
     drive_on("fmt_x86_64", cmds)
 }
 
-fn drive_on(fixture: &str, cmds: &[&str]) -> Option<(String, u64)> {
+fn drive_on(fixture: &str, cmds: &[&str]) -> (String, u64) {
     drive_with(fixture, &[], cmds)
 }
 
-fn drive_with(fixture: &str, options: &[(&str, &str)], cmds: &[&str]) -> Option<(String, u64)> {
-    let mut prog = load_fixture(fixture)?;
+fn drive_with(fixture: &str, options: &[(&str, &str)], cmds: &[&str]) -> (String, u64) {
+    let mut prog = load_fixture(fixture);
     for (name, value) in options {
         prog.arch_mut().set_kuna_option(name, value).expect("option flips");
     }
@@ -110,7 +93,7 @@ fn drive_with(fixture: &str, options: &[(&str, &str)], cmds: &[&str]) -> Option<
         .unwrap_or_else(|| panic!("console decompile did not complete:\n{}", status.optr))
         .1
         .to_string();
-    Some((text.trim_matches('\n').to_string(), adopted))
+    (text.trim_matches('\n').to_string(), adopted)
 }
 
 /// Property 1 + 2 together: the plain pair adopts, an `echo` in between does not,
@@ -119,13 +102,10 @@ fn drive_with(fixture: &str, options: &[(&str, &str)], cmds: &[&str]) -> Option<
 /// counter itself and not any state the command touched.
 #[test]
 fn adopting_the_loaded_flow_renders_the_same_c_as_rebuilding_it() {
-    let Some((adopted_c, adopted_n)) =
-        drive(&["load function main", "decompile", "print C"])
-    else {
-        return;
-    };
+    let (adopted_c, adopted_n) =
+        drive(&["load function main", "decompile", "print C"]);
     let (rebuilt_c, rebuilt_n) =
-        drive(&["load function main", "echo x", "decompile", "print C"]).expect("second load");
+        drive(&["load function main", "echo x", "decompile", "print C"]);
 
     assert_eq!(adopted_n, 1, "the plain load/decompile pair must adopt the loaded IR");
     assert_eq!(rebuilt_n, 0, "a command in between must fall back to the rebuild");
@@ -139,8 +119,8 @@ fn adopting_the_loaded_flow_renders_the_same_c_as_rebuilding_it() {
 /// `load addr` stamps its follow the same way `load function` does.
 #[test]
 fn load_addr_also_adopts() {
-    let Some((c, n)) = drive(&["load function main", "decompile", "print C"]) else { return };
-    let Some(prog) = load() else { return };
+    let (c, n) = drive(&["load function main", "decompile", "print C"]);
+    let prog = load();
     let entry = prog
         .function_entries_canonical()
         .into_iter()
@@ -148,7 +128,7 @@ fn load_addr_also_adopts() {
         .expect("the fixture exports main");
     drop(prog);
     let cmd = format!("load addr 0x{:x} main", entry.addr.get_offset());
-    let (c2, n2) = drive(&[&cmd, "decompile", "print C"]).expect("load addr drive");
+    let (c2, n2) = drive(&[&cmd, "decompile", "print C"]);
     assert_eq!(n, 1);
     assert_eq!(n2, 1, "`load addr` must stamp its follow too");
     assert_eq!(c, c2, "the two entry surfaces render the same C");
@@ -159,14 +139,12 @@ fn load_addr_also_adopts() {
 /// `Funcdata` in its place), so it must re-follow.
 #[test]
 fn a_second_decompile_does_not_adopt() {
-    let Some((_, n)) = drive(&[
+    let (_, n) = drive(&[
         "load function main",
         "decompile",
         "decompile",
         "print C",
-    ]) else {
-        return;
-    };
+    ]);
     assert_eq!(n, 1, "the stamp is single-use; a second decompile must rebuild");
 }
 
@@ -178,11 +156,8 @@ fn a_second_decompile_does_not_adopt() {
 /// rebuild.  The rendered C is the proof it matters: the DWARF names survive.
 #[test]
 fn dwarf_locals_are_a_flow_time_seed_that_forces_the_rebuild() {
-    let Some((c, n)) =
-        drive_on("dwarfstructs_x86_64", &["load function main", "decompile", "print C"])
-    else {
-        return;
-    };
+    let (c, n) =
+        drive_on("dwarfstructs_x86_64", &["load function main", "decompile", "print C"]);
     assert_eq!(n, 0, "DWARF locals are a flow-time seed; they must force the rebuild");
     assert!(!c.is_empty(), "the DWARF fixture still renders C:\n{c}");
 }
@@ -196,13 +171,11 @@ fn dwarf_locals_are_a_flow_time_seed_that_forces_the_rebuild() {
 /// the varargs never get typed.  So `formatstring` must force the rebuild.
 #[test]
 fn formatstring_forces_the_rebuild() {
-    let Some((c, n)) = drive_with(
+    let (c, n) = drive_with(
         "fmt_x86_64",
         &[("formatstring", "on")],
         &["load function main", "decompile", "print C"],
-    ) else {
-        return;
-    };
+    );
     assert_eq!(n, 0, "formatstring moves an arch flag around the drive; it must rebuild");
     assert!(
         c.contains("printf(\"%d %s"),

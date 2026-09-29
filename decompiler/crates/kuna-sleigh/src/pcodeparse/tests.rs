@@ -732,3 +732,51 @@ fn spot_check_chained_arith_and_float_ops() {
     let (_, _, ops4) = compile_collect(&lang, "r1 = -1;");
     assert!(ops4[0].starts_with("CPUI_INT_2COMP"));
 }
+
+#[test]
+fn new_is_an_identifier_not_a_builtin_operation() {
+    assert!(PcodeLexer::find_identifier(b"new").is_none());
+    let lang = basic_lang();
+    let ops = compile_ok(&lang, "local new:4; new = r1; r2 = new;");
+    assert_eq!(ops.len(), 2);
+    assert!(ops.iter().all(|op| op.starts_with("CPUI_COPY ")));
+
+    let lang = lang.with_userop("new", 17);
+    let mut snip = PcodeSnippet::new(&lang);
+    assert!(snip.parse_stream(b"r1 = new(r2);"));
+    let result = snip.release_result().unwrap();
+    assert_eq!(result.get_opvec().len(), 1);
+    let op = &result.get_opvec()[0];
+    assert_eq!(op.get_opcode(), OpCode::CPUI_CALLOTHER);
+    assert_eq!(op.get_in(0).get_offset().get_real(), 17);
+
+    let mut snip = PcodeSnippet::new(&lang);
+    assert!(!snip.parse_stream(b"r1 = borrow(r1,r2);"));
+    assert_eq!(snip.get_error_message(), "Syntax error");
+}
+
+#[test]
+fn clear_discards_non_space_locals_but_keeps_temporary_base() {
+    let lang = basic_lang();
+    let mut snip = PcodeSnippet::new(&lang);
+    snip.set_unique_base(0x400);
+    snip.add_operand(b"arg", 3);
+    assert!(matches!(snip.classify_identifier(b"inst_dest"), Token::JumpSym(_)));
+    assert!(matches!(snip.classify_identifier(b"inst_ref"), Token::JumpSym(_)));
+    assert!(snip.parse_stream(b"local new:4; new = r1;"));
+    let base = snip.get_unique_base();
+    assert!(base >= 0x400);
+    snip.report_error(None, "discarded diagnostic");
+    assert!(snip.has_errors());
+
+    snip.clear();
+    assert_eq!(snip.get_unique_base(), base);
+    assert!(!snip.has_errors());
+    assert!(snip.get_error_message().is_empty());
+    assert!(snip.release_result().is_none());
+    for name in [b"inst_dest".as_slice(), b"inst_ref", b"arg", b"new"] {
+        assert!(matches!(snip.classify_identifier(name), Token::Str(value) if value == name));
+    }
+    assert!(matches!(snip.classify_identifier(b"ram"), Token::SpaceSym(_)));
+    assert!(snip.parse_stream(b"r2 = r1;"));
+}

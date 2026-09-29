@@ -7,7 +7,17 @@
 
 use super::*;
 
-// --- Table counts (the C++ kunaNum* values) ----------------------------------
+#[test]
+fn catalog_matches_implemented_options() {
+    use std::collections::BTreeSet;
+    use crate::options::KUNA_OPTION_NAMES;
+
+    let registered: BTreeSet<_> = KUNA_OPTION_NAMES.iter().copied().collect();
+    let documented: BTreeSet<_> = SETTABLE_TABLE.iter().map(|row| row.option).collect();
+    assert_eq!(registered.len(), KUNA_OPTION_NAMES.len(), "duplicate option handler");
+    assert_eq!(documented.len(), SETTABLE_TABLE.len(), "duplicate catalog option");
+    assert_eq!(registered, documented);
+}
 
 #[test]
 fn group_count_is_39() {
@@ -17,163 +27,18 @@ fn group_count_is_39() {
 
 #[test]
 fn subphase_count_is_47() {
-    // +1 for the P9 `condition-form` subphase (truthycond, DIV-36),
-    // +1 for the P9 `brace-form` subphase (braceelide, DIV-37),
-    // +1 for the P9 `warning-style` subphase (warnstyle, DIV-38),
-    // +1 for the P9 `array-cover-width` subphase (arraycoverwidth, DIV-122).
-    // +1 for the P9 `empty-string-constant` subphase (emptystrconst, DIV-125).
-    // +1 for the P9 `type-definition-preamble` subphase (structdefs).
-    // +1 for the P9 `constant-address-global` subphase (globalref).
     assert_eq!(kuna_num_subphases(), 47);
     assert_eq!(SUBPHASE_TABLE.len(), 47);
 }
 
 #[test]
 fn surface_count_is_120() {
-    // +1 for the `option switchguardbound` surface row (angr missing-function-call),
-    // +1 for the `option switchsharedcase` surface row (angr shared-case-node b2sum),
-    // +1 for the `option switchmultipred` surface row (angr abnormal-switch-case-case3),
-    // +1 for the `option unrolledguard` surface row (angr optimized-memcpy),
-    // +1 for the `option tailcalljump` surface row (angr tee-O2 tail-jumps),
-    // +1 for the `option branchflip` surface row (angr SAILR condition polarity),
-    // +1 for the `option noreturn_externmatch` surface row (angr incorrect-duplication-chcon, DIV-13),
-    // +1 for the `option truthycond` surface row (kuna C-surface normalization, DIV-36),
-    // +1 for the `option braceelide` surface row (kuna C-surface normalization, DIV-37),
-    // +1 for the `option warnstyle` surface row (kuna C-surface normalization, DIV-38).
-    // +1 for the `option funcboundflow` surface row (kuna cross-function-merge fix).
-    // +1 for the `option securitycheck` surface row (kuna rustc panic-branch
-    // stripping, DIV-82) -- the P7 edge-virtualization sibling of `stackguard`.
-    // +1 for the `option retinputhalf` surface row (kuna P4 output-prototype:
-    // keep a returned register half that is a placed input parameter).
-    // +1 for the `option rustabi` surface row (kuna P4 output-prototype: keep the
-    // two-register rustc ScalarPair return and connect it at the call).
-    // +1 for the `option overlapbranch` surface row (kuna P2 flow-classification:
-    // a conditional branch target strictly inside its own fall-through instruction).
-    // +1 for the `option tailcallframe` surface row (kuna P2 flow-classification:
-    // a direct jmp preceded by a teardown of exactly the entry block's frame).
-    // +1 for the `option rodatastring` surface row (kuna P5 constsequence: collapse
-    // a read-only string block copy into builtin_strncpy).
-    // +1 for the `option arraycoverwidth` surface row (kuna P9 array-cover-width:
-    // render a multi-element array cover at its real width, DIV-122).
-    // +1 for the `option emptystrconst` surface row (kuna P9 empty-string-constant:
-    // keep the address when the string literal would be empty, DIV-125).
-    // +1 for the `option msvcstackguard` surface row (kuna P7 edge-virtualization:
-    // the MSVC /GS frame-cookie sibling of `stackguard`, GH-468).
-    // +1 for the `option constselectjump` surface row (kuna P2 switch-model:
-    // recover a BRANCHIND whose destination is a select over constant addresses).
-    // +1 for the `option calltrampoline` surface row (kuna P2 flow-classification:
-    // a call whose callee discards the pushed return address, DIV-144).
-    // +1 for the `option retpushedhalf` surface row (kuna P4 output-prototype:
-    // a register the function only ever PUSHED is not a placement source for a
-    // returned register half, DIV-156).
-    // +1 for the `option tailcallsaved` surface row (kuna P2 flow-classification:
-    // a teardown has to give back what the entry block saved, DIV-157).
-    // +1 for the `option callpopret` surface row (kuna P2 flow-classification:
-    // a call-over-data helper that returns through its caller's caller, DIV-163).
-    // +1 for `option cancelbytearithmetic` (P3 exact byte cancellation).
-    // +1 for `option tiedphitrim` (P6 loop-head aliased-read trim, DIV-182).
-    // +1 for the `option structdefs` surface row (kuna P9 type-definition-preamble:
-    // print the referenced composite definitions above the function).
     assert_eq!(kuna_num_surfaces(), 120);
     assert_eq!(SURFACE_TABLE.len(), 120);
 }
 
 #[test]
 fn settable_count_is_245() {
-    // One row per kuna ArchOption; the authoritative per-option list (with
-    // tier, symptoms, and provenance) is phases.toml settableTable.
-    // +1 for `callsitestackargs` (P4 stack-passed call argument recovery).
-    // +1 for `cortexmvectors` (P1 widened ARM Cortex-M vector-table signature).
-    // +1 for `paramcopyhoist` (P6 parameter copy-shadow entry-block anchor).
-    // +1 for `itecondlist` (S8 iteregion/iteboolean condition-list tolerance).
-    // +1 for `peimportcall` (P1 PE import-call binding, DIV-57).
-    // +1 for `ptrentry` (P1 pointer-referenced ARM function entries).
-    // +1 for `tailcallentry` (P1 tail-call function-entry recovery).
-    // +1 for `cppproto` (P1 DWARF C++ prototype recovery arm).
-    // +1 for `fdeinterior` (P1 `.eh_frame` FDE-interior entry suppression, DIV-61).
-    // +1 for `cppsig` (P1 demangled C++ signature application).
-    // +1 for `typedepth` (P1 full-depth DWARF type resolution, DIV-63).
-    // +1 for `itaniumrtti` (P1 Itanium GCC/Clang RTTI + vtable recovery, DIV-64).
-    // +1 for `libcsigs` (P1 measured libc signature extension, DIV-65).
-    // +1 for `funcboundflow` (P2 fall-through bound at function entries).
-    // +1 for `poolentry` (P1 ARM literal-pool inference).
-    // +1 for `guardarm` (P8 ruleBlockIfNoExit arm tie-break).
-    // +1 for `loopcondhoist` (P8 deferred-scan loop-head deferral).
-    // +1 for `calloverlap` (P3 partial-range call-overlap guards, GH-275).
-    // +1 for `orchain` (S8 returndup short-circuit operand-chain protection).
-    // +1 for `evalcurrentproto` (P4 compiler-spec current-function prototype model).
-    // +1 for `ifuncfpret` (P1 x86-64 IFUNC IRELATIVE PLT-stub naming).
-    // +1 for `outline` (S8 region excision into a synthesized pseudofunction).
-    // +1 for `msvcftol` (P2 MSVC __ftol-family call-fixup, DIV-74).
-    // +1 for `ctypes` (P9 valid per-architecture C type spelling, DIV-75).
-    // +1 for `datasyms` (P1 ELF data-symbol naming gate, DIV-76, GH-184).
-    // +1 for `loadguardrange` (P3 indexed-stack guard ValueSet range refinement, GH-182).
-    // +1 for `relocrebase` (P1 relocatable-object analysis rebase, DIV-79, GH-289).
-    // +1 for `aifstrict` (P1 AIF gap-cursor aligned slide, GH-299).
-    // +1 for `spillargtrial` (P4 caller-save spill tolerance in input-trial scoring, GH-275).
-    // +1 for `securitycheck` (P7 rustc panic-branch stripping, DIV-82).
-    // +1 for `cleanupcode` (P2 Rust drop/deallocate call removal, DIV-81).
-    // +1 for `dynrelocs` (P1 linked-image dynamic-relocation application, DIV-84).
-    // +1 for `retinputhalf` (P4 returned input-parameter half retention, DIV-85).
-    // +1 for `dwarfstructs` (P1 DWARF aggregate-layout import, DIV-86).
-    // +1 for `rustabi` (P4 rustc two-register ScalarPair return recovery).
-    // +1 for `dwarfvariants` (P1 DWARF variant-part import, DIV-87).
-    // +1 for `symbolnamerepair` (P1 degenerate-symbol-name repair, DIV-88).
-    // +1 for `noreturn_discstrict` (P1 discovered-no-return positive-evidence-only
-    // tally, DIV-92, GH-312).
-    // +1 for `aifcorroborate` (P1 AIF accept corroboration test, GH-313).
-    // +1 for `symbolnamechars` (P1 symbol-name character sanitizing, DIV-94).
-    // +1 for `symbolnamebound` (P1 symbol-name scope resource bound, DIV-95, GH-338).
-    // +1 for `msvcfpconst` (P1 MSVC `__real@` FP-constant recovery, DIV-96).
-    // +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard folding, DIV-99).
-    // +1 for `linuxsyscall` (P2 32-bit Linux int 0x80 syscall naming).
-    // +1 for `unmappedentry` (P1 unmapped-CALL-target entry suppression).
-    // +1 for `entrymainproto` (P1 PE CRT entry-function prototype recovery).
-    // +1 for `ppclocalentry` (P1 PPC64 ELFv2 local-entry entry suppression).
-    // +1 for `pdatachained` (P1 PE chained-`UNWIND_INFO` `.pdata` entry
-    // suppression, DIV-117, GH-403).
-    // +1 for `noreturnretuse` (P4 terminal no-return call use in return trials,
-    // DIV-118).
-    // +1 for `msvcstackguard` (P7 MSVC /GS frame-cookie stripping, GH-468).
-    // +1 for `entrythumbflow` (P1 entry-reachable Thumb context walk, DIV-154).
-    // +1 for `pdatainterior` (P1 `.pdata` RUNTIME_FUNCTION-interior entry suppression).
-    // +1 for `callretpair` (P4 two-register CALL output completion, DIV-162).
-    // +1 for `loweredswitchlabels` (P2 comparison-derived label signedness).
-    // +1 for `cancelbytearithmetic` (P3 exact byte cancellation, DIV-174).
-    // +1 for `pebnames` (P5 Windows TEB/PEB segment-base typing, DIV-175).
-    // +1 for `mappedflowboundary` (P2 mapped ELF x86 flow boundaries, DIV-176).
-    // +1 for `nulterminator` (P6 opt-in stack-array terminator absorption).
-    // +1 for `endptrbound` (P6 pointer-walk end bound on its buffer, DIV-177).
-    // +1 for `rexthunk` (P1 x86-64 PE REX-prefixed import-thunk rejection).
-    // +1 for `pdbinterior` (P1 PDB-procedure-interior entry suppression, DIV-180).
-    // +1 for `msvcstrappend` (P2 inlined MSVC std::string append collapse).
-    // +1 for `loweredswitchvalue` (P2 re-rolled switch dispatch value, DIV-181).
-    // +1 for `tiedphitrim` (P6 loop-head aliased-read trim, DIV-182).
-    // +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
-    // +1 for `bytehonest` (P6 uncommitted byte on the JSON variables surface) and +1 for `elfmain` (P1 ELF libc-start main naming + prototype).
-    // +1 for `argclobber` (P4 trailing clobber-argument drop).
-    // +1 for `libctypes` (P1 named libc/POSIX aggregate pointers in the prototype tables).
-    // +1 for `foldcallretphi` (P6 call-result folding past the merge phalanx).
-    // +1 for `ptrfromuse` (P5 use-derived parameter pointer).
-    // +1 for `structsynth` (P5 struct synthesis over a pointer parameter).
-    // +1 for `signedness` (P9 declared-signedness rounding).
-    // +1 for `boolbyte` (P5 truth-valued byte typing).
-    // +1 for `mulblob` (P3 wide-multiply operand structuring decline).
-    // +1 for `rawdiscover` (P1 raw-image function inventory).
-    // +1 for `protoorder` (P4 callee-first recovered parameter types).
-    // +1 for `charbyte` (P5 char-pointer byte typing).
-    // +1 for `slotptr` (P6 frame-slot pointer typing on the JSON variables surface).
-    // +1 for `calleevote` (P4 caller-to-callee parameter types).
-    // +1 for `structmerge` (P5 sibling layout union).
-    // +1 for `structheadless` (P5 a closed function's record read past its start).
-    // +1 for `callpush` (P4 a call's own return-address push).
-    // +1 for `peordinal` (P1 PE import-by-ordinal naming).
-    // +1 for `jumptablemax` (P2 switch-model jump-table size cap).
-    // +1 for `callbacktype` (P4 a callback takes its slot's prototype).
-    // +1 for `callrettype` (P4 a call returns its callee's stated type).
-    // +1 for `castobject` (P6 an out-parameter local declared at its callee's pointee).
-    // +1 for `castwiden` (P9 a widening C performs by itself keeps no cast).
-    // +1 for `elemptr` (P5 a pointer used only as an array).
     assert_eq!(kuna_num_settables(), 245);
     assert_eq!(SETTABLE_TABLE.len(), 245);
 }
@@ -191,154 +56,6 @@ fn tier_counts_are_76_core_103_transform_66_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    // core 19 -> 20: +1 for `callsitestackargs` (P4 stack-passed call arguments).
-    // transform 37 -> 38: +1 for `iteboolean` (S8 short-circuit 0/1 re-roll, DIV-51).
-    // analysis 25 -> 26: +1 for `cortexmvectors` (P1 widened Cortex-M vector table).
-    // transform 38 -> 39: +1 for `paramcopyhoist` (P6 parameter copy-shadow anchor).
-    // transform 39 -> 40: +1 for `itecondlist` (S8 ITE condition-list tolerance, DIV-56).
-    // transform 40 -> 41: +1 for `peimportcall` (P1 PE import-call binding, DIV-57).
-    // analysis 26 -> 27: +1 for `ptrentry` (P1 pointer-referenced ARM entries).
-    // analysis 27 -> 28: +1 for `tailcallentry` (P1 tail-call function-entry recovery).
-    // analysis 28 -> 29: +1 for `cppproto` (P1 DWARF C++ prototype recovery).
-    // analysis 29 -> 30: +1 for `fdeinterior` (P1 FDE-interior entry suppression, DIV-61).
-    // analysis 30 -> 31: +1 for `cppsig` (P1 demangled C++ signature application).
-    // analysis 31 -> 32: +1 for `typedepth` (P1 full-depth DWARF types, DIV-63).
-    // analysis 32 -> 33: +1 for `itaniumrtti` (P1 Itanium GCC/Clang RTTI + vtable
-    // recovery, DIV-64).
-    // analysis 33 -> 34: +1 for `libcsigs` (P1 measured libc signature extension, DIV-65).
-    // transform 41 -> 42: +1 for `funcboundflow` (P2 fall-through bound at function entries).
-    // analysis 34 -> 35: +1 for `poolentry` (P1 ARM literal-pool inference).
-    // transform 42 -> 43: +1 for `guardarm` (P8 ruleBlockIfNoExit arm tie-break).
-    // transform 43 -> 44: +1 for `loopcondhoist` (P8 deferred-scan loop-head deferral).
-    // core 20 -> 21: +1 for `calloverlap` (P3 partial-range call-overlap guards, GH-275).
-    // transform 44 -> 45: +1 for `orchain` (S8 returndup short-circuit chain gate).
-    // core 21 -> 22: +1 for `evalcurrentproto` (P4 compiler-spec current-function
-    // prototype model, DIV-71).
-    // analysis 35 -> 36: +1 for `ifuncfpret` (P1 x86-64 IFUNC PLT-stub naming).
-    // transform 45 -> 46: +1 for `outline` (deletes blocks, synthesizes a call).
-    // transform 46 -> 47: +1 for `msvcftol` (P2 MSVC __ftol call-fixup, DIV-74).
-    // core 22 -> 23: +1 for `ctypes` (P9 valid C type spelling, DIV-75).
-    // analysis 36 -> 37: +1 for `datasyms` (P1 ELF data-symbol naming, DIV-76).
-    // core 23 -> 24: +1 for `loadguardrange` (P3 guard ValueSet range refinement, GH-182).
-    // analysis 37 -> 38: +1 for `relocrebase` (P1 relocatable-object analysis rebase, DIV-79).
-    // analysis 38 -> 39: +1 for `aifstrict` (P1 AIF gap-cursor aligned slide, GH-299).
-    // transform 47 -> 48: +1 for `spillargtrial` (P4 caller-save spill tolerance, GH-275)
-    // -- transform, not core: it INSERTS a call argument, and is right on the spill/reload
-    // shape and wrong on an ordinary frame store, which is the transform tier's definition.
-    // transform 48 -> 50: +1 for `securitycheck` (P7 rustc panic-branch stripping,
-    // DIV-82) -- transform, like its `stackguard` sibling: it deletes real
-    // instructions on a name trigger -- and +1 for `cleanupcode` (P2 Rust
-    // drop/deallocate call removal, DIV-81).
-    // analysis 39 -> 40: +1 for `dynrelocs` (P1 linked-image dynamic relocations, DIV-84).
-    // core 24 -> 25: +1 for `retinputhalf` (P4 returned input-parameter half
-    // retention, DIV-85) -- core, not transform: it narrows a classification the
-    // engine already makes, and never rewrites anything the narrowing does not
-    // reach.
-    // analysis 40 -> 41: +1 for `dwarfstructs` (P1 DWARF aggregate-layout import, DIV-86).
-    // core 25 -> 26: +1 for `rustabi` (P4 rustc ScalarPair return) -- core, not
-    // transform: it keeps a value the engine already recovered instead of
-    // introducing a new rewrite.
-    // analysis 41 -> 42: +1 for `dwarfvariants` (P1 DWARF variant-part import,
-    // DIV-87).
-    // analysis 42 -> 43: +1 for `symbolnamerepair` (P1 degenerate-symbol-name
-    // repair, DIV-88).
-    // analysis 43 -> 44: +1 for `aifcorroborate` (P1 AIF accept corroboration test,
-    // GH-313) -- analysis, like its `aifstrict` sibling: it shapes which entries the
-    // discovery tier emits, and rewrites nothing.
-    // analysis 44 -> 45: +1 for `symbolnamechars` (P1 symbol-name character
-    // sanitizing, DIV-94).
-    // transform 50 -> 51: +1 for `noreturn_discstrict` (P1 discovered-no-return
-    // positive-evidence-only tally, DIV-92) -- transform, not analysis: it changes
-    // which callees are marked no-return, so it changes emitted C at every caller.
-    // analysis 43 -> 44: +1 for `symbolnamebound` (P1 symbol-name scope resource
-    // bound, DIV-95, GH-338).
-    // analysis 43 -> 44: +1 for `msvcfpconst` (P1 MSVC `__real@` FP-constant
-    // recovery, DIV-96).
-    // core 26 -> 27: +1 for `framelayout` (P6 recovered-stack-frame reporting on
-    // the `decompile-all --json` `variables` surface, DIV-97) -- core, not
-    // transform: it changes no p-code and no emitted C, only what the JSON
-    // surface reports about the frame the analysis already recovered.
-    // transform 51 -> 52: +1 for `cortexmpriv` (P2 Cortex-M privileged-mode guard
-    // folding, DIV-99).
-    // transform 52 -> 53: +1 for `linuxsyscall` (P2 32-bit Linux int 0x80 syscall
-    // naming) -- transform, not core: it renames a call and locks a prototype,
-    // which is the judgement an operator flips.
-    // analysis 47 -> 48: +1 for `unmappedentry` (P1 unmapped-CALL-target entry
-    // suppression).
-    // analysis 48 -> 49: +1 for `entrymainproto` (P1 PE CRT entry-function
-    // prototype recovery).
-    // analysis 50 -> 51: +1 for `ppclocalentry` (P1 PPC64 ELFv2 local-entry entry
-    // suppression).
-    // analysis 53 -> 54: +1 for `pdatachained` (P1 PE chained-`UNWIND_INFO`
-    // `.pdata` entry suppression, DIV-117).
-    // core 35 -> 36: +1 for `noreturnretuse` (P4 terminal no-return call use in
-    // return trials, DIV-118) -- core, not transform: it narrows which competing
-    // uses veto an output trial, changing no p-code of its own.
-    // transform 61 -> 62: +1 for `msvcstackguard` (P7 MSVC /GS frame-cookie
-    // stripping, GH-468) -- it deletes real instructions, like its `stackguard`
-    // and `securitycheck` siblings.
-    // analysis 57 -> 58: +1 for `entrythumbflow` (P1 entry-reachable Thumb
-    // context walk, DIV-154).
-    // analysis 58 -> 59: +1 for `pdatainterior` (P1 `.pdata`
-    // RUNTIME_FUNCTION-interior entry suppression).
-    // core 60 -> 61: +1 for `callretpair` (P4 two-register CALL output
-    // completion, DIV-162).
-    // core 61 -> 62: +1 for `loweredswitchlabels` (P2 comparison-derived
-    // label signedness, DIV-173).
-    // core 62 -> 63: +1 for `cancelbytearithmetic` (P3 exact modular identity).
-    // transform 72 -> 73: +1 for `pebnames` (P5 Windows TEB/PEB segment-base
-    // typing, DIV-175).
-    // transform 73 -> 74: +1 for `mappedflowboundary` (P2 mapped ELF x86 flow
-    // boundaries, DIV-176).
-    // transform 74 -> 75: +1 for `nulterminator` (P6 opt-in stack-array
-    // terminator absorption, default off -- the struct-first-member idiom is
-    // frame-indistinguishable, so it is not a default correctness fix).
-    // transform 75 -> 76: +1 for `endptrbound` (P6 pointer-walk end bound, DIV-177).
-    // analysis 59 -> 60: +1 for `rexthunk` (P1 x86-64 PE REX-prefixed
-    // import-thunk rejection).
-    // analysis 60 -> 61: +1 for `pdbinterior` (P1 PDB-procedure-interior
-    // entry suppression, DIV-180).
-    // transform 76 -> 77: +1 for `msvcstrappend` (P2 inlined MSVC
-    // std::string append collapse).
-    // core 63 -> 64: +1 for `loweredswitchvalue` (P2 re-rolled switch dispatch
-    // value, DIV-181).
-    // core 64 -> 65: +1 for `tiedphitrim` (P6 loop-head aliased-read trim,
-    // DIV-182).
-    // core 65 -> 66, transform 77 -> 78: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
-    // core 66 -> 67: +1 for `bytehonest` (P6 uncommitted byte on the JSON
-    // variables surface). analysis 61 -> 62: +1 for `elfmain` (P1 ELF
-    // libc-start main naming + prototype).
-    // core 67 -> 68: +1 for `argclobber` (P4 trailing clobber-argument drop).
-    // analysis 62 -> 63: +1 for `libctypes` (P1 named libc/POSIX aggregate
-    // pointers in the prototype tables).
-    // transform 80 -> 81: +1 for `foldcallretphi` (P6 call-result folding).
-    // transform 81 -> 82: +1 for `ptrfromuse` (P5 use-derived parameter pointer).
-    // transform 84 -> 85: +1 for `structsynth` (P5 struct synthesis over a
-    // pointer parameter).
-    // transform 85 -> 86: +1 for `signedness` (P9 declared-signedness rounding).
-    // core 68 -> 69: +1 for `boolbyte` (P5 truth-valued byte typing).
-    // transform 87 -> 88: +1 for `mulblob` (P3 wide-multiply operand
-    // structuring decline).
-    // analysis 63 -> 64: +1 for `rawdiscover` (P1 raw-image function inventory).
-    // transform 88 -> 89: +1 for `protoorder` (P4 callee-first recovered
-    // parameter types).
-    // core 69 -> 70: +1 for `charbyte` (P5 char-pointer byte typing).
-    // core 70 -> 71: +1 for `slotptr` (P6 frame-slot pointer typing on the JSON
-    // variables surface).
-    // transform 91 -> 92: +1 for `calleevote` (P4 caller-to-callee parameter
-    // types).
-    // transform 92 -> 93: +1 for `structmerge` (P5 sibling layout union).
-    // transform 94 -> 95: +1 for `structheadless` (P5 a closed function's record
-    // read past its start).
-    // transform 96 -> 97: +1 for `callpush` (P4 a call's own return-address push).
-    // analysis 65 -> 66: +1 for `peordinal` (P1 PE import-by-ordinal naming).
-    // transform 97 -> 98: +1 for `jumptablemax` (P2 switch-model jump-table size cap).
-    // transform 98 -> 99: +1 for `callbacktype` (P4 a callback takes its slot's prototype).
-    // transform 99 -> 100: +1 for `callrettype` (P4 a call returns its callee's
-    // stated type).
-    // transform 100 -> 101: +1 for `castobject` (P6 an out-parameter local declared at its callee's pointee).
-    // transform 101 -> 102: +1 for `castwiden` (P9 a widening C performs by itself keeps no cast).
-    // transform 102 -> 103: +1 for `elemptr` (P5 a pointer used only as an array).
     assert_eq!((core, transform, analysis), (76, 103, 66));
 }
 

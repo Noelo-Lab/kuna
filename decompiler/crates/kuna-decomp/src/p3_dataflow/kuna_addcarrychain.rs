@@ -15,51 +15,22 @@
 //! `add_carry_chain` (option `addcarrychain on|off`, shipped default `on`); inert
 //! when off, byte-identical to upstream.
 //!
-//! ## Gate wiring — STUB(W4)
-//!
-//! As in the sibling kuna simplification rules, the C++
-//! `if (!data.getArch()->add_carry_chain) return 0;` gate is resolved at
-//! construction (the boundary `Funcdata::glb` does not carry kuna analysis flags).
-//! W8 threads `Architecture::add_carry_chain`; [`specs`] uses the shipped default
-//! (`on`).
-//!
-//! ## Output-Varnode creation — `newUniqueOut`
-//!
-//! The C++ builds two helper ops with fresh unique outputs via
-//! `data.newUniqueOut(size, op)`.  The W3 [`Funcdata::op_set_output`] is a stub
-//! (it needs a `banks_mut()` split-borrow the funcdata owner has not yet exposed),
-//! so this rule reproduces `newUniqueOut` directly through the public
-//! [`VarnodeBank::create_def_unique`](crate::varnode::VarnodeBank::create_def_unique)
-//! (C++ `createDefUnique`) + [`PcodeOp::set_output`] — exactly the path the
-//! merged `funcdata_varnode` tests use for a fresh unique output.  The
-//! `replace_reads` callback panics if invoked: a freshly-created unique has no
-//! aliasing equivalent, so `xref` never unifies it (an invocation would be an
-//! internal-invariant violation).  Noted in the structured losses as the
-//! `op_set_output` stub workaround.
-//!
-//! ## STUB(W6) — opcode-flag resolution
-//!
-//! `opSetOpcode(...)` resolves `glb->inst[opc]` (the W6 typeop `inst` table); the
-//! op-shells are built with the [`TypeOp`] skeleton (zero flag word) until W6
-//! lands.  Noted in the structured losses.
-
-use std::rc::Rc;
+//! The registered rule reads the architecture option; constructors can also
+//! enable it directly. Helper outputs use [`Funcdata::new_unique_out`] so the
+//! function owns def-use, high-variable and lane bookkeeping.
 
 use kuna_base::address::{calc_mask, Address};
-use kuna_base::error::KunaResult;
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
-use crate::dtype::{type_metatype, Datatype};
 use crate::funcdata::Funcdata;
 use crate::context::{OpId, VarnodeId};
-use crate::varnode::{DefOpInfo, VarnodeBank};
 
 /// (kuna GH-8913) Fuse an 8-bit carry-chained 16-bit add reassembled by CONCAT
 /// (C++ `RuleAddCarryChain`).
 pub struct RuleAddCarryChain {
-    /// Resolved `glb->add_carry_chain` gate (STUB(W4); see module docs).
+    /// Explicit constructor override; otherwise consult the architecture.
     enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
@@ -166,7 +137,7 @@ impl Rule for RuleAddCarryChain {
         // Build  PIECE(hipart, baselo)  -- the 16-bit base.
         let baseop = data.new_op(2, pc.clone());
         let base_outsize = vn_size(data, hipart) + vn_size(data, baselo);
-        let _base_out = new_unique_out(data, base_outsize, baseop)
+        let _base_out = data.new_unique_out(base_outsize, baseop)
             .expect("RuleAddCarryChain: newUniqueOut(base) (internal invariant)");
         // Resolve glb->inst[CPUI_PIECE]
         // through the W6 inst[] table so the op carries the real `binary` eval-type
@@ -183,7 +154,7 @@ impl Rule for RuleAddCarryChain {
 
         // Build  zext(index)  to the output width.
         let zextop = data.new_op(1, pc);
-        let _zext_out = new_unique_out(data, outsize, zextop)
+        let _zext_out = data.new_unique_out(outsize, zextop)
             .expect("RuleAddCarryChain: newUniqueOut(zext) (internal invariant)");
         // Resolve glb->inst[] (W6).
         data.op_set_opcode_code(zextop, OpCode::CPUI_INT_ZEXT);
@@ -304,22 +275,6 @@ fn kuna_is_carry_of(data: &Funcdata, carryvn: VarnodeId, a: VarnodeId, b: Varnod
         return vn_offset(data, cst) == negc;
     }
     false
-}
-
-/// Reproduce `Funcdata::newUniqueOut(size, op)` for a fresh unique output:
-/// create a unique varnode already defined by `op` and link it as the op's
-/// output.  See module docs (the `op_set_output` stub workaround).
-fn new_unique_out(data: &mut Funcdata, size: int4, op: OpId) -> KunaResult<VarnodeId> {
-    let ct: Rc<Datatype> = Rc::new(Datatype::new(size, type_metatype::TYPE_UNKNOWN));
-    let seqnum = data.obank().get(op).expect("new_unique_out: stale op").get_seq_num().clone();
-    let info = DefOpInfo { id: op, seqnum };
-    // A freshly-created unique has no aliasing equivalent; xref never unifies it.
-    let mut never = |_: &mut VarnodeBank, _: VarnodeId, _: VarnodeId| -> KunaResult<()> {
-        panic!("new_unique_out: xref unified a fresh unique output (internal invariant)")
-    };
-    let vn = data.vbank_mut().create_def_unique(size, ct, info, &mut never)?;
-    data.obank_mut().get_mut(op).expect("new_unique_out: stale op").set_output(Some(vn));
-    Ok(vn)
 }
 
 // --- Local IR read helpers (see kuna_booleanmask for the rationale) ----------

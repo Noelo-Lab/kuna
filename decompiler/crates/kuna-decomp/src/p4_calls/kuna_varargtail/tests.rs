@@ -47,7 +47,7 @@ fn mk_def(fd: &mut Funcdata, opc: OpCode, inputs: &[VarnodeId], out_off: u64) ->
     let op = fd.new_op(inputs.len() as int4, Address::new(Rc::clone(&r), out_off));
     fd.obank_mut().change_opcode(op, TypeOp::new(opc, 0, format!("{opc:?}")));
     for (i, &vn) in inputs.iter().enumerate() {
-        fd.op_set_input(op, vn, i as int4);
+        fd.op_set_input(op, vn, i as int4).expect("wire input");
     }
     fd.new_varnode_out(8, &Address::new(r, out_off), op).expect("varnode out");
     op
@@ -69,6 +69,7 @@ fn a_copy_and_a_mask_hand_the_value_on_but_arithmetic_does_not() {
     let mut fd = build_fd();
     let r = ram(&fd);
     let vn = fd.new_varnode(8, &Address::new(Rc::clone(&r), 0x3000), None);
+    let vn = fd.set_input_varnode(vn).expect("function input");
     let k = fd.new_constant(8, 0xffff_ffff);
     let copy = mk_def(&mut fd, OpCode::CPUI_COPY, &[vn], 0x3100);
     let mask = mk_def(&mut fd, OpCode::CPUI_INT_AND, &[vn, k], 0x3200);

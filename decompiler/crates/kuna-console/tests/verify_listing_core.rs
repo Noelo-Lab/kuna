@@ -13,13 +13,6 @@
 //! `bootstrap_from_object` gives a fully-built `ConsoleProgram`, and
 //! `prog.arch().translate()` is the `&dyn Translate` the keystone drives, with
 //! `prog.arch().manage()` supplying the default code space.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_*` gates, bootstrapping needs the built x86 `.sla`
-//! under `specs/` (gitignored; `make specs`). When it is absent the bootstrap
-//! fails; the test prints that and returns early (a specs-less CI is a visible
-//! skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -54,22 +47,10 @@ fn listing_build_recovers_instructions_flow_and_functions() {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = fauxware();
-    let bin = match bin.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_listing_core: skipping (bootstrap failed, build the x86 `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // Parse the fixture bytes into an `object::File` for the exec-range universe,
     // and build the seed set the way PR2 will: existing funcsyms ∪ discovered
@@ -222,22 +203,10 @@ fn listing_build_through_engine_driver_seeds() {
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = match fauxware().to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = fauxware().to_str().expect("UTF-8 fixture path").to_string();
 
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_listing_core: skipping (bootstrap failed, build the x86 `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let bytes = std::fs::read(&bin).expect("read fixture bytes");
     let file = object::File::parse(&*bytes).expect("parse fixture ELF");

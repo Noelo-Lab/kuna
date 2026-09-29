@@ -54,12 +54,6 @@
 //! `read symbols` (`commit_pending_analysis`), gated by the per-pass flag — so the
 //! option is flipped BEFORE that commit. The XML datatest path never loads a PE and
 //! never runs this pass, so every parity gate is byte-identical regardless.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping a PE needs the built `x86` `.sla` under `specs/` (gitignored;
-//! `make specs`). If absent the bootstrap fails and the test prints a visible skip
-//! and returns early (never a false green).
 
 use std::path::PathBuf;
 
@@ -81,25 +75,15 @@ fn fixtures() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures")
 }
 
-/// Bootstrap the named RTTI fixture, optionally flip `rtti` on, then commit the
-/// (deferred) analysis facts. Returns `None` (a visible skip) if the `.sla` is
-/// missing.
-fn bootstrap_rtti(fixture: &str, on: bool) -> Option<ConsoleProgram> {
+/// Bootstrap the named RTTI fixture, optionally flip `rtti` on, then commit the (deferred)
+/// analysis facts.
+fn bootstrap_rtti(fixture: &str, on: bool) -> ConsoleProgram {
     let bin = fixtures().join(fixture);
     assert!(bin.exists(), "missing fixture {bin:?}");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_rtti: skipping {fixture} (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     if on {
         prog.arch_mut()
             .set_kuna_option("rtti", "on")
@@ -108,7 +92,7 @@ fn bootstrap_rtti(fixture: &str, on: bool) -> Option<ConsoleProgram> {
     // Analysis facts commit at `read symbols` (gated by the per-pass flag), not
     // eagerly at bootstrap — trigger that commit after the option is applied.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// The recovered-symbol assertions shared by the x64 and x86 arms: with `rtti on`,
@@ -194,9 +178,7 @@ fn assert_absent(prog: &ConsoleProgram, box_area_vma: u64) {
 /// recovered from the x64 RTTI graph.
 #[test]
 fn x64_recovers_class_names_with_option_on() {
-    let Some(prog) = bootstrap_rtti("msvc_rtti_x64.exe", true) else {
-        return;
-    };
+    let prog = bootstrap_rtti("msvc_rtti_x64.exe", true);
     assert_recovered(&prog, BOX_AREA_VMA_X64);
 }
 
@@ -204,9 +186,7 @@ fn x64_recovers_class_names_with_option_on() {
 /// recovered — the parity proof that the pass is purely additive.
 #[test]
 fn x64_class_names_absent_with_option_off() {
-    let Some(prog) = bootstrap_rtti("msvc_rtti_x64.exe", false) else {
-        return;
-    };
+    let prog = bootstrap_rtti("msvc_rtti_x64.exe", false);
     assert_absent(&prog, BOX_AREA_VMA_X64);
 }
 
@@ -214,17 +194,13 @@ fn x64_class_names_absent_with_option_off() {
 /// the SAME recovery works through the x86 ref-kind branch.
 #[test]
 fn x86_recovers_class_names_with_option_on() {
-    let Some(prog) = bootstrap_rtti("msvc_rtti_x86.exe", true) else {
-        return;
-    };
+    let prog = bootstrap_rtti("msvc_rtti_x86.exe", true);
     assert_recovered(&prog, BOX_AREA_VMA_X86);
 }
 
 /// BEFORE (x86, default-off): no class name recovered with the option off.
 #[test]
 fn x86_class_names_absent_with_option_off() {
-    let Some(prog) = bootstrap_rtti("msvc_rtti_x86.exe", false) else {
-        return;
-    };
+    let prog = bootstrap_rtti("msvc_rtti_x86.exe", false);
     assert_absent(&prog, BOX_AREA_VMA_X86);
 }

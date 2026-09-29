@@ -1,51 +1,17 @@
-//! Mach-O function-entry discovery — the kuna analog of the ELF entry oracles
-//! (`super`'s oracles 1-3), adapted to the Apple Mach-O container so a
-//! **stripped** Mach-O recovers its function starts without a supplied `--addr`
-//! (design §4.1 / §5.3 / §8 PR-13).
+//! Mach-O function-entry candidates from load commands and exports.
 //!
-//! ## Why a stripped Mach-O needs this — and why `LC_FUNCTION_STARTS` is special
+//! [`walk`] collects the `LC_MAIN` entry (`__TEXT.vmaddr + entryoff`), the
+//! `LC_FUNCTION_STARTS` table and `S_MOD_INIT_FUNC_POINTERS` sections.
+//! [`decode_function_starts`] reads ULEB128 deltas: the first is relative to
+//! `__TEXT`, and subsequent deltas advance the previous address. This is the
+//! table Ghidra's `MachoProgramBuilder.markupFunctionStarts` consumes.
+//! [`macho_entry_candidates`] also includes exported addresses; its caller
+//! filters executable sections and removes duplicates.
 //!
-//! Mach-O carries a dedicated, compact **function-start table** in the
-//! `LC_FUNCTION_STARTS` load command: a ULEB128 **delta-encoded** list of every
-//! function's start address, the first delta relative to the `__TEXT` segment
-//! base and each subsequent delta relative to the previous start. The static
-//! linker emits it for *every* function, and — crucially — it **survives
-//! stripping** (`strip -x` removes the symbol table but keeps the linkedit
-//! function-starts blob). So it is the single richest, most reliable Mach-O
-//! function-start source, the analog Ghidra reads in
-//! `MachoProgramBuilder.markupFunctionStarts`.
-//!
-//! The unioned oracles:
-//!
-//! 1. **The entry point** — `LC_MAIN`'s `entryoff` (a file/segment offset, NOT a
-//!    VMA: `object`'s `file.entry()` returns the raw `entryoff` here, unlike PE
-//!    where it is already rebased — verified). The VMA is `__TEXT.vmaddr +
-//!    entryoff`, computed in [`macho_entry_vma`]. (`LC_UNIXTHREAD` — the older
-//!    thread-state entry — carries the entry PC directly; handled too.)
-//! 2. **`LC_FUNCTION_STARTS`** — the delta-encoded function-start table
-//!    ([`function_starts`]). The headline source.
-//! 3. **`__DATA,__mod_init_func`** — the C++ static-initializer / constructor
-//!    pointer array (the `.init_array` analog); each pointer is a function start.
-//! 4. **Exports** (`file.exports()`) — the dynamic export trie's entries. Already
-//!    a funcsym source in `macho_stubs::resolve_macho_imports`, re-unioned here so
-//!    an export with no function-starts entry is still discovered as a *start*.
-//!
-//! `__TEXT,__eh_frame` / `__TEXT,__unwind_info` FDE/entry function-starts (the
-//! design's §5.3 list) are a *strict subset* of what `LC_FUNCTION_STARTS`
-//! already yields (the linker derives both from the same function set), so they
-//! add nothing on a binary that carries `LC_FUNCTION_STARTS` — which every
-//! `ld64`-linked image does. We therefore lean on `LC_FUNCTION_STARTS` as the
-//! complete source rather than re-deriving starts from the CFI tables.
-//!
-//! The arch-specific oracles `super` already owns (x86-64 prologue patterns) are
-//! reused over the Mach-O `__text`. The `_start`→`main` libc-start idiom is
-//! ELF-crt1-specific and not reused (Mach-O's entry is `LC_MAIN`, recovered
-//! directly).
-//!
-//! Pure & total: a non-Mach-O input, a fat binary with no usable slice, or a
-//! missing load command yields fewer (or zero) candidates — never an error.
-//! Fat/universal binaries select one slice (x86-64, then arm64, then first),
-//! mirroring [`crate::loader::macho_stubs`].
+//! This module does not decode `LC_UNIXTHREAD` entries or unwind tables. Missing
+//! or malformed load commands yield fewer candidates, not an error. Universal
+//! binaries select one slice (x86-64, then arm64, then first), as in
+//! [`crate::loader::macho_stubs`].
 
 use object::macho::{MachHeader32, MachHeader64, SECTION_TYPE, S_MOD_INIT_FUNC_POINTERS};
 use object::read::macho::{
@@ -54,8 +20,8 @@ use object::read::macho::{
 use object::read::Object;
 use object::{Architecture, Endianness, FileKind};
 
-/// Collect Mach-O function-start candidate VMAs: the `LC_MAIN`/`LC_UNIXTHREAD`
-/// entry, every `LC_FUNCTION_STARTS` start, the `__mod_init_func` initializers,
+/// Collect Mach-O function-start candidate VMAs: the `LC_MAIN` entry,
+/// every `LC_FUNCTION_STARTS` start, the `__mod_init_func` initializers,
 /// and the exports.
 ///
 /// The caller (`super::collect_entries`) does the exec-section / funcsym-dedup
@@ -86,7 +52,7 @@ pub(super) fn macho_entry_candidates(file: &object::File, bytes: &[u8]) -> Vec<u
 ///
 /// This is the load-command fact `LC_MAIN` states and nothing more: the routine
 /// `dyld` calls as the program's `main`. It is deliberately narrower than
-/// oracle 1 of [`macho_entry_candidates`], which unions every function-start
+/// [`macho_entry_candidates`], which unions every supported function-start
 /// source — a dylib/bundle has no `LC_MAIN`, and `LC_UNIXTHREAD` (the pre-10.8
 /// entry) points at the crt's `start`, not at `main`, so neither is reported
 /// here. Fat input is peeled to one slice on the same preference as the rest of
@@ -176,7 +142,7 @@ where
     let mut text_base: Option<u64> = None;
     // (dataoff, datasize) of the `LC_FUNCTION_STARTS` linkedit blob.
     let mut func_starts: Option<(u64, u64)> = None;
-    // Entry: `LC_MAIN` entryoff (added to text_base) or `LC_UNIXTHREAD` PC (VMA).
+    // Entry: `LC_MAIN` entryoff, added to text_base.
     let mut main_entryoff: Option<u64> = None;
     let mut mod_init: Vec<(u64, u64)> = Vec::new(); // (addr, size) of init-func sections
 

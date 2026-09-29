@@ -24,14 +24,6 @@
 //! and by default it is `main` returning `argc`. The addresses are the same in
 //! both arms, which is the point -- the option changes what is said about the
 //! address oracle 4 recovered, never which address that is.
-//!
-//! ## `.sla` precondition
-//!
-//! Like `verify_s1_entry`, bootstrapping needs the built per-arch `.sla` under
-//! `specs/` (gitignored; `make specs`, or the three specs this gate needs:
-//! `AARCH64.slaspec`, `ARM8_le.slaspec`, `riscv.lp64d.slaspec`). When absent the
-//! bootstrap fails; the test prints that and returns early (a specs-less CI is a
-//! visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -50,41 +42,27 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 /// Bootstrap `fixture` in both `elfmain` arms and assert the discovered `main` is
-/// registered and decompiles to a real body without a supplied address. Returns
-/// `false` (visible skip) only when the `.sla` is absent (bootstrap fails). Any
-/// other failure is a hard assertion.
-fn assert_discovered_main_decompiles(fixture_name: &str, main_vma: u64) -> bool {
+/// registered and decompiles to a real body without a supplied address.
+fn assert_discovered_main_decompiles(fixture_name: &str, main_vma: u64) {
     // `off` is the pre-`elfmain` expectation, verbatim; the default is the one
     // built on it.
-    assert_discovered_main_decompiles_arm(fixture_name, main_vma, false)
-        && assert_discovered_main_decompiles_arm(fixture_name, main_vma, true)
+    assert_discovered_main_decompiles_arm(fixture_name, main_vma, false);
+    assert_discovered_main_decompiles_arm(fixture_name, main_vma, true);
 }
 
 fn assert_discovered_main_decompiles_arm(
     fixture_name: &str,
     main_vma: u64,
     elfmain: bool,
-) -> bool {
+) {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = match fixture(fixture_name).to_str() {
-        Some(s) => s.to_string(),
-        None => return false,
-    };
+    let bin = fixture(fixture_name).to_str().expect("UTF-8 fixture path").to_string();
 
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_crossarch_entry_main[{fixture_name}]: skipping (bootstrap \
-                 failed, build `.sla` with `make specs`): {}",
-                e.explain()
-            );
-            return false;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     prog.arch_mut()
         .set_kuna_option("elfmain", if elfmain { "on" } else { "off" })
@@ -151,7 +129,6 @@ fn assert_discovered_main_decompiles_arm(
         "[{fixture_name}] expected `return {returned}` body (the recovered main), \
          got:\n{out}"
     );
-    true
 }
 
 /// The name `elfmain` installs at the address oracle 4 recovered.

@@ -18,13 +18,6 @@
 //! flow analysis emits the `Subroutine does not return` warning + elides the
 //! fall-through dead code. WITHOUT the address path the body keeps a wrong
 //! signature (`int4 fail(int4)`) and spurious code after the call.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_s1_callfixup`/`verify_s1_entry` gates, bootstrapping
-//! needs the built `x86` `.sla` under `specs/` (gitignored; `make specs`). When it
-//! is absent the bootstrap fails; the test prints that and returns early (a
-//! specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -44,27 +37,17 @@ fn cpp_noreturn_fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/cpp_noreturn_x86_64")
 }
 
-/// Drive `load file <cpp_noreturn>` → `load function fail` → `decompile` →
-/// `print C` and capture the rendered body.  Returns `None` when the `.sla` is
-/// absent (visible skip).
-fn decompile_function(func: &str) -> Option<String> {
+/// Drive `load file <cpp_noreturn>` → `load function fail` → `decompile` → `print C` and
+/// capture the rendered body.
+fn decompile_function(func: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = cpp_noreturn_fixture().to_str()?.to_string();
+    let bin = cpp_noreturn_fixture().to_str().expect("UTF-8 fixture path").to_string();
 
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_noreturn_demangle: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let cmds: Vec<String> = [format!("load function {func}"), "decompile".into(), "print C".into()]
         .into_iter()
@@ -80,7 +63,7 @@ fn decompile_function(func: &str) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// The core gate: `fail()` tail-calls the **demangled** `std::terminate`, which is
@@ -89,7 +72,7 @@ fn decompile_function(func: &str) -> Option<String> {
 /// no dead fall-through after the call.
 #[test]
 fn demangled_std_terminate_is_no_return_in_fail() {
-    let Some(out) = decompile_function("fail") else { return };
+    let out = decompile_function("fail");
 
     // A real decompilation happened.
     assert!(

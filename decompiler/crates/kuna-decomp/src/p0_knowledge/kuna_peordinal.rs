@@ -17,10 +17,7 @@ pub const PEORDINAL_ENV: &str = "KUNA_PEORDINAL";
 
 /// Whether ordinal-import naming is enabled for this process.
 pub fn peordinal_enabled() -> bool {
-    match std::env::var(PEORDINAL_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
-        Err(_) => true,
-    }
+    crate::options::env_toggle(PEORDINAL_ENV, true)
 }
 
 /// Bridge a `set_kuna_option("peordinal", val)` toggle to [`PEORDINAL_ENV`] so a

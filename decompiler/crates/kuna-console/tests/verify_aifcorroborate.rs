@@ -44,12 +44,6 @@
 //! entry but still CONSUMES its body, so it does not. Without that pairing the guard
 //! backfires: on the 3.4 MB PE witness it turned a 361-entry mid-body cut into a
 //! 222-entry mid-body rise.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built ARM `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -73,29 +67,20 @@ const V: &str = "sub_800039c";
 /// THE COUNT CONTROL: uncorroborated like `U`, but `startCount == 50`.
 const W: &str = "sub_80003a8";
 
-/// Bootstrap the fixture with the discovery set `kuna functions` / `decompile-all`
-/// inject on non-x86-64 (`listing` + `funcstart_patterns` + `aif`), flipping
-/// `aifcorroborate` on for the fix pass — the live-CLI ordering, where the `option`
-/// lines precede the deferred `read symbols` commit. `None` ⇒ specs-less skip.
+/// Bootstrap the fixture with the discovery set `kuna functions` / `decompile-all` inject
+/// on non-x86-64 (`listing` + `funcstart_patterns` + `aif`), flipping `aifcorroborate` on
+/// for the fix pass — the live-CLI ordering, where the `option` lines precede the deferred
+/// `read symbols` commit.
 ///
-/// `aifstrict` is left at its default (off) so the byte-granular cursor is live:
-/// that is what makes the `U_INTERIOR` probe reachable at all, and therefore what
-/// makes the cursor-pairing assertion mean something.
-fn bootstrap(corroborate: bool) -> Option<kuna_console::engine::ConsoleProgram> {
+/// `aifstrict` is left at its default (off) so the byte-granular cursor is live: that is
+/// what makes the `U_INTERIOR` probe reachable at all, and therefore what makes the
+/// cursor-pairing assertion mean something.
+fn bootstrap(corroborate: bool) -> kuna_console::engine::ConsoleProgram {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_aifcorroborate: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
     prog.arch_mut()
         .set_kuna_option("funcstart_patterns", "on")
@@ -107,16 +92,14 @@ fn bootstrap(corroborate: bool) -> Option<kuna_console::engine::ConsoleProgram> 
             .expect("aifcorroborate flips on");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Pass 1 — THE BUG (the default). AIF accepts a routine that corroborates nothing,
 /// on four other functions sharing its two-mnemonic prologue.
 #[test]
 fn default_accepts_an_uncorroborated_routine() {
-    let Some(off) = bootstrap(false) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(false);
     assert!(
         off.lookup_symbol(U).is_some(),
         "the default (`aifcorroborate off`) must show the defect: {U} calls nothing, \
@@ -131,9 +114,7 @@ fn default_accepts_an_uncorroborated_routine() {
 /// applied, and only the uncorroborated below-threshold candidate loses.
 #[test]
 fn on_refuses_only_the_uncorroborated_below_threshold_candidate() {
-    let Some(on) = bootstrap(true) else {
-        return; // specs-less skip
-    };
+    let on = bootstrap(true);
     assert!(
         on.lookup_symbol(U).is_none(),
         "`aifcorroborate on` must refuse {U}: `startCount` is 20, below the \
@@ -157,15 +138,13 @@ fn on_refuses_only_the_uncorroborated_below_threshold_candidate() {
 /// same `bx lr`, so it WOULD be accepted on the count branch if the refusal leaked.
 #[test]
 fn a_refusal_does_not_leak_the_cursor_into_the_refused_body() {
-    let Some(off) = bootstrap(false) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(false);
     assert!(
         off.lookup_symbol(U_INTERIOR).is_none(),
         "with the option off, {U} is ACCEPTED and its body consumed, so its interior \
          is never probed"
     );
-    let Some(on) = bootstrap(true) else { return };
+    let on = bootstrap(true);
     assert!(
         on.lookup_symbol(U_INTERIOR).is_none(),
         "and with the option on, {U} is REFUSED but still consumes its body: \
@@ -183,9 +162,8 @@ fn aifcorroborate_is_inert_without_aif() {
     let bin = fixture().to_str().unwrap().to_string();
     let mut sets = Vec::new();
     for corroborate in [false, true] {
-        let Ok(mut prog) = bootstrap_from_object(&bin, "", &spec_roots) else {
-            return; // specs-less skip
-        };
+        let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+            .expect("bootstrap fixture with built processor specs");
         prog.arch_mut().set_kuna_option("listing", "on").unwrap();
         prog.arch_mut().set_kuna_option("funcstart_patterns", "on").unwrap();
         if corroborate {

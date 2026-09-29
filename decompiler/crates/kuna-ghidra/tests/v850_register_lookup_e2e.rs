@@ -26,9 +26,7 @@ use ghidra_sim::{
 #[test]
 fn v850_predicate_queries_register_names_without_a_sleigh_downcast() {
     let binary = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fmt_arm");
-    let Some(oracle) = SimOracle::bootstrap(&binary) else {
-        return;
-    };
+    let oracle = SimOracle::bootstrap(&binary);
     let tspec = generate_tspec(&oracle.manager, oracle.big_endian, oracle.unique_base);
     let lang = repo_root().join("specs/Ghidra/Processors/ARM/data/languages");
     let pspec = std::fs::read(lang.join("ARMt.pspec")).expect("vendored pspec");

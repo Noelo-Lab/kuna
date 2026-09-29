@@ -45,10 +45,7 @@ pub const PDATACHAINED_ENV: &str = "KUNA_PDATACHAINED";
 /// Whether the chained-`UNWIND_INFO` entry skip is enabled for this process.
 /// Default **on**: only an explicit off-token in [`PDATACHAINED_ENV`] disables it.
 pub fn pdatachained_enabled() -> bool {
-    match std::env::var(PDATACHAINED_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
-        Err(_) => true, // unset ⇒ default-on
-    }
+    crate::options::env_toggle(PDATACHAINED_ENV, true)
 }
 
 /// Bridge a `set_kuna_option("pdatachained", val)` toggle to [`PDATACHAINED_ENV`]

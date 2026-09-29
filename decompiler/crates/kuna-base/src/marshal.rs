@@ -1,48 +1,18 @@
-//! Port of `decompiler/cpp/marshal.hh` + `marshal.cc` (W1, item
-//! `w1-base-marshal`) — the structured-data Encoder/Decoder layer.
+//! Structured encoders and decoders, from `decompiler/cpp/marshal.{hh,cc}`.
 //!
-//! Three pieces:
+//! [`AttributeId`] and [`ElementId`] are constant annotations; callers build
+//! [`IdRegistry`] explicitly and extend its base IDs for each consumer.
+//! [`Encoder`] and [`Decoder`] have XML and packed implementations. The packed
+//! wire format is described by [`packed_format`]. Opcode extensions live in
+//! `kuna_num::opcodes` to keep this crate independent of `OpCode`.
 //!
-//! - [`AttributeId`] / [`ElementId`]: annotations parallel to XML attributes
-//!   and elements.  In C++ these are static objects whose constructors run
-//!   before `main` and register themselves in a global list, which
-//!   `AttributeId::initialize()` later folds into a name -> id hashtable.
-//!   Per the porting rules (NO global ctors, deterministic registry) the
-//!   Rust ids are `const` values and the name -> id table is an explicit
-//!   [`IdRegistry`] instance: [`IdRegistry::with_base_ids`] registers every
-//!   id defined in this crate, and later crates/waves extend the registry
-//!   explicitly with their own tables (kuna's 4000+ id range included).
-//! - [`Decoder`] / [`Encoder`] traits mirroring the C++ abstract classes.
-//!   C++ overloads `read*(void)` / `read*(AttributeId)` become `read_*()` /
-//!   `read_*_id()`.  Errors (C++ `DecoderError`) surface as
-//!   `Err(KunaError::Decoder)`.
-//! - [`XmlEncode`]/[`XmlDecode`] over [`crate::xml`], and
-//!   [`PackedEncode`]/[`PackedDecode`], the byte-packed protocol described
-//!   by [`packed_format`].  The packed protocol is **bit-exact** with the
-//!   C++ implementation (`.sla` files and Ghidra save files depend on byte
-//!   identity).
+//! Attribute strings are bytes and need not be UTF-8. Encoders write to byte
+//! vectors; decoders ingest byte slices and borrow an [`AddrSpaceManager`],
+//! which may be empty when no space resolution is needed. Decoding failures
+//! use [`KunaError::Decoder`].
 //!
-//! Deliberate API notes (vs the C++ headers):
-//!
-//! - `Decoder::readOpcode` / `Encoder::writeOpcode` are **not** in the
-//!   traits: `OpCode` and its name tables are ported in `kuna-num`
-//!   (`w1-num-pcode-semantics`), which depends on this crate.  The opcode
-//!   read/write protocol (XML: opcode name string; packed: positive signed
-//!   integer) is layered on top of `read_string`/`read_signed_integer` by
-//!   that wave.
-//! - Strings are byte strings (`&[u8]` / `Vec<u8>`), following the
-//!   `crate::xml` decision: C++ `std::string` attribute payloads need not
-//!   be valid UTF-8 and must round-trip byte-for-byte.
-//! - Streams are in-memory: encoders write to `&mut Vec<u8>` (the C++
-//!   `ostream&`), `ingest_stream` takes `&[u8]` (the C++ `istream&`).
-//! - The C++ `CPUI_DEBUG` blocks in `XmlDecode::closeElement` /
-//!   `closeElementSkipping` are compiled **out** of the test oracle
-//!   (`decomp_test_dbg` builds without `CPUI_DEBUG`); the port follows the
-//!   test-oracle semantics and the blocks are noted in comments.
-//! - `Decoder` in C++ stores a possibly-null `AddrSpaceManager*`; the Rust
-//!   decoders hold a `&AddrSpaceManager` (non-null).  Contexts that pass
-//!   null in C++ (parts of the SLEIGH compiler) arrive with the sleigh wave
-//!   and can construct an empty manager.
+//! XML element closing follows the upstream release behavior: it does not
+//! check the supplied element ID or require all children to have been read.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -374,8 +344,7 @@ static BASE_ELEMENT_IDS: &[&ElementId] = &[
     &crate::address::ELEM_REGISTER,
     &crate::address::ELEM_SEQNUM,
     &crate::address::ELEM_VARNODE,
-    // translate.cc (only the element needed by OverlaySpace::decode; the
-    // full translate id table arrives with the sleigh wave)
+    // translate.cc
     &crate::space::ELEM_SPACE_OVERLAY,
 ];
 
@@ -693,9 +662,6 @@ pub trait Decoder {
     /// it as an address space (C++ `readSpace(const AttributeId &)`)
     fn read_space_id(&mut self, attrib_id: &AttributeId) -> KunaResult<Rc<AddrSpace>>;
 
-    // NOTE: C++ `readOpcode()` / `readOpcode(AttributeId&)` are layered on
-    // by the kuna-num opcode wave (see module docs).
-
     /// \brief Skip parsing of the next element
     ///
     /// The element skipped is the one that would be opened by the next call
@@ -759,9 +725,6 @@ pub trait Encoder {
 
     /// \brief Write an address space reference into the encoding
     fn write_space(&mut self, attrib_id: &AttributeId, spc: &AddrSpace);
-
-    // NOTE: C++ `writeOpcode` is layered on by the kuna-num opcode wave
-    // (see module docs).
 }
 
 // ---------------------------------------------------------------------------
@@ -1844,19 +1807,17 @@ impl Decoder for PackedDecode<'_> {
         }
         let type_byte = Self::get_next_byte(&self.in_stream, &mut self.cur_pos)?;
         let type_code = type_byte >> pf::TYPECODE_SHIFT;
-        let res: i64;
-        if type_code == pf::TYPECODE_SIGNEDINT_POSITIVE {
-            res = self.read_integer(Self::read_length_code(type_byte) as i32)? as i64;
+        let res: i64 = if type_code == pf::TYPECODE_SIGNEDINT_POSITIVE {
+            self.read_integer(Self::read_length_code(type_byte) as i32)? as i64
         } else if type_code == pf::TYPECODE_SIGNEDINT_NEGATIVE {
             // Stored in negated form; wrapping negate reproduces the C++
             // `res = -res` (i64::MIN round-trips through its own negation).
-            res = (self.read_integer(Self::read_length_code(type_byte) as i32)? as i64)
-                .wrapping_neg();
+            (self.read_integer(Self::read_length_code(type_byte) as i32)? as i64).wrapping_neg()
         } else {
             self.skip_attribute_remaining(type_byte)?;
             self.attribute_read = true;
             return Err(KunaError::decoder("Expecting signed integer attribute"));
-        }
+        };
         self.attribute_read = true;
         Ok(res)
     }

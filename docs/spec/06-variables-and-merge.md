@@ -385,6 +385,12 @@ input stays isolated. `mark_indirect_only` applies that to every illegal input
 and sets `indirectonly` on the ones that pass, and the two tests above then take
 their exception branch.
 
+The walk borrows each Varnode's descendant sequence directly: the function is
+read-only, and neither operation inspection nor worklist growth changes that
+sequence. A local membership set deduplicates the ordered worklist without
+using set iteration or changing Varnode flags. Input marking still collects
+all accepted inputs before setting their flags.
+
 The visible effect is the merge, and its soundness depends on which side of the
 copy the illegal input is. When the slot is the copy's **destination** the
 machine really does store into it, and the merge only moves where the value is
@@ -655,7 +661,10 @@ COPY ranges). Every surviving range becomes a Symbol in the local scope
 (`adjust_fit`/`create_entry`), and `funcdata_spacebase.rs
 (Funcdata::sync_varnodes_with_symbols)` paints the resulting
 `mapped`/`addrtied`/`addrforce`/`nolocalalias` flags (and, in the final sync
-only, data-types) onto the Varnodes. After `fullloop` exits,
+only, data-types) onto the Varnodes. Unmapped locations gain `nolocalalias`
+only when the caller enables alias checking and the local map proves the
+location unaliased. The first restructuring pass disables this check;
+later passes and the final sync enable it. After `fullloop` exits,
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionMappedLocalSync)` runs that final data-type-updating sync once; its
 failure mode is tolerance, not an abort — the layout keeps the conceded

@@ -5038,7 +5038,7 @@ mod tests {
         let in0 = fd.bblocks_ref().block(tgt).get_in_index(p0);
         let in1 = fd.bblocks_ref().block(tgt).get_in_index(p1);
 
-        let mut make_phi = |fd: &mut Funcdata, out_off: u64| {
+        let make_phi = |fd: &mut Funcdata, out_off: u64| {
             let mq = fd.new_op(2, addr(&rs, 0x8000));
             fd.op_set_opcode(mq, crate::typeop::type_op_for(OpCode::CPUI_MULTIEQUAL));
             let out = fd.new_varnode(4, &addr(&rs, out_off), None);

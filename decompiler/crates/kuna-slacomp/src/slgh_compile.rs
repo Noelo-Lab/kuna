@@ -1,36 +1,8 @@
-//! WS4b -- the `SleighCompile` driver and its subsystems (port of
-//! `decompiler/cpp/slgh_compile.cc`, header `slgh_compile.hh`).
+//! SLEIGH compilation driver, ported from Ghidra's slgh_compile.cc.
 //!
-//! This is the bulk of the compiler.  It owns the symbol-table build, the
-//! parse-time builder methods the parser (WS2) calls, the post-parse `process()`
-//! pipeline (consistency-check / pattern build / decision trees / unique
-//! allocation), and the orchestration of the final `.sla` `encode` (WS5).
-//!
-//! It *composes* the already-ported `kuna_sleigh::SleighBase` and reuses the
-//! `kuna_sleigh` symbol/pattern/template types throughout -- symbols are
-//! referenced by their integer id in the `SymbolTable`, modelled as
-//! [`SymbolId`]; pattern equations live in a driver-owned
-//! [`kuna_sleigh::slghpatexpress::EquationArena`]; ConstructTpl sections live in
-//! the `SleighBase` template arena.
-//!
-//! ## Lifecycle (slgh_compile.cc:3774, 2479)
-//!
-//! `run_compilation`: parse -> `process()` (consistency / patterns / decision
-//! trees / unique allocation / purge) -> encode (WS5).
-//!
-//! ## Scope note (WS4b landed subset)
-//!
-//! The full definition half (spaces / tokens / contexts / varnodes / attaches /
-//! subtables / constructors / pattern equations) plus the `process()` pattern/
-//! decision-tree pipeline and the `.sla` encode are implemented and exercised
-//! end-to-end (data-le-64 / data-be-64 byte-identical against C++ `sleigh_opt`).
-//! The deep p-code *section* path (semantic RTL with `Constructor::
-//! setMainSection` / `markSubtableOperands` / `ConstructTpl::fillinBuild`, which
-//! were never ported to `kuna-sleigh`) is stubbed with errors/panics that carry
-//! their `slgh_compile.cc`/`slghsymbol.cc` anchors; specs that exercise it are
-//! not yet claimed.
-
-#![allow(dead_code)]
+//! Owns symbols and semantic-value arenas, implements the scanner/parser
+//! callbacks, and runs consistency checks, pattern construction, decision-tree
+//! generation and unique-space allocation before emitting the compiled image.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -51,8 +23,9 @@ use kuna_sleigh::slghpatexpress::{
     ConstantValue, ContextField, EquationArena, PatternEquation, PatternExpression, PatternValue,
 };
 use kuna_sleigh::slghsymbol::{
-    ConstructTplHandle, ContextChange, ContextCommit, ContextOp, DecisionProperties,
-    LabelTableSymbol, MacroSymbol, SectionSymbol, SleighSymbol, SymbolKind, SymbolType,
+    BitrangeSymbol, Constructor, ConstructorRef, ContextChange, ContextCommit, ContextOp,
+    DecisionProperties, LabelTableSymbol, MacroSymbol, SectionSymbol, SleighSymbol, SymbolKind,
+    SymbolType,
 };
 use kuna_sleigh::sleighbase::SleighBase;
 
@@ -71,9 +44,8 @@ const NO_SYMBOL: SymbolId = u32::MAX;
 // Compiler-only helper structs (slgh_compile.hh:42-246)
 // ---------------------------------------------------------------------------
 
-/// The heterogeneous bison semantic values of the p-code grammar
-/// (`SLEIGHSTYPE`), unified into one tagged enum so the WS2 parser's `u32` ids
-/// index a single arena and never alias across value kinds.
+/// P-code grammar values (`SLEIGHSTYPE`) held in one tagged arena and
+/// referenced by the parser's `u32` handles.
 #[derive(Debug)]
 enum RtlValue {
     /// `VarnodeTpl *` (varnode/jumpdest/intvn/lhsvarnode/exportvarnode).
@@ -94,13 +66,13 @@ enum RtlValue {
 /// slgh_compile.hh:42-47).
 #[derive(Clone, Copy, Default, Debug)]
 pub struct RtlPair {
-    /// `ConstructTpl` handle in the base template arena (or `None`).
+    /// Section handle in the compiler's parser arena (or `None`).
     pub section: Option<u32>,
     /// Symbol scope id associated with the section (or `None`).
     pub scope: Option<u32>,
 }
 
-/// The collection of named p-code sections for one Constructor (`SectionVector`,
+/// Main and named p-code sections for one constructor (`SectionVector`,
 /// slgh_compile.hh:58-72).
 #[derive(Default, Debug)]
 pub struct SectionVector {
@@ -272,21 +244,12 @@ pub struct SleighCompile {
     /// The shared SLEIGH base (symbol table, address spaces, root, templates).
     pub base: SleighBase,
 
-    /// The driver-owned pattern-equation arena (the WS2 `peq_*` ids index it).
+    /// Pattern-equation arena indexed by the parser's `peq_*` handles.
     arena: EquationArena,
-    /// The driver-owned pattern-expression arena (the WS2 `pexp_*` ids index it).
+    /// Pattern-expression arena indexed by the parser's `pexp_*` handles.
     patexp: Vec<PatternExpression>,
 
-    // --- p-code section RTL arenas (WS4c) ---
-    //
-    // The WS2 parser threads `u32` ids for the heterogeneous bison semantic
-    // values of the p-code grammar (`SLEIGHSTYPE`): `VarnodeTpl *`,
-    // `ExprTree *`, `vector<OpTpl *> *`, `StarQuality *`, `ConstructTpl *`
-    // (sections), and `SectionVector *`.  Each gets its own driver-owned arena
-    // of `Option<T>` slots so an id can be *consumed* (the C++ pointer-move
-    // semantics) by taking the slot.
-    /// One arena for every heterogeneous p-code grammar semantic value, so ids
-    /// are globally unique across kinds (see the accessor helpers).
+    /// Parser semantic values share one arena; taking a slot consumes its value.
     rtl_arena: Vec<Option<RtlValue>>,
     /// `ContextChange *` arena (`context_mod`/`context_set` vec elements).
     contextchange_arena: Vec<Option<ContextChange>>,
@@ -294,8 +257,8 @@ pub struct SleighCompile {
     /// (the C++ `ConsistencyChecker::unnecessarypcode`; bumped by
     /// `deal_with_unnecessary_*`, read after `test_size_restrictions`).
     cc_unnecessary: i32,
-    /// The macro bodies (`vector<ConstructTpl *> macrotable`); index = macro id.
-    macro_bodies: Vec<Option<ConstructTpl>>,
+    /// Finalized macro bodies shared with their symbols; index = macro id.
+    macro_bodies: Vec<Rc<ConstructTpl>>,
     /// `maxdelayslotbytes` (slgh_compile.hh): largest delay slot seen.
     maxdelayslotbytes: u32,
     /// `unique_allocatemask` (slgh_compile.hh): set when a crossbuild needs the
@@ -308,7 +271,6 @@ pub struct SleighCompile {
     // --- parse-time state (slgh_compile.hh:309-334) ---
     preproc_defines: BTreeMap<Vec<u8>, Vec<u8>>,
     contexttable: Vec<FieldContext>,
-    macrotable: Vec<u32>,
     /// Number of tokens defined so far (`tokentable.size()`).
     token_count: u32,
     /// Subtable symbol ids (`tables`).
@@ -317,8 +279,8 @@ pub struct SleighCompile {
     sections: Vec<SymbolId>,
     /// Stack of `with` blocks (`withstack`).
     withstack: Vec<WithBlock>,
-    /// (subtable_id, ct_index) for each driver-side constructor id.
-    ctmap: Vec<(SymbolId, u32)>,
+    /// Runtime constructor references indexed by parser handles.
+    constructor_refs: Vec<ConstructorRef>,
     /// Current Constructor id being defined (`curct`).
     curct: Option<u32>,
     /// Current macro symbol id being defined (`curmacro`).
@@ -329,7 +291,6 @@ pub struct SleighCompile {
     filename: Vec<Vec<u8>>,
     lineno: Vec<i32>,
     symbol_loc: BTreeMap<SymbolId, Location>,
-    ctor_loc: BTreeMap<u32, Location>,
     userop_count: i32,
     warnunnecessarypcode: bool,
     warndeadtemps: bool,
@@ -382,7 +343,11 @@ impl SleighCompile {
             self.process()?;
         }
         if parseres == 0 && self.num_errors() == 0 {
-            let bytes = crate::encode::encode_to_sla_bytes(&self.base)?;
+            let bytes = if self.debugoutput {
+                crate::encode::encode_to_xml_bytes(&self.base)?
+            } else {
+                crate::encode::encode_to_sla_bytes(&self.base)?
+            };
             if std::fs::write(fileout, &bytes).is_err() {
                 eprintln!("Unable to open output file: {fileout}");
                 return Ok(2);
@@ -404,7 +369,7 @@ impl SleighCompile {
         if self.errors > 0 {
             return Ok(());
         }
-        self.check_consistency();
+        self.check_consistency()?;
         if self.errors > 0 {
             return Ok(());
         }
@@ -417,10 +382,6 @@ impl SleighCompile {
             return Ok(());
         }
         self.build_decision_trees()?;
-        if self.errors > 0 {
-            return Ok(());
-        }
-        self.build_xrefs()?;
         if self.errors > 0 {
             return Ok(());
         }
@@ -514,18 +475,19 @@ impl SleighCompile {
         self.report_warning(msg);
     }
     /// `compiler->reportError(compiler->getLocation(ct), msg)` keyed by ctor.
-    pub(crate) fn cc_report_error_ct(&mut self, _sym: SymbolId, ctid_unused: u32, msg: &str) {
-        let _ = ctid_unused;
-        // The ctor location is keyed by the driver constructor id; the checker
-        // navigates (table,ctidx) but the location map is keyed by the global
-        // ctor id, so fall back to the current parse location (matches C++ when
-        // the per-ctor location is unavailable).
-        let loc = self.current_location();
+    pub(crate) fn cc_report_error_ct(&mut self, sym: SymbolId, ctidx: u32, msg: &str) {
+        let loc = self.constructor_location(ConstructorRef {
+            table_id: sym,
+            ct_id: ctidx,
+        });
         self.report_error_loc(Some(&loc), msg);
     }
     /// `compiler->reportWarning(compiler->getLocation(ct), msg)` keyed by ctor.
-    pub(crate) fn cc_report_warning_ct(&mut self, _sym: SymbolId, _ctidx: u32, msg: &str) {
-        let loc = self.current_location();
+    pub(crate) fn cc_report_warning_ct(&mut self, sym: SymbolId, ctidx: u32, msg: &str) {
+        let loc = self.constructor_location(ConstructorRef {
+            table_id: sym,
+            ct_id: ctidx,
+        });
         self.report_warning_loc(Some(&loc), msg);
     }
     pub(crate) fn cc_warn_unnecessary(&self) -> bool {
@@ -869,9 +831,7 @@ impl SleighCompile {
         true
     }
 
-    /// `defineBitrange` (slgh_compile.cc:2800) -- needs `BitrangeSymbol` (not
-    /// yet ported in kuna-sleigh).  Falls back to a plain varnode when the
-    /// range is byte-aligned (the common case); a sub-byte bitrange errors.
+    /// Define a register alias (`defineBitrange`, slgh_compile.cc:2800).
     pub fn define_bitrange(&mut self, name: &[u8], sym: SymbolId, bitoffset: u32, numb: u32) {
         let (space, offset, vbytes) = match self.base.symtab().find_symbol_by_id(sym) {
             Some(s) => match s.kind() {
@@ -914,9 +874,10 @@ impl SleighCompile {
                 newsize as i32,
             ));
         } else {
-            self.report_error(
-                "defineBitrange: sub-byte BitrangeSymbol not yet ported (slgh_compile.cc:2800)",
-            );
+            self.add_sleigh_symbol(SleighSymbol::new(
+                name,
+                SymbolKind::Bitrange(BitrangeSymbol::new(sym, bitoffset, numb)),
+            ));
         }
     }
 
@@ -933,7 +894,7 @@ impl SleighCompile {
     }
 
     /// `dedupSymbolList` (slgh_compile.cc:2849).
-    fn dedup_symbol_list(&self, symlist: &mut [SymbolId]) -> Option<SymbolId> {
+    fn dedup_symbol_list(symlist: &mut [SymbolId]) -> Option<SymbolId> {
         let mut res = None;
         for i in 0..symlist.len() {
             let sym = symlist[i];
@@ -950,19 +911,27 @@ impl SleighCompile {
         res
     }
 
-    /// `attachValues` (slgh_compile.cc:2872).
-    pub fn attach_values(&mut self, mut symlist: Vec<SymbolId>, numlist: Vec<i64>) {
-        if let Some(dup) = self.dedup_symbol_list(&mut symlist) {
+    fn warn_attach_duplicates(&mut self, symlist: &mut [SymbolId], kind: &str) {
+        if let Some(dup) = Self::dedup_symbol_list(symlist) {
             let nm = self.symbol_name(dup);
             let loc = self.current_location();
             self.report_warning_loc(
                 Some(&loc),
                 &format!(
-                    "'attach values' list contains duplicate entries: {}",
+                    "'attach {kind}' list contains duplicate entries: {}",
                     String::from_utf8_lossy(&nm)
                 ),
             );
         }
+    }
+
+    fn attach_symbols(
+        &mut self,
+        symlist: Vec<SymbolId>,
+        table_len: usize,
+        kind: &str,
+        build: impl Fn(&[u8], PatternValue) -> KunaResult<SleighSymbol>,
+    ) {
         for sym in symlist {
             if sym == NO_SYMBOL {
                 continue;
@@ -971,10 +940,16 @@ impl SleighCompile {
                 Some(p) => p,
                 None => continue,
             };
-            let maxv = match patval.max_value() { Ok(m) => m, Err(e) => { self.report_error(&e.explain()); continue; } };
-            self.check_attach_size(sym, maxv, numlist.len(), "value");
+            let maxv = match patval.max_value() {
+                Ok(maxv) => maxv,
+                Err(error) => {
+                    self.report_error(&error.explain());
+                    continue;
+                }
+            };
+            self.check_attach_size(sym, maxv, table_len, kind);
             let nm = self.symbol_name(sym);
-            match SleighSymbol::new_valuemap(&nm, patval, numlist.clone()) {
+            match build(&nm, patval) {
                 Ok(newsym) => {
                     let _ = self.base.symtab_mut().replace_symbol(sym, newsym);
                 }
@@ -983,50 +958,25 @@ impl SleighCompile {
         }
     }
 
+    /// `attachValues` (slgh_compile.cc:2872).
+    pub fn attach_values(&mut self, mut symlist: Vec<SymbolId>, numlist: Vec<i64>) {
+        self.warn_attach_duplicates(&mut symlist, "values");
+        self.attach_symbols(symlist, numlist.len(), "value", |nm, patval| {
+            SleighSymbol::new_valuemap(nm, patval, numlist.clone())
+        });
+    }
+
     /// `attachNames` (slgh_compile.cc:2900).
     pub fn attach_names(&mut self, mut symlist: Vec<SymbolId>, names: Vec<Vec<u8>>) {
-        if let Some(dup) = self.dedup_symbol_list(&mut symlist) {
-            let nm = self.symbol_name(dup);
-            let loc = self.current_location();
-            self.report_warning_loc(
-                Some(&loc),
-                &format!(
-                    "'attach names' list contains duplicate entries: {}",
-                    String::from_utf8_lossy(&nm)
-                ),
-            );
-        }
-        for sym in symlist {
-            if sym == NO_SYMBOL {
-                continue;
-            }
-            let patval = match self.value_symbol_patval(sym) {
-                Some(p) => p,
-                None => continue,
-            };
-            let maxv = match patval.max_value() { Ok(m) => m, Err(e) => { self.report_error(&e.explain()); continue; } };
-            self.check_attach_size(sym, maxv, names.len(), "name");
-            let nm = self.symbol_name(sym);
-            match SleighSymbol::new_name_symbol(&nm, patval, names.clone()) {
-                Ok(newsym) => { let _ = self.base.symtab_mut().replace_symbol(sym, newsym); }
-                Err(e) => self.report_error(&e.explain()),
-            }
-        }
+        self.warn_attach_duplicates(&mut symlist, "names");
+        self.attach_symbols(symlist, names.len(), "name", |nm, patval| {
+            SleighSymbol::new_name_symbol(nm, patval, names.clone())
+        });
     }
 
     /// `attachVarnodes` (slgh_compile.cc:2928).
     pub fn attach_varnodes(&mut self, mut symlist: Vec<SymbolId>, varlist: Vec<SymbolId>) {
-        if let Some(dup) = self.dedup_symbol_list(&mut symlist) {
-            let nm = self.symbol_name(dup);
-            let loc = self.current_location();
-            self.report_warning_loc(
-                Some(&loc),
-                &format!(
-                    "'attach variables' list contains duplicate entries: {}",
-                    String::from_utf8_lossy(&nm)
-                ),
-            );
-        }
+        self.warn_attach_duplicates(&mut symlist, "variables");
         let var_ids: Vec<Option<u32>> = varlist
             .iter()
             .map(|&v| if v == NO_SYMBOL { None } else { Some(v) })
@@ -1054,24 +1004,9 @@ impl SleighCompile {
                 }
             }
         }
-        for sym in symlist {
-            if sym == NO_SYMBOL {
-                continue;
-            }
-            let patval = match self.value_symbol_patval(sym) {
-                Some(p) => p,
-                None => continue,
-            };
-            let maxv = match patval.max_value() { Ok(m) => m, Err(e) => { self.report_error(&e.explain()); continue; } };
-            self.check_attach_size(sym, maxv, varlist.len(), "varnode");
-            let nm = self.symbol_name(sym);
-            match SleighSymbol::new_varnodelist(&nm, patval, var_ids.clone()) {
-                Ok(newsym) => {
-                    let _ = self.base.symtab_mut().replace_symbol(sym, newsym);
-                }
-                Err(e) => self.report_error(&e.explain()),
-            }
-        }
+        self.attach_symbols(symlist, varlist.len(), "varnode", |nm, patval| {
+            SleighSymbol::new_varnodelist(nm, patval, var_ids.clone())
+        });
     }
 
     /// `newTable` (slgh_compile.cc:2968).
@@ -1083,11 +1018,10 @@ impl SleighCompile {
 
     /// `newOperand` (slgh_compile.cc:2984).
     pub fn new_operand(&mut self, ct: u32, nm: &[u8]) {
-        let (table_id, ct_idx) = self.ctmap[ct as usize];
-        let index = self.constructor(table_id, ct_idx).get_num_operands();
-        let ctref = kuna_sleigh::slghsymbol::ConstructorRef { table_id, ct_id: ct_idx };
-        let opid = self.add_sleigh_symbol(SleighSymbol::new_operand(nm, index, ctref));
-        self.constructor_mut(table_id, ct_idx).add_operand(opid);
+        let ctor = self.constructor_refs[ct as usize];
+        let index = self.constructor(ctor).get_num_operands();
+        let opid = self.add_sleigh_symbol(SleighSymbol::new_operand(nm, index, ctor));
+        self.constructor_mut(ctor).add_operand(opid);
     }
 
     /// `createConstructor` (slgh_compile.cc:3364).
@@ -1101,7 +1035,7 @@ impl SleighCompile {
         let lineno = self.lineno.last().copied().unwrap_or(0);
         let loc = self.current_location();
         let src_index = self.base.indexer_mut().index(loc.get_filename());
-        let mut ct = kuna_sleigh::slghsymbol::Constructor::new();
+        let mut ct = Constructor::new();
         ct.set_parent(table_id);
         ct.set_lineno(lineno);
         ct.set_src_index(src_index);
@@ -1111,9 +1045,11 @@ impl SleighCompile {
                 st.add_constructor(ct);
             }
         }
-        let id = self.ctmap.len() as u32;
-        self.ctmap.push((table_id, ct_idx));
-        self.ctor_loc.insert(id, loc);
+        let id = self.constructor_refs.len() as u32;
+        self.constructor_refs.push(ConstructorRef {
+            table_id,
+            ct_id: ct_idx,
+        });
         self.base.symtab_mut().add_scope();
         self.pcode.local_labelcount = 0; // C++ pcode.resetLabelCount() (cc:3377)
         self.curct = Some(id);
@@ -1128,16 +1064,21 @@ impl SleighCompile {
 
     /// `addSyntax` on the current constructor (slghparse.y:275).
     pub fn add_syntax(&mut self, ct: u32, syntax: &[u8]) {
-        let (table_id, ct_idx) = self.ctmap[ct as usize];
-        self.constructor_mut(table_id, ct_idx).add_syntax(syntax);
+        let ctor = self.constructor_refs[ct as usize];
+        self.constructor_mut(ctor).add_syntax(syntax);
     }
 
     /// `pushWith` (slgh_compile.cc:3676).
-    pub fn push_with(&mut self, ss: Option<SymbolId>, pateq: Option<u32>, _contvec: Option<Vec<u32>>) {
+    pub fn push_with(&mut self, ss: Option<SymbolId>, pateq: Option<u32>, contvec: Option<Vec<u32>>) {
+        let contvec = contvec
+            .into_iter()
+            .flatten()
+            .map(|id| self.take_context_change(id))
+            .collect();
         let mut block = WithBlock {
             ss,
             pateq,
-            contvec: Vec::new(),
+            contvec,
         };
         if block.ss.is_none() {
             block.ss = self.with_block_current_subtable();
@@ -1160,37 +1101,54 @@ impl SleighCompile {
         None
     }
 
-    /// `buildConstructor` (slgh_compile.cc:3698).  In the landed subset `vec` is
-    /// always `None` (no semantic section: `unimpl` or context-only).
+    /// C++ `SleighCompile::buildConstructor(...)` (slgh_compile.cc:3698).
+    /// Section handles belong to this compiler's parser arena.
     pub fn build_constructor(
         &mut self,
         big: u32,
         pateq: Option<u32>,
-        _contvec: Option<Vec<u32>>,
+        contvec: Option<Vec<u32>>,
         vec: Option<SectionVector>,
     ) {
-        let (table_id, ct_idx) = self.ctmap[big as usize];
+        let ctor = self.constructor_refs[big as usize];
         let mut noerrors = true;
-        if vec.is_some() {
-            self.report_error(
-                "buildConstructor: p-code section finalize not yet ported \
-                 (slgh_compile.cc:3436 finalizeSections)",
-            );
-            noerrors = false;
+        if let Some(mut sections) = vec {
+            noerrors = self.finalize_sections(big, &sections);
+            if noerrors {
+                let main = sections.release_main_section();
+                if let Some(secid) = main {
+                    let ct = self.take_section(secid);
+                    let handle = self.base.add_template(ct);
+                    self.constructor_mut(ctor)
+                        .set_main_section(handle);
+                }
+                let maxid = sections.get_max_id();
+                for i in 0..maxid {
+                    let named = sections.release_named_section(i);
+                    if let Some(secid) = named {
+                        let ct = self.take_section(secid);
+                        let handle = self.base.add_template(ct);
+                        self.constructor_mut(ctor)
+                            .set_named_section(handle, i);
+                    }
+                }
+            }
         }
         if noerrors {
             let pateq = self.collect_and_prepend_pattern(pateq);
             if let Some(eq) = pateq {
-                self.constructor_mut(table_id, ct_idx).add_equation(eq);
+                self.constructor_mut(ctor).add_equation(eq);
             } else {
                 let eps = self.arena.alloc(PatternEquation::Unconstrained {
                     patex: PatternExpression::Value(PatternValue::ConstantValue(ConstantValue::new(
                         0,
                     ))),
                 });
-                self.constructor_mut(table_id, ct_idx).add_equation(eps);
+                self.constructor_mut(ctor).add_equation(eps);
             }
-            self.constructor_mut(table_id, ct_idx).remove_trailing_space();
+            self.constructor_mut(ctor).remove_trailing_space();
+            let changes = self.collect_and_prepend_context(contvec);
+            self.constructor_mut(ctor).add_context(changes);
         }
         self.base.symtab_mut().pop_scope();
     }
@@ -1198,8 +1156,7 @@ impl SleighCompile {
     /// `WithBlock::collectAndPrependPattern` (slgh_compile.cc:152).
     fn collect_and_prepend_pattern(&mut self, pateq: Option<u32>) -> Option<u32> {
         let mut res = pateq;
-        let stack_pats: Vec<u32> = self.withstack.iter().rev().filter_map(|b| b.pateq).collect();
-        for wpat in stack_pats {
+        for wpat in self.withstack.iter().rev().filter_map(|b| b.pateq) {
             res = Some(match res {
                 Some(r) => self.arena.alloc(PatternEquation::And {
                     left: wpat,
@@ -1219,7 +1176,7 @@ impl SleighCompile {
         base
     }
 
-    // --- p-code RTL arena accessors (WS4c) ---
+    // --- p-code RTL arena accessors ---
     //
     // A SINGLE arena (`rtl_arena`) of a tagged enum backs every heterogeneous
     // bison semantic value, so ids are globally unique across value kinds
@@ -1295,20 +1252,17 @@ impl SleighCompile {
     fn alloc_secvec(&mut self, v: SectionVector) -> u32 {
         self.alloc_rtl(RtlValue::SecVec(v))
     }
-    fn secvec_ref(&self, id: u32) -> &SectionVector {
-        match self.rtl_arena.get(id as usize).and_then(|s| s.as_ref()) {
-            Some(RtlValue::SecVec(v)) => v,
-            _ => panic!("rtl id {id} is not a section vector"),
-        }
-    }
     fn secvec_mut(&mut self, id: u32) -> &mut SectionVector {
         match self.rtl_arena.get_mut(id as usize).and_then(|s| s.as_mut()) {
             Some(RtlValue::SecVec(v)) => v,
             _ => panic!("rtl id {id} is not a section vector"),
         }
     }
-    fn drop_secvec(&mut self, id: u32) {
-        self.rtl_arena[id as usize] = None;
+    fn take_secvec(&mut self, id: u32) -> SectionVector {
+        match self.rtl_arena[id as usize].take() {
+            Some(RtlValue::SecVec(sections)) => sections,
+            _ => panic!("rtl id {id} is not a section vector"),
+        }
     }
 
     // --- post-parse subsystems ---
@@ -1413,30 +1367,39 @@ impl SleighCompile {
         // subtable is intentionally left pattern-less (warned + purged) — do NOT
         // build the `tables` list directly (that would give unused subtables a
         // pattern and keep them through purge, diverging from C++).
-        {
-            let arena = std::mem::take(&mut self.arena);
-            let r = self
-                .base
-                .symtab_mut()
-                .build_subtable_pattern(root, &arena, &mut errs);
-            self.arena = arena;
-            r?;
-        }
-        let tables = self.tables.clone();
+        self.base
+            .symtab_mut()
+            .build_subtable_pattern(root, &self.arena, &mut errs)?;
         self.apply_handmaps(root);
-        for &t in &tables {
-            self.apply_handmaps(t);
+        for i in 0..self.tables.len() {
+            self.apply_handmaps(self.tables[i]);
+        }
+        let mut message = errs.join("\n");
+        if !errs.is_empty() {
+            message.push('\n');
         }
         if self.subtable_is_error(root) {
             self.errors += 1;
+            self.report_error(&message);
         }
-        for &t in &tables {
+        for i in 0..self.tables.len() {
+            let t = self.tables[i];
             if self.subtable_is_error(t) {
                 self.errors += 1;
+                let loc = self.symbol_loc.get(&t).cloned();
+                let name = self.symbol_name(t);
+                self.report_error_loc(
+                    loc.as_ref(),
+                    &format!("Problem in table '{}':{message}", String::from_utf8_lossy(&name)),
+                );
             }
             if self.subtable_pattern_none(t) {
                 let loc = self.symbol_loc.get(&t).cloned();
-                self.report_warning_loc(loc.as_ref(), "Unreferenced table");
+                let name = self.symbol_name(t);
+                self.report_warning_loc(
+                    loc.as_ref(),
+                    &format!("Unreferenced table '{}'", String::from_utf8_lossy(&name)),
+                );
             }
         }
         Ok(())
@@ -1446,18 +1409,19 @@ impl SleighCompile {
     fn apply_handmaps(&mut self, table_id: SymbolId) {
         let numct = self.constructor_count(table_id);
         for ci in 0..numct {
-            let handmap = self.constructor(table_id, ci).get_handmap().to_vec();
+            let ctor = ConstructorRef { table_id, ct_id: ci };
+            let handmap = self.constructor(ctor).get_handmap().to_vec();
             if handmap.is_empty() {
                 continue;
             }
-            if let Some(h) = self.constructor(table_id, ci).get_templ() {
+            if let Some(h) = self.constructor(ctor).get_templ() {
                 if let Some(tpl) = self.base.template_mut(h) {
                     tpl.change_handle_index(&handmap);
                 }
             }
-            let nsec = self.constructor(table_id, ci).get_num_sections();
+            let nsec = self.constructor(ctor).get_num_sections();
             for s in 0..nsec {
-                if let Some(h) = self.constructor(table_id, ci).get_named_templ(s) {
+                if let Some(h) = self.constructor(ctor).get_named_templ(s) {
                     if let Some(tpl) = self.base.template_mut(h) {
                         tpl.change_handle_index(&handmap);
                     }
@@ -1469,37 +1433,99 @@ impl SleighCompile {
     /// `buildDecisionTrees` (slgh_compile.cc:2086).
     fn build_decision_trees(&mut self) -> KunaResult<()> {
         let root = self.base.get_root().expect("root set");
-        let mut props = DecisionProperties::new();
-        self.base.symtab_mut().build_decision_tree(root, &mut props)?;
-        let tables = self.tables.clone();
-        for &t in &tables {
-            self.base.symtab_mut().build_decision_tree(t, &mut props)?;
-        }
-        let ident = props.get_ident_errors().len();
-        for _ in 0..ident {
-            self.errors += 1;
-            self.report_error("Constructor has identical pattern to another constructor");
-        }
-        if !self.lenientconflicterrors {
-            let conflict = props.get_conflict_errors().len();
-            for _ in 0..conflict {
-                self.errors += 1;
-                self.report_error(
-                    "Constructor pattern cannot be distinguished from another constructor",
-                );
+        let mut ident = Vec::new();
+        let mut conflicts = Vec::new();
+        for table_index in 0..=self.tables.len() {
+            let table_id = if table_index == 0 {
+                root
+            } else {
+                self.tables[table_index - 1]
+            };
+            let mut props = DecisionProperties::new();
+            self.base
+                .symtab_mut()
+                .build_decision_tree(table_id, &mut props)?;
+            let qualify = |&(a, b)| {
+                (
+                    ConstructorRef { table_id, ct_id: a },
+                    ConstructorRef { table_id, ct_id: b },
+                )
+            };
+            ident.extend(props.get_ident_errors().iter().map(qualify));
+            if !self.lenientconflicterrors {
+                conflicts.extend(props.get_conflict_errors().iter().map(qualify));
             }
+        }
+        for (a, b) in ident {
+            self.report_pattern_error(a, b, "Constructor has identical pattern to constructor at ");
+        }
+        for (a, b) in conflicts {
+            self.report_pattern_error(
+                a,
+                b,
+                "Constructor pattern cannot be distinguished from constructor at ",
+            );
         }
         Ok(())
     }
 
-    /// `checkConsistency` (slgh_compile.cc:2148) -- trivial in the landed subset.
-    fn check_consistency(&mut self) {
-        // The full ConsistencyChecker lives in `consistency.rs`.
-        self.check_consistency_real();
+    fn report_pattern_error(&mut self, a: ConstructorRef, b: ConstructorRef, message: &str) {
+        let loc_a = self.constructor_location(a);
+        let loc_b = self.constructor_location(b);
+        self.errors += 1;
+        self.report_error_loc(Some(&loc_a), &format!("{message}{}", loc_b.format()));
+        self.report_error_loc(Some(&loc_b), &format!("{message}{}", loc_a.format()));
     }
 
-    /// `checkLocalCollisions` (slgh_compile.cc:2250) -- no exports in the landed subset.
-    fn check_local_collisions(&mut self) {}
+    /// Warn about operands sharing exported temporaries
+    /// (`checkLocalCollisions`, slgh_compile.cc:2250).
+    fn check_local_collisions(&mut self) {
+        let Some(root) = self.base.get_root() else {
+            return;
+        };
+        let mut count = 0usize;
+        for table_index in 0..=self.tables.len() {
+            let table = if table_index == 0 {
+                root
+            } else {
+                self.tables[table_index - 1]
+            };
+            for ct_idx in 0..self.constructor_count(table) {
+                let ctor = ConstructorRef {
+                    table_id: table,
+                    ct_id: ct_idx,
+                };
+                let collision = crate::local_collisions::find_collision(
+                    &self.base,
+                    self.constructor(ctor),
+                );
+                if let Some((first, second)) = collision {
+                    count += 1;
+                    if self.warnalllocalcollisions {
+                        let loc = self.constructor_location(ctor);
+                        let first = self.symbol_name(first);
+                        let second = self.symbol_name(second);
+                        self.report_warning_loc(
+                            Some(&loc),
+                            &format!(
+                                "Possible operand collision between symbols '{}' and '{}'",
+                                String::from_utf8_lossy(&first),
+                                String::from_utf8_lossy(&second),
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+        if count > 0 {
+            self.report_warning(&format!(
+                "{count} constructors with local collisions between operands"
+            ));
+            if !self.warnalllocalcollisions {
+                self.report_warning("Use -c switch to list each individually");
+            }
+        }
+    }
 
     /// `checkNops` (slgh_compile.cc:2277).
     fn check_nops(&mut self) {
@@ -1524,34 +1550,30 @@ impl SleighCompile {
             return;
         }
         let mut register_map: BTreeMap<Vec<u8>, SymbolId> = BTreeMap::new();
-        let global = match self.base.symtab().get_global_scope() {
-            Some(g) => g.symbol_ids().collect::<Vec<_>>(),
-            None => return,
+        let Some(global) = self.base.symtab().get_global_scope() else {
+            return;
         };
         let mut collisions: Vec<(SymbolId, SymbolId)> = Vec::new();
-        for id in global {
-            let (is_proc_varnode, name) = match self.base.symtab().find_symbol_by_id(id) {
-                Some(s) => {
-                    if s.get_type() != SymbolType::Varnode {
-                        continue;
-                    }
-                    let proc = match s.kind() {
-                        kuna_sleigh::slghsymbol::SymbolKind::Varnode(v) => v
-                            .get_fixed_varnode()
-                            .space
-                            .as_ref()
-                            .map(|sp| sp.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
-                            .unwrap_or(false),
-                        _ => false,
-                    };
-                    (proc, s.get_name().to_vec())
-                }
-                None => continue,
+        for id in global.symbol_ids() {
+            let Some(symbol) = self.base.symtab().find_symbol_by_id(id) else {
+                continue;
             };
-            if !is_proc_varnode {
+            let SymbolKind::Varnode(varnode) = symbol.kind() else {
+                continue;
+            };
+            if !varnode
+                .get_fixed_varnode()
+                .space
+                .as_ref()
+                .is_some_and(|sp| sp.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
+            {
                 continue;
             }
-            let upper: Vec<u8> = name.iter().map(|c| c.to_ascii_uppercase()).collect();
+            let upper: Vec<u8> = symbol
+                .get_name()
+                .iter()
+                .map(|c| c.to_ascii_uppercase())
+                .collect();
             if let Some(&old) = register_map.get(&upper) {
                 collisions.push((id, old));
             } else {
@@ -1573,13 +1595,6 @@ impl SleighCompile {
         }
     }
 
-    /// `buildXrefs` -- the `.sla` encode does not depend on the varnode_xref
-    /// map (rebuilt on decode), so the compile path can skip it.
-    fn build_xrefs(&mut self) -> KunaResult<()> {
-        Ok(())
-    }
-
-    /// `checkUniqueAllocation` (slgh_compile.cc:3638).
     // --- helpers over the symbol table / constructors ---
 
     fn symbol_name(&self, id: SymbolId) -> Vec<u8> {
@@ -1623,25 +1638,26 @@ impl SleighCompile {
             .unwrap_or(0)
     }
 
-    fn constructor(&self, table_id: SymbolId, idx: u32) -> &kuna_sleigh::slghsymbol::Constructor {
+    fn constructor(&self, ctor: ConstructorRef) -> &Constructor {
         self.base
             .symtab()
-            .find_symbol_by_id(table_id)
-            .and_then(|s| s.as_subtable())
-            .and_then(|st| st.get_constructor(idx).ok())
+            .get_constructor(ctor)
+            .ok()
             .expect("constructor exists")
     }
 
-    fn constructor_mut(
-        &mut self,
-        table_id: SymbolId,
-        idx: u32,
-    ) -> &mut kuna_sleigh::slghsymbol::Constructor {
+    fn constructor_location(&self, ctor: ConstructorRef) -> Location {
+        let ct = self.constructor(ctor);
+        let filename = self.base.indexer().get_filename(ct.get_src_index());
+        Location::new(&filename, ct.get_lineno())
+    }
+
+    fn constructor_mut(&mut self, ctor: ConstructorRef) -> &mut Constructor {
         self.base
             .symtab_mut()
-            .find_symbol_by_id_mut(table_id)
+            .find_symbol_by_id_mut(ctor.table_id)
             .and_then(|s| s.as_subtable_mut())
-            .and_then(|st| st.get_constructor_mut(idx))
+            .and_then(|st| st.get_constructor_mut(ctor.ct_id))
             .expect("constructor exists")
     }
 
@@ -1755,7 +1771,7 @@ fn is_absolute_path(p: &[u8]) -> bool {
 }
 
 // ===========================================================================
-// CompilerHost (WS3 boundary: SleighPcode/MacroBuilder back-pointer)
+// CompilerHost callbacks for SleighPcode and MacroBuilder
 // ===========================================================================
 
 /// C++ `UNIQUE_CROSSBUILD_POSITION` / `UNIQUE_CROSSBUILD_NUMBITS`
@@ -1926,7 +1942,7 @@ fn pcode_opc_to_opcode(opc: PcodeOpc) -> OpCode {
 }
 
 // ===========================================================================
-// WS4c: the p-code section RTL build path
+// P-code section RTL construction
 //
 // Inherent methods backing the parser's p-code-section actions, plus the
 // per-constructor section finalize (finalizeSections / forceExportSize /
@@ -2089,22 +2105,13 @@ impl SleighCompile {
     }
 
     fn get_unique_space_rc(&self) -> Rc<AddrSpace> {
-        self.unique_space
-            .clone()
-            .or_else(|| self.base.unique_space())
-            .expect("unique space")
+        PcodeCompile::get_unique_space(self).expect("unique space")
     }
     fn get_constant_space_rc(&self) -> Rc<AddrSpace> {
-        self.constant_space
-            .clone()
-            .or_else(|| self.base.constant_space())
-            .expect("constant space")
+        PcodeCompile::get_constant_space(self).expect("constant space")
     }
     fn get_default_code_space_rc(&self) -> Rc<AddrSpace> {
-        self.default_space
-            .clone()
-            .or_else(|| self.base.default_code_space())
-            .expect("default code space")
+        PcodeCompile::get_default_space(self).expect("default code space")
     }
 
     // -----------------------------------------------------------------------
@@ -2565,16 +2572,6 @@ impl SleighCompile {
             }
         }
     }
-    fn symbol_varnode_size(&self, sym: SymbolId) -> i32 {
-        self.base
-            .symtab()
-            .find_symbol_by_id(sym)
-            .map(|s| match s.kind() {
-                SymbolKind::Varnode(v) => v.get_size(),
-                _ => 0,
-            })
-            .unwrap_or(0)
-    }
     fn space_symbol_space(&mut self, sym: SymbolId) -> Rc<AddrSpace> {
         self.base
             .symtab()
@@ -2665,20 +2662,12 @@ impl SleighCompile {
     /// (slgh_compile.cc:3044).
     pub fn define_invisible_operand(&mut self, sym: SymbolId) -> Option<u32> {
         let curct = self.curct?;
-        let (table_id, ct_idx) = self.ctmap[curct as usize];
-        let index = self.constructor_mut(table_id, ct_idx).get_num_operands();
+        let ctor = self.constructor_refs[curct as usize];
+        let index = self.constructor(ctor).get_num_operands();
         let name = self.symbol_name(sym);
-        // new OperandSymbol(name, index, curct)
-        let opsym = SleighSymbol::new_operand(
-            &name,
-            index,
-            kuna_sleigh::slghsymbol::ConstructorRef {
-                table_id,
-                ct_id: ct_idx,
-            },
-        );
+        let opsym = SleighSymbol::new_operand(&name, index, ctor);
         let opid = self.add_sleigh_symbol(opsym);
-        self.constructor_mut(table_id, ct_idx).add_invisible_operand(opid);
+        self.constructor_mut(ctor).add_invisible_operand(opid);
         let res = self.arena.alloc(PatternEquation::Operand { index });
         // Define the operand from the triple symbol.
         let tp = self
@@ -2855,7 +2844,7 @@ impl SleighCompile {
             let oper = SleighSymbol::new_operand(
                 p,
                 i as i32,
-                kuna_sleigh::slghsymbol::ConstructorRef {
+                ConstructorRef {
                     table_id: u32::MAX,
                     ct_id: 0,
                 },
@@ -2894,13 +2883,14 @@ impl SleighCompile {
             return;
         }
         let _ = kuna_sleigh::pcodecompile::propagate_size(&mut body); // as much as possible
+        let body = Rc::new(body);
         if let Some(s) = self.base.symtab_mut().find_symbol_by_id_mut(sym) {
             if let Some(m) = s.as_macro_mut() {
-                m.set_construct(body.clone());
+                m.set_shared_construct(Rc::clone(&body));
             }
         }
         self.base.symtab_mut().pop_scope(); // Pop local macro variables
-        self.macro_bodies.push(Some(body));
+        self.macro_bodies.push(body);
     }
 
     /// C++ `SleighCompile::createMacroUse(MacroSymbol *sym,vector<ExprTree *> *param)`
@@ -2971,13 +2961,10 @@ impl SleighCompile {
                 continue;
             }
             let parentop = if let Some(curct) = self.curct {
-                let (table_id, ct_idx) = self.ctmap[curct as usize];
+                let ctor = self.constructor_refs[curct as usize];
                 self.base
                     .symtab()
-                    .get_constructor(kuna_sleigh::slghsymbol::ConstructorRef {
-                        table_id,
-                        ct_id: ct_idx,
-                    })
+                    .get_constructor(ctor)
                     .ok()
                     .and_then(|ct| ct.get_operand(hand).ok())
             } else {
@@ -3033,7 +3020,7 @@ impl SleighCompile {
     // per-constructor section finalize + the process()-time crossbuild shift
     // -----------------------------------------------------------------------
 
-    /// C++ `SleighCompile::buildConstructor(...)` (slgh_compile.cc:3698).
+    /// Takes the parser arena's section vector and builds the constructor.
     pub fn build_constructor_ws4c(
         &mut self,
         big: u32,
@@ -3041,86 +3028,36 @@ impl SleighCompile {
         contvec: Option<Vec<u32>>,
         vec: Option<u32>,
     ) {
-        let (table_id, ct_idx) = self.ctmap[big as usize];
-        let mut noerrors = true;
-        if let Some(secvec_id) = vec {
-            noerrors = self.finalize_sections(big, secvec_id);
-            if noerrors {
-                // Attach sections to the Constructor.
-                let main = self.secvec_mut(secvec_id).release_main_section();
-                if let Some(secid) = main {
-                    let ct = self.take_section(secid);
-                    let handle = self.base.add_template(ct);
-                    self.constructor_mut(table_id, ct_idx).set_main_section(handle);
-                }
-                let maxid = self.secvec_ref(secvec_id).get_max_id();
-                for i in 0..maxid {
-                    let named = self.secvec_mut(secvec_id).release_named_section(i);
-                    if let Some(secid) = named {
-                        let ct = self.take_section(secid);
-                        let handle = self.base.add_template(ct);
-                        self.constructor_mut(table_id, ct_idx).set_named_section(handle, i);
-                    }
-                }
-            }
-            // Drop the section vector (C++ delete vec).
-            self.drop_secvec(secvec_id);
-        }
-        if noerrors {
-            let pateq = self.collect_and_prepend_pattern(pateq);
-            if let Some(eq) = pateq {
-                self.constructor_mut(table_id, ct_idx).add_equation(eq);
-            } else {
-                let eps = self.arena.alloc(PatternEquation::Unconstrained {
-                    patex: PatternExpression::Value(PatternValue::ConstantValue(ConstantValue::new(
-                        0,
-                    ))),
-                });
-                self.constructor_mut(table_id, ct_idx).add_equation(eps);
-            }
-            self.constructor_mut(table_id, ct_idx).remove_trailing_space();
-            // Context changes (prepended from the with-stack, then this ctor's).
-            let mut contvec = self.collect_and_prepend_context(contvec);
-            if !contvec.is_empty() {
-                let changes: Vec<ContextChange> =
-                    contvec.drain(..).map(|id| self.take_context_change(id)).collect();
-                self.constructor_mut(table_id, ct_idx).add_context(changes);
-            }
-        }
-        self.base.symtab_mut().pop_scope(); // In all cases pop scope
+        let sections = vec.map(|id| self.take_secvec(id));
+        self.build_constructor(big, pateq, contvec, sections);
     }
 
     /// C++ `WithBlock::collectAndPrependContext` (slgh_compile.hh): prepend each
     /// with-block's context changes (outermost first) to this ctor's.
-    fn collect_and_prepend_context(&mut self, contvec: Option<Vec<u32>>) -> Vec<u32> {
-        let mut res: Vec<u32> = Vec::new();
-        // C++ iterates withstack front-to-back, prepending each block's context
-        // (the stack is pushed inner-last, so iterate from the bottom).
-        for block in &self.withstack {
-            for cc in &block.contvec {
-                let id = self.contextchange_arena.len() as u32;
-                self.contextchange_arena.push(Some(cc.clone()));
-                res.push(id);
-            }
+    fn collect_and_prepend_context(&mut self, contvec: Option<Vec<u32>>) -> Vec<ContextChange> {
+        let mut changes: Vec<_> = self
+            .withstack
+            .iter()
+            .flat_map(|block| block.contvec.iter().cloned())
+            .collect();
+        if let Some(local) = contvec {
+            changes.extend(local.into_iter().map(|id| self.take_context_change(id)));
         }
-        if let Some(v) = contvec {
-            res.extend(v);
-        }
-        res
+        changes
     }
 
     /// C++ `SleighCompile::finalizeSections(Constructor *big,SectionVector *vec)`
     /// (slgh_compile.cc:3436).
-    fn finalize_sections(&mut self, big: u32, secvec_id: u32) -> bool {
-        let (table_id, ct_idx) = self.ctmap[big as usize];
-        let parent = self.constructor_parent(table_id, ct_idx);
+    fn finalize_sections(&mut self, big: u32, sections: &SectionVector) -> bool {
+        let ctor = self.constructor_refs[big as usize];
+        let parent = self.constructor_parent(ctor);
         let root = self.base.get_root();
         let mut errors: Vec<String> = Vec::new();
 
-        let mut cur = self.secvec_ref(secvec_id).get_main_pair();
+        let mut cur = sections.get_main_pair();
         let mut i: i32 = -1;
         let mut sectionstring = String::from("   Main section: ");
-        let max = self.secvec_ref(secvec_id).get_max_id();
+        let max = sections.get_max_id();
         loop {
             let errstring = self
                 .base
@@ -3133,8 +3070,8 @@ impl SleighCompile {
                 if !self.expand_macros(&mut body) {
                     errors.push(format!("{sectionstring}Could not expand macros"));
                 }
-                let operand_ids = self.constructor_operands(table_id, ct_idx);
-                let mut check = self.base.symtab().mark_subtable_operands(&operand_ids);
+                let operand_ids = self.constructor_operands(ctor);
+                let mut check = self.base.symtab().mark_subtable_operands(operand_ids);
                 let cs = self.get_constant_space_rc();
                 let res = body.fillin_build(&mut check, &cs);
                 if res == 1 {
@@ -3177,9 +3114,9 @@ impl SleighCompile {
                     .unwrap_or(0);
                 if delay != 0 {
                     if root != parent {
-                        let loc = self.ctor_loc.get(&big).cloned();
+                        let loc = self.constructor_location(ctor);
                         self.report_warning_loc(
-                            loc.as_ref(),
+                            Some(&loc),
                             "Delay slot used in non-root constructor",
                         );
                     }
@@ -3194,7 +3131,7 @@ impl SleighCompile {
                 if i >= max {
                     break;
                 }
-                cur = self.secvec_ref(secvec_id).get_named_pair(i);
+                cur = sections.get_named_pair(i);
                 if cur.section.is_some() {
                     break;
                 }
@@ -3207,12 +3144,12 @@ impl SleighCompile {
             sectionstring = format!("   {} section: ", String::from_utf8_lossy(&nm));
         }
         if !errors.is_empty() {
-            let loc = self.ctor_loc.get(&big).cloned();
+            let loc = self.constructor_location(ctor);
             let mut info = String::from("in ");
-            self.constructor_print_info(table_id, ct_idx, &mut info);
-            self.report_error_loc(loc.as_ref(), &info);
+            self.constructor_print_info(ctor, &mut info);
+            self.report_error_loc(Some(&loc), &info);
             for e in &errors {
-                self.report_error_loc(loc.as_ref(), e);
+                self.report_error_loc(Some(&loc), e);
             }
             return false;
         }
@@ -3261,16 +3198,9 @@ impl SleighCompile {
         for op in oldops {
             if op.get_opcode() == MACROBUILD {
                 let index = op.get_in(0).get_offset().get_real() as usize;
-                if index >= self.macro_bodies.len() {
+                let Some(macro_tpl) = self.macro_bodies.get(index).cloned() else {
                     *ctpl.get_opvec_mut() = newvec;
                     return false;
-                }
-                let macro_tpl = match &self.macro_bodies[index] {
-                    Some(m) => m.clone(),
-                    None => {
-                        *ctpl.get_opvec_mut() = newvec;
-                        return false;
-                    }
                 };
                 let labelbase = ctpl.num_labels();
                 let haserror = {
@@ -3309,51 +3239,11 @@ impl SleighCompile {
         // mirror above must be written through so the sla header's `uniqmask`
         // attribute is emitted (encode reads SleighBase::unique_allocatemask).
         self.base.set_unique_allocatemask(self.unique_allocatemask);
-        // Gather every constructor's template handles (main + named).
-        let mut handles: Vec<ConstructTplHandle> = Vec::new();
-        let mut subtables: Vec<SymbolId> = Vec::new();
         if let Some(root) = self.base.get_root() {
-            subtables.push(root);
+            self.shift_unique_table(root);
         }
-        subtables.extend(self.tables.iter().copied());
-        for table_id in subtables {
-            let numconst = self
-                .base
-                .symtab()
-                .find_symbol_by_id(table_id)
-                .and_then(|s| s.as_subtable())
-                .map(|st| st.get_num_constructors())
-                .unwrap_or(0);
-            for j in 0..numconst {
-                let (templ, named): (Option<ConstructTplHandle>, Vec<Option<ConstructTplHandle>>) =
-                    {
-                        let st = self
-                            .base
-                            .symtab()
-                            .find_symbol_by_id(table_id)
-                            .and_then(|s| s.as_subtable())
-                            .expect("subtable");
-                        let ct = st.get_constructor(j as u32).expect("constructor");
-                        let named: Vec<Option<ConstructTplHandle>> = (0..ct.get_num_sections())
-                            .map(|k| ct.get_named_templ(k))
-                            .collect();
-                        (ct.get_templ(), named)
-                    };
-                if let Some(h) = templ {
-                    handles.push(h);
-                }
-                for n in named.into_iter().flatten() {
-                    handles.push(n);
-                }
-            }
-        }
-        for h in handles {
-            // Take the template out, shift, put it back (avoids aliasing).
-            if let Some(tpl) = self.base.template_mut(h) {
-                let mut owned = std::mem::take(tpl);
-                shift_unique_construct(&mut owned);
-                *self.base.template_mut(h).unwrap() = owned;
-            }
+        for i in 0..self.tables.len() {
+            self.shift_unique_table(self.tables[i]);
         }
         let mut ubase = self.base.get_unique_base();
         ubase += 1 << UNIQUE_CROSSBUILD_POSITION;
@@ -3361,37 +3251,43 @@ impl SleighCompile {
         self.base.set_unique_base(ubase);
     }
 
+    fn shift_unique_table(&mut self, table_id: SymbolId) {
+        for ct_id in 0..self.constructor_count(table_id) {
+            let ctor = ConstructorRef { table_id, ct_id };
+            if let Some(handle) = self.constructor(ctor).get_templ() {
+                if let Some(tpl) = self.base.template_mut(handle) {
+                    shift_unique_construct(tpl);
+                }
+            }
+            let sections = self.constructor(ctor).get_num_sections();
+            for section in 0..sections {
+                if let Some(handle) = self.constructor(ctor).get_named_templ(section) {
+                    if let Some(tpl) = self.base.template_mut(handle) {
+                        shift_unique_construct(tpl);
+                    }
+                }
+            }
+        }
+    }
+
     // ---- small constructor helpers ----
 
-    fn constructor_parent(&self, table_id: SymbolId, ct_idx: u32) -> Option<SymbolId> {
+    fn constructor_parent(&self, ctor: ConstructorRef) -> Option<SymbolId> {
         self.base
             .symtab()
-            .get_constructor(kuna_sleigh::slghsymbol::ConstructorRef {
-                table_id,
-                ct_id: ct_idx,
-            })
+            .get_constructor(ctor)
             .ok()
             .and_then(|ct| ct.get_parent())
     }
-    fn constructor_operands(&self, table_id: SymbolId, ct_idx: u32) -> Vec<SymbolId> {
+    fn constructor_operands(&self, ctor: ConstructorRef) -> &[SymbolId] {
         self.base
             .symtab()
-            .get_constructor(kuna_sleigh::slghsymbol::ConstructorRef {
-                table_id,
-                ct_id: ct_idx,
-            })
-            .map(|ct| ct.get_operands().to_vec())
+            .get_constructor(ctor)
+            .map(|ct| ct.get_operands())
             .unwrap_or_default()
     }
-    fn constructor_print_info(&self, table_id: SymbolId, ct_idx: u32, out: &mut String) {
-        if let Ok(ct) = self
-            .base
-            .symtab()
-            .get_constructor(kuna_sleigh::slghsymbol::ConstructorRef {
-                table_id,
-                ct_id: ct_idx,
-            })
-        {
+    fn constructor_print_info(&self, ctor: ConstructorRef, out: &mut String) {
+        if let Ok(ct) = self.base.symtab().get_constructor(ctor) {
             let _ = ct.print_info(out, self.base.symtab());
         }
     }
@@ -3402,16 +3298,10 @@ impl CompilerHost for SleighCompile {
         SleighCompile::get_unique_addr(self)
     }
     fn get_unique_space(&self) -> Rc<AddrSpace> {
-        self.unique_space
-            .clone()
-            .or_else(|| self.base.unique_space())
-            .expect("unique space")
+        self.get_unique_space_rc()
     }
     fn get_constant_space(&self) -> Rc<AddrSpace> {
-        self.constant_space
-            .clone()
-            .or_else(|| self.base.constant_space())
-            .expect("constant space")
+        self.get_constant_space_rc()
     }
     fn get_location(&self, symbol_name: &[u8]) -> Option<Location> {
         let id = self.base.symtab().find_symbol(symbol_name)?.get_id();
@@ -3442,15 +3332,8 @@ impl CompilerHost for SleighCompile {
 }
 
 // ===========================================================================
-// PcodeCompile impl (WS4c): the driver IS the p-code compiler.
-//
-// In C++ `SleighPcode : public PcodeCompile` holds a back-pointer to the
-// `SleighCompile`.  The Rust port collapses that into the driver: `SleighCompile`
-// implements `PcodeCompile` directly, supplying the abstract hooks from its own
-// state (the unique base / label count / enforce-local flag live in
-// `self.pcode`; the spaces from the base; `addSymbol`/`getLocation`/reporting
-// from the driver).  This gives the driver all the rich `create_op`/`create_store`/
-// `assign_bit_range`/... machinery (pcodecompile.cc) for the section actions.
+// P-code builders use the driver's symbol and space state. Temporary allocation
+// uses SleighBase; label counts and local-name policy use SleighPcode.
 // ===========================================================================
 
 impl PcodeCompile for SleighCompile {
@@ -3506,7 +3389,7 @@ impl PcodeCompile for SleighCompile {
 }
 
 // ===========================================================================
-// ScannerHost + ParserActions impls (WS2 driver boundary)
+// ScannerHost and ParserActions implementations
 // ===========================================================================
 
 impl ScannerHost for SleighCompile {
@@ -3564,15 +3447,6 @@ impl ScannerHost for SleighCompile {
             SymbolType::Dummy => return None,
         })
     }
-}
-
-/// The unported p-code section path; reaching one means a spec with semantic RTL
-/// hit the WS4b landed-subset boundary.
-fn pcode_unported(name: &str) -> ! {
-    panic!(
-        "WS4b landed subset: p-code action `{name}` requires the unported \
-         ConstructTpl/section path (slgh_compile.cc / pcodecompile.cc)"
-    )
 }
 
 impl ParserActions for SleighCompile {
@@ -3657,8 +3531,7 @@ impl ParserActions for SleighCompile {
         SleighCompile::new_operand(self, ct, nm)
     }
     fn is_in_root(&self, ct: u32) -> bool {
-        let (table_id, _) = self.ctmap[ct as usize];
-        self.base.get_root() == Some(table_id)
+        self.base.get_root() == Some(self.constructor_refs[ct as usize].table_id)
     }
     fn build_constructor(&mut self, big: u32, pateq: Option<u32>, contvec: Option<Vec<u32>>, vec: u32) {
         let v = if vec == u32::MAX { None } else { Some(vec) };

@@ -1,31 +1,9 @@
-//! Port of `decompiler/cpp/float.{hh,cc}` -- FloatFormat (item
-//! w1-num-float-multiprec).
+//! Floating-point encodings and p-code arithmetic, ported from Ghidra's float.cc.
 //!
-//! Encoding information for a single floating-point format.  This supports
-//! manipulation of a single floating-point encoding: an encoding can be
-//! converted to and from the host format, and convenience methods allow
-//! p-code floating-point operations to be performed on natively encoded
-//! operands.  This follows the IEEE 754 standards.
-//!
-//! Host-semantics notes (tests/golden/vectors/README.md caveats):
-//!
-//! - Exactly where the C++ computes on host `double`, this port computes on
-//!   host `f64` (same IEEE 754 binary64 arithmetic, same hardware ops on the
-//!   oracle's x86 host).  IEEE-754 leaves the *sign* of a NaN produced by an
-//!   invalid operation (`sqrt(-1)`, `0/0`, `inf-inf`, `0*inf`, …) host-defined:
-//!   the x86 FPU yields the negative "real indefinite" QNaN (`0xffc00000`),
-//!   Apple-Silicon/ARM the positive default NaN (`0x7fc00000`); Ghidra's C++
-//!   inherits whichever the build host produces (float.cc `signbit(host)`).
-//!   To stay deterministic across build hosts *and* byte-identical to the
-//!   Linux/x86 golden oracle everywhere, the arithmetic ops pin the x86 sign
-//!   for a *generated* NaN (see [`FloatFormat::encode_generated`]); a
-//!   *propagated* NaN (an input was already NaN) keeps its host-deterministic
-//!   sign.  The payload is canonicalized by `get_nan_encoding`.
-//! - `opTrunc`'s `(intb)double` cast is the host x86 `cvttsd2si` cast, NOT
-//!   Rust's saturating `as`; see [`host_double_to_int64`].
-//! - C++ `ldexp`/`frexp` have no Rust std equivalent; [`ldexp`] / [`frexp`]
-//!   are bit-exact transcriptions of the standard (musl-style) constructions,
-//!   correctly rounded like the libm functions the oracle calls.
+//! Finite arithmetic uses host f64 values. NaNs have canonical payloads: a
+//! propagated NaN takes the first NaN operand's sign; an invalid operation
+//! produces a negative quiet NaN, matching the pinned x86 golden vectors.
+//! Integer conversion follows x86 cvttsd2si rather than Rust's saturating cast.
 
 use kuna_base::cfmt;
 
@@ -443,14 +421,11 @@ impl FloatFormat {
             if frac == 0 {
                 // Floating point infinity
                 let infinity = f64::INFINITY;
-                return (
-                    if sgn { -infinity } else { infinity },
-                    floatclass::infinity,
-                );
+                return (if sgn { -infinity } else { infinity }, floatclass::infinity);
             }
             // encoding is "Not a Number" NaN
-            let nan = f64::NAN;
-            return (if sgn { -nan } else { nan }, floatclass::nan); // Sign is usually ignored
+            let nan = f64::NAN.copysign(if sgn { -1.0 } else { 1.0 });
+            return (nan, floatclass::nan);
         } else {
             tp = floatclass::normalized;
         }
@@ -475,7 +450,11 @@ impl FloatFormat {
         // (mixed signed/unsigned, promoting lowbitpos to unsigned); lowbitpos
         // is always in [11, 64] at the call sites, so a plain signed compare
         // is equivalent.
-        let lowbitmask: u64 = if lowbitpos < 8 * 8 { 1u64 << lowbitpos } else { 0 };
+        let lowbitmask: u64 = if lowbitpos < 8 * 8 {
+            1u64 << lowbitpos
+        } else {
+            0
+        };
         let midbitmask: u64 = 1u64 << (lowbitpos - 1);
         let epsmask = midbitmask - 1;
         let odd = (*signif & lowbitmask) != 0;
@@ -720,50 +699,53 @@ impl FloatFormat {
         u64::from(tp == floatclass::nan)
     }
 
-    /// Encode a host FP result, pinning the sign of an *invalid-operation-
-    /// generated* NaN to the x86 "real indefinite" (`0xffc00000` / sign set),
-    /// so the engine is deterministic across build hosts and byte-identical to
-    /// the Linux/x86 golden oracle everywhere (see the module header).
-    ///
-    /// `input_was_nan` is true when any operand already decoded to a NaN — then
-    /// the result is a *propagated* NaN whose sign is host-deterministic (it
-    /// follows the operand: the `0x7fc00000` propagation rows of the golden
-    /// vectors), so it is left untouched.  On the x86 oracle host the fixup is a
-    /// no-op (the host already yields `0xffc00000`), so x86 output is unchanged.
-    fn encode_generated(&self, host: f64, input_was_nan: bool) -> u64 {
-        let enc = self.get_encoding(host);
-        if !input_was_nan && self.get_class(enc) == floatclass::nan {
-            return self.get_nan_encoding(true);
+    fn encode_generated(&self, host: f64) -> u64 {
+        let encoding = self.get_encoding(host);
+        if self.get_class(encoding) == floatclass::nan {
+            self.get_nan_encoding(true)
+        } else {
+            encoding
         }
-        enc
+    }
+
+    fn evaluate_unary(&self, a: u64, operation: impl FnOnce(f64) -> f64) -> u64 {
+        let (value, class) = self.get_host_float(a);
+        if class == floatclass::nan {
+            return self.get_nan_encoding(self.extract_sign(a));
+        }
+        self.encode_generated(operation(value))
+    }
+
+    fn evaluate_binary(&self, a: u64, b: u64, operation: impl FnOnce(f64, f64) -> f64) -> u64 {
+        let (left, left_class) = self.get_host_float(a);
+        if left_class == floatclass::nan {
+            return self.get_nan_encoding(self.extract_sign(a));
+        }
+        let (right, right_class) = self.get_host_float(b);
+        if right_class == floatclass::nan {
+            return self.get_nan_encoding(self.extract_sign(b));
+        }
+        self.encode_generated(operation(left, right))
     }
 
     /// Addition (+).
     pub fn op_add(&self, a: u64, b: u64) -> u64 {
-        let (val1, t1) = self.get_host_float(a);
-        let (val2, t2) = self.get_host_float(b);
-        self.encode_generated(val1 + val2, t1 == floatclass::nan || t2 == floatclass::nan)
+        self.evaluate_binary(a, b, |left, right| left + right)
     }
 
     /// Division (/).
     pub fn op_div(&self, a: u64, b: u64) -> u64 {
-        let (val1, t1) = self.get_host_float(a);
-        let (val2, t2) = self.get_host_float(b);
-        self.encode_generated(val1 / val2, t1 == floatclass::nan || t2 == floatclass::nan)
+        self.evaluate_binary(a, b, |left, right| left / right)
     }
 
     /// Multiplication (*).
     pub fn op_mult(&self, a: u64, b: u64) -> u64 {
-        let (val1, t1) = self.get_host_float(a);
-        let (val2, t2) = self.get_host_float(b);
-        self.encode_generated(val1 * val2, t1 == floatclass::nan || t2 == floatclass::nan)
+        self.evaluate_binary(a, b, |left, right| left * right)
     }
 
     /// Subtraction (-).
     pub fn op_sub(&self, a: u64, b: u64) -> u64 {
-        let (val1, t1) = self.get_host_float(a);
-        let (val2, t2) = self.get_host_float(b);
-        self.encode_generated(val1 - val2, t1 == floatclass::nan || t2 == floatclass::nan)
+        self.evaluate_binary(a, b, |left, right| left - right)
     }
 
     /// Unary negate.
@@ -780,8 +762,7 @@ impl FloatFormat {
 
     /// Square root (sqrt).
     pub fn op_sqrt(&self, a: u64) -> u64 {
-        let (val, tp) = self.get_host_float(a);
-        self.encode_generated(val.sqrt(), tp == floatclass::nan)
+        self.evaluate_unary(a, f64::sqrt)
     }
 
     /// Convert integer to floating-point: `a` is a signed integer value,
@@ -811,26 +792,91 @@ impl FloatFormat {
 
     /// Ceiling (ceil).
     pub fn op_ceil(&self, a: u64) -> u64 {
-        let (val, _type) = self.get_host_float(a);
-        self.get_encoding(val.ceil())
+        self.evaluate_unary(a, f64::ceil)
     }
 
     /// Floor (floor).
     pub fn op_floor(&self, a: u64) -> u64 {
-        let (val, _type) = self.get_host_float(a);
-        self.get_encoding(val.floor())
+        self.evaluate_unary(a, f64::floor)
     }
 
-    /// Round.
+    /// Round half away from zero.
     pub fn op_round(&self, a: u64) -> u64 {
-        let (val, _type) = self.get_host_float(a);
-        self.get_encoding(val.round()) // round half away from zero
+        self.evaluate_unary(a, f64::round)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nan_operands_keep_their_sign_and_use_canonical_payloads() {
+        let binary: [fn(&FloatFormat, u64, u64) -> u64; 4] = [
+            FloatFormat::op_add,
+            FloatFormat::op_sub,
+            FloatFormat::op_mult,
+            FloatFormat::op_div,
+        ];
+        let unary: [fn(&FloatFormat, u64) -> u64; 4] = [
+            FloatFormat::op_sqrt,
+            FloatFormat::op_ceil,
+            FloatFormat::op_floor,
+            FloatFormat::op_round,
+        ];
+        for (size, positive, negative, positive_signal, negative_signal, one) in [
+            (
+                4,
+                0x7fc0_0000,
+                0xffc0_0000,
+                0x7f80_0001,
+                0xff80_0001,
+                0x3f80_0000,
+            ),
+            (
+                8,
+                0x7ff8_0000_0000_0000,
+                0xfff8_0000_0000_0000,
+                0x7ff0_0000_0000_0001,
+                0xfff0_0000_0000_0001,
+                0x3ff0_0000_0000_0000,
+            ),
+        ] {
+            let format = FloatFormat::new(size);
+            for operation in binary {
+                for (a, b, expected) in [
+                    (positive, negative, positive),
+                    (negative, positive, negative),
+                    (positive_signal, negative_signal, positive),
+                    (negative_signal, positive_signal, negative),
+                    (one, positive_signal, positive),
+                    (one, negative_signal, negative),
+                    (positive_signal, one, positive),
+                    (negative_signal, one, negative),
+                ] {
+                    assert_eq!(
+                        operation(&format, a, b),
+                        expected,
+                        "size={size}, {a:#x}, {b:#x}"
+                    );
+                }
+            }
+            for operation in unary {
+                for (input, expected) in [
+                    (positive, positive),
+                    (negative, negative),
+                    (positive_signal, positive),
+                    (negative_signal, negative),
+                ] {
+                    assert_eq!(
+                        operation(&format, input),
+                        expected,
+                        "size={size}, {input:#x}"
+                    );
+                }
+            }
+        }
+    }
 
     // Edge tests owned by this item.  The C++ TEST(...) suites of
     // testfloatemu.cc are ported by a different item; names here are
@@ -932,7 +978,7 @@ mod tests {
         // sqrt(-1) is the negative default QNaN; sqrt(-0) is -0.
         assert_eq!(fmt4.op_sqrt(neg_one), NQNAN);
         assert_eq!(fmt4.op_sqrt(0x8000_0000), 0x8000_0000);
-        // NaN propagates (canonicalized, sign preserved through the host)
+        // NaN propagation preserves the input sign and canonicalizes the payload.
         assert_eq!(fmt4.op_add(QNAN, one), QNAN);
         assert_eq!(fmt4.op_nan(QNAN), 1);
         assert_eq!(fmt4.op_nan(PINF), 0);

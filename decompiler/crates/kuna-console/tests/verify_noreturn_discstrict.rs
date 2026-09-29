@@ -30,12 +30,6 @@
 //! is why the `tests/stages/kuna-noreturn-discstrict.xml` datatest can only prove
 //! the option is wired, and the behavior lives here (the same split
 //! `verify_noreturn_error.rs` / `ghangr-noreturn-error.xml` use).
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -59,26 +53,16 @@ enum Tally {
     Legacy,
 }
 
-/// Bootstrap the fixture with the Listing + discovered-no-return consumer on,
-/// select the tally, decompile `func`, and return the captured C (`None` ⇒
-/// specs-less skip).
-fn decompile(func: &str, tally: Tally) -> Option<String> {
+/// Bootstrap the fixture with the Listing + discovered-no-return consumer on, select the
+/// tally, decompile `func`, and return the captured C.
+fn decompile(func: &str, tally: Tally) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_noreturn_discstrict: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The live-CLI ordering: every `option` line precedes `read symbols` (the
     // deferred analysis commit), so the Listing build + the consumer see the flags.
@@ -104,16 +88,14 @@ fn decompile(func: &str, tally: Tally) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// THE PAYOFF: three undecodable bytes must not delete `usesret`'s live tail.
 #[test]
 fn decode_gap_no_longer_forges_a_noreturn_verdict() {
-    let Some(strict) = decompile("usesret", Tally::Strict) else {
-        return; // specs-less skip
-    };
-    let legacy = decompile("usesret", Tally::Legacy).expect("second bootstrap succeeds");
+    let strict = decompile("usesret", Tally::Strict);
+    let legacy = decompile("usesret", Tally::Legacy);
 
     eprintln!("---- usesret (default / strict) ----\n{strict}");
     eprintln!("---- usesret (noreturn_discstrict off / legacy) ----\n{legacy}");
@@ -145,10 +127,8 @@ fn decode_gap_no_longer_forges_a_noreturn_verdict() {
 /// never in question; what changes is whether the tally believes it returns.
 #[test]
 fn the_victim_returns_a_value_under_both_tallies() {
-    let Some(strict) = decompile("retseven", Tally::Strict) else {
-        return; // specs-less skip
-    };
-    let legacy = decompile("retseven", Tally::Legacy).expect("second bootstrap succeeds");
+    let strict = decompile("retseven", Tally::Strict);
+    let legacy = decompile("retseven", Tally::Legacy);
     for (name, body) in [("strict", &strict), ("legacy", &legacy)] {
         assert!(
             body.contains("return 7"),
@@ -162,10 +142,8 @@ fn the_victim_returns_a_value_under_both_tallies() {
 /// default keeps the whole call chain.
 #[test]
 fn the_forged_fact_propagates_to_the_whole_call_chain() {
-    let Some(strict) = decompile("_start", Tally::Strict) else {
-        return; // specs-less skip
-    };
-    let legacy = decompile("_start", Tally::Legacy).expect("second bootstrap succeeds");
+    let strict = decompile("_start", Tally::Strict);
+    let legacy = decompile("_start", Tally::Legacy);
     eprintln!("---- _start (default / strict) ----\n{strict}");
     eprintln!("---- _start (legacy) ----\n{legacy}");
 
@@ -196,16 +174,8 @@ fn a_genuine_noreturn_wrapper_is_still_discovered_under_the_default() {
         .to_str()
         .unwrap()
         .to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_noreturn_discstrict: skipping (bootstrap failed): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // Defaults everywhere except the Listing gates: `noreturn_discstrict` is ON.
     prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
     prog.arch_mut().set_kuna_option("noreturn_disc", "on").expect("noreturn_disc flips on");

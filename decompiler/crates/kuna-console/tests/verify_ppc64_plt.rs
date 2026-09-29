@@ -24,13 +24,6 @@
 //! standard ELFv2 veneer the decoder recognizes:
 //! `std r2,24(r1); addis r12,r2,off@ha; ld r12,off@l(r12); mtctr r12; bctr`,
 //! where the loaded `.plt` slot is `TOC_base(.got+0x8000) + (off@ha<<16) + off@l`.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built PowerPC `ppc_64_le.sla` under `specs/`
-//! (gitignored; `make specs`). When absent the bootstrap fails; the test prints
-//! that and returns early (a specs-less CI is a visible skip, never a false
-//! green).
 
 use std::path::PathBuf;
 
@@ -54,25 +47,13 @@ fn ppc64_plt_calls_are_named_in_decompiled_c() {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = plt_ppc64le();
-    let bin = match bin.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
     // The arch is auto-detected from the ELF machine (PowerPC64, little-endian);
     // the loader picks the `PowerPC:LE:64:default` language and bootstrap resolves
     // `ppc_64_le.sla`.
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_ppc64_plt: skipping (bootstrap failed, build the PowerPC `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The PLT imports are resolvable as functions (the elf_plt PPC64 markup), and
     // the local `.symtab` `main` resolves.

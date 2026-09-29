@@ -1,75 +1,9 @@
-//! Port of `decompiler/cpp/kuna_memsetsequence.{cc,hh}` — constant-fill
-//! (memset/bzero) recovery sub-stage (kuna GH-9230/1537, S5 constsequence).
+//! Recover constant-fill COPY runs as `builtin_memset`.
 //!
-//! This extends the S5 "constsequence" group ([`constseq`](crate::constseq)):
-//! the existing string recovery (`RuleStringCopy`/`RuleStringStore`) only fires
-//! for runs that spell a printable STRING, so an unrolled `memset`/`bzero`
-//! (clang's inlined `movaps xmm0,N(rsp)` run, or an all-zero `bzero`) renders as
-//! dozens of individual `buf[0xNN] = '\0';` element stores instead of one
-//! `builtin_memset` (GH-9230).  Gated default-on by the arch flag
-//! `memset_recover` (option `memsetrecover on|off`, shipped default `on`);
-//! inert when off, byte-identical to upstream.
-//!
-//! [`MemsetSequence`] derives from `StringSequence` to reuse its
-//! pointer-construction (`constructTypedPointer`) and COPY teardown
-//! (`removeCopyOps`).  In the Rust port — where there is no inheritance and the
-//! `StringSequence` driver is itself a deferred constseq seam (see below) — it
-//! **composes** the ported [`ArraySequence`] base
-//! ([`constseq`](crate::constseq) *Cross-pack visibility* note: the base fields
-//! and methods are `pub(crate)` precisely so this module can build on them).
-//!
-//! # What this port covers
-//!
-//! The reusable, output-determining **single-value-fill detection** is fully
-//! ported:
-//!
-//! * [`MemsetSequence::form_fill_run`] — sort the collected constant COPYs by
-//!   offset, verify they tile a contiguous byte region (no gap/overlap) holding
-//!   ONE fill byte, require a RUN (at least 2 COPYs) and a minimum 16-byte
-//!   footprint, then truncate `move_ops` to the contiguous run and record
-//!   `fill_value`/`fill_count`.  This is the routine that distinguishes a memset
-//!   from a string (and from a lone NUL terminator), so it is the core that
-//!   decides whether GH-9230 fires.
-//!
-//! # The live recovery path (now ported, GH-9230/1537)
-//!
-//! The *build*/*transform*/*teardown* halves the C++ `MemsetSequence : public
-//! StringSequence` inherits are now ported on the shared [`StringSequence`]
-//! machinery — the same machinery `RuleStringCopy` drives — exposed as
-//! `pub(crate)` entry points in `constseq.rs`:
-//!
-//! * [`StringSequence::build_for_fill`](crate::constseq) — the containing-array
-//!   type-walk + the constant COPY collection (`collect_fill_run`, recording each
-//!   COPY's byte stride in the `WriteNode` slot).
-//! * [`detect_fill_run`] — the single-value-fill detection (`formFillRun`),
-//!   shared with [`MemsetSequence::form_fill_run`] (the detection model the unit
-//!   tests drive via `from_collected`).
-//! * `StringSequence::build_memset` — the `builtin_memset(dest,value,count)`
-//!   CALLOTHER (`registerBuiltin(BUILTIN_MEMSET)` is wired at arch init) using the
-//!   inherited `constructTypedPointer`; `StringSequence::transform_memset` then
-//!   reuses `removeCopyOps` to tear down the COPY run.
-//! * [`RuleMemsetCopy::apply_op`] — the live driver (the `getTypeDefFacing`/
-//!   `isCharPrint`/`isOpaqueString`/`isAddrTied` guards + `Scope::queryContainer`,
-//!   then `build_for_fill` → `detect_fill_run` → `transform_memset`), mirroring
-//!   `RuleStringCopy::apply_op`.
-//!
-//! The remaining stub is [`MemsetSequence::collect_fill_run`] (the
-//! direct-construction `collectFillRun`); the live path collects via
-//! `StringSequence::build_for_fill` instead, so it is unused.
-//!
-//! ## Gate wiring — STUB(W4)
-//!
-//! As in the sibling kuna rules, the C++
-//! `if (!data.getArch()->memset_recover) return 0;` gate is resolved at
-//! construction (the seam `Funcdata::glb` does carry `memset_recover`).  W8
-//! threads the live `Architecture::memset_recover`; [`specs`] uses the shipped
-//! default (`on` => `memset_recover = true`, kuna DIV-2 default-on, GH-9230/1537).
-
-// The collection/build/transform/driver halves are seam-blocked stubs until the
-// W4 symbol table + W6 type factory land (see module docs); their helper inputs
-// read as unused in the interim.  This mirrors the `#![allow(dead_code)]` the
-// merged `constseq` base carries for the same reason.
-#![allow(dead_code)]
+//! [`RuleMemsetCopy`] collects array writes through [`StringSequence`], tests
+//! the shared fill predicate, then reuses its pointer construction and teardown.
+//! `memsetrecover` controls the live rule. [`MemsetSequence`] is retained as a
+//! detection model; its legacy direct constructor does not collect IR writes.
 
 use std::rc::Rc;
 
@@ -108,10 +42,8 @@ impl MemsetSequence {
     /// any base state, runs `collectFillRun`, and (if anything was collected)
     /// `formFillRun` (C++ `MemsetSequence::MemsetSequence`).
     ///
-    /// STUB: `collect_fill_run` is seam-blocked (see module docs), so in the
-    /// current port the live driver supplies the collected `move_ops` directly
-    /// via [`MemsetSequence::from_collected`] and this constructor leaves the run
-    /// empty.  The C++ control flow is preserved for restoration.
+    /// This legacy constructor leaves an empty, invalid run. Live recovery
+    /// collects writes through `StringSequence::build_for_fill` instead.
     pub fn new(char_type: Rc<Datatype>, data: &Funcdata) -> MemsetSequence {
         let mut seq = MemsetSequence {
             base: ArraySequence::new(char_type),
@@ -128,33 +60,6 @@ impl MemsetSequence {
         seq
     }
 
-    /// Build a sequence directly from an already-collected COPY run (the
-    /// `move_ops`), then run [`form_fill_run`](MemsetSequence::form_fill_run).
-    ///
-    /// This is the seam bridge for the not-yet-ported [`collect_fill_run`]
-    /// (`collectFillRun` reaches the W4 loc-set/symbol surfaces — see module
-    /// docs).  Each `WriteNode`'s `slot` field holds the COPY byte-size and its
-    /// `op` references the COPY (`getIn(0)` is the constant fill), exactly as the
-    /// C++ `collectFillRun` populates `moveOps`.
-    ///
-    /// `pub(crate)`: [`WriteNode`] is the constseq base's `pub(crate)` type, so
-    /// this seam bridge is in-crate (the live driver and tests build it).
-    pub(crate) fn from_collected(
-        char_type: Rc<Datatype>,
-        move_ops: Vec<WriteNode>,
-        data: &Funcdata,
-    ) -> MemsetSequence {
-        let mut seq = MemsetSequence {
-            base: ArraySequence::new(char_type),
-            fill_value: 0,
-            fill_count: 0,
-        };
-        seq.base.move_ops = move_ops;
-        if !seq.base.move_ops.is_empty() {
-            seq.form_fill_run(data);
-        }
-        seq
-    }
 
     /// Return `true` if a fill run was found (C++ `MemsetSequence::isValidFill`:
     /// `return fillCount != 0;`).
@@ -170,26 +75,11 @@ impl MemsetSequence {
     pub fn fill_count(&self) -> int4 {
         self.fill_count
     }
-    /// The collected/truncated COPY run (read access for the driver/tests).
-    /// `pub(crate)`: returns the constseq base's `pub(crate)` [`WriteNode`].
-    pub(crate) fn move_ops(&self) -> &[WriteNode] {
-        &self.base.move_ops
-    }
 
     /// Collect the contiguous constant COPY run (C++ `MemsetSequence::collectFillRun`).
     ///
-    /// STUB(W4/W6): walks the Symbol's type to the containing array
-    /// (`entry->getSymbol()->getType()`, `getSubType`/`resolveTruncation`), then
-    /// iterates `data.beginLoc(startAddr)..endLoc(endAddr)` — the address-only
-    /// location-set overload — gathering same-block constant uniform-fill COPYs.
-    /// The symbol table (W4) and the address-only loc-set overload (W4 loc-set
-    /// surface) are not yet ported, so this is a documented stub; the live driver
-    /// feeds the collected run through [`from_collected`].  Recorded as a loss.
-    fn collect_fill_run(&mut self, _data: &Funcdata) {
-        // STUB(W4/W6): entry/Symbol::getType + getSubType/resolveTruncation walk,
-        // data.beginLoc(addr)/endLoc(addr) address-only loc-set overload, per-op
-        // block membership, uniform-byte constant check.  Leaves move_ops empty.
-    }
+    /// The legacy model does not scan IR; the live rule uses StringSequence.
+    fn collect_fill_run(&mut self, _data: &Funcdata) {}
 
     /// Detect a single-value constant fill across the collected ops
     /// (C++ `MemsetSequence::formFillRun`) — transcribed.
@@ -208,12 +98,6 @@ impl MemsetSequence {
         }
     }
 
-    // The live `build_memset`/`transform`/`removeCopyOps` (C++
-    // `MemsetSequence::buildMemset`/`transform`) are now ported on the shared
-    // `StringSequence` machinery (`build_for_fill` -> `detect_fill_run` ->
-    // `transform_memset`), driven by `RuleMemsetCopy::apply_op` below.  This
-    // `MemsetSequence` struct remains the detection model (`form_fill_run`) the
-    // unit tests drive directly via `from_collected`.
 }
 
 /// (kuna GH-9230) Recognize a constant-fill run of COPY ops as builtin_memset
@@ -222,7 +106,7 @@ impl MemsetSequence {
 /// Mirrors `RuleStringCopy` but, when `option memsetrecover on`, routes a run of
 /// COPYs writing the SAME constant byte into a char array to builtin_memset.
 pub struct RuleMemsetCopy {
-    /// Resolved `glb->memset_recover` gate (STUB(W4); see module docs).
+    /// Gate supplied by rule registration.
     enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
@@ -252,8 +136,7 @@ impl Rule for RuleMemsetCopy {
         Some(Box::new(RuleMemsetCopy { enabled: self.enabled, group: self.group.clone() }))
     }
 
-    /// C++ `RuleMemsetCopy::applyOp` (`kuna_memsetsequence.cc:188`) — gate +
-    /// structure ported; the seam-blocked body declines.
+    /// Recover a validated constant-fill run, subject to the resolved gate.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         if !self.enabled && !data.get_arch().memset_recover {
             return 0;

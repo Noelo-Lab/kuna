@@ -16,12 +16,6 @@
 //!   was absorbed into `main`'s address-contiguous extent.
 //! * **the fix:** the caller's merged entries seed the walk too, so the descent
 //!   follows `main`'s `bl` and the validator becomes a function.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `ARM` `.sla` under `specs/` (gitignored;
-//! `make specs`). When it is absent the bootstrap fails; the test prints that
-//! and returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -44,30 +38,20 @@ fn fixture() -> PathBuf {
 }
 
 /// Bootstrap the fixture the way every `kuna` driver does on a non-x86-64 image
-/// (DIV-20/DIV-68: the Listing plus the discovery bundle). `None` is a visible
-/// skip when the `.sla` is missing.
-fn bootstrap() -> Option<ConsoleProgram> {
+/// (DIV-20/DIV-68: the Listing plus the discovery bundle).
+fn bootstrap() -> ConsoleProgram {
     let bin = fixture();
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_armdiscseed: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
     prog.arch_mut()
         .set_kuna_option("funcstart_patterns", "on")
         .expect("funcstart_patterns flips on");
     prog.arch_mut().set_kuna_option("aif", "on").expect("aif flips on");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn entries(prog: &ConsoleProgram) -> Vec<(String, u64, u64)> {
@@ -81,9 +65,7 @@ fn entries(prog: &ConsoleProgram) -> Vec<(String, u64, u64)> {
 /// function, and `main` stops where the validator starts.
 #[test]
 fn the_inventory_lists_the_function_main_calls() {
-    let Some(prog) = bootstrap() else {
-        return;
-    };
+    let prog = bootstrap();
     let got = entries(&prog);
     assert!(
         got.iter().any(|&(_, addr, _)| addr == VALIDATOR),
@@ -103,9 +85,7 @@ fn the_inventory_lists_the_function_main_calls() {
 /// that `listing_seeds` cannot recompute.
 #[test]
 fn only_the_committed_entry_seeds_reach_the_validator() {
-    let Some(prog) = bootstrap() else {
-        return;
-    };
+    let prog = bootstrap();
     let bytes = std::fs::read(fixture()).expect("fixture readable");
     let path = fixture().to_str().unwrap().to_string();
     let image =
@@ -162,9 +142,7 @@ fn only_the_committed_entry_seeds_reach_the_validator() {
 /// never becomes a function.
 #[test]
 fn a_committed_entry_outside_the_code_is_not_walked() {
-    let Some(prog) = bootstrap() else {
-        return;
-    };
+    let prog = bootstrap();
     let bytes = std::fs::read(fixture()).expect("fixture readable");
     let path = fixture().to_str().unwrap().to_string();
     let image =

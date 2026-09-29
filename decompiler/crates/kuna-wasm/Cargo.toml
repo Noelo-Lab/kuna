@@ -1,13 +1,5 @@
-# kuna-wasm: a thin, in-process decompiler front-end designed to build for
-# `wasm32-wasip1` and run entirely client-side in the browser (via a WASI shim)
-# — the same in-process path `kuna decompile-all` drives, minus the subprocess
-# CLI layer that cannot cross the wasm boundary.  Also builds natively (the
-# parity oracle: native output must equal the wasm output byte-for-byte).
-#
-# This crate depends only on the existing engine crates and adds no external
-# dependency. It shares the native file frontends' size-based `auto` mode and is
-# covered by the workspace plus native/WASI/browser parity gates. See
-# docs/web-integration.md.
+# Browser/WASI front-end, also built natively for output parity tests.
+# See docs/web-integration.md.
 [package]
 name = "kuna-wasm"
 version.workspace = true
@@ -37,6 +29,9 @@ object.workspace = true
 # (kuna outlang) `sourcelang::detect_compiler` backs the auto language policy:
 # a Rust binary renders as Rust unless the caller names a language.
 kuna-analysis.workspace = true
+
+[dev-dependencies]
+serde_json = "1.0"
 
 [lints]
 workspace = true

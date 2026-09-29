@@ -1,12 +1,8 @@
-//! Port of `decompiler/cpp/types.h` (W1).
+//! Integer widths and wrapping helpers, from `decompiler/cpp/types.h`.
 //!
-//! The C++ tree computes on fixed-width typedefs (`uintb`, `int4`, ...) and
-//! relies on C++'s defined unsigned wraparound.  Per ADR 0003 the port maps
-//! those typedefs onto Rust's primitive integers and makes every legitimately
-//! wrapping operation explicit through the [`Wrap`] helper trait.
-//!
-//! Canonical width mapping (use the Rust primitive directly in ported code;
-//! the aliases below exist as a checked, greppable record of the mapping):
+//! The aliases preserve upstream type names; code can use the corresponding
+//! Rust primitives directly. [`Wrap`] provides short names for explicit
+//! wrapping operations. The width mapping is:
 //!
 //! | C++ typedef | underlying        | Rust    |
 //! |-------------|-------------------|---------|
@@ -66,28 +62,13 @@ pub type intm = i32;
 #[allow(non_camel_case_types)]
 pub type uintp = usize;
 
-/// Port of the C++ `HOST_ENDIAN` macro: 0 on a little-endian host, 1 on a
-/// big-endian host.  (Upstream hard-codes 0 on x86 and otherwise inspects
-/// `part[3]` of a union over `int4 whole = 1`, which is 1 exactly on
-/// big-endian hosts.)
+/// Host byte order: 0 for little-endian, 1 for big-endian.
 pub const HOST_ENDIAN: i32 = if cfg!(target_endian = "big") { 1 } else { 0 };
 
-/// Explicit wrapping arithmetic for ported C++ integer expressions (ADR 0003).
-///
-/// Any C++ expression whose operands can legitimately wrap is transcribed with
-/// these helpers, never bare operators; bare `+`/`-`/`*` remain only where
-/// overflow would be a genuine bug.  This makes wraparound greppable intent
-/// and keeps debug and release builds computing identically.
-///
-/// Shift semantics: [`Wrap::wshl`]/[`Wrap::wshr`] take the shift count modulo
-/// the bit width (`wrapping_shl`/`wrapping_shr`), which matches the x86
-/// hardware behavior the C++ oracle binary exhibits for out-of-range shift
-/// counts.  `wshr` is a logical shift on unsigned types and an arithmetic
-/// shift on signed types, exactly like C++ `>>` on the corresponding typedef.
-///
-/// Division: `wdiv`/`wrem` still panic on a zero divisor (C++ UB, treated as
-/// an internal invariant violation per ADR 0004); `i64::MIN / -1` wraps
-/// instead of trapping.
+/// Explicit wrapping arithmetic with the same results in debug and release.
+/// Shift counts are taken modulo the type's bit width. Right shifts are
+/// logical for unsigned types and arithmetic for signed types. Division and
+/// remainder panic on zero; a signed minimum divided by -1 returns the minimum.
 pub trait Wrap: Copy {
     /// Wrapping addition (`a + b` on a C++ unsigned, or intended overflow).
     fn wadd(self, rhs: Self) -> Self;
@@ -101,9 +82,9 @@ pub trait Wrap: Copy {
     fn wdiv(self, rhs: Self) -> Self;
     /// Wrapping remainder. Panics on zero divisor.
     fn wrem(self, rhs: Self) -> Self;
-    /// Wrapping left shift; count taken modulo the bit width (x86 semantics).
+    /// Wrapping left shift; count taken modulo the type's bit width.
     fn wshl(self, n: u32) -> Self;
-    /// Wrapping right shift; count taken modulo the bit width (x86 semantics).
+    /// Wrapping right shift; count taken modulo the type's bit width.
     /// Logical for unsigned types, arithmetic for signed types.
     fn wshr(self, n: u32) -> Self;
 }

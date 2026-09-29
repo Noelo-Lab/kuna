@@ -1,73 +1,13 @@
-//! Port of `decompiler/cpp/funcdata.{hh,cc}` and the block-manipulation half
-//! `funcdata_block.cc` (W3, item `w3-ir-funcdata`) — the [`Funcdata`] container
-//! that owns the per-function IR (the [`VarnodeBank`], the [`PcodeOpBank`], and
-//! the two [`BlockGraph`]s) and is the single API through which the graph is
-//! mutated (ADR 0001).
+//! Per-function IR ownership and mutation, from `decompiler/cpp/funcdata.{hh,cc}`.
 //!
-//! ## ADR 0001 (IR arenas) realization
+//! [`Funcdata`] owns the [`VarnodeBank`], [`PcodeOpBank`] and basic/structured
+//! [`BlockGraph`]s. Its helpers coordinate cross-arena changes, including block
+//! operation lists and the Varnode bank's read-replacement and definition lookup
+//! callbacks. [`ArchHandle`] shares configuration and engine services.
 //!
-//! The C++ `Funcdata` *contains* `vbank`, `obank`, `bblocks`, `sblocks` by value
-//! and every mutating helper (`op*`, `new*`, `block*`) routes through it.  Here
-//! `Funcdata` owns those same containers (each of which owns its slotmap arena),
-//! and **all** cross-arena mutation lives here — most importantly the
-//! basic-block op-list manipulation (`opInsert`/`opUninsert`/`BlockBasic::insert`
-//! / `removeOp` / `setOrder`), which in C++ is split between `Funcdata` and
-//! `BlockBasic` but touches *both* the op arena (`obank`) and the block arena
-//! (`bblocks`).  Rust cannot hold two `&mut` arenas through a method on one of
-//! them, so the op-in-block primitives are [`Funcdata`] methods that reach into
-//! both: [`Funcdata::bb_insert_op`], [`Funcdata::bb_remove_op`],
-//! [`Funcdata::bb_set_order`].  The per-op basic-block membership links live on
-//! the op (`set_basic_prev`/`set_basic_next`, the third intrusive list of
-//! ADR 0001) and the per-block head/tail live in [`BasicData`].
-//!
-//! ## VarnodeBank callbacks (the seam `varnode.rs` documented)
-//!
-//! `VarnodeBank::xref`/`set_def`/`set_input`/`create_def` need two callbacks the
-//! bank cannot supply itself (they reach the op graph):
-//!   - `replace_reads(bank, old, new)` — when `xref` unifies a fresh varnode
-//!     with an existing equivalent free varnode, every op reading `old` must be
-//!     repointed to `new` (the C++ `Funcdata::totalReplace` driven inline);
-//!   - `def_addr_time(op) -> (Address, uintm)` — `VarnodeBank::find` confirms a
-//!     candidate's defining op's address/time.
-//!
-//! `Funcdata` owns both the bank and the op bank, so it constructs these
-//! closures over `&mut obank` / `&obank` at each call site
-//! ([`Funcdata::replace_reads_thunk`] and [`Funcdata::def_addr_time`]).
-//!
-//! ## Look-ahead pre-declarations (funcdata_op.cc / funcdata_varnode.cc)
-//!
-//! The `funcdata_op` (`w3-ir-funcdata-op`) and `funcdata_varnode`
-//! (`w3-ir-funcdata-varnode`) porters run **after** this item, in parallel, with
-//! NO seam-editing rights.  This module therefore pre-declares every `Funcdata`
-//! field and seam surface those files reach, so they only add method `impl`
-//! blocks:
-//!   - `vbank`/`obank` and their accessors (`vbank()`/`vbank_mut()`/`obank()`/
-//!     `obank_mut()`): the varnode/op factories (`newConstant`, `newUnique`,
-//!     `newVarnodeOut`, `newOp`, …) create through these;
-//!   - [`Funcdata::replace_reads_thunk`] / [`Funcdata::def_addr_time`]: the bank
-//!     callbacks `opSetOutput`/`opSetInput`/`setInputVarnode`/`findVarnodeWritten`
-//!     need;
-//!   - the block op-list primitives ([`Funcdata::bb_insert_op`],
-//!     [`Funcdata::bb_remove_op`], [`Funcdata::bb_op_head`],
-//!     [`Funcdata::bb_op_tail`], [`Funcdata::bb_set_order`]) that `opInsert*`
-//!     build on;
-//!   - `glb` ([`ArchHandle`]) for the constant/unique/iop spaces and
-//!     `minLanedSize`; `min_laned_size`, the create-index phase fields, and the
-//!     `flags` word with `is_high_on()`;
-//!   - [`Funcdata::set_varnode_properties`] (a `// STUB(W4)` no-op standing in
-//!     for `localmap->queryProperties` + `Cover` calc) that `opSetOutput` and
-//!     the `newVarnode*` factories call.
-//!
-//! ## Deferred surfaces (W4 / W6 / W7 / W8)
-//!
-//! Most of `funcdata.cc` is W4+ subsystem glue (the `Architecture`/`TypeFactory`
-//! / `ScopeLocal` / `FuncProto` / `JumpTable` / `Override` / `Heritage` / `Merge`
-//! / union-resolution machinery).  Those are seam-noted ([`crate::context`]'
-//! `Architecture`/`Scope`/`FuncProto`, [`crate::dtype`]) and either return an
-//! explicit `Err`/`None` or are left out; printing (`printRaw`/`printBlockTree`)
-//! is W8.  This module carries the IR-ownership skeleton, the flag/phase state
-//! machine, and the block-manipulation methods that are self-contained at the
-//! W3 IR level (`structureReset`, `clearBlocks`, the edge-rewiring wrappers).
+//! The live local map is [`ScopeLocal`](crate::varmap::ScopeLocal), and the
+//! prototype is [`FuncProto`]. Variable properties, coverage and phase state
+//! are maintained by the implementations below, not deferred placeholders.
 //!
 //! # The Funcdata impl map
 //!
@@ -240,7 +180,7 @@ pub struct Funcdata {
     display_name: String,
     /// Starting code address of binary data (C++ `baseaddr`)
     baseaddr: Address,
-    /// Prototype of this function (C++ `funcp`).  The real [`fspec::FuncProto`]
+    /// Prototype of this function (C++ `funcp`).  The real [`crate::fspec::FuncProto`]
     /// (W10 un-seam): proto-recovery actions read/mutate the recovered model,
     /// lock state, and (via [`Self::get_active_output`]) the return-value trials.
     funcp: FuncProto,
@@ -295,7 +235,7 @@ pub struct Funcdata {
     ///
     /// The C++ `HighVariable`s are allocated by `new HighVariable` from
     /// `Funcdata::assignHigh`/`Merge` and reverse-linked from each member
-    /// `vn->high`; per ADR 0001 they live in this [`HighVariableBank`] keyed by
+    /// `vn->high`; per ADR 0001 they live in this [`crate::variable::HighVariableBank`] keyed by
     /// [`crate::context::HighVariableId`], the back-link being the `Varnode::high`
     /// field already wired in `varnode.rs`.
     high_bank: crate::variable::HighVariableBank,
@@ -2528,33 +2468,10 @@ impl Funcdata {
         self.get_scope_local()?.container_entry_key(&addr, &usepoint)
     }
 
-    /// Look-up boolean properties and data-type information for a Varnode
+    /// Seed unmapped Varnodes with local/global symbol flags and exact global
+    /// types, preserving existing mapped properties. In high-level mode, create
+    /// a missing cover and mark its HighVariable cover dirty when necessary.
     /// (C++ `Funcdata::setVarnodeProperties`, `funcdata_varnode.cc:25`).
-    ///
-    /// where `localmap->queryProperties` reaches the global scope, so a
-    /// global-mapped Varnode would pick up `mapped | addrtied | persist` at every
-    /// Varnode-creation site (`newVarnode`/`newVarnodeOut`/`setInput`).
-    ///
-    /// DEFERRED (the persist/addrtied marking is a no-op here, as in the W3 base):
-    /// the global-store *survival* this item targets is delivered instead by the
-    /// heritage path — `Heritage::guard` queries `query_global_properties` for the
-    /// same `mapped | addrtied | persist` directly and `guard_returns` inserts the
-    /// `addrforce` RETURN-COPY that keeps the store's def-chain alive through
-    /// `ActionDeadCode`.  That path is sufficient for every global-store datatest
-    /// (displayformat, condconst, varcross), so this early marking is redundant
-    /// for the target.
-    ///
-    /// Marking persist/addrtied *here* (at IR construction, on every global READ as
-    /// well) was measured to regress `varcross.xml::global_cross` ("Global cross
-    /// #2", a positive-content assertion): the early `addrtied` flag perturbs the
-    /// HighVariable merge so the recovered global-flow register (`v1`) renders as a
-    /// raw register instead of its name — the downstream HighVariable-naming /
-    /// global-store render seams (`merge.rs`/`variable.rs`/`printc.rs`, owned by the
-    /// naming/render waves) are not yet landed.  Activating it gains **zero** passing
-    /// assertions over the heritage path while regressing `global_cross`, so it is
-    /// held until the naming seam lands (matrix in
-    /// `docs/rust-port/reviews/w10-global-persist.md`).  When that seam lands the
-    /// body above folds back in unchanged.
     pub fn set_varnode_properties(&mut self, vn: VarnodeId) {
         // An already-mapped Varnode keeps its flags.
         let already_mapped = match self.vbank().get(vn) {
@@ -2626,6 +2543,12 @@ impl Funcdata {
                 }
             }
         }
+        self.ensure_varnode_cover(vn);
+    }
+
+    /// The cover half of [`set_varnode_properties`](Funcdata::set_varnode_properties):
+    /// allocate `vn`'s cover once high-level analysis is on.
+    pub(crate) fn ensure_varnode_cover(&mut self, vn: VarnodeId) {
         // C++ `if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }`
         // (funcdata_varnode.cc:42).  This ALLOCATES the Varnode's Cover object (and
         // sets `coverdirty`) the first time `setVarnodeProperties` runs on a
@@ -3691,8 +3614,8 @@ impl Funcdata {
     /// `op->outputTypeLocal()` — the local-from-op output type (C++
     /// `TypeOp::getOutputLocal`, typeop.cc:262).
     ///
-    /// (kuna L3) Routes through the per-op-code [`type_op_info`] dispatch on the
-    /// shared (INTERNED) [`TypeFactory`] (`glb->types`), so two ops whose local
+    /// (kuna L3) Routes through the per-op-code [`crate::typeop::type_op_info`] dispatch on the
+    /// shared (INTERNED) [`crate::dtype::TypeFactory`] (`glb->types`), so two ops whose local
     /// type is the same size+metatype return the SAME `Rc<Datatype>`.  This is
     /// load-bearing for `Merge::mergeAdjacent`'s pointer-identity same-type test
     /// (merge.cc:990 `ct != op->inputTypeLocal(i)`): a fresh `Rc` per call would
@@ -3719,7 +3642,7 @@ impl Funcdata {
         Rc::new(Datatype::new(sz, crate::dtype::type_metatype::TYPE_UNKNOWN))
     }
 
-    /// `op->inputTypeLocal(slot)` — see [`op_output_type_local_pub`].
+    /// `op->inputTypeLocal(slot)` — see `op_output_type_local_pub`.
     pub(crate) fn op_input_type_local_pub(&self, op: OpId, slot: int4) -> Rc<Datatype> {
         let (sz, opc) = match self.obank.get(op) {
             Some(o) => {
@@ -4029,7 +3952,7 @@ impl Funcdata {
     }
 
     /// `high1->merge(high2, &testCache, isspeculative)` for the dominant-copy
-    /// path, replaying the deferred `vn->setHigh` writes (see [`bank_merge_with_log`]).
+    /// path, replaying the deferred `vn->setHigh` writes (see `bank_merge_with_log`).
     /// The intersection cache is local here (the new dominating high has no cached
     /// edges yet), matching the C++ pass of `data.getMerge()`'s `testCache`.
     fn merge_two_highs(
@@ -4225,7 +4148,7 @@ impl Funcdata {
 
     /// Drive a HighVariable's external cover update (the C++
     /// `HighVariable::updateCover`, called by Merge).  Convenience over
-    /// [`with_high_split`] for the bank's `update_cover`.
+    /// `with_high_split` for the bank's `update_cover`.
     pub fn high_update_cover(&mut self, id: crate::context::HighVariableId) {
         self.with_high_split(|hb, ctx| hb.update_cover(id, ctx));
     }
@@ -4486,7 +4409,7 @@ impl Funcdata {
     }
 
     /// C++ `Funcdata::attemptDynamicMappingLate` (`funcdata_varnode.cc:1368`):
-    /// find the Varnode a dynamic SymbolEntry maps to (via [`DynamicHash`]) and
+    /// find the Varnode a dynamic SymbolEntry maps to (via [`crate::dynamic::DynamicHash`]) and
     /// attach the Symbol's NAME to it.  Returns `true` if a Varnode was adjusted.
     ///
     /// STUB(W4): the merged tree has no Varnode→SymbolEntry retype link, so the

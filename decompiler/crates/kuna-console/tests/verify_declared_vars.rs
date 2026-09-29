@@ -22,12 +22,6 @@
 //! declaration of a name that already has one (DIV-52, whose end-to-end witness is
 //! `tests/stages/ghdec-symbol-keyed-local-decls.xml`). Pinning both here keeps a fix
 //! for either from re-opening the other.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make specs`).
-//! When absent the bootstrap fails; the test prints that and returns early (a
-//! specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -43,21 +37,15 @@ fn fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/declmerge_x86_64")
 }
 
-/// Bootstrap the fixture and decompile `func`, returning the printed C
-/// (`None` ⇒ specs-less skip).
-fn decompile(func: &str) -> Option<String> {
+/// Bootstrap the fixture and decompile `func`, returning the printed C.
+fn decompile(func: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture().to_str()?.to_string();
-    let prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("verify_declared_vars: skipping (bootstrap failed, `make specs`): {}", e.explain());
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let cmds: Vec<String> =
         [format!("load function {func}"), "decompile".into(), "print C".into()].to_vec();
@@ -72,7 +60,7 @@ fn decompile(func: &str) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// Every `vN` token that appears in the declaration block (the lines between the
@@ -127,9 +115,7 @@ fn tokens_vn(s: &str) -> Vec<String> {
 
 #[test]
 fn no_undeclared_local_variable_in_make_dir_clone() {
-    let Some(c) = decompile("make_dir_clone") else {
-        return; // specs-less skip
-    };
+    let c = decompile("make_dir_clone");
     eprintln!("---- make_dir_clone ----\n{c}");
 
     let decl_list = declared_var_list(&c);

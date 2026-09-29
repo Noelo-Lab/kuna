@@ -1,107 +1,10 @@
-//! Port of `decompiler/cpp/constseq.{cc,hh}` — combining constants written to a
-//! contiguous region of memory.
+//! Recover constant strings from contiguous COPY or STORE sequences.
 //!
-//! When code writes a string into memory one character at a time (a run of COPY
-//! ops into a stack array, or a run of STORE ops through a heap pointer), the
-//! decompiler can collapse the whole run into a single `memcpy`/`strncpy` user-op
-//! taking the assembled string as its source.  The shared machinery for *finding
-//! and validating* such a run lives in [`ArraySequence`]; the two concrete
-//! drivers — `StringSequence` (COPY-into-array) and `HeapSequence`
-//! (STORE-through-pointer) — extend it, and the [`RuleStringCopy`]/`RuleStringStore`
-//! rules apply them.
-//!
-//! # What this port covers
-//!
-//! The reusable, output-determining **base** is fully ported:
-//!
-//! * [`ArraySequence::MINIMUM_SEQUENCE_LENGTH`] / `MAXIMUM_SEQUENCE_LENGTH`.
-//! * [`WriteNode`] and its block-order comparator (`getSeqNum().getOrder()`),
-//!   which is the tie-breaker [`ArraySequence::check_interference`]'s `sort`
-//!   relies on.
-//! * [`ArraySequence::interfere_between`] — the "no interfering LOAD/STORE/CALL
-//!   between two ops" test.
-//! * [`ArraySequence::check_interference`] — the maximal-no-interference window
-//!   selection around the root op.
-//! * [`ArraySequence::form_byte_array`] — the constant-gathering ORDER: how the
-//!   per-op constant inputs are laid into a single byte array by offset, the
-//!   null-terminator handling, the contiguity/length check, and the moveOps
-//!   truncation.  **This is the routine `kuna_memsetsequence` reuses**, so the
-//!   base is exposed `pub(crate)` (see *Cross-pack visibility* below).
-//!
-//! # Faithfulness
-//!
-//! `int4`→`i32`, `uint8`/`uintb`→`u64`, `uint1`→`u8`.  The byte-array assembly
-//! uses the same big/little-endian byte unpacking, the same `used[]` marking
-//! (`1` = non-null char, `2` = null terminator), the same single-terminator
-//! allowance, and the same `< MINIMUM_SEQUENCE_LENGTH` rejection.  The C++ holds
-//! `Funcdata &data` / `PcodeOp *` / `Varnode *`; the port holds `&mut Funcdata`
-//! plus `OpId`/`VarnodeId` read through the banks, and snapshots the moveOps
-//! vector exactly as the C++ `vector<WriteNode>` is iterated.
-//!
-//! # Cross-pack visibility (for the kuna-pack porter)
-//!
-//! Upstream kuna **widened `StringSequence`'s members to `protected`** so
-//! `kuna_memsetsequence` could reuse the COPY-gathering machinery
-//! (`constseq.hh` `(kuna)` note).  In the Rust port the analogue is: the
-//! [`ArraySequence`] struct fields and the base methods
-//! (`interfere_between`, `check_interference`, `form_byte_array`,
-//! `select_string_copy_function`) are **`pub(crate)`** so the
-//! `kuna_memsetsequence` module (same crate) can build on them directly,
-//! mirroring the C++ `protected` widening.  Do **not** re-port this base in the
-//! memset module — extend [`ArraySequence`].
-//!
-//! # What landed (rport/w10-string-sequence)
-//!
-//! The **STORE-through-pointer** driver is now fully ported and live:
-//!
-//! * [`HeapSequence`] (`constseq.cc:486-967`): `findBasePointer`,
-//!   `findDuplicateBases`, `findInitialStores`, `calcAddElements`/`calcPtraddOffset`,
-//!   `collectStoreOps`, `buildStringCopy` (the typed-pointer PTRADD + CALLOTHER
-//!   builder), `gatherIndirectPairs`/`deduplicatePairs`/`removeStoreOps`, and
-//!   `transform` — all transcribed branch-for-branch.
-//! * [`RuleStringStore::apply_op`] runs the full body (read-facing pointer guard
-//!   → `HeapSequence::build` → `transform`).
-//! * `Funcdata::getInternalString` (`funcdata_varnode.cc:1434`) registers the
-//!   assembled byte-array into the architecture's persistent `StringManager`
-//!   (a shared `Rc<RefCell<StringManagerUnicode>>` on `Architecture`, threaded
-//!   into the W4 seam as `internal_strings`) and builds the `BUILTIN_STRINGDATA`
-//!   CALLOTHER whose output displays as the quoted string.
-//! * [`ArraySequence::select_string_copy_function`] performs the faithful
-//!   `charType == types->getTypeChar(...)` pointer-identity selection (now that
-//!   the cspec `<data_organization>` `<wchar_size>` is decoded, so `getSizeOfWChar`
-//!   reflects the ABI and the wide-vs-narrow split matches upstream).
-//! * The printer's `opCallother` (`printc.cc:693`) renders the functional /
-//!   `display_string` forms, and `BUILTIN_STRINGDATA` output type-locals resolve
-//!   to the char-pointer (`InternalStringOp::getOutputLocal`) so no spurious cast
-//!   wraps the literal.  The four string builtins are pre-registered into
-//!   `userops` at boot (`register_string_builtins`).
-//!
-//! This drives `heapstring.xml` (Heap string #1-7) to full parity.
-//!
-//! # Deferred half (still ledgered as a loss)
-//!
-//! The **COPY-into-array** driver `StringSequence` (`constseq.cc:188-483`) — the
-//! `stackstring.xml` path — is **not** yet transcribed; it reaches W4 surfaces the
-//! heap path does not:
-//!
-//! * The address-only `beginLoc(addr)`/`endLoc(addr)` location-set overload
-//!   (`StringSequence::collectCopyOps`).
-//! * `data.getScopeLocal()->queryContainer(...)` array-component resolution
-//!   (`StringSequence` ctor, `RuleStringCopy::applyOp`).
-//! * `constructTypedPointer`'s `constructSpacebaseInput`/`constructConstSpacebase`
-//!   + `getTypePointerStripArray` PTRSUB/PTRADD chain and `inheritUnionFieldPtr`.
-//!
-//! Until that lands, `RuleStringCopy::applyOp` declines after its constant-input
-//! guard (byte-identical to the rule being disabled) and the stack COPYs are
-//! removed by dead-code instead of collapsed into a `strncpy` user-op.
-
-// The `ArraySequence` base and its read helpers are consumed by the sibling
-// `kuna_memsetsequence` module (its Rust port lands with the kuna-pack porter)
-// and by this module's tests; until the memset port and the W4/W6 transform
-// halves land, the in-crate (non-test) consumer is absent, so the base reads as
-// dead.  This mirrors the upstream `protected` widening for reuse (`constseq.hh`
-// `(kuna)` note) — kept whole for the memset porter to extend, NOT re-ported.
-#![allow(dead_code)]
+//! [`ArraySequence`] validates ordering, interference and byte layout.
+//! [`StringSequence`] handles COPYs into arrays; [`HeapSequence`] handles
+//! STOREs through pointers. The rules replace valid runs with string builtins
+//! and preserve the surrounding dataflow. Constant-fill and read-only-string
+//! recovery reuse the same collection and replacement machinery.
 
 use kuna_base::address::Address;
 use kuna_base::types::{int4, int8, uintb};
@@ -295,7 +198,7 @@ impl ArraySequence {
         let el_size = self.char_type.get_size();
         for i in 0..self.move_ops.len() {
             let byte_pos: int4 = (self.move_ops[i].offset.wrapping_sub(root_off)) as int4;
-            if byte_pos < 0 || byte_pos + el_size > sz {
+            if byte_pos < 0 || byte_pos.checked_add(el_size).is_none_or(|end| end > sz) {
                 continue;
             }
             let mut val = vn_get_offset(data, op_get_in(data, self.move_ops[i].op, slot));
@@ -347,13 +250,8 @@ impl ArraySequence {
     /// (C++ `ArraySequence::selectStringCopyFunction`).  Returns
     /// `(builtin_id, index)` where `index` is the count passed back.
     ///
-    /// STUB(W6): the C++ compares `charType` *by pointer identity* against
-    /// `types->getTypeChar(getSizeOfChar())` / `getTypeChar(getSizeOfWChar())`.
-    /// The live `TypeFactory` is not wired into `Architecture` yet, so the
-    /// identity match cannot be performed; this falls through to the C++ default
-    /// `BUILTIN_MEMCPY` with the byte count (`numElements * getAlignSize()`).
-    /// The narrow/wide-char selection is preserved structurally for restoration.
-    /// Recorded as a loss.
+    /// Interned character-type identity selects narrow or wide string copies;
+    /// other element types use memcpy with a byte count.
     pub(crate) fn select_string_copy_function(&self, data: &Funcdata) -> (uintb, int4) {
         // Faithful to constseq.cc:161-175: compare `charType` by pointer identity
         // against `types->getTypeChar(getSizeOfChar())` / `getTypeChar(getSizeOfWChar())`.

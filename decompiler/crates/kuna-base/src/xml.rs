@@ -8,7 +8,7 @@
 //! below), the same scanner-mode protocol, the same SAX callback sequence,
 //! and the same error strings:
 //!
-//! - The scanner ([`XmlScan`]) is a line-for-line transcription, including
+//! - The scanner (`XmlScan`) is a line-for-line transcription, including
 //!   the 4-byte lookahead, the synthetic `'\n'` injected at end of stream, a
 //!   NUL byte acting as end of stream, and the **signed-char** semantics of
 //!   the oracle platform (bytes >= 0x80 become negative lookahead values, so

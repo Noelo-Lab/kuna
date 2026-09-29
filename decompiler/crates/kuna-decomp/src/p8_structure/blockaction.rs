@@ -1,66 +1,9 @@
-//! Port of `decompiler/cpp/blockaction.{cc,hh}` (W7, item `w7-s7-blockaction`)
-//! — the control-flow *structuring* engine: turning the basic-block CFG into a
-//! tree of high-level code constructs (if/else, while/do, do/while, switch,
-//! goto) by repeated schema-matching collapse.
+//! Control-flow structuring and its IR actions.
 //!
-//! # What this is
+//! Schema precedence, loop ordering and goto-edge scoring determine emitted
+//! control flow; their ordering must remain stable.
 //!
-//! The structuring algorithm ([`CollapseStructure`]) follows `blockaction.hh`:
-//!   - Start with a control-flow graph of basic blocks (the `sblocks`
-//!     [`BlockGraph`](crate::block::BlockGraph), a `BlockCopy` mirror of
-//!     `bblocks`).
-//!   - Repeatedly: search for a sub-graph matching a specific code-structure
-//!     element ([`CollapseStructure::collapse_internal`]'s rule cascade) and
-//!     collapse the component nodes into a single structured node.
-//!   - When the process gets stuck, remove ("goto") an edge chosen by a
-//!     directed-acyclic-graph trace ([`TraceDAG`]) restricted to the innermost
-//!     loop, marking it unstructured.
-//!
-//! The **schema-precedence order** in [`CollapseStructure::collapse_internal`]
-//! (goto → cat → properIf → ifElse → whileDo → doWhile → infLoop → switch, then
-//! the deferred ifNoExit / caseFallthru) is *output-determining*: it decides
-//! which gotos get emitted when several structurings are possible, so it is
-//! transcribed in exactly the C++ order.  Likewise [`LoopBody`] ordering (by
-//! head/tail index, then nesting depth) and the [`TraceDAG`] bad-edge scoring
-//! (`BadEdgeScore::operator<` / `compareFinal`) are tie-breakers that decide
-//! *which* edge becomes a goto — transcribed verbatim.
-//!
-//! # Faithfulness — fully ported vs. stub-deferred
-//!
-//! Everything that is **CFG topology** — [`FloatingEdge`], [`LoopBody`],
-//! [`TraceDAG`], and the whole [`CollapseStructure`] collapse loop and its rule
-//! cascade — is fully ported and tested; it operates on the
-//! [`BlockGraph`](crate::block::BlockGraph) edge/label API that W3 supplies.
-//!
-//! Two data-flow surfaces that `block.cc` itself left as `// STUB(W7)` in
-//! `block.rs` are threaded here as faithful-topology + stub-noted-dataflow:
-//!
-//!   - **`FlowBlock::negateCondition`** ([`negate_condition`]): the *edge swap*
-//!     (`swapEdges`) is fully ported (it is pure topology and is what determines
-//!     the true/false ordering the collapse rules depend on); the **op-flag flip**
-//!     on the underlying `BlockBasic`'s CBRANCH (`boolean_flip`/`fallthru_true`)
-//!     is the data-flow half.  Standalone (the test engine) only swaps edges;
-//!     the [`ActionBlockStructure`] wiring threads the op-flag flip through the
-//!     op bank.  The return value (whether a *data-flow* change was made) is the
-//!     `dataflow_changecount` driver, transcribed exactly.
-//!   - **`FlowBlock::isComplex`** ([`is_complex`]): the C++ base default returns
-//!     `true`; `BlockBasic::isComplex` counts statements against
-//!     `max_implied_ref` (data-flow).  The statement count is precomputed by
-//!     [`ActionBlockStructure`] over the live op lists (`Funcdata::bb_is_complex`
-//!     → `complex_blocks`) and [`is_complex`] reproduces the upstream virtual
-//!     dispatch exactly (only BlockCopy/BlockCondition resolve further; every
-//!     other subtype is unconditionally complex).  This decides whether a
-//!     whileDo uses *overflow syntax* and whether `ruleBlockOr` fires.
-//!
-//! The structuring [`Action`]s whose body is a single call into a `BlockGraph`
-//! method that `block.cc` defers to W7/W8 ([`ActionFinalStructure`] →
-//! `finalizePrinting`/`scopeBreak`/`markUnstructured`/
-//! `markLabelBumpUp`; [`ActionPreferComplement`] → `preferComplement`;
-//! [`ActionStructureTransform`] → `finalTransform`; [`ActionNormalizeBranches`]
-//! → `flipInPlace`) reproduce the C++ control structure and surface the unported
-//! `BlockGraph` method as a stub — recorded as losses.  [`ActionBlockStructure`]
-//! (the collapse driver) and [`ActionNodeJoin`]/[`ConditionalJoin`] (split-
-//! condition rejoin) are fully ported against the available Funcdata API.
+//! Upstream anchors: `decompiler/cpp/blockaction.{cc,hh}`.
 
 #![allow(clippy::needless_range_loop)] // C++ indexes by edge/path slot; preserve it
 
@@ -3640,8 +3583,9 @@ impl Action for ActionStructureTransform {
     }
 }
 
-/// \brief Flip conditional control-flow so that \e preferred comparison
-/// operators are used (C++ `ActionNormalizeBranches`).
+/// Compatibility action for branch normalization.
+///
+/// Retains its registered slot and initialized-root check without rewriting IR.
 pub struct ActionNormalizeBranches {
     base: ActionBase,
 }
@@ -3667,38 +3611,9 @@ impl Action for ActionNormalizeBranches {
         Some(Box::new(ActionNormalizeBranches { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ iterates the basic blocks, for each 2-out block whose last op is a
-        // CBRANCH it runs opFlipInPlaceTest and, on a clean (==0) test,
-        // opFlipInPlaceExecute + bb->flipInPlaceExecute().
-        //
-        // STUB(W7): `Funcdata::opFlipInPlaceExecute` is itself stubbed
-        // (funcdata_op.rs) — it needs `replaceLessequal`/`newConstant`; and
-        // `BlockBasic::flipInPlaceExecute` (the op-flag flip + swapEdges) is the
-        // block-side half left as W7 in `block.rs`.  The control structure is
-        // transcribed; the mutation is the stub.  See losses.
         let graph = data.bblocks_ref();
         let root = graph.root.expect("ActionNormalizeBranches: bblocks root");
-        let n = graph.block(root).get_size();
-        for i in 0..n {
-            let bb = data.bblocks_ref().block(root).get_block(i);
-            if data.bblocks_ref().block(bb).size_out() != 2 {
-                continue;
-            }
-            let cbranch = match last_op_of(data, bb) {
-                Some(op) => op,
-                None => continue,
-            };
-            if data.obank().get(cbranch).unwrap().code() != OpCode::CPUI_CBRANCH {
-                continue;
-            }
-            let mut fliplist: Vec<crate::context::OpId> = Vec::new();
-            if data.op_flip_in_place_test(cbranch, &mut fliplist, true) != 0 {
-                continue;
-            }
-            // opFlipInPlaceExecute + bb->flipInPlaceExecute -- STUB(W7) (see above)
-            // (skipped: the executes are stubbed; no change recorded)
-        }
-        // data.clearDeadOps();  -- STUB(W7): clearDeadOps not in merged tree.
+        graph.block(root);
         0
     }
 }

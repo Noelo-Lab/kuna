@@ -31,6 +31,7 @@ import sys
 import time
 
 from . import config
+from ..atomic import atomic_text_writer
 
 # Ordered worker phases (for display + progress sense).
 # Feature workers use: analyze, design, code, build, test, docs, commit, pr.
@@ -77,26 +78,31 @@ def _empty():
             "slots": {}, "leases": {}}
 
 
+class StateError(RuntimeError):
+    """The inventory could not be read or has invalid container types."""
+
+
 def _load():
     p = _inventory_path()
-    if not os.path.exists(p):
-        return _empty()
     try:
         with open(p) as fh:
             data = json.load(fh)
-    except (json.JSONDecodeError, OSError):
+    except FileNotFoundError:
         return _empty()
+    except (json.JSONDecodeError, UnicodeError, OSError) as exc:
+        raise StateError(f"cannot read inventory {p}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise StateError(f"invalid inventory {p}: expected an object")
     for k, v in _empty().items():
-        data.setdefault(k, v)
+        if not isinstance(data.setdefault(k, v), dict):
+            raise StateError(f"invalid inventory {p}: {k} must be an object")
     return data
 
 
 def _save(data):
     p = _inventory_path()
-    tmp = p + ".tmp"
-    with open(tmp, "w") as fh:
+    with atomic_text_writer(p) as fh:
         json.dump(data, fh, indent=2)
-    os.replace(tmp, p)
 
 
 # --- worker inventory -------------------------------------------------------
@@ -561,4 +567,8 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except StateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)

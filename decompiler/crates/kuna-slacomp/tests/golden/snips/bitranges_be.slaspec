@@ -1,0 +1,11 @@
+define endian = big;
+define space ram type=ram_space size=4 default;
+define space register type=register_space size=4;
+define register offset=0 size=4 [ r0 r1 ];
+define bitrange flag=r0[3,1];
+define bitrange middle=r0[7,9];
+define bitrange aligned=r0[8,8];
+define token instr8(8) op=(0,7);
+:flag is op=0 { r1=zext(flag); flag=1; }
+:middle is op=1 { r1=zext(middle); middle=r0[0,9]; }
+:aligned is op=2 { r1=zext(aligned); aligned=1; }

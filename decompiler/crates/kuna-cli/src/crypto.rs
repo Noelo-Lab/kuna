@@ -16,8 +16,10 @@ use std::collections::BTreeMap;
 
 use object::{Object, ObjectSection, ObjectSegment, SectionKind};
 
+use crate::args::take_value as take;
 use crate::cryptosig::{self, Hit, Kind, Region};
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
+use crate::function_info::function_json;
 use crate::jsonfmt::{dumps_indent2, Json};
 
 pub(crate) struct CryptoArgs {
@@ -131,11 +133,11 @@ fn section_matches(name: Option<&str>, want: &str) -> bool {
 }
 
 pub(crate) fn query(args: &CryptoArgs) -> Result<String, String> {
-    let bytes = crate::decompile_all::image_bytes(
+    let bytes = crate::image::image_bytes(
         &args.binary,
         kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
     )?;
-    let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
+    let file = kuna_analysis::loadimage_object::parse_object(&bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
     let (mut regs, from_segments) = regions(&file);
     if let Some(want) = &args.section {
@@ -199,7 +201,7 @@ fn attribute(args: &CryptoArgs, file: &object::File, hits: Vec<Hit>) -> Result<V
     let mut name_of = |entry: u64| {
         names
             .entry(entry)
-            .or_insert_with(|| crate::strings::function_name(&prog, &inventory, entry))
+            .or_insert_with(|| crate::function_info::function_name(&prog, &inventory, entry))
             .clone()
     };
     Ok(hits
@@ -216,7 +218,7 @@ fn attribute(args: &CryptoArgs, file: &object::File, hits: Vec<Hit>) -> Result<V
                 for vma in hit.addr..hit.addr + hit.byte_len as u64 {
                     for r in index.refs_to(vma) {
                         xrefs_count += 1;
-                        let Some(entry) = crate::strings::owning_function(&prog, &index, r.from) else {
+                        let Some(entry) = crate::function_info::owning_function(&prog, &index, r.from) else {
                             continue;
                         };
                         if !functions.iter().any(|(e, _)| *e == entry) {
@@ -229,14 +231,6 @@ fn attribute(args: &CryptoArgs, file: &object::File, hits: Vec<Hit>) -> Result<V
             Row { hit, xrefs_count, functions }
         })
         .collect())
-}
-
-fn function_json(name: &str, addr: u64) -> Json {
-    Json::Object(vec![
-        ("name".into(), Json::Str(name.to_string())),
-        ("address".into(), Json::Number(addr.to_string())),
-        ("address_hex".into(), Json::Str(format!("0x{addr:x}"))),
-    ])
 }
 
 fn optional_str(value: Option<&str>) -> Json {
@@ -339,14 +333,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<CryptoArgs, String> {
             "--algorithm" => algorithm = Some(take(argv, &mut i, "--algorithm")?),
             "--section" => section = Some(take(argv, &mut i, "--section")?),
             "--no-xrefs" => no_xrefs = true,
-            "--option" => {
-                if i + 2 >= argv.len() {
-                    return Err("--option requires NAME VALUE".into());
-                }
-                crate::optname::check(&argv[i + 1])?;
-                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
-                i += 2;
-            }
+            "--option" => options.push(crate::args::take_option(argv, &mut i)?),
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
             "--isa" => isa = kuna_console::engine::ArmIsa::parse(&take(argv, &mut i, "--isa")?)?,
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
@@ -367,15 +354,6 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<CryptoArgs, String> {
         return Err("--isa has no effect with --no-xrefs (no code is decoded)".into());
     }
     Ok(CryptoArgs { binary, json, algorithm, section, no_xrefs, options, mode, slice, target, sleighpath, isa })
-}
-
-fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
-    if *i + 1 < argv.len() {
-        *i += 1;
-        Ok(argv[*i].clone())
-    } else {
-        Err(format!("{flag} requires a value"))
-    }
 }
 
 fn usage() {

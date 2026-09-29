@@ -10,12 +10,7 @@
 //! The C control is half the gate: a real `goto` in C output is correct, so it
 //! must report nothing and count zero.
 //!
-//! ## `.sla` precondition
-//!
-//! Every test bootstraps a real x86 architecture, which needs the built `.sla`
-//! under `specs/` (gitignored; `make specs`). Without it the command cannot
-//! build an architecture; the test says so and returns — a specs-less CI is a
-//! visible skip, never a false green.
+//! Integration tests require the built processor specs under `specs/`.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -47,13 +42,6 @@ fn run_kuna(args: &[&str]) -> (String, String, Option<i32>) {
     )
 }
 
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("Could not find .sla")
-        || stderr.contains("Could not discover")
-        || stderr.contains("SLEIGH")
-}
-
 /// The marker the printer emits, spelled here exactly once so a drift in
 /// `kuna_langrust` fails this file rather than passing it silently.
 const MARKER: &str = "panic!(\"kuna: unstructured goto to ";
@@ -63,10 +51,6 @@ const MARKER: &str = "panic!(\"kuna: unstructured goto to ";
 #[test]
 fn the_text_surface_reports_the_marker_on_stderr() {
     let (stdout, stderr, code) = run_kuna(&["decompile", &fixture(), "irreducible", "--language", "rust"]);
-    if is_specs_skip(&stderr) {
-        eprintln!("SKIP: no built .sla under specs/ ({})", stderr.trim());
-        return;
-    }
     assert!(stdout.contains(MARKER), "expected the marker in:\n{stdout}");
     assert!(
         stderr.contains("note: 1 unstructured goto in irreducible"),
@@ -83,10 +67,6 @@ fn the_text_surface_reports_the_marker_on_stderr() {
 fn the_json_surface_counts_the_marker_per_function() {
     let (stdout, stderr, code) =
         run_kuna(&["decompile", &fixture(), "irreducible", "--language", "rust", "--json"]);
-    if is_specs_skip(&stderr) {
-        eprintln!("SKIP: no built .sla under specs/ ({})", stderr.trim());
-        return;
-    }
     assert!(
         stdout.contains("\"unstructured_gotos\": 1"),
         "expected the per-function count in:\n{stdout}"
@@ -105,10 +85,6 @@ fn the_json_surface_counts_the_marker_per_function() {
 fn decompile_all_carries_the_count_on_every_record() {
     let (stdout, stderr, code) =
         run_kuna(&["decompile-all", &fixture(), "--language", "rust", "--json"]);
-    if is_specs_skip(&stderr) {
-        eprintln!("SKIP: no built .sla under specs/ ({})", stderr.trim());
-        return;
-    }
     assert!(stdout.contains("\"unstructured_gotos\": 1"), "expected one lossy record in:\n{stdout}");
     assert!(
         stderr.contains("unstructured goto"),
@@ -122,18 +98,11 @@ fn decompile_all_carries_the_count_on_every_record() {
 #[test]
 fn c_output_reports_nothing_and_counts_zero() {
     let (stdout, stderr, code) = run_kuna(&["decompile", &fixture(), "irreducible"]);
-    if is_specs_skip(&stderr) {
-        eprintln!("SKIP: no built .sla under specs/ ({})", stderr.trim());
-        return;
-    }
     assert!(stdout.contains("goto label_"), "C spells the jump for real:\n{stdout}");
     assert!(!stderr.contains("unstructured goto"), "C has nothing to report:\n{stderr}");
     assert_eq!(code, Some(0));
 
     let (stdout, stderr, code) = run_kuna(&["decompile", &fixture(), "irreducible", "--json"]);
-    if is_specs_skip(&stderr) {
-        return;
-    }
     assert!(stdout.contains("\"unstructured_gotos\": 0"), "expected a zero count in:\n{stdout}");
-    assert_eq!(code, Some(0));
+    assert_eq!(code, Some(0), "{stderr}");
 }

@@ -7,7 +7,7 @@ use std::rc::Rc;
 use kuna_base::address::{Address, ELEM_RANGELIST};
 use kuna_base::marshal::{
     Encoder, IdRegistry, PackedEncode, XmlDecode, ATTRIB_CONTENT, ATTRIB_ID, ATTRIB_INDEX,
-    ATTRIB_METATYPE, ATTRIB_MODEL, ATTRIB_NAME, ATTRIB_NAMELOCK, ATTRIB_READONLY, ATTRIB_SIZE,
+    ATTRIB_MODEL, ATTRIB_NAME, ATTRIB_NAMELOCK, ATTRIB_READONLY, ATTRIB_SIZE,
     ATTRIB_TYPELOCK, ELEM_SYMBOL, ELEM_VOID,
 };
 use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager};
@@ -538,9 +538,6 @@ struct MockFetch {
 }
 
 impl MockFetch {
-    fn count(&self, what: &'static str) -> usize {
-        *self.calls.borrow().get(what).unwrap_or(&0)
-    }
     fn bump(&self, what: &'static str) {
         *self.calls.borrow_mut().entry(what).or_insert(0) += 1;
     }

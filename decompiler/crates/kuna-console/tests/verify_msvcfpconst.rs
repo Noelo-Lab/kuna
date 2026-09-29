@@ -18,13 +18,6 @@
 //! * the loader-level facts under the emitted C — that the undefined slots gain
 //!   real bytes and that both halves are reported as constant-by-construction
 //!   ranges, which is what makes the fold legal with `readonly` still off.
-//!
-//! ## `.sla` precondition
-//!
-//! The decompile arm needs the built `x86` `.sla` under `specs/` (gitignored;
-//! `make specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early — a specs-less CI is a visible skip, never a false green. The
-//! loader arms need no `.sla` and always run.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -185,24 +178,14 @@ fn the_undefined_slots_read_back_as_their_decoded_values() {
     assert_eq!(found, CONSTANTS.len());
 }
 
-/// Bootstrap the object, returning `None` (a visible skip) when the `.sla` is
-/// absent.
-fn boot() -> Option<ConsoleProgram> {
+/// Bootstrap the object.
+fn boot() -> ConsoleProgram {
     let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
     std::env::remove_var(MSVCFPCONST_ENV); // the shipped default, nothing set
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    match bootstrap_from_object(fixture().to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_msvcfpconst: skipping (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(fixture().to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// Run `load function <name>` -> `decompile` -> `print C` and return the C.
@@ -228,7 +211,7 @@ fn decompile_func(prog: ConsoleProgram, name: &str) -> String {
 /// expression is arithmetic over literals rather than over addresses.
 #[test]
 fn the_shipped_default_emits_literals_not_addresses() {
-    let Some(prog) = boot() else { return };
+    let prog = boot();
     let out = decompile_func(prog, "_scale");
     assert!(
         out.contains("0.7853981633974483"),

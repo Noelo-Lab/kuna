@@ -30,12 +30,6 @@
 //! rustc binary carrying the `.comment` record the source-language detection
 //! reads, so this also gates the load-time fact reaching the per-function rule.
 //! The C control below is what proves the fact is doing the gating.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -51,25 +45,16 @@ fn fixture(name: &str) -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name)
 }
 
-/// Bootstrap `bin`, apply `options` (before the analysis commit, as the CLI
-/// does), decompile `func`, and return the captured C (`None` => specs-less skip).
-fn decompile(bin: &str, func: &str, options: &[&str]) -> Option<String> {
+/// Bootstrap `bin`, apply `options` (before the analysis commit, as the CLI does),
+/// decompile `func`, and return the captured C.
+fn decompile(bin: &str, func: &str, options: &[&str]) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let path = fixture(bin).to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&path, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_rustabi_pair: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let path = fixture(bin).to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let mut cmds: Vec<String> = options.iter().map(|o| o.to_string()).collect();
     cmds.push(format!("load function {func}"));
@@ -87,13 +72,13 @@ fn decompile(bin: &str, func: &str, options: &[&str]) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// The bug, pinned: at the default the producer collapses to its discriminant.
 #[test]
 fn by_default_the_producer_loses_its_payload_register() {
-    let Some(code) = decompile("rust_scalarpair_x86_64", "prod", &[]) else { return };
+    let code = decompile("rust_scalarpair_x86_64", "prod", &[]);
     assert!(
         code.contains("bool prod"),
         "the pre-fix rendering is the one-bit discriminant alone; got:\n{code}",
@@ -103,9 +88,7 @@ fn by_default_the_producer_loses_its_payload_register() {
 /// With the option on, the pair survives and the payload half is written.
 #[test]
 fn the_producer_keeps_the_whole_pair() {
-    let Some(code) = decompile("rust_scalarpair_x86_64", "prod", &["option rustabi auto"]) else {
-        return;
-    };
+    let code = decompile("rust_scalarpair_x86_64", "prod", &["option rustabi auto"]);
     assert!(
         !code.contains("bool prod"),
         "the return must no longer be the discriminant alone; got:\n{code}",
@@ -126,10 +109,7 @@ fn by_default_the_consumer_reads_an_unassigned_payload() {
     // `option callretpair` (DIV-162) reaches the same call-output arm with the
     // language test dropped and ships ON, so the pre-fix rendering this test
     // describes is only visible with it held off.
-    let Some(code) = decompile("rust_scalarpair_x86_64", "cons", &["option callretpair off"])
-    else {
-        return;
-    };
+    let code = decompile("rust_scalarpair_x86_64", "cons", &["option callretpair off"]);
     assert!(
         code.contains("// edx"),
         "the payload register must show up as a bare register-commented local; got:\n{code}",
@@ -145,9 +125,7 @@ fn by_default_the_consumer_reads_an_unassigned_payload() {
 /// The fix: the call has an output, and every local the body reads is assigned.
 #[test]
 fn the_consumer_reads_the_payload_out_of_the_call() {
-    let Some(code) = decompile("rust_scalarpair_x86_64", "cons", &["option rustabi auto"]) else {
-        return;
-    };
+    let code = decompile("rust_scalarpair_x86_64", "cons", &["option rustabi auto"]);
     assert!(
         code.contains("= prod()"),
         "the call must have an output the payload comes out of; got:\n{code}",
@@ -168,16 +146,12 @@ fn the_consumer_reads_the_payload_out_of_the_call() {
 /// callee's body, and the reader must render identically with the option on.
 #[test]
 fn a_callee_proven_not_to_write_the_payload_is_not_paired() {
-    let Some(off) = decompile("rust_clobber_pair_x86_64", "pair_shaped_reader", &[]) else {
-        return;
-    };
-    let Some(on) = decompile(
+    let off = decompile("rust_clobber_pair_x86_64", "pair_shaped_reader", &[]);
+    let on = decompile(
         "rust_clobber_pair_x86_64",
         "pair_shaped_reader",
         &["option rustabi auto"],
-    ) else {
-        return;
-    };
+    );
     let body = |s: &str| s[s.find("Decompiling").unwrap_or(0)..].to_string();
     assert_eq!(
         body(&off),
@@ -196,10 +170,7 @@ fn a_callee_proven_not_to_write_the_payload_is_not_paired() {
 /// only thing that differs.
 #[test]
 fn the_veto_is_the_callee_body_and_nothing_else() {
-    let Some(paired) = decompile("rust_scalarpair_x86_64", "cons", &["option rustabi auto"])
-    else {
-        return;
-    };
+    let paired = decompile("rust_scalarpair_x86_64", "cons", &["option rustabi auto"]);
     assert!(
         paired.contains("= prod()"),
         "the positive control must still pair; got:\n{paired}",
@@ -211,8 +182,8 @@ fn the_veto_is_the_callee_body_and_nothing_else() {
 /// of the classic non-PIE `fauxware` renders identically with the option on.
 #[test]
 fn auto_cannot_change_a_c_binary() {
-    let Some(off) = decompile("fauxware", "main", &[]) else { return };
-    let Some(on) = decompile("fauxware", "main", &["option rustabi auto"]) else { return };
+    let off = decompile("fauxware", "main", &[]);
+    let on = decompile("fauxware", "main", &["option rustabi auto"]);
     // `on` carries the option's confirmation line ahead of the decompilation;
     // compare the emitted C, which is the thing that must not move.
     let body = |s: &str| s[s.find("Decompiling").unwrap_or(0)..].to_string();

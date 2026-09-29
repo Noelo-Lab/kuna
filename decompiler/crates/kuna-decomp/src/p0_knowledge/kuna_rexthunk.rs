@@ -34,10 +34,7 @@ pub const REXTHUNK_ENV: &str = "KUNA_REXTHUNK";
 
 /// Whether the REX-prefixed thunk rejection is enabled for this process.
 pub fn rexthunk_enabled() -> bool {
-    match std::env::var(REXTHUNK_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
-        Err(_) => true,
-    }
+    crate::options::env_toggle(REXTHUNK_ENV, true)
 }
 
 /// Bridge a `set_kuna_option("rexthunk", val)` toggle to [`REXTHUNK_ENV`] so a

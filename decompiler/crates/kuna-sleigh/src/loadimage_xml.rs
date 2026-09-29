@@ -1,33 +1,17 @@
-//! Port of `decompiler/cpp/loadimage_xml.hh` + `loadimage_xml.cc` (W2, item
-//! `w2-sleigh-loadimage`) — support for programs stored using an XML schema.
+//! XML-backed executable images, symbols and read-only ranges.
 //!
-//! Structural mapping (vs C++):
+//! [`LoadImageXml`] retains an `Rc<Element>` root and orders chunks and symbols
+//! by [`Address`]. Opening receives the address-space manager and [`IdRegistry`]
+//! explicitly. Architecture and symbol names remain byte strings.
 //!
-//! - `const Element *rootel` becomes an `Rc<Element>` from
-//!   [`kuna_base::xml`]; `map`/`set` members become `BTreeMap`/`BTreeSet`
-//!   keyed by [`Address`] (whose `Ord` transcribes the C++ `operator<`, ADR
-//!   0002).
-//! - The `const AddrSpaceManager *manage` member is **not** stored (the
-//!   workspace convention bans manager back-pointers, see
-//!   `kuna_base::space` module docs): it was only ever read inside `open()`
-//!   where the same manager arrives as the parameter.  `open()` also takes
-//!   the explicit [`IdRegistry`] that replaces the C++ global id tables.
-//! - The `mutable map<Address,string>::const_iterator cursymbol` becomes a
-//!   `RefCell<Option<Address>>` cursor holding the next key to report
-//!   (equivalent while the symbol map is unchanged between
-//!   `open_symbols`/`get_next_symbol` calls — mutating it mid-iteration is
-//!   iterator-invalidation UB in C++).  Before `openSymbols` the C++
-//!   iterator is uninitialized (UB to use); the Rust cursor starts at
-//!   "end", so a premature `get_next_symbol` returns `false`.
-//! - Symbol names and the arch type are byte strings (`Vec<u8>`), per the
-//!   marshal byte-string convention.
-//! - C++ quirks transcribed deliberately: `clear()` does **not** clear
-//!   `readonlyset`, and `adjustVma()` rebuilds `chunk`/`addrtosymbol` but
-//!   not `readonlyset` (so previously readonly chunks stop being reported
-//!   by `getReadonly` after an adjustment), exactly as upstream.
+//! Symbol iteration uses an interior cursor over address keys. Before
+//! `open_symbols`, the cursor is at the end and `get_next_symbol` returns false.
+//! Clearing or relocating the image leaves its read-only address set unchanged,
+//! preserving the upstream behavior.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write;
 use std::ops::Bound;
 use std::rc::Rc;
 
@@ -66,6 +50,19 @@ fn addr_space(a: &Address) -> &Rc<AddrSpace> {
     a.get_space().expect("LoadImageXml: address with null space pointer (C++ UB)")
 }
 
+/// Move entries in address order using the signed i32 byte adjustment.
+/// Address ordering uses only the immutable space index and offset.
+#[allow(clippy::mutable_key_type)]
+fn relocate_entries(entries: &mut BTreeMap<Address, Vec<u8>>, adjust: i64) {
+    let mut relocated = BTreeMap::new();
+    for (addr, bytes) in std::mem::take(entries) {
+        let offset =
+            AddrSpace::address_to_byte(adjust as u64, addr_space(&addr).get_word_size()) as i32;
+        relocated.insert(&addr + i64::from(offset), bytes);
+    }
+    *entries = relocated;
+}
+
 /// `istream::get()` over an in-memory byte string, truncated to `char` as in
 /// the C++ hex-content loop: returns the next byte as a *signed* char (high
 /// bit set comes back negative, terminating the caller's `> 0` loop), or -1
@@ -77,6 +74,17 @@ fn istream_get(content: &[u8], pos: &mut usize) -> i8 {
     let b = content[*pos];
     *pos += 1;
     b as i8 // cast: C++ assigns the int from get() into a (signed) char
+}
+
+/// Apply the C++ hex-digit arithmetic without validating the input.
+fn hex_digit(c: i8) -> i8 {
+    if c <= b'9' as i8 {
+        c.wrapping_sub(b'0' as i8)
+    } else if c <= b'F' as i8 {
+        c.wrapping_add(10).wrapping_sub(b'A' as i8)
+    } else {
+        c.wrapping_add(10).wrapping_sub(b'a' as i8)
+    }
 }
 
 /// `is >> ws`: skip the classic-locale whitespace characters.
@@ -157,7 +165,7 @@ impl LoadImageXml {
             // byte and a trailing '\n'
             let mut s = String::from("\n");
             for (i, b) in vec.iter().enumerate() {
-                s.push_str(&format!("{b:02x}"));
+                write!(s, "{b:02x}").expect("writing to a String cannot fail");
                 if i % 20 == 19 {
                     s.push('\n');
                 }
@@ -227,26 +235,7 @@ impl LoadImageXml {
                 let mut c1 = istream_get(&content, &mut pos);
                 let mut c2 = istream_get(&content, &mut pos);
                 while c1 > 0 && c2 > 0 {
-                    // The C++ digit conversion does no validation: chars in
-                    // ('9','F'] are treated as upper-case hex, everything
-                    // above 'F' as lower-case.  Arithmetic happens in int
-                    // and truncates back to char on assignment (wrapping_*).
-                    if c1 <= b'9' as i8 {
-                        c1 = c1.wrapping_sub(b'0' as i8);
-                    } else if c1 <= b'F' as i8 {
-                        c1 = c1.wrapping_add(10).wrapping_sub(b'A' as i8);
-                    } else {
-                        c1 = c1.wrapping_add(10).wrapping_sub(b'a' as i8);
-                    }
-                    if c2 <= b'9' as i8 {
-                        c2 = c2.wrapping_sub(b'0' as i8);
-                    } else if c2 <= b'F' as i8 {
-                        c2 = c2.wrapping_add(10).wrapping_sub(b'A' as i8);
-                    } else {
-                        c2 = c2.wrapping_add(10).wrapping_sub(b'a' as i8);
-                    }
-                    // int4 val = c1*16 + c2 (char promotes to int)
-                    let val: i32 = i32::from(c1) * 16 + i32::from(c2);
+                    let val = i32::from(hex_digit(c1)) * 16 + i32::from(hex_digit(c2));
                     vec.push(val as u8); // cast: (uint1)val truncation
                     skip_ws(&content, &mut pos); // is >> ws
                     c1 = istream_get(&content, &mut pos);
@@ -271,37 +260,20 @@ impl LoadImageXml {
         self.addrtosymbol.clear();
     }
 
-    /// Make sure every chunk is followed by at least 512 bytes of pad
+    /// Prune covered chunks in address order, then pad each surviving chunk
+    /// by up to 512 bytes without crossing the next chunk or the space boundary.
     fn pad(&mut self) {
-        // Search for completely redundant chunks
-        if self.chunk.is_empty() {
-            return;
-        }
-        // C++ walks (lastiter, iter) pairs, erasing `iter` when its chunk
-        // ends at or before the end of `lastiter`'s chunk.  Erasure during
-        // iteration is reproduced over a pre-collected key list: after an
-        // erase, `iter = lastiter; ++iter` is exactly the next key in the
-        // original order.
-        let keys: Vec<Address> = self.chunk.keys().cloned().collect();
-        let mut lastkey: Address = keys[0].clone();
-        for key in keys.iter().skip(1) {
-            if Rc::ptr_eq(addr_space(&lastkey), addr_space(key)) {
-                // end = offset + size - 1 in wrapping uintb arithmetic
-                let end1 = lastkey
-                    .get_offset()
-                    .wadd(self.chunk[&lastkey].len() as u64) // cast: size_t chunk length
-                    .wsub(1);
-                let end2 = key
-                    .get_offset()
-                    .wadd(self.chunk[key].len() as u64) // cast: size_t chunk length
-                    .wsub(1);
-                if end1 >= end2 {
-                    self.chunk.remove(key);
-                    continue; // lastiter unchanged
+        let mut previous: Option<(Address, u64)> = None;
+        self.chunk.retain(|key, bytes| {
+            let end = key.get_offset().wadd(bytes.len() as u64).wsub(1);
+            if let Some((last, last_end)) = &previous {
+                if Rc::ptr_eq(addr_space(last), addr_space(key)) && *last_end >= end {
+                    return false;
                 }
             }
-            lastkey = key.clone();
-        }
+            previous = Some((key.clone(), end));
+            true
+        });
 
         // C++ inserts pad chunks *while* iterating; every insertion lands
         // strictly between the current and the next original chunk (or
@@ -335,9 +307,7 @@ impl LoadImageXml {
             // operator[] creates the entry if absent (it can hit the
             // current chunk itself when its size is 0)
             let vec = self.chunk.entry(endaddr).or_default();
-            for _i in 0..maxsize {
-                vec.push(0);
-            }
+            vec.extend(std::iter::repeat(0).take(maxsize.max(0) as usize));
         }
     }
 }
@@ -444,35 +414,8 @@ impl LoadImage for LoadImageXml {
     }
 
     fn adjust_vma(&mut self, adjust: i64) {
-        // mutable_key_type: AddrSpace's interior-mutable fields
-        // (flags/shortcut Cells) do not participate in Address's Ord, which
-        // reads only the immutable space index and the offset — the key
-        // order cannot change while a key is in the map.
-        #[allow(clippy::mutable_key_type)]
-        let mut newchunk: BTreeMap<Address, Vec<u8>> = BTreeMap::new();
-        #[allow(clippy::mutable_key_type)] // see newchunk's note
-        let mut newsymbol: BTreeMap<Address, Vec<u8>> = BTreeMap::new();
-
-        // (C++ copies entries into the new maps and assigns over the old;
-        // draining the old map first is observationally identical)
-        for (a, v) in std::mem::take(&mut self.chunk) {
-            let spc = Rc::clone(addr_space(&a));
-            // addressToByte: the long argument converts to uintb
-            // (sign-extension) and the uintb result truncates into the int4
-            let off = AddrSpace::address_to_byte(adjust as u64, spc.get_word_size()) as i32;
-            let newaddr = &a + i64::from(off); // int4 sign-extends into operator+
-            newchunk.insert(newaddr, v);
-        }
-        self.chunk = newchunk;
-        for (a, nm) in std::mem::take(&mut self.addrtosymbol) {
-            let spc = Rc::clone(addr_space(&a));
-            // (same conversion chain as above)
-            let off = AddrSpace::address_to_byte(adjust as u64, spc.get_word_size()) as i32;
-            let newaddr = &a + i64::from(off);
-            newsymbol.insert(newaddr, nm);
-        }
-        self.addrtosymbol = newsymbol;
-        // (C++ does NOT re-key readonlyset — transcribed faithfully)
+        relocate_entries(&mut self.chunk, adjust);
+        relocate_entries(&mut self.addrtosymbol, adjust);
     }
 }
 

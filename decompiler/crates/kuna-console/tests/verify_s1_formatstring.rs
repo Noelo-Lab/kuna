@@ -20,13 +20,6 @@
 //! (`formatstring::parse_output_types("%d %s\n") = [Int, CharPtr]`), builds a
 //! per-call-site prototype override (`apply::build_override_pieces`), installs it
 //! via the existing `pending_proto_overrides` plumbing, and re-decompiles.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_s1_*` gates, bootstrapping needs the built `x86`
-//! `.sla` under `specs/` (gitignored; `make specs`). When it is absent the
-//! bootstrap fails; the test prints that and returns early (a specs-less CI is a
-//! visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -46,23 +39,14 @@ fn fmt_bin() -> PathBuf {
 
 /// Decompile `main` and return the captured C, optionally enabling the
 /// format-string varargs-typing feature first (`--option formatstring on`).
-fn decompile_main(formatstring_on: bool) -> Option<String> {
+fn decompile_main(formatstring_on: bool) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fmt_bin().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_s1_formatstring: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fmt_bin().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // Commit the load-time analysis facts (libproto, etc.) — what `read symbols`
     // does — so the `printf` proto is recovered before the decompile.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
@@ -85,14 +69,12 @@ fn decompile_main(formatstring_on: bool) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 #[test]
 fn formatstring_off_leaves_varargs_untyped() {
-    let Some(out) = decompile_main(false) else {
-        return; // specs-less skip
-    };
+    let out = decompile_main(false);
     assert!(out.contains("printf("), "expected a printf call, got:\n{out}");
     // Default: the %d arg is widened with a (uint8) cast and the %s arg is the
     // bare untyped `*a1` — the feature is OFF.
@@ -108,9 +90,7 @@ fn formatstring_off_leaves_varargs_untyped() {
 
 #[test]
 fn formatstring_on_types_printf_varargs() {
-    let Some(out) = decompile_main(true) else {
-        return; // specs-less skip
-    };
+    let out = decompile_main(true);
     assert!(out.contains("printf("), "expected a printf call, got:\n{out}");
     // With the feature on: the %s arg is cast to `char *` (the override typed it),
     // and the %d arg is no longer widened with a (uint8) cast (the format-derived

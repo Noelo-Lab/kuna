@@ -13,10 +13,7 @@ fn shared_div3_reciprocal_recovers_the_modulo() {
     let root = repo_root();
     let specs = std::env::var_os("KUNA_SPECS").map(PathBuf::from)
         .unwrap_or_else(|| root.join("specs"));
-    if !specs.join("Ghidra/Processors/x86/data/languages/x86-64.sla").exists() {
-        eprintln!("divopt modulo: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
+    assert!(specs.join("Ghidra/Processors/x86/data/languages/x86-64.sla").exists(), "required processor spec missing; build specs before running integration tests");
     let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args(["decompile", root.join("tests/bug-repro/sort").to_str().unwrap(),
                "--addr", "0xd040", "--sleighpath", specs.to_str().unwrap()])

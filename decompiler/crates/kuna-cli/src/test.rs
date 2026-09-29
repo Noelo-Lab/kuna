@@ -18,6 +18,8 @@ use kuna_console::kuna_buildstamp;
 use crate::jsonfmt::{dumps_indent2_sorted, Json};
 use crate::paths;
 
+mod baseline;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     All,
@@ -458,14 +460,13 @@ pub fn run_cmd(args: &TestArgs) -> i32 {
                 return 2;
             }
         }
-        let base = match crate::jsonfmt::parse(&content) {
-            Some(v) => v,
-            None => {
-                eprintln!("error: could not parse baseline JSON {bl}");
+        let base_pass = match baseline::passing(&content) {
+            Ok(passing) => passing,
+            Err(err) => {
+                eprintln!("error: could not parse baseline JSON {bl}: {err}");
                 return 2;
             }
         };
-        let base_pass = baseline_passing(&base);
         // Scope the baseline to the modes actually run.
         let run_prefixes: &[&str] = match args.mode {
             Mode::All => &["unit:", "data:"],
@@ -587,26 +588,6 @@ fn footer_json(f: Option<(i64, i64)>) -> Json {
         ]),
         None => Json::Null,
     }
-}
-
-/// Read the `passing` string array out of a baseline JSON value.
-fn baseline_passing(base: &Json) -> BTreeSet<String> {
-    if let Json::Object(pairs) = base {
-        for (k, v) in pairs {
-            if k == "passing" {
-                if let Json::Array(items) = v {
-                    return items
-                        .iter()
-                        .filter_map(|i| match i {
-                            Json::Str(s) => Some(s.clone()),
-                            _ => None,
-                        })
-                        .collect();
-                }
-            }
-        }
-    }
-    BTreeSet::new()
 }
 
 #[cfg(test)]

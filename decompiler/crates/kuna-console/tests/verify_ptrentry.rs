@@ -43,12 +43,6 @@
 //!
 //! **On** — `LEAF` is registered and decompiles to its real constant
 //! (`movs r0,#7 ; bx lr` → `return 7;`), while `SWCASE` stays undiscovered.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built ARM `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -75,24 +69,15 @@ const CALLEE: &str = "sub_8000050";
 /// inside the same discovered function, so it must never become an entry.
 const SWCASE: &str = "sub_800005c";
 
-/// Bootstrap the fixture with the Listing tier on (the surface `decompile-all` /
-/// `kuna functions` inject on non-x86-64), optionally flipping `ptrentry` on
-/// before the deferred commit — the live-CLI ordering. `None` ⇒ specs-less skip.
-fn bootstrap(on: bool) -> Option<kuna_console::engine::ConsoleProgram> {
+/// Bootstrap the fixture with the Listing tier on (the surface `decompile-all` / `kuna
+/// functions` inject on non-x86-64), optionally flipping `ptrentry` on before the deferred
+/// commit — the live-CLI ordering.
+fn bootstrap(on: bool) -> kuna_console::engine::ConsoleProgram {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_ptrentry: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // The non-x86-64 discovery set the `decompile-all` / `functions` drivers
     // inject (DIV-20). `funcstart_patterns` is what COMMITS the recursive-descent
     // walk's own finds, so without it `callee` would be discovered but unnamed.
@@ -104,7 +89,7 @@ fn bootstrap(on: bool) -> Option<kuna_console::engine::ConsoleProgram> {
         prog.arch_mut().set_kuna_option("ptrentry", "on").expect("ptrentry flips on");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Decompile `func` in an already-bootstrapped program and return the captured C.
@@ -130,9 +115,7 @@ fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
 /// decompiled at all.
 #[test]
 fn default_drops_the_pointer_only_leaf() {
-    let Some(off) = bootstrap(false) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(false);
     assert!(off.lookup_symbol(RESET).is_some(), "the reset vector is always found");
     assert!(off.lookup_symbol(CALLEE).is_some(), "the walk always follows the BL");
     assert!(
@@ -152,14 +135,12 @@ fn default_drops_the_pointer_only_leaf() {
 /// and still refuses the switch-table case that shares its shape.
 #[test]
 fn ptrentry_recovers_the_pointer_only_leaf() {
-    let Some(on) = bootstrap(true) else {
-        return; // specs-less skip
-    };
+    let on = bootstrap(true);
     assert!(
         on.lookup_symbol(LEAF).is_some(),
         "ptrentry must discover {LEAF} from its .rodata function-pointer word"
     );
-    let Some(prog) = bootstrap(true) else { return };
+    let prog = bootstrap(true);
     let body = decompile(prog, LEAF);
     eprintln!("---- {LEAF} (ptrentry on) ----\n{body}");
     assert!(body.contains("return 7;"), "{LEAF} must decompile to its real constant, got:\n{body}");
@@ -173,9 +154,7 @@ fn ptrentry_recovers_the_pointer_only_leaf() {
 #[test]
 fn ptrentry_refuses_the_switch_table_case() {
     for on in [false, true] {
-        let Some(prog) = bootstrap(on) else {
-            return; // specs-less skip
-        };
+        let prog = bootstrap(on);
         assert!(
             prog.lookup_symbol(SWCASE).is_none(),
             "ptrentry (on = {on}) must NOT split a function at {SWCASE}: its \
@@ -191,10 +170,8 @@ fn ptrentry_refuses_the_switch_table_case() {
 /// recursive-descent walk), so it is pinned here.
 #[test]
 fn ptrentry_only_adds_entries() {
-    let Some(off) = bootstrap(false) else {
-        return; // specs-less skip
-    };
-    let Some(on) = bootstrap(true) else { return };
+    let off = bootstrap(false);
+    let on = bootstrap(true);
     for f in [RESET, CALLEE] {
         assert!(off.lookup_symbol(f).is_some() && on.lookup_symbol(f).is_some(), "{f} survives");
     }

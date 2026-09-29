@@ -106,7 +106,7 @@ the read-symbols boundary is a no-op — the facts were already committed or
 dropped, and the drained stash means a second `read symbols` re-commits nothing.
 Every driver therefore emits option lines strictly between `load file` and
 `read symbols` (`decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`,
-`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`).
+`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input)`).
 
 The commit is also not transactional. Its arms mutate the architecture in place
 and in order, so an arm that fails leaves the earlier ones applied and abandons
@@ -129,6 +129,79 @@ tier one.
 
 ## 0.2 Front-ends and the decompile-all walk
 
+The public command names and handlers have one ordered table in
+`decompiler/crates/kuna-cli/src/main.rs`. Dispatch and the top-level help's
+command list use that same table. Help integration tests discover the names
+from the real CLI, reject empty or repeated entries, and exercise both help
+spellings for every advertised command. Version/help aliases remain separate;
+missing or unknown commands retain exit status 2 and diagnostics on stderr.
+
+The CLI shares flag-value and option-pair consumption in
+`decompiler/crates/kuna-cli/src/args.rs`. Command-specific parsers retain their
+flag sets and diagnostics; option names are validated before loading, and pairs
+remain in argv order when forwarded from `decompile --json` to `decompile-all`.
+Missing flag values make the parsers return a usage error (exit status 2)
+immediately, without invoking the command engine.
+
+String filtering is separate from inventory and reference attribution. The
+private `decompiler/crates/kuna-cli/src/strings/filter.rs (Regex)` module owns
+the existing pattern grammar, case folding and bounded matching. A repetition
+carries its node, limits and greedy/lazy policy together; ordinary and counted
+quantifiers share suffix handling. Count parsing scans all ASCII digits before
+checking the value, so overflow retains the same cursor and literal-brace
+fallback behavior. Match-budget accounting and warnings remain unchanged.
+
+The private `decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs`
+owns callee-first execution for whole-binary and project-export commands.
+It applies the call-graph plan, runs caller-vote rounds and structure convergence,
+parks eligible callbacks, then converges element globals. Results retain target
+order. Each planned decompile copies the driver's output options and changes
+only prototype parking; ledger resets, budgets and failed-redo handling remain
+part of the same execution path. Loading and target selection stay in the parent
+command module, while call-graph planning stays in `callgraph.rs`.
+
+FID library ingestion deduplicates across inputs in
+`decompiler/crates/kuna-cli/src/fid.rs (dedup_records)`. Membership is keyed by
+full hash, specific hash and borrowed name; a retain mask preserves input order
+and the first record's metadata without cloning names. Different names or
+specific hashes remain separate records. Database serialization and command
+diagnostics are unchanged.
+
+The database serializer visits full-hash buckets in ascending hash order and
+retains insertion order within each bucket. Names are interned on first
+encounter through one entry lookup, and repeated names reuse the same byte
+offset. Both hash maps are private lookup indices; the serialization traversal
+sets record and string-blob order explicitly. The flat format, version and
+reader behavior are unchanged.
+
+Archive-member loading is owned by
+`decompiler/crates/kuna-cli/src/fid/archive.rs`. Each object member is written to
+a privately created temporary file whose guard removes it after loading or on
+unwind. The writing handle is closed before the path-based loader opens it;
+simultaneous ingests have independent member files. Non-object members are
+still skipped, bootstrap failures retain the archive/member warning, and
+record order and cross-input deduplication remain unchanged.
+
+Text decompilation owns its C and optional region-output files for the entire
+console run, including a discovery retry. Each file is privately created and
+its initial writing handle is closed before launching the console. Scope exit
+removes both files on success, error or unwind; file-creation failures return
+a driver error before spawning the console. Script ordering, empty-output
+handling and recovered pipeline diagnostics remain unchanged.
+
+Inventory queries share function attribution and address records through
+`decompiler/crates/kuna-cli/src/function_info.rs`. Attribution prefers the
+reference walk, then the engine's inventory. String and constant rows prefer
+their canonical inventory names before entry, symbol and generated-name
+fallbacks. Cross-reference queries retain their separate target/global-name
+precedence but share the generated-name fallback and ordered function JSON
+record. No query command depends on another command's implementation.
+
+Browser smoke tests use `integrations/web/test/cdp-client.mjs` as a checked
+process boundary: spawn, exit and port-deadline failures retain bounded stderr
+diagnostics and clean up the owned profile. Availability skips remain the
+caller's decision; a failed launch is not converted into a skip.
+
 Four front-ends drive one engine assembly:
 
 - **The console** — `decomp_dbg`
@@ -138,8 +211,8 @@ Four front-ends drive one engine assembly:
   (`decompiler/crates/kuna-harness/src/bin/decomp_test_dbg.rs`), which drives the
   same bootstrap over the XML corpus. This is the parity surface: it never arms
   the watchdog and (on the XML path) never runs tier one.
-- (kuna) **`kuna decompile`** (`decompiler/crates/kuna-cli/src/decompile.rs
-  (build_script)`) — subprocess-per-function: it scripts a fresh `decomp_dbg` for
+- (kuna) **`kuna decompile`** (`decompiler/crates/kuna-cli/src/decompile/script.rs
+  (build_script_for_input)`) — subprocess-per-function: it scripts a fresh `decomp_dbg` for
   each request, so every invocation re-parses the SLEIGH spec and re-runs the
   whole-binary analysis. It injects `option listing on` by default (unless the
   caller names `listing`), so the no-return analyses fire even on the
@@ -764,6 +837,316 @@ to is not an answer on a machine that has no checkout, and a missing SLEIGH tree
 is reported where it is resolved rather than as the engine's downstream
 `No sleigh specification` — which reads as a problem with the binary.
 
+`kuna specs --diff` is informational: it writes verification guidance without
+starting a compiler (`decompiler/crates/kuna-cli/src/specs.rs (run)`). It identifies
+pinned Ghidra compiler element-stream comparisons separately from decompiler
+behavioral assertions; neither substitutes for the other.
+
+(kuna) **Compiler filenames.** The single-file `slacomp` command accepts one input
+and at most one output filename. It appends `.slaspec` or `.sla` when the filename
+has no extension; dots in parent directories do not count. Explicit matching
+suffixes, including the filenames `.slaspec` and `.sla`, are accepted unchanged,
+while other filename extensions are rejected. With no output argument it writes
+the input's sibling `.sla`. Extra positional arguments fail before compilation.
+Both filename arguments use the same normalization rule
+(`decompiler/crates/kuna-slacomp/src/bin/slacomp.rs (with_extension)`).
+
+The compiler's `-y` flag selects the XML debug encoding in both single-file and
+recursive (`-a`) modes. After successful parsing and compilation, the driver
+chooses the XML encoder or the default compressed binary encoder according to
+that flag; filename selection and write-error handling are the same in both
+modes (`decompiler/crates/kuna-slacomp/src/slgh_compile.rs (run_compilation)`,
+`decompiler/crates/kuna-slacomp/src/encode.rs (encode_to_xml_bytes)`).
+The symbol and constructor encoding path retains the `OpcodeEncoder` interface
+so each encoder chooses its own opcode representation: names in XML, signed
+integer values in binary. Treating every encoder as binary would produce numeric
+XML attributes where Ghidra expects names
+(`decompiler/crates/kuna-sleigh/src/sleighbase.rs (encode)`,
+`decompiler/crates/kuna-sleigh/src/slghsymbol.rs (SleighBaseTrans)`).
+
+The corresponding decoding path retains `OpcodeDecoder` through symbol tables,
+subtables and constructor templates. XML opcode names and packed opcode values
+therefore use the existing format-specific readers, including their validation.
+The shared ID table in `decompiler/crates/kuna-sleigh/src/slaformat/ids.rs` defines
+every SLA element and attribute once and supplies the complete XML registration
+list. Existing `sla` import paths re-export that table. `SleighBase::registry`
+builds its XML name lookup on demand; binary decoding uses numeric IDs directly.
+
+Encoding borrows the existing constructor-template slice through the symbol
+table, symbols and constructors. It preserves main-section and named-section
+order, skips absent sections without renumbering later sections, and reports
+invalid handles before reading a template. The mutable `SleighBaseTrans`
+callback is used only while decoding new templates. Encoding therefore needs
+neither a mutable adapter nor a copy of the template collection.
+
+The compiler's `with` stack owns each block's parsed context changes. Every
+enclosed constructor receives copies in outer-to-inner block order, followed
+by its local changes. Closing a block removes its assignments from subsequent
+constructors. These copies pass directly to the constructor; they do not need
+temporary handles in the parser's context-change arena.
+
+Compiler diagnostics for a constructor resolve its stored source-file index
+and line number. Consistency checks and section finalization share this lookup,
+so included-file diagnostics keep the constructor's location after parsing
+returns to the parent file. No separate constructor-location map is maintained.
+
+The consistency checker rejects a temporary that is read exactly once and
+written exactly once in the same semantic section when the read precedes or
+occurs in the write operation. This fatal error propagates through constructor
+optimization and the compiler pipeline before encoding can produce an image.
+The CLI prints the error's explanation and exits with status 2. A correctly
+ordered write and read remains eligible for copy propagation.
+
+Consistency checks borrow template varnodes and their size and offset fields.
+Selecting a copy-propagation rule and reporting unused temporaries iterate the
+existing records in increasing offset order, without copying their keys into
+a separate collection. Only a selected rule is copied out of the read-only
+search; applying it retains the owned varnode copy needed to rewrite an operation.
+Overlapping temporary records are borrowed while computing their combined span
+and read/write counts, then the map entries are replaced by the merged record.
+Both traversals visit existing definitions in order and the new record last;
+coalescing does not build an owned copy of the records.
+
+After consistency checking, the compiler checks whether different operands of a
+constructor can export the same temporary storage. It follows subtable exports
+and re-exports, including the temporary used by a dynamic export, while ignoring
+constant and register exports. Each operand traversal visits a symbol once.
+Constructors without a main template, with fewer than two operands, or containing
+only build directives are skipped. The compiler reports at most one collision
+per constructor and a total count; `slacomp -c` adds the conflicting operand names
+and constructor location. These warnings do not change the compiled image.
+
+Both compiler constructor-building entry points use the same complete
+finalizer. The entry point accepting a section vector owns it directly; the
+parser-arena entry point takes the vector from its slot before delegating.
+Finalization borrows this local vector while validating its sections, then
+attaches valid templates and context changes. Scope cleanup runs after either
+success or a validation error, including constructors without semantic sections.
+
+Parser constructor handles index the runtime's `ConstructorRef` values, which
+carry a table identity and an index within that table. Driver helpers pass this
+reference through operand creation, section finalization and diagnostics instead
+of maintaining a second pair representation. Section checks borrow the existing
+operand list. Inherited pattern composition walks the `with` stack directly,
+from inner to outer blocks, before combining each outer pattern with the result.
+Address-space lookups use the `PcodeCompile` override-or-base policy for both the
+parser's expression builders and `CompilerHost` callbacks; the existing public
+setters and parser handle types are unchanged.
+
+Pattern construction borrows the equation arena while updating the symbol table.
+Later handmap and decision-tree passes traverse the existing table list. When
+crossbuilds require extra unique-space offset bits, the compiler updates each
+referenced template in place: root table first, then declared subtables, with
+each constructor's main section before its named sections. Missing sections are
+skipped. The pass does not copy table or template-handle lists, move templates
+out of their arena, or alter templates without a constructor reference.
+Register-name collision checking likewise walks the global scope directly and
+borrows each register's spelling while forming its uppercase comparison key;
+collision order and the `-s` policy remain unchanged.
+The decoder rebuilds runtime register cross-references from the encoded symbols.
+It walks global symbols directly in name order, copying names only for stored
+registers, user operations and duplicate-register reports. Duplicate storage
+keeps the first register name and reports the later name before that original
+name. Context registration and re-registration use the same scope order and
+stop at the first error, retaining registrations and cross-references already
+completed.
+
+Context values and change masks have matching word counts. Resizing preserves
+existing words, zeroes new words and reuses buffer capacity. Partition copies
+preserve values and clear explicit-change masks. Context-cache hits refetch the
+current database slice; misses update the cached space and bounds before
+copying the database's word count into the caller's buffer.
+
+Register-name lookup borrows the selected name until the caller constructs its
+return value. The base API returns an owned byte vector; both the native engine
+and register snapshots form strings directly from the borrowed bytes. Exact
+lookups retain the storage-key comparison;
+containing-register lookups retain their address-space identity checks,
+same-offset fallback and wrapping bounds. Misses remain empty. Invalid UTF-8
+still uses replacement characters in string results.
+
+P-code construction appends default varnodes as a single batch, retaining stable
+pool indices and reusing allocations between instructions. Both direct and
+dynamic inputs generate their storage location before any auxiliary load; a
+pointer adjustment preserves the original queued operation before replacing it
+with the addition. Relative labels update one varnode at a time, retaining
+wrapping offsets, size masks and partial updates when a later label is missing.
+Queued p-code operations pass borrowed varnode slices to the emitter, retaining
+stored space-index constants. An unimplemented template is reported from the
+failing context's base constructor, with that context's address and the total
+instruction length including delay slots.
+
+Memory-state register setters borrow the varnode's address-space handle for the
+write. Bank lookup checks the space index once; absent, negative and out-of-range
+indices remain unmapped, and constants still read as their own offsets.
+
+XML load images prune redundant chunks in address order, comparing space
+identity and wrapping inclusive endpoints. Each surviving original chunk gets
+up to 512 zero bytes of padding, bounded by the next chunk and the end of its
+space; newly inserted pads are not visited again in the same pass. Encoding
+writes lowercase hex directly into the content string, with a leading newline,
+a newline after every twentieth byte and a final newline. Decoding retains its
+signed-byte stopping rules and permissive digit arithmetic, skipping whitespace
+only before each pair. These rules are implemented in
+`decompiler/crates/kuna-sleigh/src/loadimage_xml.rs`.
+
+XML image relocation uses the same ordered operation for byte chunks and
+symbols. The signed adjustment is scaled by each address space's word size,
+truncated to a signed 32-bit byte offset, then added with address wrapping.
+Colliding keys keep the last value visited in the original address order.
+Chunks are relocated before symbols; read-only markers and the symbol cursor
+keep their existing addresses.
+
+Named register bit ranges with byte-aligned ends use ordinary varnodes at the
+appropriate byte offset for the declared endianness. Other ranges register a
+compiler-only bitrange symbol holding the parent register, least-significant
+bit offset and width. Existing bitrange expression and assignment builders
+lower reads and writes; symbol-table cleanup removes these aliases before
+encoding. Zero-width and out-of-bounds ranges retain their existing errors.
+
+The three attachment directives share duplicate reporting and the replacement
+loop for pattern-value lookup, table-size validation and symbol construction.
+Duplicate entries are removed in their original order, preserving the selected
+warning symbol. Variable attachments check register widths after the duplicate
+warning and before replacing symbols. Each directive keeps its existing table
+representation, diagnostic labels and public entry point.
+
+Symbol cleanup takes ownership of removed arena slots and uses their existing
+names and operand lists. Macros and unused subtables lose their operand locals;
+non-operand locals and empty non-global scopes are also discarded. Retained
+symbols stay in place until compaction. The compacted ids update scope name
+bindings as well as parent scopes and symbol references, so name lookup and
+scope iteration remain consistent with numeric lookup after repeated cleanup.
+
+Symbol insertion gives the scope map one owned name and borrows the stored
+symbol's name when reporting a duplicate. A rejected duplicate still occupies
+its assigned slot while the original scope binding stays intact. Replacing a
+symbol updates that binding directly, including when the replaced slot came
+from a rejected insertion; its id and scope are preserved.
+
+Expression copies in operands and context changes remap embedded operand
+references after symbol compaction or constructor operand reordering. Both
+remappers use one left-to-right walk. Table-id callbacks run once per reference;
+completed updates remain if a later callback panics. Index remapping leaves
+negative and out-of-range indices unchanged.
+
+Pattern construction borrows completed constructor patterns while folding their
+common subpattern and populating decision nodes. Context validation borrows the
+constructor's changes. Each decision node still owns its simplified patterns,
+moving the simplifier's result directly into the node. Source patterns and
+context changes remain owned by their constructors.
+
+Snippet expressions have no built-in `new` operation. The byte lexer treats
+`new` as an ordinary identifier, resolved through local and language symbols.
+Clearing a snippet removes its result, diagnostics and
+non-space locals, including `inst_dest` and `inst_ref`, while preserving space
+symbols and the temporary base.
+
+Runtime context application borrows the constructor's commands and expressions.
+Commands run in stored order against the mutable parser context; evaluation
+stops at the first error without undoing preceding local updates or queued commits.
+
+Runtime handle resolution borrows operand expressions and result templates from
+its immutable SLEIGH tables. It writes computed handles to the parser context;
+if evaluation fails, earlier handle updates remain in place.
+
+Operand-value evaluation borrows explicit defining expressions and owns the
+expressions returned by defining symbols. Its synthetic walker stores only an
+instruction offset: the referenced operand's offset when its constructor is
+on the current path, otherwise the current node's offset. Instruction reads
+use that offset; context reads retain the local parser context, and address
+values use the cross context when supplied. Missing definitions evaluate to
+zero; nested operand references from the synthetic walker are rejected.
+
+Constructor operand patterns use the defining symbol when present. Otherwise,
+pattern generation borrows the operand's defining expression without copying
+its tree. The operand retains ownership of the expression throughout the build.
+
+Token-pattern concatenation shares the existing minimum-length calculation
+and performs one final intersection with a nonnegative alignment shift.
+Interior-ellipsis cases use zero shift; invalid interior or double ellipses
+retain their existing rejection order. True patterns use the same constructor
+as boolean patterns, with no tokens or ellipses.
+
+Aligned instruction patterns intersect and find their common subpattern from
+borrowed blocks. Blocks are normalized when constructed or decoded, so a zero
+alignment shift needs no copied block or additional normalization.
+
+Block normalization removes leading zero mask words, shifts mask and value
+words together past leading zero bytes, and truncates words after the final
+nonzero mask. Fixed-width bit counts determine the leading and trailing byte
+padding. Always-true and always-false blocks retain empty storage and zero
+offset; ordinary blocks retain the same significant byte span.
+
+Mask and value reads share one word extractor, preserving unsigned word-index
+conversion, zero fill outside the stored words and masked shift counts.
+Specialization, identity and intersection resolution compare instruction then
+context constraints with the same short-circuit order and absent-block rules.
+
+OR-pattern simplification uses the same conservative truth query as callers:
+one alternative must itself be always true. The query for unconstrained
+instruction bits still requires every alternative to qualify. Block comparisons
+bound each positive remaining span to one word and retain the existing maximum
+extent.
+
+Expression evaluation uses one arithmetic traversal for runtime walker values
+and compiler leaf substitutions. Each mode supplies its leaf reader; both visit
+left before right, stop at the first leaf error, and retain wrapping arithmetic,
+masked shift counts and the existing division behavior. A failed substitution
+retains the cursor progress made before the error or panic.
+
+Token alignment compares matching prefix or suffix slices in the required
+direction, retaining the first mismatch and ellipsis error order. Reverse
+alignment sums unmatched token sizes from right to left. Common subpatterns
+copy the shared prefix or suffix once, retaining token metadata and the same
+ellipsis flags; combining patterns leaves both inputs unchanged.
+
+Decision nodes enumerate compatible branch values in ascending order without
+building a temporary list. Terminal nodes sort pattern indices by specialization
+while retaining the original patterns for conflict checks. The sorted prefix
+determines each insertion point; conflict resolution still identifies entries
+by matching pattern values and constructor ids. Once checking finishes,
+patterns move into their final order. Sorting does not copy pattern trees or
+search copies to recover their indices.
+
+Field selection reuses a bounded counter array for candidates up to eight bits
+wide. Each score resets only the candidate's bins; fixed-pattern counts, entropy
+arithmetic, candidate order and tie-breaking remain unchanged. Each pass
+explicitly examines context fields before instruction fields. Root and child
+nodes both start from the same default state.
+
+Runtime constructor resolution and matched-pattern capture share one decision
+walk. The matched leaf supplies both the constructor id and the precise pattern
+needed for instruction masking. Id-only callers borrow the leaf without cloning
+its pattern. Non-subtable symbols use the same index validation in both APIs.
+
+Syntax construction examines the last display piece once. Standalone whitespace
+chunks normalize to one space, adjacent literals coalesce, and operand pieces
+keep their boundaries. Empty chunks are ignored; the first-whitespace index is
+recorded before deciding whether a chunk merges with the previous piece.
+
+Constructor printing shares literal and operand-piece handling across full
+text, mnemonic and body output. Each entry point retains its piece boundaries
+and flow-through operand dispatch. Literals retain lossy UTF-8 conversion;
+operand references retain the existing validation. Constructor-level failures
+keep partial text and walker progress. The public assembly string wrapper
+still clears both output strings when an error is returned.
+
+Pattern-building failures report the accumulated reasons. Subtable errors
+identify the table at its source location, and unreferenced-table warnings
+include its name. Decision-tree errors retain both constructors' table-qualified
+references, so equal local constructor ids in different tables remain separate
+errors. Reports identify both source locations, including included files.
+Identical patterns are always errors; unresolved overlaps are reported when
+strict conflict checking is requested with `-l`.
+
+Finalized macro templates are shared immutably between their symbols and the
+compiler's expansion table. Expanding a macro borrows this shared definition
+and creates independent output operations for parameter substitution and label
+adjustment. It does not copy the entire definition first. The expansion table
+contains only completed definitions; an invalid macro index still rejects the
+expansion.
+
 (kuna) **Mixed builds.** The engine binary `kuna` runs can come from a different
 build than `kuna` itself (an override naming another install, or a sibling left
 behind when only `kuna` was rebuilt), and nothing in the output shows it. So every
@@ -903,10 +1286,17 @@ on stderr while the `Compiling <spec>:` line that attributes them is on stdout,
 and capturing both would print every warning of a run ahead of every progress
 line (DIV-89).
 
+Script construction borrows the parsed single-function request. The subprocess
+driver supplies its resolved binary path, effective address mode, output paths
+and per-attempt defaults separately; retries and transcript diagnostics remain
+in that driver. The script module owns command ordering and path quoting. Raw
+and object-image loads retain their distinct spellings, explicit options follow
+injected defaults, and each assertion keeps its existing application slot.
+
 (kuna) **The console's filename grammar.** `kuna decompile` is the one front-end
 that reaches the engine through a console *script* rather than an in-process
 call: it writes `load file <path>` / `openfile write <path>` into `decomp_dbg`'s
-stdin (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`), where the
+stdin (`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input)`), where the
 other three read the image with `bootstrap_from_object` and never tokenize the
 path at all. Upstream reads every path with `s >> filename`, a pure whitespace
 scan, so a path containing a space arrived as two arguments: `load file` took the
@@ -919,7 +1309,7 @@ which accepts an optional double-quoted argument (`\"` and `\\` are escapes
 inside quotes; any other backslash is literal, so a Windows path survives either
 spelling) and is byte-identical to `read_token` for unquoted input, so the
 vendored corpus and every script written before quoting existed parse exactly as
-before. The two producers — `decompile.rs (console_path)` and its mirror in
+before. The two producers — `decompile/script.rs (console_path)` and its mirror in
 `scripts/decompile.py` — quote only a path that needs it, which keeps the emitted
 script byte-identical for every path that works today, including for an older
 `decomp_dbg` reached through `--decomp-dbg` (DIV-100).
@@ -997,7 +1387,7 @@ touches the engine default or the console/datatest surfaces.
 Single-function `kuna decompile` reads the same table, and that is why the table
 is shared rather than duplicated: it builds a `decomp_dbg` script instead of
 loading in-process, so it applies the pairs as `option` lines ahead of
-`read symbols` (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`).
+`read symbols` (`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input)`).
 What it does differently is *when*. It injects the Listing up front and holds the
 discovery half back for a **second attempt**, made only when the console answers
 a by-name selection with `no function matches`.
@@ -1063,7 +1453,7 @@ asks the ledger which names have been superseded and decompiles again, once,
 exactly the results that spell one. The default callee-first order
 (`protoorder`, chapter [04](04-calls-and-prototypes.md)) runs the same sweep at
 its end, in its own plan order
-(`decompiler/crates/kuna-cli/src/decompile_all.rs (converge_callee_first)`).
+(`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs (converge_callee_first)`).
 
 (kuna) Which `struct_N` a layout becomes is decided by the order the program is
 visited in, so the whole-program surfaces that keep a ledger take the SAME
@@ -1099,6 +1489,35 @@ in the pipeline is `Send`. `--jobs N` on `decompile-all`, `decompile-project` an
 `kuna` binary itself (`decompiler/crates/kuna-cli/src/jobs.rs`) in a hidden worker
 mode. `--jobs 1` is the default and is the in-process loop above, unchanged; the
 console and parity paths never see a pool.
+
+The record codec is isolated in `decompiler/crates/kuna-cli/src/jobs/wire.rs`;
+it does not own worker processes or scheduling. Chunk specifications and result
+frames retain their existing version markers, little-endian fields and field
+order. A worker flushes each completed function's result, and the parent keeps
+every complete frame before a truncated tail. Wire counts reserve no more
+storage than the remaining bytes can justify. Literal-byte tests pin both
+formats independently of their decoders.
+
+Worker-result reconciliation indexes produced records by byte address and
+then walks the requested targets in order. The last produced record for an
+address wins, and each stored record is consumed once; missing records become
+errors without moving neighboring results. Lookup-table iteration cannot
+determine output order.
+
+Scratch storage is owned by `decompiler/crates/kuna-cli/src/jobs/scratch.rs`.
+The session holds a temporary-directory guard through inventory, worker and
+result handling, so normal return, errors and unwinding all release its files.
+Directory creation is exclusive and requests private Unix permissions before
+any content is written; the final mode remains 0700 regardless of umask. Missing
+temporary parents are still created. Names retain the owner-pid prefix used by
+workers and the existing orphan sweep; parent-liveness and stale-owner policies
+are unchanged.
+
+Synthesized-structure reconciliation is owned by
+`decompiler/crates/kuna-cli/src/jobs/synth.rs`. It keeps the first-pass and sweep
+caches, replay plans, compatible renames and serial fallback together. The pool
+hands it the recorded run and receives the final worker kind and optional table;
+worker lifetime, chunk scheduling and record serialization remain separate.
 
 The pool is driver policy, and its contract is that it cannot be observed in the
 output. Work is planned longest-first into equal-work chunks and handed out
@@ -1156,7 +1575,7 @@ one (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 (install_table)`) and answers each lookup with its replayed name; a function the
 sweep will decide differently is renamed onto its sweep answers or goes out
 twice in that pool, and the parent applies the sweep on the first-pass text
-exactly as the serial batch does (`decompiler/crates/kuna-cli/src/jobs.rs (name_structs_serially)`). The second
+exactly as the serial batch does (`decompiler/crates/kuna-cli/src/jobs/synth.rs (name_structs_serially)`). The second
 decompile records its lookups as well, and they have to be the first ones,
 repeats aside. A decompile can ask one question twice (a restarted pass measures
 the same layout again), whether it does follows the process's history, and a
@@ -1168,6 +1587,19 @@ answers do change what it asks next is the real exception: its questions up to
 the first difference were answered as the serial run answers them, so the parent
 takes the corrected record, replays again and renames or decompiles only the
 functions whose answers moved.
+
+Replay cache checks borrow the answer names and current definitions instead of
+constructing temporary owned keys. A match requires equal answer count, absent
+answer positions, names and full definitions; a held name with no minted
+definition differs from a newly minted name. Owned keys remain attached to
+retained results across replay rounds. Each retained first-pass result also
+owns its rename provenance, so replacement and invalidation update the result
+and its reported rename count together. The cache stays sparse over functions
+that asked the ledger; sweep results remain separate from first-pass results.
+Each plan owns its temporary replay. After deriving the answers, superseded
+names and ordered worker message, the plan consumes the replay's minted table
+into its name lookup instead of copying names and field recipes. Replay rounds
+still start from a fresh clone of the same base ledger.
 
 A structure can travel only if another process can rebuild every field type,
 and a named type counts only if the worker's load created it
@@ -1184,7 +1616,7 @@ watchdog or a worker failure cut short in the first pool is exempt from the
 checks, since it asks a different number of questions on every run.
 
 A `decompile-project` header is rendered by the workers
-(`decompiler/crates/kuna-cli/src/jobs.rs (merge_type_definitions)`). The workers that hold the replayed structures
+(`decompiler/crates/kuna-cli/src/jobs/type_blocks.rs (merge_type_definitions)`). The workers that hold the replayed structures
 render their block in full; when no function was decompiled again, every idle
 worker installs them before it retires
 (`decompiler/crates/kuna-cli/src/jobs.rs (install_on_idle_workers)`). Every
@@ -1193,7 +1625,13 @@ its block without the structures it minted or installed, so the types its own
 functions interned (a `TEB` read by a function that synthesizes nothing) still
 reach the header. A block that holds every definition any block holds is the
 serial answer and is emitted as is; otherwise the parent warns and emits the
-union. Across thirty-two binaries (seventeen projects at O0, O2 and
+union. The merger parses each block once and borrows complete definition spans
+from canonical printer text. Membership and subset checks do not determine
+emission order: the first containing block wins, or definitions are appended in
+block/item order. CRLF and missing-final-newline input retain the earlier
+normalization for comparison and appended items; a selected whole block, and
+the first block of a union, remain byte-for-byte as supplied.
+Across thirty-two binaries (seventeen projects at O0, O2 and
 O2-noinline, stripped and with DWARF, an ARM firmware ELF and two PEs) at
 `--jobs 2` and `--jobs 4`, `decompile-all` (text and `--json`),
 `decompile-graph` and every `decompile-project` artifact are byte-identical to
@@ -1323,7 +1761,7 @@ remove — so each finished function reports the entries it reaches
 the scheduler intersects them with the resolved target set. Those hints are a
 **scheduling hint and not an edge model**: they are never serialized into any
 artifact, they are not what `kuna decompile-graph` or `--reachable-from`
-traverse — that is `decompiler/crates/kuna-cli/src/decompile_all.rs
+traverse — that is `decompiler/crates/kuna-cli/src/callgraph.rs
 (CallGraph::callees_of)`, built from the reference index — and intersecting
 rather than unioning is what keeps an `--addr`/`--functions` export from growing
 callees it was not asked for. The seeds are pool chunks like any other, which is
@@ -1513,7 +1951,7 @@ applies them to the first pass's `Funcdata` (`assertions::apply_symbol_scoped`),
 and decompiles again with the mutated local scope carried across as
 `mapped_symbols`. That second pass is emitted only when such a directive bound to
 the function, so every run without one costs exactly what it did before. The
-script surface (`decompiler/crates/kuna-cli/src/decompile.rs (build_script)`)
+script surface (`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input)`)
 emits the same facts at the same three slots, with the same conditional second
 `decompile`.
 
@@ -1619,7 +2057,7 @@ while the identical directive bound the moment the same run selected the functio
 BY NAME. Pointing `--addr` at an address claims a lift entry, but does not
 override loader knowledge that the address is an import pointer. The generated
 script ensures a symbol exists
-(`decompiler/crates/kuna-cli/src/decompile.rs (build_script, selected_vma)` ->
+(`decompiler/crates/kuna-cli/src/decompile/script.rs (build_script_for_input, selected_vma)` ->
 `function symbol <vma>` -> `ConsoleProgram::ensure_function_symbol`) between the
 caller's own `--define-function` declarations and the program-scoped directives.
 It is the symbol-table half of `--define-function <start>`, and it is skipped
@@ -1880,12 +2318,27 @@ space="ram"/>`), so on any ordinary image an added range was global before the
 caller spoke; only the removal direction moves the C. Exposing an assertion that
 is measurably a no-op would be the same failure the plane is built to avoid.
 
-(kuna) **Load-time env bridges.** Seven loader gates are consumed *inside* the
+(kuna) **Load-time env bridges.** Loader gates are consumed *inside* the
 bootstrap — before any console `option` line can possibly run — so the option
 surface alone cannot deliver them; each is bridged through a process environment
-variable exported first (`decompiler/crates/kuna-cli/src/decompile_all.rs
-(apply_loadtime_env)` in-process; the equivalent `Command::env` calls in
-`decompiler/crates/kuna-cli/src/decompile.rs` for the subprocess):
+variable exported first. Both CLI paths use the bindings and value conversions
+in `decompiler/crates/kuna-cli/src/loadtime.rs (binding, settings)`:
+`apply_to_command` configures the console subprocess, and `apply_to_process`
+temporarily configures the in-process loader. Repeated options keep their final
+value. An omitted option leaves the inherited environment alone; an explicit
+disabled `macho-arm64e` removes its variable. `LoadtimeEnv` restores inherited
+values, including non-Unicode values, when the load returns or unwinds. The
+conversions preserve each loader's accepted tokens and fallback behavior;
+runtime option validation remains separate.
+
+The default-on and opt-in boolean loader gates share
+`decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs (env_toggle)`.
+They trim Unicode whitespace and compare ASCII case-insensitively: `off`, `0`
+and `false` disable; `on`, `1`, `true` and the empty string enable. Missing,
+non-Unicode or unrecognized values retain that gate's default. Gates with
+different vocabularies, such as relocatable-object loading, keep their own
+conversion rules; these permissive loader tokens do not change the strict
+runtime `on_or_off` parser.
 
 | env var | option | read at |
 |---|---|---|
@@ -1909,6 +2362,42 @@ record is honest.
 
 ## 0.3 The IR substrate
 
+Partition lookup in `decompiler/crates/kuna-base/src/partmap.rs
+(PartMap::get_value_mut)` returns the value at the greatest split point no
+larger than the query, or the default value before the first split. Mutable
+lookup handles the default interval first, then borrows the preceding tree
+entry directly. It neither clones the split key nor creates split points.
+
+Opcode-name lookup in `decompiler/crates/kuna-num/src/opcodes.rs` searches the
+existing name-index table and returns immediately on an exact match. Lookup
+is case-sensitive, retains the SLEIGH aliases, skips `BLANK`, and rejects
+`UNUSED1` when converting a matched index to an opcode. Enum values and wire
+names are unchanged.
+
+Complement lookup returns the complementary opcode and writes whether its
+inputs must be swapped. An opcode with no defined complement returns
+`CPUI_MAX` without changing the caller's reordering flag.
+
+Integer bit queries in `decompiler/crates/kuna-base/src/address.rs` use Rust's
+primitive bit operations. Least- and most-significant-set-bit queries return
+`-1` for zero; population count returns zero and leading-zero count returns 64.
+The 128-bit operations in
+`decompiler/crates/kuna-num/src/multiprecision.rs` convert little-endian limb
+pairs to native `u128` values for unsigned comparisons, wrapping addition and
+subtraction, and division. Division retains its 64-bit and smaller-numerator
+shortcuts. A zero divisor still panics when the numerator fits in 64 bits and
+returns the existing low-level error for a wider numerator, without modifying
+the result arrays.
+
+Floating-point constant evaluation uses `decompiler/crates/kuna-num/src/float.rs`
+(`FloatFormat`). Finite arithmetic uses host `f64`; NaN payloads are canonical.
+Square root, ceiling, floor, and rounding preserve an input NaN's sign;
+negation flips it and absolute value clears it. Binary arithmetic takes the
+first NaN operand's sign in p-code input order. Operations on non-NaN inputs
+that produce NaN use the negative quiet encoding pinned by the x86 golden
+oracle. This policy is explicit because Rust arithmetic does not guarantee a
+NaN result's sign, even across optimization levels of the same compiler.
+
 The per-function IR is one container, `Funcdata`
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata)`), owning
 slotmap arenas keyed by three generational id newtypes — `VarnodeId`, `OpId`,
@@ -1928,6 +2417,11 @@ the CFG, and `sblocks`, the structuring tree — physically distinct, seeded as 
 `BlockCopy` mirror of the CFG when structuring begins
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (seed_sblocks_copy)`).
 
+Registering an input varnode also applies the prototype's saved-register and
+return-address effects. This is unconditional registration behavior, not a
+separate feature gate; `funcdata_varnode.rs (apply_input_effect_marking)` uses
+the canonical `fspec.rs (effect_type)` values rather than maintaining copies.
+
 The varnode bank's two sorted trees are the container the decompiler touches most
 — a large function creates and destroys well over a million Varnodes, each one
 inserted into and removed from both — so their keys
@@ -1946,6 +2440,17 @@ the "is an equivalent varnode already present" lookup and the insertion that
 follows it are the same search, because the `insert` flag set afterwards is
 outside the `(input|written)` mask the key is built from and so cannot move the
 entry.
+
+Read-only block queries walk the stored Varnode descendants without copying
+them. Common-subexpression lookup returns the first eligible equal op in that
+sequence; earliest-use lookup instead compares block-local op order. The common
+subexpression query still checks its op, Varnode and optional cutoff before
+walking descendants, including when the descendant list is empty.
+
+Nonzero-mask propagation appends descendants directly to its local worklist
+after updating the output mask. Stored descendant order and duplicate reads
+are preserved; iterating the successors does not mutate the IR. The initial
+alive-op snapshot remains because the depth-first walk updates op marks.
 
 Every cross-arena mutation routes through `Funcdata` — Rust cannot hold two
 `&mut` arenas through a method on one of them, so the op-in-block primitives the
@@ -2110,13 +2615,32 @@ and an agent writes:
   (OptionDatabase, KUNA_OPTION_NAMES)`): upstream options dispatch by registered
   element id through `OptionDatabase::set`; the kuna-added options are an
   allowlisted name set routed to
-  `decompiler/crates/kuna-decomp/src/infra/architecture.rs (set_kuna_option)`,
-  which writes the live flag the consuming pass reads. The machine-readable
+  `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_option_dispatch.rs
+  (set_kuna_option)`, which writes the live flag the consuming pass reads.
+  The handler declaration generates both the dispatch and its name allowlist;
+  adding a handler cannot leave those two out of sync. Catalog metadata remains
+  independent, so `kuna catalog --check` compares the documented options against
+  the implemented handlers. The machine-readable
   catalog rows — values, defaults, tier, symptoms, flip guidance — are generated
   into `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases.rs
   (SETTABLE_TABLE, emit_catalog_json)` from `decompiler/crates/kuna-decomp/phases.toml`
-  by `decompiler/crates/kuna-decomp/build.rs`; the rendered catalog is
+  by `decompiler/crates/kuna-decomp/build.rs`. The build uses the TOML parser
+  with a typed schema in `decompiler/crates/kuna-decomp/build/registry.rs`:
+  row order is preserved, required fields have explicit types, and duplicate or
+  unknown fields are rejected. Live mappings must supply all three fields or
+  none. The rendered catalog is
   [docs/options.md](../options.md) and this spec never duplicates its metadata.
+  The CLI parses catalog JSON with the standard JSON parser while preserving
+  field order, duplicate keys, and number spellings for its existing renderers.
+  Conversion is bounded to 128 nested containers and rejects malformed or trailing
+  content. The parity command separately validates its baseline's required
+  string-valued passing set: invalid records are errors, not empty expectations.
+  CLI JSON rendering uses one traversal for compact, indented and sorted output
+  (`decompiler/crates/kuna-cli/src/jsonfmt/writer.rs`). Numeric tokens retain
+  their original spelling; string escaping remains ASCII-safe, including UTF-16
+  surrogate pairs for non-BMP characters. Unsorted objects borrow their stored
+  field order directly. Sorted output orders borrowed field references stably,
+  preserving duplicate-key order, and applies the same policy to nested objects.
 - **Modes (option presets)** (kuna)
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs (MODE_TABLE, mode_overrides)`,
   applied by `decompiler/crates/kuna-decomp/src/infra/architecture.rs (apply_mode)`):
@@ -2269,7 +2793,8 @@ can be compared on any binary.
 The pipeline's execution order is not the folder order. Every per-function run
 executes a single declarative pass tree, `universal_sched`
 (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs (universal_sched)`,
-a transcription of upstream `ActionDatabase::universalAction`). The tree is built
+based on upstream `ActionDatabase::universalAction`, with kuna-specific passes).
+The tree is built
 once per engine as `SchedNode` values (Action leaf / Pool of rules / Group /
 RestartGroup), *filtered* by the root variant's enabled group list
 (`decompiler/crates/kuna-decomp/src/infra/action.rs (build_default_groups,
@@ -2336,10 +2861,15 @@ cursor is a map iterator whose `++` is O(1); kuna models it as the last consumed
 successors per tree descent rather than one search per op, discarding the run
 whenever the optree epoch above moves — any op created or destroyed by anything
 other than the pool's own consumption of the op it just left. The visit order is
-the search's, one buffered value at a time. The
-materialized `decompile` tree's listing is byte-equal to the C++ oracle dump
-(`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
-(UNPORTED_ALLOWLIST)` — empty).
+the search's, one buffered value at a time.
+
+The `decompile` listing is checked byte-for-byte against a maintained kuna
+schedule snapshot, including its added passes, flags, numbering and separators.
+It is not an independent C++ oracle. The tests separately pin pass presence and
+adjacency, root-filter behavior and the empty `UNPORTED_ALLOWLIST`
+(`decompiler/crates/kuna-decomp/src/infra/universalaction.rs`). Snapshot changes
+require an intentional schedule change; matching it alone does not prove
+decompilation parity, which remains covered by the output regression suites.
 
 Flow-follow itself runs *before* the tree (the upstream `followFlow` →
 `startProcessing` order), bounded by the P0 flow options — decode-error policy
@@ -2352,7 +2882,12 @@ Flow-follow itself runs *before* the tree (the upstream `followFlow` →
 itself: with `KUNA_ACTION_PROF` set to a path, every `apply` call is timed and
 the engine writes an exclusive-time table there
 (`decompiler/crates/kuna-decomp/src/infra/actionprof.rs`), rewritten each time
-the schedule unwinds so the file holds the running total for the whole process.
+the outermost timing frame closes. A scope guard closes frames on both normal
+return and panic unwind, so a caught action panic cannot strand the timing stack
+or prevent later actions from publishing. Totals belong to the current thread;
+threads and worker processes do not merge their tables when sharing an output
+path. File-write failures remain non-fatal. Rendering borrows the accumulated
+rows and sorts by descending exclusive time, then by name for ties.
 Time is exclusive — a group is charged only what it spends outside its children,
 so the rows sum to the schedule's wall time and a container cannot hide a leaf —
 and each row is keyed by the root variant it ran under, which is what separates a

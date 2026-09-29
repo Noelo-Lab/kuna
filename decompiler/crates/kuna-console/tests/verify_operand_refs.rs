@@ -26,13 +26,6 @@
 //! as a bare immediate — the case `ScalarOperandAnalyzer` handles; a RIP-relative
 //! `lea` would not surface a bare scalar, faithful to the Ghidra
 //! `ADDRESSES_DO_NOT_APPEAR_DIRECTLY_IN_CODE` gate).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_s1_*` gates, bootstrapping needs the built `x86`
-//! `.sla` under `specs/` (gitignored; `make specs`). When it is absent the
-//! bootstrap fails; the test prints that and returns early (a specs-less CI is a
-//! visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -53,23 +46,14 @@ fn operand_refs_bin() -> PathBuf {
 
 /// Decompile `main` and return the captured C, optionally enabling the
 /// scalar/operand reference-markup pass first (`--option operand_refs on`).
-fn decompile_main(operand_refs_on: bool) -> Option<String> {
+fn decompile_main(operand_refs_on: bool) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = operand_refs_bin().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_operand_refs: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = operand_refs_bin().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // The operand_refs pass runs DEFERRED at the commit point (it decodes through
     // the engine Translate, whose loadimage is attached after load). Flip the
     // option BEFORE `commit_pending_analysis` so the deferred run sees it on.
@@ -93,12 +77,12 @@ fn decompile_main(operand_refs_on: bool) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 #[test]
 fn default_off_renders_bare_address() {
-    let Some(out) = decompile_main(false) else { return };
+    let out = decompile_main(false);
     assert!(out.contains("main"), "expected a decompiled body for `main`, got:\n{out}");
     // Default-off: the scalar immediate is an untyped bare absolute address.
     assert!(
@@ -114,7 +98,7 @@ fn default_off_renders_bare_address() {
 
 #[test]
 fn operand_refs_on_renders_string_literal() {
-    let Some(out) = decompile_main(true) else { return };
+    let out = decompile_main(true);
     assert!(out.contains("main"), "expected a decompiled body for `main`, got:\n{out}");
     // operand_refs on: the read-only-data scalar is typed as a string and renders
     // as the literal (the planted char[N] + the printer's readonly-char-array route).

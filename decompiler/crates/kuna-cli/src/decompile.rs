@@ -17,16 +17,19 @@
 //! That path loads the binary in-process rather than spawning `decomp_dbg`,
 //! which is why the `decomp_dbg`-only flags are refused rather than ignored.
 
-use std::borrow::Cow;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
-use kuna_console::engine::{ArmIsa, EntrySelector, ARM_ISA_ENV};
+use kuna_console::engine::{ArmIsa, ARM_ISA_ENV};
 use kuna_console::kuna_buildstamp;
 
+use crate::args::take_value;
 use crate::decompile_all::{self, Args as AllArgs, DriverDefaults};
 use crate::paths;
+
+mod script;
+use script::{build_script_for_input, reject_unquotable};
 
 /// Options parsed for a `decompile` invocation.
 pub struct DecompileArgs {
@@ -41,9 +44,8 @@ pub struct DecompileArgs {
     /// `--define-function <start[-end][=name] | @file>` (repeatable): the
     /// caller-declared function boundaries, lowered to `function bounds` lines.
     pub func_decls: Vec<crate::funcdecl::FuncDecl>,
-    /// `--assert <directive> | @FILE` (repeatable): the caller-supplied
-    /// assertions, lowered to console lines at the slots `build_script`
-    /// documents (`crate::assertdecl`).
+    /// `--assert <directive> | @FILE` (repeatable), lowered to console lines
+    /// by [`build_script_for_input`].
     pub assertions: Vec<kuna_console::assertions::Directive>,
     /// `--assert-strict`: a rejected directive makes the run exit non-zero.
     pub assert_strict: bool,
@@ -62,47 +64,10 @@ pub struct DecompileArgs {
     pub base: Option<u64>,
 }
 
-/// Whether an `--option` value selects the "on" state (the `on_or_off` token set
-/// the console accepts), used to decide whether `macho-arm64e` exports its
-/// load-time env gate.
-fn is_on(value: &str) -> bool {
-    matches!(value.trim().to_ascii_lowercase().as_str(), "on" | "true" | "1" | "yes")
-}
-
-fn last_option_value<'a>(options: &'a [(String, String)], name: &str) -> Option<&'a str> {
-    options
-        .iter()
-        .rev()
-        .find(|(option_name, _)| option_name == name)
-        .map(|(_, value)| value.as_str())
-}
-
 /// A 0x-prefixed token auto-selects address mode (a bare hex-looking token is a
 /// function name; use `--addr` for bare numeric addresses) — `_looks_like_addr`.
 pub(crate) fn looks_like_addr(target: &str) -> bool {
     target.starts_with("0x") || target.starts_with("0X")
-}
-
-/// The VMA a by-address run selected, or `None` when the target is an
-/// object-file coordinate (`.text+0x10`) or does not parse as an address.
-///
-/// The number grammar is `--addr`'s own — `0x`-prefixed or bare hex — which is
-/// the same one [`build_script`] uses to spell the `load addr` line.
-fn selected_vma(target: &str, by_address: bool) -> Option<u64> {
-    if !by_address {
-        return None;
-    }
-    if matches!(
-        EntrySelector::parse(target),
-        EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. }
-    ) {
-        return None;
-    }
-    let digits = target.strip_prefix("0x").or_else(|| target.strip_prefix("0X")).unwrap_or(target);
-    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    u64::from_str_radix(digits, 16).ok()
 }
 
 fn parse_cli_address(value: &str) -> Result<u64, String> {
@@ -112,221 +77,6 @@ fn parse_cli_address(value: &str) -> Result<u64, String> {
         .or_else(|| value.strip_prefix("0X"))
         .unwrap_or(value);
     u64::from_str_radix(digits, 16).map_err(|_| format!("invalid address {value:?}"))
-}
-
-/// Quote a path for the console script when — and only when — it needs it.
-///
-/// The console reads a filename with `CommandStream::read_filename`, which
-/// tokenizes on whitespace unless the argument opens with `"`. An unquoted path
-/// containing a space therefore splits into two arguments: `load file` loads the
-/// wrong file, and `openfile write` truncates a file at the split point.
-///
-/// Quoting is conditional so that every path that works today keeps producing a
-/// byte-identical script — the corpus transcripts, and any older `decomp_dbg`
-/// reached through `--decomp-dbg`, which would not understand a quote. The
-/// [`Cow`] says so in the type: borrowed (and unallocated) for every path that
-/// needs no quoting, which is nearly all of them.
-///
-/// The scan is byte-wise because the console's own splitter is
-/// (`CommandStream::is_ws` is the ASCII set): the producer tests exactly the
-/// bytes the consumer would split on.
-fn console_path(path: &str) -> Cow<'_, str> {
-    if !path.as_bytes().iter().any(|b| b.is_ascii_whitespace() || *b == b'"') {
-        return Cow::Borrowed(path);
-    }
-    Cow::Owned(format!("\"{}\"", path.replace('\\', "\\\\").replace('"', "\\\"")))
-}
-
-/// A newline is the one whitespace character quoting cannot rescue: the script
-/// is fed to `decomp_dbg` as lines, so an embedded `\n` ends the command no
-/// matter how it is quoted, and the console answers with a load failure that
-/// reads like a defect in the binary.
-///
-/// Legal on unix and vanishingly rare. Diagnose it here rather than emit a
-/// script that cannot mean what it says.
-fn reject_unquotable(what: &str, path: &str) -> Result<(), String> {
-    match path.find(['\n', '\r']) {
-        None => Ok(()),
-        Some(_) => Err(format!(
-            "{what} contains a newline, which the decomp_dbg console script \
-             (one command per line) cannot carry: {path:?}"
-        )),
-    }
-}
-
-/// Build the stdin script fed to `decomp_dbg` — port of `_build_script`.
-fn build_script_for_input(
-    binary: &str,
-    target: &str,
-    by_address: bool,
-    bfd_target: Option<&str>,
-    raw_image: bool,
-    base: Option<u64>,
-    raw: bool,
-    out_path: &Path,
-    injected: &[(&'static str, &'static str)],
-    options: &[(String, String)],
-    kasserts: &[String],
-    func_decls: &[crate::funcdecl::FuncDecl],
-    assertions: &[kuna_console::assertions::Directive],
-    regions_path: Option<&Path>,
-) -> String {
-    let mut lines: Vec<String> = Vec::new();
-    // The function this run selected, when it was named rather than addressed:
-    // a directive qualified with it binds to the selection, and one qualified
-    // with any other function does not (`crate::assertdecl::console_form`).
-    let selected = if by_address { None } else { Some(target) };
-    // The console lines of one slot, in the order the caller gave them.  A
-    // directive that does not bind this run has no line and is reported by
-    // `assertion_outcomes` instead.
-    let forms = |slot| {
-        assertions
-            .iter()
-            .filter_map(|d| crate::assertdecl::console_form(d, selected).ok())
-            .filter(move |f| f.slot == slot)
-    };
-    let image = console_path(binary);
-    if raw_image {
-        let language = bfd_target.expect("raw parser requires --target");
-        let base = base.expect("raw parser requires --base");
-        lines.push(format!("load raw {language} 0x{base:x} {target} {image}"));
-    } else {
-        match bfd_target {
-            Some(t) if !t.is_empty() => lines.push(format!("load file {t} {image}")),
-            _ => lines.push(format!("load file {image}")),
-        }
-    }
-    // `option` lines MUST precede `read symbols`: the kuna_analysis passes are
-    // committed (gated by the per-pass `--option <id> on|off` flags) inside
-    // `read symbols` (IfcReadSymbols -> commit_pending_analysis). Emitting the
-    // options first lets a per-run pass gate take effect; an option after the
-    // commit would be a no-op (the analysis-port conflict #4 ordering fix). The
-    // upstream/printer options here are order-independent w.r.t. `read symbols`.
-    //
-    // The driver defaults this attempt takes, from the shared table
-    // (`decompile_all::driver_default_options`) — the DIV-15 Listing always, and
-    // the DIV-20/DIV-68 non-x86-64 discovery bundle only on the retry (see
-    // `decompile`).
-    for (name, value) in injected {
-        lines.push(format!("option {name} {value}"));
-    }
-    // (kuna `--assert`) A `readonly` range is inert unless read-only propagation
-    // is on, and that option is default-off; asserting the range turns it on.
-    // Emitted BEFORE the caller's own `--option` lines so an explicit
-    // `--option readonly off` still wins.
-    if kuna_console::assertions::implies_readonly_propagation(assertions) {
-        lines.push("option readonly on".into());
-    }
-    for (name, value) in options {
-        lines.push(format!("option {name} {value}"));
-    }
-    // (kuna `--assert`) IMAGE-scoped directives -- a read-only or volatile
-    // memory range -- must precede `read symbols`: mapping a symbol folds the
-    // range property into its SymbolEntry and never looks at the range again.
-    for form in forms(crate::assertdecl::Slot::Image) {
-        lines.push(form.line);
-    }
-    lines.push("read symbols".into());
-    // `--define-function` AFTER the analysis commit and BEFORE the load: a
-    // caller-declared boundary is an assertion that outranks whatever discovery
-    // decided about the same address, and the load below is what consults the
-    // declared extent (`ConsoleProgram::declared_extent`).
-    for decl in func_decls {
-        lines.push(decl.console_line());
-    }
-    // (kuna, RE-need `prototype-assertion-rejects-explicit`) A by-address run
-    // ensures that a function symbol exists where it points: `load addr` follows flow
-    // from the address without installing a `FunctionSymbol`, so a directive
-    // naming the very address this run decompiles was answered `no function
-    // starts at 0x…` while the body was emitted in full.  This is the same
-    // install `--define-function <start>` performs — skipped when the caller
-    // already declared that start, whose extent a second bare declaration would
-    // clear.
-    if let Some(vma) = selected_vma(target, by_address) {
-        if !func_decls.iter().any(|decl| decl.start == vma) {
-            lines.push(format!("function symbol {vma:#x}"));
-        }
-    }
-    // (kuna `--assert`) The PROGRAM-scoped directives -- a parsed type, a
-    // declared prototype, a named global -- go here, after the analysis commit
-    // and before the selection, so the function is loaded against them.
-    for form in forms(crate::assertdecl::Slot::Program) {
-        lines.push(form.line);
-    }
-    if by_address {
-        match EntrySelector::parse(target) {
-            EntrySelector::SectionOffset { .. } | EntrySelector::SectionIndexOffset { .. } => {
-                lines.push(format!("load function {target}"));
-            }
-            _ => {
-                let addr = if target.starts_with("0x") || target.starts_with("0X") {
-                    target.to_string()
-                } else {
-                    format!("0x{target}")
-                };
-                lines.push(format!("load addr {addr}"));
-            }
-        }
-    } else {
-        lines.push(format!("load function {target}"));
-    }
-    // FUNCTION-scoped directives need a loaded function and are consumed at flow
-    // time, so they precede the first `decompile`.
-    for form in forms(crate::assertdecl::Slot::Function) {
-        lines.push(form.line);
-    }
-    for ka in kasserts {
-        lines.push(format!("kassert {ka}"));
-    }
-    lines.push("decompile".into());
-    // SYMBOL-scoped directives name a LOCAL, which does not exist until a
-    // decompile has produced it (`rename v2 buf` before the first one answers
-    // `No symbol named: v2`), so they run between two decompiles. The second
-    // `decompile` is emitted ONLY when there is such a directive, so every other
-    // invocation keeps its current cost.
-    if crate::assertdecl::needs_second_pass(assertions, selected) {
-        for form in forms(crate::assertdecl::Slot::Symbol) {
-            lines.push(form.line);
-        }
-        lines.push("decompile".into());
-    }
-    let out_display = out_path.display().to_string();
-    lines.push(format!("openfile write {}", console_path(&out_display)));
-    lines.push("print C".into());
-    if raw {
-        lines.push("print raw".into());
-    }
-    lines.push("closefile".into());
-    if let Some(rp) = regions_path {
-        let rp_display = rp.display().to_string();
-        lines.push(format!("openfile write {}", console_path(&rp_display)));
-        lines.push("region blocks".into());
-        lines.push("region tree".into());
-        lines.push("closefile".into());
-    }
-    lines.push("quit".into());
-    lines.join("\n") + "\n"
-}
-
-#[cfg(test)]
-fn build_script(
-    binary: &str,
-    target: &str,
-    by_address: bool,
-    bfd_target: Option<&str>,
-    raw: bool,
-    out_path: &Path,
-    injected: &[(&'static str, &'static str)],
-    options: &[(String, String)],
-    kasserts: &[String],
-    func_decls: &[crate::funcdecl::FuncDecl],
-    assertions: &[kuna_console::assertions::Directive],
-    regions_path: Option<&Path>,
-) -> String {
-    build_script_for_input(
-        binary, target, by_address, bfd_target, false, None, raw, out_path, injected, options,
-        kasserts, func_decls, assertions, regions_path,
-    )
 }
 
 /// The console prompt `decomp_dbg` writes before echoing each command; a
@@ -764,18 +514,14 @@ fn decompiling_name(out: &str) -> Option<String> {
     })
 }
 
-/// A unique temp path under the system temp dir (no external dep; mirrors
-/// `tempfile.NamedTemporaryFile(delete=False)`'s role — a private scratch file we
-/// delete in the `finally`).
-fn temp_path(prefix: &str, suffix: &str) -> PathBuf {
-    let mut dir = std::env::temp_dir();
-    let pid = std::process::id();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    dir.push(format!("{prefix}{pid}_{nanos}{suffix}"));
-    dir
+/// Owns a private output file, closing its handle before the console opens it.
+fn temp_path(prefix: &str, suffix: &str) -> Result<tempfile::TempPath, String> {
+    tempfile::Builder::new()
+        .prefix(prefix)
+        .suffix(suffix)
+        .tempfile()
+        .map(|file| file.into_temp_path())
+        .map_err(|error| format!("could not create temporary output file: {error}"))
 }
 
 /// One `kuna decompile` run: the rendered C, the optional `--regions` dump, and
@@ -826,9 +572,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         by_address = true;
     }
 
-    let out_path = temp_path("kuna_c_", ".c");
+    let out_path = temp_path("kuna_c_", ".c")?;
     let regions_path = if args.regions {
-        Some(temp_path("kuna_regions_", ".txt"))
+        Some(temp_path("kuna_regions_", ".txt")?)
     } else {
         None
     };
@@ -869,37 +615,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     let selected: Option<&str> = if by_address { None } else { Some(args.target.as_str()) };
     let attempt = |injected: &[(&'static str, &'static str)]| {
         let script = build_script_for_input(
-            &binary,
-            &args.target,
-            by_address,
-            args.bfd_target.as_deref(),
-            args.raw_image,
-            args.base,
-            args.raw,
-            &out_path,
-            injected,
-            &args.options,
-            &args.kasserts,
-            &args.func_decls,
-            &args.assertions,
-            regions_path.as_deref(),
+            args, &binary, by_address, &out_path, injected, regions_path.as_deref(),
         );
 
-        // (kuna) The `relocobjects` option gates the ET_REL loader, which runs at
-        // `load file` — before the `option` lines in the script are processed.
-        // Bridge it to the subprocess env var the loader reads at load time so the
-        // off-switch (and the before/after demo) work for the single-shot CLI.
-        let reloc_env: Option<&'static str> =
-            last_option_value(&args.options, "relocobjects").map(|value| {
-                if matches!(
-                    value.trim().to_ascii_lowercase().as_str(),
-                    "0" | "off" | "false" | "no"
-                ) {
-                    "0"
-                } else {
-                    "1"
-                }
-            });
 
         let mut cmd = Command::new(&bin_path);
         cmd.arg("-s").arg(&specs).env("SLEIGHHOME", &specs);
@@ -915,206 +633,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                 cmd.env_remove(ARM_ISA_ENV);
             }
         }
-        if let Some(v) = reloc_env {
-            cmd.env(kuna_decomp::options::RELOC_OBJECTS_ENV, v);
-        }
-        if let Some(slice) = args.slice.as_deref().filter(|s| !s.trim().is_empty()) {
-            // Mach-O fat / universal slice override: read at the dispatch peel.
-            cmd.env("KUNA_MACHO_SLICE", slice);
-        }
-        // (PR-8 §3.7) Mach-O arm64e Apple-Silicon spec selection is a LOAD-time
-        // decision (the spec is chosen before any console `option` command runs),
-        // so `--option macho-arm64e on` must reach the subprocess as an env gate,
-        // not just a console `option` line. Export it when requested; the
-        // `option macho-arm64e on` line still flows (so the option is recognized
-        // and recorded), but the env var is what makes the spec selection live.
-        if let Some(value) = last_option_value(&args.options, "macho-arm64e") {
-            if is_on(value) {
-                cmd.env("KUNA_MACHO_ARM64E", "1");
-            } else {
-                cmd.env_remove("KUNA_MACHO_ARM64E");
-            }
-        }
-        // (kuna) Loader-tier `i386_pie_plt` gate: the PLT→name map is baked at
-        // `load file`, *before* the `option` lines in the script run, so an
-        // `--option i386_pie_plt off` must reach the loader via the env var
-        // (`kuna_i386_pie_plt::I386_PIE_PLT_ENV`) set on the subprocess up front.
-        // (The harmless `option i386_pie_plt …` line still runs for the catalog
-        // confirmation; it just can't retro-resolve the already-loaded image.)
-        if let Some(value) = last_option_value(&args.options, "i386_pie_plt") {
-            let on = !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false"
-            );
-            cmd.env("KUNA_I386_PIE_PLT", if on { "on" } else { "off" });
-        }
-        // (kuna) Load-time `ifuncfpret` gate (default-off, opt-in): the IFUNC
-        // stub naming runs at `load file`, so `--option ifuncfpret on` must reach
-        // the loader via the env var on the subprocess up front.
-        if let Some(value) = last_option_value(&args.options, "ifuncfpret") {
-            let on = matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "on" | "1" | "true" | ""
-            );
-            cmd.env("KUNA_IFUNCFPRET", if on { "on" } else { "off" });
-        }
-        // (kuna, GH-289) Load-time `relocrebase` gate: the analyzer tier runs
-        // inside `load file`, so an `--option relocrebase off` must reach the
-        // subprocess as an env var set up front.
-        if let Some(value) = last_option_value(&args.options, "relocrebase") {
-            let on = !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false"
-            );
-            cmd.env(
-                kuna_decomp::kuna_relocrebase::RELOCREBASE_ENV,
-                if on { "on" } else { "off" },
-            );
-        }
-        // (kuna, DIV-84) Load-time `dynrelocs` gate: the dynamic relocations are
-        // applied while the loader snapshots the image, so an `--option dynrelocs
-        // off` must reach the subprocess as an env var set up front.
-        if let Some(value) = last_option_value(&args.options, "dynrelocs") {
-            let on = !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false"
-            );
-            cmd.env(
-                kuna_decomp::kuna_dynrelocs::DYNRELOCS_ENV,
-                if on { "on" } else { "off" },
-            );
-        }
-        // (kuna, DIV-117) Load-time `pdatachained` gate: the PE `.pdata` entry
-        // oracle runs inside `load file`, so an `--option pdatachained off` must
-        // reach the subprocess as an env var set up front.
-        if let Some(value) = last_option_value(&args.options, "pdatachained") {
-            let on = !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false"
-            );
-            cmd.env(
-                kuna_decomp::kuna_pdatachained::PDATACHAINED_ENV,
-                if on { "on" } else { "off" },
-            );
-        }
-        // (kuna) Load-time `rexthunk` gate: PE import names are resolved inside
-        // `load file`, so an `--option rexthunk off` must reach the subprocess as
-        // an env var set up front.
-        if let Some(value) = last_option_value(&args.options, "rexthunk") {
-            let on = !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false"
-            );
-            cmd.env(
-                kuna_decomp::kuna_rexthunk::REXTHUNK_ENV,
-                if on { "on" } else { "off" },
-            );
-        }
-        // (kuna) Load-time `peordinal` gate: PE import names are resolved inside
-        // `load file`.
-        if let Some(value) = last_option_value(&args.options, "peordinal") {
-            let on = !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false"
-            );
-            cmd.env(
-                kuna_decomp::kuna_peordinal::PEORDINAL_ENV,
-                if on { "on" } else { "off" },
-            );
-        }
-        // (kuna, DIV-96) Load-time `msvcfpconst` gate: the decoded `__real@`
-        // bytes are materialised while the loader lays the object out, so an
-        // `--option msvcfpconst off` must reach the subprocess as an env var set
-        // up front.
-        if let Some(value) = last_option_value(&args.options, "msvcfpconst") {
-            let on = !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false"
-            );
-            cmd.env(
-                kuna_decomp::kuna_msvcfpconst::MSVCFPCONST_ENV,
-                if on { "on" } else { "off" },
-            );
-        }
-        // (kuna) Load-time `symbolnamerepair` gate: the symbol table is installed
-        // inside `load file`, so an `--option symbolnamerepair off` must reach the
-        // subprocess as an env var set up front.
-        if let Some(value) = last_option_value(&args.options, "symbolnamerepair") {
-            let on = !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false"
-            );
-            cmd.env(
-                kuna_decomp::kuna_symbolnamerepair::SYMBOLNAMEREPAIR_ENV,
-                if on { "on" } else { "off" },
-            );
-        }
-        // (kuna, GH-340) Load-time `symbolnamechars` gate: symbol names are
-        // minted inside `load file`, so the mode must reach the subprocess as an
-        // env var set up front.
-        if let Some(value) = last_option_value(&args.options, "symbolnamechars") {
-            let mode = kuna_decomp::kuna_symbolnamechars::NameChars::parse(value).unwrap_or_default();
-            cmd.env(
-                kuna_decomp::kuna_symbolnamechars::SYMBOLNAMECHARS_ENV,
-                mode.as_str(),
-            );
-        }
-        // (kuna) Load-time `symbolnamebound` gate, same seam: the Scopes are
-        // nested while the symbol table is installed inside `load file`, so the
-        // ceiling has to be on the subprocess before it starts. Valued, so the
-        // token is forwarded verbatim (an unparseable one falls back to the
-        // default rather than failing the load).
-        if let Some(value) = last_option_value(&args.options, "symbolnamebound") {
-            cmd.env(kuna_decomp::kuna_symbolnamebound::SYMBOLNAMEBOUND_ENV, value.trim());
-        }
-        // (kuna) Load-time `typedepth` gate: the DWARF type mapper runs inside
-        // `load file`, so an `--option typedepth off` must reach it via the env
-        // var (`kuna_typedepth::TYPEDEPTH_ENV`) set on the subprocess up front.
-        if let Some(value) = last_option_value(&args.options, "typedepth") {
-            let on = !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false"
-            );
-            cmd.env(kuna_decomp::kuna_typedepth::TYPEDEPTH_ENV, if on { "on" } else { "off" });
-        }
-        // (kuna) Load-time `libctypes` gate: the named aggregate shells are
-        // interned by the prototype pass inside `load file`, so the choice has to
-        // reach the subprocess through the env var, not the `option` line.
-        // Valued: every token but the off-tokens goes through verbatim, so a
-        // later layout value reaches the pass instead of reading as `off`.
-        if let Some(value) = last_option_value(&args.options, "libctypes") {
-            let token = value.trim().to_ascii_lowercase();
-            let on = !matches!(token.as_str(), "off" | "0" | "false");
-            cmd.env(
-                kuna_decomp::kuna_libctypes::LIBCTYPES_ENV,
-                if on { token.as_str() } else { "off" },
-            );
-        }
-        // (kuna) Load-time `dwarfstructs` gate: the aggregate layout is installed
-        // on the interned type inside `load file`, so an `--option dwarfstructs
-        // off` must reach the subprocess through the env var too.
-        if let Some(value) = last_option_value(&args.options, "dwarfstructs") {
-            let on = !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false"
-            );
-            cmd.env(
-                kuna_decomp::kuna_dwarfstructs::DWARFSTRUCTS_ENV,
-                if on { "on" } else { "off" },
-            );
-        }
-        // (kuna) Load-time `dwarfvariants` gate: the variant overlay is installed
-        // on the interned type inside `load file`, same as `dwarfstructs` above.
-        if let Some(value) = last_option_value(&args.options, "dwarfvariants") {
-            let on = !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false"
-            );
-            cmd.env(
-                kuna_decomp::kuna_dwarfvariants::DWARFVARIANTS_ENV,
-                if on { "on" } else { "off" },
-            );
-        }
+        crate::loadtime::apply_to_command(&mut cmd, &args.options, args.slice.as_deref());
         let output = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -1235,13 +754,7 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             base.iter().chain(discovery.iter()).copied().collect();
         result = attempt(&widened);
     }
-    let result = result.map_err(|(message, _)| message);
-
-    let _ = std::fs::remove_file(&out_path);
-    if let Some(rp) = &regions_path {
-        let _ = std::fs::remove_file(rp);
-    }
-    result
+    result.map_err(|(message, _)| message)
 }
 
 /// Python `str.strip("\n")`: trim leading/trailing newline characters only.
@@ -1309,7 +822,7 @@ pub fn run(args: &DecompileArgs) -> i32 {
 /// Entry point for `kuna decompile`: parse the command line, then render either
 /// the text surface ([`run`], a `decomp_dbg` subprocess) or, with `--json`, the
 /// `decompile-all` record shape for the one selected function ([`run_json`]).
-pub fn main(argv: &[String]) -> i32 {
+pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut binary: Option<String> = None;
     let mut target: Option<String> = None;
     let mut addr = false;
@@ -1345,136 +858,64 @@ pub fn main(argv: &[String]) -> i32 {
             "--json" => json = true,
             "--raw" => raw = true,
             "--raw-image" => raw_image = true,
-            "--base" => match take_value(argv, &mut i, "--base") {
-                Some(value) => match parse_cli_address(&value) {
-                    Ok(value) => base = Some(value),
-                    Err(error) => {
-                        eprintln!("error: {error}");
-                        return 2;
-                    }
-                },
-                None => return 2,
-            },
+            "--base" => base = Some(parse_cli_address(&take_value(argv, &mut i, "--base")?)?),
             "--regions" => regions = true,
-            "--slice" => slice = take_value(argv, &mut i, "--slice"),
-            "--isa" => match take_value(argv, &mut i, "--isa") {
-                Some(value) => match ArmIsa::parse(&value) {
-                    Ok(value) => {
-                        isa = value;
-                        forwarded.push("--isa".into());
-                        forwarded.push(isa.map_or("auto", ArmIsa::as_str).into());
-                    }
-                    Err(error) => {
-                        eprintln!("error: {error}");
-                        return 2;
-                    }
-                },
-                None => return 2,
-            },
-            "--target" => {
-                bfd_target = take_value(argv, &mut i, "--target");
+            "--slice" => slice = Some(take_value(argv, &mut i, "--slice")?),
+            "--isa" => {
+                isa = ArmIsa::parse(&take_value(argv, &mut i, "--isa")?)?;
+                forwarded.push("--isa".into());
+                forwarded.push(isa.map_or("auto", ArmIsa::as_str).into());
             }
+            "--target" => bfd_target = Some(take_value(argv, &mut i, "--target")?),
             "--option" => {
-                // nargs=2
-                if i + 2 >= argv.len() {
-                    eprintln!("error: --option requires NAME VALUE");
-                    return 2;
-                }
-                if let Err(msg) = crate::optname::check(&argv[i + 1]) {
-                    eprintln!("error: {msg}");
-                    return 2;
-                }
-                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
-                forwarded.extend(argv[i..i + 3].iter().cloned());
-                i += 2;
+                options.push(crate::args::take_option(argv, &mut i)?);
+                forwarded.extend(argv[i - 2..=i].iter().cloned());
             }
-            // (kuna outlang) `--language` is the first-class surface for the
-            // output language; it lowers to the upstream `setlanguage` option, so
-            // it reaches every downstream consumer (the console script here, the
-            // in-process option applier in decompile-all) with no new plumbing.
-            // Pushed in argv order, so a later `--option setlanguage` still wins.
-            "--language" => match take_value(argv, &mut i, "--language") {
-                Some(value) => {
-                    match decompile_all::parse_language_flag(&value) {
-                        Ok(Some(lang)) => options.push(("setlanguage".into(), lang.into())),
-                        Ok(None) => {}
-                        Err(msg) => {
-                            eprintln!("error: {msg}");
-                            return 2;
-                        }
-                    }
-                    forwarded.push("--language".into());
-                    forwarded.push(value);
-                    saw_language = true;
+            "--language" => {
+                let value = take_value(argv, &mut i, "--language")?;
+                if let Some(lang) = decompile_all::parse_language_flag(&value)? {
+                    options.push(("setlanguage".into(), lang.into()));
                 }
-                None => return 2,
-            },
-            "--mode" => match take_value(argv, &mut i, "--mode") {
-                Some(value) => mode = Some(value),
-                None => return 2,
-            },
-            "--kassert" => {
-                if let Some(v) = take_value(argv, &mut i, "--kassert") {
-                    kasserts.push(v);
-                }
+                forwarded.push("--language".into());
+                forwarded.push(value);
+                saw_language = true;
             }
-            "--define-function" => match take_value(argv, &mut i, "--define-function") {
-                Some(value) => match crate::funcdecl::parse_flag(&value) {
-                    Ok(decls) => {
-                        func_decls.extend(decls);
-                        forwarded.push("--define-function".into());
-                        forwarded.push(value);
-                    }
-                    Err(msg) => {
-                        eprintln!("error: {msg}");
-                        return 2;
-                    }
-                },
-                None => return 2,
-            },
-            "--assert" => match take_value(argv, &mut i, "--assert") {
-                Some(value) => match crate::assertdecl::parse_flag(&value) {
-                    Ok(parsed) => {
-                        assertions.extend(parsed);
-                        forwarded.push("--assert".into());
-                        forwarded.push(value);
-                    }
-                    Err(msg) => {
-                        eprintln!("error: {msg}");
-                        return 2;
-                    }
-                },
-                None => return 2,
-            },
+            "--mode" => mode = Some(take_value(argv, &mut i, "--mode")?),
+            "--kassert" => kasserts.push(take_value(argv, &mut i, "--kassert")?),
+            "--define-function" => {
+                let value = take_value(argv, &mut i, "--define-function")?;
+                func_decls.extend(crate::funcdecl::parse_flag(&value)?);
+                forwarded.push("--define-function".into());
+                forwarded.push(value);
+            }
+            "--assert" => {
+                let value = take_value(argv, &mut i, "--assert")?;
+                assertions.extend(crate::assertdecl::parse_flag(&value)?);
+                forwarded.push("--assert".into());
+                forwarded.push(value);
+            }
             "--assert-strict" => {
                 assert_strict = true;
                 forwarded.push("--assert-strict".into());
             }
-            "--decomp-dbg" => decomp_dbg = take_value(argv, &mut i, "--decomp-dbg"),
-            "--engine" => engine = take_value(argv, &mut i, "--engine"),
-            "--sleighpath" => sleighpath = take_value(argv, &mut i, "--sleighpath"),
+            "--decomp-dbg" => decomp_dbg = Some(take_value(argv, &mut i, "--decomp-dbg")?),
+            "--engine" => engine = Some(take_value(argv, &mut i, "--engine")?),
+            "--sleighpath" => sleighpath = Some(take_value(argv, &mut i, "--sleighpath")?),
             "-h" | "--help" => {
                 usage();
-                return 0;
+                return Ok(0);
             }
             "--timeout" => {
-                // Accepted for compatibility; the in-process child has no timeout
-                // wall (the Python timeout guarded a hung subprocess — out of scope
-                // here, but we must consume the value so it isn't read as a positional).
-                let _ = take_value(argv, &mut i, "--timeout");
+                take_value(argv, &mut i, "--timeout")?;
             }
-            s if s.starts_with("--") => {
-                eprintln!("error: unknown option {s}");
-                return 2;
-            }
+            s if s.starts_with("--") => return Err(format!("unknown option {s}")),
             _ => {
                 if binary.is_none() {
                     binary = Some(a.to_string());
                 } else if target.is_none() {
                     target = Some(a.to_string());
                 } else {
-                    eprintln!("error: unexpected argument {a:?}");
-                    return 2;
+                    return Err(format!("unexpected argument {a:?}"));
                 }
             }
         }
@@ -1484,8 +925,7 @@ pub fn main(argv: &[String]) -> i32 {
     let (binary, target) = match (binary, target) {
         (Some(b), Some(t)) => (b, t),
         _ => {
-            eprintln!("error: decompile requires <binary> and <func>");
-            return 2;
+            return Err("decompile requires <binary> and <func>".into());
         }
     };
     // Honor `--engine cpp|rust` like the Python tools: set `KUNA_ENGINE`.  In the
@@ -1498,26 +938,24 @@ pub fn main(argv: &[String]) -> i32 {
     addr |= looks_like_addr(&target);
 
     if raw_image {
-        if bfd_target.as_deref().is_none_or(|value| value.trim().is_empty()) {
-            eprintln!("error: --raw-image requires --target <SLEIGH-language-id>");
-            return 2;
+        if bfd_target
+            .as_deref()
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            return Err("--raw-image requires --target <SLEIGH-language-id>".into());
         }
         if base.is_none() {
-            eprintln!("error: --raw-image requires --base <address>");
-            return 2;
+            return Err("--raw-image requires --base <address>".into());
         }
         if parse_cli_address(&target).is_err() {
-            eprintln!("error: --raw-image requires a numeric entry address");
-            return 2;
+            return Err("--raw-image requires a numeric entry address".into());
         }
         if slice.is_some() {
-            eprintln!("error: --slice does not apply to --raw-image input");
-            return 2;
+            return Err("--slice does not apply to --raw-image input".into());
         }
         addr = true;
     } else if base.is_some() {
-        eprintln!("error: --base requires --raw-image");
-        return 2;
+        return Err("--base requires --raw-image".into());
     }
 
     if json {
@@ -1531,11 +969,10 @@ pub fn main(argv: &[String]) -> i32 {
             ("--decomp-dbg", decomp_dbg.is_some()),
         ] {
             if requested {
-                eprintln!("error: {flag} is not supported with --json");
-                return 2;
+                return Err(format!("{flag} is not supported with --json"));
             }
         }
-        return run_json(&JsonRequest {
+        return Ok(run_json(&JsonRequest {
             binary: &binary,
             target: &target,
             by_address: addr,
@@ -1546,7 +983,7 @@ pub fn main(argv: &[String]) -> i32 {
             sleighpath: sleighpath.as_deref(),
             raw_image,
             base,
-        });
+        }));
     }
 
     // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
@@ -1561,18 +998,12 @@ pub fn main(argv: &[String]) -> i32 {
     // Omitted mode is the size-driven `auto` policy. Preset overrides are
     // prepended so explicit `--option` pairs remain last-write-wins in the
     // generated console script.
-    match decompile_all::mode_options_for_binary(mode.as_deref(), &binary, options) {
-        Ok(merged) => options = merged,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return 2;
-        }
-    }
+    options = decompile_all::mode_options_for_binary(mode.as_deref(), &binary, options)?;
     if addr && !explicit_fast_funcdisc {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
 
-    run(&DecompileArgs {
+    Ok(run(&DecompileArgs {
         binary,
         target,
         by_address: addr,
@@ -1590,18 +1021,7 @@ pub fn main(argv: &[String]) -> i32 {
         isa,
         raw_image,
         base,
-    })
-}
-
-/// Consume the value following a flag at `argv[i]`, advancing `i` past it.
-fn take_value(argv: &[String], i: &mut usize, flag: &str) -> Option<String> {
-    if *i + 1 < argv.len() {
-        *i += 1;
-        Some(argv[*i].clone())
-    } else {
-        eprintln!("error: {flag} requires a value");
-        None
-    }
+    }))
 }
 
 fn usage() {
@@ -1799,8 +1219,43 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn temporary_output_paths_have_independent_owned_lifetimes() {
+        let first = super::temp_path("kuna_c_test_", ".c").unwrap();
+        let second = super::temp_path("kuna_c_test_", ".c").unwrap();
+        let first_path = first.to_path_buf();
+        let second_path = second.to_path_buf();
+        assert_ne!(first_path, second_path);
+        assert_eq!(first.extension().unwrap(), "c");
+        assert_eq!(std::fs::read(&first).unwrap(), b"");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&first).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        std::fs::write(&first, b"rendered C").unwrap();
+        assert_eq!(std::fs::read(&first).unwrap(), b"rendered C");
+        drop(first);
+        assert!(!first_path.exists());
+        assert!(second_path.exists());
+        drop(second);
+        assert!(!second_path.exists());
+    }
+
+    #[test]
+    fn temporary_output_path_is_removed_on_unwind() {
+        let output = super::temp_path("kuna_regions_test_", ".txt").unwrap();
+        let path = output.to_path_buf();
+        let result = std::panic::catch_unwind(move || {
+            let _output = output;
+            panic!("test output cleanup");
+        });
+        assert!(result.is_err());
+        assert!(!path.exists());
+    }
+
     use super::{
-        arch_failure_reason, build_script, check_errors, command_failure, console_path,
+        arch_failure_reason, check_errors, command_failure,
         decompile_all, decompile_command_failure, decompiling_name, find_pipeline_failure,
         is_unknown_function, option_failure, pipeline_refusal, read_symbols_failure,
         reject_unquotable,
@@ -1821,6 +1276,45 @@ mod tests {
         ("aif", "on"),
     ];
     use std::path::Path;
+    use super::script::console_path;
+
+    fn script_args(binary: &str, target: &str) -> super::DecompileArgs {
+        super::DecompileArgs {
+            binary: binary.into(),
+            target: target.into(),
+            by_address: false,
+            bfd_target: None,
+            raw: false,
+            regions: false,
+            options: Vec::new(),
+            kasserts: Vec::new(),
+            func_decls: Vec::new(),
+            assertions: Vec::new(),
+            assert_strict: false,
+            decomp_dbg: None,
+            sleighpath: None,
+            slice: None,
+            isa: None,
+            raw_image: false,
+            base: None,
+        }
+    }
+
+    fn build_script(
+        args: &super::DecompileArgs,
+        out_path: &Path,
+        injected: &[(&'static str, &'static str)],
+        regions_path: Option<&Path>,
+    ) -> String {
+        super::build_script_for_input(
+            args,
+            &args.binary,
+            args.by_address,
+            out_path,
+            injected,
+            regions_path,
+        )
+    }
 
     /// Recorded `decomp_dbg` transcript: the empty-scope load failure DIV-88's
     /// `symbolnamerepair` guards (`--option symbolnamerepair off`).
@@ -2187,17 +1681,13 @@ Decompilation complete
     fn build_script_declares_boundaries_between_read_symbols_and_the_load() {
         let decls = crate::funcdecl::parse_flag("0x1400-0x1480=decrypt").expect("parses");
         let script = build_script(
-            "/tmp/a.out",
-            "0x1400",
-            true,
-            None,
-            false,
+            &super::DecompileArgs {
+                by_address: true,
+                func_decls: decls.clone(),
+                ..script_args("/tmp/a.out", "0x1400")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &decls,
-            &[],
             None,
         );
         let line = |needle: &str| {
@@ -2207,9 +1697,8 @@ Decompilation complete
                 .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
         };
         assert!(
-            line("read symbols")
-                < line("function bounds 0x1400 0x1480 as decrypt")
-                    && line("function bounds 0x1400 0x1480 as decrypt") < line("load addr 0x1400"),
+            line("read symbols") < line("function bounds 0x1400 0x1480 as decrypt")
+                && line("function bounds 0x1400 0x1480 as decrypt") < line("load addr 0x1400"),
             "wrong order in:\n{script}"
         );
     }
@@ -2219,22 +1708,19 @@ Decompilation complete
     /// `prototype 0x…` for the very address being decompiled was rejected.
     #[test]
     fn build_script_symbols_the_entry_a_by_address_run_selected() {
-        let directives = vec![crate::assertdecl::parse_one(
-            "prototype 0x401571 void decrypt(unsigned int key)",
-        )
-        .expect("parses")];
+        let directives =
+            vec![
+                crate::assertdecl::parse_one("prototype 0x401571 void decrypt(unsigned int key)")
+                    .expect("parses"),
+            ];
         let script = build_script(
-            "/tmp/a.out",
-            "0x401571",
-            true,
-            None,
-            false,
+            &super::DecompileArgs {
+                by_address: true,
+                assertions: directives.clone(),
+                ..script_args("/tmp/a.out", "0x401571")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &directives,
             None,
         );
         let line = |needle: &str| {
@@ -2258,17 +1744,12 @@ Decompilation complete
     fn only_an_addressed_selection_gets_an_implicit_symbol() {
         let script = |target: &str, by_address: bool| {
             build_script(
-                "/tmp/a.out",
-                target,
-                by_address,
-                None,
-                false,
+                &super::DecompileArgs {
+                    by_address,
+                    ..script_args("/tmp/a.out", target)
+                },
                 Path::new("/tmp/kuna.c"),
                 LISTING,
-                &[],
-                &[],
-                &[],
-                &[],
                 None,
             )
         };
@@ -2284,21 +1765,20 @@ Decompilation complete
     fn a_declared_start_is_not_re_declared_without_its_extent() {
         let decls = crate::funcdecl::parse_flag("0x1400-0x1480=decrypt").expect("parses");
         let script = build_script(
-            "/tmp/a.out",
-            "0x1400",
-            true,
-            None,
-            false,
+            &super::DecompileArgs {
+                by_address: true,
+                func_decls: decls.clone(),
+                ..script_args("/tmp/a.out", "0x1400")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &decls,
-            &[],
             None,
         );
         assert_eq!(
-            script.lines().filter(|l| l.starts_with("function bounds")).count(),
+            script
+                .lines()
+                .filter(|l| l.starts_with("function bounds"))
+                .count(),
             1,
             "the declared extent was re-declared away:\n{script}"
         );
@@ -2320,17 +1800,12 @@ Decompilation complete
         .map(|spec| crate::assertdecl::parse_one(spec).expect("parses"))
         .collect();
         let script = build_script(
-            "/tmp/a.out",
-            "authenticate",
-            false,
-            None,
-            false,
+            &super::DecompileArgs {
+                assertions: directives.clone(),
+                ..script_args("/tmp/a.out", "authenticate")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &directives,
             None,
         );
         let line = |needle: &str| {
@@ -2361,23 +1836,21 @@ Decompilation complete
     /// need it.
     #[test]
     fn build_script_emits_one_decompile_without_a_symbol_scoped_assertion() {
-        let directives = vec![crate::assertdecl::parse_one("data 0x601048 char *pw")
-            .expect("parses")];
+        let directives = vec![crate::assertdecl::parse_one("data 0x601048 char *pw").expect("parses")];
         let script = build_script(
-            "/tmp/a.out",
-            "main",
-            false,
-            None,
-            false,
+            &super::DecompileArgs {
+                assertions: directives.clone(),
+                ..script_args("/tmp/a.out", "main")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &directives,
             None,
         );
-        assert_eq!(script.lines().filter(|l| *l == "decompile").count(), 1, "{script}");
+        assert_eq!(
+            script.lines().filter(|l| *l == "decompile").count(),
+            1,
+            "{script}"
+        );
         assert!(script.contains("map address 0x601048 char *pw"), "{script}");
     }
 
@@ -2419,17 +1892,9 @@ Execution error: No symbol named: v9
     #[test]
     fn build_script_without_declarations_emits_no_boundary_lines() {
         let script = build_script(
-            "/tmp/a.out",
-            "main",
-            false,
-            None,
-            false,
+            &script_args("/tmp/a.out", "main"),
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[],
             None,
         );
         assert!(!script.contains("function bounds"), "got:\n{script}");
@@ -2441,17 +1906,9 @@ Execution error: No symbol named: v9
     #[test]
     fn build_script_quotes_spaced_paths() {
         let script = build_script(
-            "/home/u/test dir/a.out",
-            "main",
-            false,
-            None,
-            false,
+            &script_args("/home/u/test dir/a.out", "main"),
             Path::new("/tmp/out dir/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[],
             Some(Path::new("/tmp/out dir/kuna.txt")),
         );
         assert!(
@@ -2473,23 +1930,42 @@ Execution error: No symbol named: v9
     #[test]
     fn build_script_quotes_the_path_after_a_bfd_target() {
         let script = build_script(
-            "/home/u/test dir/a.out",
-            "main",
-            false,
-            Some("x86:LE:64:default"),
-            false,
+            &super::DecompileArgs {
+                bfd_target: Some("x86:LE:64:default".into()),
+                ..script_args("/home/u/test dir/a.out", "main")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[],
             None,
         );
         assert!(
             script.contains("load file x86:LE:64:default \"/home/u/test dir/a.out\"\n"),
             "got:\n{script}"
         );
+    }
+
+    #[test]
+    fn build_script_for_raw_input_preserves_load_and_output_order() {
+        let script = build_script(
+            &super::DecompileArgs {
+                by_address: true,
+                raw: true,
+                raw_image: true,
+                base: Some(0x4000),
+                bfd_target: Some("x86:LE:64:default".into()),
+                ..script_args("/tmp/raw image.bin", "0x4000")
+            },
+            Path::new("/tmp/out dir/kuna.c"),
+            LISTING,
+            Some(Path::new("/tmp/out dir/regions.txt")),
+        );
+        assert_eq!(script, concat!(
+                "load raw x86:LE:64:default 0x4000 0x4000 \"/tmp/raw image.bin\"\n",
+                "option errortoomanyinstructions off\noption listing on\nread symbols\n",
+                "function symbol 0x4000\nload addr 0x4000\ndecompile\n",
+                "openfile write \"/tmp/out dir/kuna.c\"\nprint C\nprint raw\nclosefile\n",
+                "openfile write \"/tmp/out dir/regions.txt\"\nregion blocks\nregion tree\nclosefile\nquit\n",
+            ));
     }
 
     /// A checked-in fixture path, so the architecture classification behind the
@@ -2550,22 +2026,21 @@ Execution error: No symbol named: v9
     #[test]
     fn the_widened_script_puts_the_bundle_before_the_commit() {
         let script = build_script(
-            &fixture("entrymain_arm"),
-            "sub_410",
-            false,
-            None,
-            false,
+            &script_args(&fixture("entrymain_arm"), "sub_410"),
             Path::new("/tmp/kuna.c"),
             WIDENED,
-            &[],
-            &[],
-            &[],
-            &[],
             None,
         );
         let (before, after) = script.split_once("read symbols").expect("read symbols");
-        for line in ["option listing on", "option funcstart_patterns on", "option aif on"] {
-            assert!(before.contains(&format!("{line}\n")), "missing {line}:\n{script}");
+        for line in [
+            "option listing on",
+            "option funcstart_patterns on",
+            "option aif on",
+        ] {
+            assert!(
+                before.contains(&format!("{line}\n")),
+                "missing {line}:\n{script}"
+            );
         }
         assert!(after.contains("load function sub_410"), "got:\n{script}");
     }
@@ -2587,22 +2062,23 @@ Execution error: No symbol named: v9
     #[test]
     fn build_script_is_unchanged_for_ordinary_paths() {
         let script = build_script(
-            "/home/u/a.out",
-            "main",
-            false,
-            None,
-            false,
+            &script_args("/home/u/a.out", "main"),
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[],
             None,
         );
-        assert!(script.contains("load file /home/u/a.out\n"), "got:\n{script}");
-        assert!(script.contains("openfile write /tmp/kuna.c\n"), "got:\n{script}");
-        assert!(!script.contains('"'), "no quoting where none is needed:\n{script}");
+        assert!(
+            script.contains("load file /home/u/a.out\n"),
+            "got:\n{script}"
+        );
+        assert!(
+            script.contains("openfile write /tmp/kuna.c\n"),
+            "got:\n{script}"
+        );
+        assert!(
+            !script.contains('"'),
+            "no quoting where none is needed:\n{script}"
+        );
     }
 
     /// Quoting cannot rescue a newline — the transport is one command per line —
@@ -2664,20 +2140,16 @@ Execution error: No symbol named: v9
     #[test]
     fn a_range_directive_precedes_read_symbols_and_turns_readonly_on() {
         let script = build_script(
-            "/tmp/a.out",
-            "sample",
-            false,
-            None,
-            false,
+            &super::DecompileArgs {
+                options: vec![("readonly".into(), "off".into())],
+                assertions: vec![
+                    crate::assertdecl::parse_one("readonly 0x404028+8").unwrap(),
+                    crate::assertdecl::parse_one("volatile 0x50000000+4").unwrap(),
+                ],
+                ..script_args("/tmp/a.out", "sample")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[("readonly".into(), "off".into())],
-            &[],
-            &[],
-            &[
-                crate::assertdecl::parse_one("readonly 0x404028+8").unwrap(),
-                crate::assertdecl::parse_one("volatile 0x50000000+4").unwrap(),
-            ],
             None,
         );
         let at = |needle: &str| {
@@ -2686,11 +2158,18 @@ Execution error: No symbol named: v9
                 .position(|l| l == needle)
                 .unwrap_or_else(|| panic!("{needle:?} missing from:\n{script}"))
         };
-        assert!(at("option readonly on") < at("option readonly off"), "{script}");
+        assert!(
+            at("option readonly on") < at("option readonly off"),
+            "{script}"
+        );
         assert!(at("readonly 0x404028 8") < at("read symbols"), "{script}");
         assert!(at("volatile 0x50000000 4") < at("read symbols"), "{script}");
         // No symbol-scoped directive ⇒ still exactly one `decompile`.
-        assert_eq!(script.lines().filter(|l| *l == "decompile").count(), 1, "{script}");
+        assert_eq!(
+            script.lines().filter(|l| *l == "decompile").count(),
+            1,
+            "{script}"
+        );
     }
 
     /// With no range directive the script is untouched — no `option readonly`
@@ -2698,17 +2177,12 @@ Execution error: No symbol named: v9
     #[test]
     fn no_range_directive_leaves_the_readonly_option_alone() {
         let script = build_script(
-            "/tmp/a.out",
-            "sample",
-            false,
-            None,
-            false,
+            &super::DecompileArgs {
+                assertions: vec![crate::assertdecl::parse_one("name v2 buf").unwrap()],
+                ..script_args("/tmp/a.out", "sample")
+            },
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[crate::assertdecl::parse_one("name v2 buf").unwrap()],
             None,
         );
         assert!(!script.contains("option readonly"), "{script}");
@@ -2723,27 +2197,25 @@ Execution error: No symbol named: v9
 
         let original = "/home/u/test dir/a.out";
         let script = build_script(
-            original,
-            "main",
-            false,
-            None,
-            false,
+            &script_args(original, "main"),
             Path::new("/tmp/kuna.c"),
             LISTING,
-            &[],
-            &[],
-            &[],
-            &[],
             None,
         );
-        let line = script.lines().next().expect("the script opens with load file");
+        let line = script
+            .lines()
+            .next()
+            .expect("the script opens with load file");
 
         let mut s = CommandStream::new(line);
         assert_eq!(s.read_token(), "load");
         assert_eq!(s.read_token(), "file");
         let filename = s.read_filename();
         s.skip_ws();
-        assert!(s.eof(), "the path must exhaust the line, not leave a second argument");
+        assert!(
+            s.eof(),
+            "the path must exhaust the line, not leave a second argument"
+        );
         assert_eq!(filename, original);
     }
 }

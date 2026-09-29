@@ -9,12 +9,7 @@
 //! are decompiled here in one gate so the two spellings are compared directly
 //! rather than asserted apart.
 //!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the command fails to build an architecture; the
-//! test prints that and returns early (a specs-less CI is a visible skip, never
-//! a false green).
+//! Integration tests require the built processor specs under `specs/`.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -43,9 +38,8 @@ const GHIDRA_TYPE_NAMES: &[&str] = &[
     "float10", "float16", "xunknown1", "xunknown2", "xunknown4", "xunknown8", "wchar2", "wchar4",
 ];
 
-/// `kuna decompile-all <fixture> --option ctypes <on|off>`; `None` on a
-/// missing-`.sla` skip.
-fn decompile_all(fixture_name: &str, ctypes: &str) -> Option<String> {
+/// Run `kuna decompile-all <fixture> --option ctypes <on|off>`.
+fn decompile_all(fixture_name: &str, ctypes: &str) -> String {
     let sp = specs();
     let bin = fixture(fixture_name);
     let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
@@ -54,13 +48,9 @@ fn decompile_all(fixture_name: &str, ctypes: &str) -> Option<String> {
         .expect("failed to spawn the kuna binary");
     let stderr = String::from_utf8_lossy(&out.stderr);
     if !out.status.success() {
-        if stderr.contains("could not build an architecture") {
-            eprintln!("ctypes_per_arch: skipping (no .sla; build with `make specs`)");
-            return None;
-        }
         panic!("kuna decompile-all failed on {fixture_name}: {stderr}");
     }
-    Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
 /// Count whole-word occurrences of `needle` in `hay`, so `int` does not match
@@ -89,7 +79,7 @@ fn word_count(hay: &str, needle: &str) -> usize {
 #[test]
 fn no_ghidra_type_name_survives_on_any_target() {
     for name in ["fmt_x86_64", "i386_pie_nl", "fmt_arm", "fmt_aarch64"] {
-        let Some(c) = decompile_all(name, "on") else { return };
+        let c = decompile_all(name, "on");
         for ghidra in GHIDRA_TYPE_NAMES {
             assert_eq!(
                 word_count(&c, ghidra),
@@ -106,8 +96,8 @@ fn no_ghidra_type_name_survives_on_any_target() {
 /// wrong, and it is invisible on either target alone.
 #[test]
 fn eight_byte_integers_spell_per_data_model() {
-    let Some(lp64) = decompile_all("fmt_x86_64", "on") else { return };
-    let Some(ilp32) = decompile_all("i386_pie_nl", "on") else { return };
+    let lp64 = decompile_all("fmt_x86_64", "on");
+    let ilp32 = decompile_all("i386_pie_nl", "on");
 
     // x86-64 System V is LP64: `long` is 8 bytes, so the 8-byte core types land
     // there and `long long` is never reached.
@@ -133,7 +123,7 @@ fn eight_byte_integers_spell_per_data_model() {
 /// unaffected.
 #[test]
 fn off_keeps_the_ghidra_vocabulary() {
-    let Some(off) = decompile_all("i386_pie_nl", "off") else { return };
+    let off = decompile_all("i386_pie_nl", "off");
     assert!(word_count(&off, "int4") > 0, "ctypes off must keep the core-type names");
     assert!(word_count(&off, "int8") > 0, "ctypes off must keep the 8-byte core-type names");
 }
@@ -144,8 +134,8 @@ fn off_keeps_the_ghidra_vocabulary() {
 /// TYPE_INT core type). With `ctypes on` both vocabularies collapse onto one.
 #[test]
 fn the_two_vocabularies_no_longer_coexist() {
-    let Some(on) = decompile_all("i386_pie_nl", "on") else { return };
-    let Some(off) = decompile_all("i386_pie_nl", "off") else { return };
+    let on = decompile_all("i386_pie_nl", "on");
+    let off = decompile_all("i386_pie_nl", "off");
     // Off: both a C spelling (from realtypes) and a Ghidra spelling are present --
     // the reported mixture.
     assert!(word_count(&off, "unsigned int") > 0 && word_count(&off, "uint4") > 0);

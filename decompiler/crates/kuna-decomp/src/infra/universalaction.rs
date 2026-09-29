@@ -1,54 +1,15 @@
-//! Port of `decompiler/cpp/coreaction.cc` `ActionDatabase::universalAction`
-//! (`coreaction.cc:5722`) — **the keystone schedule** (ADR 0005).
+//! Declarative pass schedule, based on `decompiler/cpp/coreaction.cc`
+//! `ActionDatabase::universalAction` and extended with kuna-specific passes.
 //!
-//! # What this is
+//! [`SchedNode`] records registration order, groups and flags; materialization
+//! creates the engine's actions and rule pools. Each root (`decompile`,
+//! `jumptable`, etc.) selects groups through [`Action::clone_filtered`].
+//! Rule rows supply their registration names and groups, while action leaves
+//! obtain those from their constructors.
 //!
-//! `universalAction` is the ~300-line C++ constructor that imperatively builds
-//! the single *universal* Action/Rule tree — every pass the decompiler knows,
-//! nested into [`ActionGroup`]s / [`ActionPool`]s / the outer
-//! [`ActionRestartGroup`].  A *root* action (`"decompile"`, `"jumptable"`, …) is
-//! that universal tree filtered to a set of enabled groups by an
-//! [`ActionGroupList`] (C++ `clone(grouplist)`; here
-//! [`Action::clone_filtered`]).  The group member-lists are built verbatim by
-//! [`build_default_groups`] (already ported in `action.rs`).
-//!
-//! Per ADR 0005 the schedule is represented **declaratively** as a [`SchedNode`]
-//! spec tree (variants [`SchedNode::Action`] / [`SchedNode::Pool`] /
-//! [`SchedNode::Group`] / [`SchedNode::RestartGroup`]), then *materialized* into
-//! the concrete engine objects by [`SchedNode::materialize`].  The declarative
-//! form is diffable against the C++ constructor (this file's body is a
-//! line-for-line transcription of `coreaction.cc:5734-6031`), printable for
-//! `list action`-style tooling, and the natural anchor for a future
-//! `PassRegistration`.
-//!
-//! # Faithfulness notes
-//!
-//! * The tree shape, the **child order within every group/pool**, the node
-//!   flags (`rule_repeatapply` on the loops/pools, `rule_onceperfunc` only on
-//!   the universal restart group), and each node's *group string* and *name* are
-//!   transcribed exactly — these determine the filtered `clone(grouplist)`
-//!   result and the `list action` dump that the B0 gate byte-compares against
-//!   the C++ oracle.
-//! * Each leaf Action is constructed through its own module's constructor (which
-//!   fixes its C++ `name`); each Rule is registered into its [`ActionPool`] with
-//!   the C++ `Rule::getName()` string (the 3rd `Rule(...)` ctor argument) so the
-//!   pool dump matches.  The Rule's *group* is the `universalAction` group
-//!   argument (not the per-file `specs()` placeholder).
-//! * `ActionParamShiftStart`/`ActionParamShiftStop` (C++ 5741, 5765) and
-//!   `RuleIndirectConcat` (C++ 5938) are **commented out** in upstream and so
-//!   are absent here too.
-//!
-//! # The B0 allowlist (now empty)
-//!
-//! Earlier waves left a handful of Rules/Actions referenced by `universalAction`
-//! un-ported (STUB markers in their home modules), omitted from the materialized
-//! tree and enumerated in [`UNPORTED_ALLOWLIST`].  As of
-//! `w8x-universalaction-wire` all of them (`splitflow`, `subfloat_convert`,
-//! `stackprobeloop`, `lowerswitchinstall`, `dumptyhumplate`, `splitcopy`,
-//! `splitload`, `splitstore`, `stringcopy`, `stringstore`) are ported and wired
-//! into [`universal_sched`] at their exact C++ registration positions, so
-//! [`UNPORTED_ALLOWLIST`] is **empty** and the materialized "decompile" tree is
-//! byte-equal to the C++ oracle `list action` dump.
+//! Listings retain the upstream `list action` format. The regression fixture
+//! pins kuna's current tree, not an unchanged upstream schedule. Tests also
+//! require [`UNPORTED_ALLOWLIST`] to remain empty.
 
 use std::rc::Rc;
 
@@ -60,33 +21,19 @@ use crate::action::{
     RuleState, UNIVERSAL_NAME,
 };
 
-// =============================================================================
-// Allowlist of genuinely-unported passes (documented B0 dump diff)
-// =============================================================================
-
-/// A pass named by `universalAction` but not yet ported, with the wave/boundary
-/// blocking it.  Materialization skips these; the B0 listing test treats them as
-/// an explicit, named diff against the C++ oracle dump.
+/// Metadata for an omitted upstream pass, retained for API compatibility.
 #[derive(Debug, Clone, Copy)]
 pub struct UnportedEntry {
     /// The C++ `getName()` of the missing Action/Rule (the dump token).
     pub name: &'static str,
     /// The `universalAction` group argument it was registered under.
     pub group: &'static str,
-    /// The wave/boundary that must land it.
+    /// The dependency preventing its implementation.
     pub blocked_by: &'static str,
 }
 
-/// Every pass present in the C++ `universalAction` tree but not yet ported.
-///
-/// **Empty since `w8x-universalaction-wire`.**  The last ten allowlisted passes
-/// (`splitflow`, `subfloat_convert`, `stackprobeloop`, `lowerswitchinstall`,
-/// `dumptyhumplate`, `splitcopy`, `splitload`, `splitstore`, `stringcopy`,
-/// `stringstore`) were ported on the `w8x-subflow-splits` / `w8x-constseq-strings`
-/// / `kuna_stackprobeloop` / `kuna_loweredswitch` branches and are now wired into
-/// [`universal_sched`] at their exact C++ registration positions.  The
-/// materialized "decompile" tree is therefore **byte-equal** to the C++ oracle
-/// `list action` dump with no diff (the B0 empty-allowlist gate).
+/// No upstream pass is currently allowlisted as missing. Listing tests require
+/// this to stay empty and do not strip entries from the expected snapshot.
 pub const UNPORTED_ALLOWLIST: &[UnportedEntry] = &[];
 
 // =============================================================================
@@ -277,11 +224,8 @@ impl ActionListFilter {
 /// `" repeat "`/blank, the `!`/`S`/`A` flag columns, `depth*5+2` indent, name.
 /// Returns `num+1`.
 ///
-/// The index is **zero-padded** to width 4 (`{num:04}`), matching the C++ oracle
-/// `list action` dump: the console's shared output stream carries a sticky
-/// `setfill('0')` (set by the address-printing commands run before `list action`
-/// in the documented capture procedure), so `setw(4) << dec << num` renders
-/// `0000`, `0001`, …  The B0 gate byte-compares against that captured dump.
+/// Zero-padding matches the original C++ console capture's sticky
+/// `setfill('0')` and is retained in the kuna listing snapshot.
 fn print_action_line(
     out: &mut String,
     num: int4,
@@ -335,20 +279,20 @@ const REPEAT: u32 = ruleflags::rule_repeatapply;
 const ONCE: u32 = ruleflags::rule_onceperfunc;
 
 // =============================================================================
-// The universal schedule (transcription of coreaction.cc:5734-6031)
+// The universal schedule (based on coreaction.cc:5734-6031)
 // =============================================================================
 
-/// Build the declarative universal [`SchedNode`] tree — a verbatim
-/// transcription of `ActionDatabase::universalAction` (`coreaction.cc:5722`).
+/// Build the universal [`SchedNode`] tree, including kuna-specific passes.
 ///
 /// `stackspace` / `stackspace_index` correspond to the C++
 /// `conf->getStackSpace()` (the same `AddrSpace`, passed both as the `Rc`
-/// handle [`ActionStackPtrFlow`] keeps and as the manager *index*
-/// [`ActionExtraPopSetup`] keeps).  `extra_pool_rules` are the architecture's
+/// handle [`ActionStackPtrFlow`](crate::coreaction_render::ActionStackPtrFlow)
+/// keeps and as the manager *index*
+/// [`ActionExtraPopSetup`](crate::coreaction_protos::ActionExtraPopSetup) keeps).
+/// `extra_pool_rules` are the architecture's
 /// CPU-specific `conf->extra_pool_rules`, appended to `oppool1` exactly as the
-/// C++ loop does (empty for the default tree).  None of these affect the
-/// `list action` dump (they change only construction-time fields), so the B0
-/// gate may pass `None`/`vec![]`.
+/// C++ loop does. The stack-space arguments do not affect listing fields;
+/// extra rules do. The default-tree snapshot uses `None`/`vec![]`.
 pub fn universal_sched(
     stackspace: Option<Rc<AddrSpace>>,
     stackspace_index: Option<i32>,

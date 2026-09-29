@@ -9,12 +9,7 @@
 //! is the `xrefs-unify-pe-import` need: an import has two addresses under one
 //! name, and asking either must answer the same.
 //!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` / `ARM` `.sla` under `specs/` (gitignored;
-//! `make specs`). When one is absent the command cannot build an architecture;
-//! the test prints that and returns early — a specs-less CI is a visible skip,
-//! never a false green.
+//! Integration tests require the built processor specs under `specs/`.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -75,47 +70,38 @@ fn run_kuna(args: &[&str]) -> (String, String, i32) {
     )
 }
 
-/// `true` when the failure is a missing-`.sla` bootstrap failure (a legitimate
-/// skip), not a real bug.
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-}
-
-/// Run `kuna xrefs ...`, returning its stdout, or `None` on a missing-`.sla` skip.
-fn xrefs(args: &[&str]) -> Option<String> {
+/// Run `kuna xrefs ...` and return its stdout.
+fn xrefs(args: &[&str]) -> String {
     let mut argv = vec!["xrefs"];
     argv.extend_from_slice(args);
     let (stdout, stderr, code) = run_kuna(&argv);
     if code != 0 {
-        if is_specs_skip(&stderr) {
-            eprintln!("skipping: {stderr}");
-            return None;
-        }
         panic!("kuna xrefs {args:?} failed ({code}): {stderr}");
     }
-    Some(stdout)
+    stdout
 }
 
-/// The integer value of the first `"key": N` in a document.
-fn json_int(doc: &str, key: &str) -> Option<u64> {
-    let needle = format!("\"{key}\":");
-    let i = doc.find(&needle)? + needle.len();
-    doc[i..].trim_start().split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
+fn json_int(doc: &str, pointer: &str) -> Option<u64> {
+    let document: serde_json::Value = serde_json::from_str(doc).expect("valid xref JSON");
+    document.pointer(pointer).and_then(serde_json::Value::as_u64)
 }
 
-/// The string value of the first `"key": "..."` in a document.
-fn json_str(doc: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{key}\": \"");
-    let i = doc.find(&needle)? + needle.len();
-    Some(doc[i..].split('"').next()?.to_string())
+fn json_str(doc: &str, pointer: &str) -> Option<String> {
+    let document: serde_json::Value = serde_json::from_str(doc).expect("valid xref JSON");
+    document.pointer(pointer).and_then(serde_json::Value::as_str).map(str::to_owned)
 }
 
-/// Every `"kind": "..."` value in a document, in order.
 fn kinds(doc: &str) -> Vec<String> {
-    doc.match_indices("\"kind\": \"")
-        .filter_map(|(i, m)| doc[i + m.len()..].split('"').next().map(str::to_string))
+    let document: serde_json::Value = serde_json::from_str(doc).expect("valid xref JSON");
+    document
+        .get("xrefs")
+        .and_then(serde_json::Value::as_array)
+        .expect("xref array")
+        .iter()
+        .map(|reference| {
+            reference.get("kind").and_then(serde_json::Value::as_str)
+                .expect("reference kind").to_owned()
+        })
         .collect()
 }
 
@@ -129,12 +115,10 @@ fn rows(text: &str) -> Vec<&str> {
 /// row carrying an `address_hex`.
 #[test]
 fn the_acceptance_probe() {
-    let Some(doc) = xrefs(&[&aif_gap(), "--to", "0x1030", "--json"]) else {
-        return;
-    };
-    assert!(json_int(&doc, "count").unwrap() > 0, "no references found:\n{doc}");
+    let doc = xrefs(&[&aif_gap(), "--to", "0x1030", "--json"]);
+    assert!(json_int(&doc, "/count").unwrap() > 0, "no references found:\n{doc}");
     assert!(doc.contains("\"address_hex\":"), "no address_hex in a row:\n{doc}");
-    assert_eq!(json_str(&doc, "direction").as_deref(), Some("to"));
+    assert_eq!(json_str(&doc, "/direction").as_deref(), Some("to"));
     // `_FINI_0` @ 0x10e0 uses `__cxa_finalize` twice, once through each of its
     // two addresses: it null-checks the GOT slot at 0x3ff8 (the weak-symbol
     // guard) and then calls the `.plt.got` veneer at 0x1030. Both are references
@@ -149,9 +133,7 @@ fn the_acceptance_probe() {
 /// asked for, so a consumer never has to infer which one `address` meant.
 #[test]
 fn every_row_names_both_ends_of_the_edge() {
-    let Some(doc) = xrefs(&[&aif_gap(), "--to", "0x1030", "--json"]) else {
-        return;
-    };
+    let doc = xrefs(&[&aif_gap(), "--to", "0x1030", "--json"]);
     for key in ["from_address_hex", "to_address_hex", "from_function", "to_function"] {
         assert!(doc.contains(&format!("\"{key}\":")), "missing {key}:\n{doc}");
     }
@@ -166,10 +148,8 @@ fn every_row_names_both_ends_of_the_edge() {
 /// function it sits in.
 #[test]
 fn to_a_named_function_finds_its_call_sites() {
-    let Some(doc) = xrefs(&[&fauxware(), "--to", "authenticate", "--json"]) else {
-        return;
-    };
-    assert_eq!(json_int(&doc, "count"), Some(1), "{doc}");
+    let doc = xrefs(&[&fauxware(), "--to", "authenticate", "--json"]);
+    assert_eq!(json_int(&doc, "/count"), Some(1), "{doc}");
     assert_eq!(kinds(&doc), vec!["call"]);
     assert!(doc.contains("\"name\": \"main\""), "call site is not attributed to main:\n{doc}");
 }
@@ -177,9 +157,7 @@ fn to_a_named_function_finds_its_call_sites() {
 /// `--from` is the other direction: a function's callees, named.
 #[test]
 fn from_a_function_lists_its_callees() {
-    let Some(doc) = xrefs(&[&fauxware(), "--from", "main", "--json", "--kind", "call"]) else {
-        return;
-    };
+    let doc = xrefs(&[&fauxware(), "--from", "main", "--json", "--kind", "call"]);
     for callee in ["authenticate", "accepted", "rejected", "puts", "read"] {
         assert!(doc.contains(&format!("\"name\": \"{callee}\"")), "no call to {callee}:\n{doc}");
     }
@@ -191,18 +169,14 @@ fn from_a_function_lists_its_callees() {
 /// string whose address is taken.
 #[test]
 fn data_read_and_write_references_are_all_reported() {
-    let Some(doc) = xrefs(&[&aif_gap(), "--to", "0x4010", "--json"]) else {
-        return;
-    };
+    let doc = xrefs(&[&aif_gap(), "--to", "0x4010", "--json"]);
     let found = kinds(&doc);
     for want in ["data", "read", "write"] {
         assert!(found.iter().any(|k| k == want), "no {want} reference:\n{doc}");
     }
 
-    let Some(doc) = xrefs(&[&fauxware(), "--to", "s_400915", "--json"]) else {
-        return;
-    };
-    assert!(json_int(&doc, "count").unwrap() > 0, "a used string has no users:\n{doc}");
+    let doc = xrefs(&[&fauxware(), "--to", "s_400915", "--json"]);
+    assert!(json_int(&doc, "/count").unwrap() > 0, "a used string has no users:\n{doc}");
     assert_eq!(kinds(&doc), vec!["data"], "{doc}");
 }
 
@@ -211,9 +185,7 @@ fn data_read_and_write_references_are_all_reported() {
 /// and must never appear as one.
 #[test]
 fn a_calls_return_address_is_not_reported_as_a_reference() {
-    let Some(doc) = xrefs(&[&aif_gap(), "--from", "_FINI_0", "--json"]) else {
-        return;
-    };
+    let doc = xrefs(&[&aif_gap(), "--from", "_FINI_0", "--json"]);
     // `_FINI_0` calls 0x1030 at 0x1102 (5 bytes) and 0x1070 at 0x1107 (5 bytes).
     for after_a_call in ["0x1107", "0x110c"] {
         assert!(
@@ -226,20 +198,16 @@ fn a_calls_return_address_is_not_reported_as_a_reference() {
 /// An address target works as well as a name, and resolves the name back.
 #[test]
 fn an_address_target_resolves_its_name() {
-    let Some(doc) = xrefs(&[&fauxware(), "--to", "0x400664", "--json"]) else {
-        return;
-    };
-    assert_eq!(json_str(&doc, "name").as_deref(), Some("authenticate"), "{doc}");
-    assert_eq!(json_int(&doc, "address"), Some(0x400664));
+    let doc = xrefs(&[&fauxware(), "--to", "0x400664", "--json"]);
+    assert_eq!(json_str(&doc, "/target/name").as_deref(), Some("authenticate"), "{doc}");
+    assert_eq!(json_int(&doc, "/target/address"), Some(0x400664));
 }
 
 /// The human surface: a `#` header naming the query, then one tab-separated row
 /// per reference — greppable, and never the JSON document.
 #[test]
 fn the_human_surface_is_a_header_plus_tab_separated_rows() {
-    let Some(text) = xrefs(&[&aif_gap(), "--to", "0x1030"]) else {
-        return;
-    };
+    let text = xrefs(&[&aif_gap(), "--to", "0x1030"]);
     let mut lines = text.lines();
     let header = lines.next().expect("a header line");
     assert!(header.starts_with("# 2 references to __cxa_finalize @ 0x1030"), "{text}");
@@ -269,14 +237,12 @@ fn the_human_surface_is_a_header_plus_tab_separated_rows() {
 fn a_pe_import_answers_the_same_at_its_veneer_and_at_its_slot() {
     const VENEER: &str = "0x1400079b0";
     const SLOT: &str = "0x14000d234";
-    let Some(at_veneer) = xrefs(&[&pe_imports(), "--to", VENEER, "--json"]) else {
-        return;
-    };
-    let at_slot = xrefs(&[&pe_imports(), "--to", SLOT, "--json"]).expect("the slot query");
+    let at_veneer = xrefs(&[&pe_imports(), "--to", VENEER, "--json"]);
+    let at_slot = xrefs(&[&pe_imports(), "--to", SLOT, "--json"]);
 
-    assert_eq!(json_str(&at_veneer, "name").as_deref(), Some("VirtualProtect"), "{at_veneer}");
-    assert_eq!(json_int(&at_veneer, "count"), Some(2), "{at_veneer}");
-    assert_eq!(json_int(&at_slot, "count"), Some(2), "{at_slot}");
+    assert_eq!(json_str(&at_veneer, "/target/name").as_deref(), Some("VirtualProtect"), "{at_veneer}");
+    assert_eq!(json_int(&at_veneer, "/count"), Some(2), "{at_veneer}");
+    assert_eq!(json_int(&at_slot, "/count"), Some(2), "{at_slot}");
 
     // The two rows are the real uses of the import, in the two functions whose
     // decompilation calls it: `__write_memory.part.0` calls straight through the
@@ -305,11 +271,9 @@ fn a_pe_import_answers_the_same_at_its_veneer_and_at_its_slot() {
 /// no users at all.
 #[test]
 fn a_slot_reached_only_through_its_veneer_still_finds_its_callers() {
-    let Some(doc) = xrefs(&[&pe_imports(), "--to", "0x14000d33c", "--json"]) else {
-        return;
-    };
-    assert_eq!(json_str(&doc, "name").as_deref(), Some("puts"), "{doc}");
-    assert_eq!(json_int(&doc, "count"), Some(1), "{doc}");
+    let doc = xrefs(&[&pe_imports(), "--to", "0x14000d33c", "--json"]);
+    assert_eq!(json_str(&doc, "/target/name").as_deref(), Some("puts"), "{doc}");
+    assert_eq!(json_int(&doc, "/count"), Some(1), "{doc}");
     assert_eq!(kinds(&doc), vec!["call"], "{doc}");
     assert!(doc.contains("\"from_address_hex\": \"0x1400015a5\""), "not main's call:\n{doc}");
     assert!(doc.contains("\"name\": \"main\""), "call site unattributed:\n{doc}");
@@ -325,9 +289,7 @@ fn forwarding_veneer_edges_are_jumps_on_pe_and_elf() {
         (pe_imports(), "0x140007240", "0x14000d33c"),
         (aif_gap(), "0x1030", "0x3ff8"),
     ] {
-        let Some(doc) = xrefs(&[&binary, "--from", veneer, "--json"]) else {
-            return;
-        };
+        let doc = xrefs(&[&binary, "--from", veneer, "--json"]);
         assert_eq!(kinds(&doc), vec!["jump"], "{veneer} did not forward:\n{doc}");
         assert!(
             doc.contains(&format!("\"to_address_hex\": \"{slot}\"")),
@@ -346,12 +308,10 @@ fn forwarding_veneer_edges_are_jumps_on_pe_and_elf() {
 /// the veneer, and the slot is disclosed as its alias.
 #[test]
 fn an_import_named_by_its_veneer_and_its_slot_resolves_by_name() {
-    let Some(by_name) = xrefs(&[&pe_imports(), "--to", "VirtualProtect", "--json"]) else {
-        return;
-    };
-    let by_veneer = xrefs(&[&pe_imports(), "--to", "0x1400079b0", "--json"]).expect("the veneer");
+    let by_name = xrefs(&[&pe_imports(), "--to", "VirtualProtect", "--json"]);
+    let by_veneer = xrefs(&[&pe_imports(), "--to", "0x1400079b0", "--json"]);
 
-    assert_eq!(json_str(&by_name, "address_hex").as_deref(), Some("0x1400079b0"), "{by_name}");
+    assert_eq!(json_str(&by_name, "/target/address_hex").as_deref(), Some("0x1400079b0"), "{by_name}");
     assert!(by_name.contains("\"0x14000d234\""), "the slot is not disclosed:\n{by_name}");
     // Not merely the same count: the same rows, byte for byte.
     let answer = |doc: &str| doc[doc.find("\"xrefs\"").expect("an xrefs array")..].to_string();
@@ -362,11 +322,9 @@ fn an_import_named_by_its_veneer_and_its_slot_resolves_by_name() {
 /// fold must not depend on which half the call sites happen to reference.
 #[test]
 fn a_name_folds_whichever_half_of_the_import_is_called() {
-    let Some(doc) = xrefs(&[&pe_imports(), "--to", "puts", "--json"]) else {
-        return;
-    };
-    assert_eq!(json_str(&doc, "address_hex").as_deref(), Some("0x140007240"), "{doc}");
-    assert_eq!(json_int(&doc, "count"), Some(1), "{doc}");
+    let doc = xrefs(&[&pe_imports(), "--to", "puts", "--json"]);
+    assert_eq!(json_str(&doc, "/target/address_hex").as_deref(), Some("0x140007240"), "{doc}");
+    assert_eq!(json_int(&doc, "/count"), Some(1), "{doc}");
     assert!(doc.contains("\"from_address_hex\": \"0x1400015a5\""), "not main's call:\n{doc}");
 }
 
@@ -378,9 +336,6 @@ fn a_name_folds_whichever_half_of_the_import_is_called() {
 fn two_genuinely_distinct_functions_of_one_name_are_still_refused() {
     let object = fixture("entry_selectors_x86_64.o");
     let (_, stderr, code) = run_kuna(&["xrefs", &object, "--to", "duplicate_local"]);
-    if is_specs_skip(&stderr) {
-        return;
-    }
     assert_eq!(code, 1, "{stderr}");
     assert!(stderr.contains("ambiguous"), "{stderr}");
     assert!(stderr.contains(".text.selector_a+0x0"), "{stderr}");
@@ -391,21 +346,17 @@ fn two_genuinely_distinct_functions_of_one_name_are_still_refused() {
 /// name: an ordinary function keeps an empty `aliases` list and its own answer.
 #[test]
 fn an_ordinary_function_is_never_aliased_to_anything() {
-    let Some(doc) = xrefs(&[&fauxware(), "--to", "authenticate", "--json"]) else {
-        return;
-    };
+    let doc = xrefs(&[&fauxware(), "--to", "authenticate", "--json"]);
     assert!(doc.contains("\"aliases\": []"), "authenticate acquired an alias:\n{doc}");
-    assert_eq!(json_int(&doc, "count"), Some(1), "{doc}");
+    assert_eq!(json_int(&doc, "/count"), Some(1), "{doc}");
 }
 
 /// An empty answer is an answer: a target nothing references is exit 0 with
 /// `count: 0`, not an error a caller has to distinguish from a broken run.
 #[test]
 fn a_target_with_no_references_is_an_empty_success() {
-    let Some(doc) = xrefs(&[&aif_gap(), "--to", "0x2000", "--json"]) else {
-        return;
-    };
-    assert_eq!(json_int(&doc, "count"), Some(0), "{doc}");
+    let doc = xrefs(&[&aif_gap(), "--to", "0x2000", "--json"]);
+    assert_eq!(json_int(&doc, "/count"), Some(0), "{doc}");
     assert!(doc.contains("\"xrefs\": []"), "{doc}");
 }
 
@@ -414,9 +365,6 @@ fn a_target_with_no_references_is_an_empty_success() {
 #[test]
 fn an_unresolvable_target_fails_with_a_reason() {
     let (_, stderr, code) = run_kuna(&["xrefs", &fauxware(), "--to", "no_such_symbol_here"]);
-    if is_specs_skip(&stderr) {
-        return;
-    }
     assert_eq!(code, 1, "{stderr}");
     assert!(stderr.contains("no symbol named"), "{stderr}");
 }
@@ -447,17 +395,14 @@ fn usage_errors_exit_two() {
 /// is a stronger fact than a fingerprint match.
 #[test]
 fn a_function_no_descent_reaches_still_answers_for_itself() {
-    let Some(doc) = xrefs(&[&cortexm_gap(), "--from", "0x800039c", "--json"]) else {
-        return;
-    };
-    assert_eq!(json_int(&doc, "count"), Some(1), "the focus seed did not walk:\n{doc}");
-    assert_eq!(json_str(&doc, "name").as_deref(), Some("sub_800039c"), "{doc}");
+    let doc = xrefs(&[&cortexm_gap(), "--from", "0x800039c", "--json"]);
+    assert_eq!(json_int(&doc, "/count"), Some(1), "the focus seed did not walk:\n{doc}");
+    assert_eq!(json_str(&doc, "/target/name").as_deref(), Some("sub_800039c"), "{doc}");
     assert!(doc.contains("\"to_address_hex\": \"0x8000160\""), "wrong callee:\n{doc}");
     assert!(doc.contains("\"from_address_hex\": \"0x80003a0\""), "wrong call site:\n{doc}");
 
-    let off = xrefs(&[&cortexm_gap(), "--from", "0x800039c", "--json", "--option", "aif", "off"])
-        .expect("the gap-walk-off query");
-    assert_eq!(json_int(&off, "count"), Some(1), "the focus seed needs the gap-walk:\n{off}");
+    let off = xrefs(&[&cortexm_gap(), "--from", "0x800039c", "--json", "--option", "aif", "off"]);
+    assert_eq!(json_int(&off, "/count"), Some(1), "the focus seed needs the gap-walk:\n{off}");
 }
 
 /// The speculative gap-walk runs over the partition the reference walk itself
@@ -471,17 +416,14 @@ fn a_function_no_descent_reaches_still_answers_for_itself() {
 /// the recall this query would lose by dropping the Listing without replacing it.
 #[test]
 fn the_gap_walk_finds_call_sites_a_descent_cannot_reach() {
-    let Some(doc) = xrefs(&[&cortexm_gap(), "--to", "0x8000160", "--json"]) else {
-        return;
-    };
-    assert_eq!(json_int(&doc, "count"), Some(2), "a caller is missing:\n{doc}");
+    let doc = xrefs(&[&cortexm_gap(), "--to", "0x8000160", "--json"]);
+    assert_eq!(json_int(&doc, "/count"), Some(2), "a caller is missing:\n{doc}");
     for site in ["0x8000042", "0x80003a0"] {
         assert!(doc.contains(&format!("\"from_address_hex\": \"{site}\"")), "no {site}:\n{doc}");
     }
 
-    let off = xrefs(&[&cortexm_gap(), "--to", "0x8000160", "--json", "--option", "aif", "off"])
-        .expect("the gap-walk-off query");
-    assert_eq!(json_int(&off, "count"), Some(1), "the gap-walk was not the reason:\n{off}");
+    let off = xrefs(&[&cortexm_gap(), "--to", "0x8000160", "--json", "--option", "aif", "off"]);
+    assert_eq!(json_int(&off, "/count"), Some(1), "the gap-walk was not the reason:\n{off}");
     assert!(
         !off.contains("\"from_address_hex\": \"0x80003a0\""),
         "the gap-walk-off answer still has the gap call site:\n{off}"

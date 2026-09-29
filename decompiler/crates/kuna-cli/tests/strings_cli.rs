@@ -1,94 +1,11 @@
-//! Gate for `kuna strings` — the string inventory five testers on four crackmes
-//! asked for and fell back to `strings(1)` for.
-//!
-//! Two layers, because the command lands before the integrator wires its
-//! dispatch arm in `main.rs` (the `disassemble_cli.rs` precedent):
-//!
-//! * **In-process** — the module is pulled in by `#[path]` (with the crate
-//!   modules it uses) and driven through its own `parse_args` + `query`, so the
-//!   whole command *except* the dispatch arm is under test from the day the file
-//!   lands. `query` returns the rendered text instead of writing it, which is
-//!   also what lets these tests assert on exact columns.
-//! * **End to end** — the same invocations through the built `kuna` binary.
-//!   Until `main.rs` routes `"strings"`, those are a visible skip, never a false
-//!   green.
-//!
-//! Two cases are load-bearing.
-//!
-//! [`the_acceptance_probe`] is the promoted probe: `kuna strings <binary>` used
-//! to exit 2 with `unknown subcommand "strings"`.
-//!
-//! [`a_wide_string_is_a_one_character_string_at_byte_width`] is the recorded
-//! defect `--encoding` exists for: a UTF-16LE literal read at 1-byte width stops
-//! at the NUL after its first character, which is why the decompiler renders
-//! `LoadLibraryW("n")` for `L"ntdll.dll"`. It runs on a synthetic ELF built
-//! in-process, so it needs no vendored fixture.
-//!
-//! [`a_utf8_prompt_keeps_its_start_address`] is the other one: a literal whose
-//! first characters are multi-byte is reported from the byte AFTER its last
-//! sequence, which is not an address anything in the image refers to — so the
-//! row also arrives with no references and no owning function.
-//!
-//! ## `.sla` precondition
-//!
-//! The reference walk bootstraps the architecture, which needs the built `x86`
-//! `.sla` under `specs/` (gitignored; `make specs`). When it is absent the
-//! command cannot load; the test prints that and returns early — a specs-less CI
-//! is a visible skip. The scan itself needs no `.sla`, which is what the
-//! `--no-xrefs` cases run without.
+//! Integration tests for `kuna strings` against the built executable.
+//! Processor specs and fixtures are required; load failures fail the tests.
 
+use serde_json::Value as Json;
 use std::path::PathBuf;
-use std::process::Command;
 
-#[allow(dead_code)]
-#[path = "../src/jsonfmt.rs"]
-mod jsonfmt;
-#[allow(dead_code)]
-#[path = "../src/output.rs"]
-mod output;
-#[allow(dead_code)]
-#[path = "../src/paths.rs"]
-mod paths;
-#[allow(dead_code)]
-#[path = "../src/assertdecl.rs"]
-mod assertdecl;
-
-#[path = "../src/funcdecl.rs"]
-mod funcdecl;
-#[allow(dead_code)]
-#[path = "../src/optname.rs"]
-mod optname;
-#[allow(dead_code)]
-#[path = "../src/decompile.rs"]
-mod decompile;
-#[allow(dead_code)]
-#[path = "../src/jobs.rs"]
-mod jobs;
-#[allow(dead_code)]
-#[path = "../src/runtime_hints.rs"]
-mod runtime_hints;
-#[allow(dead_code)]
-#[path = "../src/limits.rs"]
-mod limits;
-#[allow(dead_code)]
-#[path = "../src/decompile_all.rs"]
-mod decompile_all;
-#[allow(dead_code)]
-#[path = "../src/strings.rs"]
-mod strings;
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
-}
-
-fn fixture(name: &str) -> String {
-    repo_root()
-        .join("decompiler/crates/kuna-analysis/tests/fixtures")
-        .join(name)
-        .to_str()
-        .unwrap()
-        .to_string()
-}
+mod common;
+use common::{fixture, run_kuna};
 
 /// The vendored non-stripped `fauxware`: `.rodata` prompts referenced from
 /// `main`, which is exactly the string→its-user hop this command exists for.
@@ -110,27 +27,10 @@ fn utf8prompt() -> String {
     fixture("utf8prompt_x86_64")
 }
 
-/// `true` when a failure is a missing-`.sla` bootstrap failure (a legitimate
-/// skip), not a real bug.
-fn is_specs_skip(message: &str) -> bool {
-    message.contains("could not build an architecture")
-        || message.contains("SLEIGH")
-        || message.contains("Could not discover")
-}
-
-/// Drive the command in-process, exactly as `main.rs` will: parse the argv, then
-/// render. `None` is the missing-`.sla` skip.
-fn listing(argv: &[&str]) -> Option<String> {
-    let argv: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
-    let args = strings::parse_args(&argv).unwrap_or_else(|e| panic!("{argv:?}: {e}"));
-    match strings::query(&args) {
-        Ok(text) => Some(text),
-        Err(e) if is_specs_skip(&e) => {
-            eprintln!("skipping: {e}");
-            None
-        }
-        Err(e) => panic!("kuna strings {argv:?} failed: {e}"),
-    }
+fn listing(argv: &[&str]) -> String {
+    let (stdout, stderr, code) = run_kuna(&[&["strings"][..], argv].concat());
+    assert_eq!(code, 0, "kuna strings {argv:?}: {stderr}");
+    stdout
 }
 
 /// The error a rejected invocation reports, whichever half rejected it: the
@@ -141,13 +41,11 @@ enum Refusal {
 }
 
 fn refusal(argv: &[&str]) -> Refusal {
-    let argv: Vec<String> = argv.iter().map(|s| (*s).to_string()).collect();
-    match strings::parse_args(&argv) {
-        Err(e) => Refusal::Usage(e),
-        Ok(args) => match strings::query(&args) {
-            Err(e) => Refusal::Query(e),
-            Ok(text) => panic!("{argv:?} was expected to be refused, got:\n{text}"),
-        },
+    let (stdout, stderr, code) = run_kuna(&[&["strings"][..], argv].concat());
+    match code {
+        2 => Refusal::Usage(stderr),
+        1 => Refusal::Query(stderr),
+        _ => panic!("{argv:?} was expected to be refused, exited {code}:\n{stdout}\n{stderr}"),
     }
 }
 
@@ -170,23 +68,32 @@ fn row_at<'a>(rows: &'a [Vec<String>], addr: &str) -> Option<&'a Vec<String>> {
 /// section — the columns `strings(1)` cannot produce.
 #[test]
 fn the_inventory_carries_addresses_and_sections() {
-    let Some(out) = listing(&[&fauxware(), "--no-xrefs"]) else { return };
+    let out = listing(&[&fauxware(), "--no-xrefs"]);
     let rows = rows(&out);
     let prompt = row_at(&rows, "0x400915").expect("\"Username: \" @ 0x400915");
     assert_eq!(prompt[1], "ascii");
     assert_eq!(prompt[2], "10", "ten visible characters");
     assert_eq!(prompt[3], ".rodata");
     assert_eq!(prompt[6], "Username: ");
-    assert!(row_at(&rows, "0x4008d0").is_some(), "the backdoor password must be listed");
-    assert!(out.starts_with("# 14 strings in "), "a header naming the query:\n{out}");
-    assert!(out.contains("termination any"), "and the ending policy it ran under:\n{out}");
+    assert!(
+        row_at(&rows, "0x4008d0").is_some(),
+        "the backdoor password must be listed"
+    );
+    assert!(
+        out.starts_with("# 14 strings in "),
+        "a header naming the query:\n{out}"
+    );
+    assert!(
+        out.contains("termination any"),
+        "and the ending policy it ran under:\n{out}"
+    );
 }
 
 /// The reason to ask kuna rather than `strings(1)`: the row names the function
 /// that uses the string.
 #[test]
 fn a_row_names_the_functions_that_reference_it() {
-    let Some(out) = listing(&[&fauxware(), "--filter", "^Username: $"]) else { return };
+    let out = listing(&[&fauxware(), "--filter", "^Username: $"]);
     let rows = rows(&out);
     let prompt = row_at(&rows, "0x400915").expect("the prompt survives its own filter");
     assert_eq!(prompt[4], "1", "referenced once");
@@ -197,10 +104,12 @@ fn a_row_names_the_functions_that_reference_it() {
 /// address spelled both ways.
 #[test]
 fn the_json_document_has_the_house_shape() {
-    let Some(out) = listing(&[&fauxware(), "--json", "--filter", "^Username: $"]) else { return };
-    let parsed = jsonfmt::parse(&out).expect("the document parses as JSON");
-    let jsonfmt::Json::Object(root) = &parsed else { panic!("the document is an object") };
-    let key = |k: &str| root.iter().find(|(name, _)| name == k).map(|(_, v)| v);
+    let out = listing(&[&fauxware(), "--json", "--filter", "^Username: $"]);
+    let parsed = serde_json::from_str::<Json>(&out).expect("the document parses as JSON");
+    let Json::Object(root) = &parsed else {
+        panic!("the document is an object")
+    };
+    let key = |k: &str| root.get(k);
     for k in [
         "binary",
         "encoding",
@@ -215,10 +124,14 @@ fn the_json_document_has_the_house_shape() {
     ] {
         assert!(key(k).is_some(), "the document must carry {k:?}:\n{out}");
     }
-    let Some(jsonfmt::Json::Array(items)) = key("strings") else { panic!("strings is an array") };
+    let Some(Json::Array(items)) = key("strings") else {
+        panic!("strings is an array")
+    };
     assert_eq!(items.len(), 1, "one match:\n{out}");
-    let jsonfmt::Json::Object(row) = &items[0] else { panic!("a row is an object") };
-    let field = |k: &str| row.iter().find(|(name, _)| name == k).map(|(_, v)| v);
+    let Json::Object(row) = &items[0] else {
+        panic!("a row is an object")
+    };
+    let field = |k: &str| row.get(k);
     for k in [
         "address",
         "address_hex",
@@ -233,16 +146,18 @@ fn the_json_document_has_the_house_shape() {
     ] {
         assert!(field(k).is_some(), "every row must carry {k:?}:\n{out}");
     }
-    assert_eq!(field("address"), Some(&jsonfmt::Json::Number("4196629".into())));
-    assert_eq!(field("address_hex"), Some(&jsonfmt::Json::Str("0x400915".into())));
-    assert_eq!(field("text"), Some(&jsonfmt::Json::Str("Username: ".into())));
-    let Some(jsonfmt::Json::Array(functions)) = field("functions") else {
+    assert_eq!(field("address"), Some(&Json::from(4196629_u64)));
+    assert_eq!(field("address_hex"), Some(&Json::String("0x400915".into())));
+    assert_eq!(field("text"), Some(&Json::String("Username: ".into())));
+    let Some(Json::Array(functions)) = field("functions") else {
         panic!("functions is an array")
     };
     assert_eq!(functions.len(), 1, "one referencing function:\n{out}");
-    let jsonfmt::Json::Object(f) = &functions[0] else { panic!("a function is an object") };
+    let Json::Object(f) = &functions[0] else {
+        panic!("a function is an object")
+    };
     assert!(
-        f.contains(&("name".to_string(), jsonfmt::Json::Str("main".into()))),
+        f.get("name") == Some(&Json::String("main".into())),
         "named, with both address forms:\n{out}"
     );
     assert!(f.iter().any(|(k, _)| k == "address") && f.iter().any(|(k, _)| k == "address_hex"));
@@ -254,11 +169,16 @@ fn the_json_document_has_the_house_shape() {
 /// shorter runs and raising it drops them.
 #[test]
 fn min_length_moves_the_analyzer_threshold() {
-    let Some(loose) = listing(&[&fauxware(), "--no-xrefs", "--min-length", "3"]) else { return };
-    let Some(tight) = listing(&[&fauxware(), "--no-xrefs", "--min-length", "20"]) else { return };
-    assert!(rows(&loose).len() > rows(&tight).len(), "a lower minimum must admit more");
+    let loose = listing(&[&fauxware(), "--no-xrefs", "--min-length", "3"]);
+    let tight = listing(&[&fauxware(), "--no-xrefs", "--min-length", "20"]);
     assert!(
-        rows(&tight).iter().all(|r| r[2].parse::<usize>().unwrap() >= 20),
+        rows(&loose).len() > rows(&tight).len(),
+        "a lower minimum must admit more"
+    );
+    assert!(
+        rows(&tight)
+            .iter()
+            .all(|r| r[2].parse::<usize>().unwrap() >= 20),
         "no row shorter than the minimum survives"
     );
 }
@@ -269,8 +189,15 @@ fn min_length_moves_the_analyzer_threshold() {
 #[test]
 fn a_length_prefixed_name_table_is_reported_by_default() {
     let bin = nametable();
-    let mut argv = vec![&bin[..], "--no-xrefs", "--section", ".rodata", "--min-length", "4"];
-    let Some(out) = listing(&argv) else { return };
+    let mut argv = vec![
+        &bin[..],
+        "--no-xrefs",
+        "--section",
+        ".rodata",
+        "--min-length",
+        "4",
+    ];
+    let out = listing(&argv);
     let texts: Vec<String> = rows(&out).iter().map(|r| r[6].clone()).collect();
     assert_eq!(
         texts,
@@ -281,7 +208,7 @@ fn a_length_prefixed_name_table_is_reported_by_default() {
     // The pass-faithful policy is the behaviour this replaced: the table is gone
     // and only the C literal survives.
     argv.extend_from_slice(&["--termination", "nul"]);
-    let Some(out) = listing(&argv) else { return };
+    let out = listing(&argv);
     let strict = rows(&out);
     assert_eq!(strict.len(), 1, "only the NUL-ended literal:\n{out}");
     assert_eq!(strict[0][6], "Correct serial!");
@@ -291,7 +218,7 @@ fn a_length_prefixed_name_table_is_reported_by_default() {
 /// its last visible byte rather than claiming a terminator it does not have.
 #[test]
 fn an_unterminated_row_declares_itself() {
-    let Some(out) = listing(&[
+    let out = listing(&[
         &nametable(),
         "--no-xrefs",
         "--json",
@@ -299,22 +226,30 @@ fn an_unterminated_row_declares_itself() {
         "4",
         "--filter",
         "^out.js$",
-    ]) else {
-        return;
+    ]);
+    let parsed = serde_json::from_str::<Json>(&out).expect("the document parses as JSON");
+    let Json::Object(root) = &parsed else {
+        panic!("the document is an object")
     };
-    let parsed = jsonfmt::parse(&out).expect("the document parses as JSON");
-    let jsonfmt::Json::Object(root) = &parsed else { panic!("the document is an object") };
-    let key = |k: &str| root.iter().find(|(name, _)| name == k).map(|(_, v)| v);
-    assert_eq!(key("termination"), Some(&jsonfmt::Json::Str("any".into())), "echoed:\n{out}");
-    let Some(jsonfmt::Json::Array(items)) = key("strings") else { panic!("strings is an array") };
+    let key = |k: &str| root.get(k);
+    assert_eq!(
+        key("termination"),
+        Some(&Json::String("any".into())),
+        "echoed:\n{out}"
+    );
+    let Some(Json::Array(items)) = key("strings") else {
+        panic!("strings is an array")
+    };
     assert_eq!(items.len(), 1, "one match:\n{out}");
-    let jsonfmt::Json::Object(row) = &items[0] else { panic!("a row is an object") };
-    let field = |k: &str| row.iter().find(|(name, _)| name == k).map(|(_, v)| v);
-    assert_eq!(field("nul_terminated"), Some(&jsonfmt::Json::Bool(false)));
-    assert_eq!(field("length"), Some(&jsonfmt::Json::Number("6".into())));
+    let Json::Object(row) = &items[0] else {
+        panic!("a row is an object")
+    };
+    let field = |k: &str| row.get(k);
+    assert_eq!(field("nul_terminated"), Some(&Json::Bool(false)));
+    assert_eq!(field("length"), Some(&Json::from(6_u64)));
     assert_eq!(
         field("byte_length"),
-        Some(&jsonfmt::Json::Number("6".into())),
+        Some(&Json::from(6_u64)),
         "no terminator to count:\n{out}"
     );
 }
@@ -323,17 +258,13 @@ fn an_unterminated_row_declares_itself() {
 /// address, its text and its terminator-inclusive extent.
 #[test]
 fn the_strict_policy_is_a_subset_of_the_default() {
-    let Some(relaxed) = listing(&[&fauxware(), "--no-xrefs", "--json"]) else { return };
-    let Some(strict) = listing(&[&fauxware(), "--no-xrefs", "--json", "--termination", "nul"])
-    else {
-        return;
-    };
-    let rows = |doc: &str| -> Vec<jsonfmt::Json> {
-        let jsonfmt::Json::Object(root) = jsonfmt::parse(doc).expect("JSON") else {
+    let relaxed = listing(&[&fauxware(), "--no-xrefs", "--json"]);
+    let strict = listing(&[&fauxware(), "--no-xrefs", "--json", "--termination", "nul"]);
+    let rows = |doc: &str| -> Vec<Json> {
+        let Json::Object(root) = serde_json::from_str::<Json>(doc).expect("JSON") else {
             panic!("object")
         };
-        let Some((_, jsonfmt::Json::Array(items))) =
-            root.into_iter().find(|(name, _)| name == "strings")
+        let Some((_, Json::Array(items))) = root.into_iter().find(|(name, _)| name == "strings")
         else {
             panic!("strings is an array")
         };
@@ -343,7 +274,10 @@ fn the_strict_policy_is_a_subset_of_the_default() {
     assert_eq!(strict.len(), 13, "the analyzer's own inventory of fauxware");
     assert_eq!(relaxed.len(), 14, "plus the one unterminated printable run");
     for row in &strict {
-        assert!(relaxed.contains(row), "the relaxed ending dropped a row: {row:?}");
+        assert!(
+            relaxed.contains(row),
+            "the relaxed ending dropped a row: {row:?}"
+        );
     }
 }
 
@@ -351,11 +285,17 @@ fn the_strict_policy_is_a_subset_of_the_default() {
 /// optional.
 #[test]
 fn section_narrows_the_scan() {
-    let Some(out) = listing(&[&fauxware(), "--no-xrefs", "--section", "rodata"]) else { return };
+    let out = listing(&[&fauxware(), "--no-xrefs", "--section", "rodata"]);
     let rows = rows(&out);
     assert!(!rows.is_empty(), "fauxware has .rodata strings");
-    assert!(rows.iter().all(|r| r[3] == ".rodata"), "only .rodata rows:\n{out}");
-    assert!(row_at(&rows, "0x400238").is_none(), "the .interp string is out of scope");
+    assert!(
+        rows.iter().all(|r| r[3] == ".rodata"),
+        "only .rodata rows:\n{out}"
+    );
+    assert!(
+        row_at(&rows, "0x400238").is_none(),
+        "the .interp string is out of scope"
+    );
 }
 
 /// An unknown `--section` is a question that cannot be answered: a failed query
@@ -365,7 +305,10 @@ fn an_unknown_section_reports_what_is_there() {
     match refusal(&[&fauxware(), "--section", "nope"]) {
         Refusal::Query(e) => {
             assert!(e.contains("no section named"), "{e}");
-            assert!(e.contains(".rodata"), "the reachable sections are named: {e}");
+            assert!(
+                e.contains(".rodata"),
+                "the reachable sections are named: {e}"
+            );
         }
         Refusal::Usage(e) => panic!("an unknown section is a failed query, not a usage error: {e}"),
     }
@@ -381,7 +324,7 @@ fn filter_is_a_regex() {
         ("zzz-no-such-string", 0),
     ];
     for (pattern, want) in cases {
-        let Some(out) = listing(&[&fauxware(), "--no-xrefs", "--filter", pattern]) else { return };
+        let out = listing(&[&fauxware(), "--no-xrefs", "--filter", pattern]);
         assert_eq!(rows(&out).len(), want, "--filter {pattern:?}:\n{out}");
     }
 }
@@ -475,22 +418,31 @@ fn a_wide_string_is_a_one_character_string_at_byte_width() {
     let path = path.to_str().unwrap();
 
     // 1-byte width, the analyzer's own minimum: the literal is invisible.
-    let Some(ascii) = listing(&[path, "--no-xrefs", "--encoding", "ascii"]) else { return };
-    assert!(rows(&ascii).is_empty(), "a wide literal has no 5-char ASCII run:\n{ascii}");
+    let ascii = listing(&[path, "--no-xrefs", "--encoding", "ascii"]);
+    assert!(
+        rows(&ascii).is_empty(),
+        "a wide literal has no 5-char ASCII run:\n{ascii}"
+    );
 
     // 1-byte width, minimum 1: exactly the `LoadLibraryW("n")` rendering.
-    let Some(truncated) =
-        listing(&[path, "--no-xrefs", "--encoding", "ascii", "--min-length", "1"])
-    else {
-        return;
-    };
+    let truncated = listing(&[
+        path,
+        "--no-xrefs",
+        "--encoding",
+        "ascii",
+        "--min-length",
+        "1",
+    ]);
     let byte_rows = rows(&truncated);
     let first = row_at(&byte_rows, "0x400000").expect("a row at the literal's address");
-    assert_eq!(first[6], "n", "1-byte width stops at the NUL after the first character");
+    assert_eq!(
+        first[6], "n",
+        "1-byte width stops at the NUL after the first character"
+    );
     assert_eq!(first[2], "1");
 
     // 2-byte width: the whole literal.
-    let Some(text) = listing(&[path, "--no-xrefs", "--encoding", "utf16"]) else { return };
+    let text = listing(&[path, "--no-xrefs", "--encoding", "utf16"]);
     let wide_rows = rows(&text);
     let row = row_at(&wide_rows, "0x400000").expect("a row at the literal's address");
     assert_eq!(row[1], "utf16");
@@ -512,9 +464,12 @@ fn encoding_all_reports_both_widths() {
     let path = temp_binary("both", &synthetic_elf(vma, &rodata));
     let path = path.to_str().unwrap();
 
-    let Some(out) = listing(&[path, "--no-xrefs", "--encoding", "all"]) else { return };
+    let out = listing(&[path, "--no-xrefs", "--encoding", "all"]);
     let rows = rows(&out);
-    assert_eq!(row_at(&rows, "0x400000").expect("the ASCII row")[1], "ascii");
+    assert_eq!(
+        row_at(&rows, "0x400000").expect("the ASCII row")[1],
+        "ascii"
+    );
     let wide = row_at(&rows, &format!("0x{:x}", vma + wide_at)).expect("the UTF-16 row");
     assert_eq!(wide[1], "utf16");
     assert_eq!(wide[6], "ntdll.dll");
@@ -530,28 +485,34 @@ fn encoding_all_reports_both_widths() {
 fn a_utf8_prompt_keeps_its_start_address() {
     // 1-byte width: the row starts twelve bytes into the literal, holds 43 of
     // its 50 characters, and nothing references it.
-    let Some(ascii) = listing(&[&utf8prompt(), "--filter", "magical"]) else { return };
+    let ascii = listing(&[&utf8prompt(), "--filter", "magical"]);
     let ascii_rows = rows(&ascii);
     let truncated = row_at(&ascii_rows, "0x10100c").expect("the ASCII reading loses the prefix");
     assert_eq!(truncated[1], "ascii");
     assert_eq!(truncated[2], "43");
-    assert_eq!(truncated[4], "0", "no reference lands on a mid-literal address");
+    assert_eq!(
+        truncated[4], "0",
+        "no reference lands on a mid-literal address"
+    );
     assert_eq!(truncated[5], "-", "so no function owns it");
 
     // UTF-8: the whole literal, at the address `prompt_user` loads.
-    let Some(utf8) = listing(&[&utf8prompt(), "--encoding", "utf8", "--filter", "magical"])
-    else {
-        return;
-    };
+    let utf8 = listing(&[&utf8prompt(), "--encoding", "utf8", "--filter", "magical"]);
     let utf8_rows = rows(&utf8);
-    assert!(row_at(&utf8_rows, "0x10100c").is_none(), "the truncated row is gone:\n{utf8}");
-    let whole =
-        row_at(&utf8_rows, "0x101000").expect("the literal is reported at its own address");
+    assert!(
+        row_at(&utf8_rows, "0x10100c").is_none(),
+        "the truncated row is gone:\n{utf8}"
+    );
+    let whole = row_at(&utf8_rows, "0x101000").expect("the literal is reported at its own address");
     assert_eq!(whole[1], "utf8");
     assert_eq!(whole[2], "50", "fifty characters in fifty-five bytes");
     assert_eq!(whole[4], "1", "the LEA the reference walk already found");
     assert_eq!(whole[5], "prompt_user");
-    assert!(whole[6].starts_with('\u{ff3f}'), "the fullwidth low line leads it: {:?}", whole[6]);
+    assert!(
+        whole[6].starts_with('\u{ff3f}'),
+        "the fullwidth low line leads it: {:?}",
+        whole[6]
+    );
 }
 
 /// A row with no multi-byte content reads identically under both readings of the
@@ -559,21 +520,20 @@ fn a_utf8_prompt_keeps_its_start_address() {
 /// on costs an ASCII-only image nothing.
 #[test]
 fn an_ascii_only_row_is_unmoved_by_the_utf8_reading() {
-    let Some(ascii) = listing(&[&utf8prompt(), "--no-xrefs", "--filter", "control literal"])
-    else {
-        return;
-    };
-    let Some(utf8) = listing(&[
+    let ascii = listing(&[&utf8prompt(), "--no-xrefs", "--filter", "control literal"]);
+    let utf8 = listing(&[
         &utf8prompt(),
         "--no-xrefs",
         "--encoding",
         "utf8",
         "--filter",
         "control literal",
-    ]) else {
-        return;
-    };
-    assert_eq!(rows(&ascii), rows(&utf8), "the control literal must not move");
+    ]);
+    assert_eq!(
+        rows(&ascii),
+        rows(&utf8),
+        "the control literal must not move"
+    );
     let ascii_rows = rows(&ascii);
     let control = row_at(&ascii_rows, "0x101038").expect("the ASCII-only control literal");
     assert_eq!(control[1], "ascii");
@@ -581,9 +541,13 @@ fn an_ascii_only_row_is_unmoved_by_the_utf8_reading() {
 
     // And the whole fauxware inventory, which holds no multi-byte sequence at
     // all, is byte-identical under `ascii` and `utf8`.
-    let Some(a) = listing(&[&fauxware(), "--no-xrefs"]) else { return };
-    let Some(u) = listing(&[&fauxware(), "--no-xrefs", "--encoding", "utf8"]) else { return };
-    assert_eq!(rows(&a), rows(&u), "a pure-ASCII image reads the same either way");
+    let a = listing(&[&fauxware(), "--no-xrefs"]);
+    let u = listing(&[&fauxware(), "--no-xrefs", "--encoding", "utf8"]);
+    assert_eq!(
+        rows(&a),
+        rows(&u),
+        "a pure-ASCII image reads the same either way"
+    );
 }
 
 /// An image with no usable section table — a UPX-packed ELF keeps its program
@@ -598,8 +562,11 @@ fn a_section_less_image_falls_back_to_its_segments() {
     let path = temp_binary("segments", &image);
     let path = path.to_str().unwrap();
 
-    let Some(out) = listing(&[path, "--no-xrefs"]) else { return };
-    assert!(out.contains("scanned by segments"), "the header says which set was walked:\n{out}");
+    let out = listing(&[path, "--no-xrefs"]);
+    assert!(
+        out.contains("scanned by segments"),
+        "the header says which set was walked:\n{out}"
+    );
     let _ = std::fs::remove_file(path);
 }
 
@@ -629,69 +596,37 @@ fn the_command_line_contract() {
 
 // --- end to end, through the built binary ------------------------------------
 
-fn run_kuna(args: &[&str]) -> (String, String, i32) {
-    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
-        .args(args)
-        .output()
-        .expect("failed to spawn the kuna binary");
-    (
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-        String::from_utf8_lossy(&out.stderr).into_owned(),
-        out.status.code().unwrap_or(-1),
-    )
-}
-
-/// `strings.rs` is dispatch-free until `main.rs` routes `"strings"` to it. Until
-/// then the end-to-end tests are a visible skip rather than a false green; every
-/// test above still covers the command itself.
-fn dispatch_wired() -> bool {
-    let (_, stderr, _) = run_kuna(&["strings"]);
-    let wired = !stderr.contains("unknown subcommand");
-    if !wired {
-        eprintln!("strings_cli: skipping (main.rs does not dispatch `strings` yet)");
-    }
-    wired
-}
-
 /// The promoted acceptance probe, as the RE loop runs it: through the binary,
 /// exit 0, the literals on stdout.
 #[test]
 fn the_acceptance_probe() {
-    if !dispatch_wired() {
-        return;
-    }
     let (stdout, stderr, code) = run_kuna(&["strings", &fauxware()]);
-    if is_specs_skip(&stderr) {
-        eprintln!("skipping: {stderr}");
-        return;
-    }
     assert_eq!(code, 0, "kuna strings must exit 0, not {code}: {stderr}");
-    assert!(stdout.contains("Username: "), "the .rodata prompts must be listed:\n{stdout}");
-    assert!(stdout.contains("main"), "and the function that uses them:\n{stdout}");
+    assert!(
+        stdout.contains("Username: "),
+        "the .rodata prompts must be listed:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("main"),
+        "and the function that uses them:\n{stdout}"
+    );
 }
 
 /// `--json` on stdout is a whole JSON document, which is what the probe asserts.
 #[test]
 fn the_cli_json_is_a_document() {
-    if !dispatch_wired() {
-        return;
-    }
     let (stdout, stderr, code) = run_kuna(&["strings", &fauxware(), "--json", "--no-xrefs"]);
-    if is_specs_skip(&stderr) {
-        eprintln!("skipping: {stderr}");
-        return;
-    }
     assert_eq!(code, 0, "{stderr}");
-    assert!(jsonfmt::parse(&stdout).is_some(), "stdout must parse as JSON:\n{stdout}");
+    assert!(
+        serde_json::from_str::<Json>(&stdout).is_ok(),
+        "stdout must parse as JSON:\n{stdout}"
+    );
 }
 
 /// The exit codes the reference documents: `2` for a malformed command line,
 /// `1` for a query that cannot be answered.
 #[test]
 fn the_cli_exit_codes() {
-    if !dispatch_wired() {
-        return;
-    }
     let (_, stderr, code) = run_kuna(&["strings"]);
     assert_eq!(code, 2, "no binary is a usage error");
     assert!(stderr.contains("usage: kuna strings"), "{stderr}");
@@ -700,7 +635,10 @@ fn the_cli_exit_codes() {
     assert_eq!(code, 2, "an unknown encoding is a usage error");
 
     let (_, stderr, code) = run_kuna(&["strings", "/no/such/binary"]);
-    assert_eq!(code, 1, "an unreadable binary is a failed query, not a usage error");
+    assert_eq!(
+        code, 1,
+        "an unreadable binary is a failed query, not a usage error"
+    );
     assert!(stderr.starts_with("error: "), "{stderr}");
 }
 
@@ -714,12 +652,14 @@ fn the_cli_exit_codes() {
 /// runs with `--no-xrefs` and is never a skip.
 #[test]
 fn a_universal_macho_is_scanned_not_rejected() {
-    let out = listing(&[&fixture("macho_fat"), "--no-xrefs", "--min-length", "2"])
-        .expect("the scan needs no .sla");
+    let out = listing(&[&fixture("macho_fat"), "--no-xrefs", "--min-length", "2"]);
     let rows = rows(&out);
     let cstring = row_at(&rows, "0x1000005ee").expect("the x86-64 slice's format string");
     assert_eq!(cstring[3], "__cstring");
-    assert!(cstring[6].starts_with("%d"), "the literal itself: {cstring:?}");
+    assert!(
+        cstring[6].starts_with("%d"),
+        "the literal itself: {cstring:?}"
+    );
     assert_eq!(rows.len(), 8, "the whole x86-64 slice, no more:\n{out}");
     assert!(
         rows.iter().all(|r| r[0].starts_with("0x1000")),
@@ -741,14 +681,22 @@ fn the_slice_override_picks_which_slice_is_scanned() {
             "2",
             "--slice",
             slice,
-        ])
-        .expect("the scan needs no .sla");
+        ]);
         rows(&out)
     };
     let x86 = scan("x86_64");
     let arm = scan("arm64");
-    assert!(row_at(&x86, "0x1000005ee").is_some(), "the x86-64 literal: {x86:?}");
-    assert!(row_at(&arm, "0x1000005d0").is_some(), "the arm64 literal: {arm:?}");
-    assert!(row_at(&arm, "0x1000005ee").is_none(), "the arm64 scan is not the x86-64 one: {arm:?}");
+    assert!(
+        row_at(&x86, "0x1000005ee").is_some(),
+        "the x86-64 literal: {x86:?}"
+    );
+    assert!(
+        row_at(&arm, "0x1000005d0").is_some(),
+        "the arm64 literal: {arm:?}"
+    );
+    assert!(
+        row_at(&arm, "0x1000005ee").is_none(),
+        "the arm64 scan is not the x86-64 one: {arm:?}"
+    );
     assert_ne!(x86.len(), arm.len(), "two slices, two inventories");
 }

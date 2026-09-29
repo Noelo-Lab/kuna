@@ -52,7 +52,7 @@
 //!   types. Nothing reads `_chain`; the cost is a name, the alternative is a
 //!   split type.
 //! * **At most one level of by-value nesting.** `stat` holds three `timespec`s
-//!   by value; `timespec` holds no aggregate. [`tests`](super::tests) asserts
+//!   by value; `timespec` holds no aggregate. The `super::tests` module asserts
 //!   that, so the recursive mint in [`super::named_aggregate`] terminates by
 //!   construction rather than by a depth counter.
 

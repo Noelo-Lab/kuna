@@ -17,7 +17,7 @@ PYTHON  ?= python3
 # (inside target/, which is gitignored, so a failed run leaves no repo litter).
 GHIDRA_SIM_LOG := $(ENGINE)/target/ghidra-sim.log
 
-.PHONY: all binaries specs test test-stages test-cli test-ghidra rust rust-test clean check-spec version
+.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint clean check-spec version
 
 all: binaries specs
 
@@ -63,29 +63,13 @@ $(BINDIR)/kuna:
 # Release profile (the dev profile costs minutes for the same answer);
 # --include-ignored picks up the heavier sort/grep breadth test.
 #
-# TWO canaries, because this target has twice been a FALSE GREEN while CI's
-# equivalent step was red:
-#   * the skip canary (the same grep CI runs): with the `.sla` specs missing or
-#     unusable every ghidra-sim test prints a skip notice and returns early --
-#     by design, so a specs-less checkout is a visible skip rather than a false
-#     failure.  A green `make test-ghidra` that skipped everything proves
-#     nothing.  Worktrees hit this constantly: `KUNA_SPECS`/`SLEIGHHOME` do not
-#     reach the cargo suites (AGENTS.md), so the harness resolves <repo>/specs
-#     relative to its own crate and finds nothing.
-#   * the breadth canary: `ghidra_sim_sort_grep_breadth` is `#[ignore]`d (it is
-#     the heavy one), so ANY run that loses `--include-ignored` reports it
-#     "ignored" and still exits 0 -- which is exactly how a broken
-#     `<vardecl symref>` on the sort/grep fixtures reached CI green-locally.
-#     Demand the line that proves it actually ran.
+# Missing or unusable specs fail the tests. The breadth check also verifies
+# that the normally ignored sort/grep test actually ran.
 test-ghidra:
 	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
 	@bash -c 'set -o pipefail; cd $(ENGINE) && \
 	  cargo test --$(PROFILE) -p kuna-ghidra -- --include-ignored --nocapture \
 	    2>&1 | tee $(GHIDRA_SIM_LOG)'
-	@if grep -qE 'skipping \(.*(\.sla|make specs|specs tree)' $(GHIDRA_SIM_LOG); then \
-	  echo "ERROR: ghidra-sim tests skipped for missing/unusable SLEIGH specs -- false green"; \
-	  exit 1; \
-	fi
 	@grep -q 'test ghidra_sim_sort_grep_breadth \.\.\. ok' $(GHIDRA_SIM_LOG) || { \
 	  echo "ERROR: the sort/grep breadth test did not RUN (needs --include-ignored) -- false green"; \
 	  exit 1; \
@@ -103,6 +87,9 @@ check-spec:
 test-cli:
 	PYTHONPATH=$(ROOT) python3 -m scripts.repipe.clitests
 
+test-tools:
+	PYTHONPATH=$(ROOT) $(PYTHON) -m unittest discover -s $(ROOT)/scripts/tests -p 'test_*.py'
+
 # Print the repo version as MAJOR.MINOR (VERSION file + commit count -- the
 # scheme release CI tags with; see docs/release.md).
 version:
@@ -112,6 +99,11 @@ version:
 # golden differential vectors, the SLEIGH-compiler .sla content-parity tests, ...).
 rust-test:
 	cd $(ENGINE) && cargo test --workspace --no-fail-fast
+
+# One invocation: a crate an earlier `--no-deps` run checked only as a dependency
+# is fresh to a later run, which then passes without linting it.
+lint:
+	cd $(ENGINE) && cargo clippy --release -p kuna-cli -p kuna-base -p kuna-num --no-deps -- -D warnings
 
 clean:
 	cd $(ENGINE) && cargo clean

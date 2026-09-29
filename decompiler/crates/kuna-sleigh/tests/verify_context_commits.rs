@@ -8,12 +8,6 @@
 //! each language's own source closure (`.slaspec` plus every `.sinc` it
 //! `@include`s, transitively). Zero occurrences must mean `false`, and any
 //! occurrence must mean `true`, for all 149 vendored languages.
-//!
-//! ## `.sla` precondition
-//!
-//! The `.sla` files are build artifacts (gitignored; `make specs`). With none
-//! present the test prints that and returns — a specs-less CI is a visible skip,
-//! never a false green.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -48,16 +42,16 @@ fn repo_root() -> PathBuf {
 fn vendored_sla() -> Vec<(String, String, PathBuf)> {
     let procs = repo_root().join("specs/Ghidra/Processors");
     let mut out = Vec::new();
-    let Ok(dirs) = std::fs::read_dir(&procs) else {
-        return out;
-    };
-    for d in dirs.flatten() {
+    let dirs = std::fs::read_dir(&procs).expect("read vendored processor directory");
+    for d in dirs {
+        let d = d.expect("read processor directory entry");
         let processor = d.file_name().to_string_lossy().into_owned();
         let langs = d.path().join("data/languages");
         let Ok(files) = std::fs::read_dir(&langs) else {
             continue;
         };
-        for f in files.flatten() {
+        for f in files {
+            let f = f.expect("read language directory entry");
             let p = f.path();
             if p.extension().and_then(|e| e.to_str()) != Some("sla") {
                 continue;
@@ -75,15 +69,12 @@ fn source_closure(slaspec: &Path) -> BTreeSet<PathBuf> {
     let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
     let mut stack = vec![slaspec.to_path_buf()];
     while let Some(f) = stack.pop() {
-        let Ok(f) = f.canonicalize() else {
-            continue;
-        };
+        let f = f.canonicalize().unwrap_or_else(|e| panic!("{}: {e}", f.display()));
         if !seen.insert(f.clone()) {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&f) else {
-            continue;
-        };
+        let text = std::fs::read_to_string(&f)
+            .unwrap_or_else(|e| panic!("{}: {e}", f.display()));
         let dir = f.parent().unwrap().to_path_buf();
         for line in text.lines() {
             let Some(rest) = line.trim_start().strip_prefix("@include") else {
@@ -98,26 +89,22 @@ fn source_closure(slaspec: &Path) -> BTreeSet<PathBuf> {
 }
 
 /// How many times `globalset` appears in a language's own source closure.
-fn globalset_occurrences(sla: &Path) -> Option<usize> {
+fn globalset_occurrences(sla: &Path) -> usize {
     let slaspec = sla.with_extension("slaspec");
-    if !slaspec.is_file() {
-        return None;
-    }
     let mut n = 0;
     for f in source_closure(&slaspec) {
-        let Ok(text) = std::fs::read_to_string(&f) else {
-            continue;
-        };
+        let text = std::fs::read_to_string(&f)
+            .unwrap_or_else(|e| panic!("{}: {e}", f.display()));
         n += text.matches("globalset").count();
     }
-    Some(n)
+    n
 }
 
-fn has_commits(sla: &Path) -> Option<bool> {
-    let bytes = std::fs::read(sla).ok()?;
+fn has_commits(sla: &Path) -> bool {
+    let bytes = std::fs::read(sla).unwrap_or_else(|e| panic!("{}: {e}", sla.display()));
     let mut engine = Sleigh::new(Box::new(DummyImg), Box::new(ContextInternal::new()));
-    engine.initialize_from_sla(&bytes).ok()?;
-    Some(engine.base().has_context_commits())
+    engine.initialize_from_sla(&bytes).expect("decode vendored processor spec");
+    engine.base().has_context_commits()
 }
 
 /// Every `.sla` under these processors must answer `false` for the context-
@@ -132,22 +119,12 @@ const SOME_TRUE: &[&str] = &["PIC", "M16C"];
 #[test]
 fn context_commits_agree_with_the_globalset_sources() {
     let corpus = vendored_sla();
-    if corpus.is_empty() {
-        eprintln!(
-            "verify_context_commits: skipping (no vendored .sla; build them with `make specs`)"
-        );
-        return;
-    }
     assert_eq!(corpus.len(), 149, "the vendored language corpus changed");
 
     let mut answers: Vec<(String, String, bool, usize)> = Vec::new();
     for (processor, name, path) in &corpus {
-        let Some(commits) = has_commits(path) else {
-            panic!("{name}: the vendored .sla failed to load");
-        };
-        let Some(occurrences) = globalset_occurrences(path) else {
-            panic!("{name}: no .slaspec beside the vendored .sla");
-        };
+        let commits = has_commits(path);
+        let occurrences = globalset_occurrences(path);
         assert_eq!(
             commits,
             occurrences > 0,
@@ -191,14 +168,8 @@ fn context_commits_agree_with_the_globalset_sources() {
 #[test]
 fn delay_slot_bytes_are_zero_off_the_delay_slot_languages() {
     let corpus = vendored_sla();
-    if corpus.is_empty() {
-        eprintln!("verify_context_commits: skipping (no vendored .sla)");
-        return;
-    }
     for name in ["x86-64.sla", "AARCH64.sla"] {
-        let Some((_, _, path)) = corpus.iter().find(|(_, n, _)| n == name) else {
-            continue;
-        };
+        let (_, _, path) = corpus.iter().find(|(_, n, _)| n == name).expect("required processor spec");
         let bytes = std::fs::read(path).expect("read .sla");
         let mut engine = Sleigh::new(Box::new(DummyImg), Box::new(ContextInternal::new()));
         engine.initialize_from_sla(&bytes).expect("decode .sla");
@@ -209,13 +180,13 @@ fn delay_slot_bytes_are_zero_off_the_delay_slot_languages() {
         );
     }
     // SPARC is the counter-example: a decode there folds the delay slot in.
-    if let Some((_, _, path)) = corpus.iter().find(|(_, n, _)| n == "SparcV9_32.sla") {
-        let bytes = std::fs::read(path).expect("read .sla");
-        let mut engine = Sleigh::new(Box::new(DummyImg), Box::new(ContextInternal::new()));
-        engine.initialize_from_sla(&bytes).expect("decode .sla");
-        assert!(
-            engine.base().max_delay_slot_bytes() > 0,
-            "SparcV9_32 decodes a delay slot inside one_instruction"
-        );
-    }
+    let (_, _, path) = corpus.iter().find(|(_, n, _)| n == "SparcV9_32.sla")
+        .expect("required SPARC processor spec");
+    let bytes = std::fs::read(path).expect("read .sla");
+    let mut engine = Sleigh::new(Box::new(DummyImg), Box::new(ContextInternal::new()));
+    engine.initialize_from_sla(&bytes).expect("decode .sla");
+    assert!(
+        engine.base().max_delay_slot_bytes() > 0,
+        "SparcV9_32 decodes a delay slot inside one_instruction"
+    );
 }

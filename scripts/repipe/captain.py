@@ -30,6 +30,7 @@ import time
 
 from . import config, select as select_mod
 from ..pipeline import state as pstate
+from ..atomic import atomic_text_writer
 
 # --- the machines -----------------------------------------------------------
 
@@ -124,12 +125,8 @@ def _startup_lock():
 
 def save_round(doc):
     p = _round_path(doc["round"])
-    # A per-process temp name: a shared "<path>.tmp" lets two writers interleave into the same
-    # file and os.replace a half-written document into place.
-    tmp = "%s.tmp.%d" % (p, os.getpid())
-    with open(tmp, "w") as fh:
+    with atomic_text_writer(p) as fh:
         json.dump(doc, fh, indent=2)
-    os.replace(tmp, p)
 
 
 def transition(doc, machine, to, note=None):

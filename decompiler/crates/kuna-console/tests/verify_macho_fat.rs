@@ -28,12 +28,6 @@
 //! dispatch with no flag — multi-format support is unconditional. The fat magic
 //! routes straight to the object loader (no XML rejection); the `--slice`/arm64e
 //! overrides remain separate, opt-in selectors layered on top.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86`/`AARCH64` `.sla` under `specs/` (gitignored;
-//! `make specs`). If absent the bootstrap fails and the test prints that and
-//! returns early (a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -80,9 +74,9 @@ fn decompile_func(prog: ConsoleProgram, func_cmd: &str) -> String {
     status.optr.clone()
 }
 
-/// Bootstrap `macho_fat` (multi-format loading is unconditional) with the given
-/// slice override env, returning `None` (a visible skip) when the `.sla` is absent.
-fn boot_fat(slice: Option<&str>) -> Option<ConsoleProgram> {
+/// Bootstrap `macho_fat` (multi-format loading is unconditional) with the given slice
+/// override env.
+fn boot_fat(slice: Option<&str>) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("macho_fat");
@@ -92,40 +86,20 @@ fn boot_fat(slice: Option<&str>) -> Option<ConsoleProgram> {
         Some(s) => std::env::set_var("KUNA_MACHO_SLICE", s),
         None => std::env::remove_var("KUNA_MACHO_SLICE"),
     }
-    let r = match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_macho_fat: skipping (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    };
+    let result = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots);
     std::env::remove_var("KUNA_MACHO_SLICE");
-    r
+    result.expect("bootstrap fixture with built processor specs")
 }
 
-/// (default-on proof) A fat Mach-O loads through the *default* `load file`
-/// dispatch with no flag — multi-format support is unconditional. A `.sla`-absent
-/// environment surfaces as a load error; here we only assert the dispatch ROUTES
-/// to the object loader (no XML "not recognized" rejection). The default slice
-/// selection still applies (the `KUNA_MACHO_SLICE` override stays a separate
-/// feature).
+/// A fat Mach-O loads through the default file dispatch and slice selection.
 #[test]
 fn fat_default_on_routes_to_object_loader() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("macho_fat");
-    if let Err(e) = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots) {
-        let msg = e.explain();
-        assert!(
-            !msg.contains("Unable to recognize") && !msg.contains("XML"),
-            "default-on: the binary must route to the object loader (got: {msg})"
-        );
-    }
+    kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots)
+        .expect("default dispatch loads object with built processor specs");
 }
 
 /// The headline: the fat binary loads with the **default** slice (x86-64),
@@ -135,7 +109,7 @@ fn fat_default_on_routes_to_object_loader() {
 #[test]
 fn fat_default_slice_is_x86_64_and_names_printf() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(prog) = boot_fat(None) else { return };
+    let prog = boot_fat(None);
 
     // Default preference selects the x86-64 slice.
     let desc = prog.description().to_string();
@@ -165,9 +139,7 @@ fn fat_default_slice_is_x86_64_and_names_printf() {
 #[test]
 fn fat_slice_override_selects_arm64() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(prog) = boot_fat(Some("arm64")) else {
-        return;
-    };
+    let prog = boot_fat(Some("arm64"));
 
     let desc = prog.description().to_string();
     assert!(
@@ -196,10 +168,9 @@ fn fat_slice_override_selects_arm64() {
 // is real* (the engine reads the header, the gate fires, the AppleSilicon `.sla`
 // drives the decode). A genuine Apple-toolchain arm64e fixture is a follow-up.
 
-/// Bootstrap `macho_arm64e` (multi-format loading is unconditional) with the
-/// `macho-arm64e` gate set per `gate`, returning `None` (a visible skip) when the
-/// `.sla` is absent.
-fn boot_arm64e(gate: bool) -> Option<ConsoleProgram> {
+/// Bootstrap `macho_arm64e` (multi-format loading is unconditional) with the `macho-arm64e`
+/// gate set per `gate`.
+fn boot_arm64e(gate: bool) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("macho_arm64e");
@@ -210,19 +181,9 @@ fn boot_arm64e(gate: bool) -> Option<ConsoleProgram> {
     } else {
         std::env::remove_var("KUNA_MACHO_ARM64E");
     }
-    let r = match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_macho_fat: skipping arm64e (bootstrap failed; build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    };
+    let result = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots);
     std::env::remove_var("KUNA_MACHO_ARM64E");
-    r
+    result.expect("bootstrap fixture with built processor specs")
 }
 
 /// Gate ON: an arm64e Mach-O selects the `AARCH64:LE:64:AppleSilicon` spec (the
@@ -231,9 +192,7 @@ fn boot_arm64e(gate: bool) -> Option<ConsoleProgram> {
 #[test]
 fn arm64e_gate_on_selects_apple_silicon_spec() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(prog) = boot_arm64e(true) else {
-        return;
-    };
+    let prog = boot_arm64e(true);
 
     let desc = prog.description().to_string();
     assert!(
@@ -258,9 +217,7 @@ fn arm64e_gate_on_selects_apple_silicon_spec() {
 #[test]
 fn arm64e_gate_off_uses_generic_v8a_spec() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(prog) = boot_arm64e(false) else {
-        return;
-    };
+    let prog = boot_arm64e(false);
 
     let desc = prog.description().to_string();
     assert!(

@@ -83,7 +83,7 @@ fn tmode_at(program: &ConsoleProgram, offset: u64) -> u32 {
         .unwrap()
 }
 
-fn load(path: &str, options: &[(&str, &str)]) -> Option<ConsoleProgram> {
+fn load(path: &str, options: &[(&str, &str)]) -> ConsoleProgram {
     load_with_decoder(path, "", None, options)
 }
 
@@ -92,20 +92,14 @@ fn load_with_decoder(
     target: &str,
     isa: Option<ArmIsa>,
     options: &[(&str, &str)],
-) -> Option<ConsoleProgram> {
-    let mut program = match bootstrap_from_object_with_isa(path, target, &specs(), isa) {
-        Ok(program) => program,
-        Err(error) if error.explain().contains("No sleigh specification") => {
-            eprintln!("verify_entrythumbflow_pe: skipping (build the ARM `.sla`): {}", error.explain());
-            return None;
-        }
-        Err(error) => panic!("PE bootstrap failed: {}", error.explain()),
-    };
+) -> ConsoleProgram {
+    let mut program = bootstrap_from_object_with_isa(path, target, &specs(), isa)
+        .expect("bootstrap fixture with built processor specs");
     for (name, value) in options {
         program.arch_mut().set_kuna_option(name, value).unwrap();
     }
     program.commit_pending_analysis().unwrap();
-    Some(program)
+    program
 }
 
 #[test]
@@ -118,9 +112,7 @@ fn conditional_noreturn_blx_preserves_the_not_taken_path() {
         0xfe, 0xff, 0xff, 0xea, // A32: b 0x401010
     ], b"exit", 0x10);
     let path = fixture.to_string_lossy();
-    let Some(mut program) = load_with_decoder(&path, "ARM:LE:32:v8:default", None, &[]) else {
-        return;
-    };
+    let mut program = load_with_decoder(&path, "ARM:LE:32:v8:default", None, &[]);
     assert_eq!(tmode_at(&program, 0x401008), 1, "the condition-false successor is Thumb");
     assert_eq!(tmode_at(&program, 0x40100a), 1, "the reachable return is Thumb");
     assert_eq!(tmode_at(&program, 0x401010), 0, "the BLX callee stays A32");
@@ -141,9 +133,7 @@ fn unconditional_noreturn_blx_still_terminates_the_path() {
         0xfe, 0xff, 0xff, 0xea,
     ], b"exit", 0x10);
     let path = fixture.to_string_lossy();
-    let Some(program) = load_with_decoder(&path, "ARM:LE:32:v8:default", None, &[]) else {
-        return;
-    };
+    let program = load_with_decoder(&path, "ARM:LE:32:v8:default", None, &[]);
     assert_eq!(tmode_at(&program, 0x401000), 1);
     assert_eq!(tmode_at(&program, 0x401004), 0, "no fall-through from the unconditional call");
     assert_eq!(tmode_at(&program, 0x401010), 0);
@@ -159,21 +149,17 @@ fn disabled_noreturn_known_does_not_cut_off_thumb_flow() {
         0x1e, 0xff, 0x2f, 0xe1, // A32: bx lr (despite the no-return name)
     ], b"fastfail", 0x10);
     let path = fixture.to_string_lossy();
-    let Some(enabled) = load_with_decoder(&path, "ARM:LE:32:v8:default", None, &[]) else {
-        return;
-    };
+    let enabled = load_with_decoder(&path, "ARM:LE:32:v8:default", None, &[]);
     assert_eq!(tmode_at(&enabled, 0x401004), 0, "the enabled name heuristic terminates the path");
     for listing in ["off", "on"] {
         let mut outputs = Vec::new();
         for isa in [None, Some(ArmIsa::Thumb)] {
-            let Some(mut program) = load_with_decoder(
+            let mut program = load_with_decoder(
                 &path,
                 "ARM:LE:32:v8:default",
                 isa,
                 &[("noreturn_known", "off"), ("listing", listing)],
-            ) else {
-                return;
-            };
+            );
             assert_eq!(tmode_at(&program, 0x401004), 1, "disabled facts must not stop the walk");
             let entry = program.find_entry_at(0x401000).unwrap();
             let results = decompile_targets(&mut program, vec![entry], true, false, false);
@@ -215,11 +201,9 @@ fn non_arm_override_preserves_odd_pe_entries() {
             std::fs::write(&fixture, bytes).unwrap();
             let path = fixture.to_string_lossy();
             for listing in ["off", "on"] {
-                let Some(mut program) = load_with_decoder(
+                let mut program = load_with_decoder(
                     &path, "x86:LE:32:default:gcc", None, &[("listing", listing)],
-                ) else {
-                    return;
-                };
+                );
                 let entries = program.function_entries_canonical();
                 assert_eq!(entries.len(), 1, "machine {machine:x}, Listing {listing}");
                 assert_eq!(entries[0].addr.get_offset(), entry, "selected x86 entry remains odd");
@@ -242,11 +226,9 @@ fn arm_override_normalizes_the_pe_entry_before_naming_it() {
     bytes[pe + 4..pe + 6].copy_from_slice(&object::pe::IMAGE_FILE_MACHINE_I386.to_le_bytes());
     std::fs::write(&fixture, bytes).unwrap();
     let path = fixture.to_string_lossy();
-    let Some(mut program) = load_with_decoder(
+    let mut program = load_with_decoder(
         &path, "ARM:LE:32:v8:default", Some(ArmIsa::Thumb), &[],
-    ) else {
-        return;
-    };
+    );
     let entries = program.function_entries_canonical();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].addr.get_offset(), 0x401000);
@@ -272,9 +254,7 @@ fn the_listing_decodes_the_walked_entry_as_thumb() {
     let path = fixture.to_string_lossy().into_owned();
     // The whole-binary drivers' non-x86-64 bundle: the Listing, and the
     // recursive-descent commit that promotes its followed CALL targets.
-    let Some(program) = load(&path, &[("listing", "on"), ("funcstart_patterns", "on")]) else {
-        return;
-    };
+    let program = load(&path, &[("listing", "on"), ("funcstart_patterns", "on")]);
     assert_eq!(tmode_at(&program, 0x401000), 1);
     assert_eq!(tmode_at(&program, 0x401008), 1, "the BL target is walked as Thumb");
     assert!(
@@ -293,18 +273,14 @@ fn the_listing_decodes_the_walked_entry_as_thumb() {
 fn an_arm_machine_pe_with_a_thumb_entry_gets_the_entry_walk() {
     let fixture = arm_machine_pe();
     let path = fixture.to_string_lossy().into_owned();
-    let Some(program) = load(&path, &[]) else {
-        return;
-    };
+    let program = load(&path, &[]);
     assert!(program.description().starts_with("ARM:LE:32"), "{}", program.description());
     let entry = program.find_entry_at(0x401001).expect("the odd PE entry resolves");
     assert_eq!(entry.addr.get_offset(), 0x401000);
     assert_eq!(entry.name, "sub_401000", "named at the even address it lives at");
     assert_eq!(tmode_at(&program, 0x401000), 1, "the walk paints the entry Thumb");
 
-    let Some(off) = load(&path, &[("entrythumbflow", "off")]) else {
-        return;
-    };
+    let off = load(&path, &[("entrythumbflow", "off")]);
     assert_eq!(tmode_at(&off, 0x401000), 0, "off leaves the language default");
     let _ = std::fs::remove_file(fixture);
 }

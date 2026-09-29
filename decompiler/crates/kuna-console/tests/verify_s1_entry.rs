@@ -13,13 +13,6 @@
 //! AND the `.eh_frame` FDE pcBegin). The angr-style default naming
 //! (`Architecture::name_style_angr`, default-on) means the discovered name is
 //! `sub_1405` (`p0_knowledge::database::kuna_function_name`, no leading zeros).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_w11_elf_plt_names` gate, bootstrapping needs the
-//! built `x86` `.sla` under `specs/` (gitignored; `make specs`). When it is
-//! absent the bootstrap fails; the test prints that and returns early (a
-//! specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -43,22 +36,10 @@ fn discovered_main_decompiles_without_supplied_address() {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = stripped_dynamic();
-    let bin = match bin.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_s1_entry: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // (kuna) The analysis-pass facts are now committed at `read symbols` (gated by
     // the per-pass `--option <id> on|off` flags), not eagerly at bootstrap — so a
@@ -135,22 +116,10 @@ fn dynamic_init_fini_elements_get_ghidra_names() {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
     let bin = stripped_dynamic();
-    let bin = match bin.to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
 
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_s1_entry: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     // The array-element starts resolve under their Ghidra names, NOT `sub_<addr>`.

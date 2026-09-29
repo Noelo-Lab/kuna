@@ -4,12 +4,11 @@
 //! (`.c` / `.h` / `.asm` / `README.md`) are written, cross-referenced, and
 //! (for the `.h`) syntactically valid C.
 //!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` / `ARM` `.sla` under `specs/` (gitignored;
-//! `make specs`).  When it is absent the command fails to build an architecture;
-//! the affected test prints that and returns early (a specs-less CI is a visible
-//! skip, never a false green).
+//! Integration tests require the built processor specs under `specs/`.
+
+mod common;
+
+use common::process;
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -57,18 +56,8 @@ fn run_kuna(args: &[&str]) -> (String, String, bool) {
     )
 }
 
-/// `true` when the failure is a missing-`.sla` bootstrap failure (a legitimate
-/// skip), not a real bug.
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-}
-
-/// Run `decompile-project` on `fixture_name` into a fresh temp dir; returns
-/// `Some(out_dir)` on success or `None` on a specs-less skip (panics on any
-/// other failure).
-fn project(fixture_name: &str, tag: &str) -> Option<PathBuf> {
+/// Export `fixture_name` and return the project directory.
+fn project(fixture_name: &str, tag: &str) -> PathBuf {
     let bin = fixture(fixture_name);
     let dir = out_dir(tag);
     let (_stdout, stderr, ok) = run_kuna(&[
@@ -80,13 +69,9 @@ fn project(fixture_name: &str, tag: &str) -> Option<PathBuf> {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_project_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return None;
-        }
         panic!("kuna decompile-project failed on {fixture_name}: {stderr}");
     }
-    Some(dir)
+    dir
 }
 
 /// A selected project begins with the same body-bearing target resolution as
@@ -105,10 +90,6 @@ fn selected_project_refuses_an_executable_section_iat_slot() {
         "--sleighpath",
         &specs(),
     ]);
-    if is_specs_skip(&stderr) {
-        eprintln!("decompile_project_iat: skipping (no `.sla`; run `make specs`): {stderr}");
-        return;
-    }
     assert!(!ok, "an IAT slot unexpectedly exported: {stdout}");
     assert!(stdout.trim().is_empty(), "an IAT project summary escaped: {stdout}");
     assert_eq!(
@@ -131,7 +112,7 @@ fn artifacts(dir: &std::path::Path, file_name: &str) -> (PathBuf, PathBuf, PathB
 
 #[test]
 fn project_folder_written_for_fauxware() {
-    let Some(dir) = project("fauxware", "written") else { return };
+    let dir = project("fauxware", "written");
     let (c, h, asm, readme) = artifacts(&dir, "fauxware");
     for f in [&c, &h, &asm, &readme] {
         assert!(f.exists(), "missing artifact {}", f.display());
@@ -164,7 +145,7 @@ fn project_folder_written_for_fauxware() {
 /// entry at `0x5b0` for a program whose `main` is at `0x1000005b0`.
 #[test]
 fn macho_readme_entry_point_is_a_vma() {
-    let Some(dir) = project("macho_stripped_main", "macho_entry") else { return };
+    let dir = project("macho_stripped_main", "macho_entry");
     let (_c, _h, _asm, readme) = artifacts(&dir, "macho_stripped_main");
     let readme_text = std::fs::read_to_string(&readme).unwrap();
     assert!(
@@ -178,7 +159,7 @@ fn macho_readme_entry_point_is_a_vma() {
 /// address every other artifact uses for that function.
 #[test]
 fn arm_thumb_readme_entry_point_is_the_even_inventory_address() {
-    let Some(dir) = project("arm_thumb_linked_le32", "thumb_entry") else { return };
+    let dir = project("arm_thumb_linked_le32", "thumb_entry");
     let (_c, _h, _asm, readme) = artifacts(&dir, "arm_thumb_linked_le32");
     let readme_text = std::fs::read_to_string(&readme).unwrap();
     assert!(
@@ -197,7 +178,7 @@ fn arm_thumb_readme_entry_point_is_the_even_inventory_address() {
 /// offset zero.
 #[test]
 fn relocatable_readme_has_no_entry_and_lists_laid_out_sections() {
-    let Some(dir) = project("entry_selectors_x86_64.o", "reloc_readme") else { return };
+    let dir = project("entry_selectors_x86_64.o", "reloc_readme");
     let (_c, _h, _asm, readme) = artifacts(&dir, "entry_selectors_x86_64.o");
     let readme_text = std::fs::read_to_string(&readme).unwrap();
     assert!(
@@ -216,7 +197,7 @@ fn relocatable_readme_has_no_entry_and_lists_laid_out_sections() {
 
 #[test]
 fn asm_labels_match_c_function_names() {
-    let Some(dir) = project("fauxware", "labels") else { return };
+    let dir = project("fauxware", "labels");
     let (c, _h, asm, _r) = artifacts(&dir, "fauxware");
     let c_text = std::fs::read_to_string(&c).unwrap();
     let asm_text = std::fs::read_to_string(&asm).unwrap();
@@ -237,7 +218,7 @@ fn asm_labels_match_c_function_names() {
 
 #[test]
 fn asm_has_stack_comment_for_main() {
-    let Some(dir) = project("fauxware", "stack") else { return };
+    let dir = project("fauxware", "stack");
     let (_c, _h, asm, _r) = artifacts(&dir, "fauxware");
     let asm_text = std::fs::read_to_string(&asm).unwrap();
     // Find `main:` and assert a `; stack:` or `; arg:` line appears in its
@@ -255,7 +236,7 @@ fn asm_has_stack_comment_for_main() {
 
 #[test]
 fn dat_labels_cross_referenced() {
-    let Some(dir) = project("fauxware", "dat") else { return };
+    let dir = project("fauxware", "dat");
     let (c, _h, asm, _r) = artifacts(&dir, "fauxware");
     let c_text = std::fs::read_to_string(&c).unwrap();
     let asm_text = std::fs::read_to_string(&asm).unwrap();
@@ -295,12 +276,11 @@ fn dat_labels_cross_referenced() {
 
 #[test]
 fn header_syntax_checks_with_cc() {
-    // Gated: only run when a C compiler is available.
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
-        eprintln!("header_syntax_checks_with_cc: skipping (no working `cc`)");
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        eprintln!("header_syntax_checks_with_cc: skipping (no `cc`)");
         return;
     }
-    let Some(dir) = project("fauxware", "cc") else { return };
+    let dir = project("fauxware", "cc");
     let (_c, h, _asm, _r) = artifacts(&dir, "fauxware");
     // The export preserves the recovered prototype token-for-token, including
     // a possibly non-standard signature for `main`. Remap that reserved C
@@ -339,7 +319,7 @@ fn header_syntax_checks_with_cc() {
 /// has to parse, and has to arrive after the aggregates it holds by value.
 #[test]
 fn header_syntax_checks_when_a_type_shares_a_name_with_a_function() {
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("header_syntax_checks_when_a_type_shares_a_name_with_a_function: no `cc`");
         return;
     }
@@ -358,10 +338,6 @@ fn header_syntax_checks_when_a_type_shares_a_name_with_a_function() {
             &specs(),
         ]);
         if !ok {
-            if is_specs_skip(&stderr) {
-                eprintln!("decompile_project_cli: skipping (no `.sla`): {stderr}");
-                return;
-            }
             panic!("kuna decompile-project failed (libctypes {arm}): {stderr}");
         }
         let (_c, h, _asm, _r) = artifacts(&dir, "libctypes_stat_x86_64");
@@ -393,7 +369,7 @@ fn header_syntax_checks_when_a_type_shares_a_name_with_a_function() {
 
 #[test]
 fn arm_thumb_project_smoke() {
-    let Some(dir) = project("arm_thumb_linked_le32", "arm") else { return };
+    let dir = project("arm_thumb_linked_le32", "arm");
     let (_c, _h, asm, _r) = artifacts(&dir, "arm_thumb_linked_le32");
     assert!(asm.exists(), "arm project missing .asm");
     let asm_text = std::fs::read_to_string(&asm).unwrap();
@@ -428,10 +404,6 @@ fn fast_project_discovers_real_function_bodies() {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("fast_project_discovers_real_function_bodies: skipping: {stderr}");
-            return;
-        }
         panic!("fast project failed: {stderr}");
     }
     let c = std::fs::read_to_string(dir.join("pdb_prog.exe.c")).unwrap();
@@ -480,10 +452,6 @@ fn fast_project_discovers_indirect_pointer_target() {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("fast_project_discovers_indirect_pointer_target: skipping: {stderr}");
-            return;
-        }
         panic!("fast pointer project failed: {stderr}");
     }
     let c = std::fs::read_to_string(dir.join("aif_gap_x86_64.c")).unwrap();
@@ -530,10 +498,6 @@ fn fast_project_does_not_promote_switch_case_labels() {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("fast_project_does_not_promote_switch_case_labels: skipping: {stderr}");
-            return;
-        }
         panic!("fast switch-table project failed: {stderr}");
     }
     let c = std::fs::read_to_string(dir.join("switchtab_x86_64.c")).unwrap();
@@ -571,10 +535,6 @@ fn fast_selected_project_does_not_expand_to_callees() {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("fast_selected_project_does_not_expand_to_callees: skipping: {stderr}");
-            return;
-        }
         panic!("fast selected project failed: {stderr}");
     }
     let c = std::fs::read_to_string(dir.join("pdb_prog.exe.c")).unwrap();
@@ -591,7 +551,7 @@ fn fast_selected_project_does_not_expand_to_callees() {
 /// dumped whole -- the loader serves the read the declared type asks for.
 #[test]
 fn a_global_larger_than_the_load_window_is_dumped_whole() {
-    let Some(dir) = project("regglobal_fmt_x86_64", "big_global") else { return };
+    let dir = project("regglobal_fmt_x86_64", "big_global");
     let (_c, _h, asm, _readme) = artifacts(&dir, "regglobal_fmt_x86_64");
     let asm_text = std::fs::read_to_string(&asm).unwrap();
     assert!(
@@ -628,10 +588,6 @@ fn a_binary_with_a_string_over_the_load_window_still_exports() {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("a_binary_with_a_string_over_the_load_window_still_exports: skipping: {stderr}");
-            return;
-        }
         panic!("kuna decompile-project failed on tests/bug-repro/sort: {stderr}");
     }
     let (c, h, asm, readme) = artifacts(&dir, "sort");
@@ -677,10 +633,6 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs project: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("serial project export failed: {stderr}");
     }
     let names = [
@@ -771,10 +723,6 @@ fn jobs_project_names_synthesized_structs_as_the_serial_export_does() {
         };
         let (serial, stderr, ok) = export("serial", &[], &[]);
         if !ok {
-            if is_specs_skip(&stderr) {
-                eprintln!("structsynth jobs: skipping (no `.sla`; run `make specs`): {stderr}");
-                return;
-            }
             panic!("serial project export failed: {stderr}");
         }
         let names: Vec<String> = ["c", "h", "asm"]
@@ -833,10 +781,6 @@ fn jobs_project_serial_path_keeps_the_types_of_the_other_functions() {
     };
     let (serial, stderr, ok) = export("serial", &[], &[]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("structsynth teb: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("serial project export failed: {stderr}");
     }
     let (sharded, stderr, ok) =
@@ -886,11 +830,6 @@ fn project_exit_distinguishes_all_failed_from_partial_success() {
             args.push("--stream");
         }
         let (stdout, stderr, ok) = run_kuna(&args);
-        if is_specs_skip(&stderr) {
-            eprintln!("project_exit_distinguishes_all_failed_from_partial_success: skipping: {stderr}");
-            let _ = std::fs::remove_dir_all(failed_dir);
-            return;
-        }
         assert!(!ok, "the all-failed {mode} project exited zero: {stdout}");
         assert!(stdout.contains("functions: 0 ok, 1 failed"), "summary was lost: {stdout}");
         assert!(
@@ -963,8 +902,8 @@ fn project_exit_distinguishes_all_failed_from_partial_success() {
 
 // --- `--stream` ---------------------------------------------------------------
 
-/// Run a streamed export into a fresh temp dir; `None` on a specs-less skip.
-fn stream_project(fixture_name: &str, tag: &str, extra: &[&str]) -> Option<PathBuf> {
+/// Run a streamed export into a fresh temp directory.
+fn stream_project(fixture_name: &str, tag: &str, extra: &[&str]) -> PathBuf {
     let bin = fixture(fixture_name);
     let dir = out_dir(tag);
     let specs = specs();
@@ -982,31 +921,16 @@ fn stream_project(fixture_name: &str, tag: &str, extra: &[&str]) -> Option<PathB
     args.extend_from_slice(extra);
     let (_stdout, stderr, ok) = run_kuna(&args);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("stream project: skipping (no `.sla`; run `make specs`): {stderr}");
-            // A streamed run creates the folder BEFORE the load can fail, so a
-            // skip has one to clean up where the non-stream helper has none.
-            let _ = std::fs::remove_dir_all(&dir);
-            return None;
-        }
         panic!("streamed project export failed on {fixture_name}: {stderr}");
     }
-    Some(dir)
+    dir
 }
 
-/// The raw token a compact-JSON field carries (`"name":"main"` -> `"main"`).
+/// Return a required top-level field's original JSON bytes.
 fn json_field<'a>(line: &'a str, key: &str) -> &'a str {
-    let needle = format!("\"{key}\":");
-    let at = line
-        .find(&needle)
-        .unwrap_or_else(|| panic!("index line has no {key}: {line}"))
-        + needle.len();
-    let rest = &line[at..];
-    let end = match rest.strip_prefix('"') {
-        Some(body) => body.find('"').expect("unterminated string") + 2,
-        None => rest.find([',', '}']).expect("unterminated value"),
-    };
-    &rest[..end]
+    let fields: std::collections::BTreeMap<String, &serde_json::value::RawValue> =
+        serde_json::from_str(line).expect("valid project JSON");
+    fields.get(key).copied().unwrap_or_else(|| panic!("missing {key}: {line}")).get()
 }
 
 /// The `// Function:` blocks of a `.c`, as a sorted multiset.
@@ -1052,8 +976,8 @@ fn assert_stream_matches_serial(
     for line in &lines {
         let offset: usize = json_field(line, "c_offset").parse().unwrap();
         let len: usize = json_field(line, "c_len").parse().unwrap();
-        let name = json_field(line, "name").trim_matches('"');
-        let addr = json_field(line, "addr").trim_matches('"');
+        let name: String = serde_json::from_str(json_field(line, "name")).unwrap();
+        let addr: String = serde_json::from_str(json_field(line, "addr")).unwrap();
         let block = &c[offset..offset + len];
         assert!(
             block.starts_with(&format!("// Function: {name} @ {addr}")),
@@ -1108,9 +1032,7 @@ fn assert_stream_matches_serial(
 /// where everything landed.
 #[test]
 fn streamed_artifacts_match_the_non_stream_export() {
-    let Some(stream) = stream_project("dwarfstructs_x86_64", "stream_serial", &[]) else {
-        return;
-    };
+    let stream = stream_project("dwarfstructs_x86_64", "stream_serial", &[]);
     let serial = out_dir("stream_reference");
     let (_, stderr, ok) = run_kuna(&[
         "decompile-project",
@@ -1131,14 +1053,7 @@ fn streamed_artifacts_match_the_non_stream_export() {
 
     assert_stream_matches_serial(&stream, &serial, "dwarfstructs_x86_64", true);
 
-    let Some(pooled) =
-        stream_project("dwarfstructs_x86_64", "stream_j3", &["--jobs", "3", "--jobs-chunk", "1"])
-    else {
-        for dir in [stream, serial] {
-            let _ = std::fs::remove_dir_all(dir);
-        }
-        return;
-    };
+    let pooled = stream_project("dwarfstructs_x86_64", "stream_j3", &["--jobs", "3", "--jobs-chunk", "1"]);
     assert_stream_matches_serial(&pooled, &serial, "dwarfstructs_x86_64", false);
 
     for dir in [stream, serial, pooled] {
@@ -1151,13 +1066,11 @@ fn streamed_artifacts_match_the_non_stream_export() {
 /// discovery round.
 #[test]
 fn streamed_project_can_select_nested_dialog_callbacks() {
-    let Some(dir) = stream_project(
+    let dir = stream_project(
         "stdcallpop_pe_i386.exe",
         "stream_dialog_callbacks",
         &["--functions", "sub_401000,sub_401410"],
-    ) else {
-        return;
-    };
+    );
     let c = std::fs::read_to_string(dir.join("stdcallpop_pe_i386.exe.c")).unwrap();
     for (address, name) in [("0x401000", "sub_401000"), ("0x401410", "sub_401410")] {
         assert!(
@@ -1177,11 +1090,11 @@ fn streamed_project_can_select_nested_dialog_callbacks() {
 /// first, ahead of functions that come earlier in address order.
 #[test]
 fn streamed_blocks_follow_the_entry_point_not_the_address_order() {
-    let Some(dir) = stream_project("fauxware", "stream_order", &[]) else { return };
+    let dir = stream_project("fauxware", "stream_order", &[]);
     let index = std::fs::read_to_string(dir.join("index.jsonl")).unwrap();
     let order: Vec<String> = index
         .lines()
-        .map(|l| json_field(l, "name").trim_matches('"').to_string())
+        .map(|line| serde_json::from_str(json_field(line, "name")).unwrap())
         .collect();
     let at = |name: &str| {
         order
@@ -1211,41 +1124,18 @@ fn run_kuna_env_with_timeout(
     env: &[(&str, &str)],
     cap: std::time::Duration,
 ) -> Option<(String, String, bool)> {
-    use std::io::Read;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
-        .args(args)
-        .envs(env.iter().copied())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn the kuna binary");
-    let mut out = child.stdout.take().expect("stdout piped");
-    let mut err = child.stderr.take().expect("stderr piped");
-    let out = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = out.read_to_end(&mut buf);
-        buf
-    });
-    let err = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = err.read_to_end(&mut buf);
-        buf
-    });
-    let deadline = std::time::Instant::now() + cap;
-    let status = loop {
-        match child.try_wait().expect("try_wait on the kuna binary") {
-            Some(status) => break Some(status),
-            None if std::time::Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break None;
-            }
-            None => std::thread::sleep(std::time::Duration::from_millis(100)),
-        }
-    };
-    let out = String::from_utf8_lossy(&out.join().expect("stdout reader")).into_owned();
-    let err = String::from_utf8_lossy(&err.join().expect("stderr reader")).into_owned();
-    status.map(|s| (out, err, s.success()))
+    process::output_with_timeout(
+        Command::new(env!("CARGO_BIN_EXE_kuna")).args(args).envs(env.iter().copied()),
+        cap,
+        std::time::Duration::from_millis(100),
+    )
+    .map(|output| {
+        (
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+            output.status.success(),
+        )
+    })
 }
 
 /// `--stream` hands its chunks to the same pool, so a worker that panics costs
@@ -1257,9 +1147,7 @@ fn run_kuna_env_with_timeout(
 #[test]
 fn streamed_worker_panic_loses_only_the_function_that_panicked() {
     let pool = ["--jobs", "2", "--jobs-chunk", "64"];
-    let Some(reference) = stream_project("fauxware", "stream_fault_reference", &pool) else {
-        return;
-    };
+    let reference = stream_project("fauxware", "stream_fault_reference", &pool);
     let dir = out_dir("stream_fault");
     let bin = fixture("fauxware");
     let specs = specs();
@@ -1343,9 +1231,7 @@ fn streamed_worker_panic_loses_only_the_function_that_panicked() {
 fn a_streamed_seed_runs_in_a_worker_and_costs_only_its_own_record() {
     const ENTRY: &str = "0x400580";
     let pool = ["--jobs", "2", "--jobs-chunk", "64"];
-    let Some(reference) = stream_project("fauxware", "stream_seed_reference", &pool) else {
-        return;
-    };
+    let reference = stream_project("fauxware", "stream_seed_reference", &pool);
     let dir = out_dir("stream_seed_fault");
     let bin = fixture("fauxware");
     let specs = specs();
@@ -1427,10 +1313,6 @@ fn streamed_selected_project_does_not_expand_to_callees() {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("streamed_selected_project_does_not_expand_to_callees: skipping: {stderr}");
-            return;
-        }
         panic!("streamed selected project failed: {stderr}");
     }
     let c = std::fs::read_to_string(dir.join("pdb_prog.exe.c")).unwrap();
@@ -1481,7 +1363,7 @@ fn stream_refuses_an_assertion_and_is_not_a_whole_binary_flag() {
 /// before the program loads, README.md included.
 #[test]
 fn a_failed_load_reports_itself_and_spares_a_previous_export() {
-    let Some(dir) = project("fauxware", "stream_failed") else { return };
+    let dir = project("fauxware", "stream_failed");
     let (c, h, asm, readme) = artifacts(&dir, "fauxware");
     let before: Vec<Vec<u8>> =
         [&c, &h, &asm, &readme].iter().map(|f| std::fs::read(f).unwrap()).collect();
@@ -1606,21 +1488,16 @@ fn a_missing_binary_creates_no_folder() {
 #[test]
 fn a_dead_writer_stops_the_run_and_reports_its_own_error() {
     for jobs in ["1", "2"] {
-        if !a_dead_writer_stops_a_run_at_jobs(jobs) {
-            return;
-        }
+        a_dead_writer_stops_a_run_at_jobs(jobs);
     }
 }
 
-/// One arm of the test above; `false` means the specs were missing and the run
-/// never started.
-///
 /// The fault waits for `asm: complete`, so the producer is past the sweep
 /// interleave and doing nothing but pulling targets — which is where ignoring
 /// the stop signal costs the whole binary: the fixture's 1,073 functions take
 /// ~95 s serially and ~50 s at `--jobs 2`, against the few dozen written by the
 /// time a stopping run notices.
-fn a_dead_writer_stops_a_run_at_jobs(jobs: &str) -> bool {
+fn a_dead_writer_stops_a_run_at_jobs(jobs: &str) {
     let bin = fixture("mcount_x86_64");
     let dir = out_dir(&format!("stream_writer_death_j{jobs}"));
     std::fs::create_dir_all(&dir).unwrap();
@@ -1666,11 +1543,6 @@ fn a_dead_writer_stops_a_run_at_jobs(jobs: &str) -> bool {
     let Some(injected) = injected else {
         let out = child.wait_with_output().unwrap();
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        if is_specs_skip(&stderr) {
-            eprintln!("a_dead_writer_stops_the_run: skipping (no `.sla`): {stderr}");
-            let _ = std::fs::remove_dir_all(&dir);
-            return false;
-        }
         panic!("the export never finished its sweep: {stderr}");
     };
 
@@ -1726,7 +1598,6 @@ fn a_dead_writer_stops_a_run_at_jobs(jobs: &str) -> bool {
         );
     }
     let _ = std::fs::remove_dir_all(&dir);
-    true
 }
 
 /// Replace `path` with a directory, retrying against the writer's own atomic
@@ -1799,13 +1670,6 @@ fn a_sectionless_image_never_reports_a_sweeping_asm_at_jobs_1() {
     let out = child.wait_with_output().unwrap();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if !out.status.success() {
-        if is_specs_skip(&stderr) {
-            eprintln!("a_sectionless_image: skipping (no `.sla`): {stderr}");
-            for dir in [dir, junk_dir] {
-                let _ = std::fs::remove_dir_all(dir);
-            }
-            return;
-        }
         panic!("the sectionless streamed export failed: {stderr}");
     }
     assert!(!seen.is_empty(), "the status file was never observed");
@@ -1879,10 +1743,6 @@ fn a_struct_name_means_the_same_record_in_the_export_and_in_decompile_all() {
         let base = ["decompile-project", &bin, "-o", dir.to_str().unwrap(), "--sleighpath", &specs()];
         let (_out, stderr, ok) = run_kuna(&[&base[..], arm].concat());
         if !ok {
-            if is_specs_skip(&stderr) {
-                eprintln!("decompile_project_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-                return;
-            }
             panic!("kuna decompile-project failed: {stderr}");
         }
         let header =

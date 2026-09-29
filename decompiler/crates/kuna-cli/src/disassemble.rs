@@ -92,6 +92,7 @@ use kuna_console::disasm::{
 use kuna_console::engine::ConsoleProgram;
 use kuna_sleigh::loadimage::section_flags;
 
+use crate::args::take_value as take;
 use crate::decompile::looks_like_addr;
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
 use crate::jsonfmt::{dumps_indent2, Json};
@@ -1025,14 +1026,7 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
             "--follow" => follow = true,
             "--count" => count = Some(parse_positive(&take(argv, &mut i, a)?, a)? as usize),
             "--bytes" => bytes = Some(parse_positive(&take(argv, &mut i, a)?, a)?),
-            "--option" => {
-                if i + 2 >= argv.len() {
-                    return Err("--option requires NAME VALUE".into());
-                }
-                crate::optname::check(&argv[i + 1])?;
-                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
-                i += 2;
-            }
+            "--option" => options.push(crate::args::take_option(argv, &mut i)?),
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
             "--define-function" => {
                 let v = take(argv, &mut i, "--define-function")?;
@@ -1090,15 +1084,6 @@ fn parse_positive(value: &str, flag: &str) -> Result<u64, String> {
     match value.parse::<u64>() {
         Ok(n) if n > 0 => Ok(n),
         _ => Err(format!("{flag} takes a positive integer, got {value:?}")),
-    }
-}
-
-fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
-    if *i + 1 < argv.len() {
-        *i += 1;
-        Ok(argv[*i].clone())
-    } else {
-        Err(format!("{flag} requires a value"))
     }
 }
 

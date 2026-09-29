@@ -4,8 +4,7 @@
 //! custom Base64 alphabet in `.rodata`, each read by one named function, plus
 //! the TEA delta and the CRC-32 polynomial as `.text` immediates.
 //!
-//! The reference walk needs the built x86 `.sla`; without it the attributed
-//! cases print a skip and return. The `--no-xrefs` cases need no `.sla`.
+//! The reference walk requires the built x86 spec. `--no-xrefs` needs no spec.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -28,13 +27,6 @@ fn run_kuna(args: &[&str]) -> (String, String, i32) {
         String::from_utf8_lossy(&out.stderr).into_owned(),
         out.status.code().unwrap_or(-1),
     )
-}
-
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-        || stderr.contains(".sla")
 }
 
 fn rows(text: &str) -> Vec<Vec<String>> {
@@ -62,10 +54,6 @@ fn the_scan_finds_every_shape_without_the_reference_walk() {
 #[test]
 fn each_row_names_the_function_that_uses_it() {
     let (out, err, code) = run_kuna(&["crypto", &fixture()]);
-    if code != 0 && is_specs_skip(&err) {
-        eprintln!("skipping: {err}");
-        return;
-    }
     assert_eq!(code, 0, "{err}");
     let rows = rows(&out);
     let owner = |addr: &str| rows.iter().find(|r| r[0] == addr).map(|r| r[8].clone()).unwrap_or_default();

@@ -3651,6 +3651,14 @@ directly, so they are not vacuous on small fixtures. This is a driver-tier resou
 effect, so it is a CLI flag and an environment bridge rather than a settable
 option (DIV-169).
 
+The serial-fallback variants, their public enumeration order, and their stable
+diagnostic strings share one declaration in
+`decompiler/crates/kuna-analysis/src/listing/kuna_pdecode/refusal.rs`.
+`Refusal::ALL` and `Refusal::COUNT` are generated from that declaration, so adding
+a refusal cannot omit it from the documentation checks. A compatibility test
+pins the existing order and spellings; the scheduling and fallback policies do
+not depend on this representation.
+
 (kuna) The seed set carries one more source, under the same `funcstart_patterns`
 gate as the prologue starts: **the entries the load-time passes have already
 committed**, handed down from `engine.rs (commit_pending_analysis)` rather than
@@ -4235,7 +4243,7 @@ an executable section a function — an IAT slot lives in `.rdata`, so it is nev
 one — while the inventory does name it, because `pe_iat` (§1.3) registered the
 import there. For PE, the graph therefore falls back from the walk's function
 set to the inventory extent containing the target
-(`decompiler/crates/kuna-cli/src/decompile_all.rs (CallGraph::callee_of)`), which
+(`decompiler/crates/kuna-cli/src/callgraph.rs (CallGraph::callee_of)`), which
 is the same fold it already applies to every callee it reports. ELF historically
 inventories the PLT veneer only, not its GOT slot, so the graph admits the slot
 half of each decoded forwarding relation as a zero-extent node; `decompile-graph`

@@ -41,6 +41,7 @@ import random
 import sys
 
 from . import config
+from ..atomic import atomic_text_writer
 
 # `kuna --mode auto` picks its pipeline from the input size at these byte boundaries.
 AGGRESSIVE_MAX = 512_000
@@ -200,11 +201,9 @@ def write_slate(round_n, slate, meta=None):
     doc = {"round": int(round_n), "count": len(slate), "challenges": slate}
     if meta:
         doc.update(meta)
-    tmp = str(p) + ".tmp"
-    with open(tmp, "w") as fh:
+    with atomic_text_writer(p) as fh:
         json.dump(doc, fh, indent=2, sort_keys=False)
         fh.write("\n")
-    os.replace(tmp, p)
     return p
 
 

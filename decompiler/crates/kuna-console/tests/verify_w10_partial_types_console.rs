@@ -17,12 +17,6 @@
 //!  * that a successful `map unionfacet` actually lands a `UNION_FACET` symbol in
 //!    the loaded function's local scope (recovery is REAL — the command is not a
 //!    silent no-op).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the other console integration gates, bootstrapping needs the built
-//! `.sla` artifacts under `specs/` (gitignored; `make specs`).  A missing `.sla`
-//! prints a skip and returns early — never a false green.
 
 use std::path::PathBuf;
 
@@ -39,23 +33,13 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap a datatest into a [`ConsoleProgram`], or `None` if the `.sla` is
-/// missing (printed, so a specs-less CI is a visible skip, never a false green).
-fn boot(stem: &str) -> Option<ConsoleProgram> {
+/// Bootstrap a datatest into a [`ConsoleProgram`].
+fn boot(stem: &str) -> ConsoleProgram {
     let root = repo_root();
     let xml = root.join(format!("tests/datatests/{stem}.xml"));
     let specs = root.join("specs");
-    match bootstrap_from_file(xml.to_str().unwrap(), "", &[specs.to_str().unwrap().to_string()]) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_w10_partial_types_console: skipping {stem} (bootstrap failed, \
-                 build `.sla` with `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_file(xml.to_str().unwrap(), "", &[specs.to_str().unwrap().to_string()])
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// Drive `commands` through a console wired like the datatest runner, with
@@ -94,14 +78,13 @@ const PARTIALUNION_PREFIX: &[&str] = &[
     "lo fu partial1",
 ];
 
-/// Run `PARTIALUNION_PREFIX` then `tail`, returning captured output.  Returns
-/// `None` (skip) if specs are missing.
-fn run_partialunion(tail: &[&str]) -> Option<String> {
-    let prog = boot("partialunion")?;
+/// Run `PARTIALUNION_PREFIX` then `tail`, returning captured output.
+fn run_partialunion(tail: &[&str]) -> String {
+    let prog = boot("partialunion");
     let mut cmds: Vec<&str> = PARTIALUNION_PREFIX.to_vec();
     cmds.extend_from_slice(tail);
     let (_status, out) = drive(prog, &cmds);
-    Some(out)
+    out
 }
 
 // --- F1: a real `map unionfacet` lands a UNION_FACET symbol -----------------
@@ -113,10 +96,7 @@ fn map_unionfacet_creates_real_union_facet_symbol() {
     // (field 1 -> n=2, offset 0x1006ee) with the UNION_FACET category.  A
     // command that silently failed (the old engine_unavailable stub) would
     // leave no such symbol.
-    let prog = match boot("partialunion") {
-        Some(p) => p,
-        None => return,
-    };
+    let prog = boot("partialunion");
     let mut cmds: Vec<&str> = PARTIALUNION_PREFIX.to_vec();
     cmds.push("map unionfacet structunion 1 r0x1006ee 10603fc3e29498");
     let count_pre = cmds.len();
@@ -157,11 +137,8 @@ fn map_unionfacet_unknown_union_name_errors() {
     // `findByName("nosuchunion")` returns null -> the C++ throws
     // "Bad union data-type: nosuchunion".  The command must report an error and
     // create nothing.
-    let Some(out) =
-        run_partialunion(&["map unionfacet nosuchunion 0 r0x1006ee 1"])
-    else {
-        return;
-    };
+    let out =
+        run_partialunion(&["map unionfacet nosuchunion 0 r0x1006ee 1"]);
     assert!(
         out.contains("Bad union data-type"),
         "unknown union name must yield the 'Bad union data-type' error; got: {out:?}",
@@ -174,9 +151,7 @@ fn map_unionfacet_unknown_union_name_errors() {
 fn map_unionfacet_non_union_type_errors() {
     // `astruct` exists but is TYPE_STRUCT, not TYPE_UNION -> the second half of
     // the `ct==0 || getMetatype()!=TYPE_UNION` guard fires.
-    let Some(out) = run_partialunion(&["map unionfacet astruct 0 r0x1006ee 1"]) else {
-        return;
-    };
+    let out = run_partialunion(&["map unionfacet astruct 0 r0x1006ee 1"]);
     assert!(
         out.contains("Bad union data-type"),
         "a struct (non-union) type must yield 'Bad union data-type'; got: {out:?}",
@@ -190,9 +165,7 @@ fn map_unionfacet_field_index_out_of_range_errors() {
     // `structunion` has 2 fields (a, b) so numDepend()==2; field index 2 is the
     // first out-of-range value (`fieldNum >= ct->numDepend()`) -> "Bad field
     // index".  This is the upper boundary the bounds check must reject.
-    let Some(out) = run_partialunion(&["map unionfacet structunion 2 r0x1006ee 1"]) else {
-        return;
-    };
+    let out = run_partialunion(&["map unionfacet structunion 2 r0x1006ee 1"]);
     assert!(
         out.contains("Bad field index"),
         "field index == numDepend must be rejected as 'Bad field index'; got: {out:?}",
@@ -205,9 +178,7 @@ fn map_unionfacet_field_index_out_of_range_errors() {
 fn map_unionfacet_field_index_below_negative_one_errors() {
     // -2 is the first value below the `-1` whole-union sentinel: `fieldNum < -1`
     // rejects it.  (-1 itself is accepted — the lower-boundary inclusive case.)
-    let Some(out) = run_partialunion(&["map unionfacet structunion -2 r0x1006ee 1"]) else {
-        return;
-    };
+    let out = run_partialunion(&["map unionfacet structunion -2 r0x1006ee 1"]);
     assert!(
         out.contains("Bad field index"),
         "field index -2 (< -1) must be rejected as 'Bad field index'; got: {out:?}",
@@ -221,7 +192,7 @@ fn map_commands_require_a_loaded_function() {
     // With a program installed but no function loaded, both commands must hit
     // their shared first guard (`dcp->fd == 0` -> "No function loaded") before
     // touching the type factory or the stream.
-    let Some(prog) = boot("partialunion") else { return };
+    let prog = boot("partialunion");
     let (_status, out) = drive(
         prog,
         &["map unionfacet structunion 0 r0x1006ee 1", "map hash r0x1006a7 1 int4 x"],

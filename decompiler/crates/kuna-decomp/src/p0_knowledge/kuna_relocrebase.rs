@@ -34,10 +34,7 @@ pub const RELOCREBASE_ENV: &str = "KUNA_RELOCREBASE";
 /// Whether the relocatable-object analysis rebase is enabled for this process.
 /// Default **on**: only an explicit off-token in [`RELOCREBASE_ENV`] disables it.
 pub fn relocrebase_enabled() -> bool {
-    match std::env::var(RELOCREBASE_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
-        Err(_) => true, // unset ⇒ default-on
-    }
+    crate::options::env_toggle(RELOCREBASE_ENV, true)
 }
 
 /// Bridge a `set_kuna_option("relocrebase", val)` toggle to [`RELOCREBASE_ENV`]

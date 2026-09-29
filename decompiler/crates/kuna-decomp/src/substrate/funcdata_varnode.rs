@@ -1,82 +1,7 @@
-//! Port of `decompiler/cpp/funcdata_varnode.cc` (W3, item
-//! `w3-ir-funcdata-varnode`) — the `Funcdata` methods pertaining directly to
-//! Varnodes: the `newVarnode*` creation family, the input/free-varnode
-//! life-cycle (`setInputVarnode`/`deleteVarnode`/`destroyVarnode`), the
-//! storage-range finders (`findCoveredInput`/`findVarnodeInput`/…), and the
-//! def-use rewiring (`totalReplace`).
+//! Varnode creation, input registration and read replacement for [`Funcdata`].
 //!
-//! These are additional `impl Funcdata` methods; the [`Funcdata`] struct, the
-//! IR-arena ownership (ADR 0001), and the bank callbacks live in
-//! [`crate::funcdata`].  This module is a **parallel** porter (it runs after the
-//! serial `funcdata`/`block` chain, alongside `funcdata_op`) and therefore holds
-//! **no seam-editing rights**: it may not touch `context.rs`/`dtype.rs`, nor any
-//! other module, nor the private fields of `Funcdata`.  Everything here goes
-//! through the `pub`/`pub(crate)` surface `funcdata.rs` exposes.
-//!
-//! ## What this wave ports (self-contained on the public IR surface)
-//!
-//! The **free-varnode factories** create through `vbank.create`/`create_unique`
-//! (the plain insertion path, no `xref` read-repointing callback): `newConstant`,
-//! `newUnique`, `newVarnode` (all three overloads), `newVarnodeIop`,
-//! `newVarnodeSpace`, `newVarnodeCallSpecs`.  The **create-index allocation
-//! order** is preserved exactly because each goes straight to the bank's single
-//! `create_index++` path, in the same statement order as the C++.
-//!
-//! `deleteVarnode` (`vbank.destroy`), `destroyVarnode` (the def/descend teardown,
-//! sequenced through the public op/varnode accessors), the storage-range finders
-//! (`findCoveredInput`/`findCoveringInput`/`hasInputIntersection`/
-//! `findVarnodeInput`/`findVarnodeWritten`, each a `vbank` range query), the
-//! `descend` iteration helpers, `checkForLanedRegister` (a `// STUB(W4)` no-op),
-//! and `totalReplace` (def-use rewiring, sequenced — see below) are all ported in
-//! full.  `setInputVarnode`'s overlap pre-check (the pure `vbank` read half) is
-//! ported as [`Funcdata::find_input_overlap`].
-//!
-//! ## The two-arena split borrow and the `xref` callback (missing public API)
-//!
-//! A handful of C++ methods route a *fresh* varnode through
-//! `VarnodeBank::setInput`/`createDef`, which call `xref`, which invokes the
-//! `replace_reads` callback (re-pointing every op that read an equivalent
-//! pre-existing free varnode onto the kept one) **while the bank is mid-mutation**
-//! — so `&mut vbank` and `&mut obank` are live *simultaneously*.  `funcdata.rs`
-//! supplies the callback as the static [`Funcdata::replace_reads_thunk`]
-//! (`&mut PcodeOpBank -> impl FnMut`) precisely so a caller with *direct field
-//! access* can split-borrow `self.vbank` and `self.obank`.  A sibling module has
-//! no such access (Rust field privacy is by module; `Funcdata::vbank`/`obank` are
-//! private to `crate::funcdata`), and the only public accessors
-//! (`vbank_mut()`/`obank_mut()`) each reborrow all of `self`.
-//!
-//! Consequently every method that drives the `xref` callback path —
-//! `setInputVarnode` (its `vbank.setInput` tail), `newVarnodeOut`/`newUniqueOut`
-//! (`vbank.createDef`/`createDefUnique`) — needs a `pub(crate)` split accessor on
-//! `Funcdata` (e.g. `fn banks_mut(&mut self) -> (&mut VarnodeBank, &mut
-//! PcodeOpBank)`) that only the `funcdata.rs` owner can add.  Exactly as the
-//! `funcdata.rs` module doc anticipates ("the bodies that call `xref`
-//! (`setInputVarnode`, `opSetOutput`) live in funcdata_op"), those bodies are
-//! left to the seam owner; this module ports the **portable remainder**.
-//!
-//! `totalReplace` does **not** go through `xref`: it re-points op inputs directly
-//! (the standalone `opSetInput` semantics), which decompose into *sequential*
-//! single-arena borrows (`vbank.erase_descend` ; `obank.set_input` ;
-//! `vbank.add_descend`), so it is ported in full here.
-//!
-//! ## What this wave defers to `funcdata_op` (op-creation API)
-//!
-//! `totalReplaceConstant`, `adjustInputVarnodes`, `combineInputVarnodes`,
-//! `newExtendedConstant`, `descend2Undef`, and `splitUses` build **new ops**
-//! (`newOp` + `opSetOpcode` + `opInsert{Begin,Before,After,End}` +
-//! `newVarnodeOut`/`newUniqueOut`).  That op-creation/insertion API
-//! (`funcdata_op.cc`) is the **funcdata_op** wave's; these methods sit at that
-//! boundary and are noted in the structured `losses` rather than half-ported.
-//!
-//! ## Missing public surfaces on the merged W3 IR (precise notes)
-//!
-//! Two pre-existing public surfaces would let more of `funcdata_varnode.cc` land
-//! without seam edits; both are noted as losses:
-//!   - `Varnode::set_flags(uint4)` is private to `varnode.rs`, so `newCodeRef`'s
-//!     `setFlags(annotation)` and `cloneVarnode`'s flag-copy cannot be expressed
-//!     (the create + `assignHigh` portion is otherwise portable);
-//!   - `Funcdata::banks_mut()` (the `(vbank, obank)` split accessor) for the
-//!     `xref`-callback methods above.
+//! Ported from Ghidra's funcdata_varnode.cc. Bank mutations that replace reads
+//! borrow the varnode and op banks together through `Funcdata::banks_mut`.
 
 use std::rc::Rc;
 
@@ -88,41 +13,11 @@ use kuna_base::types::{int4, uint1, uint4, uintb, uintm, Wrap};
 use kuna_num::opcodes::OpCode;
 
 use crate::dtype::{type_metatype, Datatype};
+use crate::fspec::effect_type;
 use crate::funcdata::Funcdata;
 use crate::context::{OpId, VarnodeId};
 use crate::varnode::{varnode_flags, DefOpInfo};
 
-/// Effect classes a [`crate::context::FuncProto`] reports for a storage range
-/// (C++ `EffectRecord::effecttype`, `fspec.hh:392-397`).
-///
-/// STUB(W4): the prototype model subsystem (`fspec.{hh,cc}`) is W4.  The W3
-/// `funcp` placeholder reports no records, so the `setInputVarnode` tail always
-/// sees `UNKNOWN_EFFECT` (the "absence of an EffectRecord" value) and never marks
-/// an input `unaffected`/`return_address`.  The constants are transcribed
-/// verbatim so the W4 wave can wire `funcp.hasEffect` in without changing call
-/// sites.
-/// Gate for the `setInputVarnode` effect-marking tail (saved-register / return-
-/// address inputs marked `unaffected`/`return_address`).  ENABLED as of the W10 RSP
-/// L4/L5 stack-frame render: the marking removes the spurious `//rsp` input local so
-/// an unaffected stack-pointer call argument resolves to a true spacebase reference,
-/// which `ActionNameVars::linkSpacebaseSymbol`'s namerec rename
-/// ([`Funcdata::name_undefined_spacebase_symbols`], coreaction.cc:3016 + 3087-3094)
-/// then names `v1` and the `&symbol` attach renders `&v1` — matching the C++ oracle
-/// (the prior net-negative `PTRSUB(RSP,...)` fallback is resolved corpus-wide).
-const INPUT_EFFECT_MARKING_ENABLED: bool = true;
-
-#[allow(dead_code)]
-mod effect_record {
-    use kuna_base::types::uint4;
-    /// The sub-function does not change the value at all.
-    pub const UNAFFECTED: uint4 = 1;
-    /// The memory is changed and is completely unrelated to its original value.
-    pub const KILLEDBYCALL: uint4 = 2;
-    /// The memory is being used to store the return address.
-    pub const RETURN_ADDRESS: uint4 = 3;
-    /// An unknown effect (indicates the absence of an EffectRecord).
-    pub const UNKNOWN_EFFECT: uint4 = 4;
-}
 
 impl Funcdata {
     // -----------------------------------------------------------------------
@@ -366,9 +261,9 @@ impl Funcdata {
             let cur = self.vbank().get(outvn).map(|v| v.get_nz_mask()).unwrap_or(0);
             if nzmask != cur {
                 self.vbank_mut().get_mut(outvn).expect("calc_nz_mask: stale out").set_nz_mask(nzmask);
-                let descend: Vec<OpId> =
-                    self.vbank().get(outvn).map(|v| v.descend_iter().collect()).unwrap_or_default();
-                worklist.extend(descend);
+                if let Some(v) = self.vbank().get(outvn) {
+                    worklist.extend(v.descend_iter());
+                }
             }
         }
     }
@@ -642,12 +537,24 @@ impl Funcdata {
     /// it split-borrows both banks ([`Funcdata::banks_mut`]) and runs
     /// [`replace_reads_thunk`](Funcdata::replace_reads_thunk) over `obank`.
     ///
-    /// STUB(W4): the `localmap->queryProperties` symbol look-up + `setSymbolProperties`/
-    /// `setFlags(vflags & ~typelock)` tail is the W4 symbol scope; the W3 placeholder
-    /// reports no entry, so it is the [`Funcdata::set_varnode_properties`] no-op,
-    /// preserving the call cadence (and never touching the (space,offset,size) the
-    /// flow gate asserts).
+    /// The attached output receives its high variable and lane-storage record
+    /// when those analyses are active, followed by scope-derived properties.
     pub fn new_varnode_out(&mut self, s: int4, m: &Address, op: OpId) -> KunaResult<VarnodeId> {
+        self.varnode_out(s, m, op, true)
+    }
+
+    /// [`new_varnode_out`](Funcdata::new_varnode_out) for a simplification rule: the
+    /// output is not recorded as lane-divisible storage.
+    pub fn new_varnode_out_unlaned(
+        &mut self,
+        s: int4,
+        m: &Address,
+        op: OpId,
+    ) -> KunaResult<VarnodeId> {
+        self.varnode_out(s, m, op, false)
+    }
+
+    fn varnode_out(&mut self, s: int4, m: &Address, op: OpId, laned: bool) -> KunaResult<VarnodeId> {
         let ct = Self::type_base_unknown(s);
         // Split-borrow: the thunk (holds &mut obank) drops before later &mut self calls.
         let def = self.def_op_info_v(op);
@@ -658,10 +565,9 @@ impl Funcdata {
         };
         self.obank_mut().get_mut(op).expect("new_varnode_out: stale op").set_output(Some(vn));
         self.assign_high(vn);
-        if s >= self.get_min_laned_size() {
+        if laned && s >= self.get_min_laned_size() {
             self.check_for_laned_register(s, m);
         }
-        // uint4 vflags=0; entry = localmap->queryProperties(...); ...  -- STUB(W4)
         self.set_varnode_properties(vn);
         Ok(vn)
     }
@@ -673,6 +579,16 @@ impl Funcdata {
     /// [`new_varnode_out`](Funcdata::new_varnode_out).  No `localmap` match (the
     /// unique space never carries symbols), matching the C++.
     pub fn new_unique_out(&mut self, s: int4, op: OpId) -> KunaResult<VarnodeId> {
+        self.unique_out(s, op, true)
+    }
+
+    /// [`new_unique_out`](Funcdata::new_unique_out) for a simplification rule: the
+    /// output is not recorded as lane-divisible storage.
+    pub fn new_unique_out_unlaned(&mut self, s: int4, op: OpId) -> KunaResult<VarnodeId> {
+        self.unique_out(s, op, false)
+    }
+
+    fn unique_out(&mut self, s: int4, op: OpId, laned: bool) -> KunaResult<VarnodeId> {
         let ct = Self::type_base_unknown(s);
         let def = self.def_op_info_v(op);
         let vn = {
@@ -682,7 +598,7 @@ impl Funcdata {
         };
         self.obank_mut().get_mut(op).expect("new_unique_out: stale op").set_output(Some(vn));
         self.assign_high(vn);
-        if s >= self.get_min_laned_size() {
+        if laned && s >= self.get_min_laned_size() {
             let addr =
                 self.vbank().get(vn).expect("new_unique_out: stale vn").get_addr().clone();
             self.check_for_laned_register(s, &addr);
@@ -800,31 +716,22 @@ impl Funcdata {
             vbank.set_input(vn, &mut replace)?
         };
         self.set_varnode_properties(vn);
-        // Held behind the W10 spacebase-typing render boundary (see the doc comment): the
-        // faithful transcription is in [`apply_input_effect_marking`], gated off so
-        // the wire is a one-call flip once the render chain is ready.
-        if INPUT_EFFECT_MARKING_ENABLED {
-            self.apply_input_effect_marking(vn);
-        }
+        self.apply_input_effect_marking(vn);
         Ok(vn)
     }
 
-    /// The `funcp.hasEffect` tail of C++ `setInputVarnode` (`funcdata_varnode.cc`):
-    /// mark a saved-register input `unaffected` and a return-address input
-    /// `unaffected`+`return_address`.  Ported faithfully, currently gated off
-    /// by [`INPUT_EFFECT_MARKING_ENABLED`] behind the W10 spacebase-typing render
-    /// boundary (see [`Funcdata::set_input_varnode`]).
+    /// Mark saved-register and return-address inputs using prototype effects.
     fn apply_input_effect_marking(&mut self, vn: VarnodeId) {
         let (vaddr, vsize) = {
             let v = self.vbank().get(vn).expect("apply_input_effect_marking: stale vn");
             (v.get_addr().clone(), v.get_size())
         };
         let effecttype = self.get_func_proto().has_effect(&vaddr, vsize);
-        if effecttype == effect_record::UNAFFECTED {
+        if effecttype == effect_type::UNAFFECTED {
             if let Some(v) = self.vbank_mut().get_mut(vn) {
                 v.set_unaffected();
             }
-        } else if effecttype == effect_record::RETURN_ADDRESS {
+        } else if effecttype == effect_type::RETURN_ADDRESS {
             if let Some(v) = self.vbank_mut().get_mut(vn) {
                 // Should be unaffected over the course of the function.
                 v.set_unaffected();

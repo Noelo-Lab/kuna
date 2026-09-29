@@ -52,12 +52,6 @@
 //! DEFERRED commit point (`read symbols` / `commit_pending_analysis`), when the flag
 //! is known. This test mirrors that ordering: it sets the options on the live arch
 //! and THEN calls `commit_pending_analysis()`.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -87,26 +81,16 @@ enum Mode {
     On,
 }
 
-/// Bootstrap the fixture, (optionally) enable AIF, commit the analysis, and return
-/// the live program so the caller can inspect the symbol table / decompile a
-/// discovered function. `None` ⇒ specs-less skip.
-fn bootstrap(mode: Mode) -> Option<kuna_console::engine::ConsoleProgram> {
+/// Bootstrap the fixture, (optionally) enable AIF, commit the analysis, and return the live
+/// program so the caller can inspect the symbol table / decompile a discovered function.
+fn bootstrap(mode: Mode) -> kuna_console::engine::ConsoleProgram {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_aif: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The live-CLI ordering: the `option` lines precede `read symbols` (the deferred
     // commit). Set the flags on the live arch BEFORE committing so the deferred
@@ -117,7 +101,7 @@ fn bootstrap(mode: Mode) -> Option<kuna_console::engine::ConsoleProgram> {
     }
     // `read symbols`: build the Listing (deferred) and run the consumers, gated.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Decompile `func` in the already-bootstrapped program and return the captured C.
@@ -144,9 +128,7 @@ fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
 /// table (the default is unchanged).
 #[test]
 fn aif_recovers_function_reachable_only_via_data_path() {
-    let Some(off) = bootstrap(Mode::Off) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(Mode::Off);
     // OFF (default): the hidden, indirect-only function is NOT discovered (the
     // gap-walk never runs and no oracle / static CALL reaches 0x13ae).
     assert!(
@@ -155,9 +137,7 @@ fn aif_recovers_function_reachable_only_via_data_path() {
          parity): it is reachable only through the .rodata function-pointer table"
     );
 
-    let Some(on) = bootstrap(Mode::On) else {
-        return; // specs-less skip (unreachable if the first bootstrap succeeded)
-    };
+    let on = bootstrap(Mode::On);
     // ON: the AIF gap-walk accepts 0x13ae (fingerprint match + valid subroutine)
     // and the commit registers it.
     assert!(
@@ -209,13 +189,8 @@ fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
     let path = bin.to_str().unwrap().to_string();
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let prog = match bootstrap_from_object(&path, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("verify_aif: skipping (bootstrap failed, `make specs`): {}", e.explain());
-            return; // specs-less skip
-        }
-    };
+    let prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let bytes = std::fs::read(&bin).expect("read fixture bytes");
     let file = object::File::parse(&*bytes).expect("parse fixture ELF");
@@ -284,9 +259,7 @@ fn a_text_free_listing_fingerprints_exactly_like_a_text_carrying_one() {
 /// is the parity guarantee — default-off ⇒ byte-identical to today.
 #[test]
 fn flags_off_does_not_discover_the_gap_function() {
-    let Some(off) = bootstrap(Mode::Off) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(Mode::Off);
     assert!(
         off.lookup_symbol(HIDDEN_FN).is_none(),
         "default (AIF off) must not register the gap function {HIDDEN_FN}"

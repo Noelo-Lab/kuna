@@ -15,12 +15,6 @@
 //! `undefined<size>` type, so the container query matches at the real access
 //! width and the name binds. Before the fix `bump` reads `dat_4020`/`dat_4028`;
 //! after, `g_total`/`g_counter`.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -36,25 +30,16 @@ fn fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/dwarf_globals_x86_64")
 }
 
-/// Bootstrap the fixture, commit the (default-on) DWARF analysis, decompile
-/// `func`, and return the captured C (`None` ⇒ specs-less skip).
-fn decompile(func: &str) -> Option<String> {
+/// Bootstrap the fixture, commit the (default-on) DWARF analysis, decompile `func`, and
+/// return the captured C.
+fn decompile(func: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_data_global_symbols: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // `read symbols`: commit the DWARF data-object facts (data-global naming is
     // default-on and needs no flag; the DWARF pass reads `.debug_info` directly).
     prog.commit_pending_analysis().expect("analysis commit succeeds");
@@ -72,14 +57,14 @@ fn decompile(func: &str) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// `bump` reads/writes the 4-byte `g_counter` and 8-byte `g_total` — both must
 /// render by name, neither as `dat_<addr>`.
 #[test]
 fn multibyte_globals_render_by_dwarf_name_not_dat() {
-    let Some(code) = decompile("bump") else { return }; // specs-less skip
+    let code = decompile("bump");
 
     assert!(
         code.contains("g_counter"),
@@ -98,7 +83,7 @@ fn multibyte_globals_render_by_dwarf_name_not_dat() {
 /// `main` takes the address of / assigns the 8-byte pointer global `g_name`.
 #[test]
 fn pointer_global_renders_by_dwarf_name() {
-    let Some(code) = decompile("main") else { return }; // specs-less skip
+    let code = decompile("main");
 
     assert!(
         code.contains("g_name"),

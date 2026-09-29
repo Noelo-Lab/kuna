@@ -317,3 +317,43 @@ fn destroy_varnode_input_no_def_unhooks_and_frees() {
     assert_eq!(fd.obank().get(op).unwrap().get_in(0), None, "reader slot nulled");
     assert!(fd.vbank().get(inp).is_none(), "input varnode freed");
 }
+
+#[test]
+fn nonzero_masks_reach_a_loop_fixpoint_and_preserve_duplicate_readers() {
+    let mut fd = build_fd();
+    let root = fd.bblocks_ref().root.unwrap();
+    let entry = fd.bblocks_mut().new_block_basic(root);
+    let body = fd.bblocks_mut().new_block_basic(root);
+    fd.bblocks_mut().add_edge(entry, body);
+    fd.bblocks_mut().add_edge(body, body);
+    fd.bblocks_mut().add_loop_edge(body, 0);
+    let append = |fd: &mut Funcdata, code: OpCode, inputs: &[VarnodeId]| {
+        let op = fd.new_op(inputs.len() as int4, Address::new(ram(fd), 0x1000));
+        fd.op_set_opcode(op, kuna_decomp::typeop::type_op_for(code));
+        let output = fd.new_unique_out(1, op).unwrap();
+        for (slot, &input) in inputs.iter().enumerate() {
+            fd.op_set_input(op, input, slot as int4).unwrap();
+        }
+        fd.op_insert(op, body, None);
+        (op, output)
+    };
+    let one = fd.new_constant(1, 1);
+    let (phi, merged) = append(&mut fd, OpCode::CPUI_MULTIEQUAL, &[one, one]);
+    let (shift, shifted) = append(&mut fd, OpCode::CPUI_INT_LEFT, &[merged, one]);
+    let (reader, copied) = append(&mut fd, OpCode::CPUI_INT_OR, &[merged, merged]);
+    fd.op_set_input(phi, shifted, 1).unwrap();
+    let descendants: Vec<_> = fd.vbank().get(merged).unwrap().descend_iter().collect();
+    assert_eq!(descendants, vec![shift, reader, reader]);
+    let values = [one, merged, shifted, copied];
+    let flags = values.map(|id| fd.vbank().get(id).unwrap().get_flags());
+    let ops = [phi, shift, reader];
+    let op_flags = ops.map(|id| fd.obank().get(id).unwrap().get_flags());
+
+    for _ in 0..3 {
+        fd.calc_nz_mask();
+        assert_eq!(values.map(|id| fd.vbank().get(id).unwrap().get_nz_mask()), [1, 255, 254, 255]);
+        assert_eq!(values.map(|id| fd.vbank().get(id).unwrap().get_flags()), flags);
+        assert_eq!(ops.map(|id| fd.obank().get(id).unwrap().get_flags()), op_flags);
+        assert_eq!(fd.vbank().get(merged).unwrap().descend_iter().collect::<Vec<_>>(), descendants);
+    }
+}

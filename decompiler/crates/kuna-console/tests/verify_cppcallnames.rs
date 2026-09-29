@@ -26,13 +26,6 @@
 //! The fixture is the vendored `cpp_noreturn_x86_64` (`g++ -O0 -no-pie -fno-pic`),
 //! already used by `verify_noreturn_demangle`: `fail()` tail-calls
 //! `std::terminate()`, whose PLT stub is at 0x401070.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_funcstart_patterns`/`verify_noreturn_demangle` gates,
-//! the bootstrap needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -53,31 +46,22 @@ fn fixture() -> PathBuf {
 /// `std::terminate`'s PLT-stub VMA (pinned by `verify_noreturn_demangle`).
 const TERMINATE_STUB: u64 = 0x401070;
 
-/// Bootstrap the fixture with the discovery passes the `aggressive` preset turns
-/// on, applied BEFORE the deferred analysis commit (the live-CLI `option` <
-/// `read symbols` ordering). `None` ⇒ specs-less skip.
-fn bootstrap_aggressive() -> Option<ConsoleProgram> {
+/// Bootstrap the fixture with the discovery passes the `aggressive` preset turns on,
+/// applied BEFORE the deferred analysis commit (the live-CLI `option` < `read symbols`
+/// ordering).
+fn bootstrap_aggressive() -> ConsoleProgram {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_cppcallnames: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     for opt in ["listing", "fast_funcdisc", "funcstart_patterns"] {
         prog.arch_mut().set_kuna_option(opt, "on").expect("the discovery gate flips on");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Run a console script against an already-bootstrapped program and return the
@@ -103,7 +87,7 @@ fn run_console(prog: ConsoleProgram, cmds: &[&str]) -> String {
 /// FunctionSymbol must not be installed over it.
 #[test]
 fn namespaced_callee_renders_qualified_with_discovery_on() {
-    let Some(prog) = bootstrap_aggressive() else { return };
+    let prog = bootstrap_aggressive();
     let out = run_console(prog, &["load function fail", "decompile", "print C"]);
 
     assert!(
@@ -121,7 +105,7 @@ fn namespaced_callee_renders_qualified_with_discovery_on() {
 /// generic `sub_<addr>` — the by-name path already did.
 #[test]
 fn load_addr_header_uses_the_known_symbol_name() {
-    let Some(prog) = bootstrap_aggressive() else { return };
+    let prog = bootstrap_aggressive();
     let out = run_console(
         prog,
         &[&format!("load addr 0x{TERMINATE_STUB:x}"), "decompile", "print C"],
@@ -142,7 +126,7 @@ fn load_addr_header_uses_the_known_symbol_name() {
 /// name, and an explicit `load addr <vma> <name>` still wins.
 #[test]
 fn discovery_still_names_genuinely_unknown_entries() {
-    let Some(prog) = bootstrap_aggressive() else { return };
+    let prog = bootstrap_aggressive();
     let generic: Vec<String> = prog
         .function_entries_canonical()
         .into_iter()

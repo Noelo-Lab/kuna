@@ -1,26 +1,18 @@
-//! Port of `decompiler/cpp/sleighbase.{hh,cc}` (W2, item `w2-sleigh-core`):
-//! [`SourceFileIndexer`] and [`SleighBase`], the common core of everything
-//! that reads or writes SLEIGH specification files natively.
+//! Shared SLEIGH specification state, from
+//! `decompiler/cpp/sleighbase.{hh,cc}`.
 //!
-//! Architecture mapping (C++ has no multiple inheritance to reproduce):
+//! [`SleighBase`] owns address spaces, [`TranslateBase`] configuration, the
+//! [`SymbolTable`], constructor templates and register cross-references.
+//! [`crate::sleigh::Sleigh`] embeds it and adds the loader and parsing state.
+//! [`SourceFileIndexer`] records source-file names used by compiled specifications.
 //!
-//! - C++ `SleighBase : Translate` *is* an `AddrSpaceManager` and *holds* the
-//!   `TranslateBase` state.  The Rust [`SleighBase`] **owns** an
-//!   `AddrSpaceManager`, a [`TranslateBase`], the [`SymbolTable`], the
-//!   register cross-reference map, the user-op list, and the
-//!   `ConstructTpl` store (the `ConstructTplHandle` backing the
-//!   [`SleighBaseTrans`] boundary).  The concrete `Sleigh` engine (sleigh.rs)
-//!   embeds a `SleighBase` and adds the load image / context machinery.
-//! - The C++ register virtuals (`getRegister`/`getRegisterName`/...) are the
-//!   [`RegisterLookup`] surface; [`SleighBase`] is installed as the manager's
-//!   register lookup so kuna-base decode paths reach the symbol-table-backed
-//!   register map.  Because the lookup is shared by `Rc`, the register map is
-//!   built once after decode and stored behind a clone-on-read accessor.
-//! - The `SleighBaseTrans` boundary needed by `SymbolTable::decode`
-//!   (`getConstantSpace` + `ConstructTpl` decode/encode) is satisfied by a
-//!   short-lived [`SlaTrans`] borrowing the constant space and the template
-//!   store, so it stays disjoint from the `&mut symtab` borrow.
+//! [`SnapshotRegisterLookup`] provides an independent register lookup for the
+//! address-space manager, avoiding a reference cycle back to the engine.
+//! During symbol decoding, a temporary `TemplateDecoder` borrows the constant
+//! space and template store separately from the mutable symbol table.
 
+use std::cell::OnceCell;
+use std::collections::btree_map::Entry;
 use std::rc::Rc;
 
 use kuna_base::error::{KunaError, KunaResult};
@@ -30,7 +22,8 @@ use kuna_base::space::{
     RegisterLookup, UniqueSpace, VarnodeStorage,
 };
 
-use kuna_num::opcodes::{OpCode, OpcodeDecoder, OpcodeEncoder};
+use kuna_num::opcodes::{OpcodeDecoder, OpcodeEncoder};
+
 use kuna_num::pcoderaw::VarnodeData;
 
 use crate::semantics::ConstructTpl;
@@ -41,6 +34,9 @@ use crate::slghsymbol::{
     SymbolType,
 };
 use crate::translate::{storage_from_varnode_data, TranslateBase};
+
+#[cfg(test)]
+mod tests;
 
 /// C++ `SourceFileIndexer`: associates each constructor in a SLEIGH language
 /// with the source file where it is defined.
@@ -86,6 +82,7 @@ impl SourceFileIndexer {
     }
 
     /// C++ `SourceFileIndexer::decode`.
+    /// Decode names and extend the index range used for encoding.
     pub fn decode(&mut self, decoder: &mut dyn Decoder) -> KunaResult<()> {
         let el = decoder.open_element_id(&sla::ELEM_SOURCEFILES)?;
         while decoder.peek_element()? == sla::ELEM_SOURCEFILE {
@@ -95,14 +92,6 @@ impl SourceFileIndexer {
             decoder.close_element(subel)?;
             self.file_to_index.insert(filename.clone(), index);
             self.index_to_file.insert(index, filename);
-            // C++ `decode` does not touch `leastUnusedIndex`; that is harmless
-            // upstream because `encode` only ever runs on a compiler-populated
-            // indexer (built via `index()`).  kuna's WS5 round-trip *does*
-            // re-encode a decoded indexer, and `encode` iterates
-            // `0..leastUnusedIndex` -- so keep the one-up count consistent with
-            // the restored indices (the contiguous `0..=max` invariant the
-            // compiler maintains).  This re-establishes the invariant without
-            // altering any compiler-path behavior. (kuna)
             if index >= self.least_unused_index {
                 self.least_unused_index = index + 1;
             }
@@ -136,7 +125,7 @@ pub struct SleighBase {
     /// The address spaces (C++ inherited `AddrSpaceManager`).
     ///
     /// Held behind an [`Rc`] so the single space set the SLEIGH lift populates
-    /// can be **shared** with the [`Architecture`] / `Funcdata::glb`
+    /// can be **shared** with the `Architecture` / `Funcdata::glb`
     /// (LOSS-132 unification): the C++ `Architecture` *is-a* `AddrSpaceManager`,
     /// so there is exactly one manager and the lifted varnodes, the
     /// architecture, and every analysis pass key state by the same
@@ -168,22 +157,12 @@ pub struct SleighBase {
     pub(crate) num_sections: u32,
     /// C++ `indexer`.
     indexer: SourceFileIndexer,
-    /// The marshal id registry used to decode `.sla` (kuna boundary for the C++
-    /// global id registration).
-    pub(crate) registry: IdRegistry,
+    registry: OnceCell<IdRegistry>,
 }
 
 impl SleighBase {
     /// C++ `SleighBase()` — an uninitialized translator.
     pub fn new() -> SleighBase {
-        // The id registry maps element/attribute *names* to ids; only the XML
-        // protocol consults it (`.sla` is packed and uses numeric ids
-        // directly).  Register the full table anyway so XML-format callers
-        // share the same id space.
-        let mut registry = IdRegistry::with_base_ids();
-        crate::translate::register_translate_ids(&mut registry);
-        crate::globalcontext::register_globalcontext_ids(&mut registry);
-        sla::register_sla_ids(&mut registry);
         SleighBase {
             manager: Rc::new(AddrSpaceManager::new()),
             base: TranslateBase::new(),
@@ -196,7 +175,7 @@ impl SleighBase {
             unique_allocatemask: 0,
             num_sections: 0,
             indexer: SourceFileIndexer::new(),
-            registry,
+            registry: OnceCell::new(),
         }
     }
 
@@ -229,27 +208,27 @@ impl SleighBase {
         error_pairs: &mut Vec<Vec<u8>>,
         mut register_context: impl FnMut(&[u8], i32, i32) -> KunaResult<()>,
     ) -> KunaResult<()> {
-        // Collect the global-scope symbol ids in scope (BTreeMap) order, the
-        // C++ `SymbolTree` (set<SleighSymbol*,SymbolCompare>) iteration order.
         let glb = self
             .symtab
             .get_global_scope()
             .ok_or_else(|| KunaError::sleigh("symbol table has no global scope"))?;
-        let ids: Vec<u32> = glb.symbol_ids().collect();
-        for sym_id in ids {
+        for sym_id in glb.symbol_ids() {
             let sym = self
                 .symtab
                 .find_symbol_by_id(sym_id)
                 .ok_or_else(|| KunaError::sleigh("undefined global symbol"))?;
-            let name = sym.get_name().to_vec();
+            let name = sym.get_name();
             match sym.kind() {
                 SymbolKind::Varnode(v) => {
                     let key = storage_from_varnode_data(v.get_fixed_varnode());
-                    if let Some(existing) = self.varnode_xref.get(&key) {
-                        error_pairs.push(name);
-                        error_pairs.push(existing.clone());
-                    } else {
-                        self.varnode_xref.insert(key, name);
+                    match self.varnode_xref.entry(key) {
+                        Entry::Occupied(entry) => {
+                            error_pairs.push(name.to_vec());
+                            error_pairs.push(entry.get().clone());
+                        }
+                        Entry::Vacant(entry) => {
+                            entry.insert(name.to_vec());
+                        }
                     }
                 }
                 SymbolKind::UserOp(u) => {
@@ -257,11 +236,11 @@ impl SleighBase {
                     while self.userop.len() <= index {
                         self.userop.push(Vec::new());
                     }
-                    self.userop[index] = name;
+                    self.userop[index] = name.to_vec();
                 }
                 SymbolKind::Context(_) => {
                     let (sb, eb) = context_field_bits(sym)?;
-                    register_context(&name, sb, eb)?;
+                    register_context(name, sb, eb)?;
                 }
                 _ => {}
             }
@@ -278,8 +257,7 @@ impl SleighBase {
             .symtab
             .get_global_scope()
             .ok_or_else(|| KunaError::sleigh("symbol table has no global scope"))?;
-        let ids: Vec<u32> = glb.symbol_ids().collect();
-        for sym_id in ids {
+        for sym_id in glb.symbol_ids() {
             let sym = self
                 .symtab
                 .find_symbol_by_id(sym_id)
@@ -306,12 +284,12 @@ impl SleighBase {
 
     /// C++ `SleighBase::getRegisterName(AddrSpace*,uintb,int4)`.
     pub fn get_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> Vec<u8> {
-        register_name_from_xref(&self.varnode_xref, base, off, size)
+        register_name_from_xref(&self.varnode_xref, base, off, size).to_vec()
     }
 
     /// C++ `SleighBase::getExactRegisterName`.
     pub fn get_exact_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> Vec<u8> {
-        exact_register_name_from_xref(&self.varnode_xref, base, off, size)
+        exact_register_name_from_xref(&self.varnode_xref, base, off, size).to_vec()
     }
 
     /// C++ `SleighBase::getAllRegisters`.
@@ -485,7 +463,10 @@ impl SleighBase {
         let mut symtab = std::mem::take(&mut self.symtab);
         let mut templates = std::mem::take(&mut self.templates);
         let decode_res = {
-            let mut trans = SlaTrans { const_space: const_space.clone(), templates: &mut templates };
+            let mut trans = TemplateDecoder {
+                const_space,
+                templates: &mut templates,
+            };
             symtab.decode(decoder, &mut trans)
         };
         self.symtab = symtab;
@@ -541,7 +522,7 @@ impl SleighBase {
     /// `SymbolTable::encode`, and the per-symbol/pattern/semantics `encode`
     /// methods underneath) was already ported for the decoder round-trip and is
     /// reused verbatim.
-    pub fn encode(&self, encoder: &mut dyn Encoder) -> KunaResult<()> {
+    pub fn encode(&self, encoder: &mut dyn OpcodeEncoder) -> KunaResult<()> {
         encoder.open_element(&sla::ELEM_SLEIGH);
         encoder.write_signed_integer(&sla::ATTRIB_VERSION, i64::from(sla::FORMAT_VERSION));
         encoder.write_bool(&sla::ATTRIB_BIGENDIAN, self.base.is_big_endian());
@@ -588,18 +569,10 @@ impl SleighBase {
         }
         encoder.close_element(&sla::ELEM_SPACES);
 
-        // SymbolTable::encode needs the SleighBaseTrans boundary (for the per-section
-        // ConstructTpl encode).  The boundary borrows the template store; encode only
-        // reads it, but SlaTrans holds `&mut`, so clone the store to satisfy the
-        // signature (encode never mutates the templates).
-        let const_space = self
-            .manager
+        self.manager
             .get_constant_space()
-            .cloned()
             .ok_or_else(|| KunaError::sleigh("constant space not registered"))?;
-        let mut templates = self.templates.clone();
-        let trans = SlaTrans { const_space, templates: &mut templates };
-        self.symtab.encode(encoder, &trans)?;
+        self.symtab.encode(encoder, &self.templates)?;
 
         encoder.close_element(&sla::ELEM_SLEIGH);
         Ok(())
@@ -646,16 +619,15 @@ fn space_eq(a: &Option<Rc<AddrSpace>>, base: &Rc<AddrSpace>) -> bool {
 /// The register cross-reference map type (location -> register name).
 type VarnodeXref = std::collections::BTreeMap<VarnodeStorage, Vec<u8>>;
 
-/// C++ `SleighBase::getRegisterName` over a register cross-reference map (the
-/// `varnode_xref` location->name table).  Factored out so both [`SleighBase`]
-/// and [`SnapshotRegisterLookup`] resolve names identically.
+/// C++ `SleighBase::getRegisterName`, shared by the engine, base API and
+/// register snapshots.
 #[allow(clippy::mutable_key_type)]
-fn register_name_from_xref(
-    xref: &VarnodeXref,
+pub(crate) fn register_name_from_xref<'a>(
+    xref: &'a VarnodeXref,
     base: &Rc<AddrSpace>,
     off: u64,
     size: i32,
-) -> Vec<u8> {
+) -> &'a [u8] {
     let key = VarnodeStorage {
         space: Some(Rc::clone(base)),
         offset: off,
@@ -667,43 +639,43 @@ fn register_name_from_xref(
     // reproduces `iter == begin()` (nothing is <= key).
     let mut prev_iter = xref.range((std::ops::Bound::Unbounded, std::ops::Bound::Included(&key)));
     let Some((point, name)) = prev_iter.next_back() else {
-        return Vec::new();
+        return &[];
     };
     if !space_eq(&point.space, base) {
-        return Vec::new();
+        return &[];
     }
     let offbase = point.offset;
     // C++ `point.offset + point.size >= off + size`
     if point.offset.wrapping_add(u64::from(point.size)) >= off.wrapping_add(size as u64) {
-        return name.clone();
+        return name;
     }
     // Walk back through same-base, same-offset entries.
     let mut back = xref.range((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(point)));
     while let Some((p, n)) = back.next_back() {
         if !space_eq(&p.space, base) || p.offset != offbase {
-            return Vec::new();
+            return &[];
         }
         if p.offset.wrapping_add(u64::from(p.size)) >= off.wrapping_add(size as u64) {
-            return n.clone();
+            return n;
         }
     }
-    Vec::new()
+    &[]
 }
 
 /// C++ `SleighBase::getExactRegisterName` over a register cross-reference map.
 #[allow(clippy::mutable_key_type)]
-fn exact_register_name_from_xref(
-    xref: &VarnodeXref,
+pub(crate) fn exact_register_name_from_xref<'a>(
+    xref: &'a VarnodeXref,
     base: &Rc<AddrSpace>,
     off: u64,
     size: i32,
-) -> Vec<u8> {
+) -> &'a [u8] {
     let key = VarnodeStorage {
         space: Some(Rc::clone(base)),
         offset: off,
         size: size as u32, // C++ int4 -> uint4
     };
-    xref.get(&key).cloned().unwrap_or_default()
+    xref.get(&key).map(Vec::as_slice).unwrap_or_default()
 }
 
 /// A standalone [`RegisterLookup`] snapshot built from the engine's register
@@ -711,7 +683,7 @@ fn exact_register_name_from_xref(
 /// on the engine's [`AddrSpaceManager`] (the kuna stand-in for the C++
 /// `AddrSpace::trans` back-pointer) so the `<context_data>`/`<tracked_set>`
 /// spec decode — and any later `Translate::getRegister`-by-name path — resolves
-/// register names without an `Rc` cycle back into the owning [`Sleigh`].
+/// register names without an `Rc` cycle back into the owning [`crate::sleigh::Sleigh`].
 ///
 /// It resolves names exactly as [`SleighBase`] does (the same factored
 /// algorithms); the name->storage direction is the inverse of the same map.
@@ -747,241 +719,35 @@ impl RegisterLookup for SnapshotRegisterLookup {
     }
 
     fn get_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
-        String::from_utf8_lossy(&register_name_from_xref(&self.xref, base, off, size)).into_owned()
+        String::from_utf8_lossy(register_name_from_xref(&self.xref, base, off, size)).into_owned()
     }
 
     fn get_exact_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String {
-        String::from_utf8_lossy(&exact_register_name_from_xref(&self.xref, base, off, size))
+        String::from_utf8_lossy(exact_register_name_from_xref(&self.xref, base, off, size))
             .into_owned()
     }
 }
 
-/// Short-lived [`SleighBaseTrans`] boundary used during `SymbolTable::decode`:
-/// supplies the constant space and decodes/encodes `ConstructTpl` sections
-/// into the template store.  Borrows the store mutably so it stays disjoint
-/// from the `&mut symtab` borrow.
-struct SlaTrans<'a> {
+/// Decodes constructor templates into the arena during symbol-table restore.
+struct TemplateDecoder<'a> {
     const_space: Rc<AddrSpace>,
     templates: &'a mut Vec<ConstructTpl>,
 }
 
-impl SleighBaseTrans for SlaTrans<'_> {
+impl SleighBaseTrans for TemplateDecoder<'_> {
     fn get_constant_space(&self) -> Rc<AddrSpace> {
         Rc::clone(&self.const_space)
     }
 
     fn decode_construct_tpl(
         &mut self,
-        decoder: &mut dyn Decoder,
+        decoder: &mut dyn OpcodeDecoder,
     ) -> KunaResult<(i32, ConstructTplHandle)> {
-        // ConstructTpl::decode needs the OpcodeDecoder surface; the boundary only
-        // hands a &mut dyn Decoder, so wrap it in a shim that reads opcodes
-        // via the packed protocol (signed integer; the .sla format).
         let mut tpl = ConstructTpl::new();
-        let mut shim = OpcodeShim { inner: decoder };
-        let sectionid = tpl.decode(&mut shim)?;
+        let sectionid = tpl.decode(decoder)?;
         let handle = self.templates.len();
         self.templates.push(tpl);
         Ok((sectionid, handle))
-    }
-
-    fn encode_construct_tpl(
-        &self,
-        handle: ConstructTplHandle,
-        section_id: i32,
-        encoder: &mut dyn Encoder,
-    ) -> KunaResult<()> {
-        let tpl = self
-            .templates
-            .get(handle)
-            .ok_or_else(|| KunaError::sleigh("bad ConstructTpl handle"))?;
-        let mut shim = OpcodeEncodeShim { inner: encoder };
-        tpl.encode(&mut shim, section_id);
-        Ok(())
-    }
-}
-
-/// Wraps a `&mut dyn Decoder` and supplies the [`OpcodeDecoder`] surface by
-/// reading opcodes through the packed protocol (a positive signed integer
-/// holding the raw enum value, marshal.cc `PackedDecode::readOpcode`).  The
-/// `.sla` stream is always packed, so this matches `PackedDecode::readOpcode`
-/// exactly.
-struct OpcodeShim<'a, 'b> {
-    inner: &'a mut (dyn Decoder + 'b),
-}
-
-/// C++ `opcode_from_packed_integer` (marshal.cc): the packed `readOpcode`
-/// body, reproduced because the helper is private to kuna-num.
-fn opcode_from_packed_integer(raw: i64) -> KunaResult<OpCode> {
-    let val = raw as i32; // cast: C++ `(int4)readSignedInteger()` truncation
-    if val < 0 || val >= OpCode::CPUI_MAX as i32 {
-        return Err(KunaError::decoder("Bad encoded OpCode"));
-    }
-    OpCode::from_i32(val).ok_or_else(|| KunaError::decoder("Bad encoded OpCode"))
-}
-
-impl OpcodeDecoder for OpcodeShim<'_, '_> {
-    fn read_opcode(&mut self) -> KunaResult<OpCode> {
-        opcode_from_packed_integer(self.inner.read_signed_integer()?)
-    }
-    fn read_opcode_id(
-        &mut self,
-        attrib_id: &kuna_base::marshal::AttributeId,
-    ) -> KunaResult<OpCode> {
-        opcode_from_packed_integer(self.inner.read_signed_integer_id(attrib_id)?)
-    }
-}
-
-/// Encoder counterpart of [`OpcodeShim`] (the packed `writeOpcode` body:
-/// a signed integer holding the raw enum value).
-struct OpcodeEncodeShim<'a, 'b> {
-    inner: &'a mut (dyn Encoder + 'b),
-}
-
-impl OpcodeEncoder for OpcodeEncodeShim<'_, '_> {
-    fn write_opcode(&mut self, attrib_id: &kuna_base::marshal::AttributeId, opc: OpCode) {
-        // marshal.cc `PackedEncode::writeOpcode`: write the enum as a signed
-        // integer.
-        self.inner.write_signed_integer(attrib_id, opc as i64);
-    }
-}
-
-// Forward the Decoder surface from the shims to the inner decoder.
-macro_rules! forward_decoder {
-    ($t:ty) => {
-        impl Decoder for $t {
-            fn get_addr_space_manager(&self) -> &AddrSpaceManager {
-                self.inner.get_addr_space_manager()
-            }
-            fn ingest_stream(&mut self, s: &[u8]) -> KunaResult<()> {
-                self.inner.ingest_stream(s)
-            }
-            fn peek_element(&mut self) -> KunaResult<u32> {
-                self.inner.peek_element()
-            }
-            fn open_element(&mut self) -> KunaResult<u32> {
-                self.inner.open_element()
-            }
-            fn open_element_id(
-                &mut self,
-                elem_id: &kuna_base::marshal::ElementId,
-            ) -> KunaResult<u32> {
-                self.inner.open_element_id(elem_id)
-            }
-            fn close_element(&mut self, id: u32) -> KunaResult<()> {
-                self.inner.close_element(id)
-            }
-            fn close_element_skipping(&mut self, id: u32) -> KunaResult<()> {
-                self.inner.close_element_skipping(id)
-            }
-            fn get_next_attribute_id(&mut self) -> KunaResult<u32> {
-                self.inner.get_next_attribute_id()
-            }
-            fn get_indexed_attribute_id(
-                &mut self,
-                attrib_id: &kuna_base::marshal::AttributeId,
-            ) -> KunaResult<u32> {
-                self.inner.get_indexed_attribute_id(attrib_id)
-            }
-            fn rewind_attributes(&mut self) {
-                self.inner.rewind_attributes()
-            }
-            fn read_bool(&mut self) -> KunaResult<bool> {
-                self.inner.read_bool()
-            }
-            fn read_bool_id(
-                &mut self,
-                attrib_id: &kuna_base::marshal::AttributeId,
-            ) -> KunaResult<bool> {
-                self.inner.read_bool_id(attrib_id)
-            }
-            fn read_signed_integer(&mut self) -> KunaResult<i64> {
-                self.inner.read_signed_integer()
-            }
-            fn read_signed_integer_id(
-                &mut self,
-                attrib_id: &kuna_base::marshal::AttributeId,
-            ) -> KunaResult<i64> {
-                self.inner.read_signed_integer_id(attrib_id)
-            }
-            fn read_signed_integer_expect_string(
-                &mut self,
-                expect: &[u8],
-                expectval: i64,
-            ) -> KunaResult<i64> {
-                self.inner.read_signed_integer_expect_string(expect, expectval)
-            }
-            fn read_signed_integer_expect_string_id(
-                &mut self,
-                attrib_id: &kuna_base::marshal::AttributeId,
-                expect: &[u8],
-                expectval: i64,
-            ) -> KunaResult<i64> {
-                self.inner.read_signed_integer_expect_string_id(attrib_id, expect, expectval)
-            }
-            fn read_unsigned_integer(&mut self) -> KunaResult<u64> {
-                self.inner.read_unsigned_integer()
-            }
-            fn read_unsigned_integer_id(
-                &mut self,
-                attrib_id: &kuna_base::marshal::AttributeId,
-            ) -> KunaResult<u64> {
-                self.inner.read_unsigned_integer_id(attrib_id)
-            }
-            fn read_string(&mut self) -> KunaResult<Vec<u8>> {
-                self.inner.read_string()
-            }
-            fn read_string_id(
-                &mut self,
-                attrib_id: &kuna_base::marshal::AttributeId,
-            ) -> KunaResult<Vec<u8>> {
-                self.inner.read_string_id(attrib_id)
-            }
-            fn read_space(&mut self) -> KunaResult<Rc<AddrSpace>> {
-                self.inner.read_space()
-            }
-            fn read_space_id(
-                &mut self,
-                attrib_id: &kuna_base::marshal::AttributeId,
-            ) -> KunaResult<Rc<AddrSpace>> {
-                self.inner.read_space_id(attrib_id)
-            }
-        }
-    };
-}
-
-forward_decoder!(OpcodeShim<'_, '_>);
-
-// Forward the Encoder surface from the encode shim to the inner encoder.
-impl Encoder for OpcodeEncodeShim<'_, '_> {
-    fn open_element(&mut self, elem_id: &kuna_base::marshal::ElementId) {
-        self.inner.open_element(elem_id)
-    }
-    fn close_element(&mut self, elem_id: &kuna_base::marshal::ElementId) {
-        self.inner.close_element(elem_id)
-    }
-    fn write_bool(&mut self, attrib_id: &kuna_base::marshal::AttributeId, val: bool) {
-        self.inner.write_bool(attrib_id, val)
-    }
-    fn write_signed_integer(&mut self, attrib_id: &kuna_base::marshal::AttributeId, val: i64) {
-        self.inner.write_signed_integer(attrib_id, val)
-    }
-    fn write_unsigned_integer(&mut self, attrib_id: &kuna_base::marshal::AttributeId, val: u64) {
-        self.inner.write_unsigned_integer(attrib_id, val)
-    }
-    fn write_string(&mut self, attrib_id: &kuna_base::marshal::AttributeId, val: &[u8]) {
-        self.inner.write_string(attrib_id, val)
-    }
-    fn write_string_indexed(
-        &mut self,
-        attrib_id: &kuna_base::marshal::AttributeId,
-        index: u32,
-        val: &[u8],
-    ) {
-        self.inner.write_string_indexed(attrib_id, index, val)
-    }
-    fn write_space(&mut self, attrib_id: &kuna_base::marshal::AttributeId, spc: &AddrSpace) {
-        self.inner.write_space(attrib_id, spc)
     }
 }
 
@@ -1006,18 +772,20 @@ impl SleighBase {
         manager_get_mut(&mut self.manager)
     }
 
-    /// The marshal id registry (name -> id), for callers decoding the engine's
-    /// data in the XML protocol (the `.sla` packed protocol uses numeric ids
-    /// directly and does not consult it).
+    /// XML name lookup for the SLEIGH format, initialized on first use.
     pub fn registry(&self) -> &IdRegistry {
-        &self.registry
+        self.registry.get_or_init(|| {
+            let mut registry = IdRegistry::with_base_ids();
+            crate::translate::register_translate_ids(&mut registry);
+            crate::globalcontext::register_globalcontext_ids(&mut registry);
+            sla::register_sla_ids(&mut registry);
+            registry
+        })
     }
 }
 
 // ---------------------------------------------------------------------------
-// Compile-side build API (the WS4b `SleighCompile` driver drives `SleighBase`
-// through these — the C++ `SleighBase`/`AddrSpaceManager`/`Translate` build
-// surface the compiler inherits).  Additive: the decode path is untouched.
+// Compiler-facing symbol and template construction.
 // ---------------------------------------------------------------------------
 impl SleighBase {
     /// Read access to the symbol table (`SleighBase::symtab`).
@@ -1045,9 +813,7 @@ impl SleighBase {
         &self.templates
     }
 
-    /// Mutable access to one `ConstructTpl` by handle (for the WS4b
-    /// `changeHandleIndex`/`shiftUnique` fix-ups, which mutate handles owned by
-    /// this arena).
+    /// Mutable access to an arena-owned template by its handle.
     pub fn template_mut(&mut self, handle: ConstructTplHandle) -> Option<&mut ConstructTpl> {
         self.templates.get_mut(handle)
     }
@@ -1164,8 +930,12 @@ impl SleighBase {
         self.base.set_unique_base(val);
     }
 
-    /// The source-file indexer (C++ `indexer`), mutable — `createConstructor`
-    /// indexes the defining filename.
+    /// Source filenames referenced by constructor metadata.
+    pub fn indexer(&self) -> &SourceFileIndexer {
+        &self.indexer
+    }
+
+    /// Registers source filenames while constructing the symbol table.
     pub fn indexer_mut(&mut self) -> &mut SourceFileIndexer {
         &mut self.indexer
     }

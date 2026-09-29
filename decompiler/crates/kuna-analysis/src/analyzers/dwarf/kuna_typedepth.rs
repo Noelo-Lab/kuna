@@ -1,53 +1,16 @@
-//! (kuna `typedepth`) The DWARF type mapper's recursion guard — a faithful port
-//! of Ghidra's `DWARFDataTypeImporter.trackRecursion`, replacing the fixed hop
-//! budget that truncated ordinary declarations to `void`.
+//! Recursion guards for [`super::build_datatype`]'s DWARF type walk.
 //!
-//! ## What the budget was actually protecting against
+//! [`Guard::Cycle`] follows Ghidra's
+//! `DWARFDataTypeImporter.trackRecursion`: each DIE offset may appear twice on
+//! the current path; a third entry is refused. Successful [`TypeWalk::enter`]
+//! calls are paired with [`TypeWalk::leave`], so returning from a branch releases
+//! its count. This distinguishes a cycle from a deep, finite type declaration.
+//! [`MAX_NESTING`] also bounds the native stack for long acyclic chains.
 //!
-//! [`super::build_datatype`] walks a DWARF type DIE chain by following
-//! `DW_AT_type`. Nothing in the DWARF format forbids that chain from closing on
-//! itself (a `DW_TAG_pointer_type` whose `DW_AT_type` is its own offset, a
-//! `typedef`/`const` pair pointing at each other, a truncated or hand-forged
-//! `.debug_info`), and upstream hits the same hazard on real C++ input where a
-//! struct's fields are populated. Unguarded, the mapper recurses forever.
-//!
-//! Upstream guards it with a **per-DIE-offset re-entry counter**:
-//!
-//! ```java
-//! private boolean trackRecursion(long id, int delta) {
-//!     Integer count = recursionTrackingOffsetToLoopCount.getOrDefault(id, 0);
-//!     count = count + delta;
-//!     switch (count) { case 3: Msg.error(...); return false; }
-//!     recursionTrackingOffsetToLoopCount.put(id, count);
-//!     return true;
-//! }
-//! ```
-//!
-//! — a DIE may be re-entered twice, and the third entry is refused. That fires
-//! **only** on a cycle: an acyclic chain visits each offset once.
-//!
-//! ## What kuna had instead
-//!
-//! The port reduced it to `MAX_TYPE_DEPTH = 3` hops counted over the whole walk,
-//! transparent qualifiers included, which conflates "the same DIE again" (a
-//! cycle) with "a deep but finite chain" (ordinary C). `const char **` is four
-//! DIEs, `const size_t *` is four, `char *const authors[]` is four — all of them
-//! came out `void`. The budget could not be raised into safety either: with no
-//! cycle detection under it, ANY cap is both too low for real code and unable to
-//! prove termination for a self-referential chain.
-//!
-//! ## The guard here
-//!
-//! [`TypeWalk::Cycle`] is upstream's counter. Termination: every recursive step
-//! is bracketed by [`TypeWalk::enter`]/[`TypeWalk::leave`], an offset already on
-//! the path twice is refused, and the number of distinct offsets in a
-//! compilation unit is finite — so no walk can be infinite. [`MAX_NESTING`] is a
-//! second, blunter bound that keeps a *long* (not cyclic) forged chain from
-//! exhausting the native stack, which a Java port does not have to worry about
-//! and a Rust one does.
-//!
-//! [`TypeWalk::Depth`] is the pre-fix budget, kept so `--option typedepth off`
-//! reproduces the old mapping exactly.
+//! [`Guard::Depth`] retains the three-hop budget for `--option typedepth off`.
+//! It counts transparent qualifiers too, so ordinary declarations such as
+//! `const char **` exceed it. Either guard's refusal makes the caller yield
+//! `void` for that part of the type.
 
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -22,16 +22,8 @@ fn callsite_prototype_override_wins_over_slot_prototype() {
     let root = repo_root();
     let fixture = root.join("decompiler/crates/kuna-analysis/tests/fixtures/macho_imports");
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(fixture.to_str().unwrap(), "", &spec_roots) {
-        Ok(prog) => prog,
-        Err(err) => {
-            eprintln!(
-                "verify_typed_macho_tail: skipping (no `.sla`): {}",
-                err.explain()
-            );
-            return;
-        }
-    };
+    let mut prog = bootstrap_from_object(fixture.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit");
     let entry = prog
         .resolve_entry(&EntrySelector::Name("printf".to_string()))

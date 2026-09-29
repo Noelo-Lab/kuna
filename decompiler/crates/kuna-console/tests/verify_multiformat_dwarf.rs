@@ -44,13 +44,6 @@
 //! existing ELF DWARF gate (`verify_s1_dwarf.rs`) is unaffected (this PR only drops
 //! the format gate, the ELF section names are identical). Multi-format (PE/Mach-O)
 //! loading is unconditional — the same default pipeline reads the non-ELF DWARF.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_multiformat_*` / `verify_s1_dwarf` gates, bootstrapping
-//! needs the built `x86` `.sla` under `specs/` (gitignored; `make specs`). When it
-//! is absent the bootstrap fails; the test prints that and returns early (a
-//! specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -69,34 +62,24 @@ fn fixtures() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures")
 }
 
-/// Bootstrap a fixture (multi-format loading is unconditional), returning `None`
-/// (a visible skip) when the `.sla` is absent.
-fn boot(name: &str) -> Option<ConsoleProgram> {
+/// Bootstrap a fixture (multi-format loading is unconditional).
+fn boot(name: &str) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join(name);
     assert!(path.exists(), "missing fixture {path:?}");
 
-    match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_multiformat_dwarf: skipping {name} (bootstrap failed; build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// [`boot`] with the DWARF pass disabled before the deferred analysis commit (the
 /// live-CLI `option` < `read symbols` ordering) — the baseline arm: whatever names
 /// this binary without its debug info.
-fn boot_dwarf_off(name: &str) -> Option<ConsoleProgram> {
-    let mut prog = boot(name)?;
+fn boot_dwarf_off(name: &str) -> ConsoleProgram {
+    let mut prog = boot(name);
     prog.arch_mut().set_kuna_option("dwarf", "off").expect("the dwarf gate flips off");
-    Some(prog)
+    prog
 }
 
 /// Run a `load …`-driven `decompile` → `print C` and return the captured C.
@@ -122,7 +105,7 @@ fn decompile(prog: ConsoleProgram, setup: &[&str]) -> String {
 #[test]
 fn pe_dwarf_recovers_name_and_typed_signature() {
     // AFTER: load by the DWARF name (the COFF symtab no longer carries it).
-    let Some(prog) = boot("pe_dwarf.exe") else { return };
+    let prog = boot("pe_dwarf.exe");
     let t0 = Instant::now();
     let after = decompile(prog, &["load function first_byte", "decompile", "print C"]);
     let elapsed = t0.elapsed();
@@ -131,7 +114,7 @@ fn pe_dwarf_recovers_name_and_typed_signature() {
     // BEFORE (in-test baseline): with the DWARF pass off, nothing names this code
     // — the COFF symtab FUNC entry was `--strip-symbol`-removed — so the same
     // address renders the engine's `sub_<addr>` placeholder.
-    let Some(prog_b) = boot_dwarf_off("pe_dwarf.exe") else { return };
+    let prog_b = boot_dwarf_off("pe_dwarf.exe");
     let before = decompile(prog_b, &["load addr 0x140001550", "decompile", "print C"]);
 
     // The DWARF name resolved (and is NOT a placeholder for itself).
@@ -167,7 +150,7 @@ fn pe_dwarf_recovers_name_and_typed_signature() {
 fn macho_dwarf_recovers_name_and_typed_signature() {
     // AFTER: the DWARF name `first_byte` (the Mach-O symtab FUNC entry was renamed
     // to `_l0`, so this name is DWARF-only).
-    let Some(prog) = boot("macho_dwarf.o") else { return };
+    let prog = boot("macho_dwarf.o");
     let t0 = Instant::now();
     let after = decompile(prog, &["load function first_byte", "decompile", "print C"]);
     let elapsed = t0.elapsed();
@@ -175,7 +158,7 @@ fn macho_dwarf_recovers_name_and_typed_signature() {
 
     // BEFORE: with the DWARF pass off, the only name left at this address is the
     // `--redefine-sym`ed symtab entry `_l0` — never the DWARF name.
-    let Some(prog_b) = boot_dwarf_off("macho_dwarf.o") else { return };
+    let prog_b = boot_dwarf_off("macho_dwarf.o");
     let before = decompile(prog_b, &["load addr 0x0", "decompile", "print C"]);
 
     assert!(
@@ -205,10 +188,10 @@ fn macho_dwarf_recovers_name_and_typed_signature() {
 /// `__DWARF,__debug_*` section lookups resolve the whole CU.
 #[test]
 fn both_formats_recover_a_second_dwarf_only_function() {
-    let Some(pe) = boot("pe_dwarf.exe") else { return };
+    let pe = boot("pe_dwarf.exe");
     let pe_add = decompile(pe, &["load function add", "decompile", "print C"]);
 
-    let Some(macho) = boot("macho_dwarf.o") else { return };
+    let macho = boot("macho_dwarf.o");
     let macho_add = decompile(macho, &["load function add", "decompile", "print C"]);
 
     assert!(

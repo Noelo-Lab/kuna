@@ -3,7 +3,7 @@
 //! actionable ones as a `note:` line on stderr, and stdout stays clean JSON.
 //!
 //! Fixture: `pyinstaller_cookie_x86_64` (`arraycoverwidth_x86_64` with a
-//! PyInstaller CArchive cookie appended). A missing `.sla` is a visible skip.
+//! PyInstaller CArchive cookie appended).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -34,20 +34,12 @@ fn run_kuna(args: &[&str]) -> (String, String, i32) {
     )
 }
 
-fn no_specs(stderr: &str, code: i32) -> bool {
-    code != 0 && (stderr.contains("could not build an architecture") || stderr.contains(".sla"))
-}
-
 const PYI_HINT: &str = "PyInstaller bundle (Python 3.12): extract with pyinstxtractor-ng";
 
 #[test]
 fn summary_json_carries_the_runtime_array() {
     let bin = fixture("pyinstaller_cookie_x86_64");
     let (out, err, code) = run_kuna(&["functions", &bin, "--summary", "--json"]);
-    if no_specs(&err, code) {
-        eprintln!("skipping: no .sla ({err})");
-        return;
-    }
     assert_eq!(code, 0, "{err}");
     assert!(out.contains("\"runtime\": ["), "{out}");
     assert!(out.contains("\"id\": \"pyinstaller\""), "{out}");
@@ -63,10 +55,7 @@ fn summary_json_carries_the_runtime_array() {
 fn a_plain_image_has_an_empty_runtime_array_and_no_note() {
     let bin = fixture("arraycoverwidth_x86_64");
     let (out, err, code) = run_kuna(&["functions", &bin, "--summary", "--json"]);
-    if no_specs(&err, code) {
-        eprintln!("skipping: no .sla ({err})");
-        return;
-    }
+    assert_eq!(code, 0, "{err}");
     assert!(out.contains("\"runtime\": []"), "{out}");
     let (_, err, _) = run_kuna(&["decompile", &bin, "vm"]);
     assert!(!err.contains("note:"), "{err}");
@@ -76,10 +65,6 @@ fn a_plain_image_has_an_empty_runtime_array_and_no_note() {
 fn other_subcommands_note_the_hint_on_stderr_only() {
     let bin = fixture("pyinstaller_cookie_x86_64");
     let (out, err, code) = run_kuna(&["functions", &bin, "--json"]);
-    if no_specs(&err, code) {
-        eprintln!("skipping: no .sla ({err})");
-        return;
-    }
     assert_eq!(code, 0, "{err}");
     assert_eq!(err.matches("note:").count(), 1, "{err}");
     assert!(err.contains(PYI_HINT), "{err}");

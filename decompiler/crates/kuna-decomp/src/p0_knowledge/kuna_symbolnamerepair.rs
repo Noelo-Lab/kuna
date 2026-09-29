@@ -57,10 +57,7 @@ pub const SYMBOLNAMEREPAIR_ENV: &str = "KUNA_SYMBOLNAMEREPAIR";
 /// Default **on**: only an explicit off-token in [`SYMBOLNAMEREPAIR_ENV`]
 /// disables it.
 pub fn symbolnamerepair_enabled() -> bool {
-    match std::env::var(SYMBOLNAMEREPAIR_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
-        Err(_) => true, // unset ⇒ default-on
-    }
+    crate::options::env_toggle(SYMBOLNAMEREPAIR_ENV, true)
 }
 
 /// Whether `component` — one `::`-delimited piece of a qualified symbol name —

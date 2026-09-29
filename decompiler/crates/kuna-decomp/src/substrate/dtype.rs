@@ -8352,7 +8352,6 @@ mod tests {
     /// data-type object appears exactly once.
     #[test]
     fn dependent_order_pointer_cycle() {
-        use type_metatype::*;
         let f = factory();
         // The real construction flow: two incomplete structs, mutual pointers,
         // then complete each with a field pointing at the other.

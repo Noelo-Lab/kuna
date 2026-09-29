@@ -524,10 +524,12 @@ lives under `TMPDIR`, outside the tester's sandbox, so every reference call fail
 Each fix carries a regression test in `tools/repipe/smoke.sh` or `tests/cli/`. Two are worth
 knowing about because they shape how you should extend this code:
 
-- **A regex guard is not a sanitizer.** CodeQL rejected a charset gate on a URL id and was
-  right to: the tainted string still flowed into a path. The accepted fix builds the path from
-  `os.listdir()` and compares the id against filesystem-produced names by equality, which
-  makes traversal structurally impossible rather than guarded.
+- **Request identifiers select files, not paths.** Dashboard readers and asset routes
+  compare identifiers with directory entries and use the filesystem-produced path.
+  Identifier checks match the whole string. Assets and recorded agent paths also keep
+  resolved containment checks; need-record symlinks retain their documented support.
+  Offline tests cover valid lookups, missing artifacts, source precedence and these
+  link policies without starting the dashboard or contacting external services.
 - **Negative operators are universally quantified.** `absent` under `[*]` means *no* element
   has it, not *some* element lacks it. Existentially-quantified negation let a probe and its
   own negation both pass on a mixed array, which the gate reads as `already-supported` — i.e.

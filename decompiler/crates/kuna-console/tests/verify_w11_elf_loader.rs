@@ -10,13 +10,6 @@
 //! feeds.  It asserts the engine (1) detected the ELF, (2) picked the x86-64
 //! SLEIGH language, (3) lifted the function, and (4) printed a real C body
 //! mentioning `add` (not a crash/empty).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the other console gates, bootstrapping needs the built `x86` `.sla`
-//! under `specs/` (gitignored; `make specs`).  When it is absent the bootstrap
-//! fails; the test prints that and returns early (a specs-less CI is a visible
-//! skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -152,18 +145,8 @@ fn real_elf_decompiles_under_engine() {
     path.push(format!("kuna_w11_elf_{}.elf", std::process::id()));
     std::fs::write(&path, &elf).unwrap();
 
-    let prog = match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_w11_elf_loader: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            let _ = std::fs::remove_file(&path);
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // (2) The ELF machine resolved to the x86-64 SLEIGH language (the language
     // description for `x86:LE:64:default` is "Intel/AMD 64-bit x86").

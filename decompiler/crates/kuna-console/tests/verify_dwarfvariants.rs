@@ -43,12 +43,6 @@
 //! live gate is the process env var `kuna_dwarfvariants::DWARFVARIANTS_ENV`.
 //! Flipping it is serialized by a mutex — the env is process-global and
 //! `cargo test` runs the tests in this binary concurrently.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -66,15 +60,14 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture with `dwarfvariants` on/off (and `dwarfstructs` pinned
-/// on either way), decompile each of `funcs` and return the concatenated C.
-/// `None` => specs-less skip.
-fn decompile(funcs: &[&str], variants: bool) -> Option<String> {
+/// Bootstrap the fixture with `dwarfvariants` on/off (and `dwarfstructs` pinned on either
+/// way), decompile each of `funcs` and return the concatenated C.
+fn decompile(funcs: &[&str], variants: bool) -> String {
     decompile_in("dwarfvariants_x86_64", funcs, variants)
 }
 
 /// As [`decompile`], over an arbitrary committed fixture.
-fn decompile_in(fixture: &str, funcs: &[&str], variants: bool) -> Option<String> {
+fn decompile_in(fixture: &str, funcs: &[&str], variants: bool) -> String {
     let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
     let root = repo_root();
     let specs = root.join("specs");
@@ -82,7 +75,7 @@ fn decompile_in(fixture: &str, funcs: &[&str], variants: bool) -> Option<String>
     let path = root
         .join("decompiler/crates/kuna-analysis/tests/fixtures")
         .join(fixture)
-        .to_str()?
+        .to_str().expect("UTF-8 fixture path")
         .to_string();
 
     std::env::set_var(DWARFSTRUCTS_ENV, "on");
@@ -90,17 +83,7 @@ fn decompile_in(fixture: &str, funcs: &[&str], variants: bool) -> Option<String>
     let prog = bootstrap_from_object(&path, "", &spec_roots);
     std::env::remove_var(DWARFVARIANTS_ENV);
     std::env::remove_var(DWARFSTRUCTS_ENV);
-    let mut prog = match prog {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_dwarfvariants: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = prog.expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let mut cmds: Vec<String> = Vec::new();
@@ -120,22 +103,22 @@ fn decompile_in(fixture: &str, funcs: &[&str], variants: bool) -> Option<String>
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
-/// Run one function both ways; `None` => specs-less skip.
-fn ab(func: &str) -> Option<(String, String)> {
-    let off = decompile(&[func], false)?;
-    let on = decompile(&[func], true)?;
-    Some((off, on))
+/// Run one function both ways.
+fn ab(func: &str) -> (String, String) {
+    let off = decompile(&[func], false);
+    let on = decompile(&[func], true);
+    (off, on)
 }
 
 /// As [`ab`], over the `dwarfvariants_overlay_x86_64` fixture — the one built
 /// for the NAMING rule rather than for the shapes.
-fn ab_overlay(func: &str) -> Option<(String, String)> {
-    let off = decompile_in("dwarfvariants_overlay_x86_64", &[func], false)?;
-    let on = decompile_in("dwarfvariants_overlay_x86_64", &[func], true)?;
-    Some((off, on))
+fn ab_overlay(func: &str) -> (String, String) {
+    let off = decompile_in("dwarfvariants_overlay_x86_64", &[func], false);
+    let on = decompile_in("dwarfvariants_overlay_x86_64", &[func], true);
+    (off, on)
 }
 
 /// An 8-byte `Result<u32,u32>` return: a field-less aggregate is classified as a
@@ -145,7 +128,7 @@ fn ab_overlay(func: &str) -> Option<(String, String)> {
 /// classifier can place, and the signature is the source's.
 #[test]
 fn result_return_loses_its_phantom_sret_parameter() {
-    let Some((off, on)) = ab("ret_result") else { return };
+    let (off, on) = ab("ret_result");
     assert!(
         off.contains("ret_result(core::result::Result<u32, u32> *rethidden,uint4 x)"),
         "gate off should reproduce the phantom sret, got:\n{off}"
@@ -161,7 +144,7 @@ fn result_return_loses_its_phantom_sret_parameter() {
 /// discriminant is a NAMED field, not a byte offset.
 #[test]
 fn the_discriminant_is_a_named_field() {
-    let Some((off, on)) = ab("ret_three") else { return };
+    let (off, on) = ab("ret_three");
     // 16 bytes: a real sret either way, so the parameter list does not move and
     // what changes is purely how the payload is written.
     assert!(
@@ -180,7 +163,7 @@ fn the_discriminant_is_a_named_field() {
 /// `Variant0`, and never a variant that merely won a union-scorer tie.
 #[test]
 fn uncontested_variant_payloads_are_named_by_the_source_variant() {
-    let Some((_off, on)) = ab("ret_three") else { return };
+    let (_off, on) = ab("ret_three");
     assert!(
         on.contains("(rethidden->payload).A.__0 = x;"),
         "variant A's payload should be a named field path, got:\n{on}"
@@ -198,7 +181,7 @@ fn uncontested_variant_payloads_are_named_by_the_source_variant() {
 /// so that word is written through the offset form and NEITHER facet is named.
 #[test]
 fn a_multi_field_variant_keeps_every_field_and_names_only_what_it_may() {
-    let Some((off, on)) = ab("ret_multi") else { return };
+    let (off, on) = ab("ret_multi");
     assert!(
         off.contains("*(uint4 *)&rethidden->field_0x8 = x + 1;"),
         "gate off should write byte offsets, got:\n{off}"
@@ -221,7 +204,7 @@ fn a_multi_field_variant_keeps_every_field_and_names_only_what_it_may() {
 /// the self-referential payload field still names the enum.
 #[test]
 fn a_recursive_enum_terminates_and_names_itself() {
-    let Some((off, on)) = ab("list_len") else { return };
+    let (off, on) = ab("list_len");
     assert!(
         off.contains("l = *(fx::List **)&l->field_0x8;"),
         "gate off should chase a byte offset, got:\n{off}"
@@ -239,7 +222,7 @@ fn a_recursive_enum_terminates_and_names_itself() {
 /// variant that owns it.
 #[test]
 fn a_niche_option_recovers_its_signature_and_its_default_variant() {
-    let Some((off, on)) = ab("ret_niche") else { return };
+    let (off, on) = ab("ret_niche");
     assert!(
         off.contains("*rethidden,uint4 x,uint4 *p)"),
         "gate off should reproduce the phantom sret, got:\n{off}"
@@ -259,7 +242,7 @@ fn a_niche_option_recovers_its_signature_and_its_default_variant() {
 /// pass never sees it and the rendering is byte-identical.
 #[test]
 fn a_fieldless_enum_is_untouched() {
-    let Some((off, on)) = ab("ret_plain") else { return };
+    let (off, on) = ab("ret_plain");
     assert_eq!(off, on, "a C-like enum has no variant part");
     assert!(on.contains("Plain ret_plain(uint4 x)"), "got:\n{on}");
 }
@@ -268,7 +251,7 @@ fn a_fieldless_enum_is_untouched() {
 /// carries a `DW_TAG_variant_part`, so this pass is inert on one.
 #[test]
 fn a_plain_struct_is_untouched() {
-    let Some((off, on)) = ab("ret_pair") else { return };
+    let (off, on) = ab("ret_pair");
     assert_eq!(off, on, "a plain struct has no variant part");
     assert!(on.contains("v1.lo = x;"), "got:\n{on}");
 }
@@ -291,10 +274,7 @@ fn dwarfstructs_off_suppresses_the_variant_arm_too() {
     let prog = bootstrap_from_object(&path, "", &spec_roots);
     std::env::remove_var(DWARFVARIANTS_ENV);
     std::env::remove_var(DWARFSTRUCTS_ENV);
-    let Ok(prog) = prog else {
-        eprintln!("verify_dwarfvariants: skipping (no `.sla`)");
-        return;
-    };
+    let prog = prog.expect("required fixture setup");
     assert!(
         prog.arch().types().kuna_variant_layouts().is_empty(),
         "the variant arm must not run with `dwarfstructs off`"
@@ -321,10 +301,7 @@ fn the_layout_side_table_is_recorded() {
         let prog = bootstrap_from_object(&path, "", &spec_roots);
         std::env::remove_var(DWARFVARIANTS_ENV);
         std::env::remove_var(DWARFSTRUCTS_ENV);
-        let Ok(prog) = prog else {
-            eprintln!("verify_dwarfvariants: skipping (no `.sla`)");
-            return;
-        };
+        let prog = prog.expect("required fixture setup");
         let types = prog.arch().types();
         let l = types.kuna_variant_layout("core::result::Result<u32, u32>");
         if !on {
@@ -379,7 +356,7 @@ fn the_layout_side_table_is_recorded() {
 /// is what `dwarfvariants off` writes and is therefore known-good.
 #[test]
 fn an_overlaying_result_names_neither_variant() {
-    let Some((off, on)) = ab_overlay("put_res") else { return };
+    let (off, on) = ab_overlay("put_res");
     assert!(
         off.contains("*(uint8 *)&dst->field_0x8 ="),
         "gate off should write a byte offset, got:\n{off}"
@@ -405,7 +382,7 @@ fn an_overlaying_result_names_neither_variant() {
 /// either — the type is unchanged, only the label is gone.
 #[test]
 fn reading_an_overlaying_result_names_neither_variant() {
-    let Some((_off, on)) = ab_overlay("use16") else { return };
+    let (_off, on) = ab_overlay("use16");
     assert!(on.contains("+ 100"), "the Err arm is still in the body, got:\n{on}");
     for bad in ["Ok", "Err"] {
         assert!(!on.contains(bad), "`{bad}` must not be printed, got:\n{on}");
@@ -418,7 +395,7 @@ fn reading_an_overlaying_result_names_neither_variant() {
 /// rule from degenerating into "never name anything".
 #[test]
 fn an_option_still_names_its_only_payload_variant() {
-    let Some((off, on)) = ab_overlay("put_opt") else { return };
+    let (off, on) = ab_overlay("put_opt");
     assert!(
         off.contains("*(uint8 *)&dst->field_0x8 ="),
         "gate off should write a byte offset, got:\n{off}"
@@ -434,7 +411,7 @@ fn an_option_still_names_its_only_payload_variant() {
 /// source's type by value. Only the field path moved.
 #[test]
 fn suppression_does_not_give_back_the_phantom_sret() {
-    let Some((off, on)) = ab_overlay("r16") else { return };
+    let (off, on) = ab_overlay("r16");
     assert!(
         off.contains("r16(core::result::Result<u64, u64> *rethidden,uint4 x)"),
         "gate off should reproduce the phantom sret, got:\n{off}"
@@ -464,10 +441,7 @@ fn the_side_table_keeps_the_names_the_type_does_not() {
     let prog = bootstrap_from_object(&path, "", &spec_roots);
     std::env::remove_var(DWARFVARIANTS_ENV);
     std::env::remove_var(DWARFSTRUCTS_ENV);
-    let Ok(prog) = prog else {
-        eprintln!("verify_dwarfvariants: skipping (no `.sla`)");
-        return;
-    };
+    let prog = prog.expect("required fixture setup");
     let types = prog.arch().types();
 
     let r = types

@@ -1,42 +1,7 @@
-//! The end-to-end decompilation orchestrator (item `w9x-arch-engine-glue`).
+//! End-to-end flow following, action scheduling, and C emission.
 //!
-//! Wires the merged subsystems — the [`Architecture`] god object, the
-//! [`FlowInfo`] flow engine, the universalAction pipeline
-//! ([`crate::universalaction`]), and the [`PrintC`] printer — into a single
-//! function-decompilation path, mirroring `decompiler/cpp/ifacedecomp.cc`'s
-//! `IfcDecompile` + `IfcPrintC`:
-//!
-//! ```text
-//! IfcDecompile::execute (ifacedecomp.cc:889)
-//!   fd->followFlow(...)                         -> generate_ops + generate_blocks
-//!   allacts.getCurrent()->reset(*fd)
-//!   res = allacts.getCurrent()->perform(*fd)    -> the restart loop
-//! IfcPrintC::execute (ifacedecomp.cc:925)
-//!   print->docFunction(fd)                      -> PrintC::doc_function shell
-//! ```
-//!
-//! ## What runs end-to-end today (and what stubs out)
-//!
-//! * **Flow following is real.**  [`FlowInfo::generate_ops`] (C++
-//!   `Funcdata::followFlow` -> `generateOps`) lifts and links every
-//!   straight-line instruction's p-code into the `Funcdata`; CALL / jump-table
-//!   sites hit the documented W4 `FlowInfo` stubs (FuncCallSpecs / JumpTable),
-//!   which are no-ops here (faithful partial flow), so `generate_ops` returns
-//!   the IR built up to those boundaries rather than erroring.
-//! * **The universalAction perform loop is real.**  The 252-pass `decompile`
-//!   root is installed and run; the *boot* passes (`ActionStart` -> the C++
-//!   `Funcdata::startProcessing`) are W3/W4 stub no-ops in the merged tree
-//!   (which is why the flow follow is driven explicitly here, outside the
-//!   pipeline, exactly as the C++ `followFlow` runs before `perform`), so the
-//!   pass scheduler/status state-machine executes without rebuilding the IR.
-//! * **The printer body is the W9-emit stub.**  [`PrintC::doc_function`] emits a
-//!   structurally-complete C function *shell* (real signature + matched braces)
-//!   driving the real [`Emit`](crate::prettyprint::Emit) primitives; the
-//!   per-statement RPN expression body is the `// STUB(W9-emit)` driver absent
-//!   from the merged tree (see `printc.rs`).
-//!
-//! This proves the full path RUNS and emits plausible C — not byte-parity (the
-//! W10 grind), which the e2e gate (`tests/decompile_e2e.rs`) asserts.
+//! This connects the architecture's flow environment, restartable action tree,
+//! and printer, following upstream `IfcDecompile` and `IfcPrintC`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -1305,19 +1270,7 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         // decode: the registers the callee is proven NOT to write; inert unless
         // `option calleepreserves` is live.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, &mut fd);
-        // With the single-manager unification (LOSS-132) the universalAction passes
-        // now reach the *real* lifted varnodes, so the pipeline genuinely executes
-        // heritage / simplification / merge / … on live IR.  Some pass BODIES are
-        // still un-ported stubs (LOSS-131, the M3 grind): a hand-built fixture never
-        // reached them, but a real corpus function can hit, e.g.,
-        // `Heritage::normalizeWriteSize`'s PIECE-concat path.  Those stubs abort via
-        // `unimplemented_stub` (a deliberate `#[cold] panic!`).  Convert such a
-        // stub-abort into a recoverable `Err` at this orchestration boundary so the
-        // end-to-end harnesses degrade to the documented "honest partial parity"
-        // (the pipeline ran; a body declined at a stub) instead of taking down the
-        // whole run — exactly the graceful-degradation the LOSS-130/131 measurement
-        // assumes.  `fd`/`arch` are discarded on the unwind, so no half-mutated
-        // state escapes (`AssertUnwindSafe` is sound here for that reason).
+        // Report a pass panic as a per-function failure at the driver boundary.
         let res =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_pipeline(arch, &mut fd)));
         match res {

@@ -36,12 +36,6 @@
 //! function shares, so the aligned probe at `POOL2 + 4` is *rejected*. The option
 //! must not invent an entry there — it only stops probing addresses that cannot be
 //! instruction boundaries; it never lowers the acceptance bar.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built ARM `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -67,25 +61,16 @@ const PHANTOM2: &str = "sub_800015e";
 /// function shares, so AIF must accept it in NEITHER pass.
 const D: &str = "sub_8000160";
 
-/// Bootstrap the fixture with the discovery set `kuna functions` / `decompile-all`
-/// inject on non-x86-64 (`listing` + `funcstart_patterns` + `aif`), flipping
-/// `aifstrict` on for the fix pass — the live-CLI ordering, where the `option` lines
-/// precede the deferred `read symbols` commit. `None` ⇒ specs-less skip.
-fn bootstrap(strict: bool) -> Option<kuna_console::engine::ConsoleProgram> {
+/// Bootstrap the fixture with the discovery set `kuna functions` / `decompile-all` inject
+/// on non-x86-64 (`listing` + `funcstart_patterns` + `aif`), flipping `aifstrict` on for
+/// the fix pass — the live-CLI ordering, where the `option` lines precede the deferred
+/// `read symbols` commit.
+fn bootstrap(strict: bool) -> kuna_console::engine::ConsoleProgram {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_aifstrict: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
     prog.arch_mut()
         .set_kuna_option("funcstart_patterns", "on")
@@ -95,7 +80,7 @@ fn bootstrap(strict: bool) -> Option<kuna_console::engine::ConsoleProgram> {
         prog.arch_mut().set_kuna_option("aifstrict", "on").expect("aifstrict flips on");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Pass 1 — THE BUG (the default). With the byte-granular cursor, AIF plants an
@@ -103,9 +88,7 @@ fn bootstrap(strict: bool) -> Option<kuna_console::engine::ConsoleProgram> {
 /// lost.
 #[test]
 fn default_plants_a_phantom_inside_the_literal_pool() {
-    let Some(off) = bootstrap(false) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(false);
     assert!(off.lookup_symbol(A).is_some(), "the pool's own loader is always found");
     assert!(
         off.lookup_symbol(PHANTOM).is_some(),
@@ -130,9 +113,7 @@ fn default_plants_a_phantom_inside_the_literal_pool() {
 /// entry.
 #[test]
 fn on_slides_past_the_pool_and_finds_the_real_function() {
-    let Some(on) = bootstrap(true) else {
-        return; // specs-less skip
-    };
+    let on = bootstrap(true);
     assert!(on.lookup_symbol(A).is_some(), "the pool's own loader is always found");
     assert!(
         on.lookup_symbol(PHANTOM).is_none(),
@@ -157,11 +138,9 @@ fn on_slides_past_the_pool_and_finds_the_real_function() {
 /// it was relaxed.
 #[test]
 fn the_acceptance_bar_is_unchanged() {
-    let Some(off) = bootstrap(false) else {
-        return; // specs-less skip
-    };
+    let off = bootstrap(false);
     assert!(off.lookup_symbol(D).is_none(), "{D}'s fingerprint is unshared (bug pass)");
-    let Some(on) = bootstrap(true) else { return };
+    let on = bootstrap(true);
     assert!(
         on.lookup_symbol(D).is_none(),
         "{D} sits at an aligned pool end but its `movs ; adds` prologue matches no \
@@ -178,9 +157,8 @@ fn aifstrict_is_inert_without_aif() {
     let bin = fixture().to_str().unwrap().to_string();
     let mut sets = Vec::new();
     for strict in [false, true] {
-        let Ok(mut prog) = bootstrap_from_object(&bin, "", &spec_roots) else {
-            return; // specs-less skip
-        };
+        let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+            .expect("bootstrap fixture with built processor specs");
         prog.arch_mut().set_kuna_option("listing", "on").unwrap();
         prog.arch_mut().set_kuna_option("funcstart_patterns", "on").unwrap();
         if strict {

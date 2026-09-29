@@ -1,48 +1,18 @@
-//! Port of `decompiler/cpp/semantics.{hh,cc}` (item `w2-sleigh-semantics`):
-//! the p-code construct templates decoded from a compiled `.sla` file.
+//! P-code construct templates and builder dispatch, from
+//! `decompiler/cpp/semantics.{hh,cc}`.
 //!
-//! ## What is ported
+//! [`ConstTpl`] resolves constants, handle references and instruction-address
+//! placeholders through [`SymbolWalker`]. Address-space constants store manager
+//! indices instead of process pointers. A null space encodes as zero.
+//! `fix_space` distinguishes a nullable result from a resolution error.
 //!
-//! - [`ConstTpl`]: a constant template with all `const_type` variants
-//!   (real constants, handle references with `v_field` selection including
-//!   `v_offset_plus` truncation, space ids, relative jump offsets, the
-//!   `j_*` placeholders).  `fix`/`fixSpace` resolve against the
-//!   `ParserWalker` boundary ([`SymbolWalker`], defined by the symbol wave).
-//! - [`VarnodeTpl`] / [`OpTpl`] / [`HandleTpl`] / [`ConstructTpl`] with
-//!   their encode/decode paths (`.sla` FORMAT_SCOPE ids, see [`sla`]).
-//! - [`PcodeBuilder`]: the SLEIGH-specific p-code generator dispatch
-//!   (`build`), as a trait whose required methods are the C++ virtuals.
+//! [`VarnodeTpl`], [`OpTpl`], [`HandleTpl`] and [`ConstructTpl`] own their child
+//! values and encode or decode the compiled `.sla` representation. Their mutable
+//! accessors also support compiler construction and size propagation.
 //!
-//! ## Representation notes
-//!
-//! - The C++ `value` union (`AddrSpace *spaceid` / `int4 handle_index`) is
-//!   two struct fields; only the field matching `type` is meaningful, as in
-//!   C++ (the inactive arm is dead data).
-//! - C++ encodes an `AddrSpace *` **pointer** as a `uintb`
-//!   (`(uintb)(uintp)spc`, `ConstTpl::fix`).  The port follows the
-//!   `kuna-num` `pcoderaw.rs` convention and encodes the space's *manager
-//!   index* instead (`VarnodeData::get_space_from_const` recovers it
-//!   through the `AddrSpaceManager`); a C++ null pointer encodes as 0.
-//!   This also makes `ConstTpl::operator<` deterministic where C++
-//!   compared heap pointers.
-//! - C++ nullable owning pointers (`OpTpl::output`, `ConstructTpl::result`)
-//!   are `Option<...>` by value; `vector<VarnodeTpl *>` /
-//!   `vector<OpTpl *>` are `Vec<...>` by value.
-//! - `ConstTpl::fixSpace` returns `KunaResult<Option<Rc<AddrSpace>>>`: the
-//!   `Option` mirrors the C++ nullable `AddrSpace *` result and the `Err`
-//!   mirrors the C++ `LowlevelError` throw.  Call sites that C++
-//!   dereferences unconditionally `expect()` (UB in C++ = internal
-//!   invariant violation, ADR 0004).
-//! - The C++ `PcodeBuilder` private fields `labelbase`/`labelcount` become
-//!   required accessors on the trait (Rust traits cannot hold state); the
-//!   protected `ParserWalker *walker` member and `getCurrentWalker()` are
-//!   left to the implementor (the sleigh decode-engine wave), which holds
-//!   its own walker.
-//! - The compiler-only protected mutators `ConstructTpl::setOpvec` /
-//!   `setNumLabels` (friend `SleighCompile`) are not ported (LOSS-001
-//!   scope); `get_opvec_mut` is a port-added accessor standing in for the
-//!   C++ pattern of mutating template ops through `vector<OpTpl *>`
-//!   pointees (used by `pcodecompile.rs` size propagation).
+//! [`PcodeBuilder`] dispatches template operations. Implementors provide label
+//! state and their own walker; the runtime implementation lives in
+//! [`crate::sleigh`].
 
 use std::rc::Rc;
 
@@ -55,39 +25,8 @@ use kuna_num::opcodes::{OpCode, OpcodeDecoder, OpcodeEncoder};
 use crate::context::FixedHandle;
 use crate::slghsymbol::SymbolWalker;
 
-/// `.sla`-format ElementIds/AttributeIds used by the template system
-/// (slaformat.cc, `FORMAT_SCOPE`).  Extends the set already defined by the
-/// pattern/symbol waves, which is re-exported here so template code uses a
-/// single `sla::` namespace.
-pub mod sla {
-    use kuna_base::marshal::{AttributeId, ElementId};
-
-    pub use crate::slghsymbol::sla::*;
-
-    pub const ATTRIB_S: AttributeId = AttributeId::new("s", 5);
-    pub const ATTRIB_PLUS: AttributeId = AttributeId::new("plus", 28);
-    pub const ATTRIB_DELAY: AttributeId = AttributeId::new("delay", 42);
-    pub const ATTRIB_SECTION: AttributeId = AttributeId::new("section", 54);
-    pub const ATTRIB_LABELS: AttributeId = AttributeId::new("labels", 55);
-
-    pub const ELEM_CONST_REAL: ElementId = ElementId::new("const_real", 1);
-    pub const ELEM_VARNODE_TPL: ElementId = ElementId::new("varnode_tpl", 2);
-    pub const ELEM_CONST_SPACEID: ElementId = ElementId::new("const_spaceid", 3);
-    pub const ELEM_CONST_HANDLE: ElementId = ElementId::new("const_handle", 4);
-    pub const ELEM_OP_TPL: ElementId = ElementId::new("op_tpl", 5);
-    pub const ELEM_CONSTRUCT_TPL: ElementId = ElementId::new("construct_tpl", 21);
-    pub const ELEM_HANDLE_TPL: ElementId = ElementId::new("handle_tpl", 30);
-    pub const ELEM_CONST_RELATIVE: ElementId = ElementId::new("const_relative", 31);
-    pub const ELEM_CONST_START: ElementId = ElementId::new("const_start", 80);
-    pub const ELEM_CONST_NEXT: ElementId = ElementId::new("const_next", 81);
-    pub const ELEM_CONST_NEXT2: ElementId = ElementId::new("const_next2", 82);
-    pub const ELEM_CONST_CURSPACE: ElementId = ElementId::new("const_curspace", 83);
-    pub const ELEM_CONST_CURSPACE_SIZE: ElementId = ElementId::new("const_curspace_size", 84);
-    pub const ELEM_CONST_FLOWREF: ElementId = ElementId::new("const_flowref", 85);
-    pub const ELEM_CONST_FLOWREF_SIZE: ElementId = ElementId::new("const_flowref_size", 86);
-    pub const ELEM_CONST_FLOWDEST: ElementId = ElementId::new("const_flowdest", 87);
-    pub const ELEM_CONST_FLOWDEST_SIZE: ElementId = ElementId::new("const_flowdest_size", 88);
-}
+/// SLA IDs used by the template system.
+pub use crate::slaformat::ids as sla;
 
 // We remap these opcodes for internal use during pcode generation
 // (semantics.hh `#define`s).
@@ -1498,14 +1437,10 @@ impl ConstructTpl {
 // PcodeBuilder
 // ---------------------------------------------------------------------------
 
-/// C++ `PcodeBuilder`: SLEIGH-specific p-code generator.  The C++ abstract
-/// class becomes a trait: the pure virtuals (`dump`, `appendBuild`,
-/// `delaySlot`, `setLabel`, `appendCrossBuild`) and accessors for the C++
-/// private `labelbase`/`labelcount` fields are required methods backed by
-/// implementor state (initialize both to the C++ constructor's `lbcnt`);
-/// `build` is the C++ concrete dispatch loop.  The C++ protected
-/// `ParserWalker *walker` member and `getCurrentWalker()` live with the
-/// implementor (the sleigh decode-engine wave).
+/// SLEIGH template dispatch, implemented by the runtime builder in
+/// [`crate::sleigh`] and the macro builder in `kuna-slacomp`. Implementors own
+/// their walker and label state, initialize both label counters to the starting
+/// count, and provide the operation handlers used by [`PcodeBuilder::build`].
 pub trait PcodeBuilder {
     /// C++ `getLabelBase`.
     fn get_label_base(&self) -> u32;

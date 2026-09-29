@@ -105,7 +105,7 @@ fn recorded_pdb_name(recorded: &str) -> Option<&str> {
 }
 
 /// The fingerprint gate: does a candidate `.pdb`'s own `{guid, age}` match the PE's
-/// CodeView record [`cv`]?
+/// CodeView record `cv`?
 ///
 /// Compares (1) the **age** (exact `u32` equality) and (2) the **GUID** in its
 /// canonical Microsoft text form. The CodeView record's

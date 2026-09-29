@@ -5,8 +5,8 @@
 //! `Ghidra/Features/DecompilerDependent/src/main/java/ghidra/app/plugin/core/string/variadic/`
 //! — chiefly `FormatStringParser.java` (the pure spec-parsing logic ported here)
 //! and `FormatArgument.java` (the `(length-modifier, conversion-specifier)` pair,
-//! mirrored by [`FmtArg`]). The driver `FormatStringAnalyzer.java` is **not**
-//! ported here (it is the deferred half — see *A vs B* below).
+//! mirrored by [`FmtArg`]). Call-site classification and override construction
+//! live in [`apply`]; [`kuna_fmtstatic`] resolves format constants at load time.
 //!
 //! # What this module does (the faithful `printf`/`scanf` spec grammar)
 //!
@@ -43,33 +43,15 @@
 //! (`convertToInputDataTypes`, `FormatStringParser.java:597`), since `scanf`
 //! takes addresses to write into.
 //!
-//! # A vs B: this is the **A (pure parser) half only**
+//! # Consumers
 //!
-//! Ghidra's `FormatStringAnalyzer` is **DecompilerDependent**: to type a
-//! `printf`/`scanf` call's varargs it needs the per-call-site *format-string
-//! constant* and *which argument is the format* — both of which only exist
-//! **after** the caller is lifted to p-code (the constant char* pointer in the
-//! `CALL` op's argument varnode). That is genuinely not available at the
-//! load-time `AnalysisCtx`/`AnalysisOutput` seam the other S1 passes use.
-//!
-//! The feature therefore splits in two:
-//!
-//! - **A (this module):** a self-contained, well-tested format-string → argument
-//!   type parser. It produces no [`crate::pass::AnalysisOutput`] facts and is
-//!   **not** registered in `passes.rs` — it is a *library* the future B will
-//!   call. It touches only `kuna-analysis` and is structurally incapable of
-//!   moving any parity gate.
-//! - **B (deferred, a wave-3 engine change — NOT in this module):** the
-//!   decompile→inspect→override→re-decompile loop (the analog of Ghidra's
-//!   `ParallelDecompiler` + `PcodeFunctionParser` + `HighFunctionDBUtil.writeOverride`).
-//!   After the first decompile of a caller it walks the `CALL` ops, reads the
-//!   format-string constant from the call arg at the callee's fixed-param slot
-//!   (`PcodeFunctionParser.java:99`), parses it with **this** module, builds a
-//!   per-call-site `PrototypePieces` (callee fixed params ++ parsed varargs) and
-//!   installs it via the existing `pending_proto_overrides` →
-//!   `Override::insert_proto_override` plumbing, then re-decompiles. That is an
-//!   engine-driver change and is gated OFF by default; it is intentionally left
-//!   out of this commit.
+//! This module is the shared parser and type mapper. [`apply`] classifies
+//! variadic calls and builds per-call-site prototype overrides from the parsed
+//! argument types. [`kuna_fmtstatic`] uses Listing references and a bounded
+//! p-code window to resolve constants and emit overrides before decompilation.
+//! The console's decompile-time path can inspect lifted calls, install overrides
+//! and decompile again. Those drivers own option handling and application;
+//! the parser itself emits no analysis facts.
 //!
 //! # Losses
 //!
@@ -80,16 +62,8 @@
 //! `getIntegralPointerType` width choice Ghidra's fabricated typedefs wrap) — a
 //! documented stand-in matching the existing `protos` libc-prototype table.
 
-/// The **application half (B)** of `FormatStringAnalyzer`: the pure,
-/// unit-testable call-site classification ([`apply::classify_variadic_call`])
-/// and per-call-site override-pieces builder ([`apply::build_override_pieces`])
-/// that the parser (this module) feeds.  The Funcdata pcode-walk + the
-/// decompile→override→re-decompile loop live in the `kuna-console` driver.
 pub mod apply;
 
-/// (kuna `formatstring static`) The LOAD-TIME resolver: read the format constant
-/// out of the image at each call site and park the per-call-site override before
-/// anything is decompiled, so the typing costs no second decompile.
 pub mod kuna_fmtstatic;
 
 use std::rc::Rc;

@@ -4310,12 +4310,6 @@ impl SplitDatatype {
         None
     }
 
-    /// Borrow the held factory as a `&dyn TypeFactory` (the explicit-factory
-    /// methods need a trait object); errors if no factory is attached.
-    #[allow(dead_code)]
-    fn types_handle(&self) -> KunaResult<&dyn crate::dtype::TypeFactory> {
-        Ok(self.types()? as &dyn crate::dtype::TypeFactory)
-    }
 
     /// Clone the held factory `Rc` so it can be borrowed (`&*`) as the explicit
     /// `types` argument of `test_datatype_compatibility`/`get_component` while

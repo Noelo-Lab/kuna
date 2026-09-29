@@ -10,13 +10,6 @@
 //! it*: a parsed struct type exists in the factory, a mapped function/global symbol
 //! resolves, a volatile range is set, a context default is painted, a comment is
 //! recorded.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping the engine needs the built `.sla` artifacts under `specs/`
-//! (gitignored; `make specs`).  When the 8051 `.sla` the fixture needs is absent,
-//! the bootstrap fails; the test reports that failure (so a CI without specs is
-//! visibly skipped, never a false green) and returns early.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -33,22 +26,13 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the 8051 `boolless` corpus into a [`ConsoleProgram`], or `None` if
-/// the `.sla` is missing (printed, so a specs-less CI is a visible skip).
-fn boot_program() -> Option<ConsoleProgram> {
+/// Bootstrap the 8051 `boolless` corpus into a [`ConsoleProgram`].
+fn boot_program() -> ConsoleProgram {
     let root = repo_root();
     let xml = root.join("tests/datatests/boolless.xml");
     let specs = root.join("specs");
-    match bootstrap_from_file(xml.to_str().unwrap(), "", &[specs.to_str().unwrap().to_string()]) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "setup_commands: skipping (engine bootstrap failed, build `.sla` with `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_file(xml.to_str().unwrap(), "", &[specs.to_str().unwrap().to_string()])
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// Drive `commands` through a console wired exactly like the datatest runner,
@@ -92,7 +76,7 @@ fn dcp_program(status: &mut IfaceStatus) -> &ConsoleProgram {
 
 #[test]
 fn parse_line_struct_creates_real_type() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     let (mut status, out) = drive(
         prog,
         &["parse line struct mystruct { int4 a; int4 b; };"],
@@ -112,7 +96,7 @@ fn parse_line_struct_creates_real_type() {
 
 #[test]
 fn parse_line_typedef_creates_real_type() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     let (mut status, out) = drive(prog, &["parse line typedef int4 myint;"]);
     assert!(!out.contains("error"), "parse line typedef emitted an error: {out:?}");
     let prog = dcp_program(&mut status);
@@ -131,7 +115,7 @@ fn parse_line_typedef_creates_real_type() {
 
 #[test]
 fn map_function_creates_resolvable_symbol() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     // 8051 CODE space, an entry near the corpus function: a fresh function entry.
     let (mut status, out) = drive(prog, &["map function [CODE,0xa100] myfunc"]);
     assert!(!out.contains("error"), "map function emitted an error: {out:?}");
@@ -151,7 +135,7 @@ fn map_function_creates_resolvable_symbol() {
 
 #[test]
 fn map_address_creates_a_global_symbol() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     let (mut status, out) = drive(prog, &["map address [CODE,0x100] int4 globvar"]);
     assert!(!out.contains("error"), "map address emitted an error: {out:?}");
     let prog = dcp_program(&mut status);
@@ -162,7 +146,7 @@ fn map_address_creates_a_global_symbol() {
 
 #[test]
 fn map_label_creates_a_global_label() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     let (mut status, out) = drive(prog, &["map label mylabel [CODE,0x200]"]);
     assert!(!out.contains("error"), "map label emitted an error: {out:?}");
     let prog = dcp_program(&mut status);
@@ -179,7 +163,7 @@ fn map_label_creates_a_global_label() {
 
 #[test]
 fn volatile_marks_the_range() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     // 8051 RAM space; mark a 4-byte range volatile.
     let (mut status, out) = drive(prog, &["volatile [CODE,0x100,4]"]);
     assert!(
@@ -200,28 +184,24 @@ fn volatile_marks_the_range() {
 
 #[test]
 fn set_context_default_paints_the_variable() {
-    let Some(prog) = boot_program() else { return };
-    // Discover a real context variable name from the engine, then paint a default.
-    // (8051 has no Thumb-style TMode; we probe whatever the spec registered.)
-    let varname = first_context_variable(&prog);
-    let Some(varname) = varname else {
-        eprintln!("set_context: 8051 has no settable context variable; nothing to assert");
-        return;
-    };
-    let cmd = format!("set context {varname} 1");
-    let (mut status, out) = drive(prog, &[&cmd]);
+    let root = repo_root();
+    let xml = root.join("tests/datatests/condconst2.xml");
+    let specs = vec![root.join("specs").to_str().unwrap().to_string()];
+    let prog = bootstrap_from_file(xml.to_str().unwrap(), "", &specs)
+        .expect("bootstrap ARM fixture with built processor specs");
+    let (mut status, out) = drive(prog, &["set context TMode 1"]);
     assert!(!out.contains("error") && !out.contains("Execution error"), "set context errored: {out:?}");
     let prog = dcp_program(&mut status);
     let val = prog
         .arch()
-        .with_context_db_mut(|db| db.get_default_value_by_name(varname.as_bytes()))
+        .with_context_db_mut(|db| db.get_default_value_by_name(b"TMode"))
         .expect("the context default must read back");
     assert_eq!(val, 1, "the painted context default must read back as 1");
 }
 
 #[test]
 fn comment_instr_records_a_comment() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     // A comment needs a current function; load `boolless` first, then comment it.
     let (mut status, out) = drive(
         prog,
@@ -267,7 +247,7 @@ fn comment_instr_records_a_comment() {
 /// X/675 number, not this guard.
 #[test]
 fn printc_body_driver_landed_function_reaches_print_c() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     // Load the corpus function, decompile it, and render `print C` exactly like
     // the datatest runner does (output lands in `optr`, captured by `drive`).
     let (_status, out) = drive(
@@ -292,22 +272,6 @@ fn printc_body_driver_landed_function_reaches_print_c() {
         out.contains('{') && out.contains('}'),
         "print C must emit a function with a body block: {out:?}"
     );
-}
-
-/// Probe the engine for a context-variable name registered by the loaded spec
-/// (so `set context` can be tested against whatever the architecture defines).
-fn first_context_variable(prog: &ConsoleProgram) -> Option<String> {
-    // The candidate context-variable names the upstream specs commonly register;
-    // probe each against the real context database.
-    for cand in ["TMode", "ISA_MODE", "RELP", "phase", "vle", "AT", "EXMODE"] {
-        let exists = prog
-            .arch()
-            .with_context_db_mut(|db| db.get_default_value_by_name(cand.as_bytes()).is_ok());
-        if exists {
-            return Some(cand.to_string());
-        }
-    }
-    None
 }
 
 // ===========================================================================
@@ -337,7 +301,7 @@ fn ram_addr(prog: &ConsoleProgram, space_name: &str, off: u64) -> kuna_base::add
 /// (off+size-1) is volatile; the byte at off+size is NOT.
 #[test]
 fn w10_adv_volatile_range_boundary_is_inclusive() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     // size=4 over CODE:0x300 => bytes 0x300..0x303 inclusive are volatile.
     let (mut status, out) = drive(prog, &["volatile [CODE,0x300,4]"]);
     assert!(
@@ -363,7 +327,7 @@ fn w10_adv_volatile_range_boundary_is_inclusive() {
 /// user base, the size becomes 16 and the assertion below must be revisited.
 #[test]
 fn w10_adv_bracket_hex_size_diverges_from_cpp() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     // C++ would read size = 0x10 = 16 and mark the range; the Rust decimal-only
     // read_int yields size 0 -> the "Must specify a size" execution error.
     let (_status, out) = drive(prog, &["volatile [CODE,0x300,0x10]"]);
@@ -382,7 +346,7 @@ fn w10_adv_bracket_hex_size_diverges_from_cpp() {
 /// create exactly one global symbol, just like the shortcut form.
 #[test]
 fn w10_adv_default_codespace_address_form() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     // A leading '0' selects the default code space; the whole token is the offset.
     let (mut status, out) = drive(prog, &["map address 0x140 int4 defvar"]);
     assert!(!out.contains("error"), "map address (default-codespace form) errored: {out:?}");
@@ -409,16 +373,10 @@ fn w10_adv_default_codespace_address_form() {
 // a concrete oracle token.
 // ===========================================================================
 
-/// ADVERSARIAL 4 — the honest-metric guard is NON-VACUOUS: the engine genuinely
-/// bootstraps and the decompile genuinely reaches `print C` on this machine
-/// (specs present).  If bootstrap had silently failed (`boot_program` -> None),
-/// the guard's `else { return }` would make it a false green; this test fails
-/// loudly in that case so the guard's "reaches print" half is trustworthy.
+/// The command sequence reaches `print C` and produces a function body.
 #[test]
 fn w10_adv_r2_guard_is_not_a_skipped_false_green() {
-    let prog = boot_program()
-        .expect("engine must bootstrap (specs present) — the honest-metric guard \
-                 would otherwise be a vacuous skip / false green");
+    let prog = boot_program();
     let (_status, out) = drive(prog, &["load function boolless", "decompile", "print C"]);
     // The exact reach-condition the guard relies on, asserted independently.
     assert!(
@@ -441,7 +399,7 @@ fn w10_adv_r2_guard_is_not_a_skipped_false_green() {
 /// here.  This test pins only that the driver runs and emits a body block.
 #[test]
 fn w10_adv_r2_body_driver_emits_real_block() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     let (_status, out) = drive(prog, &["load function boolless", "decompile", "print C"]);
     // Stub marker is gone; the function reaches print and emits a brace block.
     assert!(
@@ -469,7 +427,7 @@ fn w10_adv_r2_body_driver_emits_real_block() {
 /// all, so every forbidden-token negative match is satisfied trivially.
 #[test]
 fn w10_adv_r2_negative_match_passes_vacuously_not_by_parity() {
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     let (_status, out) = drive(prog, &["load function boolless", "decompile", "print C"]);
     // Concrete forbidden tokens drawn from real min=0/max=0 datatest assertions.
     for forbidden in ["firstfield", "array", "mystruct", "populate_mystruct"] {
@@ -496,7 +454,7 @@ fn w10_adv_r2_negative_match_passes_vacuously_not_by_parity() {
 #[test]
 fn stackpointer_decode_creates_the_stack_spacebase_space() {
     use kuna_base::space::spacetype;
-    let Some(prog) = boot_program() else { return };
+    let prog = boot_program();
     let manage = prog.arch().manage();
 
     // (1) The formal stack space exists and is the manager's `stackspace`.
@@ -556,17 +514,11 @@ fn x86_64_stack_address_now_parses_via_spacebase_space() {
     let root = repo_root();
     let xml = root.join("tests/datatests/copytrim.xml");
     let specs = root.join("specs");
-    let prog = match bootstrap_from_file(
+    let prog = bootstrap_from_file(
         xml.to_str().unwrap(),
         "",
         &[specs.to_str().unwrap().to_string()],
-    ) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("skipping (bootstrap failed, build .sla): {}", e.explain());
-            return;
-        }
-    };
+    ).expect("bootstrap fixture with built processor specs");
 
     // The x86-64 stack space exists, is named "stack", and claims `'s'`.
     {

@@ -42,12 +42,6 @@ fn run(args: &[&str]) -> (String, String, bool) {
     )
 }
 
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-}
-
 #[test]
 fn explicit_function_pointer_prototype_types_the_tail_call() {
     let bin = fixture();
@@ -66,10 +60,6 @@ fn explicit_function_pointer_prototype_types_the_tail_call() {
         &data,
         "--assert-strict",
     ]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("typed_macho_tail_cli: skipping (no `.sla`): {stderr}");
-        return;
-    }
     assert!(ok, "explicit typed decompile failed: {stderr}");
     assert!(
         stdout.contains("int printf(char *fmt,int value)")
@@ -105,10 +95,6 @@ fn non_callable_slot_declarations_do_not_clone_the_current_function_prototype() 
             &declaration,
             "--assert-strict",
         ]);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("typed_macho_tail_cli: skipping (no `.sla`): {stderr}");
-            return;
-        }
         assert!(ok, "negative control rejected {declaration:?}: {stderr}");
         assert!(
             stdout.contains("int printf(char *fmt,int value)"),
@@ -131,10 +117,6 @@ fn default_single_batch_and_project_surfaces_keep_the_import_argument() {
     let sp = specs();
 
     let (single, stderr, ok) = run(&["decompile", &bin, "printf", "--sleighpath", &sp]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("typed_macho_tail_cli: skipping (no `.sla`): {stderr}");
-        return;
-    }
     assert!(ok, "single decompile failed: {stderr}");
     assert!(
         single.contains("printf(a0)"),

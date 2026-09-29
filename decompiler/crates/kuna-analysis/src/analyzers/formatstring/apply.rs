@@ -1,43 +1,17 @@
-//! Format-string varargs typing — the **application half (B)** of the kuna
-//! analog of Ghidra's `FormatStringAnalyzer` ("Variadic Function Signature
-//! Override").  This is the call-site-classification + override-building logic
-//! that the *parser* ([`super`], half A) feeds; the actual
-//! decompile→inspect→override→re-decompile *loop* lives in the console driver
-//! (`kuna-console`'s `IfcDecompile`), which is the kuna analog of Ghidra's
-//! `ParallelDecompiler` + `PcodeFunctionParser` + `HighFunctionDBUtil.writeOverride`.
+//! Call classification and prototype overrides for format-string varargs.
 //!
-//! Ghidra origin:
-//! `Ghidra/Features/DecompilerDependent/src/main/java/ghidra/app/plugin/core/string/variadic/`
-//! — chiefly `FormatStringAnalyzer.java` (the driver: `VARIADIC_SUBSTRINGS`
-//! call-name test `:42`/`:128`, `INPUT_FUNCTION_SUBSTRING` output/input choice
-//! `:59`/`:273`, `createParameters` `:292`, `initSignature` `:313`) and
-//! `PcodeFunctionParser.java` (the format-constant read at the call arg slot
-//! `:99`).
+//! [`classify_variadic_call`] follows Ghidra's `FormatStringAnalyzer`: callee
+//! names containing `printf` or `scanf` are candidates, and `scanf` selects input
+//! types even when both substrings occur. [`build_override_pieces`] combines
+//! the callee's fixed parameters and return type with the parser's [`Spec`]s.
+//! The resulting [`PrototypePieces`] has `first_var_arg_slot = -1`: the
+//! call-site override is a fixed signature, not another variadic declaration.
+//! This corresponds to Ghidra's `createParameters` / `initSignature` and
+//! `HighFunctionDBUtil.writeOverride`.
 //!
-//! # What this module does (the pure, unit-testable application logic)
-//!
-//! - [`classify_variadic_call`]: given a recovered call-site callee *name*,
-//!   decide whether it is a `printf`/`scanf`-family variadic format function and,
-//!   if so, whether it takes *output* (`printf`-family) or *input*
-//!   (`scanf`-family) argument types.  Faithful to Ghidra
-//!   `FormatStringAnalyzer.run` (`:127-128`, the `name.contains(substring)` test
-//!   over `VARIADIC_SUBSTRINGS = {"printf","scanf"}`) and `parseParameters`
-//!   (`:273`, `isOutputType = !callFunctionName.contains("scanf")`).
-//! - [`build_override_pieces`]: given the callee's *fixed* parameter types (the
-//!   already-recovered prototype, the analog of Ghidra's
-//!   `namesToParameters.get(callFunctionName)`), the callee return type, and the
-//!   format-derived [`Spec`](super::Spec) list, build the concrete
-//!   [`PrototypePieces`] for the per-call-site override — fixed types ++ the
-//!   parsed format types, with `first_var_arg_slot = -1` (the override is the now
-//!   *fixed* signature, no longer varargs — matching Ghidra's
-//!   `FunctionDefinitionDataType` with no var-args flag set, installed by
-//!   `HighFunctionDBUtil.writeOverride`).  The analog of
-//!   `createParameters`/`initSignature` (`:292`/`:313`).
-//!
-//! The Funcdata pcode-walk (find the `CALL` ops, read the format constant from
-//! the call arg at slot `paramCount`, resolve the constant through its defining
-//! op) is genuinely `Funcdata`-dependent and lives in the console driver, not
-//! here, so this module stays a pure, portable, unit-tested library.
+//! Image lookup and p-code walking belong to the load-time and console drivers.
+//! The console also owns the inspect/override/re-decompile loop; this module
+//! only classifies names and constructs overrides.
 
 use std::rc::Rc;
 
@@ -84,7 +58,7 @@ pub fn classify_variadic_call(name: &str) -> Option<bool> {
     Some(!name.contains(INPUT_FUNCTION_SUBSTRING))
 }
 
-/// Build the concrete per-call-site [`PrototypePieces`] override (Ghidra
+/// Build the concrete per-call-site [`PrototypePieces`](kuna_decomp::fspec::PrototypePieces) override (Ghidra
 /// `createParameters` `:292` + `initSignature` `:313`).
 ///
 /// The new signature is the callee's already-recovered *fixed* parameters

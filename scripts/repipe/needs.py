@@ -51,6 +51,7 @@ import sys
 from collections import OrderedDict
 
 from . import config
+from ..atomic import atomic_text_writer
 
 SCHEMA = "re-need/1"
 
@@ -440,10 +441,8 @@ def write(need, path=None):
         raise ValueError("%s: %s" % (need.fields.get("need_id"), "; ".join(problems)))
     target = str(path or need.path or path_for(need.need_id, need.status == "rejected"))
     os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
-    tmp = target + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
+    with atomic_text_writer(target, encoding="utf-8") as fh:
         fh.write(render(need))
-    os.replace(tmp, target)
     need.path = target
     return target
 
@@ -776,11 +775,9 @@ def reindex(path=None):
 
 def _write_json(target, doc):
     os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
-    tmp = target + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
+    with atomic_text_writer(target, encoding="utf-8") as fh:
         json.dump(doc, fh, indent=2)
         fh.write("\n")
-    os.replace(tmp, target)
     return target
 
 

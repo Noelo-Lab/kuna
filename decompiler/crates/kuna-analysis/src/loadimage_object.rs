@@ -459,7 +459,7 @@ pub struct ObjectLoadImage {
     /// the same `(vma, size, flags)` shape as [`Self::sections`], reported by
     /// `getSegments` so a section-keyed reader has a container to fall back on
     /// when the image carries no usable section table. Distinct from
-    /// [`Self::segments`], which owns the bytes and covers only what the file
+    /// [`Self::bytes`], which owns the bytes and covers only what the file
     /// backs; this records each segment's whole RAM footprint. Empty for an
     /// `ET_REL` load, which has no program headers.
     segment_info: Vec<SectionInfo>,
@@ -981,8 +981,9 @@ impl ObjectLoadImage {
     }
 
     /// (kuna) Build the image from a **relocatable object** (`ET_REL`): lay the
-    /// `SHF_ALLOC` sections out above [`reloc_object::RELOC_BASE`], apply the
-    /// `.rela.*` relocations, and rebase / extern-bind the symbols — producing
+    /// `SHF_ALLOC` sections out above
+    /// [`RELOC_BASE`](crate::loader::reloc_object::RELOC_BASE), apply the `.rela.*`
+    /// relocations, and rebase / extern-bind the symbols — producing
     /// the same `(segments, sections, funcsyms)` triple the linked `PT_LOAD` path
     /// produces.  Funcsym names are demangled + deduped exactly as on the linked
     /// path.  See [`crate::loader::reloc_object`].
@@ -1488,12 +1489,10 @@ impl LoadImage for ObjectLoadImage {
 ///
 /// The arch -> language-stem match is format-independent (`object` collapses
 /// `e_machine`/`IMAGE_FILE_MACHINE_*`/Mach-O `cputype` into one
-/// [`Architecture`]).  The **only** per-format variation is the compiler-model
-/// field, which comes from [`ObjectFormat::compiler_model`]: for ELF this is the
-/// same `gcc`/`default` token the function baked in before, so every produced id
-/// string is **byte-identical to today** — this is a structural change with no
-/// output change.  An arch with no `compiler_model` opinion falls back to the
-/// per-arch default (`gcc`/`default`) the id strings already used.
+/// [`Architecture`]). The compiler-model field comes from
+/// [`ObjectFormat::compiler_model`](crate::loader::format::ObjectFormat::compiler_model),
+/// falling back to the per-architecture default (`gcc`/`default`) when the
+/// format has no model for that architecture.
 ///
 /// PARTIAL: covers the common machines kuna ships a `.sla` for.  An unmapped
 /// machine is a `LowlevelError` naming it (the caller falls back to an explicit

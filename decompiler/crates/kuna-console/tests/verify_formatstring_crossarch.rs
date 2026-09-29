@@ -34,13 +34,6 @@
 //! other arches' single-flag UX. (Gate-safe: that toggle is inert unless the
 //! feature is enabled, so the parity gates — which never set `formatstring` — are
 //! byte-identical.)
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_s1_*` gates, bootstrapping needs the built per-arch
-//! `.sla` under `specs/` (gitignored; `make specs`). When it is absent the
-//! bootstrap fails; the test prints that and returns early (a specs-less CI is a
-//! visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -61,26 +54,16 @@ fn fmt_bin(arch: &str) -> PathBuf {
         .join(format!("fmt_{arch}"))
 }
 
-/// Decompile `main` of `fmt_<arch>` and return the captured C, optionally enabling
-/// the format-string varargs-typing feature first (`--option formatstring on`).
-/// Returns `None` (a visible skip) when the per-arch `.sla` is absent.
-fn decompile_main(arch: &str, formatstring_on: bool) -> Option<String> {
+/// Decompile `main` of `fmt_<arch>` and return the captured C, optionally enabling the
+/// format-string varargs-typing feature first (`--option formatstring on`).
+fn decompile_main(arch: &str, formatstring_on: bool) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fmt_bin(arch).to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_formatstring_crossarch[{arch}]: skipping (bootstrap failed, build \
-                 `.sla` with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fmt_bin(arch).to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // Commit the load-time analysis facts (libproto, PLT import names, etc.) — what
     // `read symbols` does — so the `printf` proto is recovered before the decompile.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
@@ -103,15 +86,13 @@ fn decompile_main(arch: &str, formatstring_on: bool) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// default-off: the printf varargs are left UNTYPED (the `%s` arg is *not* cast to
 /// `char *`).  Run for each of AArch64/ARM/RISC-V.
 fn assert_off_leaves_varargs_untyped(arch: &str) {
-    let Some(out) = decompile_main(arch, false) else {
-        return; // specs-less skip
-    };
+    let out = decompile_main(arch, false);
     assert!(out.contains("printf("), "[{arch}] expected a printf call, got:\n{out}");
     assert!(
         !out.contains("(char *)*a1"),
@@ -123,9 +104,7 @@ fn assert_off_leaves_varargs_untyped(arch: &str) {
 /// widening cast (the format-derived `int` matches the recovered parameter).  Run
 /// for each of AArch64/ARM/RISC-V.
 fn assert_on_types_printf_varargs(arch: &str) {
-    let Some(out) = decompile_main(arch, true) else {
-        return; // specs-less skip
-    };
+    let out = decompile_main(arch, true);
     assert!(out.contains("printf("), "[{arch}] expected a printf call, got:\n{out}");
     // The whole point: the call renders `printf("%d %s\n",a0,(char *)*a1)`.
     assert!(

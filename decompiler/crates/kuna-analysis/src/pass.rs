@@ -169,8 +169,8 @@ pub struct LocalFact {
     pub func_addr: u64,
     /// The DWARF source name of the local (e.g. `file`, `elf_header`).
     pub name: String,
-    /// The recovered kuna [`Datatype`] (mapped from the variable's `DW_AT_type` DIE
-    /// by the same DIE→Datatype mapper the typed-signature path uses).
+    /// The recovered kuna [`Datatype`](kuna_decomp::dtype::Datatype), mapped from
+    /// the variable's `DW_AT_type` DIE by the typed-signature path's mapper.
     pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
     /// The stack offset in kuna stack-space coordinates (`call_frame_cfa + fbreg`),
     /// signed; the commit wraps it to the unsigned stack address.
@@ -197,7 +197,8 @@ pub struct TypedDataFact {
     pub addr: u64,
     /// The name the symbol is installed under.
     pub name: String,
-    /// The recovered kuna [`Datatype`] for the object AT that address.
+    /// The recovered kuna [`Datatype`](kuna_decomp::dtype::Datatype) for the
+    /// object at that address.
     pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
 }
 
