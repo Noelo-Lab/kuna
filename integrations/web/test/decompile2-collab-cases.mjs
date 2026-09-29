@@ -7,7 +7,8 @@
 // bounded clocks; messages sized in UTF-8; names and programs that cannot
 // travel; the register cap and resync; huge local batches; a late
 // BroadcastChannel knock; forwarding only where needed; the shared session
-// kept apart in storage. Every case runs and is reported; any failure exits 1.
+// kept apart in storage; a program over 32 MB sent to a page that lost the
+// inviter's first hello. Every case runs and is reported; any failure exits 1.
 //   node integrations/web/test/decompile2-collab-cases.mjs
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
@@ -526,10 +527,11 @@ await test('a hello lost as the channel opens is sent again, whichever side lost
 });
 await test('third review #14 a message over the channel\'s limit in UTF-8 bytes is not sent, even under it in characters', async () => {
   const big = { name: '€'.repeat(90000), size: 100, hash: 'a'.repeat(64) };
-  const ana = member('aaaaaaaa', 'Ana', { file: big, bytes: new Uint8Array(100) });
+  const ana = member('aaaaaaaa', 'Ana', { file: FILE, bytes: FILE_BYTES });
   ana.g.create();
   const ben = member('bbbbbbbb', 'Ben');
   const [a] = invite(ana, ben);
+  Object.assign(ana.p, { file: big, bytes: new Uint8Array(100) });
   await settle(60);
   const over = a.texts.filter((t) => W.utf8Length(t) > W.MAX_MESSAGE);
   assert.ok(a.texts.length > 0);
@@ -613,6 +615,35 @@ await test('#29 a guest that gets an ack too late says so, and goes on with WebR
 });
 
 delete globalThis.RTCPeerConnection;
+// ── a fourth review ────────────────────────────────────────────────────────
+
+await test('fourth review #5 a program over 32 MB still arrives when the inviter\'s first hello is lost', async () => {
+  const bytes = new Uint8Array((33 << 20) + 5);
+  bytes.set(randomBytes(4096), 1000);
+  const file = { name: 'big.elf', size: bytes.length, hash: createHash('sha256').update(bytes).digest('hex') };
+  const ana = member('aaaaaaaa', 'Ana', { file, bytes });
+  ana.g.create();
+  ana.g.local([ana.replica.set('fn:0x1149', 'adder')]);
+  const ben = member('bbbbbbbb', 'Ben');
+  const [a, b] = linkPair();
+  const send = a.send;
+  let first = true;
+  a.send = function sendButLoseTheFirst(text) {
+    if (first) {
+      first = false;
+      return;
+    }
+    send.call(this, text);
+  };
+  ana.g.addLink(a);
+  ben.g.addLink(b, { joining: true });
+  assert.ok(await until(() => ben.p.bytes?.length === bytes.length, 30000), 'Ben received the whole program');
+  assert.equal(ben.p.file.hash, file.hash);
+  assert.ok(await until(() => ben.replica.value('fn:0x1149') === 'adder', 5000), 'and the registers');
+  ana.g.leave();
+  ben.g.leave();
+});
+
 const failed = results.filter(([ok]) => !ok);
 for (const [ok, name, why] of results) console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : ` — ${why}`}`);
 if (failed.length) {

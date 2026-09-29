@@ -49,8 +49,9 @@ const ops = (list, max) => Array.isArray(list) && list.length <= max;
 
 const CHECKS = {
   hello: (m) => Number.isSafeInteger(m.proto) && isPeer(m.peer) && isName(m.name) && (m.proto !== PROTOCOL || (
-    only(m, ['t', 'proto', 'build', 'peer', 'name', 'color', 'sid', 'file']) && typeof m.build === 'string' && HASH.test(m.build) &&
-    (m.color === null || isColor(m.color)) && (m.sid === null || isSid(m.sid)) && (m.file === null || validFile(m.file)))),
+    only(m, ['t', 'proto', 'build', 'peer', 'name', 'color', 'sid', 'file', 'seen']) && typeof m.build === 'string' && HASH.test(m.build) &&
+    (m.color === null || isColor(m.color)) && (m.sid === null || isSid(m.sid)) && (m.file === null || validFile(m.file)) &&
+    (m.seen === undefined || typeof m.seen === 'boolean'))),
   welcome: (m) => only(m, ['t', 'sid', 'color', 'roster', 'file', 'example', 'send']) && isSid(m.sid) && isColor(m.color) &&
     Array.isArray(m.roster) && m.roster.length < MAX_PEERS && m.roster.every(validMember) && validFile(m.file) &&
     typeof m.example === 'boolean' && typeof m.send === 'boolean',

@@ -849,8 +849,12 @@ longer reachable through anyone leaves the roster. A link keeps what arrives bef
 page listens on it, so a page that is still working out its build id loses nothing the
 other page sent first. A data channel can still lose what one side sends the moment it
 opens (seen on busy machines), so each page repeats its hello every second until the
-other page shows it got one by sending anything else, and holds what arrives before the
-other page's hello to read once it comes.
+other page shows it got one: by a hello marked *seen* (a page answers a hello with one
+until it has shown it got it) or by sending anything else. Nothing else goes out on the
+link before that, so the welcome, the registers and the program never arrive ahead of
+the hello they depend on, however large the program; what does arrive first is held and
+read once the hello comes. A link whose other page shows nothing for 30 seconds is
+closed.
 
 *Presence.* The top bar shows the others as initials in their colours; the tooltip says
 where each one is ("Ben: sum_to, Assembly") and a click follows them until you click or

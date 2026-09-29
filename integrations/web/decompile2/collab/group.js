@@ -10,8 +10,11 @@
 // newcomer without the program receives it in chunks and checks its SHA-256.
 // A data channel can lose what one side sends the moment it opens (the
 // other side may not be listening yet), so each page repeats its hello until
-// the other page shows it got it (by sending anything else), and holds what
-// arrives before the other's hello, to read it once the hello comes.
+// the other page shows it got it: a hello saying `seen` (sent on receiving
+// a hello from a page not yet told), or anything else. Until then nothing else
+// goes out on that link (the welcome, the registers and the program wait), so
+// a page never receives more than a few messages before the other's hello;
+// what does arrive first is held and read once the hello comes.
 // Every message from another page passes `readMessage` (shape and size) and a
 // per-page rate limit first; a page that had to drop edits asks for the
 // sender's registers again. This page sends within the same limits, sized in
@@ -46,6 +49,8 @@ const SUM_MS = 10000;
 const HELLO_MS = 1000;
 const HELLO_TRIES = 30;
 const EARLY_MAX = 500;
+/** What a page may send before the other page has its hello. */
+const BEFORE_HELLO = new Set(['hello', 'bye', 'full']);
 const SUM_SOON_MS = 1500;
 const QUIET_MS = 2000;
 /** The real clock (tests pass one of their own). */
@@ -144,7 +149,7 @@ export class Group {
         ping: limiter(1, 2, this.timers.now), other: limiter(20, 40, this.timers.now),
       },
       out: limiter(18, 18, this.timers.now), rx: null, dropped: 0, gone: false, resyncAt: 0, snapAt: 0, sumAt: 0,
-      early: [], acked: false,
+      early: [], acked: false, told: false, waiting: [], onAck: [],
     };
     this.links.add(rec);
     link.onmessage = (data, channel) => this.#receive(rec, data, channel);
@@ -153,14 +158,39 @@ export class Group {
     return rec;
   }
 
-  /** Send this page's hello, and again every HELLO_MS until the other page shows it got one. */
+  /**
+   * Send this page's hello, and again every HELLO_MS until the other page
+   * shows it got one; a link whose other page never does is dropped.
+   */
   #sayHello(rec, tries) {
     if (rec.gone || rec.failed || rec.acked || this.closed) return;
-    this.#send(rec, {
+    if (tries > HELLO_TRIES) {
+      this.#drop(rec);
+      return;
+    }
+    this.#helloNow(rec);
+    this.timers.setTimeout(() => this.#sayHello(rec, tries + 1), HELLO_MS);
+  }
+
+  #helloNow(rec) {
+    const sent = this.#send(rec, {
       t: 'hello', proto: PROTOCOL, build: this.build, peer: this.me, name: this.name,
-      color: this.color, sid: rec.joining ? null : this.sid, file: this.page.fileMeta(),
+      color: this.color, sid: rec.joining ? null : this.sid, file: this.page.fileMeta(), seen: rec.hello,
     });
-    if (tries < HELLO_TRIES) this.timers.setTimeout(() => this.#sayHello(rec, tries + 1), HELLO_MS);
+    if (sent && rec.hello) rec.told = true;
+  }
+
+  /** The other page has this page's hello: send what waited for it. */
+  #acked(rec) {
+    if (rec.acked) return;
+    rec.acked = true;
+    const waiting = rec.waiting;
+    rec.waiting = [];
+    if (waiting.length) rec.told = true;
+    for (const text of waiting) quietly(() => rec.link.send(text));
+    const onAck = rec.onAck;
+    rec.onAck = [];
+    for (const done of onAck) done();
   }
 
   /** This page's own register ops, for every page it is linked to. */
@@ -206,10 +236,19 @@ export class Group {
 
   // ── receiving ────────────────────────────────────────────────────────────
 
-  /** Send a message (or prebuilt JSON text) if it fits in one data-channel message. */
+  /**
+   * Send a message (or prebuilt JSON text) if it fits in one data-channel
+   * message; until the other page has this page's hello, it waits.
+   */
   #send(rec, msg) {
     const text = typeof msg === 'string' ? msg : JSON.stringify(msg);
     if (text.length * 3 > MAX_MESSAGE && utf8Length(text) > MAX_MESSAGE) return false;
+    const hello = typeof msg === 'object' && BEFORE_HELLO.has(msg.t);
+    if (!rec.acked && !hello) {
+      rec.waiting.push(text);
+      return true;
+    }
+    if (!hello) rec.told = true;
     return quietly(() => { rec.link.send(text); return true; }) === true;
   }
 
@@ -229,7 +268,7 @@ export class Group {
       if (channel === 'edits') this.#hold(rec, data, channel);
       return;
     }
-    if (m.t !== 'hello') rec.acked = true;
+    if (m.t !== 'hello') this.#acked(rec);
     if (!rec.lim[m.t in rec.lim ? m.t : 'other'].take()) {
       rec.dropped++;
       if (m.t === 'ops' || m.t === 'snap') this.#askResync(rec);
@@ -238,7 +277,10 @@ export class Group {
     switch (m.t) {
       case 'hello':
         this.#hello(rec, m);
-        if (rec.hello && !rec.gone && !rec.failed) this.#replay(rec);
+        if (!rec.hello || rec.gone || rec.failed) break;
+        if (m.seen) this.#acked(rec);
+        if (!m.seen || !rec.told) this.#helloNow(rec);
+        this.#replay(rec);
         break;
       case 'welcome': this.#welcome(rec, m); break;
       case 'snap': this.#ops(rec, m.ops, m.last); break;
@@ -592,6 +634,8 @@ export class Group {
   #drop(rec) {
     if (rec.gone) return;
     rec.gone = true;
+    rec.waiting = [];
+    for (const done of rec.onAck.splice(0)) done();
     this.links.delete(rec);
     quietly(() => rec.link.close());
     if (rec.rx) {
@@ -693,6 +737,8 @@ export class Group {
   }
 
   async #sendFile(rec) {
+    if (!rec.acked) await new Promise((done) => rec.onAck.push(done));
+    if (rec.gone || this.closed) return;
     const bytes = this.page.fileBytes();
     const meta = this.page.fileMeta();
     if (!bytes || !meta) return;
