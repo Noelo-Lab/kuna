@@ -470,7 +470,7 @@ export class Group {
     const send = m.file?.hash !== file.hash;
     this.#send(rec, {
       t: 'welcome', sid: this.sid, color: rec.color, roster: this.#rosterList().filter((x) => x.peer !== rec.peer),
-      file, example: this.page.isExample(), send,
+      file, send,
     });
     this.#sendSnap(rec);
     this.#sendWhere(rec);
@@ -488,7 +488,7 @@ export class Group {
     this.color = m.color;
     rec.listed = new Set(m.roster.map((x) => x.peer));
     for (const x of m.roster) if (x.peer !== this.me && x.peer !== rec.peer) this.#know(x, rec.peer);
-    this.page.welcomed({ from: rec.peer, name: rec.name, file: m.file, example: m.example, send: m.send, sid: m.sid });
+    this.page.welcomed({ from: rec.peer, name: rec.name, file: m.file, send: m.send, sid: m.sid });
     if (this.closed || rec.gone) return;
     this.#sendSnap(rec);
     this.#sendWhere(rec);

@@ -1,4 +1,4 @@
-// decompile2-collab-page.mjs — live-session cases in the real /decompile2/
+// decompile2-collab-page.mjs — live-session cases in the real /decompile/
 // page, one per defect a review found in how the page drives a session (the
 // number is the review's): a cancelled or superseded edit keeps the others'
 // changes; a language switch before a guest joins; a guest's own stored
@@ -40,8 +40,8 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { findChrome, launchChrome, openPage, openTab } from './cdp-client.mjs';
-import { requireDist, serveStatic, fixture } from './worker-harness.mjs';
-import { legacyKey } from '../decompile2/persist.js';
+import { requireDist, serveStatic, fixture, openSample } from './worker-harness.mjs';
+import { legacyKey } from '../decompile/persist.js';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
@@ -182,12 +182,12 @@ async function open(p, { seed = null } = {}) {
     for (const [k, v] of entries) localStorage.setItem(k, v);
     return true;
   }, seed || []);
-  await p.navigate(`${server.base}/decompile2/`);
+  await p.navigate(`${server.base}/decompile/`);
   await ready(p);
 }
 
 async function example(p) {
-  await p.click('#examplebtn');
+  await openSample(p);
   await p.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf' && document.getElementById('ccode').textContent.includes('add(')`, { what: `${p.label}: main`, timeout: 60000 });
   await idle(p);
 }
@@ -201,7 +201,6 @@ async function nameAndGo(p, name) {
 
 async function inviteLink(p, name = null) {
   if (!(await p.evaluate(`!!document.getElementById('d2collab')?.open`))) {
-    await p.click('#morebtn');
     await p.click('#collabbtn');
     await p.waitFor(`document.getElementById('d2collab')?.open`, { what: 'collab dialog' });
   }
@@ -245,7 +244,6 @@ async function carryReply(ana, ben) {
   await ben.waitFor(`document.querySelector('#d2collab [data-copytext]')?.value.includes('#reply=')`, { what: 'Ben\'s reply link', timeout: 20000 });
   const reply = await ben.evaluate(`document.querySelector('#d2collab [data-copytext]').value`);
   if (!(await ana.evaluate(`!!document.querySelector('#d2collab input[name=reply]')`))) {
-    await ana.click('#morebtn');
     await ana.click('#collabbtn');
     await ana.waitFor(`document.querySelector('#d2collab input[name=reply]')`, { what: 'Ana\'s paste box' });
   }
@@ -464,7 +462,7 @@ try {
     await nameAndGo(ben, 'Ben');
     await ben.waitFor(`document.querySelector('#d2collab [data-copytext]')?.value.includes('#reply=')`, { what: 'Ben waits with a reply link', timeout: 20000 });
     await closeDialog(ben);
-    await ben.click('#examplebtn');
+    await openSample(ben);
     await ben.waitFor(`!document.getElementById('d2pop').hidden && /You are joining Ana's session/.test(document.getElementById('d2pop').textContent)`, { what: 'Ben is asked first', timeout: 10000 });
   });
 
@@ -509,7 +507,6 @@ try {
     const ana = await tab('Ana', { script: 'window.RTCPeerConnection = function () { throw new Error("blocked by the browser"); };' });
     await open(ana);
     await example(ana);
-    await ana.click('#morebtn');
     await ana.click('#collabbtn');
     await nameAndGo(ana, 'Ana');
     await ana.waitFor(`/Could not make an invite link: blocked by the browser/.test(document.querySelector('#d2collab [data-status]')?.textContent || '')`, { what: 'the reason', timeout: 10000 });
@@ -519,7 +516,6 @@ try {
     const ana = await tab('Ana');
     await open(ana);
     await example(ana);
-    await ana.click('#morebtn');
     await ana.click('#collabbtn');
     await nameAndGo(ana, 'A\u2028na');
     await ana.waitFor(`document.querySelector('#d2collab [data-copytext]')?.value.includes('#join=')`, { what: 'an invite link', timeout: 10000 });
@@ -628,7 +624,7 @@ try {
     tabs = tabs.filter((t) => t !== ana);
     await ben.waitFor(`/closed/.test((document.getElementById('d2collab')?.textContent || '') + [...document.querySelectorAll('.d2-toast')].map((t) => t.textContent).join(' '))`, { what: 'Ben is told', timeout: 20000 });
     await closeDialog(ben);
-    await ben.click('#examplebtn');
+    await openSample(ben);
     await ben.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { what: 'Ben opens a program without being asked to stop a join', timeout: 60000 });
   });
 
@@ -877,7 +873,7 @@ try {
     await ben.waitFor(`document.querySelector('#d2collab [data-act=leave]')`, { what: 'the session dialog' });
     await ben.click('#d2collab [data-act=leave]');
     await ben.waitFor(`/bens_own/.test(document.getElementById('ccode').textContent)`, { what: 'Ben\'s own changes are back', timeout: 30000 });
-    await ben.navigate(`${server.base}/decompile2/`);
+    await ben.navigate(`${server.base}/decompile/`);
     await ready(ben);
     await example(ben);
     await ben.waitFor(`[...document.querySelectorAll('.d2-toast button')].some((b) => /Use those instead/.test(b.textContent))`, { what: 'the offer', timeout: 10000 });
@@ -976,7 +972,6 @@ try {
     assert.equal(await ben.evaluate(`!document.getElementById('cancelbtn').disabled`), true, 'Ben\'s edit is in flight');
     assert.match(await ben.evaluate(`localStorage.getItem(${JSON.stringify(`kuna.d2.session.${machoHash}`)}) || ''`), /bens_macho_name/, 'and saved');
     if (!(await ana.evaluate(`!!document.querySelector('#d2collab input[name=reply]')`))) {
-      await ana.click('#morebtn');
       await ana.click('#collabbtn');
       await ana.waitFor(`document.querySelector('#d2collab input[name=reply]')`, { what: 'Ana\'s paste box' });
     }
@@ -996,7 +991,7 @@ try {
     const ben = await tab('Ben', { other: true, script: DELAY_SHIM });
     await open(ben, { seed: [[`kuna.d2.shared.${SAMPLE_HASH}`, stored([fnRec(SUM, 'from_an_old_session')])]] });
     await ben.evaluate('window.__kunaDelay = 4000; true');
-    await ben.click('#examplebtn');
+    await openSample(ben);
     await sleep(1000);
     assert.equal(await ben.evaluate(`!document.getElementById('cancelbtn').disabled`), true, 'Ben is opening the example');
     await ben.evaluate(`document.getElementById('cancelbtn').click(); window.__kunaDelay = 0; true`);
@@ -1037,11 +1032,10 @@ try {
     const ana = await tab('Ana', { script: DELAY_SHIM });
     await open(ana);
     await example(ana);
-    await ana.click('#morebtn');
     await ana.click('#collabbtn');
     await ana.evaluate('window.__kunaDelay = 3000; true');
     await nameAndGo(ana, 'Ana');
-    await ana.evaluate(`document.getElementById('examplebtn').click(); true`);
+    await openSample(ana);
     await ana.waitFor(`!document.getElementById('cancelbtn').disabled`, { what: 'the example opening again', timeout: 5000 });
     await ana.evaluate(`document.getElementById('cancelbtn').click(); window.__kunaDelay = 0; true`);
     await ana.waitFor(`/open a program first/i.test(document.getElementById('d2collab')?.textContent || '')`, { what: 'the invite gives up', timeout: 20000 });

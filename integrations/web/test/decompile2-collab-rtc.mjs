@@ -14,7 +14,7 @@
 //   integrations/web/build.sh && node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
 import assert from 'node:assert/strict';
 import { findChrome, launchChrome, openPage } from './cdp-client.mjs';
-import { requireDist, serveStatic } from './worker-harness.mjs';
+import { requireDist, serveStatic, openSample } from './worker-harness.mjs';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
@@ -73,14 +73,13 @@ let skipped = null;
 try {
   const [ana, ben] = await Promise.all(chromes.map((c) => openPage(c.port)));
   for (const p of [ana, ben]) await p.viewport(1280, 860);
-  await ana.navigate(`${server.base}/decompile2/`);
+  await ana.navigate(`${server.base}/decompile/`);
   await ready(ana);
   skipped = await ana.call(PROBE);
   if (skipped) throw Object.assign(new Error(skipped), { skip: true });
-  await ana.click('#examplebtn');
+  await openSample(ana);
   await ana.waitFor(`/sum_to/.test(document.getElementById('ccode').textContent)`, { timeout: 60000 });
   await idle(ana);
-  await ana.click('#morebtn');
   await ana.click('#collabbtn');
   await ana.waitFor(`document.querySelector('#d2collab input[name=name]')`, { timeout: 20000 });
   await ana.type('Ana');

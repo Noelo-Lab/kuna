@@ -3,7 +3,7 @@
 // the startup and runtime helpers every compiler adds, and imported functions.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { groupOf, groupFunctions, firstFunction } from '../decompile2/groups.js';
+import { groupOf, groupFunctions, firstFunction } from '../decompile/groups.js';
 
 const fn = (name, address_hex, kind = 'func') => ({ name, address_hex, kind });
 const checks = [];

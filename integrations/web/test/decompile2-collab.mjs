@@ -10,18 +10,18 @@
 // refuse another build.
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
-import { Session } from '../decompile2/session.js';
+import { Session } from '../decompile/session.js';
 import {
   Replica, validOp, registersOf, applyRegisters, adoptRawKeys, describeRegister, recordKeyOf, History, MODES, birthOrder,
-} from '../decompile2/collab/replica.js';
+} from '../decompile/collab/replica.js';
 import {
   PROTOCOL, MAX_PEERS, COLORS, validMessage, readMessage, maxBytes, encodeCode, decodeCode, codeFrom, limiter,
   randomId, initials, validAnchor,
-} from '../decompile2/collab/wire.js';
-import { compactSdp, expandSdp, validSdp, passiveAnswer } from '../decompile2/collab/sdp.js';
+} from '../decompile/collab/wire.js';
+import { compactSdp, expandSdp, validSdp, passiveAnswer } from '../decompile/collab/sdp.js';
 import { sha256Js, sha256Hex } from '../sha256.js';
-import { Group, resolveColors } from '../decompile2/collab/group.js';
-import { iceServersFrom, loadCollabPrefs, PREFS_KEY } from '../decompile2/collab/collab.js';
+import { Group, resolveColors } from '../decompile/collab/group.js';
+import { iceServersFrom, loadCollabPrefs, PREFS_KEY } from '../decompile/collab/collab.js';
 
 const checks = [];
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -241,7 +241,7 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   const good = [
     { t: 'hello', proto: PROTOCOL, build: BUILD, peer: 'ana00000', name: 'Ana', color: null, sid: null, file: null },
     { t: 'hello', proto: PROTOCOL + 1, peer: 'ana00000', name: 'Ana', anything: [1, 2] },
-    { t: 'welcome', sid: 'abcdefabcdef', color: COLORS[1], roster: [{ peer: 'ana00000', name: 'Ana', color: COLORS[0] }], file, example: true, send: true },
+    { t: 'welcome', sid: 'abcdefabcdef', color: COLORS[1], roster: [{ peer: 'ana00000', name: 'Ana', color: COLORS[0] }], file, send: true },
     { t: 'snap', ops: [], last: true },
     { t: 'ops', ops: [{ k: 'fn:0x10', v: 'x', c: [1, 'ana00000'] }] },
     { t: 'file', ...file },
@@ -439,7 +439,6 @@ function page(name, { file = null, bytes = null } = {}) {
     name, file, bytes, events: [], pings: [], cursors: [], welcomes: [], progress: 0,
     fileMeta() { return this.file; },
     fileBytes() { return this.bytes; },
-    isExample() { return false; },
     welcomed(info) { this.welcomes.push(info); },
     caughtUp() { this.caught = true; },
     changed() {},

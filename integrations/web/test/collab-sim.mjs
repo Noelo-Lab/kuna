@@ -15,10 +15,10 @@
 //
 // Used by decompile2-collab-sync.mjs (scripted cases) and
 // decompile2-collab-fuzz.mjs (random runs).
-import { Session } from '../decompile2/session.js';
-import { Sync } from '../decompile2/collab/sync.js';
-import { Group } from '../decompile2/collab/group.js';
-import { Replica, validOp, adoptRawKeys, applyRegisters, birthOrder, changedBetween, registersOf } from '../decompile2/collab/replica.js';
+import { Session } from '../decompile/session.js';
+import { Sync } from '../decompile/collab/sync.js';
+import { Group } from '../decompile/collab/group.js';
+import { Replica, validOp, adoptRawKeys, applyRegisters, birthOrder, changedBetween, registersOf } from '../decompile/collab/replica.js';
 import { sha256Js } from '../sha256.js';
 
 export const BUILD = 'b'.repeat(64);
@@ -324,7 +324,7 @@ export class Page {
   #app() {
     return {
       session: () => this.session,
-      binary: () => (this.program ? { ...this.program, example: false } : null),
+      binary: () => (this.program ? { ...this.program } : null),
       fileMeta: () => (this.program ? { name: this.program.name, size: this.program.bytes.length, hash: this.program.hash.slice(7) } : null),
       mode: () => this.mode,
       typing: () => this.burst.size > 0,

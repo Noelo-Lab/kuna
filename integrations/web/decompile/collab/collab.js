@@ -17,7 +17,7 @@ import { createPresence, anchorAt, findAnchor } from './presence.js';
 export const PREFS_KEY = 'kuna.d2.collab';
 const STUN = 'stun:stun.l.google.com:19302';
 const JOIN_MS = 20000;
-const VIEW_WORDS = { c: 'C code', split: 'Side by side', asm: 'Assembly', bytes: 'Bytes', stack: 'Stack', src: 'Original source' };
+const VIEW_WORDS = { c: 'Code', split: 'Side by side', asm: 'Assembly', bytes: 'Bytes', stack: 'Stack' };
 const EFFORTS = { auto: 'Automatic', fast: 'Fast', reliable: 'Reliable', aggressive: 'Thorough' };
 const PEOPLE = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6" cy="5.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
   '<path d="M1.8 13.5c.5-2.4 2.2-3.7 4.2-3.7s3.7 1.3 4.2 3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
@@ -510,11 +510,11 @@ class Collab {
     }
   }
 
-  #welcomed({ from, name, file, example, send }) {
+  #welcomed({ from, name, file, send }) {
     const j = this.join;
     if (!j) return;
     clearTimeout(j.timer);
-    Object.assign(j, { sponsor: from, sponsorName: name, file, send, example, state: send ? 'receiving' : 'merging' });
+    Object.assign(j, { sponsor: from, sponsorName: name, file, send, state: send ? 'receiving' : 'merging' });
     this.group.setWhere(this.#where());
     this.#rosterChanged();
     this.#render();
@@ -789,7 +789,7 @@ class Collab {
   #whereWords(m) {
     if (!m.linked) return `${m.name}: connecting…`;
     if (!m.where?.fn) return `${m.name}: no function open yet`;
-    return `${m.name}: ${this.api.nameOf(m.where.fn)}, ${VIEW_WORDS[m.where.view] || 'C code'}`;
+    return `${m.name}: ${this.api.nameOf(m.where.fn)}, ${VIEW_WORDS[m.where.view] || 'Code'}`;
   }
 
   /** The people in the top bar, updated in place so a focused one keeps focus. */
@@ -896,7 +896,7 @@ class Collab {
 
   // ── the dialog ───────────────────────────────────────────────────────────
 
-  /** ⋯ → Work together…: invite (or, in a session, who is here, invite more, leave). */
+  /** Collaborate: invite (or, in a session, who is here, invite more, leave). */
   open() {
     if (this.join?.state === 'failed') this.join = null;
     this.#show({ kind: this.join ? 'join' : this.active ? 'session' : 'start', inv: this.join?.inv });

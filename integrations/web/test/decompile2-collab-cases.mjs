@@ -14,11 +14,11 @@
 //   node integrations/web/test/decompile2-collab-cases.mjs
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
-import * as S from '../decompile2/session.js';
-import * as R from '../decompile2/collab/replica.js';
-import * as W from '../decompile2/collab/wire.js';
-import * as G from '../decompile2/collab/group.js';
-import * as P from '../decompile2/persist.js';
+import * as S from '../decompile/session.js';
+import * as R from '../decompile/collab/replica.js';
+import * as W from '../decompile/collab/wire.js';
+import * as G from '../decompile/collab/group.js';
+import * as P from '../decompile/persist.js';
 
 globalThis.addEventListener ??= () => {};
 globalThis.removeEventListener ??= () => {};
@@ -282,7 +282,7 @@ function connector(me) {
 function member(peer, name, { file = null, bytes = null, replica = null, group = {} } = {}) {
   const p = {
     name, file, bytes, events: [],
-    fileMeta() { return this.file; }, fileBytes() { return this.bytes; }, isExample() { return false; },
+    fileMeta() { return this.file; }, fileBytes() { return this.bytes; },
     welcomed() {}, caughtUp() {}, changed() {}, fileProgress() {}, fileFailed() {}, roster() {}, where() {}, cursor() {}, ping() {},
     fileArrived(b, m) { this.file = m; this.bytes = b; },
     event(kind, info) { this.events.push([kind, info.name]); },
@@ -585,7 +585,7 @@ class FakePC {
 }
 await test('#29 a knock the guest gave up on is not a link: the WebRTC reply still connects', async () => {
   globalThis.RTCPeerConnection = FakePC;
-  const L = await import('../decompile2/collab/link.js');
+  const L = await import('../decompile/collab/link.js');
   const offer = await L.makeOffer({ me: 'aaaaaaaa' });
   const ch = new BroadcastChannel(`kuna.d2.link.${offer.id}`);
   const acks = [];
@@ -599,7 +599,7 @@ await test('#29 a knock the guest gave up on is not a link: the WebRTC reply sti
 });
 await test('#29 a guest that gets an ack too late says so, and goes on with WebRTC', async () => {
   globalThis.RTCPeerConnection = FakePC;
-  const L = await import('../decompile2/collab/link.js');
+  const L = await import('../decompile/collab/link.js');
   const id = W.randomId(10);
   const ch = new BroadcastChannel(`kuna.d2.link.${id}`);
   const said = [];
@@ -622,7 +622,7 @@ await test('fourth review #8 a connection that cannot be set up is closed, on ei
     async setRemoteDescription() { throw new Error('the description was refused'); }
   }
   globalThis.RTCPeerConnection = FailingPC;
-  const L = await import('../decompile2/collab/link.js');
+  const L = await import('../decompile/collab/link.js');
   await assert.rejects(L.takeOffer({ me: 'bbbbbbbb', id: W.randomId(10), sdp: { u: 'abcd', p: 'x'.repeat(24), f: 'A'.repeat(64), c: [] } }));
   assert.equal(FakePC.made.at(-1).closed, true, 'the guest closes its connection');
   const offer = await L.makeOffer({ me: 'aaaaaaaa' });

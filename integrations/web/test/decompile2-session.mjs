@@ -4,11 +4,11 @@
 // `prototype`), byte runs, the `.kuna` file round trip, outcomes, undo, the
 // C declarators behind it, and the localStorage store.
 import assert from 'node:assert/strict';
-import { Session, stripComment, shellQuote, cliCommand, isGlobalRaw } from '../decompile2/session.js';
+import { Session, stripComment, shellQuote, cliCommand, isGlobalRaw } from '../decompile/session.js';
 import {
   validateIdent, validateCType, cDeclare, parseSignature, buildPrototype, typeSize, knownTypes, normalizeType,
-} from '../decompile2/ctype.js';
-import { SessionStore, fnv1a32, hashBytes, legacyKey } from '../decompile2/persist.js';
+} from '../decompile/ctype.js';
+import { SessionStore, fnv1a32, hashBytes, legacyKey } from '../decompile/persist.js';
 
 const checks = [];
 const MAIN = '0x1198';

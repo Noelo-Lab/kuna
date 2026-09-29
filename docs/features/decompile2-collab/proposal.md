@@ -1,5 +1,8 @@
 # decompile2-collab — proposal
 
+> The page has since moved to `/decompile/` (its code to `integrations/web/decompile/`); the old
+> `/decompile2/` address redirects there, keeping `#join=` links.
+
 Live multi-user sessions in `/decompile2/`: several people open one program,
 rename, retype, comment and patch it together, ping a line to draw the others'
 attention, and see each other's pointers as faint arrows, with no server of
