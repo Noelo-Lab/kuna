@@ -1601,6 +1601,78 @@ hide a later float (`Slot::reinterpreted`). A narrower access is not the field's
 evidence and needs no rule: it already prints through an address cast
 (`*(float *)&a0->field_0x8`).
 
+**(kuna) A field held as a pointer (`fieldtype`).** Among accesses of one width
+the rule above keeps the type of the *first* one, and at `-O0` a field is reloaded
+for every use, so the first load is often the one an integer add or a compare with
+a constant reads. `sort`'s `fillbuf` then declares its buffer `long field_0x0`
+although the next load hands it to `memmove`, and `ls`'s `free_ent` declares the
+security context `long` beside `free` and `freecon`; every pointer use of such a
+field prints a cast back to what the program holds in it. With
+[`fieldtype`](../options.md) (`on|off`, default `off`) `structsynth` keeps every
+access of the field's width with the value it loaded or stored
+(`Evidence::record_access`) and, once a base is accepted, asks
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_fieldtype.rs (pointer_fields)`
+for the field's type.
+
+The evidence is what the program does with a value, not the type the value
+carries. An access counts when its value, or a copy or cast of it, is the address
+a load or store goes through (at most after a constant offset or a scaled index is
+added to it), the target of an indirect call, or an argument that a declared
+(type-locked) pointer parameter takes, or when it is what a function declared to
+return a pointer returned (`held_as_pointer`). The type a value picks up by being
+merged with other values does not count. `structsynth` reads an access's type from
+the variable the value was merged into, and at `-O2` one register can carry a
+number on one path and a string on another: e2fsck's `expand_percent_expression`
+hands `ctx->num` and `ctx->str` to the same `fprintf`, so the load of the `__u64`
+number is typed `char *` without the program ever using it as an address. Among
+the accesses that count, when some carry a pointer and no access of the field
+carries a float, the field is declared as the most specific pointer they carry: a
+pointee that is a record, a named aggregate or code outranks a scalar one, which
+outranks an undefined one, which outranks `void`. The winner must be the only
+pointer of its rank, or the only one of its rank that a declared parameter the
+loaded value is handed to names (`free (void *)` beside `freecon (char *)` settles
+on `char *`). Otherwise the first access decides as before, and it also decides
+when it already carries a pointer whose pointee outranks the winner: `fillbuf` at
+`-O2` walks its buffer as a `char *`, and `memmove`'s `void *` is no reason to say
+less. An access whose value is an address formed from the record's own base
+(`&rec[1]`, gnulib's scratch buffer pointing `data` at its inline storage) is left
+out (`addresses_the_record`): its pointee is whatever the base carried before the
+record was measured, a guess made from these very accesses.
+
+A field that some access uses as a number no pointer is keeps its type, whatever
+else holds it (`used_as_number`). That is a value, or a copy or cast of it, that is
+divided, taken a remainder of, shifted, multiplied by anything but -1 (a pointer
+difference negates), compared with sign, sign-extended or converted to a float,
+and a stored value computed by one of those. An index that reads a table and is
+then handed to `write` as its buffer stays a `long`, and so does a hash of an
+address kept in an `unsigned long`. The same test guards the last rule: a field
+whose accesses prove nothing is still declared `T *` when a value loaded from it is
+compared, for equality or unsigned order, with a value loaded from a field the
+rule declared `T *` and no access uses it as a number, since C compares a pointer
+only with a compatible one. `mergelines_node` walks `lo` down to `end_lo`, and
+nothing but that loop test says what `end_lo` is. The option never turns a field
+into a number: a field whose first access already carries a pointer keeps it, so
+at `-O2`, where the one load of that index feeds both the table read and `write`,
+the index is `void *` with the option on or off. An integer that is only ever added
+and handed to a declared `void *` parameter cannot be told from an address, and is
+declared `void *`.
+
+The integer accesses are not rewritten: the printer casts the pointer where an
+operation needs a number, the cast the program's own arithmetic on an address is.
+So a pointer difference scaled by a record size the pointee does not have, `(end -
+lo) >> 5` over a `long *`, prints both sides cast to `long` where the integer field
+printed none. That is the price of the right type. The same holds when the proven
+pointee is only a guess: `mergelines_node` at `-O0` proves `lo` a pointer to 8-byte
+words, the locals it is read into stay `long`, and each read pays a cast. Over the
+45 castbench binaries the casts on the 4,815 functions kuna and IDA both emit fall
+from 32,073 to 31,974 (`docs/features/fieldtype/record.json`). It stays off
+because of the ledger below: a reader shares a record only on exact field-type
+agreement, so a field one reader re-types moves which record another reader is
+answered with (`docs/features/fieldtype/default-on-evaluation.md`).
+`tests/stages/kuna-fieldtype.xml` pins both passes, including the index and the
+merged number as controls, and the compiled round trip in `decompile_all_cli.rs`
+checks the printed C computes what the binary does.
+
 Names are program-wide `struct_N`, minted and handed out by the **layout
 ledger** (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/ledger.rs`),
 which is the set of `struct_N` the program's `TypeFactory` already holds: the

@@ -728,6 +728,7 @@ fn option_values_live_value_present_for_105() {
     // 102 -> 103: +1 for `castobject` (live_field = cast_object).
     // 103 -> 104: +1 for `elemptr` (live_field = elem_ptr).
     // 104 -> 105: +1 for `condexeret` (live_field = cond_exe_ret).
+    // 105 -> 106: +1 for `fieldtype` (live_field = field_type).
     assert_eq!(with_live, 105);
 }
 
@@ -909,6 +910,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 242 -> 243: +1 for `castwiden`.
     // 243 -> 244: +1 for `elemptr`.
     // 244 -> 245: +1 for `condexeret`; its P4 row sits mid-table.
+    // 245 -> 246: +1 for `fieldtype`.
     assert_eq!(json.matches("},\n").count(), 245);
 }
 

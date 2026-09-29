@@ -1,0 +1,460 @@
+{
+ "opportunity": "structsynth typed a synthesized field from the first access of its widest width; at -O0 a field is reloaded per use, so the first load is often an integer add or a compare with a constant and a buffer handed to memmove is declared long. Of the 362 casts on synthesized record members over the 4,815 functions kuna and IDA both emit, about 135 read an integer-declared field as a pointer.",
+ "test_name": "tests/stages/kuna-fieldtype.xml (13 assertions; pass 1 option fieldtype off, pass 2 on over the gcc -O0 fixture, passes 3-4 over clang -O2 with operand_refs on; #12 an index read at a table and handed to write and #13 a number merged with a string on its way to fprintf stay numbers in both passes, and fail with the previous evidence rule) + unit tests (p5_types/kuna_fieldtype.rs tests, p4_calls/kuna_calleevote/tests.rs only_the_input_naming_a_superseded_record_is_forgotten) + compiled round trip decompile_all_cli.rs a_pointer_field_round_trips_through_the_printed_c (gcc -O0, clang -O0, gcc -O2, clang -O2 fixtures x option off/on x gcc/clang; the index and the merged number pinned as integers in both arms)",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_gcc_O0_x86_64",
+ "selector": "buf_shift",
+ "option": "fieldtype",
+ "flag": "field_type",
+ "change_kind": "type-inference",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "default_on": false,
+ "default_value": "off",
+ "values": "on|off",
+ "measured_on": "feat/fieldtype rebased onto origin/main 4f037dae4 (#755); one build, --option fieldtype on vs the default off. A fresh castbench arm of origin/main 4f037dae4 is byte-identical to the main-632437155 arm and to this build's default arm on all 45 binaries, and the on arm is identical to the pre-rebase measurement",
+ "evidence_rule": "an access counts only when its value (or a copy or cast of it) is a load/store address (after at most a constant offset or scaled index), an indirect-call target, an argument a type-locked pointer parameter takes, or the return of a function declared to return a pointer; a type merged into the value (phi, merged local) is not evidence. A value divided, taken a remainder of, shifted, multiplied (not by -1), compared with sign, sign-extended or converted to float keeps the field its type and blocks the compare-partner rule. A first-access pointer whose pointee outranks the proven one is kept.",
+ "castbench": {
+  "method": "castbench full (45 binaries x O0/O2/O2-noinline), one build, --option fieldtype on vs the default off; the default arm is byte-identical to a fresh origin/main 4f037dae4 arm (itself identical to main-632437155) on all 45 binaries",
+  "shared_functions": 4815,
+  "ida": {
+   "casts": 37821,
+   "per_kloc": 155.4,
+   "per_100_statements": 27.0
+  },
+  "off": {
+   "casts": 32073,
+   "per_kloc": 169.6,
+   "per_100_statements": 27.0,
+   "vs_ida": 0.848
+  },
+  "on": {
+   "casts": 31974,
+   "per_kloc": 169.1,
+   "per_100_statements": 26.9,
+   "vs_ida": 0.845
+  },
+  "by_opt_off_on": {
+   "O0": [
+    9934,
+    9893
+   ],
+   "O2": [
+    12206,
+    12180
+   ],
+   "O2-noinline": [
+    9933,
+    9901
+   ]
+  },
+  "functions_fewer": [
+   53,
+   -134
+  ],
+  "functions_more": [
+   14,
+   35
+  ],
+  "all_functions": {
+   "functions": 20230,
+   "off": 81154,
+   "on": 81041,
+   "fewer": [
+    123,
+    -234
+   ],
+   "more": [
+    55,
+    121
+   ]
+  },
+  "more_read": "all 14 shared: sort -O0 mergelines_node +20 (lo/hi proven only as pointers to undefined 8-byte words; the locals they are read into stay long and each read pays a cast), diff -O2 read_files +3 (buffer fields now void * / char *, indexed by variables), gnulib hash transfer_entries x10 +1 each (the entry's next pointer is now long *, the bucket it is stored into is still a record kuna reads as long[]), tar -O0 append_incremental_renames +1 (a pointer field assigned a callee's integer return), diff -O0 0x124fe +1 (a char * field read into an unsigned char * local); outside the shared set tar's gnulib regex (+2..+9 each) indexes fields proven only void * by computed byte offsets",
+  "previous_rule": "the rule this PR first shipped (any access type, merged ones included) gave 31,900 (71 fewer -191, 13 more +18) and declared e2fsck's problem_context.num and db->blk char *"
+ },
+ "census": {
+  "address_of_family_shared": {
+   "kuna": 2783,
+   "ida": 1864,
+   "element_of_scalar_pointer": 1843,
+   "opaque_libc_shell_member": 763,
+   "synthesized_member": 65,
+   "stack_local": 58
+  },
+  "synthesized_member_casts_shared": 362,
+  "fields": {
+   "distinct": 7650,
+   "no_pointer_access": 5340,
+   "integer_declared_with_pointer_access": 358,
+   "pointer_agree": 1844,
+   "pointer_disagree": 105
+  },
+  "retyped_by_option": {
+   "fields": 294,
+   "integer_to_pointer": 278,
+   "pointer_to_pointer": 16,
+   "record_renumbered_only": 41
+  }
+ },
+ "typesweep": {
+  "metric": "decbench type_match pinned to 625e892 (final-c/pindb.py), DECBENCH_NO_CACHE=1, one binary, --option fieldtype on vs the default off",
+  "slices": 444,
+  "per_project": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 40,
+    "perfect_on": 40,
+    "mean_off": 0.4372,
+    "mean_on": 0.4372,
+    "improved": 0,
+    "worse": 0
+   },
+   "O0": {
+    "n": 4286,
+    "perfect_off": 1160,
+    "perfect_on": 1160,
+    "mean_off": 0.5565,
+    "mean_on": 0.5565,
+    "improved": 0,
+    "worse": 0
+   },
+   "pooled": {
+    "n": 10748,
+    "perfect_off": 1674,
+    "perfect_on": 1674,
+    "mean_off": 0.3752,
+    "mean_on": 0.3752,
+    "improved": 0,
+    "worse": 0
+   },
+   "O2-noinline": {
+    "n": 4068,
+    "perfect_off": 421,
+    "perfect_on": 421,
+    "mean_off": 0.2847,
+    "mean_on": 0.2847,
+    "improved": 0,
+    "worse": 0
+   },
+   "O2": {
+    "n": 2394,
+    "perfect_off": 93,
+    "perfect_on": 93,
+    "mean_off": 0.2043,
+    "mean_on": 0.2043,
+    "improved": 0,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 1019,
+    "perfect_on": 1019,
+    "mean_off": 0.363,
+    "mean_on": 0.363,
+    "improved": 0,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 66,
+    "perfect_on": 66,
+    "mean_off": 0.4549,
+    "mean_on": 0.4549,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 113,
+    "perfect_on": 113,
+    "mean_off": 0.5438,
+    "mean_on": 0.5438,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 99,
+    "perfect_on": 99,
+    "mean_off": 0.3724,
+    "mean_on": 0.3724,
+    "improved": 0,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 55,
+    "perfect_on": 55,
+    "mean_off": 0.4695,
+    "mean_on": 0.4695,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 61,
+    "perfect_on": 61,
+    "mean_off": 0.26,
+    "mean_on": 0.26,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 221,
+    "perfect_on": 221,
+    "mean_off": 0.3982,
+    "mean_on": 0.3982,
+    "improved": 0,
+    "worse": 0
+   }
+  },
+  "decomp_vars_changed": 0
+ },
+ "typesweep_disjoint": {
+  "projects": "e2fsprogs dash kmod zlib shadow dpkg x O0/O2/O2-noinline",
+  "slices": 165,
+  "per_project": {
+   "dpkg": {
+    "n": 908,
+    "perfect_off": 58,
+    "perfect_on": 58,
+    "mean_off": 0.2136,
+    "mean_on": 0.2136,
+    "improved": 0,
+    "worse": 0
+   },
+   "O0": {
+    "n": 2234,
+    "perfect_off": 322,
+    "perfect_on": 322,
+    "mean_off": 0.5025,
+    "mean_on": 0.5025,
+    "improved": 0,
+    "worse": 0
+   },
+   "pooled": {
+    "n": 5794,
+    "perfect_off": 454,
+    "perfect_on": 454,
+    "mean_off": 0.3129,
+    "mean_on": 0.3129,
+    "improved": 0,
+    "worse": 0
+   },
+   "O2": {
+    "n": 1426,
+    "perfect_off": 40,
+    "perfect_on": 40,
+    "mean_off": 0.1786,
+    "mean_on": 0.1786,
+    "improved": 0,
+    "worse": 0
+   },
+   "dash": {
+    "n": 839,
+    "perfect_off": 115,
+    "perfect_on": 115,
+    "mean_off": 0.3676,
+    "mean_on": 0.3676,
+    "improved": 0,
+    "worse": 0
+   },
+   "O2-noinline": {
+    "n": 2134,
+    "perfect_off": 92,
+    "perfect_on": 92,
+    "mean_off": 0.2042,
+    "mean_on": 0.2042,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 99,
+    "perfect_on": 99,
+    "mean_off": 0.3724,
+    "mean_on": 0.3724,
+    "improved": 0,
+    "worse": 0
+   },
+   "kmod": {
+    "n": 280,
+    "perfect_off": 22,
+    "perfect_on": 22,
+    "mean_off": 0.3516,
+    "mean_on": 0.3516,
+    "improved": 0,
+    "worse": 0
+   },
+   "zlib": {
+    "n": 2074,
+    "perfect_off": 146,
+    "perfect_on": 146,
+    "mean_off": 0.331,
+    "mean_on": 0.331,
+    "improved": 0,
+    "worse": 0
+   },
+   "e2fsprogs": {
+    "n": 1007,
+    "perfect_off": 14,
+    "perfect_on": 14,
+    "mean_off": 0.2686,
+    "mean_on": 0.2686,
+    "improved": 0,
+    "worse": 0
+   }
+  },
+  "decomp_vars_changed": 0,
+  "previous_rule": "4 improved, 2 worse (e2fsck handle_nomem a2 and check_dir_block v55 declared char *)"
+ },
+ "e2fsck_witnesses": "O2-noinline handle_nomem keeps uint8 a2; O2 check_dir_block keeps db->blk an integer (only change on 0x28e90: a field proven a pointer prints = NULL for = 0); O0 ext2fs_*_bitmaps keep struct_55 * (0 record parameters lost at O0/O2/O2-noinline). Three parameter types move: splitting_at_eof (O0, O2-noinline) void * -> int8 *, compared with handle->path now proven a pointer (&v1[-6] for (int8)v1 - 0x30, the same address); O0 ext2fs_init_dblist int8 * -> unsigned long *, whose *a1 = v2[0] then stores an int4 * with no cast, a printer gap main already shows on about 251 stores over the castbench set",
+ "arity": "0 of 20,230 functions change their argument count, variable count or variable sizes (JSON variables[]); one parameter type moves (grep -O0 0xd6b4 unsigned long a2 -> long a2, stored through a field now proven long *)",
+ "layout": {
+  "method": "final-g/layoutrun.py (structsynth param, 8 coreutils builds), both arms of one build",
+  "fields_only": {
+   "off": [
+    880,
+    1010,
+    0.8713,
+    0.0932
+   ],
+   "on": [
+    878,
+    1010,
+    0.8693,
+    0.093
+   ]
+  },
+  "filler_counted": {
+   "off": 0.7539,
+   "on": 0.7517
+  },
+  "cause": "du -O0 fts_children no longer shares FTS with fts_read (fts_cur retyped void * there), du -O2 struct exclude answered by a larger record"
+ },
+ "corpus_hunks": {
+  "functions": 1896,
+  "RENAME": 1657,
+  "CAST": 116,
+  "ARITH": 24,
+  "MERGE": 29,
+  "SIG": 20,
+  "DECL": 4,
+  "OTHER_read": 46,
+  "file": "docs/features/fieldtype/corpus-hunks.txt"
+ },
+ "round_trip": "fieldtype_x86_64.c: buf_shift, ent_release, range_walk, cell_val, pctx_print, slot_post x 4 builds x 2 arms x 2 compilers print the binary's own lines (cell_val left out of the clang builds, pctx_print out of gcc -O2, each for a reason that holds in both arms); ops_run checked by spelling only (a code pointer is spelled void *, not callable C in either arm)",
+ "known_limits": "an integer only ever added and handed to a declared void * parameter is declared void *; the option never makes a field an integer (a field main's first-access rule already declares a pointer keeps it, e.g. an index at -O2 whose one load feeds both a table read and write)",
+ "sweep_fix": "kuna_calleevote::Ledger::forget_naming forgets only the inputs naming a superseded record; byte-identical to main on the 45 castbench binaries with fieldtype off",
+ "speed": {
+  "method": "interleaved min-of-15 decompile-all --json --max-fn-seconds 120, three arms rotated (origin/main 4f037dae4, this build at its default, this build with fieldtype on), one warm-up each (speed.py, raw samples in speed.json)",
+  "results": {
+   "bash": {
+    "default/main": {
+     "min": -0.1,
+     "median_of_ratios": 0.1,
+     "cpu_min": -0.1
+    },
+    "on/main": {
+     "min": -0.14,
+     "median_of_ratios": 1.22,
+     "cpu_min": -0.14
+    },
+    "on/default": {
+     "min": -0.04,
+     "median_of_ratios": 2.78,
+     "cpu_min": -0.04
+    }
+   },
+   "fmt": {
+    "default/main": {
+     "min": -0.15,
+     "median_of_ratios": -0.48,
+     "cpu_min": -0.15
+    },
+    "on/main": {
+     "min": 0.03,
+     "median_of_ratios": 0.21,
+     "cpu_min": 0.02
+    },
+    "on/default": {
+     "min": 0.18,
+     "median_of_ratios": 0.31,
+     "cpu_min": 0.17
+    }
+   },
+   "ls": {
+    "default/main": {
+     "min": 0.05,
+     "median_of_ratios": 0.22,
+     "cpu_min": 0.06
+    },
+    "on/main": {
+     "min": 0.15,
+     "median_of_ratios": 0.02,
+     "cpu_min": 0.15
+    },
+    "on/default": {
+     "min": 0.09,
+     "median_of_ratios": 0.26,
+     "cpu_min": 0.09
+    }
+   },
+   "sort": {
+    "default/main": {
+     "min": 0.37,
+     "median_of_ratios": -0.54,
+     "cpu_min": 0.37
+    },
+    "on/main": {
+     "min": 0.04,
+     "median_of_ratios": -0.43,
+     "cpu_min": 0.04
+    },
+    "on/default": {
+     "min": -0.33,
+     "median_of_ratios": -0.09,
+     "cpu_min": -0.33
+    }
+   }
+  },
+  "bash_before_value_gating": [
+   {
+    "default/main": {
+     "min": 4.42,
+     "median_of_ratios": 0.16,
+     "cpu_min": 4.42
+    },
+    "on/main": {
+     "min": 5.76,
+     "median_of_ratios": 0.68,
+     "cpu_min": 5.76
+    },
+    "on/default": {
+     "min": 1.29,
+     "median_of_ratios": 0.24,
+     "cpu_min": 1.29
+    }
+   },
+   {
+    "default/main": {
+     "min": 5.02,
+     "median_of_ratios": 1.26,
+     "cpu_min": 5.02
+    },
+    "on/main": {
+     "min": 6.56,
+     "median_of_ratios": 2.79,
+     "cpu_min": 6.56
+    },
+    "on/default": {
+     "min": 1.46,
+     "median_of_ratios": -1.09,
+     "cpu_min": 1.46
+    }
+   }
+  ],
+  "note": "the two earlier bash runs measured a build whose structsynth kept every access value with the option off; that list now exists only while the option or its trace is on"
+ },
+ "verdict": "ships off: every default-flip criterion passes except fields-only layout precision (docs/features/fieldtype/default-on-evaluation.md)"
+}
