@@ -2204,12 +2204,9 @@ fn dc_is_eventual_constant(data: &Funcdata, vn: VarnodeId, max_binary: i32, max_
 }
 
 /// C++ `ActionDeadCode::lastChanceLoad` (coreaction.cc:4064): on heritage pass
-/// 1 (only), hold un-consumed LOADs from eventual-constant addresses alive (a
-/// volatile-address safety net).
+/// 1, hold un-consumed LOADs from eventual-constant addresses alive. Proven
+/// volatile accesses remain live on later passes as well.
 fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> bool {
-    if data.get_heritage_pass() > 1 {
-        return false;
-    }
     if data.is_jumptable_recovery_on() {
         return false;
     }
@@ -2228,7 +2225,8 @@ fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> bo
             continue;
         }
         let ptr = o.get_in(1).expect("LOAD ptr");
-        let eventual = dc_is_eventual_constant(data, ptr, 3, 1);
+        let eventual = (data.get_heritage_pass() <= 1 && dc_is_eventual_constant(data, ptr, 3, 1))
+            || crate::p3_dataflow::kuna_volatileload::is_volatile(data, op);
         if eventual {
             dc_push_consumed(data, !0u64, vn, worklist);
             data.vbank_mut().get_mut(vn).expect("lastChanceLoad: stale out").set_auto_live_hold();

@@ -132,6 +132,9 @@ impl Rule for RuleEarlyRemoval {
             }
         }
 
+        if crate::p3_dataflow::kuna_volatileload::is_volatile(data, op) {
+            return 0;
+        }
         // Get rid of unused op
         data.op_destroy(op);
         1

@@ -1,0 +1,17 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7">
+<!-- Synthetic push; movw/movt r1,0x50000000; ldm r1,{r0,r2,r3,r4}; pop. -->
+<bytechunk space="ram" offset="0x1000">10402de9001000e3001045e31d0091e81080bde8</bytechunk>
+<symbol space="ram" offset="0x1000" name="read_four"/>
+</binaryimage>
+<script>
+  <com>volatile 0x50000000 16</com>
+  <com>load function read_four</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="volatile LDM: first read" min="1" max="1">= dat_50000000;</stringmatch>
+<stringmatch name="volatile LDM: second read" min="1" max="1">= dat_50000004;</stringmatch>
+<stringmatch name="volatile LDM: third read" min="1" max="1">= dat_50000008;</stringmatch>
+<stringmatch name="volatile LDM: fourth read" min="1" max="1">= dat_5000000c;</stringmatch>
+</decompilertest>

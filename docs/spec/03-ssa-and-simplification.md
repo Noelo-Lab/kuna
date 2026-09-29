@@ -1311,7 +1311,8 @@ drives §3.1; `ActionNonzeroMask` recomputes the known-zero-bits fact
 (`Funcdata::calc_nz_mask`) that dozens of rules consult (§3.5's booleanmask
 and flagcompare among them); `ActionVarnodeProps` applies storage-derived
 properties — after the first heritage pass it releases the `autolivehold`
-pins (except on values still LOADed through a constant/read-only pointer),
+pins (except on values still LOADed through a constant/read-only pointer or
+a proven volatile address),
 replaces *read-only* storage with its image constant when
 `readonlypropagate` is set — or, with that program-wide switch off, when the
 varnode lies in one of the loader's `dynrelocs` ranges, the `PT_GNU_RELRO`-frozen
@@ -1328,6 +1329,16 @@ the Windows loader writes there. The action also folds to zero any varnode whose
 consumed bits and nonzero mask are
 disjoint (skipping constants and COPYs of nonzero constants, which would
 recurse).
+
+Before dead-code or early-removal rules discard an unused LOAD,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_volatileload.rs` proves its
+address through a bounded graph of constant integer operations. A load from an
+explicitly volatile range stays live until normal volatile lowering can consume
+it, including later heritage passes. The proof respects operation widths, visits
+at most 64 varnodes, declines cycles and unknown inputs, and never reads memory.
+This preserves each access in a load-multiple instruction even when its later
+address expressions exceed the general dead-code lookahead limit. Ordinary
+unused loads keep the existing removal rules.
 
 **Block-graph cleanup** (mainloop tail): `ActionUnreachable` deletes blocks
 flow cannot reach (`Funcdata::remove_unreachable_blocks`); `ActionDoNothing`
