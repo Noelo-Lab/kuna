@@ -1,0 +1,897 @@
+##### O0/tar/tar @0x135e3  casts 7 -> 9 (IDA 3)
+   -  void *v4; // stack - 0x230
+   +  char *v4; // stack - 0x230
+   -      v1 = (void *)sub_1d18d();
+   -      v4 = v1;
+   +      v1 = (char *)sub_1d18d();
+   +      v4 = (char *)v1;
+   -      v1 = (void *)sub_1d123(a1);
+   -      v4 = v1;
+   +      v1 = (char *)sub_1d123(a1);
+   +      v4 = (char *)v1;
+##### O0/tar/tar @0x1381d  casts 59 -> 61 (IDA 55)
+   -  uint8 v10; // stack - 0x38
+   -  uint4 v11; // stack - 0x70
+   -  uint4 v12; // stack - 0x6c
+   -  uint4 v13; // stack - 0x68
+   -  uint4 v14; // stack - 0x64
+   -  uint8 v15; // stack - 0x50
+   -  int8 v16; // stack - 0x48
+   -  int8 v17; // stack - 0x40
+   -  int8 v18; // stack - 0x30
+   -  char *v2;
+   -  char v3; // al
+   -  uint4 v4; // eax
+   -  int4 v5; // eax
+   -  char *v6;
+   -  char v7; // dl
+   -  int8 v8; // stack - 0x60
+   -  int8 v9; // stack - 0x58
+   +  uint4 v10; // stack - 0x70
+   +  uint4 v11; // stack - 0x6c
+   +  uint4 v12; // stack - 0x68
+   +  uint4 v13; // stack - 0x64
+   +  uint8 v14; // stack - 0x50
+   +  int8 v15; // stack - 0x48
+   +  int8 v16; // stack - 0x40
+   +  int8 v17; // stack - 0x30
+   +  char v2; // al
+   +  uint4 v3; // eax
+   +  int4 v4; // eax
+   +  char *v5;
+   +  char v6; // dl
+   +  int8 v7; // stack - 0x60
+   +  int8 v8; // stack - 0x58
+   +  uint8 v9; // stack - 0x38
+   +  v7 = 0;
+   -  v9 = 0;
+   -  v16 = sub_13775(a0);
+   -  if (!v16)
+   +  v15 = sub_13775(a0);
+   +  if (!v15)
+   -  sub_29274(((unsigned int *)a0)[0x1d],&((int4 *)a0)[0x1d],&v8);
+   -  sub_293ce(((unsigned int *)a0)[0x1e],&((int4 *)a0)[0x1e],&v9);
+   +  sub_29274(((unsigned int *)a0)[0x1d],&((int4 *)a0)[0x1d],&v7);
+   +  sub_293ce(((unsigned int *)a0)[0x1e],&((int4 *)a0)[0x1e],&v8);
+   -    v4 = sub_55b51(((unsigned int *)a0)[0x1c],(((uint4 *)a0)[0x1c] & 0xf000) == 0x4000,dat_9f8f8,dat_9f8f0,NULL);
+   -    ((uint4 *)a0)[0x1c] = v1 & 0xfffff000 | v4;
+   +    v3 = sub_55b51(((unsigned int *)a0)[0x1c],(((uint4 *)a0)[0x1c] & 0xf000) == 0x4000,dat_9f8f8,dat_9f8f0,NULL);
+   +    ((uint4 *)a0)[0x1c] = v1 & 0xfffff000 | v3;
+   -    sub_12a05(((unsigned int *)a0)[0x1c],(char *)(v16 + 100),8);
+   +    sub_12a05(((unsigned int *)a0)[0x1c],(char *)(v15 + 100),8);
+   -    sub_12a05(((uint4 *)a0)[0x1c] & 0xfff,(char *)(v16 + 100),8);
+   +    sub_12a05(((uint4 *)a0)[0x1c] & 0xfff,(char *)(v15 + 100),8);
+   -  v11 = ((uint4 *)a0)[0x1d];
+   +  v10 = ((uint4 *)a0)[0x1d];
+   +  if ((dat_9f864 == 4) && (0x200000 <= v10)) {
+   +    sub_1e1d3("uid",a0,0);
+   +    v10 = 0;
+   +  }
+   +  v5 = (char *)(v15 + 0x6c);
+   +  if (sub_12ba3(v10,v5,8) != '\x01')
+   +    return 0;
+   +  v11 = ((uint4 *)a0)[0x1e];
+   -    sub_1e1d3("uid",a0,0);
+   +    sub_1e1d3("gid",a0,0);
+   -  v6 = (char *)(v16 + 0x6c);
+   -  if (sub_12ba3(v11,v6,8) != '\x01')
+   +  v5 = (char *)(v15 + 0x74);
+   +  if (sub_12901(v11,v5,8) != '\x01')
+   -  v12 = ((uint4 *)a0)[0x1e];
+   -  if ((dat_9f864 == 4) && (0x200000 <= v12)) {
+   -    sub_1e1d3("gid",a0,0);
+   -    v12 = 0;
+   +  v14 = ((uint8 *)a0)[0x11];
+   +  if ((dat_9f864 == 4) && (0x200000000 <= v14)) {
+   +    sub_1e1d3("size",a0,0);
+   +    v14 = 0;
+   -  v6 = (char *)(v16 + 0x74);
+   -  if (sub_12901(v12,v6,8) != '\x01')
+   -    return 0;
+   -  v15 = ((uint8 *)a0)[0x11];
+   -  if ((dat_9f864 == 4) && (0x200000000 <= v15)) {
+   -    sub_1e1d3("size",a0,0);
+   -    v15 = 0;
+   -  }
+   -  v3 = sub_12a9a(v15,(char *)(v16 + 0x7c),0xc);
+   -  if (v3 != '\x01')
+   +  v2 = sub_12a9a(v14,(char *)(v15 + 0x7c),0xc);
+   +  if (v2 != '\x01')
+   -          v10 = dat_9f920;
+   -          v18 = dat_9f928;
+   +          v9 = dat_9f920;
+   +          v17 = dat_9f928;
+   -        v18 = ((int8 *)a0)[0x20];
+   -        v10 = ((uint8 *)a0)[0x1f];
+   +        v17 = ((int8 *)a0)[0x20];
+   +        v9 = ((uint8 *)a0)[0x1f];
+   -    v5 = sub_5ff90(((int8 *)a0)[0x1f],((int8 *)a0)[0x20],dat_9f920,dat_9f928);
+   -    if (1 <= v5) { // branch-flip
+   -      v10 = dat_9f920;
+   -      v18 = dat_9f928;
+   +    v4 = sub_5ff90(((int8 *)a0)[0x1f],((int8 *)a0)[0x20],dat_9f920,dat_9f928);
+   +    if (1 <= v4) { // branch-flip
+   +      v9 = dat_9f920;
+   +      v17 = dat_9f928;
+   -      v18 = ((int8 *)a0)[0x20];
+   -      v10 = ((uint8 *)a0)[0x1f];
+   +      v17 = ((int8 *)a0)[0x20];
+   +      v9 = ((uint8 *)a0)[0x1f];
+   -    if ((0x1ffffffff < v10) || (v18))
+   -      sub_1e1d3("mtime",a0,&v10);
+   -    if (0x200000000 <= v10)
+   -      v10 = 0;
+   +    if ((0x1ffffffff < v9) || (v17))
+   +      sub_1e1d3("mtime",a0,&v9);
+   +    if (0x200000000 <= v9)
+   +      v9 = 0;
+   -  v3 = sub_12af2(v10,(char *)(v16 + 0x88),0xc);
+   -  if (v3 != '\x01')
+   +  v2 = sub_12af2(v9,(char *)(v15 + 0x88),0xc);
+   +  if (v2 != '\x01')
+   -    if (((dat_9f864 != 6) && (dat_9f864 != 2)) && ((v6 = (char *)(v16 + 0x149), sub_12957(0,v6,8) != '\x01' || (v6 = (char *)(v16 + 0x151), sub_129ae(0,v6,8) != '\x01'))))
+   +    if (((dat_9f864 != 6) && (dat_9f864 != 2)) && ((v5 = (char *)(v15 + 0x149), sub_12957(0,v5,8) != '\x01' || (v5 = (char *)(v15 + 0x151), sub_129ae(0,v5,8) != '\x01'))))
+   -    v13 = gnu_dev_major(((unsigned long *)a0)[0x10]);
+   -    v14 = gnu_dev_minor(((unsigned long *)a0)[0x10]);
+   +    v12 = gnu_dev_major(((unsigned long *)a0)[0x10]);
+   +    v13 = gnu_dev_minor(((unsigned long *)a0)[0x10]);
+   +    if ((dat_9f864 == 4) && (0x200000 <= v12)) {
+   +      sub_1e1d3("devmajor",a0,0);
+   +      v12 = 0;
+   +    }
+   +    v5 = (char *)(v15 + 0x149);
+   +    if (sub_12957(v12,v5,8) != '\x01')
+   +      return 0;
+   -      sub_1e1d3("devmajor",a0,0);
+   +      sub_1e1d3("devminor",a0,0);
+   -    v6 = (char *)(v16 + 0x149);
+   -    if (sub_12957(v13,v6,8) != '\x01')
+   -      return 0;
+   -    if ((dat_9f864 == 4) && (0x200000 <= v14)) {
+   -      sub_1e1d3("devminor",a0,0);
+   -      v14 = 0;
+   -    }
+   -    v6 = (char *)(v16 + 0x151);
+   -    if (sub_129ae(v14,v6,8) != '\x01')
+   +    v5 = (char *)(v15 + 0x151);
+   +    if (sub_129ae(v13,v5,8) != '\x01')
+   -      sub_12af2(((uint8 *)a0)[0x1d],(char *)(v16 + 0x159),0xc);
+   -      sub_12af2(((uint8 *)a0)[0x21],(char *)(v16 + 0x165),0xc);
+   +      sub_12af2(((uint8 *)a0)[0x1d],(char *)(v15 + 0x159),0xc);
+   +      sub_12af2(((uint8 *)a0)[0x21],(char *)(v15 + 0x165),0xc);
+   -  v7 = (dat_9f864 != 1) ? 0x30 : 0; // branch-flip
+   -  *(char *)(v16 + 0x9c) = v7;
+   +  v6 = (dat_9f864 != 1) ? 0x30 : 0; // branch-flip
+   +  *(char *)(v15 + 0x9c) = v6;
+   -      memcpy((void *)(v16 + 0x101),"ustar",6);
+   -      memcpy((void *)(v16 + 0x107),&dat_80e49,2);
+   +      memcpy((void *)(v15 + 0x101),"ustar",6);
+   +      memcpy((void *)(v15 + 0x107),&dat_80e49,2);
+   -  strcpy((char *)(v16 + 0x101),"ustar  ");
+   +  strcpy((char *)(v15 + 0x101),"ustar  ");
+   -    if (v8) // branch-flip
+   -      ((unsigned long *)a0)[4] = sub_60cc6(v8);
+   +    if (v7) // branch-flip
+   +      ((unsigned long *)a0)[4] = sub_60cc6(v7);
+   -    if (v9) // branch-flip
+   -      ((unsigned long *)a0)[5] = sub_60cc6(v9);
+   +    if (v8) // branch-flip
+   +      ((unsigned long *)a0)[5] = sub_60cc6(v8);
+   -    if ((dat_9f864 == 4) && ((v2 = ((char **)a0)[4], 0x21 <= strlen(v2) || (v2 = ((char **)a0)[4], sub_3c9b7(v2) != '\x01'))))
+   +    if ((dat_9f864 == 4) && ((v5 = ((char **)a0)[4], 0x21 <= strlen(v5) || (v5 = ((char **)a0)[4], sub_3c9b7(v5) != '\x01'))))
+   -    sub_12c4c(((int8 *)a0)[4],v16 + 0x109,0x20);
+   -    if ((dat_9f864 == 4) && ((v2 = ((char **)a0)[5], 0x21 <= strlen(v2) || (v2 = ((char **)a0)[5], sub_3c9b7(v2) != '\x01'))))
+   +    sub_12c4c(((char **)a0)[4],(char *)(v15 + 0x109),0x20);
+   +    if ((dat_9f864 == 4) && ((v5 = ((char **)a0)[5], 0x21 <= strlen(v5) || (v5 = ((char **)a0)[5], sub_3c9b7(v5) != '\x01'))))
+   -    sub_12c4c(((int8 *)a0)[5],v16 + 0x129,0x20);
+   +    sub_12c4c(((char **)a0)[5],(char *)(v15 + 0x129),0x20);
+   -      v10 = 0;
+   -      v17 = ((int8 *)a0)[0x2c];
+   -      for (; v10 < ((uint8 *)a0)[0x2b]; v10 = v10 + 1) {
+   -        sub_1e1d3(*(char **)(v17 + v10 * 0x18),a0,&v10);
+   +      v9 = 0;
+   +      v16 = ((int8 *)a0)[0x2c];
+   +      for (; v9 < ((uint8 *)a0)[0x2b]; v9 = v9 + 1) {
+   +        sub_1e1d3(*(char **)(v16 + v9 * 0x18),a0,&v9);
+   -  return v16;
+   +  return v15;
+##### O0/tar/tar @0x15a63  casts 19 -> 20 (IDA 69)
+   -  char *v1;
+   +  unsigned long v1;
+   -  bool v11; // zf
+   -  char v12 [16];
+   -  bool v13; // stack - 0x108
+   -  char v14; // stack - 0x107
+   -  int4 v15; // stack - 0x104
+   -  int4 v16; // stack - 0x100
+   -  uint4 v17; // stack - 0xfc
+   -  code *v18; // stack - 0xf0
+   -  int8 v19; // stack - 0xe8
+   +  char v11 [16];
+   +  bool v12; // stack - 0x108
+   +  char v13; // stack - 0x107
+   +  int4 v14; // stack - 0x104
+   +  int4 v15; // stack - 0x100
+   +  uint4 v16; // stack - 0xfc
+   +  code *v17; // stack - 0xf0
+   +  int8 v18; // stack - 0xe8
+   +  struct_77 *v19; // stack - 0xe0
+   -  struct_77 *v20; // stack - 0xe0
+   -  int8 v21; // stack - 0xd8
+   -  void *v22; // stack - 0xd0
+   -  int8 v23; // stack - 0xc8
+   -  int8 v24; // stack - 0xc0
+   -  unsigned long v3;
+   -  int4 v4; // eax
+   -  char *v5;
+   -  int8 v6;
+   -  uint8 v7;
+   -  unsigned long v8; // stack - 0xf8
+   -  stat v9; // stack - 0xb8
+   +  int8 v20; // stack - 0xd8
+   +  void *v21; // stack - 0xd0
+   +  int8 v22; // stack - 0xc8
+   +  int8 v23; // stack - 0xc0
+   +  int4 v3; // eax
+   +  char *v4;
+   +  int8 v5;
+   +  uint8 v6;
+   +  unsigned long v7; // stack - 0xf8
+   +  stat v8; // stack - 0xb8
+   +  bool v9; // zf
+   -  v19 = 0xffffffffffffffff;
+   -  v16 = 0;
+   -  v20 = a0->field_0x198;
+   -  v10 = v20 == NULL;
+   -  if (v10)
+   -    v15 = dat_9c268;
+   +  v18 = 0xffffffffffffffff;
+   +  v15 = 0;
+   +  v19 = a0->field_0x198;
+   +  v9 = v19 == NULL;
+   +  if (v9)
+   +    v14 = dat_9c268;
+   -    v15 = v20->field_0x1a8;
+   -  }
+   -  v18 = NULL;
+   +    v14 = v19->field_0x1a8;
+   +  }
+   +  v17 = NULL;
+   -  if ((0 <= v15) || (v10)) {
+   -    if (fstatat(v15,a1,(stat *)&a0->field_0x20[0x38],dat_9fc10)) // branch-flip
+   -      v18 = sub_2b444;
+   +  if ((0 <= v14) || (v9)) {
+   +    if (fstatat(v14,a1,(stat *)&a0->field_0x20[0x38],dat_9fc10)) // branch-flip
+   +      v17 = sub_2b444;
+   -      v16 = sub_157f9(v20,a1,dat_9fc08);
+   -      if (0 <= v16) { // branch-flip
+   -        a0->field_0x1a8 = v16;
+   -        if (fstat(v16,(stat *)&a0->field_0x20[0x38]))
+   -          v18 = sub_2b444;
+   +      v15 = sub_157f9(v19,a1,dat_9fc08);
+   +      if (0 <= v15) { // branch-flip
+   +        a0->field_0x1a8 = v15;
+   +        if (fstat(v15,(stat *)&a0->field_0x20[0x38]))
+   +          v17 = sub_2b444;
+   -        v18 = sub_2b2b1;
+   +        v17 = sub_2b2b1;
+   -    *__errno_location() = -v15;
+   -    v18 = sub_2b2b1;
+   -  }
+   -  if (v18) {
+   -    sub_2b48b(a2,v10,v18);
+   -    return;
+   -  }
+   -  v21 = a0->field_0x88;
+   -  a0->field_0x118 = v21;
+   -  v12 = sub_5fd6a(&a0->field_0x20[0x38]);
+   -  a0->field_0xe8 = SUB168(v12,0);
+   -  a0->field_0xf0 = SUB168(v12,8);
+   -  v12 = sub_5fd9e(&a0->field_0x20[0x38]);
+   -  a0->field_0xf8 = SUB168(v12,0);
+   -  a0->field_0x100 = SUB168(v12,8);
+   -  v12 = sub_5fd84(&a0->field_0x20[0x38]);
+   -  v24 = SUB168(v12,8);
+   -  v23 = SUB168(v12,0);
+   -  a0->field_0x108 = v23;
+   -  a0->field_0x110 = v24;
+   -  if (((((dat_9f8be != '\x01') || (v10)) && ((a0->field_0x70 & 0xf000) != 0x4000)) && (v4 = sub_5ff90(a0->field_0xf8,a0->field_0x100,dat_9f900,dat_9f908), v4 <= -1)) && ((!dat_9f87c || (v4 = sub_5ff90(a0->field_0x108,a0->field_0x110,dat_9f900,dat_9f908), v4 <= -1)))) {
+   +    *__errno_location() = -v14;
+   +    v17 = sub_2b2b1;
+   +  }
+   +  if (v17) {
+   +    sub_2b48b(a2,v9,v17);
+   +    return;
+   +  }
+   +  v20 = a0->field_0x88;
+   +  a0->field_0x118 = v20;
+   +  v11 = sub_5fd6a(&a0->field_0x20[0x38]);
+   +  a0->field_0xe8 = SUB168(v11,0);
+   +  a0->field_0xf0 = SUB168(v11,8);
+   +  v11 = sub_5fd9e(&a0->field_0x20[0x38]);
+   +  a0->field_0xf8 = SUB168(v11,0);
+   +  a0->field_0x100 = SUB168(v11,8);
+   +  v11 = sub_5fd84(&a0->field_0x20[0x38]);
+   +  v23 = SUB168(v11,8);
+   +  v22 = SUB168(v11,0);
+   +  a0->field_0x108 = v22;
+   +  a0->field_0x110 = v23;
+   +  if (((((dat_9f8be != '\x01') || (v9)) && ((a0->field_0x70 & 0xf000) != 0x4000)) && (v3 = sub_5ff90(a0->field_0xf8,a0->field_0x100,dat_9f900,dat_9f908), v3 <= -1)) && ((!dat_9f87c || (v3 = sub_5ff90(a0->field_0x108,a0->field_0x110,dat_9f900,dat_9f908), v3 <= -1)))) {
+   -        v5 = (char *)sub_5e548(a2);
+   -        error(0,0,gettext("%s: file is unchanged; not dumped"),v5);
+   +        v4 = (char *)sub_5e548(a2);
+   +        error(0,0,gettext("%s: file is unchanged; not dumped"),v4);
+   -      v5 = (char *)sub_5e548(a2);
+   -      error(0,0,gettext("%s: file is the archive; not dumped"),v5);
+   -      return;
+   -    }
+   -    return;
+   -  }
+   -  v11 = (a0->field_0x70 & 0xf000) == 0x4000;
+   -  if ((!v11) && (sub_153bb(a0)))
+   -    return;
+   -  if ((!v11) && ((a0->field_0x70 & 0xf000) != 0x8000)) {
+   +      v4 = (char *)sub_5e548(a2);
+   +      error(0,0,gettext("%s: file is the archive; not dumped"),v4);
+   +      return;
+   +    }
+   +    return;
+   +  }
+   +  v10 = (a0->field_0x70 & 0xf000) == 0x4000;
+   +  if ((!v10) && (sub_153bb(a0)))
+   +    return;
+   +  if ((!v10) && ((a0->field_0x70 & 0xf000) != 0x8000)) {
+   -      v7 = a0->field_0x88;
+   -      a0->field_0x18 = (int8)sub_47649(v15,a1,v7);
+   +      v6 = a0->field_0x88;
+   +      a0->field_0x18 = (int8)sub_47649(v14,a1,v6);
+   -        sub_2b48b(a2,v10,sub_2b35d);
+   +        sub_2b48b(a2,v9,sub_2b35d);
+   -      v7 = (dat_9f864 != 2) ? 100 : 99; // branch-flip
+   -      v5 = (char *)a0->field_0x18;
+   -      if (v7 < strlen(v5))
+   +      v6 = (dat_9f864 != 2) ? 100 : 99; // branch-flip
+   +      v4 = (char *)a0->field_0x18;
+   +      if (v6 < strlen(v4))
+   -      sub_3d566(v15,a1,a0,0);
+   -      sub_3d1a5(v15,a1,a0,0);
+   -      v19 = sub_bacd();
+   +      sub_3d566(v14,a1,a0,0);
+   +      sub_3d1a5(v14,a1,a0,0);
+   +      v18 = sub_bacd();
+   -      v22 = (void *)sub_1381d(a0);
+   -      if (v22) {
+   -        sub_12157((int8)v22 + 0x9d,a0->field_0x18,100);
+   -        ((char *)v22)[0x9c] = 0x32;
+   -        sub_1422e(a0,v22,v19);
+   +      v21 = (void *)sub_1381d(a0);
+   +      if (v21) {
+   +        sub_12157(&((char *)v21)[0x9d],(char *)a0->field_0x18,100);
+   +        ((char *)v21)[0x9c] = 0x32;
+   +        sub_1422e(a0,v21,v18);
+   -            v5 = (char *)sub_5e548(a2);
+   -            error(0,0,gettext("%s: socket ignored"),v5);
+   +            v4 = (char *)sub_5e548(a2);
+   +            error(0,0,gettext("%s: socket ignored"),v4);
+   -        v14 = '6';
+   -        sub_3cf89(v15,a1,a0,0,1);
+   -        sub_3d566(v15,a1,a0,0);
+   -        sub_3d1a5(v15,a1,a0,0);
+   +        v13 = '6';
+   +        sub_3cf89(v14,a1,a0,0,1);
+   +        sub_3d566(v14,a1,a0,0);
+   +        sub_3d1a5(v14,a1,a0,0);
+   -        v14 = '4';
+   -        sub_3cf89(v15,a1,a0,0,1);
+   -        sub_3d566(v15,a1,a0,0);
+   -        sub_3d1a5(v15,a1,a0,0);
+   +        v13 = '4';
+   +        sub_3cf89(v14,a1,a0,0,1);
+   +        sub_3d566(v14,a1,a0,0);
+   +        sub_3d1a5(v14,a1,a0,0);
+   -      v14 = '3';
+   -      sub_3cf89(v15,a1,a0,0,1);
+   -      sub_3d566(v15,a1,a0,0);
+   -      sub_3d1a5(v15,a1,a0,0);
+   +      v13 = '3';
+   +      sub_3cf89(v14,a1,a0,0,1);
+   +      sub_3d566(v14,a1,a0,0);
+   +      sub_3d1a5(v14,a1,a0,0);
+   -    v19 = sub_bacd();
+   +    v18 = sub_bacd();
+   -    v22 = (void *)sub_1381d(a0);
+   -    if (v22) {
+   -      ((char *)v22)[0x9c] = v14;
+   -      if (v14 != '6') {
+   -        v1 = &((char *)v22)[0x149];
+   -        v2 = a0->field_0x80;
+   -        sub_12957(gnu_dev_major(v2),v1,8);
+   -        v1 = &((char *)v22)[0x151];
+   -        v2 = a0->field_0x80;
+   -        sub_129ae(gnu_dev_minor(v2),v1,8);
+   -      }
+   -      sub_1422e(a0,v22,v19);
+   +    v21 = (void *)sub_1381d(a0);
+   +    if (v21) {
+   +      ((char *)v21)[0x9c] = v13;
+   +      if (v13 != '6') {
+   +        v4 = &((char *)v21)[0x149];
+   +        v1 = a0->field_0x80;
+   +        sub_12957(gnu_dev_major(v1),v4,8);
+   +        v4 = &((char *)v21)[0x151];
+   +        v1 = a0->field_0x80;
+   +        sub_129ae(gnu_dev_minor(v1),v4,8);
+   +      }
+   +      sub_1422e(a0,v21,v18);
+   -  sub_3cf89(v15,a1,a0,0,!v11);
+   -  sub_3d566(v15,a1,a0,v16);
+   -  sub_3d1a5(v15,a1,a0,v16);
+   -  if (v11) {
+   +  sub_3cf89(v14,a1,a0,0,!v10);
+   +  sub_3d566(v14,a1,a0,v15);
+   +  sub_3d1a5(v14,a1,a0,v15);
+   +  if (v10) {
+   -    if (sub_11fbf(a0,&v8) == 3) {
+   -      v5 = gettext("directory not dumped");
+   -      sub_11f18(a0->field_0x0,v8,v5);
+   -      return;
+   -    }
+   -    v13 = (bool)sub_14db4(a0);
+   -    v16 = a0->field_0x1a8;
+   -    if (v10)
+   -      v15 = dat_9c268;
+   +    if (sub_11fbf(a0,&v7) == 3) {
+   +      v4 = gettext("directory not dumped");
+   +      sub_11f18(a0->field_0x0,v7,v4);
+   +      return;
+   +    }
+   +    v12 = (bool)sub_14db4(a0);
+   +    v15 = a0->field_0x1a8;
+   +    if (v9)
+   +      v14 = dat_9c268;
+   -      v15 = v20->field_0x1a8;
+   +      v14 = v19->field_0x1a8;
+   -  if ((v16) && (dat_9f979)) {
+   -    v6 = a0->field_0x88;
+   -    if (v6 <= -1)
+   -      v6 += 0x1ff;
+   -    v4 = ((a0->field_0x88 & 0x1ff) && (0x3ff <= a0->field_0x88 + 0x1ff));
+   -    if ((int8)v4 + (v6 >> 9) <= a0->field_0x98) goto label_161c2;
+   -    v17 = sub_30090(v16,a0);
+   -    if (v17 == 3)
+   -      v17 = sub_14327(v16,a0);
+   +  if ((v15) && (dat_9f979)) {
+   +    v5 = a0->field_0x88;
+   +    if (v5 <= -1)
+   +      v5 += 0x1ff;
+   +    v3 = ((a0->field_0x88 & 0x1ff) && (0x3ff <= a0->field_0x88 + 0x1ff));
+   +    if ((int8)v3 + (v5 >> 9) <= a0->field_0x98) goto label_161c2;
+   +    v16 = sub_30090(v15,a0);
+   +    if (v16 == 3)
+   +      v16 = sub_14327(v15,a0);
+   -    v17 = sub_14327(v16,a0);
+   -  }
+   -  if (v17 == 3)
+   +    v16 = sub_14327(v15,a0);
+   +  }
+   +  if (v16 == 3)
+   -  if ((v17 <= 3) && (v17 < 2))
+   +  if ((v16 <= 3) && (v16 < 2))
+   -  v13 = v17 == 0;
+   +  v12 = v16 == 0;
+   -  if (v13) {
+   -    if (0 <= v16) { // branch-flip
+   -      if (v16) // branch-flip
+   -        v13 = fstat(v16,&v9) == 0;
+   -      else if ((0 <= v15) || (v10))
+   -        v13 = fstatat(v15,a1,&v9,dat_9fc10) == 0;
+   +  if (v12) {
+   +    if (0 <= v15) { // branch-flip
+   +      if (v15) // branch-flip
+   +        v12 = fstat(v15,&v8) == 0;
+   +      else if ((0 <= v14) || (v9))
+   +        v12 = fstatat(v14,a1,&v8,dat_9fc10) == 0;
+   -        *__errno_location() = -v15;
+   -        v13 = 0;
+   +        *__errno_location() = -v14;
+   +        v12 = 0;
+   -      *__errno_location() = -v16;
+   -      v13 = 0;
+   -    }
+   -    if (v13 != 1)
+   -      sub_2b48b(a2,v10,sub_2b444);
+   -  }
+   -  if (v13) {
+   -    v12 = sub_5fd84(&v9);
+   -    v4 = sub_5ff90(SUB168(v12,0),SUB168(v12,8),v23,v24);
+   -    if (((v4) && ((dat_9f94e != '\x01' || (!v11)))) || ((int8)v9._48_8_ > v21)) {
+   +      *__errno_location() = -v15;
+   +      v12 = 0;
+   +    }
+   +    if (v12 != 1)
+   +      sub_2b48b(a2,v9,sub_2b444);
+   +  }
+   +  if (v12) {
+   +    v11 = sub_5fd84(&v8);
+   +    v3 = sub_5ff90(SUB168(v11,0),SUB168(v11,8),v22,v23);
+   +    if (((v3) && ((dat_9f94e != '\x01' || (!v10)))) || ((int8)v8._48_8_ > v20)) {
+   -        v5 = (char *)sub_5e548(a2);
+   -        error(0,0,gettext("%s: file changed as we read it"),v5);
+   +        v4 = (char *)sub_5e548(a2);
+   +        error(0,0,gettext("%s: file changed as we read it"),v4);
+   -    else if ((((dat_9f880 == 1) && (v16)) && ((v11 || (v21)))) && (v2 = a0->field_0xe8, v3 = a0->field_0xf0, sub_2ab5e(v16,v15,a1,v2,v3)))
+   +    else if ((((dat_9f880 == 1) && (v15)) && ((v10 || (v20)))) && (v1 = a0->field_0xe8, v2 = a0->field_0xf0, sub_2ab5e(v15,v14,a1,v1,v2)))
+   -  if ((sub_39c7e(a0) & v13) && (dat_9f94e))
+   -    sub_3bebb(a2,v11);
+   +  if ((sub_39c7e(a0) & v12) && (dat_9f94e))
+   +    sub_3bebb(a2,v10);
+##### O0/findutils/find @0xb22b  casts 3 -> 4 (IDA 4)
+   -      v3 = sub_1d9d4(dat_499d0);
+   +      v3 = (char *)sub_1d9d4(dat_499d0);
+##### O0/findutils/find @0x11c89  casts 24 -> 25 (IDA 21)
+   -  char *v8; // stack - 0x70
+   +  unsigned char *v8; // stack - 0x70
+   -  v8 = (char *)sub_31bc2(v7);
+   -  strftime(v8,dat_49a68,v5,&v2);
+   +  v8 = (unsigned char *)sub_31bc2(v7);
+   +  strftime((char *)v8,dat_49a68,v5,&v2);
+##### O2/coreutils/ls @0xc0e0  casts 9 -> 10 (IDA 44)
+   -  unsigned long v2;
+   +  unsigned char *v2;
+   -        if ((v1 <= v6) && (v2 = v3[1], !sub_eeb0(&v10[v6 - v1],v2))) {
+   +        if ((v1 <= v6) && (v2 = (unsigned char *)v3[1], !sub_eeb0(&v10[v6 - v1],v2))) {
+##### O2/coreutils/cp @0x76f0  casts 701 -> 703 (IDA 509)
+   -  v74 = (stat *)CONCAT71(v74._1_7_,(char)a7[6]);
+   -  if ((char)a7[6]) {
+   +  v74 = (stat *)CONCAT71(v74._1_7_,*(char *)&a7[6]);
+   +  if (*(char *)&a7[6]) {
+   -          if ((char)v43[6]) goto label_910b;
+   +          if (*(char *)&v43[6]) goto label_910b;
+   -          if ((((char *)v43)[0x1f]) && (v46 = 1, (char)v43[6]))
+   +          if ((((char *)v43)[0x1f]) && (v46 = 1, *(char *)&v43[6]))
+   -            if (!(char)v43[6]) goto label_8c1d;
+   +            if (!*(char *)&v43[6]) goto label_8c1d;
+   -          if (!(char)v43[6]) goto label_8c33;
+   +          if (!*(char *)&v43[6]) goto label_8c33;
+   -                  if ((char)v43[6]) {
+   +                  if (*(char *)&v43[6]) {
+   -                if ((char)v43[6]) { // branch-flip
+   +                if (*(char *)&v43[6]) { // branch-flip
+   -                      if ((!(char)v43[0xc]) || ((unsigned long)v24._16_8_ <= 1)) {
+   +                      if ((!*(char *)&v43[0xc]) || ((unsigned long)v24._16_8_ <= 1)) {
+   -                    v74 = (stat *)CONCAT71(v74._1_7_,(char)v43[0xf]);
+   -                    if (!(char)v43[0xf]) {
+   +                    v74 = (stat *)CONCAT71(v74._1_7_,*(char *)&v43[0xf]);
+   +                    if (!*(char *)&v43[0xf]) {
+   -                  if ((char)v43[6]) goto label_982f;
+   +                  if (*(char *)&v43[6]) goto label_982f;
+   -                  if ((!(char)v43[6]) || (v41 = *v43, !*v43)) {
+   +                  if ((!*(char *)&v43[6]) || (v41 = *v43, !*v43)) {
+   -                          if ((char)v43[6]) // branch-flip
+   +                          if (*(char *)&v43[6]) // branch-flip
+   -      if ((((v8 != 0x8000) && (v4 = (v8 == 0xa000 || v8 == 0x4000) | (unsigned char)v43[5] ^ 1, v4)) || (v4 = (unsigned char)v43[6], v4)) || ((v4 = ((unsigned char *)v43)[0x3a], v4 || (v4 = ((unsigned char *)v43)[0x17], v4)))) {
+   +      if ((((v8 != 0x8000) && (v4 = (v8 == 0xa000 || v8 == 0x4000) | *(unsigned char *)&v43[5] ^ 1, v4)) || (v4 = *(unsigned char *)&v43[6], v4)) || ((v4 = ((unsigned char *)v43)[0x3a], v4 || (v4 = ((unsigned char *)v43)[0x17], v4)))) {
+   -            if (((((char)v43[6]) || (v43[1] == 2)) || ((*(unsigned int *)&v37->field_0x18 & 0xf000) != 0xa000)) || ((*(unsigned int *)&v18->field_0x18 & 0xf000) == 0xa000)) goto label_8af0;
+   +            if ((((*(char *)&v43[6]) || (v43[1] == 2)) || ((*(unsigned int *)&v37->field_0x18 & 0xf000) != 0xa000)) || ((*(unsigned int *)&v18->field_0x18 & 0xf000) == 0xa000)) goto label_8af0;
+   -          v3 = (char)v43[6];
+   +          v3 = *(char *)&v43[6];
+   -              v4 = (unsigned char)v43[6] ^ 1;
+   +              v4 = *(unsigned char *)&v43[6] ^ 1;
+   -            v3 = (char)v43[6];
+   +            v3 = *(char *)&v43[6];
+   -            v4 = (unsigned char)v43[6] ^ 1;
+   +            v4 = *(unsigned char *)&v43[6] ^ 1;
+   -    if ((!*(long *)&v43[0x12]) || ((char)v43[6])) {
+   +    if ((!*(long *)&v43[0x12]) || (*(char *)&v43[6])) {
+   -      if (((char)v43[0xf]) && (!(char)v43[6])) {
+   +      if ((*(char *)&v43[0xf]) && (!*(char *)&v43[6])) {
+   -      if ((char)v43[6]) goto label_7d27;
+   +      if (*(char *)&v43[6]) goto label_7d27;
+   -            if (((unsigned int)v68 != 0x8000) && (!((unsigned int)v68 != 0xa000 & (unsigned char)v43[5]))) {
+   +            if (((unsigned int)v68 != 0x8000) && (!((unsigned int)v68 != 0xa000 & *(unsigned char *)&v43[5]))) {
+   -                  v3 = (char)v43[6];
+   +                  v3 = *(char *)&v43[6];
+   -                if ((((!*(long *)&v43[10]) && (!((char *)v43)[0x33])) || (v3 = sub_7510(v70,0,v43), v3)) || (!(char)v43[0xd])) {
+   +                if ((((!*(long *)&v43[10]) && (!((char *)v43)[0x33])) || (v3 = sub_7510(v70,0,v43), v3)) || (!*(char *)&v43[0xd])) {
+   -                  else if ((char)v43[0xf]) {
+   +                  else if (*(char *)&v43[0xf]) {
+   -              if ((char)v43[0xf]) {
+   -                if ((char)v43[6]) { // branch-flip
+   +              if (*(char *)&v43[0xf]) {
+   +                if (*(char *)&v43[6]) { // branch-flip
+   -        if ((((*(long *)&v43[10]) || (((char *)v43)[0x33])) && (v3 = sub_7510(v70,0,v43), !v3)) && ((char)v43[0xd])) goto label_8658;
+   +        if ((((*(long *)&v43[10]) || (((char *)v43)[0x33])) && (v3 = sub_7510(v70,0,v43), !v3)) && (*(char *)&v43[0xd])) goto label_8658;
+   -        v45 = v62 != NULL & (unsigned char)v43[7];
+   +        v45 = v62 != NULL & *(unsigned char *)&v43[7];
+   -    if ((char)v43[0xf]) goto label_8258;
+   +    if (*(char *)&v43[0xf]) goto label_8258;
+   -    if ((!(char)v43[0xe]) || ((v72 & 0xf000) != 0x4000)) {
+   -      v3 = (char)v43[6];
+   +    if ((!*(char *)&v43[0xe]) || ((v72 & 0xf000) != 0x4000)) {
+   +      v3 = *(char *)&v43[6];
+   -            *(unsigned long *)&v32[-0x18] = (unsigned char)v43[0xf];
+   +            *(unsigned long *)&v32[-0x18] = *(unsigned char *)&v43[0xf];
+   -        if (((char)v43[0xc]) && (!((char *)v43)[0x17])) goto label_820e;
+   +        if ((*(char *)&v43[0xc]) && (!((char *)v43)[0x17])) goto label_820e;
+   -          if ((char)v43[0xf]) {
+   +          if (*(char *)&v43[0xf]) {
+   -            v45 = v19 != 0x4000 & (unsigned char)v43[0xf];
+   +            v45 = v19 != 0x4000 & *(unsigned char *)&v43[0xf];
+   -      if (!(char)v43[0xc]) goto label_7d98;
+   +      if (!*(char *)&v43[0xc]) goto label_7d98;
+   -      v3 = (char)v43[6];
+   +      v3 = *(char *)&v43[6];
+   -        if ((char)v43[6]) goto label_91b0;
+   +        if (*(char *)&v43[6]) goto label_91b0;
+   -    if (((v23._24_4_ & 0xf000) != 0x4000) || ((char)v43[0xe])) goto label_7803;
+   +    if (((v23._24_4_ & 0xf000) != 0x4000) || (*(char *)&v43[0xe])) goto label_7803;
+   -      v4 = (unsigned char)v74 & (unsigned char)v43[8];
+   -      v65 = (unsigned long *)CONCAT71(v65._1_7_,v4);
+   -      if (v4) { // branch-flip
+   +      v65 = (unsigned long *)CONCAT71(v65._1_7_,(unsigned char)v74 & *(unsigned char *)&v43[8]);
+   +      if ((unsigned char)v74 & *(unsigned char *)&v43[8]) { // branch-flip
+   -      v4 = ((unsigned char)v43[5] ^ 1) & v45;
+   +      v4 = (*(unsigned char *)&v43[5] ^ 1) & v45;
+   -            v74 = (stat *)CONCAT71(v74._1_7_,(char)v43[0xd]);
+   -            if ((char)v43[0xd]) goto label_8658;
+   +            v74 = (stat *)CONCAT71(v74._1_7_,*(char *)&v43[0xd]);
+   +            if (*(char *)&v43[0xd]) goto label_8658;
+   -          if (!((unsigned char)v74 & (unsigned char)v43[8])) {
+   +          if (!((unsigned char)v74 & *(unsigned char *)&v43[8])) {
+   -      if ((char)v43[0xf]) {
+   +      if (*(char *)&v43[0xf]) {
+##### O2/gzip/gzip @0x63e0  casts 12 -> 13 (IDA 4)
+   -  v8 = &dat_18040;
+   +  v8 = (unsigned long *)0x18040;
+   -  *(unsigned char **)(v7 * 8 + 0x18040) = v5;
+   +  ((unsigned char **)0x18040)[v7] = v5;
+##### O2/tar/tar @0x1ca20  casts 22 -> 24 (IDA 13)
+   -      v2 = sub_4d2d0(v2);
+   +      v2 = (uint1 *)sub_4d2d0(v2);
+   -          v2 = sub_4d2d0(v10);
+   +          v2 = (uint1 *)sub_4d2d0(v10);
+##### O2-noinline/grep/grep @0xbfa0  casts 77 -> 78 (IDA 202)
+   -  long v3;
+   +  unsigned char *v3;
+   -  unsigned char v6; // al
+   +  unsigned char v6;
+   -  v3 = a0[0x130];
+   +  v3 = (unsigned char *)a0[0x130];
+   -        v6 = sub_adc0((int)*(char *)(v3 + v21));
+   +        v6 = sub_adc0((int)(char)v3[v21]);
+   -      v5 = *(char *)(v3 + v27);
+   -      ((char *)a0)[v27 + 0x70] = ((char *)v26)[(unsigned char)sub_adc0((int)v5)];
+   +      v6 = v3[v27];
+   +      ((char *)a0)[v27 + 0x70] = ((char *)v26)[(unsigned char)sub_adc0((int)(char)v6)];
+##### O2-noinline/gzip/gzip @0x67e0  casts 12 -> 13 (IDA 4)
+   -  v8 = &dat_19040;
+   +  v8 = (unsigned long *)0x19040;
+   -  *(unsigned char **)(v7 * 8 + 0x19040) = v5;
+   +  ((unsigned char **)0x19040)[v7] = v5;
+##### O2-noinline/diffutils/diff3 @0x4ae0  casts 64 -> 65 (IDA 44)
+   -  long v4;
+   +  unsigned long *v4;
+   -        v8 = *(long *)(v15 + 0x38);
+   -        v4 = *(long *)(v15 + 0x28);
+   +        v4 = *(unsigned long **)(v15 + 0x38);
+   +        v8 = *(long *)(v15 + 0x28);
+   -        if (!sub_49b0(v4,v8,v10 + v9,v5 + v10,(v12 - v7) + 1))
+   +        if (!sub_49b0(v8,v4,v10 + v9,v5 + v10,(v12 - v7) + 1))
+   -          if ((v3 - v15 != *(long *)&v6[8] - *(long *)&v6[6]) || (v5 = *(long *)&v6[0x16], v9 = *(long *)&v6[0x10], v7 = *(long *)&v6[0x14], v12 = *(long *)&v6[0xe], !sub_4a50(v12,v7,v9,v5,(v3 - v15) + 1)))
+   +          if ((v3 - v15 != *(long *)&v6[8] - *(long *)&v6[6]) || (v5 = *(long *)&v6[0x16], v9 = *(long *)&v6[0x10], v4 = *(unsigned long **)&v6[0x14], v7 = *(long *)&v6[0xe], !sub_4a50(v7,v4,v9,v5,(v3 - v15) + 1)))
+   -  v4 = v13[6];
+   +  v4 = (unsigned long *)v13[6];
+##### O2-noinline/tar/tar @0xf760  casts 2 -> 5 (IDA 2)
+   -    v2 = sub_4ac50(dat_84a40);
+   +    v2 = (char *)sub_4ac50(dat_84a40);
+   -  v2 = sub_4ac40(1,dat_84a40);
+   -  v3 = sub_4ac40(0,dat_83f18);
+   +  v2 = (char *)sub_4ac40(1,dat_84a40);
+   +  v3 = (char *)sub_4ac40(0,dat_83f18);
+##### O2-noinline/tar/tar @0x13140  casts 0 -> 1 (IDA 7)
+   -unsigned long * sub_13140(struct_13 *a0)
+   +char * sub_13140(struct_13 *a0)
+   -  unsigned long *v1; // rax
+   +  char *v1;
+   -  char *v3;
+   -      v3 = a0->field_0x8;
+   -      if (100 <= strlen(v3)) {
+   +      v1 = a0->field_0x8;
+   +      if (100 <= strlen(v1)) {
+   -          v3 = a0->field_0x8;
+   +          v1 = a0->field_0x8;
+   -        v2 = sub_4aa70(v3);
+   +        v2 = sub_4aa70(v1);
+   -      v1 = sub_12440(a0->field_0x8); // tail-call
+   +      v1 = (char *)sub_12440(a0->field_0x8); // tail-call
+##### O2-noinline/tar/tar @0x132d0  casts 56 -> 58 (IDA 58)
+   -    sub_12890(v13,v8 + 0x109);
+   +    sub_12890(v13,(char *)(v8 + 0x109));
+   -    sub_12890(((int8 *)a0)[5],v8 + 0x129);
+   +    sub_12890(((char **)a0)[5],(char *)(v8 + 0x129));
+##### O2-noinline/tar/tar @0x16890  casts 18 -> 19 (IDA 20)
+   -  char *v10; // rax
+   -  unsigned int v11;
+   -  int8 *v12;
+   -  unsigned long *v13;
+   -  unsigned long *v14; // stack - 0x40
+   +  unsigned int v10;
+   +  int8 *v11;
+   +  unsigned long *v12;
+   +  unsigned long *v13; // stack - 0x40
+   -  int8 v3;
+   -  int4 v4;
+   -  FILE *v5; // rax
+   -  struct_37 *v6; // rax
+   -  int8 v7; // rax
+   -  unsigned long v8;
+   -  unsigned long *v9; // rax
+   +  int4 v3;
+   +  FILE *v4; // rax
+   +  struct_36 *v5; // rax
+   +  int8 v6; // rax
+   +  unsigned long v7;
+   +  unsigned long *v8; // rax
+   +  char *v9; // rax
+   -  v14 = NULL;
+   +  v13 = NULL;
+   -    v12 = dat_84308;
+   -    v13 = NULL;
+   +    v11 = dat_84308;
+   +    v12 = NULL;
+   -      v1 = &((char *)v12)[0xc];
+   -      v4 = ((int4 *)a0)[0x6a];
+   -      if (!faccessat(v4,v1,0,0)) {
+   -        v4 = sub_140d0(a0,v1,0);
+   -        if (v4 != -1) { // branch-flip
+   -          v5 = fdopen(v4,"r");
+   -          if (v5) { // branch-flip
+   -            v6 = (struct_37 *)sub_3eba0();
+   -            v7 = sub_16480(v1);
+   -            if (*(code **)(v7 + 0x18)) { // branch-flip
+   -              v8 = (**(code **)(v7 + 0x18))(*(unsigned long *)(v7 + 0x20));
+   -              *(unsigned long *)(v7 + 0x20) = v8;
+   +      v1 = &((char *)v11)[0xc];
+   +      v3 = ((int4 *)a0)[0x6a];
+   +      if (!faccessat(v3,v1,0,0)) {
+   +        v3 = sub_140d0(a0,v1,0);
+   +        if (v3 != -1) { // branch-flip
+   +          v4 = fdopen(v3,"r");
+   +          if (v4) { // branch-flip
+   +            v5 = (struct_36 *)sub_3eba0();
+   +            v6 = sub_16480(v1);
+   +            if (*(code **)(v6 + 0x18)) { // branch-flip
+   +              v7 = (**(code **)(v6 + 0x18))(*(unsigned long *)(v6 + 0x20));
+   +              *(unsigned long *)(v6 + 0x20) = v7;
+   -              v8 = *(unsigned long *)(v7 + 0x20);
+   +              v7 = *(unsigned long *)(v6 + 0x20);
+   -            v2 = *(code **)(v7 + 0x10);
+   -            if (sub_3f0c0(v2,v6,v5,0x50000001,10,v8)) {
+   -              v4 = *__errno_location();
+   +            v2 = *(code **)(v6 + 0x10);
+   +            if (sub_3f0c0(v2,v5,v4,0x50000001,10,v7)) {
+   +              v3 = *__errno_location();
+   -              error(0,v4,"%s",(char *)sub_4aa70(v1));
+   +              error(0,v3,"%s",(char *)sub_4aa70(v1));
+   -            fclose(v5);
+   -            v9 = (unsigned long *)sub_4c5b0(0x20);
+   -            v3 = v12[1];
+   -            v9[3] = v6;
+   -            v11 = 0;
+   -            if ((int4)v3)
+   -              v11 = *(unsigned int *)(v7 + 8);
+   -            *(unsigned int *)&v9[2] = v11;
+   -            v9[1] = v13;
+   -            *v9 = 0;
+   -            if (v13) {
+   -              v12 = (int8 *)*v12;
+   -              *v13 = v9;
+   -              v13 = v9;
+   -              if (!v12) break;
+   +            fclose(v4);
+   +            v8 = (unsigned long *)sub_4c5b0(0x20);
+   +            v3 = *(int4 *)&v11[1];
+   +            v8[3] = v5;
+   +            v10 = 0;
+   +            if (v3)
+   +              v10 = *(unsigned int *)(v6 + 8);
+   +            *(unsigned int *)&v8[2] = v10;
+   +            v8[1] = v12;
+   +            *v8 = 0;
+   +            if (v12) {
+   +              v11 = (int8 *)*v11;
+   +              *v12 = v8;
+   +              v12 = v8;
+   +              if (!v11) break;
+   -            v14 = v9;
+   -            v13 = v9;
+   +            v13 = v8;
+   +            v12 = v8;
+   -            v10 = dcgettext(NULL,"%s: fdopen failed",5);
+   -            error(0,*__errno_location(),v10,v1);
+   +            v9 = dcgettext(NULL,"%s: fdopen failed",5);
+   +            error(0,*__errno_location(),v9,v1);
+   -            close(v4);
+   +            close(v3);
+   -      v12 = (int8 *)*v12;
+   -    } while (v12);
+   +      v11 = (int8 *)*v11;
+   +    } while (v11);
+   -  ((unsigned long **)a0)[0x36] = v14;
+   +  ((unsigned long **)a0)[0x36] = v13;
+##### O2-noinline/tar/tar @0x1a320  casts 7 -> 9 (IDA 8)
+   -    a0 = sub_4ac50(a1);
+   +    a0 = (uint1 *)sub_4ac50(a1);
+   -    a0 = sub_4ac50(a0);
+   +    a0 = (uint1 *)sub_4ac50(a0);
+##### O2-noinline/findutils/find @0xeb50  casts 19 -> 20 (IDA 12)
+   -  tm v10; // stack - 0x78
+   -  long v11; // stack - 0x80
+   -  long v12; // stack - 0x88
+   +  long v10; // rax
+   +  tm v11; // stack - 0x78
+   +  long v12; // stack - 0x80
+   +  long v13; // stack - 0x88
+   -  unsigned long v7;
+   -  char *v8;
+   -  long v9; // rax
+   +  char *v7;
+   +  unsigned long v8;
+   +  unsigned char *v9; // rax
+   -  v10._48_8_ = *(unsigned long *)&a1->field_0x30;
+   -  v10._8_8_ = *(unsigned long *)&a1->field_0x8;
+   -  v10._16_8_ = *(unsigned long *)&a1->field_0x10;
+   -  v10._24_8_ = *(unsigned long *)&a1->field_0x18;
+   -  v10._32_8_ = *(unsigned long *)&a1->field_0x20;
+   -  v10._40_8_ = *(unsigned long *)&a1->field_0x28;
+   -  v10._0_4_ = v3 + 0xb;
+   +  v11._48_8_ = *(unsigned long *)&a1->field_0x30;
+   +  v11._8_8_ = *(unsigned long *)&a1->field_0x8;
+   +  v11._16_8_ = *(unsigned long *)&a1->field_0x10;
+   +  v11._24_8_ = *(unsigned long *)&a1->field_0x18;
+   +  v11._32_8_ = *(unsigned long *)&a1->field_0x20;
+   +  v11._40_8_ = *(unsigned long *)&a1->field_0x28;
+   +  v11._0_4_ = v3 + 0xb;
+   -    v10._0_4_ = v3 + -0xb;
+   -  v10._4_4_ = SUB84((unsigned long)*(unsigned long *)a1 >> 0x20,0);
+   -  v8 = dat_3eb08;
+   +    v11._0_4_ = v3 + -0xb;
+   +  v11._4_4_ = SUB84((unsigned long)*(unsigned long *)a1 >> 0x20,0);
+   +  v7 = dat_3eb08;
+   -    v8 = (char *)sub_26990(1);
+   -    dat_3eb08 = v8;
+   +    v7 = (char *)sub_26990(1);
+   +    dat_3eb08 = v7;
+   -  while ((v7 = strftime(v8,dat_3eb00,v6,a1), !v7 || (dat_3eb00 <= v7))) {
+   -    v8 = (char *)sub_26ad0(v8,&dat_3eb00,1);
+   -    dat_3eb08 = v8;
+   +  while ((v8 = strftime(v7,dat_3eb00,v6,a1), !v8 || (dat_3eb00 <= v8))) {
+   +    v7 = (char *)sub_26ad0(v7,&dat_3eb00,1);
+   +    dat_3eb08 = v7;
+   -  v2 = v7 + 1 + a3;
+   +  v2 = v8 + 1 + a3;
+   +  v13 = 0;
+   -  v11 = 0;
+   -  dat_3eb08 = (long)sub_269e0(v8,v2);
+   +  dat_3eb08 = (long)sub_269e0(v7,v2);
+   -  v8 = (char *)sub_26990(v2);
+   -  strftime(v8,dat_3eb00,v6,&v10);
+   +  v9 = (unsigned char *)sub_26990(v2);
+   +  strftime((char *)v9,dat_3eb00,v6,&v11);
+   -  v5 = sub_ea60(dat_3eb08,v8,&v12,&v11);
+   -  if ((v5) && (v11 == 2)) {
+   -    v9 = v12 + 2;
+   -    v1 = (unsigned char *)(v4 + v9);
+   +  v5 = sub_ea60(dat_3eb08,v9,&v13,&v12);
+   +  if ((v5) && (v12 == 2)) {
+   +    v10 = v13 + 2;
+   +    v1 = (unsigned char *)(v4 + v10);
+   -      v7 = (v7 - v9) + 1;
+   -      if (v9 + a3 + v7 != v2)
+   +      v8 = (v8 - v10) + 1;
+   +      if (v10 + a3 + v8 != v2)
+   -      memmove((void *)(v4 + v9 + a3),v1,v7);
+   +      memmove((void *)(v4 + v10 + a3),v1,v8);
+   -  free(v8);
+   +  free(v9);
+TOTAL +26

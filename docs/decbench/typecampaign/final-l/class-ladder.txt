@@ -1,0 +1,13 @@
+class TP per ladder step (K=round K; L0 = final with the five round-L options off; L1 +callbacktype; L2 +callrettype; L4 +castobject +castwiden; L +elemptr)
+int_s4       [4728, 4728, 4738, 4738, 4738, 4738]
+int_s8       [1451, 1451, 1451, 1450, 1450, 1450]
+int_u8       [3913, 3913, 3913, 3912, 3912, 3912]
+ptr_char     [5624, 5624, 5624, 5642, 5642, 5751]
+ptr_prim     [614, 614, 614, 614, 614, 677]
+ptr_ptr      [603, 603, 603, 603, 603, 674]
+ptr_struct   [568, 568, 568, 579, 579, 579]
+ptr_void     [618, 618, 653, 653, 653, 653]
+arg          [11305, 11305, 11350, 11353, 11353, 11544]
+stack        [10749, 10749, 10749, 10773, 10773, 10825]
+reg          [4, 4, 4, 4, 4, 4]
+total [22058, 22058, 22103, 22130, 22130, 22373]

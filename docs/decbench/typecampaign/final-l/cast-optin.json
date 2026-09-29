@@ -1,0 +1,841 @@
+{
+ "shared_functions": 4815,
+ "per_opt_functions": {
+  "O0": 1992,
+  "O2": 1067,
+  "O2-noinline": 1756
+ },
+ "all": {
+  "ida": {
+   "casts": 37821,
+   "lines": 243379,
+   "stmts": 140143,
+   "per_kloc": 155.4,
+   "per_100stmt": 26.99,
+   "vs_ida": 1.0
+  },
+  "l": {
+   "casts": 32073,
+   "lines": 189081,
+   "stmts": 118822,
+   "per_kloc": 169.6,
+   "per_100stmt": 26.99,
+   "vs_ida": 0.848
+  },
+  "shl": {
+   "casts": 30653,
+   "lines": 189088,
+   "stmts": 118829,
+   "per_kloc": 162.1,
+   "per_100stmt": 25.8,
+   "vs_ida": 0.81
+  },
+  "cwon": {
+   "casts": 33001,
+   "lines": 189081,
+   "stmts": 118822,
+   "per_kloc": 174.5,
+   "per_100stmt": 27.77,
+   "vs_ida": 0.873
+  }
+ },
+ "per_opt": {
+  "O0": {
+   "ida": {
+    "casts": 12195,
+    "lines": 72364,
+    "stmts": 39362,
+    "per_kloc": 168.5,
+    "per_100stmt": 30.98,
+    "vs_ida": 1.0
+   },
+   "l": {
+    "casts": 9934,
+    "lines": 59331,
+    "stmts": 35935,
+    "per_kloc": 167.4,
+    "per_100stmt": 27.64,
+    "vs_ida": 0.815
+   },
+   "shl": {
+    "casts": 9240,
+    "lines": 59332,
+    "stmts": 35936,
+    "per_kloc": 155.7,
+    "per_100stmt": 25.71,
+    "vs_ida": 0.758
+   },
+   "cwon": {
+    "casts": 10397,
+    "lines": 59331,
+    "stmts": 35935,
+    "per_kloc": 175.2,
+    "per_100stmt": 28.93,
+    "vs_ida": 0.853
+   }
+  },
+  "O2": {
+   "ida": {
+    "casts": 13459,
+    "lines": 87117,
+    "stmts": 51651,
+    "per_kloc": 154.5,
+    "per_100stmt": 26.06,
+    "vs_ida": 1.0
+   },
+   "l": {
+    "casts": 12206,
+    "lines": 64987,
+    "stmts": 41738,
+    "per_kloc": 187.8,
+    "per_100stmt": 29.24,
+    "vs_ida": 0.907
+   },
+   "shl": {
+    "casts": 11935,
+    "lines": 64990,
+    "stmts": 41741,
+    "per_kloc": 183.6,
+    "per_100stmt": 28.59,
+    "vs_ida": 0.887
+   },
+   "cwon": {
+    "casts": 12448,
+    "lines": 64987,
+    "stmts": 41738,
+    "per_kloc": 191.5,
+    "per_100stmt": 29.82,
+    "vs_ida": 0.925
+   }
+  },
+  "O2-noinline": {
+   "ida": {
+    "casts": 12167,
+    "lines": 83898,
+    "stmts": 49130,
+    "per_kloc": 145.0,
+    "per_100stmt": 24.76,
+    "vs_ida": 1.0
+   },
+   "l": {
+    "casts": 9933,
+    "lines": 64763,
+    "stmts": 41149,
+    "per_kloc": 153.4,
+    "per_100stmt": 24.14,
+    "vs_ida": 0.816
+   },
+   "shl": {
+    "casts": 9478,
+    "lines": 64766,
+    "stmts": 41152,
+    "per_kloc": 146.3,
+    "per_100stmt": 23.03,
+    "vs_ida": 0.779
+   },
+   "cwon": {
+    "casts": 10156,
+    "lines": 64763,
+    "stmts": 41149,
+    "per_kloc": 156.8,
+    "per_100stmt": 24.68,
+    "vs_ida": 0.835
+   }
+  }
+ },
+ "vs_ida_fn": {
+  "l": {
+   "fewer_than_ida": 2168,
+   "equal": 1474,
+   "more_than_ida": 1173
+  },
+  "shl": {
+   "fewer_than_ida": 2248,
+   "equal": 1451,
+   "more_than_ida": 1116
+  },
+  "cwon": {
+   "fewer_than_ida": 2117,
+   "equal": 1465,
+   "more_than_ida": 1233
+  }
+ },
+ "moves": {
+  "l:shl": {
+   "fewer": 219,
+   "fewer_casts": 1570,
+   "more": 58,
+   "more_casts": 150,
+   "top_more": [
+    [
+     16,
+     "O2",
+     "tar",
+     "0x23e80"
+    ],
+    [
+     14,
+     "O2-noinline",
+     "tar",
+     "0x22c60"
+    ],
+    [
+     7,
+     "O2-noinline",
+     "tar",
+     "0x30ef0"
+    ],
+    [
+     7,
+     "O2-noinline",
+     "tar",
+     "0xe880"
+    ],
+    [
+     7,
+     "O2-noinline",
+     "tar",
+     "0xe580"
+    ],
+    [
+     7,
+     "O2",
+     "tar",
+     "0x31350"
+    ],
+    [
+     7,
+     "O2",
+     "find",
+     "0xc9f0"
+    ],
+    [
+     6,
+     "O2",
+     "tar",
+     "0xe570"
+    ],
+    [
+     5,
+     "O2-noinline",
+     "tar",
+     "0x118d0"
+    ],
+    [
+     5,
+     "O2",
+     "tar",
+     "0x11f60"
+    ],
+    [
+     4,
+     "O2-noinline",
+     "ls",
+     "0x4dd0"
+    ],
+    [
+     4,
+     "O2",
+     "ls",
+     "0x4d10"
+    ],
+    [
+     4,
+     "O0",
+     "ls",
+     "0x6882"
+    ],
+    [
+     2,
+     "O2-noinline",
+     "tar",
+     "0x28d20"
+    ],
+    [
+     2,
+     "O2-noinline",
+     "tar",
+     "0x232e0"
+    ],
+    [
+     2,
+     "O2-noinline",
+     "tar",
+     "0x23260"
+    ],
+    [
+     2,
+     "O2-noinline",
+     "tar",
+     "0x19850"
+    ],
+    [
+     2,
+     "O2-noinline",
+     "grep",
+     "0x6350"
+    ],
+    [
+     2,
+     "O2",
+     "tar",
+     "0x24680"
+    ],
+    [
+     2,
+     "O2",
+     "tar",
+     "0x24580"
+    ],
+    [
+     2,
+     "O2",
+     "tar",
+     "0x21100"
+    ],
+    [
+     2,
+     "O2",
+     "tar",
+     "0x198d0"
+    ],
+    [
+     2,
+     "O0",
+     "tar",
+     "0x28913"
+    ],
+    [
+     2,
+     "O0",
+     "tar",
+     "0x25cf3"
+    ],
+    [
+     2,
+     "O0",
+     "find",
+     "0xb300"
+    ]
+   ],
+   "top_fewer": [
+    [
+     -41,
+     "O0",
+     "grep",
+     "0xcacb"
+    ],
+    [
+     -40,
+     "O0",
+     "tar",
+     "0x1381d"
+    ],
+    [
+     -35,
+     "O0",
+     "tar",
+     "0x26747"
+    ],
+    [
+     -35,
+     "O2-noinline",
+     "ls",
+     "0x92b0"
+    ],
+    [
+     -34,
+     "O0",
+     "cp",
+     "0x5f11"
+    ],
+    [
+     -33,
+     "O2-noinline",
+     "tar",
+     "0x215c0"
+    ],
+    [
+     -32,
+     "O0",
+     "cp",
+     "0x896f"
+    ],
+    [
+     -31,
+     "O2",
+     "grep",
+     "0xc9d0"
+    ],
+    [
+     -31,
+     "O2",
+     "tar",
+     "0x13570"
+    ],
+    [
+     -31,
+     "O2-noinline",
+     "grep",
+     "0xbab0"
+    ],
+    [
+     -30,
+     "O2",
+     "tar",
+     "0x22c60"
+    ],
+    [
+     -29,
+     "O2-noinline",
+     "cp",
+     "0x8680"
+    ],
+    [
+     -23,
+     "O2",
+     "find",
+     "0xf620"
+    ],
+    [
+     -20,
+     "O2",
+     "tar",
+     "0x1ed80"
+    ],
+    [
+     -20,
+     "O2",
+     "tar",
+     "0x2c8b0"
+    ],
+    [
+     -20,
+     "O2-noinline",
+     "tar",
+     "0x1dbe0"
+    ],
+    [
+     -19,
+     "O0",
+     "tar",
+     "0x3179e"
+    ],
+    [
+     -18,
+     "O0",
+     "ls",
+     "0x581f"
+    ],
+    [
+     -17,
+     "O0",
+     "find",
+     "0xea9f"
+    ],
+    [
+     -17,
+     "O2",
+     "tar",
+     "0x17b80"
+    ],
+    [
+     -17,
+     "O2-noinline",
+     "tar",
+     "0x17c30"
+    ],
+    [
+     -16,
+     "O0",
+     "cp",
+     "0x163ee"
+    ],
+    [
+     -16,
+     "O0",
+     "du",
+     "0xf112"
+    ],
+    [
+     -16,
+     "O0",
+     "ls",
+     "0x13740"
+    ],
+    [
+     -16,
+     "O0",
+     "sort",
+     "0x11fbe"
+    ]
+   ],
+   "shape_down": [
+    [
+     -430,
+     "i64*",
+     "<var>"
+    ],
+    [
+     -430,
+     "u64*",
+     "<var>"
+    ],
+    [
+     -217,
+     "char*",
+     "<var>"
+    ],
+    [
+     -152,
+     "u32*",
+     "<var>"
+    ],
+    [
+     -71,
+     "char**",
+     "<var>"
+    ],
+    [
+     -60,
+     "i32*",
+     "<var>"
+    ],
+    [
+     -56,
+     "void**",
+     "<var>"
+    ],
+    [
+     -25,
+     "i64",
+     "<var>"
+    ],
+    [
+     -25,
+     "named:struct_97*",
+     "<deref>"
+    ],
+    [
+     -25,
+     "named:struct_132*",
+     "<deref>"
+    ],
+    [
+     -24,
+     "named:struct_140*",
+     "<deref>"
+    ],
+    [
+     -23,
+     "u64**",
+     "<var>"
+    ],
+    [
+     -20,
+     "f32",
+     "<paren>"
+    ],
+    [
+     -19,
+     "void**",
+     "<paren>"
+    ],
+    [
+     -17,
+     "i64**",
+     "<var>"
+    ]
+   ],
+   "shape_up": [
+    [
+     61,
+     "u64*",
+     "<const>"
+    ],
+    [
+     27,
+     "u64",
+     "<field>"
+    ],
+    [
+     25,
+     "named:struct_161*",
+     "<deref>"
+    ],
+    [
+     25,
+     "named:struct_236*",
+     "<deref>"
+    ],
+    [
+     24,
+     "named:struct_248*",
+     "<deref>"
+    ],
+    [
+     20,
+     "f32",
+     "<field>"
+    ],
+    [
+     19,
+     "named:struct_9*",
+     "<paren>"
+    ],
+    [
+     17,
+     "void*",
+     "<field>"
+    ],
+    [
+     16,
+     "named:struct_39*",
+     "<deref>"
+    ],
+    [
+     16,
+     "named:struct_39*",
+     "<index>"
+    ],
+    [
+     11,
+     "named:struct_29*",
+     "<paren>"
+    ],
+    [
+     10,
+     "named:struct_8*",
+     "<addr>"
+    ],
+    [
+     10,
+     "uchar",
+     "<field>"
+    ],
+    [
+     10,
+     "named:struct_15*",
+     "<paren>"
+    ],
+    [
+     9,
+     "char*",
+     "<const>"
+    ]
+   ]
+  },
+  "cwon:l": {
+   "fewer": 330,
+   "fewer_casts": 928,
+   "more": 0,
+   "more_casts": 0,
+   "top_more": [],
+   "top_fewer": [
+    [
+     -43,
+     "O0",
+     "diff",
+     "0xa746"
+    ],
+    [
+     -16,
+     "O2",
+     "gzip",
+     "0xa090"
+    ],
+    [
+     -14,
+     "O0",
+     "diff3",
+     "0x393d"
+    ],
+    [
+     -14,
+     "O0",
+     "find",
+     "0x173d3"
+    ],
+    [
+     -14,
+     "O2-noinline",
+     "diff3",
+     "0x50f0"
+    ],
+    [
+     -13,
+     "O0",
+     "diff",
+     "0x6122"
+    ],
+    [
+     -12,
+     "O0",
+     "diff",
+     "0x7206"
+    ],
+    [
+     -12,
+     "O0",
+     "diff",
+     "0x11f90"
+    ],
+    [
+     -12,
+     "O0",
+     "diff3",
+     "0x54de"
+    ],
+    [
+     -12,
+     "O0",
+     "diff3",
+     "0x5a29"
+    ],
+    [
+     -12,
+     "O0",
+     "grep",
+     "0xa7d1"
+    ],
+    [
+     -12,
+     "O2",
+     "grep",
+     "0xaf70"
+    ],
+    [
+     -11,
+     "O0",
+     "gzip",
+     "0xb363"
+    ],
+    [
+     -10,
+     "O0",
+     "diff",
+     "0xc796"
+    ],
+    [
+     -10,
+     "O2",
+     "diff",
+     "0xec00"
+    ],
+    [
+     -10,
+     "O2-noinline",
+     "diff",
+     "0xe690"
+    ],
+    [
+     -9,
+     "O0",
+     "tar",
+     "0x2afed"
+    ],
+    [
+     -9,
+     "O2",
+     "find",
+     "0xedc0"
+    ],
+    [
+     -8,
+     "O0",
+     "cmp",
+     "0x2d6d"
+    ],
+    [
+     -8,
+     "O0",
+     "gzip",
+     "0xb0dd"
+    ],
+    [
+     -8,
+     "O2",
+     "gzip",
+     "0x89b0"
+    ],
+    [
+     -8,
+     "O2-noinline",
+     "gzip",
+     "0x8dc0"
+    ],
+    [
+     -7,
+     "O0",
+     "diff",
+     "0xc21b"
+    ],
+    [
+     -7,
+     "O0",
+     "gzip",
+     "0xb868"
+    ],
+    [
+     -7,
+     "O0",
+     "gzip",
+     "0xc45d"
+    ]
+   ],
+   "shape_down": [
+    [
+     -467,
+     "i64",
+     "<var>"
+    ],
+    [
+     -184,
+     "u64",
+     "<var>"
+    ],
+    [
+     -103,
+     "u64",
+     "<paren>"
+    ],
+    [
+     -44,
+     "i64",
+     "<index>"
+    ],
+    [
+     -43,
+     "u64",
+     "<deref>"
+    ],
+    [
+     -39,
+     "i64",
+     "<paren>"
+    ],
+    [
+     -31,
+     "i64",
+     "<deref>"
+    ],
+    [
+     -14,
+     "u64",
+     "<index>"
+    ],
+    [
+     -2,
+     "i64",
+     "<field>"
+    ],
+    [
+     -1,
+     "u64",
+     "<field>"
+    ]
+   ],
+   "shape_up": []
+  }
+ }
+}
