@@ -1686,11 +1686,12 @@ argument registers themselves, and heritage refines a partly written register in
   own location, and either half may survive as before.
 
 A high half that really is leftover still goes: the upper half of RAX after a
-callee that returns `int` in EAX sits at its own slot, traces to the call's
-INDIRECT creation, and the return narrows to EAX exactly as before. Over the
-castbench corpus and 66 further binaries the change moves no function; the shape
-it corrects is pinned by `tests/stages/kuna-returnpiece.xml` and by the compiled
-round trip over the `piecehi_*` fixtures in `kuna-cli/tests/decompile_all_cli.rs`.
+callee that returns `int` in EAX sits at its own slot and carries nothing the
+function computed, and the return narrows to EAX exactly as before. Over the
+castbench corpus and 98 further binaries (60,037 functions) the change moves no
+function; the shape it corrects is pinned by `tests/stages/kuna-returnpiece.xml`
+and by the compiled round trip over the `piecehi_*` fixtures in
+`kuna-cli/tests/decompile_all_cli.rs`.
 
 #### (kuna) The register that was only ever pushed (`retpushedhalf`)
 
