@@ -198,7 +198,8 @@ node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
   threads, proving inventory-first/lazy-address behavior, terminate-and-recreate
   cancellation, session rehydration, and transfer of a complete project ZIP without its
   intermediate artifact object, and that the build id a client asks for is the SHA-256
-  of the exact wasm served, again after a restart.
+  of the exact wasm served, again after a restart; a restarted Worker runs the engine
+  and spec files the page loaded, even after the site is deployed again.
 - **`worker-errors.mjs`** simulates a content blocker stopping the Worker before its
   initialization reply, and pins the actionable error plus terminal behavior for later
   requests.
