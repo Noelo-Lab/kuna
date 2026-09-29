@@ -116,16 +116,18 @@
   "verdict": "within budget: every median-of-ratios is under +5% (largest +4.71 cross-build, +2.81 same-path), the quiet re-run of the >5% min deltas is -1.44..+1.89, and an A/A of identical binaries moves by up to +3.58; signs flip between builds, so the residue is layout and load, not work"
  },
  "gates": {
-  "base": "origin/main 632437155; code final at d3d2b4072 (later commits docs/record only)",
+  "base": "origin/main 63dfb436c (#748) after rebase; measurements (footprint, typesweep, castbench, speed) taken on 632437155",
   "make test": "datatests: 675/675 assertions passed; PARITY OK (no datatest assertion moved)",
-  "make test-stages": "datatests: 1477/1477 assertions passed; PARITY OK (+10 kuna-returnpiece keys over main's 1467, none removed)",
-  "make rust-test": "RUST_TEST_RC=0 via rust-test-lane.sh (428 `test result: ok`, 0 failed)",
-  "make test-cli": "tests/cli: 268/268 passed (first run under load 94: 266/268, the two known wall_ms probes cold-load-xref-lookup and disassembling-40-instructions-takes)",
+  "make test-stages": "datatests: 1477/1477 assertions passed; PARITY OK (+10 kuna-returnpiece keys over main's 1467, none removed; re-recorded after the rebase, identical)",
+  "make rust-test": "RUST_TEST_RC=0 via rust-test-lane.sh (441 `test result: ok`, 0 failed)",
+  "make test-cli": "tests/cli: 269/269 passed",
+  "make lint": "RC=0",
+  "make test-tools": "OK",
   "make check-spec": "check-spec OK (lenient mode); check_spec.py --strict: check-spec OK (strict mode)",
   "kuna catalog --check": "catalog OK: documents exactly the registered kuna options",
   "counters --check": "no drift: every hard-coded site agrees with the derived truth",
   "docs/options.md": "byte-fresh (no option added)",
-  "ci": "PR #755 with full-ci: cargo workspace suite pass (33m23s), parity gates pass"
+  "ci": "PR #755 with full-ci, pre-rebase head: cargo workspace suite pass (33m23s), parity gates pass"
  },
  "files": [
   "decompiler/crates/kuna-decomp/src/p4_calls/kuna_returnuncomputed.rs",
