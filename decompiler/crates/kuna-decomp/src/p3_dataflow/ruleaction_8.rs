@@ -1565,8 +1565,9 @@ impl Rule for RuleOrCompare {
 /// name `"expandload"`).
 ///
 /// (kuna) Only the AND form is taken, and only into a field a declared record
-/// lays out; the truncation form is never taken.  Both read bytes the program
-/// never reads (see [`crate::kuna_narrowload`]).
+/// lays out, reached through a pointer whose type is locked; the truncation
+/// form is never taken.  Both read bytes the program never reads (see
+/// [`crate::kuna_narrowload`]).
 pub struct RuleExpandLoad;
 
 impl RuleExpandLoad {

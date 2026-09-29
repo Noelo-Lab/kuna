@@ -1,5 +1,6 @@
-//! (kuna) A narrow LOAD keeps its own width unless a declared record attests the
-//! whole field it would be widened to.
+//! (kuna) A narrow LOAD keeps its own width unless a declared record, reached
+//! through a pointer whose type is locked, attests the whole field it would be
+//! widened to.
 //!
 //! Upstream's `RuleExpandLoad` (`ruleaction.cc:10889`) rewrites a LOAD narrower
 //! than its pointer's pointee as a LOAD of the whole pointee and takes the
@@ -29,9 +30,13 @@ use crate::dtype::type_metatype;
 use crate::funcdata::Funcdata;
 
 /// Is `ptr` the address of a field of a record or union that a declaration
-/// laid out (DWARF, a parsed header, a libc layout)? A bare pointer's target is
-/// attested only at the bytes the program reads, even when declared, and a
-/// record `structsynth` minted attests only the accesses it was built from.
+/// laid out (DWARF, a parsed header, a libc layout), reached from a Varnode
+/// whose type is locked (a declared prototype's parameter, a declared global)
+/// through pointer arithmetic, copies and casts alone? A bare pointer's target
+/// is attested only at the bytes the program reads, even when declared; a
+/// record `structsynth` minted attests only the accesses it was built from; and
+/// a declared record reached through a call's result or a loop's phi is typed
+/// by propagation, not by a declaration of that pointer.
 pub fn widens_into_declared_field(data: &Funcdata, ptr: VarnodeId) -> bool {
     let Some(def) = data.vbank().get(ptr).and_then(|v| v.get_def()) else {
         return false;
@@ -51,4 +56,28 @@ pub fn widens_into_declared_field(data: &Funcdata, ptr: VarnodeId) -> bool {
     };
     matches!(record.get_metatype(), type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION)
         && !crate::kuna_structsynth::points_at_synthesized_record(base_type)
+        && reaches_type_lock(data, ptr)
+}
+
+fn reaches_type_lock(data: &Funcdata, ptr: VarnodeId) -> bool {
+    let mut cur = ptr;
+    for _ in 0..8 {
+        let Some(v) = data.vbank().get(cur) else { return false };
+        if v.is_type_lock() {
+            return true;
+        }
+        let Some(o) = v.get_def().and_then(|d| data.obank().get(d)) else { return false };
+        match o.code() {
+            OpCode::CPUI_PTRADD
+            | OpCode::CPUI_PTRSUB
+            | OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_COPY
+            | OpCode::CPUI_CAST => match o.get_in(0) {
+                Some(x) => cur = x,
+                None => return false,
+            },
+            _ => return false,
+        }
+    }
+    false
 }

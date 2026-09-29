@@ -6431,17 +6431,55 @@ fn check_elemptr_round_trip(run_native: bool) {
 /// prints.
 #[test]
 fn a_narrow_read_round_trips_through_the_printed_c() {
-    check_narrowload_round_trip(cfg!(all(target_os = "linux", target_arch = "x86_64")));
+    check_narrowload_round_trip("narrowload", 17, cfg!(all(target_os = "linux", target_arch = "x86_64")), stripped_wide);
 }
 
 #[test]
 fn narrowload_spellings_are_checked_without_native_execution() {
-    check_narrowload_round_trip(false);
+    check_narrowload_round_trip("narrowload", 17, false, stripped_wide);
 }
 
-fn check_narrowload_round_trip(run_native: bool) {
+/// The DWARF twin: `narrowload_dwarf_x86_64.c`, built with `-g`, masks one byte
+/// of a declared record's 4-byte field through a call's result, a loop's phi
+/// and a pointer read out of another record, each ending at that byte at the
+/// end of a page.  Main kept these narrow only with `elemptr` on; a widening
+/// gated on the record alone printed `(src(k)->flags & 0x8100) == 0x8000` and
+/// `(r_1->flags & 0x81) != 0x80`, which fault.
+#[test]
+fn a_narrow_read_of_a_declared_record_round_trips_through_the_printed_c() {
+    check_narrowload_round_trip("narrowload_dwarf", 3, cfg!(all(target_os = "linux", target_arch = "x86_64")), dwarf_wide);
+}
+
+#[test]
+fn narrowload_dwarf_spellings_are_checked_without_native_execution() {
+    check_narrowload_round_trip("narrowload_dwarf", 3, false, dwarf_wide);
+}
+
+fn stripped_wide(_: &str, body: &str) -> Option<&'static str> {
+    ["(unsigned short)a0->", "(short)a0->", "(unsigned char)a0->", "(int)a0->", "(int)a0[", "->field_0x8 & 0x"]
+        .into_iter()
+        .find(|w| body.contains(w))
+}
+
+fn dwarf_wide(name: &str, body: &str) -> Option<&'static str> {
+    if body.contains("0x8100") {
+        return Some("0x8100");
+    }
+    let loop_test = "->flags & 0x81) != 0x80";
+    let widened = body.match_indices(loop_test).any(|(i, _)| {
+        body[..i].trim_end_matches(|c: char| c.is_ascii_alphanumeric() || c == '_').ends_with('(')
+    });
+    (name == "d_loop" && widened).then_some(loop_test)
+}
+
+fn check_narrowload_round_trip(
+    fixture: &str,
+    n_tested: usize,
+    run_native: bool,
+    wide: fn(&str, &str) -> Option<&'static str>,
+) {
     let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
-    let src = std::fs::read_to_string(fx.join("narrowload_x86_64.c")).unwrap();
+    let src = std::fs::read_to_string(fx.join(format!("{fixture}_x86_64.c"))).unwrap();
     let prelude = src.split("/* prelude */").nth(1).unwrap().split("/* tested */").next().unwrap();
     let tested_src = src.split("/* tested */").nth(1).unwrap().split("/* main */").next().unwrap();
     let main = src.split("/* main */").nth(1).unwrap();
@@ -6451,15 +6489,15 @@ fn check_narrowload_round_trip(run_native: bool) {
         .filter_map(|l| l.split('(').next())
         .filter_map(|l| l.rsplit([' ', '*']).next())
         .collect();
-    assert_eq!(tested.len(), 17, "{tested:?}");
+    assert_eq!(tested.len(), n_tested, "{tested:?}");
     let sp = specs();
     if !run_native {
         eprintln!("narrowload round trip: native execution disabled; checking all spellings");
     }
-    let dir = common::scratch_file("narrowload-round-trip", "dir");
+    let dir = common::scratch_file(&format!("{fixture}-round-trip"), "dir");
     std::fs::create_dir(&dir).unwrap();
     for build in ["gcc_O0", "clang_O0", "gcc_O2", "clang_O2"] {
-        let stem = format!("narrowload_{build}_x86_64");
+        let stem = format!("{fixture}_{build}_x86_64");
         let bin = fx.join(&stem);
         let expected = run_native.then(|| process::required_output(&mut Command::new(&bin)));
         for elem in ["on", "off"] {
@@ -6482,12 +6520,12 @@ fn check_narrowload_round_trip(run_native: bool) {
                 let head = format!("// Function: {w} @ ");
                 let at = code.find(&head).unwrap_or_else(|| panic!("{build} {elem}: no `{w}` in the export"));
                 let end = code[at + head.len()..].find("// Function: ").map_or(code.len(), |e| at + head.len() + e);
-                bodies.push_str(&code[at..end]);
+                let body = &code[at..end];
+                if let Some(w) = wide(w, body) {
+                    panic!("{build} {elem}: a narrow read printed wide, as `{w}`:\n{body}");
+                }
+                bodies.push_str(body);
             }
-            for wide in ["(unsigned short)a0->", "(short)a0->", "(unsigned char)a0->", "(int)a0->", "(int)a0["] {
-                assert!(!bodies.contains(wide), "{build} {elem}: a narrow read printed as `{wide}`:\n{bodies}");
-            }
-            assert!(!bodies.contains("->field_0x8 & 0x"), "{build} {elem}: a byte test reads the whole field:\n{bodies}");
             let Some(expected) = &expected else { continue };
             std::fs::write(
                 out.join("printed.c"),
