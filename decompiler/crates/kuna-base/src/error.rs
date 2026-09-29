@@ -1,39 +1,13 @@
-//! Port of `decompiler/cpp/error.hh` plus the exception subclasses scattered
-//! through the C++ tree (W1) — the error model of ADR 0004.
+//! Engine errors, from `decompiler/cpp/error.hh` and its exception subclasses.
 //!
-//! C++ throws `LowlevelError` and subclasses and catches them at a small
-//! number of well-known frames.  The Rust port returns
-//! `Result<T, KunaError>` and matches at the same frames.  Variants mirror
-//! the C++ hierarchy one-to-one:
+//! [`KunaResult`] carries recoverable failures as [`KunaError`] variants.
+//! Display writes the explanation alone; callers add any diagnostic prefix.
+//! [`KunaError::is_lowlevel`] preserves the C++ catch hierarchy: every variant
+//! except `Decoder` belongs to `LowlevelError`.
 //!
-//! | variant            | C++ type                | declared in     |
-//! |--------------------|-------------------------|-----------------|
-//! | `Lowlevel`         | `LowlevelError`         | `error.hh`      |
-//! | `Recov`            | `RecovError`            | `error.hh`      |
-//! | `Parse`            | `ParseError`            | `error.hh`      |
-//! | `Decoder`          | `DecoderError`          | `xml.hh` (used by `marshal.hh`) |
-//! | `Sleigh`           | `SleighError`           | `context.hh`    |
-//! | `Unimpl`           | `UnimplError`           | `translate.hh`  |
-//! | `BadData`          | `BadDataError`          | `translate.hh`  |
-//! | `DataUnavail`      | `DataUnavailError`      | `loadimage.hh`  |
-//! | `Evaluation`       | `EvaluationError`       | `opbehavior.hh` |
-//! | `ParamUnassigned`  | `ParamUnassignedError`  | `fspec.hh`      |
-//! | `JumptableThunk`   | `JumptableThunkError`   | `jumptable.hh`  |
-//! | `Java`             | `JavaError`             | `ghidra_arch.hh`|
-//!
-//! IMPORTANT inheritance detail carried over from C++: `DecoderError` is a
-//! standalone struct, **not** derived from `LowlevelError`.  A C++ frame
-//! catching `LowlevelError` does *not* catch `DecoderError`; ported catch
-//! frames must use [`KunaError::is_lowlevel`] to reproduce that distinction.
-//!
-//! `DuplicateFunctionError` (`database.hh`, a `RecovError` carrying an
-//! `Address` + function name) is intentionally deferred to the database wave:
-//! its payload needs the `Address` type, which is not yet ported.  Adding it
-//! is an additive variant, not a reshape.
-//!
-//! `panic!` is reserved for internal invariant violations (states the C++
-//! code treats as undefined behavior or asserts on); panics are never used
-//! for recoverable engine errors and never caught.
+//! The database layer owns `DuplicateFunctionError` with its address and name.
+//! Converting it to `KunaError::Recov` retains only the "Duplicate Function"
+//! explanation. Panics are separate from this error enum.
 
 use thiserror::Error;
 

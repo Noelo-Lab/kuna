@@ -1830,3 +1830,35 @@ Final rustdoc passes with broken intra-doc links denied. All four required gates
 passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
 (7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
 gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.
+
+
+### Base error, encoding and address-space contracts
+
+The base headers now describe implemented interfaces instead of promising
+later port waves. Error documentation distinguishes the `Decoder` catch
+hierarchy and explains that conversion of the database's duplicate-function
+payload retains only its explanation. The corresponding database comment
+no longer promises another error-enum variant.
+
+Encoding documentation describes explicit ID registration, byte strings,
+opcode extensions and borrowed address-space managers. It also records the
+existing XML close behavior without implying extra validation. Space docs
+cover shared ownership and join records, installed register lookup, constructor
+flags and endianness, and the implemented truncation wrapper. The constraint
+on decoding spaces through a borrowed manager remains explicit.
+
+The four files lose 144 comment lines. Their snapshot comparison preserves
+every noncomment, nonblank source line, including all error strings and public
+APIs. Evidence is under `/tmp/kuna-deslop-base-contract-docs-`; no runtime or
+performance change is claimed.
+
+Base rustdoc passes with broken intra-doc links denied. Expanding that check
+to the engine finds 198 existing broken-link diagnostics across 57 files.
+Repeating it with all four original source snapshots produces the identical
+message/file multiset; no new broken link is introduced. The before/after
+logs and comparison are retained with the other evidence.
+
+All four required gates
+passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
+(7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
+gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.

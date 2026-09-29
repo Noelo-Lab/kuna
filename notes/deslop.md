@@ -2306,6 +2306,41 @@ unchanged through the last terminal success. Logs use
 `/tmp/kuna-deslop-native-integers-final-`. The preceding commit's CI and CodeQL
 pass. No baseline or threshold changed.
 
+## Current ownership and error contracts
+
+Seven Rust files lose 296 comment lines without changing any noncomment line,
+API or error string. Base error, marshal and address-space documentation now
+describes the implemented conversions, registry, borrowed services and shared
+identity. Engine context and function-data headers describe their actual
+owners and live interfaces instead of completed port waves or obsolete stub
+restrictions. Genuine unreviewed limitations remain documented. Private
+helpers are named without promising a public documentation target.
+
+Base public and private documentation now build with warnings denied. Engine
+public broken-link errors fall from 181 to 161, and private-documentation
+errors from 267 to 241. Both modes also lose two private-link warnings. Every
+other diagnostic message/file tuple is unchanged; engine documentation still
+fails on its remaining debt. Engine Clippy likewise retains the same 208
+errors and 91 warnings, including their primary source text. Strict base and
+numeric Clippy passes on both Rust 1.90 and CI's 1.98.1; CLI lint also passes.
+
+The release build takes 48.73 seconds without warnings. All 3,746 focused
+tests pass, with three existing ignores across 58 groups and no warnings.
+Four complete stage transcripts, 36 CLI cases, 286 compiler comparisons and
+48 XML outputs match their saved references. Source proofs pin all eight
+candidate files and verify every noncomment Rust line. Artifacts use
+`/tmp/kuna-deslop-engine-contracts.R8txKdoO`. This is a documentation-only
+change; no runtime speed improvement is claimed.
+
+All nine gates pass: 7,464 workspace tests, 38 existing ignores across 439
+groups and no warnings; upstream 675/675 and stages 1,467/1,467 retain parity.
+The isolated CLI run passes all 268 probes on its first try. The 42 Python
+tests, 56 Ghidra tests, 48 XML comparisons, 17 saved CLI comparisons and eleven
+browser probes pass, as do spec/catalog checks and strict CLI lint. Frozen
+diff `0d79c382` remained unchanged through the last terminal success. Logs use
+`/tmp/kuna-deslop-engine-contracts-final-`. The preceding commit's CI and CodeQL
+pass. No baseline or threshold changed.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -2317,7 +2352,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Archive member and console output files have scoped cleanup. Loading/configuration and the remaining pool module still combine several lifecycle policies. |
 | Collection policy | The CLI has a strict warning-clean Clippy gate. The release engine-library check last reported 208 collection-policy errors/91 warnings, and analysis 215 errors/64 warnings. Reviewed lookup-only collections and explicitly ordered reports preserve existing implementations where iteration cannot affect output. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and extend enforcement. |
-| Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Other wave-era STUB notes remain; schedule and SLEIGH overview claims now distinguish implemented code from real limitations. |
+| Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Context/function-data ownership headers and base contracts now describe current implementations. Other wave-era STUB notes remain; engine documentation still has 161 public broken-link errors, with 241 when private items are included. |
 | Analysis, SLEIGH, Python, integrations | Public and private analysis rustdoc links now resolve; other documentation warnings and stale migration narratives remain. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. Inherited-stderr exit diagnostics are regression-tested; the earlier real-Chrome startup timeouts remain unexplained. |
 
 Before each commit: `make test`, `make test-stages`, `make rust-test`,
