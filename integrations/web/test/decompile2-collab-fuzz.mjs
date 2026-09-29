@@ -18,7 +18,8 @@
 //     those only where the registers held nothing; a joiner brings no
 //     variable change made at another decompiler effort than the session's;
 //   - a change the others' pages refuse stays on its page, and its student is
-//     told (also for a joiner's earlier changes);
+//     told (also for a joiner's earlier changes); no page takes another for
+//     one whose clock races ahead;
 //   - adding a directive always adds one (never replaces another of the
 //     page's own); applying the others' changes never clears what the engine
 //     said of a record they did not change; a page out of any session never

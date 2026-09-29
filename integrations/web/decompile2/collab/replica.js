@@ -23,7 +23,7 @@ import { TEXT_LIMITS, UNDO_MAX, directiveTextProblem, declarationProblem } from 
 
 export const MODES = ['auto', 'fast', 'reliable', 'aggressive'];
 const MAX_COUNTER = 2 ** 48;
-const COUNTER_WINDOW = 2 ** 24;
+export const COUNTER_WINDOW = 2 ** 24;
 
 /** Whether clock `a` is later than clock `b`. */
 export const newer = (a, b) => (a[0] !== b[0] ? a[0] > b[0] : a[1] > b[1]);

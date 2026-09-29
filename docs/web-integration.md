@@ -875,7 +875,11 @@ rate limit per page (edits 20 a second, pings 1, pointers 30); what fails is dro
 the link goes on. Each register op passes `validOp`: a key of a known shape, a value of
 its kind's shape, and a clock whose counter is at most 2^48 and not more than 2^24 ahead
 of the page's own (so one bad clock cannot push every page's counter past what the others
-accept). The value rules are the page's own dialogs' rules, from one function in
+accept). Over time, each link may move the page's counter on by at most 2^24 a minute,
+far more than any edits do; ops that go faster could otherwise bring every counter to
+2^48 in minutes, after which no one's edits would be accepted. The page stops linking to
+a page that goes faster, does not link to it again in that session, and says so ("Cy's
+page sent changes this page cannot accept"). The value rules are the page's own dialogs' rules, from one function in
 `session.js`: a length cap per kind, no control characters (a newline or a line
 separator would start a second directive in an exported `.kuna` file), no `#` that
 starts a comment, and never a form that makes the engine read a file (`@FILE`, `bytes

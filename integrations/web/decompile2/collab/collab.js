@@ -880,6 +880,12 @@ class Collab {
       case 'mismatch':
         this.api.toast(`${name}'s page is a different version of Kuna; reload both.`, { kind: 'err' });
         break;
+      case 'misbehaved':
+        this.api.toast(`${name}'s page sent changes this page cannot accept, so it stopped linking to it.`, {
+          kind: 'err', detail: 'Its changes were numbered far faster than anyone edits. The others\' pages may still show it.',
+        });
+        this.presence.forget(info.peer);
+        break;
       default: break;
     }
     this.#rosterChanged();

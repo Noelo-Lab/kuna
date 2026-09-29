@@ -566,6 +566,7 @@ export class Sim {
     const out = [...this.violations];
     for (const p of this.pages.values()) {
       if (p.sync.phase === 'joining') out.push(`${p.id} is still joining after everything settled`);
+      if (p.events.includes('misbehaved')) out.push(`${p.id} took a page working as it should for one that is not, and stopped linking to it`);
       if (p.sync.phase !== 'solo') continue;
       if (p.slot === 'shared') out.push(`${p.id} is out of any session but still saves into the shared slot`);
       if (p.session.orderOf) out.push(`${p.id} is out of any session but still orders its directives by a session's births`);

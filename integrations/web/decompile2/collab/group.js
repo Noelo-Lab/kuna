@@ -35,6 +35,7 @@
 // close(), onmessage(data, channel), onclose()}.
 import { PROTOCOL, MAX_PEERS, MAX_MESSAGE, COLORS, readMessage, limiter, randomId, utf8Length, quietly } from './wire.js';
 import { sha256Hex } from '../../sha256.js';
+import { COUNTER_WINDOW, validOp } from './replica.js';
 
 export const MAX_REGISTERS = 100000;
 const MAX_STORED = 2 * MAX_REGISTERS;
@@ -53,6 +54,8 @@ const EARLY_MAX = 500;
 const BEFORE_HELLO = new Set(['hello', 'bye', 'full']);
 const SUM_SOON_MS = 1500;
 const QUIET_MS = 2000;
+/** How fast one link may move this page's clock on: COUNTER_WINDOW per RAISE_MS, at most COUNTER_WINDOW at once. */
+const RAISE_MS = 60000;
 /** The real clock (tests pass one of their own). */
 export const TIMERS = {
   setTimeout: (fn, ms) => setTimeout(fn, ms),
@@ -101,6 +104,7 @@ export class Group {
     this.peers = new Map();
     this.known = new Map();
     this.intros = new Map();
+    this.blocked = new Set();
     this.outbox = new Map();
     this.flushTimer = 0;
     this.rosterTimer = 0;
@@ -149,7 +153,7 @@ export class Group {
         ping: limiter(1, 2, this.timers.now), other: limiter(20, 40, this.timers.now),
       },
       out: limiter(18, 18, this.timers.now), rx: null, dropped: 0, gone: false, resyncAt: 0, snapAt: 0, sumAt: 0,
-      early: [], acked: false, told: false, waiting: [], onAck: [],
+      early: [], acked: false, told: false, waiting: [], onAck: [], raise: { room: COUNTER_WINDOW, at: this.timers.now() },
     };
     this.links.add(rec);
     link.onmessage = (data, channel) => this.#receive(rec, data, channel);
@@ -398,7 +402,7 @@ export class Group {
       this.#drop(rec);
       return;
     }
-    if (m.peer === this.me || (rec.peer && rec.peer !== m.peer) || this.peers.has(m.peer)) {
+    if (m.peer === this.me || (rec.peer && rec.peer !== m.peer) || this.peers.has(m.peer) || this.blocked.has(m.peer)) {
       rec.failed = true;
       this.#drop(rec);
       return;
@@ -475,6 +479,11 @@ export class Group {
         rec.dropped++;
         continue;
       }
+      const raise = validOp(op) ? op.c[0] - this.replica.counter : 0;
+      if (raise > 0 && raise <= COUNTER_WINDOW && !this.#spend(rec, raise)) {
+        this.#misbehaved(rec);
+        break;
+      }
       const prev = before ? { v: before.v, by: before.c[1] } : null;
       const r = this.replica.receive(op);
       if (r === 'invalid') {
@@ -496,6 +505,34 @@ export class Group {
       rec.caughtUp = true;
       this.page.caughtUp(rec.peer);
     }
+  }
+
+  /**
+   * Charge `n` (how far an op moves this page's clock on) to the link it came
+   * by. Pages' clocks move by one per edit, so a link that moves it faster
+   * than anyone edits is a page not working as it should: without this, one
+   * could push every page's clock to the end of its range in minutes, after
+   * which no one's edits would be accepted.
+   */
+  #spend(rec, n) {
+    const now = this.timers.now();
+    const r = rec.raise;
+    r.room = Math.min(COUNTER_WINDOW, r.room + ((now - r.at) / RAISE_MS) * COUNTER_WINDOW);
+    r.at = now;
+    if (n > r.room) return false;
+    r.room -= n;
+    return true;
+  }
+
+  /** A page that sent what no page working as it should sends: stop linking to it, and say so. */
+  #misbehaved(rec) {
+    if (rec.gone) return;
+    rec.misbehaved = true;
+    if (rec.peer) {
+      this.blocked.add(rec.peer);
+      this.known.delete(rec.peer);
+    }
+    this.#drop(rec);
   }
 
   #file(rec, m) {
@@ -548,6 +585,7 @@ export class Group {
   }
 
   #know(x, via) {
+    if (this.blocked.has(x.peer)) return;
     const k = this.known.get(x.peer) || { name: x.name, color: x.color, via: new Set(), tries: 0, retryAt: 0 };
     k.name = x.name;
     k.color = x.color;
@@ -567,7 +605,7 @@ export class Group {
       if (intro?.id === m.id && intro.answer) Promise.resolve().then(() => intro.answer(m.d)).catch(() => {});
       return;
     }
-    if (m.from === this.me || this.peers.has(m.from) || this.intros.has(m.from) || m.from > this.me) return;
+    if (m.from === this.me || this.peers.has(m.from) || this.intros.has(m.from) || m.from > this.me || this.blocked.has(m.from)) return;
     if (this.size() >= MAX_PEERS && !this.known.has(m.from)) return;
     this.#pair(m.from, rec, async () => {
       const res = await this.connect.answer({ id: m.id, sdp: m.d });
@@ -666,7 +704,7 @@ export class Group {
         this.page.event('lost', { peer, name: k.name, reachable: false });
       }
     }
-    if (!rec.bye) {
+    if (!rec.bye && !rec.misbehaved) {
       for (const other of this.peers.values()) {
         if (other.member && other.listed.has(rec.peer)) this.#know({ peer: rec.peer, name: rec.name, color: rec.color }, other.peer);
       }
@@ -677,7 +715,7 @@ export class Group {
       k.retryAt = this.timers.now() + RETRY_MS;
       this.timers.setTimeout(() => this.#mesh(), RETRY_MS + 50);
     }
-    this.page.event(rec.bye ? 'left' : 'lost', { peer: rec.peer, name: rec.name, reachable: !!k });
+    this.page.event(rec.misbehaved ? 'misbehaved' : rec.bye ? 'left' : 'lost', { peer: rec.peer, name: rec.name, reachable: !!k });
     if (this.closed) return;
     this.#rosterChanged();
   }

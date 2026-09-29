@@ -8,7 +8,8 @@
 // travel; the register cap and resync; huge local batches; a late
 // BroadcastChannel knock; forwarding only where needed; the shared session
 // kept apart in storage; a program over 32 MB sent to a page that lost the
-// inviter's first hello; a connection that cannot be set up. Every case runs and is reported; any failure exits 1.
+// inviter's first hello; a connection that cannot be set up; a page whose
+// clock races ahead. Every case runs and is reported; any failure exits 1.
 //   node integrations/web/test/decompile2-collab-cases.mjs
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
@@ -663,6 +664,46 @@ await test('fourth review #5 a program over 32 MB still arrives when the inviter
   assert.ok(await until(() => ben.p.bytes?.length === bytes.length, 30000), 'Ben received the whole program');
   assert.equal(ben.p.file.hash, file.hash);
   assert.ok(await until(() => ben.replica.value('fn:0x1149') === 'adder', 5000), 'and the registers');
+  ana.g.leave();
+  ben.g.leave();
+});
+
+await test('fourth review #9 a page whose clock races ahead is cut off and the student told; the others\' writes still count', async () => {
+  const WINDOW = 2 ** 24;
+  const ana = member('aaaaaaaa', 'Ana', { file: FILE, bytes: FILE_BYTES });
+  ana.g.create();
+  const ben = member('bbbbbbbb', 'Ben', { file: FILE, bytes: FILE_BYTES });
+  invite(ana, ben);
+  await settle(150);
+  const [a, b] = linkPair();
+  b.onmessage = () => {};
+  ana.g.addLink(a);
+  const hello = { t: 'hello', proto: W.PROTOCOL, build: BUILD, peer: 'cccccccc', name: 'Cy', color: null, sid: null, file: FILE };
+  b.send(JSON.stringify(hello));
+  await settle(60);
+  let c = ana.replica.counter;
+  for (let m = 0; m < 20; m++) {
+    const ops = [];
+    for (let i = 0; i < 1000; i++) {
+      c += WINDOW - 8;
+      ops.push({ k: `comment:${MAIN}:0x${(0x1000 + m * 1000 + i).toString(16)}`, v: 'x', c: [c, 'cccccccc'], b: [c, 'cccccccc'] });
+    }
+    b.send(JSON.stringify({ t: 'ops', ops }));
+  }
+  await settle(300);
+  assert.ok(ana.replica.counter < 2 * WINDOW, `Ana's clock stays near where it was (${ana.replica.counter})`);
+  assert.ok(ben.replica.counter < 2 * WINDOW, `and so does Ben's (${ben.replica.counter})`);
+  assert.ok(ana.p.events.some(([k, n]) => k === 'misbehaved' && n === 'Cy'), 'Ana is told');
+  assert.equal(a.closed, true, 'and her page stops linking to Cy');
+  ana.g.local([ana.replica.set(`fn:${MAIN}`, 'still_counts')]);
+  await settle(150);
+  assert.equal(ben.replica.value(`fn:${MAIN}`), 'still_counts', 'an honest write still reaches the others');
+  const [a2, b2] = linkPair();
+  b2.onmessage = () => {};
+  ana.g.addLink(a2);
+  b2.send(JSON.stringify(hello));
+  await settle(60);
+  assert.equal(a2.closed, true, 'Cy is not linked to again');
   ana.g.leave();
   ben.g.leave();
 });
