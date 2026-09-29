@@ -239,6 +239,7 @@ class Collab {
     if (desc.problem) throw new Error(`${this.api.binary().name} cannot be shared: ${desc.problem}`);
     const build = await this.build();
     if (this.active) return true;
+    if (!this.describe() || this.describe().problem) return false;
     this.sync.start({ build, name: this.name, connect: this.#connect() });
     this.group.setWhere(this.#where());
     this.#rosterChanged();
@@ -303,7 +304,9 @@ class Collab {
       if (this.group.size() >= MAX_PEERS) throw new Error('this session is full (8 people)');
       this.#status('Making an invite link…', 'busy');
       offer = await makeOffer({ me: this.me, iceServers: this.ice() });
+      if (!this.active) throw new Error('the session ended');
       const file = this.#fileMetaNow();
+      if (!file) throw new Error('open a program first');
       const code = await encodeCode('invite', { id: offer.id, n: this.name, f: file.name, z: file.size, d: offer.sdp });
       if (!this.active) throw new Error('the session ended');
       const inv = { id: offer.id, offer, link: `${this.#base()}#join=${code}`, state: 'waiting', guest: null };

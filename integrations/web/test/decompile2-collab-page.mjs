@@ -1032,6 +1032,23 @@ try {
     assert.ok(last.includes('volatile 0x3000+4') && !last.includes('readonly 0x2000+8'), `the list shown is the one for Ben's own changes: ${JSON.stringify(last)}`);
   });
 
+  await test('fifth review #8 closing the program while an invite link is being made says to open one first', async () => {
+    const ana = await tab('Ana', { script: DELAY_SHIM });
+    await open(ana);
+    await example(ana);
+    await ana.click('#morebtn');
+    await ana.click('#collabbtn');
+    await ana.evaluate('window.__kunaDelay = 3000; true');
+    await nameAndGo(ana, 'Ana');
+    await ana.evaluate(`document.getElementById('examplebtn').click(); true`);
+    await ana.waitFor(`!document.getElementById('cancelbtn').disabled`, { what: 'the example opening again', timeout: 5000 });
+    await ana.evaluate(`document.getElementById('cancelbtn').click(); window.__kunaDelay = 0; true`);
+    await ana.waitFor(`/open a program first/i.test(document.getElementById('d2collab')?.textContent || '')`, { what: 'the invite gives up', timeout: 20000 });
+    const said = await ana.evaluate(`document.getElementById('d2collab').textContent`);
+    assert.doesNotMatch(said, /Cannot read/, said);
+    assert.equal(await ana.evaluate(`document.querySelectorAll('#d2roster .d2-who').length`), 0, 'and no session was started');
+  });
+
   await test('fourth review #10 in a session, an edit or a burst of typed bytes keeps no copy of the whole session for the solo Undo', async () => {
     const { ana, ben } = await pair();
     await ana.evaluate(`import('./session.js').then(({ Session }) => {
