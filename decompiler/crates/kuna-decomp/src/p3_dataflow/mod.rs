@@ -34,3 +34,4 @@ pub mod kuna_splitstorekeep;
 pub mod kuna_constspaceload;
 pub mod kuna_simdlane;
 pub mod kuna_cancelbytearithmetic;
+pub mod kuna_narrowload; // (kuna) a narrow LOAD keeps its own width
