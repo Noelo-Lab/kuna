@@ -1770,8 +1770,8 @@ string (kuna `conststr`).** When the bytes at a `char *` constant do not decode
 as a string — the GB18030 quote glyphs gnulib's `gettext_quote` returns
 (`a1 07 65 00`) are the common case — upstream falls through to the pointer
 arm's casted-hex print, and with `globalref` on (§9.9) to `&dat_<addr>` declared
-`char`. With option `conststr` set to `strings` or `on` (the default is `on`),
-`printc.rs (PrintC::conststr_byte_literal)` reads the bytes itself, up to the
+`char`. With option `conststr` on (the default), `printc.rs
+(PrintC::conststr_byte_literal)` reads the bytes itself, up to the
 NUL within the string manager's 2,048-byte limit, and prints the literal of
 exactly those bytes (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_conststr.rs
 (byte_literal)`): a byte that begins a valid UTF-8 character is spelled as
@@ -2476,7 +2476,13 @@ directly at another start, width or type — `sigemptyset((sigset_t
 an `unsigned int *` use would change what a compare on the direct read means once
 the header declares the global; and for a pointer to code. An `undefinedN` direct
 read is accepted against an unsigned integer of the same size, since that is the
-C type the export's prelude defines it as. A `void *` constant needs one more
+C type the export's prelude defines it as. The same spelling is why a constant
+whose pointee is `undefinedN` keeps its cast beside a direct read at a known type
+(`sub_23be0((unsigned long *)0x846e8,a0)` beside `strcmp(a0,dat_846e8)` in `tar`,
+84 casts on the cast corpus): named at the type the function reads it at,
+`&dat_846e8` is a `char **` handed to an `unsigned long *` parameter, a
+conversion C does not make by itself; the lever is the callee's parameter type,
+not the constant (docs/features/conststr/analysis.md). A `void *` constant needs one more
 thing: the declared object's pointer must convert to `void *` exactly as the
 cast did, which C does for an argument, a returned value, a copy or store into
 `void *` storage and an equality test against another `void *`, and does not for
@@ -2555,29 +2561,6 @@ takes its address (`GlobalInfo::elem`): its subscripts read the element that
 declaration names. A Varnode of that storage at another type, such as its value
 before a call, which nothing prints, is not a read of it at that type, because
 every walk over the Varnodes holding it agreed on the pointer.
-
-**An unknown pointee names nothing (kuna `conststr`).** A callee that only
-moves a word through its parameter leaves the pointee `undefinedN`, so its
-caller passes `(unsigned long *)0x846e8` while reading `dat_846e8` directly as
-a `char *` in the next statement, and the direct-access refusal keeps the cast
-(`tar`'s `assign_string(&volume_label, ...)`; IDA prints `&qword_846E8`). With
-option `conststr` set to `objects` or `on`, the unknown pointee is treated as
-what it is, the absence of a type: `Plan::object_named_by_reads` declares the
-object at the one type the function's direct accesses agree on
-(`Plan::direct_type_at`) when that is an integer, `bool` or pointer of the
-unknown's size, and `Seen::merge` takes an unknown pointee and such a type of the
-same size, read at one address by two uses, as one object named by the known one
-(`kuna_globalref.rs (names_unknown)`). The reader of the constant must be one
-that takes the new pointer where it took the pointer to unknown — an argument, a
-returned value, a copy, a stored value or an equality test
-(`unknown_reader_converts`) — since upstream's cast policy never casts to a
-pointer to unknown (`cast.rs (CastStrategyC::cast_standard)`: "don't cast
-pointers to unknown"), which is exactly how a variable of the object's type in
-that position already prints. The direct accesses and the name then agree, so the
-header's declaration is the type every body reads. What still keeps its cast: a
-signed object the function writes as `undefinedN` (a zero-extension of an
-unknown prints bare and means unsigned), an object read at another width, a
-record whose members the function reads directly, and two known pointee types.
 
 **The value is the binary's.** `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs
 (a_constant_address_named_as_a_global_round_trips_through_the_printed_c)`

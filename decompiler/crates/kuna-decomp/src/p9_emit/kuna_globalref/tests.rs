@@ -37,20 +37,20 @@ fn an_address_is_in_range_only_inside_a_section() {
 #[test]
 fn a_void_use_yields_to_the_one_type_the_function_names() {
     let uint = core(4, type_metatype::TYPE_UINT, "uint4");
-    let seen = Seen::merge(Some(Seen::merge(None, void(), false, false)), Rc::clone(&uint), false, false);
+    let seen = Seen::merge(Some(Seen::merge(None, void(), false)), Rc::clone(&uint), false);
     assert!(matches!(&seen, Seen::One(t) if Rc::ptr_eq(t, &uint)));
-    let seen = Seen::merge(Some(seen), void(), false, false);
+    let seen = Seen::merge(Some(seen), void(), false);
     assert!(matches!(&seen, Seen::One(t) if Rc::ptr_eq(t, &uint)), "a later void use keeps it");
-    assert!(matches!(Seen::merge(None, void(), false, false), Seen::Void(_)));
+    assert!(matches!(Seen::merge(None, void(), false), Seen::Void(_)));
 }
 
 #[test]
 fn two_types_at_one_address_name_nothing() {
     let uint = core(4, type_metatype::TYPE_UINT, "uint4");
     let long = core(8, type_metatype::TYPE_INT, "int8");
-    let seen = Seen::merge(Some(Seen::merge(None, uint, false, false)), long, false, false);
+    let seen = Seen::merge(Some(Seen::merge(None, uint, false)), long, false);
     assert!(matches!(seen, Seen::Conflict));
-    assert!(Seen::merge(Some(Seen::Conflict), void(), false, false).object().is_none());
+    assert!(Seen::merge(Some(Seen::Conflict), void(), false).object().is_none());
 }
 
 /// (kuna `elemptr`) An unknown word and the unsigned word of its size are one
@@ -61,52 +61,15 @@ fn an_unknown_word_is_the_unsigned_word_it_is_read_beside() {
     let uint2 = core(2, type_metatype::TYPE_UINT, "uint2");
     let int2 = core(2, type_metatype::TYPE_INT, "int2");
     let unk2 = core(2, type_metatype::TYPE_UNKNOWN, "xunknown2");
-    let seen = Seen::merge(Some(Seen::merge(None, Rc::clone(&unk2), true, false)), Rc::clone(&uint2), true, false);
+    let seen = Seen::merge(Some(Seen::merge(None, Rc::clone(&unk2), true)), Rc::clone(&uint2), true);
     assert!(matches!(&seen, Seen::One(t) if Rc::ptr_eq(t, &uint2)));
-    let seen = Seen::merge(Some(Seen::merge(None, Rc::clone(&uint2), true, false)), Rc::clone(&unk2), true, false);
+    let seen = Seen::merge(Some(Seen::merge(None, Rc::clone(&uint2), true)), Rc::clone(&unk2), true);
     assert!(matches!(&seen, Seen::One(t) if Rc::ptr_eq(t, &uint2)));
-    assert!(matches!(Seen::merge(Some(Seen::One(Rc::clone(&unk2))), int2, true, false), Seen::Conflict));
-    assert!(matches!(Seen::merge(Some(Seen::One(Rc::clone(&unk2))), Rc::clone(&uint2), false, false), Seen::Conflict));
+    assert!(matches!(Seen::merge(Some(Seen::One(Rc::clone(&unk2))), int2, true), Seen::Conflict));
+    assert!(matches!(Seen::merge(Some(Seen::One(Rc::clone(&unk2))), Rc::clone(&uint2), false), Seen::Conflict));
     let ubyte = core(1, type_metatype::TYPE_UINT, "uint1");
     let unk1 = core(1, type_metatype::TYPE_UNKNOWN, "xunknown1");
-    assert!(matches!(Seen::merge(Some(Seen::One(unk1)), ubyte, true, false), Seen::Conflict));
-}
-
-/// (kuna `conststr`) An unknown pointee and a known integer, `bool` or pointer
-/// of its size are one object named by the known one; a float, another size,
-/// two known types, or the same pair without the option are two types.
-#[test]
-fn an_unknown_pointee_is_the_known_type_of_its_size() {
-    let int8 = core(8, type_metatype::TYPE_INT, "int8");
-    let unk8 = core(8, type_metatype::TYPE_UNKNOWN, "xunknown8");
-    let seen = Seen::merge(Some(Seen::merge(None, Rc::clone(&unk8), false, true)), Rc::clone(&int8), false, true);
-    assert!(matches!(&seen, Seen::One(t) if Rc::ptr_eq(t, &int8)));
-    let seen = Seen::merge(Some(Seen::merge(None, Rc::clone(&int8), false, true)), Rc::clone(&unk8), false, true);
-    assert!(matches!(&seen, Seen::One(t) if Rc::ptr_eq(t, &int8)));
-    assert!(matches!(Seen::merge(Some(Seen::One(Rc::clone(&unk8))), Rc::clone(&int8), false, false), Seen::Conflict));
-    let dbl = core(8, type_metatype::TYPE_FLOAT, "float8");
-    assert!(matches!(Seen::merge(Some(Seen::One(Rc::clone(&unk8))), dbl, false, true), Seen::Conflict));
-    let int4 = core(4, type_metatype::TYPE_INT, "int4");
-    assert!(matches!(Seen::merge(Some(Seen::One(Rc::clone(&unk8))), Rc::clone(&int4), false, true), Seen::Conflict));
-    let uint8 = core(8, type_metatype::TYPE_UINT, "uint8");
-    assert!(matches!(Seen::merge(Some(Seen::One(Rc::clone(&int8))), uint8, false, true), Seen::Conflict));
-    assert!(names_unknown(&int8, &unk8));
-    assert!(!names_unknown(&int4, &unk8));
-    assert!(!names_unknown(&unk8, &unk8), "an unknown names nothing");
-    assert!(!names_unknown(&int8, &int8), "only an unknown is named");
-}
-
-/// (kuna `conststr`) An object the constant points at as `undefinedN` takes
-/// the one type the function reads it at directly, when there is one.
-#[test]
-fn an_unknown_object_takes_the_one_type_it_is_read_at() {
-    let long = core(8, type_metatype::TYPE_INT, "int8");
-    let unk8 = core(8, type_metatype::TYPE_UNKNOWN, "xunknown8");
-    let mut plan = Plan::default();
-    plan.direct.push(direct(0x40, 8, Rc::clone(&long)));
-    assert!(plan.direct_type_at(0x40).is_some_and(|t| names_unknown(&t, &unk8)));
-    plan.direct.push(direct(0x40, 4, core(4, type_metatype::TYPE_INT, "int4")));
-    assert!(plan.direct_type_at(0x40).is_none(), "read at two widths");
+    assert!(matches!(Seen::merge(Some(Seen::One(unk1)), ubyte, true), Seen::Conflict));
 }
 
 #[test]

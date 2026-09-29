@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1476,
-    1476
+    1475,
+    1475
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -445,11 +445,10 @@
     "data:KUNA-CONSTSTR #2: on, it is the empty literal",
     "data:KUNA-CONSTSTR #3: off, the GB18030 quote is the address of a global",
     "data:KUNA-CONSTSTR #4: on, it is the literal of its bytes",
-    "data:KUNA-CONSTSTR #5: off, an unknown-pointee object is a cast integer",
-    "data:KUNA-CONSTSTR #6: on, it is the long its direct reads type",
-    "data:KUNA-CONSTSTR #7: on, and the char pointer its direct reads type",
-    "data:KUNA-CONSTSTR #8: a writable buffer is never a literal, in both passes",
-    "data:KUNA-CONSTSTR #9: storage also read at another width keeps the cast, in both passes",
+    "data:KUNA-CONSTSTR #5: a writable buffer is never a literal, in both passes",
+    "data:KUNA-CONSTSTR #6: an unknown-pointee object read as a long keeps its cast, in both passes",
+    "data:KUNA-CONSTSTR #7: and one read as a char pointer, in both passes",
+    "data:KUNA-CONSTSTR #8: storage also read at another width keeps the cast, in both passes",
     "data:KUNA-DECLAREDLIBCPROTO #1: the declared name renders in both passes",
     "data:KUNA-DECLAREDLIBCPROTO #2: so naming is not what moved, in either pass",
     "data:KUNA-DECLAREDLIBCPROTO #3: off, the arguments carry no type",

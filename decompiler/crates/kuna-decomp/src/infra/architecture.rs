@@ -1241,11 +1241,11 @@ pub struct Architecture {
     /// `literal` also prints an 8-byte literal operand with its size suffix.  See
     /// [`crate::kuna_castwiden`].
     pub cast_widen: crate::kuna_castwiden::CastWidenMode,
-    /// (kuna `conststr`) Print a constant address as what it addresses: the
-    /// empty tail string and a non-UTF-8 byte string as literals, and an object a
-    /// constant points at as `undefinedN` under the type its direct reads give
-    /// it.  See [`crate::kuna_conststr`].
-    pub const_str: crate::kuna_conststr::ConstStrMode,
+    /// (kuna `conststr`) Print a character-pointer constant as the string it
+    /// addresses where upstream's literal falls through to the address: the
+    /// empty tail of another string and a string whose bytes are not UTF-8.
+    /// See [`crate::kuna_conststr`].
+    pub const_str: bool,
     /// (kuna `cortexmpriv`) Assume the Cortex-M core is privileged, folding away
     /// the `isCurrentModePrivileged()` guard the vendored ARM SLEIGH wraps around
     /// every VERSION_7M MRS/MSR (`kuna_cortexmpriv`).
@@ -2550,7 +2550,7 @@ impl Architecture {
             cast_ternary: false, // (kuna) option castternary; reset_defaults sets the shipped default
             call_ret_type: false, // (kuna) option callrettype; reset_defaults sets the shipped default
             cast_widen: crate::kuna_castwiden::CastWidenMode::Off, // (kuna) option castwiden; reset_defaults sets the shipped default
-            const_str: crate::kuna_conststr::ConstStrMode::Off, // (kuna) option conststr; reset_defaults sets the shipped default
+            const_str: false, // (kuna) option conststr; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -2841,7 +2841,7 @@ impl Architecture {
         self.cast_ternary = true; // (kuna) option castternary default-on (provisional; see docs/features/castternary)
         self.call_ret_type = true; // (kuna) option callrettype default-on: a call's result takes the return type its callee stated earlier in a callee-first run; 0/675 datatest assertions and 0 stage assertions moved (single-function surfaces state nothing), one test-cli probe moved to the intended form, the 444-slice typesweep +6 perfect and 0 lost, casts 35,588 -> 34,808 on the census corpus (393 functions fewer, 25 more); docs/features/callrettype/default-on-evaluation.md
         self.cast_widen = crate::kuna_castwiden::CastWidenMode::Literal; // (kuna) option castwiden default `literal`: a 64-bit widening C's usual arithmetic or assignment conversion performs prints no cast, and an 8-byte literal beside one prints its L/UL suffix; 5/675 datatest assertions (upstream's pinned form) opt out per test, 18 stage assertions of other options moved to the new form, 444-slice typesweep identical, casts 35,588 -> 34,062 on the castbench shared set with 0 functions more; docs/features/castwiden/default-on-evaluation.md
-        self.const_str = crate::kuna_conststr::ConstStrMode::On; // (kuna) option conststr default `on` (provisional; see docs/features/conststr)
+        self.const_str = true; // (kuna) option conststr default-on (provisional; see docs/features/conststr/record.json)
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence

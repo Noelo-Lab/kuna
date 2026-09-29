@@ -1,12 +1,9 @@
 <decompilertest>
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
-    Cast campaign, lever `conststr`: a constant address prints as what it
-    addresses.
-
-    Three kinds of address reached PrintC::pushConstant's pointer arm and
-    printed as a forced-hex integer behind a cast (or, once globalref names
-    program data, as the unnamed global there):
+    Cast campaign, lever `conststr`: a character-pointer constant prints as
+    the string it addresses where upstream's literal falls through to the
+    address.
 
         w_empty: take("") + strcmp(s, "")
                  gcc -O2 stores "" as the terminating NUL of "tab\there\n"
@@ -15,15 +12,13 @@
         w_quote: return "\xa1\ae";
                  gnulib's GB18030 quote: not valid UTF-8, so the string
                  manager refuses it and globalref names it &dat_3000200e
-        w_word:  set_slot(&counter, n); counter < 0 ...
-        w_name:  set_name(&name, s); strlen(name)
-                 the callee's parameter points at `undefinedN`, the caller
-                 reads the same storage directly as a long / a char *, and
-                 globalref refused the name for the other type
 
-    Two controls keep their form in both passes: w_buf passes a writable
-    .data buffer to a char * parameter (never a literal), and w_wide reads
-    the storage it passes at another width (keeps the cast).
+    Three controls keep their form in both passes: w_buf passes a writable
+    .data buffer to a char * parameter (never a literal); w_word and w_name
+    hand a callee whose parameter points at an unknown word the address of a
+    long and of a char * they then read directly, and C would not convert
+    &dat_<addr> to that parameter's type by itself, so the cast stays; and
+    w_wide reads the storage it passes at another width.
 
     The fixture is a non-PIE x86-64 ELF whose file-scope data has no symbol
     (linked with -x). The callees' prototypes are declared with `parse line`
@@ -95,9 +90,8 @@ c3
 <stringmatch name="KUNA-CONSTSTR #2: on, it is the empty literal" min="1" max="1">take\(""\);</stringmatch>
 <stringmatch name="KUNA-CONSTSTR #3: off, the GB18030 quote is the address of a global" min="1" max="1">return &amp;dat_3000200e;</stringmatch>
 <stringmatch name="KUNA-CONSTSTR #4: on, it is the literal of its bytes" min="1" max="1">return "\\xa1\\ae";</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #5: off, an unknown-pointee object is a cast integer" min="1" max="1">set_slot\(\(unsigned long \*\)0x30004060,a0\);</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #6: on, it is the long its direct reads type" min="1" max="1">set_slot\(&amp;dat_30004060,a0\);</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #7: on, and the char pointer its direct reads type" min="1" max="1">set_name\(&amp;dat_30004058,a0\);</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #8: a writable buffer is never a literal, in both passes" min="2" max="2">take\(\(char \*\)0x30004040\);</stringmatch>
-<stringmatch name="KUNA-CONSTSTR #9: storage also read at another width keeps the cast, in both passes" min="2" max="2">set_slot\(\(unsigned long \*\)0x30004050,a0\);</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #5: a writable buffer is never a literal, in both passes" min="2" max="2">take\(\(char \*\)0x30004040\);</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #6: an unknown-pointee object read as a long keeps its cast, in both passes" min="2" max="2">set_slot\(\(unsigned long \*\)0x30004060,a0\);</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #7: and one read as a char pointer, in both passes" min="2" max="2">set_name\(\(unsigned long \*\)0x30004058,a0\);</stringmatch>
+<stringmatch name="KUNA-CONSTSTR #8: storage also read at another width keeps the cast, in both passes" min="2" max="2">set_slot\(\(unsigned long \*\)0x30004050,a0\);</stringmatch>
 </decompilertest>

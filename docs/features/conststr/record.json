@@ -1,10 +1,8 @@
 {
   "option": "conststr",
   "values": [
-    "off",
-    "strings",
-    "objects",
-    "on"
+    "on",
+    "off"
   ],
   "default_on": true,
   "default_value": "on",
@@ -13,36 +11,26 @@
   "change_kind": "presentation-default",
   "tier": "core",
   "source_decompiler": "ida",
-  "inspiration": "castbench residue '(char *)<const>' +188 and '(unsigned long *)<const>' +158 over IDA's 0 on the shared set; IDA names the address (&qword_846E8, word_DF9C0[i]) or prints the literal",
+  "inspiration": "castbench residue '(char *)<const>' +188 and '(unsigned long *)<const>' +158 over IDA's 0 on the shared set; the census found none of them to be an unrendered string; the strings kuna does not render print without a cast (gnulib GB18030 quotes) or, in small programs, as a cast on a tail-merged \"\"",
   "witness": {
     "repro": "gcc -O2 -o repro repro.c && strip repro && kuna decompile-all repro (repro.c in the PR body)",
     "before": [
-      "sub_11f0((unsigned long *)0x4018,*argv);",
       "v1 = sub_11e0((char *)0x2014);",
       "v5 = &dat_2004;"
     ],
     "after": [
-      "sub_11f0(&dat_4018,*argv);",
       "v1 = sub_11e0(\"\");",
       "v5 = \"\\xa1\\ae\";"
     ],
+    "task_witness": "clang -O2 nanf(\"\") (es.c): nanf((char *)0x2011) -> nanf(\"\"); the brief's clang -O0 form printed nanf(0x2004) with clang 14 here (nanf has no known prototype), no cast to remove",
     "real": {
-      "coreutils ls gettext_quote (all 45 castbench gnulib binaries)": [
+      "coreutils ls O0 gettext_quote": [
         "return &dat_238fe;",
         "return \"\\xa1\\ae\";"
       ],
-      "tar O2-noinline 0x22c60": [
-        "switch(sub_219e0((unsigned long *)0x84408,&dat_84840,0)) {",
-        "switch(sub_219e0(&dat_84408,&dat_84840,0)) {"
-      ],
-      "gzip O2-noinline 0xa0c0": [
-        "((short *)0xdf9c0)[v18] = ((short *)0xdf9c0)[v18] + 1;",
-        "dat_df9c0[v18] = dat_df9c0[v18] + 1;"
-      ],
-      "ida_at_same_addresses": [
-        "sub_22570((char *)&qword_82408, ...)",
-        "++word_DF9C0[(int)result];",
-        "sub_23BE0((void **)&qword_846E8, name);"
+      "dash O2-noinline": [
+        "v3 = strpbrk(a0,&dat_17ba3);",
+        "v3 = strpbrk(a0,\"\\x81\\x88\");"
       ]
     }
   },
@@ -81,96 +69,67 @@
     },
     "two_types_unknown_beside_known_same_size": 18,
     "strings_without_cast": "60 &dat_ GB18030 quotes (gettext_quote) across 45 binaries; tail-merged \"\" only in small programs (clang/gcc -O2)",
-    "after_shared_set_pointer_constant_casts": 593
+    "dropped_objects": "naming undefinedN-pointee objects at their direct type removed 108 shared-set casts (32,073 -> 31,965, 53 fewer, 0 more) with values kept, but passes a long */char ** to an unsigned long * parameter: not C's own conversion (gcc 14 error for char **); dropped, lever is the callee parameter type"
   },
   "castbench": {
     "set": "full: 45 binaries x O0/O2/O2-noinline; functions kuna and IDA both emit",
-    "base": "castbench main-632437155 arm (= conststr off on this build, byte-identical in all 45 files)",
+    "base": "castbench main-632437155 arm; conststr off on this build (main 63dfb436c + branch) is byte-identical to it in all 45 files",
     "shared_functions": 4815,
     "ida_casts": 37821,
     "base_casts": 32073,
-    "on_casts": 31965,
-    "removed": 108,
+    "on_casts": 32073,
+    "removed": 0,
     "per_kloc": {
       "ida": 155.4,
       "base": 169.6,
-      "on": 169.1
+      "on": 169.6
     },
     "per_100_statements": {
       "ida": 27.0,
       "base": 27.0,
-      "on": 26.9
+      "on": 27.0
     },
     "vs_ida": {
       "base": 0.848,
-      "on": 0.845
+      "on": 0.848
     },
-    "by_opt": {
-      "O0": [
-        9934,
-        9908
-      ],
-      "O2": [
-        12206,
-        12170
-      ],
-      "O2-noinline": [
-        9933,
-        9887
-      ]
-    },
-    "functions_fewer": 53,
+    "functions_fewer": 0,
     "functions_more": 0,
-    "shape_deltas": {
-      "(u64*) <const>": -79,
-      "(i16*) <const>": -11,
-      "(char*) <const>": -8,
-      "(uchar*) <const>": -5,
-      "(u32*) <const>": -2
-    }
+    "note": "on this corpus the strings kuna did not render never carried a cast"
   },
   "benchmark": {
-    "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow at O0, O2, O2-noinline; metric pinned to decbench 625e892 (final-c/pindb.py, DECBENCH_PIN=_final-c/db625), DECBENCH_NO_CACHE=1",
-    "metric": "type_match",
-    "arms": "on = default build, off = --option conststr off, same binary",
-    "functions": 10748,
-    "perfect_off": 1674,
-    "perfect_on": 1674,
-    "moved_onto_perfect": 0,
-    "moved_off_perfect": 0,
-    "improved": 0,
-    "worsened": 0,
-    "byte_identical_variables": 10748,
-    "arity_phantom": "variables[] byte-identical in all 10,748 functions: no argument or variable added or removed"
+    "status": "rerun on the final build: see below"
   },
   "corpus_sweep": {
-    "instrument": "docs/features/conststr/hunks.py (every changed line must be a (T *)0x<a> -> &dat_<a>/dat_<a> substitution or a read-only pointer -> literal)",
+    "instrument": "docs/features/conststr/hunks.py (every changed line must be a read-only pointer becoming a string literal, or a (T *)0x<a> -> &dat_<a> substitution)",
     "castbench_45": {
-      "lines": 174,
-      "subst": 114,
+      "lines": 60,
       "literal": 60,
       "other": 0,
-      "binaries_changed": 38
+      "binaries_changed": 36,
+      "what": "gettext_quote GB18030 quotes &dat_<a> -> \"\\xa1\\ae\" / \"\\xa1\\xaf\""
     },
     "extra_11": {
       "binaries": "bash O2, dash O2-noinline, kmod O2-noinline, crontab O2-noinline, dpkg-divert O2, cf2.elf (ARM) O2-noinline, bzip2 O2, useradd O0, stty O0, ip O2",
-      "subst": 46,
+      "lines": 4,
       "literal": 4,
       "other": 0,
-      "binaries_changed": 8,
-      "literals": [
+      "what": [
         "dash strpbrk(a0,\"\\x81\\x88\") / strchr(\"\\x81\\x88\",v7): dash's qchars {CTLESC, CTLQUOTEMARK}",
-        "gettext_quote GB18030 quotes"
+        "a gettext_quote GB18030 pair"
       ],
-      "found_and_fixed": "kmod's command table (v1 = &dat_27d40, read 8 bytes at a time through a merged char *) printed \"\\xba\\xb1\\x01\" in a first draft; an aligned pointer-sized word that addresses program data or code now keeps the address"
+      "found_and_fixed": [
+        "kmod's command table (v1 = &dat_27d40, read 8 bytes at a time through a merged char *) printed \"\\xba\\xb1\\x01\" in a draft; an aligned pointer-sized word that addresses program data or code now keeps the address",
+        "tail's magic-number compares against a mistyped char * ((char *)0x6969 in .text) printed instruction bytes as literals in a first draft; the address must lie in a program-data section"
+      ]
     }
   },
   "parity": {},
   "soundness": {
-    "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_constant_address_as_what_it_addresses_round_trips_through_the_printed_c: conststr_{gcc,clang}_{O0,O2}_x86_64 exported with conststr on and off, the seven witness functions compiled as printed by gcc and clang against the export's header with each dat_<addr> placed at <addr> and the fixture's data mapped at its own addresses; all print the binary's output (hashes of \"\" and \"tab\\there\\n\", the GB18030 bytes a10765/a1af, a long and a char * set through an unknown-pointee callee, the controls)",
-    "stage": "tests/stages/kuna-conststr.xml: 9 assertions, two passes (off = the bug, default = the fix), 2 controls in both",
-    "unit": "kuna_conststr/tests.rs (7), kuna_globalref/tests.rs (+2)",
-    "value": "a literal holds exactly the image's bytes through the NUL (byte-exact escapes, split after a hex escape); &dat_<addr> is the address it replaces; no cast removed changes a value: the removed casts are all (T *) on a constant address"
+    "round_trip": "kuna-cli/tests/decompile_all_cli.rs a_constant_string_round_trips_through_the_printed_c (+ conststr_spellings_are_checked_without_native_execution): conststr_{gcc,clang}_{O0,O2}_x86_64 exported with conststr on and off, the seven witness functions compiled as printed by gcc and clang against the export's header with each dat_<addr> placed at <addr> and the fixture's data mapped at its own addresses; all print the binary's output (hashes of \"\" and \"tab\\there\\n\", the GB18030 bytes a10765/a1af, the controls)",
+    "stage": "tests/stages/kuna-conststr.xml: 8 assertions, two passes (off = the bug, default = the fix), 4 controls in both",
+    "unit": "kuna_conststr/tests.rs: tail rule, byte literal, hex-escape split, byte-exact multibyte, pointer word",
+    "value": "a literal holds exactly the image's bytes through the NUL; no cast is removed"
   },
   "default_on_evaluation": "default on: see parity, benchmark, speed, castbench and corpus_sweep"
 }

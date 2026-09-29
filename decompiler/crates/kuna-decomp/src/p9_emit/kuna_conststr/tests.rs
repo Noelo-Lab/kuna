@@ -2,26 +2,6 @@
 
 use super::*;
 
-#[test]
-fn option_parses_its_four_values() {
-    for (v, m) in [
-        ("off", ConstStrMode::Off),
-        ("strings", ConstStrMode::Strings),
-        ("objects", ConstStrMode::Objects),
-        ("on", ConstStrMode::On),
-    ] {
-        let (mode, msg) = OptionConstStr.apply(v).unwrap();
-        assert_eq!(mode, m);
-        assert_eq!(mode.as_str(), v);
-        assert!(msg.contains(v));
-    }
-    assert!(OptionConstStr.apply("maybe").is_err());
-    assert!(ConstStrMode::On.strings() && ConstStrMode::On.objects());
-    assert!(ConstStrMode::Strings.strings() && !ConstStrMode::Strings.objects());
-    assert!(!ConstStrMode::Objects.strings() && ConstStrMode::Objects.objects());
-    assert!(!ConstStrMode::Off.strings() && !ConstStrMode::Off.objects());
-}
-
 /// The linker's tail merge: `""` is the NUL that ends `"tab\there\n"`.
 #[test]
 fn the_nul_ending_a_string_is_a_real_empty_string() {

@@ -5522,32 +5522,44 @@ int main(void) {
 }
 "#;
 
-/// `conststr`: a constant address prints as what it addresses. The fixture
-/// (gcc and clang, -O0 and -O2) passes a tail-merged `""`, returns gnulib's
-/// GB18030 quote `"\xa1\ae"`, and hands a callee that only moves a word the
-/// address of a `long` and of a `char *` it then reads directly; two controls
-/// pass a writable buffer and storage the caller reads at another width. Each
+/// `conststr`: a character-pointer constant prints as the string it addresses.
+/// The fixture (gcc and clang, -O0 and -O2) passes a tail-merged `""` and
+/// returns gnulib's GB18030 quote `"\xa1\ae"`; controls pass a writable buffer,
+/// hand an unknown-pointee callee the address of a `long` and a `char *` the
+/// caller then reads directly (the cast stays: C would not convert `&dat_<addr>`
+/// to that parameter's type), and read storage back at another width. Each
 /// build is exported with the option on and off, the witness functions are
 /// compiled exactly as printed against the export's header with each
 /// `dat_<addr>` placed at `<addr>` and the fixture's data mapped where the
 /// binary keeps it, and both arms must print what the binary prints.
 #[test]
-fn a_constant_address_as_what_it_addresses_round_trips_through_the_printed_c() {
+fn a_constant_string_round_trips_through_the_printed_c() {
+    check_conststr_round_trip(cfg!(all(target_os = "linux", target_arch = "x86_64")));
+}
+
+#[test]
+fn conststr_spellings_are_checked_without_native_execution() {
+    check_conststr_round_trip(false);
+}
+
+fn check_conststr_round_trip(run_native: bool) {
     let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
     let sp = specs();
     let witnesses = ["w_empty", "w_quote", "w_word", "w_name", "w_blob", "w_buf", "w_wide"];
     let builds = ["conststr_gcc_O0_x86_64", "conststr_gcc_O2_x86_64", "conststr_clang_O0_x86_64", "conststr_clang_O2_x86_64"];
-    let dir = std::env::temp_dir().join(format!("kuna-conststr-rt-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    if !run_native {
+        eprintln!("conststr round trip: native execution disabled; checking all spellings");
+    }
+    let dir = common::scratch_file("conststr-round-trip", "dir");
+    std::fs::create_dir(&dir).unwrap();
     for build in builds {
         let bin = fixtures.join(build);
-        let Ok(run) = Command::new(&bin).output() else {
-            eprintln!("conststr round trip: the x86-64 fixture does not run here, skipped");
-            return;
-        };
-        let expected = String::from_utf8_lossy(&run.stdout).trim().to_string();
-        assert_eq!(expected, "286768771227614 a10765 a1af 42 -1 12 7 9064 2", "{build}: the fixture itself");
+        let expected = run_native.then(|| {
+            let output = process::required_output(&mut Command::new(&bin));
+            let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            assert_eq!(text, "286768771227614 a10765 a1af 42 -1 12 7 9064 2", "{build}: the fixture itself");
+            text
+        });
         let harness = dir.join(format!("{build}-main.c"));
         std::fs::write(&harness, CONSTSTR_HARNESS.replace("@FIXTURE@", bin.to_str().unwrap())).unwrap();
         for arm in ["on", "off"] {
@@ -5563,10 +5575,6 @@ fn a_constant_address_as_what_it_addresses_round_trips_through_the_printed_c() {
                 "conststr",
                 arm,
             ]);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("conststr round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "{build} {arm}: kuna decompile-project failed: {stderr}");
             let code = std::fs::read_to_string(out.join(format!("{build}.c"))).unwrap();
             let mut printed = format!("#include \"{build}.h\"\n");
@@ -5578,16 +5586,18 @@ fn a_constant_address_as_what_it_addresses_round_trips_through_the_printed_c() {
             }
             let literal = printed.contains("\"\\xa1\\ae\"") && printed.contains("\"\\xa1\\xaf\"");
             assert_eq!(literal, arm == "on", "{build} {arm}: the GB18030 quotes\n{printed}");
-            for callee in ["set_slot(", "set_name("] {
-                let named = printed.contains(&format!("{callee}&dat_"));
-                assert_eq!(named, arm == "on", "{build} {arm}: `{callee}` naming\n{printed}");
+            for callee in ["set_slot((unsigned long *)0x", "set_name((unsigned long *)0x"] {
+                assert!(printed.contains(callee), "{build} {arm}: `{callee}` keeps its cast\n{printed}");
             }
             assert!(printed.contains("take(\"tab\\there\\n\")"), "{build} {arm}\n{printed}");
             if build == "conststr_gcc_O2_x86_64" {
                 let tail = if arm == "on" { "take(\"\");" } else { "take((char *)0x3000200d);" };
                 assert!(printed.contains(tail), "{build} {arm}: expected `{tail}`\n{printed}");
             }
-            assert!(!printed.contains("take(\"H") && !printed.contains("take(\"hi"), "{build} {arm}: a writable buffer printed as a literal\n{printed}");
+            assert!(
+                !printed.contains("take(\"H") && !printed.contains("take(\"hi"),
+                "{build} {arm}: a writable buffer printed as a literal\n{printed}"
+            );
             let header = std::fs::read_to_string(out.join(format!("{build}.h"))).unwrap();
             let mut names: Vec<String> = Vec::new();
             for (i, _) in printed.match_indices("dat_") {
@@ -5615,8 +5625,9 @@ fn a_constant_address_as_what_it_addresses_round_trips_through_the_printed_c() {
                 .collect();
             printed.insert_str(printed.find('\n').unwrap() + 1, &undeclared);
             std::fs::write(out.join("printed.c"), &printed).unwrap();
+            let Some(expected) = &expected else { continue };
             for cc in ["gcc", "clang"] {
-                if Command::new(cc).arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+                if process::optional_output(Command::new(cc).arg("--version")).is_none() {
                     eprintln!("conststr round trip: no `{cc}`");
                     continue;
                 }
@@ -5639,13 +5650,12 @@ fn a_constant_address_as_what_it_addresses_round_trips_through_the_printed_c() {
                     "{build} {arm}/{cc}: the printed functions did not compile:\n{}\n{printed}",
                     String::from_utf8_lossy(&built.stderr)
                 );
-                let run = Command::new(&exe).output().expect("run the round trip");
+                let run = process::required_output(&mut Command::new(&exe));
                 let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
-                assert_eq!(got, expected, "{build} {arm}/{cc}: the printed functions compute something else:\n{printed}");
+                assert_eq!(got, *expected, "{build} {arm}/{cc}: the printed functions compute something else:\n{printed}");
             }
         }
     }
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// The `conststr` round trip's `main`: map the fixture's non-executable load

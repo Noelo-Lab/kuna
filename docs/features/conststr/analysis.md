@@ -48,7 +48,7 @@ The direct-access refusals, by what the direct access is (`dpairs.py`):
 
 | shape | casts | sound to name? |
 |---|---:|---|
-| pointee `undefinedN`, direct access a known integer or pointer of that size | 84 | **yes** (below) |
+| pointee `undefinedN`, direct access a known integer or pointer of that size | 84 | no: the value is kept, but `&dat_<a>` is not the parameter's C type (below) |
 | a record whose members the function reads directly (`obstack`, `sigset_t`, `stat`, `struct_N`) | 162 | no: `dat_<start>` and `dat_<member>` would be two objects; needs member printing |
 | gzip `outbuf`, a byte array with a 2-byte direct store (`put_short`) | 54 | no: another width |
 | a byte array, direct access an unknown byte | 28 | no: an unknown byte is `char` on one surface |
@@ -61,10 +61,8 @@ loop; `(unsigned long *)` beside `(unsigned char **)`).
 
 ## What changes
 
-`conststr off|strings|objects|on`, P9, default `on`.
-
-**strings.** A character-pointer constant at a read-only address inside a program-data
-section prints
+`conststr on|off`, P9, default `on`. A character-pointer constant at a read-only address
+inside a program-data section prints
 
 - `""` at a NUL that terminates a string: the run of bytes ending at it is text (valid UTF-8,
   no control but `\t\n\r`), at least two characters, beginning at a NUL or filling the 64
@@ -78,35 +76,44 @@ section prints
 
 Code is read-only too: without the data-section bound, `tail`'s file-system magic numbers
 (`a0 == (char *)0x6969`, a compare on a mistyped `char *`) and tar's jump labels printed as
-literals of instruction bytes in a first draft. The bound is `Architecture::globalref_ranges`,
-the loader classification `globalref` already uses.
+literals of instruction bytes in a first draft. And a pointer-aligned address whose word is
+the address of program data or code (`is_image_pointer`) is a pointer table: kmod's command
+table, which a function walks through a `char *` it also reads eight bytes at a time,
+printed `"\xba\xb1\x01"` in a second draft and now keeps `&dat_27d40`.
 
-**objects.** `globalref` treats an `undefinedN` pointee as the absence of a type: the object
-is declared at the one integer, `bool` or pointer type of that size the function's direct
-accesses agree on (`Plan::object_named_by_reads`), and an `undefinedN` pointee beside such a
-known pointee at the same address is one object named by the known one (`Seen::merge`). The
-reader must be an argument, a return, a copy, a store or an equality test. Upstream's
-`castStandard` never casts to a pointer to unknown, so `&dat_846e8` (`char **`) passed to an
-`undefined8 *` parameter prints exactly as a `char **` variable in that position already
-does. IDA: `sub_23BE0((void **)&qword_846E8, name)`, `sub_22570((char *)&qword_82408, ...)`,
-`word_DF9C0[i]`.
+## What was tried and dropped: naming the unknown-pointee objects
+
+The 84 direct-access refusals whose pointee is `undefinedN` (plus 18 two-type refusals of the
+same kind) look like the lever: the pointee says nothing, the direct reads say `long` or
+`char *`, and IDA prints `&qword_846E8`. A first draft declared such an object at its direct
+type and printed `&dat_846e8`, which removed 108 casts on the shared set (32,073 -> 31,965,
+53 functions fewer, 0 more) and passed the value round trips. It is not C's own conversion:
+`undefined8 *` is `unsigned long *` in C, so `&dat_846e8` hands a `char **` (or a `long *`)
+to an `unsigned long *` parameter, an incompatible-pointer (or pointer-sign) diagnostic that
+gcc 14 makes an error, where the cast it removed was exactly the conversion. kuna's own
+cast policy prints no cast for a pointer variable in that position, but that is upstream's
+convention, not a conversion C performs, and IDA keeps the cast too
+(`sub_23BE0((void **)&qword_846E8, name)`, `sub_22570((char *)&qword_82408, ...)`).
+`globalref`'s refusals are therefore right under the campaign's rule; the lever for these
+casts is the callee's parameter type (a caller-voted `char **`/`long *`), not the constant.
 
 ## What stays
 
 - Non-addresses (222): integers kuna typed as pointers; the fix is the type, not the constant.
 - Records read member by member (162): printing `dat_2b460.__val[0]` needs a global symbol
   of the record type before the body prints; a separate lever.
+- Unknown pointees beside a known direct type (84 + 18): the callee's parameter type.
 - Signed/unknown and width conflicts (123): naming would change what a direct read computes.
 
-## Measured (both arms of one build, main 632437155 + this branch)
+## Measured (both arms of one build, main 63dfb436c + this branch)
 
-- castbench full: 32,073 -> 31,965 casts on the 4,815 shared functions (0.848x -> 0.845x IDA;
-  169.6 -> 169.1 per kloc; 27.0 -> 26.9 per 100 statements), 53 functions fewer, 0 more.
-  `(u64*) <const>` -79, `(i16*) <const>` -11, `(char*) <const>` -8, `(uchar*) <const>` -5,
-  `(u32*) <const>` -2.
-- `conststr off` output is byte-identical to the castbench main-632437155 arm on all 45
-  binaries.
-- `hunks.py`: 174 changed lines over 38 of the 45 binaries, 114 a `(T *)0x<a>` becoming
-  `&dat_<a>`/`dat_<a>`, 60 a GB18030 quote becoming its literal, 0 other.
-- 444-slice typesweep: 1,674 = 1,674 perfect, 10,748 functions with byte-identical
-  `variables[]` in both arms (no variable or argument added or removed).
+- castbench full: 32,073 = 32,073 casts on the 4,815 shared functions (0.848x IDA), 0
+  functions fewer, 0 more: on this corpus the strings kuna did not render never carried a
+  cast. `conststr off` is byte-identical to the castbench main-632437155 arm on all 45
+  binaries (so is main 63dfb436c: #748 changes none of them).
+- `hunks.py`: 60 changed lines over 36 of the 45 binaries, every one a `gettext_quote`
+  GB18030 quote (`&dat_<a>` -> `"\xa1\ae"`/`"\xa1\xaf"`), 0 other. Over 11 more binaries
+  (bash, dash, kmod, crontab, dpkg-divert, cf2.elf, bzip2, useradd, stty, ip): 4 lines, dash's
+  `strpbrk(a0,"\x81\x88")`/`strchr("\x81\x88",v7)` (its `{CTLESC, CTLQUOTEMARK}`) and a
+  GB18030 quote pair.
+- 444-slice typesweep and speed: record.json.

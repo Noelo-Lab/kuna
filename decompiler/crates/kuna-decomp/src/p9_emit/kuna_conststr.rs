@@ -1,97 +1,34 @@
-//! (kuna `conststr`) A constant address prints as what it addresses.
+//! (kuna `conststr`) A character-pointer constant prints as the string it
+//! addresses in the two cases upstream's literal falls through to the address.
 //!
 //! `PrintC::pushConstant`'s pointer arm prints a character-pointer constant as
-//! the string literal at its address, and every other pointer constant as a
-//! forced-hex integer behind a cast, unless `globalref` names the global there.
-//! Three kinds of address fall through both to the cast:
+//! the string at its address when the string manager accepts the bytes there,
+//! and otherwise as a forced-hex integer behind a cast (or, once `globalref`
+//! names program data, as `&dat_<addr>`). Two strings fall through:
 //!
-//! - A string that is the empty tail of another. A linker that merges string
-//!   constants stores the program's `""` as the terminating NUL of some other
-//!   literal (`"tab\there\n"` ends where `""` starts), and `emptystrconst`
-//!   declines a zero-character literal whose FOLLOWING bytes are not string
-//!   data, so `nanf("")` prints `nanf((char *)0x2011)`. The bytes BEFORE settle
-//!   it: a NUL that ends a run of string characters, itself begun at a NUL, is
-//!   a string's terminator and therefore a genuine `""`.
+//! - The empty tail of another string. A linker that merges string constants
+//!   stores the program's `""` as the terminating NUL of some other literal
+//!   (`"tab\there\n"` ends where `""` starts), and `emptystrconst` declines a
+//!   zero-character literal whose FOLLOWING bytes are not string data, so
+//!   `nanf("")` prints `nanf((char *)0x2011)`. The bytes BEFORE settle it: a NUL
+//!   that ends a run of text, itself begun at a NUL, is a string's terminator
+//!   and therefore a genuine `""`.
 //! - A string whose bytes are not valid UTF-8 (`"\xa1\ae"`, the GB18030 quote
-//!   gnulib's `gettext_quote` returns). The string manager rejects the encoding,
-//!   so the constant prints as an address. Here every byte up to the NUL is
-//!   spelled by value: a byte that starts a valid UTF-8 sequence as upstream
-//!   spells it, any other as a `\x` escape, and the literal is split (`"\xa1"
-//!   "e"`) where a hex digit would otherwise extend the escape. The literal's
-//!   bytes are exactly the image's. A pointer-aligned address whose word is
-//!   the address of program data or code is a pointer table (kmod's command
-//!   table read through a merged `char *`), and keeps its address.
-//! - An object whose pointed-to type is unknown. A callee that only moves a word
-//!   through its parameter leaves the pointee `undefinedN`, so the caller passes
-//!   `(unsigned long *)0x846e8` although it reads the same storage directly as
-//!   `char *`, and `globalref` refuses the name because the direct read has
-//!   another type. The unknown pointee says nothing about the object; the direct
-//!   reads do, so the object is declared at the one type they agree on when it
-//!   has the unknown's size, and `&dat_846e8` has a pointer type upstream's cast
-//!   policy never casts to a pointer to unknown (`CastStrategyC::castStandard`,
-//!   cast.cc:122).
+//!   gnulib's `gettext_quote` returns). The string manager rejects the encoding.
+//!   Here every byte up to the NUL is spelled by value: a byte that starts a
+//!   valid UTF-8 character as upstream spells it when that spelling is its own
+//!   bytes, any other as a `\x` escape, and the literal is split (`"\xa1" "e"`)
+//!   where a hex digit would otherwise extend the escape. The literal's bytes
+//!   are exactly the image's. A pointer-aligned address whose word is the
+//!   address of program data or code is a pointer table (kmod's command table
+//!   read through a merged `char *`), and keeps its address.
 //!
-//! Every literal needs a read-only address and a character pointee, as upstream's
-//! does; a buffer the program writes to never prints as a literal, and two
-//! addresses never share one.
+//! Both need what upstream's literal needs -- a one-byte character pointee, a
+//! read-only address, C output -- and an address inside a section of program
+//! data (code is read-only too); a buffer the program writes to never prints as
+//! a literal, and no literal is formed from two addresses.
 
-use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::uint1;
-
-/// `conststr off|strings|objects|on`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ConstStrMode {
-    /// Upstream's literal and `globalref`'s refusals.
-    #[default]
-    Off,
-    /// The empty tail string and the non-UTF-8 string print as literals.
-    Strings,
-    /// An unknown-pointee constant names the object its direct reads type.
-    Objects,
-    /// Both.
-    On,
-}
-
-impl ConstStrMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ConstStrMode::Off => "off",
-            ConstStrMode::Strings => "strings",
-            ConstStrMode::Objects => "objects",
-            ConstStrMode::On => "on",
-        }
-    }
-
-    pub fn strings(self) -> bool {
-        matches!(self, ConstStrMode::Strings | ConstStrMode::On)
-    }
-
-    pub fn objects(self) -> bool {
-        matches!(self, ConstStrMode::Objects | ConstStrMode::On)
-    }
-}
-
-/// The `conststr` option parser.
-pub struct OptionConstStr;
-
-impl OptionConstStr {
-    pub const NAME: &'static str = "conststr";
-
-    pub fn apply(&self, p1: &str) -> KunaResult<(ConstStrMode, String)> {
-        let mode = match p1 {
-            "off" => ConstStrMode::Off,
-            "strings" => ConstStrMode::Strings,
-            "objects" => ConstStrMode::Objects,
-            "on" => ConstStrMode::On,
-            other => {
-                return Err(KunaError::parse(format!(
-                    "Unknown conststr value: {other} (expected off|strings|objects|on)"
-                )))
-            }
-        };
-        Ok((mode, format!("Constant-address rendering set to {}", mode.as_str())))
-    }
-}
 
 /// How far back from an empty literal the terminated string is looked for.
 pub const TAIL_WINDOW: usize = 64;

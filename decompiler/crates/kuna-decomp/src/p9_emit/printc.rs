@@ -9111,7 +9111,7 @@ impl PrintC {
         char_type: &std::rc::Rc<crate::dtype::Datatype>,
         ptr_size: int4,
     ) -> Option<(String, int4)> {
-        if !arch.const_str.strings()
+        if !arch.const_str
             || !crate::kuna_globalref::in_ranges(&arch.globalref_ranges, addr.get_offset())
             || char_type.get_size() != 1
             || char_type.is_opaque_string()
@@ -9163,7 +9163,7 @@ impl PrintC {
     /// before it, so a zero-character literal there is a genuine `""`?
     fn conststr_empty_tail(&self, arch: &Architecture, addr: &Address) -> bool {
         use crate::kuna_conststr::{terminates_string, TAIL_WINDOW};
-        if !arch.const_str.strings() || !crate::kuna_globalref::in_ranges(&arch.globalref_ranges, addr.get_offset()) {
+        if !arch.const_str || !crate::kuna_globalref::in_ranges(&arch.globalref_ranges, addr.get_offset()) {
             return false;
         }
         let loader_rc = arch.translate().loader_rc();
