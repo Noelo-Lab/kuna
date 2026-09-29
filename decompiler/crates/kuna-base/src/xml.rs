@@ -1922,7 +1922,9 @@ mod tests {
         // and kuna-castwiden / a 64-bit widening C performs by itself keeps no cast
         // and kuna-elemptr / a pointer used only as an array is declared a
         // pointer to its element
-        assert_eq!(count, 352, "corpus file count drifted");
+        // and kuna-returnpiece / a value built in one return register keeps
+        // both halves and every argument that feeds it
+        assert_eq!(count, 353, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
