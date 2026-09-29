@@ -29,13 +29,19 @@ export function legacyKey(bytes) {
   return `fnv:${fnv1a32(bytes)}${fnv1a32(bytes, 0x050c5d1f)}-${bytes.length}`;
 }
 
-/** A bounded LRU of sessions (`max` binaries) in `storage`, under `prefix` (the index under `indexKey`). */
+/**
+ * A bounded LRU of sessions (`max` binaries) in `storage`, under `prefix`
+ * (the index under `indexKey`). When the storage is full, `spare` (another
+ * store, holding copies worth less) gives up its entries first, then this
+ * store its own least recently used.
+ */
 export class SessionStore {
-  constructor(storage, { max = 20, prefix = SESSION_PREFIX, indexKey = INDEX_KEY } = {}) {
+  constructor(storage, { max = 20, prefix = SESSION_PREFIX, indexKey = INDEX_KEY, spare = null } = {}) {
     this.storage = storage;
     this.max = max;
     this.prefix = prefix;
     this.indexKey = indexKey;
+    this.spare = spare;
   }
 
   index() {
@@ -59,7 +65,42 @@ export class SessionStore {
     }
   }
 
-  /** Save `text` for `hash`; evicts the oldest sessions to make room. */
+  /**
+   * What is saved for `hash`, moving what an earlier version saved for the
+   * same `bytes` under its FNV-1a key. That key (two passes over the whole
+   * program) is worked out only when such an entry exists.
+   */
+  loadMoving(hash, bytes, name) {
+    const text = this.load(hash);
+    if (text || !bytes || !this.#hasLegacy()) return text;
+    const old = legacyKey(bytes);
+    const found = this.load(old);
+    if (found && this.save(hash, name, found)) this.remove(old);
+    return found;
+  }
+
+  #hasLegacy() {
+    const legacy = `${this.prefix}fnv:`;
+    try {
+      if (typeof this.storage.key === 'function' && Number.isInteger(this.storage.length)) {
+        for (let i = 0; i < this.storage.length; i++) if (this.storage.key(i)?.startsWith(legacy)) return true;
+        return false;
+      }
+    } catch (_) { /* fall back to the index */ }
+    return this.index().some((e) => e.hash.startsWith('fnv:'));
+  }
+
+  /** Drop the least recently used entry; false when there is none. */
+  evictOne() {
+    const list = this.index();
+    const last = list.pop();
+    if (!last) return false;
+    this.#drop(last.hash);
+    try { this.#writeIndex(list); } catch (_) { /* full */ }
+    return true;
+  }
+
+  /** Save `text` for `hash`; makes room from `spare`, then from this store's oldest sessions. */
   save(hash, name, text) {
     if (!this.storage) return false;
     let list = this.index().filter((e) => e.hash !== hash);
@@ -71,6 +112,7 @@ export class SessionStore {
         this.#writeIndex(list);
         return true;
       } catch (_) {
+        if (this.spare?.evictOne()) continue;
         if (list.length <= 1) {
           try { this.storage.removeItem(this.prefix + hash); } catch (__) { /* nothing */ }
           return false;

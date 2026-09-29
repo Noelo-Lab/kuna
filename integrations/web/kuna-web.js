@@ -102,10 +102,17 @@ function validatorOf(resp) {
 // Compile the wasm, preferring streaming compilation but falling back to a
 // buffered compile when the server doesn't send `Content-Type: application/wasm`.
 // Returns `{module, validator}`: the validator is what `buildId` checks later.
-async function compileWasm(url) {
+// With `hash`, also `build`, the SHA-256 of the very bytes compiled (a copy of
+// the response), for a server that sends no validator.
+async function compileWasm(url, { hash = false } = {}) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`wasm fetch failed (${resp.status}): ${url}`);
   const validator = validatorOf(resp);
+  if (hash) {
+    const bytes = new Uint8Array(await resp.clone().arrayBuffer());
+    const module = await WebAssembly.compileStreaming(resp).catch(() => WebAssembly.compile(bytes));
+    return { module, validator, build: await sha256Hex(bytes) };
+  }
   try {
     return { module: await WebAssembly.compileStreaming(resp), validator };
   } catch (_) {
@@ -136,7 +143,9 @@ function parseLdefs(text, dir, map) {
  * (the study view asks when a live session starts): it fetches the wasm again
  * with the cache revalidated, hashes it when the server's validator says it is
  * the same file, and fails when the site changed since (reload the page).
- * `prevBuild` ({validator, build}) reuses the id a restarted Worker had.
+ * `prevBuild` ({validator, build}) reuses the id a restarted Worker had;
+ * `hashCompiled` hashes the compiled bytes right away (a restarted Worker
+ * whose server sends no validator, when the page already needed the id).
  *
  * @param {object} opts
  * @param {string} opts.wasmUrl        URL of kuna_wasm.wasm
@@ -144,12 +153,12 @@ function parseLdefs(text, dir, map) {
  * @param {string} [opts.smallBundleUrl]  URL of specs-small.json (default:
  *                                         `${specRoot}-small.json`)
  */
-export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, prevBuild = null }) {
+export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, prevBuild = null, hashCompiled = false }) {
   const base = specRoot.replace(/\/$/, '');
   const bundleUrl = smallBundleUrl || `${base}-small.json`;
 
   const [compiled, bundle] = await Promise.all([
-    compileWasm(wasmUrl),
+    compileWasm(wasmUrl, { hash: hashCompiled }),
     fetch(bundleUrl).then((r) => {
       if (!r.ok) throw new Error(`spec bundle fetch failed (${r.status}): ${bundleUrl}`);
       return r.json();
@@ -262,7 +271,7 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, prevBuild = 
     );
   }
 
-  let build = prevBuild && compiled.validator && prevBuild.validator === compiled.validator ? prevBuild.build : null;
+  let build = compiled.build || (prevBuild && compiled.validator && prevBuild.validator === compiled.validator ? prevBuild.build : null);
 
   return {
     /** What the server said identifies the compiled wasm (null when it said nothing). */

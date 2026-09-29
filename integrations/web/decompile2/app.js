@@ -28,7 +28,7 @@ import { Session, cliCommand, TEXT_LIMITS, directiveTextProblem, declarationProb
 import {
   validateIdent, validateCType, parseSignature, parseRustSignature, buildPrototype, typeSize, knownTypes, normalizeType,
 } from './ctype.js';
-import { hashBytes, legacyKey, SessionStore } from './persist.js';
+import { hashBytes, SessionStore } from './persist.js';
 import { entryOffset, bare } from './addr.js';
 import { createDialogs } from './dialogs.js';
 import { createRail } from './rail.js';
@@ -82,6 +82,7 @@ const state = {
   view: 'c',
   rendered: new Set(),
   opening: null,
+  offerShared: false,
   slot: 'own',
   remoteQueued: false,
   remoteTimer: 0,
@@ -248,8 +249,8 @@ async function fetchFunction(fn) {
 // ── the session: the student's edits as --assert directives ───────────────
 
 let session = new Session();
-const store = new SessionStore(storage);
 const sharedStore = new SessionStore(storage, { max: 5, prefix: 'kuna.d2.shared.', indexKey: 'kuna.d2.shared.index' });
+const store = new SessionStore(storage, { spare: sharedStore });
 let collab = null;
 
 /** A function's name as the student sees it (their rename, else the engine's). */
@@ -468,6 +469,7 @@ async function indexBinary(source, { example = false, keep = null, shared = null
       session = restoreSession(hash, bytes, name);
       state.slot = 'own';
       state.restored = session.size ? { count: session.size, mark: session.mark(), toasted: false } : null;
+      state.offerShared = true;
     } else {
       state.restored = null;
     }
@@ -529,6 +531,17 @@ async function indexBinary(source, { example = false, keep = null, shared = null
     state.restored.toasted = true;
     toast(`Restored ${state.restored.count} change${state.restored.count === 1 ? '' : 's'} you made to ${name} before.`);
   }
+  if (state.offerShared) {
+    state.offerShared = false;
+    const copy = collab?.shared ? null : sharedCopy(state.binary.hash);
+    if (copy && JSON.stringify(copy.toJSON()) !== JSON.stringify(session.toJSON())) {
+      const hash = state.binary.hash;
+      toast(`There are also ${copy.size} change${copy.size === 1 ? '' : 's'} to ${name} from a live session you were in.`, {
+        ms: 15000, detail: 'They are saved apart from yours.',
+        action: { label: 'Use those instead', run: () => useSharedCopy(copy, hash) },
+      });
+    }
+  }
   const dt = Math.round(performance.now() - t0);
   setStatus(`Opened ${name}`, 'ok', `${inventory.format} · ${inventory.functions.length} functions found in ${dt} ms`);
   finishOperation(op);
@@ -540,15 +553,21 @@ async function indexBinary(source, { example = false, keep = null, shared = null
 /** The student's own stored session for a binary (moving one an earlier version stored under its FNV key). */
 function restoreSession(hash, bytes = null, name = 'binary') {
   try {
-    let text = store.load(hash);
-    if (!text && bytes) {
-      const old = legacyKey(bytes);
-      text = store.load(old);
-      if (text && store.save(hash, name, text)) store.remove(old);
-    }
+    const text = store.loadMoving(hash, bytes, name);
     return text ? Session.fromJSON(JSON.parse(text)) : new Session();
   } catch (_) {
     return new Session();
+  }
+}
+
+/** A live session's copy saved for a binary (kept apart from the student's own), or null. */
+function sharedCopy(hash) {
+  try {
+    const text = sharedStore.load(hash);
+    const copy = text ? Session.fromJSON(JSON.parse(text)) : null;
+    return copy?.size ? copy : null;
+  } catch (_) {
+    return null;
   }
 }
 
@@ -723,6 +742,7 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
       opSeq++;
       state.kuna.cancel('superseded by a cached function');
       syncButtons();
+      queueMicrotask(drainIdle);
     }
     state.opening = null;
     showFunction(fn, cached, { focusAddr, key: cacheKey(fn.address_hex) });
@@ -749,7 +769,7 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
     session.recordOutcomes(data.assertions);
     cacheSet(fn.address_hex, data, key);
     showFunction(fn, data, { focusAddr, key });
-    if (key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
+    if (collab?.shared && key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
     const dt = Math.round(performance.now() - t0);
     setStatus(data.error ? `Could not decompile ${label}` : `Showing ${label}`, data.error ? 'err' : 'ok',
       `${fn.address_hex} · decompiled in ${dt} ms`);
@@ -2173,7 +2193,7 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
     persist();
     cacheSet(fn.address_hex, data, key);
     showFunction(fn, data, { keep: true, key });
-    if (key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
+    if (collab?.shared && key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
     restoreScroll(scroll);
     if (keepSel) selectTarget(keepSel, null, null, { reveal: !remote });
     flash(changedLines(oldCode, data.code));
@@ -2187,7 +2207,7 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
       toast('That change could not be applied.', { kind: 'err', detail: `${row.detail || 'The decompiler refused it.'} (${row.directive})` });
     }
     const broke = data.assertions.filter((r) => r.status === 'rejected' && !fresh.includes(r.directive) &&
-      wasApplied.has(session.sent.get(r.directive)));
+      session.keysOf(r.directive).some((k) => wasApplied.has(k)));
     for (const row of broke) {
       toast('An earlier change no longer applies.', {
         kind: 'warn',
@@ -2262,15 +2282,16 @@ function scheduleRemoteInspect(label = '') {
   if (label) state.remoteLabel = label;
   clearTimeout(state.remoteTimer);
   state.remoteTimer = setTimeout(() => {
-    if (state.remoteQueued) return;
-    state.remoteQueued = true;
-    whenIdle(() => {
-      state.remoteQueued = false;
+    if (state.remoteQueued && idleQueue.includes(state.remoteQueued)) return;
+    const task = () => {
+      if (state.remoteQueued === task) state.remoteQueued = false;
       if (!state.current || !state.caps.assert || state.current.key === cacheKey(state.current.data.address_hex)) return;
       const done = state.remoteLabel || 'Updated the code';
       state.remoteLabel = '';
       reinspect({ label: 'another person\'s change', done, remote: true });
-    });
+    };
+    state.remoteQueued = task;
+    whenIdle(task);
   }, 300);
 }
 
@@ -2959,11 +2980,13 @@ async function isExampleHash(hash) {
  * Open a program another person sent, with the session's changes rather than
  * the ones stored here. `hash` is its already-checked hash; `slot` 'shared'
  * keeps the session apart from the student's own stored changes to it.
+ * `still()` says whether the join still wants it (it may fail meanwhile).
  */
-async function openShared({ name, bytes, hash, session: shared, mode, open = null, slot = 'own' }) {
-  if (mode && [...els.mode.options].some((o) => o.value === mode)) els.mode.value = mode;
+async function openShared({ name, bytes, hash, session: shared, mode, open = null, slot = 'own', still = () => true }) {
   const example = await isExampleHash(hash);
   if (example) state.exampleSource = await fetch('./examples/sample.c').then((r) => (r.ok ? r.text() : null)).catch(() => null);
+  if (!still()) return false;
+  if (mode && [...els.mode.options].some((o) => o.value === mode)) els.mode.value = mode;
   state.slot = slot;
   await indexBinary({ name, bytes, hash }, { example, shared, keep: open });
   return state.binary?.bytes === bytes && !!state.inventory;

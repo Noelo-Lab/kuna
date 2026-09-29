@@ -12,7 +12,12 @@
 //   - every page's Session is exactly what its registers make;
 //   - no page ever sent a write for a field its student did not change in
 //     that action (or, when joining, ever), except a joiner's earlier fields
-//     written with the oldest clock, which cannot replace anyone's write.
+//     written with the oldest clock, which cannot replace anyone's write, and
+//     those only where the registers held nothing;
+//   - adding a directive always adds one (never replaces another of the
+//     page's own); applying the others' changes never clears what the engine
+//     said of a record they did not change; a page out of any session never
+//     keeps saving into the shared slot or ordering by a session's births.
 // Seeded; `--runs N` (default 400) and `--seed S` (default 1) pick the runs,
 // `--verbose` prints each failing run's problems. Needs no build.
 //   node integrations/web/test/decompile2-collab-fuzz.mjs [--runs 2000] [--seed 1]
@@ -35,7 +40,7 @@ const TYPES = ['int', 'long', 'char *', 'unsigned int'];
 const RAWS = ['readonly 0x2000+8', 'volatile 0x3000+4', 'readonly 0x2100+4'];
 const MODES = ['auto', 'fast', 'reliable', 'aggressive'];
 
-/** One random edit of any kind (always a valid value). */
+/** One random edit of any kind (always a valid value); 'addRaw' when it added a directive. */
 function mutate(rng, s) {
   const fn = rng.pick(FNS);
   switch (rng.int(9)) {
@@ -58,7 +63,10 @@ function mutate(rng, s) {
     case 7: {
       const raws = [...s.records].filter(([, r]) => r.kind === 'raw').map(([k]) => k);
       if (raws.length && rng.chance(0.4)) s.remove(rng.pick(raws));
-      else s.addRaw(rng.pick(RAWS));
+      else {
+        s.addRaw(rng.pick(RAWS));
+        return 'addRaw';
+      }
       break;
     }
     default: s.setProto(fn, rng.chance(0.2) ? null : `int f(int a${rng.int(3)})`); break;
@@ -85,7 +93,11 @@ async function runOne(seed) {
     const shared = pages.filter((p) => p.sync.shared);
     if (r < 0.42) {
       const p = rng.pick(pages.filter((x) => x.program));
-      const keys = p.edit((s) => mutate(rng, s));
+      const raws = () => [...p.session.records.values()].filter((x) => x.kind === 'raw').length;
+      const before = raws();
+      let what = null;
+      const keys = p.edit((s) => { what = mutate(rng, s); });
+      if (what === 'addRaw' && raws() !== before + 1) sim.violations.push(`${p.id} added a directive but holds ${raws()} (had ${before})`);
       log(p.id, p.sync.phase, 'edit', [...keys].join(' '));
     } else if (r < 0.56) {
       const solo = pages.filter((p) => p.sync.phase === 'solo');

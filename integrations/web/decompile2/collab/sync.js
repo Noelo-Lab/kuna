@@ -12,10 +12,10 @@
 //
 // Joining: until the inviter's registers have all arrived, this page's
 // changes stay its own. Then a joiner that has the program open brings what
-// it had, written with the oldest clock there is, so a field anyone in the
-// session has ever written (or deleted) keeps the session's value on every
-// page and only a field the session has never held takes this page's; what
-// the student changed while joining is newest. A page that left a session and
+// it had: a field the registers already hold (a value or a deletion) keeps
+// the session's, and one they do not is written with the oldest clock there
+// is, so it still loses to any write another page makes of it that this page
+// had not heard of yet; what the student changed while joining is newest. A page that left a session and
 // joins the same one again sends what it changed since it left. A joiner that receives the program opens it with
 // the session's changes; if it had its own stored changes to that program,
 // and the session does not already hold all of them, the session is saved
@@ -25,15 +25,10 @@ import {
   Replica, History, applyRegisters, adoptRawKeys, registersOf, recordKeyOf, changedBetween, localChanges, recordIndex,
   birthOrder, describeRegister, newer, oldestClock,
 } from './replica.js';
-import { Group, MAX_REGISTERS } from './group.js';
+import { Group, MAX_REGISTERS, TIMERS } from './group.js';
 
 const APPLY_MS = 16;
 const STALL_MS = 20000;
-const TIMERS = {
-  setTimeout: (fn, ms) => setTimeout(fn, ms),
-  clearTimeout: (id) => clearTimeout(id),
-  now: () => Date.now(),
-};
 
 /** Does a change to register `key` change the directives of the function at `fn`? */
 function touchesFunction(key, fn) {
@@ -183,9 +178,9 @@ export class Sync {
     this.group.local([this.replica.set('setting:mode', this.app.mode())]);
   }
 
-  /** An invite's link reached this page's session. */
-  addLink(link) {
-    if (this.active) this.group.addLink(link);
+  /** The link an invite (`invite`, its id) made reached this page's session. */
+  addLink(link, invite = null) {
+    if (this.active) this.group.addLink(link, { invite });
     else link.close();
   }
 
@@ -208,8 +203,10 @@ export class Sync {
   /**
    * Leave the session (or stop joining). The page keeps what it shows, except
    * that a session kept apart gives way to the student's own changes again
-   * (app.endShared). A page that keeps the session's changes remembers where
-   * it left, so joining the same session again sends only what changed since.
+   * (app.endShared), also when a join stops after the program it received was
+   * opened with the session's changes. A page that keeps the session's changes
+   * remembers where it left, so joining the same session again sends only
+   * what changed since.
    */
   leave() {
     const was = this.phase;
@@ -219,10 +216,11 @@ export class Sync {
     this.timers.clearTimeout(this.pendingTimer);
     this.pendingTimer = 0;
     this.pending = [];
+    const opened = was === 'joining' && !!this.join?.opened;
     if (this.join) this.timers.clearTimeout(this.join.timer);
     this.join = null;
     const session = this.app.session();
-    if (was === 'shared') session.reorder();
+    if (was === 'shared' || opened) session.reorder();
     const { replica, base } = this;
     this.replica = null;
     this.base = null;
@@ -230,6 +228,10 @@ export class Sync {
     this.history.clear();
     this.aside = null;
     this.#dirty();
+    if (opened) {
+      this.app.endShared();
+      this.slot = 'own';
+    }
     if (was !== 'shared') return was;
     const meta = this.app.fileMeta();
     this.app.clearUndo();
@@ -253,7 +255,7 @@ export class Sync {
   /** Restart the join's stall timer: a join that hears nothing for STALL_MS fails. */
   #stall() {
     const j = this.join;
-    if (!j || this.phase !== 'joining') return;
+    if (!j || this.phase !== 'joining' || j.opening) return;
     this.timers.clearTimeout(j.timer);
     j.timer = this.timers.setTimeout(() => {
       if (this.join === j && this.phase === 'joining') this.#failJoin('stalled');
@@ -305,13 +307,14 @@ export class Sync {
       want = changedBetween(anchor, now);
       for (const [key, value] of anchor) if (!want.has(key)) older.push([key, value]);
     }
+    const replaced = older.filter(([key, value]) => this.replica.regs.has(key) && this.replica.value(key) !== value).length;
     const ops = [];
-    const { changes } = localChanges(new Map(older), this.replica, { maxLive: MAX_REGISTERS });
+    const unheld = new Map(older.filter(([key]) => !this.replica.regs.has(key)));
+    const { changes } = localChanges(unheld, this.replica, { maxLive: MAX_REGISTERS });
     for (const { key, value } of changes) {
       const op = { k: key, v: value, c: oldestClock(this.me), b: oldestClock(this.me) };
       if (this.replica.apply(op)) ops.push(op);
     }
-    const replaced = older.filter(([key, value]) => this.replica.value(key) !== value).length;
     const copy = replaced ? Session.fromJSON(JSON.parse(JSON.stringify(session.toJSON()))) : null;
     const { written, refused } = this.#writeAll(want);
     for (const w of written) ops.push(w.op);
@@ -341,6 +344,7 @@ export class Sync {
   async #fileArrived(bytes, meta) {
     const j = this.join;
     if (!j || this.phase !== 'joining') return;
+    j.opening = true;
     this.timers.clearTimeout(j.timer);
     this.ui.fileOpening?.(meta);
     const hash = `sha256:${meta.hash}`;
@@ -354,8 +358,10 @@ export class Sync {
     const opened = registersOf(session);
     let ok = false;
     try {
+      j.opened = true;
       ok = await this.app.openShared({
         name: meta.name, bytes, hash, session, mode: this.replica.value('setting:mode'), open, slot: this.slot,
+        still: () => this.join === j && this.phase === 'joining',
       });
     } catch (_) {
       ok = false;
@@ -379,7 +385,7 @@ export class Sync {
     const moved = JSON.stringify(s.toJSON()) !== before;
     const mode = this.#lateMode();
     this.#joined();
-    if (moved || mode) this.app.remoteChanged({ inspect: true, mode, label: '' });
+    this.app.remoteChanged({ inspect: moved, mode, label: '' });
   }
 
   #joined() {

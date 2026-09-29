@@ -26,7 +26,7 @@
 // can be replaced (tests run the protocol on a clock of their own). A link is
 // {send(text), sendCursor(text), sendBinary(bytes), buffered(), drain(n),
 // close(), onmessage(data, channel), onclose()}.
-import { PROTOCOL, MAX_PEERS, MAX_MESSAGE, COLORS, readMessage, limiter, randomId, utf8Length } from './wire.js';
+import { PROTOCOL, MAX_PEERS, MAX_MESSAGE, COLORS, readMessage, limiter, randomId, utf8Length, quietly } from './wire.js';
 import { sha256Hex } from '../../sha256.js';
 
 export const MAX_REGISTERS = 100000;
@@ -41,7 +41,8 @@ const RESYNC_MS = 5000;
 const SUM_MS = 10000;
 const SUM_SOON_MS = 1500;
 const QUIET_MS = 2000;
-const TIMERS = {
+/** The real clock (tests pass one of their own). */
+export const TIMERS = {
   setTimeout: (fn, ms) => setTimeout(fn, ms),
   clearTimeout: (id) => clearTimeout(id),
   now: () => Date.now(),
@@ -66,9 +67,6 @@ export function resolveColors(members) {
   return members.map((m) => ({ ...m, color: color.get(m.peer) }));
 }
 
-const quietly = (fn) => {
-  try { return fn(); } catch (_) { return undefined; }
-};
 
 export class Group {
   constructor({ me, name, build, replica, connect, page, timers = TIMERS, hash = sha256Hex, sumMs = SUM_MS, quietMs = QUIET_MS }) {
@@ -130,10 +128,10 @@ export class Group {
     return this.members().find((m) => m.peer === peer) || null;
   }
 
-  /** A link from an invite: `joining` on the page that opened the invite. */
-  addLink(link, { joining = false, peer = null } = {}) {
+  /** A link from an invite: `joining` on the page that opened the invite; `invite` names the invite on the page that made it. */
+  addLink(link, { joining = false, peer = null, invite = null } = {}) {
     const rec = {
-      link, peer, joining, member: false, hello: false, name: '', color: null, where: null, listed: new Set(),
+      link, peer, joining, invite, member: false, hello: false, name: '', color: null, where: null, listed: new Set(),
       lim: {
         ops: limiter(20, 20, this.timers.now), snap: limiter(200, 400, this.timers.now), cur: limiter(30, 45, this.timers.now),
         ping: limiter(1, 2, this.timers.now), other: limiter(20, 40, this.timers.now),
@@ -196,7 +194,7 @@ export class Group {
   /** Send a message (or prebuilt JSON text) if it fits in one data-channel message. */
   #send(rec, msg) {
     const text = typeof msg === 'string' ? msg : JSON.stringify(msg);
-    if (text.length > MAX_MESSAGE && utf8Length(text) > MAX_MESSAGE) return false;
+    if (text.length * 3 > MAX_MESSAGE && utf8Length(text) > MAX_MESSAGE) return false;
     return quietly(() => { rec.link.send(text); return true; }) === true;
   }
 
@@ -351,6 +349,7 @@ export class Group {
       return;
     }
     if (this.size() >= MAX_PEERS) {
+      rec.failed = true;
       this.#send(rec, { t: 'full' });
       this.peers.delete(m.peer);
       this.timers.setTimeout(() => this.#drop(rec), 250);
@@ -367,7 +366,7 @@ export class Group {
     this.#sendSnap(rec);
     this.#sendWhere(rec);
     if (send) this.#sendFile(rec);
-    this.page.event('joined', { peer: rec.peer, name: rec.name });
+    this.page.event('joined', { peer: rec.peer, name: rec.name, invite: rec.invite });
     this.#rosterChanged();
   }
 
@@ -564,14 +563,19 @@ export class Group {
       this.page.fileFailed('lost');
     }
     const joinFailed = rec.joining && !rec.member && !rec.failed && !this.closed;
-    if (!rec.peer || this.peers.get(rec.peer) !== rec) {
+    const unjoined = !rec.joining && rec.invite && !rec.member && !rec.failed && !this.closed;
+    const early = () => {
       if (joinFailed) this.page.event('closed', { name: rec.name });
+      else if (unjoined) this.page.event('unjoined', { invite: rec.invite, name: rec.name });
+    };
+    if (!rec.peer || this.peers.get(rec.peer) !== rec) {
+      early();
       return;
     }
     this.peers.delete(rec.peer);
     this.outbox.delete(rec);
     if (!rec.member) {
-      if (joinFailed) this.page.event('closed', { name: rec.name });
+      early();
       return;
     }
     if (this.closed) return;

@@ -233,8 +233,8 @@ checks.push('cDeclare/validate/typeSize');
   const good = s.setVar(MAIN, 'v1', { name: 'total' });
   const bad = s.addRaw('bytes 0x10 zz');
   assert.deepEqual(s.assertionsFor(MAIN), ['bytes 0x10 zz', 'name v1 total']);
-  assert.equal(s.markRefused('bytes 0x10 zz', 'error: --assert "bytes 0x10 zz": not hex'), bad);
-  assert.equal(s.markRefused('never sent', 'x'), null);
+  assert.deepEqual(s.markRefused('bytes 0x10 zz', 'error: --assert "bytes 0x10 zz": not hex'), [bad]);
+  assert.deepEqual(s.markRefused('never sent', 'x'), []);
   assert.deepEqual(s.assertionsFor(MAIN), ['name v1 total'], 'refused directives are not sent');
   assert.deepEqual(s.allAssertions((a) => names.get(a)), ['name main::v1 total'], 'nor exported as directives');
   assert.deepEqual(s.entries((a) => names.get(a)).map((e) => [e.text, e.status]), [['bytes 0x10 zz', 'refused'], ['name main::v1 total', 'pending']], 'the rail still lists it');
@@ -242,6 +242,14 @@ checks.push('cDeclare/validate/typeSize');
   s.replaceWith(bad, 'bytes 0x10 90');
   assert.deepEqual(s.assertionsFor(MAIN), ['bytes 0x10 90', 'name v1 total'], 'an edit makes it eligible again');
   assert.equal(s.statusOf(good), 'pending');
+  const twice = new Session();
+  const first = twice.addRaw('readonly 0x2000');
+  const second = twice.addRaw('readonly 0x2000');
+  assert.deepEqual(twice.globalAssertions(), ['readonly 0x2000', 'readonly 0x2000']);
+  assert.deepEqual(twice.markRefused('readonly 0x2000', 'no size'), [first, second], 'two records with one refused text: both are refused');
+  assert.deepEqual(twice.globalAssertions(), [], 'so what the page sends matches what the request sent (no re-inspect loop)');
+  twice.recordOutcomes([{ directive: 'readonly 0x2000', status: 'rejected' }]);
+  assert.deepEqual([twice.statusOf(first), twice.statusOf(second)], ['rejected', 'rejected'], 'an outcome reaches every record with that text');
   checks.push('refused directives');
 }
 
@@ -385,6 +393,44 @@ assert.match(legacyKey(new TextEncoder().encode('abc')), /^fnv:[0-9a-f]{16}-3$/,
   assert.equal(throwing.load('x'), null);
   assert.deepEqual(throwing.index(), []);
   checks.push('store LRU/quota + FNV/SHA-256');
+}
+
+// ── the student's own sessions come before a session's copies ─────────────
+{
+  const mem = new Map();
+  let quota = Infinity;
+  const storage = {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+    setItem: (k, v) => {
+      const used = [...mem].filter(([key]) => key !== k).reduce((n, [key, val]) => n + key.length + val.length, 0);
+      if (used + k.length + v.length > quota) throw new Error('QuotaExceededError');
+      mem.set(k, v);
+    },
+    removeItem: (k) => mem.delete(k),
+    key: (i) => [...mem.keys()][i] ?? null,
+    get length() { return mem.size; },
+  };
+  const shared = new SessionStore(storage, { max: 5, prefix: 'kuna.d2.shared.', indexKey: 'kuna.d2.shared.index' });
+  const own = new SessionStore(storage, { spare: shared });
+  own.save('a', 'a.elf', 'my work on a'.padEnd(200, '.'));
+  own.save('b', 'b.elf', 'my work on b'.padEnd(200, '.'));
+  shared.save('c', 'c.elf', 'a session on c'.padEnd(200, '.'));
+  shared.save('d', 'd.elf', 'a session on d'.padEnd(200, '.'));
+  quota = [...mem].reduce((n, [k, v]) => n + k.length + v.length, 0) + 50;
+  assert.ok(own.save('e', 'e.elf', 'my work on e'.padEnd(200, '.')), 'the new save fits');
+  assert.ok(own.load('a') && own.load('b') && own.load('e'), 'no own session was evicted for it');
+  assert.equal(shared.index().length < 2, true, 'a session\'s copy made room first');
+  const big = new Uint8Array(64 << 20);
+  const t0 = performance.now();
+  assert.equal(own.loadMoving('f', big, 'f.elf'), null);
+  assert.ok(performance.now() - t0 < 50, `a first-time open with nothing stored reads no bytes (${(performance.now() - t0).toFixed(1)} ms)`);
+  const bytes = new TextEncoder().encode('an old program');
+  mem.set(`kuna.d2.session.${legacyKey(bytes)}`, 'saved by an earlier version');
+  quota = Infinity;
+  assert.equal(own.loadMoving('g', bytes, 'g.elf'), 'saved by an earlier version', 'an earlier version\'s entry is still found');
+  assert.equal(own.load('g'), 'saved by an earlier version', 'and moved to the current key');
+  assert.equal(mem.has(`kuna.d2.session.${legacyKey(bytes)}`), false);
+  checks.push('own sessions before a session\'s copies; the old key worked out only when one is stored');
 }
 
 console.log(`DECOMPILE2 SESSION OK — ${checks.join('; ')}`);

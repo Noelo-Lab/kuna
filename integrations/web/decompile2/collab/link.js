@@ -11,15 +11,12 @@
 // A link keeps what arrives before the page listens (the other page may say
 // hello first) and hands it over once the page has attached its handler.
 import { compactSdp, expandSdp, passiveAnswer } from './sdp.js';
-import { randomId } from './wire.js';
+import { randomId, quietly } from './wire.js';
 
 const GATHER_MS = 1500;
 const KNOCK_MS = 500;
 const CONFIRM_MS = 1500;
 const OPEN_MS = 20000;
-const quietly = (fn) => {
-  try { return fn(); } catch (_) { return undefined; }
-};
 const EARLY_MAX = 1000;
 
 /** The part of a link that holds messages until someone listens (`onmessage`), then hands them over in order. */

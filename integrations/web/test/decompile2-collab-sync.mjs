@@ -6,7 +6,9 @@
 // review's): a guest that has the program open when it joins, leaving and
 // joining again, an edit made while another person's change waits to be
 // applied, an inviter that goes away in the middle of a join, a tab of the
-// same browser keeping a guest's own changes apart, the shared order. Each
+// same browser keeping a guest's own changes apart, the shared order; then a
+// third review's: two joiners bringing the same field, a slow open of the
+// received program, a join that fails while the program opens. Each
 // case also checks that no page sent a change its student did not make, and
 // that the pages agree once settled. Needs no build.
 //   node integrations/web/test/decompile2-collab-sync.mjs
@@ -253,6 +255,61 @@ await test('#15 the order the page sends in a session is birthOrder over its reg
     for (const key of p.sync.replica.regs.keys()) assert.deepEqual(p.sync.orderOf(recordKeyOf(key)), order(recordKeyOf(key)));
     assert.equal(p.session.orderOf, p.sync.orderOf, 'the Session sorts with it');
   }
+  settled(sim);
+});
+
+// ── a third review ─────────────────────────────────────────────────────────
+
+await test('third review #1 a second joiner\'s earlier value does not replace the first joiner\'s', async () => {
+  const sim = new Sim(21);
+  const ana = sim.page(ANA, {});
+  const ben = sim.page(BEN, { own: (s) => s.setFunctionName(FN, 'bens_name') });
+  const cy = sim.page(CY, { own: (s) => s.setFunctionName(FN, 'cys_stale') });
+  ana.start();
+  await sim.run(50);
+  ben.joinVia(ana);
+  await sim.run(3000);
+  assert.ok(shows(ana, 'function 0x1100=bens_name'), 'Ben brought a name the session did not hold');
+  cy.joinVia(ana);
+  await sim.run(3000);
+  for (const p of [ana, ben, cy]) assert.ok(shows(p, 'function 0x1100=bens_name'), `${p.name} keeps Ben's name`);
+  await sim.run(60000);
+  settled(sim);
+});
+
+await test('third review #3 a slow open of the received program is not failed as stalled when another person edits meanwhile', async () => {
+  const sim = new Sim(22);
+  const ana = sim.page(ANA, {});
+  const ben = sim.page(BEN, { program: false, openMs: 45000 });
+  ana.start();
+  await sim.run(50);
+  ben.joinVia(ana);
+  for (let i = 0; i < 400 && !ben.program; i++) await sim.run(5);
+  assert.ok(ben.program && ben.sync.phase === 'joining', 'Ben is opening the program');
+  ana.edit((s) => s.setVar(FN, 'v1', { name: 'while_it_opens' }));
+  await sim.run(50000);
+  assert.deepEqual(ben.joinFailures, []);
+  assert.equal(ben.sync.phase, 'shared');
+  assert.ok(shows(ben, 'name 0x1100::v1 while_it_opens'));
+  await sim.run(60000);
+  settled(sim);
+});
+
+await test('third review #4 a join that fails while the received program opens gives the student\'s own changes back', async () => {
+  const sim = new Sim(23);
+  const ana = sim.page(ANA, { own: (s) => s.setFunctionName(FN, 'session_name') });
+  const ben = sim.page(BEN, { program: false, openMs: 8000, own: (s) => s.setVar(FN, 'v1', { name: 'bens_own' }) });
+  ana.start();
+  await sim.run(50);
+  ben.joinVia(ana);
+  for (let i = 0; i < 400 && !ben.program; i++) await sim.run(5);
+  assert.ok(ben.program && ben.sync.phase === 'joining', 'Ben is opening the program with the session\'s changes');
+  for (const l of [...sim.net.links]) sim.net.fail(l);
+  await sim.run(10000);
+  assert.deepEqual(ben.joinFailures, ['sponsor']);
+  assert.equal(ben.slot, 'own', 'Ben saves into his own slot again');
+  assert.ok(shows(ben, 'bens_own') && !shows(ben, 'session_name'), 'and sees his own changes');
+  assert.equal(ben.session.orderOf, null);
   settled(sim);
 });
 

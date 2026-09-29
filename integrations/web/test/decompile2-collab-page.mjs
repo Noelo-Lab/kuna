@@ -17,9 +17,14 @@
 // person's change waits; the "use the session's changes" offer after opening
 // another program; a tab joining a tab of its own browser that keeps a
 // student's changes apart; Stop while a new decompiler effort reloads the
-// program; changes stored by an earlier version. Each case runs in fresh tabs
-// (a second Chrome process stands in for another person's computer) and is
-// reported; any failure exits 1.
+// program; changes stored by an earlier version. Then a third review's: two
+// records with one unparseable directive (no re-decompile loop, alone), a
+// join that fails while the received program opens, another person's change
+// queued behind an open a cached function replaced, a join whose build id
+// cannot be worked out after the connection was made, the back/forward
+// cache, and a session's saved copy offered when its program is opened again.
+// Each case runs in fresh tabs (a second Chrome process stands in for another
+// person's computer) and is reported; any failure exits 1.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 // `--only TEXT` runs the cases whose name contains TEXT.
@@ -77,6 +82,37 @@ const DROP_FILE = `(() => {
   };
 })();`;
 
+/** Every request the page makes of the engine, by method, in `window.__kunaCalls`. */
+const COUNT_CALLS = `(() => {
+  window.__kunaCalls = [];
+  const post = Worker.prototype.postMessage;
+  Worker.prototype.postMessage = function (m, t) {
+    window.__kunaCalls.push(m && m.method);
+    return post.call(this, m, t);
+  };
+})();`;
+
+/** The engine cannot say which build it is (as when the site changed after the page loaded). */
+const BUILD_FAILS = `(() => {
+  const Real = window.Worker;
+  window.Worker = function (url, opts) {
+    const w = new Real(url, opts);
+    let handler = null;
+    w.addEventListener('message', (ev) => handler && handler(ev));
+    Object.defineProperty(w, 'onmessage', { get() { return handler; }, set(fn) { handler = fn; }, configurable: true });
+    const post = w.postMessage.bind(w);
+    w.postMessage = (m, t) => {
+      if (m && m.method === 'build') {
+        setTimeout(() => handler && handler({ data: { id: m.id, ok: false, error: 'the site was updated after this page loaded; reload the page' } }), 10);
+        return undefined;
+      }
+      return post(m, t);
+    };
+    return w;
+  };
+  window.Worker.prototype = Real.prototype;
+})();`;
+
 const OWN_KEY = `kuna.d2.session.${SAMPLE_HASH}`;
 const stored = (records) => JSON.stringify({ v: 1, rawSeq: 0, bytes: [], records });
 const MAIN = '0x1198';
@@ -84,6 +120,7 @@ const SUM = '0x1161';
 const fnRec = (addr, name) => [`fn:${addr}`, { kind: 'fn', addr, name }];
 const varRec = (func, sym, name) => [`var:${func}:${sym}`, { kind: 'var', func, sym, name, type: null }];
 const noteRec = (func, addr, text) => [`comment:${func}:${addr}`, { kind: 'comment', func, addr, text }];
+const rawRec = (n, text) => [`raw:${n}`, { kind: 'raw', text }];
 
 let tabs = [];
 let firstUsed = { 1: false, 2: false };
@@ -693,6 +730,117 @@ try {
     await ben.waitFor(`document.getElementById('crumbname')?.textContent === 'sample.elf'`, { what: 'Ben joined', timeout: 30000 });
     await ben.waitFor(`/kept as they were/.test([...document.querySelectorAll('.d2-toast')].map((t) => t.textContent).join(' '))`, { what: 'Ben\'s earlier changes are kept apart', timeout: 10000 });
     assert.match(await ben.evaluate(`localStorage.getItem(${JSON.stringify(OWN_KEY)}) || ''`), /from_before/, 'and moved to the current key');
+  });
+
+  // ── a third review ───────────────────────────────────────────────────────
+
+  await test('third review #2 two records with one directive the engine cannot read: no endless re-decompiling, working alone', async () => {
+    const ana = await tab('Ana', { script: COUNT_CALLS });
+    await open(ana, { seed: [[OWN_KEY, stored([rawRec(1, 'bytes 0x10 zz'), rawRec(2, 'bytes 0x10 zz')])]] });
+    await example(ana);
+    await sleep(1500);
+    const before = await ana.evaluate('window.__kunaCalls.length');
+    await sleep(3000);
+    const after = await ana.evaluate('window.__kunaCalls.length');
+    assert.equal(after, before, `the page kept asking the engine: ${JSON.stringify(await ana.evaluate('window.__kunaCalls.slice(-6)'))}`);
+    assert.match(await rail(ana), /bytes 0x10 zz/);
+  });
+
+  await test('third review #4 a join that fails while the received program opens gives the student\'s own changes back', async () => {
+    const ana = await tab('Ana');
+    await open(ana, { seed: [[OWN_KEY, stored([fnRec(SUM, 'summation')])]] });
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { other: true, script: DELAY_SHIM });
+    await open(ben, { seed: [[OWN_KEY, stored([varRec(MAIN, 'v1', 'bens_own')])]] });
+    await ben.navigate(link);
+    await nameAndGo(ben, 'Ben');
+    await ben.evaluate('window.__kunaDelay = 4000; true');
+    await carryReply(ana, ben);
+    await ben.waitFor(`/Opening/.test(document.getElementById('d2collab')?.textContent || '')`, { what: 'Ben opens the program', timeout: 20000 });
+    await ana.closeTab();
+    tabs = tabs.filter((t) => t !== ana);
+    await ben.waitFor(`/closed the connection|stopped answering/.test((document.getElementById('d2collab')?.textContent || '') + [...document.querySelectorAll('.d2-toast')].map((t) => t.textContent).join(' '))`, { what: 'Ben is told', timeout: 30000 });
+    await ben.evaluate('window.__kunaDelay = 0; true');
+    await closeDialog(ben);
+    await ben.waitFor(`/bens_own/.test(document.getElementById('ccode').textContent)`, { what: 'Ben\'s own changes show', timeout: 30000 });
+    assert.ok(!/summation/.test(await code(ben)), 'not the session\'s');
+    assert.equal(await ben.evaluate(`localStorage.getItem(${JSON.stringify(`kuna.d2.shared.${SAMPLE_HASH}`)})`), null, 'and nothing is saved as a session\'s copy');
+  });
+
+  await test('third review #5 another person\'s change queued behind an open that a cached function replaced still reaches the code', async () => {
+    const { ana, ben } = await pair({ anaScript: DELAY_SHIM });
+    await front(ben);
+    await ben.click(`#fnlist .fn[data-addr="${SUM}"]`);
+    await ben.waitFor(`document.getElementById('vname').textContent === 'sum_to' && document.getElementById('cancelbtn').disabled`, { what: 'Ben on sum_to', timeout: 30000 });
+    await front(ana);
+    await ana.evaluate('window.__kunaDelay = 4000; true');
+    await ana.click(`#fnlist .fn[data-addr="${SUM}"]`);
+    await ana.waitFor(`!document.getElementById('cancelbtn').disabled`, { what: 'Ana opens sum_to', timeout: 10000 });
+    await front(ben);
+    await popover(ben, '#ccode .t[data-sym="v1"]', 'n', 'in_sum');
+    await ben.key('Enter');
+    await front(ana);
+    await ana.waitFor(`/in_sum/.test(document.getElementById('sesslist').textContent)`, { what: 'Ben\'s change reached Ana', timeout: 10000 });
+    await sleep(800);
+    assert.equal(await ana.evaluate(`!document.getElementById('cancelbtn').disabled`), true, 'Ana is still opening sum_to, so the re-decompile waits');
+    await ana.click(`#fnlist .fn[data-addr="${MAIN}"]`);
+    await ana.evaluate('window.__kunaDelay = 0; true');
+    await ana.waitFor(`document.getElementById('vname').textContent === 'main' && document.getElementById('cancelbtn').disabled`, { what: 'Ana back on main', timeout: 20000 });
+    await front(ben);
+    await ben.click(`#fnlist .fn[data-addr="${MAIN}"]`);
+    await ben.waitFor(`document.getElementById('vname').textContent === 'main' && document.getElementById('cancelbtn').disabled`, { what: 'Ben on main', timeout: 30000 });
+    await popover(ben, '#ccode .t[data-sym="argc"]', 'n', 'later');
+    await ben.key('Enter');
+    await ana.waitFor(`/later/.test(document.getElementById('ccode').textContent)`, { what: 'Ana\'s code shows Ben\'s later rename', timeout: 30000 });
+  });
+
+  await test('third review #6 a join that cannot work out its build id after connecting closes the link, and the inviter hears', async () => {
+    const ana = await tab('Ana');
+    await open(ana);
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { script: BUILD_FAILS });
+    await ben.navigate(link);
+    await nameAndGo(ben, 'Ben');
+    await ben.waitFor(`/Could not join|could not make a connection/.test(document.getElementById('d2collab')?.textContent || '')`, { what: 'Ben is told', timeout: 20000 });
+    await ana.waitFor(`/did not finish joining/.test(document.querySelector('#d2collab [data-status]')?.textContent || '')`, { what: 'Ana is told', timeout: 20000 });
+    assert.equal(await ana.evaluate(`document.querySelectorAll('#d2roster .d2-who').length`), 0);
+  });
+
+  await test('third review #10 a page that goes into the back/forward cache leaves the session, and says so when it comes back', async () => {
+    const { ana, ben } = await pair();
+    await ben.evaluate(`dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })); true`);
+    await ana.waitFor(`document.querySelectorAll('#d2roster .d2-who').length === 0`, { what: 'Ana sees Ben go', timeout: 20000 });
+    await ben.evaluate(`dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); true`);
+    await ben.waitFor(`/left the session when you went to another page/.test([...document.querySelectorAll('.d2-toast')].map((t) => t.textContent).join(' '))`, { what: 'Ben is told', timeout: 10000 });
+    assert.match(await text(ben, '#railchanges h3'), /^Your changes/, 'the page is back to working alone');
+  });
+
+  await test('third review #11 a session\'s copy kept apart is offered again when its program is opened later', async () => {
+    const ana = await tab('Ana');
+    await open(ana, { seed: [[OWN_KEY, stored([fnRec(SUM, 'summation')])]] });
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { other: true });
+    await open(ben, { seed: [[OWN_KEY, stored([varRec(MAIN, 'v1', 'bens_own')])]] });
+    await ben.navigate(link);
+    await nameAndGo(ben, 'Ben');
+    await carryReply(ana, ben);
+    await ben.waitFor(`/summation\\(add/.test(document.getElementById('ccode').textContent)`, { what: 'Ben has the session', timeout: 30000 });
+    await idle(ben);
+    await ben.click('#d2roster [data-act=collab-open]');
+    await ben.waitFor(`document.querySelector('#d2collab [data-act=leave]')`, { what: 'the session dialog' });
+    await ben.click('#d2collab [data-act=leave]');
+    await ben.waitFor(`/bens_own/.test(document.getElementById('ccode').textContent)`, { what: 'Ben\'s own changes are back', timeout: 30000 });
+    await ben.navigate(`${server.base}/decompile2/`);
+    await ready(ben);
+    await example(ben);
+    await ben.waitFor(`[...document.querySelectorAll('.d2-toast button')].some((b) => /Use those instead/.test(b.textContent))`, { what: 'the offer', timeout: 10000 });
+    await ben.call(() => { [...document.querySelectorAll('.d2-toast button')].find((b) => /Use those instead/.test(b.textContent)).click(); return true; });
+    await ben.waitFor(`!document.getElementById('d2pop').hidden && /Replace mine/.test(document.getElementById('d2pop').textContent)`, { what: 'asked first', timeout: 10000 });
+    await ben.evaluate(`document.querySelector('#d2pop form').requestSubmit(); true`);
+    await ben.waitFor(`/summation\\(add/.test(document.getElementById('ccode').textContent)`, { what: 'the session\'s changes are Ben\'s now', timeout: 30000 });
   });
 } finally {
   clearTimeout(guard);

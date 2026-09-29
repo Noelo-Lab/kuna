@@ -621,10 +621,12 @@ is 8 bytes, the stated type is 4`), so the retype dialog warns before sending on
 `long` by the target's data model (4 bytes on Windows). A directive the engine cannot
 parse fails the whole request (`error: --assert "<directive>": …`, exit 1): the page
 matches that against the directives it sent, marks the record refused (✗ with the
-reason; it is no longer sent, and exported only as a comment), and retries without it,
+reason; it is no longer sent, and exported only as a comment; every record that gives
+the same text is marked, since the retry leaves out all of them), and retries without it,
 so a bad stored or imported directive never locks a binary out. A failed `list` with no
 directive to blame retries with none and says which were dropped. Editing any record
-clears its old outcome until the engine answers again, and a rail edit changes the
+clears its old outcome until the engine answers again (another person's changes, applied
+in a session, clear only the outcomes of the records they change), and a rail edit changes the
 record in place (a comment stays a comment of its function). Each line in *Your
 changes* is a sentence ("Renamed v1 → total", "Note at 11e1: …") and its directive is the
 tooltip. The inspect cache is keyed
@@ -645,10 +647,12 @@ Import reads the same format; an unqualified function-scoped line binds to the o
 function, and a directive the page does not model is kept verbatim. The session is also
 saved in `localStorage` per binary — `kuna.d2.session.<hash>`, the SHA-256 of the bytes
 (computed in JS outside a secure context, where WebCrypto is missing; what an earlier
-version stored there under its FNV-1a key is found and moved to the SHA-256 key), at most
-20 binaries (`kuna.d2.index`, least recently used evicted; a full or throwing store never
-breaks the page) — and loading the same file again restores it: a toast, and a "Restored
-N changes from last time. Discard them" banner in *Your changes*.
+version stored there under its FNV-1a key is found and moved to the SHA-256 key, and that
+key, two passes over the whole program, is worked out only when such an entry exists), at
+most 20 binaries (`kuna.d2.index`, least recently used evicted; a full or throwing store
+never breaks the page; when storage is full, copies of live sessions kept apart are
+evicted before any of the student's own) — and loading the same file again restores it: a
+toast, and a "Restored N changes from last time. Discard them" banner in *Your changes*.
 
 **Patching.** The Bytes view is the function's bytes: instruction bytes from the engine,
 the gaps from the page's own copy of the file through `sections[].file_offset`, patched
@@ -764,8 +768,10 @@ this page's engine compiled, worked out only when a session starts or a link is 
 (nothing is hashed for a student who never works together). The Worker fetches the wasm
 again with the cache revalidated. If the server's validator (ETag, Last-Modified, length)
 is the one it compiled, it hashes the file; otherwise the site changed since the page
-loaded, and the page asks to be reloaded. A page whose Worker restarts with a different
-wasm leaves the session. The page that invited sends the newcomer a welcome (the session,
+loaded, and the page asks to be reloaded. A cancel that restarts the Worker while it
+works this out asks the new Worker. A restarted Worker keeps the id while the validator
+matches; when the server sends none, it hashes the bytes it compiled (no second download).
+A page whose Worker restarts with a different wasm leaves the session. The page that invited sends the newcomer a welcome (the session,
 the people in it, the program's name, size and hash), and then the two send each other
 their registers; a link that comes back after a drop does the same, so each side gets
 what the other changed meanwhile (the newer clock wins each field). Until the inviter's
@@ -774,11 +780,11 @@ registers have all arrived, nothing of the newcomer's is sent.
 A newcomer without the program receives it (64 KiB chunks, paced by the channel's
 `bufferedAmount`, at most 64 MiB), checks its SHA-256 and opens it without a prompt,
 opening the function the inviter is on. A newcomer who already has the program open is
-not sent it again, and brings what it had. Those earlier changes are written with the
-oldest clock there is (`[1, page]`; every page's own writes start at 2). So a field anyone
-in the session has ever written or deleted keeps the session's value on every page, even
-one the inviter had not heard of yet, and only a field the session never held takes the
-newcomer's value. What the newcomer changed after pressing *Join* is newest. When the
+not sent it again, and brings what it had. A field the inviter's registers hold (a value
+or a deletion) keeps the session's value. A field they do not hold takes the newcomer's,
+written with the oldest clock there is (`[1, page]`; every page's own writes start at 2),
+so it still loses to any write of that field the inviter had not heard of yet. What the
+newcomer changed after pressing *Join* is newest. When the
 session replaced some of the newcomer's changes, a toast says how many and offers *Save
 yours as a file*. A page that left a session and joins the same one again (the same
 program still open, with the same changes object) sends only what it changed since
@@ -788,19 +794,28 @@ A join fails with a message, and can be tried again with a new link, when it get
 welcome within 20 seconds, when the inviter's page goes away before the join is done
 ("Ana's page closed the connection before you finished joining", or "The connection
 closed while the program was on its way"), or when nothing arrives for 20 seconds after
-the welcome. Stopping a load (the Stop button while the program is opened again, as a
-new decompiler effort does) leaves the session, since the page no longer has the
-program.
+the welcome (not counting the time the received program takes to open). A join that
+fails or is stopped after the received program opened gives the page back as leaving
+would: the student's own changes come back, and nothing more is saved as the session's
+copy. A newcomer whose page cannot work out its build id after the link was made closes
+the link, and the inviter's dialog says the person did not finish joining (an invite
+shows "joined" only once the newcomer is in the session). Stopping a load (the Stop
+button while the program is opened again, as a new decompiler effort does) leaves the
+session, since the page no longer has the program. A page that goes into the browser's
+back/forward cache leaves the session, and says so when it comes back.
 
 *Where a session is stored.* The inviter, and a newcomer who had the program open, keep
 the session as their own (`kuna.d2.session.<hash>`). A newcomer who receives the program
 while having changes of their own stored for it, which the session does not already hold
 all of, keeps the two apart. The session is saved under `kuna.d2.shared.<hash>` (at most
 5 programs, least recently used evicted, indexed in `kuna.d2.shared.index`) and never
-over the newcomer's own. The session dialog offers *Save them as a file* (a `.kuna`
-qualified with their own function names). On leaving, their own changes come back, and a
-toast offers to keep the session's changes instead; that offer does nothing once another
-program is open, or while the page is in a session again. A newcomer with nothing stored,
+over the newcomer's own, as soon as the join completes. The session dialog offers *Save
+them as a file* (a `.kuna` qualified with their own function names). On leaving, their
+own changes come back, and a toast offers to keep the session's changes instead; that
+offer does nothing once another program is open, or while the page is in a session
+again. The session's copy stays saved: opening the program again later offers it once
+more ("There are also N changes … from a live session you were in", *Use those
+instead*), and it is the first thing evicted when storage is full. A newcomer with nothing stored,
 or whose stored changes the session holds already, keeps the session as their own. Tabs
 of one browser share their storage, so the same rule decides for them. A tab joining the
 inviter's tab of the same browser sets nothing apart when that tab keeps the session as
@@ -919,7 +934,9 @@ formats and architectures**:
    ZIP rather than the four-artifact JSON object. The Pages build runs this test.
    It also loads a session with `language: 'rust'` and asserts Rust comes back (the
    Worker used to drop the language), and checks that a client asking for the build id
-   gets the SHA-256 of the exact wasm served, again after a restart.
+   gets the SHA-256 of the exact wasm served, again after a restart (from what the new
+   Worker compiled, since this server sends no validator: no second download), and that a
+   cancel while the id is being worked out asks the new Worker.
 4. **The study view.** Five build-free suites import the page's modules from the source
    tree: **`test/decompile2-render.mjs`** (the shared highlighter's `scan` — `highlight*`
    output pinned byte for byte — token-stream rendering and the per-line fallback,
@@ -930,7 +947,7 @@ formats and architectures**:
    **`test/decompile2-session.mjs`** (directive merging and pinning, unqualified vs
    qualified output after a function rename, parameters via `prototype`, byte runs, the
    `.kuna` and JSON round trips, the CLI's `#`-comment rule, outcomes, undo/redo, the
-   store's LRU and quota handling, the hash vectors), **`test/decompile2-bytes.mjs`**
+   store's LRU and quota handling (a session's copies evicted before the student's own), the hash vectors, the old FNV key worked out only when one is stored), **`test/decompile2-bytes.mjs`**
    (every instruction's file offset and bytes against `sample.elf`, the patched file, the
    `.data`/`.bss` boundary, every no-op fill) and **`test/decompile2-learn.mjs`** (a note
    for every fixture mnemonic, idioms, the `sum_to` frame and its rows, the overflow
@@ -958,7 +975,10 @@ formats and architectures**:
    snapshot, the same-browser knock answered late, and the passive answer; and, from a
    second review, a newer write of the same value passed on, an edit lost on a dying link
    reaching that page through the others (digests), and a global with a half deleted gone
-   on every page. **`test/decompile2-collab-sync.mjs`** and
+   on every page; and, from a third review, a message over the channel's limit in UTF-8
+   bytes (under it in characters) not sent, a directive added after the registers gave
+   the page's own back, and registers applied without clearing the outcome of a record
+   they do not change. **`test/decompile2-collab-sync.mjs`** and
    **`test/decompile2-collab-fuzz.mjs`** (build-free) drive the page's real glue
    (`collab/sync.js` with `group.js` and a real `Session` per page) through
    `test/collab-sim.mjs`: in-memory links with latency, links that fail with edits in
@@ -967,14 +987,19 @@ formats and architectures**:
    with the program open and changes of its own, leaving and joining again (kept apart or
    not), an edit made while another person's change waits to be applied, an inviter that
    goes away mid-join, a join that stops hearing, a tab of the same browser keeping a
-   student's changes apart, the shared order. The fuzz test runs seeded random sessions
+   student's changes apart, the shared order; and a third review's: two joiners bringing
+   the same field, a slow open of the received program while another person edits, a
+   join that fails while the program opens. The fuzz test runs seeded random sessions
    (400 by default; `--runs`, `--seed`) of 3 to 5 pages: edits of every kind, joins and
    joins again, leaves, undo and redo, effort changes, failing links. Once they settle it
    checks that linked pages hold the same registers and send the same directives in the
    same order, that every page's Session is exactly what its registers make, and that no
    page ever sent a write for a field its student did not change (a joiner's earlier
    fields, written with the oldest clock, are the one exception, since they cannot replace
-   anyone's write).
+   anyone's write, and those only where the registers held nothing). It also checks that
+   adding a directive always adds one, that applying the others' changes never clears the
+   outcome of a record they did not change, and that a page out of any session neither
+   saves into the shared slot nor orders by a session's births.
    **`test/decompile2-replay.mjs`** exports sessions (made alone, and shared with the
    birth order) and replays each file through the native CLI (`kuna decompile … --assert
    @file`): a type used by a later type, two prototypes of one function (the later
@@ -1025,7 +1050,12 @@ formats and architectures**:
    function they had open, a view setting changed while another person's change waits,
    the "use the session's changes" offer after opening another program, a tab joining a
    tab of its own browser that keeps the student's changes apart, Stop during a reload in
-   a session, and changes stored under an earlier version's key.
+   a session, and changes stored under an earlier version's key. And a third review's:
+   two records with one unreadable directive (no endless re-decompiling), a join that
+   fails while the received program opens, another person's change queued behind an open
+   a cached function replaced, a join whose build id cannot be worked out after connecting,
+   the back/forward cache, and a session's saved copy offered when its program is opened
+   again.
    **`test/decompile2-collab-rtc.mjs`** runs two Chrome processes over real WebRTC with
    the links carried by the script and raw host candidates
    (`--disable-features=WebRtcHideLocalIpsWithMdns`, since runners lack the multicast

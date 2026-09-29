@@ -32,9 +32,11 @@ const MIME = {
   '.dwarf': 'application/octet-stream',
 };
 
+let wasmRequests = 0;
 const server = createServer(async (req, res) => {
   try {
     const rel = decodeURIComponent(new URL(req.url, 'http://worker.test').pathname);
+    if (rel.endsWith('.wasm')) wasmRequests++;
     const file = resolve(dist, '.' + rel);
     if (!file.startsWith(dist)) {
       res.writeHead(403).end();
@@ -206,9 +208,26 @@ try {
     const wasm = createHash('sha256').update(await readFile(join(dist, 'kuna_wasm.wasm'))).digest('hex');
     assert.equal(await hashing.buildId(), wasm, 'asked for, the build id is the SHA-256 of the wasm the Worker compiled');
     assert.equal(client.build, null, 'a page that does not ask for it pays nothing');
+    const before = wasmRequests;
     hashing.cancel('a new Worker');
     await hashing.ready();
     assert.equal(await hashing.buildId(), wasm, 'and a respawned Worker has the same one');
+    assert.equal(wasmRequests - before, 1, 'this server sends no validator: the new Worker hashed what it compiled instead of fetching the wasm again');
+    const racing = new KunaWorkerClient({
+      workerUrl: pathToFileURL(join(dist, 'kuna-worker.js')),
+      wasmUrl: `${base}/kuna_wasm.wasm`,
+      specRoot: `${base}/specs`,
+      workerFactory: (url) => new BrowserWorker(url),
+    });
+    try {
+      await racing.ready();
+      const asked = racing.buildId();
+      await new Promise((done) => setTimeout(done, 5));
+      racing.cancel('a new Worker');
+      assert.equal(await asked, wasm, 'a cancel while the build id was being worked out asks the new Worker');
+    } finally {
+      racing.close();
+    }
   } finally {
     hashing.close();
   }

@@ -19,6 +19,9 @@ export const UNDO_MAX = 100;
 /** How long a value in a directive may be, by what it is. */
 export const TEXT_LIMITS = Object.freeze({ name: 200, type: 512, decl: 2048, typedef: 8192, comment: 4096, raw: 4096 });
 
+/** A control character or a line break (U+2028, U+2029 included). */
+export const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+
 /**
  * Why `text` cannot go into a directive, or null: it is too long, holds a
  * control character or a line break (it would start a second directive in a
@@ -28,7 +31,7 @@ export const TEXT_LIMITS = Object.freeze({ name: 200, type: 512, decl: 2048, typ
 export function directiveTextProblem(text, max = TEXT_LIMITS.raw) {
   const t = String(text ?? '');
   if (t.length > max) return `that is too long (at most ${max} characters)`;
-  if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t)) return 'a directive cannot hold a line break or a control character';
+  if (CONTROL.test(t)) return 'a directive cannot hold a line break or a control character';
   if (/(^|\s)#/.test(t)) return 'a directive cannot hold " #" or start with # (the .kuna file reads that as a comment)';
   return null;
 }
@@ -287,7 +290,11 @@ export class Session {
     if (this.orderOf) for (const list of groups.values()) list.sort(byBirth(this.orderOf));
     groups.set('bytes', this.#bytesDirectives().filter((d) => includeRefused || !this.refused.has(d.key)));
     const out = ORDER.flatMap((k) => groups.get(k));
-    for (const d of out) this.sent.set(d.text, d.key);
+    for (const d of out) {
+      let keys = this.sent.get(d.text);
+      if (!keys) this.sent.set(d.text, (keys = new Set()));
+      keys.add(d.key);
+    }
     return out;
   }
 
@@ -306,11 +313,18 @@ export class Session {
     return this.#directives({ qualify: nameOf }).map((d) => d.text);
   }
 
+  /** The records (their keys) that produce the directive `text`: two records can give the same text. */
+  keysOf(text) {
+    const has = (key) => this.records.has(key) || (key.startsWith('bytes:') && this.byteRuns().some((r) => `bytes:${hex(r.addr)}` === key));
+    return [...(this.sent.get(String(text || '').trim()) || [])].filter(has);
+  }
+
   /** Attach the engine's `assertions[]` rows to the records that produced them. */
   recordOutcomes(rows) {
     for (const row of rows || []) {
-      const key = this.sent.get((row.directive || '').trim());
-      if (key) this.outcomes.set(key, { status: row.status, detail: row.detail || null, fatal: !!row.fatal });
+      for (const key of this.keysOf(row.directive)) {
+        this.outcomes.set(key, { status: row.status, detail: row.detail || null, fatal: !!row.fatal });
+      }
     }
   }
 
@@ -320,14 +334,17 @@ export class Session {
 
   /**
    * The engine could not parse `directive` (the request failed on it): stop
-   * sending it until it is edited, and show why. Returns its key, or null.
+   * sending it until it is edited, and show why. Every record that produces
+   * that text is marked, since the request leaves out all of them. Returns
+   * their keys.
    */
   markRefused(directive, detail) {
-    const key = this.sent.get(directive.trim());
-    if (!key) return null;
-    this.refused.add(key);
-    this.outcomes.set(key, { status: 'refused', detail: detail || null, fatal: false });
-    return key;
+    const keys = this.keysOf(directive);
+    for (const key of keys) {
+      this.refused.add(key);
+      this.outcomes.set(key, { status: 'refused', detail: detail || null, fatal: false });
+    }
+    return keys;
   }
 
   /** The session as rail rows: `[{key, kind, text, status, detail}]`, in replay order. */

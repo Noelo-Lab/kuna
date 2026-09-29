@@ -17,7 +17,7 @@
 import { Session } from '../decompile2/session.js';
 import { Sync } from '../decompile2/collab/sync.js';
 import { Group } from '../decompile2/collab/group.js';
-import { adoptRawKeys, applyRegisters, birthOrder, changedBetween, registersOf } from '../decompile2/collab/replica.js';
+import { Replica, adoptRawKeys, applyRegisters, birthOrder, changedBetween, registersOf } from '../decompile2/collab/replica.js';
 import { sha256Js } from '../sha256.js';
 
 export const BUILD = 'b'.repeat(64);
@@ -282,9 +282,10 @@ export class Net {
 
 /** One page: what app.js does around Sync, with its own storage. */
 export class Page {
-  constructor(sim, id, { program = true, own = null, name = null, browser = null } = {}) {
+  constructor(sim, id, { program = true, own = null, name = null, browser = null, openMs = null } = {}) {
     this.sim = sim;
     this.id = id;
+    this.openMs = openMs;
     this.name = name || `P${id.slice(0, 3)}`;
     this.program = program ? PROGRAM : null;
     this.session = new Session();
@@ -319,6 +320,7 @@ export class Page {
       nameOf: (a) => a,
       toast: () => {},
       remoteChanged: ({ mode }) => {
+        this.checkOutcomes();
         if (mode) this.mode = mode;
         this.sessionChanged();
       },
@@ -330,14 +332,15 @@ export class Page {
         const own = this.#restore(hash);
         return own.size ? own : null;
       },
-      openShared: ({ session, slot, mode }) => {
+      openShared: ({ session, slot, mode, still = () => true }) => {
+        if (!still()) return Promise.resolve(false);
         this.program = PROGRAM;
         this.session = session;
         this.slot = slot;
         if (mode) this.mode = mode;
         const open = ++this.opening;
         return new Promise((done) => {
-          this.sim.clock.at(this.sim.rng.int(200), () => done(this.opening === open), this.id);
+          this.sim.clock.at(this.openMs ?? this.sim.rng.int(200), () => done(this.opening === open), this.id);
         });
       },
     };
@@ -386,10 +389,26 @@ export class Page {
     else where.delete(this.program.hash);
   }
 
-  /** app.js sessionChanged: Sync first, then save. */
+  /** app.js sessionChanged: Sync first, then save; then every record is as the engine last applied it. */
   sessionChanged() {
     this.sync.local();
     this.persist();
+    this.seen = new Map();
+    for (const [key, rec] of this.session.records) {
+      this.session.outcomes.set(key, { status: 'applied', detail: null, fatal: false });
+      this.seen.set(key, JSON.stringify(rec));
+    }
+    this.seenSession = this.session;
+  }
+
+  /** The others' changes reached the Session: a record they did not change keeps its outcome. */
+  checkOutcomes() {
+    if (this.seenSession !== this.session || !this.seen) return;
+    for (const [key, rec] of this.session.records) {
+      if (this.seen.get(key) === JSON.stringify(rec) && !this.session.outcomes.has(key)) {
+        this.sim.violations.push(`${this.id}: applying the others' changes cleared the outcome of ${key}, which did not change`);
+      }
+    }
   }
 
   /** A student's edit: `mutate(session)`, then sessionChanged; returns the registers it changed. */
@@ -527,6 +546,11 @@ export class Sim {
   /** What must hold once everything settled; returns the problems found. */
   problems() {
     const out = [...this.violations];
+    for (const p of this.pages.values()) {
+      if (p.sync.phase !== 'solo') continue;
+      if (p.slot === 'shared') out.push(`${p.id} is out of any session but still saves into the shared slot`);
+      if (p.session.orderOf) out.push(`${p.id} is out of any session but still orders its directives by a session's births`);
+    }
     this.stats.pages = this.pages.size;
     this.stats.sharedAtEnd = [...this.pages.values()].filter((p) => p.sync.shared).length;
     for (const comp of this.components()) {
@@ -553,6 +577,24 @@ export class Sim {
     return out;
   }
 }
+
+/** A joiner's earlier field (the oldest clock, `[1, page]`) is written only where the registers hold nothing. */
+const apply = Replica.prototype.apply;
+const receive = Replica.prototype.receive;
+Replica.prototype.receive = function receiving(op) {
+  this.receiving = true;
+  try {
+    return receive.call(this, op);
+  } finally {
+    this.receiving = false;
+  }
+};
+Replica.prototype.apply = function checkedApply(op) {
+  if (!this.receiving && op.c?.[0] === 1 && op.c[1] === this.peer && this.regs.has(op.k)) {
+    Sim.current?.violations.push(`${this.peer} wrote its earlier ${op.k}=${JSON.stringify(op.v)} over a field the session holds`);
+  }
+  return apply.call(this, op);
+};
 
 /** Every Group.local call goes through the current simulation's check. */
 const local = Group.prototype.local;

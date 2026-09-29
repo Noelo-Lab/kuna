@@ -35,7 +35,7 @@ async function dispatch(method, params) {
   switch (method) {
     case 'init':
       kuna = await loadKuna(params);
-      return { result: { validator: kuna.validator } };
+      return { result: { validator: kuna.validator, build: params.hashCompiled ? await kuna.buildId() : null } };
     case 'build':
       return { result: { build: await requireKuna().buildId() } };
     case 'setBinary':

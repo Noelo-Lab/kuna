@@ -83,6 +83,7 @@ class Collab {
     this.dialog = null;
     this.view = null;
     this.statusNow = null;
+    this.leftForPage = false;
   }
 
   init() {
@@ -113,7 +114,20 @@ class Collab {
     document.addEventListener('keydown', (e) => {
       if (this.following && !['Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(e.key)) this.#follow(null);
     }, { capture: true });
-    addEventListener('pagehide', () => this.group?.leave());
+    addEventListener('pagehide', (e) => {
+      if (!e.persisted) {
+        this.group?.leave();
+        return;
+      }
+      if (!this.active && !this.sync.joining) return;
+      this.leftForPage = true;
+      this.leave({ quiet: true });
+    });
+    addEventListener('pageshow', (e) => {
+      if (!e.persisted || !this.leftForPage) return;
+      this.leftForPage = false;
+      this.api.toast('You left the session when you went to another page.', { kind: 'warn', detail: 'Ask for a new invite link to join again.' });
+    });
     this.api.onBuild((build) => {
       if (this.group && this.group.build !== build) {
         this.leave({ why: 'This page\'s decompiler was updated (the site changed), so it left the session. Reload the page, then join again.' });
@@ -292,8 +306,8 @@ class Collab {
           link.close();
           return;
         }
-        inv.state = 'open';
-        this.sync.addLink(link);
+        inv.state = 'linked';
+        this.sync.addLink(link, inv.id);
         this.#inviteStatus(inv);
         this.#tellReplyTab(inv, 'open');
       }).catch((e) => {
@@ -395,21 +409,18 @@ class Collab {
     this.join = join;
     this.view = { kind: 'join', inv };
     this.#render();
-    let build;
-    let res;
-    try {
-      [build, res] = await Promise.all([this.build(), takeOffer({ me: this.me, id: inv.id, sdp: inv.d, iceServers: this.ice() })]);
-    } catch (e) {
-      if (this.join === join) {
-        this.#joinFailed(e.message === 'used' ? 'This invite link was already used: each link lets one person in. Ask for a new one.'
-          : `This browser could not make a connection: ${e.message}.`);
-      }
+    const [built, taken] = await Promise.allSettled([this.build(), takeOffer({ me: this.me, id: inv.id, sdp: inv.d, iceServers: this.ice() })]);
+    const res = taken.status === 'fulfilled' ? taken.value : null;
+    if (built.status === 'rejected' || taken.status === 'rejected' || this.join !== join) {
+      res?.cancel?.();
+      if (this.join !== join) return;
+      if (taken.status === 'rejected') {
+        this.#joinFailed(taken.reason?.message === 'used' ? 'This invite link was already used: each link lets one person in. Ask for a new one.'
+          : `This browser could not make a connection: ${taken.reason?.message}.`);
+      } else this.#joinFailed(`Could not join: ${built.reason?.message}.`);
       return;
     }
-    if (this.join !== join) {
-      res.cancel?.();
-      return;
-    }
+    const build = built.value;
     join.res = res;
     if (res.sdp === null) {
       res.ready.then((link) => this.#joined(join, link, build));
@@ -832,13 +843,25 @@ class Collab {
   #event(kind, info) {
     const name = info?.name || 'Someone';
     switch (kind) {
-      case 'joined':
+      case 'joined': {
         this.api.toast(`${name} joined.`);
-        if (this.current?.state === 'open' && !this.current.guest) {
-          this.current.guest = name;
-          this.#inviteStatus(this.current);
+        const inv = info.invite && this.invites.get(info.invite);
+        if (inv) {
+          inv.state = 'open';
+          inv.guest = name;
+          this.#inviteStatus(inv);
         }
         break;
+      }
+      case 'unjoined': {
+        const inv = info.invite && this.invites.get(info.invite);
+        if (inv && inv.state !== 'open') {
+          inv.state = 'failed';
+          inv.error = `${inv.guest || 'The other person'} did not finish joining. Make a new invite link.`;
+          this.#inviteStatus(inv);
+        }
+        break;
+      }
       case 'left':
         this.api.toast(`${name} left the session.`);
         this.presence.forget(info.peer);
@@ -910,8 +933,9 @@ class Collab {
     const [text, cls] = {
       waiting: ['Waiting for their reply link…', 'busy'],
       connecting: [`Connecting to ${inv.guest || 'them'}…`, 'busy'],
+      linked: [`Connected. ${inv.guest || 'They'} are joining…`, 'busy'],
       open: [`${inv.guest || 'They'} joined.`, 'ok'],
-      failed: [NETWORK, 'err'],
+      failed: [inv.error || NETWORK, 'err'],
     }[inv.state] || ['', ''];
     this.#status(text, cls);
     const paste = this.dialog?.querySelector('[data-paste]');

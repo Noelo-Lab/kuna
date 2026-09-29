@@ -238,9 +238,12 @@ node integrations/web/test/decompile2-collab-rtc.mjs [--late 60]
   clock. The first holds one case per defect a second review found in the glue (a guest
   with the program open, leaving and joining again, an edit made inside another page's
   apply batch, an inviter that goes away mid-join, tabs of one browser, the shared
-  order). The second runs seeded random sessions and checks that linked pages agree,
-  that each page's Session is what its registers make, and that no page sends a change
-  its student did not make.
+  order), and a third review's (two joiners bringing one field, a slow open of the
+  received program, a join that fails while it opens). The second runs seeded random
+  sessions and checks that linked pages agree, that each page's Session is what its
+  registers make, that no page sends a change its student did not make, that adding a
+  directive adds one, that applying others' changes keeps the outcomes of records they do
+  not change, and that a page out of a session leaves the shared slot.
 - **`decompile2-replay.mjs`** exports sessions made alone and shared and replays each
   `.kuna` through the native CLI: a type used by a later type, the later of two
   prototypes, and a rename chain all apply.
@@ -269,7 +272,10 @@ kept apart, following into a loading function, Undo and Cancel during someone el
 re-decompile, focus, the two-tab demo, connection errors; then a second review's: a guest
 with the program open and changes of its own, leaving and joining again, an edit made
 inside the other page's apply batch, an inviter that closes mid-join, a view setting
-changed while a change waits, Stop during a reload, earlier versions' stored changes) and
+changed while a change waits, Stop during a reload, earlier versions' stored changes; and
+a third review's: an unreadable directive twice without a re-decompile loop, a join that
+fails while the program opens, a queued change behind a replaced open, a join whose build
+id fails after connecting, the back/forward cache, a session's saved copy offered again) and
 **`decompile2-collab-rtc.mjs`** (two Chrome processes over WebRTC; SKIPPED only when
 two peer connections in one page cannot connect on the machine; `--late 60` opens the
 reply a minute late). Plain

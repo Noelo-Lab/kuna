@@ -5,6 +5,7 @@
 // server) is deflated, base64url JSON holding only what a peer needs to
 // connect. DOM-free.
 import { validSdp } from './sdp.js';
+import { CONTROL } from '../session.js';
 
 export const PROTOCOL = 1;
 export const MAX_PEERS = 8;
@@ -19,7 +20,6 @@ const ID = /^[a-z0-9]{10}$/;
 const HASH = /^[0-9a-f]{64}$/;
 const ADDR = /^0x[0-9a-f]{1,16}$/;
 
-const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 const plain = (v, max) => typeof v === 'string' && v.length <= max && !CONTROL.test(v);
 const isName = (v) => plain(v, 40) && v.trim().length > 0;
 const isPeer = (v) => typeof v === 'string' && PEER.test(v);
@@ -209,6 +209,11 @@ export function limiter(rate, burst = rate, now = () => Date.now()) {
       return true;
     },
   };
+}
+
+/** Run `fn`, ignoring what it throws (closing what may already be closed). */
+export function quietly(fn) {
+  try { return fn(); } catch (_) { return undefined; }
 }
 
 /** A fresh random id of `n` characters from [a-z0-9]. */

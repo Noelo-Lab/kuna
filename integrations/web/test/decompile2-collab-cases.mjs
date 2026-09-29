@@ -498,6 +498,47 @@ await test('second review #6 an edit lost on a link that dies reaches that page 
   }
 });
 
+// ── a third review ─────────────────────────────────────────────────────────
+await test('third review #14 a message over the channel\'s limit in UTF-8 bytes is not sent, even under it in characters', async () => {
+  const big = { name: '€'.repeat(90000), size: 100, hash: 'a'.repeat(64) };
+  const ana = member('aaaaaaaa', 'Ana', { file: big, bytes: new Uint8Array(100) });
+  ana.g.create();
+  const ben = member('bbbbbbbb', 'Ben');
+  const [a] = invite(ana, ben);
+  await settle(60);
+  const over = a.texts.filter((t) => W.utf8Length(t) > W.MAX_MESSAGE);
+  assert.ok(a.texts.length > 0);
+  assert.deepEqual(over.map((t) => t.slice(0, 20)), [], 'nothing over the limit reached the channel');
+  ana.g.leave();
+  ben.g.leave();
+});
+await test('third review #8 a directive added after the registers gave this page\'s own back is added, not written over one', () => {
+  const s = new S.Session();
+  s.setRaw('raw:ana00000:1', 'readonly 0x2000+8');
+  s.addRaw('volatile 0x3000+4');
+  R.adoptRawKeys(s, 'ana00000');
+  assert.deepEqual([...s.records.values()].map((r) => r.text).sort(), ['readonly 0x2000+8', 'volatile 0x3000+4']);
+  s.addRaw('readonly 0x2100+4');
+  R.adoptRawKeys(s, 'ana00000');
+  assert.equal(s.records.size, 3, 'and the next one too');
+});
+await test('third review #9 applying registers leaves a record whose value did not change as the engine last saw it', () => {
+  const r = new R.Replica('ana00000');
+  r.set(`fn:${SUM}`, 'summation');
+  r.set(`var:${MAIN}:v1:name`, 'total');
+  r.set('data:0x4010:type', 'int');
+  r.set('data:0x4010:name', 'counter');
+  r.set('byte:0x11e1', '90');
+  const s = new S.Session();
+  R.applyRegisters(s, r, [...r.regs.keys()]);
+  s.assertionsFor(MAIN);
+  s.recordOutcomes(s.assertionsFor(MAIN).map((directive) => ({ directive, status: 'applied' })));
+  const before = [...s.outcomes.keys()].sort();
+  assert.ok(before.length >= 4);
+  R.applyRegisters(s, r, [...r.regs.keys()]);
+  assert.deepEqual([...s.outcomes.keys()].sort(), before, 'no outcome was cleared');
+});
+
 // ── the BroadcastChannel knock ─────────────────────────────────────────────
 const SDP = 'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n' +
   'c=IN IP4 0.0.0.0\r\na=candidate:1 1 udp 2113937151 127.0.0.1 40000 typ host\r\na=ice-ufrag:abcd\r\na=ice-pwd:' + 'x'.repeat(24) +

@@ -185,14 +185,26 @@ export class Replica {
 /**
  * Give this page's own raw directives (`raw:<n>`) their shared name
  * (`raw:<me>:<n>`), so a page that joins again later under another id does
- * not send them twice. Returns how many it renamed.
+ * not send them twice. A shared name already in use (a directive of this
+ * page's that came back from the registers) is never taken again: the
+ * directive gets the next free number, and the Session's own numbering moves
+ * past every one of this page's shared names. Returns how many it renamed.
  */
 export function adoptRawKeys(session, me) {
+  const mine = new RegExp(`^raw:${me}:(\\d+)$`);
+  let top = 0;
+  for (const key of session.records.keys()) {
+    const m = mine.exec(key);
+    if (m) top = Math.max(top, Number(m[1]));
+  }
   let n = 0;
   for (const [key, rec] of [...session.records]) {
     const own = /^raw:(\d+)$/.exec(key);
     if (!own || rec.kind !== 'raw') continue;
-    const shared = `raw:${me}:${own[1]}`;
+    let num = Number(own[1]);
+    if (session.records.has(`raw:${me}:${num}`)) num = ++top;
+    else top = Math.max(top, num);
+    const shared = `raw:${me}:${num}`;
     session.records.delete(key);
     session.records.set(shared, rec);
     if (session.outcomes.has(key)) session.outcomes.set(shared, session.outcomes.get(key));
@@ -200,6 +212,7 @@ export function adoptRawKeys(session, me) {
     if (session.refused.delete(key)) session.refused.add(shared);
     n++;
   }
+  if (session.rawSeq < top) session.rawSeq = top;
   return n;
 }
 
@@ -298,41 +311,54 @@ export function recordKeyOf(register) {
  * is a type and a name together: it exists only while both hold a value (a
  * half written null, as when one page deletes a global another renames at the
  * same time, removes it), so every page makes the same Session from the same
- * registers whatever it held before.
+ * registers whatever it held before. A record whose value does not change is
+ * left alone, so it keeps what the engine last said of it (its outcome).
  */
 export function applyRegisters(session, replica, keys) {
   const done = new Set();
   const field = (k) => (replica.regs.has(k) ? replica.value(k) : undefined);
+  const rec = (key) => session.records.get(key) || null;
   let bytes = false;
   for (const key of keys) {
     const parts = key.split(':');
     const v = replica.value(key);
     switch (parts[0]) {
       case 'var': {
-        const id = `${parts[1]}:${parts[2]}`;
-        if (done.has('var:' + id)) break;
-        done.add('var:' + id);
-        session.setVar(parts[1], parts[2], { name: field(`var:${id}:name`), type: field(`var:${id}:type`) });
+        const [, func, sym] = parts;
+        const id = `var:${func}:${sym}`;
+        if (done.has(id)) break;
+        done.add(id);
+        const name = field(`${id}:name`);
+        const type = field(`${id}:type`);
+        const now = rec(id);
+        const nextName = name === undefined ? now?.name ?? null : (name && name !== sym ? name : null);
+        const nextType = type === undefined ? now?.type ?? null : type || null;
+        if (nextName !== (now?.name ?? null) || nextType !== (now?.type ?? null)) session.setVar(func, sym, { name, type });
         break;
       }
-      case 'fn': session.setFunctionName(parts[1], v); break;
-      case 'proto': session.setProto(parts[1], v); break;
+      case 'fn': if ((rec(key)?.name ?? null) !== (v || null)) session.setFunctionName(parts[1], v); break;
+      case 'proto': if ((rec(key)?.decl ?? null) !== (v || null)) session.setProto(parts[1], v); break;
       case 'data': {
         const addr = parts[1];
-        if (done.has('data:' + addr)) break;
-        done.add('data:' + addr);
-        const type = field(`data:${addr}:type`);
-        const name = field(`data:${addr}:name`);
+        const id = `data:${addr}`;
+        if (done.has(id)) break;
+        done.add(id);
+        const type = field(`${id}:type`);
+        const name = field(`${id}:name`);
         if (type === undefined && name === undefined) break;
-        session.setData(addr, type || null, name || null);
+        const now = rec(id);
+        const whole = type && name;
+        if (whole ? now?.type !== type || now?.name !== name : !!now) session.setData(addr, type || null, name || null);
         break;
       }
-      case 'typedef': session.setTypedef(parts[1], v); break;
-      case 'comment': session.setComment(parts[1], parts[2], v); break;
+      case 'typedef': if ((rec(key)?.decl ?? null) !== (v || null)) session.setTypedef(parts[1], v); break;
+      case 'comment': if ((rec(key)?.text ?? null) !== (v || null)) session.setComment(parts[1], parts[2], v); break;
       case 'byte': {
         const addr = BigInt(parts[1]);
-        if (v === null) session.bytes.delete(addr);
-        else session.bytes.set(addr, parseInt(v, 16));
+        const next = v === null ? undefined : parseInt(v, 16);
+        if (session.bytes.get(addr) === next) break;
+        if (next === undefined) session.bytes.delete(addr);
+        else session.bytes.set(addr, next);
         bytes = true;
         break;
       }
@@ -340,7 +366,10 @@ export function applyRegisters(session, replica, keys) {
       case 'rawf': {
         const func = parts[0] === 'rawf' ? parts[1] : null;
         const [peer, n] = parts.slice(-2);
-        session.setRaw(`raw:${peer}:${n}`, v, func);
+        const id = `raw:${peer}:${n}`;
+        const now = rec(id);
+        const text = v ? v.trim() : null;
+        if ((now?.text ?? null) !== text || (now ? now.func || null : func) !== func) session.setRaw(id, v, func);
         break;
       }
       default: break;

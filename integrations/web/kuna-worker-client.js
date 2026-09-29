@@ -81,18 +81,21 @@ export class KunaWorkerClient {
         worker,
       );
     };
-    this.readyPromise = this.request('init', this.initParams).then((info) => {
+    const params = { ...this.initParams };
+    if (this.build && this.validator === null) params.hashCompiled = true;
+    this.readyPromise = this.request('init', params).then((info) => {
       if (generation === this.generation && info && typeof info === 'object') {
         const first = this.validator === undefined;
-        const changed = !first && (info.validator ?? null) !== this.validator;
-        this.validator = info.validator ?? null;
-        if (changed || (!first && this.validator === null)) {
-          const was = this.build;
-          this.build = null;
-          delete this.initParams.prevBuild;
-          if (was && changed) this.onbuild?.(null, was);
-          else if (was) this.buildId().then((now) => { if (now !== was) this.onbuild?.(now, was); }).catch(() => {});
+        const validator = info.validator ?? null;
+        const was = this.build;
+        if (!first) {
+          if (info.build) this.build = info.build;
+          else if (validator === null || validator !== this.validator) this.build = null;
+          if (was && this.build !== was) this.onbuild?.(this.build, was);
         }
+        this.validator = validator;
+        if (this.build) this.initParams.prevBuild = { validator, build: this.build };
+        else delete this.initParams.prevBuild;
       }
       return info;
     });
@@ -140,18 +143,28 @@ export class KunaWorkerClient {
 
   /**
    * The engine's build id: the SHA-256 of the wasm this Worker compiled,
-   * worked out on the first call (nothing is hashed until someone asks). A
-   * restarted Worker that compiled a different wasm calls `onbuild`.
+   * worked out on the first call (nothing is hashed until someone asks), and
+   * asked again of the new Worker when a cancel restarts it meanwhile. A
+   * restarted Worker keeps it while the server's validator says the wasm is
+   * the same; with no validator it hashes what it compiled itself (no second
+   * download); `onbuild` hears when it changed.
    */
   async buildId() {
-    await this.ready();
-    if (this.build) return this.build;
-    const generation = this.generation;
-    const { build } = await this.request('build');
-    if (generation !== this.generation) return this.buildId();
-    this.build = build;
-    this.initParams.prevBuild = { validator: this.validator, build };
-    return build;
+    for (;;) {
+      await this.ready();
+      if (this.build) return this.build;
+      const generation = this.generation;
+      try {
+        const { build } = await this.request('build');
+        if (generation !== this.generation) continue;
+        this.build = build;
+        this.initParams.prevBuild = { validator: this.validator, build };
+        return build;
+      } catch (error) {
+        if (error instanceof KunaWorkerCancelledError || generation !== this.generation) continue;
+        throw error;
+      }
+    }
   }
 
   checkGeneration(generation) {
