@@ -4388,6 +4388,25 @@ tier = "transform"
 symptoms = "an int widened to long beside a long operand, ((long *)a0)[1] + (long)a1|a widened index times a literal, (long)i * 8 + 0x2b200|v = (unsigned long)i; into a variable already declared unsigned long|a store of (long)i through a long pointer|memchr(p,c,(long)n) for an int n"
 
 [[settable]]
+option = "conststr"
+values = "off|strings|objects|on"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "constant-address-global"
+strength = "HARD"
+rewind = "P9"
+issue = "castcampaign-conststr"
+summary = "Print a constant address as what it addresses where upstream's string literal and `globalref` both fall through to the forced-hex integer behind a cast (or to the address of an unnamed global). `strings`: a zero-character literal at a NUL that ends a run of at least two text characters (valid UTF-8, no control but tab, newline and carriage return) begun at a NUL, or filling the 64 bytes read back, is the terminator of that string and so a genuine `\"\"` a linker's tail merge placed there, which `emptystrconst` declined because the bytes AFTER it are not string data (gcc -O2 and clang put the program's only `\"\"` at the NUL of `\"tab\\there\\n\"`; `nanf((char *)0x2011)` becomes `nanf(\"\")`); and a character-pointer constant whose bytes the UTF-8 check rejects prints the literal of its bytes, each byte no valid character covers as a `\\x` escape and the literal split where a hex digit follows one (gnulib's GB18030 quote `return &dat_238fe;` becomes `return \"\\xa1\\ae\";`). Both need the pointed-to type to be a one-byte character type, as upstream's literal does, C output, an address inside a section the loader classifies as program data (never code, which is read-only too), and every byte through the NUL read-only; a writable buffer never prints as a literal and no literal is formed from two addresses. `objects`: `globalref` refuses a constant whose object the function also reads directly at another type, and a callee that only moves a word through its parameter leaves the pointee `undefinedN`, so the caller printed `sub_23be0((unsigned long *)0x846e8,a0)` beside `strcmp(a0,dat_846e8)`; an `undefinedN` pointee says nothing about the object, so it is declared at the one integer, `bool` or pointer type of that size its direct accesses agree on (or that another use of the same constant names), and `&dat_846e8` goes to a reader for which upstream's cast policy never casts to a pointer to unknown (`CastStrategyC::castStandard`, cast.cc:122): an argument, a returned value, a copy, a stored value or an equality test. A signed object read directly as `undefinedN`, an object read at another width, a record whose members the function reads directly, and two known pointee types still keep their casts. Measured over the 45-binary castbench corpus, both arms of one build: casts on the 4,815 functions kuna and IDA both emit go 32,073 -> 31,965 (53 functions fewer, 0 more); every changed line is exactly a `(T *)0x<addr>` becoming `&dat_<addr>` or `dat_<addr>` (114 lines) or a GB18030 quote becoming its literal (60 lines), and `conststr off` is byte-identical to the build without it."
+use_when = "On by default. `strings` alone keeps `globalref`'s refusals, `objects` alone keeps upstream's literals; `off` reproduces kuna's earlier `(char *)0x2011` and `(unsigned long *)0x846e8`, for example when diffing against Ghidra. The value computed is the same in every setting: a literal holds exactly the image's bytes and `&dat_<addr>` is the address it replaces wherever `dat_<addr>` is placed there."
+example = "option conststr strings"
+source_decompiler = "ida"
+inspiration = "The 2026-09-29 constant-address census over the 45 castbench binaries: of the 701 pointer-typed constants kuna printed behind a cast on the 4,815 functions it shares with IDA (IDA: none), 222 are not addresses (0x1, -1), 6 are code, 466 are program data `globalref` refused -- 387 because the function also reads the storage directly, 77 for two pointee types -- and none is a string kuna did not render; IDA prints `&qword_846E8` and `sub_23BE0((void **)&qword_846E8, gr_name)` for the unknown-pointee shape. The strings kuna did not render print no cast: gnulib's `gettext_quote` GB18030 quotes in every coreutils/diffutils/findutils/grep/tar binary, and the tail-merged `\"\"` of small programs (clang -O2 `nanf(\"\")`)."
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "a string argument prints as a cast address, nanf((char *)0x2011) or strcmp(s,(char *)0x2011), where the source has \"\"|return &dat_238fe; for a GB18030 or Latin-1 string literal|(unsigned long *)0x846e8 passed to a callee while the same function reads dat_846e8 directly|a constant address you want kept as an address (flip off)"
+
+[[settable]]
 option = "ptrdepthcap"
 values = "on|off"
 default = "off"

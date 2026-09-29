@@ -5408,6 +5408,11 @@ fn check_globalref_round_trip(run_native: bool) {
             "--option",
             "globalref",
             arm,
+            // `w_glyph`'s GB18030 bytes are a string `conststr` prints as a
+            // literal; this test pins what `globalref` names.
+            "--option",
+            "conststr",
+            "off",
         ]);
         assert!(ok, "kuna decompile-project failed: {stderr}");
         let header = std::fs::read_to_string(out.join("globalref_x86_64.h")).unwrap();
@@ -5513,6 +5518,163 @@ int main(void) {
   long g = w_glyph(); long h = w_direct(); long i = w_numeric(1); long j = w_width();
   long k = (long)w_count(0x7fffffff);
   printf("%ld %ld %ld %d %d %d %ld %ld %ld %ld %ld\n", a, b, c, d, e, f, g, h, i, j, k);
+  return 0;
+}
+"#;
+
+/// `conststr`: a constant address prints as what it addresses. The fixture
+/// (gcc and clang, -O0 and -O2) passes a tail-merged `""`, returns gnulib's
+/// GB18030 quote `"\xa1\ae"`, and hands a callee that only moves a word the
+/// address of a `long` and of a `char *` it then reads directly; two controls
+/// pass a writable buffer and storage the caller reads at another width. Each
+/// build is exported with the option on and off, the witness functions are
+/// compiled exactly as printed against the export's header with each
+/// `dat_<addr>` placed at `<addr>` and the fixture's data mapped where the
+/// binary keeps it, and both arms must print what the binary prints.
+#[test]
+fn a_constant_address_as_what_it_addresses_round_trips_through_the_printed_c() {
+    let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let sp = specs();
+    let witnesses = ["w_empty", "w_quote", "w_word", "w_name", "w_blob", "w_buf", "w_wide"];
+    let builds = ["conststr_gcc_O0_x86_64", "conststr_gcc_O2_x86_64", "conststr_clang_O0_x86_64", "conststr_clang_O2_x86_64"];
+    let dir = std::env::temp_dir().join(format!("kuna-conststr-rt-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for build in builds {
+        let bin = fixtures.join(build);
+        let Ok(run) = Command::new(&bin).output() else {
+            eprintln!("conststr round trip: the x86-64 fixture does not run here, skipped");
+            return;
+        };
+        let expected = String::from_utf8_lossy(&run.stdout).trim().to_string();
+        assert_eq!(expected, "286768771227614 a10765 a1af 42 -1 12 7 9064 2", "{build}: the fixture itself");
+        let harness = dir.join(format!("{build}-main.c"));
+        std::fs::write(&harness, CONSTSTR_HARNESS.replace("@FIXTURE@", bin.to_str().unwrap())).unwrap();
+        for arm in ["on", "off"] {
+            let out = dir.join(format!("{build}-{arm}"));
+            let (_, stderr, ok) = run_kuna(&[
+                "decompile-project",
+                bin.to_str().unwrap(),
+                "-o",
+                out.to_str().unwrap(),
+                "--sleighpath",
+                sp.as_str(),
+                "--option",
+                "conststr",
+                arm,
+            ]);
+            if !ok && is_specs_skip(&stderr) {
+                eprintln!("conststr round trip: skipping (no `.sla`; run `make specs`)");
+                return;
+            }
+            assert!(ok, "{build} {arm}: kuna decompile-project failed: {stderr}");
+            let code = std::fs::read_to_string(out.join(format!("{build}.c"))).unwrap();
+            let mut printed = format!("#include \"{build}.h\"\n");
+            for w in witnesses {
+                let head = format!("// Function: {w} @ ");
+                let at = code.find(&head).unwrap_or_else(|| panic!("{build} {arm}: no `{w}` in the export"));
+                let end = code[at + head.len()..].find("// Function: ").map_or(code.len(), |e| at + head.len() + e);
+                printed.push_str(&code[at..end]);
+            }
+            let literal = printed.contains("\"\\xa1\\ae\"") && printed.contains("\"\\xa1\\xaf\"");
+            assert_eq!(literal, arm == "on", "{build} {arm}: the GB18030 quotes\n{printed}");
+            for callee in ["set_slot(", "set_name("] {
+                let named = printed.contains(&format!("{callee}&dat_"));
+                assert_eq!(named, arm == "on", "{build} {arm}: `{callee}` naming\n{printed}");
+            }
+            assert!(printed.contains("take(\"tab\\there\\n\")"), "{build} {arm}\n{printed}");
+            if build == "conststr_gcc_O2_x86_64" {
+                let tail = if arm == "on" { "take(\"\");" } else { "take((char *)0x3000200d);" };
+                assert!(printed.contains(tail), "{build} {arm}: expected `{tail}`\n{printed}");
+            }
+            assert!(!printed.contains("take(\"H") && !printed.contains("take(\"hi"), "{build} {arm}: a writable buffer printed as a literal\n{printed}");
+            let header = std::fs::read_to_string(out.join(format!("{build}.h"))).unwrap();
+            let mut names: Vec<String> = Vec::new();
+            for (i, _) in printed.match_indices("dat_") {
+                let hex: String = printed[i + 4..].chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+                let name = format!("dat_{hex}");
+                if !hex.is_empty() && !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+            let width = |n: &str| {
+                if printed.contains(&format!("{n} = 0x48;")) {
+                    "char"
+                } else if printed.contains(&format!("(long){n};")) {
+                    "int"
+                } else if printed.contains(&format!("strlen({n})")) {
+                    "char *"
+                } else {
+                    "long"
+                }
+            };
+            let undeclared: String = names
+                .iter()
+                .filter(|n| !header.contains(&format!(" {n};")) && !header.contains(&format!(" {n}[];")))
+                .map(|n| format!("extern {} {n};\n", width(n)))
+                .collect();
+            printed.insert_str(printed.find('\n').unwrap() + 1, &undeclared);
+            std::fs::write(out.join("printed.c"), &printed).unwrap();
+            for cc in ["gcc", "clang"] {
+                if Command::new(cc).arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+                    eprintln!("conststr round trip: no `{cc}`");
+                    continue;
+                }
+                let exe = out.join(format!("rt-{cc}"));
+                let mut args: Vec<String> =
+                    ["-std=gnu11", "-w", "-O0", "-fno-builtin", "-no-pie", "-DCONSTSTR_CALLEES_ONLY", "-o"]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
+                args.push(exe.to_str().unwrap().to_string());
+                args.push(harness.to_str().unwrap().to_string());
+                args.push(out.join("printed.c").to_str().unwrap().to_string());
+                args.push(fixtures.join("conststr_x86_64.c").to_str().unwrap().to_string());
+                for n in &names {
+                    args.push(format!("-Wl,--defsym,{n}=0x{}", &n[4..]));
+                }
+                let built = Command::new(cc).args(&args).current_dir(&out).output().expect("spawn cc");
+                assert!(
+                    built.status.success(),
+                    "{build} {arm}/{cc}: the printed functions did not compile:\n{}\n{printed}",
+                    String::from_utf8_lossy(&built.stderr)
+                );
+                let run = Command::new(&exe).output().expect("run the round trip");
+                let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
+                assert_eq!(got, expected, "{build} {arm}/{cc}: the printed functions compute something else:\n{printed}");
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The `conststr` round trip's `main`: map the fixture's non-executable load
+/// segments at their own addresses, then call the printed witnesses as the
+/// fixture's own `main` does.
+const CONSTSTR_HARNESS: &str = r#"#include <elf.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <sys/mman.h>
+#include <unistd.h>
+long w_empty(const char *); const char *w_quote(const char *); long w_word(long); long w_name(char *);
+long w_blob(void); long w_buf(void); long w_wide(long);
+int main(void) {
+  int fd = open("@FIXTURE@", O_RDONLY);
+  Elf64_Ehdr eh; pread(fd, &eh, sizeof eh, 0);
+  for (int i = 0; i < eh.e_phnum; i++) {
+    Elf64_Phdr ph; pread(fd, &ph, sizeof ph, eh.e_phoff + i * sizeof ph);
+    if (ph.p_type != PT_LOAD || (ph.p_flags & PF_X)) continue;
+    unsigned long lo = ph.p_vaddr & ~0xfffUL, hi = (ph.p_vaddr + ph.p_memsz + 0xfff) & ~0xfffUL;
+    if (mmap((void *)lo, hi - lo, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) != (void *)lo) return 2;
+    pread(fd, (void *)ph.p_vaddr, ph.p_filesz, ph.p_offset);
+  }
+  const char *q = w_quote("`");
+  const char *r = w_quote("'");
+  long a = w_empty("x");
+  long b = w_word(41); long c = w_word(-3); long d = w_name("abcd"); long e = w_blob(); long f = w_buf();
+  long g = w_wide(0x100000002L);
+  printf("%ld %02x%02x%02x %02x%02x %ld %ld %ld %ld %ld %ld\n", a, (unsigned char)q[0], (unsigned char)q[1],
+         (unsigned char)q[2], (unsigned char)r[0], (unsigned char)r[1], b, c, d, e, f, g);
   return 0;
 }
 "#;

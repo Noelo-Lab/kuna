@@ -600,6 +600,11 @@ kuna_options! { self, p1;
         self.cast_widen = mode;
         Ok(msg)
     },
+    "conststr" => {
+        let (mode, msg) = crate::kuna_conststr::OptionConstStr.apply(p1)?;
+        self.const_str = mode;
+        Ok(msg)
+    },
     "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
     "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
     "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),

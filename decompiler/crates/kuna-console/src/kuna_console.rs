@@ -207,6 +207,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "callbacktype" => conf.callbacktype.as_str(),
         // (kuna `castwiden`) Three-valued, so it reports its own token.
         "castwiden" => conf.cast_widen.as_str(),
+        // (kuna `conststr`) Four-valued, so it reports its own token.
+        "conststr" => conf.const_str.as_str(),
         "retpushedhalf" => on_off(conf.ret_pushed_half),
         "inputparamgap" => on_off(conf.input_param_gap),
         // (kuna `rustabi`) Three-valued, so it reports its own token.

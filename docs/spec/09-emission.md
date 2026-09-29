@@ -1765,11 +1765,52 @@ prints as a literal (`kuna_elemptr.rs (reaches_element_pointer)`, 05-types
 the first zero byte holds. The upstream symbol path (a read-only character-array symbol) does
 not consult the bound.
 
-**A character pointer the probe declines is still an address.** When the bytes
-at a `char *` constant do not decode as a string — the GB18030 quote glyphs
-gnulib's `gettext_quote` returns (`a1 07 65 00`) are the common case — the
-constant falls through to the pointer arm's casted-hex print, and with
-`globalref` on (§9.9) to `&dat_<addr>` declared `char`.
+**A character pointer the probe declines is still an address — unless it is a
+string (kuna `conststr`).** When the bytes at a `char *` constant do not decode
+as a string — the GB18030 quote glyphs gnulib's `gettext_quote` returns
+(`a1 07 65 00`) are the common case — upstream falls through to the pointer
+arm's casted-hex print, and with `globalref` on (§9.9) to `&dat_<addr>` declared
+`char`. With option `conststr` set to `strings` or `on` (the default is `on`),
+`printc.rs (PrintC::conststr_byte_literal)` reads the bytes itself, up to the
+NUL within the string manager's 2,048-byte limit, and prints the literal of
+exactly those bytes (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_conststr.rs
+(byte_literal)`): a byte that begins a valid UTF-8 character is spelled as
+`print_unicode` spells it when that spelling is its own bytes (an ASCII
+character, escaped or not, or a multi-byte character printed raw), and every
+other byte is a `\x` escape of its value, so `return &dat_238fe;` prints
+`return "\xa1\ae";`. Upstream escapes a codepoint rather than its bytes
+(`\x80` for `c2 80`), and C's `\x` takes every hex digit after it, so such a
+character is spelled byte by byte here and the literal is split (`"\xa1" "e"`)
+where the next character is a hex digit. It needs everything upstream's literal
+needs — a one-byte character pointee, a read-only address, C output — and two
+more things: every byte through the NUL is read-only, and the address lies in a
+section the loader classifies as program data (`Architecture::globalref_ranges`,
+§9.9), because code is read-only too: `tail`'s file-system magic numbers
+(`a0 == (char *)0x6969`) land in `.text` and would otherwise print as byte soup.
+And a pointer-aligned address whose pointer-sized word, in the image's byte order,
+is the address of program data or code (`Architecture::globalref_ranges`,
+`Architecture::litpool_const`) holds a pointer table, not a string: `kmod`'s
+command table, reached through a `char *` variable the function also reads
+eight bytes at a time, keeps `&dat_27d40` rather than printing `"\xba\xb1\x01"`.
+A writable buffer never prints as a literal.
+
+The same option keeps a genuine empty string that `emptystrconst` declines. A
+linker that merges strings stores the program's only `""` at the terminating NUL
+of another literal, so the bytes after it are whatever follows that literal —
+gcc -O2 and clang place `""` at the end of `"tab\there\n"`, followed by the
+GB18030 quote bytes, and `nanf("")` printed `nanf((char *)0x2011)`. The bytes
+*before* the NUL are the evidence there: `printc.rs
+(PrintC::conststr_empty_tail)` reads back up to 64 bytes and
+`kuna_conststr.rs (terminates_string)` accepts the NUL as a string's terminator
+when the run that ends at it is text — valid UTF-8 with no control character
+but `\t`, `\n` and `\r` — at least two characters long, and begins at a NUL or
+fills the window. The maze of §9.4's witness opens its section's data after
+other data, never right after a string's characters, and so still prints as its
+address; so does any zero byte in code. Pinned by `tests/stages/kuna-conststr.xml`
+(two passes) and by the `conststr` round trip in
+`decompiler/crates/kuna-cli/tests/decompile_all_cli.rs`, which compiles the
+printed fixture functions with gcc and clang at -O0 and -O2 and requires them to
+print what the binary prints.
 
 **Comments.** Comments reach the output through the P0 knowledge plane, never
 inline in the IR: analysis passes call `decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
@@ -2514,6 +2555,29 @@ takes its address (`GlobalInfo::elem`): its subscripts read the element that
 declaration names. A Varnode of that storage at another type, such as its value
 before a call, which nothing prints, is not a read of it at that type, because
 every walk over the Varnodes holding it agreed on the pointer.
+
+**An unknown pointee names nothing (kuna `conststr`).** A callee that only
+moves a word through its parameter leaves the pointee `undefinedN`, so its
+caller passes `(unsigned long *)0x846e8` while reading `dat_846e8` directly as
+a `char *` in the next statement, and the direct-access refusal keeps the cast
+(`tar`'s `assign_string(&volume_label, ...)`; IDA prints `&qword_846E8`). With
+option `conststr` set to `objects` or `on`, the unknown pointee is treated as
+what it is, the absence of a type: `Plan::object_named_by_reads` declares the
+object at the one type the function's direct accesses agree on
+(`Plan::direct_type_at`) when that is an integer, `bool` or pointer of the
+unknown's size, and `Seen::merge` takes an unknown pointee and such a type of the
+same size, read at one address by two uses, as one object named by the known one
+(`kuna_globalref.rs (names_unknown)`). The reader of the constant must be one
+that takes the new pointer where it took the pointer to unknown — an argument, a
+returned value, a copy, a stored value or an equality test
+(`unknown_reader_converts`) — since upstream's cast policy never casts to a
+pointer to unknown (`cast.rs (CastStrategyC::cast_standard)`: "don't cast
+pointers to unknown"), which is exactly how a variable of the object's type in
+that position already prints. The direct accesses and the name then agree, so the
+header's declaration is the type every body reads. What still keeps its cast: a
+signed object the function writes as `undefinedN` (a zero-extension of an
+unknown prints bare and means unsigned), an object read at another width, a
+record whose members the function reads directly, and two known pointee types.
 
 **The value is the binary's.** `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs
 (a_constant_address_named_as_a_global_round_trips_through_the_printed_c)`

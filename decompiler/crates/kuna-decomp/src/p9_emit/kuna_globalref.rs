@@ -103,14 +103,17 @@ impl Seen {
     /// same object as an unsigned one of its size, as [`same_object`] reads a
     /// direct access -- the undefined words a copy reads where a callee's
     /// parameter reads the elements `elemptr` gave it -- and the typed one names it.
-    fn merge(prev: Option<Seen>, to: Rc<Datatype>, sized: bool) -> Seen {
+    /// `objects` (kuna `conststr`): so is one of any integer, `bool` or pointer
+    /// type of its size, since the unknown says nothing about the object.
+    fn merge(prev: Option<Seen>, to: Rc<Datatype>, sized: bool, objects: bool) -> Seen {
         let is_void = to.get_metatype() == type_metatype::TYPE_VOID;
         let unknown_of = |a: &Datatype, b: &Datatype| {
-            sized
+            (sized
                 && a.get_metatype() == type_metatype::TYPE_UNKNOWN
                 && b.get_metatype() == type_metatype::TYPE_UINT
                 && a.get_size() == b.get_size()
-                && a.get_size() > 1
+                && a.get_size() > 1)
+                || (objects && a.get_metatype() == type_metatype::TYPE_UNKNOWN && names_unknown(b, a))
         };
         match prev {
             None | Some(Seen::Void(_)) if is_void => Seen::Void(to),
@@ -144,6 +147,9 @@ pub struct Plan {
     indexed: HashSet<u64>,
     /// Every global this function's C names, by address.
     pub minted: BTreeMap<u64, Minted>,
+    /// (kuna `conststr`) An `undefinedN` pointee names the object its direct
+    /// reads type.
+    objects: bool,
 }
 
 /// Build the plan for `fd`. Off (and empty) unless the option is on, the image
@@ -179,7 +185,7 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
                     indexed.insert(off);
                 }
                 let seen = pointees.remove(&off);
-                pointees.insert(off, Seen::merge(seen, to, arch.elem_ptr));
+                pointees.insert(off, Seen::merge(seen, to, arch.elem_ptr, arch.const_str.objects()));
             }
         } else if data_space.is_some() && v.get_addr().get_space().map(|s| s.get_index()) == data_space {
             let unnamed = in_ranges(&arch.globalref_ranges, v.get_offset())
@@ -206,7 +212,8 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
         }
     }
     let trace = std::env::var_os("KUNA_GLOBALREF_TRACE").is_some();
-    Plan { on: true, trace, numeric, direct, pointees, indexed, minted: BTreeMap::new() }
+    let objects = arch.const_str.objects();
+    Plan { on: true, trace, numeric, direct, pointees, indexed, minted: BTreeMap::new(), objects }
 }
 
 /// (kuna `elemptr`) Is `vn` the base of the `PTRADD` `op`, indexed by a value
@@ -284,6 +291,14 @@ impl Plan {
         if matches!(object.get_metatype(), type_metatype::TYPE_CODE | type_metatype::TYPE_SPACEBASE) {
             return Err(Refusal::Code);
         }
+        if self.objects
+            && pointee.get_metatype() == type_metatype::TYPE_UNKNOWN
+            && names_unknown(&object, &pointee)
+            && object.get_metatype() != type_metatype::TYPE_UINT
+            && !unknown_reader_converts(fd, op, vn)
+        {
+            return Err(Refusal::TwoTypes);
+        }
         let unknown = object.get_metatype() == type_metatype::TYPE_VOID;
         if pointee.get_metatype() == type_metatype::TYPE_VOID && !void_reader_converts(fd, op, vn) {
             return Err(Refusal::VoidReader);
@@ -295,7 +310,7 @@ impl Plan {
             return Err(Refusal::Symbol);
         }
         let (decl_type, unknown) = if !unknown {
-            (object, false)
+            (self.object_named_by_reads(fd, op, vn, off, &object).unwrap_or(object), false)
         } else if let Some(read) = self.direct_type_at(off) {
             (read, false)
         } else {
@@ -323,6 +338,28 @@ impl Plan {
         }
         self.minted.entry(off).or_insert(Minted { decl_type, unknown, array });
         Ok(())
+    }
+
+    /// (kuna `conststr`) The type of an object the constant points at as
+    /// `undefinedN`: the one type every direct access of the function reads or
+    /// writes it at, when that is an integer, `bool` or pointer of the unknown's
+    /// size and the reader takes a pointer to it where it took the pointer to
+    /// unknown. Upstream's cast policy never casts to a pointer to unknown
+    /// (`CastStrategyC::castStandard`, cast.cc:122), so the reader is what a
+    /// variable of the new type would print as.
+    fn object_named_by_reads(
+        &self,
+        fd: &Funcdata,
+        op: OpId,
+        vn: VarnodeId,
+        off: uintb,
+        object: &Rc<Datatype>,
+    ) -> Option<Rc<Datatype>> {
+        if !self.objects || object.get_metatype() != type_metatype::TYPE_UNKNOWN {
+            return None;
+        }
+        let read = self.direct_type_at(off)?;
+        (names_unknown(&read, object) && unknown_reader_converts(fd, op, vn)).then_some(read)
     }
 
     /// (kuna `elemptr`) Is the global this function names at `addr` an array,
@@ -460,6 +497,29 @@ fn void_reader_converts(fd: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
                 .and_then(|v| fd.vbank().get(v))
                 .is_some_and(|v| is_void_pointer(v.get_type_read_facing(op)))
         }
+        _ => false,
+    }
+}
+
+/// (kuna `conststr`) Can `known` stand for the object an `unknown` pointee
+/// points at: an integer, `bool` or pointer type of the unknown's size?
+fn names_unknown(known: &Datatype, unknown: &Datatype) -> bool {
+    use type_metatype::{TYPE_BOOL, TYPE_INT, TYPE_PTR, TYPE_UINT, TYPE_UNKNOWN};
+    unknown.get_metatype() == TYPE_UNKNOWN
+        && known.get_size() == unknown.get_size()
+        && matches!(known.get_metatype(), TYPE_INT | TYPE_UINT | TYPE_BOOL | TYPE_PTR)
+}
+
+/// (kuna `conststr`) For a pointer-to-unknown constant: is its reader one that
+/// takes any object pointer without a cast -- an argument, a returned value, a
+/// copy, a stored value, or an equality test?
+fn unknown_reader_converts(fd: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
+    let Some(o) = fd.obank().get(op) else { return false };
+    let slot = o.get_slot(vn);
+    match o.code() {
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN => slot >= 1,
+        OpCode::CPUI_COPY | OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => true,
+        OpCode::CPUI_STORE => slot == 2,
         _ => false,
     }
 }

@@ -27,6 +27,7 @@ pub mod kuna_truncarg;
 pub mod kuna_castimplied; // (kuna) casts C's own conversions already perform
 pub mod kuna_castternary; // (kuna) a conditional arm keeps no cast the conditional performs
 pub mod kuna_castwiden; // (kuna) a 64-bit widening C performs by itself keeps no cast
+pub mod kuna_conststr; // (kuna) a constant address prints as what it addresses
 pub mod kuna_castarith; // (kuna) pointer arithmetic stays in pointer terms
 pub mod kuna_structdefs;
 pub mod kuna_globalref; // (kuna) a constant address used as a pointer prints as its global

@@ -44,7 +44,7 @@ fn settable_count_is_245() {
 }
 
 #[test]
-fn tier_counts_are_76_core_103_transform_66_analysis() {
+fn tier_counts_are_77_core_103_transform_66_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -584,6 +584,11 @@ fn option_values_live_value_present_for_104() {
                             // same reason.  Its live value is
                             // `Architecture::cast_widen`.
                             | "castwiden"
+                            // (kuna `conststr`) takes a MODE
+                            // (`off|strings|objects|on`) over an enum field,
+                            // for the same reason.  Its live value is
+                            // `Architecture::const_str`.
+                            | "conststr"
                             | "arraycoverwidth"
                             | "emptystrconst"
                             // (kuna) `structdefs` is a PrintC option like
@@ -907,7 +912,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 241 -> 242: +1 for `castobject`.
     // 242 -> 243: +1 for `castwiden`.
     // 243 -> 244: +1 for `elemptr`.
-    assert_eq!(json.matches("},\n").count(), 244);
+    // 244 -> 245: +1 for `conststr`.
+    assert_eq!(json.matches("},\n").count(), 245);
 }
 
 #[test]

@@ -21,7 +21,9 @@
 
         w_buffer: memset(scratch, 'x', 8)  - a void * argument (.bss)
         w_glyph:  strlen(glyph)            - a char * that is not a string
-                                             (GB18030 bytes, so no literal)
+                                             (GB18030 bytes, so no literal;
+                                             `conststr` prints them as one, so
+                                             both passes set it off)
         w_width:  strlen(namebuf) + *(long *)namebuf
                   a control - the function also reads the storage directly
                   as a long, so a declared `char` would contradict it
@@ -44,6 +46,7 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/globalref_x86_64</com>
   <com>option globalref off</com>
+  <com>option conststr off</com>
   <com>read symbols</com>
   <com>lo fu w_buffer</com>
   <com>decompile</com>
@@ -59,6 +62,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/globalref_x86_64</com>
+  <com>option conststr off</com>
   <com>read symbols</com>
   <com>lo fu w_buffer</com>
   <com>decompile</com>
