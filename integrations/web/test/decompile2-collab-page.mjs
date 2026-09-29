@@ -25,7 +25,8 @@
 // cache, and a session's saved copy offered when its program is opened again.
 // And a fourth review's: opening a cached function while another person's
 // change is being decompiled, the site deployed again while a session is on
-// (a Stop restarts the engine), a guest that renamed a variable at another
+// (a Stop restarts the engine), no solo undo copies in a session, a guest
+// that renamed a variable at another
 // decompiler effort, and a program received while an edit of another program
 // is in flight. Each case runs in fresh tabs (a second Chrome process
 // stands in for another person's computer) and is reported; any failure exits 1.
@@ -973,6 +974,37 @@ try {
     assert.equal(await ben.evaluate(`localStorage.getItem(${JSON.stringify(`kuna.d2.shared.${machoHash}`)})`), null, 'nothing is saved as a session\'s copy of the other program');
     const own = await ben.evaluate(`localStorage.getItem(${JSON.stringify(`kuna.d2.session.${machoHash}`)}) || ''`);
     assert.ok(/bens macho note/.test(own) && !/bens_macho_name/.test(own), 'its own store keeps Ben\'s note, without the undone edit');
+  });
+
+  await test('fourth review #10 in a session, an edit or a burst of typed bytes keeps no copy of the whole session for the solo Undo', async () => {
+    const { ana, ben } = await pair();
+    await ana.evaluate(`import('./session.js').then(({ Session }) => {
+      window.__copies = 0;
+      const snapshot = Session.prototype.snapshot;
+      const pushUndo = Session.prototype.pushUndo;
+      Session.prototype.snapshot = function (...a) { window.__copies++; return snapshot.apply(this, a); };
+      Session.prototype.pushUndo = function (...a) { window.__copies++; return pushUndo.apply(this, a); };
+      return true;
+    })`);
+    await front(ana);
+    await popover(ana, '#ccode .t[data-sym="v1"]', 'n', 'first_name');
+    await ana.key('Enter');
+    await idle(ana);
+    await popover(ana, '#ccode .t[data-sym="argc"]', 'n', 'second_name');
+    await ana.key('Enter');
+    await idle(ana);
+    await ana.key('3');
+    await ana.waitFor(`document.querySelector('#hexdump .hb[data-a="0x11e1"]')`, { what: 'the Bytes tab', timeout: 20000 });
+    await ana.click('#hexdump .hb[data-a="0x11e1"]');
+    await ana.key('9');
+    await ana.key('0');
+    await ana.key('Escape');
+    const patched = `[...document.querySelectorAll('#sesslist .tx')].some((t) => /bytes 0x11e1 90/.test(t.title))`;
+    await ben.waitFor(patched, { what: 'Ben has the patch', timeout: 20000 });
+    await idle(ana);
+    assert.equal(await ana.evaluate('window.__copies'), 0, 'no whole-session copy was made or kept');
+    await ana.key('u');
+    await ben.waitFor(`!${patched}`, { what: 'the shared Undo still takes the patch back', timeout: 20000 });
   });
 
   await test('fourth review #1 opening a cached function while another person\'s change is being decompiled stays on it', async () => {

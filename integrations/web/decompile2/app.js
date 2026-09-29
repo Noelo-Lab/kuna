@@ -2146,12 +2146,13 @@ function flash(lines) {
  * Apply one edit: snapshot, `mutate` the session, save, drop caches, and
  * re-inspect the open function while the old render stays up. A failed or
  * cancelled request restores the snapshot; a rejected directive stays in the
- * session, marked, with the engine's reason in a toast.
+ * session, marked, with the engine's reason in a toast. In a live session
+ * there is no snapshot: the edit is shared at once, and Undo is the session's.
  */
 async function applyEdit(mutate, { label = 'edit', reselect = null, done = '' } = {}) {
   const addr = state.current?.data.address_hex ?? null;
   const before = new Set(addr ? session.assertionsFor(addr) : []);
-  const snap = session.snapshot();
+  const snap = collab?.shared ? null : session.snapshot();
   try {
     mutate();
   } catch (e) {
@@ -2161,12 +2162,12 @@ async function applyEdit(mutate, { label = 'edit', reselect = null, done = '' } 
   const fresh = addr ? session.assertionsFor(addr).filter((d) => !before.has(d)) : [];
   sessionChanged();
   if (!state.current || !state.caps.assert) {
-    session.pushUndo(snap);
+    if (snap && !collab?.shared) session.pushUndo(snap);
     renderRail();
     if (state.current && session.size) toast('Change kept but not applied: this version of the decompiler cannot apply changes.', { kind: 'warn' });
     return true;
   }
-  return reinspect({ snap, fresh, label, reselect, done });
+  return reinspect({ snap, edit: true, fresh, label, reselect, done });
 }
 
 /**
@@ -2174,7 +2175,7 @@ async function applyEdit(mutate, { label = 'edit', reselect = null, done = '' } 
  * result is cached, and shown only if that function is still on screen (the
  * student may have opened another meanwhile).
  */
-async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = null, done = '', remote = false } = {}) {
+async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit', reselect = null, done = '', remote = false } = {}) {
   const fn = state.current.fn;
   const oldCode = state.current.data.code;
   const scroll = captureScroll();
@@ -2182,7 +2183,7 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
   const op = beginOperation(remote ? 'remote' : 'edit');
   op.onCancel = () => {
     if (collab?.shared) {
-      if (op.explicit && snap) toast('Stopped. Your change is kept for everyone in the session.', { kind: 'warn', detail: 'Undo takes it back.' });
+      if (op.explicit && edit) toast('Stopped. Your change is kept for everyone in the session.', { kind: 'warn', detail: 'Undo takes it back.' });
       else if (!op.explicit && !remote) scheduleRemoteInspect();
       return;
     }
@@ -2199,7 +2200,7 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
     const data = normalizeInspect(doc);
     const wasApplied = new Set([...session.outcomes].filter(([, o]) => o.status === 'applied').map(([k]) => k));
     session.recordOutcomes(data.assertions, fn.address_hex);
-    if (snap) session.pushUndo(snap);
+    if (snap && !collab?.shared) session.pushUndo(snap);
     persist();
     cacheSet(fn.address_hex, data, key);
     if (state.current?.fn === fn) {
@@ -2238,7 +2239,7 @@ async function reinspect({ snap = null, fresh = [], label = 'edit', reselect = n
     if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return false;
     if (collab?.shared) {
       toast(remote ? 'Could not update the code with the others\' changes.' : 'Could not update the code.', {
-        kind: 'err', detail: `${errorLine(e)}${snap ? ' Your change is kept for everyone in the session; Undo takes it back.' : ''}`,
+        kind: 'err', detail: `${errorLine(e)}${edit ? ' Your change is kept for everyone in the session; Undo takes it back.' : ''}`,
       });
       setStatus('Could not update the code', 'err', e.message);
       return false;
@@ -2773,7 +2774,7 @@ function hexKey(e) {
 }
 
 function startBurst() {
-  if (!bytesState.burst) bytesState.burst = { snap: session.snapshot(), before: new Set(session.globalAssertions()) };
+  if (!bytesState.burst) bytesState.burst = { snap: collab?.shared ? null : session.snapshot(), before: new Set(session.globalAssertions()) };
 }
 
 /** One burst of typed bytes becomes one edit, sent 700 ms after the last key. */
@@ -2797,7 +2798,7 @@ function flushBytes({ send = true } = {}) {
   bytesState.burst = null;
   if (!burst || !state.current) return;
   const fresh = session.globalAssertions().filter((d) => !burst.before.has(d));
-  session.pushUndo(burst.snap);
+  if (burst.snap && !collab?.shared) session.pushUndo(burst.snap);
   sessionChanged();
   if (!send || !state.caps.assert) return;
   const fn = state.current.fn;
