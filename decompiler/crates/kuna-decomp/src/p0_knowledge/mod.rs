@@ -4,6 +4,7 @@
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
 pub mod options;
+mod kuna_option_dispatch;
 pub mod modes;
 pub mod database;
 pub mod overrides;
@@ -24,6 +25,9 @@ pub mod kuna_pdatachained;
 // (kuna) x86-64 PE REX-prefixed tail-jump import-thunk rejection option gate
 // (load-time, env-bridged).
 pub mod kuna_rexthunk;
+// (kuna) PE import-by-ordinal naming from built-in export tables (load-time,
+// env-bridged).
+pub mod kuna_peordinal;
 // (kuna) DWARF aggregate-layout import option gate (load-time, env-bridged).
 pub mod kuna_dwarfstructs;
 // (kuna) Named libc/POSIX aggregate types in the prototype tables option gate

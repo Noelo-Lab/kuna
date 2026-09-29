@@ -24,12 +24,6 @@
 //! `secret` is formed by a `lea` off a register the function loaded with
 //! `0x11111111`, so folding a base there would attribute a string to a function
 //! that never touches it, and `unused` is referenced by nothing at all.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -57,24 +51,14 @@ fn fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/picbase_i386")
 }
 
-/// Bootstrap the fixture with `picbase` in the requested state and build the
-/// index `kuna xrefs` / `kuna strings` answer out of. `None` is a visible skip
-/// when the `.sla` is missing.
-fn index(picbase: bool) -> Option<(ConsoleProgram, Vec<u8>, XrefIndex)> {
+/// Bootstrap the fixture with `picbase` in the requested state and build the index `kuna
+/// xrefs` / `kuna strings` answer out of.
+fn index(picbase: bool) -> (ConsoleProgram, Vec<u8>, XrefIndex) {
     let bin = fixture();
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_picbase: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut()
         .set_kuna_option("picbase", if picbase { "on" } else { "off" })
         .expect("picbase flips");
@@ -85,7 +69,7 @@ fn index(picbase: bool) -> Option<(ConsoleProgram, Vec<u8>, XrefIndex)> {
     let seeds: Vec<u64> =
         prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect();
     let idx = xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds);
-    Some((prog, bytes, idx))
+    (prog, bytes, idx)
 }
 
 /// The names of the functions that reference `vma`, as `kuna strings` reports
@@ -105,9 +89,7 @@ fn owners(prog: &ConsoleProgram, idx: &XrefIndex, vma: u64) -> Vec<String> {
 /// BEFORE (`--option picbase off`): nothing in the image references anything.
 #[test]
 fn every_literal_is_referenced_by_nothing_with_the_option_off() {
-    let Some((_prog, _bytes, idx)) = index(false) else {
-        return;
-    };
+    let (_prog, _bytes, idx) = index(false);
     for (vma, what) in [
         (PROMPT, "the prompt"),
         (BANNER, "the banner"),
@@ -127,9 +109,7 @@ fn every_literal_is_referenced_by_nothing_with_the_option_off() {
 /// resolved, and the global is both read and written.
 #[test]
 fn base_relative_formations_are_references_by_default() {
-    let Some((prog, _bytes, idx)) = index(true) else {
-        return;
-    };
+    let (prog, _bytes, idx) = index(true);
     assert_eq!(
         owners(&prog, &idx, PROMPT),
         vec!["_start".to_string()],
@@ -160,9 +140,7 @@ fn base_relative_formations_are_references_by_default() {
 /// the base register for its own purposes contributes nothing.
 #[test]
 fn a_function_that_clobbers_the_base_register_claims_nothing() {
-    let Some((_prog, _bytes, idx)) = index(true) else {
-        return;
-    };
+    let (_prog, _bytes, idx) = index(true);
     assert!(
         idx.refs_to(SECRET).is_empty(),
         "`clobbers` forms this address off a register it loaded with 0x11111111, \
@@ -176,9 +154,7 @@ fn a_function_that_clobbers_the_base_register_claims_nothing() {
 /// edges it can prove, not edges that would be convenient.
 #[test]
 fn an_unreferenced_literal_stays_unreferenced() {
-    let Some((_prog, _bytes, idx)) = index(true) else {
-        return;
-    };
+    let (_prog, _bytes, idx) = index(true);
     assert!(
         idx.refs_to(UNUSED).is_empty(),
         "nothing forms this address; got {:?}",
@@ -190,9 +166,7 @@ fn an_unreferenced_literal_stays_unreferenced() {
 /// re-points a reference the constant scan already found.
 #[test]
 fn the_option_only_ever_adds_edges() {
-    let (Some((_, _, off)), Some((_, _, on))) = (index(false), index(true)) else {
-        return;
-    };
+    let ((_, _, off), (_, _, on)) = (index(false), index(true));
     for vma in 0x8049000u64..0x804b400 {
         let before: Vec<(u64, XrefKind)> =
             off.refs_to(vma).iter().map(|r| (r.from, r.kind)).collect();

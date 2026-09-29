@@ -72,8 +72,8 @@
 <stringmatch name="subright #2: the middle-byte truncation lowers to a shift and a cast" min="1" max="1">a0\[1\] = \(char\)\(\(uint4\)a1 &gt;&gt; 0x10\);</stringmatch>
 <stringmatch name="subright #3: the one-byte-offset truncation lowers to a shift and a cast" min="1" max="1">a0\[2\] = \(char\)\(\(uint4\)a1 &gt;&gt; 8\);</stringmatch>
 <stringmatch name="subright #4: the least significant truncation is untouched in both passes (the c==0 bail)" min="2" max="2">a0\[3\] = \(char\)a1;</stringmatch>
-<stringmatch name="subright #5: a lone constant right-shift reader is lumped into the synthesized shift (32+3)" min="1" max="1">return \(uint4\)\(\(uint8\)a1 \* \(uint8\)a0 &gt;&gt; 0x23\);</stringmatch>
+<stringmatch name="subright #5: a lone constant right-shift reader is lumped into the synthesized shift (32+3)" min="1" max="1">return \(uint4\)\(\(uint8\)a1 \* a0 &gt;&gt; 0x23\);</stringmatch>
 <stringmatch name="subright #6: every raw SUBnn operator in the transcript comes from the rule-off pass" min="4" max="4">SUB[0-9][0-9]\(</stringmatch>
 <stringmatch name="subright #7: the rule-off pass pins the pre-fix truncation rendering" min="1" max="1">\*a0 = SUB41\(a1,3\);</stringmatch>
-<stringmatch name="subright #8: the rule-off pass pins the pre-fix un-lumped rendering" min="1" max="1">return SUB84\(\(uint8\)a1 \* \(uint8\)a0,4\) &gt;&gt; 3;</stringmatch>
+<stringmatch name="subright #8: the rule-off pass pins the pre-fix un-lumped rendering" min="1" max="1">return SUB84\(\(uint8\)a1 \* a0,4\) &gt;&gt; 3;</stringmatch>
 </decompilertest>

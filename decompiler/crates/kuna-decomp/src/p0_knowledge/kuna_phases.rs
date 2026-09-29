@@ -7,9 +7,9 @@
 //!     with Band B (S3..S6) membership, plus the `Infra` registry-only
 //!     pseudo-stage for orchestration units;
 //!   - the four static tables transcribed from `kuna_stages.cc`:
-//!     [`GROUP_TABLE`] (39 action/rule groups), [`SUBPHASE_TABLE`] (40 named
-//!     decision points), [`SURFACE_TABLE`] (90 console/option surfaces), and
-//!     [`SETTABLE_TABLE`] (22 LLM/agent-settable assertions);
+//!     [`GROUP_TABLE`] (action/rule groups), [`SUBPHASE_TABLE`] (named
+//!     decision points), [`SURFACE_TABLE`] (console/option surfaces), and
+//!     [`SETTABLE_TABLE`] (LLM/agent-settable assertions);
 //!   - the lookup API (`kuna_num_groups`/`kuna_group_by_index`/`lookup_group`
 //!     and siblings — the idiomatic equivalents of the C++ `kunaNumGroups` /
 //!     `kunaGroupByIndex` / `kunaLookupGroup` family).

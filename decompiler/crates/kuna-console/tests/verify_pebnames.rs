@@ -13,11 +13,6 @@
 //! * a raw image under a non-Windows compiler spec is never typed even with
 //!   `option pebnames on`: an x86-64 `gs:` reader and an x86 `fs:` reader stay
 //!   untyped, while the same bytes under the Windows spec are typed.
-//!
-//! ## `.sla` precondition
-//!
-//! Decompiling needs the built x86 `.sla` under `specs/`; when it is absent the
-//! bootstrap fails and each test prints a visible skip instead of passing.
 
 mod common;
 
@@ -106,28 +101,24 @@ fn spec_roots() -> Vec<String> {
     vec![repo_root().join("specs").to_str().unwrap().to_string()]
 }
 
-/// Load `path`, run `options` then decompile `select` (a `load` command), and
-/// return the transcript. `None` => specs-less skip.
-fn decompile(path: &str, options: &[&str], select: &str) -> Option<String> {
-    match bootstrap_from_object(path, "", &spec_roots()) {
-        Ok(prog) => Some(transcript(prog, options, select)),
-        Err(e) => {
-            eprintln!("verify_pebnames: skipping (bootstrap failed; build `.sla` with `make specs`): {}", e.explain());
-            None
-        }
+/// Load `path`, run `options` then decompile `select` (a `load` command), and return the
+/// transcript.
+fn decompile(path: &str, options: &[&str], select: &str) -> String {
+    {
+        let prog = bootstrap_from_object(path, "", &spec_roots())
+            .expect("bootstrap fixture with built processor specs");
+        transcript(prog, options, select)
     }
 }
 
 /// Load the raw bytes `code` at 0x1000 under `target`, then as [`decompile`].
-fn decompile_raw(stem: &str, code: &[u8], target: &str, options: &[&str]) -> Option<String> {
+fn decompile_raw(stem: &str, code: &[u8], target: &str, options: &[&str]) -> String {
     let path = common::scratch_file(stem, "bin");
     std::fs::write(&path, code).unwrap();
-    match bootstrap_from_raw(path.to_str().unwrap(), target, 0x1000, &[0x1000], None, &spec_roots()) {
-        Ok(prog) => Some(transcript(prog, options, "load addr 0x1000")),
-        Err(e) => {
-            eprintln!("verify_pebnames: skipping (raw bootstrap failed; build `.sla` with `make specs`): {}", e.explain());
-            None
-        }
+    {
+        let prog = bootstrap_from_raw(path.to_str().unwrap(), target, 0x1000, &[0x1000], None, &spec_roots())
+            .expect("bootstrap fixture with built processor specs");
+        transcript(prog, options, "load addr 0x1000")
     }
 }
 
@@ -158,13 +149,13 @@ fn write_pe(stem: &str, bits: u32, subsystem: u16, code: &str) -> String {
 #[test]
 fn a_console_pe32_plus_is_named_at_the_shipped_default() {
     let path = write_pe("pebnames-cui64", 64, 3, CODE64);
-    let Some(out) = decompile(&path, &[], "load addr 0x140001000") else { return };
+    let out = decompile(&path, &[], "load addr 0x140001000");
     assert!(out.contains("TEB *teb; // gs_offset"), "the GS base must be the TEB:\n{out}");
     assert!(out.contains("!teb->ProcessEnvironmentBlock->BeingDebugged"), "{out}");
     assert!(out.contains("teb->ProcessEnvironmentBlock->NtGlobalFlag & 0x70"), "{out}");
     assert!(out.contains("teb->Self->ProcessEnvironmentBlock->ProcessHeap"), "{out}");
 
-    let Some(off) = decompile(&path, &["off"], "load addr 0x140001000") else { return };
+    let off = decompile(&path, &["off"], "load addr 0x140001000");
     assert!(!off.contains("teb->"), "off must restore the untyped register:\n{off}");
     assert!(off.contains("; // gs_offset"), "{off}");
 }
@@ -172,7 +163,7 @@ fn a_console_pe32_plus_is_named_at_the_shipped_default() {
 #[test]
 fn a_gui_pe32_is_named_at_the_shipped_default() {
     let path = write_pe("pebnames-gui32", 32, 2, CODE32);
-    let Some(out) = decompile(&path, &[], "load addr 0x401000") else { return };
+    let out = decompile(&path, &[], "load addr 0x401000");
     assert!(out.contains("TEB *teb; // fs_offset"), "the FS base must be the TEB:\n{out}");
     assert!(out.contains("teb->ProcessEnvironmentBlock->BeingDebugged"), "{out}");
     assert!(out.contains("teb->Self->ProcessEnvironmentBlock->ProcessHeap"), "{out}");
@@ -181,8 +172,8 @@ fn a_gui_pe32_is_named_at_the_shipped_default() {
 #[test]
 fn a_function_that_writes_through_the_base_stays_untyped_at_the_shipped_default() {
     let path = write_pe("pebnames-ehframe32", 32, 2, EH_FRAME32);
-    let Some(auto) = decompile(&path, &[], "load addr 0x401000") else { return };
-    let Some(off) = decompile(&path, &["off"], "load addr 0x401000") else { return };
+    let auto = decompile(&path, &[], "load addr 0x401000");
+    let off = decompile(&path, &["off"], "load addr 0x401000");
     assert!(!auto.contains("teb"), "a function linking an SEH record must stay untyped:\n{auto}");
     assert!(auto.contains("[3]; // stack - 0xc"), "the registration record keeps its extent:\n{auto}");
     let without_option = |t: &str| t.lines().filter(|l| !l.contains("segment-base typing set to")).collect::<Vec<_>>().join("\n");
@@ -193,10 +184,10 @@ fn a_function_that_writes_through_the_base_stays_untyped_at_the_shipped_default(
 fn a_driver_or_efi_image_is_left_alone_unless_forced() {
     for (stem, subsystem) in [("pebnames-native64", 1u16), ("pebnames-efi64", 10)] {
         let path = write_pe(stem, 64, subsystem, CODE64);
-        let Some(auto) = decompile(&path, &[], "load addr 0x140001000") else { return };
+        let auto = decompile(&path, &[], "load addr 0x140001000");
         assert!(!auto.contains("teb->"), "subsystem {subsystem} must not be typed under auto:\n{auto}");
         assert!(auto.contains("; // gs_offset"), "{auto}");
-        let Some(on) = decompile(&path, &["on"], "load addr 0x140001000") else { return };
+        let on = decompile(&path, &["on"], "load addr 0x140001000");
         assert!(on.contains("TEB *teb; // gs_offset"), "`on` trusts the compiler spec:\n{on}");
     }
 }
@@ -209,10 +200,10 @@ fn a_non_windows_compiler_spec_is_never_typed_even_when_forced() {
         ("pebnames-gcc64", GS64, "x86:LE:64:default", "gs_offset"),
         ("pebnames-gcc32", FS32, "x86:LE:32:default", "fs_offset"),
     ] {
-        let Some(gcc) = decompile_raw(stem, code, &format!("{target}:gcc"), &["on"]) else { return };
+        let gcc = decompile_raw(stem, code, &format!("{target}:gcc"), &["on"]);
         assert!(!gcc.contains("teb"), "a {target}:gcc image must never be typed:\n{gcc}");
         assert!(gcc.contains(&format!("; // {reg}")), "{gcc}");
-        let Some(win) = decompile_raw(stem, code, &format!("{target}:windows"), &["on"]) else { return };
+        let win = decompile_raw(stem, code, &format!("{target}:windows"), &["on"]);
         assert!(
             win.contains("teb->Self->ProcessEnvironmentBlock->BeingDebugged"),
             "the same bytes under the Windows spec are typed:\n{win}"

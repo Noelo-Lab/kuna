@@ -1,70 +1,19 @@
-//! Port of `decompiler/cpp/slghpatexpress.{hh,cc}` (item `w2-sleigh-pattern`)
-//! — the SLEIGH pattern-expression tree.
+//! SLEIGH pattern expressions and compile-time equations, based on
+//! `decompiler/cpp/slghpatexpress.{hh,cc}`.
 //!
-//! ## What is ported
+//! [`PatternValue`] and [`PatternExpression`] represent owned expression trees
+//! with boxed children. Runtime evaluation uses [`PatternExpressionContext`],
+//! implemented by the walkers in [`crate::sleigh`]. Encoded operand references
+//! carry table and constructor IDs, validated through [`OperandValueResolver`].
 //!
-//! The full runtime `PatternExpression` tree: the `PatternValue` leaves
-//! ([`TokenField`], [`ContextField`], [`ConstantValue`], [`OperandValue`],
-//! [`StartInstructionValue`], [`EndInstructionValue`],
-//! [`Next2InstructionValue`]) and the operator nodes (Plus/Sub/Mult/
-//! LeftShift/RightShift/And/Or/Xor/Div binary, Minus/Not unary), with
+//! [`TokenPattern`] builds token-aligned patterns. [`PatternEquation`] nodes
+//! live in an [`EquationArena`] and refer to children by [`EqId`]; the compiler
+//! driver supplies token and symbol state. [`TokenField`] retains token size
+//! and identity for pattern generation, unlike fields decoded from `.sla`.
 //!
-//! - `getValue` evaluation against parser-walker state,
-//! - `minValue` / `maxValue`,
-//! - `listValues` / `getMinMax` / `getSubValue`,
-//! - `encode`, the per-class `decode` methods, and the
-//!   [`PatternExpression::decode_expression`] factory keyed by sla
-//!   ElementIds (defined in [`crate::slghpattern::sla`]).
-//!
-//! The C++ class hierarchy (virtual dispatch + `dynamic_cast`) maps onto two
-//! enums mirroring the C++ split: [`PatternValue`] (the `PatternValue`
-//! subclasses) wrapped by [`PatternExpression`] (`PatternValue` plus the
-//! `BinaryExpression`/`UnaryExpression` operators).  The C++ intrusive
-//! refcount (`refcount`/`layClaim`/`release`) is replaced by plain ownership
-//! (`Box` children): decoded expression trees are never shared in the
-//! consumer-side code paths this crate ports.
-//!
-//! ## What is NOT ported (SLEIGH compiler side)
-//!
-//! `TokenPattern` (the Token-aligned pattern builder), the whole
-//! `PatternEquation` hierarchy (`OperandEquation`, `UnconstrainedEquation`,
-//! `ValExpressEquation` and its comparison subclasses, `EquationAnd`/`Or`/
-//! `Cat`, the ellipsis equations, `OperandResolve`), the pattern-generation
-//! virtuals `genPattern` / `genMinPattern`, and the static helpers
-//! `buildPattern` / `advance_combo`.  All of these exist only to *compile* a
-//! `.slaspec`; the Rust port reads compiled `.sla` files and the compiler
-//! stays C++ (see the crate docs).  `Token` itself is unported; the one
-//! ported constructor that needs it, `TokenField(Token*,bool,int4,int4)`,
-//! becomes [`TokenField::new`] taking the two Token properties the C++
-//! constructor reads (`getSize()`, `isBigEndian()`).
-//!
-//! ## The ParserWalker hook ([`PatternExpressionContext`])
-//!
-//! Evaluation in C++ runs against a `ParserWalker` (context.hh/sleigh.hh),
-//! which does not exist yet at this point in the port DAG.
-//! [`PatternExpressionContext`] is the minimal trait mirroring exactly the
-//! `ParserWalker` surface that slghpatexpress.cc and slghpattern.cc touch:
-//! `getInstructionBytes`, `getContextBytes`, `getAddr`, `getNaddr`,
-//! `getN2addr`, plus one method standing in for the body of
-//! `OperandValue::getValue` (see [`PatternExpressionContext::operand_value`]).
-//! The sleigh-core wave implements this trait for its `ParserWalker`.
-//!
-//! ## The decode hook ([`OperandValueResolver`])
-//!
-//! `OperandValue::decode` in C++ resolves its cached `Constructor*` through
-//! the `Translate*` (really `SleighBase*`) passed to `decodeExpression`:
-//! `findSymbol(tabid)` -> `SubtableSymbol` -> `getNumConstructors()` /
-//! `getConstructor(ctid)`.  The symbol table is not ported yet, so the Rust
-//! [`OperandValue`] stores the raw `(table_id, ct_id)` pair and the decode
-//! validation goes through the [`OperandValueResolver`] hook, implemented by
-//! the slghsymbol/sleighbase wave.  Two C++ `OperandValue` methods that
-//! consult the symbol table at runtime — `isConstructorRelative()` and
-//! `getName()` (used by `ContextOp::validate` in slghsymbol.cc) — are left
-//! to that wave, which can reach them through the exposed
-//! [`OperandValue::index`]/[`OperandValue::table_id`]/[`OperandValue::ct_id`]
-//! accessors.  `OperandValue::getSubValue` (which evaluates the operand's
-//! *defining expression*, again through the symbol table) is only reachable
-//! from the unported compiler equations and returns a `Sleigh` error here.
+//! The context-free [`OperandValue::get_sub_value`] entry point cannot evaluate
+//! an operand's defining expression without symbol state and still returns an
+//! error. This limitation does not mean the equation compiler is absent.
 
 use kuna_base::address::{byte_swap_inplace, sign_extend, zero_extend, Address};
 use kuna_base::error::{KunaError, KunaResult};
@@ -80,10 +29,8 @@ use crate::slghpattern::{
 // PatternExpressionContext — the ParserWalker hook
 // ---------------------------------------------------------------------------
 
-/// The minimal `ParserWalker` surface needed to evaluate patterns and
-/// pattern expressions (see module docs).  Implemented by the sleigh-core
-/// wave's `ParserWalker`; tests implement it over synthetic byte/context
-/// providers.
+/// Walker state needed to evaluate patterns and expressions. Runtime walkers
+/// and synthetic test providers implement the same interface.
 pub trait PatternExpressionContext {
     /// C++ `ParserWalker::getInstructionBytes(int4 byteoff,int4 numbytes)`:
     /// packed big-endian instruction bytes, `byteoff` relative to the
@@ -110,9 +57,7 @@ pub trait PatternExpressionContext {
     /// `Result`.
     fn get_n2addr(&self) -> KunaResult<Address>;
 
-    /// Stand-in for the body of C++ `OperandValue::getValue`
-    /// (slghpatexpress.cc), which needs the symbol table and an out-of-band
-    /// walker; the sleigh-core implementor transcribes that body exactly.
+    /// Evaluate a constructor operand using this context's symbol and walker state.
     fn operand_value(&self, index: i32, table_id: u32, ct_id: u32) -> KunaResult<i64>;
 }
 
@@ -196,10 +141,8 @@ fn context_bytes(
 // PatternValue leaves
 // ---------------------------------------------------------------------------
 
-/// C++ `TokenField`: a value extracted from a bit range of an instruction
-/// token.  The C++ `Token *tok` member is only consulted by the unported
-/// compiler-side `genPattern`/`genMinPattern` (and is nulled by the C++
-/// decode anyway), so it is dropped here.
+/// A bit range within an instruction token. Compilation retains token size and
+/// identity for pattern generation; runtime decoding leaves both unset (-1).
 #[derive(Debug, Clone)]
 pub struct TokenField {
     bigendian: bool,
@@ -212,14 +155,9 @@ pub struct TokenField {
     byteend: i32,
     /// Amount to shift to align value (bitstart % 8)
     shift: i32,
-    /// (kuna build side) The owning `Token`'s byte size, retained so the
-    /// SLEIGH-compiler `genPattern`/`genMinPattern` can build a
-    /// `TokenPattern`.  C++ carries `Token *tok` here; the decode path nulls
-    /// it (and never calls genPattern) so the decode factory leaves this -1.
+    /// Token byte size for pattern generation; -1 after runtime decoding.
     tok_size: i32,
-    /// (kuna build side) The owning `Token`'s index (its identity in the
-    /// pattern token list, replacing the C++ `Token *` pointer-identity).
-    /// -1 after decode (no token).
+    /// Token identity for pattern alignment; -1 after runtime decoding.
     tok_index: i32,
 }
 
@@ -585,7 +523,7 @@ impl EndInstructionValue {
 /// C++ `Next2InstructionValue`: the address of the instruction after the
 /// next.  NOTE: like upstream, the [`PatternExpression::decode_expression`]
 /// factory does NOT recognize `next2_exp` (the C++ factory omits it); the
-/// symbol-table wave constructs this value directly when decoding a
+/// symbol table constructs this value directly when decoding a
 /// `Next2Symbol`.
 #[derive(Debug, Clone, Default)]
 pub struct Next2InstructionValue;
@@ -661,8 +599,7 @@ impl OperandValue {
         self.table_id
     }
 
-    /// (WS4b purge/renumber) re-point the owning-subtable id after the symbol
-    /// table is renumbered.
+    /// Remap the owning subtable after symbol renumbering.
     pub fn set_table_id(&mut self, id: u32) {
         self.table_id = id;
     }
@@ -689,10 +626,8 @@ impl OperandValue {
         Err(KunaError::sleigh("Operand used in pattern expression"))
     }
 
-    /// C++ `OperandValue::getSubValue` evaluates the operand's *defining
-    /// expression* (`sym->getDefiningExpression()->getSubValue(...)`), which
-    /// requires the symbol table.  It is only reachable from the unported
-    /// SLEIGH-compiler equations, so the port reports an error instead.
+    /// This entry point lacks the symbol state needed to evaluate the operand's
+    /// defining expression and reports an error.
     pub fn get_sub_value(&self, _replace: &[i64], _listpos: &mut i32) -> KunaResult<i64> {
         Err(KunaError::sleigh(
             "OperandValue::getSubValue requires the SLEIGH compiler symbol table (not ported)",
@@ -886,7 +821,7 @@ impl BinaryExpression {
         &self.right
     }
 
-    /// Mutable left/right (WS4c operand-index remap).
+    /// Borrow the left child for expression rewrites.
     pub fn get_left_mut(&mut self) -> &mut PatternExpression {
         &mut self.left
     }
@@ -936,7 +871,7 @@ impl UnaryExpression {
         &self.unary
     }
 
-    /// Mutable child (WS4c operand-index remap).
+    /// Borrow the child for expression rewrites.
     pub fn get_unary_mut(&mut self) -> &mut PatternExpression {
         &mut self.unary
     }
@@ -992,62 +927,67 @@ impl PatternExpression {
     /// values and resolve x86-masked; `Div` panics on a zero divisor (C++
     /// SIGFPE/UB, an internal invariant violation per ADR 0004).
     pub fn get_value(&self, walker: &dyn PatternExpressionContext) -> KunaResult<i64> {
+        self.evaluate(&mut |value| value.get_value(walker))
+    }
+
+    /// Evaluate leaves left to right with wrapping arithmetic in both modes.
+    fn evaluate(&self, leaf: &mut impl FnMut(&PatternValue) -> KunaResult<i64>) -> KunaResult<i64> {
         match self {
-            PatternExpression::Value(v) => v.get_value(walker),
+            PatternExpression::Value(v) => leaf(v),
             PatternExpression::Plus(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval.wadd(rightval))
             }
             PatternExpression::Sub(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval.wsub(rightval))
             }
             PatternExpression::Mult(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval.wmul(rightval))
             }
             PatternExpression::LeftShift(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 // intb << intb: count truncated then masked mod 64 (x86)
                 Ok(leftval.wshl(rightval as u32))
             }
             PatternExpression::RightShift(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 // intb >> intb: arithmetic shift; count truncated then
                 // masked mod 64 (x86)
                 Ok(leftval.wshr(rightval as u32))
             }
             PatternExpression::And(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval & rightval)
             }
             PatternExpression::Or(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval | rightval)
             }
             PatternExpression::Xor(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval ^ rightval)
             }
             PatternExpression::Div(b) => {
-                let leftval = b.get_left().get_value(walker)?;
-                let rightval = b.get_right().get_value(walker)?;
+                let leftval = b.get_left().evaluate(leaf)?;
+                let rightval = b.get_right().evaluate(leaf)?;
                 Ok(leftval.wdiv(rightval))
             }
             PatternExpression::Minus(u) => {
-                let val = u.get_unary().get_value(walker)?;
+                let val = u.get_unary().evaluate(leaf)?;
                 Ok(val.wneg())
             }
             PatternExpression::Not(u) => {
-                let val = u.get_unary().get_value(walker)?;
+                let val = u.get_unary().evaluate(leaf)?;
                 Ok(!val)
             }
         }
@@ -1089,48 +1029,24 @@ impl PatternExpression {
         }
     }
 
-    /// (WS4c renumber) Remap every embedded [`OperandValue`]'s `table_id`
-    /// through `remap` (`old_id -> Some(new_id)`).  C++ keeps these as
-    /// `Constructor *` pointers (immune to renumber); the kuna port stores ids,
-    /// so a defining expression that embeds operand references must be remapped.
+    /// Remap operand table ids after symbol compaction.
     pub fn remap_table_id(&mut self, remap: &dyn Fn(u32) -> u32) {
-        match self {
-            PatternExpression::Value(PatternValue::OperandValue(ov)) => {
-                ov.set_table_id(remap(ov.table_id()));
-            }
-            PatternExpression::Value(_) => {}
-            PatternExpression::Plus(b)
-            | PatternExpression::Sub(b)
-            | PatternExpression::Mult(b)
-            | PatternExpression::LeftShift(b)
-            | PatternExpression::RightShift(b)
-            | PatternExpression::And(b)
-            | PatternExpression::Or(b)
-            | PatternExpression::Xor(b)
-            | PatternExpression::Div(b) => {
-                b.get_left_mut().remap_table_id(remap);
-                b.get_right_mut().remap_table_id(remap);
-            }
-            PatternExpression::Minus(u) | PatternExpression::Not(u) => {
-                u.get_unary_mut().remap_table_id(remap);
-            }
-        }
+        self.visit_operands_mut(&mut |operand| operand.set_table_id(remap(operand.table_id())));
     }
 
-    /// (WS4c) Remap every embedded [`OperandValue`]'s operand index through
-    /// `handmap` (`original_index -> new_index`).  C++ shares the operand's
-    /// `localexp` pointer between the operand symbol and any expression that
-    /// references it (e.g. inside a `ContextOp`), so a single `changeIndex`
-    /// updates both; the kuna port clones the expression, so an expression that
-    /// outlives `order_operands` must be remapped separately.
+    /// Remap cloned operand references after constructor operand ordering.
     pub fn remap_operand_index(&mut self, handmap: &[i32]) {
-        match self {
-            PatternExpression::Value(PatternValue::OperandValue(ov)) => {
-                let idx = ov.index();
-                if (idx as usize) < handmap.len() {
-                    ov.change_index(handmap[idx as usize]);
-                }
+        self.visit_operands_mut(&mut |operand| {
+            if let Some(&index) = handmap.get(operand.index() as usize) {
+                operand.change_index(index);
             }
+        });
+    }
+
+    /// Visit operand references from left to right.
+    fn visit_operands_mut(&mut self, visit: &mut impl FnMut(&mut OperandValue)) {
+        match self {
+            PatternExpression::Value(PatternValue::OperandValue(operand)) => visit(operand),
             PatternExpression::Value(_) => {}
             PatternExpression::Plus(b)
             | PatternExpression::Sub(b)
@@ -1141,11 +1057,11 @@ impl PatternExpression {
             | PatternExpression::Or(b)
             | PatternExpression::Xor(b)
             | PatternExpression::Div(b) => {
-                b.get_left_mut().remap_operand_index(handmap);
-                b.get_right_mut().remap_operand_index(handmap);
+                b.get_left_mut().visit_operands_mut(visit);
+                b.get_right_mut().visit_operands_mut(visit);
             }
             PatternExpression::Minus(u) | PatternExpression::Not(u) => {
-                u.get_unary_mut().remap_operand_index(handmap);
+                u.get_unary_mut().visit_operands_mut(visit);
             }
         }
     }
@@ -1183,64 +1099,7 @@ impl PatternExpression {
     /// expression substituting `replace[..]` for the leaves in `listValues`
     /// order.  Arithmetic transcription matches [`Self::get_value`].
     pub fn get_sub_value(&self, replace: &[i64], listpos: &mut i32) -> KunaResult<i64> {
-        match self {
-            PatternExpression::Value(v) => v.get_sub_value(replace, listpos),
-            PatternExpression::Plus(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval.wadd(rightval))
-            }
-            PatternExpression::Sub(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval.wsub(rightval))
-            }
-            PatternExpression::Mult(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval.wmul(rightval))
-            }
-            PatternExpression::LeftShift(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                // intb << intb: count truncated then masked mod 64 (x86)
-                Ok(leftval.wshl(rightval as u32))
-            }
-            PatternExpression::RightShift(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                // intb >> intb: arithmetic; count truncated, masked mod 64
-                Ok(leftval.wshr(rightval as u32))
-            }
-            PatternExpression::And(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval & rightval)
-            }
-            PatternExpression::Or(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval | rightval)
-            }
-            PatternExpression::Xor(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval ^ rightval)
-            }
-            PatternExpression::Div(b) => {
-                let leftval = b.get_left().get_sub_value(replace, listpos)?; // Must be left first
-                let rightval = b.get_right().get_sub_value(replace, listpos)?;
-                Ok(leftval.wdiv(rightval))
-            }
-            PatternExpression::Minus(u) => {
-                let val = u.get_unary().get_sub_value(replace, listpos)?;
-                Ok(val.wneg())
-            }
-            PatternExpression::Not(u) => {
-                let val = u.get_unary().get_sub_value(replace, listpos)?;
-                Ok(!val)
-            }
-        }
+        self.evaluate(&mut |value| value.get_sub_value(replace, listpos))
     }
 
     /// C++ non-virtual `getSubValue(const vector<intb>&)`: start the leaf
@@ -1396,32 +1255,11 @@ impl PatternExpression {
     }
 }
 
-// ===========================================================================
-// SLEIGH-compiler build side (ws4a): TokenPattern + PatternEquation arena
-//
-// Port of the compile-only half of slghpatexpress.{hh,cc} — the machinery the
-// SLEIGH compiler drives to turn the parsed grammar into `Pattern`s.  This is
-// ADDITIVE to the decode side above; the decoder never enters this code.
-//
-// Ownership / arena convention (consumed by WS4b's driver):
-//   * `TokenPattern` is a value type (Clone) wrapping a `Pattern` plus its
-//     token alignment list; the C++ `Pattern *pattern` + `simplifyClone`
-//     ownership protocol becomes plain Rust ownership (`simplifyClone` IS the
-//     Clone the assignment operator performed).
-//   * `PatternEquation` is an `enum` stored in an `EquationArena` and
-//     referenced by a `u32` arena id (`EqId`) — exactly the `u32` the WS2
-//     parser actions thread.  The C++ refcounted `PatternEquation *` tree
-//     (layClaim/release) becomes an arena of nodes whose children are `EqId`s.
-//     The driver owns the arena; the parser returns the ids the arena indexes.
-//   * Equation `genPattern` is non-const in C++ (it caches `resultpattern`);
-//     here `gen_pattern` is a pure function returning the `TokenPattern` (no
-//     mutable cache needed — the callers in slghsymbol read it back through
-//     the return value).
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// Compiler token patterns and equation arena
+// ---------------------------------------------------------------------------
 
-/// The three `Token` properties the build-side `TokenField`/`TokenPattern`
-/// machinery reads (C++ `Token *`): byte size, endianness, and a unique index
-/// standing in for pointer identity in the token-alignment list.
+/// Token layout and identity used to build and align instruction patterns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildToken {
     /// C++ `tok->getSize()`.
@@ -1432,9 +1270,7 @@ pub struct BuildToken {
     pub index: i32,
 }
 
-/// C++ `TokenPattern`: the token-aligned pattern builder.  Wraps a
-/// [`Pattern`] together with the list of tokens it spans (for alignment) and
-/// the two ellipsis flags.
+/// A pattern with its token alignment and leading/trailing ellipses.
 #[derive(Debug, Clone)]
 pub struct TokenPattern {
     pattern: Pattern,
@@ -1446,14 +1282,7 @@ pub struct TokenPattern {
 impl TokenPattern {
     /// C++ `TokenPattern(void)`: TRUE pattern unassociated with a token.
     pub fn new_true() -> TokenPattern {
-        TokenPattern {
-            pattern: Pattern::Disjoint(DisjointPattern::Instruction(
-                InstructionPattern::new_always(true),
-            )),
-            toklist: Vec::new(),
-            leftellipsis: false,
-            rightellipsis: false,
-        }
+        Self::new_bool(true)
     }
 
     /// C++ `TokenPattern(bool tf)`: TRUE or FALSE pattern, no token.
@@ -1653,51 +1482,45 @@ impl TokenPattern {
             )));
         }
 
+        let (left, right) = if reversedirection {
+            (&tok1.toklist[l1 - minsize..], &tok2.toklist[l2 - minsize..])
+        } else {
+            (&tok1.toklist[..minsize], &tok2.toklist[..minsize])
+        };
+        let mut pairs = left.iter().zip(right);
+        let mismatch = if reversedirection {
+            pairs.rfind(|(a, b)| a != b)
+        } else {
+            pairs.find(|(a, b)| a != b)
+        };
+        if let Some((a, b)) = mismatch {
+            return Err(KunaError::sleigh(format!(
+                "Mismatched tokens when combining patterns -- {} != {}",
+                a.index, b.index
+            )));
+        }
+
         if reversedirection {
-            for i in 0..minsize {
-                if tok1.toklist[l1 - 1 - i] != tok2.toklist[l2 - 1 - i] {
-                    return Err(KunaError::sleigh(format!(
-                        "Mismatched tokens when combining patterns -- {} != {}",
-                        tok1.toklist[l1 - 1 - i].index,
-                        tok2.toklist[l2 - 1 - i].index
-                    )));
-                }
-            }
-            if l1 <= l2 {
-                for i in minsize..l2 {
-                    ressa += tok2.toklist[l2 - 1 - i].size;
-                }
+            let extra = if l1 <= l2 {
+                &tok2.toklist[..l2 - minsize]
             } else {
-                for i in minsize..l1 {
-                    ressa += tok1.toklist[l1 - 1 - i].size;
-                }
+                &tok1.toklist[..l1 - minsize]
+            };
+            for token in extra.iter().rev() {
+                ressa += token.size;
             }
             if l1 < l2 {
                 ressa = -ressa;
             }
-        } else {
-            for i in 0..minsize {
-                if tok1.toklist[i] != tok2.toklist[i] {
-                    return Err(KunaError::sleigh(format!(
-                        "Mismatched tokens when combining patterns -- {} != {}",
-                        tok1.toklist[i].index, tok2.toklist[i].index
-                    )));
-                }
-            }
         }
-        // Save the results into -self-
-        if l1 <= l2 {
-            self.toklist = tok2.toklist.clone();
-        } else {
-            self.toklist = tok1.toklist.clone();
-        }
+        let selected = if l1 <= l2 { tok2 } else { tok1 };
+        self.toklist = selected.toklist.clone();
         Ok(ressa)
     }
 
     /// C++ `TokenPattern::doAnd`.
     pub fn do_and(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
         let mut res = TokenPattern::new_true();
-        res.toklist.clear();
         let sa = res.resolve_tokens(self, tokpat)?;
         // C++ returns `res` by value; the caller's TokenPattern copy/assign
         // runs `pattern->simplifyClone()`.  Apply it here so the stored
@@ -1709,7 +1532,6 @@ impl TokenPattern {
     /// C++ `TokenPattern::doOr`.
     pub fn do_or(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
         let mut res = TokenPattern::new_true();
-        res.toklist.clear();
         let sa = res.resolve_tokens(self, tokpat)?;
         // do_or takes &mut on both operands (the upstream const-cast quirk);
         // operate on clones since C++ `doOr` may mutate either receiver.
@@ -1722,7 +1544,6 @@ impl TokenPattern {
     /// C++ `TokenPattern::doCat`: concatenation of `self` and `tokpat`.
     pub fn do_cat(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
         let mut res = TokenPattern::new_true();
-        res.toklist.clear();
         res.leftellipsis = self.leftellipsis;
         res.rightellipsis = self.rightellipsis;
         res.toklist = self.toklist.clone();
@@ -1740,11 +1561,7 @@ impl TokenPattern {
             }
             sa = -1;
         } else {
-            let mut acc = 0;
-            for tok in &self.toklist {
-                acc += tok.size;
-            }
-            sa = acc;
+            sa = self.get_minimum_length();
             for tok in &tokpat.toklist {
                 res.toklist.push(*tok);
             }
@@ -1753,18 +1570,13 @@ impl TokenPattern {
         if res.rightellipsis && res.leftellipsis {
             return Err(KunaError::sleigh("Double ellipsis in pattern"));
         }
-        if sa < 0 {
-            res.pattern = self.pattern.do_and(&tokpat.pattern, 0).simplify_clone();
-        } else {
-            res.pattern = self.pattern.do_and(&tokpat.pattern, sa).simplify_clone();
-        }
+        res.pattern = self.pattern.do_and(&tokpat.pattern, sa.max(0)).simplify_clone();
         Ok(res)
     }
 
     /// C++ `TokenPattern::commonSubPattern`.
     pub fn common_sub_pattern(&self, tokpat: &TokenPattern) -> KunaResult<TokenPattern> {
         let mut patres = TokenPattern::new_true();
-        patres.toklist.clear();
         let mut reversedirection = false;
 
         if self.leftellipsis || tokpat.leftellipsis {
@@ -1777,36 +1589,29 @@ impl TokenPattern {
         // Find common subset of tokens and ellipses
         patres.leftellipsis = self.leftellipsis || tokpat.leftellipsis;
         patres.rightellipsis = self.rightellipsis || tokpat.rightellipsis;
-        let mut minnum = self.toklist.len();
-        let mut maxnum = tokpat.toklist.len();
-        if maxnum < minnum {
-            std::mem::swap(&mut minnum, &mut maxnum);
-        }
-        let mut i = 0usize;
+        let maxnum = self.toklist.len().max(tokpat.toklist.len());
+        let common = if reversedirection {
+            self.toklist
+                .iter()
+                .rev()
+                .zip(tokpat.toklist.iter().rev())
+                .take_while(|(a, b)| a == b)
+                .count()
+        } else {
+            self.toklist
+                .iter()
+                .zip(&tokpat.toklist)
+                .take_while(|(a, b)| a == b)
+                .count()
+        };
         if reversedirection {
-            while i < minnum {
-                let tok = self.toklist[self.toklist.len() - 1 - i];
-                if tok == tokpat.toklist[tokpat.toklist.len() - 1 - i] {
-                    patres.toklist.insert(0, tok);
-                } else {
-                    break;
-                }
-                i += 1;
-            }
-            if i < maxnum {
+            patres.toklist = self.toklist[self.toklist.len() - common..].to_vec();
+            if common < maxnum {
                 patres.leftellipsis = true;
             }
         } else {
-            while i < minnum {
-                let tok = self.toklist[i];
-                if tok == tokpat.toklist[i] {
-                    patres.toklist.push(tok);
-                } else {
-                    break;
-                }
-                i += 1;
-            }
-            if i < maxnum {
+            patres.toklist = self.toklist[..common].to_vec();
+            if common < maxnum {
                 patres.rightellipsis = true;
             }
         }
@@ -1931,10 +1736,8 @@ fn build_equation_pattern(
 // OperandResolve (slghpatexpress.hh:339)
 // ---------------------------------------------------------------------------
 
-/// C++ `OperandResolve`: the traversal state for `resolveOperandLeft`.  The
-/// C++ struct holds a `vector<OperandSymbol*> &operands`; here the operand
-/// updates flow through the [`OperandResolveSink`] hook so the equation code
-/// stays independent of the symbol table.
+/// Left-to-right operand-layout traversal state. Symbol updates pass through
+/// [`OperandResolveSink`].
 pub struct OperandResolve {
     /// Current base operand (as we traverse left to right).
     pub base: i32,
@@ -1964,9 +1767,7 @@ impl OperandResolve {
     }
 }
 
-/// Hook for the operand mutations `OperandEquation::resolveOperandLeft`
-/// performs on a `OperandSymbol` (C++ reaches through `state.operands[index]`
-/// directly).  Implemented by the slghsymbol build side.
+/// Symbol access needed to resolve operand offsets in a pattern equation.
 pub trait OperandResolveSink {
     /// C++ `OperandSymbol::isOffsetIrrelevant()` for operand `index`.
     fn is_offset_irrelevant(&self, index: i32) -> bool;
@@ -1978,14 +1779,11 @@ pub trait OperandResolveSink {
 // PatternEquation arena (slghpatexpress.hh:351-487, slghpatexpress.cc)
 // ---------------------------------------------------------------------------
 
-/// Arena id of a [`PatternEquation`] node (the `u32` the WS2 parser threads).
+/// Index of a [`PatternEquation`] node in its owning arena.
 pub type EqId = u32;
 
-/// C++ `PatternEquation` hierarchy as an arena enum.  Children are stored as
-/// [`EqId`]s into the owning [`EquationArena`] (replacing the C++ refcounted
-/// `PatternEquation *` pointers); leaf payloads (the value/expression of a
-/// comparison, the operand index, the unconstrained expression) are owned
-/// inline.
+/// An equation node with owned leaf values and child indices into its
+/// [`EquationArena`].
 #[derive(Debug, Clone)]
 pub enum PatternEquation {
     /// C++ `OperandEquation(int4 index)`.
@@ -2016,8 +1814,8 @@ pub enum PatternEquation {
     RightEllipsis { eq: EqId },
 }
 
-/// The driver-owned arena of [`PatternEquation`] nodes (the storage the WS2
-/// `u32` equation ids index).
+/// Driver-owned equation nodes. Pattern generation returns new patterns
+/// without caching them in the arena.
 #[derive(Debug, Clone, Default)]
 pub struct EquationArena {
     nodes: Vec<PatternEquation>,

@@ -698,7 +698,6 @@ struct Scratch {
     pool: KunaNodePool,
     graph: KunaRegionGraph,
     head: KunaNodeId,
-    sink: KunaNodeId,
     node_of: BTreeMap<BlockId, KunaNodeId>,
 }
 
@@ -750,7 +749,7 @@ fn build_scratch(data: &Funcdata) -> Scratch {
             graph.add_edge(&pool, nid, sink);
         }
     }
-    Scratch { pool, graph, head, sink, node_of }
+    Scratch { pool, graph, head, node_of }
 }
 
 /// Is `[start, end)` a single-entry region of `g`?

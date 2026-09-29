@@ -18,12 +18,6 @@
 //! * `reads_slot` reads a **writable** word holding the same kind of address;
 //!   the image's copy of a writable slot is not evidence of anything.
 //! * `reads_number` reads a read-only word holding 42.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `ARM` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -48,37 +42,27 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture and build the index `kuna xrefs` / `kuna strings`
-/// answer out of. `None` is a visible skip when the `.sla` is missing.
-fn index() -> Option<XrefIndex> {
+/// Bootstrap the fixture and build the index `kuna xrefs` / `kuna strings` answer out of.
+fn index() -> XrefIndex {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/poolref_arm_le32");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_poolref: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let bytes = std::fs::read(&bin).expect("fixture readable");
     let file = object::File::parse(&*bytes).expect("fixture parses");
     let seeds: Vec<u64> =
         prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect();
-    Some(xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds))
+    xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds)
 }
 
 /// The defect: the literal is referenced from the instruction that loads its
 /// address out of the pool, not merely from nowhere.
 #[test]
 fn a_literal_reached_through_a_pool_word_is_referenced_by_the_load() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     let refs: Vec<(u64, XrefKind)> =
         idx.refs_to(PROMPT).iter().map(|r| (r.from, r.kind)).collect();
     assert_eq!(
@@ -99,7 +83,7 @@ fn a_literal_reached_through_a_pool_word_is_referenced_by_the_load() {
 /// The pre-existing edge is kept: the pool word itself is still read.
 #[test]
 fn the_pool_word_is_still_read_by_the_same_instruction() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     let refs: Vec<(u64, XrefKind)> =
         idx.refs_to(POOL_PROMPT).iter().map(|r| (r.from, r.kind)).collect();
     assert_eq!(refs, vec![(USES_PROMPT, XrefKind::Read)]);
@@ -108,7 +92,7 @@ fn the_pool_word_is_still_read_by_the_same_instruction() {
 /// The three refusals, each of which would be a fabricated reference.
 #[test]
 fn a_narrow_read_a_writable_slot_and_a_number_are_not_followed() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     assert!(
         idx.refs_to(NARROW).is_empty(),
         "`ldrh r0,[pool]` reads a number out of the pool, not a pointer; got {:?}",

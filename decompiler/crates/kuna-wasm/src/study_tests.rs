@@ -1,23 +1,29 @@
 //! The study view's commands on the browser example (`sample.elf`): `inspect`
 //! against `decompile`, the instruction listing against the C and the file,
-//! `read`, and the `--assert` plane end to end. Skips visibly without specs.
+//! `read`, and the `--assert` plane end to end.
 
 use std::path::PathBuf;
 
 use kuna_console::disasm::hex;
 
-use crate::json::read::{parse, Value};
 use crate::{run_request, Request};
+use serde_json::Value;
 
-fn fixture() -> Option<(String, String)> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().ok()?;
+fn fixture() -> (String, String) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .canonicalize()
+        .expect("repository root");
     let binary = root.join("integrations/web/test/fixtures/sample.elf");
     let specs = root.join("specs");
-    Some((binary.to_str()?.to_string(), specs.to_str()?.to_string()))
+    (
+        binary.to_str().unwrap().to_string(),
+        specs.to_str().unwrap().to_string(),
+    )
 }
 
-fn run(cmd: &str, args: &[&str], asserts: &[&str]) -> Option<Result<Value, String>> {
-    let (binary, specs) = fixture()?;
+fn run(cmd: &str, args: &[&str], asserts: &[&str]) -> Result<Value, String> {
+    let (binary, specs) = fixture();
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let asserts: Vec<String> = asserts.iter().map(|s| s.to_string()).collect();
     let out = run_request(&Request {
@@ -29,76 +35,91 @@ fn run(cmd: &str, args: &[&str], asserts: &[&str]) -> Option<Result<Value, Strin
         language: None,
         asserts: &asserts,
     });
-    match out {
-        Err(e) if e.contains("could not build an architecture") => {
-            eprintln!("study_tests: skipping: {e}");
-            None
-        }
-        other => Some(other.map(|json| parse(&json))),
-    }
+    out.map(|json| serde_json::from_str(&json).expect("valid JSON"))
 }
 
 fn fixture_bytes() -> Vec<u8> {
-    std::fs::read(fixture().expect("fixture").0).expect("fixture bytes")
+    std::fs::read(fixture().0).expect("fixture bytes")
 }
-
 
 #[test]
 fn inspect_is_decompile_plus_a_consistent_map_of_the_function() {
-    let Some(decompiled) = run("decompile", &["main"], &[]) else { return };
+    let decompiled = run("decompile", &["main"], &[]);
     let decompiled = decompiled.expect("decompile main");
-    let Some(inspected) = run("inspect", &["main"], &[]) else { return };
+    let inspected = run("inspect", &["main"], &[]);
     let inspected = inspected.expect("inspect main");
-    let f = inspected.get("function");
-    let code = f.get("code").str().expect("code");
-    assert_eq!(Some(code), decompiled.get("functions").arr()[0].get("code").str());
-    assert_eq!(inspected.get("language").str(), Some("c-language"));
-    assert_eq!(inspected.get("target").get("bits").u64(), Some(64));
-    assert_eq!(*f.get("tokens_error"), Value::Null);
+    let f = &inspected["function"];
+    let code = f["code"].as_str().expect("code");
+    assert_eq!(
+        Some(code),
+        decompiled["functions"].as_array().expect("array")[0]["code"].as_str()
+    );
+    assert_eq!(inspected["language"].as_str(), Some("c-language"));
+    assert_eq!(inspected["target"]["bits"].as_u64(), Some(64));
+    assert_eq!(f["tokens_error"], Value::Null);
 
     let lines: Vec<&str> = code.split('\n').collect();
-    let tokens = f.get("tokens").arr();
+    let tokens = f["tokens"].as_array().expect("array");
     assert!(!tokens.is_empty());
     for t in tokens {
-        let line = t.get("line").u64().expect("line") as usize;
-        let col = t.get("col").u64().expect("col") as usize;
-        let text = t.get("text").str().expect("text");
+        let line = t["line"].as_u64().expect("line") as usize;
+        let col = t["col"].as_u64().expect("col") as usize;
+        let text = t["text"].as_str().expect("text");
         let units: Vec<u16> = lines[line - 1].encode_utf16().collect();
         let len = text.encode_utf16().count();
         assert_eq!(String::from_utf16_lossy(&units[col..col + len]), text);
     }
 
-    let entry = f.get("address").u64().expect("entry");
+    let entry = f["address"].as_u64().expect("entry");
     let bytes = fixture_bytes();
-    let instructions = f.get("instructions").arr();
+    let instructions = f["instructions"].as_array().expect("array");
     assert!(!instructions.is_empty());
-    assert_eq!(f.get("instructions_truncated"), &Value::Bool(false));
-    let starts: Vec<u64> = instructions.iter().filter_map(|i| i.get("address").u64()).collect();
+    assert_eq!(f["instructions_truncated"], Value::Bool(false));
+    let starts: Vec<u64> = instructions
+        .iter()
+        .filter_map(|i| i["address"].as_u64())
+        .collect();
     for i in instructions {
-        let address = i.get("address").u64().expect("address");
-        assert_eq!(i.get("offset").num(), Some((address - entry) as f64));
-        for line in i.get("lines").arr() {
-            let line = line.u64().expect("line") as usize;
-            assert!((1..=lines.len()).contains(&line), "line {line} out of range");
+        let address = i["address"].as_u64().expect("address");
+        assert_eq!(i["offset"].as_u64(), Some(address - entry));
+        for line in i["lines"].as_array().expect("array") {
+            let line = line.as_u64().expect("line") as usize;
+            assert!(
+                (1..=lines.len()).contains(&line),
+                "line {line} out of range"
+            );
         }
-        let size = i.get("size").u64().expect("size") as usize;
-        let offset = i.get("file_offset").u64().expect("sample.elf's .text is file-backed") as usize;
-        assert_eq!(i.get("bytes").str(), Some(hex(&bytes[offset..offset + size]).as_str()));
+        let size = i["size"].as_u64().expect("size") as usize;
+        let offset = i["file_offset"]
+            .as_u64()
+            .expect("sample.elf's .text is file-backed") as usize;
+        assert_eq!(
+            i["bytes"].as_str(),
+            Some(hex(&bytes[offset..offset + size]).as_str())
+        );
     }
-    for mapping in f.get("line_mappings").arr() {
-        for address in mapping.get("addresses").arr() {
-            assert!(starts.contains(&address.u64().expect("address")), "{mapping:?}");
+    for mapping in f["line_mappings"].as_array().expect("array") {
+        for address in mapping["addresses"].as_array().expect("array") {
+            assert!(
+                starts.contains(&address.as_u64().expect("address")),
+                "{mapping:?}"
+            );
         }
     }
     let first = &instructions[0];
-    let Some(read) = run("read", &[first.get("address_hex").str().expect("hex"), "16"], &[]) else {
-        return;
-    };
+    let read = run(
+        "read",
+        &[first["address_hex"].as_str().expect("hex"), "16"],
+        &[],
+    );
     let read = read.expect("read");
-    let first_bytes = first.get("bytes").str().expect("bytes");
-    assert!(read.get("bytes").str().expect("bytes").starts_with(first_bytes));
-    assert_eq!(read.get("size").u64(), Some(16));
-    assert_eq!(read.get("file_offset"), first.get("file_offset"));
+    let first_bytes = first["bytes"].as_str().expect("bytes");
+    assert!(read["bytes"]
+        .as_str()
+        .expect("bytes")
+        .starts_with(first_bytes));
+    assert_eq!(read["size"].as_u64(), Some(16));
+    assert_eq!(read["file_offset"], first["file_offset"]);
 }
 
 /// `function <entry>=<name>` renames the function everywhere the next load
@@ -107,27 +128,50 @@ fn inspect_is_decompile_plus_a_consistent_map_of_the_function() {
 #[test]
 fn a_function_rename_reaches_the_inventory_and_qualifies_later_directives() {
     let rename = "function 0x1198=entry_main";
-    let Some(list) = run("list", &[], &[rename]) else { return };
+    let list = run("list", &[], &[rename]);
     let list = list.expect("list");
-    let row = list
-        .get("functions")
-        .arr()
+    let row = list["functions"]
+        .as_array()
+        .expect("array")
         .iter()
-        .find(|f| f.get("address_hex").str() == Some("0x1198"))
+        .find(|f| f["address_hex"].as_str() == Some("0x1198"))
         .expect("main's entry is listed");
-    assert_eq!(row.get("name").str(), Some("entry_main"));
-    assert!(row.get("aliases").arr().iter().any(|a| a.str() == Some("main")), "{row:?}");
-    assert_eq!(list.get("assertions").arr()[0].get("status").str(), Some("applied"));
-    assert!(list.get("sections").arr().iter().any(|s| s.get("name").str() == Some(".text")));
+    assert_eq!(row["name"].as_str(), Some("entry_main"));
+    assert!(
+        row["aliases"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .any(|a| a.as_str() == Some("main")),
+        "{row:?}"
+    );
+    assert_eq!(
+        list["assertions"].as_array().expect("array")[0]["status"].as_str(),
+        Some("applied")
+    );
+    assert!(list["sections"]
+        .as_array()
+        .expect("array")
+        .iter()
+        .any(|s| s["name"].as_str() == Some(".text")));
 
-    let Some(inspected) = run("inspect", &["entry_main"], &[rename, "name entry_main::v1 total"]) else {
-        return;
-    };
+    let inspected = run(
+        "inspect",
+        &["entry_main"],
+        &[rename, "name entry_main::v1 total"],
+    );
     let inspected = inspected.expect("inspect the renamed function");
-    let code = inspected.get("function").get("code").str().expect("code");
-    assert!(code.contains("entry_main(") && code.contains("total"), "{code}");
-    let statuses: Vec<&str> =
-        inspected.get("assertions").arr().iter().filter_map(|a| a.get("status").str()).collect();
+    let code = inspected["function"]["code"].as_str().expect("code");
+    assert!(
+        code.contains("entry_main(") && code.contains("total"),
+        "{code}"
+    );
+    let statuses: Vec<&str> = inspected["assertions"]
+        .as_array()
+        .expect("array")
+        .iter()
+        .filter_map(|a| a["status"].as_str())
+        .collect();
     assert_eq!(statuses, vec!["applied", "applied"]);
 }
 
@@ -135,54 +179,64 @@ fn a_function_rename_reaches_the_inventory_and_qualifies_later_directives() {
 #[test]
 fn a_byte_patch_reaches_read_and_the_listing() {
     let patch = "bytes 0x1198 90909090";
-    let Some(before) = run("read", &["0x1198", "4"], &[]) else { return };
+    let before = run("read", &["0x1198", "4"], &[]);
     let before = before.expect("read");
-    let offset = before.get("file_offset").u64().expect("file offset") as usize;
-    assert_eq!(before.get("bytes").str(), Some(hex(&fixture_bytes()[offset..offset + 4]).as_str()));
-    let Some(after) = run("read", &["0x1198", "4"], &[patch]) else { return };
-    assert_eq!(after.expect("read").get("bytes").str(), Some("90909090"));
-    let Some(inspected) = run("inspect", &["main"], &[patch]) else { return };
+    let offset = before["file_offset"].as_u64().expect("file offset") as usize;
+    assert_eq!(
+        before["bytes"].as_str(),
+        Some(hex(&fixture_bytes()[offset..offset + 4]).as_str())
+    );
+    let after = run("read", &["0x1198", "4"], &[patch]);
+    assert_eq!(after.expect("read")["bytes"].as_str(), Some("90909090"));
+    let inspected = run("inspect", &["main"], &[patch]);
     let inspected = inspected.expect("inspect");
-    let first = &inspected.get("function").get("instructions").arr()[0];
-    assert_eq!(first.get("bytes").str(), Some("90"));
-    assert_eq!(first.get("mnemonic").str(), Some("NOP"));
+    let first = &inspected["function"]["instructions"]
+        .as_array()
+        .expect("array")[0];
+    assert_eq!(first["bytes"].as_str(), Some("90"));
+    assert_eq!(first["mnemonic"].as_str(), Some("NOP"));
 }
 
 /// A directive that binds to nothing is a report row and the C still comes
 /// back; one that does not parse is the run's error.
 #[test]
 fn a_rejected_directive_is_a_row_and_a_malformed_one_an_error() {
-    let Some(inspected) = run("inspect", &["main"], &["name v999 nope"]) else { return };
+    let inspected = run("inspect", &["main"], &["name v999 nope"]);
     let inspected = inspected.expect("a rejected directive still returns the function");
-    assert!(inspected.get("function").get("code").str().is_some());
-    let row = &inspected.get("assertions").arr()[0];
-    assert_eq!(row.get("status").str(), Some("rejected"));
-    assert!(row.get("detail").str().is_some());
+    assert!(inspected["function"]["code"].as_str().is_some());
+    let row = &inspected["assertions"].as_array().expect("array")[0];
+    assert_eq!(row["status"].as_str(), Some("rejected"));
+    assert!(row["detail"].as_str().is_some());
 
-    let Some(bad) = run("inspect", &["main"], &["bogus directive"]) else { return };
-    assert!(bad.expect_err("unparsable").starts_with("--assert \"bogus directive\""));
-    let Some(two_lines) = run("inspect", &["main"], &["name v1 a\nname v2 b"]) else { return };
+    let bad = run("inspect", &["main"], &["bogus directive"]);
+    assert!(bad
+        .expect_err("unparsable")
+        .starts_with("--assert \"bogus directive\""));
+    let two_lines = run("inspect", &["main"], &["name v1 a\nname v2 b"]);
     assert!(two_lines.is_err());
 }
 
 #[test]
 fn read_bounds_its_length_and_stops_at_unmapped_memory() {
-    let Some(zero) = run("read", &["0x1198", "0"], &[]) else { return };
+    let zero = run("read", &["0x1198", "0"], &[]);
     assert!(zero.is_err());
-    let Some(huge) = run("read", &["0x1198", "65537"], &[]) else { return };
+    let huge = run("read", &["0x1198", "65537"], &[]);
     assert!(huge.is_err());
     // sample.elf's executable segment ends at 0x11f9 (`.fini`), and a hole
     // follows: a read across the end returns the four mapped bytes only.
-    let Some(tail) = run("read", &["0x11f5", "64"], &[]) else { return };
+    let tail = run("read", &["0x11f5", "64"], &[]);
     let tail = tail.expect("a read across the end of the segment");
-    assert_eq!(tail.get("size").u64(), Some(4));
-    let offset = tail.get("file_offset").u64().expect("file-backed") as usize;
-    assert_eq!(tail.get("bytes").str(), Some(hex(&fixture_bytes()[offset..offset + 4]).as_str()));
-    let Some(nowhere) = run("read", &["0x7fff0000", "16"], &[]) else { return };
+    assert_eq!(tail["size"].as_u64(), Some(4));
+    let offset = tail["file_offset"].as_u64().expect("file-backed") as usize;
+    assert_eq!(
+        tail["bytes"].as_str(),
+        Some(hex(&fixture_bytes()[offset..offset + 4]).as_str())
+    );
+    let nowhere = run("read", &["0x7fff0000", "16"], &[]);
     let nowhere = nowhere.expect("unmapped is an empty read, not an error");
-    assert_eq!(nowhere.get("size").u64(), Some(0));
-    assert_eq!(nowhere.get("bytes").str(), Some(""));
-    assert_eq!(*nowhere.get("file_offset"), Value::Null);
+    assert_eq!(nowhere["size"].as_u64(), Some(0));
+    assert_eq!(nowhere["bytes"].as_str(), Some(""));
+    assert_eq!(nowhere["file_offset"], Value::Null);
 }
 
 /// `xrefs` answers from the CLI's reference walk: `main` calls `add`,
@@ -190,20 +244,32 @@ fn read_bounds_its_length_and_stops_at_unmapped_memory() {
 /// `sum_to`'s one caller is `main`.
 #[test]
 fn xrefs_names_both_ends_of_every_reference() {
-    let Some(main) = run("xrefs", &["main"], &[]) else { return };
+    let main = run("xrefs", &["main"], &[]);
     let main = main.expect("xrefs main");
-    let callees: Vec<&str> =
-        main.get("callees").arr().iter().filter_map(|r| r.get("name").str()).collect();
+    let callees: Vec<&str> = main["callees"]
+        .as_array()
+        .expect("array")
+        .iter()
+        .filter_map(|r| r["name"].as_str())
+        .collect();
     assert_eq!(callees, vec!["add", "sum_to", "printf"]);
-    assert!(main.get("callees").arr().iter().all(|r| r.get("kind").str() == Some("call")));
-    let data = main.get("data_refs").arr();
-    assert!(data.iter().any(|r| r.get("address_hex").str() == Some("0x2004")), "{data:?}");
-    let Some(sum_to) = run("xrefs", &["sum_to"], &[]) else { return };
+    assert!(main["callees"]
+        .as_array()
+        .expect("array")
+        .iter()
+        .all(|r| r["kind"].as_str() == Some("call")));
+    let data = main["data_refs"].as_array().expect("array");
+    assert!(
+        data.iter()
+            .any(|r| r["address_hex"].as_str() == Some("0x2004")),
+        "{data:?}"
+    );
+    let sum_to = run("xrefs", &["sum_to"], &[]);
     let sum_to = sum_to.expect("xrefs sum_to");
-    let callers = sum_to.get("callers").arr();
+    let callers = sum_to["callers"].as_array().expect("array");
     assert_eq!(callers.len(), 1);
-    assert_eq!(callers[0].get("name").str(), Some("main"));
-    assert_eq!(callers[0].get("address_hex").str(), Some("0x1198"));
-    assert_eq!(callers[0].get("instruction").str(), Some("CALL 0x1161"));
-    assert!(callers[0].has("from_hex"));
+    assert_eq!(callers[0]["name"].as_str(), Some("main"));
+    assert_eq!(callers[0]["address_hex"].as_str(), Some("0x1198"));
+    assert_eq!(callers[0]["instruction"].as_str(), Some("CALL 0x1161"));
+    assert!(callers[0].get("from_hex").is_some());
 }

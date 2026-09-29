@@ -24,12 +24,6 @@
 //! The parity corpora cannot see any of this: both are symbol-less bytechunks
 //! that never construct an `ObjectLoadImage`, so a `.pdata` change is invisible
 //! to `make test` and `make test-stages`.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` / `AARCH64` `.sla` under `specs/`
-//! (gitignored; `make specs`). When absent the bootstrap fails, and the test
-//! prints that and returns early — a visible skip, never a false green.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -53,10 +47,10 @@ fn fixtures() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures")
 }
 
-/// Load a fixture with the gate forced on/off, or left unset (`None`) to observe
-/// the shipped default, and commit the analysis facts so the discovered entries
-/// become visible symbols. `None` back means the `.sla` is absent (a visible skip).
-fn boot(name: &str, gate: Option<bool>) -> Option<ConsoleProgram> {
+/// Load a fixture with the gate forced on/off, or left unset (`None`) to observe the
+/// shipped default, and commit the analysis facts so the discovered entries become visible
+/// symbols.
+fn boot(name: &str, gate: Option<bool>) -> ConsoleProgram {
     let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
@@ -70,19 +64,9 @@ fn boot(name: &str, gate: Option<bool>) -> Option<ConsoleProgram> {
     let booted = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots);
     std::env::remove_var(PDATACHAINED_ENV);
 
-    let mut prog = match booted {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_pdatachained: skipping {name} (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = booted.expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Drive `load function <name>` → `decompile` → `print C` and return the C.
@@ -109,7 +93,7 @@ fn decompile_func(prog: ConsoleProgram, name: &str) -> String {
 /// function, and the primary is truncated into the reported `} while ;`.
 #[test]
 fn chained_chunk_is_not_an_entry_and_the_primary_decompiles_whole() {
-    let Some(prog) = boot("pe_chainedunwind_x86_64.exe", None) else { return };
+    let prog = boot("pe_chainedunwind_x86_64.exe", None);
     assert!(
         prog.lookup_symbol("sub_140001000").is_some(),
         "the primary must still be discovered from its own .pdata record"
@@ -138,7 +122,7 @@ fn chained_chunk_is_not_an_entry_and_the_primary_decompiles_whole() {
 /// option's, so only the entry and the cut are pinned here.
 #[test]
 fn gate_off_restores_the_bogus_entry_and_the_truncation() {
-    let Some(prog) = boot("pe_chainedunwind_x86_64.exe", Some(false)) else { return };
+    let prog = boot("pe_chainedunwind_x86_64.exe", Some(false));
     assert!(
         prog.lookup_symbol("sub_140001020").is_some(),
         "gate off must restore the chained chunk as a function"
@@ -152,7 +136,7 @@ fn gate_off_restores_the_bogus_entry_and_the_truncation() {
 /// the whole function fails. The default recovers the loop.
 #[test]
 fn loop_shape_decompiles_at_the_default() {
-    let Some(prog) = boot("pe_chainedunwind_loop_x86_64.exe", None) else { return };
+    let prog = boot("pe_chainedunwind_loop_x86_64.exe", None);
     assert!(
         prog.lookup_symbol("sub_140001020").is_none(),
         "the chained chunk must not be claimed as a function"
@@ -180,7 +164,7 @@ fn loop_shape_decompiles_at_the_default() {
 /// branch's own block.
 #[test]
 fn gate_off_truncation_still_renders_valid_c() {
-    let Some(prog) = boot("pe_chainedunwind_loop_x86_64.exe", Some(false)) else { return };
+    let prog = boot("pe_chainedunwind_loop_x86_64.exe", Some(false));
     let out = decompile_func(prog, "sub_140001000");
     assert!(
         !out.contains("decompilation failed") && !out.contains("LOSS-131"),
@@ -197,7 +181,7 @@ fn gate_off_truncation_still_renders_valid_c() {
 /// truncation is quiet, and the second half of the function simply disappears.
 #[test]
 fn plain_fallthrough_shape_keeps_its_second_half() {
-    let Some(prog) = boot("pe_chainedunwind_plainft_x86_64.exe", None) else { return };
+    let prog = boot("pe_chainedunwind_plainft_x86_64.exe", None);
     let out = decompile_func(prog, "sub_140001000");
     assert!(!out.contains("funcboundflow"), "must not be truncated, got:\n{out}");
     // 0x1c = 1+2+3+4+5+6+7, the sum only the whole body computes.
@@ -209,7 +193,7 @@ fn plain_fallthrough_shape_keeps_its_second_half() {
 /// stride all four are discovered. Not gated — the stride is not a judgement call.
 #[test]
 fn arm64_pdata_stride_discovers_every_record() {
-    let Some(prog) = boot("pe_pdata_arm64.exe", None) else { return };
+    let prog = boot("pe_pdata_arm64.exe", None);
     for name in
         ["sub_140001000", "sub_140001010", "sub_140001020", "sub_140001030"]
     {

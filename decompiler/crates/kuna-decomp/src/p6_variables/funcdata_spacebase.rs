@@ -591,6 +591,11 @@ impl Funcdata {
             crate::kuna_endptrbound::coalesce_hints(&mut state, &endptr_walks, &space, t.as_ref());
         }
 
+        if self.get_arch().cast_object {
+            let declared = crate::kuna_castobject::declare_out_params(self, &mut state, &space);
+            self.record_cast_objects(declared);
+        }
+
         // overlapProblems = restructure(state).  Clone the type factory `Rc` out
         // first so the &mut ScopeLocal borrow does not alias the &self arch read.
         let types_rc = self.get_arch().types_rc();
@@ -1215,6 +1220,8 @@ impl Funcdata {
     /// Walks every Varnode in the local scope's space; for each, resolves the
     /// overlapping mapped Symbol and paints the `mapped`/`addrtied`/`addrforce`/
     /// `nolocalalias` flags and (when `update_datatypes`) the recovered type.
+    /// Unmapped locations gain `nolocalalias` only when the caller enables
+    /// the alias check and the local map proves the location unaliased.
     /// Returns `true` if any Varnode changed.
     pub fn sync_varnodes_with_symbols(
         &mut self,
@@ -1324,40 +1331,9 @@ impl Funcdata {
                 if in_scope {
                     fl = varnode_flags::mapped | varnode_flags::addrtied;
                 } else if unmapped_alias_check {
-                    // C++ funcdata_varnode.cc:999-1001:
-                    //   fl = lm->isUnmappedUnaliased(vnexemplar) ? nolocalalias : 0;
-                    // The faithful flip is [`ScopeLocal::is_unmapped_unaliased`]
-                    // (varmap.rs).  Wiring it here forwards the MIPS gp spill (Gp Test
-                    // #2 GAINED: the unmapped, unaliased gp-spill slot gets
-                    // `nolocalalias`, RuleIndirectCollapse drops the per-call INDIRECT,
-                    // and the constant reaches the GOT loads → `printf("Hello",a0)`),
-                    // and — now that `protect_switch_paths` is byte-faithful (the
-                    // out-of-bounds `getIn(1)` panic in `switch_is_delayed_constant` /
-                    // the walk's eager input read is fixed) — ALL 6 switch datatests
-                    // (switchind 16/16, switchmulti 9/9, switchloop 10/10, switchhide,
-                    // switchreturn, ifswitch) HOLD.
-                    //
-                    // BLOCKED on ONE residual: Gp Test #1 (`populate(v1)`).  The flip
-                    // is byte-faithful (C++ flips the same -0x10 gp slot), but in rust
-                    // the resulting alias change drives a HighVariable OVER-MERGE: the
-                    // `&v1` stack-address COPY merges into the `a0` input parameter
-                    // (param typed `xunknown1 *a0` instead of C++'s `xunknown4 a0`),
-                    // so `a0 = v1; populate(a0)` is emitted explicitly where C++ keeps
-                    // the populate-arg and printf-arg `a0` as distinct single-use SSA
-                    // versions and implies the COPY → `populate(v1)`.  This is a
-                    // DOWNSTREAM merge/HighVariable divergence (the LOSS-247 stack-
-                    // COPY-into-input family), not in either of these two pieces.
-                    // NEXT-LOCUS: stop the speculative merge of the `&v1` address COPY
-                    // into the `a0` input param (merge.rs / ActionMerge* input-merge
-                    // eligibility under `nolocalalias`), THEN flip this on:
-                    //   let unaliased = self.get_scope_local().and_then(|lm|
-                    //       ex_addr.get_space().map(|spc|
-                    //           lm.is_unmapped_unaliased(&spc, ex_addr.get_offset())))
-                    //       .unwrap_or(false);
-                    //   fl = if unaliased { varnode_flags::nolocalalias } else { 0 };
                     let unaliased = self.get_scope_local().and_then(|lm|
                         ex_addr.get_space().map(|spc|
-                            lm.is_unmapped_unaliased(&spc, ex_addr.get_offset())))
+                            lm.is_unmapped_unaliased(spc, ex_addr.get_offset())))
                         .unwrap_or(false);
                     fl = if unaliased { varnode_flags::nolocalalias } else { 0 };
                 } else {

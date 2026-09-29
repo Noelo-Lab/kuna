@@ -1,0 +1,46 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-1a283c46d533",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--functions",
+    "w_bcmp,w_chk,w_hsum,w_hash",
+    "--option",
+    "elemptr",
+    "on",
+    "--option",
+    "protoorder",
+    "cycles"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "timeout_s": 120,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
+    "binary_sha256": "9111eb49e758aae85158c7d5637be62e7ed63708f431086aa8c32f87448643e6",
+    "binary_size": 21768,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64",
+    "selector": "w_chk",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "w_bcmp\\(char \\*a0,char \\*a1,long a2\\)",
+      "w_bcmp\\(a0,&dat_30003020,0xf\\);",
+      "return w_hsum\\(&dat_30003020,0xf\\);"
+    ],
+    "stdout_absent": [
+      "\"0!0"
+    ]
+  },
+  "notes": "A 15-byte table holding a zero byte goes to parameters elemptr types char * because the callees index all fifteen bytes (w_bcmp compares, w_hsum hashes). Callers pass its address, &dat_30003020: a string literal would stop at the zero byte. Naming protoorder makes the narrowed run the callee-first batch in which callees state their parameters."
+}

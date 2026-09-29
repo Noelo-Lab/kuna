@@ -21,12 +21,6 @@
 //!
 //! Fixtures: `midstring_x86_64` (`+.c`, purpose-built, carries the negative
 //! control) and `regglobal_fmt_x86_64` (the IDA-parity reference).
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -42,25 +36,15 @@ fn fixture(name: &str) -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name)
 }
 
-/// Bootstrap `bin`, commit the analysis facts, decompile `func`, and return the
-/// captured C (`None` ⇒ specs-less skip).
-fn decompile(bin: &str, func: &str) -> Option<String> {
+/// Bootstrap `bin`, commit the analysis facts, decompile `func`, and return the captured C.
+fn decompile(bin: &str, func: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let path = fixture(bin).to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&path, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_midstring_literals: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let path = fixture(bin).to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let cmds: Vec<String> =
@@ -76,7 +60,7 @@ fn decompile(bin: &str, func: &str) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// The purpose-built fixture: `sink("coreutils")` is `&banner[4]` after gcc's
@@ -84,7 +68,7 @@ fn decompile(bin: &str, func: &str) -> Option<String> {
 /// an interior pointer into a read-only **int** array, must stay numeric.
 #[test]
 fn interior_pointer_into_a_char_array_renders_the_tail_literal() {
-    let Some(code) = decompile("midstring_x86_64", "main") else { return };
+    let code = decompile("midstring_x86_64", "main");
 
     assert!(
         code.contains(r#"sink("GNU coreutils")"#),
@@ -104,7 +88,7 @@ fn interior_pointer_into_a_char_array_renders_the_tail_literal() {
 /// `"%s"` is 12 bytes into `"%s: %s"`.
 #[test]
 fn fmt_main_resolves_its_merged_tail_literals() {
-    let Some(code) = decompile("regglobal_fmt_x86_64", "main") else { return };
+    let code = decompile("regglobal_fmt_x86_64", "main");
 
     assert!(
         code.contains(r#"bindtextdomain("coreutils""#),

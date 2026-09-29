@@ -251,7 +251,7 @@ fn prints_exactly_as_a_float(data: &Funcdata, vn: VarnodeId) -> bool {
         return false;
     }
     data.get_arch().get_float_format(node.get_size()).is_some_and(|f| {
-        f.get_host_float(node.get_offset() as u64).1 != kuna_num::float::floatclass::nan
+        f.get_host_float(node.get_offset()).1 != kuna_num::float::floatclass::nan
     })
 }
 
@@ -335,7 +335,7 @@ fn inside_a_frame_aggregate(
             return true;
         }
     }
-    let shift = 64 - 8 * space.get_addr_size().clamp(1, 8) as u32;
+    let shift = 64 - 8 * space.get_addr_size().clamp(1, 8);
     let signed = |x: kuna_base::types::uintb| ((x << shift) as i64) >> shift;
     let regions = regions.get_or_insert_with(|| {
         let Some(sp) = data.find_spacebase_input(space) else { return Vec::new() };
@@ -476,6 +476,13 @@ pub(crate) fn input_refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bo
         || family_refuses(data, vn, Reading::Input, ct)
         || indexes_a_pointer(data, vn)
         || splits_a_wide_constant(data, &value_family(data, vn), ct, 0)
+}
+
+/// (kuna `callrettype`) Does anything the caller does with the call result
+/// `vn` outrank the callee's stated return type `ct` for it?  The refusals a
+/// callee's vote meets at a call argument, asked of the result's own uses.
+pub(crate) fn output_refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    class_of(ct).is_none() || family_refuses(data, vn, Reading::Input, ct)
 }
 
 /// Is the value `vn` the index of a pointer addition (`((char *)0x1018)[a0]`,
@@ -727,7 +734,7 @@ pub(crate) fn with_sibling_loads(data: &Funcdata, family: &[VarnodeId]) -> Vec<V
         if through_the_frame(data, o) {
             continue;
         }
-        let Some((base, off)) = o.get_in(1).and_then(|a| place(a)) else { continue };
+        let Some((base, off)) = o.get_in(1).and_then(&place) else { continue };
         let Some(bnode) = data.vbank().get(base) else { continue };
         let mut addrs: Vec<VarnodeId> = if off == 0 { vec![base] } else { Vec::new() };
         for r in bnode.descend_iter() {
@@ -1578,6 +1585,29 @@ pub fn park_recovered(
     }
     arch.set_function_prototype_pieces_at(entry, pieces.clone());
     Ok(Recovered { pieces, trimmed })
+}
+
+/// (kuna `callbacktype`) Does the body of `entry` read the argument register
+/// ONE PAST a declared parameter list before writing it?
+///
+/// The same one-sided entry walk [`arity_claim_sound`] takes, asked of a list
+/// the program declared rather than one recovery built: a body that consumes a
+/// register the declaration does not pass is not the function that declaration
+/// describes, and locking it there would drop a live argument. A walk that
+/// cannot see the body answers `false`, so the declaration stands on the rest
+/// of the policy.
+pub fn reads_past_the_list(
+    arch: &mut Architecture,
+    entry: &Address,
+    pieces: &PrototypePieces,
+    storage: &[(Address, int4)],
+) -> bool {
+    if !storage.iter().all(|(a, _)| crate::kuna_calleearitybody::is_register(a)) {
+        return false;
+    }
+    let Some(next) = next_slot_storage(pieces, arch) else { return false };
+    let Some(facts) = entry_facts(arch, entry) else { return false };
+    facts.proves_input(&next.0, next.1)
 }
 
 /// Would [`park_recovered`]'s locking branch accept `storage` as a statement of

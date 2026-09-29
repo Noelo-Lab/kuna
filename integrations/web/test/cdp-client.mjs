@@ -22,55 +22,67 @@ export function findChrome() {
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 /**
- * Start one headless Chrome (with any extra `flags`) and wait (up to `waitMs`)
- * for its DevTools port. Resolves `{port, child, close}`, or `{failed}` saying
- * why it never came up (how it exited, or the last lines it printed).
- */
-async function startChrome(chromePath, width, height, flags, waitMs) {
-  const profile = mkdtempSync(join(tmpdir(), 'kuna-cdp-'));
-  const child = spawn(chromePath, [
-    '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run',
-    '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars',
-    '--remote-debugging-port=0', `--user-data-dir=${profile}`,
-    `--window-size=${width},${height}`, ...flags, 'about:blank',
-  ], { stdio: ['ignore', 'ignore', 'pipe'] });
-  let stderr = '';
-  child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-2000); });
-  let exited = null;
-  child.on('exit', (code, signal) => { exited = signal || `exit ${code}`; });
-  child.on('error', (e) => { exited = e.message; });
-  const close = () => {
-    try { child.kill('SIGKILL'); } catch (_) { /* gone */ }
-    child.stderr.destroy();
-    try { rmSync(profile, { recursive: true, force: true }); } catch (_) { /* busy */ }
-  };
-  const end = Date.now() + waitMs;
-  let port = null;
-  while (!port && !exited && Date.now() < end) {
-    await sleep(100);
-    try { port = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]; } catch (_) { /* not yet */ }
-  }
-  if (port) {
-    child.stderr.resume();
-    return { port: Number(port), child, close };
-  }
-  close();
-  const why = exited ? `Chrome stopped (${exited})` : `no DevTools port after ${waitMs / 1000} s`;
-  return { failed: `${why}${stderr.trim() ? `: ${stderr.trim().split('\n').slice(-3).join(' | ')}` : ''}` };
-}
-
-/**
  * Launch headless Chrome (with any extra `flags`); resolves `{port, child,
- * close}` once DevTools answers. A cold start on a busy CI runner can take
- * well over ten seconds, so it waits up to a minute and tries a second time
- * before giving up.
+ * close}` once it publishes its DevTools port. A cold start on a busy CI
+ * runner can take well over ten seconds, so it waits up to a minute.
  */
-export async function launchChrome(chromePath = findChrome(), { width = 1280, height = 860, flags = [], waitMs = 60000 } = {}) {
-  const first = await startChrome(chromePath, width, height, flags, waitMs);
-  if (!first.failed) return first;
-  const second = await startChrome(chromePath, width, height, flags, waitMs);
-  if (!second.failed) return second;
-  throw new Error(`Chrome did not open a DevTools port (twice). First: ${first.failed}. Second: ${second.failed}`);
+export async function launchChrome(chromePath = findChrome(), { width = 1280, height = 860, flags = [], startupTimeoutMs = 60000 } = {}) {
+  if (!chromePath) throw new Error('Chrome executable not found');
+  if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs < 0) {
+    throw new Error('Chrome startup timeout must be a nonnegative finite number');
+  }
+  const profile = mkdtempSync(join(tmpdir(), 'kuna-cdp-'));
+  let child;
+  const cleanup = () => {
+    try { rmSync(profile, { recursive: true, force: true }); } catch (_) { /* retried when the child closes */ }
+  };
+  const close = () => {
+    try { child?.kill('SIGKILL'); } catch (_) { /* gone */ }
+    child?.stderr?.destroy();
+    cleanup();
+  };
+  let stderr = '';
+  const failure = (message) => new Error(`${message}${stderr.trim() ? `\n${stderr.trim()}` : ''}`);
+  try {
+    child = spawn(chromePath, [
+      '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run',
+      '--no-default-browser-check', '--disable-extensions', '--hide-scrollbars',
+      '--remote-debugging-port=0', `--user-data-dir=${profile}`,
+      `--window-size=${width},${height}`, ...flags, 'about:blank',
+    ], { stdio: ['ignore', 'ignore', 'pipe'] });
+    child.once('close', cleanup);
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-8192); });
+    let spawnError;
+    let exited;
+    child.once('error', (error) => { spawnError = error; });
+    child.once('exit', (code, signal) => { exited = { code, signal }; });
+    const deadline = Date.now() + startupTimeoutMs;
+    for (;;) {
+      if (spawnError) throw failure(`Could not start Chrome: ${spawnError.message}`);
+      if (exited) {
+        throw failure(`Chrome exited before publishing its DevTools port (${exited.signal ? `signal ${exited.signal}` : `code ${exited.code}`})`);
+      }
+      let portFile = '';
+      try { portFile = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8'); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      const newline = portFile.indexOf('\n');
+      if (newline >= 0 && child.exitCode === null && child.signalCode === null) {
+        const value = portFile.slice(0, newline).trim();
+        const port = /^\d+$/.test(value) ? Number(value) : NaN;
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+          throw failure(`Chrome wrote an invalid DevTools port: ${JSON.stringify(value)}`);
+        }
+        return { port, child, close };
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw failure(`Chrome did not open a DevTools port within ${startupTimeoutMs} ms`);
+      await sleep(Math.min(50, remaining));
+    }
+  } catch (error) {
+    close();
+    throw error;
+  }
 }
 
 /** Attach to a page target (the first, or `targetId`); resolves a small session API. */

@@ -391,6 +391,10 @@ pub struct Architecture {
     /// `charptr on|off`.  The rule lives in
     /// [`kuna_charptr`](crate::p5_types::kuna_charptr).
     pub char_ptr: bool,
+    /// (kuna `elemptr`) Declare a pointer-width value used only as an array of
+    /// one element type as a pointer to that element; option `elemptr on|off`.
+    /// The rule lives in [`kuna_elemptr`](crate::p5_types::kuna_elemptr).
+    pub elem_ptr: bool,
     /// (kuna `ptrfromuse`) Type a function input whose only memory role is to be
     /// a LOAD/STORE base as a pointer, and what that pointer points at.  See
     /// [`kuna_ptrfromuse`](crate::p5_types::kuna_ptrfromuse).
@@ -398,6 +402,9 @@ pub struct Architecture {
     /// (kuna `protoorder`) Callee-first whole-binary order and what it states
     /// (`types` or `lock`); read by the `kuna-cli` driver.
     pub protoorder: crate::kuna_protoorder::ProtoOrderMode,
+    /// (kuna `callbacktype`) Does a callback take the prototype of the slot it
+    /// is passed to?
+    pub callbacktype: crate::kuna_callbacktype::CallbackTypeMode,
     /// (kuna `calleevote`) What the complete caller set of a function decides about it.
     pub calleevote: crate::kuna_calleevote::CalleeVoteMode,
     /// (kuna `codescalar`) Refuse a `code` pointee as the data-type of a
@@ -736,6 +743,10 @@ pub struct Architecture {
     /// (kuna) A stack pointer walk's one-past-the-end bound renders on the walked
     /// buffer, recovered as one array (option `endptrbound`).
     pub end_ptr_bound: bool,
+    /// (kuna) A frame object whose address only fills declared `T *` parameters
+    /// is declared `T` (option `castobject`).  See
+    /// [`crate::p6_variables::kuna_castobject`].
+    pub cast_object: bool,
     /// (kuna) A widened multiply operand stays a value instead of being
     /// structured into a 16-byte aggregate (option `mulblob`).  See
     /// [`crate::p3_dataflow::kuna_mulblob`].
@@ -1220,6 +1231,16 @@ pub struct Architecture {
     /// type itself (its type under the usual arithmetic conversions is the cast's
     /// target with and without the cast).  See [`crate::kuna_castternary`].
     pub cast_ternary: bool,
+    /// (kuna `callrettype`) A call's output takes the return type its callee's
+    /// own recovery stated earlier in a callee-first run.  See
+    /// [`crate::kuna_callrettype`].
+    pub call_ret_type: bool,
+    /// (kuna `castwiden`) Leave out a 64-bit widening of an arithmetic operand
+    /// when the other operand's printed type makes C convert it to that same type,
+    /// and one into a destination declared with the cast's type or width.
+    /// `literal` also prints an 8-byte literal operand with its size suffix.  See
+    /// [`crate::kuna_castwiden`].
+    pub cast_widen: crate::kuna_castwiden::CastWidenMode,
     /// (kuna `cortexmpriv`) Assume the Cortex-M core is privileged, folding away
     /// the `isCurrentModePrivileged()` guard the vendored ARM SLEIGH wraps around
     /// every VERSION_7M MRS/MSR (`kuna_cortexmpriv`).
@@ -1294,9 +1315,22 @@ pub struct Architecture {
         (int4, uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
+    /// (kuna `callbacktype`) The whole-binary run's record of the constants
+    /// declared callback slots carried.
+    pub kuna_callbacktype: crate::kuna_callbacktype::Ledger,
     /// (kuna `calleevote`) The whole-binary run's record of call arguments and
     /// what the callers stated.
     pub kuna_calleevote: crate::kuna_calleevote::Ledger,
+    /// (kuna `callrettype`) The recovered return value each callee stated for
+    /// the callers decompiled after it.  Copied per function by
+    /// [`crate::kuna_callrettype::seed`].
+    pub kuna_callret_types: crate::kuna_callrettype::StatedReturns,
+    /// (kuna `callrettype`) The (caller, callee) pairs whose statement the
+    /// caller's finished variables contradicted ([`crate::kuna_callrettype::refuse`]).
+    pub kuna_callret_refused: std::collections::HashSet<crate::kuna_callrettype::Refusal>,
+    /// (kuna `elemptr`) What each function of a batch said about each global,
+    /// and the globals each must not type because another disagrees.
+    pub kuna_elemptr: crate::kuna_elemptr::Ledger,
     /// (ghidra-mode, Phase 4) Name recommendations staged for the NEXT
     /// decompile drive — `(name, storage addr, usepoint, size)`, taken (and
     /// cleared) by `decompile_func_full_with_override_dyn` and seeded into the
@@ -1639,6 +1673,12 @@ pub struct Architecture {
     /// `load file`, upstream of `option`); this bool exists only for catalog
     /// visibility and the `phase catalog` live `current` field.
     pub analysis_rexthunk: bool,
+    /// (kuna) Gate PE import-by-ordinal naming from built-in export tables
+    /// (`peordinal`); default **on**. Read through the [`crate::kuna_peordinal`]
+    /// **env var** (import names are resolved inside `load file`, upstream of
+    /// `option`); this bool exists only for catalog visibility and the `phase
+    /// catalog` live `current` field.
+    pub analysis_peordinal: bool,
     /// (kuna) Gate degenerate-symbol-name repair (`symbolnamerepair`); default
     /// **on**. An empty `::` component in a loader symbol name is rejected by
     /// `Database::attach_scope`, and because the symbol table is installed inside
@@ -2354,8 +2394,10 @@ impl Architecture {
             cast_arith: false, // (kuna) option castarith; reset_defaults sets the shipped default
             cast_index: false, // (kuna) option castindex; reset_defaults sets the shipped default
             char_ptr: false, // (kuna) option charptr; shipped off
+            elem_ptr: false, // (kuna) option elemptr; reset_defaults sets the shipped default
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Off, // (kuna) option ptrfromuse; reset_defaults sets the shipped default
             protoorder: crate::kuna_protoorder::ProtoOrderMode::Off, // (kuna) option protoorder; reset_defaults sets the shipped default
+            callbacktype: crate::kuna_callbacktype::CallbackTypeMode::Off, // (kuna) option callbacktype
             calleevote: crate::kuna_calleevote::CalleeVoteMode::Off, // (kuna) option calleevote
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
             add_carry_chain: false,
@@ -2428,6 +2470,7 @@ impl Architecture {
             cookie_scramble: true,
             nul_terminator: false,
             end_ptr_bound: true,
+            cast_object: false, // (kuna) option castobject; reset_defaults sets the shipped default
             mul_blob: true,
             callee_pop: true,
             callee_proto_stack: true,
@@ -2500,6 +2543,8 @@ impl Architecture {
             cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cast_sign: false, // (kuna) option castsign; reset_defaults sets the shipped default
             cast_ternary: false, // (kuna) option castternary; reset_defaults sets the shipped default
+            call_ret_type: false, // (kuna) option callrettype; reset_defaults sets the shipped default
+            cast_widen: crate::kuna_castwiden::CastWidenMode::Off, // (kuna) option castwiden; reset_defaults sets the shipped default
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -2510,7 +2555,11 @@ impl Architecture {
             kuna_callee_dead_cache: std::collections::HashMap::new(),
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
+            kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),
+            kuna_callret_types: std::collections::HashMap::new(),
+            kuna_callret_refused: std::collections::HashSet::new(),
+            kuna_elemptr: crate::kuna_elemptr::Ledger::default(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
             kuna_pending_proto_model: None,     // (ghidra Phase 4) staged per drive
@@ -2555,6 +2604,7 @@ impl Architecture {
             analysis_dynrelocs: false,
             analysis_pdatachained: false,
             analysis_rexthunk: false,
+            analysis_peordinal: false,
             analysis_symbolnamerepair: false,
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_symbolnamebound: None,
@@ -2717,6 +2767,7 @@ impl Architecture {
         self.lowered_switch_exact = true; // (kuna) DIV-183 default-on correctness fix: a re-rolled lowered switch labels every case value and is kept only when it routes every value and keeps every statement as its compare tree does
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.mul_blob = true; // (kuna) mulblob default-on: an unsigned wide-multiply operand prints as the value it is, matching the signed form kuna already renders
+        self.cast_object = true; // (kuna) option castobject default-on: a stack local whose address only fills declared int * parameters, whose readers agree, is declared int; evidence in docs/features/castobject/default-on-evaluation.md
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
         self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
@@ -2782,6 +2833,8 @@ impl Architecture {
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
         self.cast_sign = true; // (kuna) option castsign default-on: a frame local or pointer index only ever compared signed, never an operand of + - * <<, and never met by a top-bit constant in == != & | ^, is declared signed; 0/675 datatest assertions and 0 stage assertions moved, test-cli unchanged, the 444-slice typesweep identical, casts 38,703 -> 38,602 on the census corpus, 41 functions fewer and 0 more; docs/features/castsign/default-on-evaluation.md
         self.cast_ternary = true; // (kuna) option castternary default-on (provisional; see docs/features/castternary)
+        self.call_ret_type = true; // (kuna) option callrettype default-on: a call's result takes the return type its callee stated earlier in a callee-first run; 0/675 datatest assertions and 0 stage assertions moved (single-function surfaces state nothing), one test-cli probe moved to the intended form, the 444-slice typesweep +6 perfect and 0 lost, casts 35,588 -> 34,808 on the census corpus (393 functions fewer, 25 more); docs/features/callrettype/default-on-evaluation.md
+        self.cast_widen = crate::kuna_castwiden::CastWidenMode::Literal; // (kuna) option castwiden default `literal`: a 64-bit widening C's usual arithmetic or assignment conversion performs prints no cast, and an 8-byte literal beside one prints its L/UL suffix; 5/675 datatest assertions (upstream's pinned form) opt out per test, 18 stage assertions of other options moved to the new form, 444-slice typesweep identical, casts 35,588 -> 34,062 on the castbench shared set with 0 functions more; docs/features/castwiden/default-on-evaluation.md
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
@@ -2790,8 +2843,10 @@ impl Architecture {
         self.char_byte = true; // (kuna) option charbyte default-on: a byte read through a `char *` whose only unsigned vote is the zero-extension is seeded `char`; 0/675 datatests, PARITY OK on stages, measured in docs/features/charbyte/record.json
         self.cast_arith = true; // (kuna) option castarith default-on: a pointer plus whole elements prints as ((T *)p)[k] instead of *(T *)((long)p + K); 0/675 datatest assertions moved, 16 stage assertions moved to the new form, 444-slice typesweep identical, speed within budget; docs/features/castarith/record.json
         self.cast_index = true; // (kuna) option castindex default-on: a pointer plus a variable index of whole elements prints as ((T *)p)[i], a char * difference as p - q; 0/675 datatest assertions moved, stages PARITY OK, 444-slice typesweep identical, speed within budget; docs/features/castindex/default-on-evaluation.md
+        self.elem_ptr = true; // (kuna) option elemptr default-on: see docs/features/elemptr/default-on-evaluation.md
         self.char_ptr = false; // (kuna) option charptr; shipped off -- the flip is held on `make test-cli`, see docs/features/charptr/default-on-evaluation.md
         self.ptr_from_use = crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void; // (kuna) option ptrfromuse default void: 0/675 datatests, stages PARITY OK, type_match 0 worse over 10,748 decbench functions; evidence in docs/features/ptrfromuse/default-on-evaluation.md
+        self.callbacktype = crate::kuna_callbacktype::CallbackTypeMode::On; // (kuna) option callbacktype default `on`: a function whose address reaches exactly one kind of declared callback slot takes that slot's prototype; evidence in docs/features/callbacktype/default-on-evaluation.md
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
         self.codescalar = true; // (kuna) DIV-138 default-on: a `code` pointee is never a value type, so blocking it can only replace a widthless scalar with the size-correct default
@@ -2875,6 +2930,7 @@ impl Architecture {
         self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
         self.analysis_dynrelocs = true; // (kuna) DIV-84 linked-image dynamic relocations default-ON
         self.analysis_pdatachained = true; // (kuna) DIV-117 GH-403: a chained-UNWIND_INFO .pdata record is an interior chunk, not a function
+        self.analysis_peordinal = true; // (kuna) an OLEAUT32/WS2_32/WSOCK32/MSVBVM60 import-by-ordinal is named from the built-in export table
         self.analysis_rexthunk = true; // (kuna) DIV-179: the `FF 25` one byte into a REX-prefixed tail jump through an import slot is not an import thunk
         self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
@@ -2922,956 +2978,6 @@ impl Architecture {
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
 
-    /// Apply a kuna stage-model option (`option <name> <value>`), the analogue of
-    /// an upstream `ArchOption::apply` for the 23 kuna-owned knobs in
-    /// [`KUNA_OPTION_NAMES`](crate::options::KUNA_OPTION_NAMES).
-    ///
-    /// Unlike the upstream options (dispatched through `OptionDatabase` keyed by a
-    /// registered `ElementId`), the kuna options write configuration flags that
-    /// live directly on this `Architecture` (or, for `arraynotation`, on the
-    /// owned [`PrintC`]).  Each arm reuses the per-option parse helper that owns
-    /// the value validation + confirmation text (`parse_compare_form`,
-    /// `parse_return_pair_form`, `parse_memset_recover_form`,
-    /// `parse_stack_probe_loop_form`, the `OptionNameStyle`/`OptionArrayNotation`/
-    /// `OptionLowerSwitch::apply` bodies) or the shared
-    /// [`on_or_off`](crate::options::on_or_off) toggle parser, then writes the
-    /// resolved value into the live flag the consuming action/printer reads.
-    ///
-    /// The console (`IfcOption`) and the `kassert` dispatcher route a name in
-    /// `KUNA_OPTION_NAMES` here; an unknown name is the caller's bug (it is gated
-    /// by the allowlist) and surfaces as a parse error.
-    pub fn set_kuna_option(&mut self, name: &str, p1: &str) -> KunaResult<String> {
-        use crate::options::on_or_off;
-        // Shared on/off arm: parse the toggle, write the field, format the message.
-        macro_rules! on_off {
-            ($field:ident, $label:literal) => {{
-                let val = on_or_off(p1)?;
-                self.$field = val;
-                Ok(format!(
-                    concat!($label, " turned {}"),
-                    if val { "on" } else { "off" }
-                ))
-            }};
-        }
-        match name {
-            "compareform" => {
-                let (form, msg) = crate::kuna_compareform::parse_compare_form(p1)?;
-                self.present_lessequal = form.present_lessequal();
-                Ok(msg)
-            }
-            "arraynotation" => {
-                let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
-                self.print_mut().options.set_array_notation(val);
-                Ok(msg)
-            }
-            "truthycond" => {
-                let (val, msg) = crate::kuna_truthycond::OptionTruthyCond.apply(p1)?;
-                self.print_mut().options.set_truthy_cond(val);
-                Ok(msg)
-            }
-            "braceelide" => {
-                let (val, msg) = crate::kuna_braceelide::OptionBraceElide.apply(p1)?;
-                self.print_mut().options.set_brace_elide(val);
-                Ok(msg)
-            }
-            "warnstyle" => {
-                let (val, msg) = crate::kuna_warnstyle::OptionWarnStyle.apply(p1)?;
-                self.print_mut().options.set_warn_inline(val);
-                Ok(msg)
-            }
-            "arraycoverwidth" => {
-                let (val, msg) =
-                    crate::kuna_arraycoverwidth::OptionArrayCoverWidth.apply(p1)?;
-                self.print_mut().options.set_array_cover_width(val);
-                Ok(msg)
-            }
-            "emptystrconst" => {
-                let (val, msg) = crate::kuna_emptystrconst::OptionEmptyStrConst.apply(p1)?;
-                self.print_mut().options.set_empty_str_const(val);
-                Ok(msg)
-            }
-            "structdefs" => {
-                let (val, msg) = crate::kuna_structdefs::OptionStructDefs.apply(p1)?;
-                self.print_mut().options.set_struct_defs(val);
-                Ok(msg)
-            }
-            "globalref" => {
-                let (val, msg) = crate::kuna_globalref::OptionGlobalRef.apply(p1)?;
-                self.print_mut().options.set_global_ref(val);
-                Ok(msg)
-            }
-            "thumbfuncptr" => on_off!(preserve_thumb_funcptr, "Thumb function-pointer preservation"),
-            "inferfuncentry" => on_off!(infer_funcentry, "Function-entry constant inference"),
-            "returnpair" => {
-                let (form, msg) = crate::kuna_returnpair::parse_return_pair_form(p1)?;
-                self.return_single = form.return_single();
-                Ok(msg)
-            }
-            "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
-            "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
-            "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
-            "cancelbytearithmetic" => {
-                let (val, msg) =
-                    crate::p3_dataflow::kuna_cancelbytearithmetic::OptionCancelByteArithmetic
-                        .apply(p1)?;
-                self.cancel_byte_arithmetic = val;
-                Ok(msg)
-            }
-            "retsplitglobal" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_retsplitglobal::OptionRetSplitGlobal.apply(p1)?;
-                self.ret_split_global = val;
-                Ok(msg)
-            }
-            "simdlane" => {
-                let (val, msg) = crate::p3_dataflow::kuna_simdlane::OptionSimdLane.apply(p1)?;
-                self.simd_lane_fold = val;
-                Ok(msg)
-            }
-            "constspaceload" => {
-                let (val, msg) =
-                    crate::p3_dataflow::kuna_constspaceload::OptionConstSpaceLoad.apply(p1)?;
-                self.const_space_load_fold = val;
-                Ok(msg)
-            }
-            "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
-            "callpush" => on_off!(drop_call_push, "Call return-address push removal"),
-            "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
-            "fastfailnoreturn" => on_off!(fastfail_noreturn, "Windows int 0x29 (__fastfail) no-return"),
-            "int3pad" => {
-                let (mode, msg) = crate::kuna_int3pad::OptionInt3Pad.apply(p1)?;
-                self.int3_pad = mode;
-                Ok(msg)
-            }
-            "x64syscall" => {
-                let (mode, msg) = crate::kuna_x64syscall::OptionX64Syscall.apply(p1)?;
-                self.x64_syscall = mode;
-                Ok(msg)
-            }
-            "pebnames" => {
-                let (mode, msg) = crate::kuna_pebnames::OptionPebNames.apply(p1)?;
-                self.peb_names = mode;
-                Ok(msg)
-            }
-            "structsynth" => {
-                let (mode, msg) = crate::kuna_structsynth::OptionStructSynth.apply(p1)?;
-                self.struct_synth = mode;
-                Ok(msg)
-            }
-            "structmerge" => {
-                let (mode, msg) = crate::kuna_structmerge::OptionStructMerge.apply(p1)?;
-                self.struct_merge = mode;
-                Ok(msg)
-            }
-            "structheadless" => {
-                let (mode, msg) = crate::kuna_structheadless::OptionStructHeadless.apply(p1)?;
-                self.struct_headless = mode;
-                Ok(msg)
-            }
-            "decodehalt" => on_off!(decode_halt, "Decode-failure halt reporting"),
-            "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
-            "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
-            "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),
-            "tailcallsaved" => {
-                on_off!(tail_call_saved, "Saved-register restore test for a frame teardown")
-            }
-            "calltrampoline" => on_off!(call_trampoline, "Return-address-discarding call trampoline flow-through"),
-            "callpopret" => on_off!(call_pop_ret, "Return-address-popping call transfer flow-through"),
-            "entryretdispatch" => on_off!(entry_ret_dispatch, "Entry-point RET-dispatch call-chain recovery"),
-            "pushimmediateret" => on_off!(push_immediate_ret, "Push-immediate RET tail-transfer recovery"),
-            "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
-            "mappedflowboundary" => on_off!(mapped_flow_boundary, "Mapped ELF x86 flow boundaries"),
-            "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
-            "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
-            "linuxsyscall" => on_off!(linux_syscall, "Linux int 0x80 syscall naming"),
-            "msvcstrappend" => on_off!(msvc_str_append, "MSVC std::string inlined append collapsing"),
-            "switchselector" => on_off!(switch_selector_guard, "Lowered-switch in-function-selector restriction"),
-            "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
-            "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
-            "retinputhalf" => on_off!(ret_input_half, "Returned input-parameter half retention"),
-            "retpushedhalf" => on_off!(ret_pushed_half, "Push-only register placement rejection"),
-            "noreturnretuse" => on_off!(noreturn_ret_use, "No-return call argument use in return trials"),
-            "zeroidiomuse" => on_off!(zero_idiom_use, "Self-cancelling zeroing-idiom use in input trials"),
-            "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
-            "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
-            "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
-            "rustabi" => {
-                let (mode, msg) = crate::kuna_rustabi::parse_rust_abi_mode(p1)?;
-                self.rust_abi = mode.as_u8();
-                Ok(msg)
-            }
-            "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
-            "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
-            "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
-            "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
-            "dynamichashmax" => on_off!(dynamic_hash_maxdup_high, "DynamicHash collision budget"),
-            "stackprobeloop" => {
-                let (form, msg) = crate::kuna_stackprobeloop::parse_stack_probe_loop_form(p1)?;
-                self.model_stack_probe_loop = form.model_stack_probe_loop();
-                Ok(msg)
-            }
-            "memsetrecover" => {
-                let (form, msg) = crate::kuna_memsetsequence::parse_memset_recover_form(p1)?;
-                self.memset_recover = form.memset_recover();
-                Ok(msg)
-            }
-            "rodatastring" => {
-                let (form, msg) = crate::kuna_rodatastring::parse_rodata_string_form(p1)?;
-                self.rodata_string = form.rodata_string();
-                Ok(msg)
-            }
-            "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
-            "constselectjump" => on_off!(const_select_jump, "Constant-select indirect branch recovery"),
-            "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
-            "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
-            "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
-            "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
-            "jtsharepartial" => on_off!(jumptable_share_partial, "Shared jump-table partial sub-decompilation"),
-            "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
-            "loweredswitch" => {
-                let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
-                self.recover_lowered_switch = val;
-                Ok(msg)
-            }
-            "loweredswitchlabels" => {
-                let (val, msg) = crate::kuna_loweredswitchlabels::OptionLowerSwitchLabels.apply(p1)?;
-                self.lowered_switch_labels = val;
-                Ok(msg)
-            }
-            "loweredswitchvalue" => on_off!(lowered_switch_value_check, "Lowered-switch dispatch value check"),
-            "loweredswitchexact" => on_off!(lowered_switch_exact, "Exact lowered-switch recovery"),
-            "loweredswitchheads" => on_off!(lowered_switch_every_head, "Lowered-switch detection from every cascade head"),
-            "callsitestackargs" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
-                self.callsite_stack_args = val;
-                Ok(msg)
-            }
-            "mulblob" => {
-                let (val, msg) = crate::p3_dataflow::kuna_mulblob::OptionMulBlob.apply(p1)?;
-                self.mul_blob = val;
-                Ok(msg)
-            }
-            "endptrbound" => {
-                let (val, msg) =
-                    crate::p6_variables::kuna_endptrbound::OptionEndPtrBound.apply(p1)?;
-                self.end_ptr_bound = val;
-                Ok(msg)
-            }
-            "cookiescramble" => {
-                let (val, msg) =
-                    crate::p6_variables::kuna_cookiescramble::OptionCookieScramble.apply(p1)?;
-                self.cookie_scramble = val;
-                Ok(msg)
-            }
-            "calleeprotostack" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_calleeprotostack::OptionCalleeProtoStack.apply(p1)?;
-                self.callee_proto_stack = val;
-                Ok(msg)
-            }
-            "calleepop" => {
-                let (val, msg) =
-                    crate::p6_variables::kuna_calleepop::OptionCalleePop.apply(p1)?;
-                self.callee_pop = val;
-                Ok(msg)
-            }
-            "stackarggap" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_stackarggap::OptionStackArgGap.apply(p1)?;
-                self.stack_arg_gap = val;
-                Ok(msg)
-            }
-            "inputparamgap" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_inputparamgap::OptionInputParamGap.apply(p1)?;
-                self.input_param_gap = val;
-                Ok(msg)
-            }
-            "argclobber" => {
-                let (val, msg) = crate::p4_calls::kuna_argclobber::OptionArgClobber.apply(p1)?;
-                self.arg_clobber = val;
-                Ok(msg)
-            }
-            "passthrough" => {
-                let (val, msg) = crate::p4_calls::kuna_passthrough::OptionPassThrough.apply(p1)?;
-                self.pass_through = val;
-                Ok(msg)
-            }
-            "calleedeadarg" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_calleedeadarg::OptionCalleeDeadArg.apply(p1)?;
-                self.callee_dead_arg = val;
-                Ok(msg)
-            }
-            "calleepreserves" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_calleepreserves::OptionCalleePreserves.apply(p1)?;
-                self.callee_preserves = val;
-                Ok(msg)
-            }
-            "calleeretpreserves" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_calleeretpreserves::OptionCalleeRetPreserves.apply(p1)?;
-                self.callee_ret_preserves = val;
-                Ok(msg)
-            }
-            "calleescratchbody" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_calleescratchbody::OptionCalleeScratchBody.apply(p1)?;
-                self.callee_scratch_body = val;
-                Ok(msg)
-            }
-            "indirectanchor" => {
-                let (val, msg) =
-                    crate::p3_dataflow::kuna_indirectanchor::OptionIndirectAnchor.apply(p1)?;
-                self.indirect_anchor = val;
-                Ok(msg)
-            }
-            "varargstackargs" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_varargstackargs::OptionVarargStackArgs.apply(p1)?;
-                self.vararg_stack_args = val;
-                Ok(msg)
-            }
-            "calleearitybody" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_calleearitybody::OptionCalleeArityBody.apply(p1)?;
-                self.callee_arity_body = val;
-                return Ok(msg);
-            }
-            "calleearitycut" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_calleearitycut::OptionCalleeArityCut.apply(p1)?;
-                self.callee_arity_cut = val;
-                return Ok(msg);
-            }
-            "calleearityscratch" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_calleearityscratch::OptionCalleeArityScratch.apply(p1)?;
-                self.callee_arity_scratch = val;
-                return Ok(msg);
-            }
-            "calleearitylive" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_calleearitylive::OptionCalleeArityLive.apply(p1)?;
-                self.callee_arity_live = val;
-                Ok(msg)
-            }
-            "calleearity" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_calleearity::OptionCalleeArity.apply(p1)?;
-                self.callee_arity = val;
-                Ok(msg)
-            }
-            "calleearityfwd" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_calleearityfwd::OptionCalleeArityFwd.apply(p1)?;
-                self.callee_arity_fwd = val;
-                Ok(msg)
-            }
-            "calloverlap" => {
-                let (val, msg) =
-                    crate::p3_dataflow::kuna_calloverlap::OptionCallOverlap.apply(p1)?;
-                self.call_overlap = val;
-                Ok(msg)
-            }
-            "spillargtrial" => {
-                let (val, msg) =
-                    crate::p4_calls::kuna_spillargtrial::OptionSpillArgTrial.apply(p1)?;
-                self.spill_arg_trial = val;
-                Ok(msg)
-            }
-            "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
-            "indexaliasguard" => {
-                let (val, msg) =
-                    crate::p3_dataflow::kuna_indexaliasguard::OptionIndexAliasGuard.apply(p1)?;
-                self.index_alias_guard = val;
-                Ok(msg)
-            }
-            "tiedstorekeep" => {
-                on_off!(tied_store_keep, "Address-tied store copy-propagation brake")
-            }
-            "loopcounterstore" => {
-                on_off!(loop_counter_store, "Frame-slot loop-counter store brake")
-            }
-            "tiedphitrim" => {
-                on_off!(tied_phi_trim, "Loop-head address-tied input trim")
-            }
-            "splitstorekeep" => {
-                on_off!(split_store_keep, "Refinement-split stack store mark")
-            }
-            "regionstructure" => {
-                let (val, msg) =
-                    crate::p8_structure::region_structurer::OptionRegionStructure.apply(p1)?;
-                self.region_structure = val;
-                Ok(msg)
-            }
-            "guardarm" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_ifnoexit::OptionGuardArm.apply(p1)?;
-                self.guard_arm = val;
-                Ok(msg)
-            }
-            "loopcondhoist" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_ifnoexit::OptionLoopCondHoist.apply(p1)?;
-                self.loop_cond_hoist = val;
-                Ok(msg)
-            }
-            "regionlooprefine" => on_off!(
-                region_loop_refine,
-                "Region structurer multi-exit/irreducible loop-successor refinement"
-            ),
-            "regionedgeorder" => on_off!(
-                region_edge_order,
-                "Region structurer H2 post-dominator + dominance-tiered edge-virtualization ordering"
-            ),
-            "outline" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_outline::OptionOutline.apply(p1)?;
-                self.outline_spec = val;
-                Ok(msg)
-            }
-            "condfold" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_condfold::OptionCondFold.apply(p1)?;
-                self.cond_fold = val;
-                Ok(msg)
-            }
-            "gotoreduce" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
-                self.reduce_return_gotos = val;
-                Ok(msg)
-            }
-            "ifelseflatten" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_ifelseflatten::OptionIfElseFlatten.apply(p1)?;
-                self.flatten_ifelse = val;
-                Ok(msg)
-            }
-            "crossjumprevert" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_crossjumpreverter::OptionCrossJumpReverter.apply(p1)?;
-                self.revert_cross_jumps = val;
-                Ok(msg)
-            }
-            "taildup" => {
-                let (val, msg) = crate::p8_structure::kuna_taildup::OptionTailDup.apply(p1)?;
-                self.dup_return_call_tails = val;
-                Ok(msg)
-            }
-            "dedupitetail" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_dedupitetail::OptionDedupIteTail.apply(p1)?;
-                self.dedup_ite_tail = val;
-                Ok(msg)
-            }
-            "iteexpr" => on_off!(iteexpr, "Computed-expression arm ?: recovery (iteregion extension)"),
-            "evalcurrentproto" => {
-                let (val, msg) =
-                    crate::kuna_evalcurrentproto::OptionEvalCurrentProto.apply(p1)?;
-                self.evalcurrentproto = val;
-                Ok(msg)
-            }
-            "iteboolean" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_iteboolean::OptionIteBoolean.apply(p1)?;
-                self.iteboolean = val;
-                Ok(msg)
-            }
-            "itecondlist" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_itecondlist::OptionIteCondList.apply(p1)?;
-                self.itecondlist = val;
-                Ok(msg)
-            }
-            "paramcopyhoist" => {
-                let (val, msg) =
-                    crate::p6_variables::kuna_paramcopyhoist::OptionParamCopyHoist.apply(p1)?;
-                self.param_copy_hoist = val;
-                Ok(msg)
-            }
-            "iteregion" => {
-                let (val, msg) = crate::p8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
-                self.iteregion = val;
-                Ok(msg)
-            }
-            "returndup" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
-                self.duplicate_shared_returns = val;
-                Ok(msg)
-            }
-            "orchain" => {
-                let (val, msg) = crate::p8_structure::kuna_orchain::OptionOrChain.apply(p1)?;
-                self.returndup_orchain = val;
-                Ok(msg)
-            }
-            "earlyreturn" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;
-                self.early_return = val;
-                Ok(msg)
-            }
-            "switchreturn" => {
-                let (val, msg) =
-                    crate::p8_structure::kuna_switchreturn::OptionSwitchReturn.apply(p1)?;
-                self.switch_return = val;
-                Ok(msg)
-            }
-            "foldcallret" => {
-                let (val, msg) = crate::kuna_callretfold::OptionFoldCallRet.apply(p1)?;
-                self.fold_call_returns = val;
-                Ok(msg)
-            }
-            "foldcallretphi" => {
-                let (val, msg) =
-                    crate::kuna_foldcallretphi::OptionFoldCallRetPhi.apply(p1)?;
-                self.fold_call_ret_phi = val;
-                Ok(msg)
-            }
-            "indirectonly" => {
-                let (val, msg) = crate::kuna_indirectonly::OptionIndirectOnly.apply(p1)?;
-                self.mark_indirect_only = val;
-                Ok(msg)
-            }
-            "hideshadow" => {
-                let (val, msg) = crate::kuna_hideshadow::OptionHideShadow.apply(p1)?;
-                self.hide_shadow = val;
-                Ok(msg)
-            }
-            "impliedrefs" => {
-                let (val, msg) = crate::kuna_impliedrefs::OptionImpliedRefs.apply(p1)?;
-                self.max_implied_ref = val;
-                Ok(msg)
-            }
-            "termdup" => {
-                let (val, msg) = crate::kuna_impliedrefs::OptionTermDup.apply(p1)?;
-                self.max_term_duplication = val;
-                Ok(msg)
-            }
-            "stackguard" => on_off!(strip_stack_guard, "Stack-guard canary stripping"),
-            "msvcstackguard" => {
-                on_off!(strip_msvc_stack_guard, "MSVC /GS frame-cookie stripping")
-            }
-            "securitycheck" => {
-                on_off!(strip_security_check, "Rust security-check branch stripping")
-            }
-            "branchflip" => on_off!(branch_flip, "Negated-guard branch flipping for linearity"),
-            "litpoolconst" => {
-                on_off!(litpoolconst, "In-code literal-pool constant folding")
-            }
-            "loopbreak_recovery" => {
-                let (val, msg) =
-                    crate::kuna_loopbreak_recovery::OptionLoopBreakRecovery.apply(p1)?;
-                self.recover_loop_break = val;
-                Ok(msg)
-            }
-            "namestyle" => {
-                let (val, msg) = crate::kuna_naming::OptionNameStyle.apply(p1)?;
-                self.name_style_angr = val;
-                Ok(msg)
-            }
-            "signedness" => {
-                let (val, msg) = crate::kuna_typeround::OptionSignedness.apply(p1)?;
-                self.signedness = val;
-                Ok(msg)
-            }
-            "realtypes" => on_off!(realtypes, "Real-C-type rendering for unknowns"),
-            "ctypes" => on_off!(ctypes, "valid-C core type spelling"),
-            "framelayout" => on_off!(framelayout, "recovered stack-frame reporting"),
-            "bytehonest" => on_off!(byte_honest, "uncommitted-byte width reporting"),
-            "slotptr" => on_off!(slot_ptr, "frame-slot pointer typing"),
-            "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
-            "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
-            "castsign" => on_off!(cast_sign, "signed declarations for signed-only locals"),
-            "castternary" => on_off!(cast_ternary, "conditional-arm cast elision"),
-            "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
-            "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
-            "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
-            "charbyte" => on_off!(char_byte, "char-pointer byte typing"),
-            "castarith" => on_off!(cast_arith, "pointer arithmetic in pointer terms"),
-            "castindex" => on_off!(cast_index, "variable indexes and pointer differences in pointer terms"),
-            "calleevote" => {
-                let (mode, msg) = crate::kuna_calleevote::OptionCalleeVote.apply(p1)?;
-                self.calleevote = mode;
-                Ok(msg)
-            }
-            "protoorder" => {
-                let (mode, msg) = crate::kuna_protoorder::OptionProtoOrder.apply(p1)?;
-                self.protoorder = mode;
-                Ok(msg)
-            }
-            "charptr" => on_off!(char_ptr, "character-pointer evidence"),
-            "ptrfromuse" => {
-                let (val, msg) =
-                    crate::p5_types::kuna_ptrfromuse::OptionPtrFromUse.apply(p1)?;
-                self.ptr_from_use = val;
-                Ok(msg)
-            }
-            "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
-            "paramrefdecl" => on_off!(param_ref_decl, "address-taken parameter re-declaration guard"),
-            "nulterminator" => {
-                let (val, msg) =
-                    crate::p6_variables::kuna_nulterminator::OptionNulTerminator.apply(p1)?;
-                self.nul_terminator = val;
-                Ok(msg)
-            }
-            "declhightype" => {
-                let (val, msg) = crate::kuna_declhightype::OptionDeclHighType.apply(p1)?;
-                self.decl_high_type = val;
-                Ok(msg)
-            }
-            "dedupvardecls" => {
-                let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;
-                self.dedup_var_decls = val;
-                Ok(msg)
-            }
-            // (kuna) Analysis-pass gates: one boolean per `kuna_analysis::passes`
-            // pass id. The console's `commit_analysis_output` (run at `read
-            // symbols`, after the options below have been applied) consults the
-            // matching flag and skips a disabled pass's facts. The option id IS
-            // the pass's `AnalysisPass::id()` string. Real-ELF path only.
-            "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
-            "peimportcall" => on_off!(analysis_peimportcall, "PE/Mach-O import-slot call binding"),
-            "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
-            "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
-            // (kuna) Load-time gate, same env bridge as `dwarfstructs` below: the
-            // named aggregate shells are interned by the prototype pass at `load
-            // file`, upstream of this `option`.
-            "libctypes" => {
-                use crate::kuna_libctypes::LibcTypesLayout;
-                let layout = match p1.trim().to_ascii_lowercase().as_str() {
-                    "opaque" | "on" | "1" | "true" => LibcTypesLayout::Opaque,
-                    "glibc" => LibcTypesLayout::Glibc,
-                    "off" | "0" | "false" => LibcTypesLayout::Off,
-                    other => {
-                        return Err(KunaError::lowlevel(format!(
-                            "libctypes: expected `off`, `opaque` or `glibc`, got `{other}`"
-                        )))
-                    }
-                };
-                self.analysis_libctypes = layout != LibcTypesLayout::Off;
-                self.analysis_libctypes_glibc = layout == LibcTypesLayout::Glibc;
-                crate::kuna_libctypes::set_libctypes_env_layout(layout);
-                Ok(format!(
-                    "Named libc aggregate types turned {}",
-                    match layout {
-                        LibcTypesLayout::Off => "off",
-                        LibcTypesLayout::Opaque => "on (opaque)",
-                        LibcTypesLayout::Glibc => "on (glibc layouts)",
-                    }
-                ))
-            }
-            "win32sigs" => on_off!(analysis_win32sigs, "Built-in Win32 API signature table"),
-            "declaredlibcproto" => {
-                on_off!(analysis_declaredlibcproto, "Declared-name libc prototype lookup")
-            }
-            "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
-            "widestrings" => {
-                on_off!(analysis_widestrings, "UTF-16LE width of the string-literal pass")
-            }
-            "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
-            "unmappedentry" => {
-                on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
-            }
-            "ppclocalentry" => {
-                on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
-            }
-            "picbase" => {
-                on_off!(analysis_picbase, "PIC base-register folding in the xref index")
-            }
-            "entrymainproto" => {
-                on_off!(analysis_entrymainproto, "PE CRT entry-function prototype recovery")
-            }
-            "machomain" => {
-                on_off!(analysis_machomain, "Mach-O LC_MAIN entry naming + prototype")
-            }
-            "pemain" => {
-                on_off!(analysis_pemain, "PE CRT user-entry naming")
-            }
-            "armlibcmain" => {
-                on_off!(analysis_armlibcmain, "non-PIE ARM crt1 _start->main recovery")
-            }
-            "elfmain" => {
-                on_off!(analysis_elfmain, "ELF libc-start main naming + prototype")
-            }
-            "eh_frame_full" => {
-                on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
-            }
-            "fdeinterior" => {
-                on_off!(analysis_fdeinterior, ".eh_frame FDE-interior entry suppression")
-            }
-            "pdatainterior" => {
-                on_off!(analysis_pdatainterior, ".pdata RUNTIME_FUNCTION-interior entry suppression")
-            }
-            "pdbinterior" => {
-                on_off!(analysis_pdbinterior, "PDB procedure-interior entry suppression")
-            }
-            "funcstart_patterns" => {
-                on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
-            }
-            "cortexmvectors" => {
-                on_off!(analysis_cortexmvectors, "Widened ARM Cortex-M vector-table signature")
-            }
-            "ptrentry" => {
-                on_off!(analysis_ptrentry, "Pointer-referenced ARM function entries")
-            }
-            "poolentry" => {
-                on_off!(
-                    analysis_poolentry,
-                    "ARM literal-pool inference (entry recall + AIF phantom suppression)"
-                )
-            }
-            "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
-            "entrythumbflow" => {
-                on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
-            }
-            "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
-            // (kuna) Loader-tier gate: also bridge to the env var the loader reads
-            // (the PLT map is baked at `load file`, upstream of this `option`), so
-            // an `option i386_pie_plt off` *before* `load file` in the same process
-            // takes effect. The CLI sets the env directly on the subprocess too.
-            "ifuncfpret" => {
-                let val = on_or_off(p1)?;
-                self.analysis_ifuncfpret = val;
-                crate::kuna_ifuncfpret::set_ifuncfpret_env(val);
-                Ok(format!(
-                    "IFUNC PLT-stub naming turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            "i386_pie_plt" => {
-                let val = on_or_off(p1)?;
-                self.analysis_i386_pie_plt = val;
-                crate::kuna_i386_pie_plt::set_i386_pie_plt_env(val);
-                Ok(format!(
-                    "i386-PIE PLT-stub decode turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            // (kuna) Load-time gate: the analyzer tier runs inside `load file`, so
-            // bridge to the env var it reads (the CLI sets it on the subprocess too).
-            "relocrebase" => {
-                let val = on_or_off(p1)?;
-                self.analysis_relocrebase = val;
-                crate::kuna_relocrebase::set_relocrebase_env(val);
-                Ok(format!(
-                    "relocatable-object analysis rebase turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            "dynrelocs" => {
-                let val = on_or_off(p1)?;
-                self.analysis_dynrelocs = val;
-                crate::kuna_dynrelocs::set_dynrelocs_env(val);
-                Ok(format!(
-                    "linked-image dynamic-relocation application turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            "pdatachained" => {
-                let val = on_or_off(p1)?;
-                self.analysis_pdatachained = val;
-                crate::kuna_pdatachained::set_pdatachained_env(val);
-                Ok(format!(
-                    "PE chained-UNWIND_INFO .pdata entry suppression turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            "rexthunk" => {
-                let val = on_or_off(p1)?;
-                self.analysis_rexthunk = val;
-                crate::kuna_rexthunk::set_rexthunk_env(val);
-                Ok(format!(
-                    "x86-64 PE REX-prefixed import-thunk rejection turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            // (kuna) Load-time gate: the symbol table is installed inside `load
-            // file`, so bridge to the env var it reads (the CLI sets it on the
-            // subprocess too).
-            "symbolnamerepair" => {
-                let val = on_or_off(p1)?;
-                self.analysis_symbolnamerepair = val;
-                crate::kuna_symbolnamerepair::set_symbolnamerepair_env(val);
-                Ok(format!(
-                    "degenerate-symbol-name repair turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            // (kuna) Load-time gate: symbol names are minted inside `load file`,
-            // so bridge the choice to the env var the loader reads (the CLI sets
-            // it on the subprocess too).
-            "symbolnamechars" => {
-                let mode = crate::kuna_symbolnamechars::NameChars::parse(p1).ok_or_else(|| {
-                    KunaError::lowlevel(format!(
-                        "symbolnamechars must be off|safe|ident, got `{p1}`"
-                    ))
-                })?;
-                self.analysis_symbolnamechars = mode;
-                crate::kuna_symbolnamechars::set_symbolnamechars_env(mode);
-                Ok(format!("symbol-name character sanitizing set to {}", mode.as_str()))
-            }
-            // (kuna) Load-time gate on the same seam, and VALUED: the scope
-            // ceiling is a number, so `on_or_off` does not apply.
-            "symbolnamebound" => {
-                let (bound, msg) = crate::kuna_symbolnamebound::parse_symbolnamebound(p1)?;
-                self.analysis_symbolnamebound = bound;
-                crate::kuna_symbolnamebound::set_symbolnamebound_env(bound);
-                Ok(msg)
-            }
-            // (kuna) Load-time gate: the constant bytes are materialised inside
-            // `load file`, so bridge to the env var the loader reads (the CLI
-            // sets it on the subprocess too).
-            "msvcfpconst" => {
-                let val = on_or_off(p1)?;
-                self.analysis_msvcfpconst = val;
-                crate::kuna_msvcfpconst::set_msvcfpconst_env(val);
-                Ok(format!(
-                    "MSVC __real@ FP-constant recovery turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            "mips_isa" => on_off!(analysis_mips_isa, "MIPS16 ISA_MODE decode-mode marker pass"),
-            "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
-            "datasyms" => {
-                on_off!(analysis_datasyms, "ELF data-symbol (STT_OBJECT) naming")
-            }
-            "dwarf_lines" => {
-                on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
-            }
-            "cppproto" => {
-                on_off!(analysis_cppproto, "DWARF C++ prototype recovery arm")
-            }
-            // (kuna) Load-time gate: also bridge to the env var the type mapper
-            // reads (the DWARF types are baked at `load file`, upstream of this
-            // `option`), so an `option typedepth off` *before* `load file` in the
-            // same process takes effect. The CLI sets the env directly too.
-            "typedepth" => {
-                let val = on_or_off(p1)?;
-                self.analysis_typedepth = val;
-                crate::kuna_typedepth::set_typedepth_env(val);
-                Ok(format!(
-                    "Full-depth DWARF type resolution turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            // (kuna) Load-time gate, same env bridge as `typedepth` above: the
-            // aggregate layout is installed on the interned type at `load file`,
-            // upstream of this `option`.
-            "dwarfstructs" => {
-                let val = on_or_off(p1)?;
-                self.analysis_dwarfstructs = val;
-                crate::kuna_dwarfstructs::set_dwarfstructs_env(val);
-                Ok(format!(
-                    "DWARF aggregate-layout import turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            // (kuna) Load-time gate, same env bridge as `dwarfstructs` above: the
-            // variant overlay is installed on the interned type at `load file`,
-            // upstream of this `option`.
-            "dwarfvariants" => {
-                let val = on_or_off(p1)?;
-                self.analysis_dwarfvariants = val;
-                crate::kuna_dwarfvariants::set_dwarfvariants_env(val);
-                Ok(format!(
-                    "DWARF variant-part import turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            "cppsig" => {
-                let (mode, msg) = crate::kuna_cppsig::parse_cppsig_mode(p1)?;
-                self.analysis_cppsig = mode;
-                Ok(msg)
-            }
-            "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
-            "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
-            "operand_refs" => on_off!(analysis_operand_refs, "Scalar/operand reference-markup pass"),
-            "formatstring" => {
-                let (mode, msg) = crate::kuna_formatstring::parse_formatstring_mode(p1)?;
-                self.analysis_formatstring = mode;
-                Ok(msg)
-            }
-            "listing" => on_off!(analysis_listing, "Listing/xref disassembly tier"),
-            "fast_funcdisc" => {
-                on_off!(analysis_fast_funcdisc, "Fast whole-project function discovery")
-            }
-            "rawdiscover" => {
-                on_off!(analysis_rawdiscover, "Raw-image recursive function discovery")
-            }
-            "noreturn_disc" => {
-                on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
-            }
-            "noreturn_discstrict" => {
-                on_off!(
-                    analysis_noreturn_discstrict,
-                    "Discovered-no-return positive-evidence-only tally"
-                )
-            }
-            "noreturn_propagate" => {
-                on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
-            }
-            "noreturn_error" => {
-                on_off!(analysis_noreturn_error, "error(nonzero,...) conditional no-return recognizer")
-            }
-            "noreturn_reach" => {
-                on_off!(analysis_noreturn_reach, "CFG-reachability no-return rule (Ghidra targetOnlyCallsNoReturn)")
-            }
-            "fid" => on_off!(analysis_fid, "FID fingerprint matcher Listing consumer"),
-            "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
-            "itaniumrtti" => {
-                on_off!(analysis_itaniumrtti, "Itanium (GCC/Clang) RTTI / vtable recovery pass")
-            }
-            "aif" => {
-                on_off!(analysis_aif, "Aggressive Instruction Finder gap-walk Listing consumer")
-            }
-            "aifstrict" => {
-                on_off!(analysis_aifstrict, "AIF gap-cursor aligned slide (GH-299)")
-            }
-            "aifcorroborate" => {
-                on_off!(analysis_aifcorroborate, "AIF accept corroboration test (GH-313)")
-            }
-            "tailcallentry" => {
-                on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
-            }
-            "gopclntab" => {
-                on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
-            }
-            "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
-            "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
-            // (kuna) ET_REL relocatable-object (`.o`) loader capability. Unlike
-            // every other kuna option this gates the *loader* (run at `load
-            // file`, before any `option` command is processed), so a flag on this
-            // `Architecture` would be read too late. The toggle is bridged across
-            // the layer by a process env var the loader reads at `from_bytes`
-            // time; flipping it here affects a subsequent `load file` of a `.o`.
-            // See `kuna_analysis::loadimage_object::reloc_objects_enabled`.
-            "relocobjects" => {
-                let val = on_or_off(p1)?;
-                std::env::set_var(
-                    crate::options::RELOC_OBJECTS_ENV,
-                    if val { "1" } else { "0" },
-                );
-                Ok(format!(
-                    "ET_REL relocatable-object loading turned {}",
-                    if val { "on" } else { "off" }
-                ))
-            }
-            // (kuna §3.7) arm64e Apple-Silicon spec selection. Unlike the
-            // analysis-pass gates this affects the *load-time* SLEIGH-spec choice
-            // (`language_id_for`), which runs before this console `option` command;
-            // the live gate is the `KUNA_MACHO_ARM64E` env var the CLI exports for
-            // `--option macho-arm64e on`. This arm records the requested state on
-            // the Architecture so the option is a recognized name (catalog
-            // consistency) and a kassert can read it back. Default-off.
-            "macho-arm64e" => on_off!(macho_arm64e, "Mach-O arm64e Apple-Silicon spec selection"),
-            other => Err(KunaError::parse(format!("Unknown kuna option: {other}"))),
-        }
-    }
 
     /// Apply a named, concrete decompiler *mode* preset (`reliable` |
     /// `aggressive` | `fast`): a batch of `(option, value)` overrides fanned out
@@ -4326,6 +3432,8 @@ impl Architecture {
         ctx.cast_index = self.cast_index && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) castindex
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.char_ptr = self.char_ptr; // (kuna) charptr
+        ctx.elem_ptr = self.elem_ptr; // (kuna) elemptr
+        ctx.elem_ptr_ranges = std::rc::Rc::clone(&self.globalref_ranges); // (kuna) elemptr
         ctx.slot_ptr = self.slot_ptr; // (kuna) slotptr
         ctx.libctypes = self.analysis_libctypes; // (kuna) libctypes (kuna_libcfit)
         ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
@@ -4338,6 +3446,7 @@ impl Architecture {
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
         ctx.nul_terminator = self.nul_terminator; // nulterminator
         ctx.end_ptr_bound = self.end_ptr_bound; // endptrbound
+        ctx.cast_object = self.cast_object; // castobject
         ctx.mul_blob = self.mul_blob; // (kuna) mulblob
         ctx.callee_pop = self.callee_pop; // calleepop
         ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack

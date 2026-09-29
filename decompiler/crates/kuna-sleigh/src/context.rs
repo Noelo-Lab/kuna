@@ -1,33 +1,12 @@
-//! Port of `decompiler/cpp/context.hh` + `context.cc` (W2, item
-//! `w2-sleigh-context`): objects describing the context around the parsing
-//! of an instruction by the SLEIGH engine.
+//! Instruction tokens and resolved varnode handles, from
+//! `decompiler/cpp/context.{hh,cc}`.
 //!
-//! Scope note (what lives here now vs. later):
+//! [`Token`] stores a byte-string name and encoding layout. [`FixedHandle`]
+//! describes a static location or a dynamic pointer with temporary storage;
+//! nullable address spaces use `Option<Rc<AddrSpace>>`.
 //!
-//! - [`Token`] and [`FixedHandle`] are ported here: they depend only on
-//!   W1 types and are needed across the sleigh symbol/decode waves.
-//! - `ConstructState`, `ContextSet`, `ParserContext`, `ParserWalker` and
-//!   `ParserWalkerChange` are **deferred to the sleigh decode-engine item**:
-//!   they are built around `Constructor` / `TripleSymbol` /
-//!   `OperandSymbol` (`slghsymbol.{hh,cc}`) and `Translate`
-//!   (`translate.{hh,cc}`), none of which are ported yet (see this crate's
-//!   `lib.rs`: `sleigh.{hh,cc}` is listed as "the decode engine:
-//!   ParserContext, PcodeCacher, Sleigh").  Porting them now would force
-//!   placeholder types into modules owned by later items.
-//! - C++ `SleighError` (defined in `context.hh`) is already represented by
-//!   `kuna_base::error::KunaError::Sleigh` (constructor helper
-//!   `KunaError::sleigh`), per ADR 0004.
-//! - The context *database* machinery the parser consults (`ContextCache`,
-//!   `ContextDatabase`, ...) is declared in `globalcontext.hh` upstream and
-//!   is ported in [`crate::globalcontext`].
-//!
-//! Representation notes:
-//!
-//! - Names are byte strings (`Vec<u8>`), following the workspace marshal
-//!   convention: `Token` names arrive from `.sla` decode via
-//!   `Decoder::read_string`, which returns bytes.
-//! - C++ `AddrSpace *` members (possibly null) are `Option<Rc<AddrSpace>>`,
-//!   following the kuna-base `Address`/`VarnodeData` convention.
+//! Parser arenas and walkers live in [`crate::sleigh`]. The context database
+//! and cache live in [`crate::globalcontext`].
 
 use std::rc::Rc;
 

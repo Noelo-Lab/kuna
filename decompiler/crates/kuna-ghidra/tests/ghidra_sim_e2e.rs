@@ -78,8 +78,7 @@ struct SessionRun {
 }
 
 /// Bootstrap the oracle, drive the whole session, and split the output.
-/// Returns `None` when the `.sla` specs are not built (visible skip).
-fn run_session(binary: &Path, targets: &[&str]) -> Option<SessionRun> {
+fn run_session(binary: &Path, targets: &[&str]) -> SessionRun {
     run_session_with(binary, targets, |_| {})
 }
 
@@ -89,7 +88,7 @@ fn run_session_with(
     binary: &Path,
     targets: &[&str],
     mutate: impl FnOnce(&mut SimOracle),
-) -> Option<SessionRun> {
+) -> SessionRun {
     run_session_config(binary, targets, &[("decompile", "c")], mutate)
 }
 
@@ -102,8 +101,8 @@ fn run_session_config(
     targets: &[&str],
     actions: &[(&str, &str)],
     mutate: impl FnOnce(&mut SimOracle),
-) -> Option<SessionRun> {
-    let mut oracle = SimOracle::bootstrap(binary)?;
+) -> SessionRun {
+    let mut oracle = SimOracle::bootstrap(binary);
     mutate(&mut oracle);
 
     let addrs: Vec<Address> = targets
@@ -245,7 +244,7 @@ fn run_session_config(
         .clone()
         .expect("repeat decompileAt payload present");
 
-    Some(SessionRun { oracle, trace, docs, payloads, repeat_payload, addrs, first_decompile })
+    SessionRun { oracle, trace, docs, payloads, repeat_payload, addrs, first_decompile }
 }
 
 /// The r5 wire/structure contract, per decompiled function.
@@ -590,9 +589,7 @@ const PIN_FAILLOG_GETMAPPED_TOTAL: u64 = 1448;
 #[test]
 fn ghidra_sim_faillog_pins() {
     let binary = repo_root().join("tests/bug-repro/faillog");
-    let Some(run) = run_session(&binary, FAILLOG_TARGETS) else {
-        return; // visible skip: specs not built
-    };
+    let run = run_session(&binary, FAILLOG_TARGETS);
     assert_structure(&run);
 
     // ---- measure everything first (one run = every number), assert after ----
@@ -748,14 +745,12 @@ fn ghidra_sim_faillog_pins() {
 fn ghidra_sim_faillog_switch_analyzer_shape() {
     let binary = repo_root().join("tests/bug-repro/faillog");
     // sub_2620 (main) is the switch-heavy target.
-    let Some(run) = run_session_config(
+    let run = run_session_config(
         &binary,
         &["sub_2620"],
         &[("decompile", ""), ("", "noc"), ("", "notree"), ("", "jumpload")],
         |_| {},
-    ) else {
-        return; // visible skip: specs not built
-    };
+    );
     let parsed = &run.docs[0];
     ghidra_sim::assert_phase4_traps(parsed, "switch-analyzer");
     assert!(!parsed.has_markup, "noc: the markup <function> must be absent");
@@ -790,14 +785,12 @@ fn ghidra_sim_faillog_switch_analyzer_shape() {
 #[test]
 fn ghidra_sim_faillog_paramid_shape() {
     let binary = repo_root().join("tests/bug-repro/faillog");
-    let Some(run) = run_session_config(
+    let run = run_session_config(
         &binary,
         &["sub_3320"],
         &[("paramid", ""), ("", "noc"), ("", "notree"), ("", "parammeasures")],
         |_| {},
-    ) else {
-        return; // visible skip: specs not built
-    };
+    );
     let parsed = &run.docs[0];
     ghidra_sim::assert_phase4_traps(parsed, "paramid");
     assert!(
@@ -852,9 +845,7 @@ fn sim_symbol_size(s: &ghidra_sim::SimSymbol) -> Option<i64> {
 #[test]
 fn ghidra_sim_faillog_rename_persistence() {
     let binary = repo_root().join("tests/bug-repro/faillog");
-    let Some(run1) = run_session(&binary, &["sub_3ad0"]) else {
-        return; // visible skip: specs not built
-    };
+    let run1 = run_session(&binary, &["sub_3ad0"]);
     let parsed = &run1.docs[0];
     let cand = parsed
         .localdb
@@ -880,7 +871,7 @@ fn ghidra_sim_faillog_rename_persistence() {
     // — which kuna must carry as a NAME RECOMMENDATION, the C++
     // `ScopeLocal::nameRecommend` path.
     let renamed = "host_renamed_probe";
-    let Some(run2) = run_session_with(&binary, &["sub_3ad0"], move |o| {
+    let run2 = run_session_with(&binary, &["sub_3ad0"], move |o| {
         o.local_var_overrides.insert(
             entry_off,
             vec![ghidra_sim::oracle::HostLocalVar {
@@ -893,9 +884,7 @@ fn ghidra_sim_faillog_rename_persistence() {
                 hash: 0,
             }],
         );
-    }) else {
-        return;
-    };
+    });
     let parsed2 = &run2.docs[0];
     assert!(
         parsed2.c_text.contains(renamed),
@@ -930,9 +919,7 @@ fn ghidra_sim_faillog_rename_persistence() {
 #[test]
 fn ghidra_sim_faillog_dynamic_rename_persistence() {
     let binary = repo_root().join("tests/bug-repro/faillog");
-    let Some(run1) = run_session(&binary, &["sub_3ad0"]) else {
-        return; // visible skip: specs not built
-    };
+    let run1 = run_session(&binary, &["sub_3ad0"]);
     let parsed = &run1.docs[0];
     // A wire symbol kuna encoded with a `<hash>` entry (type="dynamic").
     let cand = parsed
@@ -952,7 +939,7 @@ fn ghidra_sim_faillog_dynamic_rename_persistence() {
     let old_name = cand.name.clone();
     let entry_off = run1.addrs[0].get_offset();
     let renamed = "host_dyn_renamed";
-    let Some(run2) = run_session_with(&binary, &["sub_3ad0"], move |o| {
+    let run2 = run_session_with(&binary, &["sub_3ad0"], move |o| {
         o.local_var_overrides.insert(
             entry_off,
             vec![ghidra_sim::oracle::HostLocalVar {
@@ -965,9 +952,7 @@ fn ghidra_sim_faillog_dynamic_rename_persistence() {
                 hash,
             }],
         );
-    }) else {
-        return;
-    };
+    });
     assert!(
         run2.docs[0].c_text.contains(renamed),
         "a host rename of a DYNAMIC (hash-storage) local ({old_name} -> {renamed}) \
@@ -989,9 +974,7 @@ fn ghidra_sim_faillog_dynamic_rename_persistence() {
 #[test]
 fn ghidra_sim_faillog_high_symrefs_are_not_shared_with_params() {
     let binary = repo_root().join("tests/bug-repro/faillog");
-    let Some(run) = run_session(&binary, FAILLOG_TARGETS) else {
-        return; // visible skip: specs not built
-    };
+    let run = run_session(&binary, FAILLOG_TARGETS);
     for (i, parsed) in run.docs.iter().enumerate() {
         let symbols = parsed.localdb.as_ref().expect("<localdb> present");
         let param_ids: BTreeSet<u64> =
@@ -1018,9 +1001,7 @@ fn ghidra_sim_faillog_high_symrefs_are_not_shared_with_params() {
 #[test]
 fn ghidra_sim_faillog_flush_native_stability() {
     let binary = repo_root().join("tests/bug-repro/faillog");
-    let Some(run) = run_session(&binary, &["sub_3ad0"]) else {
-        return; // visible skip: specs not built
-    };
+    let run = run_session(&binary, &["sub_3ad0"]);
     assert_eq!(
         run.payloads[0], run.repeat_payload,
         "repeat decompileAt after flushNative is not byte-identical"
@@ -1037,14 +1018,12 @@ fn ghidra_sim_faillog_flush_native_stability() {
 fn ghidra_sim_faillog_flush_native_clears_symbol_cache() {
     let binary = repo_root().join("tests/bug-repro/faillog");
     // sub_2620 (main) calls sub_38d0 in its first statement.
-    let Some(run) = run_session_with_override(
+    let run = run_session_with_override(
         &binary,
         "sub_2620",
         0x38d0,
         "renamed_after_flush",
-    ) else {
-        return; // visible skip: specs not built
-    };
+    );
     let (before, after) = run;
     assert!(
         before.contains("sub_38d0"),
@@ -1070,7 +1049,7 @@ fn run_session_with_override(
     target: &str,
     override_addr: u64,
     override_name: &str,
-) -> Option<(String, String)> {
+) -> (String, String) {
     let name = override_name.to_string();
     run_flush_epoch_session(
         binary,
@@ -1096,7 +1075,7 @@ fn run_flush_epoch_session(
     target: &str,
     pre: impl FnOnce(&mut SimOracle),
     at_arm: impl Fn(&mut SimOracle) + 'static,
-) -> Option<(String, String)> {
+) -> (String, String) {
     struct ArmMutate<F: Fn(&mut SimOracle)> {
         oracle: SimOracle,
         armed: std::rc::Rc<std::cell::Cell<bool>>,
@@ -1111,7 +1090,7 @@ fn run_flush_epoch_session(
         }
     }
 
-    let mut oracle = SimOracle::bootstrap(binary)?;
+    let mut oracle = SimOracle::bootstrap(binary);
     pre(&mut oracle);
     let entry = oracle
         .prog
@@ -1183,7 +1162,7 @@ fn run_flush_epoch_session(
         trace.responses[4].payload.as_ref().expect("second decompile payload"),
         &manager,
     );
-    Some((first.c_text, second.c_text))
+    (first.c_text, second.c_text)
 }
 
 /// Host-side tracked-register context reaches the engine (the wired
@@ -1199,9 +1178,7 @@ fn ghidra_sim_tracked_register_reaches_output() {
     use kuna_base::space::RegisterLookup;
     let binary = repo_root().join("tests/bug-repro/faillog");
     let target = &["sub_3ad0"];
-    let Some(base_run) = run_session(&binary, target) else {
-        return; // visible skip: specs not built
-    };
+    let base_run = run_session(&binary, target);
     let tracked_base = base_run
         .oracle
         .log
@@ -1213,7 +1190,7 @@ fn ghidra_sim_tracked_register_reaches_output() {
         tracked_base >= 1,
         "getTrackedRegisters never fired — the ContextGhidra wiring is dead"
     );
-    let Some(over_run) = run_session_with(&binary, target, |oracle| {
+    let over_run = run_session_with(&binary, target, |oracle| {
         let rsi = {
             let sleigh = oracle
                 .prog
@@ -1229,9 +1206,7 @@ fn ghidra_sim_tracked_register_reaches_output() {
                 loc: kuna_sleigh::translate::varnode_data_from_storage(&rsi),
                 val: 0x1234,
             });
-    }) else {
-        return;
-    };
+    });
     assert_ne!(
         base_run.docs[0].c_text, over_run.docs[0].c_text,
         "a host-side tracked RSI value did not change the output — the wire \
@@ -1249,11 +1224,9 @@ fn ghidra_sim_tracked_register_reaches_output() {
 fn ghidra_sim_tracked_override_reverts_after_flush() {
     use kuna_base::space::RegisterLookup;
     let binary = repo_root().join("tests/bug-repro/faillog");
-    let Some(base_run) = run_session(&binary, &["sub_3ad0"]) else {
-        return; // visible skip: specs not built
-    };
+    let base_run = run_session(&binary, &["sub_3ad0"]);
     let baseline = base_run.docs[0].c_text.clone();
-    let Some((with_override, after_revert)) = run_flush_epoch_session(
+    let (with_override, after_revert) = run_flush_epoch_session(
         &binary,
         "sub_3ad0",
         |oracle| {
@@ -1276,9 +1249,7 @@ fn ghidra_sim_tracked_override_reverts_after_flush() {
         |oracle| {
             oracle.tracked_overrides.clear();
         },
-    ) else {
-        return;
-    };
+    );
     assert_ne!(
         with_override, baseline,
         "the tracked RSI override did not change the first decompile"
@@ -1309,9 +1280,7 @@ fn ghidra_sim_sort_grep_breadth() {
         ("tests/bug-repro/grep", &["sub_e5c0", "sub_e640", "sub_e8f0"][..]),
     ] {
         let binary = repo_root().join(fixture);
-        let Some(run) = run_session(&binary, targets) else {
-            return; // visible skip: specs not built
-        };
+        let run = run_session(&binary, targets);
         assert_structure(&run);
         for (i, parsed) in run.docs.iter().enumerate() {
             let (reg_count, reg_names) = register_leaks(&parsed.c_text, &run.oracle.register_names);
@@ -1351,7 +1320,7 @@ fn ghidra_sim_sort_grep_breadth() {
 fn ghidra_sim_hidden_return_auto_param_is_not_declared_twice() {
     let binary =
         repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/dwarfstructs_x86_64");
-    let Some(run) = run_session_with(&binary, &["ret_big"], |oracle| {
+    let run = run_session_with(&binary, &["ret_big"], |oracle| {
         let entry = oracle
             .prog
             .find_entry_by_name("ret_big")
@@ -1360,9 +1329,7 @@ fn ghidra_sim_hidden_return_auto_param_is_not_declared_twice() {
             .get_offset();
         oracle.hidden_return_overrides.insert(entry);
         oracle.parameter_address_overrides.insert(entry);
-    }) else {
-        return;
-    };
+    });
     assert_structure(&run);
     let c = &run.docs[0].c_text;
     let signature = c
@@ -1380,7 +1347,7 @@ fn ghidra_sim_hidden_return_auto_param_is_not_declared_twice() {
 fn ghidra_sim_custom_large_return_has_no_auto_hidden_param() {
     let binary =
         repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/dwarfstructs_x86_64");
-    let Some(run) = run_session_with(&binary, &["ret_big"], |oracle| {
+    let run = run_session_with(&binary, &["ret_big"], |oracle| {
         let entry = oracle
             .prog
             .find_entry_by_name("ret_big")
@@ -1390,9 +1357,7 @@ fn ghidra_sim_custom_large_return_has_no_auto_hidden_param() {
         oracle.custom_storage_overrides.insert(entry);
         oracle.parameter_address_overrides.insert(entry);
         oracle.custom_return_address_overrides.insert(entry);
-    }) else {
-        return;
-    };
+    });
     assert_structure(&run);
     let c = &run.docs[0].c_text;
     let signature = c
@@ -1406,7 +1371,7 @@ fn ghidra_sim_custom_large_return_has_no_auto_hidden_param() {
 fn ghidra_sim_custom_large_return_with_no_formals_clears_hidden_input() {
     let binary =
         repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/dwarfstructs_x86_64");
-    let Some(run) = run_session_with(&binary, &["ret_big"], |oracle| {
+    let run = run_session_with(&binary, &["ret_big"], |oracle| {
         let entry = oracle
             .prog
             .find_entry_by_name("ret_big")
@@ -1418,9 +1383,7 @@ fn ghidra_sim_custom_large_return_with_no_formals_clears_hidden_input() {
         pieces.innames.clear();
         oracle.custom_storage_overrides.insert(entry);
         oracle.custom_return_address_overrides.insert(entry);
-    }) else {
-        return;
-    };
+    });
     assert_structure(&run);
     let c = &run.docs[0].c_text;
     let signature = c

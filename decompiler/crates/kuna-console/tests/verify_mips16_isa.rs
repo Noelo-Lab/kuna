@@ -24,14 +24,6 @@
 //! analysis facts are committed at `read symbols` (the gated commit, after any
 //! `--option` flips); the test triggers that with `commit_pending_analysis`
 //! (after optionally flipping `mips_isa off`), then loads + decompiles.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_w11_*` gates, bootstrapping needs the built MIPS
-//! `.sla` under `specs/` (gitignored; `make specs`, or just
-//! `slacomp specs/Ghidra/Processors/MIPS/data/languages/mips32be.slaspec`).  When
-//! it is absent the bootstrap fails; the test prints that and returns early (a
-//! specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -49,27 +41,17 @@ fn mips16() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/mips16_le32")
 }
 
-/// Bootstrap the MIPS16 fixture, optionally flip `mips_isa off` BEFORE the gated
-/// analysis commit (exactly the order the CLI uses: `option` lines before `read
-/// symbols`), commit, then `load function m16_square` → `decompile` → `print C`.
-/// Returns the printed C, or `None` if the MIPS `.sla` is absent (a visible skip).
-fn decompile_m16(turn_off: bool) -> Option<String> {
+/// Bootstrap the MIPS16 fixture, optionally flip `mips_isa off` BEFORE the gated analysis
+/// commit (exactly the order the CLI uses: `option` lines before `read symbols`), commit,
+/// then `load function m16_square` → `decompile` → `print C`. Returns the printed C.
+fn decompile_m16(turn_off: bool) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let bin = mips16().to_str()?.to_string();
+    let bin = mips16().to_str().expect("UTF-8 fixture path").to_string();
 
-    let mut prog: ConsoleProgram = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_mips16_isa: skipping (bootstrap failed, build the MIPS `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog: ConsoleProgram = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The MIPS16 function resolves by name (the loader's FUNC symbol stream).
     assert!(
@@ -103,12 +85,12 @@ fn decompile_m16(turn_off: bool) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 #[test]
 fn mips16_function_decodes_as_mips16_not_mips32() {
-    let Some(out) = decompile_m16(false) else { return };
+    let out = decompile_m16(false);
 
     eprintln!("=== decompiled m16_square (mips_isa ON / MIPS16) ===\n{out}\n===");
 
@@ -140,11 +122,6 @@ fn mips16_function_decodes_as_mips16_not_mips32() {
 fn mips16_off_reverts_to_mips32_misdecode() {
     let on = decompile_m16(false);
     let off = decompile_m16(true);
-
-    let (Some(on), Some(off)) = (on, off) else {
-        eprintln!("verify_mips16_isa: skipping off-toggle (no MIPS `.sla`)");
-        return;
-    };
 
     eprintln!("=== mips_isa ON ===\n{on}\n=== mips_isa OFF ===\n{off}\n===");
 

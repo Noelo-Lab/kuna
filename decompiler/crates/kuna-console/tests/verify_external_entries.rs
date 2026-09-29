@@ -28,12 +28,6 @@
 //! was never filled, and reported as a successful read. Two adjacent externs are
 //! exactly that shape (the second test below), which is how the browser's
 //! inventory saw one unmapped extern followed by forty "mapped" ones.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored;
-//! `make specs`). If it is absent the bootstrap fails and the test prints that
-//! and returns early (a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -50,22 +44,13 @@ fn fixture() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/ptx.o")
 }
 
-fn boot() -> Option<ConsoleProgram> {
+fn boot() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixture();
     assert!(path.exists(), "missing fixture {path:?}");
-    match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_external_entries: skipping (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// Every extern-area entry: those the canonical inventory carries but the
@@ -83,7 +68,7 @@ fn extern_entries(prog: &ConsoleProgram) -> Vec<kuna_console::engine::FunctionEn
 /// error — instead of the byte-load failure the lifter would raise.
 #[test]
 fn selecting_an_external_reports_an_external_not_an_error() {
-    let Some(mut prog) = boot() else { return };
+    let mut prog = boot();
 
     let externs = extern_entries(&prog);
     assert!(!externs.is_empty(), "fixture must carry extern-area entries");
@@ -115,7 +100,7 @@ fn selecting_an_external_reports_an_external_not_an_error() {
 /// were served from a never-filled buffer and answered "mapped".
 #[test]
 fn a_failed_read_does_not_make_its_neighbours_look_mapped() {
-    let Some(prog) = boot() else { return };
+    let prog = boot();
 
     let externs = extern_entries(&prog);
     assert!(

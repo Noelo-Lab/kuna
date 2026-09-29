@@ -1,56 +1,14 @@
-//! Port of `decompiler/cpp/slghpattern.{hh,cc}` (item `w2-sleigh-pattern`)
-//! — instruction/context match patterns.
+//! Instruction and context match patterns, ported from Ghidra's slghpattern.cc.
 //!
-//! ## Shape of the port
+//! [`Pattern`] and [`DisjointPattern`] represent unions and instruction/context
+//! combinations over [`PatternBlock`] mask/value pairs. Matching reads bytes
+//! through [`PatternExpressionContext`]; encoding uses the shared [`sla`] IDs.
 //!
-//! The C++ class hierarchy
-//!
-//! ```text
-//! Pattern
-//!  +- DisjointPattern            (a pattern with no ORs in it)
-//!  |   +- InstructionPattern     (matches the instruction bitstream)
-//!  |   +- ContextPattern         (matches the context bitstream)
-//!  |   +- CombinePattern         (a context piece and an instruction piece)
-//!  +- OrPattern
-//! ```
-//!
-//! maps onto the enums [`Pattern`] / [`DisjointPattern`] over the three
-//! concrete structs, with [`PatternBlock`] as the shared mask/value pair.
-//! Virtual dispatch becomes `match`; the C++ `dynamic_cast` ladders in the
-//! algebra (`doAnd`/`doOr`/`commonSubPattern`) are transcribed in the exact
-//! C++ cast order, and the C-style downcasts that would be UB on a type
-//! confusion become panics (ADR 0004).  The C++ two-phase
-//! construct-then-`decode` protocol becomes `decode` factory functions, so a
-//! null `maskvalue` (only possible pre-decode upstream) cannot exist here.
-//! `PatternBlock::clone()` is the derived [`Clone`].
-//!
-//! ## The `OrPattern::doOr` mutation quirk
-//!
-//! Upstream `OrPattern::doOr` is declared `const` but, when `sa < 0`, shifts
-//! the elements of the receiver's OWN `orlist` (through the element
-//! pointers) while pushing the *unshifted* clones into the result; with
-//! `sa > 0` it shifts EVERY element of the result, the receiver's clones
-//! included.  Both behaviors are transcribed exactly, which is why
-//! [`Pattern::do_or`] takes `&mut self` and `&mut Pattern` (the C++ `const`
-//! is a lie there, and delegation can make either operand the mutated
-//! receiver).
-//!
-//! ## Walker boundary
-//!
-//! `isMatch`/`isInstructionMatch`/`isContextMatch` evaluate against a
-//! `ParserWalker`, which does not exist yet in the port DAG; they take the
-//! [`PatternExpressionContext`] boundary trait defined in
-//! [`crate::slghpatexpress`] (see its module docs).
-//!
-//! ## sla format ids ([`sla`])
-//!
-//! The `.sla` ElementIds/AttributeIds live in C++ `slaformat.{hh,cc}` under
-//! `FORMAT_SCOPE = 1`.  Scoped ids are never registered in the global
-//! name->id registry (the C++ constructors skip registration for
-//! `scope != 0`, and `.sla` streams are packed/id-numeric), so there is no
-//! `IdRegistry` registration function here.  Only the ids used by
-//! slghpattern/slghpatexpress are defined; they should migrate to
-//! `slaformat.rs` when item `w2-sleigh-slaformat` ports that file.
+//! [`Pattern::do_or`] preserves an upstream mutation quirk. For an `OrPattern`
+//! receiver, a negative shift changes its original elements while the result
+//! keeps unshifted copies. A positive shift changes every result element,
+//! including copies of the receiver. Delegation can select either operand as
+//! the receiver, so both arguments are mutable.
 
 use kuna_base::error::KunaResult;
 use kuna_base::marshal::{Decoder, Encoder};
@@ -58,52 +16,8 @@ use kuna_base::types::Wrap;
 
 use crate::slghpatexpress::PatternExpressionContext;
 
-/// SLA-format ids used by the pattern/pattern-expression modules (C++
-/// `slaformat.cc`, `FORMAT_SCOPE = 1`); see the module docs for why these
-/// are not registered in any [`kuna_base::marshal::IdRegistry`].
-pub mod sla {
-    use kuna_base::marshal::{AttributeId, ElementId};
-
-    pub const ATTRIB_VAL: AttributeId = AttributeId::new("val", 2);
-    pub const ATTRIB_OFF: AttributeId = AttributeId::new("off", 6);
-    pub const ATTRIB_MASK: AttributeId = AttributeId::new("mask", 8);
-    pub const ATTRIB_INDEX: AttributeId = AttributeId::new("index", 9);
-    pub const ATTRIB_NONZERO: AttributeId = AttributeId::new("nonzero", 10);
-    pub const ATTRIB_STARTBIT: AttributeId = AttributeId::new("startbit", 14);
-    pub const ATTRIB_TABLE: AttributeId = AttributeId::new("table", 16);
-    pub const ATTRIB_CT: AttributeId = AttributeId::new("ct", 17);
-    pub const ATTRIB_SHIFT: AttributeId = AttributeId::new("shift", 29);
-    pub const ATTRIB_ENDBIT: AttributeId = AttributeId::new("endbit", 30);
-    pub const ATTRIB_SIGNBIT: AttributeId = AttributeId::new("signbit", 31);
-    pub const ATTRIB_ENDBYTE: AttributeId = AttributeId::new("endbyte", 32);
-    pub const ATTRIB_STARTBYTE: AttributeId = AttributeId::new("startbyte", 33);
-    pub const ATTRIB_BIGENDIAN: AttributeId = AttributeId::new("bigendian", 35);
-
-    pub const ELEM_MASK_WORD: ElementId = ElementId::new("mask_word", 6);
-    pub const ELEM_PAT_BLOCK: ElementId = ElementId::new("pat_block", 7);
-    pub const ELEM_CONTEXT_PAT: ElementId = ElementId::new("context_pat", 10);
-    pub const ELEM_OPERAND_EXP: ElementId = ElementId::new("operand_exp", 12);
-    pub const ELEM_INSTRUCT_PAT: ElementId = ElementId::new("instruct_pat", 18);
-    pub const ELEM_COMBINE_PAT: ElementId = ElementId::new("combine_pat", 19);
-    pub const ELEM_TOKENFIELD: ElementId = ElementId::new("tokenfield", 27);
-    pub const ELEM_CONTEXTFIELD: ElementId = ElementId::new("contextfield", 29);
-    pub const ELEM_AND_EXP: ElementId = ElementId::new("and_exp", 47);
-    pub const ELEM_DIV_EXP: ElementId = ElementId::new("div_exp", 48);
-    pub const ELEM_LSHIFT_EXP: ElementId = ElementId::new("lshift_exp", 49);
-    pub const ELEM_MINUS_EXP: ElementId = ElementId::new("minus_exp", 50);
-    pub const ELEM_MULT_EXP: ElementId = ElementId::new("mult_exp", 51);
-    pub const ELEM_NOT_EXP: ElementId = ElementId::new("not_exp", 52);
-    pub const ELEM_OR_EXP: ElementId = ElementId::new("or_exp", 53);
-    pub const ELEM_PLUS_EXP: ElementId = ElementId::new("plus_exp", 54);
-    pub const ELEM_RSHIFT_EXP: ElementId = ElementId::new("rshift_exp", 55);
-    pub const ELEM_SUB_EXP: ElementId = ElementId::new("sub_exp", 56);
-    pub const ELEM_XOR_EXP: ElementId = ElementId::new("xor_exp", 57);
-    pub const ELEM_INTB: ElementId = ElementId::new("intb", 58);
-    pub const ELEM_END_EXP: ElementId = ElementId::new("end_exp", 59);
-    pub const ELEM_NEXT2_EXP: ElementId = ElementId::new("next2_exp", 60);
-    pub const ELEM_START_EXP: ElementId = ElementId::new("start_exp", 61);
-    pub const ELEM_OR_PAT: ElementId = ElementId::new("or_pat", 78);
-}
+/// SLA IDs used by patterns and pattern expressions.
+pub use crate::slaformat::ids as sla;
 
 // ---------------------------------------------------------------------------
 // PatternBlock
@@ -190,13 +104,7 @@ impl PatternBlock {
 
         if !self.maskvec.is_empty() {
             // Cut off unaligned zeros from beginning of mask
-            let mut suboff: i32 = 0;
-            let mut tmp = self.maskvec[0];
-            while tmp != 0 {
-                suboff += 1;
-                tmp >>= 8;
-            }
-            suboff = 4 - suboff; // sizeof(uintm) - suboff
+            let suboff = (self.maskvec[0].leading_zeros() / 8) as i32;
             if suboff != 0 {
                 self.offset += suboff; // Slide up maskvec by suboff bytes
                 let n = self.maskvec.len();
@@ -216,23 +124,9 @@ impl PatternBlock {
                 self.valvec[n - 1] = self.valvec[n - 1].wshl((suboff * 8) as u32);
             }
 
-            // Cut zeros from end of mask: walk iter1 back to the last
-            // non-zero word (or begin()), then advance past it
-            let mut i = self.maskvec.len();
-            loop {
-                if i == 0 {
-                    break; // iter1 == maskvec.begin()
-                }
-                i -= 1;
-                if self.maskvec[i] != 0 {
-                    break; // Find last non-zero
-                }
-            }
-            if i != self.maskvec.len() {
-                i += 1; // Find first zero, in last zero chain
-            }
-            self.maskvec.truncate(i);
-            self.valvec.truncate(i);
+            let end = self.maskvec.iter().rposition(|&word| word != 0).map_or(0, |i| i + 1);
+            self.maskvec.truncate(end);
+            self.valvec.truncate(end);
         }
 
         if self.maskvec.is_empty() {
@@ -242,11 +136,7 @@ impl PatternBlock {
         }
         // size_t -> int4: pattern masks are a handful of words
         self.nonzerosize = (self.maskvec.len() as i32) * 4;
-        let mut tmp = *self.maskvec.last().unwrap(); // tmp must be nonzero
-        while (tmp & 0xff) == 0 {
-            self.nonzerosize -= 1;
-            tmp >>= 8;
-        }
+        self.nonzerosize -= (self.maskvec.last().unwrap().trailing_zeros() / 8) as i32;
     }
 
     /// C++ `PatternBlock::commonSubPattern`: the resulting pattern has a
@@ -254,11 +144,7 @@ impl PatternBlock {
     /// agree.
     pub fn common_sub_pattern(&self, b: &PatternBlock) -> PatternBlock {
         let mut res = PatternBlock::new_always(true);
-        let maxlength = if self.get_length() > b.get_length() {
-            self.get_length()
-        } else {
-            b.get_length()
-        };
+        let maxlength = self.get_length().max(b.get_length());
 
         res.offset = 0;
         let mut offset: i32 = 0; // local cursor (C++ shadows the member)
@@ -284,11 +170,7 @@ impl PatternBlock {
             return PatternBlock::new_always(false);
         }
         let mut res = PatternBlock::new_always(true);
-        let maxlength = if self.get_length() > b.get_length() {
-            self.get_length()
-        } else {
-            b.get_length()
-        };
+        let maxlength = self.get_length().max(b.get_length());
 
         res.offset = 0;
         let mut offset: i32 = 0; // local cursor (C++ shadows the member)
@@ -314,18 +196,13 @@ impl PatternBlock {
         res
     }
 
-    /// C++ `PatternBlock::specializes`: does every masked bit in `self`
-    /// match the corresponding masked bit in `op2`.
+    /// C++ `PatternBlock::specializes`: every bit masked in `op2` is also
+    /// masked in `self`, with matching values.
     pub fn specializes(&self, op2: &PatternBlock) -> bool {
         let length = 8 * op2.get_length();
         let mut sbit: i32 = 0;
         while sbit < length {
-            let mut tmplength = length - sbit;
-            // C++ `tmplength > 8*sizeof(uintm)` compares int4 vs size_t:
-            // tmplength converts to 64-bit unsigned (it is positive here)
-            if (tmplength as i64 as u64) > 32 {
-                tmplength = 32;
-            }
+            let tmplength = (length - sbit).min(32);
             let mask1 = self.get_mask(sbit, tmplength);
             let value1 = self.get_value(sbit, tmplength);
             let mask2 = op2.get_mask(sbit, tmplength);
@@ -343,18 +220,10 @@ impl PatternBlock {
 
     /// C++ `PatternBlock::identical`: do the mask and value match exactly.
     pub fn identical(&self, op2: &PatternBlock) -> bool {
-        let mut length = 8 * op2.get_length();
-        let tmplen = 8 * self.get_length();
-        if tmplen > length {
-            length = tmplen; // Maximum of two lengths
-        }
+        let length = (8 * op2.get_length()).max(8 * self.get_length());
         let mut sbit: i32 = 0;
         while sbit < length {
-            let mut tmplength = length - sbit;
-            // C++ int4 vs size_t mixed comparison (positive here)
-            if (tmplength as i64 as u64) > 32 {
-                tmplength = 32;
-            }
+            let tmplength = (length - sbit).min(32);
             let mask1 = self.get_mask(sbit, tmplength);
             let value1 = self.get_value(sbit, tmplength);
             let mask2 = op2.get_mask(sbit, tmplength);
@@ -383,70 +252,28 @@ impl PatternBlock {
 
     /// C++ `PatternBlock::getMask`.
     pub fn get_mask(&self, startbit: i32, size: i32) -> u32 {
-        let startbit = startbit - 8 * self.offset;
-        // Note the division and remainder here is unsigned (C++ divides the
-        // int4 by `8*sizeof(uintm)`, a size_t, promoting the dividend to
-        // 64-bit unsigned).  Then it is recast to signed.  If startbit is
-        // negative, then wordnum1 is either negative or very big; in either
-        // case, shift comes out between 0 and 31.
-        let ustart = startbit as i64 as u64; // int4 -> size_t: sign-extend then reinterpret
-        let wordnum1 = (ustart / 32) as i32; // size_t -> int4 truncation
-        let shift = (ustart % 32) as i32; // in [0,31]
-        let wordnum2 = ((startbit + size - 1) as i64 as u64 / 32) as i32; // same int4 -> size_t -> int4 path
-
-        // (wordnum1<0)||(wordnum1>=maskvec.size()): the second compare is
-        // int4 vs size_t in C++ but is only reached with wordnum1 >= 0
-        let mut res: u32 = if wordnum1 < 0 || wordnum1 as usize >= self.maskvec.len() {
-            0
-        } else {
-            self.maskvec[wordnum1 as usize] // wordnum1 >= 0 here
-        };
-
-        res = res.wshl(shift as u32); // shift in [0,31]
-        if wordnum1 != wordnum2 {
-            let tmp: u32 = if wordnum2 < 0 || wordnum2 as usize >= self.maskvec.len() {
-                0
-            } else {
-                self.maskvec[wordnum2 as usize] // wordnum2 >= 0 here
-            };
-            // 32-shift: shift==0 cannot reach this branch for the size<=32
-            // call sites (it would be shift-by-32 UB in C++); out-of-range
-            // counts resolve x86-masked (ADR 0003)
-            res |= tmp.wshr((32 - shift) as u32);
-        }
-        // size in (0,32] for all C++ call sites; x86-masked otherwise
-        res = res.wshr((32 - size) as u32);
-
-        res
+        self.get_bits(&self.maskvec, startbit, size)
     }
 
     /// C++ `PatternBlock::getValue`.
     pub fn get_value(&self, startbit: i32, size: i32) -> u32 {
+        self.get_bits(&self.valvec, startbit, size)
+    }
+
+    /// Extract a field with the C++ unsigned word indexing and masked shifts.
+    fn get_bits(&self, words: &[u32], startbit: i32, size: i32) -> u32 {
         let startbit = startbit - 8 * self.offset;
-        // Same unsigned division/remainder transcription as get_mask
-        let ustart = startbit as i64 as u64; // int4 -> size_t: sign-extend then reinterpret
-        let wordnum1 = (ustart / 32) as i32; // size_t -> int4 truncation
-        let shift = (ustart % 32) as i32; // in [0,31]
-        let wordnum2 = ((startbit + size - 1) as i64 as u64 / 32) as i32; // same int4 -> size_t -> int4 path
+        let ustart = startbit as i64 as u64;
+        let wordnum1 = (ustart / 32) as i32;
+        let shift = (ustart % 32) as i32;
+        let wordnum2 = ((startbit + size - 1) as i64 as u64 / 32) as i32;
 
-        let mut res: u32 = if wordnum1 < 0 || wordnum1 as usize >= self.valvec.len() {
-            0
-        } else {
-            self.valvec[wordnum1 as usize] // wordnum1 >= 0 here
-        };
-        res = res.wshl(shift as u32); // shift in [0,31]
+        let mut res = words.get(wordnum1 as usize).copied().unwrap_or(0).wshl(shift as u32);
         if wordnum1 != wordnum2 {
-            let tmp: u32 = if wordnum2 < 0 || wordnum2 as usize >= self.valvec.len() {
-                0
-            } else {
-                self.valvec[wordnum2 as usize] // wordnum2 >= 0 here
-            };
-            // see get_mask for the shift-count notes
-            res |= tmp.wshr((32 - shift) as u32);
+            let next = words.get(wordnum2 as usize).copied().unwrap_or(0);
+            res |= next.wshr((32 - shift) as u32);
         }
-        res = res.wshr((32 - size) as u32);
-
-        res
+        res.wshr((32 - size) as u32)
     }
 
     /// C++ `PatternBlock::alwaysTrue`.
@@ -868,111 +695,33 @@ impl DisjointPattern {
         }
     }
 
-    /// C++ `DisjointPattern::specializes`: return true if everywhere this's
-    /// mask is non-zero, op2's mask is non-zero and op2's value matches.
+    /// Compare instruction and context specialization (`DisjointPattern::specializes`).
     pub fn specializes(&self, op2: &DisjointPattern) -> bool {
-        let a = self.get_block(false);
-        let b = op2.get_block(false);
-        if let Some(b) = b {
-            if !b.always_true() {
-                // a must match existing block
-                match a {
-                    None => return false,
-                    Some(a) => {
-                        if !a.specializes(b) {
-                            return false;
-                        }
-                    }
-                }
+        [false, true].into_iter().all(|context| {
+            match (self.get_block(context), op2.get_block(context)) {
+                (_, None) => true,
+                (None, Some(b)) => b.always_true(),
+                (Some(a), Some(b)) => b.always_true() || a.specializes(b),
             }
-        }
-        let a = self.get_block(true);
-        let b = op2.get_block(true);
-        if let Some(b) = b {
-            if !b.always_true() {
-                // a must match existing block
-                match a {
-                    None => return false,
-                    Some(a) => {
-                        if !a.specializes(b) {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-        true
+        })
     }
 
-    /// C++ `DisjointPattern::identical`: return true if patterns match
-    /// exactly.
+    /// C++ `DisjointPattern::identical`: instruction and context constraints match.
     pub fn identical(&self, op2: &DisjointPattern) -> bool {
-        let a = self.get_block(false);
-        let b = op2.get_block(false);
-        match b {
-            Some(b) => {
-                // a must match existing block
-                match a {
-                    None => {
-                        if !b.always_true() {
-                            return false;
-                        }
-                    }
-                    Some(a) => {
-                        if !a.identical(b) {
-                            return false;
-                        }
-                    }
-                }
+        [false, true].into_iter().all(|context| {
+            match (self.get_block(context), op2.get_block(context)) {
+                (None, None) => true,
+                (Some(a), None) | (None, Some(a)) => a.always_true(),
+                (Some(a), Some(b)) => a.identical(b),
             }
-            None => {
-                if let Some(a) = a {
-                    if !a.always_true() {
-                        return false;
-                    }
-                }
-            }
-        }
-        let a = self.get_block(true);
-        let b = op2.get_block(true);
-        match b {
-            Some(b) => {
-                // a must match existing block
-                match a {
-                    None => {
-                        if !b.always_true() {
-                            return false;
-                        }
-                    }
-                    Some(a) => {
-                        if !a.identical(b) {
-                            return false;
-                        }
-                    }
-                }
-            }
-            None => {
-                if let Some(a) = a {
-                    if !a.always_true() {
-                        return false;
-                    }
-                }
-            }
-        }
-        true
+        })
     }
 
-    /// C++ `DisjointPattern::resolvesIntersect`: is this pattern equal to
-    /// the intersection of `op1` and `op2`.
+    /// C++ `DisjointPattern::resolvesIntersect`: equal to the intersection of `op1` and `op2`.
     pub fn resolves_intersect(&self, op1: &DisjointPattern, op2: &DisjointPattern) -> bool {
-        if !resolve_intersect_block(
-            op1.get_block(false),
-            op2.get_block(false),
-            self.get_block(false),
-        ) {
-            return false;
-        }
-        resolve_intersect_block(op1.get_block(true), op2.get_block(true), self.get_block(true))
+        [false, true].into_iter().all(|context| {
+            resolve_intersect_block(op1.get_block(context), op2.get_block(context), self.get_block(context))
+        })
     }
 
     /// C++ `DisjointPattern::decodeDisjoint`: DisjointPattern factory.
@@ -1109,47 +858,30 @@ impl OrPattern {
         Some(&self.orlist[i as usize]) // i >= 0 expected (C++ UB otherwise)
     }
 
-    /// C++ `OrPattern::alwaysTrue`.  This isn't quite right because
-    /// different branches may cover the entire gamut (upstream comment).
+    /// True when an alternative is always true; collectively exhaustive
+    /// alternatives are not detected (`OrPattern::alwaysTrue`).
     pub fn always_true(&self) -> bool {
-        for pat in &self.orlist {
-            if pat.always_true() {
-                return true;
-            }
-        }
-        false
+        self.orlist.iter().any(DisjointPattern::always_true)
     }
 
     /// C++ `OrPattern::alwaysFalse`.
     pub fn always_false(&self) -> bool {
-        for pat in &self.orlist {
-            if !pat.always_false() {
-                return false;
-            }
-        }
-        true
+        self.orlist.iter().all(DisjointPattern::always_false)
     }
 
-    /// C++ `OrPattern::alwaysInstructionTrue`.
+    /// Require every alternative to leave instruction bits unconstrained
+    /// (`OrPattern::alwaysInstructionTrue`).
     pub fn always_instruction_true(&self) -> bool {
-        for pat in &self.orlist {
-            if !pat.always_instruction_true() {
-                return false;
-            }
-        }
-        true
+        self.orlist.iter().all(DisjointPattern::always_instruction_true)
     }
 
     /// C++ `OrPattern::simplifyClone`: look for alwaysTrue, eliminate
     /// alwaysFalse.
     pub fn simplify_clone(&self) -> Pattern {
-        for pat in &self.orlist {
-            // Look for alwaysTrue
-            if pat.always_true() {
-                return Pattern::Disjoint(DisjointPattern::Instruction(
-                    InstructionPattern::new_always(true),
-                ));
-            }
+        if self.always_true() {
+            return Pattern::Disjoint(DisjointPattern::Instruction(
+                InstructionPattern::new_always(true),
+            ));
         }
 
         let mut newlist: Vec<DisjointPattern> = Vec::new();
@@ -1307,7 +1039,9 @@ fn do_and_view(a: PatView<'_>, b: PatView<'_>, sa: i32) -> Pattern {
                 PatView::Instruction(x) => x,
                 _ => panic!("InstructionPattern::doAnd: operand is not an InstructionPattern (C++ UB cast)"),
             };
-            let respattern = if sa < 0 {
+            let respattern = if sa == 0 {
+                a_ip.maskvalue.intersect(&b4.maskvalue)
+            } else if sa < 0 {
                 let mut a_block = a_ip.maskvalue.clone();
                 a_block.shift(-sa);
                 a_block.intersect(&b4.maskvalue)
@@ -1413,7 +1147,9 @@ fn common_sub_view(a: PatView<'_>, b: PatView<'_>, sa: i32) -> Pattern {
                 PatView::Instruction(x) => x,
                 _ => panic!("InstructionPattern::commonSubPattern: operand is not an InstructionPattern (C++ UB cast)"),
             };
-            let respattern = if sa < 0 {
+            let respattern = if sa == 0 {
+                a_ip.maskvalue.common_sub_pattern(&b4.maskvalue)
+            } else if sa < 0 {
                 let mut a_block = a_ip.maskvalue.clone();
                 a_block.shift(-sa);
                 a_block.common_sub_pattern(&b4.maskvalue)
@@ -1753,6 +1489,40 @@ mod tests {
     }
 
     // -- PatternBlock -------------------------------------------------------
+
+    #[test]
+    fn patternblock_normalization_preserves_byte_alignment() {
+        for first in 0..64 {
+            for last in first..64 {
+                let mut mask = [0u8; 16];
+                mask[4 + first / 8] |= 0x80 >> (first % 8);
+                mask[4 + last / 8] |= 0x80 >> (last % 8);
+                let values: Vec<u8> = (0..16).map(|i| i * 13 + 7).collect();
+                let words = |bytes: &[u8]| {
+                    bytes.chunks_exact(4).map(|b| u32::from_be_bytes(b.try_into().unwrap())).collect::<Vec<_>>()
+                };
+                let start = 4 + first / 8;
+                let span = last / 8 - first / 8 + 1;
+                let count = span.div_ceil(4) * 4;
+                let mut expected_mask = mask[start..start + span].to_vec();
+                expected_mask.resize(count, 0);
+                let mut block = PatternBlock {
+                    offset: 7,
+                    nonzerosize: 16,
+                    maskvec: words(&mask),
+                    valvec: words(&values),
+                };
+                block.normalize();
+                assert_eq!(block.offset, 7 + start as i32, "{first}/{last}");
+                assert_eq!(block.nonzerosize, span as i32, "{first}/{last}");
+                assert_eq!(block.maskvec, words(&expected_mask), "{first}/{last}");
+                assert_eq!(block.valvec, words(&values[start..start + count]), "{first}/{last}");
+                let normalized = block.clone();
+                block.normalize();
+                assert_eq!(format!("{block:?}"), format!("{normalized:?}"));
+            }
+        }
+    }
 
     #[test]
     fn patternblock_normalize_offsets_and_length() {

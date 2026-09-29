@@ -1,19 +1,8 @@
-//! `kuna catalog` — the option-catalog surface (discovery half of the LLM control API).
+//! Discover, render and validate the registered option catalog.
 //!
-//! Drives `decomp_dbg phase catalog [<option>]`, extracts the embedded JSON from
-//! the console transcript, and re-emits it.  Modes:
-//!   * (default) a human-readable table,
-//!   * `--json`     the catalog as `json.dumps(indent=2)` (byte-identical to the
-//!                  Python `--json`),
-//!   * `--markdown` the `docs/options.md` body (tier-grouped, symptom-indexed),
-//!   * `--check`    verify the catalog documents exactly the registered kuna
-//!                  options.  In the Rust-only world the old `check_drift` (which
-//!                  parsed the removed `decompiler/cpp/options.cc` + `kuna_*.hh`)
-//!                  can no longer run; the faithful replacement cross-checks the
-//!                  catalog the binary emits against the in-process registered
-//!                  option set ([`kuna_decomp::options::KUNA_OPTION_NAMES`]),
-//!                  catching the same drift (a registered option with no catalog
-//!                  row, or a stale catalog row).
+//! The console supplies JSON; this module renders a table, indented JSON or
+//! the generated Markdown manual. Validation compares the catalog with
+//! [`kuna_decomp::options::KUNA_OPTION_NAMES`] to reject missing or stale rows.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;

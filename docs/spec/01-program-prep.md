@@ -96,7 +96,7 @@ bridged across the process by environment variables the CLI exports:
 `KUNA_RELOC_OBJECTS` (`relocobjects`), `KUNA_I386_PIE_PLT` (`i386_pie_plt`),
 `KUNA_RELOCREBASE` (`relocrebase`), `KUNA_DYNRELOCS` (`dynrelocs`),
 `KUNA_MSVCFPCONST` (`msvcfpconst`), `KUNA_PDATACHAINED` (`pdatachained`),
-`KUNA_REXTHUNK` (`rexthunk`),
+`KUNA_REXTHUNK` (`rexthunk`), `KUNA_PEORDINAL` (`peordinal`),
 `KUNA_MACHO_ARM64E` (`macho-arm64e`),
 `KUNA_MACHO_SLICE` (`--slice`), `KUNA_ARM_ISA` (`--isa`). For those,
 the option rows exist for discoverability while the live gate is the env var. The
@@ -485,7 +485,15 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   selector first means a mapped synthetic VMA, then falls back to a raw function
   offset only when exactly one definition matches. Name and raw-offset collisions
   report every candidate instead of taking symbol-table order, and only a symbol
-  marked undefined is classified as external. Loaders that publish no section
+  marked undefined is classified as external. Linked ELF inputs retain the
+  symbol-table definition addresses separately from resolved import-stub
+  addresses, using ELFv1 code entries rather than descriptor addresses and
+  folding the ARM Thumb state bit. These addresses follow loader VMA shifts.
+  A name matching one executable definition and only import stubs selects the
+  definition in both selector resolution and canonical name lookup; both entries
+  remain in the inventory. Multiple executable definitions or unclassified
+  executable competitors remain ambiguous, and explicit address selection
+  remains literal. Loaders that publish no section
   records, including the XML corpus loader, prove a numeric VMA by probing one
   byte from the load image instead. Which sections are memory-resident
   is the one question that stays per-format — ELF's `SHF_ALLOC` bit and COFF's
@@ -1053,8 +1061,22 @@ funcsym stream:
   IAT (slots) in lockstep — the i-th name belongs to the slot at
   `image_base + first_thunk_rva + i*ptr` — naming the slot (the GOT analog, folded
   through the read-only `.idata` page) and additionally decoding the MinGW `FF 25`
-  thunk veneers so a direct `call thunk` also resolves. Import-by-ordinal
-  synthesizes `<DLL>_Ordinal_<n>`.
+  thunk veneers so a direct `call thunk` also resolves. An import-by-ordinal has
+  no name in the INT. (kuna) `peordinal` (default-on, env-bridged,
+  `decompiler/crates/kuna-analysis/src/loader/kuna_peordinal.rs (ordinal_name)`)
+  names it from a built-in export table when the DLL is `OLEAUT32`, `WS2_32`,
+  `WSOCK32` or `MSVBVM60`, whose ordinals are fixed by their `.def` files and which
+  toolchains routinely import by ordinal (`OLEAUT32` #2 is `SysAllocString`, #6
+  `SysFreeString`; `WS2_32` #23 is `socket`, #115 `WSAStartup`). Each table is the
+  consensus of independent export listings: an ordinal is admitted only when every
+  listing that has it agrees on the name. `WS2_32` is limited to the WinSock 1.1
+  ordinals (1-23, 51-57, 101-116, 151, 500), the only ones stable across Windows
+  releases, and `WSOCK32` has its own table because it swaps `inet_addr`,
+  `inet_ntoa` and `ioctlsocket` relative to `WS2_32`. Any other ordinal, and every
+  ordinal of any other DLL, synthesizes `<DLL>_Ordinal_<n>`, which is also what
+  `option peordinal off` restores. The resolved name is the import's name
+  everywhere downstream (slot and thunk symbols, `kuna functions`, `kuna xrefs`),
+  so `win32sigs` seeds its prototype when its table carries one.
   (kuna) `rexthunk` (default-on, env-bridged,
   `decompiler/crates/kuna-analysis/src/loader/kuna_rexthunk.rs (is_rex_tail)`)
   keeps that thunk decode off compiler-emitted tail jumps. The decode is a byte
@@ -1865,8 +1887,14 @@ moves.
   was measured the same way the libc one was: an import histogram over the PE images
   of the RE arena corpus, admitting a name at five or more images, plus the
   resource/loader family below that bar because it is the family the defect was
-  reported against. The reduction rule is the one above, with the Windows spellings
-  named — handles and `LPVOID` are `void *`, `DWORD`/`UINT`/`LCID` are unsigned
+  reported against, plus the OLE Automation `BSTR`/`VARIANT`/`SAFEARRAY` calls and the
+  WinSock-only exports (`WSACleanup`, `WSAGetLastError`, `closesocket`, ...), which
+  are nearly always imported by ordinal and reach this table through `peordinal`'s
+  names. The BSD socket spellings are not added here; the libc tables carry only
+  some of them (`socket`, `recv`, `send`, `select`), and `SafeArrayCreate`,
+  `VariantChangeType` and `WSAStartup` are absent because each takes a by-value
+  `VARTYPE`/`USHORT`/`WORD`. The reduction rule is the one above, with the
+  Windows spellings named — handles and `LPVOID` are `void *`, `DWORD`/`UINT`/`LCID` are unsigned
   4-byte, `BOOL`/`LONG` signed 4-byte, `SIZE_T` pointer-width, `LPCSTR` a `char *`,
   `LPCWSTR` a `wchar_t *` at the compiler spec's `wchar_size`, `LPDWORD` an
   `unsigned int *` — and a declaration with a slot that has no honest spelling is
@@ -3623,6 +3651,14 @@ directly, so they are not vacuous on small fixtures. This is a driver-tier resou
 effect, so it is a CLI flag and an environment bridge rather than a settable
 option (DIV-169).
 
+The serial-fallback variants, their public enumeration order, and their stable
+diagnostic strings share one declaration in
+`decompiler/crates/kuna-analysis/src/listing/kuna_pdecode/refusal.rs`.
+`Refusal::ALL` and `Refusal::COUNT` are generated from that declaration, so adding
+a refusal cannot omit it from the documentation checks. A compatibility test
+pins the existing order and spellings; the scheduling and fallback policies do
+not depend on this representation.
+
 (kuna) The seed set carries one more source, under the same `funcstart_patterns`
 gate as the prologue starts: **the entries the load-time passes have already
 committed**, handed down from `engine.rs (commit_pending_analysis)` rather than
@@ -4207,7 +4243,7 @@ an executable section a function — an IAT slot lives in `.rdata`, so it is nev
 one — while the inventory does name it, because `pe_iat` (§1.3) registered the
 import there. For PE, the graph therefore falls back from the walk's function
 set to the inventory extent containing the target
-(`decompiler/crates/kuna-cli/src/decompile_all.rs (CallGraph::callee_of)`), which
+(`decompiler/crates/kuna-cli/src/callgraph.rs (CallGraph::callee_of)`), which
 is the same fold it already applies to every callee it reports. ELF historically
 inventories the PLT veneer only, not its GOT slot, so the graph admits the slot
 half of each decoded forwarding relation as a zero-extent node; `decompile-graph`
@@ -4483,6 +4519,38 @@ sweep of the fixture corpus: no call-graph edge lost anywhere, and gained where 
 image has a delta switch — `mcount_x86_64` 495 to 508 functions reachable from the
 entry, the gnulib image 89 to 100, the MSVC fixture 2 to 6. `kuna strings` over the
 896 KB `mcount_x86_64`, which holds 470 computed jumps, 676 ms to 704 ms.
+
+(kuna) Both reads stop at the engine's own jump-table ceiling,
+`Architecture::max_jumptable_size` — 1024 unless `option jumptablemax <n>` raises
+it — so one value decides how far a switch is followed in both tiers. A range
+check that states more cases than the ceiling is not a reason to decline: the
+first `jumptablemax` entries are still read and walked, and the walk records the
+switch as **truncated** (`SwitchTable`, with the case count the range check
+states and the number read, which is zero when the ceiling is below the two
+entries a table needs). A table with no range check that reads up to the
+ceiling is recorded the same way, with no stated count.
+
+(kuna) The walk's decode set is global, so it cannot say how long one function
+is: code two entries share is decoded under whichever entry reached it first. A
+gcc `.cold` fragment sits below its parent and jumps back into the parent's body,
+so the fragment's walk claims the parent's tail and the parent's own walk stops
+where that tail begins (on python3.10, `PyType_Ready`'s 12 KB body claimed 200
+instructions and its 1.9 KB fragment 2,782). `build_measured` therefore keeps the
+successor graph the walk decoded, one `(vma, len, falls through)` row per
+instruction plus one row per branch or switch-case edge, and
+`function_instruction_counts` re-runs each requested entry's own descent over it,
+stopping at every other seeded entry and at a caller-given cap. Shared code then
+counts for every entry that reaches it, whatever order the walk claimed it in.
+The plain `build` keeps no graph, so `kuna xrefs`, `strings`, `crypto` and the
+plain `kuna functions --json` listing pay nothing for it. `kuna functions
+--summary` (and `--reachable-from`, which already walk the image) count up to
+`maxinstruction + 1` to flag, before any decompile, the functions whose body
+exceeds `maxinstruction`, and list each truncated switch under the function whose
+extent contains its dispatch. On the MSVC state machine that motivated it (a
+16.6 MB function dispatching through a 90,781-entry image-base-relative table),
+the default walk reads 1024 entries and reports the switch; with `jumptablemax
+100000` it reads the whole table, and the body the cases reach is over the
+100000-instruction budget.
 
 
 (kuna) The same pool word is a second defect one surface over, in the **listing**

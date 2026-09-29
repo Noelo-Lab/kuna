@@ -229,6 +229,27 @@ fn a_multiequal_cycle_terminates() {
 }
 
 #[test]
+fn a_rejected_walk_preserves_existing_marks_and_all_flags() {
+    let mut fx = Fx::new();
+    let input = fx.input(0x100);
+    let other = fx.konst(7);
+    let merged = fx.phi(input, other);
+    fx.indirect(merged);
+    fx.direct_read(merged);
+    fx.fd.vbank_mut().get_mut(input).unwrap().set_flags_pub(varnode_flags::mark);
+    let initial: Vec<_> = fx.fd.vbank().iter_loc()
+        .map(|vn| (vn, fx.fd.vbank().get(vn).unwrap().get_flags()))
+        .collect();
+    for _ in 0..3 {
+        assert!(!check_indirect_use(&fx.fd, input));
+        assert!(!check_indirect_use(&fx.fd, merged));
+        for &(vn, flags) in &initial {
+            assert_eq!(fx.fd.vbank().get(vn).unwrap().get_flags(), flags);
+        }
+    }
+}
+
+#[test]
 fn option_name_is_registered_and_parses() {
     assert_eq!(OptionIndirectOnly::NAME, "indirectonly");
     assert!(KUNA_OPTION_NAMES.contains(&OptionIndirectOnly::NAME));

@@ -9,12 +9,7 @@
 //!    genuinely has no functions. The line is executable content, so a data-only
 //!    object keeps its honest empty answer and its exit 0.
 //!
-//! ## `.sla` precondition
-//!
-//! Every test here bootstraps a real architecture, which needs the built `x86`
-//! `.sla` under `specs/` (gitignored; `make specs`). When it is absent the
-//! command fails to build an architecture; the test prints that and returns
-//! early — a specs-less CI is a visible skip, never a false green.
+//! Integration tests require the built processor specs under `specs/`.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -53,37 +48,9 @@ fn run_kuna(args: &[&str]) -> (String, String, Option<i32>) {
     )
 }
 
-/// `true` when the failure is a missing-`.sla` bootstrap failure (a legitimate
-/// skip), not a real bug.
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-        || stderr.contains("Could not find .sla")
-}
-
-/// The string value of a top-level `"key": "..."` / `"key": null` field, without
-/// a JSON dependency (the documents are the CLI's own controlled output).
-///
-/// The value is JSON-escaped, so the terminator is the first quote that is not
-/// itself escaped — the reported reason quotes the selector it could not find.
-fn json_field<'a>(doc: &'a str, key: &str) -> Option<&'a str> {
-    let at = doc.find(&format!("\"{key}\":"))? + key.len() + 3;
-    let rest = doc[at..].trim_start();
-    if rest.starts_with("null") {
-        return None;
-    }
-    let body = rest.strip_prefix('"')?;
-    let mut escaped = false;
-    for (i, c) in body.char_indices() {
-        match c {
-            _ if escaped => escaped = false,
-            '\\' => escaped = true,
-            '"' => return Some(&body[..i]),
-            _ => {}
-        }
-    }
-    None
+fn json_field(doc: &str, key: &str) -> Option<String> {
+    let document: serde_json::Value = serde_json::from_str(doc).expect("valid CLI JSON");
+    document.get(key).and_then(serde_json::Value::as_str).map(str::to_owned)
 }
 
 /// Write `bytes` to a private scratch file and return its path.
@@ -174,10 +141,6 @@ fn decompile_json_emits_the_record_shape_for_one_function() {
     let (stdout, stderr, code) =
         run_kuna(&["decompile", &fixture(), "_DT_INIT", "--json", "--sleighpath", &specs()]);
     if code != Some(0) {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_json_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile --json failed: {stderr}");
     }
     assert!(stdout.trim_start().starts_with('{'), "not a JSON object:\n{stdout}");
@@ -200,26 +163,25 @@ fn decompile_json_emits_the_record_shape_for_one_function() {
 fn decompile_json_is_byte_identical_to_decompile_all_for_one_function() {
     let bin = fixture();
     let sp = specs();
-    let (one, stderr, code) =
-        run_kuna(&["decompile", &bin, "_DT_INIT", "--json", "--sleighpath", &sp]);
-    if code != Some(0) {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_json_cli: skipping (no `.sla`): {stderr}");
-            return;
+    for options in [
+        &[][..],
+        &["--option", "setlanguage", "rust-language"][..],
+        &["--option", "setlanguage", "rust-language", "--option", "setlanguage", "c-language"][..],
+    ] {
+        let mut one_args = vec!["decompile", &bin, "_DT_INIT", "--json", "--sleighpath", &sp];
+        one_args.extend_from_slice(options);
+        let (one, stderr, code) = run_kuna(&one_args);
+        if code != Some(0) {
+            panic!("kuna decompile --json failed: {stderr}");
         }
-        panic!("kuna decompile --json failed: {stderr}");
+        let mut all_args = vec![
+            "decompile-all", &bin, "--functions", "_DT_INIT", "--json", "--sleighpath", &sp,
+        ];
+        all_args.extend_from_slice(options);
+        let (all, stderr, code) = run_kuna(&all_args);
+        assert_eq!(code, Some(0), "kuna decompile-all --json failed: {stderr}");
+        assert_eq!(one, all, "the two surfaces must emit one document: {options:?}");
     }
-    let (all, stderr, code) = run_kuna(&[
-        "decompile-all",
-        &bin,
-        "--functions",
-        "_DT_INIT",
-        "--json",
-        "--sleighpath",
-        &sp,
-    ]);
-    assert_eq!(code, Some(0), "kuna decompile-all --json failed: {stderr}");
-    assert_eq!(one, all, "the two surfaces must emit one document, byte for byte");
 }
 
 /// A `0x`-prefixed selector and an explicit `--addr` reach the same record, so
@@ -230,10 +192,6 @@ fn decompile_json_selects_by_address_too() {
     let sp = specs();
     let (auto, stderr, code) = run_kuna(&["decompile", &bin, "0x1000", "--json", "--sleighpath", &sp]);
     if code != Some(0) {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_json_cli: skipping (no `.sla`): {stderr}");
-            return;
-        }
         panic!("kuna decompile 0x1000 --json failed: {stderr}");
     }
     assert!(auto.contains("\"address_hex\": \"0x1000\""), "{auto}");
@@ -271,10 +229,6 @@ fn json_refuses_the_flags_it_cannot_honor() {
 fn an_unresolved_selector_answers_with_an_error_envelope() {
     let (stdout, stderr, code) =
         run_kuna(&["decompile", &fixture(), "nosuchfunction", "--json", "--sleighpath", &specs()]);
-    if is_specs_skip(&stderr) {
-        eprintln!("decompile_json_cli: skipping (no `.sla`): {stderr}");
-        return;
-    }
     assert_eq!(code, Some(1), "an unresolved selector is not a success: {stderr}");
     assert!(stdout.trim_start().starts_with('{'), "still JSON:\n{stdout}");
     assert!(stdout.contains("\"count\": 0"), "{stdout}");
@@ -302,11 +256,6 @@ fn a_total_discovery_failure_is_reported_as_a_failure() {
         let mut argv = surface.clone();
         argv.extend_from_slice(&["--sleighpath", sp.as_str()]);
         let (stdout, stderr, code) = run_kuna(&argv);
-        if !stderr.to_lowercase().contains("no functions") && is_specs_skip(&stderr) {
-            eprintln!("decompile_json_cli: skipping (no `.sla`): {stderr}");
-            let _ = std::fs::remove_file(&image);
-            return;
-        }
         assert_ne!(code, Some(0), "{surface:?} must not report success: {stderr}");
         assert!(
             stderr.to_lowercase().contains("no functions"),
@@ -331,10 +280,6 @@ fn a_packed_image_is_named_as_packed() {
     let (stdout, stderr, code) =
         run_kuna(&["functions", image.to_str().unwrap(), "--json", "--sleighpath", &specs()]);
     let _ = std::fs::remove_file(&image);
-    if !stderr.to_lowercase().contains("no functions") && is_specs_skip(&stderr) {
-        eprintln!("decompile_json_cli: skipping (no `.sla`): {stderr}");
-        return;
-    }
     assert_ne!(code, Some(0), "{stderr}");
     assert!(stderr.contains("UPX-packed"), "the packer must be named: {stderr}");
     assert!(stderr.contains("kuna unpack"), "the recovery must be named: {stderr}");
@@ -351,10 +296,6 @@ fn an_image_with_no_code_keeps_its_empty_success() {
     let (stdout, stderr, code) =
         run_kuna(&["functions", image.to_str().unwrap(), "--json", "--sleighpath", &specs()]);
     let _ = std::fs::remove_file(&image);
-    if code != Some(0) && is_specs_skip(&stderr) {
-        eprintln!("decompile_json_cli: skipping (no `.sla`): {stderr}");
-        return;
-    }
     assert_eq!(code, Some(0), "a data-only object is not a failed run: {stderr}");
     assert!(stdout.contains("\"count\": 0"), "{stdout}");
     assert!(stdout.contains("\"error\": null"), "{stdout}");
@@ -367,10 +308,6 @@ fn an_image_with_no_code_keeps_its_empty_success() {
 fn a_run_that_finds_functions_still_exits_zero() {
     let (stdout, stderr, code) = run_kuna(&["functions", &fixture(), "--json", "--sleighpath", &specs()]);
     if code != Some(0) {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_json_cli: skipping (no `.sla`): {stderr}");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     assert!(!stdout.contains("\"count\": 0"), "the fixture has functions:\n{stdout}");

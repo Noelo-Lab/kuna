@@ -23,12 +23,6 @@
 //! symbol-less bytechunks that never construct an `ObjectLoadImage`, so nothing
 //! there has a function map for `query_call` to miss.
 //! `tests/stages/tailcallframe.xml` covers the decision on hand-built bytes.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -50,27 +44,17 @@ fn repo_root() -> PathBuf {
 }
 
 /// Bootstrap the fixture with `tailcallframe` in the requested state.
-/// `None` is a visible skip when the `.sla` is missing.
-fn load(tailcallframe: bool) -> Option<ConsoleProgram> {
+fn load(tailcallframe: bool) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/tailcallframe_x86_64");
-    let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_tailcallframe: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut()
         .set_kuna_option("tailcallframe", if tailcallframe { "on" } else { "off" })
         .expect("tailcallframe flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn code_addr(prog: &ConsoleProgram, vma: u64) -> Address {
@@ -98,7 +82,7 @@ fn callback_body(prog: &mut ConsoleProgram) -> String {
 /// so `tailcalljump`'s `query_call` can never resolve it.
 #[test]
 fn the_tail_jump_target_is_not_a_discovered_function() {
-    let Some(prog) = load(true) else { return };
+    let prog = load(true);
     let entries: Vec<u64> =
         prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect();
     assert!(
@@ -111,7 +95,7 @@ fn the_tail_jump_target_is_not_a_discovered_function() {
 /// BEFORE (`--option tailcallframe off`): the callback absorbs the renderer.
 #[test]
 fn the_callback_absorbs_the_renderer_with_the_option_off() {
-    let Some(mut prog) = load(false) else { return };
+    let mut prog = load(false);
     let body = callback_body(&mut prog);
     assert!(
         body.contains(RENDERER_BODY),
@@ -123,7 +107,7 @@ fn the_callback_absorbs_the_renderer_with_the_option_off() {
 /// AFTER (default): the jump is a call, and the renderer's body is gone.
 #[test]
 fn the_tail_jump_becomes_a_call_by_default() {
-    let Some(mut prog) = load(true) else { return };
+    let mut prog = load(true);
     let body = callback_body(&mut prog);
     assert!(
         !body.contains(RENDERER_BODY),

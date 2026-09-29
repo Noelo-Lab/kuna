@@ -121,40 +121,18 @@ fn specs() -> Vec<String> {
         .unwrap_or_else(|_| repo_root().join("specs").to_string_lossy().into_owned())]
 }
 
-/// Bootstrap a TE fixture, or skip when the ARM/x86 `.sla` has not been built.
-///
-/// Only a missing SLEIGH specification is a skip: every other bootstrap error
-/// is a real regression and panics, so a broken load can never read as a green
-/// specs-less run.
-fn load_or_skip(path: &str, target: &str, isa: Option<ArmIsa>) -> Option<ConsoleProgram> {
-    match bootstrap_from_te(path, target, &specs(), isa) {
-        Ok(program) => Some(program),
-        Err(error) if error.explain().contains("No sleigh specification") => {
-            eprintln!(
-                "verify_te_image: skipping (build the `.sla` with `make specs`): {}",
-                error.explain()
-            );
-            None
-        }
-        Err(error) => panic!("TE bootstrap failed: {}", error.explain()),
-    }
+/// Bootstrap a TE fixture with built ARM/x86 specs.
+fn load_fixture(path: &str, target: &str, isa: Option<ArmIsa>) -> ConsoleProgram {
+    bootstrap_from_te(path, target, &specs(), isa)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 #[test]
 fn thumb_te_dispatches_maps_and_decompiles() {
     let fixture = TeFixture::thumb_return_7();
     let path = fixture.0.to_string_lossy();
-    let mut program = match bootstrap_from_file(&path, "", &specs()) {
-        Ok(program) => program,
-        Err(error) if error.explain().contains("No sleigh specification") => {
-            eprintln!(
-                "verify_te_image: skipping (build the `.sla` with `make specs`): {}",
-                error.explain()
-            );
-            return;
-        }
-        Err(error) => panic!("TE dispatch from `load file` failed: {}", error.explain()),
-    };
+    let mut program = bootstrap_from_file(&path, "", &specs())
+        .expect("bootstrap fixture with built processor specs");
     program.commit_pending_analysis().unwrap();
     assert_eq!(
         program.sections(),
@@ -189,9 +167,7 @@ fn explicit_targets_keep_te_mappings_and_use_the_selected_entry_convention() {
         ("ARM:LE:32:v4t:default", 0x401000),
         ("x86:LE:32:default:gcc", 0x401001),
     ] {
-        let Some(mut program) = load_or_skip(&path, target, None) else {
-            continue;
-        };
+        let mut program = load_fixture(&path, target, None);
         program.commit_pending_analysis().unwrap();
         assert!(program.description().starts_with(target), "{}", program.description());
         assert_eq!(program.find_entry_at(0x401001).unwrap().addr.get_offset(), entry, "{target}");
@@ -204,9 +180,7 @@ fn explicit_targets_keep_te_mappings_and_use_the_selected_entry_convention() {
 fn armthumb_mixed_uses_thumb2_without_painting_a32_code() {
     let fixture = TeFixture::mixed_machine_thumb2_and_arm();
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "", None) else {
-        return;
-    };
+    let mut program = load_fixture(&path, "", None);
     program.commit_pending_analysis().unwrap();
     assert!(program.description().starts_with("ARM:LE:32:v8:default"));
 
@@ -259,9 +233,7 @@ fn armthumb_mixed_uses_thumb2_without_painting_a32_code() {
 fn odd_thumb_entry_carries_mode_across_bl_but_not_blx() {
     let fixture = TeFixture::thumb_calls_arm();
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "ARM:LE:32:v8:default", None) else {
-        return;
-    };
+    let mut program = load_fixture(&path, "ARM:LE:32:v8:default", None);
     program.commit_pending_analysis().unwrap();
 
     let entry = program.find_entry_at(0x401001).expect("odd Thumb entry");
@@ -347,9 +319,7 @@ fn assert_it_return_paths(code: &[u8]) {
     let path = fixture.0.to_string_lossy();
     let mut outputs = Vec::new();
     for isa in [None, Some(ArmIsa::Thumb)] {
-        let Some(mut program) = load_or_skip(&path, "", isa) else {
-            return;
-        };
+        let mut program = load_fixture(&path, "", isa);
         program.commit_pending_analysis().unwrap();
         assert_eq!(tmode_at(&program, 0x401006), 1, "the conditional fall-through is Thumb");
         assert_eq!(tmode_at(&program, 0x401008), 1, "the fall-through return is Thumb");
@@ -371,9 +341,7 @@ fn assert_it_return_paths(code: &[u8]) {
 fn odd_thumb_entry_walk_truncates_at_its_budget_and_keeps_the_load_usable() {
     let fixture = TeFixture::long_thumb_entry();
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "", None) else {
-        return;
-    };
+    let mut program = load_fixture(&path, "", None);
     program
         .commit_pending_analysis()
         .expect("an exhausted Thumb context walk must not fail the load");
@@ -421,9 +389,7 @@ fn odd_thumb_entry_walk_truncates_at_its_budget_and_keeps_the_load_usable() {
 fn a_blx_target_below_a_thumb_callee_does_not_flatten_it() {
     let fixture = TeFixture::thumb_blx_below_thumb_callee();
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "ARM:LE:32:v8:default", None) else {
-        return;
-    };
+    let mut program = load_fixture(&path, "ARM:LE:32:v8:default", None);
     program.commit_pending_analysis().unwrap();
     assert_eq!(tmode_at(&program, 0x401010), 0, "the BLX target is A32");
     assert_eq!(tmode_at(&program, 0x401018), 1, "the BL callee is Thumb");
@@ -446,9 +412,7 @@ fn a_blx_target_below_a_thumb_callee_does_not_flatten_it() {
 fn the_walk_stops_at_the_file_backed_bytes() {
     let fixture = TeFixture::thumb_entry_into_zero_tail();
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "", None) else {
-        return;
-    };
+    let mut program = load_fixture(&path, "", None);
     program.commit_pending_analysis().unwrap();
     assert_eq!(tmode_at(&program, 0x401002), 1, "the second no-op is walked");
     assert_eq!(tmode_at(&program, 0x401004), 0, "the zero tail is not");
@@ -461,9 +425,7 @@ fn the_walk_stops_at_the_file_backed_bytes() {
 fn entrythumbflow_off_leaves_the_entry_at_the_language_default() {
     let fixture = TeFixture::thumb_entry_before_arm();
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "", None) else {
-        return;
-    };
+    let mut program = load_fixture(&path, "", None);
     program
         .arch_mut()
         .set_kuna_option("entrythumbflow", "off")
@@ -488,9 +450,7 @@ fn odd_generic_arm_entry_preserves_a32_code_on_either_side() {
         (TeFixture::thumb_entry_before_arm(), 0x401004, 0x401000),
     ] {
         let path = fixture.0.to_string_lossy();
-        let Some(mut program) = load_or_skip(&path, "", None) else {
-            return;
-        };
+        let mut program = load_fixture(&path, "", None);
         program.commit_pending_analysis().unwrap();
         assert_eq!(tmode_at(&program, thumb_addr), 1, "entry at {thumb_addr:#x}");
         assert_eq!(tmode_at(&program, thumb_addr + 2), 1, "reachable Thumb return");
@@ -512,9 +472,7 @@ fn odd_generic_arm_entry_preserves_a32_code_on_either_side() {
 fn entry_thumb_walk_decodes_overlaid_bytes() {
     let fixture = TeFixture::thumb_entry_overlaid_with_branch();
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "", None) else {
-        return;
-    };
+    let mut program = load_fixture(&path, "", None);
     program.set_assertions(vec![Directive {
         raw: "bytes 0x401000 02e0".to_string(),
         body: Body::Bytes {
@@ -553,9 +511,7 @@ fn entry_thumb_walk_reaches_a_materialized_virtual_tail() {
     bytes[48..52].copy_from_slice(&16u32.to_le_bytes());
     let fixture = TeFixture::write("te-thumb-tail-overlay", bytes);
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "", None) else {
-        return;
-    };
+    let mut program = load_fixture(&path, "", None);
     apply_byte_assertions(&mut program, &[
         (0x401000, &[0x02, 0xe0]),
         (0x401008, &[0x07, 0x20, 0x70, 0x47]),
@@ -575,9 +531,7 @@ fn entry_thumb_walk_merges_adjacent_and_overlapping_materialized_spans() {
     bytes[48..52].copy_from_slice(&16u32.to_le_bytes());
     let fixture = TeFixture::write("te-thumb-split-overlay", bytes);
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "", None) else {
-        return;
-    };
+    let mut program = load_fixture(&path, "", None);
     apply_byte_assertions(&mut program, &[
         (0x401004, &[0x70, 0x47]),
         (0x401003, &[0x00]),
@@ -596,9 +550,7 @@ fn entry_thumb_walk_excludes_uninitialized_gaps_and_rejected_overlays() {
     bytes[48..52].copy_from_slice(&16u32.to_le_bytes());
     let fixture = TeFixture::write("te-thumb-incomplete-overlay", bytes);
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "", None) else {
-        return;
-    };
+    let mut program = load_fixture(&path, "", None);
     apply_byte_assertions(&mut program, &[
         (0x401008, &[0x4f, 0xf0]),
         (0x40100c, &[0x70, 0x47]),
@@ -623,9 +575,7 @@ fn entry_thumb_walk_excludes_overlays_in_nonexecutable_mappings() {
         TeImage::arm(&[0xfa, 0xe7]).entry_rva(CODE_RVA | 1).build(),
     );
     let path = fixture.0.to_string_lossy();
-    let Some(mut program) = load_or_skip(&path, "", None) else {
-        return;
-    };
+    let mut program = load_fixture(&path, "", None);
     apply_byte_assertions(&mut program, &[(0x400ff8, &[0x07, 0x20, 0x70, 0x47])]);
     program.commit_pending_analysis().unwrap();
     assert_eq!(tmode_at(&program, 0x401000), 1);
@@ -655,9 +605,7 @@ fn assert_entry_returns_7(program: &mut ConsoleProgram) {
 fn arm_te_literal_pool_folds_only_with_litpoolconst() {
     let fixture = TeFixture::arm_literal_pool_return_7();
     let path = fixture.0.to_string_lossy();
-    let Some(mut enabled) = load_or_skip(&path, "", None) else {
-        return;
-    };
+    let mut enabled = load_fixture(&path, "", None);
     assert_eq!(
         enabled.arch().litpool_const.as_slice(),
         &[(0x401000, 0x40100b)]

@@ -22,12 +22,6 @@
 //! holds `ScalarOperandAnalyzer.checkOperands`' "below 4096 could be a number"
 //! floor off the composed address — applying it there would report nothing on
 //! either binary.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `ARM` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -54,30 +48,20 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture and build the index `kuna xrefs` / `kuna strings`
-/// answer out of. `None` is a visible skip when the `.sla` is missing.
-fn index() -> Option<XrefIndex> {
+/// Bootstrap the fixture and build the index `kuna xrefs` / `kuna strings` answer out of.
+fn index() -> XrefIndex {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/picpool_arm_le32");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_picpool: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let bytes = std::fs::read(&bin).expect("fixture readable");
     let file = object::File::parse(&*bytes).expect("fixture parses");
     let seeds: Vec<u64> =
         prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect();
-    Some(xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds))
+    xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds)
 }
 
 /// The defect: the address of the literal is in neither instruction of the pair
@@ -85,7 +69,7 @@ fn index() -> Option<XrefIndex> {
 /// nothing at all.
 #[test]
 fn a_pool_displacement_composed_with_the_pc_references_the_literal() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     let refs: Vec<(u64, XrefKind)> =
         idx.refs_to(PROMPT).iter().map(|r| (r.from, r.kind)).collect();
     assert_eq!(
@@ -105,7 +89,7 @@ fn a_pool_displacement_composed_with_the_pc_references_the_literal() {
 /// function forms several references at once.
 #[test]
 fn the_add_may_be_scheduled_away_from_its_load() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     let refs: Vec<(u64, XrefKind)> =
         idx.refs_to(SECOND).iter().map(|r| (r.from, r.kind)).collect();
     assert_eq!(refs, vec![(COMPOSES_SECOND, XrefKind::Data)]);
@@ -116,7 +100,7 @@ fn the_add_may_be_scheduled_away_from_its_load() {
 /// lands on a real literal, and the program never read the PC to get there.
 #[test]
 fn arithmetic_that_never_reads_the_pc_composes_nothing() {
-    let Some(idx) = index() else { return };
+    let idx = index();
     assert!(
         idx.refs_to(NUMBER).is_empty(),
         "the pool word here is a number the program added four to, not a \

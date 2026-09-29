@@ -604,6 +604,29 @@ group):
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs` | signed div/mod idioms, segments, pointer flow, predication, float compares | `RuleSignDiv2`, `RuleSignMod2nOpt`, `RuleModOpt`, `RuleSegment`, `RulePtrFlow`, `RuleConditionalMove` (group `conditionalexe`), `RuleFloatCast`, `RuleIgnoreNan` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, cleanup-pool `RuleExpandLoad` |
 
+The pointer/division family in `ruleaction_6.rs` resolves opcode changes through
+the canonical `TypeOp` table and applies them with `Funcdata::op_set_opcode`.
+That mutation is infallible; its helper returns no `Result`, so rules do not
+carry unreachable failure branches around it. Fresh unique outputs use
+`Funcdata::new_unique_out` directly and retain their allocation-error handling.
+These ownership changes do not alter rule guards, opcode flags, or rewrite order.
+
+The boolean/arithmetic and bit-piece families in `ruleaction_3.rs` and
+`ruleaction_4.rs` also allocate unique outputs through `Funcdata::new_unique_out`.
+New outputs therefore receive high variables when high-level state is enabled,
+including public rule calls after that transition, and matching lane-storage
+records while lane collection is active. Rule matching and graph-edit order are
+unchanged. Addressed outputs in `ruleaction_4.rs` likewise use
+`Funcdata::new_varnode_out`: store promotion and extension shortening retain
+the shared factory's high-variable, lane-storage and scope-property bookkeeping.
+Shortening still adjusts the address for endianness and unsets the prior output
+before allocating its replacement. Output reassignment uses
+`Funcdata::op_set_output`, preserving old-definition unlinking and the bank's
+reader-replacement callback. The shared property update supplies missing covers
+in high-level state and marks high-variable cover information dirty. This also
+applies when `RuleSubZext` turns a middle truncation, with or without a following
+shift, into a full-width shift and mask.
+
 For the 64-bit unsigned divide-by-three reciprocal, GCC can share one wide
 multiply between the quotient and remainder. After `RuleDivOpt` recovers
 `x / 3`, the sibling `(high64(x * 0xaaaaaaaaaaaaaaab) & ~1)` is exactly twice
@@ -625,9 +648,19 @@ uses type `unsigned int *`. Widened, it printed `sink((short)a0[0x1a])`, which C
 sign-extends, so 0x9abc reached `sink` as 4294941372. Declined, the load keeps
 its own width and kuna's unsigned spelling of an undefined value:
 `sink(*(unsigned short *)&a0[0x1a])`. A value whose type is known signed or
-unsigned still takes the truncation form. That form is value-correct but reads
-the whole element, and narrowing it too would move pinned output
-(`kuna-tiedphitrim.xml` #13/#14).
+unsigned still takes the truncation form through a declared pointer. That form
+is value-correct but reads the whole element, bytes the program never reads, so
+with `elemptr` on (the default) a pointer whose pointee was inferred from use --
+no type-locked Varnode at the base of its chain of offsets and copies -- keeps
+the load its own width
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_elemptr.rs (keeps_load_narrow)`).
+`elemptr` supplies such pointees and a prototype carries them to callers: a
+2-byte field at `+4` of a 6-byte object, read through a parameter its callee
+declares `unsigned int *`, printed `(unsigned short)a0[1]`, a 4-byte read that
+faults when the object ends a page, and now prints `*(unsigned short *)&a0[1]`.
+A type-locked pointer keeps upstream's form; the datatest corpus does not move.
+`kuna-tiedphitrim.xml` #13/#14 and `structsynth-locals.xml` #2 pin the narrow
+spelling of a 4-byte field read through an inferred `int8 *`.
 
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
 default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
@@ -1003,6 +1036,15 @@ INT_CARRY or its const-folded `INT_LESSEQUAL((-b) & mask, a)` form, matched
 through CAST/COPY chains. Rewrite: one wide `INT_ADD(PIECE(hipart, b),
 ZEXT(a))`, recovering the single 16-bit addition the 6502-class ADC pair
 implements. Settable `addcarrychain`, shipped default **on** (DIV-2).
+
+Carry-chain and array-stride helper outputs use
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs (new_unique_out)`
+instead of private copies of the bank allocation sequence. The shared factory
+links each definition and assigns its HighVariable when high-level variables
+are already enabled; it also owns lane bookkeeping. Pattern guards, opcode
+metadata, graph-edit order and option gates are unchanged. The ordinary
+schedule applies these rules before high-level assignment, while direct rule
+invocations must also preserve the function's existing high-level state.
 
 **booleanmask** (GH-1282) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_booleanmask.rs

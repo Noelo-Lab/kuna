@@ -1,37 +1,16 @@
-//! Port of `decompiler/cpp/emulateutil.hh` + `emulateutil.cc` (W2, item
-//! `w2-sleigh-emulate`): (lightweight) emulation for executing snippets
-//! defined with PcodeOpRaw objects.
+//! Raw p-code snippet emulation, from `decompiler/cpp/emulateutil.{hh,cc}`.
 //!
-//! Scope note: the C++ file holds two classes.
+//! [`EmulateSnippet`] holds a shared loader and address-space manager. Address-space
+//! constants use manager indices. Temporary
+//! values use a `BTreeMap`; cached operations use `Rc<PcodeOpRaw>` and own their
+//! varnodes. [`PcodeEmitCache`] therefore borrows only the operation list.
 //!
-//! - **`EmulateSnippet` is ported here.**  Its `Architecture *glb` member is
-//!   used for exactly two things — `glb->loader` (reading initial values
-//!   out of the load image) and, through `getSpaceFromConst()`, the space
-//!   table — so the port stores those two slices directly
-//!   (`Rc<RefCell<dyn LoadImage>>` + `Rc<AddrSpaceManager>`, the same
-//!   substitution pattern as `FloatFormatProvider` in kuna-num and the
-//!   manager boundary in `emulate.rs`).  The C++ `getArch()` accessor has no
-//!   meaning without `Architecture` and is not ported.
-//! - **`EmulatePcodeOp` is NOT yet ported.**  It emulates over the syntax
-//!   tree's `PcodeOp`/`Varnode`/`FlowBlock` objects (`op.hh`,
-//!   `varnode.hh`, `block.hh`) and `glb->userops`, none of which exist
-//!   until the kuna-decomp IR wave lands (ADR 0001 arenas: its methods
-//!   will take Funcdata-resident IDs, so porting it now would invent the
-//!   IR API ahead of that wave).  It must be added when `op.rs` exists.
+//! Load-image reads fetch eight bytes, apply the address space's byte order
+//! and requested-size adjustment, and propagate unavailable-data errors.
 //!
-//! Other notes:
-//!
-//! - `tempValues` (`map<uintb,uintb>`) is a `BTreeMap<u64, u64>` (ADR 0002).
-//! - `opList`/`varList`: ops are `Rc<PcodeOpRaw>` and the separate varnode
-//!   list disappears (the Rust `PcodeOpRaw` owns its varnodes by value; see
-//!   `kuna_num::pcoderaw` and `emulate.rs` module docs), so `buildEmitter`
-//!   returns a [`PcodeEmitCache`] borrowing only the op list.
-//! - `getLoadImageValue` reads a full `sizeof(uintb)` = 8 bytes through
-//!   `(uint1 *)&res`; the port pins `HOST_ENDIAN` to 0 (little-endian
-//!   oracle host) as in `memstate.rs`, making the read + conditional
-//!   byte_swap equal to `construct_value(buf, 8, space-is-big-endian)`.
-//!   Unlike `MemoryImage`, a `DataUnavailError` is *not* caught here — it
-//!   propagates, as in C++.
+//! Emulation over decompiler IR lives in `kuna-decomp`'s
+//! `p2_lift/kuna_emulatefunction.rs`, which combines the upstream
+//! `EmulatePcodeOp` and `EmulateFunction` behavior.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;

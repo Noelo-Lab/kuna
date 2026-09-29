@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callbacktype",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64",
+    "binary_sha256": "b9e3aeab05dd089e299f03cb6b0135592771fe49cc73120da22127b41610799a",
+    "binary_size": 16800,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_refused_x86_64",
+    "selector": "score1",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int score1\\(int \\*a0\\)",
+      "qsort\\(v\\d+,4,4,score1\\)",
+      "\\(unsigned int\\)score1\\(v\\d+\\)"
+    ],
+    "stdout_absent": [
+      "score1\\(void \\*a0,void \\*a1\\)",
+      "score1\\([^()]*,[^()]*\\)"
+    ]
+  },
+  "notes": "`score1` takes one pointer and is cast into qsort's two-pointer comparator slot, and `main` also calls it directly. The declaration's closed two-parameter list would materialize a second argument at both direct call sites out of whatever the register last held -- qsort's element size -- and neither argument is in the program.",
+  "probe_id": "p-53c2821d2ac6"
+}

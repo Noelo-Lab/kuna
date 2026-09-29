@@ -2,14 +2,15 @@
 //! built `kuna` binary over the real vendored `fauxware` ELF and asserts the
 //! machine-readable JSON surface decbench and an LLM driver consume.
 //!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored;
-//! `make specs`).  When it is absent the command fails to build an architecture;
-//! the test prints that and returns early (a specs-less CI is a visible skip,
-//! never a false green).
+//! Integration tests require the built processor specs under `specs/`.
 
 mod common;
+
+use common::process;
+
+#[cfg(unix)]
+#[path = "common/compiler_probe_tests.rs"]
+mod compiler_probe_tests;
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -155,42 +156,62 @@ fn cpp_mangled() -> String {
         .to_string()
 }
 
-/// Parse the `"count": N` field out of the decompile-all `--json` header.
 fn json_count(stdout: &str) -> Option<usize> {
-    let i = stdout.find("\"count\":")? + "\"count\":".len();
-    stdout[i..].trim_start().split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
+    let document: serde_json::Value = serde_json::from_str(stdout).expect("valid CLI JSON");
+    document
+        .get("count")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
 }
 
-/// Every entry address in a `functions` / `decompile-all` `--json` document, in
-/// document (address) order.  `"address_hex"` is a different key, so the `":"` in
-/// the pattern is what keeps it out.
 fn json_addresses(stdout: &str) -> Vec<u64> {
-    stdout
-        .match_indices("\"address\":")
-        .filter_map(|(i, m)| {
-            stdout[i + m.len()..]
-                .trim_start()
-                .split(|c: char| !c.is_ascii_digit())
-                .next()?
-                .parse()
-                .ok()
+    let document: serde_json::Value = serde_json::from_str(stdout).expect("valid CLI JSON");
+    document
+        .get("functions")
+        .and_then(serde_json::Value::as_array)
+        .expect("function array")
+        .iter()
+        .map(|function| {
+            function.get("address").and_then(serde_json::Value::as_u64)
+                .expect("numeric function address")
         })
         .collect()
 }
 
-/// Run `kuna <cmd> <bin> --mode reliable --json` and return its entry addresses,
-/// or `None` on a missing-`.sla` skip.
-fn run_json_addrs(cmd: &str, bin: &str, sp: &str, extra: &[&str]) -> Option<Vec<u64>> {
+#[test]
+fn json_helpers_use_function_fields_and_preserve_raw_records() {
+    let document = r#"{"metadata":{"count":99,"address":99,"size":99},"count":2,"functions":[
+  {"name":"a\"b","address":1,"size":4,"variables":[{"size":32}]},
+  {"name":"second","address":2,"size":8}
+]}"#;
+    assert_eq!(json_count(document), Some(2));
+    assert_eq!(json_addresses(document), [1, 2]);
+    assert_eq!(json_sizes(document), [4, 8]);
+    let records = json_records(document);
+    assert_eq!(records.len(), 2);
+    assert_eq!(record_name(records[0]), "a\"b");
+    assert_eq!(
+        records[0],
+        r#"{"name":"a\"b","address":1,"size":4,"variables":[{"size":32}]}"#
+    );
+}
+
+#[test]
+fn json_helpers_reject_malformed_documents() {
+    for document in [r#"{"count":2garbage}"#, r#"{"count":2} trailing"#] {
+        assert!(std::panic::catch_unwind(|| json_count(document)).is_err());
+    }
+}
+
+/// Run `kuna <cmd> <bin> --mode reliable --json` and return its entry addresses.
+fn run_json_addrs(cmd: &str, bin: &str, sp: &str, extra: &[&str]) -> Vec<u64> {
     let mut args = vec![cmd, bin, "--json", "--sleighpath", sp, "--mode", "reliable"];
     args.extend_from_slice(extra);
     let (stdout, stderr, ok) = run_kuna(&args);
     if !ok {
-        if is_specs_skip(&stderr) {
-            return None;
-        }
         panic!("kuna {cmd} failed on {bin}: {stderr}");
     }
-    Some(json_addresses(&stdout))
+    json_addresses(&stdout)
 }
 
 /// The `error(nonzero,…)` boundary-overrun fixture (`noreturn_error_x86_64`):
@@ -256,50 +277,14 @@ fn run_kuna_env_with_timeout(
     env: &[(&str, &str)],
     cap: Duration,
 ) -> Option<(String, String, bool)> {
-    use std::io::Read;
-    let mut child = kuna_command(env)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn the kuna binary");
-    // Drain the pipes on reader threads so a chatty child can never block on a
-    // full pipe while we poll for exit.
-    let mut stdout_pipe = child.stdout.take().expect("stdout piped");
-    let mut stderr_pipe = child.stderr.take().expect("stderr piped");
-    let out_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stdout_pipe.read_to_end(&mut buf);
-        buf
-    });
-    let err_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stderr_pipe.read_to_end(&mut buf);
-        buf
-    });
-    let deadline = Instant::now() + cap;
-    let status = loop {
-        match child.try_wait().expect("try_wait on the kuna binary") {
-            Some(st) => break Some(st),
-            None if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break None;
-            }
-            None => std::thread::sleep(Duration::from_millis(200)),
-        }
-    };
-    let stdout = String::from_utf8_lossy(&out_thread.join().expect("stdout reader")).into_owned();
-    let stderr = String::from_utf8_lossy(&err_thread.join().expect("stderr reader")).into_owned();
-    status.map(|st| (stdout, stderr, st.success()))
-}
-
-/// `true` when the failure is a missing-`.sla` bootstrap failure (a legitimate
-/// skip), not a real bug.
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
+    process::output_with_timeout(kuna_command(env).args(args), cap, Duration::from_millis(200))
+        .map(|output| {
+            (
+                String::from_utf8_lossy(&output.stdout).into_owned(),
+                String::from_utf8_lossy(&output.stderr).into_owned(),
+                output.status.success(),
+            )
+        })
 }
 
 /// A filtered whole-binary run is still a body-lifting surface. Selecting a
@@ -320,10 +305,6 @@ fn decompile_all_refuses_an_executable_section_iat_slot() {
         "--sleighpath",
         &specs(),
     ]);
-    if is_specs_skip(&stderr) {
-        eprintln!("decompile_all_iat: skipping (no `.sla`; run `make specs`): {stderr}");
-        return;
-    }
     assert!(!ok, "an IAT slot unexpectedly decompiled: {stdout}");
     assert!(stdout.trim().is_empty(), "an IAT result row escaped: {stdout}");
     assert_eq!(
@@ -346,10 +327,6 @@ fn decompile_all_emits_json_for_main() {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_all_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     // Shape assertions (no JSON dep): two functions, both with non-null code.
@@ -397,24 +374,18 @@ fn decompile_all_emits_json_for_main() {
 fn fast_mode_matches_explicit_options_and_user_override_wins() {
     let bin = arm_entrymain();
     let sp = specs();
-    let run = |extra: &[&str]| -> Option<String> {
+    let run = |extra: &[&str]| -> String {
         let mut args =
             vec!["decompile-all", bin.as_str(), "--json", "--no-vars", "--sleighpath", sp.as_str()];
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
         }
-        Some(stdout)
+        stdout
     };
 
-    let Some(fast) = run(&["--mode", "fast"]) else {
-        eprintln!("fast mode: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
+    let fast = run(&["--mode", "fast"]);
     let explicit = run(&[
         "--mode",
         "reliable",
@@ -430,8 +401,7 @@ fn fast_mode_matches_explicit_options_and_user_override_wins() {
         "--option",
         "fast_funcdisc",
         "on",
-    ])
-    .expect("explicit fast-equivalent run");
+    ]);
     assert_eq!(fast, explicit, "fast must equal its four explicit option overrides");
 
     let noreturn = noreturn_fixture();
@@ -494,7 +464,7 @@ fn modes_command_lists_auto_policy_and_fast_preset() {
 fn omitted_and_explicit_auto_match_aggressive_on_a_small_binary() {
     let bin = fauxware();
     let sp = specs();
-    let run = |mode: Option<&str>| -> Option<String> {
+    let run = |mode: Option<&str>| -> String {
         let mut args = vec![
             "functions",
             bin.as_str(),
@@ -507,20 +477,14 @@ fn omitted_and_explicit_auto_match_aggressive_on_a_small_binary() {
         }
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna functions failed for mode {mode:?}: {stderr}");
         }
-        Some(stdout)
+        stdout
     };
 
-    let Some(omitted) = run(None) else {
-        eprintln!("auto mode: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
-    assert_eq!(omitted, run(Some("auto")).expect("explicit auto"));
-    assert_eq!(omitted, run(Some("aggressive")).expect("explicit aggressive"));
+    let omitted = run(None);
+    assert_eq!(omitted, run(Some("auto")));
+    assert_eq!(omitted, run(Some("aggressive")));
 }
 
 #[test]
@@ -550,7 +514,7 @@ fn decompile_mode_requires_a_value() {
 fn arm_decompile_all_defaults_funcstart_patterns_on() {
     let bin = arm_entrymain();
     let sp = specs();
-    let run = |extra: &[&str]| -> Option<usize> {
+    let run = |extra: &[&str]| -> usize {
         let mut args = vec![
             "decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str(),
             "--mode", "reliable",
@@ -558,19 +522,13 @@ fn arm_decompile_all_defaults_funcstart_patterns_on() {
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
         }
-        Some(json_count(&stdout).expect("count in json"))
+        json_count(&stdout).expect("count in json")
     };
-    let Some(default_cnt) = run(&[]) else {
-        eprintln!("arm funcstart default: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
-    let off_cnt = run(&["--option", "funcstart_patterns", "off"]).expect("second run");
-    let on_cnt = run(&["--option", "funcstart_patterns", "on"]).expect("third run");
+    let default_cnt = run(&[]);
+    let off_cnt = run(&["--option", "funcstart_patterns", "off"]);
+    let on_cnt = run(&["--option", "funcstart_patterns", "on"]);
     // The non-x86-64 default injects the pass: it discovers strictly more than `off`,
     // and matches the explicit `on`.
     assert!(
@@ -598,7 +556,7 @@ fn arm_decompile_all_defaults_funcstart_patterns_on() {
 fn arm_decompile_all_defaults_aif_on() {
     let bin = arm_thumb();
     let sp = specs();
-    let run = |extra: &[&str]| -> Option<usize> {
+    let run = |extra: &[&str]| -> usize {
         let mut args = vec![
             "decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str(),
             "--mode", "reliable",
@@ -606,19 +564,13 @@ fn arm_decompile_all_defaults_aif_on() {
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
         }
-        Some(json_count(&stdout).expect("count in json"))
+        json_count(&stdout).expect("count in json")
     };
-    let Some(default_cnt) = run(&[]) else {
-        eprintln!("arm aif default: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
-    let off_cnt = run(&["--option", "aif", "off"]).expect("second run");
-    let on_cnt = run(&["--option", "aif", "on"]).expect("third run");
+    let default_cnt = run(&[]);
+    let off_cnt = run(&["--option", "aif", "off"]);
+    let on_cnt = run(&["--option", "aif", "on"]);
     assert_eq!(
         default_cnt, on_cnt,
         "ARM default must equal explicit `aif on` (default={default_cnt}, on={on_cnt}) — the injection did not fire"
@@ -654,7 +606,7 @@ fn arm_decompile_all_defaults_aif_on() {
 fn arm_decompile_all_raw_thumb_prologue_seed_non_destructive() {
     let bin = arm_thumb();
     let sp = specs();
-    let run = |extra: &[&str]| -> Option<usize> {
+    let run = |extra: &[&str]| -> usize {
         let mut args = vec![
             "decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str(),
             "--mode", "reliable",
@@ -662,21 +614,15 @@ fn arm_decompile_all_raw_thumb_prologue_seed_non_destructive() {
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
         }
-        Some(json_count(&stdout).expect("count in json"))
+        json_count(&stdout).expect("count in json")
     };
-    let Some(default_cnt) = run(&[]) else {
-        eprintln!("arm raw-prologue default: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
+    let default_cnt = run(&[]);
     // `funcstart_patterns off` disables the whole recursive-discovery tier (the raw
     // Thumb-prologue seed is gated on the same flag), so the default (with the raw
     // seed active) must never discover fewer.
-    let off_cnt = run(&["--option", "funcstart_patterns", "off"]).expect("second run");
+    let off_cnt = run(&["--option", "funcstart_patterns", "off"]);
     assert!(
         default_cnt >= off_cnt,
         "raw Thumb-prologue seed must never discover FEWER than funcstart_patterns off \
@@ -699,12 +645,9 @@ fn arm_decompile_all_raw_thumb_prologue_seed_non_destructive() {
 fn arm_functions_inventory_covers_every_decompile_all_entry() {
     let bin = arm_entrymain();
     let sp = specs();
-    let Some(inventory) = run_json_addrs("functions", &bin, &sp, &[]) else {
-        eprintln!("arm functions parity: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
+    let inventory = run_json_addrs("functions", &bin, &sp, &[]);
     let decompiled =
-        run_json_addrs("decompile-all", &bin, &sp, &["--no-vars"]).expect("second run");
+        run_json_addrs("decompile-all", &bin, &sp, &["--no-vars"]);
 
     let missing: Vec<u64> =
         decompiled.iter().copied().filter(|a| !inventory.contains(a)).collect();
@@ -731,8 +674,7 @@ fn arm_functions_inventory_covers_every_decompile_all_entry() {
         &sp,
         &["--option", "listing", "on", "--option", "funcstart_patterns", "on", "--option",
           "aif", "on"],
-    )
-    .expect("third run");
+    );
     assert_eq!(
         inventory, explicit,
         "the non-x86-64 `functions` default must equal the explicit discovery bundle"
@@ -748,19 +690,16 @@ fn arm_functions_inventory_covers_every_decompile_all_entry() {
 fn x86_64_functions_inventory_is_unchanged_and_covers_decompile_all() {
     let bin = fauxware();
     let sp = specs();
-    let Some(inventory) = run_json_addrs("functions", &bin, &sp, &[]) else {
-        eprintln!("x86-64 functions parity: skipping (no `.sla`; run `make specs`)");
-        return;
-    };
+    let inventory = run_json_addrs("functions", &bin, &sp, &[]);
     let no_listing =
-        run_json_addrs("functions", &bin, &sp, &["--option", "listing", "off"]).expect("second run");
+        run_json_addrs("functions", &bin, &sp, &["--option", "listing", "off"]);
     assert_eq!(
         inventory, no_listing,
         "x86-64 `kuna functions` must not build the Listing — the DIV-15 default is the \
          decompiling surfaces'"
     );
     let decompiled =
-        run_json_addrs("decompile-all", &bin, &sp, &["--no-vars"]).expect("third run");
+        run_json_addrs("decompile-all", &bin, &sp, &["--no-vars"]);
     let missing: Vec<u64> =
         decompiled.iter().copied().filter(|a| !inventory.contains(a)).collect();
     assert!(
@@ -791,10 +730,6 @@ fn decompile_all_reports_each_entry_once() {
     let (stdout, stderr, ok) =
         run_kuna(&["decompile-all", bin.as_str(), "--json", "--sleighpath", sp.as_str()]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("entry dedup: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
     }
     assert_eq!(
@@ -841,10 +776,6 @@ fn decompile_all_functions_filter_resolves_an_alias() {
         "sub_100b8",
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("alias lookup: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
     }
     assert_eq!(
@@ -875,10 +806,6 @@ fn decompile_all_addr_tolerates_the_arm_thumb_bit() {
         "decompile-all", arm.as_str(), "--json", "--sleighpath", sp.as_str(), "--addr", "0x100b9",
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("thumb --addr: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna decompile-all failed on the ARM fixture: {stderr}");
     }
     assert!(
@@ -900,9 +827,6 @@ fn decompile_all_addr_tolerates_the_arm_thumb_bit() {
         "decompile-all", x86.as_str(), "--json", "--sleighpath", sp.as_str(), "--addr", "0x1357",
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            return;
-        }
         panic!("kuna decompile-all failed on the x86-64 fixture: {stderr}");
     }
     assert!(
@@ -925,10 +849,6 @@ fn arm_thumb_pe_functions_and_address_decompile() {
         &sp,
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("ARM PE CLI: skipping (no ARM `.sla`)");
-            return;
-        }
         panic!("kuna functions failed on synthetic ARM PE: {stderr}");
     }
     assert!(
@@ -981,11 +901,6 @@ fn te_image_auto_detects_entry_mapping_and_thumb_context() {
 
     let (stdout, stderr, ok) =
         run_kuna(&["functions", &binary, "--json", "--sleighpath", &sp]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("te_image CLI: skipping (no ARM `.sla`): {stderr}");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
     assert!(ok, "TE functions failed: {stderr}");
     assert!(stdout.contains("\"count\": 1"), "{stdout}");
     assert!(
@@ -1127,10 +1042,6 @@ fn te_object_view_commands_report_capability_errors() {
         let mut args = vec![command, &binary, "--sleighpath", &sp];
         args.extend(flag);
         let (_stdout, stderr, ok) = run_kuna(&args);
-        if !ok && matches!(command, "functions" | "decompile-all") && is_specs_skip(&stderr) {
-            eprintln!("TE {command} filters: skipping (no ARM `.sla`): {stderr}");
-            continue;
-        }
         assert!(!ok, "TE {command} unexpectedly succeeded");
         assert!(
             stderr.contains("UEFI TE input has no object-file view"),
@@ -1234,10 +1145,6 @@ fn decompile_all_converges_on_past_pathological_function() {
         ),
     };
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_all_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     // Shape assertions (no JSON dep): a well-formed single-function document
@@ -1280,10 +1187,6 @@ fn decompile_all_watchdog_quiet_on_healthy_function() {
         None => panic!("kuna decompile-all on a healthy function did not terminate in 300s"),
     };
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_all_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(stdout.contains("\"count\": 1"), "expected count 1:\n{stdout}");
@@ -1349,10 +1252,6 @@ fn decompile_all_listing_default_collapses_noreturn_wrapper() {
     // Pass 1: reliable has no listing override, so the driver fallback fires.
     let (on_out, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_all_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all (default) failed: {stderr}");
     }
     let on_code = code_field(&on_out).to_string();
@@ -1403,10 +1302,6 @@ fn functions_lists_main() {
     let bin = fauxware();
     let (stdout, stderr, ok) = run_kuna(&["functions", &bin, "--json", "--sleighpath", &specs()]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("decompile_all_cli: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     assert!(stdout.contains("\"name\": \"main\""), "enumeration missing `main`:\n{stdout}");
@@ -1429,27 +1324,21 @@ fn functions_lists_main() {
 fn decompile_all_error_nonzero_does_not_absorb_next_function() {
     let bin = noreturn_error_fixture();
     let sp = specs();
-    let code = |extra: &[&str]| -> Option<String> {
+    let code = |extra: &[&str]| -> String {
         let mut a: Vec<&str> =
             vec!["decompile-all", &bin, "--addr", "0x4011c0", "--json", "--sleighpath", &sp];
         a.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&a);
-        if !ok {
-            eprintln!("decompile-all failed (likely a specs-less environment): {stderr}");
-            return None;
-        }
-        Some(stdout)
+        assert!(ok, "decompile-all failed: {stderr}");
+        stdout
     };
     // OFF: err_fatal's flow walks past `call error(2)` into the following functions.
     // `funcboundflow` (default-on, DIV-67) is a SECOND, name-independent bound that
     // stops the same overrun at `compute`'s entry, so it must also be off to expose
     // the pre-fix overrun this test isolates.
-    let Some(off) = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"])
-    else {
-        return; // specs-less skip
-    };
+    let off = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"]);
     // ON (default): the CALL_RETURN prune stops err_fatal at the no-return call.
-    let on = code(&[]).expect("second run succeeds if the first did");
+    let on = code(&[]);
     // `err_warn` belongs to `compute_warn` — a DIFFERENT function two hops after
     // err_fatal. It can only appear in err_fatal's decompilation if the flow-follower
     // overran `call error(2)` and absorbed the following functions. OFF must show the
@@ -1475,25 +1364,19 @@ fn decompile_all_error_nonzero_does_not_absorb_next_function() {
 fn kuna_decompile_single_error_nonzero_does_not_absorb_next_function() {
     let bin = noreturn_error_fixture();
     let sp = specs();
-    let code = |extra: &[&str]| -> Option<String> {
+    let code = |extra: &[&str]| -> String {
         let mut a: Vec<&str> = vec!["decompile", &bin, "0x4011c0", "--addr", "--sleighpath", &sp];
         a.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&a);
-        if !ok {
-            eprintln!("kuna decompile failed (likely a specs-less environment): {stderr}");
-            return None;
-        }
-        Some(stdout)
+        assert!(ok, "kuna decompile failed: {stderr}");
+        stdout
     };
     // `err_warn` belongs to `compute_warn`, a DIFFERENT function — it appears in err_fatal's
     // output ONLY if the flow overran past `call error(2)`.  `funcboundflow` (default-on,
     // DIV-67) is a second, name-independent bound at `compute`'s entry, so it too must be
     // off to expose the pre-fix overrun.
-    let Some(off) = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"])
-    else {
-        return; // specs-less skip
-    };
-    let on = code(&[]).expect("second run succeeds if the first did");
+    let off = code(&["--option", "noreturn_error", "off", "--option", "funcboundflow", "off"]);
+    let on = code(&[]);
     assert!(
         off.contains("err_warn"),
         "noreturn_error off: single-function err_fatal should overrun (pre-fix):\n{off}"
@@ -1519,23 +1402,18 @@ fn dwarf_source_line_comments_stay_opt_in_under_every_mode() {
         .unwrap()
         .to_string();
     let sp = specs();
-    let code = |extra: &[&str]| -> Option<String> {
+    let code = |extra: &[&str]| -> String {
         let mut a: Vec<&str> =
             vec!["decompile", &bin, "elaborate_debug_symbol", "--sleighpath", &sp];
         a.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&a);
         if !ok {
-            if is_specs_skip(&stderr) {
-                return None;
-            }
             panic!("kuna decompile failed for {extra:?}: {stderr}");
         }
-        Some(stdout)
+        stdout
     };
 
-    let Some(default) = code(&[]) else {
-        return; // specs-less skip
-    };
+    let default = code(&[]);
     assert!(
         default.contains("elaborate_debug_symbol"),
         "expected the function body, got:\n{default}"
@@ -1545,14 +1423,14 @@ fn dwarf_source_line_comments_stay_opt_in_under_every_mode() {
         "the default (auto -> aggressive here) must NOT annotate source lines:\n{default}"
     );
 
-    let aggressive = code(&["--mode", "aggressive"]).expect("second run succeeds");
+    let aggressive = code(&["--mode", "aggressive"]);
     assert!(
         !aggressive.contains("/* debug_symbol.c:"),
         "--mode aggressive must NOT annotate source lines:\n{aggressive}"
     );
 
     // Named explicitly, the pass still works — and outranks the mode.
-    let opted_in = code(&["--option", "dwarf_lines", "on"]).expect("third run succeeds");
+    let opted_in = code(&["--option", "dwarf_lines", "on"]);
     assert!(
         opted_in.contains("/* debug_symbol.c:124 */"),
         "`--option dwarf_lines on` must still annotate source lines:\n{opted_in}"
@@ -1567,11 +1445,7 @@ fn raw_image_supported_surfaces_share_seed_and_base_semantics() {
     let sp = specs();
     let target = "ARM:LE:32:v4t:default";
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla");
-    if !spec.exists() {
-        eprintln!("raw_image CLI: skipping (no ARM `.sla`)");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
+    assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     let (stdout, stderr, ok) = run_kuna(&[
         "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
@@ -1664,11 +1538,7 @@ fn raw_image_discovers_called_functions_beyond_its_seeds() {
     let sp = specs();
     let target = "Cortus:LE:32:APS3:default";
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/Cortus/data/languages/aps3.sla");
-    if !spec.exists() {
-        eprintln!("raw_image CLI: skipping (no Cortus APS3 `.sla`)");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
+    assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     // Off: the inventory is exactly the seed, as it was before the option.
     let (stdout, stderr, ok) = run_kuna(&[
@@ -1731,11 +1601,7 @@ fn raw_image_decompile_scales_word_addressed_selector() {
     let binary = path.to_string_lossy().into_owned();
     let sp = specs();
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/Atmel/data/languages/avr8.sla");
-    if !spec.exists() {
-        eprintln!("raw_image CLI: skipping (no AVR8 `.sla`)");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
+    assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     let (stdout, stderr, ok) = run_kuna(&[
         "functions", &binary, "--json", "--raw-image", "--target",
@@ -1829,11 +1695,7 @@ fn raw_project_preserves_byte_addressed_data_coordinates() {
     let binary = path.to_string_lossy().into_owned();
     let sp = specs();
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/Atmel/data/languages/avr8.sla");
-    if !spec.exists() {
-        eprintln!("raw_image CLI: skipping (no AVR8 `.sla`)");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
+    assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     let out_dir = common::scratch_file("raw-avr-data-project", "dir");
     let (stdout, stderr, ok) = run_kuna(&[
@@ -1871,10 +1733,7 @@ fn raw_address_directives_use_target_units() {
     let sp = specs();
     let avr_spec = PathBuf::from(&sp).join("Ghidra/Processors/Atmel/data/languages/avr8.sla");
     let arm_spec = PathBuf::from(&sp).join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla");
-    if !avr_spec.exists() || !arm_spec.exists() {
-        eprintln!("raw_image CLI: skipping (no AVR8 or ARM `.sla`)");
-        return;
-    }
+    assert!(avr_spec.exists() && arm_spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     let avr_path = common::scratch_file("raw-avr-directives", "bin");
     std::fs::write(&avr_path, [0, 0, 0x08, 0x95]).unwrap();
@@ -1935,11 +1794,7 @@ fn raw_text_decode_failure_is_not_reported_as_an_external() {
     let binary = path.to_string_lossy().into_owned();
     let sp = specs();
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/x86/data/languages/x86-64.sla");
-    if !spec.exists() {
-        eprintln!("raw_image CLI: skipping (no x86-64 `.sla`)");
-        let _ = std::fs::remove_file(path);
-        return;
-    }
+    assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile", &binary, "0", "--raw-image", "--target", "x86:LE:64:default",
@@ -2014,17 +1869,15 @@ fn raw_image_rejects_missing_metadata_and_object_only_surfaces() {
     std::fs::remove_file(path).unwrap();
 }
 
-/// Every `"size": N` in a `--json` document, in document order.
 fn json_sizes(stdout: &str) -> Vec<u64> {
-    stdout
-        .match_indices("\"size\":")
-        .filter_map(|(i, key)| {
-            stdout[i + key.len()..]
-                .trim_start()
-                .split(|c: char| !c.is_ascii_digit())
-                .next()?
-                .parse()
-                .ok()
+    let document: serde_json::Value = serde_json::from_str(stdout).expect("valid CLI JSON");
+    document
+        .get("functions")
+        .and_then(serde_json::Value::as_array)
+        .expect("function array")
+        .iter()
+        .map(|function| {
+            function.get("size").and_then(serde_json::Value::as_u64).expect("numeric function size")
         })
         .collect()
 }
@@ -2049,10 +1902,6 @@ fn functions_json_carries_a_ranking_extent() {
     let (stdout, stderr, ok) =
         run_kuna(&["functions", &bin, "--json", "--sleighpath", &specs()]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("functions_json_carries_a_ranking_extent: skipping (no `.sla`): {stderr}");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let sizes = json_sizes(&stdout);
@@ -2105,36 +1954,17 @@ fn functions_and_decompile_all_agree_on_size() {
     let (inventory, stderr, ok) =
         run_kuna(&["functions", &bin, "--json", "--sleighpath", &sp]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("functions_and_decompile_all_agree_on_size: skipping: {stderr}");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let (decompiled, stderr, ok) =
         run_kuna(&["decompile-all", &bin, "--json", "--sleighpath", &sp]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("functions_and_decompile_all_agree_on_size: skipping: {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     // Both documents are address-ordered over the same entry set, so the size
     // columns line up positionally.
     let want = json_sizes(&inventory);
-    // `decompile-all` also emits a `size` per recovered VARIABLE; keep only the
-    // per-function ones by pairing each with the entry address that precedes it.
-    let got: Vec<u64> = json_addresses(&decompiled)
-        .iter()
-        .map(|addr| {
-            let rec = decompiled
-                .split(&format!("\"address\": {addr},"))
-                .nth(1)
-                .expect("each entry address must open a record");
-            json_sizes(rec).first().copied().expect("each record must carry `size`")
-        })
-        .collect();
+    let got = json_sizes(&decompiled);
     assert_eq!(
         want, got,
         "the inventory and the whole-binary run disagree on function extents"
@@ -2157,10 +1987,6 @@ fn instruction_budget_overrun_truncates_instead_of_failing() {
                   "--option", "maxinstruction", "5"];
     let (truncated, stderr, ok) = run_kuna(&budget);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("instruction_budget_overrun_truncates_instead_of_failing: skipping: {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(
@@ -2216,10 +2042,6 @@ fn aggregate_exit_distinguishes_all_failed_from_partial_success() {
     let mut text_args = vec!["decompile-all", &bin, "--functions", "main"];
     text_args.extend_from_slice(&fatal);
     let (stdout, stderr, ok) = run_kuna(&text_args);
-    if is_specs_skip(&stderr) {
-        eprintln!("aggregate_exit_distinguishes_all_failed_from_partial_success: skipping: {stderr}");
-        return;
-    }
     assert!(!ok, "an all-failed text batch exited zero");
     assert!(
         stdout.contains("// Function: main @ 0x40071d")
@@ -2266,10 +2088,6 @@ fn fast_discovery_finds_the_pointer_only_target() {
     let args = ["functions", &bin, "--json", "--sleighpath", &sp, "--mode", "fast"];
     let (stdout, stderr, ok) = run_kuna(&args);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("fast_discovery_finds_the_pointer_only_target: skipping (no `.sla`)");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let fast = json_addresses(&stdout);
@@ -2318,10 +2136,6 @@ fn jobs_output_is_byte_identical_to_serial() {
             "--option", "protoorder", "off"];
         let (want, stderr, ok) = run_kuna(&base);
         if !ok {
-            if is_specs_skip(&stderr) {
-                eprintln!("jobs: skipping (no `.sla`; run `make specs`): {stderr}");
-                return;
-            }
             panic!("kuna decompile-all failed: {stderr}");
         }
         assert!(want.contains("\"code\""), "the serial run decompiled nothing:\n{want}");
@@ -2361,10 +2175,6 @@ fn jobs_notes_that_the_default_callee_first_order_is_serial_only() {
     let base = ["decompile-all", &bin, "--max-fn-seconds", "0", "--sleighpath", &sp];
     let (serial, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(!stderr.contains("callee-first"), "a serial run printed the pool note:\n{stderr}");
@@ -2390,10 +2200,6 @@ fn a_narrowed_run_orders_callees_first_only_when_asked() {
     let base = ["decompile-all", &bin, "--functions", "caller,callee", "--sleighpath", &sp];
     let (plain, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("protoorder: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(!stderr.contains("protoorder"), "a default narrowed run printed a note:\n{stderr}");
@@ -2432,10 +2238,6 @@ fn recursive_callees_state_their_types_under_cycles() {
                 "calleevote", "off",
             ]);
         if !ok {
-            if is_specs_skip(&stderr) {
-                eprintln!("protoorder cycles: skipping (no `.sla`; run `make specs`): {stderr}");
-                return;
-            }
             panic!("kuna decompile-all --option protoorder {value} failed: {stderr}");
         }
         for f in ["wrap", "wrap2"] {
@@ -2463,10 +2265,6 @@ fn a_frame_records_char_pointer_pointer_is_not_its_type() {
         let (got, stderr, ok) =
             run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "calleevote", value]);
         if !ok {
-            if is_specs_skip(&stderr) {
-                eprintln!("calleevote frame: skipping (no `.sla`; run `make specs`): {stderr}");
-                return;
-            }
             panic!("kuna decompile-all --option calleevote {value} failed: {stderr}");
         }
         assert!(got.contains("v2[1] = 0x506070801020304;"), "{value}: the node's word store split:\n{got}");
@@ -2495,10 +2293,6 @@ fn a_redone_recursive_function_reads_no_statement_of_its_own() {
         let (got, stderr, ok) =
             run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "protoorder", value]);
         if !ok {
-            if is_specs_skip(&stderr) {
-                eprintln!("protoorder cyclestruct: skipping (no `.sla`; run `make specs`): {stderr}");
-                return;
-            }
             panic!("kuna decompile-all --option protoorder {value} failed: {stderr}");
         }
         let chunk = |name: &str| -> String {
@@ -2583,13 +2377,9 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
     let sp = specs();
     let (stdout, stderr, ok) =
         run_kuna(&["decompile-all", &bin, "--option", "structdefs", "on", "--sleighpath", &sp]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("protoorder float-in-GPR: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     for want in [
-        "return (int)(float)h(a0,v1) + v1 + 3;",
+        "return (int)h(a0,v1) + v1 + 3;",
         "(unsigned int)(v1 < 0x3fc00000)",
         "if (v1 == 0x3fc00001)",
         "(unsigned int)(0x3fc00000 < v1)",
@@ -2614,7 +2404,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
     assert!(!converts_v1("(int)v1", false), "`(int)v1` printed:\n{stdout}");
     assert!(!converts_v1("(unsigned int)v1", true), "`(unsigned int)v1` printed:\n{stdout}");
 
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("protoorder float-in-GPR round trip: no `cc`, spelling checked only");
         return;
     }
@@ -2666,7 +2456,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed callers did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-    let run = Command::new(&exe).output().expect("run the round trip");
+    let run = process::required_output(&mut Command::new(&exe));
     let got = String::from_utf8_lossy(&run.stdout).to_string();
     let _ = std::fs::remove_dir_all(&dir);
     let lines: Vec<&str> = got.lines().collect();
@@ -2689,17 +2479,13 @@ fn a_float_pointee_keeps_the_callers_integer_stores_round_trip() {
         .unwrap()
         .to_string();
     let sp = specs();
-    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    let have_cc = process::optional_output(Command::new("cc").arg("--version")).is_some();
     for off in [false, true] {
         let mut args = vec!["decompile-all", bin.as_str(), "--option", "structdefs", "on", "--sleighpath", &sp];
         if off {
             args.extend_from_slice(&["--option", "protoorder", "off"]);
         }
         let (stdout, stderr, ok) = run_kuna(&args);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("protoorder float pointee: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-all failed: {stderr}");
         let names = ["u1 ", "u2 ", "s3 ", "cp1 ", "cp3 ", "cp5 "];
         let chunks: Vec<&str> =
@@ -2773,7 +2559,7 @@ fn a_float_pointee_keeps_the_callers_integer_stores_round_trip() {
             "the printed callers did not compile (off={off}):\n{}\n{printed}",
             String::from_utf8_lossy(&cc.stderr)
         );
-        let run = Command::new(&exe).output().expect("run the round trip");
+        let run = process::required_output(&mut Command::new(&exe));
         let got = String::from_utf8_lossy(&run.stdout).to_string();
         let _ = std::fs::remove_dir_all(&dir);
         let (printed_run, source_run) = got.split_once("--\n").expect("both runs printed");
@@ -2801,10 +2587,6 @@ fn a_byte_pointee_vote_keeps_the_callers_wide_stores() {
             args.extend_from_slice(&["--option", "ptrfromuse", "off"]);
         }
         let (stdout, stderr, ok) = run_kuna(&args);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("protoorder byte pointee: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-all failed: {stderr}");
         let fill = stdout.split("// Function: ").find(|c| c.starts_with("fill ")).expect("fill is printed");
         assert!(fill.contains("= 0x2020726174737575;"), "the eight-byte store was split (off={off}):\n{fill}");
@@ -2826,10 +2608,6 @@ fn callee_first_runs_the_structsynth_convergence_sweep() {
     let sp = specs();
     let base = ["decompile-all", bin.as_str(), "--sleighpath", sp.as_str(), "--option", "structsynth", "param"];
     let (default, stderr, ok) = run_kuna(&base);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("protoorder structsynth sweep: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     let mut off_args = base.to_vec();
     off_args.extend_from_slice(&["--option", "protoorder", "off"]);
@@ -2861,10 +2639,6 @@ fn a_byte_pointee_vote_keeps_word_fills_and_long_callers_whole() {
             args.extend_from_slice(&["--option", "ptrfromuse", "off"]);
         }
         let (stdout, stderr, ok) = run_kuna(&args);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("protoorder word fills: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-all failed: {stderr}");
         for (name, store) in [("fill_words", "= 0x102030405060708;"), ("fill_many", "= 0x2020726174737575;")] {
             let body = stdout
@@ -2895,10 +2669,6 @@ fn jobs_full_load_agrees_with_the_inventory_handoff() {
     ];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs full-load: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     let mut args = base.to_vec();
@@ -2925,10 +2695,6 @@ fn jobs_preserves_namespaced_cpp_callee_names() {
         ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs c++ names: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(
@@ -2958,10 +2724,6 @@ fn jobs_auto_and_the_plain_c_surface_match_serial() {
         ["decompile-all", bin.as_str(), "--max-fn-seconds", "0", "--sleighpath", sp.as_str()];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs auto: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(want.matches("// Function:").count() > 1, "the fixture must hold several functions");
@@ -3016,10 +2778,6 @@ fn jobs_names_synthesized_structs_as_the_serial_run_does() {
             }
             let (want, stderr, ok) = run_kuna(&base);
             if !ok {
-                if is_specs_skip(&stderr) {
-                    eprintln!("jobs structsynth: skipping (no `.sla`; run `make specs`): {stderr}");
-                    return;
-                }
                 panic!("kuna decompile-all {fixture} failed: {stderr}");
             }
             assert!(want.contains(pinned), "{fixture} stopped synthesizing {pinned:?}");
@@ -3066,10 +2824,6 @@ fn jobs_falls_back_when_a_worker_cannot_install_the_replayed_structures() {
         "--option", "protoorder", "off"];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs structsynth install: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(want.contains("struct_4 *"), "the fixture stopped synthesizing");
@@ -3102,10 +2856,6 @@ fn jobs_falls_back_when_a_structure_holds_a_type_other_workers_lack() {
         "--option", "protoorder", "off"];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs structsynth peb: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(want.contains("void store_a(struct_0 *a0"), "the fixture stopped synthesizing:\n{want}");
@@ -3144,10 +2894,6 @@ fn jobs_structsynth_off_is_the_serial_structsynth_off_document() {
     ];
     let (want, stderr, ok) = run_kuna(&off);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs structsynth off: skipping (no `.sla`; run `make specs`): {stderr}");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     assert!(!want.contains("struct_0"), "structsynth off still synthesized");
@@ -3225,10 +2971,7 @@ fn jobs_leaves_no_scratch_directory_behind() {
         .expect("failed to spawn the kuna binary");
     let pid = child.id();
     let status = child.wait().expect("wait on the kuna binary");
-    if !status.success() {
-        eprintln!("jobs scratch: skipping (the run failed; likely no `.sla`)");
-        return;
-    }
+    assert!(status.success(), "pooled decompilation failed: {status}");
     let mine = format!("kuna-jobs-{pid}-");
     let left: Vec<String> = std::fs::read_dir(std::env::temp_dir())
         .into_iter()
@@ -3308,11 +3051,7 @@ fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
         if Instant::now() >= deadline || child.try_wait().expect("try_wait").is_some() {
             let _ = child.kill();
             let _ = child.wait();
-            let sla =
-                PathBuf::from(specs()).join("Ghidra/Processors/x86/data/languages/x86-64.sla");
-            assert!(!sla.exists(), "the pool never came up although {} is built", sla.display());
-            eprintln!("jobs cancellation: skipping (the pool never came up; no `.sla`)");
-            return;
+            panic!("the worker pool did not start before the deadline");
         }
         std::thread::sleep(Duration::from_millis(100));
     };
@@ -3341,15 +3080,20 @@ fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
 
 // --- `--jobs N`: a dead worker costs one function --------------------------
 
-/// `decompile-all --json` records, split at their own indentation, so a record
-/// can be compared whole and named without a JSON parser.
+/// Parse records while retaining their original bytes for equality checks.
 fn json_records(doc: &str) -> Vec<&str> {
-    doc.split("\n    {\n").skip(1).map(|r| r.split("\n    }").next().unwrap_or(r)).collect()
+    #[derive(serde::Deserialize)]
+    struct Records<'a> {
+        #[serde(borrow)]
+        functions: Vec<&'a serde_json::value::RawValue>,
+    }
+    let document: Records<'_> = serde_json::from_str(doc).expect("valid function records");
+    document.functions.into_iter().map(|record| record.get()).collect()
 }
 
-fn record_name(record: &str) -> &str {
-    let at = record.find("\"name\": \"").expect("a record has a name") + "\"name\": \"".len();
-    &record[at..at + record[at..].find('"').expect("a terminated name")]
+fn record_name(record: &str) -> String {
+    let record: serde_json::Value = serde_json::from_str(record).expect("valid function record");
+    record.get("name").and_then(serde_json::Value::as_str).expect("function name").to_owned()
 }
 
 /// The count a `[kuna <tag>] N function(s) left unfinished ... recovered.` line
@@ -3359,9 +3103,8 @@ fn recovered_count(stderr: &str) -> Option<usize> {
     line.split("] ").nth(1)?.split(' ').next()?.parse().ok()
 }
 
-/// The serial `decompile-all --json` document of `fauxware`, or `None` on a
-/// specs-less skip.
-fn fauxware_serial_json() -> Option<String> {
+/// The serial `decompile-all --json` document of `fauxware`.
+fn fauxware_serial_json() -> String {
     let (want, stderr, ok) = run_kuna(&[
         "decompile-all",
         &fauxware(),
@@ -3372,13 +3115,9 @@ fn fauxware_serial_json() -> Option<String> {
         &specs(),
     ]);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs faults: skipping (no `.sla`; run `make specs`): {stderr}");
-            return None;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
-    Some(want)
+    want
 }
 
 /// A pooled `decompile-all --json` of `fauxware` in ONE chunk (so one worker
@@ -3412,7 +3151,7 @@ fn assert_only_lost_differ(serial: &str, pooled: &str, lost: &[&str]) {
     assert_eq!(got.len(), want.len(), "one record per target:\n{pooled}");
     for (w, g) in want.iter().zip(&got) {
         assert_eq!(record_name(w), record_name(g), "target order moved");
-        if !lost.contains(&record_name(w)) {
+        if !lost.contains(&record_name(w).as_str()) {
             assert_eq!(g, w, "{} is not the serial record", record_name(w));
         }
     }
@@ -3429,7 +3168,7 @@ fn assert_only_lost_differ(serial: &str, pooled: &str, lost: &[&str]) {
 /// load); `authenticate` comes third, after a delivered prefix.
 #[test]
 fn jobs_a_worker_panic_loses_only_the_function_that_panicked() {
-    let Some(serial) = fauxware_serial_json() else { return };
+    let serial = fauxware_serial_json();
     let total = json_records(&serial).len();
     for (name, addr) in [("main", "0x40071d"), ("authenticate", "0x400664")] {
         let (got, stderr, ok) = fauxware_pooled_with_fault(&format!("panic:{addr}"), "0");
@@ -3466,7 +3205,7 @@ fn jobs_a_worker_panic_loses_only_the_function_that_panicked() {
 /// succeeds alone the document is the serial one and nothing is reported lost.
 #[test]
 fn jobs_a_transient_worker_death_loses_nothing() {
-    let Some(serial) = fauxware_serial_json() else { return };
+    let serial = fauxware_serial_json();
     let (got, stderr, ok) = fauxware_pooled_with_fault("panic-once:0x40071d", "0");
     assert!(ok, "{stderr}");
     assert_eq!(got, serial, "a recovered run must be the serial document");
@@ -3489,7 +3228,7 @@ fn jobs_a_transient_worker_death_loses_nothing() {
 /// warm too.
 #[test]
 fn jobs_a_stalled_worker_loses_only_the_function_that_stalled() {
-    let Some(serial) = fauxware_serial_json() else { return };
+    let serial = fauxware_serial_json();
     let (got, stderr, ok) = fauxware_pooled_with_fault("stall:0x4006fd", "1");
     assert!(ok, "{stderr}");
     assert_only_lost_differ(&serial, &got, &["rejected"]);
@@ -3521,10 +3260,10 @@ fn jobs_a_stalled_worker_loses_only_the_function_that_stalled() {
     assert_only_lost_differ(&serial, &got, &lost);
     let stalled =
         "\"error\": \"worker stalled past the per-function watchdog (1s); the worker was killed";
-    for r in json_records(&got).into_iter().filter(|r| lost.contains(&record_name(r))) {
+    for r in json_records(&got).into_iter().filter(|r| lost.contains(&record_name(r).as_str())) {
         assert!(r.contains(stalled), "{r}");
         let marked = r.contains("; not re-run: two functions re-run from its chunk stalled\"");
-        assert_eq!(marked, not_rerun.contains(&record_name(r)), "{r}");
+        assert_eq!(marked, not_rerun.contains(&record_name(r).as_str()), "{r}");
     }
     for addr in ["0x4006fd", "0x400530", "0x400550"] {
         let fired = stderr.matches(&format!("KUNA_JOBS_FAULT: injected stall at {addr}")).count();
@@ -3544,7 +3283,7 @@ fn jobs_a_stalled_worker_loses_only_the_function_that_stalled() {
 /// must cost those five and nothing else, not the chunk.
 #[test]
 fn jobs_neighbouring_crashers_do_not_forfeit_their_chunk() {
-    let Some(serial) = fauxware_serial_json() else { return };
+    let serial = fauxware_serial_json();
     let crashers = [
         ("main", "0x40071d"),
         ("__libc_csu_init", "0x4007e0"),
@@ -3576,7 +3315,7 @@ fn jobs_neighbouring_crashers_do_not_forfeit_their_chunk() {
 /// behind says it was not re-run.
 #[test]
 fn jobs_rerunning_a_dead_worker_never_loops() {
-    let Some(serial) = fauxware_serial_json() else { return };
+    let serial = fauxware_serial_json();
     let total = json_records(&serial).len();
     let every_record_failed = |doc: &str, prefix: &str| {
         let records = json_records(doc);
@@ -3696,10 +3435,6 @@ fn jobs_decode_lanes_are_byte_identical_to_serial() {
     let lanes_on = [("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_STATS", "1")];
     let (want, want_err, ok) = run_kuna(&["functions", &bin, "--json", "--sleighpath", &sp]);
     if !ok {
-        if is_specs_skip(&want_err) {
-            eprintln!("jobs decode: skipping (no `.sla`; run `make specs`): {want_err}");
-            return;
-        }
         panic!("kuna functions failed: {want_err}");
     }
     assert!(want.contains("\"name\""), "the serial run enumerated nothing:\n{want}");
@@ -3754,10 +3489,6 @@ fn jobs_decode_lanes_decline_on_a_context_committing_language() {
     let args = ["functions", &bin, "--json", "--sleighpath", &sp];
     let (want, stderr, ok) = run_kuna(&args);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs decode arm: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let mut with_jobs = args.to_vec();
@@ -3784,10 +3515,6 @@ fn a_dead_lane_falls_back_to_the_serial_walk() {
     let args = ["functions", &bin, "--json", "--sleighpath", &sp];
     let (want, stderr, ok) = run_kuna(&args);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs decode fault: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let mut with_jobs = args.to_vec();
@@ -3823,10 +3550,6 @@ fn jobs_decode_lanes_agree_with_serial_on_decompile_all() {
         ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "0", "--sleighpath", &sp];
     let (want, stderr, ok) = run_kuna(&base);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs decode all: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna decompile-all failed: {stderr}");
     }
     let mut args = base.to_vec();
@@ -3854,10 +3577,6 @@ fn a_refused_lane_spawn_falls_back_to_the_serial_walk() {
     let args = ["functions", &bin, "--json", "--sleighpath", &sp];
     let (want, stderr, ok) = run_kuna(&args);
     if !ok {
-        if is_specs_skip(&stderr) {
-            eprintln!("jobs decode spawn: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         panic!("kuna functions failed: {stderr}");
     }
     let mut with_jobs = args.to_vec();
@@ -3910,10 +3629,6 @@ fn functions_takes_jobs_with_a_raw_image() {
         "4",
     ];
     let (got, stderr, ok) = run_kuna_env(&args, &[("KUNA_DECODE_MIN_BYTES", "0")]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("jobs decode raw: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "functions --raw-image --jobs 4 must not be refused: {stderr}");
     assert!(got.contains("\"functions\""), "the raw image enumerated nothing:\n{got}");
     assert!(
@@ -3964,10 +3679,6 @@ fn functions_takes_jobs_with_an_assert_overlay() {
         ["functions", &bin, "--summary", "--sleighpath", &sp, "--assert", overlay, "--jobs", "4"];
     let (got, stderr, ok) =
         run_kuna_env(&args, &[("KUNA_DECODE_MIN_BYTES", "0"), ("KUNA_DECODE_STATS", "1")]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("jobs decode assert: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "functions --assert --jobs 4 must not be refused: {stderr}");
     assert!(
         stderr.contains("[kuna --jobs] decode: 4 lanes, "),
@@ -4003,15 +3714,11 @@ fn a_sign_contested_synthesized_field_round_trips_through_the_printed_c() {
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile-all", &bin, "--functions", "f", "--option", "structdefs", "on", "--sleighpath", &sp,
     ]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("signfield round trip: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     assert!(stdout.contains("unsigned short field_0xc;"), "{stdout}");
     assert!(stdout.contains("sink(a0->field_0xc);"), "{stdout}");
 
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("signfield round trip: no `cc`, spelling checked only");
         return;
     }
@@ -4035,7 +3742,7 @@ fn a_sign_contested_synthesized_field_round_trips_through_the_printed_c() {
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed f did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-    let run = Command::new(&exe).output().expect("run the round trip");
+    let run = process::required_output(&mut Command::new(&exe));
     let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got, (0x9abcu32).to_string(), "the printed f hands sink a different value:\n{stdout}");
@@ -4058,15 +3765,11 @@ fn a_float_and_integer_union_field_round_trips_through_the_printed_c() {
     let (stdout, stderr, ok) = run_kuna(&[
         "decompile-all", &bin, "--functions", "vread", "--option", "structdefs", "on", "--sleighpath", &sp,
     ]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("unionfield round trip: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     assert!(stdout.contains("char field_0x8[8];"), "{stdout}");
     assert!(stdout.contains("return *(double *)a0->field_0x8;"), "{stdout}");
 
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("unionfield round trip: no `cc`, spelling checked only");
         return;
     }
@@ -4097,7 +3800,7 @@ fn a_float_and_integer_union_field_round_trips_through_the_printed_c() {
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed vread did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-    let run = Command::new(&exe).output().expect("run the round trip");
+    let run = process::required_output(&mut Command::new(&exe));
     let got = String::from_utf8_lossy(&run.stdout).to_string();
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got.lines().last(), Some("0"), "the printed vread reads the union differently:\n{got}\n{stdout}");
@@ -4126,14 +3829,10 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
         let mut args = vec!["decompile-all", bin.as_str(), "--functions", "f", "--sleighpath", sp.as_str()];
         args.extend_from_slice(extra);
         let (stdout, stderr, ok) = run_kuna(&args);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("expandload round trip: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-all failed: {stderr}");
         assert!(stdout.contains(call), "{stdout}");
 
-        if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+        if process::optional_output(Command::new("cc").arg("--version")).is_none() {
             eprintln!("expandload round trip: no `cc`, spelling checked only");
             continue;
         }
@@ -4157,7 +3856,7 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
             .output()
             .expect("spawn cc");
         assert!(cc.status.success(), "the printed f did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-        let run = Command::new(&exe).output().expect("run the round trip");
+        let run = process::required_output(&mut Command::new(&exe));
         let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(got, (0x9abcu32).to_string(), "the printed f hands sink a different value:\n{stdout}");
@@ -4171,6 +3870,8 @@ fn a_zero_extended_narrow_load_round_trips_through_the_printed_c() {
 /// a widening, a varargs argument) or pass a type C would convert differently.
 /// The round trip compiles the printed functions, option off and on, with gcc
 /// and clang, and checks every build prints what the original binary prints.
+/// `castwiden` is held off: it leaves out some of the widenings pinned here,
+/// which `an_implied_widening_round_trips_through_the_printed_c` covers.
 #[test]
 fn an_implied_cast_round_trips_through_the_printed_c() {
     const FUNCS: &str = "arg_memchr,arg_toupper,arg_strchr,asg_char,asg_uint,asg_short,asg_uchar,\
@@ -4205,7 +3906,7 @@ int main(void) {
     let changed: [(&str, &str); 6] = [
         ("memchr(a0,(int)a1,(unsigned long)a2);", "memchr(a0,a1,a2);"),
         ("strchr(a0,(int)a1);", "strchr(a0,a1);"),
-        ("v1 = (long)*(char *)(a0 + v2);", "v1 = *(char *)(a0 + v2);"),
+        ("v1 = (long)a0[v2];", "v1 = a0[v2];"),
         (
             "(int)(unsigned int)(unsigned char)to_uchar((int)a1)",
             "(int)(unsigned char)to_uchar((int)a1)",
@@ -4217,7 +3918,7 @@ int main(void) {
     let sp = specs();
     let compilers: Vec<&str> = ["gcc", "clang"]
         .into_iter()
-        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     for fixture in ["castimplied_gcc_O0_x86_64", "castimplied_clang_O0_x86_64"] {
         let bin = repo_root()
@@ -4229,13 +3930,9 @@ int main(void) {
         for opt in ["off", "on"] {
             let args = [
                 "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
-                "--option", "castimplied", opt,
+                "--option", "castimplied", opt, "--option", "castwiden", "off",
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castimplied round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             for want in kept {
                 assert!(stdout.contains(want), "{fixture} option {opt} lost `{want}`:\n{stdout}");
@@ -4267,7 +3964,7 @@ int main(void) {
                     "{cc} rejected the printed C ({fixture}, option {opt}):\n{}",
                     String::from_utf8_lossy(&out.stderr)
                 );
-                let run = Command::new(&exe).output().expect("run the round trip");
+                let run = process::required_output(&mut Command::new(&exe));
                 let _ = std::fs::remove_dir_all(&dir);
                 assert_eq!(
                     String::from_utf8_lossy(&run.stdout),
@@ -4290,6 +3987,8 @@ int main(void) {
 /// gcc -O0 keeps the result of each conditional in a register, so its build
 /// prints conditionals; clang -O0 spills it, and most of its diamonds print as
 /// if/else, where `castimplied` already leaves the widening out.
+/// `castwiden` is held off: it leaves out some of the widenings pinned here,
+/// which `an_implied_widening_round_trips_through_the_printed_c` covers.
 #[test]
 fn a_conditional_arm_cast_round_trips_through_the_printed_c() {
     const FUNCS: &str = "b64_decode,arm_char,arm_uchar,arm_short,arm_char_uint,arm_long,arm_char_long,\
@@ -4369,7 +4068,7 @@ int main(void) {
     let sp = specs();
     let compilers: Vec<&str> = ["gcc", "clang"]
         .into_iter()
-        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     for fixture in ["castternary_gcc_O0_x86_64", "castternary_clang_O0_x86_64"] {
         let bin = repo_root()
@@ -4379,32 +4078,33 @@ int main(void) {
             .unwrap()
             .to_string();
         let gcc = fixture.contains("gcc");
-        for opt in ["off", "on"] {
+        // The spellings are pinned with `elemptr` off, which leaves the table
+        // bases integers; with it on (the default) they are subscripts of
+        // declared pointers, and the printed C must still compute the same values.
+        for (elem, opt) in [("off", "off"), ("off", "on"), ("on", "off"), ("on", "on")] {
             let args = [
                 "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
-                "--option", "castternary", opt,
+                "--option", "castternary", opt, "--option", "castwiden", "off", "--option", "elemptr", elem,
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castternary round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             let changed: Vec<(&str, &str)> =
                 both.iter().chain(if gcc { gcc_only.iter() } else { [].iter() }).copied().collect();
-            for (off, on) in changed {
-                let want = if opt == "on" { on } else { off };
-                assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
-            }
-            if gcc {
-                for want in gcc_kept {
-                    assert!(stdout.contains(want), "{fixture} option {opt} lost `{want}`:\n{stdout}");
+            if elem == "off" {
+                for (off, on) in changed {
+                    let want = if opt == "on" { on } else { off };
+                    assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
+                }
+                if gcc {
+                    for want in gcc_kept {
+                        assert!(stdout.contains(want), "{fixture} option {opt} lost `{want}`:\n{stdout}");
+                    }
                 }
             }
             for cc in &compilers {
                 for level in ["-O0", "-O2"] {
                     let dir = std::env::temp_dir().join(format!(
-                        "kuna-castternary-rt-{}-{fixture}-{opt}-{cc}{level}",
+                        "kuna-castternary-rt-{}-{fixture}-{elem}-{opt}-{cc}{level}",
                         std::process::id()
                     ));
                     std::fs::create_dir_all(&dir).unwrap();
@@ -4424,7 +4124,260 @@ int main(void) {
                         "{cc} rejected the printed C ({fixture}, option {opt}):\n{}",
                         String::from_utf8_lossy(&out.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let run = process::required_output(&mut Command::new(&exe));
+                    let _ = std::fs::remove_dir_all(&dir);
+                    assert_eq!(
+                        String::from_utf8_lossy(&run.stdout),
+                        WANT,
+                        "{fixture} printed with option {opt} and built by {cc} {level} computes a different value:\n{stdout}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// (kuna `castwiden`) A 64-bit widening C performs by itself keeps no cast: an
+/// operand of `+ - * / % & | ^` beside a 64-bit operand of the cast's type, beside
+/// a literal the `literal` value prints with its `L`/`UL` suffix, and a widening
+/// into an assignment, a store or a prototyped argument of the cast's type or
+/// width.  A shift, a comparison, an unsigned widening beside a signed operand, a
+/// negated unsigned literal and one widened value read by both operands of an op
+/// (`(long)i * (long)i`) keep their cast, and a 32-bit sum or product beside a long
+/// of the same operator keeps its parentheses.  Beside a chain of its own operator,
+/// which prints without parentheses and which C regroups (`(long)a + ((long)b + x)`
+/// prints `(long)a + b + x`), the left operand keeps its cast unless the chain's
+/// first leaf is 64-bit.  The functions of
+/// `castwiden_x86_64.c`, built with gcc and clang at -O0 and -O2, are printed with
+/// the option off, on and literal, compiled with gcc and clang at -O0 and -O2
+/// (`-fwrapv`, so the 32-bit arithmetic kuna prints as `int` wraps as the machine's
+/// does), and every build must print what the fixture binary prints for negative
+/// values, 0x80000000..0xffffffff, sums past 32 bits and squares past 2^32.
+#[test]
+fn an_implied_widening_round_trips_through_the_printed_c() {
+    const FUNCS: &str = "add_load,minus_load,add_uload,mix_uint,add_char,div_load,udiv_load,mul_two,lit_mul,lit_add,\
+                         lit_umul,lit_index,lit_mask,lit_neg,ret_ulong,store_long,store_ulong,store_uchar,assign_ulong,\
+                         assign_loop,sink,assign_call,assign_size,field_add,field_umix,find_len,keep_shift,keep_less,\
+                         keep_mixed,keep_neglit,sq,usq,sq_diff,dist,par_add,par_mul,chain_add,chain_mul,chain_add3,\
+                         chain_xor";
+    const WANT: &str = "2147483647 2147483647 5 0 0 7 1 0 -3\n\
+0 1 0\n\
+0 0\n\
+2147483646 2147483648 4 1 3 -5 0 -1664 -4\n\
+18446744073709551615 1 18446744073709551613\n\
+5\n\
+-1 18446744073709551615\n\
+4294967294 0 2147483652 4611686014132420609 -6442450941 25769803771 2147483648 3573412788608 2147483644\n\
+2147483647 1 18446744071562067965\n\
+0\n\
+2147483647 2147483647\n\
+-1 4294967295 18446744071562067973 4611686018427387904 6442450944 -25769803769 -2147483647 -3573412790272 -2147483651\n\
+18446744071562067968 0 2147483648\n\
+2147483647\n\
+-2147483648 18446744071562067968\n\
+2147483640 2147483654 18446744073709551614 49 21 -77 -6 -11648 -10\n\
+18446744073709551609 0 18446744073709551607\n\
+1\n\
+-7 18446744073709551609\n\
+2147483650 2147483644 8 9 -9 43 4 4992 0\n\
+3 1 18446744073709551609\n\
+0\n\
+3 3\n\
+18446744073709551600 0 4294967296 0\n\
+18446744071562067983 34359738360 8589934591 18446742974197923840 4294967296\n\
+18446744073709551600 17179869184 6442450944 0 8589934591\n\
+18446744073709551603 24 4294967299 3298534883328 6148914691236517200\n\
+-133 122 255 250 2147483775\n\
+3 -1 -1\n\
+38654705538 4294967284\n\
+6148914691236517202 715827882 6148914690520689323\n\
+4294967292 2 10\n\
+-6 18446744069414584334\n\
+4294967294 18446744071562067968\n\
+-2147483647 0\n\
+0 0 0 0 2147483647 2147483648 0 0\n\
+-5 0 2147483647 18446744073709551603\n\
+1 18446744065119617025 0 2 2147483645 2147483647 2147483647 -6442450941\n\
+-7 -9 2147483644 18446744069414584332\n\
+4611686014132420609 4611686014132420609 1152921504606846976 5764607516591783938 2147483645 -1 2147483647 4611686009837453315\n\
+4294967289 19327352823 8589934588 18446744071562067980\n\
+4611686018427387904 4611686018427387904 1152921504606846976 5764607523034234880 2147483647 0 0 -4611686016279904256\n\
+-4294967301 -19327352832 -4294967297 18446744071562067955\n\
+4294967296 4294967296 1073741824 5368709120 2147614719 2147549184 0 422212464869376\n\
+131067 589824 2147680255 18446744073709486067\n\
+4295098369 18446181119461294081 1073741824 5368905730 2147352573 2147418111 281477124063231 -422218907320317\n\
+-131079 -589833 2147287036 18446744069414649868\n\
+2147488281 2147488281 536895241 2684337181 2147576329 2147529989 -4611676066988167705 298549619056881\n\
+92677 417069 2147622670 18446744073709505270\n";
+    const MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+struct rec {
+  long a;
+  unsigned long b;
+  int c;
+  unsigned int d;
+};
+int main(void) {
+  long lp[4] = {-5, 0x7fffffff, -1, 3};
+  unsigned long up[4] = {0xfffffffffffffff0UL, 0x80000000UL, 5, 0};
+  static const signed char sc[] = {1, -128, 127};
+  static const unsigned char uc[] = {0xff, 0x80};
+  int ints[] = {0, -1, 0x7fffffff, (int)0x80000000, -7, 3};
+  unsigned int uints[] = {0, 0xffffffffu, 0x80000000u, 3};
+  for (int k = 0; k < 6; k++) {
+    int i = ints[k];
+    printf("%ld %ld %lu %ld %ld %ld %ld %ld %ld\n", F(long, add_load)(lp, i), F(long, minus_load)(lp, i),
+           F(unsigned long, add_uload)(up, i), F(long, mul_two)(i, i), F(long, mul_two)(i, -3), F(long, lit_mul)(i),
+           F(long, lit_add)(i), F(long, lit_index)(i, i), F(long, lit_neg)(i));
+    printf("%lu %d %lu\n", F(unsigned long, ret_ulong)(i), (int)F(bool, keep_less)(lp, i),
+           F(unsigned long, assign_ulong)(i, (int)(0u - (unsigned int)i)));
+    if (i != 0)
+      printf("%ld\n", F(long, div_load)(lp, i));
+    long sl[4] = {0};
+    unsigned long su[4] = {0};
+    F(void, store_long)(sl, i);
+    F(void, store_ulong)(su, i);
+    printf("%ld %lu\n", sl[1], su[2]);
+  }
+  for (int k = 0; k < 4; k++) {
+    unsigned int u = uints[k];
+    printf("%lu %lu %lu %lu", F(unsigned long, mix_uint)(up, u), F(unsigned long, lit_umul)(u),
+           F(unsigned long, lit_mask)(u), F(unsigned long, keep_shift)(u));
+    if (u != 0)
+      printf(" %lu", F(unsigned long, udiv_load)(up, u));
+    printf("\n");
+  }
+  unsigned long su[4] = {0};
+  F(void, store_uchar)(su, uc);
+  printf("%ld %ld %lu %lu %lu\n", F(long, add_char)(lp, sc), F(long, add_char)(lp, sc + 1), su[3],
+         F(unsigned long, keep_mixed)(lp, uc), F(unsigned long, keep_mixed)(lp + 1, uc + 1));
+  printf("%ld %ld %ld\n", F(long, find_len)("abcxdef", 7), F(long, find_len)("abcxdef", 3),
+         F(long, find_len)("abcdef", 6));
+  printf("%lu %lu\n", F(unsigned long, assign_loop)(ints, 6), F(unsigned long, assign_loop)(ints + 1, 3));
+  printf("%lu %lu %lu\n", F(unsigned long, assign_size)(-7), F(unsigned long, assign_size)(0x7fffffff),
+         F(unsigned long, assign_size)((int)0x80000000));
+  printf("%lu %lu %lu\n", F(unsigned long, assign_call)(-1, 0xffffffffu), F(unsigned long, assign_call)((int)0x80000000, 0x80000000u),
+         F(unsigned long, assign_call)(5, 7));
+  struct rec rs[3] = {{-5, 7, -1, 0xffffffffu}, {0x7fffffff, 0xfffffffffffffff0UL, 0x7fffffff, 1},
+                      {1, 2, (int)0x80000000, 0x80000000u}};
+  for (int k = 0; k < 3; k++)
+    printf("%ld %lu\n", F(long, field_add)(&rs[k]), F(unsigned long, field_umix)(&rs[k]));
+  int big[] = {0, -1, 0x7fffffff, (int)0x80000000, 0x10000, -0x10001, 46341};
+  for (int k = 0; k < 7; k++) {
+    int i = big[k];
+    printf("%ld %lu %ld %ld %ld %ld %ld %ld\n", F(long, sq)(i), F(unsigned long, usq)((unsigned int)i),
+           F(long, sq_diff)(i, i >> 1), F(long, dist)(0, 0, i, i >> 1), F(long, par_add)(lp, i, i),
+           F(long, par_add)(lp, i, 1), F(long, par_mul)(lp, i, i), F(long, par_mul)(lp, i, 3));
+    printf("%ld %ld %ld %lu\n", F(long, chain_add)(lp, i, i), F(long, chain_mul)(lp + 3, i, 3),
+           F(long, chain_add3)(lp, i, i, i), F(unsigned long, chain_xor)(up, (unsigned int)i, 3u));
+  }
+  return 0;
+}
+"#;
+    // (function, text with the option off, with `on`, with `literal`) per fixture.
+    type Pins = &'static [(&'static str, &'static str, &'static str, &'static str)];
+    let gcc_o0: Pins = &[
+        ("add_load", "(long)a1 + ((long *)a0)[1]", "return a1 + ((long *)a0)[1];", "return a1 + ((long *)a0)[1];"),
+        ("mul_two", "(long)a1 * (long)a0", "return (long)a1 * a0;", "return (long)a1 * a0;"),
+        ("lit_mul", "return (long)a0 * 0xc + 7;", "return (long)a0 * 0xc + 7;", "return a0 * 0xcL + 7;"),
+        ("lit_mask", "(unsigned long)a0 | 0x100000000;", "(unsigned long)a0 | 0x100000000;", "return a0 | 0x100000000UL;"),
+        ("store_ulong", "((long *)a0)[2] = (long)a1;", "((long *)a0)[2] = a1;", "((long *)a0)[2] = a1;"),
+        ("assign_size", "v1 = (unsigned long)a0;", "v1 = a0;", "v1 = a0;"),
+        ("find_len", "memchr(a0,0x78,(long)a1)", "memchr(a0,0x78,a1)", "memchr(a0,0x78,a1)"),
+        ("keep_mixed", "*a0 + (unsigned long)*a1", "*a0 + (unsigned long)*a1", "*a0 + (unsigned long)*a1"),
+        ("sq", "return (long)a0 * (long)a0;", "return (long)a0 * a0;", "return (long)a0 * a0;"),
+        ("sq_diff", "(long)(a0 - a1) * (long)(a0 - a1)", "(long)(a0 - a1) * (long)(a0 - a1)", "(long)(a0 - a1) * (long)(a0 - a1)"),
+        ("par_add", "return (long)(a2 + a1) + ((long *)a0)[1];", "return (a2 + a1) + ((long *)a0)[1];", "return (a2 + a1) + ((long *)a0)[1];"),
+    ];
+    let clang_o0: Pins = &[
+        ("add_load", "((long *)a0)[1] + (long)a1", "return ((long *)a0)[1] + a1;", "return ((long *)a0)[1] + a1;"),
+        ("mul_two", "(long)a0 * (long)a1", "return (long)a0 * a1;", "return (long)a0 * a1;"),
+        ("lit_index", "((long)a0 * 0xc + (long)a1) * 0x80", "((long)a0 * 0xc + a1) * 0x80", "(a0 * 0xcL + a1) * 0x80"),
+        ("assign_size", "v1 = (unsigned long)a0;", "v1 = a0;", "v1 = a0;"),
+        ("keep_mixed", "(unsigned long)*a1 + *a0", "(unsigned long)*a1 + *a0", "(unsigned long)*a1 + *a0"),
+        ("par_add", "((long *)a0)[1] + (long)(a1 + a2);", "((long *)a0)[1] + (a1 + a2);", "((long *)a0)[1] + (a1 + a2);"),
+        ("par_mul", "((long *)a0)[1] * (long)(a1 * a2);", "((long *)a0)[1] * (a1 * a2);", "((long *)a0)[1] * (a1 * a2);"),
+        ("chain_add", "return (long)a1 + (long)a2 + *a0;", "return (long)a1 + a2 + *a0;", "return (long)a1 + a2 + *a0;"),
+        ("chain_add3", "(long)a1 + (long)a2 + (long)a3 + ", "return a1 + (long)a2 + a3 + ", "return a1 + (long)a2 + a3 + "),
+    ];
+    let gcc_o2: Pins = &[
+        ("add_load", "(long)a1 + ((long *)a0)[1]", "return a1 + ((long *)a0)[1];", "return a1 + ((long *)a0)[1];"),
+        ("lit_add", "return (long)a0 + 1;", "return (long)a0 + 1;", "return a0 + 1L;"),
+        ("store_long", "((long *)a0)[1] = (long)a1;", "((long *)a0)[1] = a1;", "((long *)a0)[1] = a1;"),
+        ("assign_size", "v1 = (unsigned long)a0;", "v1 = a0;", "v1 = a0;"),
+        ("sq", "return (long)a0 * (long)a0;", "return (long)a0 * (long)a0;", "return (long)a0 * (long)a0;"),
+        ("usq", "(unsigned long)a0 * (unsigned long)a0;", "(unsigned long)a0 * (unsigned long)a0;", "(unsigned long)a0 * (unsigned long)a0;"),
+    ];
+    let clang_o2: Pins = &[
+        ("sq", "return (long)a0 * (long)a0;", "return (long)a0 * (long)a0;", "return (long)a0 * (long)a0;"),
+        ("usq", "(unsigned long)a0 * (unsigned long)a0;", "(unsigned long)a0 * (unsigned long)a0;", "(unsigned long)a0 * (unsigned long)a0;"),
+        ("par_mul", "return (long)(a1 * a2) * ((long *)a0)[1];", "return (a1 * a2) * ((long *)a0)[1];", "return (a1 * a2) * ((long *)a0)[1];"),
+        ("chain_mul", "return (long)a2 * (long)a1 * *a0;", "return (long)a2 * a1 * *a0;", "return (long)a2 * a1 * *a0;"),
+    ];
+    // Kept by every value: a comparison operand, and a widening beside a negated
+    // unsigned literal (`keep_neglit`, whose constant kuna prints with the option
+    // off too in a form C reads as +2^31, so it is not called below).
+    let kept = [("keep_less", "*a0 < (long)a1"), ("keep_neglit", "return (long)a0 + ")];
+    let sp = specs();
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    for (fixture, pins) in [
+        ("castwiden_gcc_O0_x86_64", gcc_o0),
+        ("castwiden_clang_O0_x86_64", clang_o0),
+        ("castwiden_gcc_O2_x86_64", gcc_o2),
+        ("castwiden_clang_O2_x86_64", clang_o2),
+    ] {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        for (arm, opt) in ["off", "on", "literal"].into_iter().enumerate() {
+            let args = [
+                "decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str(),
+                "--option", "castwiden", opt, "--option", "structdefs", "on",
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            for &(func, off, on, literal) in pins {
+                let want = [off, on, literal][arm];
+                let text = castsign_function(&stdout, func);
+                assert!(text.contains(want), "{fixture} option {opt}: {func} does not print `{want}`:\n{text}");
+            }
+            for (func, want) in kept {
+                let text = castsign_function(&stdout, func);
+                assert!(text.contains(want), "{fixture} option {opt}: {func} lost `{want}`:\n{text}");
+            }
+            for cc in &compilers {
+                for level in ["-O0", "-O2"] {
+                    let dir = std::env::temp_dir().join(format!(
+                        "kuna-castwiden-rt-{}-{fixture}-{opt}-{cc}{level}",
+                        std::process::id()
+                    ));
+                    std::fs::create_dir_all(&dir).unwrap();
+                    let src = dir.join("rt.c");
+                    let exe = dir.join("rt");
+                    std::fs::write(
+                        &src,
+                        format!("#include <stdbool.h>\n#include <stdio.h>\n#include <string.h>\n{stdout}\n{MAIN}"),
+                    )
+                    .unwrap();
+                    let out = Command::new(cc)
+                        .args([
+                            "-std=gnu11", level, "-w", "-fno-strict-aliasing", "-fwrapv", "-Wno-error=int-conversion",
+                            "-o", exe.to_str().unwrap(), src.to_str().unwrap(),
+                        ])
+                        .output()
+                        .expect("spawn the C compiler");
+                    assert!(
+                        out.status.success(),
+                        "{cc} rejected the printed C ({fixture}, option {opt}):\n{}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                    let run = process::required_output(&mut Command::new(&exe));
                     let _ = std::fs::remove_dir_all(&dir);
                     assert_eq!(
                         String::from_utf8_lossy(&run.stdout),
@@ -4460,6 +4413,8 @@ fn castsign_function<'a>(listing: &'a str, name: &str) -> &'a str {
 /// option leaves alone.  `castsign_eq_x86_64.c` also compares the value for
 /// equality with `3000000000` or `10000000000000000000`, decimal literals whose C
 /// type is wider than the declaration, so those declarations stay unsigned.
+/// `castwiden` is held off: it leaves out some of the widenings pinned here,
+/// which `an_implied_widening_round_trips_through_the_printed_c` covers.
 #[test]
 fn a_signed_only_variable_round_trips_through_the_printed_c() {
     const WRAP_FUNCS: &str = "dec_neg,cnt_wrap,spin,count_down,dec_neg32,sign_of,sign_of32,peek";
@@ -4632,17 +4587,14 @@ int main(void) {
             FUNCS,
             MAIN,
             WANT,
-            &[(
-                "v1 = (unsigned long)*(unsigned int *)(a0 + (long)a2 * 4);",
-                "v1 = *(unsigned int *)(a0 + (long)a2 * 4);",
-            )],
+            &[("v1 = (unsigned long)a0[a2];", "v1 = a0[a2];")],
             OLD,
         ),
     ];
     let sp = specs();
     let compilers: Vec<&str> = ["gcc", "clang"]
         .into_iter()
-        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     for (fixture, funcs, main, want, lines, same) in cases {
         let bin = repo_root()
@@ -4655,13 +4607,9 @@ int main(void) {
         for opt in ["off", "on"] {
             let args = [
                 "decompile-all", bin.as_str(), "--functions", funcs, "--sleighpath", sp.as_str(),
-                "--option", "castsign", opt,
+                "--option", "castsign", opt, "--option", "castwiden", "off",
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castsign round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             for (off, on) in lines {
                 let want = if opt == "on" { on } else { off };
@@ -4691,7 +4639,7 @@ int main(void) {
                         "{cc} {level} rejected the printed C ({fixture}, option {opt}):\n{}",
                         String::from_utf8_lossy(&out.stderr)
                     );
-                    let run = Command::new(&exe).output().expect("run the round trip");
+                    let run = process::required_output(&mut Command::new(&exe));
                     let _ = std::fs::remove_dir_all(&dir);
                     assert_eq!(
                         String::from_utf8_lossy(&run.stdout),
@@ -4731,6 +4679,197 @@ int main(void) {
     assert_eq!(rust[0], rust[1], "castsign changed Rust output");
 }
 
+/// (kuna `castobject`) A local whose address only fills declared `int *`
+/// parameters is declared `int` when no reader wants it unsigned, and the call
+/// stops casting its address.  `castobject_x86_64.c` reaps children that exit
+/// with 0, 7 and 255 or die of a signal, so every status bit the tests read is
+/// exercised, and runs the `init_*`, `gid_mixed` and `stored_value` objects,
+/// which start with a parameter's value that `waitpid` on a pid with no child
+/// (or `getgroups` with a size of 0) leaves in place, over values with the top
+/// bit set.  `init_signed` is read signed only and moves at `-O0`; the others
+/// have a reader that wants the other signedness (a logical shift, an unsigned
+/// compare, a zero-extension, a signed compare of a `gid_t`, or a logical shift
+/// of the value stored into the object), and they and the other readers that
+/// disagree (a logical shift at `-O2`, an address kept in a pointer, a byte read
+/// of one half, wrapping arithmetic) must print exactly as they did.  Each
+/// fixture is decompiled with the option off and on, the printed functions are
+/// compiled with gcc and clang at -O0 and -O2, and every build must print what
+/// the fixture binary prints.  `clang -O2` allocates the status slot with
+/// `push %rax` and kuna reads the pushed register back after the call, and it
+/// prints `escaped` and `two_widths` through a piece accessor, which is not C;
+/// both are defects of their own, the same in either arm, so the functions that
+/// reap children are not built from that fixture.
+#[test]
+fn an_out_parameter_local_round_trips_through_the_printed_c() {
+    const ALL: &str = "exit_code,status_order,reaped,escaped,two_widths,plus_one,cancel_state,\
+init_signed,init_ushr,init_ult,init_zext,gid_mixed,stored_value";
+    const CLANG_O2: &str =
+        "plus_one,cancel_state,init_signed,init_ushr,init_ult,init_zext,gid_mixed,stored_value";
+    const UNCHANGED: &[&str] = &[
+        "status_order", "reaped", "escaped", "two_widths", "plus_one", "cancel_state", "init_ushr", "init_ult",
+        "init_zext", "gid_mixed", "stored_value",
+    ];
+    const EVERY: &[&str] = &[
+        "exit_code", "status_order", "reaped", "escaped", "two_widths", "plus_one", "cancel_state", "init_signed",
+        "init_ushr", "init_ult", "init_zext", "gid_mixed", "stored_value",
+    ];
+    const INIT: &str = "init 00000000 0 0 0 0 0 ff800000\ninit 00000020 0 0 2 0 12 8\n\
+init 00000100 0 0 1 0 101 ff800000\ninit 00007f00 0 3 127 0 12869 ff80003f\n\
+init 80000000 -2048 800 0 ffffffff00000000 -1 ffc00000\ninit 80000001 0 0 0 0 -1 ffc00000\n\
+init fffffffe 255 ff 255 ff -1 f\ninit ffffffff 255 ff 255 ff -1 f\ninit 87654321 67 43 101 43 -1 c\n\
+init ffff0000 -1 fff 0 ffffffff00000000 -1 ffffff80\ninit 800000ff 0 0 0 0 -1 c\n";
+    const REAP: &str = "exit_code    0 7 255 -2\nstatus_order 0 3 9\nreaped       5 -15\nescaped      9 0\n\
+two_widths   9 3840\n";
+    const TAIL: &str = "plus_one     257 16\ncancel_state 7 7\n";
+    let want = format!("{REAP}{TAIL}{INIT}");
+    let want_clang_o2 = format!("{TAIL}{INIT}");
+    const MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+static int child(int code) {
+  int pid = fork();
+  if (pid == 0) {
+    if (code < 0)
+      raise(-code);
+    _exit(code);
+  }
+  return pid;
+}
+int main(void) {
+#ifndef SUBSET
+  int a = F(int, exit_code)(child(0)), b = F(int, exit_code)(child(7)), c = F(int, exit_code)(child(255)),
+      d = F(int, exit_code)(child(-SIGTERM));
+  printf("exit_code    %d %d %d %d\n", a, b, c, d);
+  long e = F(long, status_order)(child(0)), f = F(long, status_order)(child(3)),
+       g = F(long, status_order)(child(-SIGKILL));
+  printf("status_order %ld %ld %ld\n", e, f, g);
+  child(5);
+  long h = F(long, reaped)();
+  child(-SIGTERM);
+  long i = F(long, reaped)();
+  printf("reaped       %ld %ld\n", h, i);
+  int j = F(int, escaped)(child(9)), k = F(int, escaped)(child(-SIGTERM));
+  printf("escaped      %d %d\n", j, k);
+  int l = F(int, two_widths)(child(9)), m = F(int, two_widths)(child(-SIGTERM));
+  printf("two_widths   %d %d\n", l, m);
+#endif
+  unsigned long n = F(unsigned long, plus_one)(child(1)), o = F(unsigned long, plus_one)(child(-SIGTERM));
+  printf("plus_one     %lu %lu\n", n, o);
+  int q = F(int, cancel_state)();
+  pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+  int r = F(int, cancel_state)();
+  printf("cancel_state %d %d\n", q, r);
+  unsigned vals[] = {0, 0x20, 0x100, 0x7f00, 0x80000000u, 0x80000001u, 0xfffffffeu, 0xffffffffu, 0x87654321u,
+                     0xffff0000u, 0x800000ffu};
+  for (unsigned t = 0; t < sizeof vals / sizeof *vals; t++)
+    printf("init %08x %d %x %d %lx %ld %x\n", vals[t], F(int, init_signed)(vals[t]), F(unsigned, init_ushr)(vals[t]),
+           F(int, init_ult)(vals[t]), F(long, init_zext)(vals[t]), F(long, gid_mixed)((int)vals[t]),
+           F(unsigned, stored_value)(vals[t]));
+  return 0;
+}
+"#;
+    // (fixture, functions, output, the lines option off prints and what option on
+    // prints instead, the functions option on must print unchanged)
+    type Case<'a> = (&'a str, &'a str, &'a str, &'a [(&'a str, &'a str)], &'a [&'a str]);
+    let cases: [Case; 4] = [
+        (
+            "castobject_gcc_O0_x86_64",
+            ALL,
+            want.as_str(),
+            &[
+                ("\n  unsigned int v1; // stack - 0x14\n  \n  if (waitpid(a0,(int *)&v1,0) <= -1)",
+                 "\n  int v1; // stack - 0x14\n  \n  if (waitpid(a0,&v1,0) <= -1)"),
+                ("    return (int)v1 >> 8 & 0xff;", "    return v1 >> 8 & 0xff;"),
+                ("\n  unsigned int v1; // stack - 0x14\n  \n  v1 = a0;\n  waitpid(0x7ffffff0,(int *)&v1,1);",
+                 "\n  int v1; // stack - 0x14\n  \n  v1 = a0;\n  waitpid(0x7ffffff0,&v1,1);"),
+                ("(int)v1 >> 8 & 0xff : (int)v1 >> 0x14;", "v1 >> 8 & 0xff : v1 >> 0x14;"),
+            ],
+            UNCHANGED,
+        ),
+        (
+            "castobject_clang_O0_x86_64",
+            ALL,
+            want.as_str(),
+            &[
+                ("\n  unsigned int v1; // stack - 0x14", "\n  int v1; // stack - 0x14"),
+                ("if (0 <= waitpid(a0,(int *)&v1,0)) {", "if (0 <= waitpid(a0,&v1,0)) {"),
+                ("  waitpid(0x7ffffff0,(int *)&v1,1);\n  v3 = (v1 & 0x7f) ? (int)v1 >> 8",
+                 "  waitpid(0x7ffffff0,&v1,1);\n  v3 = (v1 & 0x7f) ? v1 >> 8"),
+            ],
+            UNCHANGED,
+        ),
+        ("castobject_gcc_O2_x86_64", ALL, want.as_str(), &[("(int *)&v1", "(int *)&v1")], EVERY),
+        ("castobject_clang_O2_x86_64", CLANG_O2, want_clang_o2.as_str(), &[], &EVERY[5..]),
+    ];
+    let sp = specs();
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    for (fixture, funcs, want, lines, same) in cases {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        let mut printed: Vec<String> = Vec::new();
+        for opt in ["off", "on"] {
+            let args = [
+                "decompile-all", bin.as_str(), "--functions", funcs, "--sleighpath", sp.as_str(),
+                "--option", "castobject", opt,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            for (off, on) in lines {
+                let line = if opt == "on" { on } else { off };
+                assert!(stdout.contains(line), "{fixture} option {opt} does not print `{line}`:\n{stdout}");
+            }
+            for cc in &compilers {
+                for level in ["-O0", "-O2"] {
+                    let dir = std::env::temp_dir()
+                        .join(format!("kuna-castobject-rt-{}-{fixture}-{opt}-{cc}{level}", std::process::id()));
+                    std::fs::create_dir_all(&dir).unwrap();
+                    let src = dir.join("rt.c");
+                    let exe = dir.join("rt");
+                    let subset = if funcs == CLANG_O2 { "#define SUBSET\n" } else { "" };
+                    std::fs::write(
+                        &src,
+                        format!(
+                            "{subset}#include <pthread.h>\n#include <signal.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <sys/wait.h>\n#include <unistd.h>\n{stdout}\n{MAIN}"
+                        ),
+                    )
+                    .unwrap();
+                    let out = Command::new(cc)
+                        .args(["-std=gnu11", "-w", "-Wno-error=int-conversion", level])
+                        .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                        .output()
+                        .expect("spawn the C compiler");
+                    assert!(
+                        out.status.success(),
+                        "{cc} {level} rejected the printed C ({fixture}, option {opt}):\n{}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                    let run = process::required_output(&mut Command::new(&exe));
+                    let _ = std::fs::remove_dir_all(&dir);
+                    assert_eq!(
+                        String::from_utf8_lossy(&run.stdout),
+                        want,
+                        "{fixture} printed with option {opt} and built by {cc} {level} computes a different value:\n{stdout}"
+                    );
+                }
+            }
+            printed.push(stdout);
+        }
+        for name in same {
+            assert_eq!(
+                castsign_function(&printed[0], name),
+                castsign_function(&printed[1], name),
+                "{fixture}: option castobject changed {name}"
+            );
+        }
+    }
+}
+
 /// (kuna `castsign`) A declaration whose type is locked is never re-signed.  A
 /// `--assert type` on a stack local and on a register local, and a DWARF local
 /// the source declares `unsigned long`, keep that type and the `(long)` their
@@ -4760,10 +4899,6 @@ fn castsign_leaves_a_locked_declaration_alone() {
         let bin = fixture(name);
         let (stdout, stderr, ok) =
             run_kuna(&["decompile", &bin, func, "--sleighpath", &sp, "--option", "castsign", "on"]);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("castsign locked declaration: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile failed: {stderr}");
         for want in unlocked {
             assert!(stdout.contains(want), "{name} {func} unlocked does not print `{want}`:\n{stdout}");
@@ -4799,10 +4934,10 @@ fn castsign_leaves_a_locked_declaration_alone() {
     let dir = std::env::temp_dir().join(format!("kuna-castsign-lock-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let stripped = dir.join("sign_of");
-    let strip = Command::new("objcopy")
-        .args(["--strip-debug", dwarf.as_str(), stripped.to_str().unwrap()])
-        .output();
-    if strip.is_ok_and(|o| o.status.success()) {
+    let strip = process::optional_output(
+        Command::new("objcopy").args(["--strip-debug", dwarf.as_str(), stripped.to_str().unwrap()]),
+    );
+    if strip.is_some() {
         let args = [
             "decompile-all", stripped.to_str().unwrap(), "--functions", "sign_of", "--sleighpath",
             sp.as_str(), "--option", "castsign", "on",
@@ -4812,6 +4947,8 @@ fn castsign_leaves_a_locked_declaration_alone() {
         for want in signed_stack {
             assert!(stdout.contains(want), "stripped, the slot does not print `{want}`:\n{stdout}");
         }
+    } else {
+        eprintln!("castsign stripped-DWARF check: no `objcopy`");
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -4851,7 +4988,7 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
     assert!(tested.len() >= 24, "{tested:?}");
     let sp = specs();
     let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
-    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    let have_cc = process::optional_output(Command::new("cc").arg("--version")).is_some();
     for build in ["gcc_O0", "clang_O0", "gcc_O2"] {
         let bin = fx.join(format!("castarith_{build}_x86_64"));
         let bin = bin.to_str().unwrap();
@@ -4861,10 +4998,6 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
                 "--option", "structdefs", "on", "--option", "castarith", arm,
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castarith round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             let mut body = String::new();
             let mut seen = 0;
@@ -4914,7 +5047,7 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
                 eprintln!("castarith round trip: no x86-64 host or no `cc`, spelling checked only");
                 continue;
             }
-            let expected = Command::new(bin).output().expect("run the fixture");
+            let expected = process::required_output(&mut Command::new(bin));
             let dir = std::env::temp_dir()
                 .join(format!("kuna-castarith-rt-{}-{build}-{arm}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
@@ -4934,7 +5067,7 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
                 "{build} castarith {arm}: the printed functions did not compile:\n{}\n{body}",
                 String::from_utf8_lossy(&cc.stderr)
             );
-            let got = Command::new(&exe).output().expect("run the round trip");
+            let got = process::required_output(&mut Command::new(&exe));
             let _ = std::fs::remove_dir_all(&dir);
             assert_eq!(
                 String::from_utf8_lossy(&got.stdout),
@@ -4958,6 +5091,8 @@ fn a_pointer_plus_whole_elements_round_trips_through_the_printed_c() {
 /// byte offset read at 8 bytes and a `long *` difference keep the integer form.
 /// A base64 decoder indexes its `malloc`ed global table by input bytes of 0x80
 /// and up, into a filler with the sign bit set, and checksums every quad.
+/// `castwiden` is held off: it leaves out some of the widenings pinned here,
+/// which `an_implied_widening_round_trips_through_the_printed_c` covers.
 #[test]
 fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed_c() {
     let fx = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
@@ -4977,17 +5112,19 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
     assert!(tested.len() >= 20, "{tested:?}");
     let sp = specs();
     let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
-    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
+    let have_cc = process::optional_output(Command::new("cc").arg("--version")).is_some();
     for build in ["gcc_O0", "clang_O0", "gcc_O2"] {
         let bin = fx.join(format!("castindex_{build}_x86_64"));
         let bin = bin.to_str().unwrap();
-        for arm in ["on", "off"] {
-            let args = ["decompile-all", bin, "--sleighpath", sp.as_str(), "--option", "castindex", arm];
+        // The spellings are pinned with `elemptr` off, which leaves the bases
+        // `void *` for this option to rewrite; with it on (the default) P5 types
+        // them first, and the printed C must still compute the same values.
+        for (elem, arm) in [("off", "on"), ("off", "off"), ("on", "on"), ("on", "off")] {
+            let args = [
+                "decompile-all", bin, "--sleighpath", sp.as_str(), "--option", "castindex", arm, "--option",
+                "castwiden", "off", "--option", "elemptr", elem,
+            ];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("castindex round trip: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             let mut body = String::new();
             let mut seen = 0;
@@ -5023,19 +5160,21 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
                     "(long)b64_table",
                 ]
             };
-            for w in want.iter().chain(kept) {
-                assert!(body.contains(w), "{build} castindex {arm}: expected `{w}`\n{body}");
-            }
-            if arm == "on" {
-                assert!(!body.contains("(long)b64_table"), "{build}: the table lookup kept its round trip\n{body}");
+            if elem == "off" {
+                for w in want.iter().chain(kept) {
+                    assert!(body.contains(w), "{build} castindex {arm}: expected `{w}`\n{body}");
+                }
+                if arm == "on" {
+                    assert!(!body.contains("(long)b64_table"), "{build}: the table lookup kept its round trip\n{body}");
+                }
             }
             if !runs_here || !have_cc {
                 eprintln!("castindex round trip: no x86-64 host or no `cc`, spelling checked only");
                 continue;
             }
-            let expected = Command::new(bin).output().expect("run the fixture");
+            let expected = process::required_output(&mut Command::new(bin));
             let dir = std::env::temp_dir()
-                .join(format!("kuna-castindex-rt-{}-{build}-{arm}", std::process::id()));
+                .join(format!("kuna-castindex-rt-{}-{build}-{elem}-{arm}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
             let c = dir.join("rt.c");
             let exe = dir.join("rt");
@@ -5053,7 +5192,7 @@ fn a_variable_index_and_a_byte_pointer_difference_round_trip_through_the_printed
                 "{build} castindex {arm}: the printed functions did not compile:\n{}\n{body}",
                 String::from_utf8_lossy(&cc.stderr)
             );
-            let got = Command::new(&exe).output().expect("run the round trip");
+            let got = process::required_output(&mut Command::new(&exe));
             let _ = std::fs::remove_dir_all(&dir);
             assert_eq!(
                 String::from_utf8_lossy(&got.stdout),
@@ -5092,22 +5231,18 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
     assert_eq!(tested.len(), 4, "{tested:?}");
     let sp = specs();
     let runs_here = cfg!(all(target_os = "linux", target_arch = "x86_64"));
-    let have_cc = Command::new("cc").arg("--version").output().map(|o| o.status.success()).unwrap_or(false);
-    let decompile = |bin: &str, arm: &str| -> Option<String> {
+    let have_cc = process::optional_output(Command::new("cc").arg("--version")).is_some();
+    let decompile = |bin: &str, arm: &str| -> String {
         let args = [
             "decompile-all", bin, "--sleighpath", sp.as_str(),
             "--option", "structdefs", "on", "--option", "castarith", arm,
         ];
         let (stdout, stderr, ok) = run_kuna(&args);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("castarith enum round trip: skipping (no `.sla`; run `make specs`)");
-            return None;
-        }
         assert!(ok, "kuna decompile-all failed: {stderr}");
-        Some(stdout)
+        stdout
     };
     let cxx = fx.join("castarith_enumclass_gpp_O2_x86_64");
-    let Some(out) = decompile(cxx.to_str().unwrap(), "on") else { return };
+    let out = decompile(cxx.to_str().unwrap(), "on");
     let rd = out.split("// Function: rd_enum_class ").nth(1).expect("rd_enum_class printed");
     let rd = rd.split("// Function: ").next().unwrap();
     for w in ["use_kind(*(Kind *)((long)p + 5));", "use_op(*(Op *)((long)p + 6));"] {
@@ -5117,7 +5252,7 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
         let bin = fx.join(format!("castarith_enum_{build}_x86_64"));
         let bin = bin.to_str().unwrap();
         for arm in ["on", "off"] {
-            let Some(stdout) = decompile(bin, arm) else { return };
+            let stdout = decompile(bin, arm);
             let mut types: Vec<String> = Vec::new();
             let mut body = String::new();
             let mut seen = 0;
@@ -5160,7 +5295,7 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
                 eprintln!("castarith enum round trip: no x86-64 host or no `cc`, spelling checked only");
                 continue;
             }
-            let expected = Command::new(bin).output().expect("run the fixture");
+            let expected = process::required_output(&mut Command::new(bin));
             let dir = std::env::temp_dir()
                 .join(format!("kuna-castarith-enum-rt-{}-{build}-{arm}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
@@ -5180,7 +5315,7 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
                 "{build} castarith {arm}: the printed functions did not compile:\n{}\n{body}",
                 String::from_utf8_lossy(&cc.stderr)
             );
-            let got = Command::new(&exe).output().expect("run the round trip");
+            let got = process::required_output(&mut Command::new(&exe));
             let _ = std::fs::remove_dir_all(&dir);
             assert_eq!(
                 String::from_utf8_lossy(&got.stdout),
@@ -5204,6 +5339,15 @@ fn an_enum_element_keeps_the_integer_form_and_round_trips() {
 /// type, twice, and a value also ordered or divided as a number, twice).
 #[test]
 fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
+    check_globalref_round_trip(cfg!(all(target_os = "linux", target_arch = "x86_64")));
+}
+
+#[test]
+fn globalref_spellings_are_checked_without_native_execution() {
+    check_globalref_round_trip(false);
+}
+
+fn check_globalref_round_trip(run_native: bool) {
     let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
     let bin = fixtures.join("globalref_x86_64");
     let sp = specs();
@@ -5239,15 +5383,17 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
             &[],
         ),
     ];
-    let expected = Command::new(&bin).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-    let Ok(expected) = expected else {
-        eprintln!("globalref round trip: the x86-64 fixture does not run here, spelling checked only");
-        return;
-    };
-    assert_eq!(expected, "210 21 27 121 1 0 4 229 1 -8608764254683430263 2", "the fixture itself");
-    let dir = std::env::temp_dir().join(format!("kuna-globalref-rt-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let expected = run_native.then(|| {
+        let output = process::required_output(&mut Command::new(&bin));
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        assert_eq!(text, "210 21 27 121 1 0 4 229 1 -8608764254683430263 2", "the fixture itself");
+        text
+    });
+    if !run_native {
+        eprintln!("globalref round trip: native execution disabled; checking all spellings");
+    }
+    let dir = common::scratch_file("globalref-round-trip", "dir");
+    std::fs::create_dir(&dir).unwrap();
     let harness = dir.join("main.c");
     std::fs::write(&harness, GLOBALREF_HARNESS.replace("@FIXTURE@", bin.to_str().unwrap())).unwrap();
     for (arm, want, decls) in arms {
@@ -5263,10 +5409,6 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
             "globalref",
             arm,
         ]);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("globalref round trip: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-project failed: {stderr}");
         let header = std::fs::read_to_string(out.join("globalref_x86_64.h")).unwrap();
         let code = std::fs::read_to_string(out.join("globalref_x86_64.c")).unwrap();
@@ -5304,8 +5446,9 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
             .collect();
         printed.insert_str(printed.find('\n').unwrap() + 1, &undeclared);
         std::fs::write(out.join("printed.c"), &printed).unwrap();
+        let Some(expected) = &expected else { continue };
         for cc in ["gcc", "clang"] {
-            if Command::new(cc).arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+            if process::optional_output(Command::new(cc).arg("--version")).is_none() {
                 eprintln!("globalref round trip: no `{cc}`");
                 continue;
             }
@@ -5335,9 +5478,9 @@ fn a_constant_address_named_as_a_global_round_trips_through_the_printed_c() {
                 "{arm}/{cc}: the printed callers did not compile:\n{}\n{printed}",
                 String::from_utf8_lossy(&built.stderr)
             );
-            let run = Command::new(&exe).output().expect("run the round trip");
+            let run = process::required_output(&mut Command::new(&exe));
             let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
-            assert_eq!(got, expected, "{arm}/{cc}: the printed callers compute something else:\n{printed}");
+            assert_eq!(got, *expected, "{arm}/{cc}: the printed callers compute something else:\n{printed}");
         }
     }
     let _ = std::fs::remove_dir_all(&dir);
@@ -5410,10 +5553,6 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
             .to_string();
         let (stdout, stderr, ok) =
             run_kuna(&["decompile-all", bin.as_str(), "--functions", "w1f,w4f", "--sleighpath", sp.as_str()]);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("foldcallret short-circuit round trip: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
         for w in want {
             assert!(stdout.contains(w), "{name}: missing `{w}`:\n{stdout}");
@@ -5422,7 +5561,7 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
             assert!(!stdout.contains(n), "{name}: the call was folded into a right-hand operand (`{n}`):\n{stdout}");
         }
 
-        if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+        if process::optional_output(Command::new("cc").arg("--version")).is_none() {
             eprintln!("foldcallret short-circuit round trip: no `cc`, spelling checked only");
             continue;
         }
@@ -5443,7 +5582,7 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
             .output()
             .expect("spawn cc");
         assert!(cc.status.success(), "{name}: the printed C did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-        let run = Command::new(&exe).output().expect("run the round trip");
+        let run = process::required_output(&mut Command::new(&exe));
         let got = String::from_utf8_lossy(&run.stdout).trim().to_string();
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(got, "2 0", "{name}: the printed C makes a different number of calls than the binary:\n{stdout}");
@@ -5476,10 +5615,6 @@ fn a_load_is_not_printed_after_a_store_into_its_bytes() {
         "--sleighpath",
         sp.as_str(),
     ]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("aliasoverlap round trip: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     let body = |name: &str| -> String {
         let at = stdout.find(&format!("// Function: {name} @")).unwrap_or_else(|| panic!("no {name}:\n{stdout}"));
@@ -5492,7 +5627,7 @@ fn a_load_is_not_printed_after_a_store_into_its_bytes() {
         ("indexed", "*(unsigned long *)(a0 + a1 * 4);", "*(unsigned int *)(a0 + 4 + a1 * 4) = "),
         ("after", "((char *)a0)[0xb] = ", "return *(unsigned int *)((long)a0 + 7);"),
         ("before", "((char *)a0)[6] = ", "return *(unsigned int *)((long)a0 + 7);"),
-        ("next", "*(unsigned int *)(a0 + 4 + a1 * 4) = ", "return *(unsigned int *)(a0 + a1 * 4);"),
+        ("next", "a0[a1 + 1] = ", "return a0[a1];"),
     ];
     for (name, first, second) in ordered {
         let b = body(name);
@@ -5500,7 +5635,7 @@ fn a_load_is_not_printed_after_a_store_into_its_bytes() {
         assert!(i.is_some() && j.is_some() && i < j, "{name}: `{first}` must print before `{second}`:\n{b}");
     }
 
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("aliasoverlap round trip: no `cc`, order checked only");
         return;
     }
@@ -5543,7 +5678,7 @@ int main(void) {
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed functions did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-    let run = Command::new(&exe).output().expect("run the round trip");
+    let run = process::required_output(&mut Command::new(&exe));
     let got = String::from_utf8_lossy(&run.stdout).to_string();
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got.lines().last(), Some("0"), "the printed functions read different bytes:\n{got}\n{stdout}");
@@ -5574,10 +5709,6 @@ fn a_split_load_is_not_moved_past_a_store_or_a_call() {
         "--sleighpath",
         sp.as_str(),
     ]);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("splitload round trip: skipping (no `.sla`; run `make specs`)");
-        return;
-    }
     assert!(ok, "kuna decompile-all failed: {stderr}");
     let body = |name: &str| -> String {
         let at = stdout.find(&format!("// Function: {name} @")).unwrap_or_else(|| panic!("no {name}:\n{stdout}"));
@@ -5592,7 +5723,7 @@ fn a_split_load_is_not_moved_past_a_store_or_a_call() {
     }
     assert!(body("plain").contains("v1._0_1_ = s->c7;"), "plain no longer splits:\n{}", body("plain"));
 
-    if Command::new("cc").arg("--version").output().map(|o| !o.status.success()).unwrap_or(true) {
+    if process::optional_output(Command::new("cc").arg("--version")).is_none() {
         eprintln!("splitload round trip: no `cc`, order checked only");
         return;
     }
@@ -5643,7 +5774,7 @@ int main(void) {
         .output()
         .expect("spawn cc");
     assert!(cc.status.success(), "the printed functions did not compile:\n{}", String::from_utf8_lossy(&cc.stderr));
-    let run = Command::new(&exe).output().expect("run the round trip");
+    let run = process::required_output(&mut Command::new(&exe));
     let got = String::from_utf8_lossy(&run.stdout).to_string();
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got.lines().last(), Some("0"), "the printed functions read different bytes:\n{got}\n{printed}");
@@ -5727,10 +5858,6 @@ fn a_calls_own_return_address_push_is_part_of_the_call() {
         for arm in ["off", "on"] {
             let args = ["decompile-all", bin.to_str().unwrap(), "--sleighpath", sp.as_str(), "--option", "callpush", arm];
             let (stdout, stderr, ok) = run_kuna(&args);
-            if !ok && is_specs_skip(&stderr) {
-                eprintln!("callpush: skipping (no `.sla`; run `make specs`)");
-                return;
-            }
             assert!(ok, "kuna decompile-all failed: {stderr}");
             let mut body = String::new();
             for part in stdout.split("// Function: ").skip(1) {
@@ -5762,3 +5889,671 @@ fn a_calls_own_return_address_push_is_part_of_the_call() {
         );
     }
 }
+
+/// The printed text of the functions `names` in a `decompile-all` listing, in
+/// listing order, each from its `// Function:` header to the next.
+fn callrettype_functions(listing: &str, names: &[&str]) -> String {
+    let mut out = String::new();
+    for part in listing.split("// Function: ").skip(1) {
+        let name = part.split_whitespace().next().unwrap_or("");
+        if names.contains(&name) {
+            out.push_str("// Function: ");
+            out.push_str(part);
+        }
+    }
+    out
+}
+
+/// Every call in `listing`, keyed by the function printing it: the callee's
+/// name and how many arguments it is passed, sorted.  A header counts as a
+/// call to itself, so a function whose own parameter list moves shows too.
+fn callrettype_calls(listing: &str) -> std::collections::BTreeMap<String, Vec<(String, usize)>> {
+    const NOT_CALLS: &[&str] = &["if", "while", "for", "switch", "return", "sizeof"];
+    let mut out = std::collections::BTreeMap::new();
+    for part in listing.split("// Function: ").skip(1) {
+        let name = part.split_whitespace().next().unwrap_or("").to_string();
+        let b = part.as_bytes();
+        let mut calls = Vec::new();
+        let mut i = 0;
+        while i < b.len() {
+            if b[i].is_ascii_alphabetic() || b[i] == b'_' {
+                let start = i;
+                while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+                    i += 1;
+                }
+                let word = &part[start..i];
+                if i < b.len() && b[i] == b'(' && !NOT_CALLS.contains(&word) {
+                    let (mut depth, mut args, mut j, mut empty) = (0i32, 1usize, i, true);
+                    while j < b.len() {
+                        match b[j] {
+                            b'(' => depth += 1,
+                            b')' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            b',' if depth == 1 => args += 1,
+                            b' ' | b'\n' => {}
+                            _ if depth >= 1 => empty = false,
+                            _ => {}
+                        }
+                        j += 1;
+                    }
+                    calls.push((word.to_string(), if empty { 0 } else { args }));
+                }
+                continue;
+            }
+            i += 1;
+        }
+        calls.sort();
+        out.insert(name, calls);
+    }
+    out
+}
+
+/// (kuna `callrettype`) A call's result takes the return type its callee's own
+/// recovery gave it earlier in the same run, so `(char *)skip_blanks(a0)` under
+/// a `char * skip_blanks(char *a0)` declaration prints without the conversion,
+/// and the same for a `char *` found by `strchr`, a `FILE *` handed back from a
+/// global and a `long` compared signed.  The controls keep their casts: a callee
+/// whose unsigned result shares a variable with `strcmp`'s signed one, the
+/// `unsigned long` shift a `long` result is read through, a callee recovered
+/// `void`, which states nothing, and a `long *` result the merge ties into one
+/// variable with the `-1` and the count the function returns (`cached`, which
+/// must stay `unsigned long` rather than turn into a pointer), and two callers
+/// that zero-extend a callee's `short` and `int` result in place before
+/// returning it (`unsigned short use_s16_as_u`, `unsigned int
+/// use_neg_as_unsigned`, called through their printed prototypes, where a
+/// statement at the callee's sign would hand back -15536 and
+/// 18446744073709551613), and two that keep an `int` result in an `unsigned
+/// int` and hand it back as `unsigned long` through a reload or a move from
+/// the register it was kept in across another call (`keep_widened`,
+/// `keep_across`, read whole and shifted, where `int` would print
+/// 9223372036854775806), and one that passes such a result to an `unsigned
+/// long` parameter (`pass_widened`, where an `int` argument would hand `halve`
+/// a sign-extended value and print 9223372036854775807).  Every fixture is
+/// decompiled with the option
+/// off and on; every printed function compiled with gcc and clang at -O0 and
+/// -O2 must print what the binary prints, and no call in the whole listing may
+/// gain or lose an argument or a result.
+#[test]
+fn a_call_result_typed_by_its_callee_round_trips_through_the_printed_c() {
+    const ALL: &[&str] = &[
+        "skip_blanks", "count_upper", "upper_after_blanks", "upper_of_rest", "first_of", "first_char",
+        "signed_delta", "is_behind", "clamp_delta", "hash_of", "pick", "after_colon", "fallback_name", "name_len",
+        "pick_stream", "stream_no", "s16", "use_s16_as_u", "neg32", "use_neg_as_unsigned", "widen_signed", "tick",
+        "keep_widened", "keep_across", "halve", "pass_widened", "mark", "marked_len",
+    ];
+    const O2: &[&str] = &[
+        "first_of", "first_char", "signed_delta", "is_behind", "clamp_delta", "hash_of", "pick", "after_colon",
+        "fallback_name", "name_len", "pick_stream", "stream_no", "s16", "use_s16_as_u", "neg32",
+        "use_neg_as_unsigned", "widen_signed", "tick", "keep_widened", "keep_across", "halve", "pass_widened", "mark",
+        "marked_len",
+    ];
+    const WANT: &str =
+        "202 205 2\n104 -1\n1 0 -2\n1 -1 0\n7 6 6\n10 21 9\n50000 4294967293 -12\n2147483646 2147483646 2147483647\n";
+    const MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+int main(void) {
+  char buf[] = "  AbC";
+  char buf2[] = "xyzw";
+  char buf3[] = "Hi!Hi!!";
+  printf("%ld %ld %ld\n", F(long, upper_after_blanks)(buf), F(long, upper_of_rest)(buf),
+         (long)(F(char *, skip_blanks)(buf) - buf));
+  printf("%d %d\n", F(int, first_char)(buf2 + 1, 3L) - 17, F(int, first_char)(buf2, 0L));
+  printf("%d %d %ld\n", F(int, is_behind)(3L, 9L), F(int, is_behind)(9L, 3L), F(long, clamp_delta)(1L, 9L));
+  printf("%d %d %d\n", F(int, pick)("ab", "cd", 1), F(int, pick)("ab", "cd", 0), F(int, pick)("ab", "ab", 0));
+  printf("%ld %ld %ld\n", F(long, name_len)(NULL), F(long, name_len)("key:value"), F(long, name_len)("plain"));
+  printf("%d %d %ld\n", F(int, stream_no)(0), F(int, stream_no)(1), F(long, marked_len)(buf3));
+  printf("%ld %lu %ld\n", (long)use_s16_as_u(50), (unsigned long)use_neg_as_unsigned(1), (long)widen_signed(4));
+  printf("%lu %lu %lu\n", (unsigned long)keep_widened(1) >> 1, (unsigned long)keep_across(1) >> 1,
+         (unsigned long)pass_widened(1));
+  return 0;
+}
+"#;
+    const O2_WANT: &str =
+        "104 -1\n1 0 -2\n1 -1 0\n7 6 6\n10 21 9\n50000 4294967293 -12\n2147483646 2147483646 2147483647\n";
+    const O2_MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+int main(void) {
+  char buf2[] = "xyzw";
+  char buf3[] = "Hi!Hi!!";
+  printf("%d %d\n", F(int, first_char)(buf2 + 1, 3L) - 17, F(int, first_char)(buf2, 0L));
+  printf("%d %d %ld\n", F(int, is_behind)(3L, 9L), F(int, is_behind)(9L, 3L), F(long, clamp_delta)(1L, 9L));
+  printf("%d %d %d\n", F(int, pick)("ab", "cd", 1), F(int, pick)("ab", "cd", 0), F(int, pick)("ab", "ab", 0));
+  printf("%ld %ld %ld\n", F(long, name_len)(NULL), F(long, name_len)("key:value"), F(long, name_len)("plain"));
+  printf("%d %d %ld\n", F(int, stream_no)(0), F(int, stream_no)(1), F(long, marked_len)(buf3));
+  printf("%ld %lu %ld\n", (long)use_s16_as_u(50), (unsigned long)use_neg_as_unsigned(1), (long)widen_signed(4));
+  printf("%lu %lu %lu\n", (unsigned long)keep_widened(1) >> 1, (unsigned long)keep_across(1) >> 1,
+         (unsigned long)pass_widened(1));
+  return 0;
+}
+"#;
+    // (fixture, printed functions, main, output, what option off prints and what
+    // option on prints instead, what both print)
+    type Case<'a> = (&'a str, &'a [&'a str], &'a str, &'a str, &'a [(&'a str, &'a str)], &'a [&'a str]);
+    let cases: [Case; 3] = [
+        (
+            "callrettype_gcc_O0_x86_64",
+            ALL,
+            MAIN,
+            WANT,
+            &[
+                ("v1 = (char *)skip_blanks(a0);", "v1 = skip_blanks(a0);"),
+                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                (
+                    "v1 = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
+                    "    v1 = after_colon(a0);\n  else {\n    v1 = fallback_name();",
+                ),
+                ("return (int)neg32(a0);", "return neg32(a0);"),
+            ],
+            &[
+                "return (unsigned long)signed_delta(a0,a1) >> 0x3f;",
+                "(unsigned int)hash_of(a0) % 7",
+                "  mark(a0);\n",
+                "unsigned long cached(long *a0,unsigned long a1)",
+                "        v1 = 0xffffffffffffffff;",
+                "    v1 = lookup((long *)*a0,a1);",
+                "unsigned short use_s16_as_u(",
+                "unsigned int use_neg_as_unsigned(",
+                "unsigned int keep_widened(",
+                "unsigned int keep_across(",
+            ],
+        ),
+        (
+            "callrettype_clang_O0_x86_64",
+            ALL,
+            MAIN,
+            WANT,
+            &[
+                ("v1 = (char *)skip_blanks(a0);", "v1 = skip_blanks(a0);"),
+                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                ("return (long)signed_delta(a0,a1) < 0;", "return signed_delta(a0,a1) < 0;"),
+                (
+                    "v1 = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
+                    "v1 = (a0) ? after_colon(a0) : fallback_name();",
+                ),
+                ("return (int)neg32(a0);", "return neg32(a0);"),
+            ],
+            &[
+                "  mark(a0);\n",
+                "unsigned short use_s16_as_u(",
+                "unsigned int use_neg_as_unsigned(",
+                "unsigned int keep_widened(",
+                "unsigned int keep_across(",
+            ],
+        ),
+        (
+            "callrettype_gcc_O2_x86_64",
+            O2,
+            O2_MAIN,
+            O2_WANT,
+            &[
+                ("v1 = (char *)after_colon(a0);", "v1 = after_colon(a0);"),
+                ("v1 = (char *)fallback_name();", "v1 = fallback_name();"),
+                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                ("return (int)neg32(a0);", "return neg32(a0);"),
+            ],
+            &[
+                "v1 = (char *)skip_blanks(a0);",
+                "return (unsigned long)signed_delta(a0,a1) >> 0x3f;",
+                "unsigned short use_s16_as_u(short a0)",
+                "unsigned int use_neg_as_unsigned(int a0)",
+                "unsigned int keep_widened(",
+                "unsigned int keep_across(",
+            ],
+        ),
+    ];
+    let sp = specs();
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    for (fixture, funcs, main, want, lines, kept) in cases {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        let mut listings: Vec<String> = Vec::new();
+        for opt in ["off", "on"] {
+            let args = ["decompile-all", bin.as_str(), "--sleighpath", sp.as_str(), "--option", "callrettype", opt];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            for (off, on) in lines {
+                let want = if opt == "on" { on } else { off };
+                assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
+            }
+            for k in kept {
+                assert!(stdout.contains(k), "{fixture} option {opt} lost `{k}`:\n{stdout}");
+            }
+            let printed = callrettype_functions(&stdout, funcs);
+            for cc in &compilers {
+                for level in ["-O0", "-O2"] {
+                    let dir = std::env::temp_dir()
+                        .join(format!("kuna-callrettype-rt-{}-{fixture}-{opt}-{cc}{level}", std::process::id()));
+                    std::fs::create_dir_all(&dir).unwrap();
+                    let src = dir.join("rt.c");
+                    let exe = dir.join("rt");
+                    std::fs::write(
+                        &src,
+                        format!(
+                            "#include <stdbool.h>\n#include <stdio.h>\n#include <string.h>\n\
+                             #define stderr_ptr (&stderr)\n#define stdout_ptr (&stdout)\n\
+                             #define CONCAT22(h, l) ((unsigned int)(unsigned short)(h) << 16 | (unsigned short)(l))\n\
+                             char *g_fallback = \"fallback\";\nvolatile int g_ticks;\n{printed}\n{main}"
+                        ),
+                    )
+                    .unwrap();
+                    let out = Command::new(cc)
+                        .args(["-std=gnu11", "-w", "-Wno-error=int-conversion", level])
+                        .args(["-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                        .output()
+                        .expect("spawn the C compiler");
+                    assert!(
+                        out.status.success(),
+                        "{cc} {level} rejected the printed C ({fixture}, option {opt}):\n{}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                    let run = process::required_output(&mut Command::new(&exe));
+                    let _ = std::fs::remove_dir_all(&dir);
+                    assert_eq!(
+                        String::from_utf8_lossy(&run.stdout),
+                        want,
+                        "{fixture} printed with option {opt} and built by {cc} {level} computes a different value:\n{printed}"
+                    );
+                }
+            }
+            listings.push(stdout);
+        }
+        assert_eq!(
+            callrettype_calls(&listings[0]),
+            callrettype_calls(&listings[1]),
+            "{fixture}: option callrettype moved a call's arguments"
+        );
+        let reads = |listing: &str, callee: &str| {
+            let call = format!("{callee}(");
+            listing.lines().filter(|l| l.find(&call).is_some_and(|at| l[..at].contains('='))).count()
+        };
+        for header in listings.iter().flat_map(|l| l.lines()).filter(|l| l.starts_with("void ")) {
+            let callee = header[5..].split('(').next().unwrap_or("").trim();
+            assert_eq!(
+                reads(&listings[0], callee),
+                reads(&listings[1], callee),
+                "{fixture}: option callrettype changed how often the result of the void function {callee} is read"
+            );
+        }
+    }
+}
+
+/// `elemptr`: a pointer the program uses only as an array of one element type
+/// is declared as that pointer, so a textbook base64 decoder reads
+/// `dat_30004060[v2]`, `a0[v7]` and `v6[v8]` instead of three integer sums behind
+/// casts. The round trip exports `elemptr_x86_64.c`'s gcc -O0, clang -O0 and
+/// gcc -O2 builds with the option on and off, compiles the witnesses exactly as
+/// printed against the export's own header with gcc and clang, links every
+/// `dat_<addr>` at `<addr>` with the fixture's data mapped where the binary keeps
+/// it, and runs them: both arms must print what the binary prints. The inputs
+/// read bytes at and above 0x80 signed and unsigned, use them as indexes both
+/// ways, index backwards from the end of an `int` array, read a `.data` table
+/// of `int`s, fill a table through a global the program allocated, and return
+/// an allocated buffer to the caller. Two controls keep their integer form: a
+/// record walked by a stride, and one pointer read at two widths. A second line
+/// reads tables whose elements have the top bit set: a `unsigned short` and an
+/// `unsigned int` element returned to a caller that widens them (declared
+/// signed, the callers would sign-extend), one shifted and one only compared,
+/// and a byte table one function zero-extends and another sign-extends (the
+/// header can declare it at one sign only, so neither indexes it). At -O2, gcc's
+/// `w_rev` returns the `malloc` result it never copies out of `rax`, and kuna
+/// declares it `void` in both arms (a return-recovery gap outside this option),
+/// so that build's round trip does not compare the reversed string. A third
+/// line copies a string into buffers bounded by a length the function compares
+/// a pointer difference against (the length stays `unsigned long`, never a
+/// `char *` base), and stores an `int` counter into an `unsigned` table and
+/// indexes a second table with its elements (the counter stays `int`). A
+/// fourth line reads a global `int *` two functions index and two others step
+/// by bytes, a table one function indexes and two others name the first
+/// element of, and a 2-byte field at the end of a readable page through a
+/// pointer a callee reads as `unsigned int *`: no function may type the global
+/// or the table (the batch's one declaration would rescale the others' byte
+/// arithmetic, or make the scalar the array), and the field is read 2 bytes
+/// wide (a 4-byte element read would fault). A global the header declines as
+/// read at two types is compiled at the pointer that header comment lists, the
+/// type the batch would commit, so a disagreement cannot hide behind `char *`.
+/// A fifth line returns 8-byte elements above 2^32 from a function that loads
+/// them through an address computed in the register it returns them in
+/// (`w_nexttab`, coreutils `expand`'s `get_next_tab_column`), which is never
+/// declared to return that address's type. A sixth line compares and hashes a
+/// 15-byte table with a zero byte inside it through parameters the option
+/// types `char *` (`w_chk`, `w_hash`) and through a parameter merged with it
+/// (`w_pick`): the table is passed as its address, never as a string literal
+/// that ends at the zero byte while the reader takes all fifteen.
+#[test]
+fn an_element_pointer_round_trips_through_the_printed_c() {
+    check_elemptr_round_trip(cfg!(all(target_os = "linux", target_arch = "x86_64")));
+}
+
+#[test]
+fn elemptr_spellings_are_checked_without_native_execution() {
+    check_elemptr_round_trip(false);
+}
+
+fn check_elemptr_round_trip(run_native: bool) {
+    let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let sp = specs();
+    let witnesses = [
+        "w_build", "w_decode", "w_sbytes", "w_ubytes", "w_words", "w_back", "w_sidx", "w_table", "w_rev",
+        "w_record", "w_mixed", "w_wu", "w_wucall", "w_iu", "w_iucall", "w_iu2", "w_srch", "w_xu", "w_xs", "w_put",
+        "w_ctr", "w_gpinit", "w_gpbump", "w_gpadv", "w_gpread", "w_tidx", "w_tfirst", "w_tset", "w_sum4", "w_hdr",
+        "w_nexttab", "w_tabinit", "w_bcmp", "w_chk", "w_hsum", "w_hash", "w_pick",
+    ];
+    let on: &[&str] = &[
+        "char * w_decode(char *a0,unsigned long a1,unsigned long *a2)",
+        "long w_sbytes(char *a0,int a1)",
+        "long w_ubytes(unsigned char *a0,int a1)",
+        "long w_sidx(char *a0,int a1,int *a2)",
+        "long w_mixed(char *a0,int a1)",
+        "unsigned short w_wu(unsigned int a0)",
+        "unsigned int w_iu(unsigned int a0)",
+        "w_put(char *a0,unsigned long a1,char *a2)",
+        "w_ctr(unsigned int *a0,",
+        "long w_hsum(char *a0,long a1)",
+        "long w_pick(char *a0,long a1,int a2)",
+    ];
+    let off: &[&str] = &["void * w_decode(long a0,unsigned long a1,unsigned long *a2)"];
+    if !run_native {
+        eprintln!("elemptr round trip: native execution disabled; checking all spellings");
+    }
+    let dir = common::scratch_file("elemptr-round-trip", "dir");
+    std::fs::create_dir(&dir).unwrap();
+    for build in ["gcc_O0", "clang_O0", "gcc_O2"] {
+        let stem = format!("elemptr_{build}_x86_64");
+        let bin = fixtures.join(&stem);
+        let rev_broken = build == "gcc_O2";
+        let expected = run_native.then(|| {
+            let output = process::required_output(&mut Command::new(&bin));
+            let mut text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if rev_broken {
+                let mut fields: Vec<&str> = text.split(' ').collect();
+                fields[3] = "-";
+                text = fields.join(" ");
+            }
+            text
+        });
+        for arm in ["on", "off"] {
+            // The field sits at the very end of a readable page with the option
+            // on; off, upstream's widened load is kept, so it sits mid-page.
+            let harness = dir.join(format!("main-{build}-{arm}.c"));
+            std::fs::write(
+                &harness,
+                ELEMPTR_HARNESS
+                    .replace("@FIXTURE@", bin.to_str().unwrap())
+                    .replace("@REV@", if rev_broken { "0" } else { "1" })
+                    .replace("@PAGE_END@", if arm == "on" { "6" } else { "600" }),
+            )
+            .unwrap();
+            let out = dir.join(format!("{build}-{arm}"));
+            let (_, stderr, ok) = run_kuna(&[
+                "decompile-project",
+                bin.to_str().unwrap(),
+                "-o",
+                out.to_str().unwrap(),
+                "--sleighpath",
+                sp.as_str(),
+                "--option",
+                "elemptr",
+                arm,
+            ]);
+            assert!(ok, "kuna decompile-project failed: {stderr}");
+            let header = std::fs::read_to_string(out.join(format!("{stem}.h"))).unwrap();
+            let code = std::fs::read_to_string(out.join(format!("{stem}.c"))).unwrap();
+            for w in if arm == "on" { on } else { off } {
+                assert!(code.contains(w), "{build} {arm}: missing `{w}`:\n{code}");
+            }
+            assert!(code.contains("long w_table(int a0)"), "{build} {arm}:\n{code}");
+            assert!(!code.contains("w_put(char *a0,char *a1"), "{build} {arm}: the length is a number:\n{code}");
+            if arm == "on" {
+                assert!(!code.contains("(unsigned short)a0[1]"), "{build}: the 2-byte field is read 4 wide:\n{code}");
+            }
+            assert!(
+                code.contains("unsigned long w_nexttab(unsigned long a0,"),
+                "{build} {arm}: the returned element is a number:\n{code}"
+            );
+            assert!(
+                !code.contains("\"0!0"),
+                "{build} {arm}: the table with a zero byte inside is a string literal:\n{code}"
+            );
+            if arm == "on" {
+                assert!(header.contains("extern unsigned char dat_"), "{build}: the encoding table:\n{header}");
+                assert!(header.contains("extern int dat_"), "{build}: the weights table:\n{header}");
+                assert!(!code.contains("(long)v6 + (long)v8"), "{build}: the decoded buffer:\n{code}");
+                assert!(header.contains("extern unsigned short dat_"), "{build}: the word table:\n{header}");
+                assert!(
+                    !header.lines().any(|l| l.contains("[];") && l.contains("also used as")),
+                    "{build}: one table declared at two elements:\n{header}"
+                );
+            }
+            let mut printed = format!("#include <stddef.h>\n#include <stdlib.h>\n#include \"{stem}.h\"\n");
+            let mut bodies = String::new();
+            for w in witnesses {
+                let head = format!("// Function: {w} @ ");
+                let at = code.find(&head).unwrap_or_else(|| panic!("{build} {arm}: no `{w}` in the export"));
+                let end = code[at + head.len()..].find("// Function: ").map_or(code.len(), |e| at + head.len() + e);
+                bodies.push_str(&code[at..end]);
+            }
+            let mut names: Vec<String> = Vec::new();
+            for (i, _) in bodies.match_indices("dat_") {
+                let hex: String = bodies[i + 4..].chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+                let name = format!("dat_{hex}");
+                if !hex.is_empty() && !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+            for n in &names {
+                if header.contains(&format!(" {n};")) || header.contains(&format!(" {n}[];")) {
+                    continue;
+                }
+                let listed = header.lines().find_map(|l| {
+                    let why = l.split_once(&format!("/* {n} is "))?.1;
+                    let decls = why.split_once("so it is not declared: ")?.1.trim_end_matches(" */");
+                    decls.split(", ").find(|d| d.contains('*') || d.ends_with("[]")).map(str::to_string)
+                });
+                // A name the header leaves out is main's integer global; one the
+                // bodies subscript is a pointer.
+                let guess = if bodies.contains(&format!("{n}[")) { format!("char *{n}") } else { format!("long {n}") };
+                printed.push_str(&format!("extern {};\n", listed.unwrap_or(guess)));
+            }
+            printed.push_str(&bodies);
+            std::fs::write(out.join("printed.c"), &printed).unwrap();
+            let Some(expected) = &expected else { continue };
+            for cc in ["gcc", "clang"] {
+                if process::optional_output(Command::new(cc).arg("--version")).is_none() {
+                    eprintln!("elemptr round trip: no `{cc}`");
+                    continue;
+                }
+                let exe = out.join(format!("rt-{cc}"));
+                // Clang 16+ and gcc 14 make these errors, which `-w` does not
+                // silence; a guessed declaration of an undeclared global trips them.
+                let mut args: Vec<String> = [
+                    "-std=gnu11",
+                    "-w",
+                    "-Wno-error=int-conversion",
+                    "-Wno-error=incompatible-pointer-types",
+                    "-O0",
+                    "-fno-builtin",
+                    "-no-pie",
+                    "-o",
+                ]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+                args.push(exe.to_str().unwrap().to_string());
+                args.push(harness.to_str().unwrap().to_string());
+                args.push(out.join("printed.c").to_str().unwrap().to_string());
+                for n in &names {
+                    args.push(format!("-Wl,--defsym,{n}=0x{}", &n[4..]));
+                }
+                let built = Command::new(cc).args(&args).current_dir(&out).output().expect("spawn cc");
+                assert!(
+                    built.status.success(),
+                    "{build} {arm}/{cc}: the printed witnesses did not compile:\n{}\n{printed}",
+                    String::from_utf8_lossy(&built.stderr)
+                );
+                let run = process::required_output(&mut Command::new(&exe));
+                let mut got = String::from_utf8_lossy(&run.stdout).trim().to_string();
+                let mut want = expected.clone();
+                // gcc -O2 with the option off (main): `w_tabinit` fills the table
+                // through `unsigned long *` and `w_nexttab` reads it as an integer
+                // sum, and the header declares neither, so no one declaration
+                // computes both; with the option on both read `dat_<addr>[i]`.
+                if build == "gcc_O2" && arm == "off" {
+                    let four = |t: &str| t.lines().take(4).collect::<Vec<_>>().join("\n");
+                    got = four(&got);
+                    want = four(&want);
+                }
+                assert_eq!(got, want, "{build} {arm}/{cc}: the printed witnesses compute something else:\n{printed}");
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `elemptr` under `--jobs N`: a global or a table is an array only where
+/// every function of a batch agrees, and a worker sees a share of the
+/// functions, so a pool of more than one function types neither -- exactly as
+/// a serial run that does not take the callee-first order. With `--option
+/// protoorder off` on both, `decompile-all` and `decompile-project` print with
+/// `--jobs 4` what they print with `--jobs 1`, and neither declares the global
+/// `gp` an `int *` that `w_gpbump` steps by 4 bytes (as `int *`, `gp += 4`
+/// would move 16). The default serial run still types it where the batch agrees.
+#[test]
+fn element_pointers_under_jobs_match_the_serial_run() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let off = ["--sleighpath", sp.as_str(), "--option", "protoorder", "off"];
+    let serial: Vec<&str> = ["decompile-all", bin.as_str()].iter().chain(off.iter()).copied().collect();
+    let (want, stderr, ok) = run_kuna(&serial);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let mut pooled = serial.clone();
+    pooled.extend_from_slice(&["--jobs", "4", "--jobs-chunk", "1"]);
+    let (got, stderr, ok) = run_kuna(&pooled);
+    assert!(ok, "kuna decompile-all --jobs 4 failed: {stderr}");
+    assert_eq!(got, want, "--jobs 4 moved the elemptr fixture's document");
+    assert!(got.contains("dat_300053e8 += 4;"), "the byte step on gp:\n{got}");
+    assert!(!got.contains("dat_300053e8["), "gp is indexed as an array without a batch:\n{got}");
+    let (callee_first, _, ok) = run_kuna(&["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()]);
+    assert!(ok);
+    assert!(callee_first.contains("dat_300053e0[dat_30005080[v2]] = (char)v2;"), "{callee_first}");
+
+    let dir = std::env::temp_dir().join(format!("kuna-elemptr-jobs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut exports = Vec::new();
+    for jobs in ["1", "4"] {
+        let out = dir.join(format!("j{jobs}"));
+        let mut args = vec!["decompile-project", bin.as_str(), "-o", out.to_str().unwrap()];
+        args.extend_from_slice(&off);
+        args.extend_from_slice(&["--jobs", jobs, "--jobs-chunk", "1"]);
+        let (_, stderr, ok) = run_kuna(&args);
+        assert!(ok, "kuna decompile-project --jobs {jobs} failed: {stderr}");
+        let read = |ext: &str| std::fs::read_to_string(out.join(format!("elemptr_gcc_O0_x86_64.{ext}"))).unwrap();
+        exports.push((read("c"), read("h")));
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(exports[0].0, exports[1].0, "decompile-project --jobs 4 moved the .c");
+    assert_eq!(exports[0].1, exports[1].1, "decompile-project --jobs 4 moved the .h");
+    assert!(!exports[1].1.contains("int *dat_300053e8"), "the .h declares gp an int *:\n{}", exports[1].1);
+}
+
+/// The `elemptr` round trip's `main`: map the fixture's non-executable load
+/// segments at their own addresses, then call the printed witnesses with the
+/// fixture's own inputs and print its line.
+const ELEMPTR_HARNESS: &str = r#"#include <elf.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
+unsigned char *w_decode(const char *, unsigned long, unsigned long *);
+long w_sbytes(const char *, int); long w_ubytes(const unsigned char *, int);
+long w_words(const int *, int); long w_back(const int *, int);
+long w_sidx(const signed char *, int, const int *); long w_table(int); char *w_rev(const char *, int);
+long w_record(const long *, int); long w_mixed(const char *, int);
+unsigned long w_wucall(unsigned int); unsigned long w_iucall(unsigned int); unsigned long w_iu2(unsigned int);
+long w_srch(unsigned int); unsigned long w_xu(const unsigned char *, int); long w_xs(const unsigned char *, int);
+void w_put(char *, unsigned long, const char *); void w_ctr(unsigned int *, unsigned int *, int);
+void w_gpinit(long); void w_gpbump(void); void w_gpadv(long); long w_gpread(long);
+long w_tidx(unsigned int); long w_tfirst(void); void w_tset(long); long w_hdr(const unsigned int *);
+void w_tabinit(void); unsigned long w_nexttab(unsigned long, unsigned long *, _Bool *);
+int w_chk(const char *); long w_hash(void); long w_pick(const char *, long, int);
+int main(void) {
+  int fd = open("@FIXTURE@", O_RDONLY);
+  Elf64_Ehdr eh; pread(fd, &eh, sizeof eh, 0);
+  for (int i = 0; i < eh.e_phnum; i++) {
+    Elf64_Phdr ph; pread(fd, &ph, sizeof ph, eh.e_phoff + i * sizeof ph);
+    if (ph.p_type != PT_LOAD || (ph.p_flags & PF_X)) continue;
+    unsigned long lo = ph.p_vaddr & ~0xfffUL, hi = (ph.p_vaddr + ph.p_memsz + 0xfff) & ~0xfffUL;
+    if (mmap((void *)lo, hi - lo, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) != (void *)lo) return 2;
+    pread(fd, (void *)ph.p_vaddr, ph.p_filesz, ph.p_offset);
+  }
+  static const char hi[] = "\x81\x7f\xfe\x01\x80\x10";
+  static const int wide[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+  static int span[256];
+  for (int i = 0; i < 256; i++)
+    span[i] = i * 3 - 384;
+  static const long recs[] = {2, 3, 5, 7, 11, 13};
+  unsigned long n = 0;
+  unsigned char *dec = w_decode("aGVsbG8gd29ybGQ=", 16, &n);
+  char *rev = @REV@ ? w_rev("kuna", 4) : (w_rev("kuna", 4), "-");
+  long a = w_sbytes(hi, 6);
+  long b = w_ubytes((const unsigned char *)hi, 6);
+  long c = w_words(wide, 16);
+  long d = w_back(wide + 16, 16);
+  long e = w_sidx((const signed char *)hi, 6, span + 128);
+  long f = w_table(8);
+  long g = w_record(recs, 3);
+  long h = w_mixed("abcdefgh", 2);
+  printf("%s %lu %s %ld %ld %ld %ld %ld %ld %ld %ld\n", (char *)dec, n, rev, a, b, c, d, e, f, g, h);
+  static const unsigned char ix[] = {0, 1, 2, 3, 4, 5};
+  printf("%lu %lu %lu %lu %lu %lu %ld %ld %lu %ld\n", w_wucall(1), w_wucall(6), w_iucall(1), w_iucall(3), w_iu2(1),
+         w_iu2(2), w_srch(0xffffffffu), w_srch(5), w_xu(ix, 6), w_xs(ix, 6));
+  char put8[8], put4[4];
+  static unsigned int fmap[8], eclass[8] = {5, 6, 7};
+  w_put(put8, 8, "abc");
+  w_put(put4, 4, "abcdef");
+  w_ctr(fmap, eclass, 8);
+  printf("%s %s %u %u %u\n", put8, put4, eclass[0], eclass[3], eclass[7]);
+  w_gpinit(16);
+  long g1 = w_gpread(1);
+  w_gpbump();
+  long g2 = w_gpread(1);
+  w_gpadv(2);
+  long g3 = w_gpread(1);
+  long t1 = w_tidx(3), t2 = w_tfirst();
+  w_tset(-7);
+  long t3 = w_tidx(8), t4 = w_tfirst();
+  unsigned char *pg = mmap(0, 8192, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  mprotect(pg + 4096, 4096, PROT_NONE);
+  unsigned char *o = pg + 4096 - @PAGE_END@;
+  o[0] = 1, o[1] = 2, o[2] = 3, o[3] = 4, o[4] = 0x34, o[5] = 0x92;
+  printf("%ld %ld %ld %ld %ld %ld %ld %ld\n", g1, g2, g3, t1, t2, t3, t4, w_hdr((const unsigned int *)o));
+  w_tabinit();
+  unsigned long ti = 0;
+  _Bool last = 0;
+  unsigned long n1 = w_nexttab(9, &ti, &last), n2 = w_nexttab(0x100000005ul, &ti, &last), n3 = w_nexttab(0x200000000ul, &ti, &last);
+  printf("%lu %lu %lu %lu %d\n", n1, n2, n3, ti, (int)last);
+  static const unsigned char der[15] = {0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14};
+  char ok[15], bad[15];
+  memcpy(ok, der, 15);
+  memcpy(bad, der, 15);
+  bad[14] = 0;
+  printf("%d %d %ld %ld %ld\n", w_chk(ok), w_chk(bad), w_hash(), w_pick("abcdefghijklmno", 15, 1), w_pick(0, 15, 0));
+  return 0;
+}
+"#;

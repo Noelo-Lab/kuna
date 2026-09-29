@@ -55,6 +55,21 @@ the suite starts on the label alone. (It also always runs pre-merge on a fork PR
 *Run workflow*.) Run all four locally regardless: the workspace suite is the long pole in
 CI, so local failures are found far sooner.
 
+The workspace integration tests require built processor specs. Missing or
+unusable specs are failures, not skips; use the worktree symlink procedure below
+when reusing another checkout's build. Tests for optional external toolchains may
+skip when the tool is absent, but a failed build with an installed tool is an error.
+
+Python tooling unit tests run with `make test-tools` and are also required by CI.
+They use temporary state directories, not the live pipeline inventory.
+
+CI also runs `make lint`, treating Clippy warnings as errors in the CLI and the
+base and numeric libraries, not the whole workspace or their test targets.
+
+The Rust test profile uses optimization level 1 for real-image tests, with debug
+assertions and integer-overflow checks enabled. Ordinary development builds retain
+Cargo's unoptimized default.
+
 - **Never re-pin `docs/baseline.json` to absorb a regression** — fix the code or make the
   change opt-in. The only sanctioned re-pins are an intentional upstream sync or a
   deliberate default change, and the commit message says which (`kuna test --save-baseline`).
@@ -98,7 +113,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 
 - **Anything that can change emitted C ships behind a named option** — a `settableTable`
   row in `decompiler/crates/kuna-decomp/phases.toml` (every field populated, including
-  `tier` + `symptoms`) plus registration in `src/p0_knowledge/options.rs`; `kuna catalog
+  `tier` + `symptoms`) plus a handler in `src/p0_knowledge/kuna_option_dispatch.rs`; `kuna catalog
   --check` must stay green. Options can take values, not just on/off. New logic goes in a
   `kuna_<slug>.rs` module inside its owning phase folder (canonical template:
   `p2_lift/kuna_loweredswitch.rs`). This is for *features* — behavior that is a judgment

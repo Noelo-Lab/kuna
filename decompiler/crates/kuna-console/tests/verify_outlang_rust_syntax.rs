@@ -23,12 +23,6 @@
 //! the operand type, and `[u8; 3]` does not do arithmetic. Making the output
 //! *compile* is a different and much larger project. This gate asserts it
 //! parses.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -52,25 +46,15 @@ fn grep() -> PathBuf {
     repo_root().join("tests/bug-repro/grep")
 }
 
-/// Decompile `func` from `bin` under `lang`, returning the emitted document
-/// (`None` => specs-less skip).
-fn decompile_as(bin: &PathBuf, func: &str, lang: &str) -> Option<String> {
+/// Decompile `func` from `bin` under `lang`, returning the emitted document.
+fn decompile_as(bin: &PathBuf, func: &str, lang: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let path = bin.to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&path, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_outlang_rust_syntax: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let path = bin.to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let cmds: Vec<String> = vec![
@@ -90,12 +74,12 @@ fn decompile_as(bin: &PathBuf, func: &str, lang: &str) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(strip_console_chatter(&status.optr))
+    strip_console_chatter(&status.optr)
 }
 
 /// The raw console transcript, for the arms that assert on a console message
 /// rather than on the document.
-fn console_transcript(bin: &PathBuf, func: &str, lang: &str) -> Option<String> {
+fn console_transcript(bin: &PathBuf, func: &str, lang: &str) -> String {
     RAW.with(|r| r.set(true));
     let out = decompile_as(bin, func, lang);
     RAW.with(|r| r.set(false));
@@ -129,14 +113,14 @@ fn assert_parses_as_rust(code: &str, what: &str) {
 #[test]
 fn rust_output_parses() {
     for func in ["sub_2f60", "sub_3050", "sub_31a0"] {
-        let Some(code) = decompile_as(&faillog(), func, "rust-language") else { return };
+        let code = decompile_as(&faillog(), func, "rust-language");
         assert_parses_as_rust(&code, func);
     }
 }
 
 #[test]
 fn rust_output_parses_on_a_wider_body() {
-    let Some(code) = decompile_as(&grep(), "sub_144a0", "rust-language") else { return };
+    let code = decompile_as(&grep(), "sub_144a0", "rust-language");
     assert_parses_as_rust(&code, "grep/sub_144a0");
 }
 
@@ -147,7 +131,7 @@ fn rust_output_parses_on_a_wider_body() {
 #[test]
 fn rust_match_output_parses() {
     for func in ["sub_eda0", "sub_f9c0", "sub_15020", "sub_1f450"] {
-        let Some(code) = decompile_as(&grep(), func, "rust-language") else { return };
+        let code = decompile_as(&grep(), func, "rust-language");
         assert_parses_as_rust(&code, &format!("grep/{func}"));
         assert!(code.contains("match "), "expected a match in {func}:\n{code}");
         assert!(code.contains("_ => "), "a match on an integer needs a wildcard arm in {func}");
@@ -160,7 +144,7 @@ fn rust_match_output_parses() {
 /// jump-table indices, which is exactly Rust's `A | B =>`.
 #[test]
 fn multi_label_arms_use_pattern_alternation() {
-    let Some(code) = decompile_as(&grep(), "sub_f9c0", "rust-language") else { return };
+    let code = decompile_as(&grep(), "sub_f9c0", "rust-language");
     let re = regex::Regex::new(r"(?m)^\s*0x[0-9a-f]+( \| 0x[0-9a-f]+)+ => \{").unwrap();
     assert!(re.is_match(&code), "expected an `A | B => {{` arm; got:\n{code}");
 }
@@ -170,7 +154,7 @@ fn multi_label_arms_use_pattern_alternation() {
 /// this is the regression test for those members reaching the emitters.
 #[test]
 fn rust_output_carries_no_c_isms() {
-    let Some(code) = decompile_as(&grep(), "sub_144a0", "rust-language") else { return };
+    let code = decompile_as(&grep(), "sub_144a0", "rust-language");
     // The scan is over CODE, not prose: the residual-goto marker deliberately
     // says "unstructured goto", and the signature's `) -> T` is a return arrow.
     let body: String = code
@@ -199,7 +183,7 @@ fn rust_output_carries_no_c_isms() {
 /// the language is a real selection rather than a global mode change.
 #[test]
 fn c_output_is_unchanged_by_the_language_seam() {
-    let Some(code) = decompile_as(&faillog(), "sub_3050", "c-language") else { return };
+    let code = decompile_as(&faillog(), "sub_3050", "c-language");
     assert!(code.contains("void sub_3050("), "expected the C prototype form; got:\n{code}");
     assert!(!code.contains("unsafe fn"), "C output must not carry the Rust shell:\n{code}");
     assert!(!code.contains("let mut"), "C output must not carry Rust declarations:\n{code}");
@@ -209,7 +193,7 @@ fn c_output_is_unchanged_by_the_language_seam() {
 /// otherwise a typo would keep emitting C under a name that says otherwise.
 #[test]
 fn an_unknown_language_is_rejected() {
-    let Some(out) = console_transcript(&faillog(), "sub_3050", "not-a-language") else { return };
+    let out = console_transcript(&faillog(), "sub_3050", "not-a-language");
     assert!(
         out.contains("Unknown print language"),
         "expected the unknown-language error; got:\n{out}"
@@ -222,7 +206,7 @@ fn an_unknown_language_is_rejected() {
 /// it was the single largest source of non-compiling output before the fix.
 #[test]
 fn variadic_prototypes_carry_extern_c() {
-    let Some(code) = decompile_as(&grep(), "__printf_chk", "rust-language") else { return };
+    let code = decompile_as(&grep(), "__printf_chk", "rust-language");
     assert!(code.contains(", ...)"), "expected a recovered variadic; got:\n{code}");
     assert!(
         code.contains("unsafe extern \"C\" fn"),
@@ -233,7 +217,7 @@ fn variadic_prototypes_carry_extern_c() {
 /// The non-variadic majority keeps the shorter shell.
 #[test]
 fn non_variadic_prototypes_stay_plain_unsafe_fn() {
-    let Some(code) = decompile_as(&faillog(), "sub_3050", "rust-language") else { return };
+    let code = decompile_as(&faillog(), "sub_3050", "rust-language");
     assert!(code.contains("unsafe fn sub_3050("), "got:\n{code}");
     assert!(!code.contains("extern \"C\""), "no variadic here; got:\n{code}");
 }

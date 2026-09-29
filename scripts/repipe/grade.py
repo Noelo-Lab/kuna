@@ -53,6 +53,7 @@ import sys
 import tempfile
 
 from . import config
+from ..atomic import atomic_text_writer
 
 SCHEMA = "re-grade/1"
 
@@ -488,11 +489,9 @@ def record(round_n, verdict):
     file per challenge so concurrent T_DRAIN grading never interleaves."""
     p = outcome_path(round_n, verdict["hexid"])
     os.makedirs(os.path.dirname(p), exist_ok=True)
-    tmp = str(p) + ".tmp"
-    with open(tmp, "w") as fh:
+    with atomic_text_writer(p) as fh:
         json.dump(verdict, fh, indent=2)
         fh.write("\n")
-    os.replace(tmp, p)
     return p
 
 

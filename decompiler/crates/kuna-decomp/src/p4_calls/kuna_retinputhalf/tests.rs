@@ -74,7 +74,7 @@ fn a_written_varnode_is_never_the_input_parameter_shape() {
     let r = ram(&fd);
     let op = fd.new_op(1, Address::new(Rc::clone(&r), 0x2100));
     fd.obank_mut().change_opcode(op, TypeOp::new(OpCode::CPUI_COPY, 0, "COPY"));
-    fd.op_set_input(op, src, 0);
+    fd.op_set_input(op, src, 0).expect("wire input");
     let out = fd.new_varnode_out(8, &Address::new(r, 0x2100), op).expect("varnode out");
     assert!(
         !is_input_parameter(&fd, out),

@@ -18,12 +18,6 @@
 //! Fixture: `kuna-analysis/tests/fixtures/aif_gap_x86_64` — a stripped x86-64 ELF
 //! whose `0x13c9` function calls `sub_1129` … `sub_1393` in sequence, so a bound
 //! that lands after the first call is trivially observable in the body.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -57,24 +51,15 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture. `None` ⇒ specs-less skip.
-fn load() -> Option<ConsoleProgram> {
+/// Bootstrap the fixture.
+fn load() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64");
-    let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_funcbounds: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn code_addr(prog: &ConsoleProgram, vma: u64) -> Address {
@@ -112,7 +97,7 @@ fn reported_extent(prog: &ConsoleProgram) -> u64 {
 /// feature must not disturb.
 #[test]
 fn an_undeclared_function_keeps_its_derived_extent_and_unbounded_flow() {
-    let Some(mut prog) = load() else { return };
+    let mut prog = load();
     assert_eq!(prog.declared_extent(ENTRY), 0, "nothing is declared yet");
     // The derived clip: `.text` ends at 0x1673 and `_DT_FINI` is the first entry
     // of the NEXT code section, so the section end wins over the neighbour.
@@ -128,7 +113,7 @@ fn an_undeclared_function_keeps_its_derived_extent_and_unbounded_flow() {
 /// and names the entry.
 #[test]
 fn a_declared_boundary_bounds_the_flow_and_the_reported_extent() {
-    let Some(mut prog) = load() else { return };
+    let mut prog = load();
     let addr = code_addr(&prog, ENTRY);
     let name = prog
         .declare_function(addr, Some("stage1"), (DECLARED_END - ENTRY) as i32)
@@ -155,7 +140,7 @@ fn a_declared_boundary_bounds_the_flow_and_the_reported_extent() {
 /// mode, so declaring a boundary that cut any real edge produced nothing at all.
 #[test]
 fn a_declared_end_a_branch_targets_clips_instead_of_aborting() {
-    let Some(mut prog) = load() else { return };
+    let mut prog = load();
     let addr = code_addr(&prog, BRANCH_ENTRY);
     prog.declare_function(addr.clone(), Some("deregister"), (BRANCH_END - BRANCH_ENTRY) as i32)
         .expect("the declaration is accepted");
@@ -191,7 +176,7 @@ fn a_declared_end_a_branch_targets_clips_instead_of_aborting() {
 /// bounds` warning.
 #[test]
 fn declaring_the_derived_extent_reproduces_the_undeclared_body() {
-    let Some(mut prog) = load() else { return };
+    let mut prog = load();
     let addr = code_addr(&prog, LEAF_ENTRY);
     let seed = DecompileSeed::plain(&[], &[]);
     let natural = decompile_one(prog.arch_mut(), "sub_1129", addr.clone(), 0, &seed, &[])
@@ -222,7 +207,7 @@ fn declaring_the_derived_extent_reproduces_the_undeclared_body() {
 /// by name afterwards.
 #[test]
 fn a_declared_entry_becomes_resolvable_by_name() {
-    let Some(mut prog) = load() else { return };
+    let mut prog = load();
     // 0x1500 is interior to the merged blob: discovery does not know it.
     let interior = 0x1500u64;
     assert!(prog.lookup_symbol("hidden_stage").is_none());
@@ -243,7 +228,7 @@ fn a_declared_entry_becomes_resolvable_by_name() {
 /// gave it: a boundary assertion must not silently rename `main` to `sub_<addr>`.
 #[test]
 fn an_unnamed_declaration_does_not_overwrite_an_existing_name() {
-    let Some(mut prog) = load() else { return };
+    let mut prog = load();
     let named = prog
         .function_entries_canonical()
         .iter()
@@ -260,30 +245,25 @@ fn an_unnamed_declaration_does_not_overwrite_an_existing_name() {
         .any(|e| e.addr.get_offset() == named && e.name == "_DT_FINI"));
 }
 
-/// Bootstrap an arbitrary fixture with analysis options set before the deferred
-/// analysis commit. `None` ⇒ specs-less skip.
-fn load_fixture_with_options(rel: &str, options: &[(&str, &str)]) -> Option<ConsoleProgram> {
+/// Bootstrap an arbitrary fixture with analysis options set before the deferred analysis
+/// commit.
+fn load_fixture_with_options(rel: &str, options: &[(&str, &str)]) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(rel);
-    let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("verify_funcbounds: skipping {rel} (bootstrap failed): {}", e.explain());
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     for (name, value) in options {
         prog.arch_mut()
             .set_kuna_option(name, value)
             .unwrap_or_else(|e| panic!("option {name}={value} applies: {}", e.explain()));
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// Bootstrap an arbitrary fixture with the default analysis options.
-fn load_fixture(rel: &str) -> Option<ConsoleProgram> {
+fn load_fixture(rel: &str) -> ConsoleProgram {
     load_fixture_with_options(rel, &[])
 }
 
@@ -294,15 +274,11 @@ fn load_fixture(rel: &str) -> Option<ConsoleProgram> {
 /// external-symbol note and exited non-zero.
 #[test]
 fn declaring_an_import_keeps_its_external_provenance() {
-    let Some(mut prog) = load_fixture("et_rel_status_arm.o") else { return };
-    let Some(import) = prog
+    let mut prog = load_fixture("et_rel_status_arm.o");
+    let import = prog
         .function_entries_canonical()
         .into_iter()
-        .find(|e| e.provenance == kuna_console::engine::EntryProvenance::UndefinedExternal)
-    else {
-        eprintln!("verify_funcbounds: skipping (no undefined external in the fixture)");
-        return;
-    };
+        .find(|e| e.provenance == kuna_console::engine::EntryProvenance::UndefinedExternal).expect("required fixture setup");
     let vma = import.addr.get_offset();
     let addr = code_addr(&prog, vma);
     prog.declare_function(addr, None, 0).expect("declared");
@@ -323,15 +299,11 @@ fn declaring_an_import_keeps_its_external_provenance() {
 /// and declaring at the odd shadow left an entry no load would ever find.
 #[test]
 fn a_thumb_declaration_folds_the_mode_bit() {
-    let Some(mut prog) = load_fixture("arm_thumb_linked_le32") else { return };
-    let Some(entry) = prog
+    let mut prog = load_fixture("arm_thumb_linked_le32");
+    let entry = prog
         .function_entries_canonical()
         .into_iter()
-        .find(|e| e.name == "compute")
-    else {
-        eprintln!("verify_funcbounds: skipping (the fixture lost its `compute` entry)");
-        return;
-    };
+        .find(|e| e.name == "compute").expect("required fixture setup");
     assert_eq!(entry.addr.get_offset() % 2, 0, "the enumeration reports the even entry");
     let even = entry.addr.get_offset();
     let addr = code_addr(&prog, even | 1);
@@ -346,7 +318,7 @@ fn a_thumb_declaration_folds_the_mode_bit() {
 /// to that cutoff's halt rather than aborting the otherwise valid function.
 #[test]
 fn a_pcode_free_branch_resolves_at_a_discovered_funcbound_cutoff() {
-    let Some(mut prog) = load_fixture_with_options(
+    let mut prog = load_fixture_with_options(
         "funcbound_cutoff_i386",
         &[
             ("listing", "on"),
@@ -354,7 +326,7 @@ fn a_pcode_free_branch_resolves_at_a_discovered_funcbound_cutoff() {
             ("aif", "on"),
             ("aifstrict", "on"),
         ],
-    ) else { return };
+    );
     assert!(
         prog.function_entries_canonical()
             .iter()

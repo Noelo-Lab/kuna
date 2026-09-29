@@ -479,7 +479,7 @@ const RETURN_WALK_BLOCKS: usize = 4;
 /// return register: the last CALL before `ret` in its block, or in the chain of
 /// single predecessors above it. `None` when a join, an indirect call or the
 /// entry comes first.
-fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
+pub(crate) fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
     let mut cur = data.op_previous_op(ret);
     let mut bl = data.obank().get(ret)?.get_parent()?;
     for _ in 0..RETURN_WALK_BLOCKS {

@@ -1,22 +1,7 @@
-//! The user-facing `kuna` CLI — one Rust binary that reimplements the four
-//! former Python entry points (`decompile`, `run_tests`, `catalog`, `slacomp`,
-//! which lived in the old `kuna/` Python package and were removed after the port):
-//!
-//! ```text
-//!   kuna decompile <binary> <func> [--addr] [--option NAME VALUE]... [--kassert ARGS]...
-//!                                 [--define-function <start[-end][=name] | @file>]...
-//!   kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F]
-//!             [--save-baseline F] [--json] [--binary P] [--sleighpath D]
-//!   kuna catalog [--json|--markdown|--check] [--option NAME] [--tier T]
-//!   kuna specs [-a <dir>] [<slaspec>...] [--diff]
-//! ```
-//!
-//! Most subcommands shell out to the already-built engine binaries (the same
-//! console command surface the Python drove), so their output is byte-identical;
-//! `catalog --check` runs in-process against `kuna-decomp`.  Argument parsing is
-//! hand-rolled (matching the workspace convention of avoiding a new dep) and
-//! mirrors each module's argparse contract.
+//! Command dispatch for the kuna CLI.
 
+mod args;
+mod callgraph;
 mod catalog;
 mod crypto;
 mod cryptosig;
@@ -29,8 +14,12 @@ mod disassemble;
 mod fid;
 mod assertdecl;
 mod funcdecl;
+mod function_info;
+mod image;
 mod jobs;
 mod jsonfmt;
+mod limits;
+mod loadtime;
 mod optname;
 mod output;
 mod paths;
@@ -45,7 +34,31 @@ mod xrefs;
 
 use std::process::ExitCode;
 
+use crate::args::take_value;
 use test::{Mode, TestArgs};
+
+type CommandHandler = fn(&[String]) -> i32;
+
+const COMMANDS: &[(&str, CommandHandler)] = &[
+    ("decompile", |args| args::report(decompile::main(args))),
+    ("decompile-all", decompile_all::run),
+    ("decompile-project", decompile_project::run),
+    ("decompile-graph", decompile_graph::run),
+    ("functions", decompile_all::run_functions),
+    ("disassemble", disassemble::run),
+    ("read", disassemble::run_read),
+    ("xrefs", xrefs::run),
+    ("strings", strings::run),
+    ("crypto", crypto::run),
+    ("unpack", unpack::run),
+    ("docs", docs::run),
+    ("install-skill", |args| args::report(skill::run(args))),
+    ("test", |args| args::report(cmd_test(args))),
+    ("catalog", |args| args::report(cmd_catalog(args))),
+    ("modes", cmd_modes),
+    ("specs", specs::run),
+    ("fid", fid::run),
+];
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -57,24 +70,6 @@ fn main() -> ExitCode {
     let rest = &args[2..];
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {
-        "decompile" => decompile::main(rest),
-        "decompile-all" => decompile_all::run(rest),
-        "decompile-project" => decompile_project::run(rest),
-        "decompile-graph" => decompile_graph::run(rest),
-        "functions" => decompile_all::run_functions(rest),
-        "test" => cmd_test(rest),
-        "catalog" => cmd_catalog(rest),
-        "docs" => docs::run(rest),
-        "install-skill" => skill::run(rest),
-        "modes" => cmd_modes(rest),
-        "specs" => specs::run(rest),
-        "fid" => fid::run(rest),
-        "unpack" => unpack::run(rest),
-        "strings" => strings::run(rest),
-        "crypto" => crypto::run(rest),
-        "disassemble" => disassemble::run(rest),
-        "read" => disassemble::run_read(rest),
-        "xrefs" => xrefs::run(rest),
         "-V" | "--version" | "version" => {
             // Release CI bakes the repo-derived MAJOR.MINOR (docs/release.md)
             // via KUNA_VERSION; dev builds report the workspace Cargo version.
@@ -91,17 +86,22 @@ fn main() -> ExitCode {
             0
         }
         other => {
-            eprintln!("kuna: unknown subcommand {other:?}");
-            usage();
-            2
+            if let Some((_, run)) = COMMANDS.iter().find(|(name, _)| *name == other) {
+                run(rest)
+            } else {
+                eprintln!("kuna: unknown subcommand {other:?}");
+                usage();
+                2
+            }
         }
     };
     ExitCode::from(code as u8)
 }
 
 fn usage() {
+    let names = COMMANDS.iter().map(|(name, _)| *name).collect::<Vec<_>>().join("|");
     eprintln!(
-        "usage: kuna <decompile|decompile-all|decompile-project|decompile-graph|functions|disassemble|read|xrefs|strings|crypto|unpack|docs|install-skill|test|catalog|modes|specs|fid> ...\n\
+        "usage: kuna <{names}> ...\n\
          \n\
          LLM agents: run `kuna install-skill` once.  It installs the kuna skill -- how to drive\n\
          this CLI well, embedded in the binary, no network -- for Claude Code, Codex and OpenCode\n\
@@ -141,9 +141,8 @@ fn apply_engine(engine: Option<&str>) {
 
 // --- test --------------------------------------------------------------------
 
-fn cmd_test(argv: &[String]) -> i32 {
+fn cmd_test(argv: &[String]) -> Result<i32, String> {
     let mut mode = Mode::All;
-    let mut mode_set = false;
     let mut names: Vec<String> = Vec::new();
     let mut binary: Option<String> = None;
     let mut engine: Option<String> = None;
@@ -159,48 +158,39 @@ fn cmd_test(argv: &[String]) -> i32 {
         match a {
             "--all" => {
                 mode = Mode::All;
-                mode_set = true;
             }
             "--unittests" => {
                 mode = Mode::Unittests;
-                mode_set = true;
             }
             "--datatests" => {
                 mode = Mode::Datatests;
-                mode_set = true;
             }
             "--name" => {
-                if let Some(v) = take_value(argv, &mut i, "--name") {
-                    names.push(v);
-                }
+                names.push(take_value(argv, &mut i, "--name")?);
             }
-            "--binary" => binary = take_value(argv, &mut i, "--binary"),
-            "--engine" => engine = take_value(argv, &mut i, "--engine"),
-            "--sleighpath" => sleighpath = take_value(argv, &mut i, "--sleighpath"),
-            "--datatests-dir" => datatests_dir = take_value(argv, &mut i, "--datatests-dir"),
-            "--baseline" => baseline = take_value(argv, &mut i, "--baseline"),
-            "--save-baseline" => save_baseline = take_value(argv, &mut i, "--save-baseline"),
+            "--binary" => binary = Some(take_value(argv, &mut i, "--binary")?),
+            "--engine" => engine = Some(take_value(argv, &mut i, "--engine")?),
+            "--sleighpath" => sleighpath = Some(take_value(argv, &mut i, "--sleighpath")?),
+            "--datatests-dir" => datatests_dir = Some(take_value(argv, &mut i, "--datatests-dir")?),
+            "--baseline" => baseline = Some(take_value(argv, &mut i, "--baseline")?),
+            "--save-baseline" => save_baseline = Some(take_value(argv, &mut i, "--save-baseline")?),
             "--json" => json = true,
             "-h" | "--help" => {
                 usage_test();
-                return 0;
+                return Ok(0);
             }
             s if s.starts_with("--") => {
-                eprintln!("error: unknown option {s}");
-                return 2;
+                return Err(format!("unknown option {s}"));
             }
             other => {
-                eprintln!("error: unexpected argument {other:?}");
-                return 2;
+                return Err(format!("unexpected argument {other:?}"));
             }
         }
         i += 1;
     }
-    let _ = mode_set;
 
     if !names.is_empty() && mode == Mode::All {
-        eprintln!("error: --name requires --unittests or --datatests");
-        return 2;
+        return Err("--name requires --unittests or --datatests".into());
     }
     apply_engine(engine.as_deref());
 
@@ -214,7 +204,7 @@ fn cmd_test(argv: &[String]) -> i32 {
         save_baseline,
         json,
     };
-    test::run_cmd(&targs)
+    Ok(test::run_cmd(&targs))
 }
 
 fn usage_test() {
@@ -239,7 +229,7 @@ fn usage_test() {
 
 // --- catalog -----------------------------------------------------------------
 
-fn cmd_catalog(argv: &[String]) -> i32 {
+fn cmd_catalog(argv: &[String]) -> Result<i32, String> {
     let mut option: Option<String> = None;
     let mut tier: Option<String> = None;
     let mut json = false;
@@ -253,42 +243,35 @@ fn cmd_catalog(argv: &[String]) -> i32 {
     while i < argv.len() {
         let a = argv[i].as_str();
         match a {
-            "--option" => option = take_value(argv, &mut i, "--option"),
-            "--tier" => tier = take_value(argv, &mut i, "--tier"),
+            "--option" => option = Some(take_value(argv, &mut i, "--option")?),
+            "--tier" => tier = Some(take_value(argv, &mut i, "--tier")?),
             "--json" => json = true,
             "--markdown" => markdown = true,
             "--check" => check = true,
-            "--engine" => engine = take_value(argv, &mut i, "--engine"),
+            "--engine" => engine = Some(take_value(argv, &mut i, "--engine")?),
             "--decomp-dbg" => {
-                if let Some(v) = take_value(argv, &mut i, "--decomp-dbg") {
-                    std::env::set_var("KUNA_DECOMP_DBG", v);
-                    decomp_dbg_flag = true;
-                }
+                std::env::set_var("KUNA_DECOMP_DBG", take_value(argv, &mut i, "--decomp-dbg")?);
+                decomp_dbg_flag = true;
             }
             "--sleighpath" => {
-                if let Some(v) = take_value(argv, &mut i, "--sleighpath") {
-                    std::env::set_var("KUNA_SPECS", v);
-                }
+                std::env::set_var("KUNA_SPECS", take_value(argv, &mut i, "--sleighpath")?);
             }
             "-h" | "--help" => {
                 usage_catalog();
-                return 0;
+                return Ok(0);
             }
             s if s.starts_with("--") => {
-                eprintln!("error: unknown option {s}");
-                return 2;
+                return Err(format!("unknown option {s}"));
             }
             other => {
-                eprintln!("error: unexpected argument {other:?}");
-                return 2;
+                return Err(format!("unexpected argument {other:?}"));
             }
         }
         i += 1;
     }
     // argparse mutually-exclusive group: at most one of json/markdown/check.
     if (json as u8) + (markdown as u8) + (check as u8) > 1 {
-        eprintln!("error: --json, --markdown, --check are mutually exclusive");
-        return 2;
+        return Err("--json, --markdown, --check are mutually exclusive".into());
     }
     apply_engine(engine.as_deref());
     let pinned_by = if decomp_dbg_flag {
@@ -297,7 +280,7 @@ fn cmd_catalog(argv: &[String]) -> i32 {
         paths::pinned_by("KUNA_DECOMP_DBG")
     };
 
-    if check {
+    Ok(if check {
         catalog::cmd_check(pinned_by)
     } else if json {
         catalog::cmd_json(option.as_deref(), pinned_by)
@@ -305,7 +288,7 @@ fn cmd_catalog(argv: &[String]) -> i32 {
         catalog::cmd_markdown(option.as_deref())
     } else {
         catalog::cmd_text(option.as_deref(), tier.as_deref(), pinned_by)
-    }
+    })
 }
 
 fn usage_catalog() {
@@ -398,17 +381,4 @@ fn cmd_modes(argv: &[String]) -> i32 {
         }
     }
     output::emit_with_status(&text, 0)
-}
-
-// --- helpers -----------------------------------------------------------------
-
-/// Consume the value following a flag at `argv[i]`, advancing `i` past it.
-fn take_value(argv: &[String], i: &mut usize, flag: &str) -> Option<String> {
-    if *i + 1 < argv.len() {
-        *i += 1;
-        Some(argv[*i].clone())
-    } else {
-        eprintln!("error: {flag} requires a value");
-        None
-    }
 }

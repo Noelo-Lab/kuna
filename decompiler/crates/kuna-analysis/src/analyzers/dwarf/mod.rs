@@ -115,30 +115,16 @@ use kuna_decomp::fspec::PrototypePieces;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, SymFact, SymKind};
 
-/// The `.debug_line` source-line side of the DWARF analyzer (`DwarfLinesPass`,
-/// the kuna analog of `DWARFLineInfoCommentScript`). Separate pass + gate
-/// (`dwarf_lines`, default-off) from the names/types pass below.
 mod lines;
 pub use lines::DwarfLinesPass;
 
-/// (kuna `cppproto`) The C++ arm — `DW_AT_specification`/`DW_AT_abstract_origin`
-/// resolution, namespace/class name qualification, and address-keyed prototype
-/// binding. See [`kuna_cppproto`].
 mod kuna_cppproto;
 
-/// (kuna `typedepth`) The type mapper's recursion guard — upstream's per-DIE
-/// cycle counter in place of a fixed hop budget. See [`kuna_typedepth`].
 mod kuna_typedepth;
 use kuna_typedepth::TypeWalk;
 
-/// (kuna `dwarfstructs`) The aggregate-LAYOUT arm — `DW_AT_byte_size` plus the
-/// `DW_TAG_member` children, installed on the interned struct/union instead of
-/// leaving it a zero-size shell. See [`kuna_dwarfstructs`].
 mod kuna_dwarfstructs;
 
-/// (kuna `dwarfvariants`) The DISCRIMINATED-UNION arm — `DW_TAG_variant_part` /
-/// `DW_AT_discr` / `DW_TAG_variant`, i.e. the layout a Rust tagged enum keeps
-/// there instead of in `DW_TAG_member` children. See [`kuna_dwarfvariants`].
 mod kuna_dwarfvariants;
 
 /// gimli's section reader: a byte slice tagged with the run-time endianness.
@@ -884,9 +870,9 @@ fn build_pieces(
     })
 }
 
-/// Collect the named, typed stack LOCALS of a defined subprogram (subtask 3): each
+/// Collect the named, typed stack locals of a defined subprogram: each
 /// direct `DW_TAG_variable` / `DW_TAG_formal_parameter` child carrying a single
-/// `DW_OP_fbreg <off>` location becomes a [`LocalFact`] at stack offset
+/// `DW_OP_fbreg <off>` location becomes a [`LocalFact`](crate::pass::LocalFact) at stack offset
 /// `cfa + off`, with its type mapped from `DW_AT_type` by [`build_datatype`].
 ///
 /// Faithful reduction of `DWARFFunctionImporter.processSubprogram` →

@@ -29,6 +29,7 @@ import sys
 
 from . import config
 from ..pipeline import state as pstate
+from ..atomic import atomic_text_writer
 
 # Resources a track always contends for, regardless of what the need says it touches.
 # Every quality need needs the whole counter set, so "at most one option-adding builder in
@@ -137,10 +138,8 @@ def write_contracts(picks, round_n, path=None):
          "touches": list(getattr(p["need"], "touches", []) or [])}
         for p in picks]}
     os.makedirs(os.path.dirname(str(path)), exist_ok=True)
-    tmp = str(path) + ".tmp"
-    with open(tmp, "w") as fh:
+    with atomic_text_writer(path) as fh:
         json.dump(doc, fh, indent=2)
-    os.replace(tmp, path)
     return path
 
 

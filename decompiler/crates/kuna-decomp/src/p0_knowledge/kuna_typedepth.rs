@@ -37,10 +37,7 @@ pub const TYPEDEPTH_ENV: &str = "KUNA_TYPEDEPTH";
 /// Whether full-depth DWARF type resolution is enabled for this process.
 /// Default **on**: only an explicit off-token in [`TYPEDEPTH_ENV`] disables it.
 pub fn typedepth_enabled() -> bool {
-    match std::env::var(TYPEDEPTH_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
-        Err(_) => true, // unset ⇒ default-on
-    }
+    crate::options::env_toggle(TYPEDEPTH_ENV, true)
 }
 
 /// Bridge a `set_kuna_option("typedepth", val)` toggle to [`TYPEDEPTH_ENV`] so a

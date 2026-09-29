@@ -1,52 +1,16 @@
-//! WS1 -- the SLEIGH lexer (port of `decompiler/cpp/slghscan.l`).
+//! SLEIGH scanner and preprocessor, ported from Ghidra's slghscan.l.
 //!
-//! The C++ lexer is a flex scanner with **start-conditions** (`%x`) that switch
-//! the active token set per syntactic region, plus a hand-written preprocessor
-//! layer (`@include` / `@define` / `@ifdef` / `@if` ... `@endif`) that runs
-//! *before* tokenization.  This module is the hand port of that scanner.
-//!
-//! ## Start conditions (flex `%x`, slghscan.l:483-488)
-//!
-//! - `INITIAL`    -- top level: `define`/`attach`/`macro`/`with`/subtable names.
-//! - `defblock`   -- inside `define`/`attach` blocks (token/context/space/varnode).
-//! - `macroblock` -- a macro's parameter list `( ... )`.
-//! - `print`      -- a constructor's display (mnemonic) section, up to `is`.
-//! - `pattern`    -- a constructor's pattern/context section, up to `{`.
-//! - `sem`        -- a constructor's semantic (p-code) section `{ ... }`.
-//! - `preproc`    -- transient state used while a preprocessor directive erases
-//!   a region (`last_preproc` saves the state to return to).
-//!
-//! The scanner returns to `INITIAL` (or the saved state) on the structural
-//! delimiters (`;`, `is`, `{`, `}`); `slgh->calcContextLayout()` is triggered as
-//! a side effect when `attach`/`with` is scanned (slghscan.l:501-502).
-//!
-//! ## Porting strategy: longest-match per start-condition
-//!
-//! flex picks, at each input position, the rule with the **longest match**
-//! (ties broken by rule order).  This module reproduces that explicitly: for
-//! the current [`ScanState`] it tries each rule's matcher in the flex source
-//! order, keeps the longest match, then runs that rule's action.  An action
-//! either returns a [`Token`] or loops (whitespace / comment / preprocessor /
-//! `$(...)` macro expansion produce no token).
-//!
-//! Two flex features are honored exactly:
-//! - The `^@[^\n]*\n?` preprocessor rule and the `<preproc>^.*\n` erasure rule
-//!   are **column-0 anchored** (the leading `^`): an `@` mid-line falls to the
-//!   `.` rule instead.  We track whether the cursor is at the start of a line.
-//! - The number rules and the operator rules interact via longest-match: e.g.
-//!   `0xZZ` lexes as `INTEGER 0` then identifier `xZZ`, because `0x[0-9a-fA-F]+`
-//!   needs at least one hex digit and otherwise loses to `[0-9]+` matching `0`.
-//!
-//! ## Module ownership: WS1 owns this file exclusively.
-
-#![allow(dead_code)]
+//! Each [`ScanState`] selects a token set. Rules use longest-match selection,
+//! breaking ties in source order, as flex does. Preprocessor directives and
+//! `$(...)` macro expansion run before tokenization. Directive recognition is
+//! anchored at the start of a line.
 
 use kuna_base::error::KunaResult;
 
 /// Lexer start-conditions, mirroring the flex `%x` states (slghscan.l:483-488).
 ///
 /// `Preproc` corresponds to the `preproc` `%x` state used during directive
-/// erasure; the state to resume is saved in [`SleighScanner::last_preproc`].
+/// erasure; the scanner saves the previous state to resume afterwards.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScanState {
     /// Top-level (flex `INITIAL`).
@@ -85,9 +49,7 @@ pub enum TokenValue {
     Intb(i64),
     /// `STRING` / `SYMBOLSTRING` -- an identifier or quoted string (bison `string *str`).
     Str(Vec<u8>),
-    /// A token that resolves to an existing symbol: carries the symbol name the
-    /// parser looks up (bison `*sym` handle alternatives).  WS2 maps this to a
-    /// concrete `SleighSymbol` reference during parsing.
+    /// Name of an existing symbol, resolved by the parser to a symbol id.
     SymbolName(Vec<u8>),
 }
 
@@ -174,12 +136,8 @@ struct FileStreamState {
 
 /// The SLEIGH lexer: a hand port of the flex scanner in `slghscan.l`.
 ///
-/// Owns the include stack, the active start-condition, and the preprocessor's
-/// `@if` nesting state.  It does **not** own the symbol table or the
-/// [`crate::slgh_compile::SleighCompile`] driver; `find_symbol`-style lookups and
-/// the `nextLine`/`calcContextLayout`/`parseFromNewFile` side effects are routed
-/// back to the driver through the [`ScannerHost`] trait so this module stays
-/// file-disjoint from WS4.
+/// Owns include and macro buffers, the active start-condition and `@if`
+/// nesting. Symbol lookups and compiler side effects go through [`ScannerHost`].
 pub struct SleighScanner {
     /// Current flex start-condition.
     state: ScanState,
@@ -206,27 +164,17 @@ pub struct SleighScanner {
     negative_if: i32,
 }
 
-/// Side-effect callbacks the scanner makes back into the compile driver.
-///
-/// Mirrors the `slgh->...` calls embedded in `slghscan.l` (e.g. `nextLine`,
-/// `calcContextLayout`, `parseFromNewFile`/`parseFileFinished`, preproc value
-/// get/set, `find_symbol` resolution).  WS4 implements this on `SleighCompile`;
-/// keeping it a trait lets WS1 own `slghscan.rs` without touching `slgh_compile.rs`.
+/// Compiler callbacks for source locations, includes, preprocessing and symbol
+/// lookup. Implemented by [`crate::slgh_compile::SleighCompile`].
 pub trait ScannerHost {
     /// Advance the current-file line counter (`slgh->nextLine()`).
     fn next_line(&mut self);
     /// Finalize the context layout (`slgh->calcContextLayout()`), triggered by
     /// `attach`/`with`.
     fn calc_context_layout(&mut self);
-    /// Resolve and read an `@include` file.  Mirrors the C++
-    /// `slgh->parseFromNewFile(fname); fname = slgh->grabCurrentFilePath();
-    /// sleighin = fopen(fname,...)` sequence in `preprocess()`: the driver
-    /// resolves `fname` against the include path and records the new file as
-    /// current, and the lexer reads its bytes.  Returns the file contents, or
-    /// `None` if the file could not be opened (C++ aborts; WS4 reports the
-    /// error).  **(WS1 freeze addition -- see docs/rust-port/sleigh-compiler/
-    /// ws1-lexer.md; replaces the bare `parse_from_new_file` the skeleton
-    /// declared.)**
+    /// Resolve an `@include` path, make it current and return its bytes.
+    /// The compiler restores the previous location if reading fails and
+    /// returns `None`; the scanner reports the preprocessor error.
     fn read_include(&mut self, fname: &[u8]) -> Option<Vec<u8>>;
     /// Pop the current file/macro (`slgh->parseFileFinished`).
     fn parse_file_finished(&mut self);
@@ -241,9 +189,8 @@ pub trait ScannerHost {
     /// Resolve an identifier to an existing symbol's kind, for `find_symbol`
     /// (slghscan.l:389).  Returns `None` if the identifier is unknown (-> `STRING`).
     fn find_symbol_kind(&self, name: &[u8]) -> Option<SymbolTokenKind>;
-    /// Report a fatal preprocessor error (`preproc_error`, slghscan.l:48): the
-    /// C++ prints and `exit(1)`s.  The default panics, matching the abort; WS4
-    /// may route it through its error machinery.
+    /// Report a fatal preprocessor error (`preproc_error`, slghscan.l:48).
+    /// The default implementation panics.
     fn preproc_error(&mut self, msg: &str) -> ! {
         panic!("SLEIGH preprocessor error: {msg}");
     }

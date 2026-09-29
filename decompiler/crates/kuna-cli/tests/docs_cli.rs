@@ -1,260 +1,178 @@
-//! `kuna docs` — the reference manual compiled into the binary.
-//!
-//! Two properties are on trial here, and the second is the one that rots
-//! silently.
-//!
-//! **The surface works, with no repo on disk.** That is the entire point of
-//! `include_str!`-ing the documents: a release binary is often all a driving
-//! agent has.  `the_binary_carries_its_docs_out_of_the_repo` copies the built
-//! executable into an empty directory and reads a document out of it there.
-//!
-//! **The embedded bytes are still the bytes in `docs/`.**  `docs/options.md` is
-//! GENERATED (`kuna catalog --markdown > docs/options.md`), already fenced on
-//! disk by `kuna-decomp/tests/options_md_fresh.rs`; embedding it adds a second
-//! place a stale catalog could hide.  `embedded_docs_match_the_files_on_disk`
-//! closes that: `include_str!` is tracked by cargo's dep-info, so touching a
-//! document rebuilds the crate, and this test is what proves the rebuild
-//! actually happened rather than trusting it.
-//!
-//! The module under test lives in a `[[bin]]`-only crate, so it is pulled in by
-//! path along with the two crate modules it uses.  Their own `#[cfg(test)]`
-//! units therefore run in this binary too; that is noise, not a second suite.
+//! Validate the embedded manual through the CLI, including a relocated binary.
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::path::Path;
+use std::process::{Child, Command, Output, Stdio};
+use std::sync::Mutex;
 
-#[allow(dead_code)]
-#[path = "../src/docs.rs"]
-mod docs;
-#[allow(dead_code)]
-#[path = "../src/jsonfmt.rs"]
-mod jsonfmt;
-#[allow(dead_code)]
-#[path = "../src/output.rs"]
-mod output;
+use serde_json::Value;
 
-use jsonfmt::Json;
+mod common;
+use common::repo_root;
 
-/// The five topics an agent driving kuna needs, in the order `kuna docs` lists
-/// them: the command reference, the option catalog it drives, the working rules,
-/// then the two models those rules lean on.
 const REQUIRED: [&str; 5] = ["cli", "options", "agents", "phases", "modes"];
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
+// A concurrent fork can inherit the copy's writable descriptor until exec,
+// causing the relocated executable to fail with ETXTBSY even after copy returns.
+static PROCESS_SETUP: Mutex<()> = Mutex::new(());
+
+fn spawn_docs(args: &[&str]) -> Child {
+    let _setup = PROCESS_SETUP.lock().unwrap();
+    Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .arg("docs")
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn kuna docs")
 }
 
-// --- the embed itself --------------------------------------------------------
+fn run_docs(args: &[&str]) -> Output {
+    spawn_docs(args).wait_with_output().expect("wait for kuna docs")
+}
+
+fn docs(args: &[&str]) -> String {
+    let output = run_docs(args);
+    assert!(
+        output.status.success(),
+        "kuna docs {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("UTF-8 document")
+}
+
+fn index() -> Vec<Value> {
+    serde_json::from_str(&docs(&["--json"])).expect("JSON topic list")
+}
+
+fn source(topic: &str) -> String {
+    std::fs::read_to_string(repo_root().join(format!("docs/{topic}.md"))).unwrap()
+}
+
+fn assert_document(topic: &str, actual: &[u8]) {
+    let expected = source(topic);
+    let expected = expected.as_bytes();
+    assert!(
+        actual == expected,
+        "stale embedded {topic}: {} bytes, expected {}; first difference at byte {}",
+        actual.len(),
+        expected.len(),
+        actual
+            .iter()
+            .zip(expected)
+            .position(|(a, b)| a != b)
+            .unwrap_or(actual.len().min(expected.len()))
+    );
+}
 
 #[test]
 fn embedded_docs_match_the_files_on_disk() {
-    let root = repo_root();
-    for d in docs::DOCS {
-        let path = root.join(d.path);
-        let on_disk =
-            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        let regenerate = if d.path == "docs/options.md" {
-            " That file is generated: `kuna catalog --markdown > docs/options.md` first."
-        } else {
-            ""
-        };
-        assert!(
-            on_disk == d.body,
-            "`kuna docs {}` would ship a stale {}: the binary embeds {} bytes, the file holds {}. \
-             Rebuild kuna-cli.{}",
-            d.topic,
-            d.path,
-            d.body.len(),
-            on_disk.len(),
-            regenerate
-        );
+    for topic in REQUIRED {
+        assert_document(topic, docs(&[topic]).as_bytes());
     }
 }
 
 #[test]
 fn the_topics_an_agent_needs_are_embedded_in_priority_order() {
-    let topics: Vec<&str> = docs::DOCS.iter().map(|d| d.topic).collect();
-    assert!(topics.len() >= REQUIRED.len(), "only {topics:?} embedded");
-    assert_eq!(&topics[..REQUIRED.len()], &REQUIRED);
-    for d in docs::DOCS {
-        assert!(!d.summary.is_empty(), "{} has no summary", d.topic);
-        assert!(d.body.len() > 1024, "{} embedded only {} bytes", d.topic, d.body.len());
+    let rows = index();
+    let topics: Vec<_> = rows
+        .iter()
+        .map(|row| row["topic"].as_str().unwrap())
+        .collect();
+    assert!(topics.starts_with(&REQUIRED), "{topics:?}");
+    for row in rows {
+        assert!(!row["title"].as_str().unwrap().is_empty());
+        assert!(!row["summary"].as_str().unwrap().is_empty());
+        assert!(row["bytes"].as_u64().unwrap() > 1024);
     }
 }
 
 #[test]
 fn the_option_catalog_arrives_whole() {
-    let catalog = docs::lookup("options").expect("options topic").body;
-    assert!(catalog.contains("## Symptom index"), "the symptom index is missing");
-    assert!(
-        catalog.lines().count() > 900,
-        "the catalog embedded only {} lines",
-        catalog.lines().count()
-    );
+    let catalog = docs(&["options"]);
+    assert!(catalog.contains("## Symptom index"));
+    assert!(catalog.lines().count() > 900);
 }
-
-// --- the rendered surfaces ---------------------------------------------------
 
 #[test]
 fn the_list_is_one_line_per_topic() {
-    let list = docs::render_list();
-    let lines: Vec<&str> = list.lines().collect();
-    assert_eq!(lines.len(), docs::DOCS.len());
-    for (line, d) in lines.iter().zip(docs::DOCS) {
-        assert!(line.starts_with(d.topic), "{line:?} does not lead with {}", d.topic);
-        assert!(line.contains(d.summary), "{line:?} dropped its summary");
+    let list = docs(&[]);
+    let lines: Vec<_> = list.lines().collect();
+    let rows = index();
+    assert_eq!(lines.len(), rows.len());
+    for (line, row) in lines.iter().zip(rows) {
+        assert_eq!(line.split_whitespace().next(), row["topic"].as_str());
+        assert!(line.contains(row["summary"].as_str().unwrap()), "{line}");
     }
 }
 
 #[test]
 fn the_json_list_is_the_documented_shape() {
-    let text = docs::render_json();
-    let items = match jsonfmt::parse(&text).expect("--json must parse") {
-        Json::Array(items) => items,
-        other => panic!("--json must emit an array, got {other:?}"),
-    };
-    assert_eq!(items.len(), docs::DOCS.len());
-    for (item, d) in items.iter().zip(docs::DOCS) {
-        let pairs = match item {
-            Json::Object(pairs) => pairs,
-            other => panic!("expected an object, got {other:?}"),
-        };
-        let keys: Vec<&str> = pairs.iter().map(|(k, _)| k.as_str()).collect();
+    for row in index() {
+        let object = row.as_object().expect("topic object");
+        let keys: Vec<_> = object.keys().map(String::as_str).collect();
         assert_eq!(keys, ["topic", "title", "summary", "bytes"]);
-        assert_eq!(pairs[0].1, Json::Str(d.topic.into()));
-        assert_eq!(pairs[3].1, Json::Number(d.body.len().to_string()));
+        let topic = row["topic"].as_str().unwrap();
+        assert_eq!(row["bytes"].as_u64(), Some(docs(&[topic]).len() as u64));
     }
 }
 
 #[test]
 fn all_concatenates_every_document_verbatim() {
-    let all = docs::render_all();
-    for d in docs::DOCS {
-        assert!(
-            all.contains(d.body.trim_end_matches('\n')),
-            "--all dropped or mangled {}",
-            d.topic
-        );
-        assert!(all.contains(d.path), "--all did not label {}", d.topic);
-    }
-}
-
-// --- end to end, through the built binary ------------------------------------
-
-fn run_docs(args: &[&str]) -> Output {
-    let mut argv = vec!["docs"];
-    argv.extend_from_slice(args);
-    Command::new(env!("CARGO_BIN_EXE_kuna"))
-        .args(&argv)
-        .output()
-        .expect("failed to spawn the kuna binary")
-}
-
-/// `docs.rs` is dispatch-free until `main.rs` routes `"docs"` to it.  Until then
-/// the end-to-end tests are a visible skip rather than a false green; the
-/// property tests above still cover the embed.
-fn dispatch_wired() -> bool {
-    let out = run_docs(&["--json"]);
-    let wired = !String::from_utf8_lossy(&out.stderr).contains("unknown subcommand");
-    if !wired {
-        eprintln!("docs_cli: skipping (main.rs does not dispatch `docs` yet)");
-    }
-    wired
-}
-
-fn stdout_of(out: &Output) -> String {
-    String::from_utf8_lossy(&out.stdout).into_owned()
-}
-
-#[test]
-fn the_cli_lists_at_least_the_five_topics() {
-    if !dispatch_wired() {
-        return;
-    }
-    let out = run_docs(&[]);
-    assert!(out.status.success(), "`kuna docs` exited {:?}", out.status.code());
-    let listed: Vec<String> = stdout_of(&out)
-        .lines()
-        .filter_map(|l| l.split_whitespace().next().map(str::to_string))
-        .collect();
+    let all = docs(&["--all"]);
     for topic in REQUIRED {
-        assert!(listed.iter().any(|l| l == topic), "`kuna docs` did not list {topic}: {listed:?}");
-    }
-}
-
-#[test]
-fn the_cli_prints_a_topic_byte_for_byte() {
-    if !dispatch_wired() {
-        return;
-    }
-    for d in docs::DOCS {
-        let out = run_docs(&[d.topic]);
-        assert!(out.status.success(), "`kuna docs {}` exited {:?}", d.topic, out.status.code());
         assert!(
-            out.stdout == d.body.as_bytes(),
-            "`kuna docs {}` emitted {} bytes, the document is {}",
-            d.topic,
-            out.stdout.len(),
-            d.body.len()
+            all.contains(source(topic).trim_end_matches('\n')),
+            "missing {topic}"
+        );
+        assert!(
+            all.contains(&format!("docs/{topic}.md")),
+            "missing {topic} label"
         );
     }
-}
-
-#[test]
-fn the_cli_json_matches_the_in_process_renderer() {
-    if !dispatch_wired() {
-        return;
-    }
-    let out = run_docs(&["--json"]);
-    assert!(out.status.success());
-    assert_eq!(stdout_of(&out), docs::render_json());
-    assert!(jsonfmt::parse(&stdout_of(&out)).is_some(), "`kuna docs --json` is not JSON");
 }
 
 #[test]
 fn an_unknown_topic_is_a_usage_error_that_names_the_real_ones() {
-    if !dispatch_wired() {
-        return;
-    }
-    let out = run_docs(&["xrefs"]);
-    assert_eq!(out.status.code(), Some(2));
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let output = run_docs(&["xrefs"]);
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
     for topic in REQUIRED {
-        assert!(stderr.contains(topic), "the error did not offer {topic}: {stderr}");
+        assert!(stderr.contains(topic), "{stderr}");
     }
 }
 
-/// The whole point: no repo, no `docs/`, no cwd that means anything.
 #[test]
 fn the_binary_carries_its_docs_out_of_the_repo() {
-    if !dispatch_wired() {
-        return;
-    }
     let sandbox = std::env::temp_dir().join(format!("kuna_docs_norepo_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&sandbox);
-    std::fs::create_dir_all(&sandbox).expect("create sandbox");
+    std::fs::create_dir(&sandbox).expect("create sandbox");
     let exe = sandbox.join("kuna");
-    std::fs::copy(env!("CARGO_BIN_EXE_kuna"), &exe).expect("copy the binary out of the repo");
-    make_executable(&exe);
-
-    let out = Command::new(&exe)
-        .current_dir(&sandbox)
-        .args(["docs", "cli"])
-        .env_remove("KUNA_SPECS")
-        .env_remove("SLEIGHHOME")
-        .env_remove("KUNA_DECOMP_DBG")
-        .output()
-        .expect("run the relocated binary");
-
-    assert!(out.status.success(), "exited {:?}", out.status.code());
-    let cli = docs::lookup("cli").unwrap();
-    assert!(out.stdout == cli.body.as_bytes(), "the relocated binary lost docs/cli.md");
-    assert_eq!(
-        std::fs::read_dir(&sandbox).unwrap().count(),
-        1,
-        "`kuna docs` left files behind, so it is not answering from rodata"
+    let child = {
+        let _setup = PROCESS_SETUP.lock().unwrap();
+        std::fs::copy(env!("CARGO_BIN_EXE_kuna"), &exe).expect("copy kuna");
+        make_executable(&exe);
+        Command::new(&exe)
+            .current_dir(&sandbox)
+            .args(["docs", "cli"])
+            .env_remove("KUNA_SPECS")
+            .env_remove("SLEIGHHOME")
+            .env_remove("KUNA_DECOMP_DBG")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run relocated kuna")
+    };
+    let output = child.wait_with_output().expect("wait for relocated kuna");
+    let file_count = std::fs::read_dir(&sandbox).unwrap().count();
+    std::fs::remove_dir_all(&sandbox).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    let _ = std::fs::remove_dir_all(&sandbox);
+    assert_document("cli", &output.stdout);
+    assert_eq!(file_count, 1, "docs left files behind");
 }
 
 #[cfg(unix)]
@@ -268,22 +186,16 @@ fn make_executable(path: &Path) {
 #[cfg(not(unix))]
 fn make_executable(_path: &Path) {}
 
-/// `kuna docs options | head -20` is the first thing anyone types at a 280 KB
-/// document; the stdout boundary must take the EPIPE quietly.
 #[test]
 fn a_reader_that_walks_away_is_not_a_panic() {
-    if !dispatch_wired() {
-        return;
-    }
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
-        .args(["docs", "--all"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn kuna");
+    let mut child = spawn_docs(&["--all"]);
     drop(child.stdout.take().expect("stdout pipe"));
-    let out = child.wait_with_output().expect("wait for kuna");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!stderr.contains("panicked"), "broken pipe panicked: {stderr}");
-    assert!(out.status.success(), "exited {:?}: {stderr}", out.status.code());
+    let output = child.wait_with_output().expect("wait for kuna");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(
+        output.status.success(),
+        "exited {:?}: {stderr}",
+        output.status.code()
+    );
 }

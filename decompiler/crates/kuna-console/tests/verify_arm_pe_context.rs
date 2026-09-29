@@ -28,16 +28,8 @@ fn specs() -> Vec<String> {
 
 #[test]
 fn thumb_machine_pe_normalizes_entry_and_decompiles() {
-    let mut program = match bootstrap_from_object_with_isa(&fixture(), "", &specs(), None) {
-        Ok(program) => program,
-        Err(error) => {
-            eprintln!(
-                "verify_arm_pe_context: skipping (build the ARM `.sla`): {}",
-                error.explain()
-            );
-            return;
-        }
-    };
+    let mut program = bootstrap_from_object_with_isa(&fixture(), "", &specs(), None)
+        .expect("bootstrap fixture with built processor specs");
     program.commit_pending_analysis().unwrap();
 
     let odd = program
@@ -61,21 +53,12 @@ fn thumb_machine_pe_normalizes_entry_and_decompiles() {
 
 #[test]
 fn explicit_thumb_mode_uses_container_mapping() {
-    let mut program = match bootstrap_from_object_with_isa(
+    let mut program = bootstrap_from_object_with_isa(
         &fixture(),
         "ARM:LE:32:v4t:default",
         &specs(),
         Some(ArmIsa::Thumb),
-    ) {
-        Ok(program) => program,
-        Err(error) => {
-            eprintln!(
-                "verify_arm_pe_context: skipping (build the ARM `.sla`): {}",
-                error.explain()
-            );
-            return;
-        }
-    };
+    ).expect("bootstrap fixture with built processor specs");
     program.commit_pending_analysis().unwrap();
     let entry = program.find_entry_at(0x401001).unwrap();
     let result = decompile_targets(&mut program, vec![entry], true, false, false);

@@ -29,12 +29,6 @@
 //!  - **`option noreturn_known off` + `option noreturn_externmatch off`** (both
 //!    consumers of the list disabled): the pre-fix rendering — the dead `7`
 //!    multiplier is back in the emitted C.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -58,25 +52,15 @@ enum Mode {
     ListOff,
 }
 
-/// Bootstrap the fixture, apply the mode, decompile `func`, return the captured C
-/// (`None` ⇒ specs-less skip).
-fn decompile(func: &str, mode: Mode) -> Option<String> {
+/// Bootstrap the fixture, apply the mode, decompile `func`, return the captured C.
+fn decompile(func: &str, mode: Mode) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_cxx_throw_noreturn: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The live-CLI ordering: `option` lines precede `read symbols` (the deferred
     // analysis commit), so the flags are set before the pass would run.
@@ -101,7 +85,7 @@ fn decompile(func: &str, mode: Mode) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// THE PAYOFF: by default the `std::__throw_length_error` call is no-return, so the
@@ -109,11 +93,9 @@ fn decompile(func: &str, mode: Mode) -> Option<String> {
 /// gone. With the list consumers off it is emitted, which is the GH-273 bug.
 #[test]
 fn throw_length_error_eliminates_dead_tail() {
-    let Some(fixed) = decompile("append_bound", Mode::Default) else {
-        return; // specs-less skip
-    };
+    let fixed = decompile("append_bound", Mode::Default);
     let buggy =
-        decompile("append_bound", Mode::ListOff).expect("second bootstrap succeeds if the first did");
+        decompile("append_bound", Mode::ListOff);
 
     eprintln!("---- append_bound (default / fixed) ----\n{fixed}");
     eprintln!("---- append_bound (list off / pre-fix) ----\n{buggy}");
@@ -151,11 +133,9 @@ fn throw_length_error_eliminates_dead_tail() {
 /// symbol: `std::__throw_out_of_range` likewise drops its `* 11` dead tail.
 #[test]
 fn throw_out_of_range_eliminates_dead_tail() {
-    let Some(fixed) = decompile("at_bound", Mode::Default) else {
-        return; // specs-less skip
-    };
+    let fixed = decompile("at_bound", Mode::Default);
     let buggy =
-        decompile("at_bound", Mode::ListOff).expect("second bootstrap succeeds if the first did");
+        decompile("at_bound", Mode::ListOff);
 
     eprintln!("---- at_bound (default / fixed) ----\n{fixed}");
     eprintln!("---- at_bound (list off / pre-fix) ----\n{buggy}");

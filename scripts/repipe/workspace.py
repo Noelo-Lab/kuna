@@ -50,6 +50,7 @@ from pathlib import Path
 
 from . import config
 from . import redact
+from ..atomic import atomic_text_writer
 
 BIN_MODE = 0o755
 SHIM_MODE = 0o755
@@ -114,13 +115,9 @@ def _extras_rel(rel: str) -> str:
 # --- writing ----------------------------------------------------------------
 
 def _write(path: Path, text: str, mode: int = 0o644) -> None:
-    """Atomic write: temp sibling, then os.replace."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = str(path) + ".tmp"
-    with open(tmp, "w") as fh:
+    with atomic_text_writer(path, mode=mode) as fh:
         fh.write(text)
-    os.chmod(tmp, mode)
-    os.replace(tmp, path)
 
 
 def _copy_exec(src: Path, dst: Path) -> None:

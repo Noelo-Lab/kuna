@@ -297,7 +297,15 @@ that still prints (its target), a conversion this rule leaves out (its own
 operand's type, which it preserved), a truncation printed as a cast, a load
 `*(T *)p` through a pointer printed with that cast or declared `T *`, and a
 subscript `((T *)p)[k]` whose base prints with that cast (the form `castarith`
-below gives a load). An
+below gives a load). With `elemptr` on (05-types §5.2), whose declarations
+produce subscripts of declared pointers, a subscript `p[k]` of a variable the text
+declares `T *`, or of a constant printed as an array name or behind its own cast,
+reads a `T` as well (`ImpliedCasts::subscript_base_type`), so the `(int)` a `?:`
+arm of `a0[i]` carries is the conversion C performs. So does a subscript of a
+global no symbol names that `elemptr` typed, `dat_5068[k]`: the export header
+declares it at the one type the function reads and writes it at (`kuna_globalref.rs
+(Plan::declared_type)`, what `extract_global_objects` writes, §9.9), and a
+subscript reads that type's pointee when it is the pointer the base is read at. An
 arithmetic operand is not known, because C promotes `a - b` over two
 `unsigned char`s to a negative `int` where the p-code wraps; neither is a
 constant or a call. Under that rule `(long)(int)(unsigned int)(unsigned char)c`
@@ -388,6 +396,90 @@ where `int` is 4 bytes, and only for C output. Pinned by
 base64 decoder and arms of `char`, `unsigned char`, `short` and `int` against
 `int`, unsigned, `long` and negative arms, built with gcc and clang at -O0 and
 -O2, printing the binary's values with the option off and on.
+
+**Widenings C performs by itself (kuna `castwiden`).** Upstream hides an
+INT_SEXT/INT_ZEXT under arithmetic only when the other operand is an explicit
+variable of the same metatype (or a constant no wider than `int`), so a widened
+`int` beside a loaded `long` prints `((long *)a0)[1] + (long)a1`, beside a
+structure field `a0->field_0x8 % (long)a1`, beside a literal `(long)i * 0xc + 7`,
+and into a store through a `long` pointer `((long *)a0)[1] = (long)a1;`. With the
+option `castwiden` set to `on` (`off` keeps them; `literal`, the default, is
+described below), the printer leaves out a 64-bit widening where C's own
+conversions give the same type and value. The IR is unchanged; the decision is
+made per arithmetic op, once, and cached for the function
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_castimplied.rs (ImpliedCasts::widen_plan)`,
+computed by `decompiler/crates/kuna-decomp/src/p9_emit/kuna_castwiden.rs (plan)`
+and read by `printc.rs (PrintC::implied_cast_drops)`).
+
+An operand of `+ - * / % & | ^` qualifies when it is an INT_SEXT or INT_ZEXT
+printed as a cast to an 8-byte integer, or a `CPUI_CAST` to one over an operand
+`castimplied` left narrower, and the extension is the one C performs on the
+operand's printed type: a sign-extension of a signed type, a zero-extension of
+an unsigned one (`kuna_castwiden.rs (widening)`). Its cast goes when, for every
+promoted type the other operand may have as printed, the usual arithmetic
+conversions give the operation the same type with and without the cast, and
+that type is the cast's own or the cast keeps every value of its operand
+(`kuna_castwiden.rs (fits)`): C then converts the operand to the operation's
+type itself, and an integer conversion depends only on the value it converts.
+The other operand's type is the set `castternary` uses, derived from the
+printed text (`kuna_castwiden.rs (operand_set)`): a declared variable, a
+conversion that stays, a literal's C type, a load through a pointer printed as a
+declared variable, a cast, a structure field or an element of such a base
+(`kuna_castwiden.rs (load_type)`), and for a nested arithmetic op the usual
+conversions of its own operands after its own decision (`kuna_castwiden.rs
+(expr_set)`). Anything else is unknown and keeps the cast. Of two widened
+operands only the right one's cast goes, so `(long)a * (long)b` prints
+`(long)a * b` and the survivor keeps the product 64-bit. An op that reads one
+widened value in both slots, `(long)i * (long)i`, keeps both casts: the printer
+asks about a cast per reading op, not per slot, so leaving one out would leave
+out both and print a 32-bit square. A zero-extension beside a signed 8-byte
+operand keeps its cast, because the bare operand would make the operation signed
+(`*a0 + (unsigned long)*a1`), and so does every widening a comparison, a shift
+or unary minus reads.
+
+Leaving a cast out must not change how C groups the text. The operand prints as
+upstream's hidden extension does (`printc.rs (PrintC::widen_drops)` pushes the
+hidden-function token instead of the cast), which parenthesizes it whenever its
+operator binds no tighter than the reader's: `((long *)a0)[1] + (long)(a1 + a2)`
+prints `((long *)a0)[1] + (a1 + a2)`, never `((long *)a0)[1] + a1 + a2`, which C
+would compute as two 64-bit additions. And since the printer writes `x + (y + z)`
+as `x + y + z` (the same associative operator on the right takes no
+parentheses), which C groups as `(x + y) + z`, the left operand of `+ * & | ^`
+whose right operand is such a chain meets the chain's first leaf in C, not the
+chain: its cast goes only when that leaf, as printed, would let it go
+(`kuna_castwiden.rs (first_leaf_fits)`), so `(long)a + ((long)b + *p)` prints
+`(long)a + b + *p` and not `a + b + *p`.
+
+`on` also widens `castimplied`'s destinations for a widening to eight bytes
+(`kuna_castimplied.rs (ImpliedCasts::converts_exactly)`,
+`(ImpliedCasts::fits_dest)`; a narrower widening keeps what `castimplied`
+decides): a widening that does not keep its value, `(unsigned long)i` of an `int`, goes into an
+assignment, prototyped argument or return declared with exactly its spelling,
+because that conversion is the one the cast spelled; a value-keeping widening
+also goes into an integer of the cast's width with the other signedness, as
+`memchr(a0,0x78,a1)` for an `int a1` does; and a store through a pointer printed
+as a declared variable, a cast, a field or an element is such a destination
+(`kuna_castwiden.rs (store_pointee)`).
+
+With `literal`, the operand beside an integer literal qualifies too. The literal
+is an 8-byte constant in the IR, but C types `8` as `int`, so today the cast is
+what makes `(long)i * 8` a 64-bit product. The literal is printed with the
+suffix of its width, `L` (`LL` where `long` is 4 bytes), or `UL` as the unsigned
+value of its bits for an unsigned target (`printc.rs
+(IntegerLiteral::suffix_as_long)`, asked through `printc.rs
+(PrintC::widen_suffix)`), and the cast goes when the suffixed literal has the
+cast's type and the operation keeps its type (`kuna_castwiden.rs
+(literal_suffix)`): `a0 * 0xcL + 7`, `a0 / 3UL`. A negated literal C types as
+unsigned (`-0x80000000`, whose C value is 2^31) keeps the cast, because the
+suffix would change its value. Only where `int` is 4 bytes, and only for C
+output. Pinned by `tests/stages/kuna-castwiden.xml` (three passes) and by a
+compiled round trip (`kuna-cli/tests/decompile_all_cli.rs`,
+`an_implied_widening_round_trips_through_the_printed_c`) over gcc and clang
+builds at -O0 and -O2, printed with each value and compiled with gcc and clang
+at -O0 and -O2 (`-fwrapv`, so the 32-bit arithmetic kuna prints as `int` wraps as
+the machine's does), all printing the binary's values for negative inputs,
+0x80000000..0xffffffff, sums past 32 bits and squares past 2^32, including the
+shared, parenthesized and regrouped shapes above.
 
 **Casting an output.** `coreaction_casts.rs (Funcdata::cast_output)` compares
 the *token* type the operator naturally produces — `coreaction_casts.rs
@@ -1521,6 +1613,18 @@ is keyed by HighVariable and used by every body reference path as well as its
 declaration; existing parameter, user/debug, Ghidra-style, global, and callee
 names remain authoritative.
 
+The name allocator stores each spelling once, either reserved for a future
+declaration or assigned with its next suffix counter. It uses only keyed lookup;
+the caller's declaration order, never hash iteration, decides who receives each
+name. This replaces separate reserved-name, used-name and suffix-counter maps
+without changing the first-free-suffix rule.
+
+Duplicate-name counting borrows the declaration strings and releases those
+borrows before suffix assignment mutates names. The allocator consumes borrowed
+names directly and owns its reserved keys, without an intermediate string-copy
+vector. Rendered-signature deduplication likewise observes only set membership;
+caller order determines which declaration is retained.
+
 Partial covers of a mapped scalar are suppressed only when another
 HighVariable with the same name actually represents the whole storage: its
 first member is non-constant, starts at symbol offset zero, and has the symbol's
@@ -1634,6 +1738,32 @@ this does **not** repair is the reason the blob pointer carried a
 character-pointer type in the first place: it shared a merged live range with a
 genuine `char *` parameter (§6), and the probe is doing what it is supposed to do
 for a `char *` constant once that type is established.
+
+**An indexed table is a literal only when the index stays inside it.** With
+`elemptr` on (05-types §5.2), a character-pointer constant that is the base of a
+`PTRADD` indexed by a computed value is probed with the index's largest value
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_elemptr.rs
+(literal_index_bound)`): a zero-extended byte is at most 255, a mask is at most
+its mask, an unsigned remainder is less than its divisor, and anything else is
+unbounded. `push_ptr_char_constant_ir` keeps the literal only when that bound is
+at most the literal's character count — its NUL is the last byte still inside it
+— because the C `"..."[x]` reads the literal, not the image. A table the string
+probe accepts as text ends at its first zero byte and the table does not: findutils'
+and tar's `get_date` parsers index bison tables (`yycheck`, `yytable`) that printed as `"\x05"[v0]` and a 110-byte
+escape string indexed by the parser state, and coreutils `sort` indexes a
+256-byte table whose first byte is zero, which printed `""[*v15._0_8_]`. So an
+unbounded index declines the literal too. The bound is consulted only for a
+constant `elemptr` itself typed (`Funcdata::kuna_elemptr_typed_constant`): a
+character array another pass already recovered keeps the spelling it had
+(`sort`'s `"CCc"[v21]`, `tar`'s base64 alphabet, `&" %s"[v0]`). A declined
+literal falls through to the address, and so to the array name `globalref` gives
+it (§9.9). A constant whose character-pointer type comes from `elemptr` alone —
+it reaches, through copies and merges, a pointer the rule typed or a callee's
+parameter the rule typed and stated, and nothing reads it as a C string — never
+prints as a literal (`kuna_elemptr.rs (reaches_element_pointer)`, 05-types
+§5.2): the reader indexes the bytes and may take more than a literal ending at
+the first zero byte holds. The upstream symbol path (a read-only character-array symbol) does
+not consult the bound.
 
 **A character pointer the probe declines is still an address.** When the bytes
 at a `char *` constant do not decode as a string — the GB18030 quote glyphs
@@ -2080,7 +2210,15 @@ Assembly comes from the listing walk
 undecodable byte inside a body is a `.byte` row and not the loss of the whole
 listing. Edges come from the reference index `kuna xrefs` answers with, through
 the same call-graph model `--reachable-from` walks
-(`decompiler/crates/kuna-cli/src/decompile_all.rs (CallGraph::callees_of)`).
+(`decompiler/crates/kuna-cli/src/callgraph.rs (CallGraph::callees_of)`).
+
+The CLI graph module owns inventory containment, reachability and caller
+completeness queries. Its scheduling module,
+`decompiler/crates/kuna-cli/src/callgraph/plan.rs`, owns the iterative SCC walk
+and recursion policy used by callee-first decompilation. Object-file consumers
+share `decompiler/crates/kuna-cli/src/image.rs`: they read the selected Mach-O
+slice and reject TE inputs that have no object-file view. These boundaries are
+shared by the command drivers without changing edge rules or output ordering.
 
 **Both ends of every edge are rows of the same document.** A reference into the
 middle of a body resolves to the body, and one that lands in no discovered
@@ -2342,6 +2480,41 @@ the `structsynth` convergence sweep and kept by the header's type pruning.
 The directly read `dat_<addr>` names are still not declared on their own
 account; only an address some function takes is.
 
+**An indexed table is an array (`elemptr`).** With `elemptr` on (05-types
+§5.2), a constant address that is the base of a `PTRADD` indexed by a computed
+value is an array's first element, and `plan` records it (`Plan::indexed`). The
+name then prints without the `&` (`printc.rs (PrintC::push_global_ref_ir)` asks
+`Plan::is_array`): `dat_4020` already has exactly the constant's pointer type in
+C, so `dat_4020[v1]` is the same address and the same element as
+`*(unsigned char *)(v1 + 0x4020)`. `extract_global_objects` declares it `T
+dat_4020[]`, an array of unknown length, and `global_declarations` prefers that
+declaration over a scalar one another function makes when no function reads the
+name directly: an indexed body does not compile against a scalar, and a direct
+read does not compile against an array, so with both present the address is left
+undeclared with a comment, like two direct types. Two functions that index the
+address at different elements (`char dat_4020[]` and `unsigned char dat_4020[]`)
+leave it undeclared with a comment too: a body reads `dat_4020[i]` at whatever
+element the header declares, so either declaration would change what the other
+body computes. The batch's agreement pass (05-types §5.2) keeps that from arising
+within one process; a sharded `--jobs` worker cannot see the other functions, so
+it names no table an array at all (`Funcdata::kuna_elemptr_objects`), nor does
+any run of several functions that is not the callee-first batch, and a pool
+prints what the serial run with `--option protoorder off` prints. An
+array whose storage this function also reads or writes directly keeps its cast
+(`DirectAccess`). With `elemptr` on, `plan` also takes an undefined word
+(`undefined2 *`) and an unsigned word of the same size read at one address as
+one object, named by the unsigned one, the way `same_object` already reads a
+direct access (`Seen::merge`): a caller that copies `0x4b000` into a pointer
+variable and passes it to a callee whose parameter `elemptr` declared `unsigned
+short *` reads the address both ways, and would otherwise lose the name to the
+two-type refusal. A global no symbol names that a function reads directly and
+`elemptr` typed an element pointer (`dat_5068 = malloc(0x100)`, `dat_5068[i]`)
+is declared in the header too, `extern char *dat_5068;`, although no function
+takes its address (`GlobalInfo::elem`): its subscripts read the element that
+declaration names. A Varnode of that storage at another type, such as its value
+before a call, which nothing prints, is not a read of it at that type, because
+every walk over the Varnodes holding it agreed on the pointer.
+
 **The value is the binary's.** `decompiler/crates/kuna-cli/tests/decompile_all_cli.rs
 (a_constant_address_named_as_a_global_round_trips_through_the_printed_c)`
 exports a non-PIE fixture whose data has no symbols both ways, compiles each
@@ -2360,4 +2533,3 @@ casts; with the option off the output is byte-identical to the build without it.
 On the 4,815 functions kuna and IDA both emit, casts fall from 45,126 to 44,001
 and no function gains one. Variables and types are untouched, so `type_match`
 cannot move (1,609 perfect functions in both arms of the 444-slice sweep).
-

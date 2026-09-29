@@ -1,58 +1,21 @@
-//! Port of `decompiler/cpp/memstate.hh` + `memstate.cc` (W2, item
-//! `w2-sleigh-emulate`): classes for keeping track of memory state during
-//! emulation.
+//! Emulated memory banks and address-space state, from
+//! `decompiler/cpp/memstate.{hh,cc}`.
 //!
-//! Paradigm mapping (each noted again at its use site):
+//! [`MemoryBankCore`] holds the space, word size and page size. [`MemoryBank`]
+//! supplies word, value, page and chunk access. [`MemoryState`] shares banks
+//! through `Rc<RefCell<dyn MemoryBank>>`; overlays share their underlying banks.
+//! [`MemoryPageOverlay`] owns byte-vector pages in an ordered map. [`MemoryImage`]
+//! shares its loader and converts unavailable pages to zeroes, propagating other
+//! errors.
 //!
-//! - The C++ abstract base `MemoryBank` splits into [`MemoryBankCore`] (the
-//!   concrete data members: wordsize / pagesize / space) and the
-//!   [`MemoryBank`] trait — the virtuals `insert`/`find`/`get_page`/
-//!   `set_page` (the latter two with the C++ default bodies as provided
-//!   methods) plus the non-virtual public interface (`set_value`,
-//!   `get_value`, `set_chunk`, `get_chunk`) as provided methods — following
-//!   the `TranslateBase`/`Translate` boundary precedent in `translate.rs`.
-//! - C++ `MemoryBank *` handles (the `underlie` links, the banks registered
-//!   in a `MemoryState`, the emulator's state) are
-//!   `Rc<RefCell<dyn MemoryBank>>`: the C++ pointers are shared and
-//!   non-owning ("The MemoryState object does \e not assume responsibility
-//!   for freeing the MemoryBank") and both reads and writes flow through
-//!   them.  Likewise `MemoryImage`'s `LoadImage *` is
-//!   `Rc<RefCell<dyn LoadImage>>` (`LoadImage::load_fill` takes `&mut self`).
-//! - **`HOST_ENDIAN` is pinned to 0 (little-endian)**: the C++
-//!   host-endian-dependent reinterpretations (`(uint1 *)&curval`,
-//!   `*((const uintb *)val)`) are transcribed against the little-endian
-//!   oracle host that produces the golden output, so the port computes
-//!   identically on every host.
-//! - `MemoryPageOverlay`'s `map<uintb,uint1 *>` of heap pages becomes a
-//!   `BTreeMap<u64, Vec<u8>>` (ADR 0002); the explicit destructor is `Drop`.
-//! - Errors (ADR 0004): the C++ throws (`LowlevelError` on read-only
-//!   writes, a full hash table, unmapped spaces) become
-//!   `Result<_, KunaError>` with the same explain strings; `MemoryImage`
-//!   catches `DataUnavailError` exactly where C++ does (treating unmapped
-//!   pages as zero) and propagates every other error.
-//! - C++ `MemoryState` overloads become suffixed names: `set_value` /
-//!   `get_value` (space + offset + size), `set_value_by_name` /
-//!   `get_value_by_name` (named register via `Translate`), and
-//!   `set_value_data` / `get_value_data` (a `VarnodeData`, matching the
-//!   `get_register_data` naming in `translate.rs`).
-//!
-//! Two upstream anomalies are transcribed rather than repaired (the C++ is
-//! the spec), with the port's behavior pinned at the use sites:
-//!
-//! 1. The default `getPage`/`setPage` adjust the first partial word against
-//!    `addr` (the page start) instead of `addr + skip`; for a `skip` that is
-//!    not a multiple of the wordsize (reachable through `get_chunk` /
-//!    `set_chunk` on a bank using the default page methods, e.g.
-//!    `MemoryHashOverlay`) the C++ reads the wrong bytes and overruns the
-//!    caller's buffer.  The port transcribes the arithmetic exactly; the
-//!    C++ buffer overrun becomes a slice-bounds panic (ADR 0004: UB state).
-//! 2. The full-word path of the default `setPage` reads
-//!    `sizeof(uintb)` = 8 bytes through `*((const uintb *)val)` regardless
-//!    of the wordsize; for wordsize < 8 the high bytes are an overread of
-//!    the caller's buffer.  The port reads the bytes that exist and
-//!    zero-fills the rest (the garbage is unobservable except through a
-//!    `MemoryHashOverlay` storing the raw word, where C++ exposes
-//!    uninitialized memory).
+//! Host-word reinterpretation follows the upstream little-endian representation
+//! on every host, with explicit conversion for the bank's byte order.
+//! The default page methods preserve two upstream edge cases:
+//! - An initial partial word uses the page start rather than the start plus skip.
+//!   A misaligned skip can select the wrong bytes or panic on slice bounds.
+//! - A full-word `set_page` reads eight bytes even when the word size is smaller.
+//!   Missing bytes are zero-filled; raw [`MemoryHashOverlay`] values can expose
+//!   those high bytes.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -1033,12 +996,7 @@ impl MemoryState {
     /// \param spc is the address space of the desired MemoryBank
     /// \return the MemoryBank or `None` if no bank is associated with \e spc
     pub fn get_memory_bank(&self, spc: &Rc<AddrSpace>) -> Option<&Rc<RefCell<dyn MemoryBank>>> {
-        let index = spc.get_index();
-        if index as usize >= self.memspace.len() {
-            // cast: C++ int4 index >= vector::size() comparison
-            return None;
-        }
-        self.memspace[index as usize].as_ref() // cast: index >= 0
+        self.memspace.get(spc.get_index() as usize).and_then(Option::as_ref)
     }
 
     /// Set a value on the memory state.
@@ -1104,8 +1062,7 @@ impl MemoryState {
             .space
             .as_ref()
             .expect("MemoryState: register with null space pointer (C++ UB)");
-        let spc = Rc::clone(spc);
-        self.set_value(&spc, vdata.offset, vdata.size as i32, cval) // cast: uint4 size as C++ int4
+        self.set_value(spc, vdata.offset, vdata.size as i32, cval) // cast: uint4 size as C++ int4
     }
 
     /// Retrieve a value from a named register in the memory state (C++
@@ -1139,8 +1096,7 @@ impl MemoryState {
             .space
             .as_ref()
             .expect("MemoryState: varnode with null space pointer (C++ UB)");
-        let spc = Rc::clone(spc);
-        self.set_value(&spc, vn.offset, vn.size as i32, cval) // cast: uint4 size as C++ int4
+        self.set_value(spc, vn.offset, vn.size as i32, cval) // cast: uint4 size as C++ int4
     }
 
     /// Get a value from a \b varnode (C++ `getValue(const VarnodeData *)`).

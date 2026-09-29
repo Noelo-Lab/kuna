@@ -69,17 +69,8 @@ impl SleighBaseTrans for TestTrans {
 
     fn decode_construct_tpl(
         &mut self,
-        _decoder: &mut dyn Decoder,
+        _decoder: &mut dyn kuna_num::opcodes::OpcodeDecoder,
     ) -> KunaResult<(i32, ConstructTplHandle)> {
-        Err(KunaError::sleigh("no ConstructTpl in verifier tests"))
-    }
-
-    fn encode_construct_tpl(
-        &self,
-        _handle: ConstructTplHandle,
-        _section_id: i32,
-        _encoder: &mut dyn Encoder,
-    ) -> KunaResult<()> {
         Err(KunaError::sleigh("no ConstructTpl in verifier tests"))
     }
 }
@@ -337,11 +328,10 @@ fn verify_w2sym_operand_decode_all_attributes_and_byte_roundtrip() {
     let lexp = op.get_local_expression().unwrap();
     assert_eq!((lexp.index(), lexp.table_id(), lexp.ct_id()), (3, 0, 0));
     // re-encode of the whole table is byte-identical to the C++-shaped input
-    let trans = TestTrans::new(&manager);
     let mut reenc = Vec::new();
     {
         let mut enc = PackedEncode::new(&mut reenc);
-        table.encode(&mut enc, &trans).unwrap();
+        table.encode(&mut enc, &[]).unwrap();
     }
     assert_eq!(reenc, buf);
 }
@@ -648,11 +638,10 @@ fn verify_w2sym_name_symbol_truncated_table_and_tab_reencode() {
     assert_eq!(s, "x");
     // re-encode: the TAB entry becomes an attribute-less NAMETAB, i.e. the
     // stream a C++ encode of the post-decode state would produce
-    let trans = TestTrans::new(&manager);
     let mut reenc = Vec::new();
     {
         let mut enc = PackedEncode::new(&mut reenc);
-        table.encode(&mut enc, &trans).unwrap();
+        table.encode(&mut enc, &[]).unwrap();
     }
     let mut expected = Vec::new();
     {

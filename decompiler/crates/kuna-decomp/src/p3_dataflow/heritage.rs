@@ -5017,15 +5017,6 @@ impl Default for Heritage {
     }
 }
 
-/// Panic helper for the stub methods whose `Funcdata` SSA-construction
-/// primitives are not yet present.  Centralizes the message so the W3-op /
-/// W4 / W6 waves can grep the stubs.
-#[inline(never)]
-#[cold]
-fn unimplemented_stub(what: &str) -> ! {
-    panic!("kuna heritage STUB not yet realized: {what}");
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -18,13 +18,6 @@
 //! function decompiles to non-empty C naming itself, and (3) `extract_variables`
 //! returns a sane parameter/local list (params carry a dense `arg_index`; every
 //! variable carries a non-empty C type string).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling loader gates, bootstrapping needs the built `x86` `.sla`
-//! under `specs/` (gitignored; `make specs`).  When it is absent the bootstrap
-//! fails; the test prints that and returns early (a specs-less CI is a visible
-//! skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -44,22 +37,10 @@ fn fauxware() -> PathBuf {
 fn decompile_all_enumerates_and_decompiles_every_function() {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = match fauxware().to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
+    let bin = fauxware().to_str().expect("UTF-8 fixture path").to_string();
 
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_decompile_all: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
 
     // (1) Enumeration: the loader + analysis function set must include the real
@@ -153,18 +134,9 @@ fn canonical_enumeration_reports_each_entry_address_once() {
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
 
     for fixture in [fauxware(), arm_thumb()] {
-        let Some(bin) = fixture.to_str().map(|s| s.to_string()) else { continue };
-        let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!(
-                    "canonical enumeration: skipping {bin} (bootstrap failed, build `.sla` \
-                     with `make specs`): {}",
-                    e.explain()
-                );
-                continue;
-            }
-        };
+        let bin = fixture.to_str().expect("UTF-8 fixture path").to_string();
+        let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+            .expect("bootstrap fixture with built processor specs");
         prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
 
         let canonical = prog.function_entries_canonical();

@@ -27,12 +27,6 @@
 //!        `pushPartialSymbol`/`findTruncation`) sees the field the cast-plane
 //!        `resolve_truncation` scored — if the write were dropped the member
 //!        would not render.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling console gates, bootstrapping needs the built `.sla` under
-//! `specs/` (gitignored; `make specs`).  A missing `.sla` prints a skip and
-//! returns early — never a false green.
 
 use std::path::PathBuf;
 
@@ -46,21 +40,12 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn boot(stem: &str) -> Option<ConsoleProgram> {
+fn boot(stem: &str) -> ConsoleProgram {
     let root = repo_root();
     let xml = root.join(format!("tests/datatests/{stem}.xml"));
     let specs = root.join("specs");
-    match bootstrap_from_file(xml.to_str().unwrap(), "", &[specs.to_str().unwrap().to_string()]) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_w10_union_truncation: skipping {stem} (bootstrap failed, build `.sla` \
-                 with `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_file(xml.to_str().unwrap(), "", &[specs.to_str().unwrap().to_string()])
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// Drive `commands` through a console with `program` installed as current, then
@@ -103,7 +88,7 @@ const SETUP: &[&str] = &[
 /// (offset 4).  Both are partialunion.xml oracle `<stringmatch>` lines.
 #[test]
 fn partialunion_float_write_and_int_read_resolve_to_correct_fields() {
-    let Some(prog) = boot("partialunion") else { return };
+    let prog = boot("partialunion");
     let mut cmds: Vec<&str> = SETUP.to_vec();
     cmds.extend_from_slice(&["lo fu partialunion", "dec", "print C", "quit"]);
     let out = drive(prog, &cmds);
@@ -139,7 +124,7 @@ fn partialunion_float_write_and_int_read_resolve_to_correct_fields() {
 /// `newoff`/field selection is real.
 #[test]
 fn partial1_int_writes_resolve_to_a_aval_fields_by_offset() {
-    let Some(prog) = boot("partialunion") else { return };
+    let prog = boot("partialunion");
     let mut cmds: Vec<&str> = SETUP.to_vec();
     cmds.extend_from_slice(&[
         "lo fu partial1",
@@ -170,7 +155,7 @@ fn partial1_int_writes_resolve_to_a_aval_fields_by_offset() {
 /// partialunion field tokens.
 #[test]
 fn unrelated_function_has_no_union_field_tokens() {
-    let Some(prog) = boot("condconst") else { return };
+    let prog = boot("condconst");
     let out = drive(prog, &["lo fu condconst", "dec", "print C", "quit"]);
     eprintln!("=== condconst print C ===\n{out}");
     for tok in ["globvar", "bval1", "aval1", "aval2"] {

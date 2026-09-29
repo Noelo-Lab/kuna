@@ -19,12 +19,6 @@
 //! The gate is a process-global env var (import names are resolved inside `load
 //! file`, upstream of every per-function `option`), so each test holds one mutex
 //! for its whole run.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored;
-//! `make specs`). When absent the bootstrap fails, and the test prints that and
-//! returns early.
 
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
@@ -55,9 +49,9 @@ fn lock() -> MutexGuard<'static, ()> {
     GATE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Load a fixture with the gate forced on/off, or left unset (`None`) for the
-/// shipped default. Call under [`lock`]. `None` back means the `.sla` is absent.
-fn boot_fixture(name: &str, gate: Option<bool>) -> Option<ConsoleProgram> {
+/// Load a fixture with the gate forced on/off, or left unset (`None`) for the shipped
+/// default. Call under [`lock`].
+fn boot_fixture(name: &str, gate: Option<bool>) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(name);
@@ -67,21 +61,13 @@ fn boot_fixture(name: &str, gate: Option<bool>) -> Option<ConsoleProgram> {
         Some(on) => std::env::set_var(REXTHUNK_ENV, if on { "on" } else { "off" }),
         None => std::env::remove_var(REXTHUNK_ENV),
     }
-    let mut prog = match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_rexthunk: skipping (bootstrap failed; build `.sla` with `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
-fn boot(gate: Option<bool>) -> Option<ConsoleProgram> {
+fn boot(gate: Option<bool>) -> ConsoleProgram {
     boot_fixture("pe_rexthunk_x86_64.exe", gate)
 }
 
@@ -117,7 +103,7 @@ fn name_at(prog: &ConsoleProgram, vma: u64) -> String {
 #[test]
 fn rex_tail_is_not_a_thunk_and_real_thunks_keep_their_names() {
     let _gate = lock();
-    let Some(prog) = boot(None) else { return };
+    let prog = boot(None);
     assert_eq!(executable_entries(&prog), vec![ENTRY, THUNK, EXIT_THUNK]);
     assert!(prog.find_entry_at(MID_INSTRUCTION).is_none());
     assert_eq!(name_at(&prog, THUNK), "InitializeSListHead");
@@ -129,7 +115,7 @@ fn rex_tail_is_not_a_thunk_and_real_thunks_keep_their_names() {
 #[test]
 fn wrapper_tail_jump_still_names_the_import() {
     let _gate = lock();
-    let Some(prog) = boot(None) else { return };
+    let prog = boot(None);
     let out = decompile_at(prog, WRAPPER);
     assert!(out.contains("InitializeSListHead(0x140002100);"), "got:\n{out}");
 }
@@ -140,7 +126,7 @@ fn wrapper_tail_jump_still_names_the_import() {
 #[test]
 fn caller_names_both_thunks_and_keeps_the_wrapper() {
     let _gate = lock();
-    let Some(prog) = boot(None) else { return };
+    let prog = boot(None);
     let out = decompile_at(prog, ENTRY);
     assert!(out.contains("sub_140001030();"), "got:\n{out}");
     // `globalref` (default on) names the list head `&dat_140002100`; either
@@ -157,7 +143,7 @@ fn caller_names_both_thunks_and_keeps_the_wrapper() {
 #[test]
 fn gate_off_restores_the_mid_instruction_thunk() {
     let _gate = lock();
-    let Some(prog) = boot(Some(false)) else { return };
+    let prog = boot(Some(false));
     assert_eq!(executable_entries(&prog), vec![ENTRY, MID_INSTRUCTION, THUNK, EXIT_THUNK]);
     assert_eq!(name_at(&prog, MID_INSTRUCTION), "InitializeSListHead");
     assert_eq!(name_at(&prog, EXIT_THUNK), "ExitProcess");
@@ -167,7 +153,7 @@ fn gate_off_restores_the_mid_instruction_thunk() {
 #[test]
 fn gate_on_matches_the_default() {
     let _gate = lock();
-    let Some(prog) = boot(Some(true)) else { return };
+    let prog = boot(Some(true));
     assert_eq!(executable_entries(&prog), vec![ENTRY, THUNK, EXIT_THUNK]);
 }
 
@@ -177,7 +163,7 @@ fn gate_on_matches_the_default() {
 #[test]
 fn far_contiguous_table_keeps_every_thunk() {
     let _gate = lock();
-    let Some(prog) = boot_fixture("pe_rexthunk_far_x86_64.exe", None) else { return };
+    let prog = boot_fixture("pe_rexthunk_far_x86_64.exe", None);
     assert_eq!(name_at(&prog, 0x140001020), "GetTickCount");
     assert_eq!(name_at(&prog, 0x140001026), "Sleep");
     assert_eq!(name_at(&prog, 0x14000102c), "ExitProcess");
@@ -189,7 +175,7 @@ fn far_contiguous_table_keeps_every_thunk() {
 #[test]
 fn thunks_reached_without_rel32_keep_their_names() {
     let _gate = lock();
-    let Some(prog) = boot_fixture("pe_rexthunk_reach_x86_64.exe", None) else { return };
+    let prog = boot_fixture("pe_rexthunk_reach_x86_64.exe", None);
     for (vma, name) in [
         (0x140001207, "ExitProcess"),
         (0x140001217, "ExitThread"),
@@ -212,7 +198,7 @@ fn thunks_reached_without_rel32_keep_their_names() {
 fn noreturn_calls_through_pointers_keep_the_import() {
     let _gate = lock();
     for (vma, next_body) in [(0x140001170u64, "return 7;"), (0x140001150, "0x140002100")] {
-        let Some(prog) = boot_fixture("pe_rexthunk_reach_x86_64.exe", None) else { return };
+        let prog = boot_fixture("pe_rexthunk_reach_x86_64.exe", None);
         let out = decompile_at(prog, vma);
         assert!(out.contains("ExitProcess(0); // no-return"), "{vma:#x} got:\n{out}");
         assert!(!out.contains(next_body), "{vma:#x} absorbed the next function:\n{out}");

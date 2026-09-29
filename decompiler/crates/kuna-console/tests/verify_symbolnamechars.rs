@@ -21,12 +21,6 @@
 //! `tests/stages/kuna-symbolnamechars.xml` therefore pins the DEFAULT arm only
 //! and the off/ident arms live here, where the env var can be set around each
 //! load. Same limit, same reason, as `verify_symbolnamerepair.rs`.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early — a specs-less CI is a visible skip, never a false green.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -65,16 +59,8 @@ fn load_function_names(bin: &str, mode: NameChars) -> Result<Vec<String>, String
     Ok(prog.function_entries().map(|(name, _)| name.to_string()).collect())
 }
 
-/// Whether the `.sla` is present, so a bootstrap failure means what it says.
-/// Returns `false` (and prints) when it is not — a visible skip.
-fn specs_available() -> bool {
-    match load_function_names(&fixture("hostile_symname_x86_64"), NameChars::Safe) {
-        Err(e) if e.contains("sleigh specification") || e.contains(".sla") => {
-            eprintln!("verify_symbolnamechars: skipping (no `.sla`, build with `make specs`): {e}");
-            false
-        }
-        _ => true,
-    }
+fn require_specs() {
+    load_function_names(&fixture("hostile_symname_x86_64"), NameChars::Safe).expect("load required fixture with built processor specs");
 }
 
 /// The broken arm. `off` is today's verbatim behavior, kept reachable for
@@ -83,9 +69,7 @@ fn specs_available() -> bool {
 /// is doing the work.
 #[test]
 fn off_restores_every_half_of_the_defect() {
-    if !specs_available() {
-        return;
-    }
+    require_specs();
     let names = load_function_names(&fixture("hostile_symname_x86_64"), NameChars::Off)
         .expect("the fixture must still load with the sanitizer off");
 
@@ -107,9 +91,7 @@ fn off_restores_every_half_of_the_defect() {
 /// names stay two names, and nothing else about the binary changes.
 #[test]
 fn safe_neutralizes_every_half_and_keeps_distinct_names_distinct() {
-    if !specs_available() {
-        return;
-    }
+    require_specs();
     let names = load_function_names(&fixture("hostile_symname_x86_64"), NameChars::Safe)
         .expect("the fixture must load under the shipped default");
 
@@ -137,9 +119,7 @@ fn safe_neutralizes_every_half_and_keeps_distinct_names_distinct() {
 /// exactly those, which is why it cannot be the default.
 #[test]
 fn safe_leaves_gcc_clone_suffixes_alone_and_ident_folds_them() {
-    if !specs_available() {
-        return;
-    }
+    require_specs();
     // A real gcc -O2 binary whose `.symtab` carries `.constprop.0` clone names.
     let bin = fixture("noreturn_error_x86_64");
     let safe = load_function_names(&bin, NameChars::Safe).expect("safe load");
@@ -181,9 +161,7 @@ fn safe_leaves_gcc_clone_suffixes_alone_and_ident_folds_them() {
 /// five times.
 #[test]
 fn every_reported_name_is_addressable_and_unique() {
-    if !specs_available() {
-        return;
-    }
+    require_specs();
     for bin in ["hostile_symname_x86_64", "anon_namespace_x86_64", "cpp_mangled_x86_64"] {
         let path = fixture(bin);
         let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());

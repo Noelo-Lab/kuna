@@ -2450,6 +2450,11 @@ impl PrintC {
             arch.cast_implied && promotes,
             cast_sign,
             arch.cast_ternary && promotes && arch.types().get_size_of_int() == 4,
+            if promotes && arch.types().get_size_of_int() == 4 {
+                arch.cast_widen
+            } else {
+                crate::kuna_castwiden::CastWidenMode::Off
+            },
         );
         self.stmt_op = None;
         // (kuna) Publish the fd for the fd-free RPN leaf emitters (emit_atom /
@@ -3165,15 +3170,17 @@ impl PrintC {
         // distinct declarations. Their accesses must be relative to their own
         // piece-sized objects; retaining the group's offset/type decoration would
         // produce forms such as `byte_2._1_1_` against a one-byte declaration.
-        let mut remaining_name_count = std::collections::HashMap::<String, usize>::new();
-        for (_, name) in &decls {
-            *remaining_name_count.entry(name.clone()).or_default() += 1;
-        }
-        for (high, name) in &decls {
-            if remaining_name_count.get(name).copied().unwrap_or(0) > 1
-                && fd.high_bank().high_piece_id(*high).is_some()
-            {
-                self.local_name_standalones.insert(*high);
+        {
+            let mut remaining_name_count = std::collections::HashMap::<&str, usize>::new();
+            for (_, name) in &decls {
+                *remaining_name_count.entry(name.as_str()).or_default() += 1;
+            }
+            for (high, name) in &decls {
+                if remaining_name_count.get(name.as_str()).copied().unwrap_or(0) > 1
+                    && fd.high_bank().high_piece_id(*high).is_some()
+                {
+                    self.local_name_standalones.insert(*high);
+                }
             }
         }
         // Existing collapses remove declarations proven to denote one Symbol.
@@ -3184,10 +3191,9 @@ impl PrintC {
         // `value_1` global or direct call. The override is also read by all body
         // render paths.
         {
-            let original: Vec<String> = decls.iter().map(|(_, name)| name.clone()).collect();
             let occupied = declaration_occupied_names(fd, param_names);
             let mut names = crate::kuna_dedupvardecls::DeclNameUniquifier::new(
-                original.iter().map(String::as_str),
+                decls.iter().map(|(_, name)| name.as_str()),
                 occupied.iter().map(String::as_str),
             );
             for (high, name) in &mut decls {
@@ -3400,7 +3406,7 @@ impl PrintC {
             .get(high)
             .and_then(|h| {
                 let st = h.kuna_symbol_type()?;
-                array_decl_parts(&st, rt)
+                array_decl_parts(st, rt)
             })
             // No mapped-Symbol array: fall back to the declaration representative's
             // own data-type.  An anonymous `undefined1 [N]` array (an oversize
@@ -5554,8 +5560,12 @@ impl PrintC {
                     // all reduce to opTypeCast (printc.hh:332-341) — they render as
                     // a parenthesized type cast, not a functional `OPC(args)`.
                     OpEmitKind::TypeCast if opc == OpCode::CPUI_CAST => {
-                        let implied = self.implied_cast_drops(fd, arch, op, read_op);
-                        self.op_type_cast_ir_with(fd, arch, op, implied)
+                        if self.widen_drops(fd, arch, op, read_op) {
+                            self.op_hidden_func_ir(fd, arch, op);
+                        } else {
+                            let implied = self.implied_cast_drops(fd, arch, op, read_op);
+                            self.op_type_cast_ir_with(fd, arch, op, implied)
+                        }
                     }
                     OpEmitKind::TypeCast => self.op_type_cast_ir(fd, arch, op),
                     OpEmitKind::Func | OpEmitKind::Custom => {
@@ -6226,6 +6236,8 @@ impl PrintC {
         if strat.is_zext_cast(&outtype, &intype) {
             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
                 self.op_hidden_func_ir(fd, arch, op);
+            } else if self.widen_drops(fd, arch, op, read_op) {
+                self.op_hidden_func_ir(fd, arch, op);
             } else if self.implied_cast_drops(fd, arch, op, read_op) {
                 self.op_type_cast_ir_with(fd, arch, op, true);
             } else {
@@ -6256,6 +6268,8 @@ impl PrintC {
         };
         if strat.is_sext_cast(&outtype, &intype) {
             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
+                self.op_hidden_func_ir(fd, arch, op);
+            } else if self.widen_drops(fd, arch, op, read_op) {
                 self.op_hidden_func_ir(fd, arch, op);
             } else if self.implied_cast_drops(fd, arch, op, read_op) {
                 self.op_type_cast_ir_with(fd, arch, op, true);
@@ -6506,6 +6520,31 @@ impl PrintC {
         let Some(strat) = cast_strategy_for(arch) else { return false };
         let view = ImpliedView { pc: self, fd, arch, strat };
         self.cast_implied.drops(&view, fd, op, read_op)
+    }
+
+    /// (kuna `castwiden`) Does the arithmetic `read_op` convert the widening `op`
+    /// by itself?  The operand then prints as upstream's hidden extension, which
+    /// keeps the parentheses the cast gave it (`p + (a + b)`, never `p + a + b`).
+    /// See [`crate::kuna_castwiden`].
+    fn widen_drops(&self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) -> bool {
+        if !self.cast_implied.widen_on() || read_op.is_none() {
+            return false;
+        }
+        let Some(strat) = cast_strategy_for(arch) else { return false };
+        let view = ImpliedView { pc: self, fd, arch, strat };
+        self.cast_implied.widen_drops(&view, fd, op, read_op)
+    }
+
+    /// (kuna `castwiden`) The suffix the constant `vn` read by `op` prints with
+    /// so C converts the other operand itself: `Some(true)` for `UL`.  See
+    /// [`crate::kuna_castwiden`].
+    fn widen_suffix(&self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) -> Option<bool> {
+        if !self.cast_implied.widen_literal() {
+            return None;
+        }
+        let strat = cast_strategy_for(arch)?;
+        let view = ImpliedView { pc: self, fd, arch, strat };
+        self.cast_implied.widen_suffix(&view, fd, vn, op)
     }
 
     /// (kuna `castternary`) The casts to leave out of the arms of the conditional
@@ -7715,7 +7754,9 @@ impl PrintC {
             // documented LOSS below.
             use crate::dtype::type_metatype::{TYPE_PTR, TYPE_PTRREL};
             if matches!(ct.get_metatype(), TYPE_PTR | TYPE_PTRREL) {
-                if off != 0 {
+                // (kuna `elemptr`) A pointer the rule gave `char *` says the bytes
+                // are indexed, never that they end at a zero byte.
+                if off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
                     if let Some(sub) = ct.get_ptr_to() {
                         if sub.is_char_print() {
                             // point = op->getAddr() (the using op's address; used only
@@ -7725,6 +7766,14 @@ impl PrintC {
                                 .get(op)
                                 .map(|o| o.get_addr().clone())
                                 .unwrap_or_default();
+                            // (kuna `elemptr`) A table indexed by a computed value
+                            // prints as a literal only when the index cannot run
+                            // past it.
+                            let bound = if arch.elem_ptr {
+                                crate::kuna_elemptr::literal_index_bound(fd, op, vn)
+                            } else {
+                                None
+                            };
                             if self.push_ptr_char_constant_ir(
                                 arch,
                                 off,
@@ -7733,6 +7782,7 @@ impl PrintC {
                                 &point,
                                 op,
                                 vn,
+                                bound,
                             ) {
                                 return;
                             }
@@ -7783,7 +7833,10 @@ impl PrintC {
             // when present.  So: equate-Symbol format wins; otherwise the
             // read-facing type format (e.g. `force datatype octint4 oct` ->
             // `globaloct = 05555`).
-            let lit = self.integer_literal(fd, arch, vn, &ct);
+            let mut lit = self.integer_literal(fd, arch, vn, &ct);
+            if let Some(unsigned) = self.widen_suffix(fd, arch, vn, op) {
+                lit.suffix_as_long(arch, unsigned);
+            }
             self.push_constant_ir_fmt_sign_flags(
                 off,
                 sz,
@@ -8131,8 +8184,12 @@ impl PrintC {
     /// (kuna `globalref`) `&dat_<addr>`: the address of the global a constant
     /// pointer names, in place of the `(T *)0x<addr>` cast.
     fn push_global_ref_ir(&mut self, arch: &Architecture, addr: u64, op: OpId, vn: VarnodeId) {
-        let tok = self.lang_token(&tokens::ADDRESSOF);
-        self.push_op(tok, Some(op_key(op)));
+        // (kuna `elemptr`) An array's name is already the address of its first
+        // element, of exactly the pointer type the constant had.
+        if !self.globalref.is_array(addr) {
+            let tok = self.lang_token(&tokens::ADDRESSOF);
+            self.push_op(tok, Some(op_key(op)));
+        }
         self.push_atom(&Atom::with_op_vn(
             kuna_global_data_name(arch.kuna_name_style(), addr),
             TagType::VarToken,
@@ -8454,6 +8511,7 @@ impl PrintC {
                                     &point,
                                     op,
                                     in1.unwrap_or_default(),
+                                    None,
                                 ) {
                                     return;
                                 }
@@ -8960,6 +9018,7 @@ impl PrintC {
         point: &Address,
         op: OpId,
         vn: VarnodeId,
+        indexed: Option<Option<uintb>>,
     ) -> bool {
         let spc = match arch.manage().get_default_data_space() {
             Some(s) => std::rc::Rc::clone(s),
@@ -8988,6 +9047,17 @@ impl PrintC {
         let mut chars_emitted: int4 = 0;
         if !self.print_character_constant(arch, &mut s, &stringaddr, subct, &mut chars_emitted) {
             return false;
+        }
+        // (kuna `elemptr`) `indexed` is `Some(bound)` for the base of an access
+        // indexed by a computed value, `bound` the largest index it can take when
+        // something bounds it. The literal holds `chars_emitted` characters and
+        // its NUL; an index that can reach past them -- or that nothing bounds --
+        // reads bytes the literal does not have. A parser table whose bytes happen
+        // to escape as text ends at its first zero byte, and the table does not.
+        if let Some(bound) = indexed {
+            if bound.is_none_or(|b| b > chars_emitted as uintb) {
+                return false;
+            }
         }
         // (kuna emptystrconst) A zero-character literal names no byte of the
         // image, so it is strictly less informative than the address it would
@@ -9952,6 +10022,25 @@ struct IntegerLiteral {
     size_suffix: &'static str,
 }
 
+impl IntegerLiteral {
+    /// (kuna `castwiden`) Print the literal with the size suffix of an 8-byte
+    /// integer, `UL` when `unsigned`: `-4UL` is the unsigned value of the bits
+    /// `-4` spells, as `(unsigned long)-4` is.
+    fn suffix_as_long(&mut self, arch: &Architecture, unsigned: bool) {
+        let ll = arch.types().get_size_of_long() == arch.types().get_size_of_int();
+        self.force_sized = true;
+        self.size_suffix = match (unsigned, ll) {
+            (false, false) => "L",
+            (false, true) => "LL",
+            (true, false) => "UL",
+            (true, true) => "ULL",
+        };
+        if unsigned {
+            self.force_unsigned = false;
+        }
+    }
+}
+
 /// C++ `castStrategy = data.getArch()->print->getCastStrategy()` (the
 /// `CastStrategyC` the C printer holds).  Rebuilt here from the bound type
 /// factory each time it is needed (the strategy is stateless apart from the
@@ -10022,6 +10111,38 @@ impl crate::kuna_castimplied::PrintedForms for ImpliedView<'_> {
 
     fn long_size(&self) -> i32 {
         self.arch.types().get_size_of_long()
+    }
+
+    fn integer_token(&self, vn: VarnodeId, op: OpId, suffix: Option<bool>) -> Option<String> {
+        use crate::dtype::type_metatype::{TYPE_INT, TYPE_UINT, TYPE_UNKNOWN};
+        let v = self.fd.vbank().get(vn)?;
+        if !v.is_constant() || v.is_annotation() {
+            return None;
+        }
+        let ct = v.get_type_read_facing(op).clone();
+        if ct.is_enum_type()
+            || ct.is_char_print()
+            || !matches!(ct.get_metatype(), TYPE_INT | TYPE_UINT | TYPE_UNKNOWN)
+        {
+            return None;
+        }
+        let mut lit = self.pc.integer_literal(self.fd, self.arch, vn, &ct);
+        if let Some(unsigned) = suffix {
+            lit.suffix_as_long(self.arch, unsigned);
+        }
+        Some(self.pc.integer_token(
+            v.get_offset(),
+            v.get_size(),
+            lit.display_fmt,
+            lit.sign,
+            lit.force_unsigned,
+            lit.force_sized,
+            lit.size_suffix,
+        ))
+    }
+
+    fn global_declared_type(&self, addr: u64) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+        self.pc.globalref.declared_type(addr)
     }
 }
 

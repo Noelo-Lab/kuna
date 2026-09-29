@@ -50,12 +50,6 @@ fn run(args: &[&str]) -> (String, String, bool) {
     )
 }
 
-fn specs_missing(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-}
-
 #[test]
 fn functions_reports_both_duplicate_local_definitions_with_object_coordinates() {
     let binary = fixture();
@@ -69,10 +63,6 @@ fn functions_reports_both_duplicate_local_definitions_with_object_coordinates() 
         "--mode",
         "reliable",
     ]);
-    if !ok && specs_missing(&stderr) {
-        eprintln!("entry_selectors: skipping (no built x86-64.sla): {stderr}");
-        return;
-    }
     assert!(ok, "kuna functions failed: {stderr}");
     assert_eq!(
         stdout.matches("\"name\": \"duplicate_local\"").count(),
@@ -113,10 +103,6 @@ fn decompile_all_rejects_ambiguous_names_and_offsets_but_accepts_a_section_selec
             "--mode",
             "reliable",
         ]);
-        if !ok && specs_missing(&stderr) {
-            eprintln!("entry_selectors: skipping (no built x86-64.sla): {stderr}");
-            return;
-        }
         assert!(!ok, "ambiguous selector {selector:?} succeeded: {stdout}");
         assert!(stderr.contains("ambiguous"), "{stderr}");
         assert!(stderr.contains(".text.selector_a+0x0"), "{stderr}");
@@ -172,10 +158,6 @@ fn single_decompile_uses_the_same_strict_selector_rules() {
         "--mode",
         "reliable",
     ]);
-    if !ok && specs_missing(&stderr) {
-        eprintln!("entry_selectors: skipping (no built x86-64.sla): {stderr}");
-        return;
-    }
     assert!(!ok, "ambiguous name succeeded: {stdout}");
     assert!(stderr.contains("ambiguous"), "{stderr}");
     assert!(stderr.contains(".text.selector_a+0x0"), "{stderr}");
@@ -222,10 +204,6 @@ fn an_ambiguous_name_is_answered_in_the_default_mode_too() {
         "--decomp-dbg",
         &console,
     ]);
-    if !ok && specs_missing(&stderr) {
-        eprintln!("entry_selectors: skipping (no built x86-64.sla): {stderr}");
-        return;
-    }
     assert!(!ok, "ambiguous name succeeded: {stdout}");
     assert!(stderr.contains("ambiguous"), "{stderr}");
     assert!(stderr.contains(".text.selector_a+0x0"), "{stderr}");
@@ -251,10 +229,6 @@ fn xrefs_reports_an_ambiguous_name_rather_than_guessing() {
         "--mode",
         "reliable",
     ]);
-    if !ok && specs_missing(&stderr) {
-        eprintln!("entry_selectors: skipping (no built x86-64.sla): {stderr}");
-        return;
-    }
     assert!(!ok, "ambiguous xrefs target succeeded: {stdout}");
     assert!(stderr.contains("ambiguous"), "{stderr}");
     assert!(stderr.contains(".text.selector_a+0x0"), "{stderr}");
@@ -277,10 +251,6 @@ fn invalid_object_coordinates_fail_with_actionable_diagnostics() {
         "--mode",
         "reliable",
     ]);
-    if !ok && specs_missing(&stderr) {
-        eprintln!("entry_selectors: skipping (no built x86-64.sla): {stderr}");
-        return;
-    }
     assert!(!ok, "one-past-end section selector succeeded");
     assert!(stderr.contains("no function matches \"6:0x6\""), "{stderr}");
 
@@ -333,10 +303,6 @@ fn decompile_project_accepts_a_section_index_selector() {
         "--mode",
         "reliable",
     ]);
-    if !ok && specs_missing(&stderr) {
-        eprintln!("entry_selectors: skipping project test (no built x86-64.sla): {stderr}");
-        return;
-    }
     assert!(ok, "section-index project export failed: {stderr}");
     assert!(stdout.contains("functions: 1 ok, 0 failed"), "{stdout}");
 

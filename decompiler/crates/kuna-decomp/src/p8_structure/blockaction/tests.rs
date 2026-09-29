@@ -1144,3 +1144,89 @@ fn condfold_ok_is_dead_when_the_option_is_off() {
         "empty sets -> the relaxation is dead"
     );
 }
+
+fn normalization_branch(opcode: OpCode) -> (Funcdata, BlockId, [OpId; 2]) {
+    let mut data = cj_fd();
+    let root = data.bblocks_ref().root.unwrap();
+    let entry = data.bblocks_mut().new_block_basic(root);
+    let left = data.bblocks_mut().new_block_basic(root);
+    let right = data.bblocks_mut().new_block_basic(root);
+    data.bblocks_mut().add_edge(entry, left);
+    data.bblocks_mut().add_edge(entry, right);
+    let inputs = if opcode == OpCode::CPUI_BOOL_NEGATE {
+        1
+    } else {
+        2
+    };
+    let condition = cj_op(&mut data, inputs, 0x1000, opcode);
+    for index in 0..inputs {
+        let input = data.new_constant(1, index as u64);
+        data.op_set_input(condition, input, index).unwrap();
+    }
+    let output = data.new_unique_out(1, condition).unwrap();
+    data.op_insert(condition, entry, None);
+    let jump = cj_op(&mut data, 2, 0x1004, OpCode::CPUI_CBRANCH);
+    let target = data.new_constant(8, 0x1100);
+    data.op_set_input(jump, target, 0).unwrap();
+    data.op_set_input(jump, output, 1).unwrap();
+    data.op_insert(jump, entry, None);
+    (data, entry, [condition, jump])
+}
+
+fn normalization_snapshot(data: &Funcdata, entry: BlockId, ops: [OpId; 2]) -> String {
+    format!(
+        "{:?} {:?} {:?} {:?}",
+        data.bblocks_ref().block(entry),
+        data.bb_ops(entry),
+        data.obank().get(ops[0]),
+        data.obank().get(ops[1])
+    )
+}
+
+#[test]
+fn normalization_keeps_eligible_branch_ir_and_edge_order_unchanged() {
+    for (opcode, expected) in [
+        (OpCode::CPUI_INT_NOTEQUAL, 0),
+        (OpCode::CPUI_INT_EQUAL, 1),
+        (OpCode::CPUI_BOOL_NEGATE, 0),
+        (OpCode::CPUI_INT_LESS, 0),
+    ] {
+        let (mut data, entry, ops) = normalization_branch(opcode);
+        let mut candidates = Vec::new();
+        assert_eq!(
+            data.op_flip_in_place_test(ops[1], &mut candidates, true),
+            expected
+        );
+        assert!(!candidates.is_empty());
+        let before = normalization_snapshot(&data, entry, ops);
+        let mut action = ActionNormalizeBranches::boxed("normalizebranches");
+        assert_eq!(action.apply(&mut data, &mut ActionContext::default()), 0);
+        assert_eq!(action.base().count, 0);
+        assert_eq!(normalization_snapshot(&data, entry, ops), before);
+    }
+}
+
+#[test]
+fn normalization_keeps_registration_and_group_filtering() {
+    let mut action = ActionNormalizeBranches::boxed("normalizebranches");
+    assert_eq!(action.get_name(), "normalizebranches");
+    assert_eq!(action.get_group(), "normalizebranches");
+    assert!(action.clone_filtered(&ActionGroupList::new()).is_none());
+    let groups = ActionGroupList::from_names(["normalizebranches"]);
+    assert_eq!(
+        action.clone_filtered(&groups).unwrap().get_name(),
+        "normalizebranches"
+    );
+    let mut data = cj_fd();
+    assert_eq!(action.apply(&mut data, &mut ActionContext::default()), 0);
+    assert_eq!(data.bblocks_get_size(), 0);
+}
+
+#[test]
+#[should_panic(expected = "ActionNormalizeBranches: bblocks root")]
+fn normalization_requires_an_initialized_graph() {
+    let mut data = cj_fd();
+    data.bblocks_mut().root = None;
+    ActionNormalizeBranches::boxed("normalizebranches")
+        .apply(&mut data, &mut ActionContext::default());
+}

@@ -32,15 +32,8 @@ fn specs() -> String {
     repo_root().join("specs").to_string_lossy().into_owned()
 }
 
-fn specs_missing(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-        || stderr.contains(".sla")
-}
-
 /// Decompile the fixture's overlapping function, optionally flipping the option.
-fn decompile(extra: &[&str]) -> Option<String> {
+fn decompile(extra: &[&str]) -> String {
     let binary = fixture();
     let sleigh = specs();
     let mut args: Vec<&str> =
@@ -50,20 +43,16 @@ fn decompile(extra: &[&str]) -> Option<String> {
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if !out.status.success() {
-        if specs_missing(&stderr) {
-            eprintln!("skipping: specs not built ({stderr})");
-            return None;
-        }
         panic!("kuna decompile failed: {stderr}");
     }
-    Some(stdout)
+    stdout
 }
 
 /// The acceptance clauses of `a-52c2ad89b522`, verbatim: neither the out-of-image
 /// call nor the invented global may appear, and the run must succeed.
 #[test]
 fn default_emits_neither_artefact_of_the_swallowed_decode() {
-    let Some(c) = decompile(&[]) else { return };
+    let c = decompile(&[]);
     assert!(
         !regex_sub_call(&c),
         "the swallowed decode's out-of-image sub_<hex>() call is still emitted:\n{c}"
@@ -84,7 +73,7 @@ fn default_emits_neither_artefact_of_the_swallowed_decode() {
 /// asserting nothing.
 #[test]
 fn option_off_reproduces_both_artefacts() {
-    let Some(c) = decompile(&["--option", "overlapbranch", "off"]) else { return };
+    let c = decompile(&["--option", "overlapbranch", "off"]);
     assert!(regex_sub_call(&c), "expected the out-of-image call with the option off:\n{c}");
     assert!(regex_dat_add(&c), "expected the invented global with the option off:\n{c}");
 }

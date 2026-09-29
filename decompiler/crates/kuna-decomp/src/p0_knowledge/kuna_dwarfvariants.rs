@@ -61,10 +61,7 @@ pub const DWARFVARIANTS_ENV: &str = "KUNA_DWARFVARIANTS";
 /// Whether DWARF variant-part import is enabled for this process.
 /// Default **on**: only an explicit off-token in [`DWARFVARIANTS_ENV`] disables it.
 pub fn dwarfvariants_enabled() -> bool {
-    match std::env::var(DWARFVARIANTS_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
-        Err(_) => true, // unset => default-on
-    }
+    crate::options::env_toggle(DWARFVARIANTS_ENV, true)
 }
 
 /// Bridge a `set_kuna_option("dwarfvariants", val)` toggle to

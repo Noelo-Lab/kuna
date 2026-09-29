@@ -7,7 +7,10 @@
     "{{BIN}}",
     "--option",
     "calleevote",
-    "types"
+    "types",
+    "--option",
+    "callbacktype",
+    "off"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -40,6 +43,6 @@
       "a0\\[4\\] = '"
     ]
   },
-  "notes": "TYPES: `peek_used` takes the record its one caller passes, `report`'s own struct_N, and `same` takes `char *`. The getter keeps `void *` (a lone field needs `fields`), and so does the qsort callback, whose address escapes. `mark` is passed a string too, but stores a four-byte constant through it, which a `char *` would print as four char stores, so it stays `void *`.",
-  "probe_id": "a-ce46aeb79953"
+  "notes": "TYPES: `peek_used` takes the record its one caller passes, `report`'s own struct_N, and `same` takes `char *`. The getter keeps `void *` (a lone field needs `fields`), and so does the qsort callback, whose callers are unknown (`callbacktype off` keeps it a calleevote control). `mark` stores a four-byte constant through its string, so it stays `void *`.",
+  "probe_id": "a-43e569ac0311"
 }

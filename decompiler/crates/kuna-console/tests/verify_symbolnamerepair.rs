@@ -20,13 +20,6 @@
 //!   attacker-controlled data that no header check validates. Fixture:
 //!   `hostile_scope_x86_64`, whose `.symtab` carries a function literally named
 //!   `a::::b`.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling `verify_noreturn_demangle` gate, bootstrapping needs the built
-//! `x86` `.sla` under `specs/` (gitignored; `make specs`). When it is absent the
-//! bootstrap fails; the test prints that and returns early (a specs-less CI is a
-//! visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -66,22 +59,8 @@ fn load_function_names(bin: &str, repair: bool) -> Result<Vec<String>, String> {
     Ok(prog.function_entries().map(|(name, _)| name.to_string()).collect())
 }
 
-/// Whether the `.sla` is present, so a bootstrap failure means what it says.
-/// Returns `false` (and prints) when it is not — a visible skip.
-///
-/// The match is on the spec-resolution text only, so the `Non-global scope has
-/// empty name` failure this file exists to catch can never be mistaken for a
-/// missing-specs skip.
-fn specs_available() -> bool {
-    match load_function_names(&fixture("anon_namespace_x86_64"), true) {
-        Err(e) if e.contains("sleigh specification") || e.contains(".sla") => {
-            eprintln!(
-                "verify_symbolnamerepair: skipping (no `.sla`, build with `make specs`): {e}"
-            );
-            false
-        }
-        _ => true,
-    }
+fn require_specs() {
+    load_function_names(&fixture("anon_namespace_x86_64"), true).expect("load required fixture with built processor specs");
 }
 
 /// The root-cause gate: an ordinary unstripped C++ binary whose definitions live
@@ -93,9 +72,7 @@ fn specs_available() -> bool {
 /// other.
 #[test]
 fn anonymous_namespace_binary_loads_without_the_backstop() {
-    if !specs_available() {
-        return;
-    }
+    require_specs();
     // Backstop OFF: the demangler fix alone must carry this, with nothing to
     // fall back on. If the two were entangled, this arm would fail the load.
     let names = match load_function_names(&fixture("anon_namespace_x86_64"), false) {
@@ -126,9 +103,7 @@ fn anonymous_namespace_binary_loads_without_the_backstop() {
 /// the root-cause fix does NOT cover, and the reason the gate exists.
 #[test]
 fn hostile_symbol_name_aborts_the_load_only_with_the_gate_off() {
-    if !specs_available() {
-        return;
-    }
+    require_specs();
     let bin = fixture("hostile_scope_x86_64");
 
     // On (also the shipped default): the degenerate component is skipped and the

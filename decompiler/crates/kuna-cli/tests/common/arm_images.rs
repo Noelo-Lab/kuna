@@ -28,7 +28,17 @@ fn symbol(
 
 /// Generate an ELF32 executable with code at 0x10000 and caller-supplied mode metadata.
 pub fn elf(code: &[u8], markers: &[(u64, &str)], functions: &[(u64, &str, u64)]) -> Vec<u8> {
-    let mut obj = Object::new(BinaryFormat::Elf, Architecture::Arm, Endianness::Little);
+    elf_for(Architecture::Arm, code, markers, functions)
+}
+
+/// [`elf`] for any little-endian 32-bit `arch`.
+pub fn elf_for(
+    arch: Architecture,
+    code: &[u8],
+    markers: &[(u64, &str)],
+    functions: &[(u64, &str, u64)],
+) -> Vec<u8> {
+    let mut obj = Object::new(BinaryFormat::Elf, arch, Endianness::Little);
     let text = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
     obj.append_section_data(text, code, 4);
     for &(offset, name) in markers {

@@ -25,12 +25,6 @@
 //! [`ConsoleProgram::any_executable_entry`] is how a caller asks whether an
 //! inventory holds anything a whole-binary run would decompile without paying
 //! for the enumeration twice (RE-need `function-inventory-silently-lists`).
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored;
-//! `make specs`). If it is absent the bootstrap fails and the test prints that
-//! and returns early (a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -47,22 +41,13 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn boot(rel: &str) -> Option<ConsoleProgram> {
+fn boot(rel: &str) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = root.join(rel);
     assert!(path.exists(), "missing fixture {path:?}");
-    match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_declared_entry_batch: skipping (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 fn declare(prog: &mut ConsoleProgram, vma: u64, name: &str, size: i32) {
@@ -84,11 +69,8 @@ fn offsets(prog: &ConsoleProgram) -> Vec<u64> {
 /// declaration is what puts the function back in the batch.
 #[test]
 fn a_declared_entry_survives_the_section_flag_filter() {
-    let Some(mut prog) =
-        boot("decompiler/crates/kuna-analysis/tests/fixtures/pe_datasection_entry_i386.exe")
-    else {
-        return;
-    };
+    let mut prog =
+        boot("decompiler/crates/kuna-analysis/tests/fixtures/pe_datasection_entry_i386.exe");
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
 
     assert!(
@@ -115,9 +97,7 @@ fn a_declared_entry_survives_the_section_flag_filter() {
 /// — until a caller declares one, which is the caller's call to make.
 #[test]
 fn an_undeclared_data_address_is_still_dropped() {
-    let Some(mut prog) = boot("decompiler/crates/kuna-analysis/tests/fixtures/ptx.o") else {
-        return;
-    };
+    let mut prog = boot("decompiler/crates/kuna-analysis/tests/fixtures/ptx.o");
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
 
     let executable = offsets(&prog);
@@ -152,11 +132,8 @@ fn an_undeclared_data_address_is_still_dropped() {
 /// entry for entry.
 #[test]
 fn an_inventory_of_only_import_slots_holds_no_executable_entry() {
-    let Some(mut prog) =
-        boot("decompiler/crates/kuna-analysis/tests/fixtures/pe_dataimports_i386.exe")
-    else {
-        return;
-    };
+    let mut prog =
+        boot("decompiler/crates/kuna-analysis/tests/fixtures/pe_dataimports_i386.exe");
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
 
     let canonical = prog.function_entries_canonical();
@@ -191,7 +168,7 @@ fn the_two_executable_entry_answers_agree() {
         "decompiler/crates/kuna-analysis/tests/fixtures/pe_dataimports_i386.exe",
         "decompiler/crates/kuna-analysis/tests/fixtures/pe_datasection_entry_i386.exe",
     ] {
-        let Some(mut prog) = boot(rel) else { return };
+        let mut prog = boot(rel);
         prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
         let canonical = prog.function_entries_canonical();
         assert_eq!(

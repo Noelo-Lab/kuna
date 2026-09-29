@@ -45,9 +45,8 @@ impl<K: Ord + Clone, V: Clone> PartMap<K, V> {
         PartMap { database: BTreeMap::new(), defaultvalue }
     }
 
-    /// Look up the first split point coming before the given point and return
-    /// the value object it maps to.  If there is no earlier split point
-    /// return the default value.  (C++ `getValue`, const flavor.)
+    /// Return the value at the greatest split point at or before `pnt`,
+    /// or the default value before the first split point (C++ `getValue`).
     pub fn get_value(&self, pnt: &K) -> &V {
         match self.database.range((Unbounded, Included(pnt))).next_back() {
             Some((_, v)) => v,
@@ -55,20 +54,14 @@ impl<K: Ord + Clone, V: Clone> PartMap<K, V> {
         }
     }
 
-    /// Mutable flavor of [`PartMap::get_value`] (C++ `getValue`, non-const).
-    /// Note that, as in C++, this can hand back a mutable reference to the
-    /// default value object.
+    /// Mutable lookup, including the default value before the first split
+    /// point. Returns the value directly without cloning a key.
     pub fn get_value_mut(&mut self, pnt: &K) -> &mut V {
-        let key = self
-            .database
-            .range((Unbounded, Included(pnt)))
-            .next_back()
-            .map(|(k, _)| k.clone());
-        match key {
-            Some(k) => self
-                .database
-                .get_mut(&k)
-                .expect("partmap: split point vanished"),
+        if self.database.first_key_value().is_none_or(|(first, _)| pnt < first) {
+            return &mut self.defaultvalue;
+        }
+        match self.database.range_mut((Unbounded, Included(pnt))).next_back() {
+            Some((_, v)) => v,
             None => &mut self.defaultvalue,
         }
     }

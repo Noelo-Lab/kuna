@@ -2615,19 +2615,12 @@ impl MapState {
     /// final layout order.
     pub fn initialize(&mut self) -> KunaResult<bool> {
         // Enforce boundaries of local variables
-        let last = match self.range.get_last_signed_range(&self.spaceid) {
-            Some(r) => r.get_last(),
-            None => return Ok(false),
+        let Some((high, sst)) = self.endpoint() else {
+            return Ok(false);
         };
         if self.maplist.is_empty() {
             return Ok(false);
         }
-        let high = self.spaceid.wrap_offset(last.wadd(1));
-        let word_size = self.spaceid.get_word_size();
-        let addr_size = self.spaceid.get_addr_size();
-        let mut sst: intb = AddrSpace::byte_to_address(high, word_size) as intb;
-        sst = sign_extend(sst, (addr_size as int4) * 8 - 1);
-        sst = AddrSpace::address_to_byte_int(sst, word_size);
         // Add extra range to bound any final open entry
         self.maplist.push(RangeHint::new(
             high,
@@ -2644,6 +2637,25 @@ impl MapState {
         self.reconcile_datatypes()?;
         self.iter = 0;
         Ok(true)
+    }
+
+    /// The first byte past the analyzed range, as an offset and as a signed
+    /// offset: where [`MapState::initialize`] puts the terminating hint.
+    fn endpoint(&self) -> Option<(uintb, intb)> {
+        let last = self.range.get_last_signed_range(&self.spaceid)?.get_last();
+        let high = self.spaceid.wrap_offset(last.wadd(1));
+        let word_size = self.spaceid.get_word_size();
+        let addr_size = self.spaceid.get_addr_size();
+        let mut sst: intb = AddrSpace::byte_to_address(high, word_size) as intb;
+        sst = sign_extend(sst, (addr_size as int4) * 8 - 1);
+        sst = AddrSpace::address_to_byte_int(sst, word_size);
+        Some((high, sst))
+    }
+
+    /// (kuna `castobject`) The signed offset of the terminating hint, where
+    /// `restructure` ends an open range no other hint follows.
+    pub fn end_sstart(&self) -> Option<intb> {
+        self.endpoint().map(|(_, sst)| sst)
     }
 
     /// Get the current RangeHint in the collection (C++ `next`,

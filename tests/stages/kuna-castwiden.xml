@@ -1,0 +1,134 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna castwiden (P9, sub-stage cast-policy; option castwiden off|on|literal).
+
+    A 64-bit widening that C's own conversions perform keeps no cast.  The
+    ported CastStrategyC::isExtensionCastImplied hides an INT_SEXT/INT_ZEXT only
+    beside an explicit variable of the same metatype, so a widened int beside a
+    loaded long, into a store through a long pointer, or times a literal prints
+    its (int8) although C converts it to that same type by itself.
+
+    gcc -O0 -fno-pie of (the bytes below are .text):
+
+      add_load(p, i)     return p[1] + i;                 (long *p, int i)
+      mul_two(a, b)      return (long)a * b;
+      lit_mul(i)         return (long)i * 12 + 7;
+      store_long(p, i)   p[1] = i;
+      assign_size(i, o)  unsigned long n = i; o[0] = n; return n / 3;
+      keep_less(p, i)    return p[0] < i;
+      keep_mixed(p, c)   return (unsigned long)c[0] + (unsigned long)p[0];
+
+    Pass 1 (castwiden off) prints every widening (#1 #3 #5 #7 #9 #11).  Pass 2
+    (on) leaves out the widening beside an operand printed with the cast's type
+    (#2: the loaded int8; #4: of two widened factors the right one, so the
+    product stays 64-bit) and into a destination of the cast's width (#8, #10:
+    a store through an int8 or uint8 pointer).  Pass 3 (literal) also prints the
+    8-byte literal beside a widening with its width's suffix, so C converts the
+    other operand itself (#6: 0xcL; #12: 3UL beside a (uint8) of an int4, whose
+    implicit conversion is that same sign-extension).  Every pass keeps the
+    widening in a comparison (#13) and a zero-extension beside a signed int8,
+    where the bare operand would make the sum signed (#14).
+-->
+<bytechunk space="ram" offset="0x1000">
+554889e548897df88975f4488b45f84883c008488b108b45f448984801d05dc3
+554889e5897dfc8975f88b45fc4863d08b45f84898480fafc25dc3554889e589
+7dfc8b45fc4863d04889d04801c04801d048c1e0024883c0075dc3554889e548
+897df88975f4488b45f8488d50088b45f44898488902905dc3554889e5897dec
+488975e08b45ec4898488945f8488b45e0488b55f8488910488b45f848baabaa
+aaaaaaaaaaaa48f7e24889d048d1e85dc3554889e548897df88975f4488b45f8
+488b108b45f448984839c20f9cc00fb6c05dc3554889e548897df8488975f048
+8b45f00fb6000fb6d0488b45f8488b004801d05dc3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="add_load"/>
+<symbol space="ram" offset="0x1020" name="mul_two"/>
+<symbol space="ram" offset="0x103b" name="lit_mul"/>
+<symbol space="ram" offset="0x105b" name="store_long"/>
+<symbol space="ram" offset="0x1079" name="assign_size"/>
+<symbol space="ram" offset="0x10b1" name="keep_less"/>
+<symbol space="ram" offset="0x10d3" name="keep_mixed"/>
+</binaryimage>
+<script>
+  <com>option castwiden off</com>
+  <com>lo fu add_load</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mul_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lit_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu store_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu assign_size</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep_less</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep_mixed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option castwiden on</com>
+  <com>lo fu add_load</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mul_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lit_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu store_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu assign_size</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep_less</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep_mixed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option castwiden literal</com>
+  <com>lo fu add_load</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mul_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lit_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu store_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu assign_size</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep_less</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep_mixed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="castwiden #1: with the option off the int4 beside a loaded int8 carries an (int8)" min="1" max="1">return \(int8\)a1 \+ \(\(int8 \*\)a0\)\[1\];</stringmatch>
+<stringmatch name="castwiden #2: on and literal leave the widening to the usual arithmetic conversions" min="2" max="2">return a1 \+ \(\(int8 \*\)a0\)\[1\];</stringmatch>
+<stringmatch name="castwiden #3: with the option off both factors carry an (int8)" min="1" max="1">return \(int8\)a1 \* \(int8\)a0;</stringmatch>
+<stringmatch name="castwiden #4: on and literal keep one (int8), which keeps the product 64-bit" min="2" max="2">return \(int8\)a1 \* a0;</stringmatch>
+<stringmatch name="castwiden #5: off and on keep the widening beside an int literal" min="2" max="2">return \(int8\)a0 \* 0xc \+ 7;</stringmatch>
+<stringmatch name="castwiden #6: literal types the 8-byte literal and leaves the widening to C" min="1" max="1">return a0 \* 0xcL \+ 7;</stringmatch>
+<stringmatch name="castwiden #7: with the option off the store through an int8 pointer carries an (int8)" min="1" max="1">\(\(int8 \*\)a0\)\[1\] = \(int8\)a1;</stringmatch>
+<stringmatch name="castwiden #8: on and literal leave the conversion to the store" min="2" max="2">\(\(int8 \*\)a0\)\[1\] = a1;</stringmatch>
+<stringmatch name="castwiden #9: with the option off the store through a uint8 pointer carries an (int8)" min="1" max="1">\*a1 = \(int8\)a0;</stringmatch>
+<stringmatch name="castwiden #10: on and literal leave the value-keeping widening to the store of the same width" min="2" max="2">\*a1 = a0;</stringmatch>
+<stringmatch name="castwiden #11: off and on keep the (uint8) beside an int literal" min="2" max="2">return \(uint8\)a0 / 3;</stringmatch>
+<stringmatch name="castwiden #12: literal prints 3UL and leaves the conversion to C" min="1" max="1">return a0 / 3UL;</stringmatch>
+<stringmatch name="castwiden #13: every pass keeps the widening in a comparison" min="3" max="3">return \*a0 &lt; \(int8\)a1;</stringmatch>
+<stringmatch name="castwiden #14: every pass keeps a zero-extension beside a signed int8" min="3" max="3">return \*a0 \+ \(uint8\)\*a1;</stringmatch>
+</decompilertest>

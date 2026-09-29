@@ -2,14 +2,9 @@
 //! `this`, plus the declared parameter types — to a function whose mangled
 //! symbol survives.
 //!
-//! ## What the name-only demangler leaves on the table
-//!
-//! [`crate::demangle`] reduces a mangled symbol to its qualified NAME
-//! ([`demangle_name`](crate::demangle::demangle_name)), and its own header
-//! records the gap: *"It does NOT apply the demangled signature (parameter /
-//! return types) … a deferred follow-up."* [`demangle_raw`] has kept the full
-//! c++filt form since that PR and had no production caller. This module is that
-//! caller.
+//! [`crate::demangle::demangle_name`] produces qualified names for loader
+//! symbols. This pass consumes [`demangle_raw`] to recover declared parameter
+//! types and the evidence for an implicit `this`.
 //!
 //! The payoff is a **stripped** binary. A C++ shared library exports its member
 //! functions through `.dynsym`, so `_ZN7leveldb12TableBuilder10WriteBlockEPNS_12
@@ -83,7 +78,7 @@
 //! return type only for template functions, so upstream returns null and leaves
 //! the function's own recovered return type in place — which is why
 //! `leveldb::TableBuilder::NumEntries` still renders `undefined8` in Ghidra. Here
-//! that is expressed as [`PrototypePieces::outtype`] `= None`, which
+//! that is expressed by setting [`PrototypePieces`]'s `outtype` to `None`, which
 //! `Funcdata::apply_locked_prototype` reads as "lock the INPUT half only".
 
 use std::collections::{HashMap, HashSet};

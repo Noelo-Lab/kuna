@@ -7,12 +7,6 @@
 //! serial Listing is built first, and then EVERY address it decoded is decoded
 //! again on the second engine and compared field for field — length,
 //! fall-through, flow class, static targets, mnemonic and operands.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -161,14 +155,11 @@ fn agree_everywhere(name: &str) -> usize {
 
 #[test]
 fn a_rebuilt_engine_decodes_every_address_the_same() {
-    if !specs_ready(&[
+    assert!(specs_ready(&[
         "x86/data/languages/x86.sla",
         "x86/data/languages/x86-64.sla",
         "AARCH64/data/languages/AARCH64.sla",
-    ]) {
-        eprintln!("verify_decode_engine: skipping (required .sla files are absent; `make specs`)");
-        return;
-    }
+    ]), "required processor specs must be available");
     // fauxware (a small non-PIE ELF), a DWARF-typed ELF, a CET PIE (whose GOT
     // slots the loader patches, so a re-parse of the file would read zeroes),
     // a PE, and the two largest in-repo x86-64 images.
@@ -216,10 +207,7 @@ fn a_recipe_that_carries_no_sla_is_refused() {
 
 #[test]
 fn arm_thumb_declares_its_context_commits() {
-    if !specs_ready(&["ARM/data/languages/ARM7_le.sla"]) {
-        eprintln!("verify_decode_engine: skipping ARM (ARM7_le.sla is absent; `make specs`)");
-        return;
-    }
+    assert!(specs_ready(&["ARM/data/languages/ARM7_le.sla"]), "required processor specs must be available");
     let bin = fixture("arm_thumb_linked_le32");
     let path = bin.to_str().unwrap().to_string();
     let prog = bootstrap_from_object(&path, "", &spec_roots())
@@ -259,10 +247,7 @@ fn arm_thumb_declares_its_context_commits() {
 
 #[test]
 fn recipe_space_truncations_are_applied() {
-    if !specs_ready(&["AARCH64/data/languages/AARCH64.sla"]) {
-        eprintln!("verify_decode_engine: skipping AARCH64 (AARCH64.sla is absent; `make specs`)");
-        return;
-    }
+    assert!(specs_ready(&["AARCH64/data/languages/AARCH64.sla"]), "required processor specs must be available");
     let bin = fixture("entrymain_aarch64");
     let path = bin.to_str().unwrap().to_string();
     let prog = bootstrap_from_object(&path, "", &spec_roots())

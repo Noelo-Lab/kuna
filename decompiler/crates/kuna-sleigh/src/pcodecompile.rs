@@ -1,51 +1,20 @@
-//! Port of `decompiler/cpp/pcodecompile.{hh,cc}` (item
-//! `w2-sleigh-semantics`): the p-code expression/statement builder shared
-//! by the SLEIGH compiler and the runtime snippet parser.
+//! P-code expression and statement construction, based on
+//! `decompiler/cpp/pcodecompile.{hh,cc}`.
 //!
-//! At runtime this machinery is driven by `pcodeparse` (`PcodeSnippet`,
-//! a later item) to compile p-code **injection snippets**; the other C++
-//! subclass (`SleighCompile`) belongs to the unported compiler (LOSS-001).
+//! [`PcodeCompile`] shares builder methods between `kuna-slacomp::SleighCompile`
+//! and [`crate::pcodeparse::PcodeSnippet`]. Implementors provide spaces, temporary
+//! allocation, symbol registration and diagnostics. Location queries use symbol
+//! names; the compiler resolves them while runtime snippets return no location.
 //!
-//! ## Shape of the port
+//! [`ExprTree`] owns its operations and output. Builders consume and return
+//! trees rather than transferring raw pointers. [`PcodeCompileSymbol`] carries
+//! varnode or label declarations; shared [`LabelSymbol`] values use `Cell` for
+//! placement and reference counts. Bit-range builders take an already-resolved
+//! varnode and name from their caller.
 //!
-//! - C++ `PcodeCompile` is an abstract class with data members; the port is
-//!   the [`PcodeCompile`] trait: the C++ pure virtuals (`allocateTemp`,
-//!   `addSymbol`, `getLocation`, `reportError`, `reportWarning`) and
-//!   accessors for the C++ data members (`defaultspace`, `constantspace`,
-//!   `uniqspace`, `local_labelcount`, `enforceLocalKey`) are required
-//!   methods; every concrete C++ method body is a provided method
-//!   transcribed from pcodecompile.cc.
-//! - [`ExprTree`] owns its ops/output by value (`Vec<OpTpl>` /
-//!   `Option<VarnodeTpl>`); the C++ null-vs-empty `ops` pointer distinction
-//!   only ever exists transiently and is collapsed to the empty `Vec`.
-//!   Methods that C++ passes/frees raw pointers through take and return
-//!   `ExprTree` by value.
-//! - C++ overloads split by arity: `createOp` -> [`PcodeCompile::create_op`]
-//!   (unary) / [`PcodeCompile::create_op2`] (binary), `createOpNoOut` ->
-//!   [`PcodeCompile::create_op_no_out`] / [`PcodeCompile::create_op_no_out2`].
-//! - `LabelSymbol` lives in C++ slghsymbol.hh but was deliberately not
-//!   ported by the symbol wave (its only consumers are the compiler and
-//!   this module); it is defined here as [`LabelSymbol`], shared as
-//!   `Rc<LabelSymbol>` with `Cell` interior mutability for the two fields
-//!   C++ mutates through shared pointers (`isplaced`, `refcount`).
-//! - `addSymbol(SleighSymbol *)` receives either a freshly built
-//!   `VarnodeSymbol` or a `LabelSymbol`; the port's
-//!   [`PcodeCompileSymbol`] enum carries exactly those two cases.
-//! - `getLocation(SleighSymbol *)` is keyed by the symbol **name** in the
-//!   port ([`PcodeCompile::get_location`]): the only runtime implementor
-//!   (`PcodeSnippet`) returns null unconditionally, and the pointer-keyed
-//!   map belongs to the unported compiler.
-//! - `createBitRange(SpecificSymbol *sym,...)` takes the already-resolved
-//!   `sym->getVarnode()` plus the symbol name
-//!   ([`PcodeCompile::create_bit_range`]): the `getVarnode()` virtuals were
-//!   deferred by the symbol wave, and the caller (the pcodeparse item)
-//!   resolves them.
-//! - The C++ statics `force_size`/`matchSize`/`fillinZero`/`propagateSize`
-//!   are free functions.  C++ aliases a target `VarnodeTpl *` *into* the op
-//!   vector it simultaneously mutates; the port expresses the same
-//!   algorithm with an explicit target slot (`(op_index, slot)`,
-//!   [`match_size`]/[`fillin_zero`]) — the propagation loop still visits
-//!   the target's own slot exactly as C++ does (a same-size no-op).
+//! Size propagation addresses an output or input by its `(op_index, slot)`
+//! rather than aliasing a pointer into the vector being updated. The traversal
+//! still visits the target's own slot, where a matching size is a no-op.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -112,12 +81,8 @@ pub struct StarQuality {
     pub size: u32,
 }
 
-/// C++ `LabelSymbol` (slghsymbol.hh): a branch label within a p-code
-/// snippet.  Defined here because the symbol wave deliberately skipped it
-/// (compiler-side class; this module and the snippet parser are its only
-/// runtime consumers).  Shared as `Rc<LabelSymbol>` mirroring the C++
-/// aliasing between the local scope and grammar values; the two fields C++
-/// mutates through that shared pointer use `Cell`.
+/// A p-code branch label shared between local scopes and grammar values.
+/// Placement and reference counts use `Cell` behind the shared `Rc`.
 #[derive(Debug, Default)]
 pub struct LabelSymbol {
     /// Symbol name (C++ `SleighSymbol::name`).

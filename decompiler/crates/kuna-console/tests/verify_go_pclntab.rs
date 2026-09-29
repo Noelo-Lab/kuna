@@ -13,16 +13,10 @@
 //! Following Increment 15's pattern (the real-Go no-return e2e), this test BUILDS
 //! a tiny Go program at runtime in an isolated temp dir with a private
 //! `GOCACHE`/`GOPATH` (hermetic — never touches the user's environment), guarded
-//! on `go` being on PATH AND the build succeeding; it **skips cleanly** otherwise.
+//! on `go` being on PATH. An installed compiler must build the fixture successfully.
 //! The hermetic parser logic is pinned separately by the unit tests in
 //! `kuna-analysis/src/pclntab/tests.rs` (no `go` needed), so the merge-blocking
 //! gate does not depend on a Go toolchain.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored;
-//! `make specs`). When absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -66,7 +60,7 @@ func main() {
 
 /// Build `MAIN_GO` into `out_bin` hermetically. `strip` toggles `-ldflags=-s -w`
 /// (drops the symbol table + DWARF, but KEEPS `.gopclntab`). Returns `true` on a
-/// successful build that produced the binary, `false` for any failure (→ skip).
+/// successful build that produced the binary, `false` for any failure.
 fn build_go(dir: &std::path::Path, out_bin: &std::path::Path, strip: bool) -> bool {
     if std::fs::create_dir_all(dir).is_err() {
         return false;
@@ -95,26 +89,17 @@ fn build_go(dir: &std::path::Path, out_bin: &std::path::Path, strip: bool) -> bo
     matches!(cmd.status(), Ok(s) if s.success()) && out_bin.exists()
 }
 
-/// Bootstrap a binary, commit the deferred analysis (so the pclntab pass's facts
-/// land), and return the `ConsoleProgram`. `None` if the `.sla` is absent (skip).
-fn bootstrap(bin: &str) -> Option<kuna_console::engine::ConsoleProgram> {
+/// Bootstrap a binary, commit the deferred analysis (so the pclntab pass's facts land), and
+/// return the `ConsoleProgram`.
+fn bootstrap(bin: &str) -> kuna_console::engine::ConsoleProgram {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_go_pclntab: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // The analysis-pass facts are committed at `read symbols` (gated by the per-pass
     // flags), not eagerly at bootstrap — trigger that commit here.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// The headline e2e: a STRIPPED Go binary (no `.symtab`) recovers `main.main` and
@@ -132,16 +117,12 @@ fn stripped_go_functions_recovered_from_pclntab() {
     let _ = std::fs::remove_dir_all(&dir);
     let out_bin = dir.join("go_stripped");
     if !build_go(&dir, &out_bin, /* strip */ true) {
-        eprintln!("verify_go_pclntab: skipping (`go build` did not produce a binary)");
         let _ = std::fs::remove_dir_all(&dir);
-        return;
+        panic!("installed Go compiler failed to build the fixture");
     }
     let bin = out_bin.to_str().expect("utf8 path").to_string();
 
-    let Some(prog) = bootstrap(&bin) else {
-        let _ = std::fs::remove_dir_all(&dir);
-        return;
-    };
+    let prog = bootstrap(&bin);
 
     // AFTER: the user functions are recovered by name from the pclntab. On a
     // stripped binary there is NO `.symtab`, so these names can ONLY come from the
@@ -178,22 +159,15 @@ fn gopclntab_off_suppresses_recovery() {
     let _ = std::fs::remove_dir_all(&dir);
     let out_bin = dir.join("go_stripped");
     if !build_go(&dir, &out_bin, /* strip */ true) {
-        eprintln!("verify_go_pclntab: skipping (`go build` did not produce a binary)");
         let _ = std::fs::remove_dir_all(&dir);
-        return;
+        panic!("installed Go compiler failed to build the fixture");
     }
     let bin = out_bin.to_str().expect("utf8 path").to_string();
 
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("verify_go_pclntab: skipping (bootstrap failed): {}", e.explain());
-            let _ = std::fs::remove_dir_all(&dir);
-            return;
-        }
-    };
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // Turn the pass OFF before the deferred commit consults the flag.
     prog.arch_mut()
         .set_kuna_option("gopclntab", "off")

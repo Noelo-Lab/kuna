@@ -1,12 +1,4 @@
-//! Verifier adversarial tests for item `w2-harness-floatemu` (round 1).
-//!
-//! Independent of the ported `testfloatemu.rs`: fixtures and expected
-//! values here are re-derived from the C++ source
-//! (`decompiler/unittests/testfloatemu.cc`) and from a standalone C++
-//! oracle probe (g++ -std=c++11, x86-64 glibc/libstdc++ host — verbatim
-//! transcription of `FloatFormat::printDecimal` float.cc:446-477 plus the
-//! `(int64_t)float` guard of TEST(float_opTrunc_to_int)), NOT from the
-//! porter's helper functions.
+//! Conversion checks for the floating-point fixtures adapted from Ghidra.
 
 use kuna_num::float::FloatFormat;
 
@@ -49,18 +41,19 @@ fn verify_fixture_bits_rederivation() {
     assert_eq!(f32::MAX.to_bits(), 0x7f7f_ffff);
 }
 
-/// Every op test in the harness feeds `format.get_encoding(f64::from(f))`
-/// as the op input where the C++ feeds `format.getEncoding(f)` (float
-/// promoted to double).  That is only faithful if the promotion+re-encode
-/// is bit-exact for ALL fixture values — including the subnormal boundary
-/// cells (the w1 denormal-carry repair) and the NaN rows (payload through
-/// cvtss2sd).  Pin it.
+/// Re-encode each fixture value; spell out the NaN's host bits because a
+/// floating-point cast may change its sign or payload.
 #[test]
 fn verify_fixture_encodings_bit_exact() {
     let format = FloatFormat::new(4);
     for bits in FIXTURE_BITS {
         let f = f32::from_bits(bits);
-        let enc = format.get_encoding(f64::from(f));
+        let host = if f.is_nan() {
+            f64::from_bits(0x7ff8_0000_0000_0000)
+        } else {
+            f64::from(f)
+        };
+        let enc = format.get_encoding(host);
         assert_eq!(
             enc,
             u64::from(bits),
@@ -69,29 +62,39 @@ fn verify_fixture_encodings_bit_exact() {
     }
 }
 
-/// The `assert_float_encoding(f: f64)` rewrite of ASSERT_FLOAT_ENCODING
-/// derives `true_encoding` via an f32->f64->f32 roundtrip that the C++
-/// macro does not perform for float-typed arguments (it takes the float
-/// bits directly).  Pin that the roundtrip is bit-exact for the NaN call
-/// sites (sign + payload through cvtss2sd/cvtsd2ss on this host) and that
-/// the widened doubles equal the x86 numeric_limits NaNs.
 #[test]
-fn verify_float_encoding_macro_nan_roundtrip() {
-    for bits in [0x7fc0_0000u32, 0xffc0_0000u32] {
-        let f = f32::from_bits(bits);
-        let widened = f64::from(f);
-        // cast: the macro rewrite's double -> float narrowing under test
-        let narrowed = (widened as f32).to_bits();
-        assert_eq!(narrowed, bits, "f32->f64->f32 NaN roundtrip changed bits");
+fn verify_nan_format_conversion_preserves_sign() {
+    let format4 = FloatFormat::new(4);
+    let format8 = FloatFormat::new(8);
+    for (input4, input8, canonical4, canonical8) in [
+        (
+            0x7fc0_0000,
+            0x7ff8_0000_0000_0000,
+            0x7fc0_0000,
+            0x7ff8_0000_0000_0000,
+        ),
+        (
+            0xffc0_0000,
+            0xfff8_0000_0000_0000,
+            0xffc0_0000,
+            0xfff8_0000_0000_0000,
+        ),
+        (
+            0x7f80_0001,
+            0x7ff0_0000_0000_0001,
+            0x7fc0_0000,
+            0x7ff8_0000_0000_0000,
+        ),
+        (
+            0xff80_0001,
+            0xfff0_0000_0000_0001,
+            0xffc0_0000,
+            0xfff8_0000_0000_0000,
+        ),
+    ] {
+        assert_eq!(format4.op_float2float(input4, &format8), canonical8);
+        assert_eq!(format8.op_float2float(input8, &format4), canonical4);
     }
-    assert_eq!(
-        f64::from(f32::from_bits(0x7fc0_0000)).to_bits(),
-        0x7ff8_0000_0000_0000u64
-    );
-    assert_eq!(
-        f64::from(f32::from_bits(0xffc0_0000)).to_bits(),
-        0xfff8_0000_0000_0000u64
-    );
 }
 
 /// TEST(float_opTrunc_to_int)'s `(int64_t)f` guard is UB in C++ for NaN /

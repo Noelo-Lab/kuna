@@ -39,12 +39,6 @@
 //!
 //! The discovery options are the ones `--mode aggressive` (the `auto` choice for
 //! an image this small) turns on, set before the deferred commit as the CLI does.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::{Path, PathBuf};
 
@@ -73,7 +67,7 @@ fn fixture(ext: &str) -> PathBuf {
     ))
 }
 
-fn bootstrap(options: &[(&str, &str)]) -> Option<ConsoleProgram> {
+fn bootstrap(options: &[(&str, &str)]) -> ConsoleProgram {
     bootstrap_image(&fixture("exe"), options, None)
 }
 
@@ -81,20 +75,11 @@ fn bootstrap_image(
     bin: &Path,
     options: &[(&str, &str)],
     declared: Option<(u64, &str)>,
-) -> Option<ConsoleProgram> {
+) -> ConsoleProgram {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_pdbinterior: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     for (name, value) in [("listing", "on"), ("aif", "on"), ("aifstrict", "on")]
         .iter()
         .chain(options)
@@ -115,7 +100,7 @@ fn bootstrap_image(
     }
     prog.commit_pending_analysis()
         .expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn decompile(prog: ConsoleProgram, name: &str) -> String {
@@ -163,9 +148,7 @@ fn inventory(prog: &ConsoleProgram) -> Vec<(u64, String, Vec<String>)> {
 /// committed and the leaf's render stops at it.
 #[test]
 fn off_plants_an_entry_inside_the_pdb_leaf() {
-    let Some(prog) = bootstrap(&[("pdbinterior", "off")]) else {
-        return;
-    };
+    let prog = bootstrap(&[("pdbinterior", "off")]);
     assert!(prog.lookup_symbol(LEAF).is_some(), "the PDB names the leaf");
     assert!(
         prog.lookup_symbol(PHANTOM).is_some(),
@@ -182,9 +165,7 @@ fn off_plants_an_entry_inside_the_pdb_leaf() {
 /// rejected and every case renders.
 #[test]
 fn default_keeps_the_pdb_leaf_whole() {
-    let Some(prog) = bootstrap(&[]) else {
-        return;
-    };
+    let prog = bootstrap(&[]);
     assert!(prog.lookup_symbol(LEAF).is_some(), "the PDB names the leaf");
     assert!(
         prog.lookup_symbol(PHANTOM).is_none(),
@@ -206,9 +187,7 @@ fn default_keeps_the_pdb_leaf_whole() {
 /// The extents come out of the `.pdb`, so `pdb off` withdraws them as well.
 #[test]
 fn pdb_off_withdraws_the_extents() {
-    let Some(prog) = bootstrap(&[("pdb", "off")]) else {
-        return;
-    };
+    let prog = bootstrap(&[("pdb", "off")]);
     assert!(
         prog.lookup_symbol(PHANTOM).is_some(),
         "with pdb off nothing may consult the .pdb, so {PHANTOM} is committed as before"
@@ -219,9 +198,7 @@ fn pdb_off_withdraws_the_extents() {
 /// the entry inside it is the only function its code has, and it stays.
 #[test]
 fn default_keeps_the_only_entry_of_a_static_leaf() {
-    let Some(prog) = bootstrap(&[]) else {
-        return;
-    };
+    let prog = bootstrap(&[]);
     assert!(
         prog.lookup_symbol("static_leaf").is_none(),
         "no public names the static leaf"
@@ -248,9 +225,7 @@ fn default_keeps_the_only_entry_of_a_static_leaf() {
 #[test]
 fn a_function_at_the_static_leaf_start_lets_its_extent_apply() {
     let declared = Some((STATIC_LEAF, "static_leaf"));
-    let Some(off) = bootstrap_image(&fixture("exe"), &[("pdbinterior", "off")], declared) else {
-        return;
-    };
+    let off = bootstrap_image(&fixture("exe"), &[("pdbinterior", "off")], declared);
     assert!(
         off.lookup_symbol(STATIC_PHANTOM).is_some(),
         "off commits {STATIC_PHANTOM}"
@@ -261,9 +236,7 @@ fn a_function_at_the_static_leaf_start_lets_its_extent_apply() {
         "off must truncate static_leaf at {STATIC_PHANTOM}; got:\n{body}"
     );
 
-    let Some(on) = bootstrap_image(&fixture("exe"), &[], declared) else {
-        return;
-    };
+    let on = bootstrap_image(&fixture("exe"), &[], declared);
     assert!(
         on.lookup_symbol(STATIC_PHANTOM).is_none(),
         "{STATIC_PHANTOM} must be rejected"
@@ -283,9 +256,7 @@ fn a_function_at_the_static_leaf_start_lets_its_extent_apply() {
 #[test]
 fn default_keeps_entries_the_owner_does_not_decode() {
     for options in [&[("pdbinterior", "off")][..], &[]] {
-        let Some(prog) = bootstrap(options) else {
-            return;
-        };
+        let prog = bootstrap(options);
         for (leaf, entry) in [
             ("handler_leaf", "sub_1400013a0"),
             ("caller_leaf", "sub_1400013d0"),
@@ -306,9 +277,7 @@ fn default_keeps_entries_the_owner_does_not_decode() {
 /// default (removing it would render that block nowhere — the #612 defect class).
 #[test]
 fn default_keeps_entries_after_a_targetless_call() {
-    let Some(prog) = bootstrap(&[]) else {
-        return;
-    };
+    let prog = bootstrap(&[]);
     for (leaf, entry) in
         [("indirect_leaf", "sub_140001450"), ("fastfail_leaf", "sub_140001490")]
     {
@@ -325,9 +294,7 @@ fn default_keeps_entries_after_a_targetless_call() {
 /// extent is not used and the public survives.
 #[test]
 fn a_public_inside_a_procedure_blocks_its_extent() {
-    let Some(prog) = bootstrap(&[]) else {
-        return;
-    };
+    let prog = bootstrap(&[]);
     assert!(prog.lookup_symbol("pubinside_leaf").is_some(), "the PDB names pubinside_leaf");
     assert!(
         prog.lookup_symbol("pub_inside").is_some(),
@@ -355,9 +322,6 @@ fn a_fingerprint_mismatched_pdb_changes_nothing() {
     let default = bootstrap_image(&exe, &[], None);
     let pdb_off = bootstrap_image(&exe, &[("pdb", "off")], None);
     let _ = std::fs::remove_dir_all(&dir);
-    let (Some(default), Some(pdb_off)) = (default, pdb_off) else {
-        return;
-    };
     assert!(
         default.lookup_symbol(PHANTOM).is_some(),
         "no extent may apply"

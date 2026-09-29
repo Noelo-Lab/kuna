@@ -262,6 +262,17 @@ printed a bare `return;` and `error: null`, indistinguishable from a function
 that returns normally. The fourth cause, `noreturn`, is not a decode failure and
 is deliberately untouched: it is already reported on the call it follows.
 
+When the generic `PowerPC:BE:64:default` or `PowerPC:LE:64:default` decoder
+fails on an aligned `isel` encoding, `decodehalt` also names the selected target
+and suggests an explicit `--target PowerPC:<endian>:64:A2ALT` for AltiVec code.
+The hint reads only the four bytes at the failure; an unreadable word, another
+opcode or another target adds no hint. It neither retries nor changes the ISA.
+ELF machine/class, ABI version flags and GNU vector calling-convention attributes
+do not identify a complete ISA: the A2 variants have conflicting vector encodings,
+and a matching `isel` word can also be data. The user must choose the variant
+appropriate to the input. The ordinary truncation marker remains, and
+`decodehalt off` suppresses the extra hint along with the existing warnings.
+
 **The instruction budget.** `max_instructions` (100000 by default, `option
 maxinstruction N`) caps how many instructions one function's flow may decode.
 Reaching it either throws — `option errortoomanyinstructions on`, upstream's
@@ -993,7 +1004,11 @@ the case targets.
    "switch" is a jump through a read-only pointer; its value is read from the
    load image and the table has one entry.
 4. **Accept or rescue.** If the chosen range exceeds `max_jumptable_size`
-   (1024, `architecture.rs (reset_defaults_internal)`), the four kuna bound
+   (1024, `architecture.rs (reset_defaults_internal)`; settable per run as the
+   catalogued `option jumptablemax <n>`: upstream's `OptionJumpTableMax`, parsed
+   strictly by `Architecture::set_kuna_option`, so anything but a positive
+   decimal count is refused; the analysis tier's switch-table read takes the
+   same field, see chapter 01), the four kuna bound
    extensions below get one chance each, in order; if none installs a bound the
    model is declined, model 2 is tried, and then recovery fails with
    `"Could not recover jumptable ... Too many branches"`

@@ -546,6 +546,11 @@ impl Replay {
         &self.minted
     }
 
+    /// Consume the replay, transferring its table in mint order.
+    pub fn into_table(self) -> Vec<(String, SynthRequest)> {
+        self.minted
+    }
+
     /// The `struct_<n>` names held by something the run did not mint.
     pub fn held(&self) -> Vec<String> {
         let minted: HashSet<&str> = self.minted.iter().map(|(n, _)| n.as_str()).collect();

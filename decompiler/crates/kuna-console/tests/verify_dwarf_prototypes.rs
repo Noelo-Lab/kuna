@@ -19,12 +19,6 @@
 //!
 //! Fixtures: `dwarf_globals_x86_64` (a small purpose-built `-g` binary) and
 //! `regglobal_fmt_x86_64` (GNU coreutils `fmt`, the IDA-parity reference).
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -40,25 +34,16 @@ fn fixture(name: &str) -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name)
 }
 
-/// Bootstrap `bin`, commit the (default-on) DWARF facts, decompile `func`, and
-/// return the captured C (`None` ⇒ specs-less skip).
-fn decompile(bin: &str, func: &str) -> Option<String> {
+/// Bootstrap `bin`, commit the (default-on) DWARF facts, decompile `func`, and return the
+/// captured C.
+fn decompile(bin: &str, func: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let path = fixture(bin).to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&path, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_dwarf_prototypes: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let path = fixture(bin).to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let cmds: Vec<String> =
@@ -74,14 +59,14 @@ fn decompile(bin: &str, func: &str) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// `int bump(int n)` — the DWARF parameter NAME (`n`) is the visible delta from
 /// the recovered-storage default (`a0`).
 #[test]
 fn parameter_names_and_types_come_from_dwarf() {
-    let Some(code) = decompile("dwarf_globals_x86_64", "bump") else { return };
+    let code = decompile("dwarf_globals_x86_64", "bump");
 
     assert!(
         code.contains("bump(int4 n)"),
@@ -93,7 +78,7 @@ fn parameter_names_and_types_come_from_dwarf() {
 /// both parameter names.
 #[test]
 fn main_renders_its_source_signature() {
-    let Some(code) = decompile("dwarf_globals_x86_64", "main") else { return };
+    let code = decompile("dwarf_globals_x86_64", "main");
 
     assert!(
         code.contains("main(int4 argc,char **argv)"),
@@ -108,7 +93,7 @@ fn main_renders_its_source_signature() {
 /// `return (unsigned __int8)v16 ^ 1;`.
 #[test]
 fn fmt_main_return_narrows_from_the_bogus_register_pair() {
-    let Some(code) = decompile("regglobal_fmt_x86_64", "main") else { return };
+    let code = decompile("regglobal_fmt_x86_64", "main");
 
     assert!(
         code.contains("main(int4 argc,char **argv)"),

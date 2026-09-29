@@ -23,12 +23,6 @@
 //! helper below therefore sets it BEFORE `bootstrap_from_object`, serialized by a
 //! mutex because the environment is process-global and `cargo test` runs the
 //! tests in this binary concurrently.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -46,16 +40,16 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture with `typedepth` on/off, decompile each of `funcs` and
-/// return the concatenated C. `None` => specs-less skip.
-fn decompile(funcs: &[&str], typedepth: bool) -> Option<String> {
+/// Bootstrap the fixture with `typedepth` on/off, decompile each of `funcs` and return the
+/// concatenated C.
+fn decompile(funcs: &[&str], typedepth: bool) -> String {
     let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let path = root
         .join("decompiler/crates/kuna-analysis/tests/fixtures/typedepth_x86_64")
-        .to_str()?
+        .to_str().expect("UTF-8 fixture path")
         .to_string();
 
     std::env::set_var(TYPEDEPTH_ENV, if typedepth { "on" } else { "off" });
@@ -70,17 +64,7 @@ fn decompile(funcs: &[&str], typedepth: bool) -> Option<String> {
     let prog = bootstrap_from_object(&path, "", &spec_roots);
     std::env::remove_var(TYPEDEPTH_ENV);
     std::env::remove_var(DWARFSTRUCTS_ENV);
-    let mut prog = match prog {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_typedepth: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = prog.expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let mut cmds: Vec<String> = Vec::new();
@@ -100,18 +84,15 @@ fn decompile(funcs: &[&str], typedepth: bool) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// The headline plain-C case: a stack local declared `const char *const *`
 /// (pointer → const → pointer → const → char) is five DIEs deep.
 #[test]
 fn stack_local_keeps_its_element_type() {
-    let (Some(off), Some(on)) =
-        (decompile(&["count_authors"], false), decompile(&["count_authors"], true))
-    else {
-        return;
-    };
+    let (off, on) =
+        (decompile(&["count_authors"], false), decompile(&["count_authors"], true));
     assert!(off.contains("void **p"), "gate off should reproduce the bug, got:\n{off}");
     assert!(
         on.contains("char **p") && !on.contains("void **p"),
@@ -123,11 +104,8 @@ fn stack_local_keeps_its_element_type() {
 /// collapsed the qualifier hops — the case that arm left on the table.
 #[test]
 fn three_pointer_hops_resolve() {
-    let (Some(off), Some(on)) =
-        (decompile(&["take_argvp"], false), decompile(&["take_argvp"], true))
-    else {
-        return;
-    };
+    let (off, on) =
+        (decompile(&["take_argvp"], false), decompile(&["take_argvp"], true));
     assert!(off.contains("void ***argvp"), "gate off should reproduce the bug, got:\n{off}");
     assert!(
         on.contains("char ***argvp"),
@@ -139,11 +117,8 @@ fn three_pointer_hops_resolve() {
 /// name, not the shared `anon_struct` (the `mbstate_t` shape).
 #[test]
 fn anonymous_aggregate_takes_its_typedef_name() {
-    let (Some(off), Some(on)) =
-        (decompile(&["use_state"], false), decompile(&["use_state"], true))
-    else {
-        return;
-    };
+    let (off, on) =
+        (decompile(&["use_state"], false), decompile(&["use_state"], true));
     assert!(off.contains("anon_struct *cur"), "gate off should reproduce the bug, got:\n{off}");
     assert!(
         on.contains("state_t *cur"),
@@ -157,7 +132,7 @@ fn anonymous_aggregate_takes_its_typedef_name() {
 /// instead of letting the pointer degrade to `void *`.
 #[test]
 fn colliding_typedef_name_falls_back_not_to_void() {
-    let Some(on) = decompile(&["walk_codes"], true) else { return };
+    let on = decompile(&["walk_codes"], true);
     assert!(
         !on.contains("void *base"),
         "a name collision must not degrade the pointer to void, got:\n{on}"
@@ -169,9 +144,7 @@ fn colliding_typedef_name_falls_back_not_to_void() {
 /// rendered address-taken; with the real extent it decays like the array it is.
 #[test]
 fn global_array_gets_its_real_extent() {
-    let (Some(off), Some(on)) = (decompile(&["main"], false), decompile(&["main"], true)) else {
-        return;
-    };
+    let (off, on) = (decompile(&["main"], false), decompile(&["main"], true));
     assert!(
         off.contains("(char **)&default_authors"),
         "gate off should reproduce the bug, got:\n{off}"
@@ -187,7 +160,7 @@ fn global_array_gets_its_real_extent() {
 /// cycle counter, not a hop budget, is what keeps the walk finite).
 #[test]
 fn recursive_struct_types_terminate() {
-    let Some(on) = decompile(&["list_len", "ping", "pong"], true) else { return };
+    let on = decompile(&["list_len", "ping", "pong"], true);
     assert!(on.contains("list_len"), "self-referential struct walk should decompile:\n{on}");
     assert!(on.contains("ping_s"), "mutually recursive struct should resolve:\n{on}");
     assert!(on.contains("pong_s"), "mutually recursive struct should resolve:\n{on}");

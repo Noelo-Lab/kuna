@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="Cortus:LE:32:APS3:default">
+<!--
+    Cortus APS3 (specs/Ghidra/Processors/Cortus): three constructors in
+    aps3.slaspec produced wrong p-code.  One image, three independent functions,
+    one per defect.
+
+    FUN_0  - `inv rd, imm` (0x14/0x1c and the .cc forms 0x94/0x9c) emitted
+             `rd = ~imm` where the core negates.  Only the REGISTER forms
+             0x15/0x16/0x96 are a bitwise NOT; the immediate forms are not.
+             Bytes 1c 20 56 00 = inv r2, 0x56 -> -0x56 = 0xffffffaa, not 0xffffffa9.
+
+    FUN_10 - `extb.cc`/`exth.cc` (0xb3/0xc3) emitted `zext` while also computing
+             NF = (rd s< 0), a flag a zero-extended value can never set.  They
+             sign-extend.  Under zext the signed branch below is unreachable, so
+             the whole taken path and the parameter itself are folded away.
+             Bytes b3 22 = extb.cc r2, r2 ; 22 03 = blt +6.
+
+    FUN_30 - `call [rd]` (0xF1) assigned r15 = inst_next BEFORE reading rd.  r15
+             is the link register and is the usual target register for a far
+             call, so the write clobbered the target and every such site
+             resolved to the following instruction.
+             Bytes 08 f0 00 00 / 2c f0 40 00 / f1 f0 = r15 = 0x40 ; call [r15].
+
+    Stage: 02 P-code lift (SLEIGH semantic constructors).
+    No option gates these - they are strict corrections of wrong p-code, so the
+    default pipeline both reproduces the bug (before) and shows the fix (after).
+-->
+<bytechunk space="ram" offset="0x0">
+1c205600e1f0
+</bytechunk>
+<bytechunk space="ram" offset="0x10">
+b32222030420e1f00421e1f0
+</bytechunk>
+<bytechunk space="ram" offset="0x30">
+08f000002cf04000f1f0e1f0
+</bytechunk>
+<bytechunk space="ram" offset="0x40">
+e1f0
+</bytechunk>
+<symbol space="ram" offset="0x0" name="FUN_0"/>
+<symbol space="ram" offset="0x10" name="FUN_10"/>
+<symbol space="ram" offset="0x30" name="FUN_30"/>
+<symbol space="ram" offset="0x40" name="FUN_40"/>
+</binaryimage>
+<script>
+  <com>lo fu FUN_0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu FUN_10</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu FUN_30</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="APS3 #1: inv with an immediate negates (-0x56 = 0xffffffaa)" min="1" max="1">return 0xffffffaa;</stringmatch>
+<stringmatch name="APS3 #2: the bitwise-NOT result 0xffffffa9 must NOT appear" min="0" max="0">0xffffffa9</stringmatch>
+<stringmatch name="APS3 #3: extb.cc sign-extends, so the signed branch is reachable" min="1" max="1">return 1;</stringmatch>
+<stringmatch name="APS3 #4: and its guard survives as a signed comparison" min="1" max="1">'\\0' &lt;= a0</stringmatch>
+<stringmatch name="APS3 #5: call [r15] reaches the loaded target at 0x40" min="1" max="1">FUN_40\(\)</stringmatch>
+<stringmatch name="APS3 #6: it must NOT resolve to the following instruction 0x3a" min="0" max="0">0x3a</stringmatch>
+</decompilertest>

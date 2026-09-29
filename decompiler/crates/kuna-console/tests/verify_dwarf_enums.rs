@@ -19,12 +19,6 @@
 //! Fixtures: `dwarf_enums_x86_64` (`+.c`, purpose-built: unsigned enum, signed
 //! enum with a negative member) and `regglobal_fmt_x86_64` (the IDA-parity
 //! reference — coreutils `quoting_style`).
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -40,25 +34,16 @@ fn fixture(name: &str) -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name)
 }
 
-/// Bootstrap `bin`, commit the (default-on) DWARF facts, decompile `func`, and
-/// return the captured C (`None` ⇒ specs-less skip).
-fn decompile(bin: &str, func: &str) -> Option<String> {
+/// Bootstrap `bin`, commit the (default-on) DWARF facts, decompile `func`, and return the
+/// captured C.
+fn decompile(bin: &str, func: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let path = fixture(bin).to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&path, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_dwarf_enums: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let path = fixture(bin).to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let cmds: Vec<String> =
@@ -74,7 +59,7 @@ fn decompile(bin: &str, func: &str) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// `int apply(enum mode m, enum level l, int n)` — both parameters declare their
@@ -82,7 +67,7 @@ fn decompile(bin: &str, func: &str) -> Option<String> {
 /// so it also pins the width-masking of the value map.
 #[test]
 fn enum_parameters_and_comparisons_render_by_member_name() {
-    let Some(code) = decompile("dwarf_enums_x86_64", "apply") else { return };
+    let code = decompile("dwarf_enums_x86_64", "apply");
 
     assert!(
         code.contains("apply(mode m,level l,int4 n)"),
@@ -101,7 +86,7 @@ fn enum_parameters_and_comparisons_render_by_member_name() {
 /// Constant arguments at a call site pick up the callee's enum parameter type.
 #[test]
 fn enum_arguments_render_by_member_name_at_the_call_site() {
-    let Some(code) = decompile("dwarf_enums_x86_64", "main") else { return };
+    let code = decompile("dwarf_enums_x86_64", "main");
 
     assert!(
         code.contains("apply(mode_truncate,level_error,7)"),
@@ -114,7 +99,7 @@ fn enum_arguments_render_by_member_name_at_the_call_site() {
 /// reuse path (re-creating an already-filled enum is an error, not a no-op).
 #[test]
 fn fmt_main_renders_the_quoting_style_member() {
-    let Some(code) = decompile("regglobal_fmt_x86_64", "main") else { return };
+    let code = decompile("regglobal_fmt_x86_64", "main");
 
     assert!(
         code.contains("quotearg_style(shell_escape_always_quoting_style"),

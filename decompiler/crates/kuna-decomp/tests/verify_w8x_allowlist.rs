@@ -1,24 +1,6 @@
-//! Verifier adversarial tests for item `w8x-universalaction-wire`
-//! (and the rule-body items it closes: `w8x-subflow-splits`,
-//! `w8x-constseq-strings`, `kuna_stackprobeloop`, `kuna_loweredswitch` install).
-//!
-//! The verdict file is `docs/rust-port/reviews/w8x-allowlist-closure.md`.  These
-//! tests target the three load-bearing claims of the wave:
-//!
-//!   1. `UNPORTED_ALLOWLIST` is genuinely **empty** (not just "small").
-//!   2. The materialized decompile tree is **byte-equal** to the C++ oracle dump
-//!      with NO line-stripping or renumbering — i.e. every previously-allowlisted
-//!      pass is present, and the gate is not silently weakened.
-//!   3. Each newly-wired pass sits at its **exact C++ `universalAction`
-//!      registration position** (verified against its immediate neighbours, which
-//!      is the property a misplaced rule would silently break while still passing
-//!      a name-set check).
-//!
-//! They are intentionally redundant with the in-tree
-//! `universalaction_listing::decompile_tree_dump_is_byte_equal_to_oracle`: a
-//! verifier owns an independent oracle-derived check so a future edit that
-//! weakens the in-tree gate (re-adds stripping, drops a pass) cannot pass review
-//! unnoticed.
+//! Schedule coverage for formerly unported passes: presence, registration
+//! adjacency and listing format. The shared kuna snapshot includes later
+//! kuna-specific additions and is not an independent C++ oracle.
 
 use kuna_decomp::universalaction::{universal_sched, ActionListFilter, UNPORTED_ALLOWLIST};
 
@@ -36,9 +18,9 @@ const DECOMPILE_GROUPS: &[&str] = &[
     "conditionalexe",
 ];
 
-const ORACLE: &str = include_str!("fixtures/list_action_decompile_oracle.txt");
+const SNAPSHOT: &str = include_str!("fixtures/list_action_decompile_snapshot.txt");
 
-/// Render the Rust decompile-root dump exactly as the B0 gate does.
+/// Render the decompile-root dump used by the listing snapshot test.
 fn rust_dump() -> String {
     let sched = universal_sched(None, None, vec![]);
     let filter = ActionListFilter::from_names(DECOMPILE_GROUPS.iter().copied());
@@ -99,27 +81,24 @@ fn w8x_allowlist_is_empty() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Byte-equality with the raw oracle, AND the ten formerly-allowlisted passes
+// 2. Byte-equality with the snapshot, AND the ten formerly-allowlisted passes
 //    are present (so the byte-equality is non-vacuous, not achieved by stripping
 //    both sides).
 // ---------------------------------------------------------------------------
 
 #[test]
-fn w8x_dump_is_byte_equal_to_raw_oracle() {
-    // Independent of the in-tree gate: compare verbatim, no stripping, no
-    // renumbering.  A length or content divergence fails.
+fn w8x_dump_is_byte_equal_to_snapshot() {
     let dump = rust_dump();
     assert_eq!(
-        dump, ORACLE,
-        "rendered decompile dump is not byte-equal to the raw C++ oracle"
+        dump, SNAPSHOT,
+        "rendered decompile dump is not byte-equal to the kuna snapshot"
     );
 }
 
 #[test]
 fn w8x_all_ten_formerly_allowlisted_passes_are_present() {
-    // The exact ten names the wave claims to have wired in.  Each must appear in
-    // BOTH the oracle and the Rust dump (proving the byte-equality above is not
-    // vacuous — i.e. not achieved by both sides omitting them).
+    // Require these in both sources, so deleting them from the snapshot cannot
+    // conceal a missing registration.
     const WIRED: &[&str] = &[
         "splitflow", "subfloat_convert", "stackprobeloop", "lowerswitchinstall",
         "dumptyhumplate", "splitcopy", "splitload", "splitstore", "stringcopy",
@@ -127,15 +106,15 @@ fn w8x_all_ten_formerly_allowlisted_passes_are_present() {
     ];
     let dump = rust_dump();
     let named_dump: Vec<&str> = dump.lines().filter(|l| last_token(l).is_some()).collect();
-    let named_oracle: Vec<&str> = ORACLE.lines().filter(|l| last_token(l).is_some()).collect();
+    let named_snapshot: Vec<&str> = SNAPSHOT.lines().filter(|l| last_token(l).is_some()).collect();
     for name in WIRED {
         assert!(
             named_dump.iter().any(|l| last_token(l) == Some(name)),
             "{name:?} missing from the Rust dump (allowlist re-introduced?)"
         );
         assert!(
-            named_oracle.iter().any(|l| last_token(l) == Some(name)),
-            "{name:?} missing from the C++ oracle (stale fixture?)"
+            named_snapshot.iter().any(|l| last_token(l) == Some(name)),
+            "{name:?} missing from the kuna snapshot (stale fixture?)"
         );
     }
 }
@@ -200,9 +179,8 @@ fn w8x_dump_index_is_zero_padded_width4() {
         first.starts_with("0000"),
         "first dump line must start with the zero-padded index 0000, got {first:?}"
     );
-    // And the oracle agrees (guards against a fixture re-capture drifting format).
     assert!(
-        ORACLE.lines().next().map(|l| l.starts_with("0000")).unwrap_or(false),
-        "oracle first line is not zero-padded width-4"
+        SNAPSHOT.lines().next().map(|l| l.starts_with("0000")).unwrap_or(false),
+        "snapshot first line is not zero-padded width-4"
     );
 }

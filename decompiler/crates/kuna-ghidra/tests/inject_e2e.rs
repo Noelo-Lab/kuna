@@ -67,12 +67,8 @@ impl Run {
     }
 }
 
-/// Drive registerProgram → setAction → one decompileAt per target →
-/// deregisterProgram against the in-process [`GhidraProcess`], with the host
-/// end answered by the sim oracle.
-///
-/// `None` when the `.sla` specs are not built (the visible skip the CI canary
-/// greps for).
+/// Drive registerProgram → setAction → one decompileAt per target → deregisterProgram
+/// against the in-process [`GhidraProcess`], with the host end answered by the sim oracle.
 fn run(
     binary: &Path,
     lang_dir: &str,
@@ -80,8 +76,8 @@ fn run(
     cspec_name: &str,
     targets: &[&str],
     fault: Option<InjectFault>,
-) -> Option<Run> {
-    let mut oracle = SimOracle::bootstrap(binary)?;
+) -> Run {
+    let mut oracle = SimOracle::bootstrap(binary);
     oracle.inject_fault = fault;
     let tspec = generate_tspec(&oracle.manager, oracle.big_endian, oracle.unique_base);
     let dir = repo_root().join(lang_dir);
@@ -146,11 +142,11 @@ fn run(
             other => (other.map(|p| p.len()).unwrap_or(0), String::new()),
         })
         .collect();
-    Some(Run {
+    Run {
         trace,
         oracle,
         results,
-    })
+    }
 }
 
 /// Assert every driven target produced a function, and say which did not.
@@ -185,16 +181,14 @@ fn assert_all_decompiled(r: &Run, targets: &[&str], what: &str) {
 #[test]
 fn arm32_fetches_the_setisamode_fixup_from_the_host() {
     let binary = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fmt_arm");
-    let Some(r) = run(
+    let r = run(
         &binary,
         ARM_LANG,
         "ARMt.pspec",
         "ARM.cspec",
         ARM_TARGETS,
         None,
-    ) else {
-        return;
-    };
+    );
     assert_all_decompiled(&r, ARM_TARGETS, "ARM:LE:32 fmt_arm");
 
     let main_c = &r.results[0].1;
@@ -229,16 +223,14 @@ fn arm32_fetches_the_setisamode_fixup_from_the_host() {
 fn mips32_fetches_the_setisamode_fixup_from_the_host() {
     let binary = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/plt_mips32");
     let targets = ["main"];
-    let Some(r) = run(
+    let r = run(
         &binary,
         MIPS_LANG,
         "mips32.pspec",
         "mips32be.cspec",
         &targets,
         None,
-    ) else {
-        return;
-    };
+    );
     assert_all_decompiled(&r, &targets, "MIPS:BE:32 plt_mips32");
     assert!(
         r.callother_fixups() > 0,
@@ -254,16 +246,14 @@ fn mips32_fetches_the_setisamode_fixup_from_the_host() {
 fn aarch64_issues_no_inject_query() {
     let binary = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fmt_aarch64");
     let targets = ["main", "frame_dummy", "_start"];
-    let Some(r) = run(
+    let r = run(
         &binary,
         AARCH64_LANG,
         "AARCH64.pspec",
         "AARCH64.cspec",
         &targets,
         None,
-    ) else {
-        return;
-    };
+    );
     assert_all_decompiled(&r, &targets, "AArch64 fmt_aarch64");
     assert_eq!(
         r.callother_fixups(),
@@ -280,16 +270,14 @@ fn aarch64_issues_no_inject_query() {
 fn a_thrown_inject_stays_a_low_level_error() {
     let binary = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fmt_arm");
     let targets = ["main", "frame_dummy"];
-    let Some(r) = run(
+    let r = run(
         &binary,
         ARM_LANG,
         "ARMt.pspec",
         "ARM.cspec",
         &targets,
         Some(InjectFault::NotFound),
-    ) else {
-        return;
-    };
+    );
     assert_eq!(r.results[0].0, 0, "main should not have decompiled");
     assert!(
         r.trace.responses[2]
@@ -312,16 +300,14 @@ fn a_thrown_inject_stays_a_low_level_error() {
 fn an_empty_inject_response_fails_only_that_function() {
     let binary = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/fmt_arm");
     let targets = ["main", "frame_dummy"];
-    let Some(r) = run(
+    let r = run(
         &binary,
         ARM_LANG,
         "ARMt.pspec",
         "ARM.cspec",
         &targets,
         Some(InjectFault::NoPcode),
-    ) else {
-        return;
-    };
+    );
     assert_eq!(r.results[0].0, 0, "main should not have decompiled");
     assert!(
         r.trace.responses[2]

@@ -12,10 +12,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 
 from . import config, state
+
+
+class BacklogError(RuntimeError):
+    """The ranked backlog is unreadable or cannot be used for selection."""
 
 
 def _slug(opp):
@@ -33,15 +38,39 @@ def _opp_id(opp):
     return "%s::%s" % (opp.get("test_name", ""), opp.get("selector"))
 
 
+def _validate_row(row, location):
+    if not isinstance(row, dict):
+        raise BacklogError(f"invalid backlog {location}: expected an object")
+    score = row.get("score", 0)
+    if type(score) not in (int, float) or (isinstance(score, float) and not math.isfinite(score)):
+        raise BacklogError(f"invalid backlog {location}: score must be a finite number")
+    if not isinstance(row.get("test_name", ""), str):
+        raise BacklogError(f"invalid backlog {location}: test_name must be a string")
+    if row.get("func_name") is not None and not isinstance(row["func_name"], str):
+        raise BacklogError(f"invalid backlog {location}: func_name must be a string or null")
+    for field in ("kinds", "reasons"):
+        values = row.get(field, [])
+        if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
+            raise BacklogError(f"invalid backlog {location}: {field} must be an array of strings")
+
+
 def _read_ranked(name):
     path = config.pipeline_docs_dir() / name
-    if not path.exists():
-        return []
     try:
         with open(path) as fh:
-            return json.load(fh).get("ranked", [])
-    except (json.JSONDecodeError, OSError):
+            document = json.load(fh)
+    except FileNotFoundError:
         return []
+    except (json.JSONDecodeError, UnicodeError, OSError) as exc:
+        raise BacklogError(f"cannot read backlog {path}: {exc}") from exc
+    if not isinstance(document, dict):
+        raise BacklogError(f"invalid backlog {path}: expected an object")
+    ranked = document.get("ranked")
+    if not isinstance(ranked, list):
+        raise BacklogError(f"invalid backlog {path}: ranked must be an array")
+    for index, row in enumerate(ranked):
+        _validate_row(row, f"{path}: ranked[{index}]")
+    return ranked
 
 
 def load_backlog():
@@ -95,7 +124,11 @@ def main(argv=None):
                    help="restrict to small self-contained units or structural-matrix gaps")
     args = p.parse_args(argv)
 
-    opp = pick(skip_custom=args.skip_custom, min_score=args.min_score, kind=args.kind)
+    try:
+        opp = pick(skip_custom=args.skip_custom, min_score=args.min_score, kind=args.kind)
+    except (BacklogError, state.StateError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     if opp is None:
         if not (args.shell or args.json):
             print("no remaining opportunities", file=sys.stderr)

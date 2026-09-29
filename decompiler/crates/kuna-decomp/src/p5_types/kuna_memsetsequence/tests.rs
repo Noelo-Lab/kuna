@@ -3,10 +3,8 @@
 //! distinguishes a memset from a string or a lone NUL terminator — plus the
 //! [`RuleMemsetCopy`] gate and the `OptionMemsetRecover` parse.
 //!
-//! The collection (`collect_fill_run`), build (`build_memset`), transform, and
-//! the full `RuleMemsetCopy::apply_op` body reach W4/W6 stubs (symbol table,
-//! type-facing factory, address-only loc-set overload) and are exercised only at
-//! their gate/structure level here — see the module docs.
+//! These fixtures exercise the detection model directly; stage tests cover
+//! collection and replacement through the live rule.
 
 use super::*;
 
@@ -22,6 +20,29 @@ use crate::action::Rule;
 use crate::constseq::WriteNode;
 use crate::dtype::type_metatype;
 use crate::context::{ArchContext, BlockId, TypeOp};
+
+impl MemsetSequence {
+    fn from_collected(
+        char_type: Rc<Datatype>,
+        move_ops: Vec<WriteNode>,
+        data: &Funcdata,
+    ) -> MemsetSequence {
+        let mut seq = MemsetSequence {
+            base: ArraySequence::new(char_type),
+            fill_value: 0,
+            fill_count: 0,
+        };
+        seq.base.move_ops = move_ops;
+        if !seq.base.move_ops.is_empty() {
+            seq.form_fill_run(data);
+        }
+        seq
+    }
+
+    fn move_ops(&self) -> &[WriteNode] {
+        &self.base.move_ops
+    }
+}
 
 fn build_manager() -> AddrSpaceManager {
     let mut m = AddrSpaceManager::new();

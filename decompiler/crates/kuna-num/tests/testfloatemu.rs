@@ -1,30 +1,7 @@
-//! Port of the C++ unit tests in `decompiler/unittests/testfloatemu.cc`.
+//! Operation checks adapted from Ghidra's testfloatemu.cc.
 //!
-//! One C++ `TEST(name)` -> one `#[test] fn name()`, assertion for
-//! assertion, same constants, same order.  The C++ TEST names (e.g.
-//! `float_opNan`) are kept exactly for the port-audit gate, hence the
-//! file-level `non_snake_case` allow.
-//!
-//! Scaffolding mapping (testfloatemu.cc:38-116):
-//! - `floatFromRawBits`/`floatToRawBits`/`doubleFromRawBits`/`doubleToRawBits`
-//!   (4/8-byte `memcpy` on the little-endian host) become
-//!   `from_bits`/`to_bits` helpers.
-//! - The `ASSERT_FLOAT_ENCODING`/`ASSERT_DOUBLE_ENCODING` macros become
-//!   `assert_float_encoding`/`assert_double_encoding` fns taking `f64`: every
-//!   C++ call site's argument is, or is promoted to, `double` at
-//!   `format.getEncoding(f)`, and the float macro's `floatToRawBits(f)`
-//!   narrows to `float` exactly as the C++ implicit conversion does.
-//! - The file-static `float_test_values`/`int_test_values` vectors become
-//!   fixture fns returning arrays (same values, same order).
-//! - `std::numeric_limits` constants: `denorm_min()` and `quiet_NaN()` are
-//!   pinned by bit pattern (the x86 host values the C++ oracle computes
-//!   with); `min()`/`max()`/`infinity()` map to
-//!   `MIN_POSITIVE`/`MAX`/`INFINITY`.
-//!
-//! Like the C++ original, these tests compare `FloatFormat` results against
-//! the *host's* floating-point semantics; NaN sign/payload propagation
-//! follows the x86 host lowering -- the same caveat documented in the
-//! kuna-num `float.rs` module docs.
+//! Finite results compare against host arithmetic. NaNs use the sign policy
+//! pinned by the golden vectors rather than the compiler's NaN propagation.
 
 #![allow(non_snake_case)] // C++ TEST(name) fn names are preserved exactly
 
@@ -55,19 +32,14 @@ fn double_to_raw_bits(f: f64) -> u64 {
     f.to_bits()
 }
 
-/// Pin a NaN *generated* from non-NaN inputs to the x86 "real indefinite"
-/// (`0xffc00000`), mirroring [`FloatFormat::encode_generated`] (see the float.rs
-/// module header).  These are host-parity tests: they compare `FloatFormat`
-/// against the build host's native FP, which agree everywhere EXCEPT the sign of
-/// an invalid-operation-generated NaN — the x86 FPU sets it, Apple-Silicon/ARM
-/// clears it.  The engine canonicalizes generated NaNs to the x86 sign for
-/// cross-host determinism, so the host reference is canonicalized the same way
-/// to keep the test meaningful off-x86.  On the x86 oracle host this is a no-op
-/// (the host already yields `0xffc00000`).  `inputs_nan` marks a *propagated*
-/// NaN (host-deterministic sign), which is left untouched.
-fn canon_generated_nan4(raw: u64, inputs_nan: bool) -> u64 {
+/// The fixture contains only positive quiet NaNs; invalid operations produce
+/// the negative quiet NaN used by the pinned x86 oracle.
+fn expected_arithmetic_encoding(raw: u64, inputs_nan: bool) -> u64 {
+    if inputs_nan {
+        return float_to_raw_bits(FLOAT_QNAN);
+    }
     let is_nan = (raw & 0x7f80_0000) == 0x7f80_0000 && (raw & 0x007f_ffff) != 0;
-    if !inputs_nan && is_nan {
+    if is_nan {
         0xffc0_0000
     } else {
         raw
@@ -158,8 +130,15 @@ fn double_encoding_normal() {
 
 #[test]
 fn float_encoding_nan() {
-    assert_float_encoding(f64::from(FLOAT_QNAN));
-    assert_float_encoding(f64::from(-FLOAT_QNAN));
+    let format = FloatFormat::new(4);
+    assert_eq!(
+        format.get_encoding(f64::from_bits(0x7ff8_0000_0000_0000)),
+        0x7fc0_0000
+    );
+    assert_eq!(
+        format.get_encoding(f64::from_bits(0xfff8_0000_0000_0000)),
+        0xffc0_0000
+    );
 }
 
 #[test]
@@ -312,7 +291,7 @@ fn float_opNan() {
 
     for f in float_test_values() {
         let true_result = u64::from(f.is_nan()); // C++ bool -> uintb
-        let encoding = format.get_encoding(f64::from(f));
+        let encoding = float_to_raw_bits(f);
         let result = format.op_nan(encoding);
 
         assert_eq!(true_result, result);
@@ -325,7 +304,7 @@ fn float_opNeg() {
 
     for f in float_test_values() {
         let true_result = float_to_raw_bits(-f);
-        let encoding = format.get_encoding(f64::from(f));
+        let encoding = float_to_raw_bits(f);
         let result = format.op_neg(encoding);
 
         assert_eq!(true_result, result);
@@ -338,7 +317,7 @@ fn float_opAbs() {
 
     for f in float_test_values() {
         let true_result = float_to_raw_bits(f.abs());
-        let encoding = format.get_encoding(f64::from(f));
+        let encoding = float_to_raw_bits(f);
         let result = format.op_abs(encoding);
 
         assert_eq!(true_result, result);
@@ -350,8 +329,8 @@ fn float_opSqrt() {
     let format = FloatFormat::new(4);
 
     for f in float_test_values() {
-        let true_result = canon_generated_nan4(float_to_raw_bits(f.sqrt()), f.is_nan());
-        let encoding = format.get_encoding(f64::from(f));
+        let true_result = expected_arithmetic_encoding(float_to_raw_bits(f.sqrt()), f.is_nan());
+        let encoding = float_to_raw_bits(f);
         let result = format.op_sqrt(encoding);
 
         assert_eq!(true_result, result);
@@ -363,8 +342,8 @@ fn float_opCeil() {
     let format = FloatFormat::new(4);
 
     for f in float_test_values() {
-        let true_result = float_to_raw_bits(f.ceil());
-        let encoding = format.get_encoding(f64::from(f));
+        let true_result = expected_arithmetic_encoding(float_to_raw_bits(f.ceil()), f.is_nan());
+        let encoding = float_to_raw_bits(f);
         let result = format.op_ceil(encoding);
 
         assert_eq!(true_result, result);
@@ -376,8 +355,8 @@ fn float_opFloor() {
     let format = FloatFormat::new(4);
 
     for f in float_test_values() {
-        let true_result = float_to_raw_bits(f.floor());
-        let encoding = format.get_encoding(f64::from(f));
+        let true_result = expected_arithmetic_encoding(float_to_raw_bits(f.floor()), f.is_nan());
+        let encoding = float_to_raw_bits(f);
         let result = format.op_floor(encoding);
 
         assert_eq!(true_result, result);
@@ -390,8 +369,8 @@ fn float_opRound() {
 
     for f in float_test_values() {
         // C++ std::round(float): round half away from zero, same as f32::round
-        let true_result = float_to_raw_bits(f.round());
-        let encoding = format.get_encoding(f64::from(f));
+        let true_result = expected_arithmetic_encoding(float_to_raw_bits(f.round()), f.is_nan());
+        let encoding = float_to_raw_bits(f);
         let result = format.op_round(encoding);
 
         assert_eq!(true_result, result);
@@ -420,16 +399,17 @@ fn float_to_double_opFloat2Float() {
     let format8 = FloatFormat::new(8);
 
     for f in float_test_values() {
-        // C++ (double)f: exact float -> double promotion
-        let true_result = double_to_raw_bits(f64::from(f));
-        let encoding = format.get_encoding(f64::from(f));
+        let true_result = if f.is_nan() {
+            DOUBLE_QNAN.to_bits()
+        } else {
+            double_to_raw_bits(f64::from(f))
+        };
+        let encoding = float_to_raw_bits(f);
         let result = format.op_float2float(encoding, &format8);
 
         assert_eq!(true_result, result);
     }
 }
-
-//  TODO float2float going the other direction, double_to_float_opFloat2Float
 
 /// The C++ test's `(int64_t)f` cast as the oracle's x86 host performs it
 /// (`cvttss2si`): truncation toward zero; NaN, infinities, and values whose
@@ -467,7 +447,7 @@ fn float_opTrunc_to_int() {
         // in int32 range, so `as i32` (truncate toward zero) matches the C++
         // host cast; int32_t -> uintb sign-extends, hence `as i64 as u64`.
         let true_result = (f as i32 as i64 as u64) & 0xffffffff;
-        let encoding = format.get_encoding(f64::from(f));
+        let encoding = float_to_raw_bits(f);
         let result = format.op_trunc(encoding, 4);
 
         assert_eq!(true_result, result);
@@ -481,10 +461,10 @@ fn float_opEqual() {
     let format = FloatFormat::new(4);
 
     for f1 in float_test_values() {
-        let encoding1 = format.get_encoding(f64::from(f1));
+        let encoding1 = float_to_raw_bits(f1);
         for f2 in float_test_values() {
             let true_result = u64::from(f1 == f2); // C++ bool -> uintb
-            let encoding2 = format.get_encoding(f64::from(f2));
+            let encoding2 = float_to_raw_bits(f2);
             let result = format.op_equal(encoding1, encoding2);
 
             assert_eq!(true_result, result);
@@ -497,10 +477,10 @@ fn float_opNotEqual() {
     let format = FloatFormat::new(4);
 
     for f1 in float_test_values() {
-        let encoding1 = format.get_encoding(f64::from(f1));
+        let encoding1 = float_to_raw_bits(f1);
         for f2 in float_test_values() {
             let true_result = u64::from(f1 != f2); // C++ bool -> uintb
-            let encoding2 = format.get_encoding(f64::from(f2));
+            let encoding2 = float_to_raw_bits(f2);
             let result = format.op_not_equal(encoding1, encoding2);
 
             assert_eq!(true_result, result);
@@ -513,10 +493,10 @@ fn float_opLess() {
     let format = FloatFormat::new(4);
 
     for f1 in float_test_values() {
-        let encoding1 = format.get_encoding(f64::from(f1));
+        let encoding1 = float_to_raw_bits(f1);
         for f2 in float_test_values() {
             let true_result = u64::from(f1 < f2); // C++ bool -> uintb
-            let encoding2 = format.get_encoding(f64::from(f2));
+            let encoding2 = float_to_raw_bits(f2);
             let result = format.op_less(encoding1, encoding2);
 
             assert_eq!(true_result, result);
@@ -529,10 +509,10 @@ fn float_opLessEqual() {
     let format = FloatFormat::new(4);
 
     for f1 in float_test_values() {
-        let encoding1 = format.get_encoding(f64::from(f1));
+        let encoding1 = float_to_raw_bits(f1);
         for f2 in float_test_values() {
             let true_result = u64::from(f1 <= f2); // C++ bool -> uintb
-            let encoding2 = format.get_encoding(f64::from(f2));
+            let encoding2 = float_to_raw_bits(f2);
             let result = format.op_less_equal(encoding1, encoding2);
 
             assert_eq!(true_result, result);
@@ -545,11 +525,13 @@ fn float_opAdd() {
     let format = FloatFormat::new(4);
 
     for f1 in float_test_values() {
-        let encoding1 = format.get_encoding(f64::from(f1));
+        let encoding1 = float_to_raw_bits(f1);
         for f2 in float_test_values() {
-            let true_result =
-                canon_generated_nan4(float_to_raw_bits(f1 + f2), f1.is_nan() || f2.is_nan());
-            let encoding2 = format.get_encoding(f64::from(f2));
+            let true_result = expected_arithmetic_encoding(
+                float_to_raw_bits(f1 + f2),
+                f1.is_nan() || f2.is_nan(),
+            );
+            let encoding2 = float_to_raw_bits(f2);
             let result = format.op_add(encoding1, encoding2);
 
             assert_eq!(true_result, result);
@@ -562,11 +544,13 @@ fn float_opDiv() {
     let format = FloatFormat::new(4);
 
     for f1 in float_test_values() {
-        let encoding1 = format.get_encoding(f64::from(f1));
+        let encoding1 = float_to_raw_bits(f1);
         for f2 in float_test_values() {
-            let true_result =
-                canon_generated_nan4(float_to_raw_bits(f1 / f2), f1.is_nan() || f2.is_nan());
-            let encoding2 = format.get_encoding(f64::from(f2));
+            let true_result = expected_arithmetic_encoding(
+                float_to_raw_bits(f1 / f2),
+                f1.is_nan() || f2.is_nan(),
+            );
+            let encoding2 = float_to_raw_bits(f2);
             let result = format.op_div(encoding1, encoding2);
 
             assert_eq!(true_result, result);
@@ -579,11 +563,13 @@ fn float_opMult() {
     let format = FloatFormat::new(4);
 
     for f1 in float_test_values() {
-        let encoding1 = format.get_encoding(f64::from(f1));
+        let encoding1 = float_to_raw_bits(f1);
         for f2 in float_test_values() {
-            let true_result =
-                canon_generated_nan4(float_to_raw_bits(f1 * f2), f1.is_nan() || f2.is_nan());
-            let encoding2 = format.get_encoding(f64::from(f2));
+            let true_result = expected_arithmetic_encoding(
+                float_to_raw_bits(f1 * f2),
+                f1.is_nan() || f2.is_nan(),
+            );
+            let encoding2 = float_to_raw_bits(f2);
             let result = format.op_mult(encoding1, encoding2);
 
             assert_eq!(true_result, result);
@@ -596,11 +582,13 @@ fn float_opSub() {
     let format = FloatFormat::new(4);
 
     for f1 in float_test_values() {
-        let encoding1 = format.get_encoding(f64::from(f1));
+        let encoding1 = float_to_raw_bits(f1);
         for f2 in float_test_values() {
-            let true_result =
-                canon_generated_nan4(float_to_raw_bits(f1 - f2), f1.is_nan() || f2.is_nan());
-            let encoding2 = format.get_encoding(f64::from(f2));
+            let true_result = expected_arithmetic_encoding(
+                float_to_raw_bits(f1 - f2),
+                f1.is_nan() || f2.is_nan(),
+            );
+            let encoding2 = float_to_raw_bits(f2);
             let result = format.op_sub(encoding1, encoding2);
 
             assert_eq!(true_result, result);

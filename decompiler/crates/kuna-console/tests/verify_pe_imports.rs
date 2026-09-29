@@ -35,13 +35,6 @@
 //! confirms the same fixture routes through the default `load file` dispatch to
 //! the object loader (the byte-identical-dispatch proof shared with
 //! `verify_object_formats`).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling console gates, bootstrapping needs the built `x86` `.sla`
-//! under `specs/` (gitignored; `make specs`). If it is absent the bootstrap fails
-//! and the test prints that and returns early (a visible skip, never a false
-//! green).
 
 use std::path::PathBuf;
 
@@ -98,25 +91,15 @@ fn decompile_func(prog: ConsoleProgram, func_cmd: &str) -> String {
     status.optr.clone()
 }
 
-/// Bootstrap a fixture, returning `None` (a visible skip) when the `.sla` is
-/// absent.
-fn boot(name: &str) -> Option<ConsoleProgram> {
+/// Bootstrap a fixture.
+fn boot(name: &str) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join(name);
     assert!(path.exists(), "missing fixture {path:?}");
 
-    match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_pe_imports: skipping {name} (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// The headline: a linked, non-stripped MinGW PE loads, decompiles `main`, and
@@ -127,23 +110,10 @@ fn pe_linked_exe_decompiles_with_named_imports() {
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = fixtures().join("pe_imports.exe");
 
-    // (default-on proof) The object loads through the *default* `load file`
-    // dispatch with no flag — multi-format support is unconditional. (A `.sla`-
-    // absent environment surfaces as a load error; the main body's skip covers
-    // that, so here we only assert the dispatch ROUTES to the object loader, i.e.
-    // it does not fail with the XML "not recognized" error.)
-    let dflt = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots);
-    if let Err(e) = &dflt {
-        // Only acceptable failure is a missing-`.sla` bootstrap error, never an
-        // "unrecognized format" rejection (that would mean the magic wasn't admitted).
-        let msg = e.explain();
-        assert!(
-            !msg.contains("Unable to recognize") && !msg.contains("XML"),
-            "default-on: the object must route to the object loader (got: {msg})"
-        );
-    }
+    kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots)
+        .expect("default dispatch loads object with built processor specs");
 
-    let Some(prog) = boot("pe_imports.exe") else { return };
+    let prog = boot("pe_imports.exe");
 
     // The linked exe loads with the Windows x86-64 spec.
     let desc = prog.description().to_string();
@@ -167,7 +137,7 @@ fn pe_linked_exe_decompiles_with_named_imports() {
 /// named ONLY because the IAT walk + `FF 25` thunk decode named the thunk veneer.
 #[test]
 fn pe_stripped_exe_names_puts_via_iat_thunk() {
-    let Some(prog) = boot("pe_imports_stripped.exe") else { return };
+    let prog = boot("pe_imports_stripped.exe");
 
     // No `main` symbol in a stripped PE — decompile by address.
     let out = decompile_func(prog, &format!("load addr 0x{MAIN_VMA:x}"));
@@ -195,7 +165,7 @@ fn pe_stripped_exe_names_puts_via_iat_thunk() {
 /// pointer slot. The slot remains a symbol so calls and explicit lookup work.
 #[test]
 fn pe_batch_targets_exclude_iat_data_slots() {
-    let Some(mut prog) = boot("pe_imports_stripped.exe") else { return };
+    let mut prog = boot("pe_imports_stripped.exe");
     prog.commit_pending_analysis().expect("PE analysis commit must succeed");
 
     let canonical = prog.function_entries_canonical();
@@ -223,7 +193,7 @@ fn pe_batch_targets_exclude_iat_data_slots() {
 /// remains the preferred body-bearing name selection and keeps its prototype.
 #[test]
 fn pe_data_iat_slot_is_not_a_body_target() {
-    let Some(mut prog) = boot("pe_imports.exe") else { return };
+    let mut prog = boot("pe_imports.exe");
     prog.commit_pending_analysis().expect("PE analysis commit must succeed");
 
     let slot = EntrySelector::Numeric(GETLASTERROR_IAT_VMA);
@@ -267,7 +237,7 @@ const IATINCODE_SLOTS: [u64; 3] = [0x401000, 0x401004, 0x401008];
 /// set is the entry alone, while the inventory and explicit lookup keep all four.
 #[test]
 fn pe_batch_excludes_iat_slots_inside_a_code_section() {
-    let Some(mut prog) = boot("pe_iatincode_i386.exe") else { return };
+    let mut prog = boot("pe_iatincode_i386.exe");
     prog.commit_pending_analysis().expect("PE analysis commit must succeed");
 
     let canonical: Vec<u64> =
@@ -320,7 +290,7 @@ fn pe_batch_excludes_iat_slots_inside_a_code_section() {
 /// render `VirtualAlloc(` / `GetModuleHandleA(` through the same slots.
 #[test]
 fn pe_iat_slots_in_code_still_name_their_calls() {
-    let Some(mut prog) = boot("pe_iatincode_i386.exe") else { return };
+    let mut prog = boot("pe_iatincode_i386.exe");
     prog.commit_pending_analysis().expect("PE analysis commit must succeed");
     let out = decompile_func(prog, &format!("load addr {IATINCODE_ENTRY_VMA:#x}"));
     for name in ["VirtualAlloc(", "GetModuleHandleA("] {
@@ -332,7 +302,7 @@ fn pe_iat_slots_in_code_still_name_their_calls() {
 /// function at an address the import directory claims still gets a body.
 #[test]
 fn pe_declared_entry_outranks_the_import_slot_test() {
-    let Some(mut prog) = boot("pe_iatincode_i386.exe") else { return };
+    let mut prog = boot("pe_iatincode_i386.exe");
     prog.commit_pending_analysis().expect("PE analysis commit must succeed");
     let space = prog
         .arch()

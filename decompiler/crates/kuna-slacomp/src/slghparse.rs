@@ -1,32 +1,9 @@
-//! WS2 -- the SLEIGH grammar (hand recursive-descent port of
-//! `decompiler/cpp/slghparse.y`).
+//! Recursive-descent SLEIGH parser, ported from Ghidra's slghparse.y.
 //!
-//! The C++ parser is bison LALR(1); kuna ports it (as with the p-code `parse line`
-//! grammar already in `kuna-sleigh/src/pcodeparse`) to a **hand recursive-descent
-//! parser**.  Each grammar action calls a builder on the driver, which constructs
-//! the symbol-table / constructor / template objects (the already-ported
-//! `kuna-sleigh` types).
-//!
-//! ## The driver boundary ([`ParserActions`])
-//!
-//! The bison grammar's actions are `slgh->...` calls on a `SleighCompile`.  In the
-//! Rust port those land in WS4 (`slgh_compile.rs`), still `todo!()` while WS2 is
-//! filled.  So WS2 drives the parse through the [`ParserActions`] trait: every
-//! builder the grammar invokes is a trait method, and the parser threads the
-//! arena ids (`u32`) those methods return (pattern equations, pattern
-//! expressions, ConstructTpl sections, ExprTrees, VarnodeTpls, op lists, ...)
-//! exactly as bison threads the `$$`/`$n` semantic values.  This mirrors the
-//! interface-freeze decision in `docs/rust-port/sleigh-compiler/map.md` (WS4):
-//! "Pattern equations / ConstructTpls / op-template lists are referenced by arena
-//! ids (`u32`) the driver owns -- this keeps the parser from threading raw owned
-//! trees through every production."
-//!
-//! [`crate::slgh_compile::SleighCompile`] implements [`ParserActions`] (and
-//! [`crate::slghscan::ScannerHost`]); the recording mock used by the golden-parse
-//! tests implements both too, so WS2 is verified independently of WS4.  Every
-//! action emits a [`ParserActions::trace`] token; the golden traces are captured
-//! from an instrumented `/tmp` copy of the bison grammar (the `KT(...)` calls --
-//! see `docs/rust-port/sleigh-compiler/ws2-parser.md`).
+//! [`ParserActions`] builds symbols, patterns and p-code templates through the
+//! compilation driver. Semantic values are handles into the driver's arenas.
+//! The recording driver in the parser tests checks the same action sequence
+//! against traces captured from the original bison grammar.
 //!
 //! ## Precedence (slghparse.y:82-93), highest last
 //!
@@ -46,10 +23,6 @@
 //! ```
 //! Realized as precedence-climbing for both `pexpression` (pattern values) and
 //! `expr` (p-code).
-//!
-//! ## Module ownership: WS2 owns this file exclusively.
-
-#![allow(dead_code)]
 
 use kuna_base::error::{KunaError, KunaResult};
 
@@ -63,7 +36,7 @@ pub const ACTIONON_ACTION: i32 = 1;
 
 /// p-code opcodes the grammar names directly (the `CPUI_*` constants the bison
 /// actions pass to `pcode.createOp`).  Kept as a small enum so the trait stays
-/// free of a dependency on the full `kuna_sleigh` opcode set; WS4 maps these to
+/// free of a dependency on the full `kuna_sleigh` opcode set; the driver maps these to
 /// `kuna_sleigh::opcodes::OpCode`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PcodeOpc {
@@ -96,7 +69,7 @@ pub type SymId = crate::slgh_compile::SymbolId;
 /// the `u32` ids are the driver-owned arena handles that stand in for the C++
 /// `*` semantic values.
 ///
-/// Implemented by [`SleighCompile`] (WS4 bodies) and by the test recording mock.
+/// Implemented by [`SleighCompile`] and by the test recording driver.
 pub trait ParserActions {
     /// Emit a golden-trace token for the action just taken (default no-op; the
     /// test mock records it).  Mirrors the instrumented bison `KT("...")`.
@@ -243,9 +216,8 @@ pub trait ParserActions {
     fn report_error(&mut self, msg: &str);
 }
 
-/// Parsed token/context field qualities (the grammar's `FieldQuality`).  Mirrors
-/// [`crate::slgh_compile::FieldQuality`] but stays parser-local so the parser
-/// never depends on the driver's not-yet-built `FieldQuality::new` (WS4).
+/// Parsed token/context field qualities, converted by the driver into
+/// [`crate::slgh_compile::FieldQuality`].
 #[derive(Clone, Debug)]
 pub struct FieldQual {
     pub name: Vec<u8>,

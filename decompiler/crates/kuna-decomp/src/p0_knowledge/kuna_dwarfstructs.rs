@@ -41,10 +41,7 @@ pub const DWARFSTRUCTS_ENV: &str = "KUNA_DWARFSTRUCTS";
 /// Whether DWARF aggregate-layout import is enabled for this process.
 /// Default **on**: only an explicit off-token in [`DWARFSTRUCTS_ENV`] disables it.
 pub fn dwarfstructs_enabled() -> bool {
-    match std::env::var(DWARFSTRUCTS_ENV) {
-        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false"),
-        Err(_) => true, // unset => default-on
-    }
+    crate::options::env_toggle(DWARFSTRUCTS_ENV, true)
 }
 
 /// Bridge a `set_kuna_option("dwarfstructs", val)` toggle to

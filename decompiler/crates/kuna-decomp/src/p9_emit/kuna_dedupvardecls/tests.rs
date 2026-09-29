@@ -1,4 +1,4 @@
-//! Unit tests for the `dedupvardecls` option parser and the `DeclDedup` helper.
+//! Declaration-option, signature-deduplication and name-allocation tests.
 
 use super::*;
 
@@ -121,4 +121,48 @@ fn ghidra_style_prefixes_are_preserved_when_suffixing() {
     assert_eq!(names.unique("uVar1"), "uVar1_1");
     assert_eq!(names.unique("Var2"), "Var2");
     assert_eq!(names.unique("Var2"), "Var2_1");
+}
+
+#[test]
+fn default_allocator_accepts_unreserved_and_generated_base_names() {
+    let mut names = DeclNameUniquifier::default();
+    for (base, expected) in [
+        ("x", "x"), ("x", "x_1"), ("x_1", "x_1_1"),
+        ("", ""), ("", "_1"), ("_1", "_1_1"),
+        ("α", "α"), ("α", "α_1"),
+    ] {
+        assert_eq!(names.unique(base), expected);
+    }
+}
+
+#[test]
+fn allocation_matches_a_first_free_name_reference() {
+    use std::collections::BTreeSet;
+
+    let pool = ["", "x", "x_1", "x_2", "x_1_1", "tmp", "tmp_9", "α", "α_1", "_1"];
+    let mut random = 1u64;
+    let mut choose = || {
+        random = random.wrapping_mul(6364136223846793005).wrapping_add(1);
+        pool[((random >> 32) as usize) % pool.len()]
+    };
+    for case in 0..1000 {
+        let locals: Vec<_> = (0..case % 31).map(|_| choose()).collect();
+        let occupied: Vec<_> = (0..case % 7).map(|_| choose()).collect();
+        let reserved: BTreeSet<_> = locals.iter().chain(&occupied).copied().collect();
+        let mut used: BTreeSet<String> = occupied.iter().map(|name| (*name).to_owned()).collect();
+        let mut names = DeclNameUniquifier::new(locals.iter().copied(), occupied.iter().copied());
+        for _ in 0..64 {
+            let base = choose();
+            let expected = if !used.contains(base) {
+                base.to_owned()
+            } else {
+                (1u32..)
+                    .map(|suffix| format!("{base}_{suffix}"))
+                    .find(|name| !reserved.contains(name.as_str()) && !used.contains(name))
+                    .unwrap()
+            };
+            assert_eq!(names.unique(base), expected, "case {case}, base {base:?}");
+            assert!(used.insert(expected));
+        }
+    }
 }

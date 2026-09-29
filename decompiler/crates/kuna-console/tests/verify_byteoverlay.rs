@@ -15,12 +15,6 @@
 //! dat_50000000 * 2`. Overlaying `b8 2a 00 00 00 c3` on its entry is
 //! `mov eax,0x2a; ret`, so a directive that reached the lifter is visible in one
 //! line of C and one that did not is equally visible.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -39,21 +33,12 @@ fn repo_root() -> PathBuf {
 
 /// Bootstrap the fixture, WITHOUT the analysis commit: a byte overlay has to be
 /// stated before it, which is the ordering under test.
-fn load() -> Option<ConsoleProgram> {
+fn load() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/assertranges_x86_64");
-    match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!(
-                "verify_byteoverlay: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 fn bytes(addr: u64, data: &[u8]) -> Directive {
@@ -67,8 +52,8 @@ fn bytes(addr: u64, data: &[u8]) -> Directive {
 /// Decompile `target` under `directives`, in the order the CLI's in-process
 /// surface applies them (`decompile_all::load_program`): image-scoped before the
 /// analysis commit, program-scoped after it.
-fn decompile_with(target: &str, directives: Vec<Directive>) -> Option<(String, Vec<Outcome>)> {
-    let mut prog = load()?;
+fn decompile_with(target: &str, directives: Vec<Directive>) -> (String, Vec<Outcome>) {
+    let mut prog = load();
     if !directives.is_empty() {
         prog.set_assertions(directives);
         assertions::apply_image_scoped(&mut prog);
@@ -80,13 +65,13 @@ fn decompile_with(target: &str, directives: Vec<Directive>) -> Option<(String, V
         .expect("the fixture has this function");
     let funcs = decompile_targets(&mut prog, vec![entry], false, false, false);
     let code = funcs[0].code.clone().unwrap_or_default();
-    Some((code, prog.assertion_outcomes()))
+    (code, prog.assertion_outcomes())
 }
 
 /// The un-asserted baseline the case below is measured against.
 #[test]
 fn the_baseline_computes_from_the_image_bytes() {
-    let Some((code, report)) = decompile_with("sample", Vec::new()) else { return };
+    let (code, report) = decompile_with("sample", Vec::new());
     assert!(report.is_empty(), "no directives ⇒ no report rows");
     assert!(code.contains("scale"), "baseline lost the .data load:\n{code}");
     assert!(!code.contains("0x2a"), "baseline already returns the overlay:\n{code}");
@@ -95,9 +80,7 @@ fn the_baseline_computes_from_the_image_bytes() {
 /// The headline: stated bytes are what gets lifted.
 #[test]
 fn an_overlay_is_what_the_lifter_decodes() {
-    let Some((code, report)) = decompile_with("sample", vec![bytes(SAMPLE, &RETURN_42)]) else {
-        return;
-    };
+    let (code, report) = decompile_with("sample", vec![bytes(SAMPLE, &RETURN_42)]);
     assert_eq!(report[0].status, "applied", "{report:?}");
     assert_eq!(report[0].kind, "bytes");
     assert!(code.contains("return 0x2a"), "the overlay never reached the lifter:\n{code}");
@@ -109,10 +92,7 @@ fn an_overlay_is_what_the_lifter_decodes() {
 /// this one it would be a decompilation of a program the caller never described.
 #[test]
 fn an_unmapped_overlay_is_rejected_naming_the_span() {
-    let Some((code, report)) = decompile_with("sample", vec![bytes(0x9000_0000, &RETURN_42)])
-    else {
-        return;
-    };
+    let (code, report) = decompile_with("sample", vec![bytes(0x9000_0000, &RETURN_42)]);
     assert_eq!(report[0].status, "rejected", "{report:?}");
     let detail = report[0].detail.clone().unwrap_or_default();
     assert!(detail.contains("no loaded segment maps 0x90000000"), "detail: {detail:?}");
@@ -122,26 +102,26 @@ fn an_unmapped_overlay_is_rejected_naming_the_span() {
 /// The console spelling of the same fact, from the generated script surface.
 #[test]
 fn the_console_command_overlays_and_says_so() {
-    let Some(out) = drive_console(&["override bytes 0x401140 b82a000000c3"]) else { return };
+    let out = drive_console(&["override bytes 0x401140 b82a000000c3"]);
     assert!(out.contains("Successfully overlaid 6 bytes at"), "out: {out:?}");
 
-    let Some(out) = drive_console(&["override bytes 0x401140 abc"]) else { return };
+    let out = drive_console(&["override bytes 0x401140 abc"]);
     assert!(out.contains("odd number of hex digits"), "out: {out:?}");
 
-    let Some(out) = drive_console(&["override bytes 0x90000000 90"]) else { return };
+    let out = drive_console(&["override bytes 0x90000000 90"]);
     assert!(out.contains("no loaded segment maps"), "out: {out:?}");
 }
 
-/// Drive `commands` through a console wired like the datatest runner, with the
-/// fixture installed as the current program.  `None` ⇒ specs-less skip.
-fn drive_console(commands: &[&str]) -> Option<String> {
+/// Drive `commands` through a console wired like the datatest runner, with the fixture
+/// installed as the current program.
+fn drive_console(commands: &[&str]) -> String {
     use kuna_console::ifacedecomp::{
         execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
     };
     use kuna_console::ifaceterm::ConsoleCommands;
     use kuna_console::kuna_console::register_kuna_commands;
 
-    let program = load()?;
+    let program = load();
     let cmds: Vec<String> = commands.iter().map(|s| s.to_string()).collect();
     let count = cmds.len();
     let mut status = ConsoleCommands::into_status(cmds);
@@ -159,5 +139,5 @@ fn drive_console(commands: &[&str]) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }

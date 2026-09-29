@@ -1,25 +1,10 @@
-//! The `slacomp` binary -- the Rust `sleigh_opt` replacement.
+//! Command-line SLEIGH compiler, compatible with Ghidra's `sleigh_opt` flags.
 //!
-//! CLI contract (mirrors C++ `sleigh_opt`, slgh_compile.cc:3926-4090):
-//!
-//! ```text
-//! slacomp [-options] inputfile [outputfile]
-//!   -a              recurse: `inputfile` is a directory; compile every *.slaspec
-//!   -y              write .sla in XML debug format
-//!   -u -l -n -t -e -c -s   warning/strictness toggles (see usage below)
-//!   -DNAME=VALUE    define a preprocessor macro
-//! ```
-//!
-//! With a single `<file.slaspec>` and no output given, writes `<file>.sla` next
-//! to it.  The Python differential harness (`kuna/slacomp.py`) drives this binary
-//! and byte-compares the result against `sleigh_opt`'s.
-//!
-//! The argument parsing here is real (so the harness wiring is exercised); the
-//! actual compilation is delegated to
-//! [`SleighCompile::run_compilation`](kuna_slacomp::slgh_compile::SleighCompile::run_compilation),
-//! whose body lands in WS4.
+//! Compiles one `.slaspec` or, with `-a`, a directory tree. An omitted output
+//! path selects the input's sibling `.sla` file.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::process::ExitCode;
 
 use kuna_base::filemanage::FileManage;
@@ -29,7 +14,7 @@ const SLAEXT: &str = ".sla";
 const SLASPECEXT: &str = ".slaspec";
 
 fn usage() {
-    eprintln!("USAGE: slacomp [-x] [-dNAME=VALUE] inputfile [outputfile]");
+    eprintln!("USAGE: slacomp [options] inputfile [outputfile]");
     eprintln!("   -a              scan for all slaspec files recursively where inputfile is a directory");
     eprintln!("   -y              write .sla using XML debug format");
     eprintln!("   -u              print warnings for unnecessary pcode instructions");
@@ -64,7 +49,7 @@ fn compile_one(
     match compiler.run_compilation(slaspec, sla_out) {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("Unrecoverable error: {e:?}");
+            eprintln!("Unrecoverable error: {}", e.explain());
             2
         }
     }
@@ -82,6 +67,16 @@ struct CompileOptions {
     enforce_local_keyword: bool,
     case_sensitive_register_names: bool,
     debug_output: bool,
+}
+
+fn with_extension(path: &str, extension: &str) -> Option<String> {
+    if path.ends_with(extension) {
+        Some(path.to_owned())
+    } else if Path::new(path).file_name()?.as_encoded_bytes().contains(&b'.') {
+        None
+    } else {
+        Some(format!("{path}{extension}"))
+    }
 }
 
 fn main() -> ExitCode {
@@ -163,27 +158,23 @@ fn main() -> ExitCode {
             usage();
             return ExitCode::from(2);
         }
-        let filein = argv[i].clone();
-        // Normalize input extension to .slaspec.
-        let slaspec = if filein.ends_with(SLASPECEXT) {
-            filein.clone()
-        } else if filein.contains('.') {
+        if i + 2 < argv.len() {
+            eprintln!("Too many parameters");
+            return ExitCode::from(1);
+        }
+        let filein = &argv[i];
+        let Some(slaspec) = with_extension(filein, SLASPECEXT) else {
             eprintln!("Unknown input file type: {filein}");
             return ExitCode::from(1);
-        } else {
-            format!("{filein}{SLASPECEXT}")
         };
         // Output: explicit arg, else sibling .sla.
         let sla_out = if i + 1 < argv.len() {
             let out = &argv[i + 1];
-            if out.ends_with(SLAEXT) {
-                out.clone()
-            } else if out.contains('.') {
+            let Some(path) = with_extension(out, SLAEXT) else {
                 eprintln!("Unknown output file type: {out}");
                 return ExitCode::from(1);
-            } else {
-                format!("{out}{SLAEXT}")
-            }
+            };
+            path
         } else {
             format!("{}{}", &slaspec[..slaspec.len() - SLASPECEXT.len()], SLAEXT)
         };

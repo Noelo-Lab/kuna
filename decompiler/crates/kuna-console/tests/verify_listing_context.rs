@@ -27,12 +27,6 @@
 //! paint, not some incidental default, is what flips the ISA). x86-64 needs no
 //! decode-mode context, so the `verify_listing_core` gate (which never paints)
 //! still passes unchanged — this gate adds the ARM/MIPS half.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built ARM (and MIPS) `.sla` under `specs/` (gitignored;
-//! `make specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -73,16 +67,10 @@ const COMPUTE_EVEN_ENTRY: u64 = 0x100b8;
 // `ec98 ea12 e820 4a03`), starting with the 2-byte MIPS16 `mult a0,a0` (`ec 98`).
 const M16_SQUARE_ENTRY: u64 = 0x400130;
 
-/// Bootstrap a fixture for a real `Translate`, or return `None` (a visible skip)
-/// if the `.sla` is absent.
-fn boot(bin: &str, who: &str) -> Option<ConsoleProgram> {
-    match bootstrap_from_object(bin, "", &spec_roots()) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            eprintln!("{who}: skipping (bootstrap failed, build the `.sla` with `make specs`): {}", e.explain());
-            None
-        }
-    }
+/// Bootstrap a fixture for a real `Translate`, requiring its compiled spec.
+fn boot(bin: &str) -> ConsoleProgram {
+    bootstrap_from_object(bin, "", &spec_roots())
+        .expect("bootstrap fixture with built processor specs")
 }
 
 /// Decode one instruction at `vma` through the engine's raw `Translate` (no
@@ -143,16 +131,13 @@ fn build_listing(prog: &ConsoleProgram, bin: &str, seed: u64) -> Listing {
 /// the painted decode DIFFERS from the un-painted A32 control.
 #[test]
 fn arm_thumb_seed_decodes_in_thumb_mode_in_listing() {
-    let bin = match arm_thumb_linked().to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
-    let Some(prog) = boot(&bin, "verify_listing_context(arm)") else { return };
+    let bin = arm_thumb_linked().to_str().expect("UTF-8 fixture path").to_string();
+    let prog = boot(&bin);
 
     // Control: the un-painted (default A32) decode of `compute`'s entry. Built on a
     // FRESH bootstrap so no Listing paint has touched its ContextDatabase. The
     // Thumb `push {r7}` bytes form a valid (but different) 4-byte A32 word.
-    let prog_ctrl = boot(&bin, "verify_listing_context(arm-control)").expect("re-bootstrap");
+    let prog_ctrl = boot(&bin);
     let (a32_len, a32_mnem) = raw_decode(&prog_ctrl, COMPUTE_EVEN_ENTRY)
         .expect("the A32 control decodes the bytes as a 4-byte word");
     // A32 is always a 4-byte word.
@@ -227,17 +212,14 @@ fn arm_thumb_seed_decodes_in_thumb_mode_in_listing() {
 /// painted decode DIFFERS from the un-painted MIPS32 control.
 #[test]
 fn mips16_seed_decodes_in_mips16_mode_in_listing() {
-    let bin = match mips16().to_str() {
-        Some(s) => s.to_string(),
-        None => return,
-    };
-    let Some(prog) = boot(&bin, "verify_listing_context(mips16)") else { return };
+    let bin = mips16().to_str().expect("UTF-8 fixture path").to_string();
+    let prog = boot(&bin);
 
     // Control: the un-painted (default MIPS32) decode of `m16_square`'s entry. The
     // MIPS16 bytes are not a valid MIPS32 word, so this may legitimately fail to
     // resolve a constructor (`None`) — the strongest control: the bytes simply are
     // not MIPS32. If it does resolve, it reads a fixed 4-byte word.
-    let prog_ctrl = boot(&bin, "verify_listing_context(mips16-control)").expect("re-bootstrap");
+    let prog_ctrl = boot(&bin);
     let m32 = raw_decode(&prog_ctrl, M16_SQUARE_ENTRY);
 
     // The Listing builds with the context paint: `m16_square` decodes as MIPS16.

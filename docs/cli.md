@@ -74,6 +74,24 @@ prefix, in the `warnings` array of `kuna functions --summary --json` (and as
 learns that the image it is orienting in was repaired. A well-formed image has
 `"warnings": []`.
 
+## Compiling and verifying SLEIGH specs
+
+`kuna specs` forwards compilation arguments to `slacomp`. `kuna specs --diff`
+only prints verification guidance; it does not invoke a compiler or run checks.
+From the source checkout's root:
+
+```sh
+cargo test --manifest-path decompiler/Cargo.toml --release -p kuna-slacomp --test compiler_parity
+make test
+```
+
+The first command compares decompressed `.sla` contents with pinned Ghidra
+outputs. The second checks decompiler behavior against the datatest baseline.
+These are separate contracts: passing the datatests does not establish compiler
+output equality. Fixture provenance is in
+`decompiler/crates/kuna-slacomp/tests/golden/README.md`; the retired live C++
+differential is described in `docs/history.md`.
+
 ## Where kuna finds the engine and the specs
 
 `kuna` drives two sibling binaries — `decomp_dbg` (the engine behind `decompile`
@@ -145,6 +163,11 @@ datatest results on **stdout**) and exits nonzero on any failure or baseline reg
 when adding stage tests. `docs/baseline.json` is re-pinned only for sanctioned intentional
 changes (an upstream sync per `docs/history.md`, or a deliberate default flip the commit
 message names) — never to absorb a regression.
+
+A baseline must be a JSON object with one `passing` array containing only strings.
+Other metadata is optional. Malformed JSON, trailing non-whitespace content, a
+missing or repeated `passing` field, and wrongly typed entries exit `2`; they are
+not treated as an empty baseline. An explicitly empty `passing` array remains valid.
 
 ## `kuna decompile` — one function
 
@@ -297,6 +320,21 @@ Both options are upstream `OptionDatabase` names rather than phase-model ones, s
 they are reachable through `--option` on every surface but do not appear in `kuna
 catalog`. `--max-fn-seconds` (see `decompile-all` below) is the wall-clock half of
 the same budget.
+
+The jump-table ceiling is the other budget a giant function hits: a switch whose
+range check admits more than `jumptablemax` cases (1024 by default) is not
+recovered, and its dispatch prints as a computed call (`// jump-as-call`).
+`jumptablemax` is catalogued (`kuna catalog`), and the same value bounds how far
+`kuna functions`/`xrefs`/`strings`/`crypto` follow a switch table:
+
+```bash
+kuna decompile ./state_machine.exe 0x14000c0b0 --addr \
+    --option maxinstruction 4000000 --option jumptablemax 100000
+```
+
+`kuna functions --summary --json` (and `functions --reachable-from --json`) report
+which functions would hit either budget before anything is decompiled; see `limits`
+below.
 
 **`--define-function <start[-end][=name] | @file>`** (repeatable) tells kuna where a
 function starts and ends. Every boundary kuna knows is otherwise *derived* —
@@ -1193,6 +1231,57 @@ a narrowed or `--jobs` run, `decompile-project --stream` and under
 `--option protoorder off`.
 `KUNA_CALLEEVOTE_TRACE=1` prints each decision and its reason.
 
+### `--option callbacktype` — the prototype of the slot a callback is passed to (on by default)
+
+A function reached only through a function pointer has no call site of its own,
+so neither direction above reaches it. The library declares it anyway: `qsort`'s
+fourth parameter is `int (*)(const void *, const void *)` and `signal`'s second
+is `void (*)(int)`. When a function's address is handed to one of 23 such slots
+(`qsort`, `bsearch`, `signal`, `atexit`, `pthread_create`, `scandir`, `nftw`,
+`tsearch`, `glob` and the rest; the list is in `docs/spec/04-calls-and-prototypes.md`),
+the run parks that declaration on it and decompiles that function again, after
+every other function has been decompiled. Nothing else changes: every other
+function, a direct caller of the callback included, prints exactly what it
+prints with the option off. A declaration that is exactly the signature the body
+already printed is not parked:
+
+```bash
+kuna decompile-all ./callbacktype_x86_64 --option callbacktype off | grep -E '^(int|void).*(by_key|on_int)\('
+# int by_key(int *a0,int *a1)
+# void on_int(void)
+kuna decompile-all ./callbacktype_x86_64 | grep -E '^(int|void).*(by_key|on_int)\('
+# int by_key(void *a0,void *a1)
+# void on_int(int a0)
+```
+
+The declaration closes the parameter list, so it has to be exactly right. It is
+refused when a declared prototype already exists (DWARF, `--assert`, the library
+tables), when two slots disagree, when the address goes anywhere the slots do
+not explain (exported, stored in data, a relocation target, used a second time
+by the body that registered it), and when the function's own body contradicts
+the declaration: more inputs than it declares, fewer while something also calls
+the function directly, an input or a returned value wider than the declared
+storage (a `struct ctx *` routine cast into `signal`'s `int` slot, a `long`
+comparator cast into `qsort`'s), a `void` slot on a body that returns a value, a
+value-returning slot on a body that computes none, or a computed value narrower
+than the declared return whose upper bytes the machine code does not clear on
+every path (a `char` comparator that is `mov (%rdi),%al; sub (%rsi),%al` leaves
+the rest of `eax` as its caller left it). A direct call the caller already
+printed refuses it when it passes another number of arguments than the
+declaration (clang -O0 passing an `idiv` remainder left in `rdx`, clang -O2
+forwarding its registers untouched and printing no argument), uses a result the
+declaration does not return, or reads more of the return register than the
+declared return holds; so does a direct call from code the run did not
+decompile. A handler that never reads
+its signal number and that nothing calls directly does gain the parameter, as
+DWARF gives it; `--json` exports it with empty `line_numbers` and `addresses`.
+
+Only an x86-64 image qualifies, for the reason `calleevote` gives. Like
+`protoorder` it needs the callee-first pass, so it is inert on `kuna decompile`,
+a narrowed run, `decompile-project --stream`, under `--option protoorder off`,
+and on a `--jobs N` run that does not name it; naming it alongside `--jobs N` is
+refused. `KUNA_CALLBACKTYPE_TRACE=1` prints each park or refusal and its reason.
+
 ### `kuna functions --summary` — orientation in one call
 
 ```bash
@@ -1209,7 +1298,11 @@ without emitting a function list at all, let alone pseudocode.
             "reachable_from_entry":334,"no_callers":714,"code_bytes":171971,
             "size_buckets":[{"bucket":"0","min_size":0,"max_size":0,"count":114}, …],
             "largest":[{name,address,address_hex,aliases,size}, …],
-            "runtime":[{id,version,hint,actionable}, …]}}
+            "runtime":[{id,version,hint,actionable}, …],
+            "limits":{"maxinstruction":100000,"jumptablemax":1024,
+                      "over":[{name,address,address_hex,size,instructions,
+                               over_maxinstruction,
+                               switches_over_jumptablemax:[{address,address_hex,cases,read}]}]}}}
 ```
 
 - `entry` is the **image's declared entry point** (a PE `AddressOfEntryPoint` is
@@ -1236,6 +1329,33 @@ without emitting a function list at all, let alone pseudocode.
   section table, a repaired PE DOS `e_magic`, a clamped PE data-directory count),
   one string each, in the order they were applied — the same lines the run prints
   on stderr, without the `[kuna] ` prefix. Empty for a well-formed image.
+- `limits` names the selected functions a decompile would hit an engine budget
+  on, measured off the same reference walk and never by decompiling.
+  `instructions` counts the function's own descent: fall-through, branches and
+  the switch cases the walk read, stopping at every other inventory entry. Code
+  two functions share (a gcc `.cold` fragment that jumps back into its parent)
+  counts for both. Counting stops at `maxinstruction + 1`, so a function over
+  the budget reports exactly that; raise `--option maxinstruction` to measure
+  further. `over_maxinstruction` is `instructions > maxinstruction`.
+  `switches_over_jumptablemax` lists each dispatch whose table is longer than
+  the live `jumptablemax`, under the function whose extent contains it: `cases`
+  is the count its range check states (`null` when there is none and the read ran
+  into the ceiling), `read` how many entries were followed (`0` when the ceiling
+  is below the two entries a table needs). Both ceilings honour `--option`, so
+  re-running with a higher `jumptablemax` reads the whole table and re-measures
+  the body it reaches. On the in-repo MSVC fixture, whose one switch has four
+  cases:
+
+  ```console
+  $ kuna functions pe_switchdelta_x86_64.exe --summary --json --option jumptablemax 2 | jq -c .summary.limits
+  {"maxinstruction":100000,"jumptablemax":2,"over":[{"name":"sub_140001040","address":5368713280,
+   "address_hex":"0x140001040","size":128,"instructions":16,"over_maxinstruction":false,
+   "switches_over_jumptablemax":[{"address":5368713309,"address_hex":"0x14000105d","cases":4,"read":2}]}]}
+  $ kuna functions pe_switchdelta_x86_64.exe --summary --json --option jumptablemax 4 | jq -c .summary.limits
+  {"maxinstruction":100000,"jumptablemax":4,"over":[]}
+  ```
+
+  The text form prints the same under a `limits` line.
 - The triage flags apply: `--summary --reachable-from main` summarizes just that
   subgraph. `count` is what was selected, `total` what discovery found.
 - `runtime` names what wrapped or built the image when native decompilation is
@@ -1278,7 +1398,10 @@ numbers a caller orients by are the ones `kuna functions` reports.
 `{binary,count,functions:[{name,address,address_hex,aliases,object_location,size,code,error,
 unstructured_gotos,line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
 stack_offset,size,line_numbers,addresses}],types:[{name,definition,size}]}]}` (`kuna functions --json` emits
-`name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function).
+`name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function; with
+`--reachable-from`, which already walks the image, it also carries a top-level `limits`
+object shaped like the `--summary` one over the listed functions, and the key is absent
+otherwise, so the plain listing never pays for the walk).
 `object_location` is `null` for linked images and undefined imports; for a relocatable
 definition it is `{section_index,section,offset,offset_hex}`. `count` is what the
 `functions` array holds. `kuna functions --json` also carries `total`, the count
@@ -1499,10 +1622,14 @@ Behaviors specific to `decompile-all`:
   - **It is the serial answer with `--option protoorder off`.** A serial
     `decompile-all` or `decompile-project` decompiles callees first by default
     and types call arguments from what each callee recovered; a pool worker
-    cannot see another worker's callees, so the pool does not. Under `--jobs N`
-    with the default, the parent prints a note and call-argument types can
-    differ from the serial run; add `--option protoorder off` to both to
-    compare them byte for byte.
+    cannot see another worker's callees, so the pool does not. The same batch
+    decides which globals and tables are arrays (`elemptr`): a global is
+    declared an element pointer only where every function that uses it agrees,
+    which no worker sees, so a pool of more than one function types no global
+    or table, and neither does a serial run that is not callee-first. Under
+    `--jobs N` with the default, the parent prints a note and call-argument
+    types and array globals can differ from the serial run; add `--option
+    protoorder off` to both to compare them byte for byte.
   - **It can depend on how the work was divided, wherever the engine's own output
     already does.** A few emission decisions are first-toucher-wins in the
     per-process type and symbol database, so they are a function of which *other*

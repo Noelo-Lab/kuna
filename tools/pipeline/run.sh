@@ -91,18 +91,28 @@ disk_ok() {
   return 0
 }
 
+# Status: 0 spawned, 1 empty, 2 fatal, 3 retry on the next tick.
 spawn_worker() {
-  local opp
-  disk_ok || return 1
-  opp="$("$KUNA_PY" -m "$SELECT_MOD" --shell 2>/dev/null)" || return 1
+  local opp rc
+  disk_ok || return 3
+  opp="$("$KUNA_PY" -m "$SELECT_MOD" --shell)"
+  rc=$?
+  case "$rc" in
+    0) ;;
+    1) return 1;;
+    *) log "selector failed (rc=$rc); stopping dispatch"; return 2;;
+  esac
   eval "$opp"   # sets OPP_ID TEST_NAME BINARY SELECTOR ARCH SLUG SCORE KINDS
   SEQ=$((SEQ+1))
   local wid; wid="${WID_PREFIX}$(date +%s)-$SEQ"
   # claim atomically; if already taken (race), skip this tick
-  if ! "$KUNA_PY" -m scripts.pipeline.state claim --worker "$wid" --opportunity "$OPP_ID" >/dev/null 2>&1; then
-    log "opportunity $OPP_ID already claimed; skipping"
-    return 1
-  fi
+  "$KUNA_PY" -m scripts.pipeline.state claim --worker "$wid" --opportunity "$OPP_ID" >/dev/null
+  rc=$?
+  case "$rc" in
+    0) ;;
+    1) log "opportunity $OPP_ID already claimed; skipping"; return 3;;
+    *) log "claim failed (rc=$rc); stopping dispatch"; return 2;;
+  esac
   log "spawning $wid for [$SCORE] $OPP_ID (slug $SLUG, kinds $KINDS)"
   WORKER_ID="$wid" OPP_ID="$OPP_ID" TEST_NAME="$TEST_NAME" SELECTOR="$SELECTOR" \
     BINARY="$BINARY" SLUG="$SLUG" ARCH="$ARCH" \
@@ -113,6 +123,7 @@ spawn_worker() {
 
 log "starting (workers=$WORKERS, hours=${HOURS:-unbounded}, once=$ONCE)"
 SPAWNED=0
+DRIVER_STATUS=0
 while :; do
   [ -f "$STOP_FILE" ] && { log "STOP file present"; break; }
   [ "$DEADLINE" != "0" ] && [ "$(date +%s)" -ge "$DEADLINE" ] && { log "time budget reached"; break; }
@@ -120,15 +131,22 @@ while :; do
   gc_merged_worktrees
   # Free the claims of workers that died without saying so; otherwise their opportunities are
   # blocked forever and the backlog silently shrinks.
-  "$KUNA_PY" -m scripts.pipeline.state reap >/dev/null 2>&1
+  if ! "$KUNA_PY" -m scripts.pipeline.state reap >/dev/null; then
+    log "reaper failed; stopping dispatch"
+    DRIVER_STATUS=2
+    break
+  fi
   n="$(active_count)"
   if [ "$n" -lt "$WORKERS" ]; then
     if spawn_worker; then
       SPAWNED=$((SPAWNED+1))
       [ "$ONCE" = "1" ] && { log "--once: spawned one worker, will wait for it"; break; }
     else
-      # nothing to spawn; if no active workers either, the backlog is drained
-      [ "$(active_count)" = "0" ] && { log "backlog drained and no active workers"; break; }
+      case "$?" in
+        1) [ "$(active_count)" = "0" ] && { log "backlog drained and no active workers"; break; };;
+        3) ;;
+        *) DRIVER_STATUS=2; break;;
+      esac
     fi
   fi
   sleep "$POLL"
@@ -138,3 +156,4 @@ log "waiting for in-flight workers to finish"
 for wid in "${!WPID[@]}"; do wait "${WPID[$wid]}" 2>/dev/null; done
 log "done. $SPAWNED worker(s) launched this run."
 "$KUNA_PY" -m scripts.pipeline.status || true
+exit "$DRIVER_STATUS"

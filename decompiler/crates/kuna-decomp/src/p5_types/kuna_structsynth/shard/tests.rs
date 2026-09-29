@@ -102,6 +102,13 @@ fn a_replay_names_every_structure_as_the_ledger_does() {
     assert_eq!(replay.superseded_names(), ["struct_0"]);
     let minted: Vec<&str> = replay.table().iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(minted, ["struct_0", "struct_1", "struct_2"]);
+
+    let bytes = encode_table(replay.table());
+    let allocation = replay.table().as_ptr();
+    let minted = replay.into_table();
+    assert_eq!(minted.as_ptr(), allocation);
+    assert_eq!(encode_table(&minted), bytes);
+    assert!(Replay::probe(&factory()).into_table().is_empty());
 }
 
 /// The sweep's lookups read the final ledger, and a layout nothing answers is

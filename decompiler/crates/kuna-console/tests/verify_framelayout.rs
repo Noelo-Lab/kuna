@@ -22,13 +22,6 @@
 //! Both arms pin `slotptr off`.  That option re-spells an added slot with the
 //! pointer type of the value stored into it (`verify_slotptr.rs` gates it), so
 //! the width-only spelling this gate checks is the union's own, before that step.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling loader gates, bootstrapping needs the built `x86` `.sla` under
-//! `specs/` (gitignored; `make specs`).  When it is absent the bootstrap fails; the
-//! test prints that and returns early (a specs-less CI is a visible skip, never a
-//! false green).
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -47,21 +40,12 @@ fn fauxware() -> PathBuf {
 }
 
 /// Every function's `extract_variables` output for one setting of `framelayout`.
-fn variables_for(framelayout: bool) -> Option<Vec<(String, Vec<VarInfo>)>> {
+fn variables_for(framelayout: bool) -> Vec<(String, Vec<VarInfo>)> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = fauxware().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_framelayout: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fauxware().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
     prog.arch_mut().framelayout = framelayout;
     prog.arch_mut().slot_ptr = false;
@@ -78,13 +62,13 @@ fn variables_for(framelayout: bool) -> Option<Vec<(String, Vec<VarInfo>)>> {
         };
         out.push((name, extract_variables(prog.arch(), &fd)));
     }
-    Some(out)
+    out
 }
 
 #[test]
 fn framelayout_reports_the_frame_slots_the_final_restructure_pass_lost() {
-    let Some(off) = variables_for(false) else { return };
-    let Some(on) = variables_for(true) else { return };
+    let off = variables_for(false);
+    let on = variables_for(true);
     assert_eq!(off.len(), on.len(), "the two arms must decompile the same functions");
 
     let mut added_total = 0usize;

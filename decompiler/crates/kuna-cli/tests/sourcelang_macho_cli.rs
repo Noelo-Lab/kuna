@@ -17,11 +17,7 @@
 //! * `rust_hello_x86_64` — the positive control: a genuine rustc binary still
 //!   reads as Rust, so this is a narrowing of the test and not its removal.
 //!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent every arm prints that and returns early — a
-//! specs-less environment is a visible skip, never a false green.
+//! Integration tests require the built processor specs under `specs/`.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -61,36 +57,23 @@ fn run(args: &[&str]) -> (String, String, bool) {
     )
 }
 
-fn is_specs_skip(stderr: &str) -> bool {
-    stderr.contains("could not build an architecture")
-        || stderr.contains("SLEIGH")
-        || stderr.contains("Could not discover")
-}
-
-/// `decompile <bin> <fn> [--json]`, or `None` when there are no `.sla` files.
-fn decompile(bin: &str, func: &str, json: bool) -> Option<String> {
+/// Run `decompile <bin> <fn> [--json]`.
+fn decompile(bin: &str, func: &str, json: bool) -> String {
     let sp = specs();
     let mut args = vec!["decompile", bin, func, "--sleighpath", sp.as_str()];
     if json {
         args.push("--json");
     }
     let (stdout, stderr, ok) = run(&args);
-    if !ok && is_specs_skip(&stderr) {
-        eprintln!("sourcelang_macho_cli: skipping (no `.sla`): {stderr}");
-        return None;
-    }
     assert!(ok, "decompile {func} of {bin} failed: {stderr}");
-    Some(stdout)
+    stdout
 }
 
 /// The witness: a C function named `Runtime` does not make its program Rust.
 #[test]
 fn a_c_symbol_starting_with_r_does_not_select_the_rust_language() {
     let bin = fixture("macho_rustlike_symbol");
-    let (Some(json), Some(body)) = (decompile(&bin, "_main", true), decompile(&bin, "_main", false))
-    else {
-        return;
-    };
+    let (json, body) = (decompile(&bin, "_main", true), decompile(&bin, "_main", false));
     assert!(
         json.contains("\"language\": \"c-language\""),
         "the image is a C program; got:\n{json}"
@@ -112,12 +95,10 @@ fn a_c_symbol_starting_with_r_does_not_select_the_rust_language() {
 /// must decompile to the same text.
 #[test]
 fn the_rename_changes_nothing_but_the_symbol() {
-    let (Some(witness), Some(twin)) = (
+    let (witness, twin) = (
         decompile(&fixture("macho_rustlike_symbol"), "_main", false),
         decompile(&fixture("macho_imports"), "_main", false),
-    ) else {
-        return;
-    };
+    );
     assert_eq!(witness, twin, "the string-table edit moved the decompilation");
 }
 
@@ -126,11 +107,8 @@ fn the_rename_changes_nothing_but_the_symbol() {
 #[test]
 fn a_real_rust_binary_still_reads_as_rust() {
     let bin = fixture("rust_hello_x86_64");
-    let (Some(json), Some(body)) =
-        (decompile(&bin, "black_box", true), decompile(&bin, "black_box", false))
-    else {
-        return;
-    };
+    let (json, body) =
+        (decompile(&bin, "black_box", true), decompile(&bin, "black_box", false));
     assert!(
         json.contains("\"language\": \"rust-language\""),
         "rustc binaries must still select the Rust language; got:\n{json}"

@@ -37,6 +37,8 @@
         diff:   call strchr; sub rax,rbx                 strchr(s,c) - s
 
     Pass 1 (`option castindex off`) reproduces the bug; pass 2 turns it on.
+    Both run with `option elemptr off`: with it on, P5 already types `ldidx`'s
+    parameter `int4 *`, so both passes print `a0[a1]` before this option runs.
 -->
 <bytechunk space="ram" offset="0x100000">
 4863f68b04b7034708c300000000000000000000000000000000000000000000488b04f748034710c300000000000000000000000000000000000000000000000fb60437034704c30000000000000000000000000000000000000000000000004863f648c1e604488b44370848034710c3000000000000000000000000000000534889fbe8370000004829d85bc30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c3
@@ -50,6 +52,7 @@
 </binaryimage>
 <script>
   <com>parse line extern char *strchr(char *s,int4 c);</com>
+  <com>option elemptr off</com>
   <com>option castindex off</com>
   <com>lo fu ldidx</com>
   <com>decompile</com>
@@ -84,11 +87,11 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="castindex #1: with the option off an int-indexed read through a void pointer is an integer round trip -- the bug" min="1" max="1">return \*\(int4 \*\)\(\(int8\)a0 \+ \(int8\)a1 \* 4\) \+ \(\(int4 \*\)a0\)\[2\];</stringmatch>
+<stringmatch name="castindex #1: with the option off an int-indexed read through a void pointer is an integer round trip -- the bug" min="1" max="1">return \*\(int4 \*\)\(\(int8\)a0 \+ a1 \* 4L\) \+ \(\(int4 \*\)a0\)\[2\];</stringmatch>
 <stringmatch name="castindex #2: and a byte-pointer difference converts both pointers to integers" min="1" max="1">return \(int8\)strchr\(a0,a1\) - \(int8\)a0;</stringmatch>
 <stringmatch name="castindex #3: on, the int index is a subscript of the 4-byte element, and its extension is C's own" min="1" max="1">return \(\(int4 \*\)a0\)\[a1\] \+ \(\(int4 \*\)a0\)\[2\];</stringmatch>
 <stringmatch name="castindex #4: a long index is a subscript of the 8-byte element" min="1" max="1">return \(\(int8 \*\)a0\)\[a1\] \+ \(\(int8 \*\)a0\)\[2\];</stringmatch>
 <stringmatch name="castindex #5: a byte read takes the variable itself as the index" min="1" max="1">return \(uint4\)\(\(uint1 \*\)a0\)\[a1\] \+ \(\(int4 \*\)a0\)\[1\];</stringmatch>
-<stringmatch name="castindex #6: a 16-byte stride read at 8 bytes keeps the integer form in both passes" min="2" max="2">return \*\(int8 \*\)\(\(int8\)a0 \+ \(int8\)a1 \* 0x10 \+ 8\) \+ \(\(int8 \*\)a0\)\[2\];</stringmatch>
+<stringmatch name="castindex #6: a 16-byte stride read at 8 bytes keeps the integer form in both passes" min="2" max="2">return \*\(int8 \*\)\(\(int8\)a0 \+ a1 \* 0x10L \+ 8\) \+ \(\(int8 \*\)a0\)\[2\];</stringmatch>
 <stringmatch name="castindex #7: on, the difference of two char pointers is C's own pointer subtraction" min="1" max="1">return strchr\(a0,a1\) - a0;</stringmatch>
 </decompilertest>

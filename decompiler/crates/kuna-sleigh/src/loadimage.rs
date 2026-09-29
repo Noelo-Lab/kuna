@@ -1,37 +1,13 @@
-//! Port of `decompiler/cpp/loadimage.hh` + `loadimage.cc` (W2, item
-//! `w2-sleigh-loadimage`) — classes and API for accessing a binary load
-//! image.
+//! Byte access and metadata interfaces for loaded executable images.
 //!
-//! API mapping (vs C++):
+//! [`LoadImage`] provides reads, symbol/section iteration and address relocation.
+//! Architecture and symbol names are byte strings. Iteration takes `&self`, so
+//! loaders keep their cursors through interior mutability. Read requests above
+//! `i32::MAX` bytes are unsupported, matching the upstream byte-count limit.
 //!
-//! - The abstract class `LoadImage` becomes the [`LoadImage`] trait.  The
-//!   protected `filename` member cannot live on a trait, so `getFileName()`
-//!   becomes the required method [`LoadImage::get_file_name`] and each
-//!   implementor stores its own filename.  The non-virtual convenience
-//!   `load()` is a provided trait method.
-//! - `loadFill(uint1 *ptr,int4 size,const Address &addr)` becomes
-//!   `load_fill(&mut self, ptr: &mut [u8], addr: &Address)`: the
-//!   (pointer,size) pair collapses into a byte slice whose length is the
-//!   C++ `size` (an `int4`; requests beyond 2^31-1 bytes are unsupported,
-//!   as in C++).  The unfilled-read error contract is kept exactly: where
-//!   C++ throws `DataUnavailError` the Rust port returns
-//!   `Err(KunaError::DataUnavail)` carrying the same explain string
-//!   (`kuna_base::error` ports the exception type itself).
-//! - The `const`-but-stateful symbol/section iteration methods
-//!   (`openSymbols`/`getNextSymbol`/...) stay `&self`; implementors mirror
-//!   the C++ `mutable` cursor members with interior mutability.
-//! - `getArchType()` returns a byte string (`Vec<u8>`), following the
-//!   workspace convention that marshal/XML-derived strings are byte
-//!   strings (`LoadImageXml` reads its arch type straight from an XML
-//!   attribute).
-//! - `adjustVma(long adjust)` becomes `adjust_vma(&mut self, adjust: i64)`.
-//!
-//! `RawLoadImage` reads bytes directly from a file on disk.  C++ holds an
-//! `ifstream *` (null until `open()`); the Rust port holds an
-//! `Option<std::fs::File>`.  C++ never checks the stream state after
-//! `seekg`/`read` — a failed read silently leaves the destination buffer
-//! with its previous contents — so an OS-level I/O failure has no defined
-//! oracle behavior; the port surfaces it as `KunaError::Lowlevel`.
+//! [`ImageBytes`] exposes mapped bytes for readers with independent windows.
+//! [`RawLoadImage`] reads files, reporting seek/read failures as
+//! `KunaError::Lowlevel` and unavailable image bytes as `KunaError::DataUnavail`.
 
 use std::cell::Cell;
 use std::fs::File;
@@ -44,13 +20,7 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::Wrap;
 
-// The C++ `DataUnavailError` (loadimage.hh) is ported as the
-// `KunaError::DataUnavail` variant in kuna-base (`error.rs`), preserving the
-// "is a LowlevelError" inheritance for catch-frame purposes.
-
-/// \brief A record indicating a function symbol
-///
-/// This is a lightweight object holding the Address and name of a function
+/// A function symbol's loaded address and byte-string name.
 #[derive(Debug, Clone, Default)]
 pub struct LoadImageFunc {
     /// Start of function
@@ -74,10 +44,7 @@ pub mod section_flags {
     pub const READONLY: u32 = 16;
 }
 
-/// \brief A record describing a section bytes in the executable
-///
-/// A lightweight object specifying the location and size of the section and
-/// basic properties
+/// A loaded section's address, size and properties.
 #[derive(Debug, Clone, Default)]
 pub struct LoadImageSection {
     /// Starting address of section
@@ -120,18 +87,10 @@ pub trait ImageBytes: Send + Sync + std::fmt::Debug {
     fn mapped_covers(&self, lo: u64, hi: u64) -> bool;
 }
 
-/// \brief An interface into a particular binary executable image
+/// Read bytes by loaded address and expose initial image metadata.
 ///
-/// This class provides the abstraction needed by the decompiler for the
-/// numerous load file formats used to encode binary executables.  The data
-/// encoding the machine instructions for the executable can be accessed via
-/// the addresses where that data would be loaded into RAM.
-/// Properties other than the main data and instructions of the binary are
-/// not supposed to repeatedly queried through this interface. This
-/// information is intended to be read from this class exactly once, during
-/// initialization, and used to populate the main decompiler database. This
-/// class currently has only rudimentary support for accessing such
-/// properties.
+/// Symbols, sections and other metadata populate the decompiler's database
+/// during initialization; byte reads continue during analysis.
 pub trait LoadImage {
     /// Get the name of the LoadImage.
     ///

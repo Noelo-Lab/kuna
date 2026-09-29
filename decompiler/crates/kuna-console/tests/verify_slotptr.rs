@@ -10,13 +10,6 @@
 //! stack row's `type_name` -- that every row that differs moved from a width-only
 //! `undefinedN` to a pointer of the same size, and that the emitted C is
 //! byte-identical.
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling gates, bootstrapping needs the built `x86` `.sla` under
-//! `specs/` (gitignored; `make specs`).  When it is absent the bootstrap fails;
-//! the test prints that and returns early (a specs-less CI is a visible skip,
-//! never a false green).
 
 use std::path::PathBuf;
 
@@ -34,21 +27,12 @@ fn fauxware() -> PathBuf {
 }
 
 /// Every function's `extract_variables` output and emitted C for one setting.
-fn run(slot_ptr: bool) -> Option<Vec<(String, Vec<VarInfo>, String)>> {
+fn run(slot_ptr: bool) -> Vec<(String, Vec<VarInfo>, String)> {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = fauxware().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_slotptr: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fauxware().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("read symbols (analysis commit) must succeed");
     prog.arch_mut().framelayout = true;
     prog.arch_mut().slot_ptr = slot_ptr;
@@ -67,7 +51,7 @@ fn run(slot_ptr: bool) -> Option<Vec<(String, Vec<VarInfo>, String)>> {
         let code = print_c(prog.arch_mut(), &fd);
         out.push((name, vars, code));
     }
-    Some(out)
+    out
 }
 
 fn is_pointer_spelling(t: &str) -> bool {
@@ -76,8 +60,8 @@ fn is_pointer_spelling(t: &str) -> bool {
 
 #[test]
 fn slotptr_types_filler_slots_from_their_stores_and_changes_nothing_else() {
-    let Some(off) = run(false) else { return };
-    let Some(on) = run(true) else { return };
+    let off = run(false);
+    let on = run(true);
     assert_eq!(off.len(), on.len(), "the two arms must decompile the same functions");
 
     let mut respelled = Vec::new();

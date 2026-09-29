@@ -1,0 +1,294 @@
+{
+ "option": "castobject",
+ "values": [
+  "on",
+  "off"
+ ],
+ "default_on": true,
+ "default_value": "on",
+ "phase": "P6",
+ "subphase": "stack-frame-layout",
+ "change_kind": "type-inference",
+ "tier": "transform",
+ "source_decompiler": "kuna",
+ "inspiration": "the 2026-09-27 address-of cast census: waitpid(v2,(int *)&v5,0) over unsigned int v5 where IDA prints int stat_loc; waitpid(v1,&stat_loc,0)",
+ "witness": {
+  "repro": "gcc -O0 st.c (exit_code, see the PR body); kuna decompile-all st --functions exit_code",
+  "before": [
+   "unsigned int v1; // stack - 0x14",
+   "if (waitpid(a0,(int *)&v1,0) <= -1)",
+   "return (int)v1 >> 8 & 0xff;"
+  ],
+  "after": [
+   "int v1; // stack - 0x14",
+   "if (waitpid(a0,&v1,0) <= -1)",
+   "return v1 >> 8 & 0xff;"
+  ],
+  "ida": {
+   "coreutils sort O0 0x48cf": "int stat_loc; v9 = waitpid(v1, &stat_loc, a1 == 0); if ( (stat_loc & 0x7F) != 0 || BYTE1(stat_loc) )",
+   "diffutils diff O0 0x11e1b": "int stat_loc; if ( waitpid(pid, &stat_loc, 0) < 0 ) ... v1 = BYTE1(stat_loc);",
+   "tar O0 0x32ca8 0x33179 0x343ea 0x345e7": "int stat_loc; waitpid(..., &stat_loc, 0)"
+  }
+ },
+ "census": {
+  "script": "docs/features/castobject/addrcensus.py over the castbench arm of origin/main 0096e984d",
+  "all_45_binaries": {
+   "total": 7054,
+   "pointer_element": 4093,
+   "libc_aggregate_member": 2310,
+   "synthesized_record_member": 427,
+   "stack_local": 210,
+   "global": 14
+  },
+  "shared_with_ida": {
+   "total": 2495,
+   "pointer_element": 1611,
+   "libc_aggregate_member": 763,
+   "synthesized_record_member": 57,
+   "stack_local": 64
+  },
+  "function_level_vs_ida": {
+   "pointer_element": [
+    326,
+    11288,
+    10894
+   ],
+   "libc_aggregate_member": [
+    117,
+    4051,
+    3322
+   ],
+   "stack_local": [
+    38,
+    2031,
+    1667
+   ],
+   "synthesized_record_member": [
+    23,
+    703,
+    868
+   ]
+  },
+  "libctypes_glibc_castbench": {
+   "shared_casts": 35041,
+   "O2": 12724
+  },
+  "libctypes_glibc_FILE_only_experiment": {
+   "shared_casts": 35253,
+   "O2": 12818,
+   "functions_fewer": 67,
+   "functions_more": 0,
+   "shipped": false
+  }
+ },
+ "castbench": {
+  "set": "full: 45 binaries x O0/O2/O2-noinline; functions kuna and IDA both emit",
+  "base": "origin/main 29cfedee0; castobject off on the branch build is byte-identical to the castbench arm of 0096e984d on all 45 binaries",
+  "shared_functions": 4815,
+  "ida_casts": 37821,
+  "main_casts": 35588,
+  "branch_casts": 35572,
+  "main_per_kloc": 188.2,
+  "branch_per_kloc": 188.1,
+  "main_per_100_statements": 29.9,
+  "branch_per_100_statements": 29.9,
+  "main_vs_ida": 0.941,
+  "branch_vs_ida": 0.941,
+  "by_level_casts": {
+   "O0": [
+    11612,
+    11596
+   ],
+   "O2": [
+    13135,
+    13135
+   ],
+   "O2-noinline": [
+    10841,
+    10841
+   ]
+  },
+  "functions_fewer": 6,
+  "casts_fewer": 16,
+  "functions_more": 0,
+  "fewer": {
+   "O0/tar 0x32ca8": -3,
+   "O0/tar 0x33179": -3,
+   "O0/tar 0x343ea": -3,
+   "O0/tar 0x345e7": -3,
+   "O0/diff 0x11e1b": -2,
+   "O0/sort 0x48cf": -2
+  }
+ },
+ "typesweep": {
+  "slices": 444,
+  "functions": 10748,
+  "metric": "decbench type_match pinned at 625e892 (DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
+  "arms": "the same build (origin/main 29cfedee0 + this branch), the default vs --option castobject off",
+  "perfect_off": 1615,
+  "perfect_on": 1615,
+  "aggregate_off": 3973.97,
+  "aggregate_on": 3973.97,
+  "improved": 0,
+  "worse": 0,
+  "moved_on": 0,
+  "moved_off": 0,
+  "variables_rows": "10,738 functions byte-identical; in the other 10 the retyped local is int in DWARF (status, wstatus, wait_status) and scored a match at unsigned int already: ginstall strip, split closeout (its other stack locals only renumber), timeout main, sort reap, diff finish_output, useradd tallylog_reset, tar sys_exec_info_script sys_wait_for_child wait_for_grandchild sys_wait_command",
+  "dwarf_agreement_of_retyped_locals": "10 of 10 retyped locals are declared int in DWARF; the off arm declares all 10 unsigned int"
+ },
+ "corpus": {
+  "binaries": 81,
+  "changed_binaries": 13,
+  "classes": [
+   "DECL",
+   "CALL",
+   "SHIFT",
+   "USUF",
+   "STORE",
+   "MERGE"
+  ],
+  "merge": "split O0 sub_3e43: the register copy of the status takes int and merges with the int errno temporary; one declaration fewer, later register variables renumbered",
+  "file": "docs/features/castobject/corpus-hunks.txt",
+  "off_arm_vs_main": "byte-identical on all 45 castbench binaries"
+ },
+ "round_trips": "kuna-cli/tests/decompile_all_cli.rs an_out_parameter_local_round_trips_through_the_printed_c: castobject_{gcc,clang}_{O0,O2}_x86_64 (exit_code status_order reaped escaped two_widths plus_one cancel_state, and init_signed init_ushr init_ult init_zext gid_mixed stored_value initialized from a parameter and run over top-bit values), printed C built by gcc and clang at -O0 and -O2, output equals the binary's, option off and on",
+ "gates_on_default": {
+  "base": "origin/main 29cfedee0",
+  "make_test": "675/675 PARITY OK",
+  "make_test_stages": "1421/1421 PARITY OK (11 new keys only)",
+  "make_test_cli": "247/247",
+  "make_rust_test": "RUST_TEST_RC=0, 7,635 passed, 0 failed",
+  "check_spec": "OK lenient and strict",
+  "catalog_check": "OK",
+  "counters": "no drift"
+ },
+ "prior_defects_found": [
+  "gcc -O2: a value saved from an out-parameter before a second call that rewrites it is read after that call (was_state in analysis.md section 3), both arms",
+  "clang -O2: a slot allocated by push %rax reads back the pushed register after the call that wrote it (castobject_clang_O2_x86_64 exit_code/status_order/reaped), both arms; calleeprotostack's alias test reads only the range's first byte"
+ ],
+ "speed": {
+  "method": "interleaved min-of-15 kuna decompile-all --json, --option castobject off vs on, same build (docs/features/castobject/speed.py)",
+  "per_binary": {
+   "fmt": {
+    "off_min_ms": 4264.1,
+    "on_min_ms": 4198.1,
+    "delta_min_pct": -1.55,
+    "delta_median_pct": 1.58
+   },
+   "ls": {
+    "off_min_ms": 14310.7,
+    "on_min_ms": 14241.6,
+    "delta_min_pct": -0.48,
+    "delta_median_pct": -3.11
+   },
+   "sort": {
+    "off_min_ms": 14506.1,
+    "on_min_ms": 15218.6,
+    "delta_min_pct": 4.91,
+    "delta_median_pct": 3.67
+   },
+   "bash": {
+    "off_min_ms": 88727.4,
+    "on_min_ms": 87797.6,
+    "delta_min_pct": -1.05,
+    "delta_median_pct": -2.84
+   }
+  },
+  "sort_rerun_quiet": {
+   "off_min_ms": 14924.0,
+   "on_min_ms": 14449.9,
+   "delta_min_pct": -3.18,
+   "delta_median_pct": -2.88
+  },
+  "worst_delta_min_pct": 4.91
+ },
+ "design_revision": "The declaration moves only when no reader wants the other sign (the first version took a net vote, which left the merged variable unsigned under an int declaration for a slot stored from a register and printed its unsigned readers uncast); reconcile re-checks the merged variable at the head of ActionSetCasts and restores the variable's type when a member's reader disagrees; a slot the layout would stretch into an array declines; the walk stops at another stack slot.",
+ "landing": {
+  "base": "origin/main b273c225997aeaa1b2602393bbf704bf4860eac5 (#718 callbacktype, #729 callrettype since the numbers above)",
+  "castbench": {
+   "shared_functions": 4815,
+   "main_casts": 34829,
+   "branch_casts": 34813,
+   "main_vs_ida": 0.921,
+   "branch_vs_ida": 0.92,
+   "main_per_100_statements": 29.3,
+   "branch_per_100_statements": 29.3,
+   "by_level_casts": {
+    "O0": [
+     11373,
+     11357
+    ],
+    "O2": [
+     12902,
+     12902
+    ],
+    "O2-noinline": [
+     10554,
+     10554
+    ]
+   },
+   "functions_fewer": 6,
+   "casts_fewer": 16,
+   "functions_more": 0,
+   "off_arm_files_differing_from_main": 0
+  },
+  "typesweep": {
+   "slices": 444,
+   "functions": 10748,
+   "perfect_off": 1631,
+   "perfect_on": 1631,
+   "aggregate_off": 3995.12,
+   "aggregate_on": 3995.12,
+   "moved_on": 0,
+   "moved_off": 0,
+   "improved": 0,
+   "worse": 0,
+   "variables_byte_identical_functions": 10738
+  },
+  "hunks": {
+   "O0_coreutils_stripped_sort": {
+    "functions": 479,
+    "changed": 1,
+    "SIGN": [
+     "0x48cf"
+    ],
+    "SIGN_RENUM": [],
+    "MERGE": [],
+    "OTHER": []
+   },
+   "O0_coreutils_stripped_split": {
+    "functions": 240,
+    "changed": 1,
+    "SIGN": [],
+    "SIGN_RENUM": [],
+    "MERGE": [
+     "0x3e43 decls 10->9"
+    ],
+    "OTHER": []
+   },
+   "O0_diffutils_stripped_diff": {
+    "functions": 507,
+    "changed": 1,
+    "SIGN": [
+     "0x11e1b"
+    ],
+    "SIGN_RENUM": [],
+    "MERGE": [],
+    "OTHER": []
+   },
+   "O0_tar_stripped_tar": {
+    "functions": 1570,
+    "changed": 4,
+    "SIGN": [
+     "0x32ca8",
+     "0x33179",
+     "0x343ea",
+     "0x345e7"
+    ],
+    "SIGN_RENUM": [],
+    "MERGE": [],
+    "OTHER": []
+   }
+  }
+ }
+}

@@ -36,12 +36,6 @@
 //! before the load. The helper below therefore sets it BEFORE
 //! `bootstrap_from_object`, serialized by a mutex because the environment is
 //! process-global and `cargo test` runs the tests in this binary concurrently.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -58,32 +52,22 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture with `dwarfstructs` on/off, decompile each of `funcs`
-/// and return the concatenated C. `None` => specs-less skip.
-fn decompile(funcs: &[&str], structs: bool) -> Option<String> {
+/// Bootstrap the fixture with `dwarfstructs` on/off, decompile each of `funcs` and return
+/// the concatenated C.
+fn decompile(funcs: &[&str], structs: bool) -> String {
     let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let path = root
         .join("decompiler/crates/kuna-analysis/tests/fixtures/dwarfstructs_x86_64")
-        .to_str()?
+        .to_str().expect("UTF-8 fixture path")
         .to_string();
 
     std::env::set_var(DWARFSTRUCTS_ENV, if structs { "on" } else { "off" });
     let prog = bootstrap_from_object(&path, "", &spec_roots);
     std::env::remove_var(DWARFSTRUCTS_ENV);
-    let mut prog = match prog {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_dwarfstructs: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = prog.expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let mut cmds: Vec<String> = Vec::new();
@@ -103,18 +87,15 @@ fn decompile(funcs: &[&str], structs: bool) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// A struct passed BY VALUE keeps its type instead of degrading to the raw
 /// register it arrives in.
 #[test]
 fn by_value_struct_parameter_keeps_its_type() {
-    let (Some(off), Some(on)) =
-        (decompile(&["take_struct"], false), decompile(&["take_struct"], true))
-    else {
-        return;
-    };
+    let (off, on) =
+        (decompile(&["take_struct"], false), decompile(&["take_struct"], true));
     assert!(
         off.contains("take_struct(unsigned long p,int4 k)"),
         "gate off should reproduce the bug, got:\n{off}"
@@ -130,11 +111,8 @@ fn by_value_struct_parameter_keeps_its_type() {
 /// a phantom `rethidden` parameter appeared and the body did arithmetic on it.
 #[test]
 fn small_struct_return_loses_its_phantom_sret() {
-    let (Some(off), Some(on)) =
-        (decompile(&["ret_struct"], false), decompile(&["ret_struct"], true))
-    else {
-        return;
-    };
+    let (off, on) =
+        (decompile(&["ret_struct"], false), decompile(&["ret_struct"], true));
     assert!(
         off.contains("rethidden") && off.contains("(int4)rethidden"),
         "gate off should reproduce the phantom sret used in arithmetic, got:\n{off}"
@@ -149,10 +127,7 @@ fn small_struct_return_loses_its_phantom_sret() {
 /// pointer that the ABI genuinely has, only type what it points at.
 #[test]
 fn large_struct_return_keeps_its_real_sret() {
-    let (Some(off), Some(on)) = (decompile(&["ret_big"], false), decompile(&["ret_big"], true))
-    else {
-        return;
-    };
+    let (off, on) = (decompile(&["ret_big"], false), decompile(&["ret_big"], true));
     assert!(off.contains("rethidden"), "the 24-byte sret is real off, got:\n{off}");
     assert!(
         on.contains("rethidden") && on.contains("rethidden->x") && on.contains("rethidden->z"),
@@ -164,11 +139,8 @@ fn large_struct_return_keeps_its_real_sret() {
 /// word.
 #[test]
 fn union_members_resolve() {
-    let (Some(off), Some(on)) =
-        (decompile(&["take_union"], false), decompile(&["take_union"], true))
-    else {
-        return;
-    };
+    let (off, on) =
+        (decompile(&["take_union"], false), decompile(&["take_union"], true));
     assert!(
         off.contains("take_union(unsigned int u)"),
         "gate off should reproduce the bug, got:\n{off}"
@@ -185,9 +157,7 @@ fn union_members_resolve() {
 #[test]
 fn union_keeps_every_member_not_just_the_first() {
     let funcs = ["union_second", "union_third"];
-    let (Some(off), Some(on)) = (decompile(&funcs, false), decompile(&funcs, true)) else {
-        return;
-    };
+    let (off, on) = (decompile(&funcs, false), decompile(&funcs, true));
     assert!(
         off.contains("*(float4 *)u") && off.contains("((char *)u)[2]"),
         "gate off should reproduce the raw reads, got:\n{off}"
@@ -201,11 +171,8 @@ fn union_keeps_every_member_not_just_the_first() {
 /// A struct whose member is itself a struct resolves both levels.
 #[test]
 fn nested_struct_members_resolve() {
-    let (Some(off), Some(on)) =
-        (decompile(&["take_nest"], false), decompile(&["take_nest"], true))
-    else {
-        return;
-    };
+    let (off, on) =
+        (decompile(&["take_nest"], false), decompile(&["take_nest"], true));
     assert!(
         off.contains("((int4 *)n)[1]"),
         "gate off should reproduce the cast-and-offset, got:\n{off}"
@@ -220,11 +187,8 @@ fn nested_struct_members_resolve() {
 /// that holds it.
 #[test]
 fn bitfield_members_resolve() {
-    let (Some(off), Some(on)) =
-        (decompile(&["take_bits"], false), decompile(&["take_bits"], true))
-    else {
-        return;
-    };
+    let (off, on) =
+        (decompile(&["take_bits"], false), decompile(&["take_bits"], true));
     assert!(
         off.contains("& 7") && off.contains(">> 3"),
         "gate off should reproduce the mask-and-shift, got:\n{off}"
@@ -239,7 +203,7 @@ fn bitfield_members_resolve() {
 /// member — the recursion the shell-before-members ordering exists to survive.
 #[test]
 fn self_referential_struct_terminates() {
-    let Some(on) = decompile(&["walk_list"], true) else { return };
+    let on = decompile(&["walk_list"], true);
     assert!(
         on.contains("n->val") && on.contains("n->next"),
         "a linked-list node should resolve both its members, got:\n{on}"
@@ -252,9 +216,7 @@ fn self_referential_struct_terminates() {
 #[test]
 fn same_name_different_size_aggregates_both_survive() {
     let funcs = ["read_same_small", "read_same_big"];
-    let (Some(off), Some(on)) = (decompile(&funcs, false), decompile(&funcs, true)) else {
-        return;
-    };
+    let (off, on) = (decompile(&funcs, false), decompile(&funcs, true));
     assert!(
         off.contains("((int4 *)s)[2]"),
         "gate off should reproduce the cast-and-offset, got:\n{off}"

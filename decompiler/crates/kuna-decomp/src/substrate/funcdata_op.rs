@@ -258,6 +258,17 @@ impl Funcdata {
     /// varnode id (`vn` after a possible xref-unification), which the C++ assigns
     /// back to `vn` before `op->setOutput(vn)`.
     pub fn op_set_output(&mut self, op: OpId, vn: VarnodeId) -> KunaResult<()> {
+        self.attach_output(op, vn, true)
+    }
+
+    /// [`op_set_output`](Funcdata::op_set_output) for a simplification rule that moves
+    /// an existing output onto a rewritten op: `vn` keeps the scope properties it
+    /// already carries instead of re-deriving them at `op`.
+    pub fn op_move_output(&mut self, op: OpId, vn: VarnodeId) -> KunaResult<()> {
+        self.attach_output(op, vn, false)
+    }
+
+    fn attach_output(&mut self, op: OpId, vn: VarnodeId, refresh: bool) -> KunaResult<()> {
         // Already set to this vn.
         if self.obank().get(op).expect("op_set_output: stale op").get_out() == Some(vn) {
             return Ok(());
@@ -277,7 +288,11 @@ impl Funcdata {
             let mut replace = Funcdata::replace_reads_thunk(obank);
             vbank.set_def(vn, def, &mut replace)?
         };
-        self.set_varnode_properties(vn);
+        if refresh {
+            self.set_varnode_properties(vn);
+        } else {
+            self.ensure_varnode_cover(vn);
+        }
         self.obank_mut().get_mut(op).expect("op_set_output: stale op").set_output(Some(vn));
         Ok(())
     }
@@ -1270,8 +1285,8 @@ impl Funcdata {
         earliest: Option<OpId>,
     ) -> Option<OpId> {
         let outvn1 = self.obank().get(op).expect("cse_find_in_block: stale op").get_out();
-        let descend: Vec<OpId> =
-            self.vbank().get(vn).expect("cse_find_in_block: stale vn").descend_iter().collect();
+        let descend =
+            self.vbank().get(vn).expect("cse_find_in_block: stale vn").descend_iter();
         let early_order = earliest.map(|e| {
             self.obank().get(e).expect("cse_find_in_block: stale earliest").get_seq_num().get_order()
         });
@@ -1321,8 +1336,8 @@ impl Funcdata {
     /// (C++ `BlockBasic::earliestUse`, `block.cc:2826`).  Returns `None` if no
     /// descendant of `vn` lies in `bl`.
     pub fn block_earliest_use(&self, bl: crate::context::BlockId, vn: VarnodeId) -> Option<OpId> {
-        let descend: Vec<OpId> =
-            self.vbank().get(vn).expect("block_earliest_use: stale vn").descend_iter().collect();
+        let descend =
+            self.vbank().get(vn).expect("block_earliest_use: stale vn").descend_iter();
         let mut res: Option<OpId> = None;
         for op in descend {
             if self.obank().get(op).expect("block_earliest_use: stale op").get_parent() != Some(bl) {

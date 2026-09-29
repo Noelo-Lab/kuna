@@ -1,6 +1,5 @@
 //! Tests for the ABI seam.
 
-use super::*;
 use crate::kuna_lang::OutLang;
 
 /// The rule that makes this seam load-bearing rather than decorative: rustc

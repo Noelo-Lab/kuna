@@ -22,12 +22,6 @@
 //! direction flag to be clear at every function boundary, and the Microsoft
 //! prototype in the same spec already says so; kuna now states it where the spec
 //! is silent.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -43,25 +37,15 @@ fn fixture(name: &str) -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name)
 }
 
-/// Bootstrap `bin`, commit the analysis facts, decompile `func`, and return the
-/// captured C (`None` ⇒ specs-less skip).
-fn decompile(bin: &str, func: &str) -> Option<String> {
+/// Bootstrap `bin`, commit the analysis facts, decompile `func`, and return the captured C.
+fn decompile(bin: &str, func: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let path = fixture(bin).to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&path, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_direction_flag: skipping (bootstrap failed, build the `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let path = fixture(bin).to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let cmds: Vec<String> =
@@ -77,14 +61,14 @@ fn decompile(bin: &str, func: &str) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// `fmt/main` inlines `strcmp(file, "-")` as `repz cmpsb`, and calls several
 /// functions before reaching it — so it needs the flag to survive a call.
 #[test]
 fn an_inlined_string_op_steps_by_one() {
-    let Some(code) = decompile("regglobal_fmt_x86_64", "main") else { return };
+    let code = decompile("regglobal_fmt_x86_64", "main");
 
     assert!(
         !code.contains("* -2 + 1"),
@@ -107,7 +91,7 @@ fn an_inlined_string_op_steps_by_one() {
 /// path that every non-x86 target takes.
 #[test]
 fn a_non_x86_target_is_unaffected() {
-    let Some(code) = decompile("fmt_aarch64", "main") else { return };
+    let code = decompile("fmt_aarch64", "main");
 
     assert!(
         code.contains("main("),

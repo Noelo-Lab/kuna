@@ -15,20 +15,12 @@ fn repo_root() -> PathBuf {
         .unwrap()
 }
 
-fn boot() -> Option<ConsoleProgram> {
+fn boot() -> ConsoleProgram {
     let root = repo_root();
     let specs = vec![root.join("specs").to_str().unwrap().to_string()];
     let fixture = root.join("decompiler/crates/kuna-analysis/tests/fixtures/macho_import_slots");
-    match bootstrap_from_object(fixture.to_str().unwrap(), "", &specs) {
-        Ok(program) => Some(program),
-        Err(error) => {
-            eprintln!(
-                "verify_macho_import_slots: skipping (build `.sla` with `make specs`): {}",
-                error.explain()
-            );
-            None
-        }
-    }
+    bootstrap_from_object(fixture.to_str().unwrap(), "", &specs)
+        .expect("bootstrap fixture with built processor specs")
 }
 
 fn decompile(program: ConsoleProgram, setup: &[&str]) -> String {
@@ -51,7 +43,7 @@ fn decompile(program: ConsoleProgram, setup: &[&str]) -> String {
 
 #[test]
 fn peimportcall_binds_only_the_typed_macho_import_slot() {
-    let Some(on_program) = boot() else { return };
+    let on_program = boot();
     let on = decompile(
         on_program,
         &["load function _call_slots", "decompile", "print C"],
@@ -69,7 +61,7 @@ fn peimportcall_binds_only_the_typed_macho_import_slot() {
         "ordinary __objc_msgrefs data must remain anonymous:\n{on}"
     );
 
-    let Some(off_program) = boot() else { return };
+    let off_program = boot();
     let off = decompile(
         off_program,
         &[

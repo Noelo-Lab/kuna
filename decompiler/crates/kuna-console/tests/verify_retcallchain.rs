@@ -9,12 +9,6 @@
 //! Fixture: `kuna-analysis/tests/fixtures/retcallchain_i386` (source
 //! `retcallchain_i386.s`), whose `chain_entry` is three links followed by a
 //! plain epilogue.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`).  When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -41,27 +35,18 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture and run the analysis commit.  `None` ⇒ specs-less skip.
-fn load_fixture(fixture: &str) -> Option<ConsoleProgram> {
+/// Bootstrap the fixture and run the analysis commit.
+fn load_fixture(fixture: &str) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(fixture);
-    let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_retcallchain: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit");
-    Some(prog)
+    prog
 }
 
-fn load() -> Option<ConsoleProgram> {
+fn load() -> ConsoleProgram {
     load_fixture("retcallchain_i386")
 }
 
@@ -73,8 +58,8 @@ fn flow(addr: u64, kind: &str) -> Directive {
 }
 
 /// Decompile `chain_entry` under `directives` and return its C.
-fn decompile_with(directives: Vec<Directive>) -> Option<String> {
-    let mut prog = load()?;
+fn decompile_with(directives: Vec<Directive>) -> String {
+    let mut prog = load();
     if !directives.is_empty() {
         prog.set_assertions(directives);
         assertions::apply_program_scoped(&mut prog);
@@ -85,7 +70,7 @@ fn decompile_with(directives: Vec<Directive>) -> Option<String> {
     let funcs = decompile_targets(&mut prog, vec![target], false, false, false);
     let code = funcs[0].code.clone().unwrap_or_default();
     assert_eq!(funcs[0].error, None, "the pipeline aborted:\n{code}");
-    Some(code)
+    code
 }
 
 /// The sites the walk reports for an override at `at`.
@@ -102,7 +87,7 @@ fn sites(prog: &ConsoleProgram, at: u64) -> Vec<u64> {
 /// Unasserted entry chains are recovered by the same strict detector.
 #[test]
 fn the_default_recovers_the_whole_entry_chain() {
-    let Some(code) = decompile_with(Vec::new()) else { return };
+    let code = decompile_with(Vec::new());
     for call in CALLS {
         assert!(code.contains(call), "the default chain stopped before {call}:\n{code}");
     }
@@ -110,7 +95,7 @@ fn the_default_recovers_the_whole_entry_chain() {
 
 #[test]
 fn entry_recognition_reports_the_complete_chain() {
-    let Some(prog) = load() else { return };
+    let prog = load();
     let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
     let entry = Address::new(space, CHAIN_ENTRY);
     let sites = kuna_entry_chain_sites(
@@ -127,7 +112,7 @@ fn entry_recognition_reports_the_complete_chain() {
 
 #[test]
 fn immediate_ret_recognition_reports_only_the_one_store_tail() {
-    let Some(prog) = load_fixture("push_immediate_ret_i386") else { return };
+    let prog = load_fixture("push_immediate_ret_i386");
     let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
     let entry = Address::new(space.clone(), 0x0804_9000);
     let matched = kuna_push_immediate_ret(prog.arch().translate(), &entry, CHAIN_MAX_INSNS)
@@ -155,7 +140,7 @@ fn immediate_ret_recognition_reports_only_the_one_store_tail() {
 
 #[test]
 fn immediate_ret_transfer_never_registers_the_encrypted_target_as_a_function() {
-    let Some(mut prog) = load_fixture("push_immediate_ret_i386.exe") else { return };
+    let mut prog = load_fixture("push_immediate_ret_i386.exe");
     prog.arch_mut()
         .set_kuna_option("pushimmediateret", "on")
         .expect("pushimmediateret flips on");
@@ -181,7 +166,7 @@ fn immediate_ret_transfer_never_registers_the_encrypted_target_as_a_function() {
 /// The need's own case: one override on the first link recovers all three calls.
 #[test]
 fn overriding_the_first_link_recovers_the_whole_chain() {
-    let Some(code) = decompile_with(vec![flow(LINK_RETS[0], "call")]) else { return };
+    let code = decompile_with(vec![flow(LINK_RETS[0], "call")]);
     for call in CALLS {
         assert!(code.contains(call), "the chain stopped before {call}:\n{code}");
     }
@@ -190,7 +175,7 @@ fn overriding_the_first_link_recovers_the_whole_chain() {
 /// Every link names the other two, whichever one the caller happened to find.
 #[test]
 fn each_link_reports_the_others() {
-    let Some(prog) = load() else { return };
+    let prog = load();
     for (i, at) in LINK_RETS.iter().enumerate() {
         let want: Vec<u64> =
             LINK_RETS.iter().copied().filter(|a| a != at).collect();
@@ -202,7 +187,7 @@ fn each_link_reports_the_others() {
 /// continuation, and neither does an ordinary leaf's own return.
 #[test]
 fn an_ordinary_return_extends_to_nothing() {
-    let Some(prog) = load() else { return };
+    let prog = load();
     assert!(sites(&prog, EPILOGUE_RET).is_empty(), "the epilogue was read as a link");
     assert!(sites(&prog, FIRST_LINK).is_empty(), "an address outside the walk was read as a link");
 }
@@ -213,7 +198,7 @@ fn an_ordinary_return_extends_to_nothing() {
 /// partial register-alias writes must also invalidate the supposed proof.
 #[test]
 fn fallthrough_decoys_are_not_entry_chains() {
-    let Some(prog) = load_fixture("entry_ret_dispatch_i386") else { return };
+    let prog = load_fixture("entry_ret_dispatch_i386");
     let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
     for entry in [
         0x0804_9043,
@@ -239,7 +224,7 @@ fn fallthrough_decoys_are_not_entry_chains() {
 /// The site cap is a hard stop, not an advisory one.
 #[test]
 fn the_site_cap_bounds_what_is_reported() {
-    let Some(prog) = load() else { return };
+    let prog = load();
     let space = prog.arch().manage().get_default_code_space().cloned().expect("code space");
     let entry = Address::new(space.clone(), CHAIN_ENTRY);
     let at = Address::new(space, LINK_RETS[0]);

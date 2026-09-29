@@ -38,12 +38,6 @@
 //! mirrors that ordering exactly: it sets the options on the live arch and THEN
 //! calls `commit_pending_analysis()` (the deferred build + consumer run), proving
 //! the flag-after-load path actually builds the Listing and applies the consumer.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -68,25 +62,16 @@ enum Mode {
     On,
 }
 
-/// Bootstrap the fixture, (optionally) enable the consumer, decompile `func`, and
-/// return the captured C (`None` ⇒ specs-less skip).
-fn decompile(func: &str, mode: Mode) -> Option<String> {
+/// Bootstrap the fixture, (optionally) enable the consumer, decompile `func`, and return
+/// the captured C.
+fn decompile(func: &str, mode: Mode) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let bin = fixture().to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&bin, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_noreturn_disc: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     // The live-CLI ordering: the `option` lines precede `read symbols` (the
     // deferred commit). Set the flags on the live arch BEFORE committing so the
@@ -113,7 +98,7 @@ fn decompile(func: &str, mode: Mode) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// THE PAYOFF: with the consumer on, the custom `die` wrapper is concluded
@@ -122,10 +107,8 @@ fn decompile(func: &str, mode: Mode) -> Option<String> {
 /// must differ, and the on-form must carry the no-return terminator.
 #[test]
 fn discovered_noreturn_eliminates_dead_code_after_custom_wrapper() {
-    let Some(off) = decompile("compute_a", Mode::Off) else {
-        return; // specs-less skip
-    };
-    let on = decompile("compute_a", Mode::On).expect("second bootstrap succeeds if the first did");
+    let off = decompile("compute_a", Mode::Off);
+    let on = decompile("compute_a", Mode::On);
 
     eprintln!("---- compute_a (flags OFF / default) ----\n{off}");
     eprintln!("---- compute_a (flags ON) ----\n{on}");
@@ -162,9 +145,7 @@ fn discovered_noreturn_eliminates_dead_code_after_custom_wrapper() {
 /// guarantee — the deferred build never fires by default).
 #[test]
 fn flags_off_is_the_today_baseline() {
-    let Some(off) = decompile("compute_a", Mode::Off) else {
-        return; // specs-less skip
-    };
+    let off = decompile("compute_a", Mode::Off);
     assert!(!off.trim().is_empty(), "expected a non-empty body for compute_a");
     // The default body follows the fall-through, so it is the larger merged form
     // (it references more than one `compute_*`/`die` site). The exact bytes are the
@@ -180,9 +161,7 @@ fn flags_off_is_the_today_baseline() {
 /// `exit` — a sanity check that the fixture's wrapper is shaped as documented.
 #[test]
 fn die_wrapper_tail_calls_exit() {
-    let Some(die) = decompile("die", Mode::On) else {
-        return; // specs-less skip
-    };
+    let die = decompile("die", Mode::On);
     eprintln!("---- die (flags ON) ----\n{die}");
     assert!(
         die.contains("exit") || die.contains("// no-return"),

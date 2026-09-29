@@ -1,55 +1,19 @@
-//! Port of `decompiler/cpp/globalcontext.hh` + `globalcontext.cc` (W2, item
-//! `w2-sleigh-context`): utilities for getting address-based context to the
-//! disassembler and decompiler.
+//! Address-based decoding context and tracked register values.
 //!
-//! Pieces: [`ContextBitRange`] (a value packed into the context blob),
-//! [`TrackedContext`]/[`TrackedSet`] (tracked register values),
-//! [`ContextDatabase`] (the abstract database interface),
-//! [`ContextInternal`] (the in-memory implementation on
-//! `kuna_base::partmap::PartMap`), and [`ContextCache`] (the per-address
-//! cache with flow-boundary invalidation).
+//! [`ContextDatabase`] defines the interface; [`ContextInternal`] stores context
+//! in address partitions, and [`ContextCache`] caches the current flow range.
+//! Context values use `u32` words. Variable names are byte strings ordered
+//! lexicographically by byte.
 //!
-//! Port decisions (each justified at its use site):
+//! Region updates call back for each context blob in database order. Explicit
+//! assignments mark change points; a flowing update stops where the affected
+//! bits are already marked. Cloning `FreeArray` copies values and clears masks,
+//! so a split inherits values without marking another explicit assignment.
 //!
-//! - `uintm -> u32`: a context *blob* is an array of `u32` words
-//!   (`8*sizeof(uintm)` is 32 everywhere below).
-//! - Context-variable names are byte strings (`Vec<u8>`/`&[u8]`) per the
-//!   workspace marshal convention; `BTreeMap<Vec<u8>,_>` iterates in the
-//!   same byte-lexicographic order as the C++ `std::map<string,_>`.
-//! - The C++ protected virtuals (`getVariable`, `getRegionForSet`,
-//!   `getRegionToChangePoint`, `getDefaultValue`) are public trait methods —
-//!   Rust traits have no protected visibility.  `getVariable` returns the
-//!   `ContextBitRange` *by value* (it is a `Copy` POD that is immutable
-//!   after registration; the C++ non-const reference is never used to
-//!   mutate), which sidesteps borrow conflicts in the provided methods.
-//! - C++ `getRegionForSet`/`getRegionToChangePoint` pass back a
-//!   `vector<uintm *>` of raw pointers into the database which the caller
-//!   then writes through.  Safe Rust cannot hand out a list of aliasing
-//!   `&mut`; instead the region methods invoke a caller-supplied callback
-//!   on each blob, in the same iteration order.  Every C++ caller applies
-//!   one uniform mutation per returned blob, so interleaving "mark mask /
-//!   mutate blob" per entry produces the identical final state (the mask
-//!   array and value array of an entry never alias, and the
-//!   `getRegionToChangePoint` stop-test reads only masks of *later*
-//!   entries, which the callback never touches).
-//! - `FreeArray`'s `Clone` transcribes the C++ `operator=` — values are
-//!   copied, the mask is **zeroed** ("Copy value at split point, but not
-//!   fact that value is being set").  `PartMap::split`/`clear_range` are
-//!   the only cloners, exactly the C++ `database[pnt] = ...` sites.
-//! - [`ContextCache`] does not own the database: the C++ encapsulated
-//!   `ContextDatabase *` becomes an explicit method parameter (same
-//!   precedent as `kuna_num::pcoderaw::VarnodeData::get_space_from_const`,
-//!   which takes the manager the C++ pointer implied).  C++ `getDatabase()`
-//!   has no equivalent.  The C++ cached `const uintm *context` pointer
-//!   cannot be stored safely; on a cache hit the blob is re-fetched with
-//!   the cheap single-lookup `ContextDatabase::get_context` instead.  This
-//!   reproduces the C++ behavior for every flow that goes through the
-//!   ContextCache API (including paints from below `first` that reach into
-//!   the cached range without tripping the invalidation tests).  The only
-//!   divergence is flows that mutate the database *directly* while a cache
-//!   is live AND insert a new split point inside the cached range: C++
-//!   serves the stale pre-split blob, the port serves the fresh one.  No
-//!   in-tree flow does this (reported as a loss by the porting item).
+//! The cache receives its database as a method parameter and fetches values
+//! even on a range hit. Reads therefore observe direct database changes,
+//! including new split points inside the cached range; unlike the upstream
+//! cached pointer, no old context blob is retained.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -106,27 +70,17 @@ pub fn register_globalcontext_ids(registry: &mut IdRegistry) {
 // ContextBitRange
 // ---------------------------------------------------------------------------
 
-/// \brief Description of a context variable within the disassembly context
-/// \e blob
-///
-/// Disassembly context is stored as individual (integer) values packed into
-/// a sequence of words. This class represents the info for encoding or
-/// decoding a single value within this sequence.  A value is a contiguous
-/// range of bits within one context word. Size can range from 1 bit up to
-/// the size of a word.
-///
-/// (C++ `ContextBitRange(void)` leaves the fields uninitialized; `Default`
-/// zeroes them here.)
+/// A contiguous value packed within one 32-bit context word.
+/// Bit indices run from the most significant bit (0) to the least significant
+/// bit (31). `Default` zeroes all fields.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ContextBitRange {
     /// Index of word containing this context value
     word: i32,
-    /// Starting bit of the value within its word (0=most significant bit
-    /// 1=least significant).  Never read after construction, as in C++.
+    /// First bit within the word, numbered from the most significant bit.
     #[allow(dead_code)]
     startbit: i32,
-    /// Ending bit of the value within its word.  Never read after
-    /// construction, as in C++.
+    /// Last bit within the word.
     #[allow(dead_code)]
     endbit: i32,
     /// Right-shift amount to apply when unpacking this value from its word
@@ -136,44 +90,34 @@ pub struct ContextBitRange {
 }
 
 impl ContextBitRange {
-    /// Bits within the whole context blob are labeled starting with 0 as the
-    /// most significant bit in the first word in the sequence. The new
-    /// context value must be contained within a single word.
-    /// \param sbit is the starting (most significant) bit of the new value
-    /// \param ebit is the ending (least significant) bit of the new value
+    /// Describe the inclusive range `sbit..=ebit` in the whole context blob.
+    /// Callers must supply ordered, nonnegative indices within one 32-bit word;
+    /// this constructor does not validate them.
     pub fn new(sbit: i32, ebit: i32) -> ContextBitRange {
-        // 8*sizeof(uintm) == 32.  (C++ divides int4 by size_t — an unsigned
-        // division — identical to i32 division for the non-negative bit
-        // positions used here.)
         let word = sbit / 32;
         let startbit = sbit - word * 32;
         let endbit = ebit - word * 32;
         let shift = 32 - endbit - 1;
-        // cast: startbit+shift is in [0,31] for any in-word range (C++
-        // shifts by an int with the same value)
         let mask = (!0u32) >> ((startbit + shift) as u32);
         ContextBitRange { word, startbit, endbit, shift, mask }
     }
 
-    /// Return the shift-amount for \b this value
+    /// Right shift needed to unpack the value.
     pub fn get_shift(&self) -> i32 {
         self.shift
     }
 
-    /// Return the mask for \b this value
+    /// Mask applied after shifting to unpack the value.
     pub fn get_mask(&self) -> u32 {
         self.mask
     }
 
-    /// Return the word index for \b this value
+    /// Index of the context word containing the value.
     pub fn get_word(&self) -> i32 {
         self.word
     }
 
-    /// \brief Set \b this value within a given context blob
-    ///
-    /// \param vec is the given context blob to alter (as an array of words)
-    /// \param val is the integer value to set
+    /// Store the low bits of `val`, preserving the rest of the context word.
     pub fn set_value(&self, vec: &mut [u32], val: u32) {
         let word = self.word as usize; // cast: word index, non-negative
         let mut newval = vec[word];
@@ -182,10 +126,7 @@ impl ContextBitRange {
         vec[word] = newval;
     }
 
-    /// \brief Retrieve \b this value from a given context blob
-    ///
-    /// \param vec is the given context blob (as an array of words)
-    /// \return the recovered integer value
+    /// Read the value from the context blob.
     pub fn get_value(&self, vec: &[u32]) -> u32 {
         (vec[self.word as usize] >> self.shift) & self.mask // cast: word index
     }
@@ -702,13 +643,8 @@ impl FreeArray {
     /// \param sz is the new number of words to resize array to
     fn reset(&mut self, sz: i32) {
         let sz = sz as usize; // cast: word count, non-negative by construction
-        let mut newarray = vec![0u32; sz]; // Pad new part with zero
-        let mut newmask = vec![0u32; sz];
-        let min = sz.min(self.array.len());
-        newarray[..min].copy_from_slice(&self.array[..min]); // Copy old part
-        newmask[..min].copy_from_slice(&self.mask[..min]);
-        self.array = newarray;
-        self.mask = newmask;
+        self.array.resize(sz, 0);
+        self.mask.resize(sz, 0);
     }
 }
 
@@ -1144,19 +1080,16 @@ impl ContextCache {
         // C++: (addr.getSpace()!=curspace)||(first>addr.getOffset())||
         //      (last<addr.getOffset())
         let n = database.get_context_size() as usize; // cast: word count
-        if !self.cache_covers(addr) {
+        let context = if !self.cache_covers(addr) {
             self.curspace = addr.get_space().cloned();
             let (context, first, last) = database.get_context_bounds(addr);
             self.first = first;
             self.last = last;
-            buf[..n].copy_from_slice(&context[..n]);
+            context
         } else {
-            // Cache hit: the C++ copies from its cached blob pointer; the
-            // port re-fetches the same blob with the cheap single lookup
-            // (see module docs).
-            let context = database.get_context(addr);
-            buf[..n].copy_from_slice(&context[..n]);
-        }
+            database.get_context(addr)
+        };
+        buf[..n].copy_from_slice(&context[..n]);
     }
 
     /// \brief Change the value of a context variable at the given address

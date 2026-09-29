@@ -168,129 +168,8 @@ fn peak_rss_bytes() -> Option<u64> {
     Some(line.split_whitespace().nth(1)?.parse::<u64>().ok()? * 1024)
 }
 
-/// Why the walk ran serially. Every variant has a stable stderr spelling; the
-/// first group is the gate, the second is a fault after the lanes started.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Refusal {
-    /// The target has no threads (wasm).
-    NoThreads,
-    /// No rebuildable engine: not a standalone `Sleigh`, or no `.sla` bytes.
-    NoEngine,
-    /// The language's constructors carry `globalset`, so a decode at one
-    /// address can change how another decodes.
-    ContextCommits,
-    /// A delay-slot decode fetches past its own instruction.
-    DelaySlots,
-    /// The loader cannot share its (live, patched) bytes.
-    NoSharedBytes,
-    /// A per-address decode mode is painted into the context database.
-    ContextPaint,
-    /// Nothing to walk.
-    NoSeeds,
-    /// Some executable address is mapped by no segment, which is the one case
-    /// in which the loader's staging window is history-dependent.
-    UnmappedExec,
-    /// The walk is too small to pay for the engine builds.
-    TooSmall,
-    /// A lane's engine could not be built.
-    KitFailed,
-    /// A rebuilt engine disagreed with the parent on a sampled decode.
-    KitDisagrees,
-    /// The OS refused a lane thread (`RLIMIT_NPROC`, a container `pids.max`, or
-    /// no memory for a stack).
-    SpawnFailed,
-    /// A lane panicked.
-    LaneFault,
-    /// A lane fetched bytes at an unmapped address.
-    UnmappedFetch,
-    /// Two shards claimed one address (a router bug).
-    Collision,
-    /// The rounds did not converge.
-    RoundLimit,
-    /// The parent's context database moved during the walk.
-    ContextMoved,
-}
-
-impl Refusal {
-    /// Every variant, so a new one cannot be added without a stderr spelling and
-    /// a line in `docs/cli.md` (both are asserted against this list).
-    ///
-    /// Tied to the enum by [`Refusal::index`], whose exhaustive match an 18th
-    /// variant does not compile past.
-    pub const ALL: [Refusal; Refusal::COUNT] = [
-        Refusal::NoThreads,
-        Refusal::NoEngine,
-        Refusal::ContextCommits,
-        Refusal::DelaySlots,
-        Refusal::NoSharedBytes,
-        Refusal::ContextPaint,
-        Refusal::NoSeeds,
-        Refusal::UnmappedExec,
-        Refusal::TooSmall,
-        Refusal::KitFailed,
-        Refusal::KitDisagrees,
-        Refusal::SpawnFailed,
-        Refusal::LaneFault,
-        Refusal::UnmappedFetch,
-        Refusal::Collision,
-        Refusal::RoundLimit,
-        Refusal::ContextMoved,
-    ];
-
-    /// How many variants there are. Bumping it without extending [`Refusal::ALL`]
-    /// does not compile, and extending `ALL` without bumping it does not either.
-    pub const COUNT: usize = 17;
-
-    /// This variant's place in [`Refusal::ALL`].
-    ///
-    /// The match is exhaustive, so a new variant stops the build here; the
-    /// round-trip in `every_refusal_is_in_the_all_list` then forces it into
-    /// `ALL`, which is what the spelling and documentation tests iterate.
-    const fn index(self) -> usize {
-        match self {
-            Refusal::NoThreads => 0,
-            Refusal::NoEngine => 1,
-            Refusal::ContextCommits => 2,
-            Refusal::DelaySlots => 3,
-            Refusal::NoSharedBytes => 4,
-            Refusal::ContextPaint => 5,
-            Refusal::NoSeeds => 6,
-            Refusal::UnmappedExec => 7,
-            Refusal::TooSmall => 8,
-            Refusal::KitFailed => 9,
-            Refusal::KitDisagrees => 10,
-            Refusal::SpawnFailed => 11,
-            Refusal::LaneFault => 12,
-            Refusal::UnmappedFetch => 13,
-            Refusal::Collision => 14,
-            Refusal::RoundLimit => 15,
-            Refusal::ContextMoved => 16,
-        }
-    }
-
-    /// The stderr spelling, stable across releases.
-    pub fn reason(self) -> &'static str {
-        match self {
-            Refusal::NoThreads => "no threads on this target",
-            Refusal::NoEngine => "no rebuildable decode engine",
-            Refusal::ContextCommits => "language commits context",
-            Refusal::DelaySlots => "language has delay slots",
-            Refusal::NoSharedBytes => "loader cannot share its bytes",
-            Refusal::ContextPaint => "per-address decode context",
-            Refusal::NoSeeds => "no seeds",
-            Refusal::UnmappedExec => "executable range not fully mapped",
-            Refusal::TooSmall => "executable image too small",
-            Refusal::KitFailed => "engine rebuild failed",
-            Refusal::KitDisagrees => "rebuilt engine disagrees",
-            Refusal::SpawnFailed => "thread spawn failed",
-            Refusal::LaneFault => "lane fault",
-            Refusal::UnmappedFetch => "unmapped fetch",
-            Refusal::Collision => "merge collision",
-            Refusal::RoundLimit => "round limit",
-            Refusal::ContextMoved => "context moved",
-        }
-    }
-}
+mod refusal;
+pub use refusal::Refusal;
 
 /// The rebuild instructions every lane's engine is built from, captured once per
 /// load and reused across every `Listing` rebuild.
@@ -1651,19 +1530,6 @@ mod tests {
         }
         assert_eq!(woke.load(Ordering::SeqCst), 2);
         assert!(!gate.wait(), "a poisoned gate refuses every later arrival");
-    }
-
-    /// `ALL` is hand-written, so something has to tie it to the enum: `index()`
-    /// is exhaustive (a new variant stops the build), and this pins that every
-    /// index really addresses its own variant, so `ALL` cannot be short.
-    #[test]
-    fn every_refusal_is_in_the_all_list() {
-        assert_eq!(Refusal::ALL.len(), Refusal::COUNT);
-        for (at, refusal) in Refusal::ALL.iter().enumerate() {
-            assert_eq!(refusal.index(), at, "{refusal:?} is not at its own index in ALL");
-        }
-        let distinct: BTreeSet<usize> = Refusal::ALL.iter().map(|r| r.index()).collect();
-        assert_eq!(distinct.len(), Refusal::COUNT, "two variants share an index");
     }
 
     #[test]

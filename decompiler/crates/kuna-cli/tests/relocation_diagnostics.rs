@@ -80,13 +80,9 @@ fn unsupported_arm_relocations() -> SyntheticFixture {
 fn json_functions_reports_exact_relocation_count_with_fixed_stderr_ceiling() {
     let root = repo_root();
     let specs = root.join("specs");
-    if !specs
+    assert!(specs
         .join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla")
-        .exists()
-    {
-        eprintln!("relocation_diagnostics: skipping (no built ARM8_le.sla)");
-        return;
-    }
+        .exists(), "required processor spec missing; build specs before running integration tests");
     let fixture = unsupported_arm_relocations();
     let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args([

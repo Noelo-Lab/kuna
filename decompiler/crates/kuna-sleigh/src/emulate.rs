@@ -1,43 +1,19 @@
-//! Port of `decompiler/cpp/emulate.hh` + `emulate.cc` (W2, item
-//! `w2-sleigh-emulate`): classes for emulating p-code.
+//! P-code execution and breakpoints, from `decompiler/cpp/emulate.{hh,cc}`.
 //!
-//! Paradigm mapping (each noted again at its use site):
+//! [`EmulateCore`] stores halt and current-behavior state; [`Emulate`] provides
+//! dispatch and requires operation handlers. [`EmulateMemory`] exposes shared
+//! memory and the current operation, with reusable handlers in [`emulate_memory`].
+//! Concrete engines delegate to those handlers or supply their own behavior.
 //!
-//! - The C++ abstract class `Emulate` splits into [`EmulateCore`] (the
-//!   concrete data members `emu_halted` / `currentBehave`) and the
-//!   [`Emulate`] trait — the protected virtuals as required methods plus the
-//!   non-virtual `setHalt`/`getHalt`/`executeCurrentOp` as provided methods
-//!   (the `TranslateBase`/`Translate` boundary precedent).
-//! - The C++ intermediate class `EmulateMemory` becomes the
-//!   [`EmulateMemory`] trait (accessors for its data members `memstate` /
-//!   `currentOp`, plus the manager boundary below) together with the
-//!   [`emulate_memory`] module holding its method bodies as free functions;
-//!   a concrete engine implements `Emulate::execute_*` by delegating there
-//!   — that delegation *is* the C++ inheritance edge, and an engine
-//!   overriding a method (as `EmulatePcodeCache` does for `executeBranch` /
-//!   `executeCallother`) simply provides its own body instead.
-//! - **Manager boundary**: C++ `Translate` *is an* `AddrSpaceManager`, and
-//!   `executeLoad`/`executeStore` reach the space table through
-//!   `getSpaceFromConst()` (a reinterpreted pointer).  The port stores a
-//!   manager index in the constant (see `kuna_num::pcoderaw`), so the
-//!   emulator carries an explicit `Rc<AddrSpaceManager>` handle
-//!   ([`EmulateMemory::addr_space_manager`]).
-//! - **Breakpoint back-pointers**: C++ `BreakCallBack::setEmulate` /
-//!   `BreakTable::setEmulate` store a raw `Emulate *` that callbacks reach
-//!   back through while the emulator is mid-execution.  Rust cannot hold
-//!   that mutable back-pointer, so the emulator is passed *into* the
-//!   callback at invocation time (`&mut dyn EmulateMemory` parameters on
-//!   [`BreakTable`]/[`BreakCallBack`]); the `setEmulate` plumbing disappears
-//!   with identical observable association.  A callback that re-enters its
-//!   own break table (C++ would allow it) panics on the `RefCell` borrow.
-//! - `PcodeOpRaw *` handles into the op cache are `Rc<PcodeOpRaw>` (the
-//!   ops are immutable once cached).  The C++ `varcache` of `VarnodeData *`
-//!   disappears: the Rust `PcodeOpRaw` owns its varnodes by value (decision
-//!   recorded in `kuna_num::pcoderaw` module docs), so [`PcodeEmitCache`]
-//!   manages only the op cache.
-//! - Errors (ADR 0004): every C++ throw becomes `Result` with the same
-//!   explain string; `executeCurrentOp`'s dispatch errors propagate to the
-//!   caller exactly where the C++ exception would.
+//! Address-space constants contain manager indices. The emulator keeps an
+//! explicit `Rc<AddrSpaceManager>` to resolve them. Cached operations are
+//! immutable `Rc<PcodeOpRaw>` values and own their varnodes, so [`PcodeEmitCache`]
+//! only manages the operation list.
+//!
+//! Breakpoint callbacks receive `&mut dyn EmulateMemory` during invocation rather
+//! than storing an emulator back-pointer. Re-entering the same break table from
+//! a callback panics on its active `RefCell` borrow. Operation and callback errors
+//! propagate as `KunaResult` with their original messages.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -59,30 +35,11 @@ use crate::translate::{PcodeEmit, Translate};
 // BreakCallBack / BreakTable / BreakTableCallBack
 // ---------------------------------------------------------------------------
 
-/// \brief A breakpoint object
-///
-/// This is a base class for breakpoint objects in an emulator.  The
-/// breakpoints are implemented as callback methods, which are overridden for
-/// the particular behavior needed by the emulator.  Each implementation must
-/// override either
-///   - pcode_callback()
-///   - address_callback()
-///
-/// depending on whether the breakpoint is tailored for a particular pcode op
-/// or for a machine address.  (The C++ `emulate` member and `setEmulate` are
-/// replaced by the `emulate` parameter — module docs.)
+/// Breakpoint hooks that receive the active emulator on each invocation.
+/// Override the hook for the kind of breakpoint being registered.
 pub trait BreakCallBack {
-    /// Call back method for pcode based breakpoints.
-    ///
-    /// This routine is invoked during emulation, if this breakpoint has
-    /// somehow been associated with this kind of pcode op.  The callback can
-    /// perform any operation on the emulator context it wants.  It then
-    /// returns \b true if these actions are intended to replace the action
-    /// of the pcode op itself.  Or it returns \b false if the pcode op
-    /// should still have its normal effect on the emulator context.
-    /// \param emulate is the emulator context (the C++ stored back-pointer)
-    /// \param op is the particular pcode operation where the break occurs
-    /// \return \b true if the normal pcode op action should not occur
+    /// Handle a user-defined p-code operation. Return `true` to suppress its
+    /// normal action. The default returns `true` without changing emulator state.
     fn pcode_callback(
         &mut self,
         emulate: &mut dyn EmulateMemory,
@@ -92,17 +49,8 @@ pub trait BreakCallBack {
         Ok(true)
     }
 
-    /// Call back method for address based breakpoints.
-    ///
-    /// This routine is invoked during emulation, if this breakpoint has
-    /// somehow been associated with this address.  The callback can perform
-    /// any operation on the emulator context it wants. It then returns
-    /// \b true if these actions are intended to replace the action of the
-    /// \b entire machine instruction at this address. Or it returns \b false
-    /// if the machine instruction should still be executed normally.
-    /// \param emulate is the emulator context (the C++ stored back-pointer)
-    /// \param addr is the address where the break has occurred
-    /// \return \b true if the machine instruction should not be executed
+    /// Handle an instruction address. Return `true` to suppress execution of
+    /// the entire instruction. The default returns `true` without changing state.
     fn address_callback(
         &mut self,
         emulate: &mut dyn EmulateMemory,
@@ -113,45 +61,19 @@ pub trait BreakCallBack {
     }
 }
 
-/// \brief A collection of breakpoints for the emulator
-///
-/// A BreakTable keeps track of an arbitrary number of breakpoints for an
-/// emulator.  Breakpoints are either associated with a particular
-/// user-defined pcode op, or with a specific machine address (as in a
-/// standard debugger). Through the BreakTable object, an emulator can invoke
-/// breakpoints through the two methods
-///  - do_pcode_op_break()
-///  - do_address_break()
-///
-/// depending on the type of breakpoint they currently want to invoke.
-/// (C++ `setEmulate` is replaced by the `emulate` parameters — module docs.)
+/// Dispatch breakpoints for user-defined p-code operations or instruction
+/// addresses. A `true` result suppresses normal execution at that breakpoint.
 pub trait BreakTable {
-    /// \brief Invoke any breakpoints associated with this particular pcodeop
-    ///
-    /// Within the table, the first breakpoint which is designed to work with
-    /// this particular kind of pcode operation is invoked.  If there was a
-    /// breakpoint and it was designed to \e replace the action of the pcode
-    /// op, then \b true is returned.
-    /// \param emulate is the emulator context for the breakpoints
-    /// \param curop is the instance of a pcode op to test for breakpoints
-    /// \return \b true if the action of the pcode op is performed by the
-    ///         breakpoint
+    /// Invoke a matching operation callback. Return `true` if it replaces the
+    /// normal p-code action, or `false` if execution should continue.
     fn do_pcode_op_break(
         &mut self,
         emulate: &mut dyn EmulateMemory,
         curop: &PcodeOpRaw,
     ) -> KunaResult<bool>;
 
-    /// \brief Invoke any breakpoints associated with this machine address
-    ///
-    /// Within the table, the first breakpoint which is designed to work with
-    /// at this address is invoked.  If there was a breakpoint, and if it was
-    /// designed to \e replace the action of the machine instruction, then
-    /// \b true is returned.
-    /// \param emulate is the emulator context for the breakpoints
-    /// \param addr is address to test for breakpoints
-    /// \return \b true if the machine instruction has been replaced by a
-    ///         breakpoint
+    /// Invoke a matching address callback. Return `true` if it replaces the
+    /// entire machine instruction, or `false` if execution should continue.
     fn do_address_break(
         &mut self,
         emulate: &mut dyn EmulateMemory,
@@ -159,14 +81,10 @@ pub trait BreakTable {
     ) -> KunaResult<bool>;
 }
 
-/// \brief A basic instantiation of a breakpoint table
+/// Breakpoint registry with shared, mutable callbacks.
 ///
-/// This object allows breakpoints to be registered in the table via either
-///   - register_pcode_callback()  or
-///   - register_address_callback()
-///
-/// Breakpoints are stored in map containers, and the core BreakTable methods
-/// are implemented to search in these containers
+/// One callback is stored per user-operation id or address; registering the same
+/// key replaces its callback. The translator resolves user-operation names.
 pub struct BreakTableCallBack {
     /// The translator
     trans: Rc<dyn Translate>,
@@ -183,13 +101,7 @@ pub struct BreakTableCallBack {
 }
 
 impl BreakTableCallBack {
-    /// Basic breaktable constructor.
-    ///
-    /// The break table needs a translator object so user-defined pcode ops
-    /// can be registered against by name.  (The C++ `emulate` member and the
-    /// `setEmulate` wiring are replaced by the invocation-time parameter —
-    /// module docs.)
-    /// \param t is the translator object
+    /// Create a breakpoint table using the translator to resolve user-op names.
     pub fn new(t: Rc<dyn Translate>) -> Self {
         BreakTableCallBack {
             trans: t,
@@ -198,20 +110,14 @@ impl BreakTableCallBack {
         }
     }
 
-    /// Register a pcode based breakpoint.
-    ///
-    /// Any time the emulator is about to execute a user-defined pcode op
-    /// with the given name, the indicated breakpoint is invoked first. The
-    /// break table does \e not assume responsibility for freeing the
-    /// breakpoint object (the `Rc` is shared with the caller).
-    /// \param name is the name of the user-defined pcode op
-    /// \param func is the breakpoint object to associate with the pcode op
+    /// Register for the first matching user-operation name, replacing its prior
+    /// callback. Unknown names return `KunaError::Lowlevel`. The table retains the
+    /// supplied shared callback.
     pub fn register_pcode_callback(
         &mut self,
         name: &str,
         func: Rc<RefCell<dyn BreakCallBack>>,
     ) -> KunaResult<()> {
-        // (C++ func->setEmulate(emulate) is the replaced back-pointer)
         let mut userops: Vec<String> = Vec::new();
         self.trans.get_user_op_names(&mut userops);
         let mut i: i32 = 0;
@@ -226,33 +132,20 @@ impl BreakTableCallBack {
         Err(KunaError::lowlevel(format!("Bad userop name: {name}")))
     }
 
-    /// Register an address based breakpoint.
-    ///
-    /// Any time the emulator is about to execute (the pcode translation of)
-    /// a particular machine instruction at this address, the indicated
-    /// breakpoint is invoked first. The break table does \e not assume
-    /// responsibility for freeing the breakpoint object.
-    /// \param addr is the address associated with the breakpoint
-    /// \param func is the breakpoint being registered
+    /// Register a callback for an instruction address, replacing its prior
+    /// callback. The table retains the supplied shared callback.
     pub fn register_address_callback(
         &mut self,
         addr: &Address,
         func: Rc<RefCell<dyn BreakCallBack>>,
     ) {
-        // (C++ func->setEmulate(emulate) is the replaced back-pointer)
         self.addresscallback.insert(addr.clone(), func);
     }
 }
 
 impl BreakTable for BreakTableCallBack {
-    /// Invoke any breakpoints for the given pcode op.
-    ///
-    /// This routine examines the pcode-op based container for any
-    /// breakpoints associated with the given op.  If one is found, its
-    /// pcode_callback method is invoked.
-    /// \param curop is pcode op being checked for breakpoints
-    /// \return \b true if the breakpoint exists and returns \b true,
-    ///         otherwise return \b false
+    /// Use input zero's offset as the user-operation id. Invoke its callback,
+    /// or return `false` when no callback is registered.
     fn do_pcode_op_break(
         &mut self,
         emulate: &mut dyn EmulateMemory,
@@ -266,14 +159,7 @@ impl BreakTable for BreakTableCallBack {
         }
     }
 
-    /// Invoke any breakpoints for the given address.
-    ///
-    /// This routine examines the address based container for any breakpoints
-    /// associated with the given address. If one is found, its
-    /// address_callback method is invoked.
-    /// \param addr is the address being checked for breakpoints
-    /// \return \b true if the breakpoint exists and returns \b true,
-    ///         otherwise return \b false
+    /// Invoke the callback registered for this address, or return `false`.
     fn do_address_break(
         &mut self,
         emulate: &mut dyn EmulateMemory,
@@ -290,10 +176,8 @@ impl BreakTable for BreakTableCallBack {
 // Emulate
 // ---------------------------------------------------------------------------
 
-/// The concrete data members of the C++ abstract class `Emulate`
-/// (`emu_halted`, `currentBehave`).  An engine embeds one and exposes it
-/// through [`Emulate::emulate_core`].  The fields are public, mirroring the
-/// C++ protected members.
+/// Halt state and current operation behavior shared by emulator engines.
+/// An engine exposes these fields through [`Emulate::emulate_core`].
 pub struct EmulateCore {
     /// Set to \b true if the emulator is halted
     pub emu_halted: bool,
@@ -315,16 +199,9 @@ impl Default for EmulateCore {
     }
 }
 
-/// \brief A pcode-based emulator interface.
-///
-/// The interface expects that the underlying emulation engine operates on
-/// individual pcode operations as its atomic operation.  The interface
-/// allows execution stepping through individual pcode operations. The
-/// interface allows querying of the \e current pcode op, the current machine
-/// address, and the rest of the machine state.
-///
-/// (The C++ protected virtuals are required methods here; Rust traits have
-/// no protected methods, so they are public.)
+/// Execution interface for engines that step through individual p-code
+/// operations. Engines provide operation handlers and machine-address tracking;
+/// the trait supplies dispatch through the current operation behavior.
 pub trait Emulate {
     /// Access the concrete C++ base-class members (kuna boundary; see
     /// [`EmulateCore`]).
@@ -499,23 +376,13 @@ pub trait Emulate {
 // EmulateMemory
 // ---------------------------------------------------------------------------
 
-/// \brief An abstract Emulate class using a MemoryState object as the
-/// backing machine state
+/// Engine access to shared memory, the current raw operation and address spaces.
 ///
-/// Most p-code operations are implemented using the MemoryState to fetch and
-/// store values.  Control-flow is implemented partially in that
-/// set_execute_address() is called to indicate which instruction is being
-/// executed. The implementing engine must provide
-///   - fallthru_op()
-///   - set_execute_address()
-///   - get_execute_address()
-///
-/// This trait carries the C++ `EmulateMemory` data members as accessors; the
-/// method bodies live in the [`emulate_memory`] module and an engine's
-/// `impl Emulate` delegates to them (module docs).  The following p-code
-/// operations are stubbed out and return an error: CALLOTHER, MULTIEQUAL,
-/// INDIRECT, CPOOLREF, SEGMENTOP, and NEW.  Of course the engine can
-/// override these.
+/// Reusable operation handlers live in [`emulate_memory`]; engines delegate
+/// their [`Emulate`] methods to these handlers or provide their own. Engines
+/// provide fallthrough and instruction-address tracking through [`Emulate`].
+/// The shared handlers reject CALLOTHER, MULTIEQUAL, INDIRECT, CPOOLREF,
+/// SEGMENTOP and NEW with errors.
 pub trait EmulateMemory: Emulate {
     /// Get the emulator's memory state (the C++ protected `memstate` member
     /// and the public `getMemoryState`; shared with the application).
@@ -772,10 +639,7 @@ impl PcodeEmit for PcodeEmitCache<'_> {
 // EmulatePcodeCache
 // ---------------------------------------------------------------------------
 
-/// Adapter giving [`register_instructions`] the one slice of [`Translate`]
-/// it needs.  (C++ passes the `Translate *` directly; the W1 port
-/// parameterized the float behaviors by [`FloatFormatProvider`] — see
-/// kuna-num opbehavior.rs module docs.)
+/// Exposes a translator's floating-point formats to instruction behaviors.
 pub struct TranslateFloatFormats(pub Rc<dyn Translate>);
 
 impl FloatFormatProvider for TranslateFloatFormats {

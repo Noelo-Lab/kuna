@@ -1,42 +1,7 @@
-//! The end-to-end decompilation orchestrator (item `w9x-arch-engine-glue`).
+//! End-to-end flow following, action scheduling, and C emission.
 //!
-//! Wires the merged subsystems — the [`Architecture`] god object, the
-//! [`FlowInfo`] flow engine, the universalAction pipeline
-//! ([`crate::universalaction`]), and the [`PrintC`] printer — into a single
-//! function-decompilation path, mirroring `decompiler/cpp/ifacedecomp.cc`'s
-//! `IfcDecompile` + `IfcPrintC`:
-//!
-//! ```text
-//! IfcDecompile::execute (ifacedecomp.cc:889)
-//!   fd->followFlow(...)                         -> generate_ops + generate_blocks
-//!   allacts.getCurrent()->reset(*fd)
-//!   res = allacts.getCurrent()->perform(*fd)    -> the restart loop
-//! IfcPrintC::execute (ifacedecomp.cc:925)
-//!   print->docFunction(fd)                      -> PrintC::doc_function shell
-//! ```
-//!
-//! ## What runs end-to-end today (and what stubs out)
-//!
-//! * **Flow following is real.**  [`FlowInfo::generate_ops`] (C++
-//!   `Funcdata::followFlow` -> `generateOps`) lifts and links every
-//!   straight-line instruction's p-code into the `Funcdata`; CALL / jump-table
-//!   sites hit the documented W4 `FlowInfo` stubs (FuncCallSpecs / JumpTable),
-//!   which are no-ops here (faithful partial flow), so `generate_ops` returns
-//!   the IR built up to those boundaries rather than erroring.
-//! * **The universalAction perform loop is real.**  The 252-pass `decompile`
-//!   root is installed and run; the *boot* passes (`ActionStart` -> the C++
-//!   `Funcdata::startProcessing`) are W3/W4 stub no-ops in the merged tree
-//!   (which is why the flow follow is driven explicitly here, outside the
-//!   pipeline, exactly as the C++ `followFlow` runs before `perform`), so the
-//!   pass scheduler/status state-machine executes without rebuilding the IR.
-//! * **The printer body is the W9-emit stub.**  [`PrintC::doc_function`] emits a
-//!   structurally-complete C function *shell* (real signature + matched braces)
-//!   driving the real [`Emit`](crate::prettyprint::Emit) primitives; the
-//!   per-statement RPN expression body is the `// STUB(W9-emit)` driver absent
-//!   from the merged tree (see `printc.rs`).
-//!
-//! This proves the full path RUNS and emits plausible C — not byte-parity (the
-//! W10 grind), which the e2e gate (`tests/decompile_e2e.rs`) asserts.
+//! This connects the architecture's flow environment, restartable action tree,
+//! and printer, following upstream `IfcDecompile` and `IfcPrintC`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -229,6 +194,15 @@ impl FlowEnvironment for ArchFlowEnv {
         // When on, a halt planted because the decode failed carries the upstream
         // truncation + header warnings.
         self.arch().decode_halt
+    }
+    fn decode_failure_hint(&self, addr: &Address) -> Option<String> {
+        crate::kuna_decodehalt::powerpc_isa_hint(
+            self.arch().get_description(), addr.get_offset(), |buffer| {
+                let loader = self.arch().translate().loader_rc();
+                let Ok(mut loader) = loader.try_borrow_mut() else { return false; };
+                loader.load_fill(buffer, addr).is_ok()
+            },
+        )
     }
     fn query_call_inline(&self, entry: &Address) -> bool {
         // C++ `queryCall` copies the callee proto's `isInline()` flow effect; the
@@ -979,7 +953,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
         // (kuna `protoorder types`) And for the parameter types earlier callees stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, fd);
+        crate::p4_calls::kuna_callrettype::seed(arch, fd);
         crate::p4_calls::kuna_calleevote::seed(arch, fd);
+        crate::kuna_elemptr::seed(arch, fd);
         // (kuna `calleepreserves`) And for the call-guard seam's view of the
         // callee's writes; shares rustabi's cache, so this is a map lookup.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, fd);
@@ -1284,25 +1260,17 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, &mut fd);
         // (kuna `protoorder types`) The parameter types callees decompiled earlier stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, &mut fd);
+        // (kuna `callrettype`) And the return types they stated.
+        crate::p4_calls::kuna_callrettype::seed(arch, &mut fd);
         // (kuna `calleevote`) What every caller of this function passes.
         crate::p4_calls::kuna_calleevote::seed(arch, &mut fd);
+        // (kuna `elemptr`) The globals another function of the batch disagrees about.
+        crate::kuna_elemptr::seed(arch, &mut fd);
         // (kuna `calleepreserves`) The call-guard seam's view of the same
         // decode: the registers the callee is proven NOT to write; inert unless
         // `option calleepreserves` is live.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, &mut fd);
-        // With the single-manager unification (LOSS-132) the universalAction passes
-        // now reach the *real* lifted varnodes, so the pipeline genuinely executes
-        // heritage / simplification / merge / … on live IR.  Some pass BODIES are
-        // still un-ported stubs (LOSS-131, the M3 grind): a hand-built fixture never
-        // reached them, but a real corpus function can hit, e.g.,
-        // `Heritage::normalizeWriteSize`'s PIECE-concat path.  Those stubs abort via
-        // `unimplemented_stub` (a deliberate `#[cold] panic!`).  Convert such a
-        // stub-abort into a recoverable `Err` at this orchestration boundary so the
-        // end-to-end harnesses degrade to the documented "honest partial parity"
-        // (the pipeline ran; a body declined at a stub) instead of taking down the
-        // whole run — exactly the graceful-degradation the LOSS-130/131 measurement
-        // assumes.  `fd`/`arch` are discarded on the unwind, so no half-mutated
-        // state escapes (`AssertUnwindSafe` is sound here for that reason).
+        // Report a pass panic as a per-function failure at the driver boundary.
         let res =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_pipeline(arch, &mut fd)));
         match res {
@@ -1866,6 +1834,10 @@ pub struct GlobalInfo {
     /// of the name does not compile against it. (An array decays to a pointer,
     /// so a scalar compare against one would compile to something else.)
     pub aggregate: bool,
+    /// (kuna `elemptr`) Direct storage the rule typed an element pointer
+    /// (`char *dat_5068`): declared although no function takes its address,
+    /// since a subscript of it reads the element its declaration names.
+    pub elem: bool,
 }
 
 /// The globals the C `print_c` just rendered for `fd` names
@@ -1876,23 +1848,32 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
     let print = arch.print();
     let plan = print.globalref_plan();
     let rt = crate::printc::RealTypeCtx::from_arch(arch, print.out_lang());
-    let info = |address: u64, ty: &std::rc::Rc<crate::dtype::Datatype>, unknown: bool, direct: bool| {
+    let info = |address: u64,
+                ty: &std::rc::Rc<crate::dtype::Datatype>,
+                unknown: bool,
+                direct: bool,
+                array: bool,
+                elem: bool| {
         let name = crate::printc::global_data_name(arch, address);
         use crate::dtype::type_metatype::{TYPE_STRUCT, TYPE_UNION};
+        // (kuna `elemptr`) An indexed global is declared as an array of unknown
+        // length, `T dat_4020[]`, which the header recognises by its suffix.
+        let declarator = if array { format!("{name}[]") } else { name.clone() };
         GlobalInfo {
             address,
-            declaration: crate::printc::declaration_text(ty, &name, rt),
+            declaration: crate::printc::declaration_text(ty, &declarator, rt),
             size: i64::from(ty.get_size()),
             name,
             unknown,
             direct,
             aggregate: matches!(ty.get_metatype(), TYPE_STRUCT | TYPE_UNION),
+            elem,
         }
     };
     let mut out: Vec<GlobalInfo> =
-        plan.minted.iter().map(|(&address, m)| info(address, &m.decl_type, m.unknown, false)).collect();
-    for (address, ty) in plan.direct_objects() {
-        let g = info(address, ty, false, true);
+        plan.minted.iter().map(|(&address, m)| info(address, &m.decl_type, m.unknown, false, m.array, false)).collect();
+    for (address, ty, elem) in plan.direct_objects() {
+        let g = info(address, ty, false, true, false, elem);
         if !out.contains(&g) {
             out.push(g);
         }

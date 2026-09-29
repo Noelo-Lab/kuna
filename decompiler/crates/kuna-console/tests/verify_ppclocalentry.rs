@@ -21,12 +21,6 @@
 //! The third test is the property that keeps this from losing code: the fold
 //! only ever REMOVES the duplicate second entry — it adds nothing, and every
 //! named function keeps or grows its extent.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `PowerPC` `.sla` under `specs/` (gitignored;
-//! `make specs`). When it is absent the bootstrap fails; the test prints that
-//! and returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -46,23 +40,14 @@ fn repo_root() -> PathBuf {
 }
 
 /// Bootstrap the fixture the way every `kuna` driver does on a non-x86-64 image
-/// (DIV-20/DIV-68: the Listing plus the discovery bundle), with `ppclocalentry`
-/// in the requested state. `None` is a visible skip when the `.sla` is missing.
-fn bootstrap(ppclocalentry: bool) -> Option<ConsoleProgram> {
+/// (DIV-20/DIV-68: the Listing plus the discovery bundle), with `ppclocalentry` in the
+/// requested state.
+fn bootstrap(ppclocalentry: bool) -> ConsoleProgram {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/plt_ppc64le");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_ppclocalentry: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
     prog.arch_mut()
         .set_kuna_option("funcstart_patterns", "on")
@@ -71,7 +56,7 @@ fn bootstrap(ppclocalentry: bool) -> Option<ConsoleProgram> {
         .set_kuna_option("ppclocalentry", if ppclocalentry { "on" } else { "off" })
         .expect("ppclocalentry flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn entries(prog: &ConsoleProgram) -> Vec<(String, u64)> {
@@ -86,9 +71,7 @@ fn size_of(entries: &[(String, u64)], name: &str) -> Option<u64> {
 /// 8-byte named husk plus an anonymous body 8 bytes later.
 #[test]
 fn local_entries_split_every_function_with_the_option_off() {
-    let Some(prog) = bootstrap(false) else {
-        return;
-    };
+    let prog = bootstrap(false);
     let got = entries(&prog);
     for &(named, anon, whole) in SPLIT {
         assert_eq!(
@@ -109,9 +92,7 @@ fn local_entries_split_every_function_with_the_option_off() {
 /// its whole routine.
 #[test]
 fn named_functions_span_their_whole_body_by_default() {
-    let Some(prog) = bootstrap(true) else {
-        return;
-    };
+    let prog = bootstrap(true);
     let got = entries(&prog);
     for &(named, anon, whole) in SPLIT {
         assert_eq!(
@@ -132,9 +113,7 @@ fn named_functions_span_their_whole_body_by_default() {
 /// no surviving function shrinks.
 #[test]
 fn the_fold_only_removes_the_duplicate_entries() {
-    let (Some(off), Some(on)) = (bootstrap(false), bootstrap(true)) else {
-        return;
-    };
+    let (off, on) = (bootstrap(false), bootstrap(true));
     let before = entries(&off);
     let after = entries(&on);
     let mut removed: Vec<&str> = before

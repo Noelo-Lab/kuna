@@ -24,13 +24,13 @@
 //! `--json` emits the machine-readable document; without it, one tab-separated
 //! row per reference under a `#` header line.
 
-use std::rc::Rc;
 
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
-use kuna_base::address::Address;
 use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
 
+use crate::args::take_value as take;
 use crate::decompile_all::{load_program, mode_options_for_binary, Args, DriverDefaults};
+use crate::function_info::{default_function_name, function_json};
 use crate::jsonfmt::{dumps_indent2, Json};
 
 /// Which way the query runs.
@@ -208,11 +208,11 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     // message `load_program` would have given it.
     std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
-    let bytes = crate::decompile_all::image_bytes(
+    let bytes = crate::image::image_bytes(
         &args.binary,
         kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
     )?;
-    let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
+    let file = kuna_analysis::loadimage_object::parse_object(&bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
     let prog = load_program(&load, DriverDefaults::Query)?;
 
@@ -343,14 +343,7 @@ fn name_at(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<String>
         // follows the call graph out of its seeds), and a row that names one must
         // still name it rather than answer `null`.
         .or_else(|| {
-            index.is_function_entry(vma).then(|| {
-                match prog.arch().manage().get_default_code_space() {
-                    Some(space) => {
-                        prog.arch().name_function(&Address::new(Rc::clone(space), vma))
-                    }
-                    None => format!("sub_{vma:x}"),
-                }
-            })
+            index.is_function_entry(vma).then(|| default_function_name(prog, vma))
         })
         .or_else(|| {
             prog.global_data_symbols()
@@ -364,34 +357,17 @@ fn name_at(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<String>
 /// first (it knows which entry's descent reached the instruction), then the
 /// engine's inventory for an address the walk never decoded.
 fn owning_function(prog: &ConsoleProgram, index: &XrefIndex, vma: u64) -> Option<(u64, String)> {
-    let entry = index
-        .function_containing(vma)
-        .or_else(|| prog.find_entry_at(vma).map(|e| e.addr.get_offset()))?;
+    let entry = crate::function_info::owning_function(prog, index, vma)?;
     Some((entry, function_name(prog, index, entry)))
 }
 
 /// The display name for a function entry, falling back to the engine's own
 /// placeholder (`sub_<addr>`) so a row is never nameless.
 fn function_name(prog: &ConsoleProgram, index: &XrefIndex, entry: u64) -> String {
-    name_at(prog, index, entry).unwrap_or_else(|| {
-        match prog.arch().manage().get_default_code_space() {
-            Some(space) => prog.arch().name_function(&Address::new(Rc::clone(space), entry)),
-            None => format!("sub_{entry:x}"),
-        }
-    })
+    name_at(prog, index, entry).unwrap_or_else(|| default_function_name(prog, entry))
 }
 
 // --- rendering ---------------------------------------------------------------
-
-/// An `{name, address, address_hex}` triple — the house address shape, used for
-/// the query target and for each row's owning function.
-fn function_json(name: &str, addr: u64) -> Json {
-    Json::Object(vec![
-        ("name".into(), Json::Str(name.to_string())),
-        ("address".into(), Json::Number(addr.to_string())),
-        ("address_hex".into(), Json::Str(format!("0x{addr:x}"))),
-    ])
-}
 
 fn optional_function_json(f: Option<(u64, String)>) -> Json {
     match f {
@@ -587,14 +563,7 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
                     kinds.push(parse_kind(k)?);
                 }
             }
-            "--option" => {
-                if i + 2 >= argv.len() {
-                    return Err("--option requires NAME VALUE".into());
-                }
-                crate::optname::check(&argv[i + 1])?;
-                options.push((argv[i + 1].clone(), argv[i + 2].clone()));
-                i += 2;
-            }
+            "--option" => options.push(crate::args::take_option(argv, &mut i)?),
             "--mode" => mode = Some(take(argv, &mut i, "--mode")?),
             "--isa" => isa = kuna_console::engine::ArmIsa::parse(&take(argv, &mut i, "--isa")?)?,
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
@@ -641,15 +610,6 @@ fn parse_kind(k: &str) -> Result<XrefKind, String> {
         "read" => Ok(XrefKind::Read),
         "write" => Ok(XrefKind::Write),
         other => Err(format!("unknown --kind {other:?} (call, jump, data, read, write)")),
-    }
-}
-
-fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
-    if *i + 1 < argv.len() {
-        *i += 1;
-        Ok(argv[*i].clone())
-    } else {
-        Err(format!("{flag} requires a value"))
     }
 }
 

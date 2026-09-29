@@ -24,12 +24,6 @@
 //! * **option ON (the fix):** the class names, the vtables and every virtual slot
 //!   are recovered — `shapes::Shape::vtable_2`, `shapes::Shape_vtable`,
 //!   `shapes::Widget::vtable_for_Drawable_0`.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and returns
-//! early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -72,39 +66,27 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the stripped hidden-visibility C++ fixture with `itaniumrtti` in the
-/// requested state, then commit the (deferred) analysis facts. `None` is a visible
-/// skip when the `.sla` is missing.
-fn bootstrap(on: bool) -> Option<ConsoleProgram> {
+/// Bootstrap the stripped hidden-visibility C++ fixture with `itaniumrtti` in the requested
+/// state, then commit the (deferred) analysis facts.
+fn bootstrap(on: bool) -> ConsoleProgram {
     let bin = repo_root()
         .join("decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_itaniumrtti: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut()
         .set_kuna_option("itaniumrtti", if on { "on" } else { "off" })
         .expect("itaniumrtti flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 /// BEFORE (`--option itaniumrtti off`, the default): nothing in the RTTI graph is
 /// named. This is the state Ghidra 12.1 also leaves such a binary in.
 #[test]
 fn nothing_is_recovered_with_the_option_off() {
-    let Some(prog) = bootstrap(false) else {
-        return;
-    };
+    let prog = bootstrap(false);
     for name in [
         SHAPE_AREA,
         SHAPE_PERIMETER,
@@ -132,9 +114,7 @@ fn nothing_is_recovered_with_the_option_off() {
 /// is named from the ABI graph alone.
 #[test]
 fn virtual_methods_are_named_from_the_rtti_graph() {
-    let Some(prog) = bootstrap(true) else {
-        return;
-    };
+    let prog = bootstrap(true);
     for name in [SHAPE_AREA, CIRCLE_AREA, WIDGET_RENDER] {
         assert!(
             prog.lookup_symbol(name).is_some(),
@@ -149,9 +129,7 @@ fn virtual_methods_are_named_from_the_rtti_graph() {
 /// scan happened to reach first.
 #[test]
 fn an_inherited_slot_is_named_for_the_defining_base() {
-    let Some(prog) = bootstrap(true) else {
-        return;
-    };
+    let prog = bootstrap(true);
     assert!(
         prog.lookup_symbol(SHAPE_PERIMETER).is_some(),
         "the slot Circle inherits unchanged must be named {SHAPE_PERIMETER}"
@@ -169,9 +147,7 @@ fn an_inherited_slot_is_named_for_the_defining_base() {
 /// must not collide with the primary sub-vtable's.
 #[test]
 fn a_secondary_subvtable_is_named_for_its_base_subobject() {
-    let Some(prog) = bootstrap(true) else {
-        return;
-    };
+    let prog = bootstrap(true);
     assert!(
         prog.lookup_symbol(WIDGET_THUNK).is_some(),
         "the Drawable subobject's thunk block must be named {WIDGET_THUNK}"
@@ -200,9 +176,7 @@ fn a_secondary_subvtable_is_named_for_its_base_subobject() {
 ///   These are a large share of the concrete implementation classes in real C++.
 #[test]
 fn template_instantiations_and_tu_local_classes_are_recovered() {
-    let Some(prog) = bootstrap(true) else {
-        return;
-    };
+    let prog = bootstrap(true);
     assert!(
         prog.has_symbol_named(VEC_INT_GET),
         "Vec<int>::get must be recovered as {VEC_INT_GET}"
@@ -230,9 +204,7 @@ fn template_instantiations_and_tu_local_classes_are_recovered() {
 /// constructor stores TWO of them.
 #[test]
 fn typeinfo_and_vtable_objects_are_labelled() {
-    let Some(prog) = bootstrap(true) else {
-        return;
-    };
+    let prog = bootstrap(true);
     for name in [
         SHAPE_TYPEINFO,
         SHAPE_TYPEINFO_NAME,
@@ -248,9 +220,7 @@ fn typeinfo_and_vtable_objects_are_labelled() {
 /// the one real exported name is never overwritten.
 #[test]
 fn the_function_set_and_real_names_are_untouched() {
-    let (Some(off), Some(on)) = (bootstrap(false), bootstrap(true)) else {
-        return;
-    };
+    let (off, on) = (bootstrap(false), bootstrap(true));
     let before: Vec<u64> =
         off.function_entries_canonical().into_iter().map(|e| e.addr.get_offset()).collect();
     let after: Vec<u64> =

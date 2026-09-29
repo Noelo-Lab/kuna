@@ -26,12 +26,6 @@
 //! routes a PE/Mach-O fixture to the object loader with no flag. Each test below
 //! also proves the *default* dispatch routes to the object loader (no XML
 //! "not recognized" rejection).
-//!
-//! ## `.sla` precondition
-//!
-//! Like the sibling console gates, bootstrapping needs the built `x86` `.sla`
-//! under `specs/` (`make specs`). If it is absent the bootstrap fails and the
-//! test prints that and returns early (a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -135,31 +129,13 @@ fn pe_object_loads_maps_and_disassembles() {
     let path = fixtures().join("pe_min.obj");
     assert!(path.exists(), "missing fixture {path:?}");
 
-    // (default-on proof) The object loads through the *default* `load file`
-    // dispatch with no flag — multi-format support is unconditional. A `.sla`-
-    // absent environment surfaces as a load error; here we only assert the
-    // dispatch ROUTES to the object loader (no XML "not recognized" rejection).
-    if let Err(e) = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots) {
-        let msg = e.explain();
-        assert!(
-            !msg.contains("Unable to recognize") && !msg.contains("XML"),
-            "default-on: the object must route to the object loader (got: {msg})"
-        );
-    }
+    kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots)
+        .expect("default dispatch loads object with built processor specs");
 
     // (1) Parses + (3) right spec. Use bootstrap_from_object directly (the arm
     // `is_object_binary` routes to) so the assertion is unambiguous.
-    let prog = match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_object_formats(PE): skipping (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // Not an ELF object: the error path would have said so. Spec is the Windows
     // x86-64 language.
     let desc = prog.description().to_string();
@@ -198,29 +174,11 @@ fn macho_object_loads_maps_and_disassembles() {
     let path = fixtures().join("macho_min.o");
     assert!(path.exists(), "missing fixture {path:?}");
 
-    // (default-on proof) The object loads through the *default* `load file`
-    // dispatch with no flag — multi-format support is unconditional. A `.sla`-
-    // absent environment surfaces as a load error; here we only assert the
-    // dispatch ROUTES to the object loader (no XML "not recognized" rejection).
-    if let Err(e) = kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots) {
-        let msg = e.explain();
-        assert!(
-            !msg.contains("Unable to recognize") && !msg.contains("XML"),
-            "default-on: the object must route to the object loader (got: {msg})"
-        );
-    }
+    kuna_console::engine::bootstrap_from_file(path.to_str().unwrap(), "", &spec_roots)
+        .expect("default dispatch loads object with built processor specs");
 
-    let prog = match bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_object_formats(Mach-O): skipping (bootstrap failed; build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return;
-        }
-    };
+    let prog = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     // (3) Mach-O x86-64 is System V AMD64 → the `gcc` spec (same description as
     // ELF x86-64 — the spec id differs only in the compiler model field).
     let desc = prog.description().to_string();

@@ -1,41 +1,7 @@
-//! `kuna <subcommand> --help` — the discovery surface, over every subcommand at
-//! once.
-//!
-//! Asking a command to describe itself is an agent's first reflex, and four of
-//! the sixteen answered it with `error: unknown option --help` and exit 2
-//! (`docs/re-needs/decompile-rejects-subcommand-help.md`). `decompile` is the
-//! one the need was filed against; `test`, `catalog` and `specs` sat one command
-//! away with the same defect, so the test is written over the whole dispatch
-//! table rather than over the reported case — a seventeenth subcommand that
-//! forgets its help arm fails here the day it lands.
-//!
-//! No `.sla` and no fixture: help is answered before anything is loaded, which
-//! is itself part of the contract ([`help_needs_no_binary_and_no_specs`]).
+//! Subcommand help and verification guidance without loading an image.
+//! Exercise the real CLI's dispatch, statuses and advertised flags.
 
 use std::process::{Command, Output};
-
-/// Every subcommand `main.rs` dispatches, in its dispatch order. `read` shares
-/// `disassemble`'s parser and prints its block, which is why both are listed.
-const SUBCOMMANDS: &[&str] = &[
-    "decompile",
-    "decompile-all",
-    "decompile-project",
-    "decompile-graph",
-    "functions",
-    "disassemble",
-    "read",
-    "xrefs",
-    "strings",
-    "crypto",
-    "unpack",
-    "docs",
-    "install-skill",
-    "test",
-    "catalog",
-    "modes",
-    "specs",
-    "fid",
-];
 
 fn run(argv: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kuna"))
@@ -50,12 +16,27 @@ fn help_text(out: &Output) -> String {
     s
 }
 
+fn subcommands() -> Vec<String> {
+    let out = run(&["--help"]);
+    assert_eq!(out.status.code(), Some(0), "{}", help_text(&out));
+    assert!(out.stdout.is_empty(), "{}", help_text(&out));
+    let text = String::from_utf8(out.stderr).expect("UTF-8 help");
+    let names: Vec<String> = text.lines().next().expect("usage line")
+        .strip_prefix("usage: kuna <").expect("command list prefix")
+        .strip_suffix("> ...").expect("command list suffix")
+        .split('|').map(str::to_owned).collect();
+    for (index, name) in names.iter().enumerate() {
+        assert!(!name.is_empty() && !names[..index].contains(name), "invalid command list: {names:?}");
+    }
+    names
+}
+
 /// The need: exit 0 and a usage block, for both spellings, on every subcommand.
 #[test]
 fn every_subcommand_answers_help() {
-    for sub in SUBCOMMANDS {
+    for sub in subcommands() {
         for flag in ["--help", "-h"] {
-            let out = run(&[sub, flag]);
+            let out = run(&[&sub, flag]);
             let text = help_text(&out);
             assert_eq!(
                 out.status.code(),
@@ -79,10 +60,10 @@ fn every_subcommand_answers_help() {
 /// that asks about `strings` must not be handed the whole dispatch table.
 #[test]
 fn each_block_names_its_own_subcommand() {
-    for sub in SUBCOMMANDS {
+    for sub in subcommands() {
         // `read` shares `disassemble`'s parser and prints the shared block.
-        let expect = if *sub == "read" { "usage: kuna disassemble|read" } else { &format!("usage: kuna {sub}") };
-        let text = help_text(&run(&[sub, "--help"]));
+        let expect = if sub == "read" { "usage: kuna disassemble|read" } else { &format!("usage: kuna {sub}") };
+        let text = help_text(&run(&[&sub, "--help"]));
         assert!(text.starts_with(expect), "`kuna {sub} --help` opened with:\n{text}");
     }
 }
@@ -133,4 +114,64 @@ fn an_unknown_option_is_still_a_usage_error() {
             "`kuna {sub} --no-such-flag` lost its diagnostic"
         );
     }
+}
+
+#[test]
+fn top_level_aliases_and_usage_errors_keep_their_statuses_and_streams() {
+    let help = run(&["--help"]);
+    assert_eq!(help.status.code(), Some(0));
+    assert!(help.stdout.is_empty());
+    for alias in ["-h", "help"] {
+        let out = run(&[alias]);
+        assert_eq!(out.status.code(), Some(0));
+        assert_eq!(out.stdout, help.stdout);
+        assert_eq!(out.stderr, help.stderr);
+    }
+    let empty = run(&[]);
+    assert_eq!(empty.status.code(), Some(2));
+    assert_eq!(empty.stdout, help.stdout);
+    assert_eq!(empty.stderr, help.stderr);
+    let unknown = "unknown\ncommand";
+    let out = run(&[unknown]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+    assert_eq!(out.stderr, format!("kuna: unknown subcommand {unknown:?}\n{}",
+        String::from_utf8(help.stderr).unwrap()).into_bytes());
+
+    let version = run(&["--version"]);
+    assert_eq!(version.status.code(), Some(0));
+    assert!(version.stdout.starts_with(b"kuna "));
+    assert!(version.stderr.is_empty());
+    for alias in ["-V", "version"] {
+        let out = run(&[alias]);
+        assert_eq!(out.status.code(), Some(0));
+        assert_eq!(out.stdout, version.stdout);
+        assert_eq!(out.stderr, version.stderr);
+    }
+}
+
+#[test]
+fn specs_diff_explains_independent_gates_without_running_a_compiler() {
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["specs", "--diff"])
+        .env("KUNA_SLACOMP", concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+        .output()
+        .expect("spawn kuna");
+    assert_eq!(out.status.code(), Some(0), "{}", help_text(&out));
+    assert!(out.stderr.is_empty(), "{}", help_text(&out));
+    let text = String::from_utf8(out.stdout).expect("UTF-8 guidance");
+    for expected in [
+        "informational",
+        "pinned Ghidra",
+        "--test compiler_parity",
+        "make test",
+        "separate",
+        "docs/history.md",
+        "decompiler/crates/kuna-slacomp/tests/golden/README.md",
+    ] {
+        assert!(text.contains(expected), "missing {expected:?}: {text}");
+    }
+    assert!(!text.contains("no in-tree oracle"), "{text}");
+    assert!(!text.contains("subsumed"), "{text}");
+    assert!(!text.contains("docs/rust-port/"), "{text}");
 }

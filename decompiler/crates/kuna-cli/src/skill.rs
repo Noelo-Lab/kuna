@@ -78,7 +78,7 @@ impl Agent {
     }
 }
 
-pub fn run(argv: &[String]) -> i32 {
+pub fn run(argv: &[String]) -> Result<i32, String> {
     let mut agents: Option<Vec<Agent>> = None;
     let mut project = false;
     let mut dir: Option<PathBuf> = None;
@@ -89,20 +89,19 @@ pub fn run(argv: &[String]) -> i32 {
     while i < argv.len() {
         match argv[i].as_str() {
             "--agent" => {
-                let Some(v) = crate::take_value(argv, &mut i, "--agent") else { return 2 };
+                let v = crate::args::take_value(argv, &mut i, "--agent")?;
                 agents = Some(match v.as_str() {
                     "claude" => vec![Agent::Claude],
                     "codex" => vec![Agent::Codex],
                     "opencode" => vec![Agent::OpenCode],
                     "all" => Agent::ALL.to_vec(),
                     other => {
-                        eprintln!("error: unknown agent {other:?} (expected claude, codex, opencode or all)");
-                        return 2;
+                        return Err(format!("unknown agent {other:?} (expected claude, codex, opencode or all)"));
                     }
                 });
             }
             "--dir" => {
-                let Some(v) = crate::take_value(argv, &mut i, "--dir") else { return 2 };
+                let v = crate::args::take_value(argv, &mut i, "--dir")?;
                 dir = Some(PathBuf::from(v));
             }
             "--project" => project = true,
@@ -110,16 +109,13 @@ pub fn run(argv: &[String]) -> i32 {
             "--print" => print = true,
             "-h" | "--help" => {
                 eprintln!("{USAGE}");
-                return 0;
+                return Ok(0);
             }
             s if s.starts_with('-') => {
-                eprintln!("error: unknown option {s}");
-                eprintln!("{USAGE}");
-                return 2;
+                return Err(format!("unknown option {s}\n{USAGE}"));
             }
             other => {
-                eprintln!("error: unexpected argument {other:?}");
-                return 2;
+                return Err(format!("unexpected argument {other:?}"));
             }
         }
         i += 1;
@@ -127,14 +123,12 @@ pub fn run(argv: &[String]) -> i32 {
 
     if print {
         if agents.is_some() || project || dir.is_some() || force {
-            eprintln!("error: --print installs nothing and takes no other flag");
-            return 2;
+            return Err("--print installs nothing and takes no other flag".into());
         }
-        return output::emit_with_status(BODY, 0);
+        return Ok(output::emit_with_status(BODY, 0));
     }
     if dir.is_some() && (agents.is_some() || project) {
-        eprintln!("error: --dir names the skills directory itself; drop --agent/--project");
-        return 2;
+        return Err("--dir names the skills directory itself; drop --agent/--project".into());
     }
 
     let name = skill_name();
@@ -145,11 +139,10 @@ pub fn run(argv: &[String]) -> i32 {
             Agent::ALL.into_iter().filter(|a| a.config_dir().is_some_and(|d| d.is_dir())).collect()
         });
         if chosen.is_empty() {
-            eprintln!(
-                "error: found no agent config directory (~/.claude, ~/.codex, ~/.config/opencode); \
-                 pass --agent claude|codex|opencode, or --dir DIR for another agent (--print shows the skill)"
+            return Err(
+                "found no agent config directory (~/.claude, ~/.codex, ~/.config/opencode); \
+                 pass --agent claude|codex|opencode, or --dir DIR for another agent (--print shows the skill)".into()
             );
-            return 2;
         }
         let mut targets = Vec::new();
         for a in chosen {
@@ -157,8 +150,7 @@ pub fn run(argv: &[String]) -> i32 {
             match root {
                 Some(r) => targets.push((a.label(), r.join("skills"))),
                 None => {
-                    eprintln!("error: {}: cannot locate the home directory", a.label());
-                    return 2;
+                    return Err(format!("{}: cannot locate the home directory", a.label()));
                 }
             }
         }
@@ -195,7 +187,7 @@ pub fn run(argv: &[String]) -> i32 {
             );
         }
     }
-    status
+    Ok(status)
 }
 
 /// Write `BODY` to `path`, returning the verdict word for the report.

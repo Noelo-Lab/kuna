@@ -83,6 +83,8 @@ e88b008d50fd488b45f08910905dc3
 <symbol space="ram" offset="0x1008b3" name="twodim_array"/>
 </binaryimage>
 <script>
+  <!-- kuna: castwiden default literal; this upstream test pins the (int8) widening upstream prints in a subscript beside an int literal -->
+  <com>option castwiden off</com>
   <com>parse line struct arraystruct { int4 a; int4 b; int4 arr1[16]; int4 arr2[16]; };</com>
   <com>parse line struct substruct { int4 c; int4 d; int4 e; };</com>
   <com>parse line struct hierarchy { int4 a; int4 b; substruct arr1[10]; substruct arr2[10]; };</com>

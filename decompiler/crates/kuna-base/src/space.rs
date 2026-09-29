@@ -1,53 +1,20 @@
-//! Port of `decompiler/cpp/space.hh` + `space.cc` (W1, item
-//! `w1-base-space-address`) — classes for describing address spaces — plus
-//! the `AddrSpaceManager` from `translate.hh/.cc`: the W1 lookup core
-//! (registration + name/shortcut/index lookup, which `Decoder::readSpace`
-//! requires) extended by the W2 `w2-sleigh-translate` item with the
-//! `JoinRecord` machinery, `SpacebaseSpace`, the resolver list and the
-//! decode entry points.  The abstract `Translate` layer itself lives in
-//! `kuna-sleigh::translate`.
+//! Address spaces and their manager, from `decompiler/cpp/space.{hh,cc}`
+//! and `translate.{hh,cc}`. `FspecSpace` and `IopSpace` are defined here too;
+//! the translation interface lives in `kuna_sleigh::translate`.
 //!
-//! Also ported here (their C++ homes need types that are not yet available,
-//! but they are pure `AddrSpace` subclasses): `FspecSpace` (`fspec.hh/.cc`)
-//! and `IopSpace` (`op.hh/.cc`).
+//! Spaces are shared as `Rc<AddrSpace>` and compared by pointer identity.
+//! Methods receive their manager explicitly instead of storing back-pointers;
+//! [`RegisterLookup`] supplies register access through the manager. Constructors
+//! receive target endianness directly. A private kind selects each space's
+//! behavior, and constructor types retain the upstream subclass names.
 //!
-//! Structural mapping (vs C++):
+//! Fields that change after registration use `Cell` or `RefCell`. Join records
+//! belong to the join space and are shared with it; spacebase register data
+//! also lives in the owning space. [`VarnodeStorage`] provides the storage
+//! triple below `kuna-num`, whose `VarnodeData` cannot be a base dependency.
 //!
-//! - C++ spaces are heap objects owned by the manager and shared by raw
-//!   pointer everywhere.  Rust spaces are `Rc<AddrSpace>`; pointer equality
-//!   maps to `Rc::ptr_eq`.  The `manage`/`trans` back-pointers are **not**
-//!   stored (they would form reference cycles); the few methods that need
-//!   them take an explicit `&AddrSpaceManager` parameter, and constructors
-//!   that consulted `Translate::isBigEndian()` take a `bool` instead.
-//!   The register-lookup half of the `trans` back-pointer is modelled by an
-//!   explicit [`RegisterLookup`] trait object installed on the manager (set
-//!   by the sleigh/architecture bootstrap); paths needing
-//!   `Translate::getRegister` error out until one is installed.
-//! - C++ virtual dispatch over the `AddrSpace` subclass hierarchy becomes a
-//!   private kind discriminant: each `virtual` method matches on the kind,
-//!   one arm per C++ override.  The subclass names survive as constructor
-//!   types (`ConstantSpace::new()`, ...) carrying their `NAME`/`INDEX`
-//!   constants.
-//! - Fields the C++ code mutates *after* a space is registered (through the
-//!   manager's friend access) are `Cell`s; everything else is set during
-//!   construction/decode (`&mut self`, before the `Rc` wrap).  The mutable
-//!   join-record table and `SpacebaseSpace` base-register data live in
-//!   `RefCell`s inside the owning space's kind (the C++ keeps the join table
-//!   on the manager; see `AddrSpaceManager::find_add_join` for why the move
-//!   is observationally equivalent).
-//! - [`VarnodeStorage`] mirrors the (space, offset, size) triple of C++
-//!   `VarnodeData` (pcoderaw.hh) for the join/spacebase/register machinery:
-//!   the canonical `VarnodeData` port is `kuna_num::pcoderaw::VarnodeData`,
-//!   which cannot be named from this crate (kuna-num depends on kuna-base).
-//!   `kuna-sleigh::translate` converts at the boundary.
-//!
-//! The `FspecSpace` printRaw/encode arms are restored (W6 `fspec-3`): the
-//! call-spec layer registers the small slice of `FuncCallSpecs` state these arms
-//! read ([`FspecCallInfo`]) under the same integer handle the offset of the
-//! \e fspec address carries — the faithful equivalent of the C++ pointer cast.
-//! Still deferred (losses ledger): `IopSpace::printRaw` (needs `PcodeOp`, W3).
-//! That arm returns `Err(KunaError::Lowlevel)`; everywhere the C++ throws, the
-//! exact C++ error string is kept.
+//! Fspec rendering and encoding resolve integer handles through the
+//! [`FspecCallInfo`] registry. Iop raw rendering returns a low-level error.
 
 use std::cell::{Cell, RefCell};
 use std::collections::btree_map::Entry;
@@ -159,16 +126,9 @@ use addrspace_flags as fl;
 // VarnodeStorage — the C++ VarnodeData triple, as needed below kuna-num
 // ---------------------------------------------------------------------------
 
-/// The (space, offset, size) storage triple of the C++ `VarnodeData`
-/// (pcoderaw.hh), mirrored here for the machinery from `translate.cc/hh`
-/// that must live in this crate ([`JoinRecord`] pieces, `SpacebaseSpace`
-/// base registers, [`RegisterLookup`] results).
-///
-/// The canonical port of `VarnodeData` is `kuna_num::pcoderaw::VarnodeData`
-/// — it cannot be named from kuna-base (kuna-num depends on kuna-base), so
-/// the comparison operators are transcribed here a second time and
-/// `kuna-sleigh::translate` provides the conversions between the two
-/// representations (recorded in the rust-port losses ledger).
+/// A (space, offset, size) triple for join pieces, spacebase registers and
+/// register lookup. `kuna_sleigh::translate` converts this base-level type to
+/// and from `kuna_num::pcoderaw::VarnodeData`, preserving its comparison order.
 #[derive(Debug, Clone, Default)]
 pub struct VarnodeStorage {
     /// The address space (C++ `AddrSpace *`; `None` is the null pointer)
@@ -320,10 +280,7 @@ pub trait RegisterLookup {
     fn get_exact_register_name(&self, base: &Rc<AddrSpace>, off: u64, size: i32) -> String;
 }
 
-/// The shared error for paths that need `Translate::getRegister` before any
-/// [`RegisterLookup`] has been installed on the manager.  (In C++ the
-/// back-pointer always exists; in kuna it is absent until the sleigh wave's
-/// engine — or a test stub — installs one.)
+/// The error for register access before a [`RegisterLookup`] is installed.
 pub fn no_register_lookup_err() -> KunaError {
     KunaError::lowlevel(
         "kuna rust port: no Translate/register lookup installed in the AddrSpaceManager",
@@ -1068,13 +1025,7 @@ impl AddrSpace {
     pub fn num_spacebase(&self) -> i32 {
         match &self.kind {
             // SpacebaseSpace::numSpacebase
-            AddrSpaceKind::Spacebase { state, .. } => {
-                if state.borrow().hasbaseregister {
-                    1
-                } else {
-                    0
-                }
-            }
+            AddrSpaceKind::Spacebase { state, .. } if state.borrow().hasbaseregister => 1,
             _ => 0,
         }
     }
@@ -1213,12 +1164,9 @@ impl AddrSpace {
         }
     }
 
-    /// Find the JoinRecord whose unified range starts exactly at \e offset
-    /// within \b this (join) space (C++ `AddrSpaceManager::findJoin`, reached
-    /// here through the join space's own `JoinState` rather than the C++
-    /// `glb->findJoin` manager back-pointer — mirrors how [`overlap_join`]
-    /// reaches the table).  Errors if \b this is not a join space or the offset
-    /// is unlinked.
+    /// Look up the join record whose unified range starts at `offset`.
+    /// Uses this space's join table, as does [`Self::overlap_join`].
+    /// Returns an error for other space kinds or an unlinked offset.
     pub fn find_join(&self, offset: u64) -> KunaResult<Rc<JoinRecord>> {
         match self.join_state() {
             Some(state) => state.borrow().find_join(offset),
@@ -2032,14 +1980,8 @@ impl UniqueSpace {
     /// Fixed size (in bytes) for unique space offsets
     pub const SIZE: u32 = 4;
 
-    /// Constructor.  This is the constructor for the \b unique space, which
-    /// is automatically constructed by the analysis engine, and constructed
-    /// only once.  The name should always be \b unique.
-    ///
-    /// `big_end` replaces the C++ `t->isBigEndian()` consultation of the
-    /// (unported) Translate back-pointer.
-    /// \param ind is the integer identifier
-    /// \param flags are attribute flags (currently unused)
+    /// Construct the unique space with its manager index, attribute flags
+    /// and target endianness. The physical-storage flag is always set.
     #[allow(clippy::new_ret_no_self)] // C++ subclass constructor
     pub fn new(ind: i32, flags: u32, big_end: bool) -> AddrSpace {
         let mut space = AddrSpace::new(
@@ -2086,13 +2028,7 @@ impl JoinSpace {
     /// (C++ private MAX_PIECES)
     pub(crate) const MAX_PIECES: i32 = 64;
 
-    /// Constructor.  This is the constructor for the \b join space, which is
-    /// automatically constructed by the analysis engine, and constructed
-    /// only once. The name should always be \b join.
-    ///
-    /// `big_end` replaces the C++ `t->isBigEndian()` consultation of the
-    /// (unported) Translate back-pointer.
-    /// \param ind is the integer identifier
+    /// Construct the join space with its manager index and target endianness.
     #[allow(clippy::new_ret_no_self)] // C++ subclass constructor
     pub fn new(ind: i32, big_end: bool) -> AddrSpace {
         let mut space = AddrSpace::new(
@@ -2379,24 +2315,10 @@ impl fmt::Debug for RegisterLookupSlot {
     }
 }
 
-/// \brief A manager for different address spaces
-///
-/// Allows creation, lookup by name, lookup by shortcut and iteration over
-/// address spaces.
-///
-/// Port of the C++ `AddrSpaceManager` (translate.hh/.cc): the W1 core
-/// (registration — `insert_space`, shortcut assignment, the default-space
-/// setters — and lookup by name, shortcut and index, plus the special-space
-/// accessors needed by `Decoder::readSpace`/`Encoder::writeSpace`) plus the
-/// W2 translate-item extensions: the join-record machinery (`find_add_join`,
-/// `find_join`, `renormalize_join_address`, ...), the resolver list, and
-/// `decode_space`/`decode_spaces`.  The C++ `joinallocate`/`splitset`/
-/// `splitlist` members live inside the join space's kind ([`JoinState`]) so
-/// the `JoinSpace` virtuals can reach them without a back-pointer; since a
-/// join space belongs to exactly one record-creating manager in practice
-/// (the C++ `copySpaces` comment notwithstanding), the table is shared
-/// rather than per-manager — observationally equivalent for every in-tree
-/// use.
+/// Register, decode and resolve address spaces by name, shortcut or index.
+/// Also maintains defaults, constant resolvers and register lookup. Join
+/// records live in the shared join space, so sharing that space shares its
+/// record table; in-tree callers use one manager to create those records.
 #[derive(Debug, Default)]
 pub struct AddrSpaceManager {
     /// Every space we know about for this architecture
@@ -2703,9 +2625,8 @@ impl AddrSpaceManager {
         spc.deadcodedelay.set(delaydelta);
     }
 
-    /// Mark a space as truncated from its original size (the body of the C++
-    /// `truncateSpace(const TruncationTag &)`; the `TruncationTag` wrapper
-    /// arrives with the sleigh wave).
+    /// Mark a named space as truncated to `size` bytes, using the fields
+    /// decoded by `kuna_sleigh::translate::TruncationTag`.
     pub fn truncate_space(&self, space_name: &str, size: u32) -> KunaResult<()> {
         match self.get_space_by_name(space_name) {
             None => Err(KunaError::lowlevel(format!(
@@ -3043,14 +2964,13 @@ impl AddrSpaceManager {
             ));
         }
 
-        let totalsize: u32;
-        if logicalsize != 0 {
+        let totalsize: u32 = if logicalsize != 0 {
             if pieces.len() != 1 {
                 return Err(KunaError::lowlevel(
                     "Cannot specify logical size for multiple piece join",
                 ));
             }
-            totalsize = logicalsize;
+            logicalsize
         } else {
             // Calculate sum of the sizes of all pieces (uint4 arithmetic)
             let mut sum: u32 = 0;
@@ -3060,8 +2980,8 @@ impl AddrSpaceManager {
             if sum == 0 {
                 return Err(KunaError::lowlevel("Cannot create a zero size join"));
             }
-            totalsize = sum;
-        }
+            sum
+        };
 
         let state = self.join_records()?;
         let testnode = JoinRecord {
@@ -3442,14 +3362,10 @@ impl AddrSpaceManager {
     /// instantiate the \b iop, \b fspec, and \b join spaces, but this is
     /// currently done by the Architecture class.
     ///
-    /// (kuna rust) Rust's aliasing rules make this method un-callable with a
-    /// decoder constructed over `self` (the C++ usage): the decoder holds
-    /// `&AddrSpaceManager` while `insert_space` needs `&mut self`.  Until
-    /// the architecture wave revisits the `Decoder` manager access, callers
-    /// drive the identical loop body stepwise — a fresh decoder per child
-    /// element around each `decode_space`/`insert_space` pair — so each
-    /// element's `read_space` resolution sees the previously inserted
-    /// spaces.
+    /// A decoder borrowing this manager cannot be passed while `self` is
+    /// mutably borrowed. Callers that need each child to resolve previously
+    /// inserted spaces use a fresh decoder for each `decode_space` call,
+    /// ending that borrow before `insert_space`.
     /// \param decoder is the stream decoder
     pub fn decode_spaces(&mut self, decoder: &mut dyn Decoder) -> KunaResult<()> {
         // The first space should always be the constant space

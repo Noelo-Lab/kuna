@@ -53,6 +53,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import config
+from ..atomic import atomic_text_writer
 
 CATALOG_TIMEOUT = int(os.environ.get("REPIPE_CATALOG_TIMEOUT", "300"))
 
@@ -133,10 +134,8 @@ def _replace_groups(text: str, m, newvals) -> str:
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    tmp = str(path) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
+    with atomic_text_writer(path, encoding="utf-8") as fh:
         fh.write(text)
-    os.replace(tmp, str(path))
 
 
 def assert_literal(path, pattern, expected, site="literal", counter="literal"):

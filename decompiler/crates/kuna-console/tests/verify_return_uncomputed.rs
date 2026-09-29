@@ -26,12 +26,6 @@
 //! Fixtures: `regglobal_fmt_x86_64` with DWARF disabled (the prototype-less path;
 //! with DWARF the locked `int` return never enters recovery at all) and
 //! `structreturn_x86_64`, the negative control.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -47,25 +41,16 @@ fn fixture(name: &str) -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name)
 }
 
-/// Bootstrap `bin`, apply `options` (before the analysis commit, as the CLI
-/// does), decompile `func`, and return the captured C (`None` ⇒ specs-less skip).
-fn decompile(bin: &str, func: &str, options: &[&str]) -> Option<String> {
+/// Bootstrap `bin`, apply `options` (before the analysis commit, as the CLI does),
+/// decompile `func`, and return the captured C.
+fn decompile(bin: &str, func: &str, options: &[&str]) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
 
-    let path = fixture(bin).to_str()?.to_string();
-    let mut prog = match bootstrap_from_object(&path, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_return_uncomputed: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let path = fixture(bin).to_str().expect("UTF-8 fixture path").to_string();
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
 
     let mut cmds: Vec<String> = options.iter().map(|o| o.to_string()).collect();
     cmds.push(format!("load function {func}"));
@@ -86,7 +71,7 @@ fn decompile(bin: &str, func: &str, options: &[&str]) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }
 
 /// With no prototype to lock the return, `fmt/main` used to join `RAX:RDX`. The
@@ -94,10 +79,7 @@ fn decompile(bin: &str, func: &str, options: &[&str]) -> Option<String> {
 /// return sites where the leftover shows up.
 #[test]
 fn fmt_main_without_a_prototype_returns_one_register() {
-    let Some(code) = decompile("regglobal_fmt_x86_64", "main", &["option dwarf off", "option listing on"])
-    else {
-        return;
-    };
+    let code = decompile("regglobal_fmt_x86_64", "main", &["option dwarf off", "option listing on"]);
 
     assert!(
         !code.contains("undefined16"),
@@ -121,7 +103,7 @@ fn fmt_main_without_a_prototype_returns_one_register() {
 /// pair is kept.
 #[test]
 fn a_computed_struct_pair_return_is_kept() {
-    let Some(code) = decompile("structreturn_x86_64", "make", &[]) else { return };
+    let code = decompile("structreturn_x86_64", "make", &[]);
 
     assert!(
         code.contains("undefined16"),
@@ -141,7 +123,7 @@ fn a_computed_struct_pair_return_is_kept() {
 /// arithmetic. A LOAD is a real value, so the pair is kept.
 #[test]
 fn a_loaded_struct_pair_return_is_kept() {
-    let Some(code) = decompile("structreturn_x86_64", "passthru", &[]) else { return };
+    let code = decompile("structreturn_x86_64", "passthru", &[]);
 
     assert!(
         code.contains("undefined16"),

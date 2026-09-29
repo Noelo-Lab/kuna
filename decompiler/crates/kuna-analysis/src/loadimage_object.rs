@@ -387,6 +387,14 @@ struct FuncSym {
     name: Vec<u8>,
 }
 
+/// Linked ELF definitions and import stubs at normalized code addresses, before
+/// call naming combines them into the same function inventory.
+#[derive(Debug, Clone, Default)]
+pub struct ElfFunctionProvenance {
+    pub definitions: HashSet<u64>,
+    pub imports: HashSet<u64>,
+}
+
 /// One **data** symbol: a defined `.symtab`/`.dynsym` `STT_OBJECT` entry (the BFD
 /// `BSF_OBJECT` twin of [`FuncSym`]).
 ///
@@ -451,7 +459,7 @@ pub struct ObjectLoadImage {
     /// the same `(vma, size, flags)` shape as [`Self::sections`], reported by
     /// `getSegments` so a section-keyed reader has a container to fall back on
     /// when the image carries no usable section table. Distinct from
-    /// [`Self::segments`], which owns the bytes and covers only what the file
+    /// [`Self::bytes`], which owns the bytes and covers only what the file
     /// backs; this records each segment's whole RAM footprint. Empty for an
     /// `ET_REL` load, which has no program headers.
     segment_info: Vec<SectionInfo>,
@@ -503,6 +511,7 @@ pub struct ObjectLoadImage {
     /// Empty for every non-PE image and for a relocatable object.
     import_slots: Vec<(u64, u64)>,
     elfv1: crate::loader::elfv1::Descriptors,
+    elf_functions: ElfFunctionProvenance,
     /// The address space the file bytes map to (C++ `spaceid`, null until
     /// `attachToSpace`).
     spaceid: Option<Rc<AddrSpace>>,
@@ -590,6 +599,9 @@ fn patch_segments(segments: &mut [Segment], vma: u64, value: u64, width: usize, 
 }
 
 impl ObjectLoadImage {
+    pub fn elf_function_provenance(&self) -> &ElfFunctionProvenance {
+        &self.elf_functions
+    }
     /// Open an ELF file as a [`LoadImage`] (the analog of
     /// `LoadImageBfd::LoadImageBfd` + `open()`).
     ///
@@ -821,6 +833,8 @@ impl ObjectLoadImage {
         let namechars = symbolnamechars_mode();
         let mut funcsyms: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
+        let mut elf_functions = ElfFunctionProvenance::default();
+        let is_elf = file.format() == object::BinaryFormat::Elf;
         // The data half of the same two symbol tables (`STT_OBJECT`), collected in
         // the same walks and deduped on its own address set.  See [`DataSym`].
         let mut datasyms: Vec<DataSym> = Vec::new();
@@ -851,6 +865,7 @@ impl ObjectLoadImage {
                 continue; // UND / import placeholder, not a real code address
             }
             let addr = elfv1.code_address(sym.address());
+            if is_elf { elf_functions.definitions.insert(if arm32_decoder { addr & !1 } else { addr }); }
             let name = match sym.name_bytes() {
                 Ok(n) if !n.is_empty() => crate::loader::elf_plt::strip_version(n),
                 _ => continue,
@@ -869,6 +884,7 @@ impl ObjectLoadImage {
         // `ElfFormat::resolve_imports` just calls the unchanged
         // `elf_plt::resolve_plt_imports`.
         for p in fmt.resolve_imports(&file, bytes) {
+            if is_elf { elf_functions.imports.insert(if arm32_decoder { p.addr & !1 } else { p.addr }); }
             if seen.insert(p.addr) {
                 funcsyms.push(FuncSym { addr: p.addr, name: demangle_funcsym_name(p.name, namechars) });
             }
@@ -889,6 +905,7 @@ impl ObjectLoadImage {
                 continue; // UND import placeholder (mirrors source #1)
             }
             let addr = elfv1.code_address(sym.address());
+            if is_elf { elf_functions.definitions.insert(if arm32_decoder { addr & !1 } else { addr }); }
             let name = match sym.name_bytes() {
                 Ok(n) if !n.is_empty() => crate::loader::elf_plt::strip_version(n),
                 _ => continue,
@@ -954,6 +971,7 @@ impl ObjectLoadImage {
             dynreloc_const,
             import_slots,
             elfv1,
+            elf_functions,
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
             bufoffset: RefCell::new(!0u64), // ~((uintb)0)
@@ -963,8 +981,9 @@ impl ObjectLoadImage {
     }
 
     /// (kuna) Build the image from a **relocatable object** (`ET_REL`): lay the
-    /// `SHF_ALLOC` sections out above [`reloc_object::RELOC_BASE`], apply the
-    /// `.rela.*` relocations, and rebase / extern-bind the symbols — producing
+    /// `SHF_ALLOC` sections out above
+    /// [`RELOC_BASE`](crate::loader::reloc_object::RELOC_BASE), apply the `.rela.*`
+    /// relocations, and rebase / extern-bind the symbols — producing
     /// the same `(segments, sections, funcsyms)` triple the linked `PT_LOAD` path
     /// produces.  Funcsym names are demangled + deduped exactly as on the linked
     /// path.  See [`crate::loader::reloc_object`].
@@ -1097,6 +1116,7 @@ impl ObjectLoadImage {
             // are relocations, resolved by the layout pass.
             import_slots: Vec::new(),
             elfv1: Default::default(),
+            elf_functions: ElfFunctionProvenance::default(),
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),
             bufoffset: RefCell::new(!0u64),
@@ -1429,6 +1449,10 @@ impl LoadImage for ObjectLoadImage {
             *vma = vma.wadd(badjust);
         }
         self.elfv1.adjust_vma(badjust);
+        self.elf_functions.definitions = self.elf_functions.definitions.drain()
+            .map(|addr| addr.wadd(badjust)).collect();
+        self.elf_functions.imports = self.elf_functions.imports.drain()
+            .map(|addr| addr.wadd(badjust)).collect();
         for s in &mut self.funcsyms {
             s.addr = s.addr.wadd(badjust);
         }
@@ -1465,12 +1489,10 @@ impl LoadImage for ObjectLoadImage {
 ///
 /// The arch -> language-stem match is format-independent (`object` collapses
 /// `e_machine`/`IMAGE_FILE_MACHINE_*`/Mach-O `cputype` into one
-/// [`Architecture`]).  The **only** per-format variation is the compiler-model
-/// field, which comes from [`ObjectFormat::compiler_model`]: for ELF this is the
-/// same `gcc`/`default` token the function baked in before, so every produced id
-/// string is **byte-identical to today** — this is a structural change with no
-/// output change.  An arch with no `compiler_model` opinion falls back to the
-/// per-arch default (`gcc`/`default`) the id strings already used.
+/// [`Architecture`]). The compiler-model field comes from
+/// [`ObjectFormat::compiler_model`](crate::loader::format::ObjectFormat::compiler_model),
+/// falling back to the per-architecture default (`gcc`/`default`) when the
+/// format has no model for that architecture.
 ///
 /// PARTIAL: covers the common machines kuna ships a `.sla` for.  An unmapped
 /// machine is a `LowlevelError` naming it (the caller falls back to an explicit
@@ -2226,6 +2248,7 @@ mod tests {
         let mut rec = LoadImageFunc::default();
         assert!(img.get_next_symbol(&mut rec));
         assert_eq!(rec.address, Address::new(Rc::clone(&ram), 0x402000));
+        assert_eq!(img.elf_function_provenance().definitions, HashSet::from([0x402000]));
     }
 
     #[test]

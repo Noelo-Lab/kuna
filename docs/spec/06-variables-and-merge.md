@@ -385,6 +385,12 @@ input stays isolated. `mark_indirect_only` applies that to every illegal input
 and sets `indirectonly` on the ones that pass, and the two tests above then take
 their exception branch.
 
+The walk borrows each Varnode's descendant sequence directly: the function is
+read-only, and neither operation inspection nor worklist growth changes that
+sequence. A local membership set deduplicates the ordered worklist without
+using set iteration or changing Varnode flags. Input marking still collects
+all accepted inputs before setting their flags.
+
 The visible effect is the merge, and its soundness depends on which side of the
 copy the illegal input is. When the slot is the copy's **destination** the
 machine really does store into it, and the merge only moves where the value is
@@ -655,7 +661,10 @@ COPY ranges). Every surviving range becomes a Symbol in the local scope
 (`adjust_fit`/`create_entry`), and `funcdata_spacebase.rs
 (Funcdata::sync_varnodes_with_symbols)` paints the resulting
 `mapped`/`addrtied`/`addrforce`/`nolocalalias` flags (and, in the final sync
-only, data-types) onto the Varnodes. After `fullloop` exits,
+only, data-types) onto the Varnodes. Unmapped locations gain `nolocalalias`
+only when the caller enables alias checking and the local map proves the
+location unaliased. The first restructuring pass disables this check;
+later passes and the final sync enable it. After `fullloop` exits,
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionMappedLocalSync)` runs that final data-type-updating sync once; its
 failure mode is tolerance, not an abort — the layout keeps the conceded
@@ -784,6 +793,69 @@ of `ActionRestructureVarnode` so the next inference pass types it. The rebuilt
 the alias gather still hands later layouts an open hint there and the rewrite
 never changes the layout that justified it. `option endptrbound off` restores
 the neighbour-bound layout.
+
+**An out-parameter takes the callee's declaration (kuna `castobject`, default
+on).** When two hints for the same bytes differ only in signedness, the ordering
+`RangeHint::preferred` falls back to (`type_order`) ranks `unsigned` ahead of
+signed, so a stack local the body reads with bit tests comes back `unsigned int`
+even where the callee that fills it declares `int *`: `waitpid`'s status prints
+as `unsigned int v5;` and the call as `waitpid(v2,(int *)&v5,0)`, with the
+arithmetic shift of `WEXITSTATUS` casting the value back (`(int)v5 >> 8`).
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_castobject.rs
+(declare_out_params)` runs in `restructure_varnode` after the three gathers and
+before the layout decision. From the alias checker's additive bases
+(`kuna_castobject.rs (frame_refs)`) it keeps an offset only when every base that
+lands on it has no index and is read by nothing but direct calls, each at a
+parameter whose type is locked (a declared or libc signature; a format-string
+position and a prototype override do not count) and is a pointer to one plain 4-
+or 8-byte integer `T`; a base that also flows into a copy, a store, a comparison
+or arithmetic, a base at another offset inside the object, or two calls naming
+different pointees decline the offset. Every hint inside `[start, start + sizeof
+T)` must start at `start`, be exactly `sizeof T` wide, carry an integer or
+unknown type, not be type-locked, and not be an indexed open range, so a byte
+read of one half or a wider copy of the slot leaves it alone, and so does a slot
+whose open hint the layout would stretch into an array because no hint starts
+where the slot ends (the extra elements are bytes no access reads, and the
+declaration would re-type them too). The pass runs after the `endptrbound`
+coalesce, so a walked buffer is already a single hint there. `kuna_castobject.rs
+(readers_agree)` then walks every read of the slot's Varnodes, through copies,
+phis and the operators whose C result keeps the operand's type (`& | ^ ~`, a
+right shift, a quotient or remainder, and `+ - *` and `<<` of an unsigned slot),
+and requires every operator whose C meaning depends on the operand's sign (`<`,
+`<=`, `/`, `%`, `>>`, a widening, and a `SUBPIECE` above the lowest byte, which
+the printer spells as a shift) to compute with `T`'s sign. One reader that wants
+the other sign declines the slot, and so does a reader the walk does not model
+(an address, an index, a float conversion). The walk stops at a value stored
+into another stack slot, which is that slot's own variable and is read at its
+own declaration. A slot re-declared signed is also left alone when `+`, `-`,
+`*`, unary `-` or `<<` reads it directly or through the expression it prints
+into, because the binary wraps where signed C arithmetic is undefined, and when
+a constant with its top bit set meets it in `==`, `!=`, `&`, `|` or `^`, which C
+would sign-extend.
+
+The declaration is what moves; a register copy of the value can take `T` with it
+and then merge with another `T` variable whose live range it does not overlap,
+one declaration fewer. A stack local is declared at the type of its address-tied
+storage, which `ActionMappedLocalSync` paints from the Symbol after the main
+loop, but the cast pass computes with the merged `HighVariable`'s type, the most
+specific type among all its members. A slot stored from a register (`int st =
+init;`) gains a member that carries the stored value's own type, so the variable
+can keep `unsigned int` there while the declaration says `int`, and a cast the
+cast pass would need against `int` is never put in. That is why a single
+opposing reader declines: when every sign-dependent reader computes with `T`'s
+sign, each cast put in against the old type converts to the declared type and
+prints as nothing (`castimplied` sees an identity), and the rest are the
+conversions C performs itself on assignment, argument passing and return. A
+merge can still bring readers the walk never saw into the variable: a value
+stored into the slot joins it through the COPY, and that value's own reads
+become the variable's. `kuna_castobject.rs (reconcile)` runs at the head of
+`ActionSetCasts`, after every merge: for each slot any pass re-declared whose
+variable's type is not `T`, it repeats the walk over every member of the
+variable and, when some reader disagrees, types the slot's storage and its
+Symbol at the variable's type again, so the declaration and the cast pass agree
+and the call casts the address as it did with the option off. The -O2 form of
+`WEXITSTATUS`, a logical `v >> 8 & 0xff`, reads the slot unsigned, so the slot
+stays as the frame read it.
 
 **Alias blocking.** The `varmap.rs (AliasChecker)` collects every pointer
 into the stack by walking additive expressions rooted at the spacebase input

@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "callbacktype",
+    "on",
+    "--jobs",
+    "2"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_x86_64",
+    "binary_sha256": "5832788491b29b10513da669765b36cc8b84aa3c67b50fee2e6cb7a8692a7df5",
+    "binary_size": 16544,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/callbacktype_x86_64",
+    "selector": "by_key",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 2
+    },
+    "stderr_matches": [
+      "--option callbacktype and --jobs are exclusive"
+    ]
+  },
+  "notes": "A parked declaration is per-load state a later decompile reads back, so it does not cross a worker process. Refused rather than silently inert, the way --option protoorder is.",
+  "probe_id": "p-7e55b1055609"
+}

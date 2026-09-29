@@ -22,12 +22,6 @@
 //! it has an owner is exactly the defect. The two differ in the table's stride
 //! (4-byte `.long` entries, 8-byte `.quad` entries) and in how the literal's
 //! address is materialized (`PUSH imm32`, RIP-relative `LEA`).
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -112,31 +106,21 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the named fixture and build the index `kuna xrefs` / `kuna strings`
-/// answer out of. `None` is a visible skip when the `.sla` is missing.
-fn index_of(name: &str) -> Option<XrefIndex> {
+/// Bootstrap the named fixture and build the index `kuna xrefs` / `kuna strings` answer out
+/// of.
+fn index_of(name: &str) -> XrefIndex {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name);
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_switchtable: skipping {} (bootstrap failed, build `.sla` \
-                 with `make specs`): {}",
-                name,
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let bytes = std::fs::read(&bin).expect("fixture readable");
     let file = object::File::parse(&*bytes).expect("fixture parses");
     let seeds: Vec<u64> =
         prog.function_entries_canonical().iter().map(|e| e.addr.get_offset()).collect();
-    Some(xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds))
+    xrefs::build(&file, prog.arch(), prog.arch().translate(), &seeds)
 }
 
 /// The defect: a literal only a case body forms is referenced by that case body,
@@ -144,7 +128,7 @@ fn index_of(name: &str) -> Option<XrefIndex> {
 #[test]
 fn a_literal_in_a_switch_case_body_is_owned_by_the_dispatching_function() {
     for fx in [I386, X86_64] {
-        let Some(idx) = index_of(fx.name) else { continue };
+        let idx = index_of(fx.name);
         for (i, &lit) in fx.literals.iter().enumerate() {
             let refs: Vec<u64> = idx.refs_to(lit).iter().map(|r| r.from).collect();
             assert!(
@@ -171,7 +155,7 @@ fn a_literal_in_a_switch_case_body_is_owned_by_the_dispatching_function() {
 #[test]
 fn the_dispatch_files_a_jump_edge_to_every_case_body() {
     for fx in [I386, X86_64] {
-        let Some(idx) = index_of(fx.name) else { continue };
+        let idx = index_of(fx.name);
         for (i, &case) in fx.cases.iter().enumerate() {
             let refs: Vec<(u64, XrefKind)> =
                 idx.refs_to(case).iter().map(|r| (r.from, r.kind)).collect();
@@ -192,7 +176,7 @@ fn the_dispatch_files_a_jump_edge_to_every_case_body() {
 #[test]
 fn the_table_scan_stops_at_the_end_of_the_table() {
     for fx in [I386, X86_64] {
-        let Some(idx) = index_of(fx.name) else { continue };
+        let idx = index_of(fx.name);
         let mut jumps: Vec<u64> = idx
             .refs_from_instruction(fx.branch)
             .iter()
@@ -215,7 +199,7 @@ fn the_table_scan_stops_at_the_end_of_the_table() {
 #[test]
 fn the_table_is_still_data_and_the_default_arm_is_unchanged() {
     for fx in [I386, X86_64] {
-        let Some(idx) = index_of(fx.name) else { continue };
+        let idx = index_of(fx.name);
         let table: Vec<(u64, XrefKind)> =
             idx.refs_to(fx.table).iter().map(|r| (r.from, r.kind)).collect();
         assert_eq!(
@@ -236,7 +220,7 @@ fn the_table_is_still_data_and_the_default_arm_is_unchanged() {
 #[test]
 fn a_delta_table_dispatches_to_every_case_body() {
     for fx in [PIC_X86_64, PE_MSVC] {
-        let Some(idx) = index_of(fx.name) else { continue };
+        let idx = index_of(fx.name);
         let mut jumps: Vec<u64> = idx
             .refs_from_instruction(fx.branch)
             .iter()
@@ -258,7 +242,7 @@ fn a_delta_table_dispatches_to_every_case_body() {
 #[test]
 fn what_a_delta_case_body_reaches_belongs_to_the_dispatcher() {
     for fx in [PIC_X86_64, PE_MSVC] {
-        let Some(idx) = index_of(fx.name) else { continue };
+        let idx = index_of(fx.name);
         for (i, &to) in fx.reached.iter().enumerate() {
             let refs: Vec<u64> = idx.refs_to(to).iter().map(|r| r.from).collect();
             assert!(
@@ -285,7 +269,7 @@ fn what_a_delta_case_body_reaches_belongs_to_the_dispatcher() {
 #[test]
 fn the_delta_dispatch_materializes_no_table_address() {
     for fx in [PIC_X86_64, PE_MSVC] {
-        let Some(idx) = index_of(fx.name) else { continue };
+        let idx = index_of(fx.name);
         let from_branch: Vec<(u64, XrefKind)> = idx
             .refs_from_instruction(fx.branch)
             .iter()

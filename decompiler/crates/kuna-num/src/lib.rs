@@ -1,18 +1,11 @@
-//! kuna-num: numeric semantics of the kuna Rust port.
+//! Numeric semantics and raw p-code primitives, based on Ghidra's decompiler.
 //!
-//! Ports the pure-arithmetic C++ files (`decompiler/cpp/`):
+//! [`multiprecision`] provides arithmetic over little-endian limbs; [`float`]
+//! handles floating-point encodings and arithmetic. [`opcodes`] defines opcode
+//! identities and names, [`opbehavior`] evaluates scalar operations, and
+//! [`pcoderaw`] stores varnodes and raw operations.
 //!
-//! - `multiprecision.{hh,cc}` (128/256-bit limb arithmetic)
-//! - `float.{hh,cc}` / `double.{hh,cc}` (FloatFormat: host-independent IEEE
-//!   emulation and split-double reconstruction)
-//! - `CircleRange`, extracted from `rangeutil.{hh,cc}` (circular value-set
-//!   domain; the rest of rangeutil's ValueSet machinery lives in kuna-decomp)
-//!
-//! Integer semantics follow ADR 0003: `uintb -> u64`, `intb -> i64`, all
-//! ported arithmetic goes through the wrapping-helper trait, and `calc_mask`
-//! truncation semantics are preserved exactly.
-//!
-//! Lints are inherited from the workspace (`[lints] workspace = true`).
+//! Circular ranges and split-varnode analysis live in `kuna-decomp`.
 
 pub mod float;
 pub mod multiprecision;

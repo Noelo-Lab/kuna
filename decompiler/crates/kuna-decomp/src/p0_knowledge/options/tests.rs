@@ -1,26 +1,28 @@
-//! In-module tests for `options` (the `ArchOption` dispatch surface, W4).
-//!
-//! Two test families:
-//!   1. **Parsing matrices** — every option's on/off/bad-value/integer paths,
-//!      asserting the *exact* C++ message/error text (the contract `run_tests`
-//!      and the console exercise).
-//!   2. **XML decode** — an `<optionslist>` stream driven through
-//!      [`OptionDatabase::decode`], checking dispatch, param threading, and the
-//!      bare-content (param1) path.
-//!
-//! The W5/W6/W8 subsystems are not alive, so a [`RecordingContext`] implements
-//! [`ArchOptionContext`] by recording calls + holding the alive config fields,
-//! which is enough to exercise every `apply()` end-to-end.
+//! Option parsing, dispatch and XML decoding against a recording architecture.
 
 use super::*;
 
 use kuna_base::marshal::{IdRegistry, XmlDecode};
 use kuna_base::space::AddrSpaceManager;
 
-// ---------------------------------------------------------------------------
-// A test ArchOptionContext: holds the "alive" config fields and records calls
-// into the W5/W6/W8-seamed methods so the apply() bodies can be exercised.
-// ---------------------------------------------------------------------------
+#[test]
+fn environment_toggle_tokens_preserve_default_on_and_opt_in_policies() {
+    for value in ["on", "1", "true", "", " ON ", "\tTrUe\n", "\u{2003}"] {
+        for default in [false, true] {
+            assert!(parse_env_toggle(value, default), "{value:?}, default={default}");
+        }
+    }
+    for value in ["off", "0", "false", " OFF ", "\tFaLsE\n"] {
+        for default in [false, true] {
+            assert!(!parse_env_toggle(value, default), "{value:?}, default={default}");
+        }
+    }
+    for value in ["no", "yes", "2", "anything", "of", "off\0", "ＯＦＦ"] {
+        for default in [false, true] {
+            assert_eq!(parse_env_toggle(value, default), default, "{value:?}");
+        }
+    }
+}
 
 /// A recording / minimal-state [`ArchOptionContext`] for tests.
 #[derive(Default)]

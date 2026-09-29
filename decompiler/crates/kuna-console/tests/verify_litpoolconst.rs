@@ -20,12 +20,6 @@
 //! bytechunks whose loader reports no sections and no segments, so the range list
 //! is empty there and the option is structurally inert — which is also why the
 //! default-on flip moves 0/675 datatest assertions.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `ARM` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -51,27 +45,17 @@ fn repo_root() -> PathBuf {
 }
 
 /// Bootstrap the fixture with `litpoolconst` in the requested state.
-/// `None` is a visible skip when the `.sla` is missing.
-fn load(litpoolconst: bool) -> Option<ConsoleProgram> {
+fn load(litpoolconst: bool) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/picpool_arm_le32");
-    let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_litpoolconst: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut()
         .set_kuna_option("litpoolconst", if litpoolconst { "on" } else { "off" })
         .expect("litpoolconst flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn code_addr(prog: &ConsoleProgram, vma: u64) -> Address {
@@ -99,7 +83,7 @@ fn body(prog: &mut ConsoleProgram, vma: u64) -> String {
 /// which is the entire warrant for the fold.
 #[test]
 fn the_text_section_is_the_foldable_range() {
-    let Some(prog) = load(true) else { return };
+    let prog = load(true);
     assert_eq!(
         prog.arch().litpool_const.as_slice(),
         &[(TEXT_LO, TEXT_HI)],
@@ -111,7 +95,7 @@ fn the_text_section_is_the_foldable_range() {
 /// BEFORE (`--option litpoolconst off`): the pool word is an opaque global.
 #[test]
 fn the_pool_word_is_a_global_with_the_option_off() {
-    let Some(mut prog) = load(false) else { return };
+    let mut prog = load(false);
     let c = body(&mut prog, COMPOSES_PROMPT);
     assert!(
         c.contains("dat_42c"),
@@ -125,7 +109,7 @@ fn the_pool_word_is_a_global_with_the_option_off() {
 /// AFTER (default): the value the program computes is in the C.
 #[test]
 fn the_pool_word_folds_to_its_constant_by_default() {
-    let Some(mut prog) = load(true) else { return };
+    let mut prog = load(true);
     let c = body(&mut prog, COMPOSES_PROMPT);
     assert!(
         !c.contains("dat_"),
@@ -141,7 +125,7 @@ fn the_pool_word_folds_to_its_constant_by_default() {
 /// behaviour untouched.
 #[test]
 fn the_program_wide_readonly_switch_is_still_off() {
-    let Some(prog) = load(true) else { return };
+    let prog = load(true);
     assert!(
         !prog.arch().readonlypropagate,
         "`litpoolconst` must not imply `option readonly`; folding every `.rodata` \

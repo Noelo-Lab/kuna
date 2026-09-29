@@ -2657,7 +2657,11 @@ impl Rule for RuleSubvarZext {
         let mask = calc_mask(invsize);
         let ptrflow = data.vbank().get(invn).expect("vn").is_ptr_flow();
 
-        run_subflow(data, vn, mask, ptrflow, false, false)
+        let (applied, returned) = run_subflow_returning(data, vn, mask, ptrflow, false, false);
+        if returned {
+            crate::kuna_callrettype::note_returned_extension(data, false, invsize);
+        }
+        applied
     }
 }
 
@@ -2695,7 +2699,11 @@ impl Rule for RuleSubvarSext {
         let invsize = data.vbank().get(invn).expect("vn").get_size();
         let mask = calc_mask(invsize);
 
-        run_subflow(data, vn, mask, self.isaggressive != 0, true, false)
+        let (applied, returned) = run_subflow_returning(data, vn, mask, self.isaggressive != 0, true, false);
+        if returned {
+            crate::kuna_callrettype::note_returned_extension(data, true, invsize);
+        }
+        applied
     }
 
     fn reset(&mut self, _data: &mut Funcdata) {
@@ -2731,19 +2739,32 @@ fn run_subflow(
     sext: bool,
     big: bool,
 ) -> int4 {
+    run_subflow_returning(data, root, mask, aggr, sext, big).0
+}
+
+/// [`run_subflow`], also answering whether the applied transform narrowed the
+/// function's returned value (kuna `callrettype`).
+fn run_subflow_returning(
+    data: &mut Funcdata,
+    root: VarnodeId,
+    mask: uintb,
+    aggr: bool,
+    sext: bool,
+    big: bool,
+) -> (int4, bool) {
     let mut subflow = match SubvariableFlow::new(data, root, mask, aggr, sext, big) {
         Ok(sf) => sf,
-        Err(_) => return 0, // construction reached a stub (e.g. sext constant check)
+        Err(_) => return (0, false), // construction reached a stub (e.g. sext constant check)
     };
     match subflow.do_trace(data) {
         Ok(true) => {}
-        _ => return 0,
+        _ => return (0, false),
     }
     match subflow.do_replacement(data) {
-        Ok(()) => 1,
+        Ok(()) => (1, subflow.returns_traversed),
         // C++ doReplacement() returns void; a structured error (e.g. a residual
         // symbol/iop stub) is treated as "no change" rather than aborting the pass.
-        Err(_) => 0,
+        Err(_) => (0, false),
     }
 }
 
@@ -4289,12 +4310,6 @@ impl SplitDatatype {
         None
     }
 
-    /// Borrow the held factory as a `&dyn TypeFactory` (the explicit-factory
-    /// methods need a trait object); errors if no factory is attached.
-    #[allow(dead_code)]
-    fn types_handle(&self) -> KunaResult<&dyn crate::dtype::TypeFactory> {
-        Ok(self.types()? as &dyn crate::dtype::TypeFactory)
-    }
 
     /// Clone the held factory `Rc` so it can be borrowed (`&*`) as the explicit
     /// `types` argument of `test_datatype_compatibility`/`get_component` while

@@ -1,14 +1,12 @@
-//! Cross-wave stub placeholders for the W3 IR data-model.
+//! Shared IR identifiers, opcode descriptors and per-function architecture context.
 //!
-//! Per ADR 0001 the IR is three `Funcdata`-owned slotmap arenas keyed by the
-//! newtypes [`VarnodeId`], [`OpId`], [`BlockId`].  The keys live here (the one
-//! place every W3 serial-chain file can name them); the arenas and the
-//! `Funcdata`-mediated mutation API are filled by `funcdata`/`op`/`block`.
+//! [`VarnodeId`], [`OpId`] and [`BlockId`] identify entries in the function's
+//! slotmap arenas. [`HighVariableId`] identifies a high-level variable in its
+//! separate bank. [`ArchContext`] shares address spaces and services with the
+//! engine and carries configuration and symbol snapshots used by the IR.
 //!
-//! Everything else in this file is a forward-reference placeholder for a type
-//! that `varnode.hh` mentions but that belongs to a later wave, annotated with
-//! the wave that fills it.  These let `varnode.rs` transcribe the member layout
-//! and link structure faithfully without pulling in the unported subsystems.
+//! The legacy [`Cover`], [`Scope`] and [`FuncProto`] marker types remain public;
+//! the function's live coverage, scope and prototype use their owning modules.
 
 use std::rc::Rc;
 
@@ -24,72 +22,42 @@ new_key_type! {
     /// is a caught error, not a use-after-free.
     pub struct VarnodeId;
 
-    /// Arena key for a `PcodeOp` (ADR 0001).
-    ///
-    /// STUB(W3): the `PcodeOp` arena and its accessors are `op`/`funcdata`'s
-    /// (`w3-ir-op`).  `varnode.rs` stores `OpId`s for `def` and `descend`
-    /// links, exactly as the C++ stores `PcodeOp *`.
+    /// Generational arena key for a [`PcodeOp`](crate::op::PcodeOp).
     pub struct OpId;
 
-    /// Arena key for a `FlowBlock` (ADR 0001).
-    ///
-    /// STUB(W3): filled by `block` (`w3-ir-block`); declared here so the shared
-    /// key set is in one place.
+    /// Generational arena key for a [`FlowBlock`](crate::block::FlowBlock).
     pub struct BlockId;
 }
 
-/// HighVariable — the high-level variable an instance of which a Varnode is.
-///
-/// STUB(W7): filled by `merge`/`HighVariable` (`w7`).  `Varnode` holds an
-/// `Option<HighVariableId>` where the C++ holds a `HighVariable *`; until W7
-/// every varnode's high is `None` (the C++ `getHigh()` likewise throws until
-/// merging builds it).  Modelled as an opaque arena key so the eventual
-/// HighVariable arena can slot in without touching the Varnode layout.
+/// A high-level variable's key in [`HighVariableBank`](crate::variable::HighVariableBank).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HighVariableId(pub u32);
 
-/// Cover — the def/use address coverage of a Varnode.
-///
-/// STUB(W7): filled by `cover`/`Cover` (`w7`).  The C++ `Varnode::cover` is a
-/// lazily-built, mutable `Cover *`; the W3 data-model only needs to track the
-/// presence/absence and the `coverdirty` flag (carried in `flags`), so a unit
-/// placeholder suffices until W7 supplies the real geometry.
+/// Legacy coverage marker. Live Varnode coverage uses [`crate::cover::Cover`].
 #[derive(Debug, Clone, Default)]
 pub struct Cover;
 
-/// TypeOp — the behavioral class (opcode) attached to a [`PcodeOp`].
-///
-/// STUB(W6): filled by `typeop`/`type` (`w6`).  The C++ `TypeOp` (`typeop.hh`)
-/// bundles an [`OpCode`] value, a cached property-flag word
-/// (`getFlags()`/`opflags`, transcribed as [`type_op_flags`]), a display
-/// `name`, an `OpBehavior` for emulation, and the `TypeFactory`-backed local
-/// type calculators (`getOutputLocal`/`getInputLocal`).
-///
-/// `op.cc` reaches only a thin slice of that surface: `PcodeOp::setOpcode`
-/// caches `getFlags()` into the op's `flags`, `code()` returns `getOpcode()`,
-/// the op-code lists key on `code()`, and the print/eval/type-local methods
-/// dispatch through the `OpBehavior`/`TypeFactory`.  This boundary carries exactly
-/// the first three (`opcode`/`flags`/`name`); the emulation+type-local methods
-/// stay in W6 (the W3 `collapse`/`executeSimple`/`outputTypeLocal` paths defer
-/// or take the behavior as an explicit argument — see `op.rs`).
+/// Opcode, property flags and display name attached to a [`PcodeOp`](crate::op::PcodeOp).
+/// Local type information comes from [`TypeOpInfo`](crate::typeop::TypeOpInfo);
+/// emulation behavior is supplied separately through [`ArchContext::opbehaviors`].
 #[derive(Debug, Clone)]
 pub struct TypeOp {
-    /// The op-code value (C++ `TypeOp::opcode`).  // STUB(W6)
+    /// The op-code value (C++ `TypeOp::opcode`).
     pub opcode: OpCode,
     /// Cached pcode-op properties for this op-code (C++ `TypeOp::opflags`,
-    /// the `PcodeOp::*` flag bits `setOpcode` ORs in).  // STUB(W6)
+    /// the `PcodeOp::*` flag bits `setOpcode` ORs in).
     pub flags: uint4,
-    /// Symbol denoting this operation (C++ `TypeOp::name`).  // STUB(W6)
+    /// Symbol denoting this operation (C++ `TypeOp::name`).
     pub name: String,
 }
 
 impl TypeOp {
-    /// Construct a minimal behavioral-class skeleton (STUB(W6)).
+    /// Construct an opcode descriptor.
     pub fn new(opcode: OpCode, flags: uint4, name: impl Into<String>) -> TypeOp {
         TypeOp { opcode, flags, name: name.into() }
     }
 
-    /// Get the op-code value (C++ `TypeOp::getOpcode`).  // STUB(W6)
+    /// Get the op-code value (C++ `TypeOp::getOpcode`).
     pub fn get_opcode(&self) -> OpCode {
         self.opcode
     }
@@ -99,13 +67,13 @@ impl TypeOp {
         self.flags
     }
 
-    /// Get the display name of the op-code (C++ `TypeOp::getName`).  // STUB(W6)
+    /// Get the display name of the op-code (C++ `TypeOp::getName`).
     pub fn get_name(&self) -> &str {
         &self.name
     }
 }
 
-/// One mapped global [`SymbolEntry`] storage record, flattened for the read-only
+/// One mapped global [`SymbolEntry`](crate::database::SymbolEntry) storage record, flattened for the read-only
 /// `queryProperties` walk the [`ArchHandle`] performs in
 /// [`Funcdata::set_varnode_properties`](crate::funcdata::Funcdata::set_varnode_properties).
 ///
@@ -183,11 +151,11 @@ pub struct GlobalEntry {
 
 /// A read-only snapshot of the global [`Scope`](crate::database::Scope)
 /// sufficient to reproduce `Scope::queryProperties` (`database.cc:1268-1286`)
-/// from the [`ArchHandle`] in [`Funcdata::set_varnode_properties`].
+/// from the [`ArchHandle`] in [`Funcdata::set_varnode_properties`](crate::funcdata::Funcdata::set_varnode_properties).
 ///
 /// The C++ `glb` is the live `Architecture`, so `localmap->queryProperties` walks
 /// the parent chain up to the live global scope.  The merged kuna `glb`
-/// ([`ArchContext`]) is a separate IR-boundary skeleton, and the function's
+/// ([`ArchContext`]) holds per-function configuration and services, and the function's
 /// `localmap` owns its own detached `Database`; this snapshot is the wire that
 /// reconnects the global symbol table onto `glb` so global-mapped varnodes get
 /// `persist`/`addrtied` painted and survive `ActionDeadCode`.  Built once per
@@ -631,42 +599,20 @@ impl GlobalQuery {
 #[path = "context_tests.rs"]
 mod tests;
 
-/// Global configuration data for the program being decompiled (C++
-/// `Architecture`, owned by `Funcdata` as `glb`).
+/// Per-function configuration and shared services built by
+/// [`Architecture::build_arch_handle`](crate::architecture::Architecture::build_arch_handle).
 ///
-/// STUB(W4): the full `decompiler/cpp/architecture.{hh,cc}` `Architecture` is a
-/// large W4 subsystem (the address-space manager, the `TypeFactory`, the symbol
-/// table, the loader, prototype models, user-op table, the action database,
-/// p-code injection).  This skeleton carries only the slice the W3 `Funcdata`
-/// boot and its `funcdata_block`/`funcdata_op`/`funcdata_varnode` siblings reach
-/// at the IR-construction boundary:
-///
-///   - the [`AddrSpaceManager`] (`glb` *is-a* `AddrSpaceManager` in C++): the
-///     constant / unique / iop / fspec spaces and `getConstant`, needed by the
-///     varnode-creation factories (`newConstant`, `newUnique`, `newVarnodeIop`,
-///     `newVarnodeSpace`, `newCodeRef`) and by `VarnodeBank::new`;
-///   - `getMinimumLanedRegisterSize` (`minLanedSize` is initialized from it in
-///     the `Funcdata` constructor and reset in `clear`).
-///
-/// The `TypeFactory` (`glb->types`, W6 / [`crate::dtype`]), the symbol table /
-/// `ScopeLocal` (W4 / [`Scope`]), the loader, the prototype models, the user-op
-/// table, and the `ActionDatabase` (`glb->allacts`, used by `stageJumpTable`)
-/// are **not** part of this skeleton; the W3 callers that need them are either
-/// stub-noted with an explicit `Err`/`None` or take the value as an argument.
+/// Address-space identities, type and loader services are shared with the engine.
+/// Options and global-query data are snapshotted for the function; Ghidra-backed
+/// queries can use the remote scope. [`ArchHandle`] shares this context between
+/// the function and its analysis passes.
 pub struct ArchContext {
-    /// The address-space manager (`Architecture` derives from
-    /// `AddrSpaceManager` in C++).  // STUB(W4)
-    ///
-    /// Held as an [`Rc`] (LOSS-132): the **single** space set the SLEIGH engine
-    /// lifted into is *shared* here, so `glb.manage()` returns the same
-    /// `Rc<AddrSpace>` identities and indices the lifted varnodes carry and the
-    /// analysis passes key state by.  Hand-built test fixtures still pass an
-    /// owned [`AddrSpaceManager`] through [`ArchContext::new`] (wrapped here);
-    /// the real lift+analyze path shares the engine's `Rc` via
-    /// [`ArchContext::new_shared`].
+    /// Shared spaces retain the pointer identities and indices used by lifted
+    /// Varnodes. [`Self::new_shared`] accepts the engine's manager; [`Self::new`]
+    /// wraps an owned manager for fixtures.
     pub manage: Rc<AddrSpaceManager>,
     /// Minimum Varnode size to check as a laned register (C++
-    /// `Architecture::getMinimumLanedRegisterSize`).  // STUB(W4)
+    /// `Architecture::getMinimumLanedRegisterSize`).
     pub min_laned_register_size: int4,
     /// Vector registers that have preferred lane sizes (C++
     /// `Architecture::lanerecords`), built from the pspec `<register_data>`
@@ -768,7 +714,7 @@ pub struct ArchContext {
     /// (kuna) angr-style default naming: an unknown callee / global prints as
     /// `sub_<addr>` / `dat_<addr>` rather than `func_<addr>` (C++
     /// `Architecture::name_style_angr`, default-on).  Read by the call-spec
-    /// printed-name resolution ([`FuncCallSpecs::fspec_printed_name`]).
+    /// printed-name resolution ([`FuncCallSpecs::fspec_printed_name`](crate::fspec::FuncCallSpecs::fspec_printed_name)).
     pub name_style_angr: bool,
     /// (kuna, Phase 3) Ghidra-convention fallback naming (`FUN_`/`DAT_`/`LAB_`),
     /// set only by the ghidra-mode registerProgram — see
@@ -895,6 +841,14 @@ pub struct ArchContext {
     /// [`Architecture::char_ptr`](crate::architecture::Architecture).  The rule
     /// lives in [`kuna_charptr`](crate::p5_types::kuna_charptr).
     pub char_ptr: bool,
+    /// (kuna `elemptr`) Declare a pointer used only as an array of one element
+    /// type as that pointer; option `elemptr on|off`.  Copied from
+    /// [`Architecture::elem_ptr`](crate::architecture::Architecture).  The rule
+    /// lives in [`kuna_elemptr`](crate::p5_types::kuna_elemptr).
+    pub elem_ptr: bool,
+    /// (kuna `elemptr`) The sections a program's data objects live in, sorted and
+    /// inclusive; the `globalref` ranges, copied from the Architecture.
+    pub elem_ptr_ranges: std::rc::Rc<Vec<(u64, u64)>>,
     /// (kuna `slotptr`) Record what each `restructure_varnode` pass sees stored
     /// into the stack frame; mirrors
     /// [`Architecture::slot_ptr`](crate::architecture::Architecture).
@@ -946,6 +900,10 @@ pub struct ArchContext {
     /// walked buffer, which is recovered as one array (`endptrbound`).  Read by
     /// [`crate::p6_variables::kuna_endptrbound::gather_walks`].
     pub end_ptr_bound: bool,
+    /// (kuna) a frame object whose address only fills declared `T *` parameters
+    /// is declared `T` (`castobject`).  Read by
+    /// [`crate::p6_variables::kuna_castobject::declare_out_params`].
+    pub cast_object: bool,
     /// (kuna) a widened multiply operand stays a value instead of being
     /// structured into an aggregate (`mulblob`).  Read by
     /// [`crate::p3_dataflow::kuna_mulblob::declines_zext`].
@@ -997,7 +955,7 @@ pub struct ArchContext {
     /// [`ParamActive`](crate::fspec::ParamActive) that
     /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) then
     /// consults through
-    /// [`crate::p4_calls::kuna_inputparamgap::gap_slot_is_exempt`].
+    /// [`crate::kuna_inputparamgap::trial_is_protected`].
     pub input_param_gap: bool,
     /// (kuna) at a CALL SITE, let an unreferenced argument register whose next
     /// slot is on the stack end the argument list (`stackarggap`).  Read by
@@ -1197,8 +1155,7 @@ pub struct ArchContext {
     pub struct_headless: crate::p5_types::kuna_structheadless::StructHeadlessMode,
     /// (kuna) `option switchselector`: refuse a recovered lowered-switch record
     /// whose synthesized BRANCHIND would not get the switch value as its
-    /// selector.  Read by
-    /// [`install_selector_is_sound`](crate::p2_lift::kuna_loweredswitch::install_selector_is_sound).
+    /// selector. Checked during [`lowered-switch detection`](crate::kuna_loweredswitch::ActionLowerSwitchDetect::detect).
     pub switch_selector_guard: bool,
     pub cond_fold: int4,
     /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
@@ -1241,13 +1198,13 @@ pub struct ArchContext {
     /// (kuna) `itecondlist`: let the `iteregion`/`iteboolean` diamond matchers descend
     /// a multi-component `BlockList` in the condition position to its last component —
     /// see `Architecture::itecondlist`.  Read by
-    /// [`crate::p8_structure::kuna_itecondlist::cond_list_tail`].
+    /// `kuna_itecondlist::cond_list_tail`.
     pub itecondlist: bool,
     /// (kuna) `orchain`: decline a `returndup` split whose shared RETURN block is the
     /// out-target two conditionals must keep in common for
     /// `CollapseStructure::rule_block_or` to fuse them — see
     /// `Architecture::returndup_orchain`.  Read by
-    /// [`crate::p8_structure::kuna_orchain::shortcircuit_shared_targets`].
+    /// `kuna_orchain::shortcircuit_shared_targets`.
     pub returndup_orchain: bool,
     /// (kuna) `paramcopyhoist`: anchor an unmodified incoming parameter's trim COPY
     /// in the entry block rather than at the MULTIEQUAL slot's predecessor tail —
@@ -1303,7 +1260,7 @@ pub struct ArchContext {
     pub strip_security_check: bool,
     /// (kuna) flip negated-guard if/else branches for linearity (option
     /// `branchflip`, opt-in default-off).  Read by
-    /// [`crate::p8_structure::kuna_branchflip`]'s `ActionBranchFlip`.
+    /// [`ActionBranchFlip`](crate::blockaction::ActionBranchFlip).
     pub branch_flip: bool,
     /// (kuna) GH-9203: when set, `ActionConditionalConst::handlePhiNodes` declines
     /// to materialize a propagated constant as a COPY inside a loop predecessor
@@ -1461,8 +1418,7 @@ pub struct ArchContext {
     /// Read-only snapshot of the global symbol table (C++ `glb->symboltab`'s
     /// global scope + property map), the wire for `localmap->queryProperties`'s
     /// walk up to the global scope.  Built at `build_arch_handle` (after every
-    /// `map addr`); read by [`Funcdata::set_varnode_properties`](crate::funcdata::
-    /// Funcdata::set_varnode_properties) to paint `persist`/`addrtied` on
+    /// `map addr`); read by [`Funcdata::set_varnode_properties`](crate::funcdata::Funcdata::set_varnode_properties) to paint `persist`/`addrtied` on
     /// global-mapped varnodes so their stores survive `ActionDeadCode`.  `None`
     /// for hand-built fixtures (no symbol table).
     pub global_query: Option<Rc<GlobalQuery>>,
@@ -1475,16 +1431,14 @@ pub struct ArchContext {
     pub remote_scope: Option<Rc<crate::remote_provider::RemoteScope>>,
     /// Infer pointers from likely-address constants (C++ `glb->infer_pointers`),
     /// shared from the real [`crate::architecture::Architecture`] through
-    /// `build_arch_handle`.  Read by [`ActionConstantPtr`](crate::coreaction_render::
-    /// ActionConstantPtr)'s `isPointer`/`checkCopy` (coreaction.cc:1056-1144) to gate
+    /// `build_arch_handle`.  Read by [`ActionConstantPtr`](crate::coreaction_render::ActionConstantPtr)'s `isPointer`/`checkCopy` (coreaction.cc:1056-1144) to gate
     /// the various pointer-inference arms.  Default-on (C++ `resetDefaults`); `false`
     /// for hand-built fixtures (no constant-pointer recovery exercised).
     pub infer_pointers: bool,
     /// (kuna GH-6930) Infer single-bit constants matching an exact function entry
     /// as pointers (C++ `glb->infer_funcentry`), shared from the real architecture.
     /// Read by `ActionConstantPtr::isPointer`'s `bit_transitions < 3` guard
-    /// (coreaction.cc:1158-1159) via [`kuna_is_function_entry`](crate::
-    /// kuna_inferfuncentry::kuna_is_function_entry).  Default-on (DIV-2); `false`
+    /// (coreaction.cc:1158-1159) via [`kuna_is_function_entry`](crate::kuna_inferfuncentry::kuna_is_function_entry).  Default-on (DIV-2); `false`
     /// for hand-built fixtures.
     pub infer_funcentry: bool,
     /// Ordered list of address spaces in which a constant pointer can be inferred
@@ -1496,7 +1450,7 @@ pub struct ArchContext {
     /// Source-declared callee prototypes, keyed by `(space_index, entry_offset)`
     /// (C++ the callee `Funcdata`'s lazily-built locked `FuncProto`).  Snapshotted
     /// from the global FunctionSymbols at `build_arch_handle`; read back by
-    /// `ActionDefaultParams::apply` via [`Architecture::callee_proto_pieces`] to
+    /// `ActionDefaultParams::apply` via [`Self::callee_proto_pieces`] to
     /// `fc->copy(otherfunc->getFuncProto())` (`coreaction.cc:2385`).  Empty for
     /// hand-built fixtures and undeclared callees.  Shared behind an `Rc`
     /// because `build_arch_handle` hands the same snapshot to every function of
@@ -1513,18 +1467,17 @@ pub struct ArchContext {
     /// Snapshot of the engine's tracked-register database (C++ `glb->context`'s
     /// track base, populated by `set track <reg> <val> [start end]`).  The
     /// per-function `glb` skeleton does not hold the `ContextDatabase`, so
-    /// `build_arch_handle` clones the part-map here; [`ActionConstbase`](crate::
-    /// coreaction_early::ActionConstbase) queries it for the entry address to emit
+    /// `build_arch_handle` clones the part-map here; [`ActionConstbase`](crate::coreaction_early::ActionConstbase) queries it for the entry address to emit
     /// the `COPY #val -> reg` ops (`coreaction.cc:707`).  Empty for hand-built
     /// fixtures and when no register is tracked.
     pub tracked_sets: kuna_base::partmap::PartMap<Address, kuna_sleigh::globalcontext::TrackedSet>,
 }
 
 impl ArchContext {
-    /// Construct the skeleton from an owned [`AddrSpaceManager`] (STUB(W4)).
+    /// Construct a context from an owned [`AddrSpaceManager`].
     ///
     /// Used by hand-built test fixtures; the real path shares the engine's
-    /// manager through [`Architecture::new_shared`].
+    /// manager through [`Self::new_shared`].
     pub fn new(manage: AddrSpaceManager) -> ArchContext {
         ArchContext::new_shared(Rc::new(manage))
     }
@@ -1619,6 +1572,8 @@ impl ArchContext {
             cast_index: false, // (kuna) option castindex
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
             char_ptr: false, // (kuna) option charptr (default off)
+            elem_ptr: false, // (kuna) option elemptr, copied from Architecture
+            elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr
             slot_ptr: true, // (kuna) option slotptr (default on), copied from Architecture
             libctypes: false, // (kuna) option libctypes, copied from Architecture
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
@@ -1637,6 +1592,9 @@ impl ArchContext {
             // endptrbound only re-expresses an address the walk already compares
             // against, so the fixture seam carries the real default.
             end_ptr_bound: true,
+            // castobject only re-types a slot whose readers agree, so the fixture
+            // seam carries the shipped default.
+            cast_object: true,
             // mulblob only declines a rewrite, so the fixture seam carries the
             // shipped default.
             mul_blob: true,
@@ -1865,8 +1823,7 @@ impl ArchContext {
     /// Read `sz` bytes out of the program load image at `addr` into `buf`,
     /// mirroring C++ `glb->loader->loadFill(bytes, sz, addr)`.  Returns an error
     /// (the C++ `DataUnavailError` analogue) when no loader is shared or the
-    /// region is unavailable.  Used by [`Funcdata::fillin_read_only`](crate::
-    /// funcdata::Funcdata::fillin_read_only) to fetch a read-only Varnode's value.
+    /// region is unavailable.  Used by [`Funcdata::fillin_read_only`](crate::funcdata::Funcdata::fillin_read_only) to fetch a read-only Varnode's value.
     pub fn loader_fill(&self, buf: &mut [u8], addr: &Address) -> KunaResult<()> {
         let loader = self
             .loader
@@ -1974,7 +1931,7 @@ impl ArchContext {
     }
 
     /// Borrow the address-space manager (C++ `glb` viewed as an
-    /// `AddrSpaceManager`).  // STUB(W4)
+    /// `AddrSpaceManager`).
     pub fn manage(&self) -> &AddrSpaceManager {
         &self.manage
     }
@@ -2072,7 +2029,7 @@ impl ArchContext {
     }
 
     /// Get the minimum laned-register size (C++
-    /// `Architecture::getMinimumLanedRegisterSize`).  // STUB(W4)
+    /// `Architecture::getMinimumLanedRegisterSize`).
     pub fn get_minimum_laned_register_size(&self) -> int4 {
         self.min_laned_register_size
     }
@@ -2107,7 +2064,7 @@ impl ArchContext {
     }
 
     /// Create a constant Varnode storage address in the constant space
-    /// (C++ `AddrSpaceManager::getConstant`).  // STUB(W4)
+    /// (C++ `AddrSpaceManager::getConstant`).
     pub fn get_constant(&self, val: u64) -> Address {
         self.manage.get_constant(val)
     }
@@ -2316,10 +2273,10 @@ impl ArchContext {
     }
 }
 
-/// The fields of a global [`SymbolEntry`] that C++ `ActionConstantPtr::isPointer` /
+/// The fields of a global [`SymbolEntry`](crate::database::SymbolEntry) that C++ `ActionConstantPtr::isPointer` /
 /// `Funcdata::spacebaseConstant` read off the result of `queryContainer`
 /// (`coreaction.cc:1167-1180`, `funcdata.cc:411-416`).  Flattened from a
-/// [`GlobalEntry`] by [`Architecture::query_container_global`] because the merged
+/// [`GlobalEntry`] by [`ArchContext::query_container_global`] because the merged
 /// `glb` holds the frozen global scope as a snapshot, not the live `Scope`.
 #[derive(Debug, Clone)]
 pub struct GlobalContainer {
@@ -2349,42 +2306,21 @@ impl GlobalContainer {
     }
 }
 
-/// The local-variable scope of a function (C++ `ScopeLocal`, `Funcdata::localmap`).
-///
-/// STUB(W4): the symbol scope machinery (`decompiler/cpp/database.{hh,cc}`,
-/// `varmap.{hh,cc}`) is a W4 subsystem.  `Funcdata` holds an `Option<Scope>`
-/// where the C++ holds a `ScopeLocal *`; the W3 IR data-model never reads symbol
-/// state, so the placeholder is empty.  The varnode-property look-ups
-/// (`localmap->queryProperties`) that `setVarnodeProperties`/`newVarnode*` make
-/// resolve to "no entry, no extra flags" until W4 fills this in.
+/// Legacy scope marker. A function's live local map uses [`crate::varmap::ScopeLocal`].
 #[derive(Debug, Clone, Default)]
 pub struct Scope;
 
-/// The recovered prototype of a function (C++ `FuncProto`, `Funcdata::funcp`).
-///
-/// STUB(W4): the prototype model subsystem (`decompiler/cpp/fspec.{hh,cc}`) is
-/// W4.  `Funcdata` holds a `FuncProto` placeholder so the struct layout and the
-/// `getFuncProto` accessor exist; the W3 IR construction never queries the
-/// prototype.
+/// Legacy prototype marker. A function's live prototype uses [`crate::fspec::FuncProto`].
 #[derive(Debug, Clone, Default)]
 pub struct FuncProto;
 
 impl FuncProto {
-    /// Is the output (return value) storage locked? (C++ `FuncProto::isOutputLocked`).
-    ///
-    /// STUB(W6): the proto-recovery passes are stubs and never lock the
-    /// output, so this reports the un-recovered default (`false`).  `ActionDeadCode::
-    /// gatherConsumedReturn` reads it to decide whether the return value is fully
-    /// consumed; with no locked proto it falls through to the NZ-mask scan.
+    /// The marker has no locked output storage.
     pub fn is_output_locked(&self) -> bool {
         false
     }
 
-    /// Number of bytes of the return value that are consumed, or 0 if unknown
-    /// (C++ `FuncProto::getReturnBytesConsumed`).
-    ///
-    /// STUB(W6): no recovered proto, so 0 ("no restriction") — the faithful
-    /// un-recovered default.
+    /// The marker has no known consumed return bytes.
     pub fn get_return_bytes_consumed(&self) -> i32 {
         0
     }
@@ -2394,13 +2330,7 @@ impl FuncProto {
 // DatabaseArch / TranslateAccess / TypeFactoryAccess on the ArchContext.
 // ===========================================================================
 //
-// STUB(W4/W5/W6) closure: `database.rs` declares these traits (the slice of
-// `glb` the symbol database needs) and the in-crate `TestArch` implements them
-// for unit tests.  There was no NON-test impl, so the ghidra-style naming in
-// `Database::build_variable_name` / `build_default_name` was unreachable in the
-// live pipeline (`ActionNameVars` hardcoded `format!("v{base}")`).  Implementing
-// the traits here on the `ArchContext` wires the live engine to that
-// renderer so `option namestyle ghidra` produces `iVarN` locals.
+// Shared architecture services used by the symbol database.
 
 impl crate::database::TranslateAccess for ArchContext {
     /// C++ `Translate::getRegisterName(spc,off,sz)` — forward to the engine's
@@ -2473,10 +2403,5 @@ impl crate::database::DatabaseArch for ArchContext {
     }
 }
 
-/// Shared handle to the [`Architecture`] (C++ `Funcdata::glb`, a borrowed
-/// `Architecture *`).
-///
-/// STUB(W4): the C++ `glb` is a non-owning back-pointer to the long-lived
-/// `Architecture`.  Modeled as `Rc<Architecture>` so multiple `Funcdata`
-/// snapshots (ADR 0007) can share it; the W3 code only reads through it.
+/// Shared per-function configuration and services (`Funcdata::glb`).
 pub type ArchHandle = Rc<ArchContext>;

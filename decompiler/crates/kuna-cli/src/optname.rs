@@ -23,7 +23,7 @@ use kuna_decomp::options::{UPSTREAM_OPTION_ELEMENTS, KUNA_OPTION_NAMES};
 pub(crate) fn is_known(name: &str) -> bool {
     KUNA_OPTION_NAMES.contains(&name)
         || UPSTREAM_OPTION_ELEMENTS.iter().any(|e| e.get_name() == name)
-        || crate::decompile_all::is_loadtime_gate(name)
+        || crate::loadtime::is_loadtime_gate(name)
 }
 
 /// Check one `--option NAME VALUE` pair's name, returning the CLI error text

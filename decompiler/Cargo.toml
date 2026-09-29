@@ -1,9 +1,4 @@
-# kuna Rust port -- cargo workspace.
-#
-# A parallel reimplementation of the C++ decompiler under decompiler/cpp/
-# (the test ORACLE, which stays green throughout the port). Crate boundaries,
-# dependency edges, and the C++ -> crate file mapping are documented in each
-# crate's lib.rs and in docs/rust-port/.
+# Workspace for the decompiler, SLEIGH toolchain, and frontends.
 
 [workspace]
 resolver = "2"
@@ -17,77 +12,18 @@ license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-# External
 thiserror = "2.0"
 flate2 = "1.1"
 smallvec = "1.15"
 slotmap = "1.0"
-# The real-ELF LoadImage backend (W11 / `loadimage_object.rs`) substitutes the
-# `object` crate for the C++ console's GNU BFD dependency (LoadImageBfd /
-# loadimage_bfd.cc); see docs/rust-port/losses.md (the BFD dependency-substitution
-# LOSS).  Read-only parsing only -- no_default_features keeps the surface to the
-# explicit format readers.  `elf` is the established path; `pe`/`macho`/`coff`
-# are the multi-format expansion (docs/multiformat-loader-design.md), enabling
-# `object::File::parse` to recognize PE/Mach-O/COFF — admitted on the load path
-# unconditionally (multi-format is the default, increment 46).
 object = { version = "0.39", default-features = false, features = ["read_core", "elf", "pe", "macho", "coff", "std"] }
-# Dev-only (kuna-harness): the datatest <stringmatch> engine.  std::regex
-# (ECMAScript) has no Rust equivalent; the regex crate is the documented
-# substitution (LOSS-007).  Used by the harness crate only -- never the engine.
 regex = "1"
-# The Rust-output syntax gate (`kuna-console/tests/verify_outlang_rust_syntax.rs`)
-# parses the emitted `setlanguage rust-language` document. A parser fails on a
-# CATEGORY of defect (an unbalanced brace, a leaked `->`/`~`/`goto`/`do{}while`)
-# where a string assertion can only fail on a construct someone remembered to
-# assert -- which is exactly how the reference implementation this back-end is
-# modelled on ships Rust output that does not parse. Already in Cargo.lock as a
-# transitive dependency, so this adds a lock edge, not a crate. Dev-only.
 syn = { version = "2", default-features = false, features = ["full", "parsing", "printing", "clone-impls", "proc-macro"] }
-# Symbol demangling (kuna-analysis / `s1_demangle/`), the kuna analog of
-# Ghidra's `GnuDemanglerAnalyzer`.  Ghidra's GNU/Itanium demangler is NOT Java
-# logic: `GnuDemanglerNativeProcess` shells out to a native `demangle`
-# executable (libiberty `cplus_demangle`), so mirroring Ghidra = "call a
-# third-party demangler and consume its string".  Per the same
-# dependency-substitution LOSS the BFD object model takes (see
-# `loadimage_object.rs` / docs/rust-port/losses.md), these permissive crates
-# replace Ghidra's native `demangle`/libiberty dependency.  cpp_demangle =
-# Itanium C++ (MIT/Apache); rustc-demangle = Rust legacy `_ZN` + v0 `_R`
-# (MIT/Apache).  Used by kuna-analysis only -- never the engine.
 cpp_demangle = "0.5"
 rustc-demangle = "0.1"
-# MSVC C++ demangling (kuna-analysis / `s1_demangle/`), the MSVC arm of the same
-# `GnuDemanglerAnalyzer` analog.  Ghidra's MSVC demangler (`MicrosoftDemangler`,
-# the `MDMang` engine) is a large hand-rolled C++ grammar in
-# `Ghidra/Features/MicrosoftDemangler/.../*`.  cpp_demangle/rustc-demangle do NOT
-# recognize the MSVC `?`-prefixed scheme (`?foo@Bar@@QEAAXXZ`), so the
-# multi-format loader's MSVC/COFF arm (docs/multiformat-loader-design.md §5.5,
-# PR-9) substitutes the permissive `msvc-demangler` crate (MIT) for it -- the same
-# dependency-substitution LOSS the BFD/Itanium/Rust/DWARF deps take (see
-# docs/rust-port/losses.md).  Used by kuna-analysis only -- never the engine.
 msvc-demangler = "0.11"
-# DWARF debug-info parsing (kuna-analysis / `s1_dwarf/`), the kuna analog of
-# Ghidra's `DWARFAnalyzer`.  Ghidra hand-rolls a complete DWARF reader in
-# `ghidra.app.util.bin.format.dwarf.*` (DWARFProgram, DebugInfoEntry,
-# DIEAggregate, DWARFAbbreviation, StringTable, …).  Per the same
-# dependency-substitution LOSS the BFD object model takes (BFD -> `object`; see
-# `loadimage_object.rs` / docs/rust-port/losses.md), kuna substitutes `gimli`,
-# the de-facto Rust DWARF reader (MIT/Apache), for Ghidra's hand-rolled parser
-# wholesale.  Read-only over the `.debug_*` section bytes -- no_default_features
-# keeps the surface to `read` + `std`.  Used by kuna-analysis only -- never the
-# engine.
 gimli = { version = "0.33", default-features = false, features = ["read", "std"] }
-# PDB (Program Database) parsing (kuna-analysis / `s1_pdb/`), the kuna analog of
-# Ghidra's `PdbUniversalAnalyzer`.  Ghidra hand-rolls a complete PDB reader in
-# `ghidra.app.util.bin.format.pdb2.pdbreader.*` (~196 type + ~280 symbol
-# classes — the TPI/IPI/DBI/symbol-stream parsers).  Per the same
-# dependency-substitution LOSS the BFD object model takes (BFD -> `object`) and
-# DWARF takes (Ghidra's hand-rolled DWARF -> `gimli`; see `loadimage_object.rs`
-# / docs/rust-port/losses.md), kuna substitutes `pdb` — the de-facto mature Rust
-# PDB reader (MIT/Apache, used by Firefox symbolication + `pdb-addr2line`) — for
-# Ghidra's hand-rolled `pdb2/pdbreader` wholesale.  Read-only over the PDB
-# streams.  Used by kuna-analysis only -- never the engine.
 pdb = "0.8"
-# Intra-workspace
 kuna-base = { path = "crates/kuna-base" }
 kuna-num = { path = "crates/kuna-num" }
 kuna-sleigh = { path = "crates/kuna-sleigh" }
@@ -96,8 +32,11 @@ kuna-analysis = { path = "crates/kuna-analysis" }
 kuna-console = { path = "crates/kuna-console" }
 
 [workspace.lints.clippy]
-# Wired to rust/clippy.toml: std::collections::HashMap / HashSet are banned
-# workspace-wide because decompiler output must be deterministic and hash-map
-# iteration order is not. Use BTreeMap/BTreeSet with ported Ord comparators
-# (see docs/rust-port/adr/0002-ordered-containers.md).
+# Ordered collections keep output decisions deterministic; see clippy.toml.
 disallowed_types = "deny"
+
+# Exercise real-image workloads without disabling debug validation.
+[profile.test]
+opt-level = 1
+debug-assertions = true
+overflow-checks = true

@@ -1,82 +1,21 @@
-//! Port of `decompiler/cpp/slghsymbol.{hh,cc}` (item `w2-sleigh-symbol`) —
-//! the SLEIGH symbol system as decoded from a compiled `.sla` file.
+//! SLEIGH symbols, constructor patterns and runtime instruction dispatch.
 //!
-//! ## What is ported
+//! Port of `decompiler/cpp/slghsymbol.{hh,cc}`. [`SleighSymbol`] pairs a
+//! name/id/scope header with a [`SymbolKind`]. [`SymbolTable`] owns symbols
+//! and scopes; constructor and operand references use IDs resolved through
+//! that table rather than C++ pointers.
 //!
-//! - The `SleighSymbol` hierarchy as [`SleighSymbol`] (name/id/scope header)
-//!   wrapping a [`SymbolKind`] enum mirroring the C++ subclasses:
-//!   Space/Token/UserOp/Epsilon/Value/ValueMap/Name/Varnode/Context/
-//!   VarnodeList/Operand/Start/End/Next2/FlowDest/FlowRef/Subtable.
-//! - [`Constructor`] with print pieces (`print`/`print_mnemonic`/
-//!   `print_body`, the flow-through rule) and context commands.
-//! - [`DecisionNode`] runtime dispatch (`resolve`) and its decode.
-//! - [`SymbolTable`] with [`SymbolScope`] chains and the two-pass `.sla`
-//!   restore: header shells first (`decode_symbol_header`), then the
-//!   per-kind content decode in stream order.
-//! - The `encode`/`encodeHeader` writers for every decodable kind (used by
-//!   the round-trip tests; the writer side of `.sla` otherwise belongs to
-//!   the unported compiler, LOSS-001).
+//! The compiler builds patterns and decision trees here, then purges and
+//! renumbers the table for serialization. Decoding restores symbol headers
+//! before their contents so cross-references can be validated.
 //!
-//! ## What is NOT ported (SLEIGH compiler side, LOSS-001)
+//! Constructor p-code uses handles into the template arena. Encoding borrows
+//! the templates; decoding adds them through [`SleighBaseTrans`]. Runtime
+//! pattern resolution and context changes use [`SymbolWalker`] and
+//! [`SymbolWalkerChange`].
 //!
-//! Everything reachable only from `slgh_compile`: `SymbolTable::purge`/
-//! `renumber`/`replaceSymbol`, `Constructor::buildPattern`/`orderOperands`/
-//! `addEquation`/`setMainSection`/`setNamedSection`/
-//! `markSubtableOperands`/`isRecursive`/`setError`/`isError`/
-//! `collectLocalExports` (the pure print-piece builders `addOperand`/
-//! `addInvisibleOperand`/`addSyntax`/`removeTrailingSpace`/`addContext`
-//! ARE ported — tests build constructors with them),
-//! `SubtableSymbol::buildPattern`/`buildDecisionTree`/
-//! `collectLocalValues` (+ the `beingbuilt`/`errors` flags),
-//! `DecisionNode::split`/`orderPatterns`/`chooseOptimalField`/`getScore`/
-//! `getNumFixed`/`getMaximumLength`/`consistentValues`/`addConstructorPair`,
-//! `DecisionProperties`, `OperandSymbol::setCodeAddress`/
-//! `setOffsetIrrelevant`/mark handling (`defineOperand` IS ported),
-//! and the Macro/Label/Section/Bitrange
-//! symbol classes ([`SymbolType`] keeps their discriminants so `getType`
-//! comparisons stay transcribable).  The `TokenPattern *pattern` and
-//! `PatternEquation *pateq` members are compiler state and are dropped.
-//! The `getVarnode()` virtuals (returning `VarnodeTpl`, semantics.hh) are
-//! deferred with the semantics wave: their only callers are in the unported
-//! pcode compiler.
-//!
-//! ## Pointer-web representation
-//!
-//! C++ resolves symbol ids to raw pointers at decode time
-//! (`trans->findSymbol(id)`, unchecked casts).  The port stores the **ids**
-//! (`u32`, C++ `uintm`) and resolves through the owning [`SymbolTable`] at
-//! use time; methods that C++ ran on a bare pointer take a `&SymbolTable`
-//! parameter.  Where a C++ unchecked downcast would be UB on a
-//! wrongly-typed id, the port returns a `KunaError` (documented at each
-//! site; same policy as the `OperandValueResolver` boundary contract in
-//! [`crate::slghpatexpress`]).  `DecisionNode::parent` is dropped: its only
-//! consumer is the compiler-side `split()`.
-//!
-//! ## Boundaries
-//!
-//! - [`SymbolWalker`] extends the [`PatternExpressionContext`] boundary from
-//!   [`crate::slghpatexpress`] with exactly the additional `ParserWalker`
-//!   surface slghsymbol.cc touches (operand push/pop, current constructor,
-//!   fixed handles, spaces, flow addresses, bit reads).  Implemented by the
-//!   sleigh decode-engine wave; tests implement it synthetically.
-//! - [`SymbolWalkerChange`] mirrors `ParserWalkerChange` for the
-//!   context-command `apply` path (`setContextWord`/`addCommit`).
-//! - [`SleighBaseTrans`] stands in for the `SleighBase *trans` decode
-//!   argument, reduced to what the symbol decode actually pulls from it
-//!   beyond id storage: the constant space and `ConstructTpl`
-//!   (semantics.hh) decode/encode, which belongs to the unported semantics
-//!   wave.  Constructors hold opaque [`ConstructTplHandle`]s.
-//! - [`SymbolTable`] itself implements
-//!   [`crate::slghpatexpress::OperandValueResolver`], closing the loop the
-//!   pattern wave left open (`OperandValue::decode` validation), and
-//!   provides `OperandValue::isConstructorRelative`/`getName` (C++
-//!   slghpatexpress.cc:800-812) as
-//!   [`SymbolTable::operand_value_is_constructor_relative`] /
-//!   [`SymbolTable::operand_value_name`].
-//!
-//! Names and print pieces are byte strings (marshal convention); printed
-//! output goes to a `String` with names converted lossily (`.sla`
-//! identifiers are ASCII).
+//! Names and print pieces are byte strings. Printed output converts names
+//! lossily to UTF-8 (`.sla` identifiers are ASCII).
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -88,6 +27,7 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::{Decoder, Encoder};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::Wrap;
+use kuna_num::opcodes::{OpcodeDecoder, OpcodeEncoder};
 use kuna_num::pcoderaw::VarnodeData;
 
 use crate::context::{FixedHandle, Token};
@@ -99,82 +39,8 @@ use crate::slghpatexpress::{
 use crate::slghpattern::{DisjointPattern, Pattern};
 use crate::semantics::{ConstTpl, ConstType, ConstructTpl, VarnodeTpl};
 
-/// `.sla`-format ElementIds/AttributeIds used by the symbol system
-/// (slaformat.cc, `FORMAT_SCOPE`).  Extends the set already defined by the
-/// pattern wave in [`crate::slghpattern::sla`], which is re-exported here so
-/// symbol code uses a single `sla::` namespace.
-pub mod sla {
-    use kuna_base::marshal::{AttributeId, ElementId};
-
-    pub use crate::slghpattern::sla::*;
-
-    pub const ATTRIB_ID: AttributeId = AttributeId::new("id", 3);
-    pub const ATTRIB_SPACE: AttributeId = AttributeId::new("space", 4);
-    pub const ATTRIB_CODE: AttributeId = AttributeId::new("code", 7);
-    pub const ATTRIB_PIECE: AttributeId = AttributeId::new("piece", 11);
-    pub const ATTRIB_NAME: AttributeId = AttributeId::new("name", 12);
-    pub const ATTRIB_SCOPE: AttributeId = AttributeId::new("scope", 13);
-    pub const ATTRIB_SIZE: AttributeId = AttributeId::new("size", 15);
-    pub const ATTRIB_MINLEN: AttributeId = AttributeId::new("minlen", 18);
-    pub const ATTRIB_BASE: AttributeId = AttributeId::new("base", 19);
-    pub const ATTRIB_NUMBER: AttributeId = AttributeId::new("number", 20);
-    pub const ATTRIB_CONTEXT: AttributeId = AttributeId::new("context", 21);
-    pub const ATTRIB_PARENT: AttributeId = AttributeId::new("parent", 22);
-    pub const ATTRIB_SUBSYM: AttributeId = AttributeId::new("subsym", 23);
-    pub const ATTRIB_LINE: AttributeId = AttributeId::new("line", 24);
-    pub const ATTRIB_SOURCE: AttributeId = AttributeId::new("source", 25);
-    pub const ATTRIB_LENGTH: AttributeId = AttributeId::new("length", 26);
-    pub const ATTRIB_FIRST: AttributeId = AttributeId::new("first", 27);
-    pub const ATTRIB_SCOPESIZE: AttributeId = AttributeId::new("scopesize", 45);
-    pub const ATTRIB_SYMBOLSIZE: AttributeId = AttributeId::new("symbolsize", 46);
-    pub const ATTRIB_VARNODE: AttributeId = AttributeId::new("varnode", 47);
-    pub const ATTRIB_LOW: AttributeId = AttributeId::new("low", 48);
-    pub const ATTRIB_HIGH: AttributeId = AttributeId::new("high", 49);
-    pub const ATTRIB_FLOW: AttributeId = AttributeId::new("flow", 50);
-    pub const ATTRIB_I: AttributeId = AttributeId::new("i", 52);
-    pub const ATTRIB_NUMCT: AttributeId = AttributeId::new("numct", 53);
-
-    pub const ELEM_PRINT: ElementId = ElementId::new("print", 8);
-    pub const ELEM_PAIR: ElementId = ElementId::new("pair", 9);
-    pub const ELEM_NULL: ElementId = ElementId::new("null", 11);
-    pub const ELEM_OPERAND_SYM: ElementId = ElementId::new("operand_sym", 13);
-    pub const ELEM_OPERAND_SYM_HEAD: ElementId = ElementId::new("operand_sym_head", 14);
-    pub const ELEM_OPER: ElementId = ElementId::new("oper", 15);
-    pub const ELEM_DECISION: ElementId = ElementId::new("decision", 16);
-    pub const ELEM_OPPRINT: ElementId = ElementId::new("opprint", 17);
-    pub const ELEM_CONSTRUCTOR: ElementId = ElementId::new("constructor", 20);
-    pub const ELEM_SCOPE: ElementId = ElementId::new("scope", 22);
-    pub const ELEM_VARNODE_SYM: ElementId = ElementId::new("varnode_sym", 23);
-    pub const ELEM_VARNODE_SYM_HEAD: ElementId = ElementId::new("varnode_sym_head", 24);
-    pub const ELEM_USEROP: ElementId = ElementId::new("userop", 25);
-    pub const ELEM_USEROP_HEAD: ElementId = ElementId::new("userop_head", 26);
-    pub const ELEM_VAR: ElementId = ElementId::new("var", 28);
-    pub const ELEM_CONTEXT_OP: ElementId = ElementId::new("context_op", 32);
-    pub const ELEM_SYMBOL_TABLE: ElementId = ElementId::new("symbol_table", 38);
-    pub const ELEM_VALUE_SYM: ElementId = ElementId::new("value_sym", 39);
-    pub const ELEM_VALUE_SYM_HEAD: ElementId = ElementId::new("value_sym_head", 40);
-    pub const ELEM_CONTEXT_SYM: ElementId = ElementId::new("context_sym", 41);
-    pub const ELEM_CONTEXT_SYM_HEAD: ElementId = ElementId::new("context_sym_head", 42);
-    pub const ELEM_END_SYM: ElementId = ElementId::new("end_sym", 43);
-    pub const ELEM_END_SYM_HEAD: ElementId = ElementId::new("end_sym_head", 44);
-    pub const ELEM_EPSILON_SYM: ElementId = ElementId::new("epsilon_sym", 62);
-    pub const ELEM_EPSILON_SYM_HEAD: ElementId = ElementId::new("epsilon_sym_head", 63);
-    pub const ELEM_NAME_SYM: ElementId = ElementId::new("name_sym", 64);
-    pub const ELEM_NAME_SYM_HEAD: ElementId = ElementId::new("name_sym_head", 65);
-    pub const ELEM_NAMETAB: ElementId = ElementId::new("nametab", 66);
-    pub const ELEM_NEXT2_SYM: ElementId = ElementId::new("next2_sym", 67);
-    pub const ELEM_NEXT2_SYM_HEAD: ElementId = ElementId::new("next2_sym_head", 68);
-    pub const ELEM_START_SYM: ElementId = ElementId::new("start_sym", 69);
-    pub const ELEM_START_SYM_HEAD: ElementId = ElementId::new("start_sym_head", 70);
-    pub const ELEM_SUBTABLE_SYM: ElementId = ElementId::new("subtable_sym", 71);
-    pub const ELEM_SUBTABLE_SYM_HEAD: ElementId = ElementId::new("subtable_sym_head", 72);
-    pub const ELEM_VALUEMAP_SYM: ElementId = ElementId::new("valuemap_sym", 73);
-    pub const ELEM_VALUEMAP_SYM_HEAD: ElementId = ElementId::new("valuemap_sym_head", 74);
-    pub const ELEM_VALUETAB: ElementId = ElementId::new("valuetab", 75);
-    pub const ELEM_VARLIST_SYM: ElementId = ElementId::new("varlist_sym", 76);
-    pub const ELEM_VARLIST_SYM_HEAD: ElementId = ElementId::new("varlist_sym_head", 77);
-    pub const ELEM_COMMIT: ElementId = ElementId::new("commit", 79);
-}
+/// SLA IDs used by the symbol system.
+pub use crate::slaformat::ids as sla;
 
 // ---------------------------------------------------------------------------
 // Boundaries
@@ -191,11 +57,9 @@ pub struct ConstructorRef {
     pub ct_id: u32,
 }
 
-/// The additional `ParserWalker` surface (context.hh/sleigh.hh) used by
-/// slghsymbol.cc beyond the [`PatternExpressionContext`] boundary: operand
-/// traversal for printing, fixed-handle lookup, address spaces, flow
-/// addresses, and the raw bit reads `DecisionNode::resolve` dispatches on.
-/// Implemented by the sleigh decode-engine wave.
+/// Walker operations used by symbol resolution and printing: operand traversal,
+/// resolved handles, address spaces, flow addresses and instruction/context bits.
+/// Runtime parser walkers implement this extension of [`PatternExpressionContext`].
 pub trait SymbolWalker: PatternExpressionContext {
     /// C++ `ParserWalker::pushOperand(int4 i)`.
     fn push_operand(&mut self, i: i32) -> KunaResult<()>;
@@ -237,12 +101,8 @@ pub trait SymbolWalkerChange: SymbolWalker {
 /// storage).
 pub type ConstructTplHandle = usize;
 
-/// Boundary standing in for the `SleighBase *trans` argument of the symbol
-/// decode/encode methods, reduced to what slghsymbol.cc pulls from it
-/// beyond symbol-id storage: `trans->getConstantSpace()` and the
-/// `ConstructTpl` (semantics.hh) decode/encode, which belongs to the
-/// unported semantics wave.  Symbol-id resolution (`trans->findSymbol`)
-/// stays inside [`SymbolTable`].
+/// Supplies the constant space and constructor-template storage for symbol
+/// decoding. Symbol-id resolution stays inside [`SymbolTable`].
 pub trait SleighBaseTrans {
     /// C++ `trans->getConstantSpace()`.
     fn get_constant_space(&self) -> Rc<AddrSpace>;
@@ -252,26 +112,16 @@ pub trait SleighBaseTrans {
     /// means the main section.
     fn decode_construct_tpl(
         &mut self,
-        decoder: &mut dyn Decoder,
+        decoder: &mut dyn OpcodeDecoder,
     ) -> KunaResult<(i32, ConstructTplHandle)>;
-    /// C++ `templ->encode(encoder, section_id)` inside `Constructor::encode`
-    /// (`section_id == -1` for the main section).
-    fn encode_construct_tpl(
-        &self,
-        handle: ConstructTplHandle,
-        section_id: i32,
-        encoder: &mut dyn Encoder,
-    ) -> KunaResult<()>;
 }
 
 // ---------------------------------------------------------------------------
 // SymbolType + small helpers
 // ---------------------------------------------------------------------------
 
-/// C++ `SleighSymbol::symbol_type`.  All discriminants are kept, including
-/// the compiler-only classes that have no ported [`SymbolKind`] variant
-/// (Macro/Section/Bitrange/Label/Dummy), so `getType()` comparisons
-/// transcribe one-to-one.
+/// Symbol categories matching C++ `SleighSymbol::symbol_type`, including
+/// compiler-only symbols and the reserved `Dummy` category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SymbolType {
     /// C++ `space_symbol`
@@ -300,17 +150,17 @@ pub enum SymbolType {
     Next2,
     /// C++ `subtable_symbol`
     Subtable,
-    /// C++ `macro_symbol` (class not ported, LOSS-001)
+    /// C++ `macro_symbol`
     Macro,
-    /// C++ `section_symbol` (class not ported, LOSS-001)
+    /// C++ `section_symbol`
     Section,
-    /// C++ `bitrange_symbol` (class not ported, LOSS-001)
+    /// C++ `bitrange_symbol`
     Bitrange,
     /// C++ `context_symbol`
     Context,
     /// C++ `epsilon_symbol`
     Epsilon,
-    /// C++ `label_symbol` (class not ported, LOSS-001)
+    /// C++ `label_symbol`
     Label,
     /// C++ `flowdest_symbol`
     FlowDest,
@@ -326,9 +176,7 @@ fn name_text(name: &[u8]) -> Cow<'_, str> {
     String::from_utf8_lossy(name)
 }
 
-/// (WS4b renumber) remap the `OperandValue` subtable-id inside a `PatternValue`,
-/// if any (the table-driven family symbols carry no subtable id; an
-/// `OperandValue` does).
+/// Remap an operand value's owning-subtable id within a pattern value.
 fn remap_patval_table(pv: Option<&mut PatternValue>, map: &impl Fn(u32) -> u32) {
     if let Some(PatternValue::OperandValue(ov)) = pv {
         ov.set_table_id(map(ov.table_id()));
@@ -861,11 +709,8 @@ impl OperandSymbol {
         }
     }
 
-    /// (WS4c) Remap operand-value indices embedded in this operand's defining
-    /// expression through `handmap` (`original_index -> new_index`).  C++ shares
-    /// the operand `localexp` pointers, so a single `changeIndex` updates every
-    /// reference; the kuna port clones, so the defexp's references are remapped
-    /// separately after `order_operands`.
+    /// Remap this operand's owned defining expression separately from its local
+    /// expression, using `handmap[original_index] = new_index`.
     pub fn remap_defexp_operand_index(&mut self, handmap: &[i32]) {
         if let Some(de) = self.defexp.as_mut() {
             de.remap_operand_index(handmap);
@@ -937,10 +782,9 @@ pub struct FlowRefSymbol {
     const_space: Option<Rc<AddrSpace>>,
 }
 
-/// C++ `SubtableSymbol`: a table of constructors with its decode-time
-/// decision tree.  The compiler-only `TokenPattern *pattern` and
-/// `beingbuilt`/`errors` flags are present for the build side (ws4a); the
-/// decode path leaves them at their defaults.
+/// Constructor table and its runtime decision tree. Compilation also stores
+/// an aggregate pattern, recursion guard and error state; decoding leaves
+/// those build fields at their defaults.
 #[derive(Debug, Clone, Default)]
 pub struct SubtableSymbol {
     construct: Vec<Constructor>,
@@ -1003,8 +847,7 @@ impl SubtableSymbol {
             .ok_or_else(|| KunaError::sleigh("constructor id out of range (C++ indexes unchecked)"))
     }
 
-    /// Mutable constructor access for the WS4b driver (`getConstructor`,
-    /// build side).
+    /// Mutable access to a constructor by its index in this subtable.
     pub fn get_constructor_mut(&mut self, id: u32) -> Option<&mut Constructor> {
         self.construct.get_mut(id as usize)
     }
@@ -1017,11 +860,7 @@ impl SubtableSymbol {
     /// C++ `SubtableSymbol::resolve`: `decisiontree->resolve(walker)`
     /// (a null tree dereference is UB in C++; an error here).
     pub fn resolve(&self, walker: &dyn SymbolWalker) -> KunaResult<u32> {
-        let tree = self
-            .decisiontree
-            .as_ref()
-            .ok_or_else(|| KunaError::sleigh("subtable has no decision tree (not decoded)"))?;
-        tree.resolve(walker)
+        self.resolve_matched(walker).map(|(_, id)| *id)
     }
 
     /// Like [`SubtableSymbol::resolve`], but returns the matched
@@ -1070,16 +909,14 @@ impl ContextOp {
         })
     }
 
-    /// (WS4c) Remap the embedded operand-value indices after `order_operands`
-    /// (C++ shares the operand's `localexp` pointer; the kuna port clones, so
-    /// the ContextOp's own copy must be remapped through the handmap).
+    /// Remap operand indices in this context operation's owned expression.
     pub fn remap_operand_index(&mut self, handmap: &[i32]) {
         if let Some(pe) = self.patexp.as_mut() {
             pe.remap_operand_index(handmap);
         }
     }
 
-    /// (WS4c renumber) Remap the embedded operand-value `table_id`s.
+    /// Remap the embedded operand values' owning-subtable ids.
     pub fn remap_table_id(&mut self, remap: &dyn Fn(u32) -> u32) {
         if let Some(pe) = self.patexp.as_mut() {
             pe.remap_table_id(remap);
@@ -1200,7 +1037,7 @@ impl ContextCommit {
     pub fn get_sym(&self) -> u32 {
         self.sym
     }
-    /// Renumber the committed-to symbol id (WS4c purge/renumber).
+    /// Update the committed-to symbol id during symbol-table compaction.
     pub fn set_sym(&mut self, sym: u32) {
         self.sym = sym;
     }
@@ -1278,9 +1115,9 @@ impl ContextChange {
 // Constructor
 // ---------------------------------------------------------------------------
 
-/// C++ `Constructor` ("This is NOT a symbol").  Compiler-only members
-/// (`pattern`, `pateq`, `inerror`; see module docs) are dropped; pointers
-/// become symbol ids / template handles.
+/// Instruction constructor with owned print pieces and context commands.
+/// Operands are symbol ids; p-code sections are template-arena handles.
+/// Compilation also stores a pattern equation, built pattern and error state.
 #[derive(Debug, Clone, Default)]
 pub struct Constructor {
     /// Owning `SubtableSymbol` id (C++ null parent of a decode shell is
@@ -1293,7 +1130,7 @@ pub struct Constructor {
     printpiece: Vec<Vec<u8>>,
     /// Context commands.
     context: Vec<ContextChange>,
-    /// The main p-code section (held through the [`SleighBaseTrans`] boundary).
+    /// The main p-code section, indexed in the constructor-template arena.
     templ: Option<ConstructTplHandle>,
     /// Other named p-code sections.
     namedtempl: Vec<Option<ConstructTplHandle>>,
@@ -1308,20 +1145,15 @@ pub struct Constructor {
     lineno: i32,
     /// Source file index.
     src_index: i32,
-    /// (kuna build side) C++ `PatternEquation *pateq`: the constructor's
-    /// pattern equation, as an arena id ([`EqId`]) into the driver-owned
-    /// [`EquationArena`].  `None` for a decode shell.
+    /// Pattern equation id in the compiler's [`EquationArena`].
+    /// Absent in decoded constructors.
     pateq: Option<EqId>,
-    /// (kuna build side) C++ `TokenPattern *pattern`: the built pattern,
-    /// `None` until [`Constructor::build_pattern`] runs.
+    /// Pattern produced during compilation; absent in decoded constructors.
     pattern: Option<TokenPattern>,
-    /// (kuna build side) C++ `mutable bool inerror`.
+    /// Whether compilation reported an error for this constructor.
     inerror: bool,
-    /// (kuna build side, WS4b boundary) the operand handle re-index map computed
-    /// by [`SymbolTable::order_operands`] (`handmap[original_index] =
-    /// new_index`).  C++ applies `templ->changeHandleIndex(handmap)` inline,
-    /// but the kuna `ConstructTpl` arena is owned by the WS4b driver, so the
-    /// map is stashed here for the driver to apply.  Empty until ordered.
+    /// Operand reordering map: `handmap[original_index] = new_index`. The
+    /// compiler applies it to template sections; empty until operands are ordered.
     handmap: Vec<i32>,
 }
 
@@ -1347,11 +1179,9 @@ impl Constructor {
         self.pateq
     }
 
-    /// (kuna build side, WS4b boundary) the operand handle re-index map computed
-    /// during [`SymbolTable::order_operands`].  `handmap[original_index] =
-    /// new_index`.  The WS4b driver applies it to the constructor's
-    /// `ConstructTpl` sections via `change_handle_index` (the C++ inline
-    /// `templ->changeHandleIndex(handmap)`).  Empty if no reorder ran.
+    /// Map original operand indices to their reordered indices. The compiler
+    /// applies this map to template sections with `change_handle_index`.
+    /// Empty if no operand ordering ran.
     pub fn get_handmap(&self) -> &[i32] {
         &self.handmap
     }
@@ -1361,8 +1191,7 @@ impl Constructor {
         self.pattern.as_ref()
     }
 
-    /// Inject a pre-built [`TokenPattern`] (golden tests / WS4b that build the
-    /// pattern out of band).
+    /// Set a prebuilt [`TokenPattern`].
     pub fn set_built_pattern_for_test(&mut self, tp: TokenPattern) {
         self.pattern = Some(tp);
     }
@@ -1453,20 +1282,14 @@ impl Constructor {
         if self.firstwhitespace == -1 && syntrim == b" " {
             self.firstwhitespace = self.printpiece.len() as i32; // size_t -> int4 as in C++
         }
-        if self.printpiece.is_empty() {
-            self.printpiece.push(syntrim.to_vec());
-        } else if self.printpiece.last().expect("non-empty") == b" " && syntrim == b" " {
-            // Don't add more whitespace
-        } else if self.printpiece.last().expect("non-empty").first() == Some(&b'\n')
-            || self.printpiece.last().expect("non-empty") == b" "
-            || syntrim == b" "
-        {
-            self.printpiece.push(syntrim.to_vec());
-        } else {
-            self.printpiece
-                .last_mut()
-                .expect("non-empty")
-                .extend_from_slice(syntrim);
+        match self.printpiece.last_mut() {
+            Some(last) if last.as_slice() == b" " && syntrim == b" " => {}
+            Some(last)
+                if last.first() != Some(&b'\n') && last.as_slice() != b" " && syntrim != b" " =>
+            {
+                last.extend_from_slice(syntrim);
+            }
+            _ => self.printpiece.push(syntrim.to_vec()),
         }
     }
 
@@ -1525,9 +1348,8 @@ impl Constructor {
         &self.operands
     }
 
-    /// C++ `Constructor::setMainSection(ConstructTpl *tpl)` (slghsymbol.cc):
-    /// the section ConstructTpl is owned by the WS4c driver's section arena and
-    /// added to the base template arena; the resulting handle is stored here.
+    /// Store the main section's handle. The template remains owned by the
+    /// `SleighBase` template arena.
     pub fn set_main_section(&mut self, handle: ConstructTplHandle) {
         self.templ = Some(handle);
     }
@@ -1556,7 +1378,7 @@ impl Constructor {
         self.firstwhitespace
     }
 
-    /// The decoded context commands (test/inspection surface).
+    /// Borrow the constructor's context commands in execution order.
     pub fn get_context_changes(&self) -> &[ContextChange] {
         &self.context
     }
@@ -1569,31 +1391,27 @@ impl Constructor {
         table: &SymbolTable,
     ) -> KunaResult<()> {
         for piece in &self.printpiece {
-            // C++ `(*piter)[0] == '\n'`: indexing an empty std::string at
-            // size() yields '\0', i.e. the else branch.
-            if piece.first() == Some(&b'\n') {
-                let index = i32::from(piece[1]) - i32::from(b'A');
-                self.print_operand(s, walker, table, index)?;
-            } else {
-                s.push_str(&String::from_utf8_lossy(piece));
-            }
+            self.print_piece(s, walker, table, piece)?;
         }
         Ok(())
     }
 
-    /// Shared body of the three print loops: `operands[index]->print(s,
-    /// walker)` (C++ indexes `operands` unchecked; an error here).
-    fn print_operand(
+    /// Write a literal display piece or its encoded operand reference.
+    fn print_piece(
         &self,
         s: &mut String,
         walker: &mut dyn SymbolWalker,
         table: &SymbolTable,
-        index: i32,
+        piece: &[u8],
     ) -> KunaResult<()> {
-        let opid = self.get_operand(index)?;
-        // C++ holds OperandSymbol* and virtual-dispatches print; the enum
-        // dispatch through the symbol table is the same call.
-        table.symbol(opid)?.print(s, walker, table)
+        if piece.first() == Some(&b'\n') {
+            let index = i32::from(piece[1]) - i32::from(b'A');
+            let opid = self.get_operand(index)?;
+            table.symbol(opid)?.print(s, walker, table)?;
+        } else {
+            s.push_str(&String::from_utf8_lossy(piece));
+        }
+        Ok(())
     }
 
     /// C++ `Constructor::printMnemonic`.
@@ -1603,8 +1421,6 @@ impl Constructor {
         walker: &mut dyn SymbolWalker,
         table: &SymbolTable,
     ) -> KunaResult<()> {
-        // C++: flowthruindex test + a dynamic_cast<SubtableSymbol*> null-check;
-        // the && short-circuits identically
         if self.flowthruindex != -1 && self.flowthru_subtable(table)?.is_some() {
             walker.push_operand(self.flowthruindex)?;
             let ctref = walker.get_constructor()?;
@@ -1621,12 +1437,7 @@ impl Constructor {
         };
         for i in 0..endind {
             let piece = &self.printpiece[i as usize];
-            if piece.first() == Some(&b'\n') {
-                let index = i32::from(piece[1]) - i32::from(b'A');
-                self.print_operand(s, walker, table, index)?;
-            } else {
-                s.push_str(&String::from_utf8_lossy(piece));
-            }
+            self.print_piece(s, walker, table, piece)?;
         }
         Ok(())
     }
@@ -1638,8 +1449,6 @@ impl Constructor {
         walker: &mut dyn SymbolWalker,
         table: &SymbolTable,
     ) -> KunaResult<()> {
-        // C++ nested flowthruindex/dynamic_cast tests (&& short-circuits
-        // identically)
         if self.flowthruindex != -1 && self.flowthru_subtable(table)?.is_some() {
             walker.push_operand(self.flowthruindex)?;
             let ctref = walker.get_constructor()?;
@@ -1655,12 +1464,7 @@ impl Constructor {
         // i sign-extends to 64-bit unsigned (i is >= 0 here in practice).
         while (i as i64 as u64) < self.printpiece.len() as u64 {
             let piece = &self.printpiece[i as usize];
-            if piece.first() == Some(&b'\n') {
-                let index = i32::from(piece[1]) - i32::from(b'A');
-                self.print_operand(s, walker, table, index)?;
-            } else {
-                s.push_str(&String::from_utf8_lossy(piece));
-            }
+            self.print_piece(s, walker, table, piece)?;
             i += 1;
         }
         Ok(())
@@ -1703,7 +1507,11 @@ impl Constructor {
     }
 
     /// C++ `Constructor::encode`.
-    pub fn encode(&self, encoder: &mut dyn Encoder, trans: &dyn SleighBaseTrans) -> KunaResult<()> {
+    pub fn encode(
+        &self,
+        encoder: &mut dyn OpcodeEncoder,
+        templates: &[ConstructTpl],
+    ) -> KunaResult<()> {
         encoder.open_element(&sla::ELEM_CONSTRUCTOR);
         // C++ dereferences parent unconditionally
         let parent = self
@@ -1734,14 +1542,18 @@ impl Constructor {
         for change in &self.context {
             change.encode(encoder)?;
         }
-        if let Some(handle) = self.templ {
-            trans.encode_construct_tpl(handle, -1, encoder)?;
-        }
-        for (i, named) in self.namedtempl.iter().enumerate() {
-            if let Some(handle) = named {
-                // Some sections may be NULL (skipped); usize -> int4 section
-                // index as in the C++ loop variable
-                trans.encode_construct_tpl(*handle, i as i32, encoder)?;
+        let sections = std::iter::once((-1, self.templ)).chain(
+            self.namedtempl
+                .iter()
+                .enumerate()
+                .map(|(i, handle)| (i as i32, *handle)),
+        );
+        for (section_id, handle) in sections {
+            if let Some(handle) = handle {
+                templates
+                    .get(handle)
+                    .ok_or_else(|| KunaError::sleigh("bad ConstructTpl handle"))?
+                    .encode(encoder, section_id);
             }
         }
         encoder.close_element(&sla::ELEM_CONSTRUCTOR);
@@ -1753,7 +1565,7 @@ impl Constructor {
     /// sections (the [`SleighBaseTrans`] boundary); symbol cross-references are
     /// stored as ids.
     pub fn decode(
-        decoder: &mut dyn Decoder,
+        decoder: &mut dyn OpcodeDecoder,
         resolver: &dyn OperandValueResolver,
         trans: &mut dyn SleighBaseTrans,
     ) -> KunaResult<Constructor> {
@@ -1871,51 +1683,17 @@ impl DecisionNode {
     /// C++ `DecisionNode::resolve`: dispatch to a constructor id, or the
     /// C++ `BadDataError` when no terminal pattern matches.
     pub fn resolve(&self, walker: &dyn SymbolWalker) -> KunaResult<u32> {
-        if self.bitsize == 0 {
-            // The node is terminal
-            let pw: &dyn PatternExpressionContext = walker;
-            for (pat, ct) in &self.list {
-                if pat.is_match(pw)? {
-                    return Ok(*ct);
-                }
-            }
-            let mut s = String::new();
-            s.push(walker.get_addr().get_shortcut());
-            walker.get_addr().print_raw(&mut s)?;
-            s.push_str(": Unable to resolve constructor");
-            return Err(KunaError::bad_data(s));
-        }
-        let val = if self.contextdecision {
-            walker.get_context_bits(self.startbit, self.bitsize)?
-        } else {
-            walker.get_instruction_bits(self.startbit, self.bitsize)?
-        };
-        // C++ `children[val]->resolve(walker)`: val < 2^bitsize by
-        // construction; an undersized children vector (corrupt .sla) is UB
-        // in C++ and an indexing panic here (ADR 0004).
-        self.children[val as usize].resolve(walker)
+        self.resolve_matched(walker).map(|(_, id)| *id)
     }
 
-    /// Like [`DecisionNode::resolve`], but returns the matched
-    /// `(DisjointPattern, ct)` *pair* (the specific terminal leaf) rather
-    /// than just the constructor id.  This walks the decision tree byte-for-byte
-    /// identically to `resolve` — same context/instruction-bit dispatch, same
-    /// `BadDataError` on no match — but at the terminal node it hands back the
-    /// concrete `DisjointPattern` whose `is_match` succeeded.  No kuna-sleigh
-    /// decode path calls this; it exists only so the FID instruction-mask
-    /// accessor (`Sleigh::instruction_mask`) can recover the fixed-bit mask of
-    /// the constructor that actually matched at a node.
-    ///
-    /// **Why a pair, not a ct lookup:** one constructor can sit under several
-    /// `(DisjointPattern, ct)` leaves (different context/operand
-    /// specializations); the specific leaf must be captured by re-running
-    /// `pat.is_match`, there is no canonical "pattern for this ct".
+    /// Resolve the exact pattern leaf and its constructor id. A constructor can
+    /// have several specialized leaves, so the id alone cannot recover the
+    /// matched pattern used by instruction masking.
     pub fn resolve_matched(
         &self,
         walker: &dyn SymbolWalker,
     ) -> KunaResult<&(DisjointPattern, u32)> {
         if self.bitsize == 0 {
-            // The node is terminal
             let pw: &dyn PatternExpressionContext = walker;
             for pair in &self.list {
                 if pair.0.is_match(pw)? {
@@ -1933,7 +1711,6 @@ impl DecisionNode {
         } else {
             walker.get_instruction_bits(self.startbit, self.bitsize)?
         };
-        // Mirror of `resolve`: val < 2^bitsize by construction.
         self.children[val as usize].resolve_matched(walker)
     }
 
@@ -1955,21 +1732,12 @@ impl DecisionNode {
 
     // ---- build side (ws4a) ----
 
-    /// C++ `DecisionNode(DecisionNode *p)` for the root (`p == 0`).
-    fn new_root() -> DecisionNode {
-        DecisionNode::default()
-    }
-
-    /// C++ `DecisionNode(DecisionNode *p)` child node.
-    fn new_child() -> DecisionNode {
-        DecisionNode::default()
-    }
-
     /// C++ `DecisionNode::addConstructorPair`.
     fn add_constructor_pair(&mut self, pat: &DisjointPattern, ct: u32) {
-        // C++ clones via simplifyClone so the node owns its pattern.
-        let clone = expect_disjoint_clone(&pat.simplify_clone());
-        self.list.push((clone, ct));
+        let Pattern::Disjoint(pattern) = pat.simplify_clone() else {
+            panic!("addConstructorPair: simplifyClone of a DisjointPattern is not disjoint (C++ UB)");
+        };
+        self.list.push((pattern, ct));
         self.num += 1;
     }
 
@@ -2000,13 +1768,14 @@ impl DecisionNode {
     }
 
     /// C++ `DecisionNode::getScore(int4 low,int4 size,bool context)`.
-    fn get_score(&self, low: i32, size: i32, context: bool) -> f64 {
-        let num_bins = 1usize << size; // size is between 1 and 8
+    fn get_score(&self, low: i32, size: i32, context: bool, counters: &mut [i32]) -> f64 {
+        let num_bins = 1usize << size;
         let mut m: u32 = 1u32 << size;
         m = m.wrapping_sub(1);
 
         let mut total = 0i32;
-        let mut count = vec![0i32; num_bins];
+        let count = &mut counters[..num_bins];
+        count.fill(0);
 
         for (pat, _) in &self.list {
             let mask = pat.get_mask(low, size, context);
@@ -2022,7 +1791,7 @@ impl DecisionNode {
         }
         let mut sc = 0.0f64;
         let listlen = self.list.len() as i32;
-        for &c in count.iter().take(num_bins) {
+        for &c in count.iter() {
             if c <= 0 {
                 continue;
             }
@@ -2037,19 +1806,20 @@ impl DecisionNode {
 
     /// C++ `DecisionNode::chooseOptimalField`.
     fn choose_optimal_field(&mut self) {
+        const MAX_FIELD_BITS: i32 = 8;
+        let mut counters = [0; 1 << MAX_FIELD_BITS];
         let mut score = 0.0f64;
         let mut maxfixed = 1i32;
 
         // single-bit fields, context then instruction
-        let mut context = true;
-        loop {
+        for context in [true, false] {
             let maxlength = 8 * self.get_maximum_length(context);
             for sbit in 0..maxlength {
                 let numfixed = self.get_num_fixed(sbit, 1, context);
                 if numfixed < maxfixed {
                     continue;
                 }
-                let sc = self.get_score(sbit, 1, context);
+                let sc = self.get_score(sbit, 1, context, &mut counters);
                 if numfixed > maxfixed && sc > 0.0 {
                     score = sc;
                     maxfixed = numfixed;
@@ -2065,21 +1835,16 @@ impl DecisionNode {
                     self.contextdecision = context;
                 }
             }
-            context = !context;
-            if context {
-                break;
-            }
         }
 
         // multi-bit fields (2..=8), context then instruction
-        let mut context = true;
-        loop {
+        for context in [true, false] {
             let maxlength = 8 * self.get_maximum_length(context);
-            for size in 2..=8 {
+            for size in 2..=MAX_FIELD_BITS {
                 let mut sbit = 0;
                 while sbit < maxlength - size + 1 {
                     if self.get_num_fixed(sbit, size, context) >= maxfixed {
-                        let sc = self.get_score(sbit, size, context);
+                        let sc = self.get_score(sbit, size, context, &mut counters);
                         if sc > score {
                             score = sc;
                             self.startbit = sbit;
@@ -2090,35 +1855,23 @@ impl DecisionNode {
                     sbit += 1;
                 }
             }
-            context = !context;
-            if context {
-                break;
-            }
         }
         if score <= 0.0 {
             self.bitsize = 0; // treat the node as terminal
         }
     }
 
-    /// C++ `DecisionNode::consistentValues(vector<uint4> &bins,
-    /// DisjointPattern *pat)`.
-    fn consistent_values(&self, bins: &mut Vec<u32>, pat: &DisjointPattern) {
+    /// Compatible branch values in ascending order (`DecisionNode::consistentValues`).
+    fn consistent_values(&self, pat: &DisjointPattern) -> impl Iterator<Item = u32> {
         let mut m: u32 = if self.bitsize == 32 { 0 } else { 1u32 << self.bitsize };
         m = m.wrapping_sub(1);
         let common_mask = m & pat.get_mask(self.startbit, self.bitsize, self.contextdecision);
         let common_value = common_mask & pat.get_value(self.startbit, self.bitsize, self.contextdecision);
         let dont_care_mask = m ^ common_mask;
 
-        let mut i: u32 = 0;
-        loop {
-            if (i & dont_care_mask) == i {
-                bins.push(common_value | i);
-            }
-            if i == dont_care_mask {
-                break;
-            }
-            i += 1;
-        }
+        (0..=dont_care_mask)
+            .filter(move |&i| (i & dont_care_mask) == i)
+            .map(move |i| common_value | i)
     }
 
     /// C++ `DecisionNode::split(DecisionProperties &props)`.
@@ -2132,20 +1885,14 @@ impl DecisionNode {
             self.order_patterns(props);
             return;
         }
-        // C++ guard: a child cannot keep as many patterns as the parent (the
-        // recursion would not terminate).  The parent check uses parent->num;
-        // here `self.num` already equals the parent's count at split time.
         let num_children = 1usize << self.bitsize;
         let mut children: Vec<DecisionNode> = Vec::with_capacity(num_children);
         for _ in 0..num_children {
-            children.push(DecisionNode::new_child());
+            children.push(DecisionNode::default());
         }
-        // Move each pattern into every consistent bin.
         let list = std::mem::take(&mut self.list);
         for (pat, ct) in &list {
-            let mut vals: Vec<u32> = Vec::new();
-            self.consistent_values(&mut vals, pat);
-            for &v in &vals {
+            for v in self.consistent_values(pat) {
                 children[v as usize].add_constructor_pair(pat, *ct);
             }
         }
@@ -2155,11 +1902,11 @@ impl DecisionNode {
         }
     }
 
-    /// C++ `DecisionNode::orderPatterns(DecisionProperties &props)`.
+    /// Order terminal patterns by specialization, retaining their original indices
+    /// until conflicts are checked (`DecisionNode::orderPatterns`).
     fn order_patterns(&mut self, props: &mut DecisionProperties) {
-        let mut conflictlist: Vec<(usize, usize)> = Vec::new();
+        let mut conflicts = Vec::new();
 
-        // Check for identical patterns.
         for i in 0..self.list.len() {
             for j in 0..i {
                 if self.list[i].0.identical(&self.list[j].0) {
@@ -2168,74 +1915,47 @@ impl DecisionNode {
             }
         }
 
-        // Insertion-sort by specialization (most specialized first), tracking
-        // conflicts.  Faithful to C++ `orderPatterns`: the break-point `j` is
-        // computed by comparing the ORIGINAL item `i` (`newlist[i]`) against the
-        // PARTIALLY-SORTED current list (`list[j]`), not against the original
-        // item `j` — the in-place shift-and-insert keeps `list` sorted as it
-        // goes.  (Comparing against the original `j` reorders ties differently.)
-        let original = self.list.clone();
-        let mut sorted: Vec<(DisjointPattern, u32)> = Vec::with_capacity(original.len());
-        for i in 0..original.len() {
-            let ipat = &original[i].0;
-            let iconst = original[i].1;
-            let mut j = 0usize;
-            while j < sorted.len() {
-                let jpat = &sorted[j].0;
-                let jconst = sorted[j].1;
-                if ipat.specializes(jpat) {
+        let mut order: Vec<usize> = Vec::with_capacity(self.list.len());
+        for i in 0..self.list.len() {
+            let (pattern, constructor) = &self.list[i];
+            let mut j = 0;
+            while j < order.len() {
+                let (other, other_constructor) = &self.list[order[j]];
+                if pattern.specializes(other) {
                     break;
                 }
-                if !jpat.specializes(ipat) {
-                    // potential conflict (record the original-list indices so
-                    // the resolve loop below matches the C++ pat/const pairs)
-                    if iconst != jconst {
-                        // map sorted[j] back to its original index by value+const
-                        let oj = original
-                            .iter()
-                            .position(|(p, c)| p.identical(jpat) && *c == jconst)
-                            .unwrap_or(j);
-                        conflictlist.push((i, oj));
-                    }
+                if !other.specializes(pattern) && constructor != other_constructor {
+                    conflicts.push((i, order[j]));
                 }
                 j += 1;
             }
-            // insert original[i] at position j in the sorted list
-            sorted.insert(j, original[i].clone());
+            order.insert(j, i);
         }
-        self.list = sorted;
 
-        // Check if intersection patterns resolve each conflict.
-        let mut k = 0;
-        while k < conflictlist.len() {
-            let (i, j) = conflictlist[k];
-            let pat1 = &original[i].0;
-            let const1 = original[i].1;
-            let pat2 = &original[j].0;
-            let const2 = original[j].1;
+        for (i, j) in conflicts {
+            let (left, left_constructor) = &self.list[i];
+            let (right, right_constructor) = &self.list[j];
             let mut resolved = false;
-            for (tpat, tconst) in &self.list {
-                if std::ptr::eq(tpat, pat1) {}
-                // C++ compares pointer identity (tpat==pat1 && tconst==const1)
-                // to detect "ran out of specializations".  After the sort the
-                // patterns are clones, so identity is lost; mirror the C++
-                // semantics by value+constructor identity instead.
-                if tpat.identical(pat1) && *tconst == const1 {
+            for &index in &order {
+                let (pattern, constructor) = &self.list[index];
+                if (pattern.identical(left) && constructor == left_constructor)
+                    || (pattern.identical(right) && constructor == right_constructor)
+                {
                     break;
                 }
-                if tpat.identical(pat2) && *tconst == const2 {
-                    break;
-                }
-                if tpat.resolves_intersect(pat1, pat2) {
+                if pattern.resolves_intersect(left, right) {
                     resolved = true;
                     break;
                 }
             }
             if !resolved {
-                props.conflicting_pattern(const1, const2);
+                props.conflicting_pattern(*left_constructor, *right_constructor);
             }
-            k += 1;
         }
+        let mut original: Vec<_> = self.list.drain(..).map(Some).collect();
+        self.list.extend(order.into_iter().map(|index| {
+            original[index].take().expect("each pattern is ordered once")
+        }));
     }
 
     /// C++ `DecisionNode::encode`.
@@ -2296,11 +2016,9 @@ impl DecisionNode {
     }
 }
 
-/// C++ `DecisionProperties`: collects the identical/conflicting constructor
-/// pairs found by `DecisionNode::orderPatterns`.  C++ keys these by
-/// `Constructor*` and flips `Constructor::setError` directly; here they are
-/// recorded as `(constructor index in subtable)` pairs and the driver (WS4b)
-/// reports them / flips the error flag.
+/// Identical and conflicting constructor pairs found during pattern ordering.
+/// Each pair contains constructor indices within a subtable; the compiler
+/// reports the collected errors.
 #[derive(Debug, Clone, Default)]
 pub struct DecisionProperties {
     identerrors: Vec<(u32, u32)>,
@@ -2338,25 +2056,13 @@ impl DecisionProperties {
     }
 }
 
-/// The C++ `(DisjointPattern *)pat->simplifyClone()` cast: a result that is
-/// not disjoint is UB upstream, an error/clone-panic here (ADR 0004).
-fn expect_disjoint(p: &Pattern) -> KunaResult<DisjointPattern> {
+/// Borrow a disjoint pattern, rejecting an invalid C++ downcast.
+fn expect_disjoint(p: &Pattern) -> KunaResult<&DisjointPattern> {
     match p {
-        Pattern::Disjoint(d) => Ok(d.clone()),
+        Pattern::Disjoint(d) => Ok(d),
         Pattern::Or(_) => Err(KunaError::sleigh(
             "decision tree: expected a DisjointPattern (C++ UB cast)",
         )),
-    }
-}
-
-/// `(DisjointPattern *)pat->simplifyClone()` where the C++ result is known to
-/// be disjoint (the input was a `DisjointPattern`); panics otherwise.
-fn expect_disjoint_clone(p: &Pattern) -> DisjointPattern {
-    match p {
-        Pattern::Disjoint(d) => d.clone(),
-        Pattern::Or(_) => {
-            panic!("addConstructorPair: simplifyClone of a DisjointPattern is not disjoint (C++ UB)")
-        }
     }
 }
 
@@ -2389,11 +2095,8 @@ impl OperandResolveSink for ConstructorOperandSink<'_> {
 // ---------------------------------------------------------------------------
 // Compiler-only symbol kinds (Macro / Section / Bitrange / Label)
 //
-// These four C++ classes (`slghsymbol.hh`) exist only during compilation; they
-// are removed from the symbol table by `SymbolTable::purge` before encode, so
-// none of them has an `encode`/`decode`.  WS4c adds them so the p-code section
-// path (macro definitions, named p-code sections, `define bitrange`, branch
-// labels) can build into the real symbol table.
+// These compiler-only symbols are removed by `SymbolTable::purge` before
+// encoding and have no runtime encode/decode methods.
 // ---------------------------------------------------------------------------
 
 /// C++ `SectionSymbol` (slghsymbol.hh:120): a named p-code section.
@@ -2478,7 +2181,7 @@ pub struct MacroSymbol {
     /// C++ `index`: the macro's slot in the macro table.
     index: i32,
     /// C++ `ConstructTpl *construct`: the macro body (set by `buildMacro`).
-    construct: Option<ConstructTpl>,
+    construct: Option<Rc<ConstructTpl>>,
     /// C++ `vector<OperandSymbol *> operands`: parameter operand symbol ids.
     operands: Vec<u32>,
 }
@@ -2498,11 +2201,15 @@ impl MacroSymbol {
     }
     /// C++ `MacroSymbol::setConstruct`.
     pub fn set_construct(&mut self, ct: ConstructTpl) {
+        self.set_shared_construct(Rc::new(ct));
+    }
+    /// Shares a finalized macro body with the compiler's expansion table.
+    pub fn set_shared_construct(&mut self, ct: Rc<ConstructTpl>) {
         self.construct = Some(ct);
     }
     /// C++ `MacroSymbol::getConstruct`.
     pub fn get_construct(&self) -> Option<&ConstructTpl> {
-        self.construct.as_ref()
+        self.construct.as_deref()
     }
     /// C++ `MacroSymbol::addOperand`.
     pub fn add_operand(&mut self, sym: u32) {
@@ -2571,8 +2278,8 @@ impl LabelTableSymbol {
 // SleighSymbol
 // ---------------------------------------------------------------------------
 
-/// The C++ `SleighSymbol` subclass payloads as an enum (see module docs;
-/// compiler-only classes have no variant).
+/// Runtime and compiler symbol payloads. [`SymbolTable::purge`] removes the
+/// compiler-only variants before encoding.
 #[derive(Debug, Clone)]
 pub enum SymbolKind {
     /// C++ `SpaceSymbol`.
@@ -2860,7 +2567,7 @@ impl SleighSymbol {
         }
     }
 
-    /// Mutable subtable access (WS4b build side).
+    /// Mutable access to the subtable payload, if this is a subtable symbol.
     pub fn as_subtable_mut(&mut self) -> Option<&mut SubtableSymbol> {
         match &mut self.kind {
             SymbolKind::Subtable(v) => Some(v),
@@ -2874,10 +2581,8 @@ impl SleighSymbol {
         &mut self.kind
     }
 
-    /// (WS4b purge/renumber) re-point every encoded symbol-id cross-reference
-    /// inside this symbol's content through `remap` (`old_id -> Some(new_id)`,
-    /// `None` if the referenced symbol was purged).  C++ keeps these as
-    /// pointers (immune to renumber); the kuna port stores ids and must remap.
+    /// Remap symbol references after compaction. Ids without a replacement in
+    /// `remap` retain their original value.
     fn remap_symbol_refs(&mut self, remap: &[Option<u32>]) {
         let map = |id: u32| remap.get(id as usize).copied().flatten().unwrap_or(id);
         match &mut self.kind {
@@ -2977,7 +2682,7 @@ impl SleighSymbol {
             _ => None,
         }
     }
-    /// Mutable macro access (WS4c build side: `setConstruct`/`addOperand`).
+    /// Mutable access to the macro payload, if this is a macro symbol.
     pub fn as_macro_mut(&mut self) -> Option<&mut MacroSymbol> {
         match &mut self.kind {
             SymbolKind::Macro(m) => Some(m),
@@ -3103,39 +2808,19 @@ impl SleighSymbol {
         }
     }
 
-    /// Like [`Symbol::resolve`], but for a subtable triple also returns the
-    /// matched `DisjointPattern` leaf (cloned) alongside the constructor id —
-    /// i.e. `(ct_id, Some(pattern))`.  Dispatches identically to `resolve`
-    /// (same `is_match` walk, same `BadDataError` on no match): for non-subtable
-    /// triples it runs the same validating `resolve` and returns
-    /// `(None, None)` — they have no instruction-stream pattern.  kuna-only:
-    /// used by `Sleigh::resolve` to capture, during decode (under the correct
-    /// per-node multi-phase context), the same pattern that
-    /// `Sleigh::instruction_mask` would otherwise re-derive by a post-decode
-    /// re-walk.  No decode behavior changes — the constructor chosen is the one
-    /// `resolve` picks; the pattern is the leaf its `is_match` already matched.
+    /// Resolve and clone the matched subtable pattern under the active decode
+    /// context. Other symbols retain the validation performed by [`Self::resolve`]
+    /// and return no pattern.
     pub fn resolve_matched(
         &self,
         walker: &dyn SymbolWalker,
     ) -> KunaResult<(Option<u32>, Option<DisjointPattern>)> {
         match &self.kind {
-            SymbolKind::ValueMap(v) => {
-                v.resolve(walker)?;
-                Ok((None, None))
-            }
-            SymbolKind::Name(v) => {
-                v.resolve(walker)?;
-                Ok((None, None))
-            }
-            SymbolKind::VarnodeList(v) => {
-                v.resolve(walker)?;
-                Ok((None, None))
-            }
             SymbolKind::Subtable(v) => {
                 let (pat, ct) = v.resolve_matched(walker)?;
                 Ok((Some(*ct), Some(pat.clone())))
             }
-            _ => Ok((None, None)), // TripleSymbol::resolve base: null
+            _ => Ok((self.resolve(walker)?, None)),
         }
     }
 
@@ -3431,7 +3116,11 @@ impl SleighSymbol {
     /// C++ virtual `encode` (symbol content).  Kinds without a content
     /// encode throw the base `LowlevelError`; `SubtableSymbol::encode` is
     /// silently skipped when not fully formed, as upstream.
-    pub fn encode(&self, encoder: &mut dyn Encoder, trans: &dyn SleighBaseTrans) -> KunaResult<()> {
+    pub fn encode(
+        &self,
+        encoder: &mut dyn OpcodeEncoder,
+        templates: &[ConstructTpl],
+    ) -> KunaResult<()> {
         match &self.kind {
             SymbolKind::UserOp(v) => {
                 encoder.open_element(&sla::ELEM_USEROP);
@@ -3572,7 +3261,7 @@ impl SleighSymbol {
                 // size_t -> intb
                 encoder.write_signed_integer(&sla::ATTRIB_NUMCT, v.construct.len() as i64);
                 for ct in &v.construct {
-                    ct.encode(encoder, trans)?;
+                    ct.encode(encoder, templates)?;
                 }
                 v.decisiontree
                     .as_ref()
@@ -3668,9 +3357,7 @@ impl SymbolScope {
     }
 }
 
-/// C++ `SymbolTable`: all symbols (`symbollist`, indexed by symbol id) and
-/// all scopes (`table`, indexed by scope id).  Compiler-only maintenance
-/// (`purge`/`renumber`/`replaceSymbol`) is not ported (LOSS-001).
+/// Owns symbols and scopes, with lookup, compiler transformations and serialization.
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     symbollist: Vec<Option<SleighSymbol>>,
@@ -3767,16 +3454,11 @@ impl SymbolTable {
         let name = sym.name.clone();
         // C++ pushes onto symbollist before the duplicate check throws
         self.symbollist.push(Some(sym));
-        let scope = self
-            .table
-            .first_mut()
-            .and_then(|s| s.as_mut())
-            .expect("checked above");
-        let res = scope.add_symbol(name.clone(), id);
+        let res = scope.add_symbol(name, id);
         if res != id {
             return Err(KunaError::sleigh(format!(
                 "Duplicate symbol name '{}'",
-                name_text(&name)
+                name_text(self.symbol(id)?.get_name())
             )));
         }
         Ok(id)
@@ -3800,11 +3482,11 @@ impl SymbolTable {
             .get_mut(curid as usize)
             .and_then(|s| s.as_mut())
             .ok_or_else(|| KunaError::sleigh("current scope is undefined"))?;
-        let res = scope.add_symbol(name.clone(), id);
+        let res = scope.add_symbol(name, id);
         if res != id {
             return Err(KunaError::sleigh(format!(
                 "Duplicate symbol name: {}",
-                name_text(&name)
+                name_text(self.symbol(id)?.get_name())
             )));
         }
         Ok(id)
@@ -3845,8 +3527,8 @@ impl SymbolTable {
         self.symbollist.get(id as usize).and_then(|s| s.as_ref())
     }
 
-    /// Mutable `findSymbol(uintm id)` for the WS4b build side (`setIndex`,
-    /// `markAsContext`, `addConstructor`, operand mutators, ...).
+    /// Look up a symbol id for mutation. Returns `None` for an out-of-range id
+    /// or an empty slot.
     pub fn find_symbol_by_id_mut(&mut self, id: u32) -> Option<&mut SleighSymbol> {
         self.symbollist.get_mut(id as usize).and_then(|s| s.as_mut())
     }
@@ -4143,13 +3825,13 @@ impl SymbolTable {
                     self.subtable_symbol_mut(table_id)?.errors = true;
                 }
             }
-            let ctpat = self
+            acc = self
                 .subtable_symbol(table_id)?
                 .construct[i]
                 .pattern
-                .clone()
-                .unwrap_or_else(TokenPattern::new_true);
-            acc = ctpat.common_sub_pattern(&acc)?;
+                .as_ref()
+                .unwrap_or(&TokenPattern::new_true())
+                .common_sub_pattern(&acc)?;
         }
         let sub = self.subtable_symbol_mut(table_id)?;
         sub.pattern = Some(acc);
@@ -4198,12 +3880,8 @@ impl SymbolTable {
         let mut recursion = false;
 
         for &opid in &operand_ids {
-            // Read the operand's defining symbol / expression.
-            let (triple, defexp) = {
-                let sym = self.operand_symbol(opid)?;
-                (sym.get_defining_symbol(), sym.get_defining_expression().cloned())
-            };
-            let sympat: TokenPattern = if let Some(tripid) = triple {
+            let operand = self.operand_symbol(opid)?;
+            let sympat: TokenPattern = if let Some(tripid) = operand.get_defining_symbol() {
                 let is_subtable =
                     self.symbol(tripid)?.get_type() == SymbolType::Subtable;
                 if is_subtable {
@@ -4228,7 +3906,7 @@ impl SymbolTable {
                         None => TokenPattern::new_true(),
                     }
                 }
-            } else if let Some(pe) = defexp {
+            } else if let Some(pe) = operand.get_defining_expression() {
                 pe.gen_min_pattern(&oppattern)
             } else {
                 let nm = name_text(self.symbol(opid)?.get_name()).to_string();
@@ -4311,12 +3989,11 @@ impl SymbolTable {
         }
 
         // Make sure context expressions are valid.
-        let context = self
+        let context = &self
             .subtable_symbol(table_id)?
             .get_constructor(ct_id)?
-            .context
-            .clone();
-        for change in &context {
+            .context;
+        for change in context {
             change.validate(self)?;
         }
 
@@ -4457,9 +4134,6 @@ impl SymbolTable {
                 op.remap_operand_index(&handmap);
             }
         }
-        // Stash the handmap for WS4b: ConstructTpl handle-index fix-up
-        // (templ->changeHandleIndex) is performed by WS4b's driver, which
-        // owns the ConstructTpl arena (freeze-interface for WS4b).
         ct.handmap = handmap;
         Ok(())
     }
@@ -4471,22 +4145,20 @@ impl SymbolTable {
         table_id: u32,
         props: &mut DecisionProperties,
     ) -> KunaResult<()> {
-        // Pattern not fully formed?
-        if self.subtable_symbol(table_id)?.pattern.is_none() {
+        let table = self.subtable_symbol(table_id)?;
+        if table.pattern.is_none() {
             return Ok(());
         }
-        let numct = self.subtable_symbol(table_id)?.construct.len();
-        let mut tree = DecisionNode::new_root();
-        for i in 0..numct {
-            // the inner Pattern of the constructor's TokenPattern
-            let pat: Pattern = match self.subtable_symbol(table_id)?.construct[i].get_pattern() {
-                Some(tp) => tp.get_pattern().clone(),
+        let mut tree = DecisionNode::default();
+        for (i, constructor) in table.construct.iter().enumerate() {
+            let pat = match constructor.get_pattern() {
+                Some(tp) => tp.get_pattern(),
                 None => continue,
             };
             let ndisjoint = pat.num_disjoint();
             if ndisjoint == 0 {
-                let dp = expect_disjoint(&pat)?;
-                tree.add_constructor_pair(&dp, i as u32);
+                let dp = expect_disjoint(pat)?;
+                tree.add_constructor_pair(dp, i as u32);
             } else {
                 for j in 0..ndisjoint {
                     let dp = pat.get_disjoint(j).ok_or_else(|| {
@@ -4511,114 +4183,57 @@ impl SymbolTable {
             let a = self.symbol(a_id)?;
             (a.name.clone(), a.scopeid)
         };
-        // C++ walks scopes from the back looking for the symbol by name; the
-        // resident scope is `a`'s scopeid (the tree keys by name).
         if let Some(scope) = self.table.get_mut(scopeid as usize).and_then(|s| s.as_mut()) {
-            scope.remove_symbol(&name);
             b.id = a_id;
             b.scopeid = scopeid;
-            scope.add_symbol(name, a_id);
+            scope.tree.insert(name, a_id);
         }
         self.symbollist[a_id as usize] = Some(b);
         Ok(())
     }
 
-    /// C++ `SymbolTable::purge` (slghsymbol.cc:281): get rid of unsavable
-    /// symbols and scopes, then [`renumber`](Self::renumber) so the saved
-    /// stream has no id gaps.  In the global scope only
-    /// space/token/epsilon/section/bitrange/macro/subtable survive; in any
-    /// child scope only operands survive.  Removing a macro or an unreferenced
-    /// subtable also removes its operand locals.
+    /// Remove transient global symbols, non-operand locals, and unused subtables.
+    /// Macros and unused subtables also lose their operand locals, then symbol
+    /// and scope ids are compacted (`SymbolTable::purge`, slghsymbol.cc:281).
     pub fn purge(&mut self) {
         for i in 0..self.symbollist.len() {
-            // Decide whether to drop slot i (and collect any operand locals to
-            // also drop), without holding an outstanding borrow.
-            let (drop_self, scopeid, name): (bool, u32, Vec<u8>) = {
-                let sym = match self.symbollist[i].as_ref() {
-                    Some(s) => s,
-                    None => continue,
-                };
-                let scopeid = sym.scopeid;
-                let name = sym.name.clone();
-                let ty = sym.get_type();
-                if scopeid != 0 {
-                    // Not in global scope: keep only operands.
-                    if ty == SymbolType::Operand {
-                        continue;
-                    }
-                    (true, scopeid, name)
-                } else {
-                    match ty {
-                        SymbolType::Space
-                        | SymbolType::Token
-                        | SymbolType::Epsilon
-                        | SymbolType::Section
-                        | SymbolType::Bitrange => (true, scopeid, name),
-                        SymbolType::Macro => {
-                            // Macro symbols themselves are removed, plus their
-                            // operand locals (C++ `purge`: MacroSymbol case
-                            // walks getOperand(j) and deletes each).
-                            let mut to_drop: Vec<(u32, u32, Vec<u8>)> = Vec::new();
-                            if let Some(m) = self.symbollist[i].as_ref().and_then(|s| s.as_macro()) {
-                                for &opid in m.operand_ids() {
-                                    if let Some(op) =
-                                        self.symbollist.get(opid as usize).and_then(|s| s.as_ref())
-                                    {
-                                        to_drop.push((opid, op.scopeid, op.name.clone()));
-                                    }
-                                }
-                            }
-                            for (opid, opscope, opname) in to_drop {
-                                if let Some(sc) =
-                                    self.table.get_mut(opscope as usize).and_then(|s| s.as_mut())
-                                {
-                                    sc.remove_symbol(&opname);
-                                }
-                                self.symbollist[opid as usize] = None;
-                            }
-                            (true, scopeid, name)
-                        }
-                        SymbolType::Subtable => {
-                            // Drop only an *unused* subtable (no built pattern),
-                            // along with its constructors' operand locals.
-                            let keep = self
-                                .symbollist[i]
-                                .as_ref()
-                                .and_then(|s| s.as_subtable())
-                                .map(|st| st.get_pattern().is_some())
-                                .unwrap_or(true);
-                            if keep {
-                                continue;
-                            }
-                            // Collect this subtable's operand locals and drop
-                            // them too.
-                            let mut to_drop: Vec<(u32, u32, Vec<u8>)> = Vec::new();
-                            if let Some(st) = self.symbollist[i].as_ref().and_then(|s| s.as_subtable()) {
-                                for con in &st.construct {
-                                    for &opid in &con.operands {
-                                        if let Some(op) = self.symbollist.get(opid as usize).and_then(|s| s.as_ref()) {
-                                            to_drop.push((opid, op.scopeid, op.name.clone()));
-                                        }
-                                    }
-                                }
-                            }
-                            for (opid, opscope, opname) in to_drop {
-                                if let Some(sc) = self.table.get_mut(opscope as usize).and_then(|s| s.as_mut()) {
-                                    sc.remove_symbol(&opname);
-                                }
-                                self.symbollist[opid as usize] = None;
-                            }
-                            (true, scopeid, name)
-                        }
-                        _ => continue, // keep everything else? No: C++ default => continue (skip removal)
-                    }
+            let Some(symbol) = self.symbollist[i].as_ref() else {
+                continue;
+            };
+            let remove = if symbol.scopeid != 0 {
+                symbol.get_type() != SymbolType::Operand
+            } else {
+                match &symbol.kind {
+                    SymbolKind::Space(_)
+                    | SymbolKind::Token(_)
+                    | SymbolKind::Epsilon(_)
+                    | SymbolKind::Section(_)
+                    | SymbolKind::Bitrange(_)
+                    | SymbolKind::Macro(_) => true,
+                    SymbolKind::Subtable(table) => table.get_pattern().is_none(),
+                    _ => false,
                 }
             };
-            if drop_self {
-                if let Some(sc) = self.table.get_mut(scopeid as usize).and_then(|s| s.as_mut()) {
-                    sc.remove_symbol(&name);
+            if !remove {
+                continue;
+            }
+            let symbol = self.remove_symbol(i as u32).expect("symbol exists");
+            if symbol.scopeid == 0 {
+                match &symbol.kind {
+                    SymbolKind::Macro(macro_symbol) => {
+                        for &id in macro_symbol.operand_ids() {
+                            let _ = self.remove_symbol(id);
+                        }
+                    }
+                    SymbolKind::Subtable(table) => {
+                        for constructor in &table.construct {
+                            for &id in constructor.get_operands() {
+                                let _ = self.remove_symbol(id);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
-                self.symbollist[i] = None;
             }
         }
         // Remove any empty scopes (except the global scope 0).
@@ -4631,12 +4246,20 @@ impl SymbolTable {
         self.renumber();
     }
 
-    /// C++ `SymbolTable::renumber` (slghsymbol.cc): compact `table` and
-    /// `symbollist` so there are no id gaps, fixing up each survivor's
-    /// `id`/`scopeid`.  Cross-references between symbols are by-pointer in
-    /// C++ (immune to renumber); in the kuna port the by-id references that
-    /// matter for the saved stream are the pattern/decision-tree data (already
-    /// built into numeric form) and the scope parent ids (remapped here).
+    fn remove_symbol(&mut self, id: u32) -> Option<SleighSymbol> {
+        let symbol = self.symbollist.get_mut(id as usize)?.take()?;
+        if let Some(scope) = self
+            .table
+            .get_mut(symbol.scopeid as usize)
+            .and_then(|s| s.as_mut())
+        {
+            scope.remove_symbol(&symbol.name);
+        }
+        Some(symbol)
+    }
+
+    /// Compact symbol and scope ids, remapping name bindings, parent scopes
+    /// and symbol references (`SymbolTable::renumber`, slghsymbol.cc).
     fn renumber(&mut self) {
         // First renumber the scopes: new scope id = position in the compacted
         // table.  Build old-id -> new-id map.
@@ -4672,6 +4295,16 @@ impl SymbolTable {
                 }
             }
         }
+        for scope in newtable.iter_mut().flatten() {
+            scope.tree.retain(|_, id| {
+                if let Some(newid) = sym_remap.get(*id as usize).copied().flatten() {
+                    *id = newid;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
         // Now renumber the symbols.
         let mut newsymbol: Vec<Option<SleighSymbol>> = Vec::new();
         for i in 0..self.symbollist.len() {
@@ -4691,13 +4324,15 @@ impl SymbolTable {
         }
         self.table = newtable;
         self.symbollist = newsymbol;
-        // C++ leaves curscope pointing at table[0] implicitly via later use;
-        // after purge the table is only read for encode.
         self.curscope = self.table.first().and_then(|s| s.as_ref()).map(|s| s.get_id());
     }
 
     /// C++ `SymbolTable::encode`.
-    pub fn encode(&self, encoder: &mut dyn Encoder, trans: &dyn SleighBaseTrans) -> KunaResult<()> {
+    pub fn encode(
+        &self,
+        encoder: &mut dyn OpcodeEncoder,
+        templates: &[ConstructTpl],
+    ) -> KunaResult<()> {
         encoder.open_element(&sla::ELEM_SYMBOL_TABLE);
         // size_t -> intb counts as in C++ writeSignedInteger(..., size())
         encoder.write_signed_integer(&sla::ATTRIB_SCOPESIZE, self.table.len() as i64);
@@ -4727,7 +4362,7 @@ impl SymbolTable {
         // Now save the content of each symbol (must save IN ORDER)
         for sym in &self.symbollist {
             let sym = sym.as_ref().expect("checked in header loop");
-            sym.encode(encoder, trans)?;
+            sym.encode(encoder, templates)?;
         }
         encoder.close_element(&sla::ELEM_SYMBOL_TABLE);
         Ok(())
@@ -4737,7 +4372,7 @@ impl SymbolTable {
     /// (headers, then contents in stream order).
     pub fn decode(
         &mut self,
-        decoder: &mut dyn Decoder,
+        decoder: &mut dyn OpcodeDecoder,
         trans: &mut dyn SleighBaseTrans,
     ) -> KunaResult<()> {
         let el = decoder.open_element_id(&sla::ELEM_SYMBOL_TABLE)?;
@@ -4874,7 +4509,7 @@ impl SymbolTable {
     /// caller has already opened the content element and read `ATTRIB_ID`.
     fn decode_symbol_content(
         &mut self,
-        decoder: &mut dyn Decoder,
+        decoder: &mut dyn OpcodeDecoder,
         trans: &mut dyn SleighBaseTrans,
         id: u32,
     ) -> KunaResult<()> {
@@ -5250,7 +4885,7 @@ impl OperandValueResolver for TableResolver<'_> {
 /// the decision tree.  Runs against `&SymbolTable` so expression decode can
 /// validate operand values mid-restore.
 fn decode_subtable_content(
-    decoder: &mut dyn Decoder,
+    decoder: &mut dyn OpcodeDecoder,
     table: &SymbolTable,
     trans: &mut dyn SleighBaseTrans,
     self_id: u32,
@@ -5326,8 +4961,7 @@ mod tests {
         Rc::clone(manager.get_constant_space().unwrap())
     }
 
-    /// [`SleighBaseTrans`] over the test manager; no ConstructTpl support
-    /// (the symbol tests never include p-code sections).
+    /// [`SleighBaseTrans`] for symbol fixtures without p-code sections.
     struct TestTrans {
         cspace: Rc<AddrSpace>,
     }
@@ -5347,17 +4981,8 @@ mod tests {
 
         fn decode_construct_tpl(
             &mut self,
-            _decoder: &mut dyn Decoder,
+            _decoder: &mut dyn OpcodeDecoder,
         ) -> KunaResult<(i32, ConstructTplHandle)> {
-            Err(KunaError::sleigh("no ConstructTpl in symbol tests"))
-        }
-
-        fn encode_construct_tpl(
-            &self,
-            _handle: ConstructTplHandle,
-            _section_id: i32,
-            _encoder: &mut dyn Encoder,
-        ) -> KunaResult<()> {
             Err(KunaError::sleigh("no ConstructTpl in symbol tests"))
         }
     }
@@ -5607,6 +5232,109 @@ mod tests {
             .add_symbol(SleighSymbol::new_userop(b"dup"))
             .expect_err("duplicate must fail");
         assert!(format!("{err2}").contains("Duplicate symbol name: dup"));
+        assert_eq!(table.num_symbols(), 3);
+        assert_eq!(table.find_global_symbol(b"dup").unwrap().get_id(), 0);
+        for id in 0..3 {
+            assert_eq!(table.find_symbol_by_id(id).unwrap().get_name(), b"dup");
+        }
+
+        table
+            .replace_symbol(2, SleighSymbol::new_subtable(b"dup"))
+            .unwrap();
+        let replacement = table.find_global_symbol(b"dup").unwrap();
+        assert_eq!(replacement.get_id(), 2);
+        assert_eq!(replacement.get_scope_id(), 0);
+        assert_eq!(replacement.get_type(), SymbolType::Subtable);
+        assert_eq!(table.num_symbols(), 3);
+        let ids: Vec<_> = table.get_global_scope().unwrap().symbol_ids().collect();
+        assert_eq!(ids, [2]);
+    }
+
+    #[test]
+    fn symbol_table_purge_preserves_name_lookup() {
+        let mut table = SymbolTable::new();
+        table.add_scope();
+        table
+            .add_symbol(SleighSymbol::new(
+                b"temporary",
+                SymbolKind::Section(SectionSymbol::new(0)),
+            ))
+            .unwrap();
+        table.add_symbol(SleighSymbol::new_userop(b"first")).unwrap();
+        table.add_symbol(SleighSymbol::new_userop(b"second")).unwrap();
+
+        for _ in 0..2 {
+            table.purge();
+            assert!(table.find_global_symbol(b"temporary").is_none());
+            for (id, name) in [(0, b"first".as_slice()), (1, b"second".as_slice())] {
+                let symbol = table.find_global_symbol(name).unwrap();
+                assert_eq!(symbol.get_name(), name);
+                assert_eq!(symbol.get_id(), id);
+                assert_eq!(table.find_symbol(name).unwrap().get_id(), id);
+                assert_eq!(table.find_symbol_by_id(id).unwrap().get_name(), name);
+            }
+            let ids: Vec<_> = table.get_global_scope().unwrap().symbol_ids().collect();
+            assert_eq!(ids, [0, 1]);
+        }
+    }
+
+    #[test]
+    fn symbol_table_purge_removes_owned_operands_and_empty_scopes() {
+        let mut table = SymbolTable::new();
+        table.add_scope();
+        table.add_symbol(SleighSymbol::new_userop(b"keep")).unwrap();
+        table.add_scope();
+        let macro_operand = table
+            .add_symbol(SleighSymbol::new_operand(
+                b"macro_arg",
+                0,
+                ConstructorRef {
+                    table_id: u32::MAX,
+                    ct_id: 0,
+                },
+            ))
+            .unwrap();
+        table.pop_scope();
+        let mut macro_symbol = MacroSymbol::new(0);
+        macro_symbol.add_operand(macro_operand);
+        table
+            .add_symbol(SleighSymbol::new(b"macro", SymbolKind::Macro(macro_symbol)))
+            .unwrap();
+
+        let unused = table
+            .add_symbol(SleighSymbol::new_subtable(b"unused"))
+            .unwrap();
+        table.add_scope();
+        let operand = table
+            .add_symbol(SleighSymbol::new_operand(
+                b"table_arg",
+                0,
+                ConstructorRef {
+                    table_id: unused,
+                    ct_id: 0,
+                },
+            ))
+            .unwrap();
+        let mut constructor = Constructor::new();
+        constructor.set_parent(unused);
+        constructor.add_operand(operand);
+        table
+            .find_symbol_by_id_mut(unused)
+            .unwrap()
+            .as_subtable_mut()
+            .unwrap()
+            .add_constructor(constructor);
+        table.pop_scope();
+
+        table.purge();
+        assert_eq!(table.num_scopes(), 1);
+        assert_eq!(table.num_symbols(), 1);
+        assert_eq!(table.get_current_scope(), Some(0));
+        assert_eq!(table.find_global_symbol(b"keep").unwrap().get_id(), 0);
+        assert!(table.find_global_symbol(b"macro").is_none());
+        assert!(table.find_global_symbol(b"unused").is_none());
+        let ids: Vec<_> = table.get_global_scope().unwrap().symbol_ids().collect();
+        assert_eq!(ids, [0]);
     }
 
     // -- calc_maskword / ContextOp / ContextCommit -------------------------------
@@ -5688,6 +5416,45 @@ mod tests {
         let mut walker = TestWalker::from_bytes(&[]);
         commit.apply(&mut walker);
         assert_eq!(walker.commits, vec![(5, 1, 0xff, true)]);
+    }
+
+    #[test]
+    fn constructor_encoding_preserves_sparse_section_ids() {
+        let mut constructor = Constructor::new();
+        constructor.parent = Some(0);
+        constructor.set_main_section(0);
+        constructor.set_named_section(0, 1);
+        constructor.set_named_section(0, 3);
+        let templates = [ConstructTpl::new()];
+        let mut bytes = Vec::new();
+        constructor.encode(&mut PackedEncode::new(&mut bytes), &templates).unwrap();
+
+        let manager = test_manager();
+        let mut decoder = PackedDecode::new(&manager);
+        decoder.ingest_stream(&bytes).unwrap();
+        decoder.open_element_id(&sla::ELEM_CONSTRUCTOR).unwrap();
+        let mut sections = Vec::new();
+        while decoder.peek_element().unwrap() != 0 {
+            sections.push(ConstructTpl::new().decode(&mut decoder).unwrap());
+        }
+        decoder.close_element(sla::ELEM_CONSTRUCTOR.get_id()).unwrap();
+        assert_eq!(sections, [-1, 1, 3]);
+    }
+
+    #[test]
+    fn constructor_encoding_rejects_invalid_template_handles() {
+        for named in [false, true] {
+            let mut constructor = Constructor::new();
+            constructor.parent = Some(0);
+            if named {
+                constructor.set_named_section(0, 2);
+            } else {
+                constructor.set_main_section(0);
+            }
+            let mut bytes = Vec::new();
+            let error = constructor.encode(&mut PackedEncode::new(&mut bytes), &[]).unwrap_err();
+            assert_eq!(error.explain(), "bad ConstructTpl handle");
+        }
     }
 
     // -- full symbol-table decode / round-trip ----------------------------------
@@ -5890,11 +5657,10 @@ mod tests {
             Some(PatternValue::TokenField(_))
         ));
         // re-encode is byte identical to the hand-built (C++-shaped) stream
-        let trans = TestTrans::new(&manager);
         let mut reenc = Vec::new();
         {
             let mut enc = PackedEncode::new(&mut reenc);
-            table.encode(&mut enc, &trans).unwrap();
+            table.encode(&mut enc, &[]).unwrap();
         }
         assert_eq!(reenc, buf);
     }
@@ -6407,6 +6173,3 @@ mod tests {
         }
     }
 }
-
-
-

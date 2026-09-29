@@ -18,12 +18,6 @@
 //! the register-local cases target `int v1; // eax`, the `strcmp(a1,sneaky)`
 //! result, which the default folds into its `if` -- leaving no register local
 //! and renumbering the buffer to `v1`.  The plane is under test here, not the fold.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -37,26 +31,17 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture and run the analysis commit.  `None` ⇒ specs-less skip.
-fn load() -> Option<ConsoleProgram> {
+/// Bootstrap the fixture and run the analysis commit.
+fn load() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/fauxware");
-    let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_assertplane: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("foldcallretphi", "off")
         .expect("foldcallretphi is a registered option");
     prog.commit_pending_analysis().expect("analysis commit");
-    Some(prog)
+    prog
 }
 
 fn directive(spec: &str, body: Body) -> Directive {
@@ -64,8 +49,8 @@ fn directive(spec: &str, body: Body) -> Directive {
 }
 
 /// Decompile `authenticate` under `directives`, returning `(C, report)`.
-fn decompile_with(directives: Vec<Directive>) -> Option<(String, Vec<Outcome>)> {
-    let mut prog = load()?;
+fn decompile_with(directives: Vec<Directive>) -> (String, Vec<Outcome>) {
+    let mut prog = load();
     if !directives.is_empty() {
         prog.set_assertions(directives);
         assertions::apply_program_scoped(&mut prog);
@@ -75,7 +60,7 @@ fn decompile_with(directives: Vec<Directive>) -> Option<(String, Vec<Outcome>)> 
         .expect("fauxware has an `authenticate`");
     let funcs = decompile_targets(&mut prog, vec![entry], false, false, false);
     let code = funcs[0].code.clone().unwrap_or_default();
-    Some((code, prog.assertion_outcomes()))
+    (code, prog.assertion_outcomes())
 }
 
 /// Load a durable analysis fixture with one option disabled before the commit.
@@ -128,7 +113,7 @@ fn all_applied(report: &[Outcome]) {
 /// The un-asserted baseline every case below is measured against.
 #[test]
 fn the_baseline_names_nothing_the_directives_name() {
-    let Some((code, report)) = decompile_with(Vec::new()) else { return };
+    let (code, report) = decompile_with(Vec::new());
     assert!(report.is_empty(), "no directives ⇒ no report rows");
     assert!(code.contains("char v2 [8]"), "baseline lost its 8-byte buffer:\n{code}");
     assert!(!code.contains("credbuf"), "baseline already names credbuf:\n{code}");
@@ -140,7 +125,7 @@ fn the_baseline_names_nothing_the_directives_name() {
 /// local's name in one invocation and all three land in the C.
 #[test]
 fn prototype_type_and_name_all_reach_the_emitted_c() {
-    let Some((code, report)) = decompile_with(vec![
+    let (code, report) = decompile_with(vec![
         directive(
             "prototype authenticate int4 authenticate(char *user,char *pass)",
             Body::Prototype {
@@ -156,9 +141,7 @@ fn prototype_type_and_name_all_reach_the_emitted_c() {
             "name v2 credbuf",
             Body::Name { func: None, symbol: "v2".into(), newname: "credbuf".into() },
         ),
-    ]) else {
-        return;
-    };
+    ]);
     all_applied(&report);
     assert!(
         code.contains("authenticate(char *user,char *pass)"),
@@ -173,7 +156,7 @@ fn prototype_type_and_name_all_reach_the_emitted_c() {
 /// the first already renamed away.  The rejection is reported, not swallowed.
 #[test]
 fn directive_order_is_the_callers_order_and_a_miss_is_reported() {
-    let Some((code, report)) = decompile_with(vec![
+    let (code, report) = decompile_with(vec![
         directive(
             "name v2 credbuf",
             Body::Name { func: None, symbol: "v2".into(), newname: "credbuf".into() },
@@ -182,9 +165,7 @@ fn directive_order_is_the_callers_order_and_a_miss_is_reported() {
             "type v2 char[16]",
             Body::Type { func: None, symbol: "v2".into(), decl: "char[16]".into() },
         ),
-    ]) else {
-        return;
-    };
+    ]);
     assert_eq!(report[0].status, "applied");
     assert_eq!(report[1].status, "rejected");
     assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v2"));
@@ -196,7 +177,7 @@ fn directive_order_is_the_callers_order_and_a_miss_is_reported() {
 /// `param` — a locked input storage and name (`map param`).
 #[test]
 fn param_locks_the_input_storage_and_name() {
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (code, report) = decompile_with(vec![directive(
         "param 0 %RDI char *username",
         Body::Param {
             func: None,
@@ -204,9 +185,7 @@ fn param_locks_the_input_storage_and_name() {
             storage: "%RDI".into(),
             decl: "char *username".into(),
         },
-    )]) else {
-        return;
-    };
+    )]);
     all_applied(&report);
     assert!(
         code.contains("authenticate(char *username)"),
@@ -228,7 +207,7 @@ fn param_locks_the_input_storage_and_name() {
 /// could not tell the two runs apart.
 #[test]
 fn a_qualified_param_declares_the_callee_and_not_the_caller() {
-    let call_line = |storage: &str| -> Option<String> {
+    let call_line = |storage: &str| -> String {
         let (code, report) = decompile_with(vec![directive(
             &format!("param open::0 {storage} char *pathname"),
             Body::Param {
@@ -237,23 +216,21 @@ fn a_qualified_param_declares_the_callee_and_not_the_caller() {
                 storage: storage.into(),
                 decl: "char *pathname".into(),
             },
-        )])?;
+        )]);
         all_applied(&report);
         let signature = code.lines().next().unwrap_or_default().to_string();
         assert!(
             !signature.contains("pathname"),
             "the callee's parameter name landed on the CALLER: {signature}"
         );
-        Some(
-            code.lines()
-                .find(|l| l.contains("open("))
-                .unwrap_or_else(|| panic!("no call to open:\n{code}"))
-                .trim()
-                .to_string(),
-        )
+        code.lines()
+            .find(|l| l.contains("open("))
+            .unwrap_or_else(|| panic!("no call to open:\n{code}"))
+            .trim()
+            .to_string()
     };
-    let Some(rdi) = call_line("%RDI") else { return };
-    let Some(rsi) = call_line("%RSI") else { return };
+    let rdi = call_line("%RDI");
+    let rsi = call_line("%RSI");
     assert!(rdi.contains("open(a0)"), "the declared RDI argument is missing: {rdi}");
     assert_ne!(rdi, rsi, "the declared storage did not pick the argument");
 }
@@ -263,13 +240,11 @@ fn a_qualified_param_declares_the_callee_and_not_the_caller() {
 /// and, as above, the caller's own return is left alone.
 #[test]
 fn a_qualified_return_declares_the_callee_output() {
-    let Some((baseline, _)) = decompile_with(Vec::new()) else { return };
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (baseline, _) = decompile_with(Vec::new());
+    let (code, report) = decompile_with(vec![directive(
         "return open::%RBX int4",
         Body::Return { func: Some("open".into()), storage: "%RBX".into(), decl: "int4".into() },
-    )]) else {
-        return;
-    };
+    )]);
     all_applied(&report);
     assert_ne!(
         baseline, code,
@@ -287,12 +262,10 @@ fn a_qualified_return_declares_the_callee_output() {
 /// that carry output storage, and before the fix those aborted the process.
 #[test]
 fn return_locks_the_output_storage_and_type() {
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (code, report) = decompile_with(vec![directive(
         "return %RAX int4",
         Body::Return { func: None, storage: "%RAX".into(), decl: "int4".into() },
-    )]) else {
-        return;
-    };
+    )]);
     all_applied(&report);
     assert!(
         code.starts_with("int4 authenticate") || code.starts_with("int authenticate"),
@@ -304,7 +277,7 @@ fn return_locks_the_output_storage_and_type() {
 /// an agent describe a structure kuna never saw.
 #[test]
 fn a_typedef_is_nameable_by_a_later_type_directive() {
-    let Some((code, report)) = decompile_with(vec![
+    let (code, report) = decompile_with(vec![
         directive(
             "typedef struct creds { char raw[16]; };",
             Body::Typedef { decl: "struct creds { char raw[16]; };".into() },
@@ -313,9 +286,7 @@ fn a_typedef_is_nameable_by_a_later_type_directive() {
             "type v2 creds",
             Body::Type { func: None, symbol: "v2".into(), decl: "creds".into() },
         ),
-    ]) else {
-        return;
-    };
+    ]);
     all_applied(&report);
     assert!(code.contains("creds v2;"), "the interned struct did not type the local:\n{code}");
     assert!(code.contains("v2.raw"), "the struct fields did not render:\n{code}");
@@ -325,12 +296,10 @@ fn a_typedef_is_nameable_by_a_later_type_directive() {
 /// passes it.
 #[test]
 fn data_renames_the_global_at_its_use() {
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (code, report) = decompile_with(vec![directive(
         "data 0x601048 char *shadowpw",
         Body::Data { addr: 0x601048, decl: "char *shadowpw".into() },
-    )]) else {
-        return;
-    };
+    )]);
     all_applied(&report);
     assert!(code.contains("shadowpw"), "the declared global did not reach the C:\n{code}");
     assert!(!code.contains("sneaky"), "the loader name survived the declaration:\n{code}");
@@ -339,16 +308,14 @@ fn data_renames_the_global_at_its_use() {
 /// `comment` — an agent's own note, rendered into the C at the instruction.
 #[test]
 fn comment_reaches_the_emitted_c() {
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (code, report) = decompile_with(vec![directive(
         "comment 0x400699 open the credentials file",
         Body::Comment {
             func: None,
             addr: 0x400699,
             text: "open the credentials file".into(),
         },
-    )]) else {
-        return;
-    };
+    )]);
     all_applied(&report);
     assert!(
         code.contains("/* open the credentials file */"),
@@ -359,7 +326,7 @@ fn comment_reaches_the_emitted_c() {
 /// `function` — the `--define-function` spelling, carried by the same plane.
 #[test]
 fn function_declares_a_bounded_entry() {
-    let Some(mut prog) = load() else { return };
+    let mut prog = load();
     prog.set_assertions(vec![directive(
         "function 0x400664-0x400680=authstub",
         Body::Function { start: 0x400664, end: Some(0x400680), name: Some("authstub".into()) },
@@ -381,7 +348,7 @@ fn function_declares_a_bounded_entry() {
 /// binds to exactly the function it names.
 #[test]
 fn a_multi_function_run_needs_the_directive_to_name_its_function() {
-    let Some(mut prog) = load() else { return };
+    let mut prog = load();
     prog.set_assertions(vec![
         directive(
             "name v2 credbuf",
@@ -425,7 +392,7 @@ fn a_multi_function_run_needs_the_directive_to_name_its_function() {
 #[test]
 fn output_only_prototype_pieces_do_not_abort_the_drive() {
     use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces, PrototypePieces};
-    let Some(mut prog) = load() else { return };
+    let mut prog = load();
     let entry = prog
         .resolve_entry(&EntrySelector::Name(TARGET.to_string()))
         .expect("fauxware has an `authenticate`");
@@ -478,7 +445,7 @@ fn output_only_prototype_pieces_do_not_abort_the_drive() {
 /// `docs/cli.md`'s own worked example was among the rejected forms.
 #[test]
 fn standard_c_scalar_types_reach_the_emitted_c() {
-    let Some((code, report)) = decompile_with(vec![
+    let (code, report) = decompile_with(vec![
         directive(
             "prototype authenticate unsigned int authenticate(char *user,char *pass)",
             Body::Prototype {
@@ -497,9 +464,7 @@ fn standard_c_scalar_types_reach_the_emitted_c() {
             "type v2 unsigned char[8]",
             Body::Type { func: None, symbol: "v2".into(), decl: "unsigned char[8]".into() },
         ),
-    ]) else {
-        return;
-    };
+    ]);
     all_applied(&report);
     // This surface renders core types with their interned names (the C speller
     // is a `--mode` preset the CLI applies, not this bare drive), so the
@@ -529,15 +494,13 @@ fn standard_c_scalar_types_reach_the_emitted_c() {
 /// because either alone is self-consistent.
 #[test]
 fn a_declaration_written_under_another_name_still_binds_to_its_target() {
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (code, report) = decompile_with(vec![directive(
         "prototype authenticate void *hashit(void *out,void *input)",
         Body::Prototype {
             func: TARGET.into(),
             decl: "void *hashit(void *out,void *input)".into(),
         },
-    )]) else {
-        return;
-    };
+    )]);
     all_applied(&report);
     assert!(
         code.contains("authenticate(void *out,void *input)"),
@@ -553,15 +516,13 @@ fn a_declaration_written_under_another_name_still_binds_to_its_target() {
 /// "Syntax error" pointing at the second keyword.
 #[test]
 fn an_impossible_scalar_combination_is_rejected_by_name() {
-    let Some((_code, report)) = decompile_with(vec![directive(
+    let (_code, report) = decompile_with(vec![directive(
         "prototype authenticate short long authenticate(void)",
         Body::Prototype {
             func: TARGET.into(),
             decl: "short long authenticate(void)".into(),
         },
-    )]) else {
-        return;
-    };
+    )]);
     assert_eq!(report.len(), 1);
     assert_eq!(report[0].status, "rejected", "{report:?}");
     let detail = report[0].detail.clone().unwrap_or_default();
@@ -579,15 +540,13 @@ fn an_impossible_scalar_combination_is_rejected_by_name() {
 /// still said `applied`.
 #[test]
 fn a_prototype_at_an_entry_address_binds_to_the_function_there() {
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (code, report) = decompile_with(vec![directive(
         "prototype 0x400664 void *hashit(void *out,void *input)",
         Body::Prototype {
             func: "0x400664".into(),
             decl: "void *hashit(void *out,void *input)".into(),
         },
-    )]) else {
-        return;
-    };
+    )]);
     all_applied(&report);
     assert!(
         code.contains("authenticate(void *out,void *input)"),
@@ -603,17 +562,15 @@ fn a_prototype_at_an_entry_address_binds_to_the_function_there() {
 /// was filed on.
 #[test]
 fn an_address_form_prototype_reaches_a_callee_at_that_address() {
-    let Some((baseline, _)) = decompile_with(Vec::new()) else { return };
+    let (baseline, _) = decompile_with(Vec::new());
     assert!(baseline.contains("strcmp(a1,sneaky)"), "baseline moved:\n{baseline}");
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (code, report) = decompile_with(vec![directive(
         "prototype 0x400550 int4 strcmp(char *a,char *b,unsigned long n)",
         Body::Prototype {
             func: "0x400550".into(),
             decl: "int4 strcmp(char *a,char *b,unsigned long n)".into(),
         },
-    )]) else {
-        return;
-    };
+    )]);
     all_applied(&report);
     assert!(
         code.contains("strcmp(a1,sneaky,"),
@@ -698,12 +655,10 @@ fn an_unresolved_name_remains_a_legal_pending_prototype() {
 /// whole family did — leaves an agent with no way to tell.
 #[test]
 fn an_address_that_starts_no_function_is_rejected_by_address() {
-    let Some((_code, report)) = decompile_with(vec![directive(
+    let (_code, report) = decompile_with(vec![directive(
         "prototype 0x999999 int4 nope(void)",
         Body::Prototype { func: "0x999999".into(), decl: "int4 nope(void)".into() },
-    )]) else {
-        return;
-    };
+    )]);
     assert_eq!(report.len(), 1);
     assert_eq!(report[0].status, "rejected", "{report:?}");
     let detail = report[0].detail.clone().unwrap_or_default();
@@ -714,7 +669,7 @@ fn an_address_that_starts_no_function_is_rejected_by_address() {
 /// address as well as by name.
 #[test]
 fn a_qualified_param_accepts_an_entry_address_as_its_function() {
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (code, report) = decompile_with(vec![directive(
         "param 0x400560::0 %RDI char *pathname",
         Body::Param {
             func: Some("0x400560".into()),
@@ -722,9 +677,7 @@ fn a_qualified_param_accepts_an_entry_address_as_its_function() {
             storage: "%RDI".into(),
             decl: "char *pathname".into(),
         },
-    )]) else {
-        return;
-    };
+    )]);
     all_applied(&report);
     let call = code
         .lines()
@@ -743,7 +696,7 @@ fn a_qualified_param_accepts_an_entry_address_as_its_function() {
 /// type name the program uses.
 #[test]
 fn a_parameter_named_after_a_type_reaches_the_emitted_c() {
-    let Some((code, report)) = decompile_with(vec![
+    let (code, report) = decompile_with(vec![
         directive(
             "prototype authenticate unsigned int authenticate(char *code,char *pass)",
             Body::Prototype {
@@ -759,9 +712,7 @@ fn a_parameter_named_after_a_type_reaches_the_emitted_c() {
             "prototype read int read(int4 (*code)(int4 n))",
             Body::Prototype { func: "read".into(), decl: "int read(int4 (*code)(int4 n))".into() },
         ),
-    ]) else {
-        return;
-    };
+    ]);
     all_applied(&report);
     let sig = code
         .lines()
@@ -783,12 +734,10 @@ fn a_parameter_named_after_a_type_reaches_the_emitted_c() {
 /// declaration.  Before this the directive answered `No symbol named: v1`.
 #[test]
 fn a_type_on_a_register_local_reaches_the_declaration() {
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (code, report) = decompile_with(vec![directive(
         "type v1 unsigned int",
         Body::Type { func: None, symbol: "v1".into(), decl: "unsigned int".into() },
-    )]) else {
-        return;
-    };
+    )]);
     all_applied(&report);
     assert!(code.contains("uint4 v1; // eax"), "the retype did not land:\n{code}");
 }
@@ -796,12 +745,10 @@ fn a_type_on_a_register_local_reaches_the_declaration() {
 /// And a name: the body reads the caller's identifier, not `v1`.
 #[test]
 fn a_name_on_a_register_local_reaches_the_body() {
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (code, report) = decompile_with(vec![directive(
         "name v1 rc",
         Body::Name { func: None, symbol: "v1".into(), newname: "rc".into() },
-    )]) else {
-        return;
-    };
+    )]);
     all_applied(&report);
     assert!(code.contains("int4 rc; // eax"), "the rename did not land:\n{code}");
     assert!(code.contains("rc = strcmp("), "the body still uses the old name:\n{code}");
@@ -815,12 +762,10 @@ fn a_name_on_a_register_local_reaches_the_body() {
 /// to end.
 #[test]
 fn a_type_wider_than_the_register_is_rejected_with_both_widths() {
-    let Some((code, report)) = decompile_with(vec![directive(
+    let (code, report) = decompile_with(vec![directive(
         "type v1 char *",
         Body::Type { func: None, symbol: "v1".into(), decl: "char *".into() },
-    )]) else {
-        return;
-    };
+    )]);
     assert_eq!(report[0].status, "rejected");
     assert_eq!(
         report[0].detail.as_deref(),
@@ -833,12 +778,10 @@ fn a_type_wider_than_the_register_is_rejected_with_both_widths() {
 /// to read: the fallback must not turn a typo into a different error.
 #[test]
 fn a_name_no_local_answers_to_is_still_no_symbol_named() {
-    let Some((_, report)) = decompile_with(vec![directive(
+    let (_, report) = decompile_with(vec![directive(
         "type v9 int",
         Body::Type { func: None, symbol: "v9".into(), decl: "int".into() },
-    )]) else {
-        return;
-    };
+    )]);
     assert_eq!(report[0].status, "rejected");
     assert_eq!(report[0].detail.as_deref(), Some("No symbol named: v9"));
 }
@@ -850,7 +793,7 @@ fn a_name_no_local_answers_to_is_still_no_symbol_named() {
 /// directive has to be the rejection it always was.
 #[test]
 fn a_renamed_stack_local_does_not_get_a_second_symbol() {
-    let Some((code, report)) = decompile_with(vec![
+    let (code, report) = decompile_with(vec![
         directive(
             "name v2 credbuf",
             Body::Name { func: None, symbol: "v2".into(), newname: "credbuf".into() },
@@ -859,9 +802,7 @@ fn a_renamed_stack_local_does_not_get_a_second_symbol() {
             "type v2 char[8]",
             Body::Type { func: None, symbol: "v2".into(), decl: "char[8]".into() },
         ),
-    ]) else {
-        return;
-    };
+    ]);
     assert_eq!(report[0].status, "applied");
     assert_eq!(report[1].status, "rejected");
     assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v2"));

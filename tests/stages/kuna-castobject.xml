@@ -1,0 +1,111 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna castobject (P6, sub-stage stack-frame-layout; option castobject on|off).
+
+    Source: the 2026-09-27 address-of cast census.  The frame layout types a
+    stack slot from its own loads and stores and, where two readings of the
+    same bytes differ only in signedness, keeps the one the data-type ordering
+    ranks more specific: uint4 over int4.  So an out-parameter the callee
+    declares int4 * comes back uint4 and the call casts its address.
+
+    gcc -O0 -fno-pie -fno-stack-protector -fcf-protection=none -ffreestanding
+    -nostdlib, linked at 0x1000 (the bytes below are .text), with waitpid
+    declared below and keep a global int *:
+
+      waitpid(pid, st, o)  { *st = pid << 8; return pid + o; }
+      exit_code(pid)       { int status;
+                             if (waitpid(pid, &status, 0) < 0) return -1;
+                             if ((status & 0x7f) == 0) return (status >> 8) & 0xff;
+                             return -2; }
+      kept(pid)            the same, after keep = &status;
+      two_widths(pid)      the same, returning ((unsigned char *)&status)[1]
+      mixed(pid, init)     int status = init; the same tests, then
+                           return (unsigned)status >> 20;
+      stored(pid, k)       unsigned x = (k >> 1) ^ 0x80000001u; status = x;
+                           if (x & 0x10) return x >> 28;
+                           waitpid(pid, &status, 0); return status >> 8;
+
+    Pass 1 (option castobject off) reproduces the defect: exit_code's status is
+    declared uint4, the call casts its address, and the arithmetic shift casts
+    the value back (#1, #2, #3).  Pass 2 (option castobject on) declares it
+    int4 as waitpid does, and both casts go (#4, #5, #6).  kept's address is
+    also stored, and two_widths' status is also read one byte at a time; both
+    keep their declaration in both passes (#7, #8).  mixed's status starts with
+    a parameter's value and is also shifted right logically, and the value
+    stored into stored's status is also shifted right logically on its own
+    after the object's variable absorbs it: a reader wants the object unsigned,
+    so both keep uint4 and the cast in both passes (#9, #10, #11).
+-->
+<bytechunk space="ram" offset="0x1000">
+554889e5897dfc488975f08955f88b45fcc1e00889c2488b45f089108b55fc8b
+45f801d05dc3554889e54883ec18897dec488d4dfc8b45ecba000000004889ce
+89c7e8b9ffffff85c07907b8ffffffffeb1a8b45fc83e07f85c0750b8b45fcc1
+f8080fb6c0eb05b8feffffffc9c3554889e54883ec18897dec488d45fc488905
+7c2f0000488d4dfc8b45ecba000000004889ce89c7e866ffffff85c07907b8ff
+ffffffeb1a8b45fc83e07f85c0750b8b45fcc1f8080fb6c0eb05b8feffffffc9
+c3554889e54883ec18897dec488d4dfc8b45ecba000000004889ce89c7e81eff
+ffff85c07907b8ffffffffeb1f8b45fc83e07f85c07510488d45fc4883c0010f
+b6000fb6c0eb05b8feffffffc9c3554889e54883ec18897dec8975e88b45e889
+45fc488d4dfc8b45ecba000000004889ce89c7e8c8feffff85c07907b8ffffff
+ffeb1b8b45fc83e07f85c0750b8b45fcc1f8080fb6c0eb068b45fcc1e814c9c3
+554889e54883ec18897dec8975e88b45e8d1e835010000808945fc8b45fc8945
+f88b45fc83e01085c074088b45fcc1e81ceb1c488d4df88b45ecba0000000048
+89ce89c7e857feffff8b45f8c1f808c9c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="waitpid"/>
+<symbol space="ram" offset="0x1026" name="exit_code"/>
+<symbol space="ram" offset="0x106e" name="kept"/>
+<symbol space="ram" offset="0x10c1" name="two_widths"/>
+<symbol space="ram" offset="0x110e" name="mixed"/>
+<symbol space="ram" offset="0x1160" name="stored"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 waitpid(int4 pid, int4 *status, int4 opt);</com>
+  <com>map addr r0x4000 int4 *keep</com>
+  <com>option castobject off</com>
+  <com>lo fu exit_code</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu kept</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_widths</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stored</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option castobject on</com>
+  <com>lo fu exit_code</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu kept</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_widths</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stored</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="castobject #1: under option castobject off exit_code's out-parameter is declared uint4 (bug reproduces; with kept's, two_widths' and mixed's in both passes, seven times)" min="7" max="7">^  uint4 v1; // stack - 0xc$</stringmatch>
+<stringmatch name="castobject #2: and the call casts its address (bug reproduces; with kept's and mixed's in both passes, five times)" min="5" max="5">^  if \(waitpid\(a0,\(int4 \*\)&amp;v1,0\) &lt;= -1\)$</stringmatch>
+<stringmatch name="castobject #3: and the arithmetic shift casts the value back (bug reproduces; with kept's in both passes, three times)" min="3" max="3">^    return \(int4\)v1 &gt;&gt; 8 &amp; 0xff;$</stringmatch>
+<stringmatch name="castobject #4: option castobject on declares it int4, as waitpid does (fix, once)" min="1" max="1">^  int4 v1; // stack - 0xc$</stringmatch>
+<stringmatch name="castobject #5: the call passes its address uncast (fix; with two_widths' in both passes, three times)" min="3" max="3">^  if \(waitpid\(a0,&amp;v1,0\) &lt;= -1\)$</stringmatch>
+<stringmatch name="castobject #6: and the shift reads it uncast (fix, once)" min="1" max="1">^    return v1 &gt;&gt; 8 &amp; 0xff;$</stringmatch>
+<stringmatch name="castobject #7: an address that is also stored keeps its declaration and casts in both passes (twice)" min="2" max="2">^  keep = \(uint4 \*\)&amp;v1;$</stringmatch>
+<stringmatch name="castobject #8: a status also read one byte at a time keeps its declaration in both passes (twice)" min="2" max="2">v1\._1_1_</stringmatch>
+<stringmatch name="castobject #9: an object that starts with a parameter's value and is also shifted right logically keeps the logical shift on its uint4 declaration in both passes (twice)" min="2" max="2">^    v1 &gt;&gt;= 0x14;$</stringmatch>
+<stringmatch name="castobject #10: a value stored into the object and also shifted right logically on its own keeps the object declared uint4 in both passes (twice)" min="2" max="2">^  uint4 v1; // stack - 0x10$</stringmatch>
+<stringmatch name="castobject #11: and its call keeps the cast in both passes (twice)" min="2" max="2">^    waitpid\(a0,\(int4 \*\)&amp;v1,0\);$</stringmatch>
+</decompilertest>

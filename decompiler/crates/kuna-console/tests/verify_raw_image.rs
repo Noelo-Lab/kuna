@@ -45,13 +45,6 @@ fn repo_root() -> PathBuf {
         .unwrap()
 }
 
-/// A missing `.sla` is a visible skip; any other bootstrap failure is the test
-/// failing, so a regression can never present as a green skip.
-fn skip_or_fail(reason: &str, spec: &str) {
-    assert!(reason.contains("No sleigh specification"), "raw bootstrap failed: {reason}");
-    eprintln!("verify_raw_image: skipping (build the {spec} `.sla`): {reason}");
-}
-
 fn specs() -> Vec<String> {
     vec![std::env::var("KUNA_SPECS")
         .unwrap_or_else(|_| repo_root().join("specs").to_string_lossy().into_owned())]
@@ -88,20 +81,14 @@ fn raw_thumb_maps_base_zero_and_nonzero() {
     let fixture = RawFixture::thumb_return_7();
     let path = fixture.0.to_string_lossy();
     for (base, selected) in [(0, 0), (0x4000, 0x4001)] {
-        let mut program = match bootstrap_from_raw(
+        let mut program = bootstrap_from_raw(
             &path,
             "ARM:LE:32:v4t:default",
             base,
             &[base, selected],
             Some(ArmIsa::Thumb),
             &specs(),
-        ) {
-            Ok(program) => program,
-            Err(error) => {
-                skip_or_fail(&error.explain().to_string(), "ARM");
-                return;
-            }
-        };
+        ).expect("bootstrap raw ARM fixture with built specs");
         program.commit_pending_analysis().unwrap();
         assert_eq!(program.sections(), vec![(base, 4, 4)]);
         assert_eq!(program.num_symbols(), 1);
@@ -126,20 +113,14 @@ fn raw_thumb_maps_base_zero_and_nonzero() {
 fn raw_arm_data_addresses_preserve_their_low_bit() {
     let fixture = RawFixture::thumb_return_7();
     let path = fixture.0.to_string_lossy();
-    let mut program = match bootstrap_from_raw(
+    let mut program = bootstrap_from_raw(
         &path,
         "ARM:LE:32:v4t:default",
         0x4000,
         &[0x4001],
         Some(ArmIsa::Thumb),
         &specs(),
-    ) {
-        Ok(program) => program,
-        Err(error) => {
-            skip_or_fail(&error.explain().to_string(), "ARM");
-            return;
-        }
-    };
+    ).expect("bootstrap raw ARM fixture with built specs");
     program.commit_pending_analysis().unwrap();
     assert_eq!(program.input_address_offset(0x4001).unwrap(), 0x4001);
     assert_eq!(program.input_code_offset(0x4001).unwrap(), 0x4000);
@@ -174,13 +155,8 @@ fn word_addressed_targets_scale_base_and_entries_to_byte_offsets() {
     let path = fixture.0.to_string_lossy();
 
     let mut at_nonzero_base =
-        match bootstrap_from_raw(&path, "avr8:LE:16:default", 0x100, &[0x100], None, &specs()) {
-            Ok(program) => program,
-            Err(error) => {
-                skip_or_fail(&error.explain().to_string(), "AVR8");
-                return;
-            }
-        };
+        bootstrap_from_raw(&path, "avr8:LE:16:default", 0x100, &[0x100], None, &specs())
+            .expect("bootstrap raw AVR fixture with built specs");
     at_nonzero_base.commit_pending_analysis().unwrap();
     assert_eq!(at_nonzero_base.sections(), vec![(0x200, 4, 4)]);
     let entry = at_nonzero_base
@@ -205,13 +181,9 @@ fn word_addressed_targets_scale_base_and_entries_to_byte_offsets() {
 fn raw_console_reports_word_addresses_in_target_units() {
     let fixture = RawFixture::new("raw-word-report", &[0, 0, 0x08, 0x95]);
     let roots = specs();
-    if !PathBuf::from(&roots[0])
+    assert!(PathBuf::from(&roots[0])
         .join("Ghidra/Processors/Atmel/data/languages/avr8.sla")
-        .exists()
-    {
-        eprintln!("verify_raw_image: skipping console report test (no AVR8 `.sla`)");
-        return;
-    }
+        .exists(), "required processor specs must be available");
     let script = format!(
         "load raw avr8:LE:16:default 0x100 0x101 \"{}\"\n\
          read symbols\n\
@@ -243,13 +215,9 @@ fn raw_console_reports_word_addresses_in_target_units() {
 fn raw_map_function_normalizes_an_odd_thumb_pointer() {
     let fixture = RawFixture::thumb_return_7();
     let roots = specs();
-    if !PathBuf::from(&roots[0])
+    assert!(PathBuf::from(&roots[0])
         .join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla")
-        .exists()
-    {
-        eprintln!("verify_raw_image: skipping map function test (no ARM `.sla`)");
-        return;
-    }
+        .exists(), "required processor specs must be available");
     let script = format!(
         "load raw ARM:LE:32:v4t:default 0x4000 0x4000 \"{}\"\n\
          map function 0x4001 mapped_thumb\n\
@@ -273,13 +241,9 @@ fn raw_map_address_preserves_an_odd_arm_data_address() {
         &[0x01, 0x48, 0x00, 0x78, 0x70, 0x47, 0, 0, 0x01, 0x40, 0, 0],
     );
     let roots = specs();
-    if !PathBuf::from(&roots[0])
+    assert!(PathBuf::from(&roots[0])
         .join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla")
-        .exists()
-    {
-        eprintln!("verify_raw_image: skipping map address test (no ARM `.sla`)");
-        return;
-    }
+        .exists(), "required processor specs must be available");
     let script = format!(
         "load raw ARM:LE:32:v4t:default 0x4000 0x4001 \"{}\"\n\
          map address 0x4001 char odd_data\n\
@@ -304,13 +268,9 @@ fn raw_map_address_preserves_an_odd_arm_data_address() {
 fn console_load_raw_preserves_whitespace_in_final_filename() {
     let fixture = RawFixture::thumb_return_7_with_spaces();
     let roots = specs();
-    if !PathBuf::from(&roots[0])
+    assert!(PathBuf::from(&roots[0])
         .join("Ghidra/Processors/ARM/data/languages/ARM8_le.sla")
-        .exists()
-    {
-        eprintln!("verify_raw_image: skipping whitespace path test (no ARM `.sla`)");
-        return;
-    }
+        .exists(), "required processor specs must be available");
     let mut child = Command::new(env!("CARGO_BIN_EXE_decomp_dbg"))
         .args(["-sleighpath", &roots[0]])
         .env(kuna_console::engine::ARM_ISA_ENV, "thumb")
@@ -355,10 +315,6 @@ fn raw_input_rejects_missing_metadata_and_unmapped_entries() {
         Ok(_) => panic!("raw ARM input without --isa unexpectedly loaded"),
         Err(error) => error.explain().to_string(),
     };
-    if error.contains("No sleigh specification") {
-        eprintln!("verify_raw_image: skipping (build the ARM `.sla`): {error}");
-        return;
-    }
     assert!(
         error.contains("requires --isa"),
         "unexpected error: {error}"
@@ -380,10 +336,6 @@ fn raw_input_rejects_entry_at_end_of_mapping() {
         Ok(_) => panic!("out-of-range raw entry unexpectedly loaded"),
         Err(error) => error.explain().to_string(),
     };
-    if error.contains("No sleigh specification") {
-        eprintln!("verify_raw_image: skipping (build the ARM `.sla`): {error}");
-        return;
-    }
     assert!(
         error.contains("outside mapped range"),
         "unexpected error: {error}"
@@ -405,10 +357,6 @@ fn word_addressed_mapping_errors_report_target_units() {
         Ok(_) => panic!("out-of-range word-addressed entry unexpectedly loaded"),
         Err(error) => error.explain().to_string(),
     };
-    if error.contains("No sleigh specification") {
-        eprintln!("verify_raw_image: skipping target-unit bounds test (no AVR8 `.sla`): {error}");
-        return;
-    }
     assert!(
         error.contains("raw entry 0x103 is outside mapped range 0x100..0x102"),
         "unexpected error: {error}"
@@ -431,10 +379,6 @@ fn raw_input_rejects_empty_images() {
         Ok(_) => panic!("empty raw image unexpectedly loaded"),
         Err(error) => error.explain().to_string(),
     };
-    if error.contains("No sleigh specification") {
-        eprintln!("verify_raw_image: skipping (build the ARM `.sla`): {error}");
-        return;
-    }
     assert!(
         error.contains("raw image is empty"),
         "unexpected error: {error}"
@@ -456,9 +400,5 @@ fn raw_input_rejects_mapping_overflow() {
         Ok(_) => panic!("overflowing raw mapping unexpectedly loaded"),
         Err(error) => error.explain().to_string(),
     };
-    if error.contains("No sleigh specification") {
-        eprintln!("verify_raw_image: skipping (build the ARM `.sla`): {error}");
-        return;
-    }
     assert!(error.contains("overflows"), "unexpected error: {error}");
 }

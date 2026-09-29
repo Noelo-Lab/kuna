@@ -62,12 +62,8 @@ fn decompile_pair(name: &str, noreturn_ret_use: bool) -> (String, String) {
 #[test]
 fn arm_and_aarch64_status_helpers_keep_their_return_values() {
     let specs = repo_root().join("specs/Ghidra/Processors");
-    if !specs.join("ARM/data/languages/ARM8_le.sla").is_file()
-        || !specs.join("AARCH64/data/languages/AARCH64.sla").is_file()
-    {
-        eprintln!("verify_et_rel_status_return: skipping (required `.sla` files are absent)");
-        return;
-    }
+    assert!(specs.join("ARM/data/languages/ARM8_le.sla").is_file()
+        && specs.join("AARCH64/data/languages/AARCH64.sla").is_file(), "required processor specs must be available");
 
     for name in ["et_rel_status_arm.o", "et_rel_status_aarch64.o"] {
         let (helper, caller) = decompile_pair(name, true);

@@ -1708,6 +1708,10 @@ impl Rule for RuleExpandLoad {
         if el_type.get_size() < out_size + offset {
             return 0;
         }
+        // (kuna `elemptr`) A pointee inferred from use keeps the load narrow.
+        if crate::kuna_elemptr::keeps_load_narrow(data, root_ptr) {
+            return 0;
+        }
 
         let meta = el_type.get_metatype();
         if meta == type_metatype::TYPE_UNKNOWN
@@ -1977,10 +1981,6 @@ mod tests {
     fn wire(fd: &mut Funcdata, vn: VarnodeId, op: OpId, slot: int4) {
         fd.vbank_mut().add_descend(vn, op).unwrap();
         fd.obank_mut().get_mut(op).unwrap().set_input(Some(vn), slot);
-    }
-
-    fn groups() -> ActionGroupList {
-        ActionGroupList::from_names(["analysis"])
     }
 
     fn code(fd: &Funcdata, op: OpId) -> OpCode {

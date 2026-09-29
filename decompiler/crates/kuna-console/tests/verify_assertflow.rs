@@ -16,12 +16,6 @@
 //! `__libc_start_main` -- reaches an indirect `call *%rdx` at `0x1405` and then
 //! twenty-four more calls; declaring that instruction a `return` cuts the body
 //! to its first statement.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -38,24 +32,15 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture and run the analysis commit.  `None` ⇒ specs-less skip.
-fn load() -> Option<ConsoleProgram> {
+/// Bootstrap the fixture and run the analysis commit.
+fn load() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64");
-    let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_assertflow: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit");
-    Some(prog)
+    prog
 }
 
 fn flow(spec: &str, func: Option<&str>, addr: u64, kind: &str) -> Directive {
@@ -72,8 +57,8 @@ fn flow(spec: &str, func: Option<&str>, addr: u64, kind: &str) -> Directive {
 /// Decompile the entries at `at` under `directives`, returning `(C of the first,
 /// its pipeline error, report)`.  Mirrors what the CLI's in-process `--json`
 /// surface does.
-fn run(at: &[u64], directives: Vec<Directive>) -> Option<(String, Option<String>, Vec<Outcome>)> {
-    let mut prog = load()?;
+fn run(at: &[u64], directives: Vec<Directive>) -> (String, Option<String>, Vec<Outcome>) {
+    let mut prog = load();
     if !directives.is_empty() {
         prog.set_assertions(directives);
         assertions::apply_program_scoped(&mut prog);
@@ -87,14 +72,14 @@ fn run(at: &[u64], directives: Vec<Directive>) -> Option<(String, Option<String>
         .collect();
     let funcs = decompile_targets(&mut prog, targets, false, false, false);
     let code = funcs[0].code.clone().unwrap_or_default();
-    Some((code, funcs[0].error.clone(), prog.assertion_outcomes()))
+    (code, funcs[0].error.clone(), prog.assertion_outcomes())
 }
 
 /// The common case: a run that is expected to decompile cleanly.
-fn decompile_with(at: &[u64], directives: Vec<Directive>) -> Option<(String, Vec<Outcome>)> {
-    let (code, error, report) = run(at, directives)?;
+fn decompile_with(at: &[u64], directives: Vec<Directive>) -> (String, Vec<Outcome>) {
+    let (code, error, report) = run(at, directives);
     assert_eq!(error, None, "the pipeline aborted:\n{code}");
-    Some((code, report))
+    (code, report)
 }
 
 /// Every outcome is `applied`; panics naming the offender otherwise.
@@ -113,7 +98,7 @@ fn all_applied(report: &[Outcome]) {
 /// `v25` and ends in a twenty-five-term sum.
 #[test]
 fn the_baseline_follows_the_indirect_call_into_twenty_five_temporaries() {
-    let Some((code, report)) = decompile_with(&[SUB_13C9], Vec::new()) else { return };
+    let (code, report) = decompile_with(&[SUB_13C9], Vec::new());
     assert!(report.is_empty(), "no directives ⇒ no report rows");
     assert!(code.contains("v25"), "baseline no longer reaches v25:\n{code}");
     assert!(
@@ -125,11 +110,8 @@ fn the_baseline_follows_the_indirect_call_into_twenty_five_temporaries() {
 /// The need's own case: `flow <addr> return` collapses the body.
 #[test]
 fn declaring_the_indirect_call_a_return_cuts_the_body_to_one_statement() {
-    let Some((code, report)) =
-        decompile_with(&[SUB_13C9], vec![flow("flow 0x1405 return", None, INDIRECT_CALL, "return")])
-    else {
-        return;
-    };
+    let (code, report) =
+        decompile_with(&[SUB_13C9], vec![flow("flow 0x1405 return", None, INDIRECT_CALL, "return")]);
     all_applied(&report);
     assert_eq!(report.len(), 1);
     assert_eq!(report[0].kind, "flow");
@@ -146,19 +128,14 @@ fn declaring_the_indirect_call_a_return_cuts_the_body_to_one_statement() {
 /// fall-through, leaving the call and nothing after it.
 #[test]
 fn branch_and_callreturn_land_as_their_own_flow_types() {
-    let Some((branch, _)) =
-        decompile_with(&[SUB_13C9], vec![flow("flow 0x1405 branch", None, INDIRECT_CALL, "branch")])
-    else {
-        return;
-    };
+    let (branch, _) =
+        decompile_with(&[SUB_13C9], vec![flow("flow 0x1405 branch", None, INDIRECT_CALL, "branch")]);
     assert!(branch.contains("switch"), "branch did not become a computed jump:\n{branch}");
 
-    let Some((callret, _)) = decompile_with(
+    let (callret, _) = decompile_with(
         &[SUB_13C9],
         vec![flow("flow 0x1405 callreturn", None, INDIRECT_CALL, "callreturn")],
-    ) else {
-        return;
-    };
+    );
     assert!(!callret.contains("v25"), "callreturn did not prune the fall-through:\n{callret}");
     assert!(callret.contains("("), "callreturn dropped the call itself:\n{callret}");
     assert_ne!(branch, callret, "two flow types produced the same C");
@@ -175,11 +152,8 @@ fn branch_and_callreturn_land_as_their_own_flow_types() {
 /// anything had gone wrong at all (`docs/re-needs/rejected-flow-override-exits.md`).
 #[test]
 fn a_flow_type_the_engine_cannot_apply_is_rejected_and_keeps_the_body() {
-    let Some((code, error, report)) =
-        run(&[SUB_13C9], vec![flow("flow 0x1405 call", None, INDIRECT_CALL, "call")])
-    else {
-        return;
-    };
+    let (code, error, report) =
+        run(&[SUB_13C9], vec![flow("flow 0x1405 call", None, INDIRECT_CALL, "call")]);
     assert_eq!(error, None, "the refusal aborted the function:\n{code}");
     assert_eq!(report.len(), 1);
     assert_eq!(report[0].status, "rejected");
@@ -200,11 +174,8 @@ fn a_flow_type_the_engine_cannot_apply_is_rejected_and_keeps_the_body() {
 /// while an unbound directive left a correct body un-annotated.
 #[test]
 fn only_a_pipeline_refusal_is_fatal() {
-    let Some((_code, report)) =
-        decompile_with(&[SUB_13C9], vec![flow("flow 0x1405 goto", None, INDIRECT_CALL, "goto")])
-    else {
-        return;
-    };
+    let (_code, report) =
+        decompile_with(&[SUB_13C9], vec![flow("flow 0x1405 goto", None, INDIRECT_CALL, "goto")]);
     assert_eq!(report[0].status, "rejected");
     assert!(!report[0].fatal, "a directive rejected before the pipeline is not fatal");
 }
@@ -214,11 +185,8 @@ fn only_a_pipeline_refusal_is_fatal() {
 /// parse time; this is the engine-side guard for every other caller.)
 #[test]
 fn an_unknown_flow_kind_is_rejected_with_a_reason() {
-    let Some((_code, report)) =
-        decompile_with(&[SUB_13C9], vec![flow("flow 0x1405 goto", None, INDIRECT_CALL, "goto")])
-    else {
-        return;
-    };
+    let (_code, report) =
+        decompile_with(&[SUB_13C9], vec![flow("flow 0x1405 goto", None, INDIRECT_CALL, "goto")]);
     assert_eq!(report.len(), 1);
     assert_eq!(report[0].status, "rejected");
     assert!(
@@ -234,12 +202,10 @@ fn an_unknown_flow_kind_is_rejected_with_a_reason() {
 /// address — the plane's standing rule.
 #[test]
 fn an_unqualified_directive_is_rejected_on_a_multi_target_run() {
-    let Some((_code, report)) = decompile_with(
+    let (_code, report) = decompile_with(
         &[SUB_13C9, 0x1129],
         vec![flow("flow 0x1405 return", None, INDIRECT_CALL, "return")],
-    ) else {
-        return;
-    };
+    );
     assert_eq!(report.len(), 1);
     assert_eq!(report[0].status, "rejected");
     assert!(
@@ -254,12 +220,10 @@ fn an_unqualified_directive_is_rejected_on_a_multi_target_run() {
 /// address this image's crt1 hands `__libc_start_main`, which `elfmain` names.
 #[test]
 fn a_qualified_directive_binds_on_a_multi_target_run() {
-    let Some((code, report)) = decompile_with(
+    let (code, report) = decompile_with(
         &[SUB_13C9, 0x1129],
         vec![flow("flow main::0x1405 return", Some("main"), INDIRECT_CALL, "return")],
-    ) else {
-        return;
-    };
+    );
     all_applied(&report);
     assert!(code.contains("return dat_4014;"), "the override did not take:\n{code}");
 }

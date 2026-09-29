@@ -349,7 +349,7 @@ fn build_call_with_pair(fd: &mut Funcdata, hi_read: bool) -> (OpId, VarnodeId, V
     let target = fd.new_code_ref(&Address::new(Rc::clone(&ram), 0x2000));
     let _ = fd.op_set_input(call, target, 0);
 
-    let mut mk_half = |fd: &mut Funcdata, off: u64| -> VarnodeId {
+    let mk_half = |fd: &mut Funcdata, off: u64| -> VarnodeId {
         let ind = fd.new_op(2, Address::new(Rc::clone(&ram), 0x1010));
         fd.obank_mut()
             .change_opcode(ind, TypeOp::new(OpCode::CPUI_INDIRECT, 0, "CPUI_INDIRECT".to_string()));

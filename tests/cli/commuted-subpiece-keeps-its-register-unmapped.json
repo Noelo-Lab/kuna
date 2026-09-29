@@ -1,0 +1,37 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "print_field"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/ptx.o",
+    "binary_sha256": "61ad291a58370d37b8acc4436031de2eb29ec54f7831cb8e18b2f939517c835b",
+    "binary_size": 120664,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/ptx.o",
+    "selector": "print_field",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "if \\(4 > \\(unsigned char\\)\\(v[0-9]+ - 0x23\\)\\) goto"
+    ],
+    "stdout_absent": [
+      "field\\.start\\._0_1_ ="
+    ]
+  }
+}

@@ -17,12 +17,6 @@
 //!   * `sample` reads two `.data` globals that nothing writes (`scale` at
 //!     `0x40402c`, `bias` at `0x404028`) and reads `0x50000000` twice, and
 //!   * `latch` stores to `0x50000004`, calls, and reads it back.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built x86 `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -41,24 +35,15 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture and run the analysis commit.  `None` ⇒ specs-less skip.
-fn load() -> Option<ConsoleProgram> {
+/// Bootstrap the fixture and run the analysis commit.
+fn load() -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/assertranges_x86_64");
-    let mut prog = match bootstrap_from_object(bin.to_str()?, "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_assertranges: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit");
-    Some(prog)
+    prog
 }
 
 fn directive(spec: &str, body: Body) -> Directive {
@@ -79,8 +64,8 @@ fn volatile(addr: u64, size: i32) -> Directive {
 /// including the read-only propagation a `readonly` directive implies
 /// (`decompile_all::load_program`); the console commands paint the same
 /// properties from the generated script instead.
-fn decompile_with(target: &str, directives: Vec<Directive>) -> Option<(String, Vec<Outcome>)> {
-    let mut prog = load()?;
+fn decompile_with(target: &str, directives: Vec<Directive>) -> (String, Vec<Outcome>) {
+    let mut prog = load();
     if !directives.is_empty() {
         if assertions::implies_readonly_propagation(&directives) {
             prog.arch_mut().readonlypropagate = true;
@@ -93,7 +78,7 @@ fn decompile_with(target: &str, directives: Vec<Directive>) -> Option<(String, V
         .expect("the fixture has this function");
     let funcs = decompile_targets(&mut prog, vec![entry], false, false, false);
     let code = funcs[0].code.clone().unwrap_or_default();
-    Some((code, prog.assertion_outcomes()))
+    (code, prog.assertion_outcomes())
 }
 
 /// Every outcome is `applied`; panics naming the offender otherwise.
@@ -110,7 +95,7 @@ fn all_applied(report: &[Outcome]) {
 /// The un-asserted baseline every case below is measured against.
 #[test]
 fn the_baseline_reads_both_globals_and_merges_the_two_device_reads() {
-    let Some((code, report)) = decompile_with("sample", Vec::new()) else { return };
+    let (code, report) = decompile_with("sample", Vec::new());
     assert!(report.is_empty(), "no directives ⇒ no report rows");
     assert!(code.contains("scale"), "baseline lost the .data load:\n{code}");
     assert!(code.contains("bias"), "baseline lost the .data load:\n{code}");
@@ -125,9 +110,7 @@ fn the_baseline_reads_both_globals_and_merges_the_two_device_reads() {
 /// says so, and they fold to their initialisers.
 #[test]
 fn a_readonly_range_folds_its_loads_to_the_initialisers() {
-    let Some((code, report)) = decompile_with("sample", vec![readonly(DATA_PAIR, 8)]) else {
-        return;
-    };
+    let (code, report) = decompile_with("sample", vec![readonly(DATA_PAIR, 8)]);
     all_applied(&report);
     assert!(code.contains("* 7"), "scale did not fold to 7:\n{code}");
     assert!(code.contains("+ 100"), "bias did not fold to 100:\n{code}");
@@ -140,7 +123,7 @@ fn a_readonly_range_folds_its_loads_to_the_initialisers() {
 /// never marked it.
 #[test]
 fn read_only_propagation_without_the_range_changes_nothing() {
-    let Some(mut prog) = load() else { return };
+    let mut prog = load();
     prog.arch_mut().readonlypropagate = true;
     let entry = prog
         .resolve_entry(&EntrySelector::Name("sample".to_string()))
@@ -156,7 +139,7 @@ fn read_only_propagation_without_the_range_changes_nothing() {
 /// which for MMIO is a wrong decompilation, not a tidy one.
 #[test]
 fn a_volatile_range_keeps_both_device_reads() {
-    let Some((code, report)) = decompile_with("sample", vec![volatile(MMIO, 4)]) else { return };
+    let (code, report) = decompile_with("sample", vec![volatile(MMIO, 4)]);
     all_applied(&report);
     assert!(
         !code.contains("dat_50000000 * 2"),
@@ -173,11 +156,8 @@ fn a_volatile_range_keeps_both_device_reads() {
 /// `.data` pair folds and the device reads split, in one decompile.
 #[test]
 fn readonly_and_volatile_compose_on_one_run() {
-    let Some((code, report)) =
-        decompile_with("sample", vec![readonly(DATA_PAIR, 8), volatile(MMIO, 4)])
-    else {
-        return;
-    };
+    let (code, report) =
+        decompile_with("sample", vec![readonly(DATA_PAIR, 8), volatile(MMIO, 4)]);
     all_applied(&report);
     assert_eq!(report.len(), 2);
     assert!(code.contains("* 7") && code.contains("+ 100"), "the fold was lost:\n{code}");
@@ -192,7 +172,7 @@ fn readonly_and_volatile_compose_on_one_run() {
 /// that filed this need could not find a fixture where it did anything).
 #[test]
 fn the_property_reaches_a_range_the_loader_already_named() {
-    let Some((code, _)) = decompile_with("sample", vec![readonly(DATA_PAIR, 8)]) else { return };
+    let (code, _) = decompile_with("sample", vec![readonly(DATA_PAIR, 8)]);
     // `scale` and `bias` are ELF symbols: the baseline prints them by name.
     assert!(code.contains("* 7"), "a named global did not take the property:\n{code}");
 }
@@ -200,7 +180,7 @@ fn the_property_reaches_a_range_the_loader_already_named() {
 /// A range with no size is rejected with a reason, not accepted and dropped.
 #[test]
 fn a_zero_length_range_is_rejected_with_a_reason() {
-    let Some((_, report)) = decompile_with("sample", vec![readonly(DATA_PAIR, 0)]) else { return };
+    let (_, report) = decompile_with("sample", vec![readonly(DATA_PAIR, 0)]);
     assert_eq!(report.len(), 1);
     assert_eq!(report[0].status, "rejected");
     assert!(
@@ -214,10 +194,7 @@ fn a_zero_length_range_is_rejected_with_a_reason() {
 /// correlated with `kuna catalog` / `docs/phases.md`.
 #[test]
 fn a_range_directive_reports_the_code_data_partition_subphase() {
-    let Some((_, report)) = decompile_with("sample", vec![readonly(DATA_PAIR, 8), volatile(MMIO, 4)])
-    else {
-        return;
-    };
+    let (_, report) = decompile_with("sample", vec![readonly(DATA_PAIR, 8), volatile(MMIO, 4)]);
     assert_eq!((report[0].kind, report[0].phase, report[0].subphase), (
         "readonly",
         "P1",
@@ -245,9 +222,7 @@ fn a_range_directive_reports_the_code_data_partition_subphase() {
 /// `global add` on its own is measurably a no-op.
 #[test]
 fn global_remove_drops_a_store_and_global_add_restores_it() {
-    let Some(baseline) = drive_console(&["load function latch", "decompile", "print C"]) else {
-        return;
-    };
+    let baseline = drive_console(&["load function latch", "decompile", "print C"]);
     assert!(
         baseline.contains(&format!("dat_{LATCH_MMIO:08x} = ")),
         "baseline lost the device store:\n{baseline}"
@@ -258,8 +233,7 @@ fn global_remove_drops_a_store_and_global_add_restores_it() {
         "load function latch",
         "decompile",
         "print C",
-    ])
-    .expect("specs were present for the baseline");
+    ]);
     assert!(
         !removed.contains(&format!("dat_{LATCH_MMIO:08x} = ")),
         "`global remove` did not take the range out of the global scope:\n{removed}"
@@ -271,8 +245,7 @@ fn global_remove_drops_a_store_and_global_add_restores_it() {
         "load function latch",
         "decompile",
         "print C",
-    ])
-    .expect("specs were present for the baseline");
+    ]);
     assert!(
         restored.contains(&format!("dat_{LATCH_MMIO:08x} = ")),
         "`global add` did not put the range back:\n{restored}"
@@ -290,14 +263,12 @@ fn global_remove_drops_a_store_and_global_add_restores_it() {
 #[test]
 fn a_range_command_reads_the_explicit_size_after_the_address() {
     let below = MMIO - 4;
-    let Some(short) = drive_console(&[
+    let short = drive_console(&[
         &format!("volatile {below:#x} 4"),
         "load function sample",
         "decompile",
         "print C",
-    ]) else {
-        return;
-    };
+    ]);
     assert!(
         short.contains("dat_50000000 * 2"),
         "a 4-byte range reached a word 4 bytes past its end:\n{short}"
@@ -307,8 +278,7 @@ fn a_range_command_reads_the_explicit_size_after_the_address() {
         "load function sample",
         "decompile",
         "print C",
-    ])
-    .expect("specs were present above");
+    ]);
     assert!(
         !long.contains("dat_50000000 * 2"),
         "the explicit size was ignored (the 8-byte range did not reach the word):\n{long}"
@@ -318,18 +288,18 @@ fn a_range_command_reads_the_explicit_size_after_the_address() {
 /// A size that is not a number is a parse error, not a silently ignored token.
 #[test]
 fn a_range_command_rejects_a_bad_explicit_size() {
-    let Some(out) = drive_console(&[&format!("readonly {DATA_PAIR:#x} banana")]) else { return };
+    let out = drive_console(&[&format!("readonly {DATA_PAIR:#x} banana")]);
     assert!(out.contains("Bad size: banana"), "out: {out:?}");
 }
 
-/// Drive `commands` through a console wired like the datatest runner, with the
-/// fixture installed as the current program.  `None` ⇒ specs-less skip.
-fn drive_console(commands: &[&str]) -> Option<String> {
+/// Drive `commands` through a console wired like the datatest runner, with the fixture
+/// installed as the current program.
+fn drive_console(commands: &[&str]) -> String {
     use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData,
                                     DECOMPILE_MODULE};
     use kuna_console::ifaceterm::ConsoleCommands;
 
-    let program = load()?;
+    let program = load();
     let cmds: Vec<String> = commands.iter().map(|s| s.to_string()).collect();
     let count = cmds.len();
     let mut status = ConsoleCommands::into_status(cmds);
@@ -345,5 +315,5 @@ fn drive_console(commands: &[&str]) -> Option<String> {
     for _ in 0..count {
         execute(&mut status);
     }
-    Some(status.optr.clone())
+    status.optr.clone()
 }

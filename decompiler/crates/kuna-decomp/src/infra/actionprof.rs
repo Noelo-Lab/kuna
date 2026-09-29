@@ -1,55 +1,90 @@
-//! (kuna) `KUNA_ACTION_PROF` — an exclusive-time profile of the Action tree.
+//! Exclusive-time profiling of the Action tree, enabled by `KUNA_ACTION_PROF`.
 //!
-//! # Why this exists
-//!
-//! `perf` is unavailable on the machines this engine is tuned on
-//! (`perf_event_paranoid = 4`), and a sampling profiler stops being useful the
-//! moment a profile goes flat: it cannot tell that two 15% frames are the same
-//! cost reached down two paths, and it cannot count calls at all. Every
-//! performance investigation on a large function has therefore rebuilt the same
-//! throwaway timer around [`Action::perform`](crate::action::Action::perform)'s
-//! `apply` call. This is that timer, kept.
-//!
-//! Set `KUNA_ACTION_PROF` to a path and the engine writes an exclusive-time
-//! table there, sorted by cost:
-//!
-//! ```text
-//! total_exclusive_ms 7436.1
-//!     1627.8 ms   21.89%         25 calls  decompile/heritage
-//!     1282.9 ms   17.25%        131 calls  decompile/oppool1
-//!      184.0 ms    2.47%          9 calls  jumptable/heritage
-//! ```
-//!
-//! Time is **exclusive**: an [`ActionGroup`](crate::action::ActionGroup) is
-//! charged only what it spends outside its children, so the rows sum to the
-//! wall time of the schedule and a container never hides a leaf. Each row is
-//! keyed by the *root* action the work ran under, which separates a function's
-//! own `decompile` pass from the reduced `jumptable` pipeline that jump-table
-//! recovery runs on a partial clone.
-//!
-//! The file is rewritten every time the schedule unwinds, so it holds the
-//! running total for the whole process — one `decompile-all` leaves one table
-//! covering every function.
-//!
-//! # Cost when off
-//!
-//! One `OnceLock` load per `apply` call. `apply` is coarse — a pool applies
-//! every rule to every op in a single call — so a large function makes only a
-//! few hundred of them.
+//! Each thread accumulates `<root>/<action>` rows. A group excludes time spent
+//! in its children. Closing the outermost frame, including during panic unwind,
+//! rewrites the configured file with that thread's totals, sorted by cost and
+//! then name. Writes are best-effort; threads and worker processes do not merge
+//! their tables. When disabled, each `apply` performs one cached flag check.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::marker::PhantomData;
+use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+struct OpenFrame {
+    key: String,
+    at: Instant,
+    children: u128,
+}
+
+#[derive(Default)]
+struct Profiler {
+    root: String,
+    stack: Vec<OpenFrame>,
+    #[expect(
+        clippy::disallowed_types,
+        reason = "recording is lookup-only; rendered rows are fully sorted"
+    )]
+    totals: std::collections::HashMap<String, (u128, u64)>,
+}
+
+impl Profiler {
+    fn close(&mut self, now: Instant) -> bool {
+        let Some(frame) = self.stack.pop() else {
+            return false;
+        };
+        let elapsed = now.saturating_duration_since(frame.at).as_nanos();
+        if let Some(parent) = self.stack.last_mut() {
+            parent.children += elapsed;
+        }
+        let row = self.totals.entry(frame.key).or_insert((0, 0));
+        row.0 += elapsed.saturating_sub(frame.children);
+        row.1 += 1;
+        self.stack.is_empty()
+    }
+
+    fn render(&self) -> String {
+        let mut rows: Vec<_> = self.totals.iter().collect();
+        rows.sort_by(|(key_a, total_a), (key_b, total_b)| {
+            total_b.0.cmp(&total_a.0).then_with(|| key_a.cmp(key_b))
+        });
+        let total: u128 = rows.iter().map(|(_, value)| value.0).sum();
+        let mut out = format!("total_exclusive_ms {:.1}\n", total as f64 / 1e6);
+        for (key, &(ns, calls)) in rows {
+            let pct = if total == 0 {
+                0.0
+            } else {
+                ns as f64 / total as f64 * 100.0
+            };
+            out.push_str(&format!(
+                "{:>10.1} ms  {pct:>6.2}%  {calls:>9} calls  {key}\n",
+                ns as f64 / 1e6
+            ));
+        }
+        out
+    }
+}
+
 thread_local! {
-    /// The open `apply` frames: (row key, entry time, time charged to children).
-    static STACK: RefCell<Vec<(String, Instant, u128)>> = const { RefCell::new(Vec::new()) };
-    /// Exclusive nanoseconds and call count per row key.
-    static TOTALS: RefCell<HashMap<String, (u128, u64)>> = RefCell::new(HashMap::new());
-    /// The root schedule rows are attributed to, set by
-    /// [`ActionDatabase::set_current`](crate::action::ActionDatabase::set_current).
-    static ROOT: RefCell<String> = const { RefCell::new(String::new()) };
+    static PROFILE: RefCell<Profiler> = RefCell::new(Profiler::default());
+}
+
+/// A timing frame must close on its originating thread, including on unwind.
+#[must_use]
+pub(crate) struct ActionFrame(PhantomData<Rc<()>>);
+
+impl ActionFrame {
+    pub(crate) fn new(name: &str) -> Self {
+        enter(name);
+        Self(PhantomData)
+    }
+}
+
+impl Drop for ActionFrame {
+    fn drop(&mut self) {
+        leave();
+    }
 }
 
 /// The env var that names the output path.
@@ -71,10 +106,10 @@ pub fn set_root(name: &str) {
     if !enabled() {
         return;
     }
-    ROOT.with(|r| {
-        let mut cur = r.borrow_mut();
-        cur.clear();
-        cur.push_str(name);
+    PROFILE.with(|p| {
+        let mut profiler = p.borrow_mut();
+        profiler.root.clear();
+        profiler.root.push_str(name);
     });
 }
 
@@ -83,33 +118,27 @@ pub fn set_root(name: &str) {
 /// Rows are keyed `<root>/<name>` — the schedule [`set_root`] last named, and
 /// the action inside it.
 pub fn enter(name: &str) {
-    let key = ROOT.with(|r| {
-        let root = r.borrow();
-        if root.is_empty() { name.to_string() } else { format!("{root}/{name}") }
+    PROFILE.with(|p| {
+        let mut profiler = p.borrow_mut();
+        let root = &profiler.root;
+        let key = if root.is_empty() {
+            name.to_string()
+        } else {
+            format!("{root}/{name}")
+        };
+        profiler.stack.push(OpenFrame {
+            key,
+            at: Instant::now(),
+            children: 0,
+        });
     });
-    STACK.with(|s| s.borrow_mut().push((key, Instant::now(), 0)));
 }
 
 /// Close the innermost frame, charging its exclusive time.
 ///
 /// Writes the table out whenever the schedule unwinds to empty.
 pub fn leave() {
-    let closed = STACK.with(|s| {
-        let mut st = s.borrow_mut();
-        let (key, at, children) = st.pop()?;
-        let elapsed = at.elapsed().as_nanos();
-        if let Some(parent) = st.last_mut() {
-            parent.2 += elapsed;
-        }
-        Some((key, elapsed.saturating_sub(children), st.is_empty()))
-    });
-    let Some((key, exclusive, unwound)) = closed else { return };
-    TOTALS.with(|t| {
-        let mut m = t.borrow_mut();
-        let row = m.entry(key).or_insert((0, 0));
-        row.0 += exclusive;
-        row.1 += 1;
-    });
+    let unwound = PROFILE.with(|p| p.borrow_mut().close(Instant::now()));
     if unwound {
         dump();
     }
@@ -120,25 +149,15 @@ pub fn leave() {
 /// A write failure is ignored: a profile that cannot be written must not change
 /// what the engine does.
 pub fn dump() {
-    let Some(path) = std::env::var_os(ENV_VAR) else { return };
+    let Some(path) = std::env::var_os(ENV_VAR) else {
+        return;
+    };
     let _ = std::fs::write(path, render());
 }
 
 /// The table, as text.
 pub fn render() -> String {
-    let mut rows: Vec<(String, u128, u64)> =
-        TOTALS.with(|t| t.borrow().iter().map(|(k, v)| (k.clone(), v.0, v.1)).collect());
-    rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    let total: u128 = rows.iter().map(|r| r.1).sum();
-    let mut out = format!("total_exclusive_ms {:.1}\n", total as f64 / 1e6);
-    for (key, ns, calls) in rows {
-        let pct = if total == 0 { 0.0 } else { ns as f64 / total as f64 * 100.0 };
-        out.push_str(&format!(
-            "{:>10.1} ms  {pct:>6.2}%  {calls:>9} calls  {key}\n",
-            ns as f64 / 1e6
-        ));
-    }
-    out
+    PROFILE.with(|p| p.borrow().render())
 }
 
 #[cfg(test)]

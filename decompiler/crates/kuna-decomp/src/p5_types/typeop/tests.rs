@@ -9,7 +9,6 @@
 
 use super::*;
 use crate::dtype::{type_metatype, TypeFactoryImpl};
-use type_metatype::*;
 
 /// One expected row of the canonical table, transcribed from `typeop.cc`.
 struct Row {

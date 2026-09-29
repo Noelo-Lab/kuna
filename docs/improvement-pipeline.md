@@ -70,8 +70,13 @@ python3 -m scripts.pipeline.units                        # angr peephole/optimiz
 python3 -m scripts.pipeline.select --json                # the next unclaimed, highest-score opportunity
 ```
 
-`select` needs `sweep`'s `opportunities.json` (and `units`' `units.json`) on disk — with
-an empty backlog it prints nothing and exits 1.
+`select` combines `sweep`'s `opportunities.json` and `units`' `units.json`.
+Missing files contribute no entries; an existing file must contain a `ranked`
+array of objects. Selection validates the score, name and string-list fields it
+consumes, retaining extra metadata and defaults for omitted optional fields.
+With no eligible entry, `--shell` and `--json` print nothing and exit 1.
+Unreadable or malformed backlog or inventory data instead reports an error on
+stderr and exits 2, without emitting a selection or changing the input.
 
 Ranking is structural (switch recovery=5, kuna-failed=4, fewer-gotos=3, more-loops=3,
 fewer-labels=2, cast-noise=1, shorter=1). **Signals are a prefilter, not truth** — a
@@ -345,6 +350,25 @@ recorded for review (`claude --resume` for Claude, `codex exec resume` for Codex
 JSONL plus final output are retained beside the worker log; merged/closed-PR worktrees are
 GC'd, open ones kept. Proposals: `status --proposals` lists parked drafts;
 `state approve --opportunity <id>` green-lights one.
+
+Only a missing inventory initializes empty state. An unreadable or malformed
+`inventory.json`, or a section with the wrong container type, stops the operation
+without replacing the file; the state CLI reports the error and exits `2`. Repair
+or restore the inventory before continuing. `make test-tools` covers these failure
+paths using temporary state directories and also runs in CI.
+
+The driver distinguishes an empty selection from a retryable disk brake or
+claim race. Pauses retry on the next scheduler tick; only an empty selection
+with no active workers reports a drained backlog. Selector, reaper and claim
+errors preserve their diagnostics, stop new dispatch, and return exit 2 after
+waiting for in-flight workers. Driver tests use temporary state and replace
+worker, Git and GitHub commands; an error-exit test also runs the real selector.
+
+Pipeline and repipe text writers share `scripts/atomic.py`. Each write uses its
+own sibling file, publishes it only after a successful close, and removes it on
+failure. Existing locks still serialize read-modify-write operations; atomic
+replacement alone does not prevent lost updates or guarantee crash durability.
+Callers retain their existing encoding, JSON layout, and permission choices.
 
 ## Machinery reference
 

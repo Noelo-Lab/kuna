@@ -1,73 +1,13 @@
-//! Port of `decompiler/cpp/funcdata.{hh,cc}` and the block-manipulation half
-//! `funcdata_block.cc` (W3, item `w3-ir-funcdata`) — the [`Funcdata`] container
-//! that owns the per-function IR (the [`VarnodeBank`], the [`PcodeOpBank`], and
-//! the two [`BlockGraph`]s) and is the single API through which the graph is
-//! mutated (ADR 0001).
+//! Per-function IR ownership and mutation, from `decompiler/cpp/funcdata.{hh,cc}`.
 //!
-//! ## ADR 0001 (IR arenas) realization
+//! [`Funcdata`] owns the [`VarnodeBank`], [`PcodeOpBank`] and basic/structured
+//! [`BlockGraph`]s. Its helpers coordinate cross-arena changes, including block
+//! operation lists and the Varnode bank's read-replacement and definition lookup
+//! callbacks. [`ArchHandle`] shares configuration and engine services.
 //!
-//! The C++ `Funcdata` *contains* `vbank`, `obank`, `bblocks`, `sblocks` by value
-//! and every mutating helper (`op*`, `new*`, `block*`) routes through it.  Here
-//! `Funcdata` owns those same containers (each of which owns its slotmap arena),
-//! and **all** cross-arena mutation lives here — most importantly the
-//! basic-block op-list manipulation (`opInsert`/`opUninsert`/`BlockBasic::insert`
-//! / `removeOp` / `setOrder`), which in C++ is split between `Funcdata` and
-//! `BlockBasic` but touches *both* the op arena (`obank`) and the block arena
-//! (`bblocks`).  Rust cannot hold two `&mut` arenas through a method on one of
-//! them, so the op-in-block primitives are [`Funcdata`] methods that reach into
-//! both: [`Funcdata::bb_insert_op`], [`Funcdata::bb_remove_op`],
-//! [`Funcdata::bb_set_order`].  The per-op basic-block membership links live on
-//! the op (`set_basic_prev`/`set_basic_next`, the third intrusive list of
-//! ADR 0001) and the per-block head/tail live in [`BasicData`].
-//!
-//! ## VarnodeBank callbacks (the seam `varnode.rs` documented)
-//!
-//! `VarnodeBank::xref`/`set_def`/`set_input`/`create_def` need two callbacks the
-//! bank cannot supply itself (they reach the op graph):
-//!   - `replace_reads(bank, old, new)` — when `xref` unifies a fresh varnode
-//!     with an existing equivalent free varnode, every op reading `old` must be
-//!     repointed to `new` (the C++ `Funcdata::totalReplace` driven inline);
-//!   - `def_addr_time(op) -> (Address, uintm)` — `VarnodeBank::find` confirms a
-//!     candidate's defining op's address/time.
-//!
-//! `Funcdata` owns both the bank and the op bank, so it constructs these
-//! closures over `&mut obank` / `&obank` at each call site
-//! ([`Funcdata::replace_reads_thunk`] and [`Funcdata::def_addr_time`]).
-//!
-//! ## Look-ahead pre-declarations (funcdata_op.cc / funcdata_varnode.cc)
-//!
-//! The `funcdata_op` (`w3-ir-funcdata-op`) and `funcdata_varnode`
-//! (`w3-ir-funcdata-varnode`) porters run **after** this item, in parallel, with
-//! NO seam-editing rights.  This module therefore pre-declares every `Funcdata`
-//! field and seam surface those files reach, so they only add method `impl`
-//! blocks:
-//!   - `vbank`/`obank` and their accessors (`vbank()`/`vbank_mut()`/`obank()`/
-//!     `obank_mut()`): the varnode/op factories (`newConstant`, `newUnique`,
-//!     `newVarnodeOut`, `newOp`, …) create through these;
-//!   - [`Funcdata::replace_reads_thunk`] / [`Funcdata::def_addr_time`]: the bank
-//!     callbacks `opSetOutput`/`opSetInput`/`setInputVarnode`/`findVarnodeWritten`
-//!     need;
-//!   - the block op-list primitives ([`Funcdata::bb_insert_op`],
-//!     [`Funcdata::bb_remove_op`], [`Funcdata::bb_op_head`],
-//!     [`Funcdata::bb_op_tail`], [`Funcdata::bb_set_order`]) that `opInsert*`
-//!     build on;
-//!   - `glb` ([`ArchHandle`]) for the constant/unique/iop spaces and
-//!     `minLanedSize`; `min_laned_size`, the create-index phase fields, and the
-//!     `flags` word with `is_high_on()`;
-//!   - [`Funcdata::set_varnode_properties`] (a `// STUB(W4)` no-op standing in
-//!     for `localmap->queryProperties` + `Cover` calc) that `opSetOutput` and
-//!     the `newVarnode*` factories call.
-//!
-//! ## Deferred surfaces (W4 / W6 / W7 / W8)
-//!
-//! Most of `funcdata.cc` is W4+ subsystem glue (the `Architecture`/`TypeFactory`
-//! / `ScopeLocal` / `FuncProto` / `JumpTable` / `Override` / `Heritage` / `Merge`
-//! / union-resolution machinery).  Those are seam-noted ([`crate::context`]'
-//! `Architecture`/`Scope`/`FuncProto`, [`crate::dtype`]) and either return an
-//! explicit `Err`/`None` or are left out; printing (`printRaw`/`printBlockTree`)
-//! is W8.  This module carries the IR-ownership skeleton, the flag/phase state
-//! machine, and the block-manipulation methods that are self-contained at the
-//! W3 IR level (`structureReset`, `clearBlocks`, the edge-rewiring wrappers).
+//! The live local map is [`ScopeLocal`](crate::varmap::ScopeLocal), and the
+//! prototype is [`FuncProto`]. Variable properties, coverage and phase state
+//! are maintained by the implementations below, not deferred placeholders.
 //!
 //! # The Funcdata impl map
 //!
@@ -240,7 +180,7 @@ pub struct Funcdata {
     display_name: String,
     /// Starting code address of binary data (C++ `baseaddr`)
     baseaddr: Address,
-    /// Prototype of this function (C++ `funcp`).  The real [`fspec::FuncProto`]
+    /// Prototype of this function (C++ `funcp`).  The real [`crate::fspec::FuncProto`]
     /// (W10 un-seam): proto-recovery actions read/mutate the recovered model,
     /// lock state, and (via [`Self::get_active_output`]) the return-value trials.
     funcp: FuncProto,
@@ -273,6 +213,10 @@ pub struct Funcdata {
     /// (kuna `slotptr`) What each `restructure_varnode` pass saw stored into, and
     /// touched in, the stack frame; read only by `extract_variables`.
     slot_evidence: std::cell::RefCell<crate::kuna_slotptr::SlotEvidence>,
+    /// (kuna `castobject`) Every stack object a `restructure_varnode` pass
+    /// re-declared, as `(offset, size, type)`; read by
+    /// [`crate::kuna_castobject::reconcile`] once the variables are merged.
+    cast_objects: std::cell::RefCell<Vec<(kuna_base::types::uintb, int4, std::rc::Rc<crate::dtype::Datatype>)>>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -291,7 +235,7 @@ pub struct Funcdata {
     ///
     /// The C++ `HighVariable`s are allocated by `new HighVariable` from
     /// `Funcdata::assignHigh`/`Merge` and reverse-linked from each member
-    /// `vn->high`; per ADR 0001 they live in this [`HighVariableBank`] keyed by
+    /// `vn->high`; per ADR 0001 they live in this [`crate::variable::HighVariableBank`] keyed by
     /// [`crate::context::HighVariableId`], the back-link being the `Varnode::high`
     /// field already wired in `varnode.rs`.
     high_bank: crate::variable::HighVariableBank,
@@ -433,6 +377,15 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
+    /// (kuna `callrettype`) The recovered return value of each callee this
+    /// function calls, copied off the `Architecture` like `kuna_protoorder_types`.
+    kuna_callret_types: crate::kuna_callrettype::StatedReturns,
+    /// (kuna `callrettype`) The loader's data ranges, for telling an address
+    /// from a number ([`crate::kuna_callrettype::contradicted`]).
+    kuna_callret_data: std::rc::Rc<Vec<(u64, u64)>>,
+    /// (kuna `callrettype`) The extensions the return trimming narrowed the
+    /// returned value back through ([`crate::kuna_callrettype::note_returned_extension`]).
+    kuna_callret_returned: Vec<(bool, int4)>,
     /// (kuna `passthrough`) The register ranges `ActionFuncLink` made visible to
     /// heritage for a call whose callee states them, with the calls that own
     /// each ([`crate::p4_calls::kuna_passthrough`]).  Empty unless the option is
@@ -451,6 +404,38 @@ pub struct Funcdata {
     kuna_calleevote_inputs: Option<std::rc::Rc<crate::kuna_calleevote::CallerTypes>>,
     /// (kuna `calleevote fields`) Every caller of this function is a known direct call.
     kuna_calleevote_closed: bool,
+    /// (kuna `elemptr`) The globals this function must not type as element
+    /// pointers: another function of the batch disagrees about them.
+    kuna_elemptr_blocked: Option<std::rc::Rc<std::collections::BTreeSet<crate::kuna_elemptr::Obj>>>,
+    /// (kuna `elemptr`) The sign this function reads an object's elements at,
+    /// where its own choice was only the default and another function's rests
+    /// on evidence.
+    kuna_elemptr_adopt: Option<std::rc::Rc<crate::kuna_elemptr::Signs>>,
+    /// (kuna `elemptr`) The element signs evidence has settled in the batch so
+    /// far; this function reads them where its own sign is only the default.
+    kuna_elemptr_settled: Option<std::rc::Rc<crate::kuna_elemptr::Signs>>,
+    /// (kuna `elemptr`) What this function's last type pass said about each
+    /// global and table.
+    kuna_elemptr_verdicts:
+        std::cell::RefCell<std::collections::BTreeMap<crate::kuna_elemptr::Obj, crate::kuna_elemptr::GlobalVerdict>>,
+    /// (kuna `elemptr`) The constant addresses this function's walks typed as an
+    /// element pointer.
+    kuna_elemptr_constants: std::cell::RefCell<std::collections::BTreeSet<u64>>,
+    /// (kuna `elemptr`) The parameters and call returns a type pass typed as
+    /// element pointers (`false`), and those a later pass found indexing
+    /// another base (`true`), never typed again.  Survives [`Funcdata::clear`],
+    /// so the restart that follows a dispute starts without the candidate.
+    kuna_elemptr_inputs: std::cell::RefCell<std::collections::BTreeMap<crate::kuna_elemptr::InputKey, bool>>,
+    /// (kuna `elemptr`) A later type pass disputed an earlier one's candidate.
+    kuna_elemptr_disputed: std::cell::Cell<bool>,
+    /// (kuna `elemptr`) The Varnodes this type pass gave an element pointer.
+    kuna_elemptr_typed: std::cell::RefCell<std::collections::HashSet<crate::context::VarnodeId>>,
+    /// (kuna `elemptr`) This function is one of several decompiled with no
+    /// batch to agree on globals and tables: it types neither.
+    kuna_elemptr_no_objects: bool,
+    /// (kuna `elemptr`) What each callee decompiled earlier stated about the
+    /// parameters and return an element pointer typed.
+    kuna_elemptr_stated: std::collections::HashMap<(int4, kuna_base::types::uintb), std::rc::Rc<crate::kuna_elemptr::Stated>>,
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
@@ -544,6 +529,7 @@ impl Funcdata {
             localmap,
             frame_slots: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             slot_evidence: std::cell::RefCell::new(Default::default()),
+            cast_objects: std::cell::RefCell::new(Vec::new()),
             jumpvec: Vec::new(),
             vbank,
             obank: PcodeOpBank::new(),
@@ -565,11 +551,24 @@ impl Funcdata {
             kuna_callee_entry_dead: std::collections::HashMap::new(),
             kuna_callee_forward: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
+            kuna_callret_types: std::collections::HashMap::new(),
+            kuna_callret_data: std::rc::Rc::new(Vec::new()),
+            kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
             kuna_calleevote_inputs: None,
             kuna_calleevote_closed: false,
+            kuna_elemptr_blocked: None,
+            kuna_elemptr_adopt: None,
+            kuna_elemptr_settled: None,
+            kuna_elemptr_verdicts: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            kuna_elemptr_constants: std::cell::RefCell::new(std::collections::BTreeSet::new()),
+            kuna_elemptr_inputs: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            kuna_elemptr_disputed: std::cell::Cell::new(false),
+            kuna_elemptr_typed: std::cell::RefCell::new(std::collections::HashSet::new()),
+            kuna_elemptr_no_objects: false,
+            kuna_elemptr_stated: std::collections::HashMap::new(),
             kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters::default(),
         })
     }
@@ -802,6 +801,62 @@ impl Funcdata {
         }
     }
 
+    /// (kuna `callrettype`) Record what the callee filed under `key` returns.
+    pub fn kuna_set_callret_type(
+        &mut self,
+        key: (int4, kuna_base::types::uintb),
+        stated: std::rc::Rc<crate::kuna_callrettype::StatedReturn>,
+    ) {
+        self.kuna_callret_types.insert(key, stated);
+    }
+
+    /// (kuna `callrettype`) Record the loader's data ranges.
+    pub fn kuna_set_callret_data(&mut self, ranges: std::rc::Rc<Vec<(u64, u64)>>) {
+        self.kuna_callret_data = ranges;
+    }
+
+    /// (kuna `callrettype`) The loader's data ranges recorded by the seed.
+    pub fn kuna_callret_data(&self) -> &[(u64, u64)] {
+        &self.kuna_callret_data
+    }
+
+    /// (kuna `callrettype`) Whether any callee stated what it returns.
+    pub fn kuna_has_callret_types(&self) -> bool {
+        !self.kuna_callret_types.is_empty()
+    }
+
+    /// (kuna `callrettype`) Whether any callee stated an integer return.
+    pub fn kuna_has_integer_callret_types(&self) -> bool {
+        self.kuna_callret_types.values().any(|s| {
+            matches!(
+                s.ct.get_metatype(),
+                crate::dtype::type_metatype::TYPE_INT | crate::dtype::type_metatype::TYPE_UINT
+            )
+        })
+    }
+
+    /// (kuna `callrettype`) Record an extension the returned value was narrowed
+    /// back through.
+    pub fn kuna_note_callret_returned(&mut self, ext: (bool, int4)) {
+        if !self.kuna_callret_returned.contains(&ext) {
+            self.kuna_callret_returned.push(ext);
+        }
+    }
+
+    /// (kuna `callrettype`) The extensions the returned value was narrowed back
+    /// through: whether each extends at the sign, and from what width.
+    pub fn kuna_callret_returned(&self) -> &[(bool, int4)] {
+        &self.kuna_callret_returned
+    }
+
+    /// (kuna `callrettype`) What the callee filed under `key` stated it returns.
+    pub fn kuna_callret_type(
+        &self,
+        key: (int4, kuna_base::types::uintb),
+    ) -> Option<&crate::kuna_callrettype::StatedReturn> {
+        self.kuna_callret_types.get(&key).map(|r| r.as_ref())
+    }
+
     /// (kuna `calleevote`) Record what this function's callers pass for its inputs.
     pub fn kuna_set_calleevote_inputs(
         &mut self,
@@ -823,6 +878,138 @@ impl Funcdata {
     /// (kuna `calleevote fields`) Are all of this function's callers known direct calls?
     pub fn kuna_calleevote_closed(&self) -> bool {
         self.kuna_calleevote_closed
+    }
+
+    /// (kuna `elemptr`) Set the globals and tables this function must not type.
+    pub fn kuna_set_elemptr_blocked(
+        &mut self,
+        blocked: Option<std::rc::Rc<std::collections::BTreeSet<crate::kuna_elemptr::Obj>>>,
+    ) {
+        self.kuna_elemptr_blocked = blocked;
+    }
+
+    /// (kuna `elemptr`) Set the element signs this function adopts: the ones
+    /// the batch decided for it, and the ones evidence has settled so far.
+    pub fn kuna_set_elemptr_adopt(
+        &mut self,
+        adopt: Option<std::rc::Rc<crate::kuna_elemptr::Signs>>,
+        settled: Option<std::rc::Rc<crate::kuna_elemptr::Signs>>,
+    ) {
+        self.kuna_elemptr_adopt = adopt;
+        self.kuna_elemptr_settled = settled;
+    }
+
+    /// (kuna `elemptr`) The element shape and sign (`true` signed) this
+    /// function reads `obj`'s elements at, when the batch decided it.
+    pub fn kuna_elemptr_adopted(&self, obj: crate::kuna_elemptr::Obj) -> Option<(String, bool)> {
+        [&self.kuna_elemptr_adopt, &self.kuna_elemptr_settled]
+            .into_iter()
+            .find_map(|m| m.as_ref().and_then(|a| a.get(&obj).cloned()))
+    }
+
+    /// (kuna `elemptr`) Is `obj` one this function must not type?
+    pub fn kuna_elemptr_blocked(&self, obj: crate::kuna_elemptr::Obj) -> bool {
+        self.kuna_elemptr_blocked.as_ref().is_some_and(|b| b.contains(&obj))
+    }
+
+    /// (kuna `elemptr`) Set whether this function may type globals and tables.
+    pub fn kuna_set_elemptr_objects(&mut self, on: bool) {
+        self.kuna_elemptr_no_objects = !on;
+    }
+
+    /// (kuna `elemptr`) May this function type globals and tables?
+    pub fn kuna_elemptr_objects(&self) -> bool {
+        !self.kuna_elemptr_no_objects
+    }
+
+    /// (kuna `elemptr`) Record what the callee entered at `entry` stated.
+    pub fn kuna_set_elemptr_stated(&mut self, entry: &Address, stated: std::rc::Rc<crate::kuna_elemptr::Stated>) {
+        if let Some(sp) = entry.get_space() {
+            self.kuna_elemptr_stated.insert((sp.get_index(), entry.get_offset()), stated);
+        }
+    }
+
+    /// (kuna `elemptr`) What the callee entered at `entry` stated, if anything.
+    pub fn kuna_elemptr_stated(&self, entry: &Address) -> Option<&crate::kuna_elemptr::Stated> {
+        if self.kuna_elemptr_stated.is_empty() {
+            return None;
+        }
+        let sp = entry.get_space()?;
+        self.kuna_elemptr_stated.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `elemptr`) What this function's last type pass said about `obj`.
+    pub fn kuna_elemptr_verdict(&self, obj: crate::kuna_elemptr::Obj) -> Option<crate::kuna_elemptr::GlobalVerdict> {
+        self.kuna_elemptr_verdicts.borrow().get(&obj).cloned()
+    }
+
+    /// (kuna `elemptr`) Forget what the previous type pass said: the verdicts
+    /// and typed tables describe the pass whose types the function keeps.
+    pub fn kuna_elemptr_begin_pass(&self) {
+        self.kuna_elemptr_verdicts.borrow_mut().clear();
+        self.kuna_elemptr_constants.borrow_mut().clear();
+        self.kuna_elemptr_typed.borrow_mut().clear();
+    }
+
+    /// (kuna `elemptr`) This pass gave `vn` an element pointer.
+    pub fn kuna_elemptr_note_typed(&self, vn: crate::context::VarnodeId) {
+        self.kuna_elemptr_typed.borrow_mut().insert(vn);
+    }
+
+    /// (kuna `elemptr`) Did this pass give `vn` an element pointer?
+    pub fn kuna_elemptr_typed(&self, vn: crate::context::VarnodeId) -> bool {
+        self.kuna_elemptr_typed.borrow().contains(&vn)
+    }
+
+    /// (kuna `elemptr`) Fold one walk's verdict about `obj` in.
+    pub fn kuna_elemptr_note(&self, obj: crate::kuna_elemptr::Obj, verdict: crate::kuna_elemptr::GlobalVerdict) {
+        let mut m = self.kuna_elemptr_verdicts.borrow_mut();
+        let merged = match m.remove(&obj) {
+            Some(prev) => prev.merge(verdict),
+            None => verdict,
+        };
+        m.insert(obj, merged);
+    }
+
+    /// (kuna `elemptr`) Note a constant address a walk typed as an element pointer.
+    pub fn kuna_elemptr_note_constant(&self, addr: u64) {
+        self.kuna_elemptr_constants.borrow_mut().insert(addr);
+    }
+
+    /// (kuna `elemptr`) Did a walk type the constant address `addr`?
+    pub fn kuna_elemptr_typed_constant(&self, addr: u64) -> bool {
+        self.kuna_elemptr_constants.borrow().contains(&addr)
+    }
+
+    /// (kuna `elemptr`) What an earlier pass of this decompile did with the
+    /// parameter or call return `key`: `Some(false)` typed it, `Some(true)` it
+    /// is blocked.
+    pub fn kuna_elemptr_input(&self, key: crate::kuna_elemptr::InputKey) -> Option<bool> {
+        self.kuna_elemptr_inputs.borrow().get(&key).copied()
+    }
+
+    /// (kuna `elemptr`) A pass typed the parameter or call return `key`.
+    pub fn kuna_elemptr_note_input(&self, key: crate::kuna_elemptr::InputKey) {
+        self.kuna_elemptr_inputs.borrow_mut().entry(key).or_insert(false);
+    }
+
+    /// (kuna `elemptr`) A later pass found `key`, typed by an earlier one, to be
+    /// the index of another base: block it and ask for a restart.
+    pub fn kuna_elemptr_dispute_input(&self, key: crate::kuna_elemptr::InputKey) {
+        self.kuna_elemptr_inputs.borrow_mut().insert(key, true);
+        self.kuna_elemptr_disputed.set(true);
+    }
+
+    /// (kuna `elemptr`) Was a candidate disputed since the last call?
+    pub fn kuna_elemptr_take_disputed(&self) -> bool {
+        self.kuna_elemptr_disputed.replace(false)
+    }
+
+    /// (kuna `elemptr`) What this function's walks said about each global.
+    pub fn kuna_elemptr_verdicts(
+        &self,
+    ) -> std::collections::BTreeMap<crate::kuna_elemptr::Obj, crate::kuna_elemptr::GlobalVerdict> {
+        self.kuna_elemptr_verdicts.borrow().clone()
     }
 
     /// (kuna `protoorder types`) The types a callee's own recovery stated for
@@ -1390,6 +1577,21 @@ impl Funcdata {
     /// (kuna `framelayout`) The union of every stack-frame slot any pass recovered.
     pub fn frame_slots(&self) -> Vec<(i64, FrameSlot)> {
         self.frame_slots.borrow().iter().map(|(k, v)| (*k, v.clone())).collect()
+    }
+
+    /// (kuna `castobject`) Remember the stack objects one pass re-declared.
+    pub fn record_cast_objects(&self, objects: Vec<(kuna_base::types::uintb, int4, std::rc::Rc<crate::dtype::Datatype>)>) {
+        let mut all = self.cast_objects.borrow_mut();
+        for o in objects {
+            if !all.iter().any(|(off, size, _)| (*off, *size) == (o.0, o.1)) {
+                all.push(o);
+            }
+        }
+    }
+
+    /// (kuna `castobject`) Every stack object any pass re-declared.
+    pub fn cast_objects(&self) -> Vec<(kuna_base::types::uintb, int4, std::rc::Rc<crate::dtype::Datatype>)> {
+        self.cast_objects.borrow().clone()
     }
 
     /// (kuna `slotptr`) Fold one pass's stack-store evidence into the running record.
@@ -2266,33 +2468,10 @@ impl Funcdata {
         self.get_scope_local()?.container_entry_key(&addr, &usepoint)
     }
 
-    /// Look-up boolean properties and data-type information for a Varnode
+    /// Seed unmapped Varnodes with local/global symbol flags and exact global
+    /// types, preserving existing mapped properties. In high-level mode, create
+    /// a missing cover and mark its HighVariable cover dirty when necessary.
     /// (C++ `Funcdata::setVarnodeProperties`, `funcdata_varnode.cc:25`).
-    ///
-    /// where `localmap->queryProperties` reaches the global scope, so a
-    /// global-mapped Varnode would pick up `mapped | addrtied | persist` at every
-    /// Varnode-creation site (`newVarnode`/`newVarnodeOut`/`setInput`).
-    ///
-    /// DEFERRED (the persist/addrtied marking is a no-op here, as in the W3 base):
-    /// the global-store *survival* this item targets is delivered instead by the
-    /// heritage path — `Heritage::guard` queries `query_global_properties` for the
-    /// same `mapped | addrtied | persist` directly and `guard_returns` inserts the
-    /// `addrforce` RETURN-COPY that keeps the store's def-chain alive through
-    /// `ActionDeadCode`.  That path is sufficient for every global-store datatest
-    /// (displayformat, condconst, varcross), so this early marking is redundant
-    /// for the target.
-    ///
-    /// Marking persist/addrtied *here* (at IR construction, on every global READ as
-    /// well) was measured to regress `varcross.xml::global_cross` ("Global cross
-    /// #2", a positive-content assertion): the early `addrtied` flag perturbs the
-    /// HighVariable merge so the recovered global-flow register (`v1`) renders as a
-    /// raw register instead of its name — the downstream HighVariable-naming /
-    /// global-store render seams (`merge.rs`/`variable.rs`/`printc.rs`, owned by the
-    /// naming/render waves) are not yet landed.  Activating it gains **zero** passing
-    /// assertions over the heritage path while regressing `global_cross`, so it is
-    /// held until the naming seam lands (matrix in
-    /// `docs/rust-port/reviews/w10-global-persist.md`).  When that seam lands the
-    /// body above folds back in unchanged.
     pub fn set_varnode_properties(&mut self, vn: VarnodeId) {
         // An already-mapped Varnode keeps its flags.
         let already_mapped = match self.vbank().get(vn) {
@@ -2364,6 +2543,12 @@ impl Funcdata {
                 }
             }
         }
+        self.ensure_varnode_cover(vn);
+    }
+
+    /// The cover half of [`set_varnode_properties`](Funcdata::set_varnode_properties):
+    /// allocate `vn`'s cover once high-level analysis is on.
+    pub(crate) fn ensure_varnode_cover(&mut self, vn: VarnodeId) {
         // C++ `if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }`
         // (funcdata_varnode.cc:42).  This ALLOCATES the Varnode's Cover object (and
         // sets `coverdirty`) the first time `setVarnodeProperties` runs on a
@@ -3429,8 +3614,8 @@ impl Funcdata {
     /// `op->outputTypeLocal()` — the local-from-op output type (C++
     /// `TypeOp::getOutputLocal`, typeop.cc:262).
     ///
-    /// (kuna L3) Routes through the per-op-code [`type_op_info`] dispatch on the
-    /// shared (INTERNED) [`TypeFactory`] (`glb->types`), so two ops whose local
+    /// (kuna L3) Routes through the per-op-code [`crate::typeop::type_op_info`] dispatch on the
+    /// shared (INTERNED) [`crate::dtype::TypeFactory`] (`glb->types`), so two ops whose local
     /// type is the same size+metatype return the SAME `Rc<Datatype>`.  This is
     /// load-bearing for `Merge::mergeAdjacent`'s pointer-identity same-type test
     /// (merge.cc:990 `ct != op->inputTypeLocal(i)`): a fresh `Rc` per call would
@@ -3457,7 +3642,7 @@ impl Funcdata {
         Rc::new(Datatype::new(sz, crate::dtype::type_metatype::TYPE_UNKNOWN))
     }
 
-    /// `op->inputTypeLocal(slot)` — see [`op_output_type_local_pub`].
+    /// `op->inputTypeLocal(slot)` — see `op_output_type_local_pub`.
     pub(crate) fn op_input_type_local_pub(&self, op: OpId, slot: int4) -> Rc<Datatype> {
         let (sz, opc) = match self.obank.get(op) {
             Some(o) => {
@@ -3767,7 +3952,7 @@ impl Funcdata {
     }
 
     /// `high1->merge(high2, &testCache, isspeculative)` for the dominant-copy
-    /// path, replaying the deferred `vn->setHigh` writes (see [`bank_merge_with_log`]).
+    /// path, replaying the deferred `vn->setHigh` writes (see `bank_merge_with_log`).
     /// The intersection cache is local here (the new dominating high has no cached
     /// edges yet), matching the C++ pass of `data.getMerge()`'s `testCache`.
     fn merge_two_highs(
@@ -3963,7 +4148,7 @@ impl Funcdata {
 
     /// Drive a HighVariable's external cover update (the C++
     /// `HighVariable::updateCover`, called by Merge).  Convenience over
-    /// [`with_high_split`] for the bank's `update_cover`.
+    /// `with_high_split` for the bank's `update_cover`.
     pub fn high_update_cover(&mut self, id: crate::context::HighVariableId) {
         self.with_high_split(|hb, ctx| hb.update_cover(id, ctx));
     }
@@ -4224,7 +4409,7 @@ impl Funcdata {
     }
 
     /// C++ `Funcdata::attemptDynamicMappingLate` (`funcdata_varnode.cc:1368`):
-    /// find the Varnode a dynamic SymbolEntry maps to (via [`DynamicHash`]) and
+    /// find the Varnode a dynamic SymbolEntry maps to (via [`crate::dynamic::DynamicHash`]) and
     /// attach the Symbol's NAME to it.  Returns `true` if a Varnode was adjusted.
     ///
     /// STUB(W4): the merged tree has no Varnode→SymbolEntry retype link, so the

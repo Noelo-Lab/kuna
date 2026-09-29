@@ -1,0 +1,370 @@
+{
+ "option": "castwiden",
+ "values": [
+  "off",
+  "on",
+  "literal"
+ ],
+ "default_on": true,
+ "default_value": "literal",
+ "phase": "P9",
+ "subphase": "cast-policy",
+ "change_kind": "presentation-default",
+ "tier": "transform",
+ "source_decompiler": "ida",
+ "inspiration": "castbench residue: 64-bit widenings are kuna's largest cast excess over IDA; IDA prints 12LL * j / 4LL * v5 where kuna printed (long)j * 0xc",
+ "witness": {
+  "repro": "printf 'long idx(int j, int k) { return (k + 12L * j) * 128; }\\nlong ld(long *p, int i) { return p[1] + i; }\\nvoid st(long *p, int i) { p[1] = i; }\\n' > w.c && gcc -O0 -c w.c && kuna decompile-all w.o",
+  "before": [
+   "return ((long)a0 * 0xc + (long)a1) * 0x80;",
+   "return (long)a1 + ((long *)a0)[1];",
+   "((long *)a0)[1] = (long)a1;"
+  ],
+  "after": [
+   "return (a0 * 0xcL + a1) * 0x80;",
+   "return a1 + ((long *)a0)[1];",
+   "((long *)a0)[1] = a1;"
+  ],
+  "review_round_2": {
+   "repro": "printf 'long sq(int i) { return (long)i * i; }\\nlong pa(long *p, int a, int b) { return p[1] + (int)((unsigned)a + (unsigned)b); }\\nlong ch(long *p, int a, int b) { return (long)a + ((long)b + p[0]); }\\n' > w.c && clang -O0 -c w.c && kuna decompile-all w.o",
+   "first_version": [
+    "return (long)a0 * a0;  (gcc -O2: a0 * a0)",
+    "return ((long *)a0)[1] + a1 + a2;",
+    "return a1 + a2 + *a0;"
+   ],
+   "this_version": [
+    "return (long)a0 * a0;  (gcc -O2: (long)a0 * (long)a0)",
+    "return ((long *)a0)[1] + (a1 + a2);",
+    "return (long)a1 + a2 + *a0;"
+   ]
+  }
+ },
+ "census": {
+  "shared_functions": 4815,
+  "printed_8byte_integer_casts": {
+   "cast_ptr_to_int": 2300,
+   "zext": 1554,
+   "cast_sign_change": 1350,
+   "sext": 1350,
+   "other": 464
+  },
+  "widenings": 2904,
+  "beside_int_literal": 1640,
+  "compare_widenings_left": 40,
+  "compare_sign_change_casts": 664,
+  "doc": "docs/features/castwiden/analysis.md"
+ },
+ "castbench": {
+  "set": "full: 45 binaries x O0/O2/O2-noinline; functions kuna and IDA both emit",
+  "base": "castwiden off on the same build 07d37d9ba over main 29cfedee0 (= main 0096e984d arm byte for byte in all 45 files)",
+  "shared_functions": 4815,
+  "ida_casts": 37821,
+  "off_casts": 35588,
+  "literal_casts": 34061,
+  "removed_literal": 1527,
+  "per_kloc": {
+   "ida": 155.4,
+   "off": 188.2,
+   "literal": 180.1
+  },
+  "per_100_statements": {
+   "ida": 27.0,
+   "off": 29.9,
+   "literal": 28.7
+  },
+  "vs_ida": {
+   "off": 0.941,
+   "literal": 0.901
+  },
+  "by_opt_literal": {
+   "O0": [
+    11612,
+    10873
+   ],
+   "O2": [
+    13135,
+    12704
+   ],
+   "O2-noinline": [
+    10841,
+    10484
+   ]
+  },
+  "per_100_statements_by_opt": {
+   "O0": [
+    32.3,
+    30.2,
+    31.0
+   ],
+   "O2": [
+    31.5,
+    30.4,
+    26.1
+   ],
+   "O2-noinline": [
+    26.4,
+    25.5,
+    24.8
+   ],
+   "order": "off, literal, ida"
+  },
+  "functions_fewer": 481,
+  "functions_more": 0,
+  "rebased_onto_243177605": {
+   "base": "castwiden off, main 243177605 (#718 callbacktype, +21 casts in sort's thread routine)",
+   "off_casts": 35609,
+   "literal_casts": 34082,
+   "removed": 1527,
+   "vs_ida": {
+    "off": 0.942,
+    "literal": 0.901
+   },
+   "per_100_statements": {
+    "off": 29.9,
+    "literal": 28.7
+   },
+   "by_opt_literal": {
+    "O0": [
+     11619,
+     10880
+    ],
+    "O2": [
+     13142,
+     12711
+    ],
+    "O2-noinline": [
+     10848,
+     10491
+    ]
+   },
+   "functions_fewer": 481,
+   "functions_more": 0
+  }
+ },
+ "benchmark": {
+  "corpus": "444 slices: coreutils grep gzip diffutils bzip2 findutils tar shadow at O0, O2, O2-noinline; metric pinned (final-c/pindb.py, DECBENCH_PIN=_final-d/db625), DECBENCH_NO_CACHE=1",
+  "metric": "type_match",
+  "arms": "literal = default build, off = --option castwiden off, same binary",
+  "projects": {
+   "bzip2": {
+    "n": 267,
+    "perfect_off": 34,
+    "perfect_on": 34,
+    "mean_off": 0.4173,
+    "mean_on": 0.4173,
+    "improved": 0,
+    "worse": 0
+   },
+   "coreutils": {
+    "n": 6422,
+    "perfect_off": 989,
+    "perfect_on": 989,
+    "mean_off": 0.359,
+    "mean_on": 0.359,
+    "improved": 0,
+    "worse": 0
+   },
+   "diffutils": {
+    "n": 420,
+    "perfect_off": 64,
+    "perfect_on": 64,
+    "mean_off": 0.4514,
+    "mean_on": 0.4514,
+    "improved": 0,
+    "worse": 0
+   },
+   "findutils": {
+    "n": 790,
+    "perfect_off": 61,
+    "perfect_on": 61,
+    "mean_off": 0.2508,
+    "mean_on": 0.2508,
+    "improved": 0,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect_off": 53,
+    "perfect_on": 53,
+    "mean_off": 0.4583,
+    "mean_on": 0.4583,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 112,
+    "perfect_on": 112,
+    "mean_off": 0.5409,
+    "mean_on": 0.5409,
+    "improved": 0,
+    "worse": 0
+   },
+   "shadow": {
+    "n": 686,
+    "perfect_off": 89,
+    "perfect_on": 89,
+    "mean_off": 0.3604,
+    "mean_on": 0.3604,
+    "improved": 0,
+    "worse": 0
+   },
+   "tar": {
+    "n": 1548,
+    "perfect_off": 213,
+    "perfect_on": 213,
+    "mean_off": 0.3938,
+    "mean_on": 0.3938,
+    "improved": 0,
+    "worse": 0
+   }
+  },
+  "pooled": {
+   "n": 10748,
+   "perfect_off": 1615,
+   "perfect_on": 1615,
+   "mean_off": 0.3697,
+   "mean_on": 0.3697,
+   "improved": 0,
+   "worse": 0
+  },
+  "decisions_identical": "65,715 of 65,715 scored GT-variable decisions identical; no variable or argument added or removed",
+  "rebased_onto_243177605": {
+   "perfect_off": 1625,
+   "perfect_on": 1625,
+   "mean_off": 0.3713,
+   "mean_on": 0.3713,
+   "improved": 0,
+   "worse": 0,
+   "n": 10748
+  }
+ },
+ "speed": {
+  "method": "interleaved min-of-15 kuna decompile-all --json, castwiden off vs the default (literal), same binary 07d37d9ba (docs/features/castwiden/speed.py)",
+  "per_binary": {
+   "fmt": {
+    "off_min_ms": 4139.9,
+    "on_min_ms": 4146.2,
+    "delta_min_pct": 0.15,
+    "delta_median_pct": 0.16
+   },
+   "ls": {
+    "off_min_ms": 13977.0,
+    "on_min_ms": 14067.9,
+    "delta_min_pct": 0.65,
+    "delta_median_pct": -2.51
+   },
+   "sort": {
+    "off_min_ms": 14406.6,
+    "on_min_ms": 14402.5,
+    "delta_min_pct": -0.03,
+    "delta_median_pct": 0.32
+   },
+   "bash": {
+    "off_min_ms": 90466.4,
+    "on_min_ms": 89401.4,
+    "delta_min_pct": -1.18,
+    "delta_median_pct": -0.59
+   }
+  },
+  "worst_delta_min_pct": 0.65
+ },
+ "parity": {
+  "datatests": "675/675 PARITY OK; dupptr #1 #2 #5, longdouble #15, retspecial #3 opt out (they pin upstream's form)",
+  "stages": "1427/1427 PARITY OK on 243177605; 16 assertions of other options moved to the new form, 14 new castwiden keys",
+  "test_cli": "262/262 on 243177605; 2 probes moved to the new spelling"
+ },
+ "soundness": {
+  "round_trip": "kuna-cli/tests/decompile_all_cli.rs an_implied_widening_round_trips_through_the_printed_c: castwiden_{gcc,clang}_{O0,O2}_x86_64 printed with off/on/literal, compiled by gcc and clang at -O0 and -O2 with -fwrapv: all print the binary's output (negative values, 0x80000000..0xffffffff, sums past 32 bits, squares past 2^32), including one widened value read twice (sq, usq, sq_diff, dist), a 32-bit sum or product beside a long of the same operator (par_add, par_mul) and a widened operand beside a chain the printer writes without parentheses (chain_add, chain_mul, chain_add3, chain_xor); the pins fail on the first version",
+  "unit": "p9_emit/kuna_castwiden/tests.rs: fits() accepts exactly the (target, operand, other) combinations whose type and value C leaves unchanged, over sample values and all ten operators; literal typing in both bases",
+  "pre_existing_bugs_found": [
+   "(long)i + -0x80000000 prints an unsigned literal whose negation is +2^31 (off too; left alone)",
+   "(long)((1U - a0) * 0x13) zero-extends what the binary sign-extends (off too; left alone)"
+  ],
+  "json_surface": "decompile-all --json, off vs default, fmt O2, ls O0, gzip O2, tar O0 (2,514 functions, 20,342 variables): every field but code identical, so no variable or argument is added or removed",
+  "review_round_2_fixes": [
+   "an op reading one widened varnode in both slots keeps both casts",
+   "a dropped widening prints through the hidden-extension token, which keeps its operand's parentheses",
+   "first_leaf_fits: beside a same-operator chain the printer does not parenthesize, the left operand's cast goes only when the chain's first leaf lets it go",
+   "castimplied destinations widen only for 8-byte targets and integer operands C extends the same way"
+  ]
+ },
+ "default_on_evaluation": "docs/features/castwiden/default-on-evaluation.md",
+ "corpus_sweep": {
+  "instrument": "docs/features/castwiden/semhunks.py over docs/features/castwiden/semrun.py output (kuna decompile-all --json --option structdefs on; castwiden off vs the default, one build 07d37d9ba)",
+  "rule": "each changed line is parsed as C on both sides (casts found by castcount's grammar with the file's own type vocabulary); the trees must be equal once casts are set aside (GROUPING otherwise); no cast may be added (ADDED), removed from anything but an 8-byte integer cast (SCOPE), removed under a shift, comparison or unary op (FORBIDDEN), or removed from both operands of one op (BOTH_LOST); every removed cast is typed from the function's declarations, struct definitions and signatures: under + - * / % & | ^ the op must keep its type, or at 64 bits inside a chain of + - * & | ^ the chain must end with the same type; a destination must be the cast's type or an 8-byte integer (NARROW otherwise); anything whose type the text does not state is UNVERIFIED and listed",
+  "corpora": {
+   "castbench": {
+    "what": "castbench.py's full corpus: coreutils fmt ls sort du cp tail wc, grep, gzip, diffutils cmp diff diff3 sdiff, tar, find; O0/O2/O2-noinline",
+    "binaries": 45,
+    "casts_all_functions": {
+     "off": 87818,
+     "default": 84606
+    },
+    "functions_changed": 1157,
+    "lines_changed": 2910,
+    "verified": {
+     "arith": 2737,
+     "store": 68,
+     "assign": 366,
+     "call-arg": 38
+    },
+    "suffixes": 2386,
+    "flags": {}
+   },
+   "corpus8": {
+    "what": "bzip2 O0, bash O2, kmod O2, dpkg-divert O2, chage O0, crontab O2, dash O2-noinline, crond O0",
+    "binaries": 8,
+    "casts_all_functions": {
+     "off": 31141,
+     "default": 28943
+    },
+    "functions_changed": 561,
+    "lines_changed": 1899,
+    "verified": {
+     "arith": 1811,
+     "call-arg": 108,
+     "assign": 267,
+     "store": 2
+    },
+    "suffixes": 1557,
+    "flags": {}
+   },
+   "extra11": {
+    "what": "e2fsck O0, example64 O0, ip O2, xmlwf O2, sftp-server O2, mirai O2, last O2, minigzip O2, minipig.exe O2 (PE32), mydoom.exe O2 (PE32), init O2-noinline",
+    "binaries": 11,
+    "casts_all_functions": {
+     "off": 33837,
+     "default": 32030
+    },
+    "functions_changed": 623,
+    "lines_changed": 1613,
+    "verified": {
+     "arith": 1554,
+     "store": 84,
+     "call-arg": 109,
+     "assign": 61
+    },
+    "suffixes": 1273,
+    "flags": {}
+   }
+  },
+  "total": {
+   "binaries": 64,
+   "functions_changed": 2341,
+   "lines_changed": 6422,
+   "flags": 0
+  },
+  "control": {
+   "what": "the same classifier on the review corpus printed by this PR's first head d395e6aa2 (no struct definitions): it flags the two known lost-parentheses hunks (mirai), the one shared-widening hunk and three regrouped chains (e2fsck), all fixed here",
+   "flags": {
+    "GROUPING": 2,
+    "BOTH_LOST": 1,
+    "NARROW": 3,
+    "SCOPE": 84,
+    "UNVERIFIED": 78
+   }
+  },
+  "detail": "docs/features/castwiden/semhunks.json"
+ }
+}

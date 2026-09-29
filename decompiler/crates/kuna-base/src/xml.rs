@@ -8,7 +8,7 @@
 //! below), the same scanner-mode protocol, the same SAX callback sequence,
 //! and the same error strings:
 //!
-//! - The scanner ([`XmlScan`]) is a line-for-line transcription, including
+//! - The scanner (`XmlScan`) is a line-for-line transcription, including
 //!   the 4-byte lookahead, the synthetic `'\n'` injected at end of stream, a
 //!   NUL byte acting as end of stream, and the **signed-char** semantics of
 //!   the oracle platform (bytes >= 0x80 become negative lookahead values, so
@@ -1907,7 +1907,22 @@ mod tests {
         // declared signed
         // and kuna-pemain / a stripped PE names the function its CRT startup
         // calls `main`
-        assert_eq!(count, 344, "corpus file count drifted");
+        // and powerpc-isa-hint / a failed generic PowerPC64 isel decode
+        // suggests an explicit ISA target
+        // and cortus-aps3-constructors / inv with an immediate negates, extb.cc
+        // sign-extends, and an indirect call keeps its target
+        // and kuna-jumptablemax / a four-case switch is refused under
+        // `option jumptablemax 2`
+        // and kuna-callbacktype / a callback takes the prototype of the slot
+        // it is passed to
+        // and kuna-callrettype / a call returns the type its callee states
+        // (the single-function negative control)
+        // and kuna-castobject / an out-parameter local is declared at the type
+        // its callee declares when every reader agrees
+        // and kuna-castwiden / a 64-bit widening C performs by itself keeps no cast
+        // and kuna-elemptr / a pointer used only as an array is declared a
+        // pointer to its element
+        assert_eq!(count, 352, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

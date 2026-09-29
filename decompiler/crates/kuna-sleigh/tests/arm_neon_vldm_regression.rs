@@ -18,8 +18,7 @@
 //! This test lifts exactly that instruction against the built `ARM8_le.sla`
 //! (`ARM:LE:32:v8`) in Thumb mode, decodes two shallow instructions, and
 //! repeats the deep assembly and lift. The repeated results gate complete
-//! resets when the expanded parser arena is reused. It is skipped when the
-//! `.sla` is absent (`make specs`).
+//! resets when the expanded parser arena is reused.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -110,13 +109,7 @@ impl LoadImage for DummyImg {
 fn arm_thumb_vldmia_upper_neon_regs_does_not_panic() {
     let sla_path = repo_root()
         .join("specs/Ghidra/Processors/ARM/data/languages/ARM8_le.sla");
-    let Ok(sla) = std::fs::read(&sla_path) else {
-        eprintln!(
-            "arm_neon_vldm_regression: skipping (no `{}`; run `make specs`)",
-            sla_path.display()
-        );
-        return;
-    };
+    let sla = std::fs::read(&sla_path).expect("read compiled ARM spec");
 
     let base: u64 = 0x1000;
     // `vldmia r0, {d16-d31}` (d0 ec 20 0b) then `bx lr` / nop padding, matching

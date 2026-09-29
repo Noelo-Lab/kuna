@@ -15,8 +15,7 @@
 //! maximum), common in `-O2` output ahead of a loop head. `FlowInfo` turned the
 //! failed decode into an artificial halt, truncating every function that
 //! contained one. This test decodes it against the built `x86-64.sla`, and pins
-//! that the start-byte guard still rejects a read genuinely past 16 bytes. It is
-//! skipped when the `.sla` is absent (`make specs`).
+//! that the start-byte guard still rejects a read genuinely past 16 bytes.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -102,18 +101,11 @@ impl LoadImage for DummyImg {
     fn adjust_vma(&mut self, _adjust: i64) {}
 }
 
-/// Build an x86-64 SLEIGH over `bytes` at `base`, or `None` when the `.sla` is
-/// not built.
-fn x86_64_sleigh(base: u64, bytes: Vec<u8>) -> Option<(Sleigh, Address)> {
+/// Build an x86-64 SLEIGH over `bytes` at `base` using the required spec.
+fn x86_64_sleigh(base: u64, bytes: Vec<u8>) -> (Sleigh, Address) {
     let sla_path =
         repo_root().join("specs/Ghidra/Processors/x86/data/languages/x86-64.sla");
-    let Ok(sla) = std::fs::read(&sla_path) else {
-        eprintln!(
-            "x86_maxlen_nop_regression: skipping (no `{}`; run `make specs`)",
-            sla_path.display()
-        );
-        return None;
-    };
+    let sla = std::fs::read(&sla_path).expect("read compiled x86-64 spec");
 
     let ctx = Box::new(ContextInternal::new());
     let mut sleigh = Sleigh::new(Box::new(DummyImg), ctx);
@@ -128,7 +120,7 @@ fn x86_64_sleigh(base: u64, bytes: Vec<u8>) -> Option<(Sleigh, Address)> {
 
     let ram =
         Rc::clone(sleigh.base().manager().get_space_by_name("ram").expect("ram space"));
-    Some((sleigh, Address::new(ram, base)))
+    (sleigh, Address::new(ram, base))
 }
 
 #[test]
@@ -143,7 +135,7 @@ fn x86_64_fifteen_byte_alignment_nop_decodes() {
     ];
     bytes.push(0xc3);
 
-    let Some((sleigh, addr)) = x86_64_sleigh(base, bytes) else { return };
+    let (sleigh, addr) = x86_64_sleigh(base, bytes);
 
     let mut text = TextEmit::default();
     // Before the fix this failed with "Instruction byte read past buffer".
@@ -172,7 +164,7 @@ fn x86_64_over_length_encoding_still_rejected() {
     let mut bytes = vec![0x66; 16];
     bytes.push(0x90);
 
-    let Some((sleigh, addr)) = x86_64_sleigh(base, bytes) else { return };
+    let (sleigh, addr) = x86_64_sleigh(base, bytes);
 
     let mut text = TextEmit::default();
     let err = sleigh

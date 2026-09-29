@@ -202,6 +202,11 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "protoorder" => conf.protoorder.as_str(),
         // (kuna `calleevote`) Three-valued, so it reports its own token.
         "calleevote" => conf.calleevote.as_str(),
+        // (kuna `callbacktype`) A mode over an enum field like its two
+        // neighbours, so it reports its own token rather than a `live_field`.
+        "callbacktype" => conf.callbacktype.as_str(),
+        // (kuna `castwiden`) Three-valued, so it reports its own token.
+        "castwiden" => conf.cast_widen.as_str(),
         "retpushedhalf" => on_off(conf.ret_pushed_half),
         "inputparamgap" => on_off(conf.input_param_gap),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
@@ -254,6 +259,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "dynrelocs" => on_off(conf.analysis_dynrelocs),
         "pdatachained" => on_off(conf.analysis_pdatachained),
         "rexthunk" => on_off(conf.analysis_rexthunk),
+        "peordinal" => on_off(conf.analysis_peordinal),
         "symbolnamerepair" => on_off(conf.analysis_symbolnamerepair),
         // (kuna `symbolnamechars`) Three-valued, so it reports its own token.
         "symbolnamechars" => conf.analysis_symbolnamechars.as_str(),

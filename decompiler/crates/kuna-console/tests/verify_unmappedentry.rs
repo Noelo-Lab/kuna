@@ -23,12 +23,6 @@
 //! the FUNCTION claim is withheld. The instruction genuinely encodes a call to
 //! that address, so the Call cross-reference is filed either way and `kuna xrefs
 //! --to 0x349688c1` still reports the call site.
-//!
-//! ## `.sla` precondition
-//!
-//! Bootstrapping needs the built `x86` `.sla` under `specs/` (gitignored; `make
-//! specs`). When it is absent the bootstrap fails; the test prints that and
-//! returns early (a specs-less CI is a visible skip, never a false green).
 
 use std::path::PathBuf;
 
@@ -45,31 +39,21 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture with the bounded recursive discovery on (the consumer
-/// that commits the walk's CALL targets) and `unmappedentry` in the requested
-/// state. `None` is a visible skip when the `.sla` is missing.
-fn bootstrap(unmappedentry: bool) -> Option<ConsoleProgram> {
+/// Bootstrap the fixture with the bounded recursive discovery on (the consumer that commits
+/// the walk's CALL targets) and `unmappedentry` in the requested state.
+fn bootstrap(unmappedentry: bool) -> ConsoleProgram {
     let bin =
         repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/unmapped_call_x86_64");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
-    let mut prog = match bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "verify_unmappedentry: skipping (bootstrap failed, build `.sla` with \
-                 `make specs`): {}",
-                e.explain()
-            );
-            return None;
-        }
-    };
+    let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("fast_funcdisc", "on").expect("fast_funcdisc flips on");
     prog.arch_mut()
         .set_kuna_option("unmappedentry", if unmappedentry { "on" } else { "off" })
         .expect("unmappedentry flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    Some(prog)
+    prog
 }
 
 fn entry_names(prog: &ConsoleProgram) -> Vec<String> {
@@ -79,9 +63,7 @@ fn entry_names(prog: &ConsoleProgram) -> Vec<String> {
 /// BEFORE (`--option unmappedentry off`): the unmapped CALL target is committed.
 #[test]
 fn unmapped_call_target_is_a_function_with_the_option_off() {
-    let Some(prog) = bootstrap(false) else {
-        return;
-    };
+    let prog = bootstrap(false);
     let names = entry_names(&prog);
     assert!(
         names.iter().any(|n| n == PHANTOM),
@@ -102,9 +84,7 @@ fn unmapped_call_target_is_a_function_with_the_option_off() {
 /// AFTER (default): the phantom is gone and both real functions survive.
 #[test]
 fn unmapped_call_target_is_refused_by_default_and_real_entries_survive() {
-    let Some(prog) = bootstrap(true) else {
-        return;
-    };
+    let prog = bootstrap(true);
     let names = entry_names(&prog);
     assert!(
         !names.iter().any(|n| n == PHANTOM),
@@ -124,9 +104,7 @@ fn unmapped_call_target_is_refused_by_default_and_real_entries_survive() {
 /// function claim — the entry set loses exactly the phantom and nothing else.
 #[test]
 fn only_the_phantom_differs_between_the_two_arms() {
-    let (Some(off), Some(on)) = (bootstrap(false), bootstrap(true)) else {
-        return;
-    };
+    let (off, on) = (bootstrap(false), bootstrap(true));
     let mut before = entry_names(&off);
     let mut after = entry_names(&on);
     before.sort();

@@ -17,6 +17,8 @@ e01740f9fd7bc3a8c0035fd6
 <symbol space="ram" offset="0x455c50" name="read_returnbig"/>
 </binaryimage>
 <script>
+  <!-- kuna: castwiden default literal; this upstream test pins the (int8) widening upstream prints into a store through an int8 field -->
+  <com>option castwiden off</com>
   <com>parse line struct mystruct { int8 a; int8 b; int8 c; };</com>
   <com>parse line extern mystruct returnbig(int4 num);</com>
   <com>lo fu returnbig</com>

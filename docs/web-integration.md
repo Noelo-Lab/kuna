@@ -872,6 +872,24 @@ selectable) and the other tabs say what they need; edits are kept, exported and 
 
 ## 5. Testing
 
+Native tests decode the front-end's JSON with the test-only `serde_json` dependency.
+They check integer addresses without converting them to floating point and require
+array fields to be present with the expected type. Missing fixtures, processor
+specs, or architecture initialization now fail the native tests rather than
+turning them into successful skips.
+
+`test/cdp-client-startup.mjs` checks the browser launcher's lifecycle with
+temporary executables, without requiring Chrome or a web build. Missing or
+exited executables fail promptly with bounded stderr diagnostics; a running
+browser has up to a minute to publish a complete, valid DevTools port line (a cold
+start on a busy CI runner can take well over ten seconds). Extra Chrome flags pass
+through `flags`.
+Failures and explicit close clean up the owned temporary profile. Startup
+errors remain failures, not browser-test skips. Process exit is observed separately
+from stderr closure, since a descendant may retain the pipe after the browser
+dies. Closing the launcher also releases its stderr stream; exit status and
+captured diagnostics are retained even when the pipe would remain open.
+
 Five layers, all but the last runnable without a browser in CI, spanning **multiple
 formats and architectures**:
 
