@@ -1584,8 +1584,7 @@ undefined one leave the field `undefined<N>` (`Evidence::record`). The reason is
 an extension the text cannot show. `find`'s `consider_visiting` reads `fts_info`
 into signed comparisons and, with `movzwl`, into a call argument whose extension
 the call absorbed; typed `short`, the field made `sub_7510(a1->field_0x68)`
-sign-extend what the binary zero-extends, the value `RuleExpandLoad` keeps the
-unsigned spelling to preserve (chapter 03). An unsigned field is safe in both
+sign-extend what the binary zero-extends. An unsigned field is safe in both
 directions, since a sign-dependent operation is its own p-code op and prints its
 own cast.
 A float beside anything else is a different disagreement: the bytes are a union

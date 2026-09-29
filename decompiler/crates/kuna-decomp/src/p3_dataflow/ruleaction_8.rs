@@ -1564,11 +1564,10 @@ impl Rule for RuleOrCompare {
 /// \brief Convert LOAD size to match pointer data-type (C++ `RuleExpandLoad`,
 /// name `"expandload"`).
 ///
-/// (kuna) The truncation form declines a loaded value whose type is still
-/// undefined, where upstream accepts it.  The SUBPIECE it leaves prints as a cast
-/// to `int` of the loaded width (`TypeOpSubpiece::getOutputToken`), inventing a
-/// signedness the value never had; a zero-extended call argument then reads back
-/// sign-extended (`(short)p[0x1a]` for `movzwl 0x68(%rdi)`).
+/// (kuna) Only the AND form is taken, and only into a field a declared record
+/// lays out, reached through a pointer whose type is locked; the truncation
+/// form is never taken.  Both read bytes the program never reads (see
+/// [`crate::kuna_narrowload`]).
 pub struct RuleExpandLoad;
 
 impl RuleExpandLoad {
@@ -1708,11 +1707,6 @@ impl Rule for RuleExpandLoad {
         if el_type.get_size() < out_size + offset {
             return 0;
         }
-        // (kuna `elemptr`) A pointee inferred from use keeps the load narrow.
-        if crate::kuna_elemptr::keeps_load_narrow(data, root_ptr) {
-            return 0;
-        }
-
         let meta = el_type.get_metatype();
         if meta == type_metatype::TYPE_UNKNOWN
             || meta == type_metatype::TYPE_STRUCT
@@ -1723,46 +1717,17 @@ impl Rule for RuleExpandLoad {
         {
             return 0;
         }
-        let add_form = RuleExpandLoad::check_and_comparison(data, out_vn);
+        if !RuleExpandLoad::check_and_comparison(data, out_vn)
+            || !crate::kuna_narrowload::widens_into_declared_field(data, root_ptr)
+        {
+            return 0;
+        }
         let space_const = data.obank().get(op).expect("el: stale op").get_in(0).expect("el: load space");
         let spc = match space_from_const(data, space_const) {
             Some(s) => s,
             None => return 0,
         };
-        let mut lsb_cut: int4 = 0;
-        if add_form {
-            if spc.is_big_endian() {
-                lsb_cut = el_type.get_size() - out_size - offset;
-            } else {
-                lsb_cut = offset;
-            }
-        } else {
-            // Check for natural integer truncation.
-            if meta != type_metatype::TYPE_INT && meta != type_metatype::TYPE_UINT {
-                return 0;
-            }
-            let out_meta = data
-                .vbank()
-                .get(out_vn)
-                .expect("el: stale outVn")
-                .get_type_def_facing()
-                .get_metatype();
-            if out_meta != type_metatype::TYPE_INT
-                && out_meta != type_metatype::TYPE_UINT
-                && out_meta != type_metatype::TYPE_BOOL
-            {
-                // C++ `return false;` (treated as no-op).
-                return 0;
-            }
-            // Check that LOAD is grabbing least significant bytes.
-            if spc.is_big_endian() {
-                if out_size + offset != el_type.get_size() {
-                    return 0;
-                }
-            } else if offset != 0 {
-                return 0;
-            }
-        }
+        let lsb_cut: int4 = if spc.is_big_endian() { el_type.get_size() - out_size - offset } else { offset };
 
         // Modify the LOAD.
         let new_out = data.new_unique(el_type.get_size(), Some(Rc::clone(&el_type)));
@@ -1771,27 +1736,16 @@ impl Rule for RuleExpandLoad {
             data.op_set_input(op, root_ptr, 1).expect("el: opSetInput rootPtr");
             data.op_destroy(add);
         }
-        if add_form {
-            let dt = if meta != type_metatype::TYPE_INT && meta != type_metatype::TYPE_UINT {
-                data.get_arch()
-                    .types()
-                    .expect("el: types factory")
-                    .get_base(el_type.get_size(), type_metatype::TYPE_UINT)
-                    .expect("el: getBase UINT")
-            } else {
-                Rc::clone(&el_type)
-            };
-            RuleExpandLoad::modify_and_comparison(data, out_vn, new_out, &dt, lsb_cut);
+        let dt = if meta != type_metatype::TYPE_INT && meta != type_metatype::TYPE_UINT {
+            data.get_arch()
+                .types()
+                .expect("el: types factory")
+                .get_base(el_type.get_size(), type_metatype::TYPE_UINT)
+                .expect("el: getBase UINT")
         } else {
-            let opaddr = data.obank().get(op).expect("el: stale op").get_addr().clone();
-            let sub_op = data.new_op(2, opaddr);
-            rule_set_opcode(data, sub_op, OpCode::CPUI_SUBPIECE);
-            data.op_set_input(sub_op, new_out, 0).expect("el: opSetInput sub 0");
-            let zero = data.new_constant(4, 0);
-            data.op_set_input(sub_op, zero, 1).expect("el: opSetInput sub 1");
-            data.op_set_output(sub_op, out_vn).expect("el: opSetOutput sub");
-            data.op_insert_after(sub_op, op);
-        }
+            Rc::clone(&el_type)
+        };
+        RuleExpandLoad::modify_and_comparison(data, out_vn, new_out, &dt, lsb_cut);
         1
     }
 }

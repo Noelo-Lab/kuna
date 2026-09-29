@@ -1,0 +1,281 @@
+## castbench 45 binaries, --option elemptr off
+
+- O0-coreutils-cp 0x5522: 10 lines, e.g. `-  unsigned long v12;` -> `+  unsigned long v12; // rax`
+- O0-coreutils-cp 0x896f: 2 lines, e.g. `-      if ((((char *)a4)[0x1d]) && ((((int *)v6)[7] != v13._28_4_ || ((int)v6[4] != v13._32_4_)))) {` -> `+      if ((((char *)a4)[0x1d]) && ((((int *)v6)[7] != v13._28_4_ || (*(int *)&v6[4] != v13._32_4_)))) {`
+- O0-coreutils-cp 0x9b18: 10 lines, e.g. `-          v3 = (char)a5[6] == '\0';` -> `+          v3 = *(char *)&a5[6] == '\0';`
+- O0-coreutils-cp 0xabda: 62 lines, e.g. `-  if ((char)a7[6]) {` -> `+  if (*(char *)&a7[6]) {`
+- O0-coreutils-cp 0x10726: 2 lines, e.g. `-              if ((char)*v19) // branch-flip` -> `+              if (*(char *)v19) // branch-flip`
+- O0-coreutils-cp 0x12668: 2 lines, e.g. `-          if ((int)v2[5] <= -1)` -> `+          if (*(int *)&v2[5] <= -1)`
+- O0-coreutils-cp 0x1c09a: 6 lines, e.g. `-      if (0x30 <= (unsigned int)*a1) { // branch-flip` -> `+      if (0x30 <= *(unsigned int *)a1) { // branch-flip`
+- O0-coreutils-du 0x4831: 6 lines, e.g. `-          error(0,(int)a1[8],v4,v6);` -> `+          error(0,*(int *)&a1[8],v4,v6);`
+- O0-coreutils-du 0x76f0: 2 lines, e.g. `-    if ((int)v4[1]) // branch-flip` -> `+    if (*(int *)&v4[1]) // branch-flip`
+- O0-coreutils-du 0xb411: 2 lines, e.g. `-          if ((int)v2[5] <= -1)` -> `+          if (*(int *)&v2[5] <= -1)`
+- O0-coreutils-du 0x14258: 2 lines, e.g. `-      if ((!*v5) && ((v5 != &((char *)v4)[9] || (!(char)v4[1])))) {` -> `+      if ((!*v5) && ((v5 != &((char *)v4)[9] || (!*(char *)&v4[1])))) {`
+- O0-coreutils-fmt 0x3793: 2 lines, e.g. `-    dat_d124 += (int)dat_18120[1];` -> `+    dat_d124 += *(int *)&dat_18120[1];`
+- O0-coreutils-ls 0x1056e: 2 lines, e.g. `-              if ((char)*v19) // branch-flip` -> `+              if (*(char *)v19) // branch-flip`
+- O0-coreutils-ls 0x14a53: 2 lines, e.g. `-      if ((char)v4[4])` -> `+      if (*(char *)&v4[4])`
+- O0-coreutils-ls 0x14ca5: 2 lines, e.g. `-      if ((char)v4[4])` -> `+      if (*(char *)&v4[4])`
+- O0-coreutils-ls 0x1b5da: 2 lines, e.g. `-      if ((!*v5) && ((v5 != &((char *)v4)[9] || (!(char)v4[1])))) {` -> `+      if ((!*v5) && ((v5 != &((char *)v4)[9] || (!*(char *)&v4[1])))) {`
+- O0-coreutils-sort 0x6a5e: 2 lines, e.g. `-            if ((char)v14[6]) {` -> `+            if (*(char *)&v14[6]) {`
+- O0-coreutils-sort 0x84fe: 6 lines, e.g. `-    if ((((a1 != '\x01') && (dat_23020 == 0x80)) && (!v4)) && (((((char)v14[6] != '\x01' && (!v3)) || (((char` -> `+    if ((((a1 != '\x01') && (dat_23020 == 0x80)) && (!v4)) && ((((*(char *)&v14[6] != '\x01' && (!v3)) || ((*`
+- O0-coreutils-sort 0x9116: 6 lines, e.g. `-    if ((((dat_23229) || (sub_7fc5(v17))) || (((char *)v17)[0x36])) || ((((char *)v17)[0x33] || ((char)v17[7]` -> `+    if ((((dat_23229) || (sub_7fc5(v17))) || (((char *)v17)[0x36])) || ((((char *)v17)[0x33] || (*(char *)&v1`
+- O0-diffutils-cmp 0x42d7: 2 lines, e.g. `-  for (v3 = v1; (char)*v3 == (char)*v4; v3 = (long *)((long)v3 + 1)) {` -> `+  for (v3 = v1; *(char *)v3 == *(char *)v4; v3 = (long *)((long)v3 + 1)) {`
+- O0-diffutils-diff 0x5049: 2 lines, e.g. `-      if (((0xc9 <= v20) && (v5)) && ((char)a6[4])) {` -> `+      if (((0xc9 <= v20) && (v5)) && (*(char *)&a6[4])) {`
+- O0-diffutils-diff 0x7206: 2 lines, e.g. `-        if ((char)a0[v20 * 0x4cL + 0x48]) {` -> `+        if (*(char *)&a0[v20 * 0x4cL + 0x48]) {`
+- O0-diffutils-diff 0xef6a: 56 lines, e.g. `-  long *v2;` -> `+  char v2;`
+- O0-diffutils-diff 0x141f6: 2 lines, e.g. `-    if ((int)v4[1]) // branch-flip` -> `+    if (*(int *)&v4[1]) // branch-flip`
+- O0-diffutils-diff 0x1d508: 2 lines, e.g. `-      if ((!*v5) && ((v5 != &((char *)v4)[9] || (!(char)v4[1])))) {` -> `+      if ((!*v5) && ((v5 != &((char *)v4)[9] || (!*(char *)&v4[1])))) {`
+- O0-diffutils-diff 0x21fe9: 6 lines, e.g. `-      if (0x30 <= (unsigned int)*a1) { // branch-flip` -> `+      if (0x30 <= *(unsigned int *)a1) { // branch-flip`
+- O0-findutils-find 0xaec7: 4 lines, e.g. `-        if ((char)v1[3] == '\x01')` -> `+        if (*(char *)&v1[3] == '\x01')`
+- O0-findutils-find 0x1376d: 2 lines, e.g. `-      v1 = (char)v6[1];` -> `+      v1 = *(char *)&v6[1];`
+- O0-findutils-find 0x1ec55: 2 lines, e.g. `-          if ((int)v2[5] <= -1)` -> `+          if (*(int *)&v2[5] <= -1)`
+- O0-findutils-find 0x23cf8: 2 lines, e.g. `-      if ((char)v4[4])` -> `+      if (*(char *)&v4[4])`
+- O0-findutils-find 0x23f4a: 2 lines, e.g. `-      if ((char)v4[4])` -> `+      if (*(char *)&v4[4])`
+- O0-findutils-find 0x28423: 881 lines, e.g. `-  long v10; // rax` -> `+  char v10 [24];`
+- O0-findutils-find 0x30c11: 2 lines, e.g. `-      if ((!*v5) && ((v5 != &((char *)v4)[9] || (!(char)v4[1])))) {` -> `+      if ((!*v5) && ((v5 != &((char *)v4)[9] || (!*(char *)&v4[1])))) {`
+- O0-grep-grep 0x6fdd: 8 lines, e.g. `-  unsigned long v1;` -> `+  char v1;`
+- O0-grep-grep 0x17c61: 10 lines, e.g. `-    if (0x400 <= (int)a1[0x2d]) {` -> `+    if (0x400 <= *(int *)&a1[0x2d]) {`
+- O0-grep-grep 0x1ae2f: 4 lines, e.g. `-            if (((!v9) || ((char)v23[4])) && ((!v10 || (((char *)v23)[0x21]))))` -> `+            if (((!v9) || (*(char *)&v23[4])) && ((!v10 || (((char *)v23)[0x21]))))`
+- O0-grep-grep 0x1cbb6: 2 lines, e.g. `-    if ((int)v4[1]) // branch-flip` -> `+    if (*(int *)&v4[1]) // branch-flip`
+- O0-grep-grep 0x1d975: 2 lines, e.g. `-          if ((int)v2[5] <= -1)` -> `+          if (*(int *)&v2[5] <= -1)`
+- O0-grep-grep 0x222e7: 4 lines, e.g. `-      if ((a1 == (unsigned char)*v7) || (a2 == (unsigned char)*v7))` -> `+      if ((a1 == *(unsigned char *)v7) || (a2 == *(unsigned char *)v7))`
+- O0-tar-tar 0x2b9f2: 4 lines, e.g. `-  for (v1 = &dat_9c280; ((*v1 || ((int4)v1[1])) || (v1[4])); v1 = &v1[6]) {` -> `+  for (v1 = &dat_9c280; ((*v1 || (*(int4 *)&v1[1])) || (v1[4])); v1 = &v1[6]) {`
+- O0-tar-tar 0x2c78a: 4 lines, e.g. `-  if (((int4)dat_9f708[2] != 4) && ((int4)dat_9f708[2] != 1)) {` -> `+  if ((*(int4 *)&dat_9f708[2] != 4) && (*(int4 *)&dat_9f708[2] != 1)) {`
+- O0-tar-tar 0x34d66: 2 lines, e.g. `-    if (a0 == (int4)v1[1]) break;` -> `+    if (a0 == *(int4 *)&v1[1]) break;`
+- O0-tar-tar 0x38192: 4 lines, e.g. `-  for (v1 = a0; (((*v1 || ((int4)v1[1])) || (v1[2])) || (((int4)v1[3] || (v1[4])))); v1 = &v1[6]) {` -> `+  for (v1 = a0; (((*v1 || (*(int4 *)&v1[1])) || (v1[2])) || ((*(int4 *)&v1[3] || (v1[4])))); v1 = &v1[6]) {`
+- O0-tar-tar 0x40254: 2 lines, e.g. `-  sprintf(v5,"I%d\n%s\n",(int4)(int2)*a2,v8);` -> `+  sprintf(v5,"I%d\n%s\n",(int4)*(int2 *)a2,v8);`
+- O0-tar-tar 0x48370: 8 lines, e.g. `-        *(int4 *)&v12[1] = (int4)v12[1] + 1;` -> `+        *(int4 *)&v12[1] = *(int4 *)&v12[1] + 1;`
+- O0-tar-tar 0x493f6: 2 lines, e.g. `-      if (((int4)v6[3]) || (v6[2])) {` -> `+      if ((*(int4 *)&v6[3]) || (v6[2])) {`
+- O0-tar-tar 0x49834: 2 lines, e.g. `-  if ((((int4)a1->field_0x10[1]) && (v1)) && (*(int4 *)(a1->field_0x0 + 0x18) != *(int4 *)(v1 + 0x18)))` -> `+  if (((*(int4 *)&a1->field_0x10[1]) && (v1)) && (*(int4 *)(a1->field_0x0 + 0x18) != *(int4 *)(v1 + 0x18)))`
+- O0-tar-tar 0x49992: 2 lines, e.g. `-    if ((sub_4d206(v10)) && ((int4)v10[1] == (int4)*v11)) {` -> `+    if ((sub_4d206(v10)) && (*(int4 *)&v10[1] == (int4)*v11)) {`
+- O0-tar-tar 0x4a391: 8 lines, e.g. `-  if (!(int4)a0[1])` -> `+  if (!*(int4 *)&a0[1])`
+- O0-tar-tar 0x4b9f1: 2 lines, e.g. `-              if ((int4)v14[1]) // branch-flip` -> `+              if (*(int4 *)&v14[1]) // branch-flip`
+- O0-tar-tar 0x4ed6a: 2 lines, e.g. `-    if ((int4)v4[1]) // branch-flip` -> `+    if (*(int4 *)&v4[1]) // branch-flip`
+- O0-tar-tar 0x66a67: 2 lines, e.g. `-    if (((v2 == *v4) && (a3 == ((uint1)v4[0xd] & 0xf))) && (v1 = (void *)v4[10], sub_66372(v1,a2))) break;` -> `+    if (((v2 == *v4) && (a3 == (*(uint1 *)&v4[0xd] & 0xf))) && (v1 = (void *)v4[10], sub_66372(v1,a2))) break`
+- O0-tar-tar 0x68bdc: 2 lines, e.g. `-          while ((v8 < v13 && ((v11 = (int8 *)(((int8 *)v14)[v8] * 0x10 + a0->field_0x0), (char)v11[1] != '\t` -> `+          while ((v8 < v13 && ((v11 = (int8 *)(((int8 *)v14)[v8] * 0x10 + a0->field_0x0), *(char *)&v11[1] !=`
+- O0-tar-tar 0x6ad22: 2 lines, e.g. `-    v2 = ((*(uint2 *)((uint1)a0->field_0x0 * 2UL + *(int8 *)__ctype_b_loc()) & 8) || ((char)a0->field_0x0 == ` -> `+    v2 = ((*(uint2 *)(*(uint1 *)&a0->field_0x0 * 2UL + *(int8 *)__ctype_b_loc()) & 8) || (*(char *)&a0->field`
+- O0-tar-tar 0x6bbc1: 2 lines, e.g. `-  while ((((char)a2[2] != '\n' && ((char)a2[2] != '\x02')) && ((!a4 || ((char)a2[2] != '\t'))))) {` -> `+  while (((*(char *)&a2[2] != '\n' && (*(char *)&a2[2] != '\x02')) && ((!a4 || (*(char *)&a2[2] != '\t'))))) `
+- O0-tar-tar 0x6bd93: 14 lines, e.g. `-  v4 = *(int4 *)((uint1)a2[2] * 4UL + 0x8b26c);` -> `+  v4 = *(int4 *)(*(uint1 *)&a2[2] * 4UL + 0x8b26c);`
+- O0-tar-tar 0x6c7f5: 2 lines, e.g. `-  if ((char)v7[6] == '\x11')` -> `+  if (*(char *)&v7[6] == '\x11')`
+- O0-tar-tar 0x734d8: 2 lines, e.g. `-          } while ((char)*v2);` -> `+          } while (*(char *)v2);`
+- O0-tar-tar 0x73ba5: 2 lines, e.g. `-      } while ((char)*v2);` -> `+      } while (*(char *)v2);`
+- O0-tar-tar 0x75138: 2 lines, e.g. `-    } while ((char)*v1);` -> `+    } while (*(char *)v1);`
+- O0-tar-tar 0x766a8: 2 lines, e.g. `-    if (!(char)*v2)` -> `+    if (!*(char *)v2)`
+- O0-tar-tar 0x776c5: 2 lines, e.g. `-    v1 = (char)v7[1];` -> `+    v1 = *(char *)&v7[1];`
+- O0-tar-tar 0x780a3: 6 lines, e.g. `-  if ((char)v7[1] == '\a') {` -> `+  if (*(char *)&v7[1] == '\a') {`
+- O0-tar-tar 0x784e4: 4 lines, e.g. `-  v2 = (uint1)a1->field_0x8;` -> `+  v2 = *(uint1 *)&a1->field_0x8;`
+- O0-tar-tar 0x792ea: 2 lines, e.g. `-      if ((!*v5) && ((v5 != &((char *)v4)[9] || (!(char)v4[1])))) {` -> `+      if ((!*v5) && ((v5 != &((char *)v4)[9] || (!*(char *)&v4[1])))) {`
+- O0-tar-tar 0x7de2f: 6 lines, e.g. `-      if (0x30 <= (uint4)*a1) { // branch-flip` -> `+      if (0x30 <= *(uint4 *)a1) { // branch-flip`
+- O0-tar-tar 0x7e291: 10 lines, e.g. `-              if (((((a5) || ((int4)v14[1] != (int4)v13[1])) || (v14[2] != v13[2])) || ((int4)v14[3] != (int4` -> `+              if (((((a5) || (*(int4 *)&v14[1] != *(int4 *)&v13[1])) || (v14[2] != v13[2])) || (*(int4 *)&v14`
+- O2-coreutils-cp 0x5a50: 74 lines, e.g. `-  void *v3;` -> `+  int v3;`
+- O2-coreutils-cp 0x76f0: 99 lines, e.g. `-  v74 = (stat *)CONCAT71(v74._1_7_,(char)a7[6]);` -> `+  v74 = (stat *)CONCAT71(v74._1_7_,*(char *)&a7[6]);`
+- O2-coreutils-cp 0x10840: 6 lines, e.g. `-            if (a0->field_0x48 & 0x2000)` -> `+            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)`
+- O2-coreutils-cp 0x10fc0: 4 lines, e.g. `-  if (a0->field_0x48 & 0x2000) {` -> `+  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {`
+- O2-coreutils-cp 0x17220: 2 lines, e.g. `-      v1 = (unsigned int)*a1;` -> `+      v1 = *(unsigned int *)a1;`
+- O2-coreutils-cp 0x17380: 2 lines, e.g. `-  v1 = (char)*a0;` -> `+  v1 = *(char *)a0;`
+- O2-coreutils-cp 0x19050: 20 lines, e.g. `-            v13 = (unsigned int)v7[2] | 8;` -> `+            v13 = *(unsigned int *)&v7[2] | 8;`
+- O2-coreutils-du 0x3c50: 6 lines, e.g. `-              error(0,(int)v13[8],v20,v11);` -> `+              error(0,*(int *)&v13[8],v20,v11);`
+- O2-coreutils-du 0x6810: 4 lines, e.g. `-      if (!(int)v7[1]) break;` -> `+      if (!*(int *)&v7[1]) break;`
+- O2-coreutils-du 0x69c0: 2 lines, e.g. `-  v1 = (int)a0[1];` -> `+  v1 = *(int *)&a0[1];`
+- O2-coreutils-du 0x6b70: 4 lines, e.g. `-    if (((!v5) || ((int)v5[1])) || ((((unsigned int *)v5)[3] ^ a2) & 0x60000018)) {` -> `+    if (((!v5) || (*(int *)&v5[1])) || ((((unsigned int *)v5)[3] ^ a2) & 0x60000018)) {`
+- O2-coreutils-du 0xadd0: 6 lines, e.g. `-            if (a0->field_0x48 & 0x2000)` -> `+            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)`
+- O2-coreutils-du 0xb550: 4 lines, e.g. `-  if (a0->field_0x48 & 0x2000) {` -> `+  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {`
+- O2-coreutils-du 0x10f50: 2 lines, e.g. `-  if ((char)a0[1]) // branch-flip` -> `+  if (*(char *)&a0[1]) // branch-flip`
+- O2-coreutils-du 0x11080: 2 lines, e.g. `-      if ((!*v6) && ((v6 != &((char *)a0)[9] || (!(char)a0[1])))) {` -> `+      if ((!*v6) && ((v6 != &((char *)a0)[9] || (!*(char *)&a0[1])))) {`
+- O2-coreutils-ls 0x12340: 2 lines, e.g. `-  if ((char)v2[4])` -> `+  if (*(char *)&v2[4])`
+- O2-coreutils-ls 0x124e0: 2 lines, e.g. `-  if ((char)v2[4])` -> `+  if (*(char *)&v2[4])`
+- O2-coreutils-ls 0x178c0: 2 lines, e.g. `-  if ((char)a0[1]) // branch-flip` -> `+  if (*(char *)&a0[1]) // branch-flip`
+- O2-coreutils-ls 0x179f0: 2 lines, e.g. `-      if ((!*v6) && ((v6 != &((char *)a0)[9] || (!(char)a0[1])))) {` -> `+      if ((!*v6) && ((v6 != &((char *)a0)[9] || (!*(char *)&a0[1])))) {`
+- O2-coreutils-sort 0x3ec0: 8 lines, e.g. `-      if (1 < (unsigned int)((unsigned char *)v49)[0x32] + (unsigned int)((unsigned char *)v49)[0x34] + (unsi` -> `+      if (1 < (unsigned int)((unsigned char *)v49)[0x32] + (unsigned int)((unsigned char *)v49)[0x34] + (unsi`
+- O2-coreutils-sort 0x7af0: 6 lines, e.g. `-  long v2;` -> `+  int v2;`
+- O2-coreutils-sort 0x7ef0: 2 lines, e.g. `-            if ((char)v3[6]) {` -> `+            if (*(char *)&v3[6]) {`
+- O2-coreutils-sort 0x82d0: 2 lines, e.g. `-      if ((v14 != -1) || (!(char)v10[6])) goto label_846b;` -> `+      if ((v14 != -1) || (!*(char *)&v10[6])) goto label_846b;`
+- O2-coreutils-sort 0x9120: 6 lines, e.g. `-  if (((dat_1d861) || (v25[6] & 0xffffffffff0000U)) || ((char)v25[7])) {` -> `+  if (((dat_1d861) || (v25[6] & 0xffffffffff0000U)) || (*(char *)&v25[7])) {`
+- O2-coreutils-sort 0xb220: 2 lines, e.g. `-    v3 = (int)v8[10];` -> `+    v3 = *(int *)&v8[10];`
+- O2-coreutils-tail 0x2960: 20 lines, e.g. `-      if ((((strcmp(v35,"-")) || (((char *)v51)[0x34])) || ((int)v51[7] <= -1)) || ((*(unsigned int *)&v51[6]` -> `+      if ((((strcmp(v35,"-")) || (((char *)v51)[0x34])) || (*(int *)&v51[7] <= -1)) || ((*(unsigned int *)&v5`
+- O2-diffutils-diff 0x6e20: 2 lines, e.g. `-        if ((char)*v25) {` -> `+        if (*(char *)v25) {`
+- O2-diffutils-diff 0xbbc0: 4 lines, e.g. `-        if (((v9 == v30) && ((char)v43[0x10])) && ((2 <= (unsigned int)(dat_26580 - 4U) && (v35 = (unsigned l` -> `+        if (((v9 == v30) && (*(char *)&v43[0x10])) && ((2 <= (unsigned int)(dat_26580 - 4U) && (v35 = (unsign`
+- O2-diffutils-diff 0x10320: 4 lines, e.g. `-      if (!(int)v7[1]) break;` -> `+      if (!*(int *)&v7[1]) break;`
+- O2-diffutils-diff 0x104d0: 2 lines, e.g. `-  v1 = (int)a0[1];` -> `+  v1 = *(int *)&a0[1];`
+- O2-diffutils-diff 0x10680: 4 lines, e.g. `-    if (((!v5) || ((int)v5[1])) || ((((unsigned int *)v5)[3] ^ a2) & 0x60000018)) {` -> `+    if (((!v5) || (*(int *)&v5[1])) || ((((unsigned int *)v5)[3] ^ a2) & 0x60000018)) {`
+- O2-diffutils-diff 0x17290: 2 lines, e.g. `-  if ((char)a0[1]) // branch-flip` -> `+  if (*(char *)&a0[1]) // branch-flip`
+- O2-diffutils-diff 0x173c0: 2 lines, e.g. `-      if ((!*v6) && ((v6 != &((char *)a0)[9] || (!(char)a0[1])))) {` -> `+      if ((!*v6) && ((v6 != &((char *)a0)[9] || (!*(char *)&a0[1])))) {`
+- O2-diffutils-diff 0x1b300: 2 lines, e.g. `-      v1 = (unsigned int)*a1;` -> `+      v1 = *(unsigned int *)a1;`
+- O2-findutils-find 0x7670: 2 lines, e.g. `-        if ((a1->field_0x88 & 0xf000) != 0xa000) {` -> `+        if ((*(unsigned int *)&a1->field_0x88 & 0xf000) != 0xa000) {`
+- O2-findutils-find 0x9e60: 4 lines, e.g. `-        if ((char)a0[3])` -> `+        if (*(char *)&a0[3])`
+- O2-findutils-find 0xc110: 6 lines, e.g. `-      if ((char)v5[3]) goto label_c3c7;` -> `+      if (*(char *)&v5[3]) goto label_c3c7;`
+- O2-findutils-find 0xd130: 2 lines, e.g. `-      if (((((void *)*a0 == sub_8fc0) || ((void *)*a0 == sub_95d0)) && ((char)a0[7])) && ((int)a0[0x1a])) bre` -> `+      if (((((void *)*a0 == sub_8fc0) || ((void *)*a0 == sub_95d0)) && (*(char *)&a0[7])) && (*(int *)&a0[0x1`
+- O2-findutils-find 0xd240: 2 lines, e.g. `-    if ((((void *)*a0 == sub_8fb0) && ((char)a0[7])) && ((int)a0[0x1a]))` -> `+    if ((((void *)*a0 == sub_8fb0) && (*(char *)&a0[7])) && (*(int *)&a0[0x1a]))`
+- O2-findutils-find 0xedc0: 2 lines, e.g. `-        if (!(*(unsigned char *)(*(long *)__ctype_b_loc() + 1 + (unsigned char)*v1 * 2UL) & 8)) {` -> `+        if (!(*(unsigned char *)(*(long *)__ctype_b_loc() + 1 + *(unsigned char *)v1 * 2UL) & 8)) {`
+- O2-findutils-find 0xff90: 2 lines, e.g. `-    v1 = (char)v3[1];` -> `+    v1 = *(char *)&v3[1];`
+- O2-findutils-find 0x19ff0: 6 lines, e.g. `-            if (a0->field_0x48 & 0x2000)` -> `+            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)`
+- O2-findutils-find 0x1a780: 4 lines, e.g. `-  if (a0->field_0x48 & 0x2000) {` -> `+  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {`
+- O2-findutils-find 0x1c9f0: 2 lines, e.g. `-  if ((char)v2[4])` -> `+  if (*(char *)&v2[4])`
+- O2-findutils-find 0x1cb90: 2 lines, e.g. `-  if ((char)v2[4])` -> `+  if (*(char *)&v2[4])`
+- O2-findutils-find 0x1f590: 1275 lines, e.g. `-  long v12;` -> `+  int v12;`
+- O2-findutils-find 0x24d20: 2 lines, e.g. `-  if ((char)a0[1]) // branch-flip` -> `+  if (*(char *)&a0[1]) // branch-flip`
+- O2-findutils-find 0x24e50: 2 lines, e.g. `-      if ((!*v6) && ((v6 != &((char *)a0)[9] || (!(char)a0[1])))) {` -> `+      if ((!*v6) && ((v6 != &((char *)a0)[9] || (!*(char *)&a0[1])))) {`
+- O2-grep-grep 0x8050: 23 lines, e.g. `-  bool v2;` -> `+  unsigned char v2;`
+- O2-grep-grep 0x10290: 2 lines, e.g. `-      if (((*v8 == v10) && (v8[2] == v11)) && ((unsigned char)v8[4] == a2)) {` -> `+      if (((*v8 == v10) && (v8[2] == v11)) && (*(unsigned char *)&v8[4] == a2)) {`
+- O2-grep-grep 0x109d0: 10 lines, e.g. `-    if (0x400 <= (int)a1[0x2d]) { // branch-flip` -> `+    if (0x400 <= *(int *)&a1[0x2d]) { // branch-flip`
+- O2-grep-grep 0x144a0: 2 lines, e.g. `-    if (((char)a0[0x83]) && (v9 = a0[0x36], v9)) {` -> `+    if ((*(char *)&a0[0x83]) && (v9 = a0[0x36], v9)) {`
+- O2-grep-grep 0x169e0: 4 lines, e.g. `-      if (!(int)v7[1]) break;` -> `+      if (!*(int *)&v7[1]) break;`
+- O2-grep-grep 0x16b90: 2 lines, e.g. `-  v1 = (int)a0[1];` -> `+  v1 = *(int *)&a0[1];`
+- O2-grep-grep 0x16d40: 4 lines, e.g. `-    if (((!v5) || ((int)v5[1])) || ((((unsigned int *)v5)[3] ^ a2) & 0x60000018)) {` -> `+    if (((!v5) || (*(int *)&v5[1])) || ((((unsigned int *)v5)[3] ^ a2) & 0x60000018)) {`
+- O2-grep-grep 0x18fd0: 6 lines, e.g. `-            if (a0->field_0x48 & 0x2000)` -> `+            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)`
+- O2-grep-grep 0x19750: 4 lines, e.g. `-  if (a0->field_0x48 & 0x2000) {` -> `+  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {`
+- O2-grep-grep 0x1b140: 6 lines, e.g. `-    if (((unsigned char)*a0 == a2) || ((unsigned char)*a0 == a1))` -> `+    if ((*(unsigned char *)a0 == a2) || (*(unsigned char *)a0 == a1))`
+- O2-gzip-gzip 0x10e50: 20 lines, e.g. `-            v13 = (unsigned int)v7[2] | 8;` -> `+            v13 = *(unsigned int *)&v7[2] | 8;`
+- O2-noinline-coreutils-cp 0x5ae0: 74 lines, e.g. `-  void *v3;` -> `+  int v3;`
+- O2-noinline-coreutils-cp 0x8680: 4 lines, e.g. `-            if ((((int *)v3)[7] != v21._28_4_) || (v21._32_4_ != (int)v3[4])) {` -> `+            if ((((int *)v3)[7] != v21._28_4_) || (v21._32_4_ != *(int *)&v3[4])) {`
+- O2-noinline-coreutils-cp 0x9470: 58 lines, e.g. `-  if (!(char)a7[6]) {` -> `+  if (!*(char *)&a7[6]) {`
+- O2-noinline-coreutils-cp 0xddf0: 2 lines, e.g. `-            if ((char)*v21)` -> `+            if (*(char *)v21)`
+- O2-noinline-coreutils-cp 0xfc50: 12 lines, e.g. `-      if (a0->field_0x48 & 0x100) {` -> `+      if (((unsigned char *)&a0->field_0x48)[1] & 1) {`
+- O2-noinline-coreutils-cp 0x10b30: 6 lines, e.g. `-            if (a0->field_0x48 & 0x2000)` -> `+            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)`
+- O2-noinline-coreutils-cp 0x111a0: 4 lines, e.g. `-  if (a0->field_0x48 & 0x2000) {` -> `+  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {`
+- O2-noinline-coreutils-cp 0x17320: 2 lines, e.g. `-      v2 = (unsigned int)*a1;` -> `+      v2 = *(unsigned int *)a1;`
+- O2-noinline-coreutils-cp 0x17480: 2 lines, e.g. `-  v1 = (char)*a0;` -> `+  v1 = *(char *)a0;`
+- O2-noinline-coreutils-cp 0x18000: 4 lines, e.g. `-                v28 = (unsigned int)(char)v43[v30[10] * 8 + 4];` -> `+                v28 = (unsigned int)*(char *)&v43[v30[10] * 8 + 4];`
+- O2-noinline-coreutils-cp 0x193c0: 20 lines, e.g. `-            v19 = (unsigned int)v4[2] | 8;` -> `+            v19 = *(unsigned int *)&v4[2] | 8;`
+- O2-noinline-coreutils-du 0x4ec0: 6 lines, e.g. `-        error(0,(int)a1[8],v9,v10);` -> `+        error(0,*(int *)&a1[8],v9,v10);`
+- O2-noinline-coreutils-du 0x6a90: 2 lines, e.g. `-    if (!(int)v6[1]) {` -> `+    if (!*(int *)&v6[1]) {`
+- O2-noinline-coreutils-du 0x9c70: 12 lines, e.g. `-      if (a0->field_0x48 & 0x100) {` -> `+      if (((unsigned char *)&a0->field_0x48)[1] & 1) {`
+- O2-noinline-coreutils-du 0xab50: 6 lines, e.g. `-            if (a0->field_0x48 & 0x2000)` -> `+            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)`
+- O2-noinline-coreutils-du 0xb1c0: 4 lines, e.g. `-  if (a0->field_0x48 & 0x2000) {` -> `+  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {`
+- O2-noinline-coreutils-du 0x10a60: 2 lines, e.g. `-      if ((!*v5) && ((v5 != &((char *)a0)[9] || (!(char)a0[1])))) {` -> `+      if ((!*v5) && ((v5 != &((char *)a0)[9] || (!*(char *)&a0[1])))) {`
+- O2-noinline-coreutils-ls 0xd7c0: 2 lines, e.g. `-            if ((char)*v21)` -> `+            if (*(char *)v21)`
+- O2-noinline-coreutils-ls 0x10840: 2 lines, e.g. `-  if ((char)v2[4])` -> `+  if (*(char *)&v2[4])`
+- O2-noinline-coreutils-ls 0x109e0: 2 lines, e.g. `-  if ((char)v2[4])` -> `+  if (*(char *)&v2[4])`
+- O2-noinline-coreutils-ls 0x15e20: 2 lines, e.g. `-      if ((!*v5) && ((v5 != &((char *)a0)[9] || (!(char)a0[1])))) {` -> `+      if ((!*v5) && ((v5 != &((char *)a0)[9] || (!*(char *)&a0[1])))) {`
+- O2-noinline-coreutils-sort 0x7970: 6 lines, e.g. `-  long v2;` -> `+  int v2;`
+- O2-noinline-coreutils-sort 0x7d30: 6 lines, e.g. `-        else if ((dat_1e028 == 0x80) && (((!(char)v31[6] && ((!v5 || (v31[1])))) || ((!((char *)v31)[0x31] &&` -> `+        else if ((dat_1e028 == 0x80) && (((!*(char *)&v31[6] && ((!v5 || (v31[1])))) || ((!((char *)v31)[0x31`
+- O2-noinline-coreutils-sort 0x90d0: 2 lines, e.g. `-  if ((char)a2[6]) {` -> `+  if (*(char *)&a2[6]) {`
+- O2-noinline-coreutils-sort 0x9230: 2 lines, e.g. `-    if ((!(char)a2[6]) || (v5 != -1)) goto label_92a0;` -> `+    if ((!*(char *)&a2[6]) || (v5 != -1)) goto label_92a0;`
+- O2-noinline-coreutils-sort 0x9550: 6 lines, e.g. `-  if ((((dat_1e861) || (sub_5660(v18))) || (v18[6] & 0xff0000ff000000U)) || ((char)v18[7])) {` -> `+  if ((((dat_1e861) || (sub_5660(v18))) || (v18[6] & 0xff0000ff000000U)) || (*(char *)&v18[7])) {`
+- O2-noinline-coreutils-sort 0xa750: 6 lines, e.g. `-  if ((char)a0[6])` -> `+  if (*(char *)&a0[6])`
+- O2-noinline-coreutils-tail 0x5880: 10 lines, e.g. `-        if ((int)v17[9] < 0) {` -> `+        if (*(int *)&v17[9] < 0) {`
+- O2-noinline-diffutils-cmp 0x31f0: 4 lines, e.g. `-    for (; (char)*v1 == (char)*a1; v1 = (long *)((long)v1 + 1)) {` -> `+    for (; *(char *)v1 == *(char *)a1; v1 = (long *)((long)v1 + 1)) {`
+- O2-noinline-diffutils-diff 0x7460: 2 lines, e.g. `-      if ((char)*v22) {` -> `+      if (*(char *)v22) {`
+- O2-noinline-diffutils-diff 0x10220: 2 lines, e.g. `-    if (!(int)v6[1]) {` -> `+    if (!*(int *)&v6[1]) {`
+- O2-noinline-diffutils-diff 0x16800: 2 lines, e.g. `-      if ((!*v5) && ((v5 != &((char *)a0)[9] || (!(char)a0[1])))) {` -> `+      if ((!*v5) && ((v5 != &((char *)a0)[9] || (!*(char *)&a0[1])))) {`
+- O2-noinline-diffutils-diff 0x1a9e0: 2 lines, e.g. `-      v2 = (unsigned int)*a1;` -> `+      v2 = *(unsigned int *)a1;`
+- O2-noinline-findutils-find 0x9f40: 4 lines, e.g. `-        if ((char)a0[3])` -> `+        if (*(char *)&a0[3])`
+- O2-noinline-findutils-find 0xcfc0: 2 lines, e.g. `-      if (((((void *)*a0 == sub_9530) || ((void *)*a0 == sub_8ff0)) && ((char)a0[7])) && ((int)a0[0x1a])) bre` -> `+      if (((((void *)*a0 == sub_9530) || ((void *)*a0 == sub_8ff0)) && (*(char *)&a0[7])) && (*(int *)&a0[0x1`
+- O2-noinline-findutils-find 0xd080: 2 lines, e.g. `-    if ((((void *)*a0 == sub_8fe0) && ((char)a0[7])) && ((int)a0[0x1a]))` -> `+    if ((((void *)*a0 == sub_8fe0) && (*(char *)&a0[7])) && (*(int *)&a0[0x1a]))`
+- O2-noinline-findutils-find 0xfad0: 2 lines, e.g. `-    v2 = (char)v4[1];` -> `+    v2 = *(char *)&v4[1];`
+- O2-noinline-findutils-find 0x18c60: 10 lines, e.g. `-    if (a0->field_0x48 & 0x200) {` -> `+    if (((unsigned char *)&a0->field_0x48)[1] & 2) {`
+- O2-noinline-findutils-find 0x19b40: 6 lines, e.g. `-            if (a0->field_0x48 & 0x2000)` -> `+            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)`
+- O2-noinline-findutils-find 0x1a1c0: 4 lines, e.g. `-  if (a0->field_0x48 & 0x2000) {` -> `+  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {`
+- O2-noinline-findutils-find 0x1c170: 2 lines, e.g. `-  if ((char)v2[4])` -> `+  if (*(char *)&v2[4])`
+- O2-noinline-findutils-find 0x1c310: 2 lines, e.g. `-  if ((char)v2[4])` -> `+  if (*(char *)&v2[4])`
+- O2-noinline-findutils-find 0x20480: 266 lines, e.g. `-  int v10; // eax` -> `+  int v10;`
+- O2-noinline-findutils-find 0x25e10: 2 lines, e.g. `-      if ((!*v5) && ((v5 != &((char *)a0)[9] || (!(char)a0[1])))) {` -> `+      if ((!*v5) && ((v5 != &((char *)a0)[9] || (!*(char *)&a0[1])))) {`
+- O2-noinline-grep-grep 0x7590: 10 lines, e.g. `-  unsigned long v2;` -> `+  char v2;`
+- O2-noinline-grep-grep 0xf9a0: 2 lines, e.g. `-      if (((*v8 == v9) && (v8[2] == v2)) && ((unsigned char)v8[4] == a2)) {` -> `+      if (((*v8 == v9) && (v8[2] == v2)) && (*(unsigned char *)&v8[4] == a2)) {`
+- O2-noinline-grep-grep 0x12050: 12 lines, e.g. `-    if (0x400 <= (int)a1[0x2d]) { // branch-flip` -> `+    if (0x400 <= *(int *)&a1[0x2d]) { // branch-flip`
+- O2-noinline-grep-grep 0x12c00: 2 lines, e.g. `-    if (((char)a0[0x83]) && (v8 = a0[0x36], v8)) {` -> `+    if ((*(char *)&a0[0x83]) && (v8 = a0[0x36], v8)) {`
+- O2-noinline-grep-grep 0x14ef0: 2 lines, e.g. `-    if (!(int)v6[1]) {` -> `+    if (!*(int *)&v6[1]) {`
+- O2-noinline-grep-grep 0x16310: 12 lines, e.g. `-      if (a0->field_0x48 & 0x100) {` -> `+      if (((unsigned char *)&a0->field_0x48)[1] & 1) {`
+- O2-noinline-grep-grep 0x171f0: 6 lines, e.g. `-            if (a0->field_0x48 & 0x2000)` -> `+            if (((unsigned char *)&a0->field_0x48)[1] & 0x20)`
+- O2-noinline-grep-grep 0x17860: 4 lines, e.g. `-  if (a0->field_0x48 & 0x2000) {` -> `+  if (((unsigned char *)&a0->field_0x48)[1] & 0x20) {`
+- O2-noinline-grep-grep 0x190f0: 6 lines, e.g. `-    if (((unsigned char)*a0 == a2) || ((unsigned char)*a0 == a1))` -> `+    if ((*(unsigned char *)a0 == a2) || (*(unsigned char *)a0 == a1))`
+- O2-noinline-gzip-gzip 0xf880: 4 lines, e.g. `-                v28 = (unsigned int)(char)v43[v30[10] * 8 + 4];` -> `+                v28 = (unsigned int)*(char *)&v43[v30[10] * 8 + 4];`
+- O2-noinline-gzip-gzip 0x10dd0: 20 lines, e.g. `-            v19 = (unsigned int)v4[2] | 8;` -> `+            v19 = *(unsigned int *)&v4[2] | 8;`
+- O2-noinline-tar-tar 0x10820: 2 lines, e.g. `-    while (((v4 = dat_841d0, (int4)v2[1] != 3 || (!dat_841d0)) || (!dat_841d8))) {` -> `+    while (((v4 = dat_841d0, *(int4 *)&v2[1] != 3 || (!dat_841d0)) || (!dat_841d8))) {`
+- O2-noinline-tar-tar 0x16890: 109 lines, e.g. `-  char *v10; // rax` -> `+  unsigned int v10;`
+- O2-noinline-tar-tar 0x18350: 2 lines, e.g. `-        if ((char)v10[5]) {` -> `+        if (*(char *)&v10[5]) {`
+- O2-noinline-tar-tar 0x18d40: 2 lines, e.g. `-        if ((((int4)v10[0xb] == v5) && (v10[1] == v11._0_8_)) && (v10[2] == v11._8_8_)) {` -> `+        if (((*(int4 *)&v10[0xb] == v5) && (v10[1] == v11._0_8_)) && (v10[2] == v11._8_8_)) {`
+- O2-noinline-tar-tar 0x255e0: 4 lines, e.g. `-  for (v1 = &dat_81280; ((*v1 || ((int4)v1[1])) || (v1[4])); v1 = &v1[6]) {` -> `+  for (v1 = &dat_81280; ((*v1 || (*(int4 *)&v1[1])) || (v1[4])); v1 = &v1[6]) {`
+- O2-noinline-tar-tar 0x25a50: 2 lines, e.g. `-  v1 = (int4)v2[2];` -> `+  v1 = *(int4 *)&v2[2];`
+- O2-noinline-tar-tar 0x26210: 4 lines, e.g. `-      if ((int4)v5[2] == 1) break;` -> `+      if (*(int4 *)&v5[2] == 1) break;`
+- O2-noinline-tar-tar 0x276a0: 2 lines, e.g. `-        if (!(int4)dat_846c0[5]) {` -> `+        if (!*(int4 *)&dat_846c0[5]) {`
+- O2-noinline-tar-tar 0x2bce0: 4 lines, e.g. `-  for (; (((*a0 || ((int4)a0[1])) || (a0[2])) || (((int4)a0[3] || (a0[4])))); a0 = &a0[6]) {` -> `+  for (; (((*a0 || (*(int4 *)&a0[1])) || (a0[2])) || ((*(int4 *)&a0[3] || (a0[4])))); a0 = &a0[6]) {`
+- O2-noinline-tar-tar 0x308c0: 8 lines, e.g. `-        if ((char)v6[3]) { // branch-flip` -> `+        if (*(char *)&v6[3]) { // branch-flip`
+- O2-noinline-tar-tar 0x30b70: 2 lines, e.g. `-      if ((((char)v4[3]) && ((v3 = (char *)v4[2], !*v3 || (!strcmp(v3,"."))))) && ((int4)v4[1] < (int4)v2->fi` -> `+      if (((*(char *)&v4[3]) && ((v3 = (char *)v4[2], !*v3 || (!strcmp(v3,"."))))) && (*(int4 *)&v4[1] < (int`
+- O2-noinline-tar-tar 0x34080: 2 lines, e.g. `-      __sprintf_chk(v8,1,0x40,"I%d\n%s\n",(int4)(int2)*a2,v10);` -> `+      __sprintf_chk(v8,1,0x40,"I%d\n%s\n",(int4)*(int2 *)a2,v10);`
+- O2-noinline-tar-tar 0x37190: 158 lines, e.g. `-  code *v1;` -> `+  uint1 v1;`
+- O2-noinline-tar-tar 0x39bb0: 6 lines, e.g. `-        *(int4 *)&v3[1] = (int4)v3[1] + 1;` -> `+        *(int4 *)&v3[1] = *(int4 *)&v3[1] + 1;`
+- O2-noinline-tar-tar 0x39e20: 4 lines, e.g. `-          if ((int4)v18[1]) {` -> `+          if (*(int4 *)&v18[1]) {`
+- O2-noinline-tar-tar 0x3a100: 4 lines, e.g. `-      if (((int4)v4[3]) || (v3 = a1, v4[2]))` -> `+      if ((*(int4 *)&v4[3]) || (v3 = a1, v4[2]))`
+- O2-noinline-tar-tar 0x3a4e0: 2 lines, e.g. `-    if ((((int4)a1->field_0x10[1]) && (v1)) && (*(int4 *)(a1->field_0x0 + 0x18) != *(int4 *)(v1 + 0x18)))` -> `+    if (((*(int4 *)&a1->field_0x10[1]) && (v1)) && (*(int4 *)(a1->field_0x0 + 0x18) != *(int4 *)(v1 + 0x18)))`
+- O2-noinline-tar-tar 0x3a5d0: 2 lines, e.g. `-      while ((sub_3d980(v6) && ((int4)v6[1] == (int4)*v9))) {` -> `+      while ((sub_3d980(v6) && (*(int4 *)&v6[1] == (int4)*v9))) {`
+- O2-noinline-tar-tar 0x3c3a0: 2 lines, e.g. `-    if (a0->field_0x1c & 0x20)` -> `+    if (*(uint1 *)&a0->field_0x1c & 0x20)`
+- O2-noinline-tar-tar 0x3ed70: 2 lines, e.g. `-    if (!(int4)v6[1]) {` -> `+    if (!*(int4 *)&v6[1]) {`
+- O2-noinline-tar-tar 0x45930: 1213 lines, e.g. `-  int8 v10;` -> `+  uint4 v10; // eax`
+- O2-noinline-tar-tar 0x4dde0: 4 lines, e.g. `-        v3 = (char)v9[1];` -> `+        v3 = *(char *)&v9[1];`
+- O2-noinline-tar-tar 0x4f600: 4 lines, e.g. `-  if ((char)v3[1] != '\b') { // branch-flip` -> `+  if (*(char *)&v3[1] != '\b') { // branch-flip`
+- O2-noinline-tar-tar 0x51290: 2 lines, e.g. `-        if (((*v6 == v5) && (((uint1)v6[0xd] & 0xf) == (uint4)a3)) && (v4 = (void *)v6[10], sub_4da00(v4,a2))` -> `+        if (((*v6 == v5) && ((*(uint1 *)&v6[0xd] & 0xf) == (uint4)a3)) && (v4 = (void *)v6[10], sub_4da00(v4,`
+- O2-noinline-tar-tar 0x51370: 4 lines, e.g. `-        if ((char)v10[1] == '\x04') break;` -> `+        if (*(char *)&v10[1] == '\x04') break;`
+- O2-noinline-tar-tar 0x52260: 2 lines, e.g. `-      else if ((char)*a1 != v1)` -> `+      else if (*(char *)a1 != v1)`
+- O2-noinline-tar-tar 0x52440: 2 lines, e.g. `-    if (((((char)v4[1] == '\b') && (v3 = *v4, v3 <= 0x3f)) && ((uint8)v1[0x14] >> (v3 & 0x3f) & 1)) && (v5 = ` -> `+    if ((((*(char *)&v4[1] == '\b') && (v3 = *v4, v3 <= 0x3f)) && ((uint8)v1[0x14] >> (v3 & 0x3f) & 1)) && (v`
+- O2-noinline-tar-tar 0x52610: 2 lines, e.g. `-    if (!(char)*v1)` -> `+    if (!*(char *)v1)`
+- O2-noinline-tar-tar 0x536f0: 10 lines, e.g. `-      switch((char)v4[2]) {` -> `+      switch(*(char *)&v4[2]) {`
+- O2-noinline-tar-tar 0x53a40: 4 lines, e.g. `-            if ((char)v5[1] != '\b') break;` -> `+            if (*(char *)&v5[1] != '\b') break;`
+- O2-noinline-tar-tar 0x54350: 4 lines, e.g. `-      if ((a0->field_0x18 & 0x400000) && (1 < ((int4 *)v5)[0x2d])) {` -> `+      if ((((uint1 *)&a0->field_0x18)[2] & 0x40) && (1 < ((int4 *)v5)[0x2d])) {`
+- O2-noinline-tar-tar 0x54840: 2 lines, e.g. `-      v1 = (char)v11[1];` -> `+      v1 = *(char *)&v11[1];`
+- O2-noinline-tar-tar 0x561d0: 6 lines, e.g. `-      if ((char)a0[6] == '\x11') goto label_5624e;` -> `+      if (*(char *)&a0[6] == '\x11') goto label_5624e;`
+- O2-noinline-tar-tar 0x565e0: 4 lines, e.g. `-  if ((char)a2[2] != '\t') {` -> `+  if (*(char *)&a2[2] != '\t') {`
+- O2-noinline-tar-tar 0x56700: 108 lines, e.g. `-    v2 = (uint1)a2[2];` -> `+    v2 = *(uint1 *)&a2[2];`
+- O2-noinline-tar-tar 0x56be0: 6 lines, e.g. `-    v2 = (uint1)a2[2];` -> `+    v2 = *(uint1 *)&a2[2];`
+- O2-noinline-tar-tar 0x56d30: 4 lines, e.g. `-    if ((char)a2[2] != '\n')` -> `+    if (*(char *)&a2[2] != '\n')`
+- O2-noinline-tar-tar 0x56fa0: 2 lines, e.g. `-  v10 = (char)v9[1];` -> `+  v10 = *(char *)&v9[1];`
+- O2-noinline-tar-tar 0x57a30: 2 lines, e.g. `-    } while ((char)*v1);` -> `+    } while (*(char *)v1);`
+- O2-noinline-tar-tar 0x58a80: 2 lines, e.g. `-      } while ((char)*v1);` -> `+      } while (*(char *)v1);`
+- O2-noinline-tar-tar 0x5b310: 2 lines, e.g. `-      if ((!*v5) && ((v5 != &((char *)a0)[9] || (!(char)a0[1])))) {` -> `+      if ((!*v5) && ((v5 != &((char *)a0)[9] || (!*(char *)&a0[1])))) {`
+- O2-noinline-tar-tar 0x5e530: 2 lines, e.g. `-      v2 = (uint4)*a1;` -> `+      v2 = *(uint4 *)a1;`
+- O2-noinline-tar-tar 0x5e830: 207 lines, e.g. `-  int4 v11;` -> `+  char *v11;`
+- O2-tar-tar 0x10c20: 2 lines, e.g. `-    while (((v4 = dat_821d0, (int4)v3[1] != 3 || (!dat_821d0)) || (!dat_821d8))) {` -> `+    while (((v4 = dat_821d0, *(int4 *)&v3[1] != 3 || (!dat_821d0)) || (!dat_821d8))) {`
+- O2-tar-tar 0x17440: 117 lines, e.g. `-  unsigned int v10;` -> `+  int8 *v10;`
+- O2-tar-tar 0x185e0: 2 lines, e.g. `-        if ((char)v9[5]) {` -> `+        if (*(char *)&v9[5]) {`
+- O2-tar-tar 0x18fd0: 2 lines, e.g. `-          if (((int4)v8[0xb] == dat_82580) && (((v8[1] == v9._0_8_ && (v8[2] == v9._8_8_)) && (!((-(uint4)(v8` -> `+          if ((*(int4 *)&v8[0xb] == dat_82580) && (((v8[1] == v9._0_8_ && (v8[2] == v9._8_8_)) && (!((-(uint4`
+- O2-tar-tar 0x270f0: 2 lines, e.g. `-  v1 = (int4)v3[2];` -> `+  v1 = *(int4 *)&v3[2];`
+- O2-tar-tar 0x271a0: 4 lines, e.g. `-  for (v5 = &dat_7f280; ((*v5 || ((int4)v5[1])) || (v5[4])); v5 = &v5[6]) {` -> `+  for (v5 = &dat_7f280; ((*v5 || (*(int4 *)&v5[1])) || (v5[4])); v5 = &v5[6]) {`
+- O2-tar-tar 0x27340: 10 lines, e.g. `-      if (((int4)v10[2] == 2) && (v10[6])) {` -> `+      if ((*(int4 *)&v10[2] == 2) && (v10[6])) {`
+- O2-tar-tar 0x28cf0: 2 lines, e.g. `-        if (!(int4)dat_826c0[5]) {` -> `+        if (!*(int4 *)&dat_826c0[5]) {`
+- O2-tar-tar 0x2d3c0: 4 lines, e.g. `-  for (; (((*a0 || ((int4)a0[1])) || (a0[2])) || (((int4)a0[3] || (a0[4])))); a0 = &a0[6]) {` -> `+  for (; (((*a0 || (*(int4 *)&a0[1])) || (a0[2])) || ((*(int4 *)&a0[3] || (a0[4])))); a0 = &a0[6]) {`
+- O2-tar-tar 0x308a0: 4 lines, e.g. `-            if (!(int4)v13[1]) {` -> `+            if (!*(int4 *)&v13[1]) {`
+- O2-tar-tar 0x30e90: 8 lines, e.g. `-      if ((char)v7[3]) {` -> `+      if (*(char *)&v7[3]) {`
+- O2-tar-tar 0x348b0: 2 lines, e.g. `-    __sprintf_chk(v9,1,0x40,"I%d\n%s\n",(int4)(int2)*a2,v12);` -> `+    __sprintf_chk(v9,1,0x40,"I%d\n%s\n",(int4)*(int2 *)a2,v12);`
+- O2-tar-tar 0x359d0: 6 lines, e.g. `-  v2 = (uint4)a0[4];` -> `+  v2 = *(uint4 *)&a0[4];`
+- O2-tar-tar 0x35c30: 2 lines, e.g. `-    if ((a0[4] & 0x600) && (!(v12 & 8))) {` -> `+    if ((*(uint4 *)&a0[4] & 0x600) && (!(v12 & 8))) {`
+- O2-tar-tar 0x36260: 181 lines, e.g. `-  char *v1;` -> `+  uint4 v1;`
+- O2-tar-tar 0x36560: 70 lines, e.g. `-  v16 = a0[4];` -> `+  v14 = *(uint4 *)&a0[4];`
+- O2-tar-tar 0x36bc0: 8 lines, e.g. `-  v8 = (uint4)a0[4];` -> `+  v8 = *(uint4 *)&a0[4];`
+- O2-tar-tar 0x36e70: 22 lines, e.g. `-      v5 = (uint4)v6[2];` -> `+      v5 = *(uint4 *)&v6[2];`
+- O2-tar-tar 0x37450: 4 lines, e.g. `-      if (!(a2[4] & 0x10))` -> `+      if (!(*(uint1 *)&a2[4] & 0x10))`
+- O2-tar-tar 0x375f0: 217 lines, e.g. `-  uint8 *v11; // stack - 0x138` -> `+  uint8 *v11;`
+- O2-tar-tar 0x37bc0: 16 lines, e.g. `-  if (a1[2] & 1) {` -> `+  if (*(uint4 *)&a1[2] & 1) {`
+- O2-tar-tar 0x37f80: 320 lines, e.g. `-  uint8 v10;` -> `+  char *v10; // rax`
+- O2-tar-tar 0x38d40: 8 lines, e.g. `-    if (!(a0[4] & 0x10))` -> `+    if (!(*(uint1 *)&a0[4] & 0x10))`
+- O2-tar-tar 0x3b0c0: 30 lines, e.g. `-        v12 = v22[3];` -> `+        v6 = *(int4 *)&v22[3];`
+- O2-tar-tar 0x3be20: 2 lines, e.g. `-    if ((((int4)a1->field_0x10[1]) && (v8)) && (*(int4 *)(a1->field_0x0 + 0x18) != *(int4 *)(v8 + 0x18))) {` -> `+    if (((*(int4 *)&a1->field_0x10[1]) && (v8)) && (*(int4 *)(a1->field_0x0 + 0x18) != *(int4 *)(v8 + 0x18)))`
+- O2-tar-tar 0x3c8f0: 4 lines, e.g. `-    if ((!(*(uint1 *)&v23[3] & 8)) && (v35 = v23[1], (uint4)((int4)v35 - 1U) <= 0xfe)) {` -> `+    if ((!(*(uint1 *)&v23[3] & 8)) && (v11 = *(int4 *)&v23[1], (uint4)(v11 - 1U) <= 0xfe)) {`
+- O2-tar-tar 0x3de60: 2 lines, e.g. `-    if (a0->field_0x1c & 0x20)` -> `+    if (*(uint1 *)&a0->field_0x1c & 0x20)`
+- O2-tar-tar 0x3e2d0: 4 lines, e.g. `-    v12 = (int4)v14[1];` -> `+    v12 = *(int4 *)&v14[1];`
+- O2-tar-tar 0x3e5f0: 2 lines, e.g. `-    while ((((v2 = &v1[6], (int4)v1[1] || (*v1)) || (v1[4])) || ((int4)v1[5]))) {` -> `+    while ((((v2 = &v1[6], *(int4 *)&v1[1] || (*v1)) || (v1[4])) || (*(int4 *)&v1[5]))) {`
+- O2-tar-tar 0x3e690: 4 lines, e.g. `-    *(int4 *)&v10[3] = (int4)v10[3] + (v12 - v2);` -> `+    *(int4 *)&v10[3] = *(int4 *)&v10[3] + (v12 - v2);`
+- O2-tar-tar 0x40930: 4 lines, e.g. `-      if (!(int4)v7[1]) break;` -> `+      if (!*(int4 *)&v7[1]) break;`
+- O2-tar-tar 0x40ae0: 2 lines, e.g. `-  v1 = (int4)a0[1];` -> `+  v1 = *(int4 *)&a0[1];`
+- O2-tar-tar 0x40c90: 4 lines, e.g. `-    if (((!v6) || ((int4)v6[1])) || ((((uint4 *)v6)[3] ^ a2) & 0x60000018)) {` -> `+    if (((!v6) || (*(int4 *)&v6[1])) || ((((uint4 *)v6)[3] ^ a2) & 0x60000018)) {`
+- O2-tar-tar 0x46d70: 1885 lines, e.g. `-  int8 v13;` -> `+  uint1 v13;`
+- O2-tar-tar 0x50280: 4 lines, e.g. `-        v3 = (char)v9[1];` -> `+        v3 = *(char *)&v9[1];`
+- O2-tar-tar 0x51c00: 4 lines, e.g. `-  v2 = (uint1)a1->field_0x8;` -> `+  v2 = *(uint1 *)&a1->field_0x8;`
+- O2-tar-tar 0x51d40: 2 lines, e.g. `-      if ((((char)v6[1] == '\b') && (v3 = *v6, v3 <= 0x3f)) && ((uint8)v1[0x14] >> (v3 & 0x3f) & 1)) break;` -> `+      if (((*(char *)&v6[1] == '\b') && (v3 = *v6, v3 <= 0x3f)) && ((uint8)v1[0x14] >> (v3 & 0x3f) & 1)) brea`
+- O2-tar-tar 0x52de0: 4 lines, e.g. `-      if ((a0->field_0x18 & 0x400000) && (1 < ((int4 *)v5)[0x2d])) {` -> `+      if ((((uint1 *)&a0->field_0x18)[2] & 0x40) && (1 < ((int4 *)v5)[0x2d])) {`
+- O2-tar-tar 0x53fc0: 2 lines, e.g. `-  v1 = (char)v11[1];` -> `+  v1 = *(char *)&v11[1];`
+- O2-tar-tar 0x54380: 8 lines, e.g. `-      if (((*v8 == v16) && (((uint1)v8[0xd] & 0xf) == (uint4)v12)) && (v5 = (void *)v8[10], sub_500a0(v5,a2))` -> `+      if (((*v8 == v16) && ((*(uint1 *)&v8[0xd] & 0xf) == (uint4)v12)) && (v5 = (void *)v8[10], sub_500a0(v5,`
+- O2-tar-tar 0x546c0: 6 lines, e.g. `-            v6 = (uint1)v4[0xd] & 0xdf | ((*(uint1 *)(v5 + 10) >> 4 | (uint1)v4[0xd] >> 5) & 1) << 5;` -> `+            v6 = *(uint1 *)&v4[0xd] & 0xdf | ((*(uint1 *)(v5 + 10) >> 4 | *(uint1 *)&v4[0xd] >> 5) & 1) << 5;`
+- O2-tar-tar 0x55450: 2 lines, e.g. `-    if (!(char)*v1)` -> `+    if (!*(char *)v1)`
+- O2-tar-tar 0x55a50: 6 lines, e.g. `-                if ((char)v17[1] != '\b') break;` -> `+                if (*(char *)&v17[1] != '\b') break;`
+- O2-tar-tar 0x56f80: 4 lines, e.g. `-        } while ((char)*v1);` -> `+        } while (*(char *)v1);`
+- O2-tar-tar 0x586a0: 2 lines, e.g. `-    *(uint1 *)&v5[4] = (uint1)v5[4] & 0xfe | a4 & 1;` -> `+    *(uint1 *)&v5[4] = *(uint1 *)&v5[4] & 0xfe | a4 & 1;`
+- O2-tar-tar 0x58960: 4 lines, e.g. `-    if ((char)v19[1] != '\b') { // branch-flip` -> `+    if (*(char *)&v19[1] != '\b') { // branch-flip`
+- O2-tar-tar 0x5aa30: 74 lines, e.g. `-      *(char *)v36 = (char)*v36 + v2;` -> `+      *(char *)v36 = *(char *)v36 + v2;`
+- O2-tar-tar 0x5c4f0: 30 lines, e.g. `-              v33 = (char)v16[6];` -> `+              v33 = *(char *)&v16[6];`
+- O2-tar-tar 0x5e1c0: 2 lines, e.g. `-  if ((char)a0[1]) // branch-flip` -> `+  if (*(char *)&a0[1]) // branch-flip`
+- O2-tar-tar 0x5e2f0: 2 lines, e.g. `-      if ((!*v6) && ((v6 != &((char *)a0)[9] || (!(char)a0[1])))) {` -> `+      if ((!*v6) && ((v6 != &((char *)a0)[9] || (!*(char *)&a0[1])))) {`
+- O2-tar-tar 0x611a0: 2 lines, e.g. `-      v1 = (uint4)*a1;` -> `+      v1 = *(uint4 *)a1;`
+- O2-tar-tar 0x614a0: 207 lines, e.g. `-  int4 v11;` -> `+  char *v11;`
+
+276 functions changed.
+

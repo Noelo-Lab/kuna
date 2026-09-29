@@ -1,0 +1,839 @@
+## 18 DWARF builds (decbench compiled/), default options: main 632437155 vs this branch
+
+RuleExpandLoad sites (distinct function/op pairs, from a KUNA_TRACE_EXPANDLOAD build of each arm):
+
+| binary | main AND form | main truncation | branch AND form | branch sites main did not widen |
+|---|---|---|---|---|
+| O0-coreutils-ls | 0 | 0 | 0 | 0 |
+| O2-coreutils-ls | 0 | 0 | 0 | 0 |
+| O2-coreutils-sort | 0 | 0 | 0 | 0 |
+| O0-findutils-find | 0 | 0 | 0 | 0 |
+| O2-findutils-find | 11 | 0 | 11 | 0 |
+| O0-grep-grep | 0 | 0 | 0 | 0 |
+| O2-grep-grep | 33 | 2 | 33 | 0 |
+| O2-noinline-grep-grep | 34 | 1 | 34 | 0 |
+| O0-tar-tar | 0 | 0 | 0 | 0 |
+| O2-tar-tar | 25 | 1 | 25 | 0 |
+| O2-noinline-tar-tar | 27 | 1 | 27 | 0 |
+| O2-iproute2-ip | 26 | 75 | 26 | 0 |
+| O2-noinline-iproute2-ip | 25 | 93 | 25 | 0 |
+| O0-iproute2-rtmon | 0 | 1 | 0 | 0 |
+| O2-gzip-gzip | 0 | 1 | 0 | 0 |
+| O2-diffutils-diff | 1 | 0 | 1 | 0 |
+| O2-bzip2-bzip2 | 0 | 2 | 0 | 0 |
+| O0-shadow-login | 0 | 0 | 0 | 0 |
+| total | 182 | 177 | 182 | 0 |
+
+The branch's AND-form sites are exactly main's (182 loads in 81 functions): a declared record's field
+reached from a type-locked parameter or global. No load main printed narrow is widened.
+
+91 functions change; every one holds a main truncation site. No signature, argument count or variables[]
+count changes. Below, each changed function's diff with every `vN` spelled `V`, so lines that differ only
+by renumbering drop out: each is a truncated read `(T)X` re-spelled at its own width `*(T *)&X`, or that
+read taking its own variable or printing at its uses (upstream ActionMarkExplicit, at most max_implied_ref uses).
+
+### O0-iproute2-rtmon 0x85de set_address_type -1 +1
+```
+-  if ((char)addr->data[0] == '\xff') {
++  if (*(char *)addr->data == '\xff') {
+```
+### O2-bzip2-bzip2 0x5890 add_pair_to_block -1 +1
+```
+-      s->block[V] = (char)s->state_in_len + '\xfc';
++      s->block[V] = *(char *)&s->state_in_len + '\xfc';
+```
+### O2-bzip2-bzip2 0x8d30 BZ2_compressBlock -2 +2
+```
+-  V = s->blockSize100k;
++  V = *(char *)&s->blockSize100k;
+-  s->bsBuff = V | (unsigned int)(unsigned char)((char)V + 0x30) << (0x18U - (char)V & 0x1fU);
++  s->bsBuff = V | (unsigned int)(unsigned char)(V + 0x30) << (0x18U - (char)V & 0x1fU);
+```
+### O2-grep-grep 0x8050 print_line_head -4 +4
+```
++  uint1 V;
+-  uint8 V;
+-    V = *V;
++    V = *(uint1 *)V;
+-          *(uint1 *)V = (uint1)V;
++          *(uint1 *)V = V;
+-          *(uint1 *)V = (uint1)V;
++          *(uint1 *)V = V;
+```
+### O2-grep-grep 0xaf70 bmexec_trans -1 +1
+```
+-  V = (uint1)kwset->gc1;
++  V = *(uint1 *)&kwset->gc1;
+```
+### O2-gzip-gzip 0x89b0 huft_build -1 +1
+```
+-                V = (char)e[V - s];
++                V = *(char *)&e[V - s];
+```
+### O2-iproute2-ip 0xfec0 print_addrinfo -18 +19
+```
++  uint8 V;
++  char V;
+-  uint8 V;
+-      if ((((!filter._0_4_) || (V._0_2_ = n[1].nlmsg_type, V._2_2_ = n[1].nlmsg_flags, filter._0_4_ == V)) && (!((((uint1 *)&n[1].nlmsg_len)[3] ^ filter._280_4_) & filter._284_4_) && !((filter._288_4_ ^ (uint4)V) & filt
++      if ((((!filter._0_4_) || (V._0_2_ = n[1].nlmsg_type, V._2_2_ = n[1].nlmsg_flags, filter._0_4_ == V)) && (!((((uint1 *)&n[1].nlmsg_len)[3] ^ filter._280_4_) & filter._284_4_) && !((filter._288_4_ ^ (uint4)V) & filt
+-            V = family_name((uint4)(uint1)n[1].nlmsg_len);
++            V = family_name((uint4)*(uint1 *)&n[1].nlmsg_len);
+-              print_color_int(PRINT_ANY,COLOR_NONE,"family_index","    family %d ",(uint4)(uint1)n[1].nlmsg_len);
++              print_color_int(PRINT_ANY,COLOR_NONE,"family_index","    family %d ",(uint4)*(uint1 *)&n[1].nlmsg_len);
+-            V = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)rta_tb[2]->rta_len - 4,&rta_tb[2][1]);
+-            V = n[1].nlmsg_len;
+-            print_color_string(PRINT_ANY,ifa_family_color((char)V),"local","%s",V);
++            V = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)rta_tb[2]->rta_len - 4,&rta_tb[2][1]);
++            V = *(char *)&n[1].nlmsg_len;
++            print_color_string(PRINT_ANY,ifa_family_color(V),"local","%s",V);
+-              if ((char)n[1].nlmsg_len != '\x02')
++              if (*(char *)&n[1].nlmsg_len != '\x02')
+-                V = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)rta_tb[1]->rta_len - 4,&rta_tb[1][1]);
+-                V = n[1].nlmsg_len;
+-                print_color_string(PRINT_ANY,ifa_family_color((char)V),"address","%s",V);
++                V = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)rta_tb[1]->rta_len - 4,&rta_tb[1][1]);
++                V = *(char *)&n[1].nlmsg_len;
++                print_color_string(PRINT_ANY,ifa_family_color(V),"address","%s",V);
+-              V = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)rta_tb[4]->rta_len - 4,&rta_tb[4][1]);
+-              V = n[1].nlmsg_len;
+-              print_color_string(PRINT_ANY,ifa_family_color((char)V),"broadcast","%s ",V);
++              V = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)rta_tb[4]->rta_len - 4,&rta_tb[4][1]);
++              V = *(char *)&n[1].nlmsg_len;
++              print_color_string(PRINT_ANY,ifa_family_color(V),"broadcast","%s ",V);
+-              V = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)rta_tb[5]->rta_len - 4,&rta_tb[5][1]);
+-              V = n[1].nlmsg_len;
+-              print_color_string(PRINT_ANY,ifa_family_color((char)V),"anycast","%s ",V);
++              V = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)rta_tb[5]->rta_len - 4,&rta_tb[5][1]);
++              V = *(char *)&n[1].nlmsg_len;
++              print_color_string(PRINT_ANY,ifa_family_color(V),"anycast","%s ",V);
+-                  if ((V != 1) || ((char)n[1].nlmsg_len != '\n')) {
++                  if ((V != 1) || (*(char *)&n[1].nlmsg_len != '\n')) {
+```
+### O2-iproute2-ip 0x16220 print_addrlabel -7 +8
+```
++  uint4 idx;
++  char ifa_family;
+-  uint4 V;
+-      value = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)tb[1]->rta_len - 4,&tb[1][1]);
++      value = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)tb[1]->rta_len - 4,&tb[1][1]);
+-      V = n[1].nlmsg_len;
+-      print_color_string(PRINT_ANY,ifa_family_color((char)V),"address","%s",value);
++      ifa_family = *(char *)&n[1].nlmsg_len;
++      print_color_string(PRINT_ANY,ifa_family_color(ifa_family),"address","%s",value);
+-      V._0_2_ = n[1].nlmsg_type;
+-      V._2_2_ = n[1].nlmsg_flags;
+-      print_color_string(PRINT_ANY,COLOR_IFNAME,"ifname","%s ",ll_index_to_name(V));
++      idx._0_2_ = n[1].nlmsg_type;
++      idx._2_2_ = n[1].nlmsg_flags;
++      print_color_string(PRINT_ANY,COLOR_IFNAME,"ifname","%s ",ll_index_to_name(idx));
+```
+### O2-iproute2-ip 0x16b40 filter_nlmsg -4 +4
+```
+-  V = (uint1)n[1].nlmsg_len;
++  V = *(uint1 *)&n[1].nlmsg_len;
+-  V.rta_len._0_1_ = (uint1)n[1].nlmsg_type;
++  V.rta_len._0_1_ = *(uint1 *)&n[1].nlmsg_type;
+-  if (((uint1)n[1].nlmsg_flags ^ filter._40_4_) & filter._44_4_)
++  if ((*(uint1 *)&n[1].nlmsg_flags ^ filter._40_4_) & filter._44_4_)
+-      if ((int2)n[1].nlmsg_len == 10) {
++      if (*(int2 *)&n[1].nlmsg_len == 10) {
+```
+### O2-iproute2-ip 0x19780 print_rta_via.constprop.0 -2 +3
+```
++  char ifa_family;
+-  V = a0->field_0x4;
+-  print_color_string(PRINT_FP,ifa_family_color((char)V),NULL,"%s ",value);
++  ifa_family = *(char *)&a0->field_0x4;
++  print_color_string(PRINT_FP,ifa_family_color(ifa_family),NULL,"%s ",value);
+```
+### O2-iproute2-ip 0x1aec0 print_route -21 +18
+```
+-  V = af_bit_len((uint4)(uint1)n[1].nlmsg_len);
++  V = af_bit_len((uint4)*(uint1 *)&n[1].nlmsg_len);
+-  V.rta_len._0_1_ = (uint1)n[1].nlmsg_type;
++  V.rta_len._0_1_ = *(uint1 *)&n[1].nlmsg_type;
+-    V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)(uint1)n[1].nlmsg_len);
++    V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)*(uint1 *)&n[1].nlmsg_len);
+-    V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)(uint1)n[1].nlmsg_len);
++    V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)*(uint1 *)&n[1].nlmsg_len);
+-    V = (uint1)n[1].nlmsg_len;
++    V = *(uint1 *)&n[1].nlmsg_len;
+-      V = (uint1)n[1].nlmsg_flags;
+-      V = V;
+-      if ((V) || (V = 0, 1 <= show_details)) goto label_1b3b7;
+-    }
+-    else {
+-      V = (uint1)n[1].nlmsg_flags;
+-      V = V;
+-      if (V) {
++      V = *(uint1 *)&n[1].nlmsg_flags;
++      if ((*(uint1 *)&n[1].nlmsg_flags) || (V = 0, 1 <= show_details)) goto label_1b3b7;
++    }
++    else {
++      V = *(uint1 *)&n[1].nlmsg_flags;
++      if (*(uint1 *)&n[1].nlmsg_flags) {
+-    V = rt_addr_n2a((uint4)(uint1)n[1].nlmsg_len,(uint4)tb[7]->rta_len - 4,&tb[7][1]);
++    V = rt_addr_n2a((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)tb[7]->rta_len - 4,&tb[7][1]);
+-      V = n[1].nlmsg_len;
+-      print_color_string(PRINT_FP,ifa_family_color((char)V),NULL,"%s ",V);
++      V = *(char *)&n[1].nlmsg_len;
++      print_color_string(PRINT_FP,ifa_family_color(V),NULL,"%s ",V);
+-  V = (char)n[1].nlmsg_len;
+-  if (V != '\x02') {
+-    if ((V == '\n') && (tb[0xc]))
++  if (*(char *)&n[1].nlmsg_len != '\x02') {
++    if ((*(char *)&n[1].nlmsg_len == '\n') && (tb[0xc]))
+-          V = (uint1)n[1].nlmsg_len;
++          V = *(uint1 *)&n[1].nlmsg_len;
+-        if ((char)n[1].nlmsg_len != '\x1c')
++        if (*(char *)&n[1].nlmsg_len != '\x1c')
+```
+### O2-iproute2-ip 0x1f2d0 print_rule -8 +8
+```
+-  v4_1 = af_bit_len((uint4)(uint1)n[1].nlmsg_len);
++  v4_1 = af_bit_len((uint4)*(uint1 *)&n[1].nlmsg_len);
+-  if ((preferred_family) && (preferred_family != (uint1)n[1].nlmsg_len)) {
++  if ((preferred_family) && (preferred_family != *(uint1 *)&n[1].nlmsg_len)) {
+-    value = rt_addr_n2a((uint4)(uint1)n[1].nlmsg_len,(uint4)tb[2]->rta_len - 4,&tb[2][1]);
++    value = rt_addr_n2a((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)tb[2]->rta_len - 4,&tb[2][1]);
+-    v4_1 = ifa_family_color((char)n[1].nlmsg_len);
++    v4_1 = ifa_family_color(*(char *)&n[1].nlmsg_len);
+-    value = rt_addr_n2a((uint4)(uint1)n[1].nlmsg_len,(uint4)tb[1]->rta_len - 4,&tb[1][1]);
++    value = rt_addr_n2a((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)tb[1]->rta_len - 4,&tb[1][1]);
+-    v4_1 = ifa_family_color((char)n[1].nlmsg_len);
++    v4_1 = ifa_family_color(*(char *)&n[1].nlmsg_len);
+-  id.rta_len._0_1_ = (uint1)n[1].nlmsg_type;
++  id.rta_len._0_1_ = *(uint1 *)&n[1].nlmsg_type;
+-    value = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)tb[5]->rta_len - 4,&tb[5][1]);
++    value = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)tb[5]->rta_len - 4,&tb[5][1]);
+```
+### O2-iproute2-ip 0x1fe10 flush_rule -2 +2
+```
+-  af_bit_len((uint4)(uint1)n[1].nlmsg_len);
+-  if ((!preferred_family) || (preferred_family == (uint1)n[1].nlmsg_len)) {
++  af_bit_len((uint4)*(uint1 *)&n[1].nlmsg_len);
++  if ((!preferred_family) || (preferred_family == *(uint1 *)&n[1].nlmsg_len)) {
+```
+### O2-iproute2-ip 0x26a80 print_neigh -8 +6
+```
+-  if (((((!filter._288_8_) || (V == 0x1c)) && ((!filter._0_4_ || (filter._0_4_ == (uint1)n[1].nlmsg_len)))) && ((!filter._4_4_ || (V._0_2_ = n[1].nlmsg_type, V._2_2_ = n[1].nlmsg_flags, filter._4_4_ == V)))) && ((V = (u
++  if (((((!filter._288_8_) || (V == 0x1c)) && ((!filter._0_4_ || (filter._0_4_ == *(uint1 *)&n[1].nlmsg_len)))) && ((!filter._4_4_ || (V._0_2_ = n[1].nlmsg_type, V._2_2_ = n[1].nlmsg_flags, filter._4_4_ == V)))) && ((*(
+-            V = (uint1)n[1].nlmsg_len;
+-            V = V;
+-            if (V == 7)
++            V = *(uint1 *)&n[1].nlmsg_len;
++            if (*(uint1 *)&n[1].nlmsg_len == 7)
+-          V = (uint2)n[1].nlmsg_seq;
++          V = *(uint2 *)&n[1].nlmsg_seq;
+-          V = (uint1)n[1].nlmsg_len;
+-          V = V;
+-          if (V == 7)
++          V = *(uint1 *)&n[1].nlmsg_len;
++          if (*(uint1 *)&n[1].nlmsg_len == 7)
+```
+### O2-iproute2-ip 0x28bc0 print_ntable -4 +4
+```
++  uint1 V;
+-  uint4 V;
+-  if ((preferred_family) && (preferred_family != (uint1)n[1].nlmsg_len))
++  if ((preferred_family) && (preferred_family != *(uint1 *)&n[1].nlmsg_len))
+-  V = n[1].nlmsg_len;
+-  print_color_string(PRINT_ANY,COLOR_NONE,"family","%s ",family_name((uint4)(uint1)V));
++  V = *(uint1 *)&n[1].nlmsg_len;
++  print_color_string(PRINT_ANY,COLOR_NONE,"family","%s ",family_name((uint4)V));
+```
+### O2-iproute2-ip 0x2f590 accept_msg -2 +2
+```
+-          if (2 <= (uint1)((char)n[1].nlmsg_len + 0x80U)) {
++          if (2 <= (uint1)(*(char *)&n[1].nlmsg_len + 0x80U)) {
+-      if ((!preferred_family) || (V = 0, preferred_family == (uint1)n[1].nlmsg_len)) {
++      if ((!preferred_family) || (V = 0, preferred_family == *(uint1 *)&n[1].nlmsg_len)) {
+```
+### O2-iproute2-ip 0x2ffd0 print_mroute -3 +3
+```
+-  id.rta_len._0_1_ = (uint1)n[1].nlmsg_type;
++  id.rta_len._0_1_ = *(uint1 *)&n[1].nlmsg_type;
+-    if ((((filter._8_4_ == V) || (!filter._8_4_)) && ((!filter._4_4_ || (filter._4_4_ == (uint1)n[1].nlmsg_len)))) && ((!inet_addr_match_rta((inet_prefix *)0xab8cc,tb[1]) && (!inet_addr_match_rta((inet_prefix *)0xab9d4,
+-      V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)(uint1)n[1].nlmsg_len);
++    if ((((filter._8_4_ == V) || (!filter._8_4_)) && ((!filter._4_4_ || (filter._4_4_ == *(uint1 *)&n[1].nlmsg_len)))) && ((!inet_addr_match_rta((inet_prefix *)0xab8cc,tb[1]) && (!inet_addr_match_rta((inet_prefix *)0xab
++      V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)*(uint1 *)&n[1].nlmsg_len);
+```
+### O2-iproute2-ip 0x30b80 print_prefix -2 +2
+```
+-    V = (uint1)n[1].nlmsg_len;
++    V = *(uint1 *)&n[1].nlmsg_len;
+-      V = (uint1)n[1].nlmsg_seq;
++      V = *(uint1 *)&n[1].nlmsg_seq;
+```
+### O2-iproute2-ip 0x32480 print_token -8 +9
+```
++  uint4 idx;
++  char ifa_family;
+-  uint4 V;
+-    if ((char)n[1].nlmsg_len != '\n')
++    if (*(char *)&n[1].nlmsg_len != '\n')
+-        value = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)ltb[7]->rta_len - 4,&ltb[7][1]);
+-        V = n[1].nlmsg_len;
+-        print_color_string(PRINT_ANY,ifa_family_color((char)V),"token","%s",value);
++        value = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)ltb[7]->rta_len - 4,&ltb[7][1]);
++        ifa_family = *(char *)&n[1].nlmsg_len;
++        print_color_string(PRINT_ANY,ifa_family_color(ifa_family),"token","%s",value);
+-        V._0_2_ = n[1].nlmsg_type;
+-        V._2_2_ = n[1].nlmsg_flags;
+-        print_color_string(PRINT_ANY,COLOR_IFNAME,"ifname","%s\n",ll_index_to_name(V));
++        idx._0_2_ = n[1].nlmsg_type;
++        idx._2_2_ = n[1].nlmsg_flags;
++        print_color_string(PRINT_ANY,COLOR_IFNAME,"ifname","%s\n",ll_index_to_name(idx));
+```
+### O2-iproute2-ip 0x36bf0 xfrm_state_keep -3 +1
+```
+-  char V;
+-        V = (char)n[5].nlmsg_pid;
+-        if ((V != '\x04') && (V != ')')) {
++        if ((*(char *)&n[5].nlmsg_pid != '\x04') && (*(char *)&n[5].nlmsg_pid != ')')) {
+```
+### O2-iproute2-ip 0x3a560 xfrm_policy_print -1 +1
+```
+-      if ((filter._296_2_) && (filter._296_2_ != (int2)n[3].nlmsg_seq))
++      if ((filter._296_2_) && (filter._296_2_ != *(int2 *)&n[3].nlmsg_seq))
+```
+### O2-iproute2-ip 0x3b320 xfrm_policy_keep -1 +1
+```
+-    if (((!filter._0_4_) || (((!filter._296_2_ || (filter._296_2_ == (int2)n[3].nlmsg_seq)) && (xfrm_policy_filter_match.part.0((xfrm_address_t *)&n[1],(uint1)V))))) && (((uint1)n[0xb].nlmsg_len <= 2 && ((int8)((int4 *)
++    if (((!filter._0_4_) || (((!filter._296_2_ || (filter._296_2_ == *(int2 *)&n[3].nlmsg_seq)) && (xfrm_policy_filter_match.part.0((xfrm_address_t *)&n[1],(uint1)V))))) && ((*(uint1 *)&n[0xb].nlmsg_len <= 2 && ((int8)(
+```
+### O2-iproute2-ip 0x3c5d0 xfrm_policy_default_print -1 +1
+```
+-    V = (char)n[1].nlmsg_len;
++    V = *(char *)&n[1].nlmsg_len;
+```
+### O2-iproute2-ip 0x3d8c0 xfrm_accept_msg -3 +2
+```
+-          __fprintf_chk(arg,1,"proto %u",(uint8)(uint1)n[1].nlmsg_len);
++          __fprintf_chk(arg,1,"proto %u",(uint8)*(uint1 *)&n[1].nlmsg_len);
+-        V = (uint2)n[4].nlmsg_pid;
+-        __fprintf_chk(arg,1,":%d -> ",(uint8)(uint2)(V << 8 | V >> 8));
++        __fprintf_chk(arg,1,":%d -> ",(uint8)(uint2)(*(uint2 *)&n[4].nlmsg_pid << 8 | *(uint2 *)&n[4].nlmsg_pid >> 8));
+```
+### O2-iproute2-ip 0x48780 sub_48780 -1 +1
+```
+-  if ((char)n[1].nlmsg_len != '\x01')
++  if (*(char *)&n[1].nlmsg_len != '\x01')
+```
+### O2-iproute2-ip 0x49f30 print_netconf -4 +4
+```
++  uint1 V;
+-  uint4 V;
+-  if (((uint4)filter) && ((uint4)filter != (uint1)n[1].nlmsg_len))
++  if (((uint4)filter) && ((uint4)filter != *(uint1 *)&n[1].nlmsg_len))
+-  V = n[1].nlmsg_len;
+-  print_color_string(PRINT_ANY,COLOR_NONE,"family","%s ",family_name((uint4)(uint1)V));
++  V = *(uint1 *)&n[1].nlmsg_len;
++  print_color_string(PRINT_ANY,COLOR_NONE,"family","%s ",family_name((uint4)V));
+```
+### O2-iproute2-ip 0x5c180 getattr_u64 -1 +1
+```
+-        return (uint1)stat[1].rta_len;
++        return *(uint1 *)&stat[1].rta_len;
+```
+### O2-iproute2-ip 0x5dd40 process -1 +1
+```
+-  if ((char)n[1].nlmsg_len)
++  if (*(char *)&n[1].nlmsg_len)
+```
+### O2-iproute2-ip 0x60c90 sub_60c90 -3 +2
+```
+-    V = (char)n[1].nlmsg_len;
+-    if (V != '\x02') {
+-      if (V == '\x04')
++    if (*(char *)&n[1].nlmsg_len != '\x02') {
++      if (*(char *)&n[1].nlmsg_len == '\x04')
+```
+### O2-iproute2-ip 0x64f90 mptcp_monitor_msg -1 +1
+```
+-  V = (uint1)n[1].nlmsg_len;
++  V = *(uint1 *)&n[1].nlmsg_len;
+```
+### O2-iproute2-ip 0x660c0 process_msg -4 +2
+```
+-  char V;
+-    V = (char)n[1].nlmsg_len;
+-    if (V != '\x03') {
+-      if (V == '\x06')
++    if (*(char *)&n[1].nlmsg_len != '\x03') {
++      if (*(char *)&n[1].nlmsg_len == '\x06')
+```
+### O2-iproute2-ip 0x69500 set_address_type -1 +1
+```
+-      if ((char)addr->data[0] == '\xff') {
++      if (*(char *)addr->data == '\xff') {
+```
+### O2-noinline-grep-grep 0xb540 bmexec_trans -1 +1
+```
+-  gc1 = (char)kwset->gc1;
++  gc1 = *(char *)&kwset->gc1;
+```
+### O2-noinline-iproute2-ip 0xfe10 sub_fe10 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0xfe80 default_scope -1 +1
+```
+-    if ((char)lcl->data[0] == '\x7f')
++    if (*(char *)lcl->data == '\x7f')
+```
+### O2-noinline-iproute2-ip 0x10830 ipaddr_is_multicast -1 +1
+```
+-      V = (char)a->data[0] == '\xff';
++      V = *(char *)a->data == '\xff';
+```
+### O2-noinline-iproute2-ip 0x125e0 print_addrinfo -17 +18
+```
++  uint8 V;
++  char V;
+-  uint8 V;
+-      if (((((!filter._0_4_) || (V._0_2_ = n[1].nlmsg_type, V._2_2_ = n[1].nlmsg_flags, filter._0_4_ == V)) && (!((((uint1 *)&n[1].nlmsg_len)[3] ^ filter._280_4_) & filter._284_4_) && !((filter._288_4_ ^ flags) & filter
++      if (((((!filter._0_4_) || (V._0_2_ = n[1].nlmsg_type, V._2_2_ = n[1].nlmsg_flags, filter._0_4_ == V)) && (!((((uint1 *)&n[1].nlmsg_len)[3] ^ filter._280_4_) & filter._284_4_) && !((filter._288_4_ ^ flags) & filter
+-          V = family_name((uint4)(uint1)n[1].nlmsg_len);
++          V = family_name((uint4)*(uint1 *)&n[1].nlmsg_len);
+-            print_int(PRINT_ANY,"family_index","    family %d ",(uint4)(uint1)n[1].nlmsg_len);
++            print_int(PRINT_ANY,"family_index","    family %d ",(uint4)*(uint1 *)&n[1].nlmsg_len);
+-          V = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)rta_tb[2]->rta_len - 4,&rta_tb[2][1]);
+-          V = n[1].nlmsg_len;
+-          print_color_string(PRINT_ANY,ifa_family_color((char)V),"local","%s",V);
++          V = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)rta_tb[2]->rta_len - 4,&rta_tb[2][1]);
++          V = *(char *)&n[1].nlmsg_len;
++          print_color_string(PRINT_ANY,ifa_family_color(V),"local","%s",V);
+-            if ((char)n[1].nlmsg_len != '\x02')
++            if (*(char *)&n[1].nlmsg_len != '\x02')
+-              V = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)rta_tb[1]->rta_len - 4,&rta_tb[1][1]);
+-              V = n[1].nlmsg_len;
+-              print_color_string(PRINT_ANY,ifa_family_color((char)V),"address","%s",V);
++              V = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)rta_tb[1]->rta_len - 4,&rta_tb[1][1]);
++              V = *(char *)&n[1].nlmsg_len;
++              print_color_string(PRINT_ANY,ifa_family_color(V),"address","%s",V);
+-            V = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)rta_tb[4]->rta_len - 4,&rta_tb[4][1]);
+-            V = n[1].nlmsg_len;
+-            print_color_string(PRINT_ANY,ifa_family_color((char)V),"broadcast","%s ",V);
++            V = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)rta_tb[4]->rta_len - 4,&rta_tb[4][1]);
++            V = *(char *)&n[1].nlmsg_len;
++            print_color_string(PRINT_ANY,ifa_family_color(V),"broadcast","%s ",V);
+-            V = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)rta_tb[5]->rta_len - 4,&rta_tb[5][1]);
+-            V = n[1].nlmsg_len;
+-            print_color_string(PRINT_ANY,ifa_family_color((char)V),"anycast","%s ",V);
++            V = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)rta_tb[5]->rta_len - 4,&rta_tb[5][1]);
++            V = *(char *)&n[1].nlmsg_len;
++            print_color_string(PRINT_ANY,ifa_family_color(V),"anycast","%s ",V);
+```
+### O2-noinline-iproute2-ip 0x169c0 print_addrlabel -7 +8
+```
++  uint4 idx;
++  char ifa_family;
+-  uint4 V;
+-      value = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)tb[1]->rta_len - 4,&tb[1][1]);
++      value = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)tb[1]->rta_len - 4,&tb[1][1]);
+-      V = n[1].nlmsg_len;
+-      print_color_string(PRINT_ANY,ifa_family_color((char)V),"address","%s",value);
++      ifa_family = *(char *)&n[1].nlmsg_len;
++      print_color_string(PRINT_ANY,ifa_family_color(ifa_family),"address","%s",value);
+-      V._0_2_ = n[1].nlmsg_type;
+-      V._2_2_ = n[1].nlmsg_flags;
+-      print_color_string(PRINT_ANY,COLOR_IFNAME,"ifname","%s ",ll_index_to_name(V));
++      idx._0_2_ = n[1].nlmsg_type;
++      idx._2_2_ = n[1].nlmsg_flags;
++      print_color_string(PRINT_ANY,COLOR_IFNAME,"ifname","%s ",ll_index_to_name(idx));
+```
+### O2-noinline-iproute2-ip 0x16cd0 sub_16cd0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x1a160 filter_nlmsg -3 +3
+```
+-  V = (uint1)n[1].nlmsg_len;
++  V = *(uint1 *)&n[1].nlmsg_len;
+-  if (((uint1)n[1].nlmsg_flags ^ filter._40_4_) & filter._44_4_)
++  if ((*(uint1 *)&n[1].nlmsg_flags ^ filter._40_4_) & filter._44_4_)
+-      if ((int2)n[1].nlmsg_len == 10) {
++      if (*(int2 *)&n[1].nlmsg_len == 10) {
+```
+### O2-noinline-iproute2-ip 0x1a920 save_route -1 +1
+```
+-  host_len = af_bit_len((uint4)(uint1)n[1].nlmsg_len);
++  host_len = af_bit_len((uint4)*(uint1 *)&n[1].nlmsg_len);
+```
+### O2-noinline-iproute2-ip 0x1acd0 print_rta_via.constprop.0 -2 +3
+```
++  char ifa_family;
+-  V = a0->field_0x4;
+-  print_color_string(PRINT_FP,ifa_family_color((char)V),NULL,"%s ",value);
++  ifa_family = *(char *)&a0->field_0x4;
++  print_color_string(PRINT_FP,ifa_family_color(ifa_family),NULL,"%s ",value);
+```
+### O2-noinline-iproute2-ip 0x1b8b0 print_route -16 +13
+```
+-  V = af_bit_len((uint4)(uint1)n[1].nlmsg_len);
++  V = af_bit_len((uint4)*(uint1 *)&n[1].nlmsg_len);
+-    V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)(uint1)n[1].nlmsg_len);
++    V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)*(uint1 *)&n[1].nlmsg_len);
+-    V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)(uint1)n[1].nlmsg_len);
++    V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)*(uint1 *)&n[1].nlmsg_len);
+-    print_rta_gateway(arg,(char)n[1].nlmsg_len,tb[5]);
++    print_rta_gateway(arg,*(char *)&n[1].nlmsg_len,tb[5]);
+-      V = (uint1)n[1].nlmsg_flags;
+-      V = V;
+-      if ((V) || (V = 0, 1 <= show_details)) goto label_1bd36;
++      V = *(uint1 *)&n[1].nlmsg_flags;
++      if ((*(uint1 *)&n[1].nlmsg_flags) || (V = 0, 1 <= show_details)) goto label_1bd36;
+-      V = (uint1)n[1].nlmsg_flags;
+-      V = V;
+-      if (V) {
++      V = *(uint1 *)&n[1].nlmsg_flags;
++      if (*(uint1 *)&n[1].nlmsg_flags) {
+-    V = rt_addr_n2a((uint4)(uint1)n[1].nlmsg_len,(uint4)tb[7]->rta_len - 4,&tb[7][1]);
++    V = rt_addr_n2a((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)tb[7]->rta_len - 4,&tb[7][1]);
+-      V = n[1].nlmsg_len;
+-      print_color_string(PRINT_FP,ifa_family_color((char)V),NULL,"%s ",V);
++      V = *(char *)&n[1].nlmsg_len;
++      print_color_string(PRINT_FP,ifa_family_color(V),NULL,"%s ",V);
+-  V = (char)n[1].nlmsg_len;
+-  if (V != '\x02') {
+-    if (V != '\n') goto label_1be75;
++  if (*(char *)&n[1].nlmsg_len != '\x02') {
++    if (*(char *)&n[1].nlmsg_len != '\n') goto label_1be75;
+```
+### O2-noinline-iproute2-ip 0x1dc40 sub_1dc40 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x1f860 flush_rule -1 +1
+```
+-  af_bit_len((uint4)(uint1)n[1].nlmsg_len);
++  af_bit_len((uint4)*(uint1 *)&n[1].nlmsg_len);
+```
+### O2-noinline-iproute2-ip 0x1f980 print_rule -11 +12
+```
++  char V;
++  char V [72];
++  color_attr V;
+-  color_attr V;
+-  char V [72];
+-  V = af_bit_len((uint4)(uint1)n[1].nlmsg_len);
++  V = af_bit_len((uint4)*(uint1 *)&n[1].nlmsg_len);
+-    V = rt_addr_n2a((uint4)(uint1)n[1].nlmsg_len,(uint4)tb[2]->rta_len - 4,&tb[2][1]);
++    V = rt_addr_n2a((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)tb[2]->rta_len - 4,&tb[2][1]);
+-    V = n[1].nlmsg_len;
+-    print_color_string(PRINT_ANY,ifa_family_color((char)V),"src","%s",V);
++    V = *(char *)&n[1].nlmsg_len;
++    print_color_string(PRINT_ANY,ifa_family_color(V),"src","%s",V);
+-    V = rt_addr_n2a((uint4)(uint1)n[1].nlmsg_len,(uint4)tb[1]->rta_len - 4,&tb[1][1]);
++    V = rt_addr_n2a((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)tb[1]->rta_len - 4,&tb[1][1]);
+-    V = n[1].nlmsg_len;
+-    print_color_string(PRINT_ANY,ifa_family_color((char)V),"dst","%s",V);
++    V = *(char *)&n[1].nlmsg_len;
++    print_color_string(PRINT_ANY,ifa_family_color(V),"dst","%s",V);
+-    V = n[1].nlmsg_len;
+-    print_string.isra.0(4,"nat_gateway"," map-to %s",format_host((uint4)(uint1)V,(uint4)V - 4,&tb[5][1]));
++    V = *(uint1 *)&n[1].nlmsg_len;
++    print_string.isra.0(4,"nat_gateway"," map-to %s",format_host((uint4)V,(uint4)V - 4,&tb[5][1]));
+```
+### O2-noinline-iproute2-ip 0x26be0 sub_26be0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x278a0 print_neigh -7 +5
+```
+-  if (((((!filter._288_8_) || (V == 0x1c)) && ((!filter._0_4_ || (filter._0_4_ == (uint1)n[1].nlmsg_len)))) && ((!filter._4_4_ || (V._0_2_ = n[1].nlmsg_type, V._2_2_ = n[1].nlmsg_flags, filter._4_4_ == V)))) && ((V = (u
++  if (((((!filter._288_8_) || (V == 0x1c)) && ((!filter._0_4_ || (filter._0_4_ == *(uint1 *)&n[1].nlmsg_len)))) && ((!filter._4_4_ || (V._0_2_ = n[1].nlmsg_type, V._2_2_ = n[1].nlmsg_flags, filter._4_4_ == V)))) && ((*(
+-          V = (uint1)n[1].nlmsg_len;
+-          V = V;
+-          if (V == 7)
++          V = *(uint1 *)&n[1].nlmsg_len;
++          if (*(uint1 *)&n[1].nlmsg_len == 7)
+-        V = (uint2)n[1].nlmsg_seq;
+-        if (V)
+-          print_neigh_state(V);
++        if (*(uint2 *)&n[1].nlmsg_seq)
++          print_neigh_state(*(uint2 *)&n[1].nlmsg_seq);
+```
+### O2-noinline-iproute2-ip 0x29df0 print_ntable -3 +4
+```
++  uint1 V;
+-    if ((preferred_family) && (preferred_family != (uint1)n[1].nlmsg_len))
++    if ((preferred_family) && (preferred_family != *(uint1 *)&n[1].nlmsg_len))
+-    V = n[1].nlmsg_len;
+-    print_string(PRINT_ANY,"family","%s ",family_name((uint4)(uint1)V));
++    V = *(uint1 *)&n[1].nlmsg_len;
++    print_string(PRINT_ANY,"family","%s ",family_name((uint4)V));
+```
+### O2-noinline-iproute2-ip 0x2fa30 accept_msg -2 +2
+```
+-          if (2 <= (uint1)((char)n[1].nlmsg_len + 0x80U)) {
++          if (2 <= (uint1)(*(char *)&n[1].nlmsg_len + 0x80U)) {
+-      if ((!preferred_family) || (V = 0, preferred_family == (uint1)n[1].nlmsg_len)) {
++      if ((!preferred_family) || (V = 0, preferred_family == *(uint1 *)&n[1].nlmsg_len)) {
+```
+### O2-noinline-iproute2-ip 0x30700 print_mroute -2 +2
+```
+-    if ((((!filter._8_4_) || (filter._8_4_ == V)) && ((!filter._4_4_ || (filter._4_4_ == (uint1)n[1].nlmsg_len)))) && ((!inet_addr_match_rta((inet_prefix *)0xb68cc,tb[1]) && (!inet_addr_match_rta((inet_prefix *)0xb69d4,
+-      V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)(uint1)n[1].nlmsg_len);
++    if ((((!filter._8_4_) || (filter._8_4_ == V)) && ((!filter._4_4_ || (filter._4_4_ == *(uint1 *)&n[1].nlmsg_len)))) && ((!inet_addr_match_rta((inet_prefix *)0xb68cc,tb[1]) && (!inet_addr_match_rta((inet_prefix *)0xb6
++      V = get_real_family((uint4)((uint1 *)&n[1].nlmsg_flags)[1],(uint4)*(uint1 *)&n[1].nlmsg_len);
+```
+### O2-noinline-iproute2-ip 0x31160 print_prefix -2 +2
+```
+-    V = (uint1)n[1].nlmsg_len;
++    V = *(uint1 *)&n[1].nlmsg_len;
+-      V = (uint1)n[1].nlmsg_seq;
++      V = *(uint1 *)&n[1].nlmsg_seq;
+```
+### O2-noinline-iproute2-ip 0x313b0 sub_313b0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x32c20 print_token -8 +9
+```
++  uint4 idx;
++  char ifa_family;
+-  uint4 V;
+-    if ((char)n[1].nlmsg_len != '\n')
++    if (*(char *)&n[1].nlmsg_len != '\n')
+-        value = format_host((uint4)(uint1)n[1].nlmsg_len,(uint4)ltb[7]->rta_len - 4,&ltb[7][1]);
+-        V = n[1].nlmsg_len;
+-        print_color_string(PRINT_ANY,ifa_family_color((char)V),"token","%s",value);
++        value = format_host((uint4)*(uint1 *)&n[1].nlmsg_len,(uint4)ltb[7]->rta_len - 4,&ltb[7][1]);
++        ifa_family = *(char *)&n[1].nlmsg_len;
++        print_color_string(PRINT_ANY,ifa_family_color(ifa_family),"token","%s",value);
+-        V._0_2_ = n[1].nlmsg_type;
+-        V._2_2_ = n[1].nlmsg_flags;
+-        print_color_string(PRINT_ANY,COLOR_IFNAME,"ifname","%s\n",ll_index_to_name(V));
++        idx._0_2_ = n[1].nlmsg_type;
++        idx._2_2_ = n[1].nlmsg_flags;
++        print_color_string(PRINT_ANY,COLOR_IFNAME,"ifname","%s\n",ll_index_to_name(idx));
+```
+### O2-noinline-iproute2-ip 0x37360 xfrm_state_keep -3 +1
+```
+-  char V;
+-        V = (char)n[5].nlmsg_pid;
+-        if ((V != '\x04') && (V != ')')) {
++        if ((*(char *)&n[5].nlmsg_pid != '\x04') && (*(char *)&n[5].nlmsg_pid != ')')) {
+```
+### O2-noinline-iproute2-ip 0x3aaa0 xfrm_policy_keep -1 +1
+```
+-  if (3 <= (uint1)n[0xb].nlmsg_len)
++  if (3 <= *(uint1 *)&n[0xb].nlmsg_len)
+```
+### O2-noinline-iproute2-ip 0x3d2b0 xfrm_policy_default_print -3 +2
+```
+-  uint4 V;
+-    V = n[1].nlmsg_len;
++    V = *(char *)&n[1].nlmsg_len;
+-    __fprintf_chk(fp,V," in:  %s\n",xfrm_policy_to_str((char)V));
++    __fprintf_chk(fp,V," in:  %s\n",xfrm_policy_to_str(V));
+```
+### O2-noinline-iproute2-ip 0x3f6c0 sub_3f6c0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x42ae0 sub_42ae0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x43d70 sub_43d70 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x43dc0 create_tunnel -1 +1
+```
+-  addattr16(&req.n,0x400,2,(int2)p->encap);
++  addattr16(&req.n,0x400,2,*(unsigned short *)&p->encap);
+```
+### O2-noinline-iproute2-ip 0x45dd0 sub_45dd0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x465a0 sub_465a0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x46fb0 sub_46fb0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x49390 sub_49390 -1 +1
+```
+-    if ((char)n[1].nlmsg_len == '\x01') {
++    if (*(char *)&n[1].nlmsg_len == '\x01') {
+```
+### O2-noinline-iproute2-ip 0x4a960 print_netconf -4 +4
+```
++  uint1 V;
+-  uint4 V;
+-  if (((uint4)filter) && ((uint4)filter != (uint1)n[1].nlmsg_len))
++  if (((uint4)filter) && ((uint4)filter != *(uint1 *)&n[1].nlmsg_len))
+-  V = n[1].nlmsg_len;
+-  print_string.isra.0(4,"family","%s ",family_name((uint4)(uint1)V));
++  V = *(uint1 *)&n[1].nlmsg_len;
++  print_string.isra.0(4,"family","%s ",family_name((uint4)V));
+```
+### O2-noinline-iproute2-ip 0x4b020 sub_4b020 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x4c3d0 sub_4c3d0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x4d8e0 sub_4d8e0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x4f3b0 sub_4f3b0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x513a0 sub_513a0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x51a00 sub_51a00 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x51fc0 sub_51fc0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x540a0 sub_540a0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x551d0 sub_551d0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x56310 sub_56310 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x57a30 sub_57a30 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x5ccb0 sub_5ccb0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x5f9d0 process -1 +1
+```
+-  if ((char)n[1].nlmsg_len)
++  if (*(char *)&n[1].nlmsg_len)
+```
+### O2-noinline-iproute2-ip 0x5fd70 sub_5fd70 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x620e0 sub_620e0 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x622d0 sub_622d0 -4 +2
+```
+-  char V;
+-    V = (char)n[1].nlmsg_len;
+-    if (V != '\x02') {
+-      if (V == '\x04')
++    if (*(char *)&n[1].nlmsg_len != '\x02') {
++      if (*(char *)&n[1].nlmsg_len == '\x04')
+```
+### O2-noinline-iproute2-ip 0x65700 sub_65700 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x658a0 mptcp_monitor_msg -1 +1
+```
+-  V = (uint1)n[1].nlmsg_len;
++  V = *(uint1 *)&n[1].nlmsg_len;
+```
+### O2-noinline-iproute2-ip 0x67a80 process_msg -4 +2
+```
+-  char V;
+-    V = (char)n[1].nlmsg_len;
+-    if (V != '\x03') {
+-      if (V == '\x06')
++    if (*(char *)&n[1].nlmsg_len != '\x03') {
++      if (*(char *)&n[1].nlmsg_len == '\x06')
+```
+### O2-noinline-iproute2-ip 0x68830 sub_68830 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x68ce0 rta_getattr_u8 -1 +1
+```
+-  return (char)rta[1].rta_len;
++  return *(char *)&rta[1].rta_len;
+```
+### O2-noinline-iproute2-ip 0x6b0e0 set_address_type -1 +1
+```
+-    if ((char)addr->data[0] != '\xff') {
++    if (*(char *)addr->data != '\xff') {
+```
+### O2-noinline-iproute2-ip 0x7ac80 genl_parse_getfamily -4 +2
+```
+-  uint1 V;
+-    V = (uint1)nlh[1].nlmsg_len;
+-    if (V == 1) {
++    if (*(uint1 *)&nlh[1].nlmsg_len == 1) {
+-    V = V;
++    V = *(uint1 *)&nlh[1].nlmsg_len;
+```
+### O2-noinline-tar-tar 0x46d70 parse_datetime2 -6 +7
+```
+-  unsigned long V;
++  uint4 V;
++  uint8 V;
+-  int8 V;
++  unsigned long V;
++  int8 V;
+-  int8 V;
++  int8 V;
+-  uint8 V;
+-      V = result->tv_nsec;
++      V = *(uint4 *)&result->tv_nsec;
+-      dbg_printf((char *)V,V,(uint8)(uint4)V);
++      dbg_printf((char *)V,V,(uint8)V);
+```
+### O2-tar-tar 0x48e10 parse_datetime2 -2 +2
+```
+-    V = result->tv_nsec;
++    V = *(uint4 *)&result->tv_nsec;
+-    dbg_printf((char *)tz,V,(uint8)(uint4)V);
++    dbg_printf((char *)tz,V,(uint8)V);
+```

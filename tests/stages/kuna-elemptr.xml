@@ -43,11 +43,11 @@
                   counter keeps its own sign, so its compares need no cast
         w_hdr:    reads a 2-byte field at +4 through a pointer its callee
                   `w_sum4` (declared here `int8 w_sum4(uint4 *p, int8 n)`)
-                  reads as `uint4 *`.  Upstream's RuleExpandLoad widens the
-                  load to the 4-byte element and truncates it,
+                  reads as `uint4 *`.  Upstream's RuleExpandLoad widened the
+                  load to the 4-byte element and truncated it,
                   `(uint2)a0[1]`, reading two bytes the program never reads;
-                  with the option on a pointee inferred from use keeps the
-                  load 2 bytes wide
+                  kuna never takes that form (kuna-narrowload.xml), so the
+                  load is 2 bytes wide in both passes
         w_gpbump: steps a global `int *` by 4 bytes (`gp++`), and
         w_tfirst: reads the first element of a `.data` table by name: both
                   print that integer form in both passes.  A batch
@@ -201,8 +201,8 @@ c3
 <stringmatch name="elemptr #14: with the option on the table a counter is stored into is unsigned and the counter stays int" min="1" max="1">void w_ctr\(uint4 \*a0,int4 \*a1,int4 a2\)</stringmatch>
 <stringmatch name="elemptr #15: the stored counter is compared and used as an index with no cast" min="1" max="1">a0\[v1\] = v1;</stringmatch>
 <stringmatch name="elemptr #16: the counter is never re-declared unsigned and cast back" min="0" max="0">\(int4\)v1</stringmatch>
-<stringmatch name="elemptr #17: with the option off a 2-byte field through a pointer a callee reads as uint4 * is read 4 wide and truncated - the bug" min="1" max="1">return \(uint8\)\(uint2\)a0\[1\] \+ v1;</stringmatch>
-<stringmatch name="elemptr #18: with the option on the 2-byte field is read 2 wide" min="1" max="1">return \(uint8\)\*\(uint2 \*\)&amp;a0\[1\] \+ v1;</stringmatch>
+<stringmatch name="elemptr #17: a 2-byte field through a pointer a callee reads as uint4 * is read 2 wide in both passes" min="2" max="2">return \(uint8\)\*\(uint2 \*\)&amp;a0\[1\] \+ v1;</stringmatch>
+<stringmatch name="elemptr #18: the 2-byte field is never read 4 wide and truncated in either pass" min="0" max="0">\(uint2\)a0\[1\]</stringmatch>
 <stringmatch name="elemptr #19: a global stepped by bytes prints the byte step in both passes" min="2" max="2">dat_300053e8 \+= 4;</stringmatch>
 <stringmatch name="elemptr #20: a table's first element read by name is a scalar in both passes" min="2" max="2">return dat_30005360 \+ 1;</stringmatch>
 <stringmatch name="elemptr #21: an element loaded through an address in the returned register is returned as an integer in both passes" min="2" max="2">uint8 w_nexttab\(uint8 a0,uint8 \*a1,char \*a2\)</stringmatch>

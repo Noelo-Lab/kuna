@@ -1,0 +1,20 @@
+slices  main 444  branch 444
+main    n=10748 perfect=1674 (15.57%) mean=0.3752
+branch  n=10748 perfect=1674 (15.57%) mean=0.3752
+shared=10748 only_main=0 only_branch=0
+onto_perfect=0 off_perfect=0 improved=0 worse=0
+  level=O0             n=  4286  perfect  1160 ->  1160 (+0)  mean 0.5565 -> 0.5565  improved 0  worse 0
+  level=O2             n=  2394  perfect    93 ->    93 (+0)  mean 0.2043 -> 0.2043  improved 0  worse 0
+  level=O2-noinline    n=  4068  perfect   421 ->   421 (+0)  mean 0.2847 -> 0.2847  improved 0  worse 0
+  project=bzip2          n=   267  perfect    40 ->    40 (+0)  mean 0.4372 -> 0.4372  improved 0  worse 0
+  project=coreutils      n=  6422  perfect  1019 ->  1019 (+0)  mean 0.3630 -> 0.3630  improved 0  worse 0
+  project=diffutils      n=   420  perfect    66 ->    66 (+0)  mean 0.4549 -> 0.4549  improved 0  worse 0
+  project=findutils      n=   790  perfect    61 ->    61 (+0)  mean 0.2600 -> 0.2600  improved 0  worse 0
+  project=grep           n=   247  perfect    55 ->    55 (+0)  mean 0.4695 -> 0.4695  improved 0  worse 0
+  project=gzip           n=   368  perfect   113 ->   113 (+0)  mean 0.5438 -> 0.5438  improved 0  worse 0
+  project=shadow         n=   686  perfect    99 ->    99 (+0)  mean 0.3724 -> 0.3724  improved 0  worse 0
+  project=tar            n=  1548  perfect   221 ->   221 (+0)  mean 0.3982 -> 0.3982  improved 0  worse 0
+ONTO PERFECT:
+OFF PERFECT (a stop unless explained):
+WORSE ROWS (read every one):
+TSREPORT_DONE

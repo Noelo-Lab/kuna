@@ -1,0 +1,332 @@
+## 28 disjoint binaries (bash dash ip rtmon bzip2 kmod dpkg-divert chage xmlwf init libz crond mirai e2fsck at O0 and O2), default options
+
+### O0-iproute2-ip 0x2a6a6
+```
+-          if (v10[(int4)v15 * 4L] & 1) // branch-flip
++          if (*(uint2 *)&v10[(int4)v15 * 4L] & 1) // branch-flip
+```
+### O2-bash-bash 0x535c0
+```
+-    if ((a0->field_0x28 & 8) && (v2 = (unsigned long *)a0->field_0x8, v2))
++    if ((*(uint1 *)&a0->field_0x28 & 8) && (v2 = (unsigned long *)a0->field_0x8, v2))
+```
+### O2-bash-bash 0x56b60
+```
+-    if (a0->field_0x28 & 1)
++    if (*(uint1 *)&a0->field_0x28 & 1)
+```
+### O2-bash-bash 0x71840
+```
+-    if ((a0->field_0x28 & 0x1000) || (!a0->field_0x8)) {
++    if ((((uint1 *)&a0->field_0x28)[1] & 0x10) || (!a0->field_0x8)) {
+```
+### O2-bash-bash 0x74cd0
+```
+-      if (a0->field_0x8 & 0x8000) { // branch-flip
++      if (((uint1 *)&a0->field_0x8)[1] & 0x80) { // branch-flip
+```
+### O2-bash-bash 0x8bad0
+```
+-  struct_1 *v1;
++  uint1 v1;
+-  struct_7 *v3; // rax
+-  uint8 v4; // rax
+-  char *v5;
+-  char *v6; // rax
+-  unsigned long v7; // rax
+-  char *v8; // rax
++  struct_1 *v3;
++  struct_7 *v4; // rax
++  uint8 v5; // rax
++  char *v6;
++  char *v7; // rax
++  unsigned long v8; // rax
++  char *v9; // rax
+-    v3 = (struct_7 *)sh_xmalloc(0x30,"arrayfunc.c",0xa5);
+-    v5 = a0->field_0x0;
+-    v4 = strlen(v5);
+-    v5 = strcpy((char *)sh_xmalloc(v4 + 1,"arrayfunc.c",0xa6),v5);
+-    v2 = a0->field_0x28;
+-    v1 = a0->field_0x8;
+-    v3->field_0x0 = (int8)v5;
+-    if (v2 & 0x40) // branch-flip
+-      v5 = (char *)assoc_reference(v1,a2);
++    v4 = (struct_7 *)sh_xmalloc(0x30,"arrayfunc.c",0xa5);
++    v6 = a0->field_0x0;
++    v5 = strlen(v6);
++    v6 = strcpy((char *)sh_xmalloc(v5 + 1,"arrayfunc.c",0xa6),v6);
++    v1 = *(uint1 *)&a0->field_0x28;
++    v3 = a0->field_0x8;
++    v4->field_0x0 = (int8)v6;
++    if (v1 & 0x40) // branch-flip
++      v6 = (char *)assoc_reference(v3,a2);
+-      v5 = (char *)array_reference(v1,a1);
++      v6 = (char *)array_reference(v3,a1);
+-    if (v5) { // branch-flip
+-      v6 = (char *)sh_xmalloc(strlen(v5) + 1,"arrayfunc.c",0xac);
+-      v3->field_0x8 = (int8)strcpy(v6,v5);
++    if (v6) { // branch-flip
++      v7 = (char *)sh_xmalloc(strlen(v6) + 1,"arrayfunc.c",0xac);
++      v4->field_0x8 = (int8)strcpy(v7,v6);
+-      v8 = (char *)sh_xmalloc(1,"arrayfunc.c",0xaf);
+-      v3->field_0x8 = (int8)v8;
+-      *v8 = 0;
++      v9 = (char *)sh_xmalloc(1,"arrayfunc.c",0xaf);
++      v4->field_0x8 = (int8)v9;
++      *v9 = 0;
+-    v3->field_0x10 = 0;
+-    v3->field_0x28 = v2 & 0xffffffba;
+-    v7 = make_variable_value(v3,a3,a4);
+-    dispose_variable(v3);
+-    return v7;
++    v4->field_0x10 = 0;
++    v4->field_0x28 = v2 & 0xffffffba;
++    v8 = make_variable_value(v4,a3,a4);
++    dispose_variable(v4);
++    return v8;
+```
+### O2-bash-bash 0x8d1b0
+```
+-        if (!(a0->field_0x28 & 0x40)) {
++        if (!(*(uint1 *)&a0->field_0x28 & 0x40)) {
+```
+### O2-bash-bash 0xa0b20
+```
+-      v1 = (uint1)a0->field_0x0;
++      v1 = *(uint1 *)&a0->field_0x0;
+-      v1 = (uint1)a0->field_0x0;
++      v1 = *(uint1 *)&a0->field_0x0;
+```
+### O2-bash-bash 0xb56c0
+```
+-    if ((v4) && (v4->field_0x28 & 0x100000)) {
++    if ((v4) && (((uint1 *)&v4->field_0x28)[2] & 0x10)) {
+```
+### O2-bash-bash 0xcf7e0
+```
+-  if (a0->field_0x14 & 1) {
++  if (*(uint1 *)&a0->field_0x14 & 1) {
+```
+### O2-bash-bash 0xcf8b0
+```
+-  if (!(a0->field_0x14 & 0x100))
++  if (!(((uint1 *)&a0->field_0x14)[1] & 1))
+```
+### O2-bash-bash 0xcf930
+```
+-  if (!(a0->field_0x14 & 0x100))
++  if (!(((uint1 *)&a0->field_0x14)[1] & 1))
+```
+### O2-bash-bash 0xcf9b0
+```
+-    if ((v1) && (a0->field_0x14 & 0x100)) {
++    if ((v1) && (((uint1 *)&a0->field_0x14)[1] & 1)) {
+```
+### O2-bash-bash 0xd13b0
+```
+-  if (a0->field_0x0 & 1) // branch-flip
++  if (*(uint1 *)&a0->field_0x0 & 1) // branch-flip
+-      if (!(a0->field_0x0 & 2)) goto label_d1448;
++      if (!(*(uint1 *)&a0->field_0x0 & 2)) goto label_d1448;
+```
+### O2-dpkg-dpkg-divert 0xfb10
+```
+-      if ((a0->field_0x4 & 2) || (v33 & 0xfffffffd)) {
++      if ((*(unsigned char *)&a0->field_0x4 & 2) || (v33 & 0xfffffffd)) {
+-        if ((!(a0->field_0x4 & 2)) && (v33 <= 2)) goto label_10048;
++        if ((!(*(unsigned char *)&a0->field_0x4 & 2)) && (v33 <= 2)) goto label_10048;
+-          if (a0->field_0x4 & 2) goto label_fda1;
++          if (*(unsigned char *)&a0->field_0x4 & 2) goto label_fda1;
+```
+### O2-e2fsprogs-e2fsck 0x2bb10
+```
+-  uint1 v1;
+-  uint2 v2;
+-  int8 v3; // rax
+-  int8 v4 [13]; // stack - 0x88
+-  unsigned long v5; // r12
++  uint2 v1;
++  int8 v2; // rax
++  int8 v3 [13]; // stack - 0x88
++  unsigned long v4; // r12
+-  v5 = 0;
+-  if (((char)a0->field_0x6 == '\x02') && (!strncmp((char *)&a0[1],"..",2))) {
+-    clear_problem_context(v4);
+-    v3 = e2fsck_adjust_inode_count(((struct_155 **)a4)[2],a0->field_0x0,0xffffffff);
+-    if (v3) {
+-      v4[0] = v3;
+-      fix_problem(((struct_92 **)a4)[2],0x3000e,v4);
++  v4 = 0;
++  if ((*(char *)&a0->field_0x6 == '\x02') && (!strncmp((char *)&a0[1],"..",2))) {
++    clear_problem_context(v3);
++    v2 = e2fsck_adjust_inode_count(((struct_155 **)a4)[2],a0->field_0x0,0xffffffff);
++    if (v2) {
++      v3[0] = v2;
++      fix_problem(((struct_92 **)a4)[2],0x3000e,v3);
+-    v4[0] = e2fsck_adjust_inode_count(((struct_155 **)a4)[2],((unsigned int *)a4)[2],1);
+-    if (v4[0])
+-      fix_problem(((struct_92 **)a4)[2],0x3000e,v4);
+-    v1 = (uint1)a0->field_0x6;
+-    v5 = 3;
++    v3[0] = e2fsck_adjust_inode_count(((struct_155 **)a4)[2],((unsigned int *)a4)[2],1);
++    if (v3[0])
++      fix_problem(((struct_92 **)a4)[2],0x3000e,v3);
++    v4 = 3;
+-    v2 = CONCAT11(2,v1);
++    v1 = CONCAT11(2,*(uint1 *)&a0->field_0x6);
+-      v2 = v1;
+-    a0->field_0x6 = v2;
++      v1 = *(uint1 *)&a0->field_0x6;
++    a0->field_0x6 = v1;
+-  return v5;
++  return v4;
+```
+### O2-e2fsprogs-e2fsck 0x2c680
+```
+-        if (a0->field_0x48 & 7) goto label_2ce68;
++        if (*(uint1 *)&a0->field_0x48 & 7) goto label_2ce68;
+```
+### O2-e2fsprogs-e2fsck 0x2d9b0
+```
+-    if ((a0->field_0x4c & 0x2000) && (*(uint1 *)(((int8 *)v1)[1] + 0x34) & 2)) {
++    if ((((uint1 *)&a0->field_0x4c)[1] & 0x20) && (*(uint1 *)(((int8 *)v1)[1] + 0x34) & 2)) {
+```
+### O2-e2fsprogs-e2fsck 0x2dab0
+```
+-  if (!(a0->field_0x4c & 2))
++  if (!(*(uint1 *)&a0->field_0x4c & 2))
+-          if ((((((v13 >> (v18 & 0x3f)) - (uint8)(v31 >> (v18 & 0x1f))) % (uint8)v32) || (((int4 *)v15)[0xc] - 1U == v37)) || (a0->field_0x4c & 0x2000)) || ((v8 = ((unsigned int *)v15)[0x30], v3 = a0
++          if ((((((v13 >> (v18 & 0x3f)) - (uint8)(v31 >> (v18 & 0x1f))) % (uint8)v32) || (((int4 *)v15)[0xc] - 1U == v37)) || (((uint1 *)&a0->field_0x4c)[1] & 0x20)) || ((v8 = ((unsigned int *)v15)[0
+-  if (a0->field_0x48 & 3)
++  if (*(uint1 *)&a0->field_0x48 & 3)
+-            if (((a0->field_0x4c & 0x2000) && (*(uint1 *)(((int8 *)v15)[1] + 0x34) & 2)) && (!ext2fs_bg_flags_test(v15,v34,4))) {
++            if (((((uint1 *)&a0->field_0x4c)[1] & 0x20) && (*(uint1 *)(((int8 *)v15)[1] + 0x34) & 2)) && (!ext2fs_bg_flags_test(v15,v34,4))) {
+-  if (a0->field_0x48 & 3)
++  if (*(uint1 *)&a0->field_0x48 & 3)
+```
+### O2-e2fsprogs-e2fsck 0x31d50
+```
+-      if (a0->field_0x4c & 1) goto label_31f69;
++      if (*(uint1 *)&a0->field_0x4c & 1) goto label_31f69;
+```
+### O2-e2fsprogs-e2fsck 0x35d30
+```
+-          if ((a0->field_0x4c & 2) && (!(*(uint1 *)(v16 * 0x28 + 0xac196) & 4))) {
++          if ((*(uint1 *)&a0->field_0x4c & 2) && (!(*(uint1 *)(v16 * 0x28 + 0xac196) & 4))) {
+-          if (!(a0->field_0x4c & 2)) {
++          if (!(*(uint1 *)&a0->field_0x4c & 2)) {
+```
+### O2-e2fsprogs-e2fsck 0x4a1b0
+```
+-  if (a3->field_0x1c & 6) { // branch-flip
++  if (*(uint1 *)&a3->field_0x1c & 6) { // branch-flip
+-    if ((a3->field_0x1c & 8) && (v10 & 1)) {
++    if ((*(uint1 *)&a3->field_0x1c & 8) && (v10 & 1)) {
+-  if (!(a3->field_0x1c & 8)) {
++  if (!(*(uint1 *)&a3->field_0x1c & 8)) {
+```
+### O2-e2fsprogs-e2fsck 0x4a570
+```
+-  if (a3->field_0x1c & 6) { // branch-flip
++  if (*(uint1 *)&a3->field_0x1c & 6) { // branch-flip
+-    if ((a3->field_0x1c & 8) && (v5 & 1)) goto label_4a605;
++    if ((*(uint1 *)&a3->field_0x1c & 8) && (v5 & 1)) goto label_4a605;
+-  if (!(a3->field_0x1c & 8))
++  if (!(*(uint1 *)&a3->field_0x1c & 8))
+```
+### O2-e2fsprogs-e2fsck 0x56e60
+```
+-  if (!(a0->field_0x94 & 1))
++  if (!(*(uint1 *)&a0->field_0x94 & 1))
+```
+### O2-e2fsprogs-e2fsck 0x57ef0
+```
+-      v6 = v1 - (int4)a2->field_0x10;
++      v6 = v1 - *(int4 *)&a2->field_0x10;
+```
+### O2-e2fsprogs-e2fsck 0x5e460
+```
+-    if (a0->field_0x74 & 0x10) goto label_5e810;
++    if (*(uint1 *)&a0->field_0x74 & 0x10) goto label_5e810;
+-    if (a0->field_0x74 & 0x10) {
++    if (*(uint1 *)&a0->field_0x74 & 0x10) {
+-      if (!(a0->field_0x74 & 8))
++      if (!(*(uint1 *)&a0->field_0x74 & 8))
+-  if (a0->field_0x74 & 0x20) {
++  if (*(uint1 *)&a0->field_0x74 & 0x20) {
+-    if (!(a0->field_0x74 & 2)) goto label_5e9d3;
++    if (!(*(uint1 *)&a0->field_0x74 & 2)) goto label_5e9d3;
+```
+### O2-e2fsprogs-e2fsck 0x5ed40
+```
+-  if (a0->field_0x10 & 0x2000) { // branch-flip
++  if (((uint1 *)&a0->field_0x10)[1] & 0x20) { // branch-flip
+```
+### O2-e2fsprogs-e2fsck 0x5f1c0
+```
+-    if ((a0->field_0x10 & 1) && ((a4 & 1 || (v4 = ext2fs_inode_csum_set(a0,a1,v14), !v4)))) {
++    if ((*(uint1 *)&a0->field_0x10 & 1) && ((a4 & 1 || (v4 = ext2fs_inode_csum_set(a0,a1,v14), !v4)))) {
+```
+### O2-e2fsprogs-e2fsck 0x60440
+```
+-    v12 = (uint1)a2->field_0x6 + 0xb & 0xfffffffc;
++    v12 = *(uint1 *)&a2->field_0x6 + 0xb & 0xfffffffc;
+```
+### O2-e2fsprogs-e2fsck 0x66090
+```
+-  if (!(a0->field_0x10 & 1))
++  if (!(*(uint1 *)&a0->field_0x10 & 1))
+```
+### O2-e2fsprogs-e2fsck 0x6b590
+```
+-                        if (a0->field_0xe4 & 0x10) {
++                        if (*(uint1 *)&a0->field_0xe4 & 0x10) {
+-                        if (!(a0->field_0xe4 & 0x40)) {
++                        if (!(*(uint1 *)&a0->field_0xe4 & 0x40)) {
+-              if (a0->field_0xe4 & 0x10)
++              if (*(uint1 *)&a0->field_0xe4 & 0x10)
+```
+### O2-e2fsprogs-e2fsck 0x6e620
+```
+-    if (!(a0->field_0xe4 & 2)) {
++    if (!(*(uint1 *)&a0->field_0xe4 & 2)) {
+-      if (a0->field_0xe4 & 1) {
++      if (*(uint1 *)&a0->field_0xe4 & 1) {
+```
+### O2-iproute2-ip 0x1aec0
+```
+-  if (!(a0->field_0x18 & 0x200)) {
++  if (!(((uint1 *)&a0->field_0x18)[1] & 2)) {
+-      if ((a0->field_0x18 & 0x200) && (a0->field_0x17 == '\x05')) {
++      if ((((uint1 *)&a0->field_0x18)[1] & 2) && (a0->field_0x17 == '\x05')) {
+-      if ((a0->field_0x18 & 0x200) && (a0->field_0x17 == '\x05')) {
++      if ((((uint1 *)&a0->field_0x18)[1] & 2) && (a0->field_0x17 == '\x05')) {
+```
+### O2-iproute2-ip 0x26a80
+```
+-    if ((dat_ab850) && ((!(a0->field_0x6 & 0x20) && (dat_a40d8)))) {
++    if ((dat_ab850) && ((!(*(uint1 *)&a0->field_0x6 & 0x20) && (dat_a40d8)))) {
+```
+### O2-kmod-kmod 0x18cf0
+```
+-              if (a0->field_0x18 & 0x10) { // branch-flip
++              if (*(unsigned char *)&a0->field_0x18 & 0x10) { // branch-flip
+```
+### O2-kmod-kmod 0x18ff0
+```
+-            if (!(a0->field_0x18 & 0x10)) {
++            if (!(*(unsigned char *)&a0->field_0x18 & 0x10)) {
+```
+### O2-sysvinit-init 0x6e90
+```
+-  if ((strchr("*#sS",v4)) && (a0->field_0x0 & 0x20)) {
++  if ((strchr("*#sS",v4)) && (*(unsigned char *)&a0->field_0x0 & 0x20)) {
+```
+### O2-zlib-libz.so.1.2.13 0x5460
+```
+-    v2 = (int)a0->field_0x68 - v4;
++    v2 = *(int *)&a0->field_0x68 - v4;
+```
+
+38 functions changed.
+

@@ -486,39 +486,6 @@ pub fn keeps_stored_sign(
     false
 }
 
-/// (`RuleExpandLoad`) Must a narrow `LOAD` through `ptr` keep its own width?
-/// Upstream widens a load of a pointer's low bytes to the whole pointee and
-/// truncates it (`(unsigned short)p[1]` for a 2-byte read), which reads bytes
-/// the program never reads -- past the end of an object at a page boundary,
-/// or a device register.  That trade is upstream's for a declared pointee; a
-/// pointee inferred from use, which this rule supplies and a prototype carries
-/// on to callers, keeps the load narrow (`*(unsigned short *)&p[1]`).
-pub fn keeps_load_narrow(data: &Funcdata, ptr: VarnodeId) -> bool {
-    if !data.get_arch().elem_ptr {
-        return false;
-    }
-    let mut cur = ptr;
-    for _ in 0..8 {
-        let Some(v) = data.vbank().get(cur) else { return true };
-        if v.is_type_lock() {
-            return false;
-        }
-        let Some(o) = v.get_def().and_then(|d| data.obank().get(d)) else { return true };
-        match o.code() {
-            OpCode::CPUI_PTRADD
-            | OpCode::CPUI_PTRSUB
-            | OpCode::CPUI_INT_ADD
-            | OpCode::CPUI_COPY
-            | OpCode::CPUI_CAST => match o.get_in(0) {
-                Some(x) => cur = x,
-                None => return true,
-            },
-            _ => return true,
-        }
-    }
-    true
-}
-
 /// Walk `vn` (for a global: every Varnode holding it) and commit or decline.
 fn decide(
     data: &Funcdata,
