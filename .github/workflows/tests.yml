@@ -69,6 +69,9 @@ jobs:
       - name: Lint the CLI
         run: make lint-cli
 
+      - name: Lint the base and numeric libraries
+        run: make lint-base-num
+
       # `.sla` files are gitignored build artifacts and EVERY datatest decodes
       # through them. `make test` would bootstrap them on demand, but asserting
       # the tree is complete here turns a partial spec build into a clear

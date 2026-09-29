@@ -1,43 +1,21 @@
-//! Port of `decompiler/cpp/address.hh` + `address.cc` (W1, item
-//! `w1-base-space-address`) — classes for specifying addresses and other
-//! low-level constants.
+//! Addresses, operation sequence numbers and ranges, from
+//! `decompiler/cpp/address.{hh,cc}`.
 //!
-//! All addresses are absolute and there are no registers in CPUI. However,
-//! all addresses are prefixed with an "immutable" pointer, which can specify
-//! a separate RAM space, a register space, an i/o space etc.  Thus a
-//! translation from a real machine language will typically simulate
-//! registers by placing them in their own space, separate from RAM.
-//! Indirection (i.e. pointers) must be simulated through the LOAD and STORE
-//! ops.
+//! An address identifies a space and byte offset; registers use their own
+//! space. [`AddrSpacePtr`] also represents invalid/minimal and maximal
+//! sentinels.
 //!
-//! Pointer-model notes (vs C++):
+//! [`Address`] equality uses space identity and offset; ordering uses sentinel
+//! rank, space index and offset. Consistency requires each compared index to
+//! identify one space, as within one [`AddrSpaceManager`]. [`SeqNum`] equality
+//! uses only the unique ID, while ordering uses (address, ID); equal IDs must
+//! identify the same address in the comparison domain. [`Range`] equality and
+//! ordering use (space index, first), excluding the last offset, so equality
+//! describes equivalence in a range tree rather than identical endpoints.
 //!
-//! - The C++ `AddrSpace *base` member of `Address` admits two sentinel
-//!   values besides real spaces: the null pointer (invalid / `m_minimal`)
-//!   and `~0` (`m_maximal`).  [`AddrSpacePtr`] models all three states.
-//! - C++ `Address::operator==` compares the raw space *pointer*;
-//!   `operator<` orders spaces by *index*.  Both are transcribed exactly
-//!   (`PartialEq` is `Rc::ptr_eq`-based, `Ord` is index-based).  They
-//!   coincide — and the Rust `Ord`/`Eq` consistency contract holds — under
-//!   the standing invariant that all compared spaces belong to one
-//!   `AddrSpaceManager` (a registered index identifies a unique space).
-//! - `SeqNum::operator==` compares only the `uniq` field while `operator<`
-//!   orders by (pc, uniq); transcribed exactly with the same caveat (uniq is
-//!   unique for the life of a PcodeOp, so equality implies equal pc).
-//! - `Range`'s `operator<` (the `std::set` comparator) orders by (space
-//!   index, first) only — `last` does not participate, so `RangeList`'s
-//!   tree treats ranges with equal (space, first) as equivalent.  `Ord`/
-//!   `PartialEq` transcribe that comparator; they are tree-equivalence, not
-//!   structural equality (C++ defines no `operator==` at all).
-//!
-//! `Address::decode` inlines the (space,offset,size) scan of
-//! `VarnodeData::decode` (pcoderaw is a kuna-num item).  The register-name
-//! (`ATTRIB_NAME`) branches of the decode methods consult the
-//! [`RegisterLookup`](crate::space::RegisterLookup) installed on the
-//! `AddrSpaceManager` (erroring until the sleigh/architecture bootstrap — or
-//! a test stub — installs one), and `Address::renormalize` routes its join
-//! handling through an explicit `&AddrSpaceManager` parameter (the C++
-//! `getManager()` back-pointer).
+//! Register-name decoding uses the manager's installed
+//! [`RegisterLookup`](crate::space::RegisterLookup). Join normalization takes
+//! an explicit manager reference.
 
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
@@ -106,17 +84,8 @@ pub enum mach_extreme {
     m_maximal,
 }
 
-/// \brief A low-level machine address for labelling bytes and data.
-///
-/// All data that can be manipulated within the processor reverse engineering
-/// model can be labelled with an Address. It is simply an address space
-/// (AddrSpace) and an offset within that space.  Note that processor
-/// registers are typically modelled by creating a dedicated address space
-/// for them, as distinct from RAM say, and then specifying certain addresses
-/// within the register space that correspond to particular registers.
-/// However, an arbitrary address could refer to anything: RAM, ROM, cpu
-/// register, data segment, coprocessor, stack, nvram, etc.  An Address
-/// represents an offset \e only, not an offset and length.
+/// A byte offset within an address space, without a length. RAM and
+/// registers can be represented by distinct spaces.
 #[derive(Debug, Clone)]
 pub struct Address {
     /// Pointer to our address space
@@ -141,16 +110,9 @@ impl Address {
         Address { base: AddrSpacePtr::Spc(id), offset: off }
     }
 
-    /// The ordering triple this Address compares by: `(sentinel rank, space
-    /// index, offset)`, where rank is `0` for the null/invalid pointer, `1`
-    /// for a real space and `2` for the `m_maximal` sentinel.
-    ///
-    /// Lexicographic comparison of the triple reproduces [`Ord`] exactly: two
-    /// Addresses with the same space pointer share a rank and an index and so
-    /// fall through to the offset, which is what `cmp` does directly, and
-    /// distinct spaces sharing an index are equivalent in both.  Callers that
-    /// keep an Address inside a sort key can store the triple instead and keep
-    /// the key `Copy`.
+    /// A copyable ordering key: (sentinel rank, space index, byte offset).
+    /// Ranks are 0 for invalid, 1 for a real space and 2 for maximal.
+    /// It reproduces [`Ord`], including distinct spaces sharing an index.
     #[inline]
     pub fn sort_key(&self) -> (u8, i32, u64) {
         match &self.base {
@@ -438,10 +400,8 @@ impl Address {
     ///    - \e space indicates the address space of the tag
     ///    - \e offset indicates the offset within the space
     ///
-    /// (The C++ routes through `VarnodeData::decode` — pcoderaw is a
-    /// kuna-num item, so its (space,offset,size) attribute scan is inlined
-    /// here.  The \e name register-form requires `Translate` and is
-    /// deferred.)
+    /// The register-name form uses the manager's installed register lookup.
+    /// The shared attribute scan also serves [`Self::decode_sized`].
     pub fn decode(decoder: &mut dyn Decoder) -> KunaResult<Address> {
         let (space, offset, _size) = decode_varnode_attributes(decoder)?;
         Ok(match space {

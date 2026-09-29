@@ -17,7 +17,7 @@ PYTHON  ?= python3
 # (inside target/, which is gitignored, so a failed run leaves no repo litter).
 GHIDRA_SIM_LOG := $(ENGINE)/target/ghidra-sim.log
 
-.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint-cli clean check-spec version
+.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint-cli lint-base-num clean check-spec version
 
 all: binaries specs
 
@@ -102,6 +102,9 @@ rust-test:
 
 lint-cli:
 	cd $(ENGINE) && cargo clippy --release -p kuna-cli --no-deps -- -D warnings
+
+lint-base-num:
+	cd $(ENGINE) && cargo clippy --release -p kuna-base -p kuna-num --lib --no-deps -- -D warnings
 
 clean:
 	cd $(ENGINE) && cargo clean

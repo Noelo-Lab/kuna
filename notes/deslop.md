@@ -2437,6 +2437,51 @@ Chrome did not open its DevTools port within 10 seconds. All preceding checks
 passed, and the unchanged failed-job rerun passed. The startup cause remains
 unresolved; neither its timeout nor the application was changed here.
 
+## Foundation contracts and persistent library lint
+
+Address and integer-helper documentation now describes implemented register
+decoding, address/sequence/range comparison constraints, modulo-width shifts
+and division behavior. The complement contract explicitly preserves the
+caller's reorder flag for undefined complements. These three production files
+lose 64 comment lines; every noncomment, nonblank Rust line is unchanged.
+One new regression checks four undefined opcodes with both initial flag values
+and passes against the original implementation.
+
+`make lint-base-num` now runs strict release Clippy on the base and numeric
+libraries, and CI requires it alongside the existing CLI check. The target
+passes on both Rust 1.90 and CI's 1.98.1. It does not claim that the engine,
+the whole workspace or test targets are warning-clean. Public and private
+base/numeric rustdoc also pass with every warning denied.
+
+Two shorter complement implementations were rejected. Selecting the result
+and flag together slowed unsupported-opcode lookups 40.09% (paired 39.54%);
+a separate flag predicate still slowed them 13.34% (paired 11.18%). Both
+passed all 148 opcode/flag outcomes. The original body was restored exactly,
+and the unpublished implementation note was removed. Full sources, binaries,
+hashes, correctness results and raw timings remain in `rejected-tuple` and
+`rejected-separate-flag` under `/tmp/kuna-deslop-complement-map.3HY5DvKy`.
+
+The retained version rebuilds in 47.38 seconds without warnings. All 3,747
+focused tests pass, with three existing ignores across 59 groups and no
+warnings. Complete actual-root modules agree on all 148 opcode/flag outcomes
+in each overflow mode; the rebuilt library separately matches the original.
+The 36 CLI cases, four complete stage transcripts, 286 compiler comparisons
+and 48 XML outputs are unchanged.
+
+The restored code's initial 66-run check had an unsupported-case median
+increase of 7.20% but a paired decrease of 0.70%. A longer 190-run diagnostic,
+with 90 measured samples per version after five warmup pairs on CPU 41,
+changes aggregate median +0.09% (paired -0.04%). All five distributions range
+from -0.19% to +3.06%; unsupported lookups change -0.19% (paired -0.63%).
+Each run checks all five digests across 655,360 calls. Both sample sets are
+retained. This checks removal of the rejected regressions, not a speedup.
+
+All nine final gates pass with the source frozen through the last CLI result:
+7,465 workspace tests, 38 existing ignores across 440 groups and no warnings;
+675 upstream and 1,467 stage assertions; 268 CLI probes; Ghidra, static/spec/
+catalog/both lint targets, compatibility, XML and rebuilt browser checks.
+The previous checkpoint also passed CI and CodeQL.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.
@@ -2447,7 +2492,7 @@ These are investigation targets, not a claim that the repository review is done.
 | Option plumbing | Loader options still use process-wide environment variables; inspect the loader API before replacing ambient configuration. The 12 matching boolean readers now share one parser; distinct vocabularies remain intentional. |
 | Parsing and serialization | Standard parsers now back the registry and CLI JSON; typed baseline validation rejects false-green inputs. Review remaining command-specific JSON extraction and serialization boundaries. |
 | CLI responsibilities | The worker codec is isolated and byte-pinned; graph queries, scheduling, synthesized-structure replay, object-file views, console scripts, string filtering, callee-first feedback, query function metadata and archive ingestion have separate owners. Archive member and console output files have scoped cleanup. Loading/configuration and the remaining pool module still combine several lifecycle policies. |
-| Collection policy | The CLI has a strict warning-clean Clippy gate. The release engine-library check last reported 208 collection-policy errors/91 warnings, and analysis 215 errors/64 warnings. Reviewed lookup-only collections and explicitly ordered reports preserve existing implementations where iteration cannot affect output. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and extend enforcement. |
+| Collection policy | The CLI and base/numeric libraries have strict warning-clean Clippy gates. The release engine-library check last reported 208 collection-policy errors/91 warnings, and analysis 215 errors/64 warnings. Reviewed lookup-only collections and explicitly ordered reports preserve existing implementations where iteration cannot affect output. Review iteration semantics and lookup costs before replacing other collections, then check the remaining crates and extend enforcement. |
 | Engine boundaries | Unique and addressed rule outputs use shared factories, and output reassignment uses shared scope/cover bookkeeping, with high-level/lane-state regressions. Context/function-data ownership headers and base contracts now describe current implementations. Other wave-era STUB notes remain; engine documentation still has 161 public broken-link errors, with 241 when private items are included. |
 | Analysis, SLEIGH, Python, integrations | Public and private analysis rustdoc links now resolve; other documentation warnings and stale migration narratives remain. Inventory and ranked-backlog corruption fail closed; the driver distinguishes pauses and errors from empty work. Python writers share atomic publication. Required fixtures fail explicitly in console, SLEIGH and Ghidra tests; conditional assertions and optional-tool coverage still need review. Compiler parity uses an independent oracle. Inherited-stderr exit diagnostics are regression-tested; the earlier real-Chrome startup timeouts remain unexplained. |
 

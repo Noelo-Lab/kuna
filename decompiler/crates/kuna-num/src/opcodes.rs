@@ -351,14 +351,9 @@ pub fn get_opcode(nm: &str) -> Option<OpCode> {
     None // Name isn't an op
 }
 
-/// Get the complementary OpCode.
-///
-/// Every comparison operation has a complementary form that produces
-/// the opposite output on the same inputs. Set \b reorder to true if
-/// the complimentary operation involves reordering the input parameters.
-/// \param opc is the OpCode to complement
-/// \param reorder is set to \b true if the inputs need to be reordered
-/// \return the complementary OpCode or CPUI_MAX if not given a comparison operation
+/// Return an opcode with the complementary result, or `CPUI_MAX` if undefined.
+/// For supported operations, write whether inputs must be swapped to `reorder`.
+/// Leave `reorder` unchanged when no complement is defined.
 pub fn get_booleanflip(opc: OpCode, reorder: &mut bool) -> OpCode {
     match opc {
         OpCode::CPUI_INT_EQUAL => {

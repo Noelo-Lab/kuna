@@ -2368,6 +2368,10 @@ is case-sensitive, retains the SLEIGH aliases, skips `BLANK`, and rejects
 `UNUSED1` when converting a matched index to an opcode. Enum values and wire
 names are unchanged.
 
+Complement lookup returns the complementary opcode and writes whether its
+inputs must be swapped. An opcode with no defined complement returns
+`CPUI_MAX` without changing the caller's reordering flag.
+
 Integer bit queries in `decompiler/crates/kuna-base/src/address.rs` use Rust's
 primitive bit operations. Least- and most-significant-set-bit queries return
 `-1` for zero; population count returns zero and leading-zero count returns 64.
