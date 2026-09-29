@@ -1600,6 +1600,19 @@ impl Action for ActionReturnRecovery {
                         continue;
                     }
                 };
+                // (kuna) `passthrough`: the result of a tail call whose callee's
+                // recovered prototype returns a value in this storage.  Scored
+                // before the ancestor walk, whose INDIRECT-creation mark would
+                // keep the high register of a returned pair out of the output.
+                let (taddr, tsize) = {
+                    let t = active.get_trial(i);
+                    (t.get_address().clone(), t.get_size())
+                };
+                if crate::p4_calls::kuna_passthrough::returns_tail_result(data, vn, &taddr, tsize) {
+                    active.get_trial_mut(i).mark_active();
+                    self.base.count += 1;
+                    continue;
+                }
                 // ancestorReal.execute(op,slot,&trial,false) &&
                 //   data.ancestorOpUse(maxancestor,vn,op,trial,0,0)
                 let mut ancestor = crate::funcdata_varnode::AncestorRealistic::new();
@@ -1619,17 +1632,6 @@ impl Action for ActionReturnRecovery {
                         data.ancestor_op_use(maxancestor, vn, op, trial, 0, 0)
                     };
                     if only {
-                        active.get_trial_mut(i).mark_active();
-                    }
-                }
-                // (kuna) `passthrough`: the result of a tail call whose callee's
-                // recovered prototype returns a value in this storage.
-                if !active.get_trial(i).is_active() {
-                    let (taddr, tsize) = {
-                        let t = active.get_trial(i);
-                        (t.get_address().clone(), t.get_size())
-                    };
-                    if crate::p4_calls::kuna_passthrough::returns_tail_result(data, vn, &taddr, tsize) {
                         active.get_trial_mut(i).mark_active();
                     }
                 }

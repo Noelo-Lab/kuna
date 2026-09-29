@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/passthroughpair_le32",
+    "binary_sha256": "bd53a689d8f38b108c95a6e25025a81ac2a3c92ea96352835e3d3ce0f72925be",
+    "binary_size": 4744,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/passthroughpair_le32",
+    "selector": "fwd_wide",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned long long fwd_wide\\(int a0,int a1\\)",
+      "return wide\\(a0,a1\\); // tail-call",
+      "unsigned long long fwd_inc64\\(unsigned int a0,int a1\\)",
+      "return inc64\\(a0,a1\\); // tail-call",
+      "int fwd_narrow\\(int a0,int a1\\)",
+      "return narrow\\(a0,a1\\); // tail-call"
+    ],
+    "stdout_absent": [
+      "void fwd_wide\\(",
+      "void fwd_inc64\\("
+    ]
+  },
+  "notes": "ARM32: fwd_wide and fwd_inc64 branch to a callee returning a 64-bit value in r1:r0; each hands back the pair, like fwd_narrow does its r0."
+}

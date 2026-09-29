@@ -2702,6 +2702,28 @@ This is the claim a declared callee already gets whenever the caller names the
 return register; its cost is a void wrapper that tail-calls a value-returning
 function, which is handed that value.
 
+A return the callee's recovery put in a register pair (x86-64 `rdx:rax`, i386
+`edx:eax`, ARM `r1:r0`) is stated as a join, and is claimed register by
+register: every register of the pair must be one the function never touches,
+each gets its own RETURN read and return trial, and return recovery joins the
+trials again, as it joins the pair heritage would have registered. The high
+register is not the first of its storage class, so `fillinMap` refuses a trial
+for it that is formed by an INDIRECT creation; `ActionReturnRecovery` therefore
+scores a claimed trial before the ancestor walk that sets that mark, and skips
+the walk for it. Without this an x86-64 `jmp wide` to an `undefined16 wide(...)`
+rendered `void fwd_wide(a0,a1) { wide(a0,a1); }`; it now renders `undefined16
+fwd_wide(a0,a1) { return wide(a0,a1); }`, and a caller of `fwd_wide` reads the
+pair it always read. The witnesses are `passthroughpair_x86_64` and
+`passthroughpair_le32` under `tests/cli/passthrough-returns-a-register-pair-a-tail-call-leaves.json`
+and its ARM twin; a forwarder that writes `rdx` after the call is their control.
+Over the decbench O2 and O2-noinline corpora (500 binaries, x86-64, i386 and
+ARM) the pair arm changes three coreutils wrappers, each in three binaries:
+`get_stat_btime`, a `jmp get_stat_mtime`, now returns the `struct timespec`
+DWARF gives it, and `strintcmp`, a `jmp numcompare`, goes from `void` to the
+`undefined16` its callee is recovered with. DWARF says `int` for both of those:
+the callee's own recovery invents the `rdx` half, and the wrapper repeats it,
+as it repeats any stated return.
+
 A callee states a return at all only where its own body computed one. `protoorder`
 passes the callee's `Funcdata` to `recovered_output`, which asks
 `kuna_returnuncomputed::every_return_computes`: each live RETURN must hand back a

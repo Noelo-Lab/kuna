@@ -1,0 +1,48 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/passthroughpair_x86_64",
+    "binary_sha256": "ce28d3c70cfa09f1c70192a72a7182d8299cd0673c0268af2d022c260a2d344d",
+    "binary_size": 5024,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/passthroughpair_x86_64",
+    "selector": "fwd_wide",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "undefined16 fwd_wide\\(unsigned long a0,unsigned long a1\\)",
+      "return wide\\(a0,a1\\); // tail-call",
+      "undefined16 fwd_wide2\\(long a0,long a1\\)",
+      "return wide2\\(a0,a1\\); // tail-call",
+      "long fwd_narrow\\(long a0,long a1\\)",
+      "return narrow\\(a0,a1\\); // tail-call",
+      "undefined16 callfwd_wide\\(unsigned long a0,unsigned long a1\\)",
+      "v1 = fwd_wide\\(a0,a1\\);",
+      "return wide\\(a0,a1\\) \\+ 1;"
+    ],
+    "stdout_absent": [
+      "void fwd_wide\\(",
+      "void fwd_wide2\\(",
+      "void callfwd_wide\\(",
+      "undefined16 lofwd\\("
+    ]
+  },
+  "notes": "fwd_wide/fwd_wide2 jmp to a callee returning rdx:rax and callfwd_wide calls it then returns: each hands back the pair, like fwd_narrow does its rax. lofwd writes rdx after the call, so it is not given the pair; notfwd uses the result itself."
+}
