@@ -52,8 +52,8 @@
 //!
 //! **Did the function put it there?** Parameter storage alone is not enough,
 //! because on most ABIs some argument register is also a return register. Compare
-//! the terminal's address with the storage of the return half the walk started
-//! from:
+//! the terminal's address with the storage the half occupies in the returned
+//! value -- its register of a pair, or its bytes of the one return register:
 //!
 //! * `RDX = COPY(RSI)` -- different addresses. The function executed an
 //!   instruction to move the argument into the return register. Real.

@@ -72,11 +72,24 @@
 //! return. Anything the walk cannot classify is treated as computed, so an
 //! unfamiliar shape keeps today's answer.
 //!
+//! # A value built in one return register
+//!
+//! The same `PIECE` appears when the function assembles a value in its single
+//! return register: `((u64)hi << 32) | lo` folds into `RAX = PIECE(ESI, EDI)`,
+//! and heritage splits a partly written register into `RAX = PIECE(RAX[4:4],
+//! EAX)`. Each half is therefore judged against the bytes it occupies in the
+//! returned storage (its register of a join, or its offset in the one register),
+//! never against its own address -- an argument folded straight into the value
+//! sits at its own address by definition and would read as leftover, dropping
+//! the half, narrowing the return and orphaning the argument. And the high half
+//! of one register is never kept alone: that would return its bits as the whole
+//! value.
+//!
 //! # Why this cannot break a genuine multi-register return
 //!
-//! Two independent guards. First, the rule only ever runs with **more than one**
-//! active trial, and never deactivates the last survivor — so a function with a
-//! single recovered return register is untouched, whatever its value looks like.
+//! Two independent guards. First, the rule only ever edits a value concatenated
+//! from two halves, and never deactivates the last survivor — so a function with
+//! a single recovered return register is untouched, whatever its value looks like.
 //! Second, a real 16-byte struct return *computes* both halves: it builds them
 //! from constants, arithmetic, or loads through a pointer, and a LOAD is not in
 //! the move-only set, so the walk stops there and reports computed. Only a half
@@ -177,7 +190,7 @@ fn computes_everywhere(data: &Funcdata, vn: VarnodeId, placed_at: Option<&Addres
 
 /// The walk, carrying the input-parameter carve-out's **placement** test.
 ///
-/// `placed_at` is the storage of the return half the walk started from, which
+/// `placed_at` is the storage the half occupies in the returned value, which
 /// turns the carve-out into "did the function PUT an argument here": a terminal at
 /// a different address was moved into the return register by an instruction the
 /// function executed, while a terminal at the same address is the caller's

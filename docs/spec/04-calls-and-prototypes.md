@@ -1592,10 +1592,11 @@ to decide on; the repair therefore runs in the one-shot tail, just before
 heritage has resolved that load into a bare unwritten Varnode. A genuine wide
 return is safe from it twice over: both halves of a real struct return are
 computed (built from constants, arithmetic, or loads through a pointer — a LOAD
-is not a move, so the walk stops there), and the rule only ever edits an existing
-*pair*, never a lone recovered return value. Where every half is uncomputed — the
-synthesized-return case — the low, first-in-class register is kept so the
-function's output storage still agrees across every RETURN.
+is not a move, so the walk stops there), and the rule only ever edits a value
+concatenated from two halves, never a lone recovered return register. Where every
+half is uncomputed — the synthesized-return case — the low, first-in-class
+register is kept so the function's output storage still agrees across every
+RETURN.
 
 This subsumes `returnpair` on the GH-6990 case it was written for (`tests/stages/
 gh6990-returnpair.xml` now records both passes agreeing); the flag remains as the
@@ -1635,11 +1636,12 @@ real return value when both of the following hold:
   earlier in the walk.
 * **the function put it there.** Parameter storage alone is not enough, because on
   most conventions an argument register is also a return register. The terminal's
-  address is compared with the storage of the return half the walk started from: a
-  *different* address means the function executed an instruction to move the
-  argument into the return register, while the *same* address means the register
-  was never touched and the caller's value is passing straight through — leftover,
-  which is precisely what the sibling rule exists to drop.
+  address is compared with the storage the half occupies in the returned value
+  (see *A value built in one return register* below): a *different* address means
+  the function executed an instruction to move the argument into the return
+  register, while the *same* address means the register was never touched and the
+  caller's value is passing straight through — leftover, which is precisely what
+  the sibling rule exists to drop.
 
 A weaker version of the placement test was tried and rejected. It also rescued
 the pair when *every* half was an untouched incoming argument, on the theory that
@@ -1654,6 +1656,41 @@ The predicate runs inside `ActionOutputPrototype`, which is scheduled *before*
 `ActionInputPrototype`, so the proto's own parameter list is not fixated yet and
 the question goes to the model — the same fall-through
 `possible_input_param` takes when no locked parameters exist.
+
+#### A value built in one return register
+
+A `PIECE` at the RETURN is not always the pair return recovery joined. The function
+itself builds one when it assembles a value in its single return register:
+`((u64)hi << 32) | lo` folds into `RAX = PIECE(ESI, EDI)`, whose halves are the
+argument registers themselves, and heritage refines a partly written register into
+`RAX = PIECE(RAX[4:4], EAX)`. The repair handles both with two rules.
+
+* **Placement is measured against the bytes the half occupies.** For a pair each
+  half occupies one register of the join, read from the join record; in a single
+  register the low half sits at the register's address and the high half above it
+  (the other way round on a big-endian register file). Measuring against the
+  half's *own* address, as the repair once did, makes any argument folded straight
+  into the value "arrive" where it already is, so `ESI` in RAX's high half read as
+  the caller's leftover: the half was dropped, the return narrowed to four bytes,
+  and the argument lost its only reader — `unsigned int join_lo_hi(unsigned int
+  a0) { return a0; }` for `((u64)hi << 32) | lo` at -O0. The same measurement keeps
+  a pair half the function moved from an argument register after copy propagation
+  has replaced the move with the argument itself (two argument registers swapped
+  into `r0:r1` on ARM).
+* **The high half of one register is never returned alone.** Rewriting the RETURN
+  to the high half of a single-register value hands back those bits as the whole
+  value: `((u64)(a + 1) << 32) | b` at -O2 printed `return a0 + 1;`, and on AArch64
+  a low half that is the first argument left in `w0` sits at its own slot and must
+  read as untouched. So in one register only the low half can survive, and a value
+  whose high half is computed keeps all its bytes. In a pair each register is its
+  own location, and either half may survive as before.
+
+A high half that really is leftover still goes: the upper half of RAX after a
+callee that returns `int` in EAX sits at its own slot, traces to the call's
+INDIRECT creation, and the return narrows to EAX exactly as before. Over the
+castbench corpus and 66 further binaries the change moves no function; the shape
+it corrects is pinned by `tests/stages/kuna-returnpiece.xml` and by the compiled
+round trip over the `piecehi_*` fixtures in `kuna-cli/tests/decompile_all_cli.rs`.
 
 #### (kuna) The register that was only ever pushed (`retpushedhalf`)
 
