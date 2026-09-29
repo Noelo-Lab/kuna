@@ -22,9 +22,17 @@
       q_bit: movzx eax,byte [rdi+8] / and eax,0x30 / cmp al,0x10 / je sink(7)
       s_set: [mov qword [rdi+8],3] / mov byte [rdi+9],dl   (a narrow store)
 
+      c_bit: call get_rec / movzx eax,byte [rax+9] / and eax,0x30 / cmp al,0x10
+      l_bit: loop: movzx eax,byte [rdi+9] / and / cmp / je / add rdi,24 / ...
+
+    get_rec is declared to return a rec pointer and l_bit walks rec elements,
+    so c_bit and l_bit reach the declared record through a call's result and a
+    loop's phi, which no declaration types; only t_bit's declared parameter
+    does.
+
     One pass, defaults only: t_low, p_low, p_bit and q_bit read at their own
-    width, t_bit keeps the whole-field compare of the declared record, and the
-    store stays one byte wide.
+    width, t_bit keeps the whole-field compare of the declared record, c_bit
+    and l_bit read their byte, and the store stays one byte wide.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">
 c366662e0f1f8400000000000f1f4000
@@ -37,6 +45,13 @@ bf07000000eb99660f1f840000000000
 0fb6470883e0303c107405c30f1f4000
 bf07000000e976ffffff660f1f440000
 85f6740848c7470803000000885709c3
+31c0c366662e0f1f8400000000006690
+4883ec08e8e7ffffff0fb6400983e030
+3c1074054883c408c3bf070000004883
+c408e929ffffff660f1f840000000000
+4885f674150fb6470983e0303c10740b
+4883c7184883ee0175ebc3bf07000000
+e9fbfeffff0000000000000000000000
 </bytechunk>
 <symbol space="ram" offset="0x1000" name="sink"/>
 <symbol space="ram" offset="0x1010" name="t_low"/>
@@ -45,6 +60,9 @@ bf07000000e976ffffff660f1f440000
 <symbol space="ram" offset="0x1050" name="p_bit"/>
 <symbol space="ram" offset="0x1070" name="q_bit"/>
 <symbol space="ram" offset="0x1090" name="s_set"/>
+<symbol space="ram" offset="0x10a0" name="get_rec"/>
+<symbol space="ram" offset="0x10b0" name="c_bit"/>
+<symbol space="ram" offset="0x10e0" name="l_bit"/>
 </binaryimage>
 <script>
   <com>parse line struct rec { char *name; uint4 flags; uint2 tag; uint2 pad; int8 id; };</com>
@@ -55,6 +73,9 @@ bf07000000e976ffffff660f1f440000
   <com>parse line extern void p_bit(uint4 *p);</com>
   <com>parse line extern void q_bit(uint8 *q);</com>
   <com>parse line extern void s_set(uint8 *q, int4 all, uint1 b);</com>
+  <com>parse line extern rec *get_rec(void);</com>
+  <com>parse line extern void c_bit(void);</com>
+  <com>parse line extern void l_bit(rec *r, int8 n);</com>
   <com>lo fu t_low</com>
   <com>decompile</com>
   <com>print C</com>
@@ -73,6 +94,12 @@ bf07000000e976ffffff660f1f440000
   <com>lo fu s_set</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu c_bit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu l_bit</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="narrowload #1: a 2-byte read of a declared record's 4-byte field is 2 bytes wide" min="1" max="1">return \*\(uint2 \*\)&amp;r-&gt;flags;</stringmatch>
@@ -83,4 +110,7 @@ bf07000000e976ffffff660f1f440000
 <stringmatch name="narrowload #6: no masked compare reads a whole element the program reads part of" min="0" max="0">\([pq]\[1\] &amp;</stringmatch>
 <stringmatch name="narrowload #7: a declared record's flag word keeps the whole-field compare" min="1" max="1">if \(\(r-&gt;flags &amp; 0x3000\) != 0x1000\)</stringmatch>
 <stringmatch name="narrowload #8: a byte store into an 8-byte element stays one byte wide" min="1" max="1">\(\(uint1 \*\)q\)\[9\] = b;</stringmatch>
+<stringmatch name="narrowload #9: a masked byte compare of a declared field through a call result reads 1 byte" min="1" max="1">\(\(uint1 \*\)&amp;get_rec\(\)-&gt;flags\)\[1\] &amp; 0x30\) .= 0x10</stringmatch>
+<stringmatch name="narrowload #10: a masked byte compare of a declared field through a loop phi reads 1 byte" min="1" max="1">\(\(uint1 \*\)&amp;[A-Za-z0-9_]+-&gt;flags\)\[1\] &amp; 0x30\) .= 0x10</stringmatch>
+<stringmatch name="narrowload #11: only the declared parameter reads the whole flag word" min="1" max="1">-&gt;flags &amp; 0x3000</stringmatch>
 </decompilertest>
