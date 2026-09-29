@@ -237,7 +237,7 @@ fn live_def(fd: &mut Funcdata, bl: crate::context::BlockId, opc: OpCode, inputs:
     let op = fd.new_op(inputs.len() as int4, Address::new(Rc::clone(&r), out_off));
     fd.op_set_opcode(op, TypeOp::new(opc, 0, format!("{opc:?}")));
     for (i, &vn) in inputs.iter().enumerate() {
-        fd.op_set_input(op, vn, i as int4);
+        fd.op_set_input(op, vn, i as int4).expect("wire input");
     }
     fd.op_insert(op, bl, None);
     fd.new_varnode_out(size, &Address::new(r, out_off), op).expect("varnode out")
@@ -249,8 +249,8 @@ fn live_return(fd: &mut Funcdata, bl: crate::context::BlockId, value: VarnodeId)
     let op = fd.new_op(2, Address::new(r, 0x1ff0));
     fd.op_set_opcode(op, TypeOp::new(OpCode::CPUI_RETURN, 0, "RETURN"));
     let k = fd.new_constant(8, 0);
-    fd.op_set_input(op, k, 0);
-    fd.op_set_input(op, value, 1);
+    fd.op_set_input(op, k, 0).expect("wire input");
+    fd.op_set_input(op, value, 1).expect("wire input");
     fd.op_insert(op, bl, None);
     op
 }

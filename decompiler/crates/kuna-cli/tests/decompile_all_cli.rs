@@ -6603,7 +6603,7 @@ int main(void) {
     let sp = specs();
     let compilers: Vec<&str> = ["gcc", "clang"]
         .into_iter()
-        .filter(|cc| Command::new(cc).arg("--version").output().is_ok_and(|o| o.status.success()))
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     for fixture in ["piecehi_gcc_O0_x86_64", "piecehi_clang_O0_x86_64", "piecehi_gcc_O2_x86_64", "piecehi_clang_O2_x86_64"] {
         let bin = repo_root()
@@ -6614,10 +6614,6 @@ int main(void) {
             .to_string();
         let (stdout, stderr, ok) =
             run_kuna(&["decompile-all", bin.as_str(), "--functions", FUNCS, "--sleighpath", sp.as_str()]);
-        if !ok && is_specs_skip(&stderr) {
-            eprintln!("piecehi round trip: skipping (no `.sla`; run `make specs`)");
-            return;
-        }
         assert!(ok, "kuna decompile-all failed on {fixture}: {stderr}");
         for (name, arity) in ARITY {
             let decl = stdout
@@ -6656,7 +6652,7 @@ int main(void) {
                     "{cc} {level} rejected the printed C ({fixture}):\n{}",
                     String::from_utf8_lossy(&out.stderr)
                 );
-                let run = Command::new(&exe).output().expect("run the round trip");
+                let run = process::required_output(&mut Command::new(&exe));
                 let _ = std::fs::remove_dir_all(&dir);
                 assert_eq!(
                     String::from_utf8_lossy(&run.stdout),
