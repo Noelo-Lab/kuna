@@ -5,6 +5,7 @@
 
 pub mod heritage;
 pub mod subflow;
+mod kuna_constantbytes;
 pub mod condexe;
 pub mod condconst;
 pub mod coreaction_early;
