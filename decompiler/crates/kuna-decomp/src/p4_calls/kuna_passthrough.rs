@@ -110,12 +110,14 @@
 //! # The tail call's result
 //!
 //! When every live RETURN is reached from a direct call with nothing in between,
-//! every such callee states a non-`void` return in the same register, and the
-//! function never touches that register (`stated_tail_return`), each RETURN gets
-//! a read of it and the function's return trial (`claim_tail_return`).
-//! Upstream's `ancestorOpUse` refuses an INDIRECT creation at a RETURN, so
-//! [`returns_tail_result`] accepts the one planted at a claimed call, whose output
-//! then takes the callee's recovered return type ([`tail_return_type`]).
+//! every such callee states a non-`void` return in the same register or register
+//! pair, and the function never touches those registers (`stated_tail_return`),
+//! each RETURN gets a read of each and the function's return trial for each
+//! (`claim_tail_return`). Upstream's `ancestorOpUse` refuses an INDIRECT creation
+//! at a RETURN, so [`returns_tail_result`] accepts the one planted at a claimed
+//! call, whose output then takes the callee's recovered return type
+//! ([`tail_return_type`]). A register pair is kept whole or not at all
+//! ([`keep_tail_return_whole`]).
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -501,15 +503,16 @@ pub(crate) fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
 }
 
 /// The stated return value of the call every live RETURN of the function hands
-/// back, when there is one: the storage, size and type the callee's own
-/// recovery gave it, the same for every such call.
+/// back, when there is one: the registers the callee's own recovery put it in,
+/// the same for every such call, and those calls.
 ///
 /// Asked before any argument is claimed, so "untouched" means untouched by the
 /// function's own code. `None` unless the function's own output is recovered
 /// (not locked), every live RETURN is reached from a direct call with nothing
 /// between, every one of those callees states a non-`void` return in the same
-/// register, and no op of the function touches that register.
-fn stated_tail_return(data: &Funcdata) -> Option<(Address, int4, Vec<OpId>)> {
+/// storage, and that storage is a register or a register pair
+/// ([`register_pieces`]) no op of the function touches.
+fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId>)> {
     if data.get_func_proto().is_output_locked() || data.get_active_output().is_none() {
         return None;
     }
@@ -540,25 +543,47 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Address, int4, Vec<OpId>)> {
         }
     }
     let (addr, size) = storage?;
-    if !is_register(&addr) || touched(data, &addr, size) {
-        return None;
-    }
-    let out = data.get_func_proto().characterize_as_output(&addr, size);
-    if out == crate::fspec::Containment::NoContainment {
-        return None;
-    }
-    Some((addr, size, producers))
+    let pieces = register_pieces(data, &addr, size)?;
+    let proto = data.get_func_proto();
+    let free = |(a, s): &(Address, int4)| {
+        !touched(data, a, *s) && proto.characterize_as_output(a, *s) != crate::fspec::Containment::NoContainment
+    };
+    pieces.iter().all(free).then_some((pieces, producers))
 }
 
-/// Give every live RETURN a read of the return register its tail calls produce,
-/// register the function's return trial for it, and record the claim.
+/// The registers a stated return value occupies: its own storage, or each piece
+/// of a register pair's join (`rdx:rax`, ARM `r1:r0`). `None` for anything
+/// else, including a join with a piece outside the register file.
+fn register_pieces(data: &Funcdata, addr: &Address, size: int4) -> Option<Vec<(Address, int4)>> {
+    let space = addr.get_space()?;
+    if space.get_type() != spacetype::IPTR_JOIN {
+        return is_register(addr).then(|| vec![(addr.clone(), size)]);
+    }
+    let rec = data.get_arch().manage().find_join(addr.get_offset()).ok()?;
+    if rec.num_pieces() < 2 {
+        return None;
+    }
+    let pieces: Vec<(Address, int4)> = (0..rec.num_pieces())
+        .map(|i| rec.get_piece(i))
+        .filter_map(|p| p.space.clone().map(|sp| (Address::new(sp, p.offset), p.size as int4)))
+        .collect();
+    (pieces.len() == rec.num_pieces() as usize && pieces.iter().all(|(a, _)| is_register(a))).then_some(pieces)
+}
+
+/// Give every live RETURN a read of each return register its tail calls
+/// produce, register the function's return trial for it, and record the claim.
 ///
-/// The RETURN reads are the function's own return trial, so heritage's
-/// `guardReturns` is kept off the range ([`suppresses_return_trial`]); the producing
-/// calls keep their return-value trial, which is what hands the RETURN the
-/// callee's result.
-fn claim_tail_return(data: &mut Funcdata, claims: &mut Vec<PassThroughClaim>, ret: (Address, int4, Vec<OpId>)) {
-    let (addr, size, producers) = ret;
+/// The RETURN reads are the function's own return trials, so heritage's
+/// `guardReturns` is kept off the ranges ([`suppresses_return_trial`]); the
+/// producing calls keep their return-value trials, which is what hands the
+/// RETURN the callee's result. A register pair gets one trial per register, as
+/// heritage would register them, and return recovery joins them again.
+fn claim_tail_return(
+    data: &mut Funcdata,
+    claims: &mut Vec<PassThroughClaim>,
+    ret: (Vec<(Address, int4)>, Vec<OpId>),
+) {
+    let (pieces, producers) = ret;
     let rets: Vec<OpId> = data
         .obank()
         .iter_code(OpCode::CPUI_RETURN)
@@ -568,21 +593,23 @@ fn claim_tail_return(data: &mut Funcdata, claims: &mut Vec<PassThroughClaim>, re
     if nins.len() != rets.len() || nins.iter().any(|&n| n != nins[0]) {
         return;
     }
-    let slot = nins[0];
-    for &r in &rets {
-        let vn = data.new_varnode(size, &addr, None);
-        if data.op_insert_input(r, vn, slot).is_err() {
-            return;
+    for (k, (addr, size)) in pieces.into_iter().enumerate() {
+        let slot = nins[0] + k as int4;
+        for &r in &rets {
+            let vn = data.new_varnode(size, &addr, None);
+            if data.op_insert_input(r, vn, slot).is_err() {
+                return;
+            }
         }
-    }
-    if let Some(active) = data.get_active_output_mut() {
-        active.register_trial(&addr, size);
-        let t = active.get_num_trials() - 1;
-        active.get_trial_mut(t).set_slot(slot);
-    }
-    match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
-        Some(c) => c.ret_owners.extend(producers),
-        None => claims.push(PassThroughClaim { addr, size, arg_owners: Vec::new(), ret_owners: producers }),
+        if let Some(active) = data.get_active_output_mut() {
+            active.register_trial(&addr, size);
+            let t = active.get_num_trials() - 1;
+            active.get_trial_mut(t).set_slot(slot);
+        }
+        match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
+            Some(c) => c.ret_owners.extend(producers.iter().copied()),
+            None => claims.push(PassThroughClaim { addr, size, arg_owners: Vec::new(), ret_owners: producers.clone() }),
+        }
     }
 }
 
@@ -612,14 +639,42 @@ pub fn returns_tail_result(data: &Funcdata, vn: VarnodeId, addr: &Address, size:
         .any(|c| c.addr == *addr && c.size == size && c.ret_owners.contains(&call))
 }
 
+/// Is `[addr, addr+size)` a register of a tail call's result this pass claimed
+/// as the function's return value?
+fn is_tail_return_piece(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    data.kuna_passthrough_claims().iter().any(|c| c.addr == *addr && c.size == size && !c.ret_owners.is_empty())
+}
+
+/// Take a claimed return value whole or not at all, once `ActionReturnRecovery`
+/// has scored its trials for the last time.
+///
+/// Every register of a claimed pair must have been accepted as the tail call's
+/// result ([`returns_tail_result`]). One the callee's model does not kill -- the
+/// `xmm1` of a `struct { double, double }` on the x86-64 gcc model -- reaches
+/// the RETURN through an ordinary INDIRECT instead, and keeping the other
+/// register alone would return half the callee's value as the whole of the
+/// function's. Inert with the option off, and for a one-register claim.
+pub fn keep_tail_return_whole(data: &Funcdata, active: &mut crate::fspec::ParamActive) {
+    if !data.get_arch().pass_through {
+        return;
+    }
+    let claimed: Vec<int4> = (0..active.get_num_trials())
+        .filter(|&i| is_tail_return_piece(data, active.get_trial(i).get_address(), active.get_trial(i).get_size()))
+        .collect();
+    if claimed.iter().any(|&i| !active.get_trial(i).is_active()) {
+        for i in claimed {
+            active.get_trial_mut(i).mark_inactive();
+        }
+    }
+}
+
 /// The type a tail call this pass claimed hands back: the callee's own
 /// recovered return type, offered as the CALL output's local type.
 pub fn tail_return_type(data: &Funcdata, op: OpId, size: int4) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
     if !data.get_arch().pass_through {
         return None;
     }
-    let claim = data.kuna_passthrough_claims().iter().find(|c| c.ret_owners.contains(&op))?;
-    if claim.size != size {
+    if !data.kuna_passthrough_claims().iter().any(|c| c.ret_owners.contains(&op)) {
         return None;
     }
     let fc = (0..data.num_calls()).map(|i| data.get_call_specs(i)).find(|fc| fc.get_op() == op)?;
