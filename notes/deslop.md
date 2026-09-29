@@ -2391,6 +2391,52 @@ diff `9ab48a3e` remained unchanged through the last terminal success. Logs use
 `/tmp/kuna-deslop-limb-ops-final-`. The preceding commit's CI and CodeQL pass.
 No baseline or threshold changed.
 
+## Opcode contracts and a rejected lookup rewrite
+
+Opcode documentation now states the current names, SLEIGH aliases,
+case-sensitive lookup, reserved names, sentinel behavior and marshaling
+contracts. It removes 47 comment lines and two public-to-private links.
+Every noncomment Rust line is identical to the preceding commit, including
+the original signed-bound lookup and its tests. The spec describes that
+existing behavior. Public and private base/numeric documentation now build
+with all warnings denied; the strict baseline failed on two private links.
+
+A one-ordering-comparison lookup rewrite passed the complete-module models
+and rebuilt-library comparisons but was rejected on performance. In 66
+balanced CPU-pinned runs, its aggregate median increased 9.45% (paired 9.41%).
+All six distributions exceeded 5%, ranging from +5.99% to +14.68%. Near-unchanged
+whole workloads did not justify retaining that regression. The original
+lookup body and test comment were restored exactly, and the unpublished
+implementation note was removed. All rejected sources, executable/library
+hashes, correctness checks and raw timings are preserved under
+`/tmp/kuna-deslop-opcode-order.GueRJzXe/rejected-ordering`.
+
+The retained documentation-only version rebuilds in 52.80 seconds without
+warnings. All 3,746 focused tests pass, with three existing ignores across
+58 groups and no warnings. Actual-root modules agree on 1,215,788 names in
+each overflow mode; the rebuilt library independently matches the complete
+original module. The 36 CLI cases, four full stage transcripts, 286 compiler
+comparisons and 48 XML outputs are unchanged. Strict base/numeric Clippy
+passes on Rust 1.90 and CI's 1.98.1, and CLI lint passes. A comparison rerun
+initially hit an existing output directory; its failure log is retained, and
+the fresh-directory comparison passes all cases.
+
+The restored lookup's 66-run timing check changes aggregate median +0.51%
+(paired +0.25%), with all six distributions between -0.32% and +0.63%.
+Thirty measured samples per version follow three warmup pairs on CPU 41;
+all six digests match in every 786,432-call run. This verifies removal of the
+measured regression, not a speedup. Retained evidence is under
+`/tmp/kuna-deslop-opcode-order.GueRJzXe`.
+
+All nine final checks pass with the retained source frozen through the last
+CLI result: 7,464 workspace tests, 38 existing ignores across 439 groups and
+no warnings; 675 upstream and 1,467 stage assertions; 268 CLI probes; Ghidra,
+static/spec/catalog/lint, compatibility, XML and rebuilt browser checks.
+The preceding commit's first CI attempt failed before the browser app loaded:
+Chrome did not open its DevTools port within 10 seconds. All preceding checks
+passed, and the unchanged failed-job rerun passed. The startup cause remains
+unresolved; neither its timeout nor the application was changed here.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.

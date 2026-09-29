@@ -2362,6 +2362,12 @@ record is honest.
 
 ## 0.3 The IR substrate
 
+Opcode-name lookup in `decompiler/crates/kuna-num/src/opcodes.rs` searches the
+existing name-index table and returns immediately on an exact match. Lookup
+is case-sensitive, retains the SLEIGH aliases, skips `BLANK`, and rejects
+`UNUSED1` when converting a matched index to an opcode. Enum values and wire
+names are unchanged.
+
 Integer bit queries in `decompiler/crates/kuna-base/src/address.rs` use Rust's
 primitive bit operations. Least- and most-significant-set-bit queries return
 `-1` for zero; population count returns zero and leading-zero count returns 64.

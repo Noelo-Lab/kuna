@@ -1,29 +1,13 @@
-//! Port of `decompiler/cpp/opcodes.hh` + `opcodes.cc` (W1, item
-//! `w1-num-pcode-semantics`): the p-code operation enumeration, its name
-//! tables, and the opcode marshaling protocol.
+//! P-code operations, names and marshaling, from `decompiler/cpp/opcodes.{hh,cc}`.
 //!
-//! UB-1 (`docs/rust-port/upstream-bugs.md`): the upstream `opcode_name[]`
-//! table is one entry short (74 entries for `CPUI_MAX` = 75) — `get_opname`
-//! reads past the array for `CPUI_SPULL` (74) and returns the stale name
-//! `"EXTRACT"` for `CPUI_ZPULL` (71).  The port does NOT replicate the bug:
-//! [`OPCODE_NAME`] covers the full enum with the canonical names `"ZPULL"`
-//! and `"SPULL"` (the names `tests/golden/vectors/opbehavior.csv` pins), a
-//! compile-time assertion checks `OPCODE_NAME.len() == CPUI_MAX`, and the
-//! sorted-search table [`OPCODE_INDICES`] is regenerated for the corrected
-//! names (75 slots; upstream's 74-entry table both lacks `SPULL` and places
-//! 71 at the stale `"EXTRACT"` sort position).  For every name the C++
-//! sorted search resolves correctly, [`get_opcode`] returns the same opcode;
-//! the differences are exactly the UB-1 surface (`"EXTRACT"` no longer
-//! resolves, `"ZPULL"`/`"SPULL"` now do).
+//! Names retain the SLEIGH aliases `BUILD`, `DELAY_SLOT`, `LABEL` and
+//! `CROSSBUILD`. `ZPULL` and `SPULL` use their canonical names. [`get_opcode`]
+//! matches exact, case-sensitive names and rejects `BLANK` and `UNUSED1`.
+//! [`get_opname`] panics for the [`OpCode::CPUI_MAX`] sentinel.
 //!
-//! This module also layers the opcode read/write protocol onto the
-//! `kuna-base` marshaling traits ([`OpcodeDecoder`] / [`OpcodeEncoder`]):
-//! C++ declares `readOpcode`/`writeOpcode` as `Decoder`/`Encoder` virtuals
-//! (marshal.hh), but `OpCode` lives in this crate, which depends on
-//! `kuna-base` — so the per-format implementations (XML: opcode name string;
-//! packed: positive signed integer) are expressed here as extension traits
-//! over the concrete `XmlDecode`/`PackedDecode`/`XmlEncode`/`PackedEncode`
-//! types (see the deliberate-API note in `kuna_base::marshal`).
+//! [`OpcodeDecoder`] and [`OpcodeEncoder`] extend the base XML and packed
+//! formats here, where `OpCode` is defined: XML stores names, while packed
+//! streams store positive signed integers.
 
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::{
@@ -301,19 +285,7 @@ impl OpCode {
     }
 }
 
-/// \brief Names of operations associated with their opcode number
-///
-/// Some of the names have been replaced with special placeholder
-/// ops for the sleigh compiler and interpreter these are as follows:
-///  -  MULTIEQUAL = BUILD
-///  -  INDIRECT   = DELAY_SLOT
-///  -  PTRADD     = LABEL
-///  -  PTRSUB     = CROSSBUILD
-///
-/// UB-1 fix (see module docs): unlike the upstream 74-entry table, this
-/// table has all `CPUI_MAX` (75) entries — slot 71 is the canonical
-/// `"ZPULL"` (upstream: stale `"EXTRACT"`) and slot 74 `"SPULL"` exists
-/// (upstream: out-of-bounds read).
+/// Wire names indexed by opcode value, including the reserved slots.
 #[rustfmt::skip]
 static OPCODE_NAME: [&str; 75] = [
     "BLANK", "COPY", "LOAD", "STORE",
@@ -336,20 +308,9 @@ static OPCODE_NAME: [&str; 75] = [
     "INSERT", "ZPULL", "POPCOUNT", "LZCOUNT", "SPULL",
 ];
 
-// UB-1 (docs/rust-port/upstream-bugs.md): the upstream table is one entry
-// short of the enum; this compile-time assertion pins the Rust table to the
-// full opcode count so the bug cannot be reintroduced.
 const _: () = assert!(OPCODE_NAME.len() == OpCode::CPUI_MAX as usize);
 
-/// The alphabetic sort-order permutation of [`OPCODE_NAME`] driving the
-/// binary search in [`get_opcode`] (C++ `opcode_indices`).
-///
-/// Regenerated for the corrected 75-entry name table (UB-1): upstream's
-/// 74-entry table places 71 at the stale `"EXTRACT"` position and lacks 74;
-/// here `"SPULL"` (74) sorts between `"SEGMENTOP"` and `"STORE"`, and
-/// `"ZPULL"` (71) sorts last.  Slot 0 is `"BLANK"` (excluded from the
-/// search), so slots 1..=74 cover every named operation.  Sortedness and
-/// permutation-ness are unit-tested below.
+/// Indices ordered by wire name. Lookup skips the initial `BLANK` entry.
 #[rustfmt::skip]
 static OPCODE_INDICES: [i32; 75] = [
      0, 39, 37, 40, 38,  4,  6, 60,  7,  8,  9, 64,  5, 57,  1, 68,
@@ -359,20 +320,12 @@ static OPCODE_INDICES: [i32; 75] = [
     62, 72, 10, 59, 67, 74,  3, 63, 56, 45, 71,
 ];
 
-/// Convert an OpCode to the name as a string.
-/// \param opc is an OpCode value
-/// \return the name of the operation as a string
+/// Return an opcode's wire name. The `CPUI_MAX` sentinel panics.
 pub fn get_opname(opc: OpCode) -> &'static str {
-    // C++ indexes the (one-short) table blindly; with the UB-1 fix every
-    // real operation 1..=74 is in bounds.  `CPUI_MAX` itself would panic,
-    // surfacing the C++ out-of-bounds read as a caught invariant violation.
     OPCODE_NAME[opc as usize] // cast: enum discriminant (1..=74 for real ops) as index
 }
 
-/// Convert a name string to the matching OpCode.
-/// \param nm is the name of an operation
-/// \return the corresponding OpCode value, or `None` if the name isn't an op
-///         (C++ returns `(OpCode)0`)
+/// Resolve an exact wire name, returning `None` for unknown or reserved names.
 pub fn get_opcode(nm: &str) -> Option<OpCode> {
     let mut min: i32 = 1; // Don't include BLANK
     let mut max: i32 = OpCode::CPUI_MAX as i32 - 1;
