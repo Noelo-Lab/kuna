@@ -2362,6 +2362,12 @@ record is honest.
 
 ## 0.3 The IR substrate
 
+Partition lookup in `decompiler/crates/kuna-base/src/partmap.rs
+(PartMap::get_value_mut)` returns the value at the greatest split point no
+larger than the query, or the default value before the first split. Mutable
+lookup handles the default interval first, then borrows the preceding tree
+entry directly. It neither clones the split key nor creates split points.
+
 Opcode-name lookup in `decompiler/crates/kuna-num/src/opcodes.rs` searches the
 existing name-index table and returns immediately on an exact match. Lookup
 is case-sensitive, retains the SLEIGH aliases, skips `BLANK`, and rejects

@@ -2482,6 +2482,50 @@ All nine final gates pass with the source frozen through the last CLI result:
 catalog/both lint targets, compatibility, XML and rebuilt browser checks.
 The previous checkpoint also passed CI and CodeQL.
 
+## Direct mutable partition lookup
+
+`PartMap::get_value_mut` returns the default interval early and otherwise
+borrows the predecessor tree entry directly. It no longer clones a split key
+and searches the tree again. Public bounds, inclusive split-point semantics
+and existing tests are unchanged. The module loses seven lines. One new
+regression verifies default, exact, interior and final-interval mutations
+without creating split points; it passes against the original implementation.
+
+Complete original and candidate modules agree after 131,072 mutation steps
+in each overflow mode. Integer and String keys carry Vec values; each step
+checks values, bounds, the default, all entries, lower-bound iteration and
+emptiness. The rebuilt library separately matches the complete original.
+Both the one-repetition and full-sixteen-repetition benchmark reference records
+agree. Preparation was refreshed after rejecting the earlier complement
+rewrites, so the saved workload baseline uses the retained original complement.
+
+The release rebuild takes 47.39 seconds without warnings. All 3,748 focused
+tests pass, with three existing ignores across 60 groups and no warnings.
+Strict base/numeric Clippy passes on Rust 1.90 and CI's 1.98.1; CLI lint and
+public/private base/numeric rustdoc with warnings denied pass. The 36 CLI
+cases, four full stage transcripts, 286 compiler comparisons and 48 XML outputs
+are unchanged.
+
+In 66 balanced CPU-pinned native runs, aggregate lookup median falls 48.14%
+(paired 48.33%). All twelve distributions improve, from 27.21% to 83.35%.
+Thirty measured samples per version follow three warmup pairs on CPU 41;
+each 786,432-call run verifies its result and final-state digests. This is a
+lookup improvement, not a claim of a whole-decompiler speedup.
+
+Whole-compiler wall medians change -0.35%, +0.28% and -0.07% for Toy, x86-64
+and Hexagon; CPU medians change -0.30%, +0.29% and -0.09%. Four full stage
+medians change +0.70%, +0.59%, +0.50% and +0.48%, all within the 5% budget.
+Every compiled SLA hash and stage transcript matches. Evidence and source,
+library and executable hashes are under `/tmp/kuna-deslop-partition-direct.J79xSaUp`.
+The earlier tuple-dependent preparation remains intact under
+`/tmp/kuna-deslop-partition-borrow.9BLE5eK9`, but is not the retained baseline.
+
+All nine final gates pass with the source frozen through the final CLI result:
+7,466 workspace tests, 38 existing ignores across 441 groups and no warnings;
+675 upstream and 1,467 stage assertions; 268 CLI probes; Ghidra, static/spec/
+catalog/both lint targets, compatibility, XML and rebuilt browser checks.
+The preceding foundation-lint checkpoint also passed CI and CodeQL.
+
 ## Audit still open
 
 These are investigation targets, not a claim that the repository review is done.

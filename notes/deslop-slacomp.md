@@ -1893,3 +1893,39 @@ Final rustdoc passes with broken intra-doc links denied. All four required gates
 passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
 (7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
 gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.
+
+
+### Direct mutable partition lookup
+
+`PartMap::get_value_mut` borrows the predecessor entry directly instead of
+cloning its key and searching for it again. The default interval has an early
+return, covering both an empty map and queries before its first split point.
+The inclusive lookup boundary, returned value, split structure and public
+signatures are unchanged. Existing tests are unchanged; the module loses
+seven lines, including more precise lookup documentation.
+
+Both complete source modules agree after 131,072 mutation steps in each
+overflow mode. The sequences use integer and String keys with Vec values,
+covering default, exact, interior and extreme lookups, splitting, clearing,
+bounds and full map contents. The rebuilt library separately agrees with the
+fixed original module. Focused tests pass: 293 passed, three existing ignored,
+across 23 groups.
+
+In 66 balanced CPU-pinned native runs, 30 measured per version, aggregate
+median lookup time is 46.728% lower (paired 46.363%). All twelve scenarios
+improve, by 28.664% to 83.244%; each run performs 786,432 mutable lookups across
+integer and String keys. Every result digest and final map/default state agrees
+with the original implementation. Fixture construction and reference execution
+stay outside the timers. These are lookup measurements, not whole-decompiler
+speedups. Evidence and source/library hashes are under
+`/tmp/kuna-deslop-partmap-mut-`.
+
+A direct-range version without the default return was rejected because its
+empty integer-map case increased 16.495%. An empty-only return was also
+rejected because the nonempty default interval increased 5.907%. Their sources,
+executables and raw samples remain under the `direct-*` and `empty-*` prefixes.
+
+Final rustdoc passes with broken intra-doc links denied. All four required gates
+passed: `make test` (675/675), `make test-stages` (1,467/1,467), `make rust-test`
+(7,714 passed, 38 ignored across 433 groups), and `make check-spec`. Both parity
+gates report `PARITY OK`; catalog and whitespace checks pass. Neither baseline changed.
