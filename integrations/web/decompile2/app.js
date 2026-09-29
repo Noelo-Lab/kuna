@@ -476,6 +476,7 @@ async function indexBinary(source, { example = false, keep = null, shared = null
     bytes = source.bytes || new Uint8Array(await source.arrayBuffer());
     const hash = source.hash || await hashBytes(bytes);
     if (!isCurrent(op)) return;
+    state.offerShared = false;
     if (shared) {
       session = shared;
       state.restored = null;
@@ -549,7 +550,7 @@ async function indexBinary(source, { example = false, keep = null, shared = null
   }
   if (state.offerShared) {
     state.offerShared = false;
-    const copy = collab?.shared ? null : sharedCopy(state.binary.hash);
+    const copy = collab?.active ? null : sharedCopy(state.binary.hash);
     if (copy && JSON.stringify(copy.toJSON()) !== JSON.stringify(session.toJSON())) {
       const hash = state.binary.hash;
       toast(`There are also ${copy.size} change${copy.size === 1 ? '' : 's'} to ${name} from a live session you were in.`, {

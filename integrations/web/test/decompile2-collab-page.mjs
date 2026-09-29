@@ -25,7 +25,8 @@
 // cache, and a session's saved copy offered when its program is opened again.
 // And a fourth review's: opening a cached function while another person's
 // change is being decompiled, the site deployed again while a session is on
-// (a Stop restarts the engine), no solo undo copies in a session, a guest
+// (a Stop restarts the engine), no solo undo copies in a session, no offer of
+// an old session's copy to a page joining a new one, a guest
 // that renamed a variable at another
 // decompiler effort, and a program received while an edit of another program
 // is in flight. Each case runs in fresh tabs (a second Chrome process
@@ -974,6 +975,28 @@ try {
     assert.equal(await ben.evaluate(`localStorage.getItem(${JSON.stringify(`kuna.d2.shared.${machoHash}`)})`), null, 'nothing is saved as a session\'s copy of the other program');
     const own = await ben.evaluate(`localStorage.getItem(${JSON.stringify(`kuna.d2.session.${machoHash}`)}) || ''`);
     assert.ok(/bens macho note/.test(own) && !/bens_macho_name/.test(own), 'its own store keeps Ben\'s note, without the undone edit');
+  });
+
+  await test('fifth review #2 a program received while joining never offers an old session\'s copy of it, even after an earlier open was stopped', async () => {
+    const ana = await tab('Ana');
+    await open(ana);
+    await example(ana);
+    const link = await inviteLink(ana, 'Ana');
+    const ben = await tab('Ben', { other: true, script: DELAY_SHIM });
+    await open(ben, { seed: [[`kuna.d2.shared.${SAMPLE_HASH}`, stored([fnRec(SUM, 'from_an_old_session')])]] });
+    await ben.evaluate('window.__kunaDelay = 4000; true');
+    await ben.click('#examplebtn');
+    await sleep(1000);
+    assert.equal(await ben.evaluate(`!document.getElementById('cancelbtn').disabled`), true, 'Ben is opening the example');
+    await ben.evaluate(`document.getElementById('cancelbtn').click(); window.__kunaDelay = 0; true`);
+    await idle(ben);
+    await joinByHash(ben, link);
+    await carryReply(ana, ben);
+    await joinedBoth(ana, ben);
+    await idle(ben);
+    await sleep(1000);
+    const said = await toasts(ben);
+    assert.ok(!said.some((t) => /from a live session you were in/.test(t)), `no offer of an old session's copy while in this one: ${JSON.stringify(said)}`);
   });
 
   await test('fourth review #10 in a session, an edit or a burst of typed bytes keeps no copy of the whole session for the solo Undo', async () => {
