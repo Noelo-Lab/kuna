@@ -4,7 +4,7 @@
 // open and changes of their own, some that must receive it; random edits of
 // every kind, joins (and joins again after leaving), leaves, undo and redo,
 // decompiler-effort changes (also by pages working alone, which join later),
-// students moving about quickly, links that fail with edits in flight, and pairs
+// students moving about quickly, bytes typed in bursts (sent when a burst ends), links that fail with edits in flight, and pairs
 // of pages that cannot link directly, links that lose the first message one
 // side sends; every action followed by a random wait,
 // so edits land inside the others' 16 ms apply batch, during joins and while a
@@ -138,6 +138,12 @@ async function runOne(seed) {
       if (can.length) rng.pick(can).setMode(rng.pick(MODES));
     } else if (r < 0.88) {
       if (shared.length) rng.pick(shared).moveAbout(20 + rng.int(60));
+    } else if (r < 0.93) {
+      const p = rng.pick(pages.filter((x) => x.program));
+      const pairs = [];
+      for (let i = 1 + rng.int(3); i > 0; i--) pairs.push([`0x${(0x1000 + rng.int(6)).toString(16)}`, rng.int(3) * 0x48]);
+      p.typeBytes(pairs);
+      log(p.id, p.sync.phase, 'types bytes', JSON.stringify(pairs));
     } else {
       await sim.run(rng.int(400));
     }

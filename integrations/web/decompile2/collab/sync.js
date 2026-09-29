@@ -479,13 +479,18 @@ export class Sync {
     }
   }
 
-  /** The page's Session changed (an edit, an undo, a byte burst): send what the student changed. */
+  /**
+   * The page's Session changed (an edit, an undo, a byte burst): send what
+   * the student changed, except bytes still being typed (their burst goes out
+   * as one edit when it ends).
+   */
   local({ record = true } = {}) {
     if (this.phase !== 'shared' || this.applying || !this.replica) return;
     const session = this.app.session();
     adoptRawKeys(session, this.me);
     const now = registersOf(session);
     const want = changedBetween(this.base, now);
+    if (this.app.typing?.()) for (const key of [...want.keys()]) if (key.startsWith('byte:')) want.delete(key);
     if (!want.size) return;
     const { written, refused } = this.#writeAll(want);
     this.#tellRefused(refused);
@@ -562,18 +567,34 @@ export class Sync {
     if (!this.pendingTimer) this.pendingTimer = this.timers.setTimeout(() => this.#applyPending(), APPLY_MS);
   }
 
-  /** Apply a frame's worth of the others' changes to the page at once. */
+  /**
+   * The bytes the student is typing and has not sent yet (a burst goes out
+   * as one edit when it ends): they stay on the page as typed, and go out
+   * with the rest of the burst even where someone else wrote them meanwhile.
+   */
+  #typedBytes() {
+    const now = registersOf(this.app.session());
+    const typed = new Set();
+    for (const key of changedBetween(this.base, now).keys()) if (key.startsWith('byte:')) typed.add(key);
+    return typed;
+  }
+
+  /**
+   * Apply a frame's worth of the others' changes to the page at once, after
+   * sending what the student changed (except bytes still being typed).
+   */
   #applyPending() {
     this.pendingTimer = 0;
     const changes = this.pending;
     this.pending = [];
     if (this.phase !== 'shared' || !changes.length) return;
+    const typed = this.app.typing?.() ? this.#typedBytes() : null;
     this.local();
     const words = (c) => `${this.#who(c.by)} ${describeRegister(c.key, c.value, c.prev, this.app.nameOf || ((a) => a))}`;
     const values = changes.filter((c) => c.value !== c.prev);
     const first = values.find((c) => c.by !== this.me);
     const replaced = values.filter((c) => c.prevBy === this.me && c.by !== this.me);
-    const keys = [...new Set(changes.map((c) => c.key))].filter((k) => !k.startsWith('setting:'));
+    const keys = [...new Set(changes.map((c) => c.key))].filter((k) => !k.startsWith('setting:') && !typed?.has(k));
     const fn = this.app.target();
     const mode = changes.some((c) => c.key === 'setting:mode') ? this.#lateMode() : null;
     if (replaced.length) {
@@ -587,6 +608,7 @@ export class Sync {
         applyRegisters(session, this.replica, keys);
         this.#rebase(session, keys);
       }
+      for (const c of changes) if (typed?.has(c.key)) setBase(this.base, c.key, this.replica.value(c.key));
       this.app.remoteChanged({ inspect: keys.some((k) => touchesFunction(k, fn)), mode, label: first ? words(first) : '' });
     } finally {
       this.applying = false;

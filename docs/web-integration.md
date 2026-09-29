@@ -746,7 +746,10 @@ its Session's registers with a **base**, the registers the Session held when it 
 matched the replica, not with the replica itself. The replica runs ahead of the Session
 while the others' changes wait to be applied, and comparing against it would send their
 changes back as this page's deletions. The others' changes are applied together, once per
-frame (16 ms), through the page's remote path, and the base moves with them. That path
+frame (16 ms), through the page's remote path, and the base moves with them. Bytes being
+typed are the exception: a burst goes out as one change (one Undo step) when it ends,
+700 ms after the last key, and until then the others' changes to those bytes do not
+replace what the student typed (the burst, being newer, then wins everywhere). That path
 re-decompiles the open function only when they touch it (once per burst, 300 ms after
 the last, when no request is running) and adds no undo step. The glue is
 `collab/sync.js`, DOM-free and tested on a virtual clock. A shared change is never taken

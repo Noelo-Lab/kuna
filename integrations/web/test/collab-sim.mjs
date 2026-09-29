@@ -307,6 +307,8 @@ export class Page {
     this.replacedCopies = [];
     this.merges = [];
     this.toasts = [];
+    this.burst = new Set();
+    this.burstTimer = 0;
     if (own) {
       own(this.session);
       adoptRawKeys(this.session, id);
@@ -325,6 +327,7 @@ export class Page {
       binary: () => (this.program ? { ...this.program, example: false } : null),
       fileMeta: () => (this.program ? { name: this.program.name, size: this.program.bytes.length, hash: this.program.hash.slice(7) } : null),
       mode: () => this.mode,
+      typing: () => this.burst.size > 0,
       target: () => FN,
       nameOf: (a) => a,
       toast: (text) => this.toasts.push(text),
@@ -431,8 +434,33 @@ export class Page {
     adoptRawKeys(this.session, this.id);
     const keys = new Set(changedBetween(before, registersOf(this.session)).keys());
     for (const k of keys) this.touched.add(k);
+    if (this.burst.size) for (const k of keys) if (k.startsWith('byte:')) this.burst.add(k);
     this.sim.act(this, keys, () => this.sessionChanged());
     return keys;
+  }
+
+  /**
+   * The student types bytes in the Bytes tab (`pairs` of [addr, value]): they
+   * reach the Session at once, and the burst is sent 700 ms after the last
+   * key, as one edit (app.js byteWritten / flushBytes).
+   */
+  typeBytes(pairs) {
+    const before = registersOf(this.session);
+    for (const [addr, value] of pairs) this.session.setByte(addr, value, 0);
+    for (const k of changedBetween(before, registersOf(this.session)).keys()) {
+      this.burst.add(k);
+      this.touched.add(k);
+    }
+    this.sim.clock.clearTimeout(this.burstTimer);
+    this.burstTimer = this.sim.clock.setTimeout(() => this.flushBurst(), 700);
+  }
+
+  flushBurst() {
+    this.sim.clock.clearTimeout(this.burstTimer);
+    this.burstTimer = 0;
+    const keys = this.burst;
+    this.burst = new Set();
+    this.sim.act(this, keys, () => this.sessionChanged());
   }
 
   undo() {

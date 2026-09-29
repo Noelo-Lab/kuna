@@ -3095,6 +3095,8 @@ const collabApi = {
   session: () => session,
   binary: () => state.binary,
   mode: () => els.mode.value,
+  /** Bytes are being typed and not yet sent (a burst goes out as one edit when it ends). */
+  typing: () => !!bytesState.burst,
   current: () => ({ fn: state.current?.data.address_hex ?? null, view: state.view }),
   /** The function on screen, or the one being opened. */
   target: () => state.opening?.address_hex ?? state.current?.data.address_hex ?? null,

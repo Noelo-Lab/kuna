@@ -10,7 +10,8 @@
 // third review's: two joiners bringing the same field, a slow open of the
 // received program, a join that fails while the program opens; and a fourth
 // review's: a guest's variable changes made at another decompiler effort, a
-// guest's earlier change the others' pages refuse. Each
+// guest's earlier change the others' pages refuse; and a fifth's: bytes typed
+// while another person's change arrives. Each
 // case also checks that no page sent a change its student did not make, and
 // that the pages agree once settled. Needs no build.
 //   node integrations/web/test/decompile2-collab-sync.mjs
@@ -386,6 +387,36 @@ await test('fourth review #6 a guest\'s earlier change the others\' pages refuse
   ben.edit((s) => s.replaceWith(key, 'readonly 0x2000+8'));
   await sim.run(2000);
   assert.ok(shows(ana, 'readonly 0x2000+8'), 'made valid, it is shared');
+  await sim.run(60000);
+  settled(sim);
+});
+
+// ── a fifth review ─────────────────────────────────────────────────────────
+
+await test('fifth review #3 bytes typed while another person\'s change arrives go out once, as one step, and win where both wrote', async () => {
+  const sim = new Sim(41);
+  const ana = sim.page(ANA, {});
+  const ben = sim.page(BEN, {});
+  ana.start();
+  await sim.run(50);
+  ben.joinVia(ana);
+  await sim.run(3000);
+  assert.equal(ben.sync.phase, 'shared');
+  ben.typeBytes([['0x1000', 0xaa], ['0x1001', 0xbb]]);
+  await sim.run(100);
+  ana.edit((s) => { s.setVar(FN, 'v1', { name: 'anas' }); s.setByte('0x1001', 0xcc, 0); });
+  await sim.run(300);
+  ben.typeBytes([['0x1002', 0xdd]]);
+  await sim.run(3000);
+  assert.deepEqual(sim.violations, [], sim.violations[0]);
+  assert.equal(ben.sync.history.undoStack.length, 1, 'the burst is one step');
+  for (const p of [ana, ben]) {
+    assert.ok(shows(p, 'bytes 0x1000 aabbdd'), `${p.name} has Ben's bytes, his newer 0x1001 included`);
+    assert.ok(shows(p, 'anas'), `${p.name} has Ana's rename`);
+  }
+  ben.undo();
+  await sim.run(1000);
+  for (const p of [ana, ben]) assert.ok(!shows(p, 'bytes 0x1000'), `one Undo takes the whole burst back on ${p.name}'s page`);
   await sim.run(60000);
   settled(sim);
 });
