@@ -164,7 +164,7 @@ fn clone_filters_on_group() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn shorten_extension_keeps_high_and_lane_metadata() {
+fn shorten_extension_keeps_high_without_recording_lanes() {
     for high in [false, true] {
         for collect_lanes in [false, true] {
             let mut ctx = ArchContext::new(build_manager());
@@ -194,12 +194,7 @@ fn shorten_extension_keeps_high_and_lane_metadata() {
             assert_eq!(fd.obank().get(op).unwrap().get_out(), Some(output));
             assert_eq!(fd.obank().get(op).unwrap().get_in(0), Some(input));
             assert_eq!(fd.vbank().get(original).unwrap().get_def(), None);
-            let lanes = fd.lane_access_snapshot();
-            assert_eq!(lanes.len(), usize::from(collect_lanes));
-            if collect_lanes {
-                assert_eq!(&lanes[0].0, &address);
-                assert_eq!(lanes[0].1, 4);
-            }
+            assert!(fd.lane_access_snapshot().is_empty());
         }
     }
 }

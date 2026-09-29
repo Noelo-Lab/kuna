@@ -258,6 +258,17 @@ impl Funcdata {
     /// varnode id (`vn` after a possible xref-unification), which the C++ assigns
     /// back to `vn` before `op->setOutput(vn)`.
     pub fn op_set_output(&mut self, op: OpId, vn: VarnodeId) -> KunaResult<()> {
+        self.attach_output(op, vn, true)
+    }
+
+    /// [`op_set_output`](Funcdata::op_set_output) for a simplification rule that moves
+    /// an existing output onto a rewritten op: `vn` keeps the scope properties it
+    /// already carries instead of re-deriving them at `op`.
+    pub fn op_move_output(&mut self, op: OpId, vn: VarnodeId) -> KunaResult<()> {
+        self.attach_output(op, vn, false)
+    }
+
+    fn attach_output(&mut self, op: OpId, vn: VarnodeId, refresh: bool) -> KunaResult<()> {
         // Already set to this vn.
         if self.obank().get(op).expect("op_set_output: stale op").get_out() == Some(vn) {
             return Ok(());
@@ -277,7 +288,11 @@ impl Funcdata {
             let mut replace = Funcdata::replace_reads_thunk(obank);
             vbank.set_def(vn, def, &mut replace)?
         };
-        self.set_varnode_properties(vn);
+        if refresh {
+            self.set_varnode_properties(vn);
+        } else {
+            self.ensure_varnode_cover(vn);
+        }
         self.obank_mut().get_mut(op).expect("op_set_output: stale op").set_output(Some(vn));
         Ok(())
     }

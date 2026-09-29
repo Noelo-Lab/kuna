@@ -263,7 +263,7 @@ impl Rule for RuleBooleanDedup {
         }
         let opaddr = data.obank().get(op).expect("RuleBooleanDedup: stale op").get_addr().clone();
         let bc_op = data.new_op(2, opaddr);
-        let tmp = data.new_unique_out(1, bc_op).expect("newUniqueOut");
+        let tmp = data.new_unique_out_unlaned(1, bc_op).expect("newUniqueOut");
         set_opcode(data, bc_op, bc_opc);
         data.op_set_input(bc_op, left_o, 0).expect("RuleBooleanDedup: opSetInput");
         data.op_set_input(bc_op, right_o, 1).expect("RuleBooleanDedup: opSetInput");
@@ -391,7 +391,7 @@ impl Rule for RuleBoolZext {
                     let opaddr = data.obank().get(op).expect("RuleBoolZext: stale op").get_addr().clone();
                     let newop = data.new_op(1, opaddr);
                     set_opcode(data, newop, OpCode::CPUI_BOOL_NEGATE); // Negate the boolean
-                    let vn = data.new_unique_out(1, newop).expect("newUniqueOut");
+                    let vn = data.new_unique_out_unlaned(1, newop).expect("newUniqueOut");
                     data.op_set_input(newop, bool_vn1, 0).expect("RuleBoolZext: opSetInput");
                     data.op_insert_before(newop, op);
                     data.op_set_input(op, vn, 0).expect("RuleBoolZext: opSetInput");
@@ -474,14 +474,14 @@ impl Rule for RuleBoolZext {
                 let aoaddr =
                     data.obank().get(actionop).expect("RuleBoolZext: stale actionop").get_addr().clone();
                 let newop = data.new_op(2, aoaddr.clone());
-                let newres = data.new_unique_out(1, newop).expect("newUniqueOut");
+                let newres = data.new_unique_out_unlaned(1, newop).expect("newUniqueOut");
                 set_opcode(data, newop, opc);
                 data.op_set_input(newop, bool_vn1, 0).expect("RuleBoolZext: opSetInput");
                 data.op_set_input(newop, bool_vn2, 1).expect("RuleBoolZext: opSetInput");
                 data.op_insert_before(newop, actionop);
 
                 let newzext = data.new_op(1, aoaddr);
-                let newzout = data.new_unique_out(size, newzext).expect("newUniqueOut");
+                let newzout = data.new_unique_out_unlaned(size, newzext).expect("newUniqueOut");
                 set_opcode(data, newzext, OpCode::CPUI_INT_ZEXT);
                 data.op_set_input(newzext, newres, 0).expect("RuleBoolZext: opSetInput");
                 data.op_insert_before(newzext, actionop);
@@ -1197,7 +1197,7 @@ impl Rule for RuleSignShift {
         let opaddr = data.obank().get(op).expect("RuleSignShift: stale op").get_addr().clone();
         let shift_op = data.new_op(2, opaddr);
         set_opcode(data, shift_op, OpCode::CPUI_INT_SRIGHT);
-        let unique_vn = data.new_unique_out(vn_size(data, in_vn), shift_op).expect("newUniqueOut");
+        let unique_vn = data.new_unique_out_unlaned(vn_size(data, in_vn), shift_op).expect("newUniqueOut");
         data.op_set_input(op, unique_vn, 0).expect("RuleSignShift: opSetInput");
         let mask = data.new_constant(vn_size(data, in_vn), calc_mask(vn_size(data, in_vn)));
         data.op_set_input(op, mask, 1).expect("RuleSignShift: opSetInput");
@@ -1549,7 +1549,7 @@ impl Rule for RuleShiftPiece {
         } else {
             let opaddr = data.obank().get(op).expect("RuleShiftPiece: stale op").get_addr().clone();
             let newop = data.new_op(2, opaddr);
-            data.new_unique_out(concatsize / 8, newop).expect("newUniqueOut");
+            data.new_unique_out_unlaned(concatsize / 8, newop).expect("newUniqueOut");
             set_opcode(data, newop, OpCode::CPUI_PIECE);
             data.op_set_input(newop, vn1, 0).expect("RuleShiftPiece: opSetInput");
             data.op_set_input(newop, vn2, 1).expect("RuleShiftPiece: opSetInput");
@@ -1986,7 +1986,7 @@ impl Rule for RuleSub2Add {
         let opaddr = data.obank().get(op).expect("RuleSub2Add: stale op").get_addr().clone();
         let newop = data.new_op(2, opaddr);
         set_opcode(data, newop, OpCode::CPUI_INT_MULT);
-        let newvn = data.new_unique_out(vn_size(data, vn), newop).expect("newUniqueOut");
+        let newvn = data.new_unique_out_unlaned(vn_size(data, vn), newop).expect("newUniqueOut");
         data.op_set_input(op, newvn, 1).expect("RuleSub2Add: opSetInput"); // Replace vn's reference first
         data.op_set_input(newop, vn, 0).expect("RuleSub2Add: opSetInput");
         let negone = data.new_constant(vn_size(data, vn), calc_mask(vn_size(data, vn)));
@@ -2148,7 +2148,7 @@ impl Rule for RuleAddMultCollapse {
                 let opaddr = data.obank().get(op).expect("RuleAddMultCollapse: stale op").get_addr().clone();
                 let newop = data.new_op(2, opaddr);
                 set_opcode(data, newop, OpCode::CPUI_INT_ADD);
-                let newout = data.new_unique_out(c0sz, newop).expect("newUniqueOut");
+                let newout = data.new_unique_out_unlaned(c0sz, newop).expect("newUniqueOut");
                 data.op_set_input(newop, basevn, 0).expect("RuleAddMultCollapse: opSetInput");
                 data.op_set_input(newop, newvn, 1).expect("RuleAddMultCollapse: opSetInput");
                 data.op_insert_before(newop, op);

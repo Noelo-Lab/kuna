@@ -334,7 +334,7 @@ impl Rule for RuleStoreVarnode {
         let size = size_of(data, in_vn(data, op, 2));
         let offoff = kuna_base::space::AddrSpace::address_to_byte(offoff, baseoff.get_word_size());
         let addr = Address::new(Rc::clone(&baseoff), offoff);
-        let outvn = data.new_varnode_out(size, &addr, op).expect("newVarnodeOut");
+        let outvn = data.new_varnode_out_unlaned(size, &addr, op).expect("newVarnodeOut");
         data.vbank_mut().get_mut(outvn).expect("RuleStoreVarnode: stale out").set_stack_store();
         data.op_remove_input(op, 1);
         data.op_remove_input(op, 0);
@@ -421,7 +421,7 @@ impl Rule for RuleSubExtComm {
             let opaddr = addr_of(data, op);
             let newop = data.new_op(2, opaddr);
             set_opcode(data, newop, OpCode::CPUI_SUBPIECE);
-            newvn = data.new_unique_out(invn_size - subcut, newop).expect("newUniqueOut");
+            newvn = data.new_unique_out_unlaned(invn_size - subcut, newop).expect("newUniqueOut");
             let csize = size_of(data, in_vn(data, op, 1));
             let cvn = data.new_constant(csize, subcut as uintb);
             data.op_set_input(newop, cvn, 1).expect("RuleSubExtComm: opSetInput");
@@ -465,7 +465,7 @@ impl RuleSubCommute {
             addr = &addr + ((orig_size - max_size) as i64);
         }
         data.op_unset_output(ext_op);
-        data.new_varnode_out(max_size, &addr, ext_op).expect("newVarnodeOut")
+        data.new_varnode_out_unlaned(max_size, &addr, ext_op).expect("newVarnodeOut")
     }
 
     /// \brief Eliminate input extensions on the given binary PcodeOp (C++
@@ -519,7 +519,7 @@ impl RuleSubCommute {
         }
         data.op_unset_output(longform);
         // Truncated longform output.
-        let outvn = data.new_unique_out(max_size, longform).expect("newUniqueOut");
+        let outvn = data.new_unique_out_unlaned(max_size, longform).expect("newUniqueOut");
         data.op_set_input(longform, ext0_in, 0).expect("cancel_extensions: opSetInput");
         data.op_set_input(longform, ext1_in, 1).expect("cancel_extensions: opSetInput");
         data.op_set_input(sub_op, outvn, 0).expect("cancel_extensions: opSetInput");
@@ -729,7 +729,7 @@ impl Rule for RuleSubCommute {
                         let opaddr = addr_of(data, op);
                         let newsub = data.new_op(2, opaddr); // Commuted SUBPIECE op
                         set_opcode(data, newsub, OpCode::CPUI_SUBPIECE);
-                        let nv = data.new_unique_out(outsize, newsub).expect("newUniqueOut");
+                        let nv = data.new_unique_out_unlaned(outsize, newsub).expect("newUniqueOut");
                         new_vn = Some(nv);
                         data.op_set_input(longform, nv, i).expect("RuleSubCommute: opSetInput");
                         // vn may be free, set as input after setting newVn
@@ -742,7 +742,7 @@ impl Rule for RuleSubCommute {
             }
             last_in = Some(vn);
         }
-        data.op_set_output(longform, outvn).expect("opSetOutput");
+        data.op_move_output(longform, outvn).expect("opSetOutput");
         // Get rid of old SUBPIECE
         data.op_destroy(op);
         1
@@ -841,7 +841,7 @@ impl Rule for RuleConcatCommute {
             let opaddr = addr_of(data, op);
             let newconcat = data.new_op(2, opaddr);
             set_opcode(data, newconcat, OpCode::CPUI_PIECE);
-            let newvn = data.new_unique_out(outsz, newconcat).expect("newUniqueOut");
+            let newvn = data.new_unique_out_unlaned(outsz, newconcat).expect("newUniqueOut");
             data.op_set_input(newconcat, hi, 0).expect("RuleConcatCommute: opSetInput");
             data.op_set_input(newconcat, lo, 1).expect("RuleConcatCommute: opSetInput");
             data.op_insert_before(newconcat, op);
@@ -910,7 +910,7 @@ impl Rule for RuleConcatZext {
         let opaddr = addr_of(data, op);
         let newconcat = data.new_op(2, opaddr);
         set_opcode(data, newconcat, OpCode::CPUI_PIECE);
-        let newvn = data.new_unique_out(size_of(data, hi) + size_of(data, lo), newconcat).expect("newUniqueOut");
+        let newvn = data.new_unique_out_unlaned(size_of(data, hi) + size_of(data, lo), newconcat).expect("newUniqueOut");
         data.op_set_input(newconcat, hi, 0).expect("RuleConcatZext: opSetInput");
         data.op_set_input(newconcat, lo, 1).expect("RuleConcatZext: opSetInput");
         data.op_insert_before(newconcat, op);
@@ -976,7 +976,7 @@ impl Rule for RuleZextCommute {
         let opaddr = addr_of(data, op);
         let newop = data.new_op(2, opaddr);
         set_opcode(data, newop, OpCode::CPUI_INT_RIGHT);
-        let newout = data.new_unique_out(size_of(data, zextin), newop).expect("newUniqueOut");
+        let newout = data.new_unique_out_unlaned(size_of(data, zextin), newop).expect("newUniqueOut");
         data.op_remove_input(op, 1);
         data.op_set_input(op, newout, 0).expect("RuleZextCommute: opSetInput");
         set_opcode(data, op, OpCode::CPUI_INT_ZEXT);
@@ -1065,7 +1065,7 @@ impl Rule for RuleZextShiftZext {
         let opaddr = addr_of(data, op);
         let newop = data.new_op(1, opaddr);
         set_opcode(data, newop, OpCode::CPUI_INT_ZEXT);
-        let outvn = data.new_unique_out(size_of(data, out_vn(data, op)), newop).expect("newUniqueOut");
+        let outvn = data.new_unique_out_unlaned(size_of(data, out_vn(data, op)), newop).expect("newUniqueOut");
         data.op_set_input(newop, rootvn, 0).expect("RuleZextShiftZext: opSetInput");
         set_opcode(data, op, OpCode::CPUI_INT_LEFT);
         data.op_set_input(op, outvn, 0).expect("RuleZextShiftZext: opSetInput");
@@ -1219,7 +1219,7 @@ impl Rule for RuleConcatZero {
         let highvn = in_vn(data, op, 0);
         let opaddr = addr_of(data, op);
         let newop = data.new_op(1, opaddr);
-        let outvn = data.new_unique_out(size_of(data, out_vn(data, op)), newop).expect("newUniqueOut");
+        let outvn = data.new_unique_out_unlaned(size_of(data, out_vn(data, op)), newop).expect("newUniqueOut");
         set_opcode(data, newop, OpCode::CPUI_INT_ZEXT);
         set_opcode(data, op, OpCode::CPUI_INT_LEFT);
         data.op_set_input(op, outvn, 0).expect("RuleConcatZero: opSetInput");
@@ -1306,7 +1306,7 @@ impl Rule for RuleConcatLeftShift {
         let opaddr = addr_of(data, op);
         let newop = data.new_op(2, opaddr);
         set_opcode(data, newop, OpCode::CPUI_PIECE);
-        let newout = data.new_unique_out(size_of(data, vn1) + size_of(data, b), newop).expect("newUniqueOut");
+        let newout = data.new_unique_out_unlaned(size_of(data, vn1) + size_of(data, b), newop).expect("newUniqueOut");
         data.op_set_input(newop, vn1, 0).expect("RuleConcatLeftShift: opSetInput");
         data.op_set_input(newop, b, 1).expect("RuleConcatLeftShift: opSetInput");
         data.op_insert_before(newop, op);
@@ -1387,7 +1387,7 @@ impl Rule for RuleSubZext {
                 set_opcode(data, subop, OpCode::CPUI_INT_RIGHT); // truncation -> shift
                 let rc = data.new_constant(csize, right_val);
                 data.op_set_input(subop, rc, 1).expect("RuleSubZext: opSetInput");
-                data.op_set_output(subop, newvn).expect("opSetOutput");
+                data.op_move_output(subop, newvn).expect("opSetOutput");
             } else {
                 data.op_set_input(op, basevn, 0).expect("RuleSubZext: opSetInput");
             }
@@ -1440,7 +1440,7 @@ impl Rule for RuleSubZext {
             let shift_in1_size = size_of(data, in_vn(data, shiftop, 1));
             let sc = data.new_constant(shift_in1_size, sa); // by the combined amount
             data.op_set_input(shiftop, sc, 1).expect("RuleSubZext: opSetInput");
-            data.op_set_output(shiftop, newvn).expect("opSetOutput");
+            data.op_move_output(shiftop, newvn).expect("opSetOutput");
             let constvn = data.new_constant(basesize, val);
             set_opcode(data, op, OpCode::CPUI_INT_AND); // Turn the ZEXT into an AND
             data.op_insert_input(op, constvn, 1).expect("RuleSubZext: opInsertInput");
@@ -1893,7 +1893,7 @@ impl Rule for RuleHumptyOr {
             let opaddr = addr_of(data, op);
             let new_or_op = data.new_op(2, opaddr);
             set_opcode(data, new_or_op, OpCode::CPUI_INT_OR);
-            let or_vn = data.new_unique_out(size_of(data, a), new_or_op).expect("newUniqueOut");
+            let or_vn = data.new_unique_out_unlaned(size_of(data, a), new_or_op).expect("newUniqueOut");
             data.op_set_input(new_or_op, b, 0).expect("RuleHumptyOr: opSetInput");
             data.op_set_input(new_or_op, c, 1).expect("RuleHumptyOr: opSetInput");
             data.op_insert_before(new_or_op, op);
@@ -2013,7 +2013,7 @@ impl Rule for RuleCondNegate {
         let opaddr = addr_of(data, op);
         let newop = data.new_op(1, opaddr);
         set_opcode(data, newop, OpCode::CPUI_BOOL_NEGATE);
-        let outvn = data.new_unique_out(1, newop).expect("newUniqueOut"); // Flipped version of varnode
+        let outvn = data.new_unique_out_unlaned(1, newop).expect("newUniqueOut"); // Flipped version of varnode
         data.op_set_input(newop, vn, 0).expect("RuleCondNegate: opSetInput");
         data.op_set_input(op, outvn, 1).expect("RuleCondNegate: opSetInput");
         data.op_insert_before(newop, op);

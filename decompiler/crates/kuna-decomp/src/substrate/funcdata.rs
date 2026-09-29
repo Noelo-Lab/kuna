@@ -2543,6 +2543,12 @@ impl Funcdata {
                 }
             }
         }
+        self.ensure_varnode_cover(vn);
+    }
+
+    /// The cover half of [`set_varnode_properties`](Funcdata::set_varnode_properties):
+    /// allocate `vn`'s cover once high-level analysis is on.
+    pub(crate) fn ensure_varnode_cover(&mut self, vn: VarnodeId) {
         // C++ `if (vn->cover == 0) { if (isHighOn()) vn->calcCover(); }`
         // (funcdata_varnode.cc:42).  This ALLOCATES the Varnode's Cover object (and
         // sets `coverdirty`) the first time `setVarnodeProperties` runs on a

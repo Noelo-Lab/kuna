@@ -540,6 +540,21 @@ impl Funcdata {
     /// The attached output receives its high variable and lane-storage record
     /// when those analyses are active, followed by scope-derived properties.
     pub fn new_varnode_out(&mut self, s: int4, m: &Address, op: OpId) -> KunaResult<VarnodeId> {
+        self.varnode_out(s, m, op, true)
+    }
+
+    /// [`new_varnode_out`](Funcdata::new_varnode_out) for a simplification rule: the
+    /// output is not recorded as lane-divisible storage.
+    pub fn new_varnode_out_unlaned(
+        &mut self,
+        s: int4,
+        m: &Address,
+        op: OpId,
+    ) -> KunaResult<VarnodeId> {
+        self.varnode_out(s, m, op, false)
+    }
+
+    fn varnode_out(&mut self, s: int4, m: &Address, op: OpId, laned: bool) -> KunaResult<VarnodeId> {
         let ct = Self::type_base_unknown(s);
         // Split-borrow: the thunk (holds &mut obank) drops before later &mut self calls.
         let def = self.def_op_info_v(op);
@@ -550,7 +565,7 @@ impl Funcdata {
         };
         self.obank_mut().get_mut(op).expect("new_varnode_out: stale op").set_output(Some(vn));
         self.assign_high(vn);
-        if s >= self.get_min_laned_size() {
+        if laned && s >= self.get_min_laned_size() {
             self.check_for_laned_register(s, m);
         }
         self.set_varnode_properties(vn);
@@ -564,6 +579,16 @@ impl Funcdata {
     /// [`new_varnode_out`](Funcdata::new_varnode_out).  No `localmap` match (the
     /// unique space never carries symbols), matching the C++.
     pub fn new_unique_out(&mut self, s: int4, op: OpId) -> KunaResult<VarnodeId> {
+        self.unique_out(s, op, true)
+    }
+
+    /// [`new_unique_out`](Funcdata::new_unique_out) for a simplification rule: the
+    /// output is not recorded as lane-divisible storage.
+    pub fn new_unique_out_unlaned(&mut self, s: int4, op: OpId) -> KunaResult<VarnodeId> {
+        self.unique_out(s, op, false)
+    }
+
+    fn unique_out(&mut self, s: int4, op: OpId, laned: bool) -> KunaResult<VarnodeId> {
         let ct = Self::type_base_unknown(s);
         let def = self.def_op_info_v(op);
         let vn = {
@@ -573,7 +598,7 @@ impl Funcdata {
         };
         self.obank_mut().get_mut(op).expect("new_unique_out: stale op").set_output(Some(vn));
         self.assign_high(vn);
-        if s >= self.get_min_laned_size() {
+        if laned && s >= self.get_min_laned_size() {
             let addr =
                 self.vbank().get(vn).expect("new_unique_out: stale vn").get_addr().clone();
             self.check_for_laned_register(s, &addr);
