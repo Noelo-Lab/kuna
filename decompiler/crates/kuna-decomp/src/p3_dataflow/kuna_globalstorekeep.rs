@@ -1,0 +1,295 @@
+//! A store of a register value into a global stays where the binary makes it
+//! when an operation reads that value sign-sensitively.
+//!
+//! `RulePropagateCopy` rewrites a marker (`MULTIEQUAL`, `INDIRECT`) that reads a
+//! global's `COPY` to read the `COPY`'s input.  The `COPY` then loses its last
+//! reader and dies, and the store survives only as `Merge`'s join of the
+//! register value into the global: the value's definition prints as the store,
+//! and every later use of the value prints as a read of the global.  A use whose
+//! result depends on the operand's declared signedness then takes the global's,
+//! which the output never states (`sink = a0 * 3; v2 = sink >> 4;`).
+//!
+//! [`declines`] keeps that propagation from happening when some operation reads
+//! the stored value sign-sensitively ([`reads_signedness`]), directly or through
+//! an expression C types after it ([`passes_signedness`]: `sink + 1 >> 4` is
+//! as wrong as `sink >> 4`), or through an operation a later rule makes
+//! sign-sensitive ([`may_read_signedness`]): the marker join this decision
+//! allows is forced, so it cannot wait for the rules to finish.  The `COPY` stays
+//! alive at the binary's own store, and chapter 06's `kuna_globalvalue`
+//! refuses the copy-shadow join, so the value keeps its own variable and the
+//! store prints where the binary makes it.  Every other propagation is
+//! upstream's.
+
+use std::collections::BTreeSet;
+
+use kuna_base::types::int4;
+use kuna_num::opcodes::OpCode;
+
+use crate::context::{OpId, VarnodeId};
+use crate::expression::functional_equality;
+use crate::funcdata::Funcdata;
+use crate::jumptable::circlerange_pull_back;
+use crate::rangeutil::CircleRange;
+
+/// Does an operation with opcode `code` compute a different result when its
+/// operand in `slot`, `size` bytes wide, is declared signed rather than unsigned?
+/// `other_const` is the other operand's value when that operand is a constant.
+///
+/// The ordered comparisons, divide and remainder in either signedness, the
+/// shifted operand of `>>`, both extensions and the integer-to-float conversion
+/// do.  Below `int` width C promotes the operand first, so `==`/`!=` does too,
+/// unless the other side is a constant with the operand's top bit clear.  `+`,
+/// `-`, `*`, bitwise ops, `<<`, truncation, concatenation and the carry
+/// intrinsics (whose names state their signedness) compute the same bits either
+/// way.
+pub fn reads_signedness(code: OpCode, slot: int4, size: int4, other_const: Option<u64>) -> bool {
+    match code {
+        OpCode::CPUI_INT_RIGHT
+        | OpCode::CPUI_INT_SRIGHT
+        | OpCode::CPUI_INT_ZEXT
+        | OpCode::CPUI_INT_SEXT
+        | OpCode::CPUI_FLOAT_INT2FLOAT => slot == 0,
+        OpCode::CPUI_INT_DIV
+        | OpCode::CPUI_INT_SDIV
+        | OpCode::CPUI_INT_REM
+        | OpCode::CPUI_INT_SREM
+        | OpCode::CPUI_INT_LESS
+        | OpCode::CPUI_INT_LESSEQUAL
+        | OpCode::CPUI_INT_SLESS
+        | OpCode::CPUI_INT_SLESSEQUAL => true,
+        OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL if size > 0 && size < 4 => {
+            other_const.map_or(true, |c| (c >> (size * 8 - 1)) & 1 != 0)
+        }
+        _ => false,
+    }
+}
+
+/// Must `RulePropagateCopy` leave `vn`, the output of `COPY invn`, as the input
+/// of `op`?  True when `vn` is a global, `op` is a marker (the global's own, or
+/// the one a joined branch builds from it) or a `COPY` into the same global (what
+/// a duplicated join block leaves of its marker), `invn` is a value the function
+/// computes (a parameter never merges with a global, so its store keeps
+/// upstream's handling), and some operation reads that value, a copy of it or an
+/// expression computed from it, sign-sensitively.
+pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bool {
+    let (Some(v), Some(iv)) = (data.vbank().get(vn), data.vbank().get(invn)) else {
+        return false;
+    };
+    if !v.is_persist() || iv.is_persist() || iv.is_addr_tied() || iv.is_constant() || iv.is_input() {
+        return false;
+    }
+    let Some(reader) = data.obank().get(op) else {
+        return false;
+    };
+    if !reader.is_marker() {
+        let Some(out) = reader.get_out().and_then(|o| data.vbank().get(o)) else {
+            return false;
+        };
+        if reader.code() != OpCode::CPUI_COPY || out.get_addr() != v.get_addr() || out.get_size() != v.get_size() {
+            return false;
+        }
+    }
+    value_read_sign_sensitively(data, invn)
+}
+
+/// Is the result of `code` typed after its operand in `slot`, and the same bits
+/// whatever that operand's signedness?  `+`, `-`, `*`, the bitwise ops, `~`,
+/// unary `-` and the shifted operand of `<<` are: C gives their result the
+/// operand's (promoted) type, so an operation that reads the result
+/// sign-sensitively reads the operand's signedness too.  A cast, a truncation or
+/// an extension states its own result type and ends that.
+pub fn passes_signedness(code: OpCode, slot: int4) -> bool {
+    match code {
+        OpCode::CPUI_INT_ADD
+        | OpCode::CPUI_INT_SUB
+        | OpCode::CPUI_INT_MULT
+        | OpCode::CPUI_INT_AND
+        | OpCode::CPUI_INT_OR
+        | OpCode::CPUI_INT_XOR => true,
+        OpCode::CPUI_INT_NEGATE | OpCode::CPUI_INT_2COMP | OpCode::CPUI_INT_LEFT => slot == 0,
+        _ => false,
+    }
+}
+
+/// Can a rule that runs after this decision turn an operation with opcode
+/// `code`, reading a `size`-byte operand in `slot`, into one that
+/// [`reads_signedness`]?  `folded` is true when the operand was computed from
+/// the stored value through an operator a fold moves a constant across
+/// ([`moves_constants`]).
+///
+/// The fold moves the compare's constant onto the value (`u + 1 == 0` becomes
+/// `u == 0xffff`, and `-u`, `~u`, `u - c`, `u ^ c` alike), so such a `==`/`!=`
+/// below `int` width counts whatever its constant.  A carry becomes an ordered
+/// comparison (`carry(u, c)` is `-c <= u`), and the low half of a concatenation
+/// becomes a zero extension (`concat(y, u) & mask` is `zext(u)`).  A compare
+/// against a constant whose result [`melds`] with another into an ordered compare
+/// counts as well; the walk checks that, since it needs the compare's readers.
+pub fn may_read_signedness(code: OpCode, slot: int4, size: int4, folded: bool) -> bool {
+    match code {
+        OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL => folded && size > 0 && size < 4,
+        OpCode::CPUI_INT_CARRY => true,
+        OpCode::CPUI_PIECE => slot == 1,
+        _ => false,
+    }
+}
+
+/// Would `RuleRangeMeld` rewrite `op`, a boolean `&&` or `||` of two
+/// comparisons (or the `&`/`|` of their results that `RuleLogic2Bool` makes one),
+/// into a single comparison that [`reads_signedness`] (`u == 0 || u == 1`
+/// becomes `u < 2`)?  It asks the rule's own question: both comparisons pull back
+/// to one value, and their ranges combine into one range.  Comparisons of values
+/// of different sizes, which the rule pulls back once more, count as yes.
+fn melds(data: &Funcdata, op: OpId) -> bool {
+    let Some(o) = data.obank().get(op) else {
+        return false;
+    };
+    let and = match o.code() {
+        OpCode::CPUI_BOOL_AND | OpCode::CPUI_INT_AND => true,
+        OpCode::CPUI_BOOL_OR | OpCode::CPUI_INT_OR => false,
+        _ => return false,
+    };
+    if o.is_dead() || o.num_input() != 2 {
+        return false;
+    }
+    let compare = |i: int4| {
+        o.get_in(i)
+            .and_then(|v| data.vbank().get(v))
+            .and_then(|v| v.get_def())
+            .filter(|&d| data.obank().get(d).is_some_and(|x| x.is_bool_output()))
+    };
+    let pull = |cmp: OpId| {
+        let mut range = CircleRange::new_bool(true);
+        let mut a = circlerange_pull_back(data, &mut range, cmp, false)?;
+        if data.obank().get(cmp)?.code() == OpCode::CPUI_BOOL_NEGATE {
+            let def = data.vbank().get(a)?.get_def()?;
+            a = circlerange_pull_back(data, &mut range, def, false)?;
+        }
+        Some((range, a))
+    };
+    let (Some(c1), Some(c2)) = (compare(0), compare(1)) else {
+        return false;
+    };
+    let (Some((mut r1, a1)), Some((r2, a2))) = (pull(c1), pull(c2)) else {
+        return false;
+    };
+    if !functional_equality(a1, a2, data.vbank(), data.obank()) {
+        let size = |a: VarnodeId| data.vbank().get(a).map_or(0, |v| v.get_size());
+        return size(a1) != size(a2);
+    }
+    let combined = if and { r1.intersect(&r2) } else { r1.circle_union(&r2) };
+    if combined != 0 {
+        return false;
+    }
+    let (mut code, mut c, mut cslot) = (OpCode::CPUI_COPY, 0, 0);
+    r1.translate2_op(&mut code, &mut c, &mut cslot) == 0
+        && reads_signedness(code, 1 - cslot, data.vbank().get(a1).map_or(0, |v| v.get_size()), Some(c))
+}
+
+/// Does a rule move a compare's constant across an operation with opcode
+/// `code` onto its operand?  `RuleEqual2Constant`, `RuleEqual2Zero`,
+/// `RuleXorCollapse` and `RuleShiftCompare` do across `+`, `-`, `*`, `^`, `~`,
+/// unary `-` and `<<`; nothing does across `&` or `|`.
+fn moves_constants(code: OpCode) -> bool {
+    !matches!(code, OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR)
+}
+
+/// How a walk reached a varnode from the stored value.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Reach {
+    /// The value itself, or a copy `Merge` joins with it.
+    Member,
+    /// An expression computed from it through `&` and `|` only.
+    Derived,
+    /// An expression computed through an operator that [`moves_constants`].
+    Folded,
+}
+
+/// How many varnodes a walk visits before it answers "sign-sensitive" anyway:
+/// keeping a value apart from a global is always correct, merging it is not.
+pub const WALK_BOUND: usize = 256;
+
+/// Does an operation read the value `start` sign-sensitively, directly or
+/// through expressions that pass its signedness on ([`passes_signedness`])?
+///
+/// The value is every varnode `Merge` joins with it: the copies that carry it
+/// unchanged, a `COPY`, `MULTIEQUAL` or `INDIRECT` either way.  An expression
+/// computed from it is followed forward only, through the same ops.  Globals and
+/// constants end the walk: a copy into another global is that global's own
+/// store.
+fn value_read_sign_sensitively(data: &Funcdata, start: VarnodeId) -> bool {
+    let mut stack = vec![(start, Reach::Member)];
+    let mut seen = BTreeSet::new();
+    let carries = |x: VarnodeId| data.vbank().get(x).is_some_and(|v| !v.is_persist() && !v.is_constant());
+    while let Some((x, reach)) = stack.pop() {
+        if !seen.insert((x, reach)) {
+            continue;
+        }
+        if seen.len() > WALK_BOUND {
+            return true;
+        }
+        let Some(xv) = data.vbank().get(x) else {
+            continue;
+        };
+        if reach == Reach::Member {
+            if let Some(def) = xv.get_def().and_then(|d| data.obank().get(d)) {
+                let joined = match def.code() {
+                    OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT => 1,
+                    OpCode::CPUI_MULTIEQUAL => def.num_input(),
+                    _ => 0,
+                };
+                stack.extend((0..joined).filter_map(|i| def.get_in(i)).filter(|&i| carries(i)).map(|i| (i, Reach::Member)));
+            }
+        }
+        let size = xv.get_size();
+        for d in xv.descend_iter() {
+            let Some(dop) = data.obank().get(d) else {
+                continue;
+            };
+            if dop.is_dead() {
+                continue;
+            }
+            let code = dop.code();
+            let out = dop.get_out().filter(|&o| carries(o));
+            match code {
+                OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL => stack.extend(out.map(|o| (o, reach))),
+                OpCode::CPUI_INDIRECT => {
+                    if dop.get_in(0) == Some(x) {
+                        stack.extend(out.map(|o| (o, reach)));
+                    }
+                }
+                _ => {
+                    for slot in 0..dop.num_input() {
+                        if dop.get_in(slot) != Some(x) {
+                            continue;
+                        }
+                        let other = (dop.num_input() == 2)
+                            .then(|| dop.get_in(1 - slot))
+                            .flatten()
+                            .and_then(|o| data.vbank().get(o))
+                            .filter(|o| o.is_constant())
+                            .map(|o| o.get_offset());
+                        if reads_signedness(code, slot, size, other)
+                            || may_read_signedness(code, slot, size, reach == Reach::Folded)
+                        {
+                            return true;
+                        }
+                        if matches!(code, OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL)
+                            && other.is_some()
+                            && dop
+                                .get_out()
+                                .and_then(|o| data.vbank().get(o))
+                                .is_some_and(|o| o.descend_iter().any(|m| melds(data, m)))
+                        {
+                            return true;
+                        }
+                        if passes_signedness(code, slot) {
+                            let next = reach.max(if moves_constants(code) { Reach::Folded } else { Reach::Derived });
+                            stack.extend(out.map(|o| (o, next)));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}

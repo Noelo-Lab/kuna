@@ -1821,6 +1821,11 @@ impl Rule for RulePropagateCopy {
                 // throw LowlevelError("Self-defined varnode") -- internal invariant.
                 panic!("RulePropagateCopy: Self-defined varnode");
             }
+            // (kuna) a store of a sign-sensitively read value into a global
+            // keeps its COPY; see [`crate::p3_dataflow::kuna_globalstorekeep`].
+            if crate::p3_dataflow::kuna_globalstorekeep::declines(data, op, vn, invn) {
+                continue;
+            }
             let is_marker = data.obank().get(op).expect("RulePropagateCopy: stale op").is_marker();
             if is_marker {
                 if vn_is_constant(data, invn) {

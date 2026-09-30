@@ -1554,6 +1554,66 @@ The trim never removes an operation and refusing a merge never removes one eithe
 so a live store into the location keeps its statement. `off` is upstream's merge
 exactly.
 
+**(kuna) A value a sign-sensitive operation reads keeps its own variable rather
+than merging into a global it is stored to** (`kuna_globalvalue.rs`, a strict
+fix, no option). `Merge` joins a register value with the persistent global it is
+copied to whenever their Covers allow it. The joined value prints as a read of
+the global, and any operation on it takes the global's signedness. For
+`else { u = init * 3; sink = u; r = (int)(u >> 4); }` kuna printed
+`sink = init * 3; r = sink >> 4;`. The shift is right only while `sink` is
+unsigned, which is how kuna types it, but kuna never declares the global, so a
+reader who gives `sink` its real type — `volatile int` — turns the logical shift
+arithmetic: for `init = 0x80000000` the rebuilt program returns `-134217728`
+where the binary returns `134217728`. The mirror case is a signed value stored
+to a global kuna types unsigned, which then shifts logically; a widening, a
+conversion to `double` and a byte compare go wrong the same way, and so does an
+operation that reaches the value through `+` or `^`: `usink = a0 * 3;
+v1 = usink + 1 >> 4;` shifts the way `usink` is declared.
+
+Two pieces keep the value apart. Chapter 03's `kuna_globalstorekeep` stops
+`RulePropagateCopy` from replacing the store's `COPY` in the global's markers,
+so the `COPY` survives at the binary's own store. `Merge` then refuses the join
+in the two optional merges that would make it — the `COPY`'s required merge in
+`merge_opcode` and the same-type merge in `merge_adjacent` — when one side is
+persistent and the other is a value an operation reads sign-sensitively
+(`kuna_globalvalue.rs (keeps_apart)`): the shifted operand of `>>`, a divide,
+remainder or ordered compare in either signedness, either extension, an
+integer-to-float conversion, and, below `int` width where C promotes the operand
+first, `==`/`!=` unless the other side is a constant with the operand's top bit
+clear. `+`, `-`, `*`, the bitwise operators, `~`, unary `-` and the shifted
+operand of `<<` compute the same bits whatever the signedness, but C gives their
+result the operand's type, so they are harmless only when that result reaches no
+sign-sensitive reader. The test therefore follows an **implied** output of one of
+them — an expression printed inline around the value, like `sink + 1` — and
+counts its readers as the value's; an explicit output is a variable declared with
+its own type and ends the walk, as a cast, a truncation or an extension does
+(the extension being itself a sign-sensitive reader). The walk visits at most
+256 varnodes and answers yes when it runs out, since keeping the value apart is
+always correct. The value then keeps its own type, so an operation that reads it
+directly or through such an expression is right however the global is declared,
+and the `COPY` prints as the store where the binary makes it. By the time
+`Merge` runs the rules have finished, so a concatenation and the carry
+intrinsics (whose names state their signedness) never trigger the split here;
+chapter 03 counts them because a later rule can still turn them into an
+extension or a compare. A value that is only ever copied back into the global
+itself (a phi of the global's own reads) is still joined.
+
+The forced merge of a marker (`merge_op`, `merge_indirect`) is upstream's: it
+never refuses, so it never trims. Trimming there would print the store as a new
+`COPY` at the end of each predecessor block, after statements the binary runs
+later — a pointer store that may alias the global, or a call. Chapter 03 keeps
+the store's `COPY` out of the marker whenever the value has a reader that is
+sign-sensitive then or that a later rule makes so, so a value this forced merge
+joins with a global has no such reader. A parameter never merges with a global,
+so its stores keep upstream's handling too.
+
+Not covered: the same join decides the *pointee* type an access through the
+value takes. `int *q = p + k; gc = (char *)q; return q[1] + q[2];` prints as
+`gc = &a0[a1]; return gc[2] + gc[1];`, which reads bytes once `gc` is given its
+real type `char *`. Chapter 03's decision runs before types exist, when `q + 1`
+is still an integer add, so this needs a different signal there; it is tracked
+as issue #767.
+
 **(kuna) `option dynamichashmax`** — §6.3.
 
 ## 6.5 Cleanup

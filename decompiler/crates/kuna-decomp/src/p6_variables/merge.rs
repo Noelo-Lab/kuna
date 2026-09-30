@@ -281,6 +281,10 @@ pub trait MergeContext: HighContext {
     fn vn_size(&self, vn: VarnodeId) -> int4;
     /// `vn->getOffset()` (the storage offset within its space).
     fn vn_offset(&self, vn: VarnodeId) -> u64;
+    /// The value of `vn` when it is a constant.
+    fn vn_constant_value(&self, _vn: VarnodeId) -> Option<u64> {
+        None
+    }
     /// `vn->getCover()` — the member's (already rebuilt) Cover, or `None`.
     fn vn_cover_ref(&self, vn: VarnodeId) -> Option<Cover>;
     /// `vn->getCreateIndex()`.
@@ -1250,7 +1254,9 @@ impl Merge {
                     }
                     let h1 = ctx.vn_high(vn1).expect("merge_opcode: vn1 no high");
                     let h2 = ctx.vn_high(vn2).expect("merge_opcode: vn2 no high");
-                    if Self::merge_test_required(ctx, h1, h2) {
+                    if Self::merge_test_required(ctx, h1, h2)
+                        && !crate::p6_variables::kuna_globalvalue::keeps_apart(ctx, h1, h2)
+                    {
                         self.merge(ctx, h1, h2, false)?; // required merge
                     }
                 }
@@ -1345,7 +1351,9 @@ impl Merge {
                     continue;
                 }
                 let high_in = ctx.vn_high(vn2).expect("merge_adjacent: vn2 no high");
-                if !Self::merge_test_adjacent(ctx, high_out, high_in) {
+                if !Self::merge_test_adjacent(ctx, high_out, high_in)
+                    || crate::p6_variables::kuna_globalvalue::keeps_apart(ctx, high_out, high_in)
+                {
                     continue;
                 }
                 if !MergeIntersect::intersection(ctx, &mut self.test_cache, high_in, high_out) {

@@ -831,6 +831,56 @@ renderer therefore looks through a `COPY` of an **implied** two-input value and
 decides on the inner op; a `COPY` of an *explicit* value is left alone, because
 there the statement really is `out = <that name>`.
 
+**Keeping a global store whose value is read sign-sensitively**
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalstorekeep.rs
+(declines)`, a strict fix, no option) is the same refusal once more, for a
+persistent global. When a register value is stored to a global and an operation
+also reads that value where its declared signedness decides the result — a
+`>>`, a divide, remainder or ordered compare, an extension, an integer-to-float
+conversion, or a sub-`int` `==`/`!=` that is not against a constant with the
+operand's top bit clear — `RulePropagateCopy`
+leaves the store's `COPY` as the input of any marker that reads it, and of a
+`COPY` into the same global (what a duplicated join block leaves of the
+global's `MULTIEQUAL`). The value is everything chapter 06 would join with it:
+it is followed through the `COPY`s, `INDIRECT`s and `MULTIEQUAL`s that carry it
+unchanged, in both directions, so a reader of a stack reload at `-O0` or of a
+join counts. An expression computed from it is followed forward too when C
+gives the result the operand's type: `+`, `-`, `*`, the bitwise operators, `~`,
+unary `-` and the shifted operand of `<<` compute the same bits whatever the
+signedness, but `sink + 1 >> 4` shifts the way `sink` is declared, so a
+sign-sensitive reader of `u + 1` counts as a reader of `u`. Globals and
+constants end the walk, and a walk that visits more than 256 varnodes answers
+yes, since keeping the store is always correct.
+
+The decision cannot wait for the other rules: once the `COPY` is gone, chapter
+06's join of the value into the global's marker is forced. So the walk also
+counts a reader that a rule running later turns sign-sensitive. A fold moves a
+compare's constant onto the value: `RuleEqual2Constant`, `RuleEqual2Zero`,
+`RuleXorCollapse` and `RuleShiftCompare` rewrite `u + 1 == 0` as `u == 0xffff`,
+and do the same across `-`, `*`, `^`, `~`, unary `-` and `<<`. A sub-`int`
+`==`/`!=` on an expression computed through one of those therefore counts
+whatever its constant; through `&` and `|` alone no rule moves the constant,
+so there it counts only as above. `RuleCarryElim` turns a carry into an ordered
+compare (`carry(u, c)` is `-c <= u`), `RuleAndZext` turns the low half of a
+concatenation into a zero extension, and `RuleRangeMeld` merges two compares of
+the value against constants that a boolean `&&`/`||` (or a `&`/`|` of the two
+results) combines into one ordered compare when their ranges join into one
+(`u == 0 || u == 1` is `u < 2`; `u == 10 || u == -1` stays). All three count;
+for the last the walk asks the rule's own question, pulling both compares back
+to the value and combining their ranges. Every other rule that creates a sign-sensitive
+operation (the divide, remainder and sign-test recognizers, the float
+conversions, `RuleSborrow`, `RuleScarry`, `RuleSignShift`, `RuleTestSign`,
+`RuleZextCommute`) starts from a shift, an extension, a divide or an ordered
+compare that the walk already counts, and the rules that turn an ordered compare
+into `==` only remove a reader.
+
+Without the refusal the `COPY` dies, the store survives only as
+chapter 06's join of the value into the global, and the reader prints as a read
+of the global in the global's signedness; with it, chapter 06 keeps the value
+apart and the `COPY` prints at the binary's own store, ahead of any later
+pointer store or call. A parameter's store is left to upstream, since a
+parameter never merges with a global. Every other propagation is upstream's.
+
 **Retyping an op mid-rule.** A rule that rewrites an op in place usually changes
 its op-code, and the op-code is not just a tag: `set_opcode` caches the
 op-code's *property word* (`unary`/`binary`/`booloutput`/`commutative`/`marker`/
