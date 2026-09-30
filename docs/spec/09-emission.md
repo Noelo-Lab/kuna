@@ -33,29 +33,6 @@ normalization defaults (DIV-34 brace placement, DIV-35 NULL printing,
 DIV-36 compound assignments, DIV-37 truthy conditions, DIV-38 single-statement
 brace elision, DIV-39 inline warning slugs) in `docs/history.md`.
 
-**Byte-pointer arguments
-(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_pointerargs.rs`).** A
-callee-first run (`decompile-all` and `decompile-project` with `protoorder` on,
-the default) remembers the parameter declarations of every function it has
-printed. When a caller printed later passes the address of a whole scalar local
-or parameter where such a callee declares a character pointer (`char *`,
-`unsigned char *`, or an undefined byte, which prints as `char`), and the
-parameter has the call's finalized ABI storage at that position, the address is
-cast to the parameter's type: `sink((unsigned char *)&v1)` for `unsigned long
-v1`. The local keeps its declared type and width; C lets a character pointer
-access any object's bytes, so the cast is the conversion C requires and nothing
-else changes. There is no cast when the local already has the parameter's
-pointee type or differs from it only in the signedness of a byte (`char`
-against `unsigned char`), when the argument is an array, structure, union,
-member or any other pointer expression, for a varargs call, or where a per-call
-prototype override applies. Only declarations printed before the caller count,
-so a caller printed before its callee inside a call-graph cycle keeps the uncast
-call; a function decompiled again later in the run sees every declaration
-printed by then. Outside a callee-first run (`--jobs` workers, `protoorder off`,
-`decompile-graph`, streamed exports and single-function `kuna decompile`)
-nothing is recorded and calls print unchanged, so `--jobs N` still matches
-`--jobs 1 --option protoorder off`, as it does for `protoorder` itself.
-
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
 — a comparison against zero carries no information beyond the value's own
@@ -289,6 +266,29 @@ reaches a callee defined as `void sink64(unsigned long a0)` sign-extended,
 where the binary's 32-bit write zero-extended it. It is left alone because
 nearly every `int` argument on x86-64 is such a trim, and the cast would land
 on all of them to fix the few whose callee reads the full register.
+
+**Byte-pointer arguments
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_pointerargs.rs`).** A
+callee-first run (`decompile-all` and `decompile-project` with `protoorder` on,
+the default) remembers the parameter declarations of every function it has
+printed. When a caller printed later passes the address of a whole scalar local
+or parameter where such a callee declares a character pointer (`char *`,
+`unsigned char *`, or an undefined byte, which prints as `char`), and the
+parameter has the call's finalized ABI storage at that position, the address is
+cast to the parameter's type: `sink((unsigned char *)&v1)` for `unsigned long
+v1`. The local keeps its declared type and width; C lets a character pointer
+access any object's bytes, so the cast is the conversion C requires and nothing
+else changes. There is no cast when the local already has the parameter's
+pointee type or differs from it only in the signedness of a byte (`char`
+against `unsigned char`), when the argument is an array, structure, union,
+member or any other pointer expression, for a varargs call, or where a per-call
+prototype override applies. Only declarations printed before the caller count,
+so a caller printed before its callee inside a call-graph cycle keeps the uncast
+call; a function decompiled again later in the run sees every declaration
+printed by then. Outside a callee-first run (`--jobs` workers, `protoorder off`,
+`decompile-graph`, streamed exports and single-function `kuna decompile`)
+nothing is recorded and calls print unchanged, so `--jobs N` still matches
+`--jobs 1 --option protoorder off`, as it does for `protoorder` itself.
 
 **Casts C already performs (kuna `castimplied`).** `is_extension_cast_implied`
 hides an extension only when integer arithmetic, or a comparison against an
