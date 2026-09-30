@@ -11,10 +11,10 @@
  "default_on": false,
  "default_value": "off",
  "values": "on|off",
- "measured_on": "feat/fieldtype rebased onto origin/main 4f037dae4 (#755); one build, --option fieldtype on vs the default off. A fresh castbench arm of origin/main 4f037dae4 is byte-identical to the main-632437155 arm and to this build's default arm on all 45 binaries, and the on arm is identical to the pre-rebase measurement",
+ "measured_on": "feat/fieldtype rebased onto origin/main aaf21509b; one build, --option fieldtype on vs the default off. The default arm is byte-identical to a fresh castbench arm of origin/main aaf21509b on all 45 binaries. The same deltas (53 fewer by 134, 14 more by 35) were measured on main 632437155 and 4f037dae4 (base 32,073). Speed was measured on the 4f037dae4 rebase and the layout census on 63dfb436c; the option's code is unchanged since",
  "evidence_rule": "an access counts only when its value (or a copy or cast of it) is a load/store address (after at most a constant offset or scaled index), an indirect-call target, an argument a type-locked pointer parameter takes, or the return of a function declared to return a pointer; a type merged into the value (phi, merged local) is not evidence. A value divided, taken a remainder of, shifted, multiplied (not by -1), compared with sign, sign-extended or converted to float keeps the field its type and blocks the compare-partner rule. A first-access pointer whose pointee outranks the proven one is kept.",
  "castbench": {
-  "method": "castbench full (45 binaries x O0/O2/O2-noinline), one build, --option fieldtype on vs the default off; the default arm is byte-identical to a fresh origin/main 4f037dae4 arm (itself identical to main-632437155) on all 45 binaries",
+  "method": "castbench full (45 binaries x O0/O2/O2-noinline), one build, --option fieldtype on vs the default off; the default arm is byte-identical to a fresh origin/main aaf21509b arm on all 45 binaries",
   "shared_functions": 4815,
   "ida": {
    "casts": 37821,
@@ -22,13 +22,13 @@
    "per_100_statements": 27.0
   },
   "off": {
-   "casts": 32073,
+   "casts": 32075,
    "per_kloc": 169.6,
    "per_100_statements": 27.0,
    "vs_ida": 0.848
   },
   "on": {
-   "casts": 31974,
+   "casts": 31976,
    "per_kloc": 169.1,
    "per_100_statements": 26.9,
    "vs_ida": 0.845
@@ -39,12 +39,12 @@
     9893
    ],
    "O2": [
-    12206,
-    12180
+    12207,
+    12181
    ],
    "O2-noinline": [
-    9933,
-    9901
+    9934,
+    9902
    ]
   },
   "functions_fewer": [
@@ -57,8 +57,8 @@
   ],
   "all_functions": {
    "functions": 20230,
-   "off": 81154,
-   "on": 81041,
+   "off": 81231,
+   "on": 81118,
    "fewer": [
     123,
     -234
@@ -69,7 +69,7 @@
    ]
   },
   "more_read": "all 14 shared: sort -O0 mergelines_node +20 (lo/hi proven only as pointers to undefined 8-byte words; the locals they are read into stay long and each read pays a cast), diff -O2 read_files +3 (buffer fields now void * / char *, indexed by variables), gnulib hash transfer_entries x10 +1 each (the entry's next pointer is now long *, the bucket it is stored into is still a record kuna reads as long[]), tar -O0 append_incremental_renames +1 (a pointer field assigned a callee's integer return), diff -O0 0x124fe +1 (a char * field read into an unsigned char * local); outside the shared set tar's gnulib regex (+2..+9 each) indexes fields proven only void * by computed byte offsets",
-  "previous_rule": "the rule this PR first shipped (any access type, merged ones included) gave 31,900 (71 fewer -191, 13 more +18) and declared e2fsck's problem_context.num and db->blk char *"
+  "previous_rule": "the rule this PR first shipped (any access type, merged ones included) gave 32,073 -> 31,900 on main 632437155 (71 fewer -191, 13 more +18) and declared e2fsck's problem_context.num and db->blk char *"
  },
  "census": {
   "address_of_family_shared": {
@@ -121,8 +121,8 @@
     "n": 10748,
     "perfect_off": 1674,
     "perfect_on": 1674,
-    "mean_off": 0.3752,
-    "mean_on": 0.3752,
+    "mean_off": 0.3753,
+    "mean_on": 0.3753,
     "improved": 0,
     "worse": 0
    },
@@ -130,8 +130,8 @@
     "n": 4068,
     "perfect_off": 421,
     "perfect_on": 421,
-    "mean_off": 0.2847,
-    "mean_on": 0.2847,
+    "mean_off": 0.2851,
+    "mean_on": 0.2851,
     "improved": 0,
     "worse": 0
    },
@@ -148,8 +148,8 @@
     "n": 6422,
     "perfect_off": 1019,
     "perfect_on": 1019,
-    "mean_off": 0.363,
-    "mean_on": 0.363,
+    "mean_off": 0.3629,
+    "mean_on": 0.3629,
     "improved": 0,
     "worse": 0
    },
@@ -162,21 +162,21 @@
     "improved": 0,
     "worse": 0
    },
-   "gzip": {
-    "n": 368,
-    "perfect_off": 113,
-    "perfect_on": 113,
-    "mean_off": 0.5438,
-    "mean_on": 0.5438,
-    "improved": 0,
-    "worse": 0
-   },
    "shadow": {
     "n": 686,
     "perfect_off": 99,
     "perfect_on": 99,
     "mean_off": 0.3724,
     "mean_on": 0.3724,
+    "improved": 0,
+    "worse": 0
+   },
+   "gzip": {
+    "n": 368,
+    "perfect_off": 113,
+    "perfect_on": 113,
+    "mean_off": 0.5438,
+    "mean_on": 0.5438,
     "improved": 0,
     "worse": 0
    },
@@ -193,8 +193,8 @@
     "n": 790,
     "perfect_off": 61,
     "perfect_on": 61,
-    "mean_off": 0.26,
-    "mean_on": 0.26,
+    "mean_off": 0.2621,
+    "mean_on": 0.2621,
     "improved": 0,
     "worse": 0
    },
@@ -202,8 +202,8 @@
     "n": 1548,
     "perfect_off": 221,
     "perfect_on": 221,
-    "mean_off": 0.3982,
-    "mean_on": 0.3982,
+    "mean_off": 0.3984,
+    "mean_on": 0.3984,
     "improved": 0,
     "worse": 0
    }
@@ -234,10 +234,10 @@
    },
    "pooled": {
     "n": 5794,
-    "perfect_off": 454,
-    "perfect_on": 454,
-    "mean_off": 0.3129,
-    "mean_on": 0.3129,
+    "perfect_off": 458,
+    "perfect_on": 458,
+    "mean_off": 0.3142,
+    "mean_on": 0.3142,
     "improved": 0,
     "worse": 0
    },
@@ -245,8 +245,8 @@
     "n": 1426,
     "perfect_off": 40,
     "perfect_on": 40,
-    "mean_off": 0.1786,
-    "mean_on": 0.1786,
+    "mean_off": 0.1794,
+    "mean_on": 0.1794,
     "improved": 0,
     "worse": 0
    },
@@ -254,17 +254,17 @@
     "n": 839,
     "perfect_off": 115,
     "perfect_on": 115,
-    "mean_off": 0.3676,
-    "mean_on": 0.3676,
+    "mean_off": 0.3694,
+    "mean_on": 0.3694,
     "improved": 0,
     "worse": 0
    },
    "O2-noinline": {
     "n": 2134,
-    "perfect_off": 92,
-    "perfect_on": 92,
-    "mean_off": 0.2042,
-    "mean_on": 0.2042,
+    "perfect_off": 96,
+    "perfect_on": 96,
+    "mean_off": 0.207,
+    "mean_on": 0.207,
     "improved": 0,
     "worse": 0
    },
@@ -288,10 +288,10 @@
    },
    "zlib": {
     "n": 2074,
-    "perfect_off": 146,
-    "perfect_on": 146,
-    "mean_off": 0.331,
-    "mean_on": 0.331,
+    "perfect_off": 150,
+    "perfect_on": 150,
+    "mean_off": 0.3329,
+    "mean_on": 0.3329,
     "improved": 0,
     "worse": 0
    },
@@ -299,8 +299,8 @@
     "n": 1007,
     "perfect_off": 14,
     "perfect_on": 14,
-    "mean_off": 0.2686,
-    "mean_on": 0.2686,
+    "mean_off": 0.27,
+    "mean_on": 0.27,
     "improved": 0,
     "worse": 0
    }

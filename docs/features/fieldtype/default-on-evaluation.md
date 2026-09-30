@@ -1,20 +1,22 @@
 # fieldtype — the default flip, evaluated
 
-Measured with one build of this branch rebased onto origin/main 4f037dae4:
+Measured with one build of this branch rebased onto origin/main aaf21509b:
 `--option fieldtype on` against the shipped default `off`. The default arm is
-byte-identical to a fresh castbench arm of origin/main 4f037dae4 on all 45
-castbench binaries.
+byte-identical to a fresh castbench arm of origin/main aaf21509b on all 45
+castbench binaries. Speed was measured on the previous rebase (origin/main
+4f037dae4) and the layout census on 63dfb436c; the option's code is unchanged
+since.
 
 | criterion | result | passes |
 |---|---|---|
 | (a) `make test` | 675/675, PARITY OK; the datatests load no file, so structsynth never runs there | yes |
-| (b) `make test-stages` | 1490/1490, PARITY OK; only the 13 `kuna-fieldtype.xml` keys are this option's, no other key moved | yes |
-| (c) `make test-cli` | 269/269; no probe pins a field this option re-types | yes |
-| (d) 444-slice typesweep | 1,674 -> 1,674 perfect, 0 improved, 0 worse, 0 moved on or off perfect; `decomp_vars` identical in all 10,748 functions. A disjoint 165-slice sweep (e2fsprogs, dash, kmod, zlib, shadow, dpkg): 454 -> 454, 0 improved, 0 worse | yes |
+| (b) `make test-stages` | 1532/1532, PARITY OK; only the 13 `kuna-fieldtype.xml` keys are this option's, no other key moved | yes |
+| (c) `make test-cli` | 274/274; no probe pins a field this option re-types | yes |
+| (d) 444-slice typesweep | 1,674 -> 1,674 perfect, 0 improved, 0 worse, 0 moved on or off perfect; `decomp_vars` identical in all 10,748 functions. A disjoint 165-slice sweep (e2fsprogs, dash, kmod, zlib, shadow, dpkg): 458 -> 458, 0 improved, 0 worse | yes |
 | (e) speed, interleaved min-of-15 (fmt, ls, sort, bash -O2) | against origin/main 4f037dae4: default -0.15%, +0.05%, +0.37%, -0.10%; `on` +0.03%, +0.15%, +0.04%, -0.14% (speed.json); worst +0.37%. Before structsynth stopped keeping access values with the option off, two bash runs read default +4.42% / +5.02% and `on` +5.76% / +6.56% | yes |
 | (f) whole-corpus hunks | 1,896 functions over 45 binaries, every one classified (corpus-hunks.txt), no hunk outside the documented effect; no function changes its argument count, variable count or variable sizes | yes |
 | (g) modes.rs | no preset names the option; it is listed, with this evaluation, beside `charptr` in the preset bookkeeping test (`aggressive_carries_every_default_off_option`) | yes |
-| (h) castbench full | 32,073 -> 31,974 casts on the 4,815 shared functions (0.848x -> 0.845x IDA; 27.0 -> 26.9 per 100 statements), 53 functions fewer (-134), 14 more (+35) | yes |
+| (h) castbench full | 32,075 -> 31,976 casts on the 4,815 shared functions (0.848x -> 0.845x IDA; 27.0 -> 26.9 per 100 statements), 53 functions fewer (-134), 14 more (+35) | yes |
 | layout, fields-only (the lane's extra gate) | precision .8713 -> .8693 (880 -> 878 of 1,010), recall .0932 -> .0930 | **no** |
 
 ## Why the layout criterion fails
