@@ -18,8 +18,9 @@
     fmtlf_armhf is a linked PIE whose ELF header carries the hard-float flag.
     Pass 1 (option off) reproduces the defect on both; pass 2 (on) returns
     the whole double, takes the d0 parameter, narrows a float converted from
-    a double to s0, and keeps an integer return in r0 while d0 is also
-    written.
+    a double to s0, keeps an integer return in r0 while d0 is also written
+    or still holds a callee's double, fills an unused d0 below a used d1 with
+    one double, and does not make two floats in s0/s1 one 8-byte parameter.
 -->
 <bytechunk space="ram" offset="0x1000">080bb7ee1eff2fe1</bytechunk>
 <symbol space="ram" offset="0x1000" name="raw_fixed"/>
@@ -53,6 +54,15 @@
   <com>lo fu keep</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu bump</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu second</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w2</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtlf_armhf</com>
   <com>option armfloatreturn off</com>
@@ -76,6 +86,15 @@
   <com>lo fu keep</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu bump</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu second</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w2</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtlf_armhf</com>
   <com>option armfloatreturn on</com>
@@ -97,4 +116,8 @@
 <stringmatch name="armfloatreturn #10: on keeps the integer return in r0 while d0 is also written" min="1" max="1">unsigned int keep\(float8 a0,float8 \*a1\)</stringmatch>
 <stringmatch name="armfloatreturn #11: off returns the parsed double of the linked PIE as an integer" min="1" max="1">return \(int4\)v1;</stringmatch>
 <stringmatch name="armfloatreturn #12: on returns the parsed double of the linked PIE" min="1" max="1">float8 rd\(char \*a0\)</stringmatch>
+<stringmatch name="armfloatreturn #13: an int computed after a call returning a double stays the result in both passes" min="2" max="2">int4 bump\(int4 a0\)</stringmatch>
+<stringmatch name="armfloatreturn #14: off loses both double parameters of second" min="1" max="1">void second\(void\)</stringmatch>
+<stringmatch name="armfloatreturn #15: on fills the unused d0 below the returned d1 with one double" min="1" max="1">float8 second\(float8 a0,float8 a1\)</stringmatch>
+<stringmatch name="armfloatreturn #16: two floats read as the halves of d0 are not one integer parameter in either pass" min="2" max="2">w2\(void\)</stringmatch>
 </decompilertest>

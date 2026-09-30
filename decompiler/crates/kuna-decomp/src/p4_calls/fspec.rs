@@ -2063,6 +2063,28 @@ impl ParamListStandard {
         self.whole_float_groups = true;
     }
 
+    /// (kuna) `armfloatreturn`: the d-register entry that fills the hole at
+    /// group `grp` whole, when every group it covers is missing and a later
+    /// hit is itself a double. An unused `double` before a used one is one
+    /// 8-byte parameter, not two s-registers.
+    fn whole_double_hole(&self, hitlist: &[Option<usize>], grp: usize) -> Option<usize> {
+        if !self.whole_float_groups {
+            return None;
+        }
+        let double = |e: &ParamEntry| e.get_type() == type_class::TYPECLASS_FLOAT && e.get_size() == 8;
+        let (idx, entry) = self
+            .entry
+            .iter()
+            .enumerate()
+            .find(|(_, e)| double(e) && e.get_all_groups().first() == Some(&(grp as int4)))?;
+        let end = grp + entry.get_all_groups().len();
+        let hole = (grp..end).all(|g| hitlist.get(g).is_some_and(|h| h.is_none()));
+        let later = hitlist[end.min(hitlist.len())..]
+            .iter()
+            .any(|h| h.is_some_and(|e| double(&self.entry[e])));
+        (hole && later).then_some(idx)
+    }
+
     /// Get the list of parameter entries (C++ `getEntry`).
     pub fn get_entry(&self) -> &[ParamEntry] {
         &self.entry
@@ -2815,8 +2837,12 @@ impl ParamListStandard {
 
         // Fill in unreferenced trials for missing groups.  `i` is the group
         // index (passed to selectUnreferenceEntry), not just a position.
+        let mut covered = 0usize;
         #[allow(clippy::needless_range_loop)]
         for i in 0..hitlist.len() {
+            if i < covered {
+                continue;
+            }
             match hitlist[i] {
                 None => {
                     let pref = if float_count > int_count {
@@ -2824,7 +2850,11 @@ impl ParamListStandard {
                     } else {
                         type_class::TYPECLASS_GENERAL
                     };
-                    let curentry = match self.select_unreference_entry(i as i32, pref) {
+                    let whole = self.whole_double_hole(&hitlist, i);
+                    if let Some(w) = whole {
+                        covered = i + self.entry[w].get_all_groups().len();
+                    }
+                    let curentry = match whole.or_else(|| self.select_unreference_entry(i as i32, pref)) {
                         Some(c) => c,
                         None => continue,
                     };

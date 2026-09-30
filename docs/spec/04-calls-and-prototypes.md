@@ -3651,12 +3651,29 @@ the Ghidra front-end all state nothing, and the option then changes nothing.
 
 On such an image each function's copy of the default model gains an 8-byte
 float entry for every `d0`-`d7` register over its two s-register entries, on
-input, and one for `d0` on output. A whole double fills both single-register
-groups when holes are filled, so the s-register it covers is not a missing
-parameter. Only `d0` is return storage: a temporary left in `d1`-`d3` does not
-displace an integer returned in `r0`. After the output trials are scored, a
-single used trial in `s0` or `d0` gives the returned value a float or double
-type before constant folding can drop its storage.
+input, and one for `d0` on output; `d1`-`d3` are not return storage. A whole
+double fills both single-register groups when holes are filled, so the
+s-register it covers is not a missing parameter, and an unused `d` slot below a
+used double parameter is filled by one 8-byte parameter rather than two 4-byte
+ones (`double second(double x, double y) { return y; }` keeps `y` second). An
+unused parameter that only fills a VFP slot is typed `float` or `double`, so the
+printed prototype still puts the next parameter in its register.
+
+An 8-byte `d` input that no op reads whole -- every read, through casts, copies
+or a right shift by 32, ends in a 4-byte piece -- holds two floats in `s0` and
+`s1`, not a double, and is not made one 8-byte parameter. It keeps that slot only
+when a later VFP input is read, so the later parameter keeps its position.
+
+Return trials are scored as usual, and the wider `d0` entry then wins the
+fill-in over a 4-byte `r0`. A value a call left in `d0` is therefore retired
+first: when an integer return trial holds, at every RETURN, a value the
+function computes and only returns (not a call's output), a VFP return trial
+whose value at every RETURN is only what a call left in the register is marked
+inactive. `half(x); return k + 1;` returns `k + 1` in `r0`, not `half`'s
+double; a function that returns `half`'s result and merely uses `r0` as scratch
+keeps the double. After the output trials are scored, a single used trial in
+`s0` or `d0` gives the returned value a float or double type before constant
+folding can drop its storage.
 
 A float result is written to `s0`, the low half of `d0`, so a function that
 converts a double to float leaves `d0` holding the new low word and the old high
@@ -3678,9 +3695,10 @@ reads the recovered list as closed, because a variadic callee receives even its
 fixed floats in `r0`-`r3`.
 
 Declared prototypes and explicit return storage keep precedence throughout.
-This is scalar inference, not aggregate or vector ABI reconstruction:
-homogeneous float aggregates in `s0`-`s3` or `d0`-`d3` still need declared
-types. The stage test `tests/stages/kuna-arm-float-return.xml` runs a raw image,
+This is scalar inference, not aggregate or vector ABI reconstruction: a
+homogeneous float aggregate returned in `d0`-`d3` (`struct { double a, b; }`,
+`_Complex double`) prints as a `double` holding only its first member, and needs
+a declared type. The stage test `tests/stages/kuna-arm-float-return.xml` runs a raw image,
 a relocatable object and a linked PIE with the option off and on; the CLI tests
 in `decompiler/crates/kuna-cli/tests/arm_float_returns.rs` cover narrowing,
 widening, metadata controls and explicit contracts. ABI references:

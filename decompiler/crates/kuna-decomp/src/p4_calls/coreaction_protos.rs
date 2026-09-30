@@ -1810,7 +1810,9 @@ impl Action for ActionInputPrototype {
                     };
                     (v.get_addr().clone(), v.get_size(), v.has_no_descend())
                 };
-                if data.get_func_proto().possible_input_param(&addr, size) {
+                if data.get_func_proto().possible_input_param(&addr, size)
+                    && !crate::kuna_armfloatreturn::split_double_input(data, vn)
+                {
                     let slot = active.get_num_trials();
                     active.register_trial(&addr, size);
                     if !no_descend {
@@ -1893,8 +1895,8 @@ fn update_input_types(
         // it is a narrow STUB(W4 findDisjointCover) that does not fire).
         let is_persist = data.vbank().get(vn).map(|v| v.is_persist()).unwrap_or(false);
         let addr = active.get_trial(i).get_address().clone();
-        let ty = data
-            .high_get_type(vn)
+        let ty = crate::kuna_armfloatreturn::unused_vfp_type(data, active.get_trial(i))
+            .or_else(|| data.high_get_type(vn))
             .unwrap_or_else(|| Rc::new(crate::dtype::Datatype::new(1, crate::dtype::type_metatype::TYPE_UNKNOWN)));
         let _ = is_persist;
         let pieces = crate::fspec::ParameterPieces { addr, type_: Some(ty), flags: 0 };

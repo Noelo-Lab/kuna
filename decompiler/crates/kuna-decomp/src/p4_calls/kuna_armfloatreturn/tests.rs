@@ -267,3 +267,41 @@ fn predicated_writes_can_carry_the_older_double_through_a_join() {
     data.op_set_input(op, unrelated, 0).unwrap();
     assert!(!partial_return(&data, merged, &addr, &mut 64));
 }
+
+#[test]
+fn a_double_input_read_only_in_halves_holds_two_floats() {
+    let (mut data, addr) = function();
+    let whole = data.new_varnode(8, &addr, None);
+    let whole = data.set_input_varnode(whole).unwrap();
+    let zero = data.new_constant(4, 0);
+    output(&mut data, OpCode::CPUI_SUBPIECE, &[whole, zero], 4, &addr);
+    let cast = output(&mut data, OpCode::CPUI_CAST, &[whole], 8, &addr);
+    let shift = data.new_constant(4, 32);
+    let high = output(&mut data, OpCode::CPUI_INT_RIGHT, &[cast, shift], 8, &addr);
+    let zero = data.new_constant(4, 0);
+    output(&mut data, OpCode::CPUI_SUBPIECE, &[high, zero], 4, &addr);
+    assert!(halves_only(&data, whole, 4));
+    output(&mut data, OpCode::CPUI_FLOAT_ADD, &[whole, whole], 8, &addr);
+    assert!(!halves_only(&data, whole, 4));
+}
+
+#[test]
+fn only_a_value_computed_to_be_returned_retires_a_call_leftover() {
+    let (mut data, addr) = function();
+    let target = data.new_constant(4, 0x2000);
+    let left = output(&mut data, OpCode::CPUI_CALL, &[target], 8, &addr);
+    assert!(left_by_call(&data, left));
+    let one = data.new_constant(4, 1);
+    let computed = output(&mut data, OpCode::CPUI_INT_ADD, &[one, one], 4, &addr);
+    assert!(!left_by_call(&data, computed));
+    let ret = data.new_op(2, data.get_address().clone());
+    data.op_set_opcode_code(ret, OpCode::CPUI_RETURN);
+    let code = data.new_constant(4, 0);
+    data.op_set_input(ret, code, 0).unwrap();
+    data.op_set_input(ret, computed, 1).unwrap();
+    assert!(computed_result(&data, computed));
+    assert!(!computed_result(&data, left));
+    let store = data.new_constant(4, 0x3000);
+    output(&mut data, OpCode::CPUI_INT_ADD, &[computed, store], 4, &addr);
+    assert!(!computed_result(&data, computed));
+}

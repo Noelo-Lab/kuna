@@ -245,20 +245,81 @@ fn partial_path(
     }
 }
 
-/// Preserve the narrow return width when every exit only writes its low word.
+/// The value is written by an op of this function other than a call, and only
+/// RETURNs read it: it exists to be returned.
+fn computed_result(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(value) = data.vbank().get(vn) else { return false };
+    let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else {
+        return false;
+    };
+    !matches!(
+        op.code(),
+        OpCode::CPUI_INDIRECT | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND
+    ) && value.descend_iter().all(|id| {
+        data.obank()
+            .get(id)
+            .is_some_and(|o| o.code() == OpCode::CPUI_RETURN)
+    })
+}
+
+/// The value is what a call left in its register: the call's output or the
+/// INDIRECT a call creates.
+fn left_by_call(data: &Funcdata, vn: VarnodeId) -> bool {
+    data.vbank()
+        .get(vn)
+        .and_then(|v| v.get_def())
+        .and_then(|id| data.obank().get(id))
+        .is_some_and(|op| {
+            op.is_indirect_creation()
+                || matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
+        })
+}
+
+/// Retire a VFP return trial that only hands back what a call left in the
+/// register when an integer return trial holds a value the function computes
+/// to return: `half(x); return k + 1;` leaves `half`'s double in d0 beside
+/// `k + 1` in r0, and the wider d0 would otherwise win the fill-in.
+fn drop_call_leftovers(data: &Funcdata, active: &mut ParamActive, returns: &[crate::context::OpId]) {
+    let entries = data.get_func_proto().model().output().get_entry();
+    let vfp = |addr: &Address, size: i32| {
+        entries.iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) >= 0
+        })
+    };
+    let every = |slot: i32, test: &dyn Fn(VarnodeId) -> bool| {
+        returns.iter().all(|&id| {
+            data.obank()
+                .get(id)
+                .and_then(|o| o.get_in(slot))
+                .is_some_and(test)
+        })
+    };
+    let computed = (0..active.get_num_trials()).any(|i| {
+        let t = active.get_trial(i);
+        t.is_active()
+            && !vfp(t.get_address(), t.get_size())
+            && every(t.get_slot(), &|vn| computed_result(data, vn))
+    });
+    if !computed {
+        return;
+    }
+    for i in 0..active.get_num_trials() {
+        let t = active.get_trial(i);
+        if t.is_active()
+            && vfp(t.get_address(), t.get_size())
+            && every(t.get_slot(), &|vn| left_by_call(data, vn))
+        {
+            active.get_trial_mut(i).mark_inactive();
+        }
+    }
+}
+
+/// Retire VFP return trials a call merely left behind, then preserve the narrow
+/// return width when every exit only writes its low word.
 pub fn narrow_returns(data: &mut Funcdata, active: &mut ParamActive) {
     if !data.get_arch().arm_float_return || data.get_func_proto().is_output_locked() {
         return;
     }
-    let single = data
-        .get_func_proto()
-        .model()
-        .output()
-        .get_entry()
-        .iter()
-        .find(|e| e.get_type() == type_class::TYPECLASS_FLOAT && e.get_size() == 4)
-        .map(|e| Address::new(e.get_space().clone(), e.get_base()));
-    let Some(single) = single else { return };
     let returns: Vec<_> = data
         .obank()
         .iter_code(OpCode::CPUI_RETURN)
@@ -271,6 +332,16 @@ pub fn narrow_returns(data: &mut Funcdata, active: &mut ParamActive) {
     if returns.is_empty() {
         return;
     }
+    drop_call_leftovers(data, active, &returns);
+    let single = data
+        .get_func_proto()
+        .model()
+        .output()
+        .get_entry()
+        .iter()
+        .find(|e| e.get_type() == type_class::TYPECLASS_FLOAT && e.get_size() == 4)
+        .map(|e| Address::new(e.get_space().clone(), e.get_base()));
+    let Some(single) = single else { return };
     for i in 0..active.get_num_trials() {
         let trial = active.get_trial(i);
         if !trial.is_active()
@@ -362,6 +433,91 @@ pub fn type_returns(data: &mut Funcdata, active: &ParamActive) {
             value.update_type_locked(ty.clone(), true, false);
         }
     }
+}
+
+/// An 8-byte d-register input that no op reads whole: every use takes one
+/// 4-byte half, so it holds two floats (s0 and s1), not a double, and must not
+/// match the widened d-register entry. Kept when a later VFP input is read, so
+/// that parameter keeps its position.
+pub fn split_double_input(data: &Funcdata, vn: VarnodeId) -> bool {
+    if !data.get_arch().arm_float_return {
+        return false;
+    }
+    let Some(value) = data.vbank().get(vn).filter(|v| v.get_size() == 8) else {
+        return false;
+    };
+    let entries = data.get_func_proto().model().input().get_entry();
+    let vfp = |addr: &Address, size: i32| {
+        entries.iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) >= 0
+        })
+    };
+    let addr = value.get_addr();
+    if !vfp(addr, 8) || !halves_only(data, vn, 4) {
+        return false;
+    }
+    let end = addr.get_offset() + 8;
+    !data
+        .vbank()
+        .iter_def_flag(crate::varnode::varnode_flags::input)
+        .filter_map(|id| data.vbank().get(id))
+        .any(|v| {
+            !v.has_no_descend()
+                && v.get_addr().get_space().map(|s| s.get_index())
+                    == addr.get_space().map(|s| s.get_index())
+                && v.get_offset() >= end
+                && vfp(v.get_addr(), v.get_size())
+        })
+}
+
+/// Every read of `vn` ends in a 4-byte SUBPIECE, directly or through a CAST,
+/// COPY or a right shift by 32 that only such reads consume.
+fn halves_only(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    let Some(value) = data.vbank().get(vn) else { return false };
+    depth > 0
+        && value.descend_iter().all(|id| {
+            let Some(op) = data.obank().get(id) else { return false };
+            let Some(out) = op.get_out() else { return false };
+            let small = data.vbank().get(out).is_some_and(|o| o.get_size() <= 4);
+            match op.code() {
+                OpCode::CPUI_SUBPIECE => small,
+                OpCode::CPUI_CAST | OpCode::CPUI_COPY => halves_only(data, out, depth - 1),
+                OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT => {
+                    op.get_in(0) == Some(vn)
+                        && op
+                            .get_in(1)
+                            .and_then(|c| data.vbank().get(c))
+                            .is_some_and(|c| c.is_constant() && c.get_offset() == 32)
+                        && halves_only(data, out, depth - 1)
+                }
+                _ => false,
+            }
+        })
+}
+
+/// The type of an unused parameter that only fills a VFP slot below a used one:
+/// a float of its width, so the printed prototype puts the next parameter in the
+/// same register (an integer type would move it to the core registers).
+pub fn unused_vfp_type(data: &Funcdata, trial: &crate::fspec::ParamTrial) -> Option<Rc<crate::dtype::Datatype>> {
+    if !data.get_arch().arm_float_return || !trial.is_unref() {
+        return None;
+    }
+    let size = trial.get_size();
+    let vfp = data
+        .get_func_proto()
+        .model()
+        .input()
+        .get_entry()
+        .iter()
+        .any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT
+                && e.get_size() == size
+                && e.justified_contain(trial.get_address(), size) == 0
+        });
+    if !vfp {
+        return None;
+    }
+    data.get_arch().types()?.get_base(size, type_metatype::TYPE_FLOAT).ok()
 }
 
 /// A widened call-argument trial needs a callee contract; a live d-register
