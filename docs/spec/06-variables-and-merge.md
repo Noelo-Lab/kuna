@@ -1588,10 +1588,22 @@ them — an expression printed inline around the value, like `sink + 1` — and
 counts its readers as the value's; an explicit output is a variable declared with
 its own type and ends the walk, as a cast, a truncation or an extension does
 (the extension being itself a sign-sensitive reader). The walk visits at most
-256 varnodes and answers yes when it runs out, since keeping the value apart is
-always correct. The value then keeps its own type, so an operation that reads it
-directly or through such an expression is right however the global is declared,
-and the `COPY` prints as the store where the binary makes it. By the time
+256 varnodes and answers yes when it runs out. The value then keeps its own type,
+so an operation that reads it directly or through such an expression is right
+however the global is declared, and the `COPY` prints as the store where the
+binary makes it.
+
+Keeping the value apart is right only for the uses the binary makes of the
+register. A load of the global that a rule has already fed the value into must
+still print as the global: kuna's SSA gives a pointer store no effect on a
+global, so in `gi = u; *p = k; return gi / 16;` the load after `*p = k` reads
+the store's `COPY`, and printing the value there returns `u / 16` where the
+binary returns `k / 16` whenever `p` points at `gi`. Chapter 03 leaves such a
+load on the global while the value is read sign-sensitively; when it lets one
+through, it marks the value and the global's store of it, and `keeps_apart`
+refuses the split for a marked value (a marked instance of the value, or a
+marked instance of the global whose defining op reads the value), so the join
+happens and the load prints as the global as it did before. By the time
 `Merge` runs the rules have finished, so a concatenation and the carry
 intrinsics (whose names state their signedness) never trigger the split here;
 chapter 03 counts them because a later rule can still turn them into an

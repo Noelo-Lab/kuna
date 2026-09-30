@@ -19,10 +19,14 @@
 //! merges that make it, the `COPY`'s copy-shadow merge and the adjacent-op merge,
 //! so the value keeps its own variable and the `COPY` prints as the store.
 //! `p3_dataflow/kuna_globalstorekeep.rs` keeps that `COPY` alive in the first
-//! place, where the binary stores.  The forced merges of markers are upstream's:
-//! a register value `RulePropagateCopy` still fed into a global's marker joins
-//! the global as before, since trimming it would re-place the store at the end
-//! of each predecessor block.
+//! place, where the binary stores, and keeps the binary's later loads of the
+//! global on the global.  A value that a load was let through to stands in for
+//! that load, so [`keeps_apart`] never splits it: printed apart, it would read
+//! a register where the binary reads memory a pointer store may have changed.
+//! The forced merges of markers are upstream's: a register value
+//! `RulePropagateCopy` still fed into a global's marker joins the global as
+//! before, since trimming it would re-place the store at the end of each
+//! predecessor block.
 
 use kuna_num::opcodes::OpCode;
 
@@ -31,7 +35,8 @@ use crate::merge::MergeContext;
 use crate::p3_dataflow::kuna_globalstorekeep::{passes_signedness, reads_signedness, WALK_BOUND};
 
 /// Must HighVariables `a` and `b` stay apart because one is a global and the
-/// other a value a sign-sensitive operation reads?
+/// other a value a sign-sensitive operation reads, and that no load of the
+/// global reads instead?
 pub fn keeps_apart(ctx: &mut dyn MergeContext, a: HighVariableId, b: HighVariableId) -> bool {
     if a == b {
         return false;

@@ -839,9 +839,9 @@ also reads that value where its declared signedness decides the result — a
 `>>`, a divide, remainder or ordered compare, an extension, an integer-to-float
 conversion, or a sub-`int` `==`/`!=` that is not against a constant with the
 operand's top bit clear — `RulePropagateCopy`
-leaves the store's `COPY` as the input of any marker that reads it, and of a
+leaves the store's `COPY` as the input of the global's own markers, of a
 `COPY` into the same global (what a duplicated join block leaves of the
-global's `MULTIEQUAL`). The value is everything chapter 06 would join with it:
+global's `MULTIEQUAL`), and of every load of the global. The value is everything chapter 06 would join with it:
 it is followed through the `COPY`s, `INDIRECT`s and `MULTIEQUAL`s that carry it
 unchanged, in both directions, so a reader of a stack reload at `-O0` or of a
 join counts. An expression computed from it is followed forward too when C
@@ -850,7 +850,7 @@ unary `-` and the shifted operand of `<<` compute the same bits whatever the
 signedness, but `sink + 1 >> 4` shifts the way `sink` is declared, so a
 sign-sensitive reader of `u + 1` counts as a reader of `u`. Globals and
 constants end the walk, and a walk that visits more than 256 varnodes answers
-yes, since keeping the store is always correct.
+yes, which keeps the store and every load where the binary makes them.
 
 The decision cannot wait for the other rules: once the `COPY` is gone, chapter
 06's join of the value into the global's marker is forced. So the walk also
@@ -878,8 +878,23 @@ Without the refusal the `COPY` dies, the store survives only as
 chapter 06's join of the value into the global, and the reader prints as a read
 of the global in the global's signedness; with it, chapter 06 keeps the value
 apart and the `COPY` prints at the binary's own store, ahead of any later
-pointer store or call. A parameter's store is left to upstream, since a
-parameter never merges with a global. Every other propagation is upstream's.
+pointer store or call.
+
+A load is any other reader of the store's `COPY`: an operation that writes
+something other than the global itself (a `PIECE` that joins the stored part
+into the whole of a wider global is left to upstream). kuna's heritage puts no
+`INDIRECT` on a global at a pointer `STORE`, so after `gi = u; *p = k;` the
+binary's load of `gi` is still the store's `COPY`, and propagating `u` into it
+would stand the value in for memory that `*p` may have changed. While the value
+is read sign-sensitively the load keeps the `COPY` too, so it prints as the
+global (`gi = a0 * 3; *a1 = a2; ... if (gi <= -1)`) while the value's own uses
+keep the value. A load the refusal lets through marks the value and the store
+(the `global_load` bit of the varnode's additional flags); the mark follows the
+value into the global's markers and later stores, a marked store takes
+upstream's propagation from then on, and chapter 06 never keeps a marked value
+apart, so the load prints as the global exactly as before. A parameter's store
+is left to upstream, since a parameter never merges with a global, and so is a
+constant's. Every other propagation is upstream's.
 
 **Retyping an op mid-rule.** A rule that rewrites an op in place usually changes
 its op-code, and the op-code is not just a tag: `set_opcode` caches the

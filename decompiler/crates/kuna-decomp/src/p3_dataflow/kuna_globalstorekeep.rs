@@ -17,8 +17,15 @@
 //! allows is forced, so it cannot wait for the rules to finish.  The `COPY` stays
 //! alive at the binary's own store, and chapter 06's `kuna_globalvalue`
 //! refuses the copy-shadow join, so the value keeps its own variable and the
-//! store prints where the binary makes it.  Every other propagation is
-//! upstream's.
+//! store prints where the binary makes it.
+//!
+//! A load is the other reader of that `COPY`: kuna's SSA gives a pointer store
+//! no effect on a global, so after `gi = u; *p = k;` the binary's load of `gi`
+//! still reads the store's `COPY`, and propagating `u` into it would print `u`
+//! where the binary reads memory that `*p` may have changed.  [`declines`]
+//! keeps such a load on the global under the same test.  A load it lets through
+//! marks the value and the store, and a marked value is joined with the global
+//! as upstream joins it.  Every other propagation is upstream's.
 
 use std::collections::BTreeSet;
 
@@ -72,7 +79,9 @@ pub fn reads_signedness(code: OpCode, slot: int4, size: int4, other_const: Optio
 ///
 /// `op` is then either the global's own marker, or a `COPY` into the same
 /// global (what a duplicated join block leaves of its marker), or a load: an
-/// operation the binary makes on the global after the store.  A load that
+/// operation the binary makes on the global after the store.  (A `PIECE` that
+/// joins the stored part into the whole of a wider global is neither, and stays
+/// upstream's.)  A load that
 /// upstream lets through reads the value from then on.  After `gi = u; *p = k;`
 /// that load may see `k`, so the value must keep printing as the global: the
 /// store and the value are marked
@@ -91,10 +100,18 @@ pub fn declines(data: &mut Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -
         return false;
     };
     let out = reader.get_out();
-    let own = (reader.is_marker() || reader.code() == OpCode::CPUI_COPY)
-        && out
-            .and_then(|o| data.vbank().get(o))
-            .is_some_and(|o| o.get_addr() == v.get_addr() && o.get_size() == v.get_size());
+    let (vspace, voff, vsize) = (v.get_addr().get_space().map(|s| s.get_index()), v.get_offset(), v.get_size() as u64);
+    let writes = |same: bool| {
+        out.and_then(|o| data.vbank().get(o)).is_some_and(|o| {
+            let (ooff, osize) = (o.get_offset(), o.get_size() as u64);
+            o.get_addr().get_space().map(|s| s.get_index()) == vspace
+                && if same { ooff == voff && osize == vsize } else { ooff <= voff && voff + vsize <= ooff + osize }
+        })
+    };
+    if reader.code() == OpCode::CPUI_PIECE && writes(false) {
+        return false;
+    }
+    let own = (reader.is_marker() || reader.code() == OpCode::CPUI_COPY) && writes(true);
     let marked = v.is_global_load() || iv.is_global_load();
     if !marked && value_read_sign_sensitively(data, invn) {
         return true;
@@ -222,8 +239,9 @@ enum Reach {
     Folded,
 }
 
-/// How many varnodes a walk visits before it answers "sign-sensitive" anyway:
-/// keeping a value apart from a global is always correct, merging it is not.
+/// How many varnodes a walk visits before it answers "sign-sensitive" anyway,
+/// which keeps the store and every load of the global where the binary makes
+/// them.
 pub const WALK_BOUND: usize = 256;
 
 /// Does an operation read the value `start` sign-sensitively, directly or
