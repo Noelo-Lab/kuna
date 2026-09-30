@@ -3684,17 +3684,7 @@ impl SplitDatatype {
             } else {
                 self.data_type_pieces[i].offset
             };
-            let mut val: uintb = if sa >= losize {
-                // cast: (sa-losize) is a non-negative bit-group shift < 64 here.
-                hi >> ((sa - losize) as u32)
-            } else {
-                let mut v = lo >> ((sa as u32).wrapping_mul(8));
-                if sa + dt.get_size() > losize {
-                    v |= hi.wrapping_shl(((losize - sa) as u32).wrapping_mul(8));
-                }
-                v
-            };
-            val &= calc_mask(dt.get_size());
+            let val = super::kuna_constantbytes::pair(hi, lo, losize, sa, dt.get_size());
             let out_vn = data.new_constant(dt.get_size(), val);
             in_varnodes.push(out_vn);
             data.vbank_mut().get_mut(out_vn).expect("stale const").update_type(dt);
@@ -3721,8 +3711,7 @@ impl SplitDatatype {
             } else {
                 self.data_type_pieces[i].offset
             };
-            // cast: off is a byte offset within a Varnode (< 8 here).
-            let val = (base_val >> ((8 * off) as u32)) & calc_mask(dt.get_size());
+            let val = super::kuna_constantbytes::word(base_val, off, dt.get_size());
             let out_vn = data.new_constant(dt.get_size(), val);
             in_varnodes.push(out_vn);
             data.vbank_mut().get_mut(out_vn).expect("stale const").update_type(dt);
@@ -6151,7 +6140,9 @@ mod tests {
 
     // ---- scaffolding (mirrors funcdata_varnode.rs test scaffolding) --------
 
-    fn build_manager() -> AddrSpaceManager {
+    fn build_manager() -> AddrSpaceManager { build_manager_endian(false) }
+
+    fn build_manager_endian(big_endian: bool) -> AddrSpaceManager {
         let mut m = AddrSpaceManager::new();
         m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
         m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -6160,7 +6151,7 @@ mod tests {
         m.insert_space(Rc::new(AddrSpace::new(
             spacetype::IPTR_PROCESSOR,
             "ram",
-            false,
+            big_endian,
             8,
             1,
             4,
@@ -6178,6 +6169,12 @@ mod tests {
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
+    }
+
+    fn build_fd_endian(big_endian: bool) -> Funcdata {
+        let glb = Rc::new(ArchContext::new(build_manager_endian(big_endian)));
+        let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap()
     }
 
     fn ram(fd: &Funcdata) -> Rc<AddrSpace> {
@@ -6894,6 +6891,82 @@ mod tests {
         let mut inv: Vec<VarnodeId> = Vec::new();
         assert!(!sd.generate_constants(&mut fd, zout, &mut inv).unwrap());
         assert!(inv.is_empty(), "oversize piece must clear the accumulator");
+    }
+
+    fn pieces_with_byte_oracle(bytes: &[u8], big_endian: bool) -> (SplitDatatype, Vec<u64>) {
+        let mut memory = bytes.to_vec();
+        if big_endian { memory.reverse(); }
+        let mut split = SplitDatatype::new(3);
+        let mut expected = Vec::new();
+        for size in [1, 2, 4, 8] {
+            for offset in 0..=memory.len() - size {
+                let ty = Rc::new(Datatype::new(size as i32, type_metatype::TYPE_UINT));
+                split.data_type_pieces.push(Component { in_type: ty.clone(), out_type: ty, offset: offset as i32 });
+                let mut value = [0u8; 8];
+                if big_endian {
+                    value[8-size..].copy_from_slice(&memory[offset..offset+size]);
+                    expected.push(u64::from_be_bytes(value));
+                } else {
+                    value[..size].copy_from_slice(&memory[offset..offset+size]);
+                    expected.push(u64::from_le_bytes(value));
+                }
+            }
+        }
+        (split, expected)
+    }
+
+    #[test]
+    fn split_wide_constants_zero_extend_the_host_payload() {
+        for big_endian in [false, true] {
+            for payload in [0u64, u64::MAX, 0xfedcba9876543210] {
+                let mut bytes = [0u8; 16];
+                bytes[..8].copy_from_slice(&payload.to_le_bytes());
+                let (split, expected) = pieces_with_byte_oracle(&bytes, big_endian);
+                let mut fd = build_fd_endian(big_endian);
+                let root = mk_const(&mut fd, 16, payload);
+                let mut parts = Vec::new();
+                split.build_in_constants(&mut fd, root, &mut parts, big_endian);
+                let actual: Vec<_> = parts.iter().map(|&v| fd.vbank().get(v).unwrap().get_offset()).collect();
+                assert_eq!(actual, expected, "big_endian={big_endian}, payload={payload:x}");
+            }
+        }
+    }
+
+    #[test]
+    fn split_extended_constants_use_byte_offsets_across_both_words() {
+        for big_endian in [false, true] {
+            for (low_size, high_size) in [(4, 4), (8, 8), (16, 8)] {
+                for (low, high) in [(0u64, 0u64), (u64::MAX, u64::MAX), (0xfedcba9876543210, 0x0123456789abcdef)] {
+                    for zero_extend in [false, true] {
+                        let mut bytes = vec![0u8; low_size + high_size];
+                        let n = low_size.min(8);
+                        bytes[..n].copy_from_slice(&low.to_le_bytes()[..n]);
+                        if !zero_extend {
+                            let n = high_size.min(8);
+                            bytes[low_size..low_size+n].copy_from_slice(&high.to_le_bytes()[..n]);
+                        }
+                        let (split, expected) = pieces_with_byte_oracle(&bytes, big_endian);
+                        let mut fd = build_fd_endian(big_endian);
+                        let lo = mk_const(&mut fd, low_size as i32, low & calc_mask(low_size as i32));
+                        let opcode = if zero_extend { OpCode::CPUI_INT_ZEXT } else { OpCode::CPUI_PIECE };
+                        let op = mk_op(&mut fd, 0x80, if zero_extend { 1 } else { 2 }, opcode);
+                        if zero_extend { wire_in(&mut fd, op, lo, 0); }
+                        else {
+                            let hi = mk_const(&mut fd, high_size as i32, high & calc_mask(high_size as i32));
+                            wire_in(&mut fd, op, hi, 0); wire_in(&mut fd, op, lo, 1);
+                        }
+                        let root = mk_reg(&mut fd, 0x50, bytes.len() as i32);
+                        let root = wire_out(&mut fd, op, root);
+                        let sink = mk_op(&mut fd, 0x100, 1, OpCode::CPUI_COPY);
+                        wire_in(&mut fd, sink, root, 0);
+                        let mut parts = Vec::new();
+                        assert!(split.generate_constants(&mut fd, root, &mut parts).unwrap());
+                        let actual: Vec<_> = parts.iter().map(|&v| fd.vbank().get(v).unwrap().get_offset()).collect();
+                        assert_eq!(actual, expected, "big_endian={big_endian}, lo={low_size}, hi={high_size}, zext={zero_extend}");
+                    }
+                }
+            }
+        }
     }
 
     /// `SplitDatatype::getValueDatatype` (subflow.cc:2925): a non-pointer
