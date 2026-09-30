@@ -1929,7 +1929,10 @@ mod tests {
         // tested on the same condition again keeps its return value (GH-747)
         // and kuna-calleenamedlocals / two locals named after one callee
         // parameter stay two variables
-        assert_eq!(count, 357, "corpus file count drifted");
+        // and kuna-fieldtype / a synthesized field the program uses as a
+        // pointer is declared as that pointer
+        // and kuna-arm-volatile-loads / every read of a volatile LDM survives
+        assert_eq!(count, 358, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

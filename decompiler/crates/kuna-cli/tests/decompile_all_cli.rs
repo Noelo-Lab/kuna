@@ -3976,6 +3976,190 @@ int main(void) {
     }
 }
 
+/// (kuna `fieldtype`) A synthesized field some access holds as a pointer is
+/// declared as that pointer, a field whose value is really a number stays one,
+/// and the printed C still computes what the binary does.  The fixture's records
+/// hold a buffer added to before `memmove` gets it, a context compared with a
+/// sentinel before `strlen` and `free` get it, two walking pointers and the two
+/// end pointers they are compared with, a function pointer compared with zero
+/// before it is called, a union member read as a double and as a pointer, an
+/// index read at a table and then handed to `write` as its buffer, and a number
+/// that clang -O2 passes to one `fprintf` through the register a string also
+/// takes.  The printed functions are compiled with the option off and on, with
+/// gcc and clang, and each build must print what the fixture binary prints.
+/// `ops_run` is checked by spelling only: kuna spells a code pointer `void *`,
+/// so a call through one is not C in either arm.  `cell_val` is left out of the
+/// clang builds (at -O0 its double conversion prints as partial-variable
+/// assignments, at -O2 its double return is lost, in either arm), and
+/// `pctx_print` out of gcc -O2, whose jump table prints as a call in either arm.
+#[test]
+fn a_pointer_field_round_trips_through_the_printed_c() {
+    const PRELUDE: &str = "#include <stdbool.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\
+                           #include <unistd.h>\nchar unknown_ctx[] = \"?\";\n";
+    const MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+static long twice(long x) { return 2 * x + 1; }
+struct buf_ { char *data; long used; int left; int flags; };
+struct ent_ { char *name; int size; char *ctx; int flags; };
+struct range_ { long *lo; long *hi; long *end_lo; long *end_hi; int nlo; int nhi; };
+struct cell_ { long tag; union { double d; char *s; long l; } u; };
+struct pctx_ { unsigned long num; char *str; unsigned int ino; unsigned long blk; };
+struct slot_ { int kind; long idx; char *name; };
+int main(void) {
+  char text[] = "hello, fieldtype world";
+  struct buf_ b = { text, 10, 4, 0 };
+  long s1 = F(long, buf_shift)(&b);
+  printf("buf %ld %ld %d %.*s\n", s1, b.used, b.flags, (int)b.used, b.data);
+  char *heap = malloc(8);
+  strcpy(heap, "context");
+  struct ent_ e1 = { "a", 3, heap, 1 }, e2 = { "b", 5, unknown_ctx, 0 }, e3 = { "c", 7, "static", 0 }, e4 = { 0, 1, "x", 0 };
+  long r1 = F(long, ent_release)(&e1), r2 = F(long, ent_release)(&e2), r3 = F(long, ent_release)(&e3);
+  long r4 = F(long, ent_release)(&e4);
+  printf("ent %ld %ld %ld %ld\n", r1, r2, r3, r4);
+  long lo[] = { 9, 8, 7, 6, 5 }, hi[] = { 1, 2, 3, 4, 5 };
+  struct range_ r = { lo, hi + 4, lo + 5, hi, 0, 0 };
+  long w = F(long, range_walk)(&r);
+  printf("range %ld %d %d\n", w, r.nlo, r.nhi);
+#ifndef NO_CELL
+  struct cell_ c1 = { 1, { .s = "four" } }, c2 = { 2, { .l = -12 } }, c3 = { 3, { .d = 2.5 } };
+  printf("cell %g %g %g\n", F(double, cell_val)(&c1), F(double, cell_val)(&c2), F(double, cell_val)(&c3));
+#endif
+#ifndef NO_PCTX
+  struct pctx_ pc = { 42, "path", 7, 99 };
+  for (const char *p = "nbisxz"; *p; p++) {
+    F(void, pctx_print)(stdout, *p, 3, &pc);
+    putchar('|');
+  }
+  pc.str = 0;
+  pc.num = 0;
+  F(void, pctx_print)(stdout, 's', 1, &pc);
+  F(void, pctx_print)(stdout, 'n', 1, &pc);
+  putchar('\n');
+#endif
+  long tab[] = { 3, 1, 4, 1, 5, 9, 2, 6 };
+  struct slot_ sl = { 2, 5, "five" };
+  printf("slot %ld\n", F(long, slot_post)(tab, &sl));
+  return 0;
+}
+"#;
+    const CELL: &str = "cell 4 -12 2.5\n";
+    const PCTX: &str = " 42| 99|  7|path| 2a|z|(none) NULL(none) 0\n";
+    const WANT: &str = "buf 1054690 4 1  fie\nent 10 -1 13 -2\nrange 1600 1 0\ncell 4 -12 2.5\n 42| 99|  7|path| 2a|z|(none) NULL(none) 0\nslot 10\n";
+    let changed: [(&str, &str); 6] = [
+        ("    long field_0x0;\n    long field_0x8;", "    void *field_0x0;\n    long field_0x8;"),
+        (
+            "memmove((void *)a0->field_0x0,(void *)(a0->field_0x0 + (a0->field_0x8 - a0->field_0x10)),a0->field_0x10);",
+            "memmove(a0->field_0x0,(void *)((long)a0->field_0x0 + (a0->field_0x8 - a0->field_0x10)),a0->field_0x10);",
+        ),
+        ("v2 = strlen((char *)a0->field_0x10);", "v2 = strlen(a0->field_0x10);"),
+        ("    long field_0x10;\n    long field_0x18;", "    long *field_0x10;\n    long *field_0x18;"),
+        ("a0->field_0x0 = a0->field_0x0 + 8;", "a0->field_0x0 = &a0->field_0x0[1];"),
+        ("v1 = (*(void *)a0->field_0x8)(a0->field_0x10);", "v1 = (*a0->field_0x8)(a0->field_0x10);"),
+    ];
+    let index_stays_a_number = "    int field_0x0;\n    char field_0x4[4];\n    long field_0x8;";
+    let number_stays_a_number = "    long field_0x0;\n    char *field_0x8;\n    unsigned int field_0x10;";
+    let sp = specs();
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    for fixture in
+        ["fieldtype_gcc_O0_x86_64", "fieldtype_clang_O0_x86_64", "fieldtype_gcc_O2_x86_64", "fieldtype_clang_O2_x86_64"]
+    {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(fixture)
+            .to_str()
+            .unwrap()
+            .to_string();
+        let clang = fixture.contains("clang");
+        let gcc_o2 = fixture == "fieldtype_gcc_O2_x86_64";
+        let funcs = if clang {
+            "buf_shift,ent_release,range_walk,pctx_print,slot_post"
+        } else if gcc_o2 {
+            "buf_shift,ent_release,range_walk,cell_val,slot_post"
+        } else {
+            "buf_shift,ent_release,range_walk,cell_val,pctx_print,slot_post"
+        };
+        for opt in ["off", "on"] {
+            let args = [
+                "decompile-all", bin.as_str(), "--functions", funcs, "--sleighpath", sp.as_str(),
+                "--option", "structdefs", "on", "--option", "fieldtype", opt,
+            ];
+            let (stdout, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile-all failed: {stderr}");
+            if fixture == "fieldtype_gcc_O0_x86_64" {
+                let args = [
+                    "decompile-all", bin.as_str(), "--functions", "buf_shift,ent_release,ops_run,range_walk",
+                    "--sleighpath", sp.as_str(), "--option", "structdefs", "on", "--option", "fieldtype", opt,
+                ];
+                let (all, stderr, ok) = run_kuna(&args);
+                assert!(ok, "kuna decompile-all failed: {stderr}");
+                for (off, on) in changed {
+                    let want = if opt == "on" { on } else { off };
+                    assert!(all.contains(want), "{fixture} option {opt} does not print `{want}`:\n{all}");
+                }
+            }
+            if !clang {
+                assert!(
+                    stdout.contains("    char field_0x8[8];"),
+                    "{fixture} option {opt}: a union member read as a double and a pointer must stay raw bytes:\n{stdout}"
+                );
+            }
+            if fixture.contains("_O0_") {
+                assert!(
+                    stdout.contains(index_stays_a_number),
+                    "{fixture} option {opt}: an index read at a table and handed to write must stay a number:\n{stdout}"
+                );
+            }
+            if fixture == "fieldtype_clang_O2_x86_64" {
+                assert!(
+                    stdout.contains(number_stays_a_number),
+                    "{fixture} option {opt}: a number merged with a string on its way to fprintf must stay a number:\n{stdout}"
+                );
+            }
+            let printed: String =
+                stdout.lines().filter(|l| !l.ends_with("/* opaque */")).map(|l| format!("{l}\n")).collect();
+            for cc in &compilers {
+                let dir = std::env::temp_dir()
+                    .join(format!("kuna-fieldtype-rt-{}-{fixture}-{opt}-{cc}", std::process::id()));
+                std::fs::create_dir_all(&dir).unwrap();
+                let src = dir.join("rt.c");
+                let exe = dir.join("rt");
+                std::fs::write(&src, format!("{PRELUDE}{printed}\n{MAIN}")).unwrap();
+                let mut cmd = Command::new(cc);
+                cmd.args(["-std=gnu11", "-w", "-Werror=int-conversion", "-o", exe.to_str().unwrap()]);
+                if clang {
+                    cmd.arg("-DNO_CELL");
+                }
+                if gcc_o2 {
+                    cmd.arg("-DNO_PCTX");
+                }
+                let out = cmd.arg(src.to_str().unwrap()).output().expect("spawn the C compiler");
+                assert!(
+                    out.status.success(),
+                    "{cc} rejected the printed C ({fixture}, option {opt}):\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                let run = process::required_output(&mut Command::new(&exe));
+                let _ = std::fs::remove_dir_all(&dir);
+                let mut want = WANT.to_string();
+                if clang {
+                    want = want.replace(CELL, "");
+                }
+                if gcc_o2 {
+                    want = want.replace(PCTX, "");
+                }
+                assert_eq!(
+                    String::from_utf8_lossy(&run.stdout),
+                    want,
+                    "{fixture} printed with option {opt} and built by {cc} computes a different value:\n{stdout}"
+                );
+            }
+        }
+    }
+}
+
 /// (kuna `castternary`) A widening on an arm of `c ? a : b` that the
 /// conditional performs itself is left out, and a cast whose removal would give
 /// the conditional another type stays.  The fixture holds a textbook base64
