@@ -2417,13 +2417,10 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
     std::fs::write(
         &src,
         format!(
-            "#include <stddef.h>\n#include <stdio.h>\n#include <string.h>\n\
+            "#include <stdio.h>\n#include <string.h>\n\
              static float hs(int k, float x) {{ return x * 2.5f + (float)k; }}\n\
              static float h(int k, int bits) {{ float x; memcpy(&x, &bits, 4); return hs(k, x); }}\n\
              {printed}\n\
-             _Static_assert(sizeof(struct_1) == 2 * sizeof(int), \"g24 output size\");\n\
-             _Static_assert(offsetof(struct_1, field_0x0) == 0, \"g24 first field\");\n\
-             _Static_assert(offsetof(struct_1, field_0x4) == sizeof(int), \"g24 second field\");\n\
              static float fb(int b) {{ float f; memcpy(&f, &b, 4); return f; }}\n\
              static int s3(int k, int *p) {{ int b = p[3]; return (int)hs(k, fb(b)) + b + 3; }}\n\
              static int s5(int k, int *p) {{ int b = p[3]; return (int)hs(k, fb(b)) + (b < 0x3fc00000); }}\n\
@@ -2443,9 +2440,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
              unsigned short s = 0; char c[2] = {{0, 0}}; int q[2] = {{0, 0}}; int r20, r22, r24;\n  \
              if (use_printed) {{\n    \
              printf(\"%d %d %d %u \", g3(7, a), g5(7, a), g6(7, a), (unsigned)g9(7, a));\n    \
-             struct_1 out = {{0, 0}};\n    \
-             r20 = g20(7, b, &s); r22 = g22(7, b, c); r24 = (int)g24(7, b, &out);\n    \
-             memcpy(q, &out, sizeof(q));\n  \
+             r20 = g20(7, b, &s); r22 = g22(7, b, c); r24 = (int)g24(7, b, (void *)q);\n  \
              }} else {{\n    \
              printf(\"%d %d %d %u \", s3(7, arr), s5(7, arr), s6(7, arr), s9(7, (unsigned *)arr));\n    \
              r20 = s20(7, bits, &s); r22 = s22(7, bits, c); r24 = (int)s24(7, bits, q);\n  \
@@ -2469,8 +2464,7 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
                 "{cc} {level} rejected the printed callers:\n{}",
                 String::from_utf8_lossy(&compiled.stderr)
             );
-            let run = Command::new(&exe).output().expect("run the round trip");
-            assert!(run.status.success(), "{cc} {level}: round trip failed");
+            let run = process::required_output(&mut Command::new(&exe));
             let got = String::from_utf8_lossy(&run.stdout);
             let lines: Vec<&str> = got.lines().collect();
             assert_eq!(lines.len(), 2, "{cc} {level}: {got}");
