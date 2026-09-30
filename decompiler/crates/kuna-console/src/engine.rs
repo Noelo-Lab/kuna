@@ -580,6 +580,9 @@ pub struct ConsoleProgram {
     /// image; see [`ConsoleProgram::load_notes`].
     load_notes: Vec<String>,
     elf_functions: kuna_analysis::loadimage_object::ElfFunctionProvenance,
+    /// The ELF names the loader keeps only as aliases, keyed by normalized entry
+    /// (`ObjectLoadImage::func_symbol_aliases`).
+    loader_aliases: BTreeMap<u64, Vec<String>>,
 }
 
 fn code_offset_in_target_units(value: u64, word_size: u64) -> u64 {
@@ -761,7 +764,9 @@ impl ConsoleProgram {
     ///    not have, and it is registered beside the loader's: `macho_dwarf.o`
     ///    carries `_l0`+`first_byte` at `0x0` and `_main`+`main` at `0x40`, and a
     ///    decorated/undecorated PE pair takes the same path.  (The loader's own
-    ///    funcsym stream cannot do this — it is address-deduped as it is read.)
+    ///    funcsym stream cannot do this — it is address-deduped as it is read;
+    ///    the ELF names that dedup drops are appended as aliases only, see
+    ///    `loader_aliases`, so they never change the reported name.)
     ///
     /// Producers 1 and 3 collapse by address; producer 2 needs the same Thumb-bit
     /// normalization [`crate::project::build_asm`] already applies to its labels
@@ -820,10 +825,13 @@ impl ConsoleProgram {
                             EntryProvenance::Mapped
                         }
                     });
+                let mut aliases: Vec<String> =
+                    records.iter().map(|record| record.name.clone()).collect();
+                self.push_loader_aliases(vma, &canonical.name, &mut aliases);
                 FunctionEntry {
                     name: canonical.name.clone(),
                     addr,
-                    aliases: records.iter().map(|record| record.name.clone()).collect(),
+                    aliases,
                     object_location: object_record
                         .and_then(|record| record.object_location.clone()),
                     binding: object_record
@@ -853,6 +861,16 @@ impl ConsoleProgram {
             }
         }
         entries
+    }
+
+    /// Append the loader's alias names at `vma` that neither `name` nor `aliases`
+    /// already spells.
+    fn push_loader_aliases(&self, vma: u64, name: &str, aliases: &mut Vec<String>) {
+        for alias in self.loader_aliases.get(&vma).into_iter().flatten() {
+            if alias != name && !aliases.contains(alias) {
+                aliases.push(alias.clone());
+            }
+        }
     }
 
     /// (kuna, `functions-json-size`) The byte extent of an arbitrary address,
@@ -989,20 +1007,63 @@ impl ConsoleProgram {
         // must still resolve. Idempotent, so the bounded spelling resolves as
         // well, and a no-op for every real name.
         let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
-        let mut matches: Vec<FunctionEntry> = self
-            .function_entries_canonical()
-            .into_iter()
-            .filter(|e| e.name == want || e.aliases.iter().any(|a| a == want))
-            .collect();
+        let matches = self.entries_named(&self.function_entries_canonical(), want);
         // On a miss, the (kuna, RE-need `string-owner-function-name`) placeholder
         // fallback [`Self::resolve_entry`] takes, so the two name lookups answer
         // one name the same way.
+        self.one_named(matches, want)
+    }
+
+    fn one_named(&self, mut matches: Vec<FunctionEntry>, want: &str) -> Option<FunctionEntry> {
         match matches.len() {
             0 => self.entry_by_placeholder_name(want),
             1 => Some(matches.remove(0)),
-            _ => self.lone_elf_definition(&matches)
-                .or_else(|| self.lone_executable_candidate(&matches)),
+            _ => {
+                if let Some(entry) = self.lone_elf_definition(&matches) {
+                    return Some(entry);
+                }
+                if self.keep_direct_candidates(&mut matches, want) {
+                    return self.one_named(matches, want);
+                }
+                self.lone_executable_candidate(&matches)
+            }
         }
+    }
+
+    /// The canonical entries spelled `want`, plus the entry at each loader alias
+    /// spelled `want` whose address no canonical entry holds yet, so a lookup
+    /// sees the same candidates whether or not discovery has named that address.
+    fn entries_named(&self, entries: &[FunctionEntry], want: &str) -> Vec<FunctionEntry> {
+        let mut found = entries_spelled(entries, want);
+        for (&vma, names) in &self.loader_aliases {
+            if names.iter().any(|name| name == want)
+                && !found.iter().any(|entry| entry.addr.get_offset() == vma)
+            {
+                found.push(self.entry_at_or_named(vma));
+            }
+        }
+        found
+    }
+
+    /// Drop the candidates `want` reaches only through a loader alias, when any
+    /// other candidate remains; `true` when something was dropped. A name that
+    /// selected one function before those aliases existed keeps selecting it.
+    fn keep_direct_candidates(&self, candidates: &mut Vec<FunctionEntry>, want: &str) -> bool {
+        let before = candidates.len();
+        if candidates.iter().any(|entry| !self.named_only_by_loader_alias(entry, want)) {
+            candidates.retain(|entry| !self.named_only_by_loader_alias(entry, want));
+        }
+        candidates.len() < before
+    }
+
+    fn named_only_by_loader_alias(&self, entry: &FunctionEntry, want: &str) -> bool {
+        let vma = entry.addr.get_offset();
+        entry.name != want
+            && self.loader_aliases.get(&vma).is_some_and(|names| names.iter().any(|n| n == want))
+            && !self
+                .symbols
+                .slots_of(want)
+                .any(|symbol| self.thumb_normalized(symbol.addr.get_offset()) == vma)
     }
 
     /// (kuna, issue #197) Resolve the canonical entry AT `vma`, tolerating an
@@ -1042,7 +1103,7 @@ impl ConsoleProgram {
                 // bounded spelling resolves as well.
                 let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
                 let entries = self.function_entries_canonical();
-                let mut candidates = entries_spelled(&entries, want);
+                let mut candidates = self.entries_named(&entries, want);
                 if candidates.is_empty() {
                     // (kuna, RE-need `string-owner-function-name`) Nothing carries
                     // that name, so read it as the placeholder it looks like: a
@@ -1221,10 +1282,12 @@ impl ConsoleProgram {
                     EntryProvenance::Mapped
                 }
             });
+        let mut aliases: Vec<String> = records.iter().map(|record| record.name.clone()).collect();
+        self.push_loader_aliases(vma, &canonical.name, &mut aliases);
         Some(FunctionEntry {
             name: canonical.name.clone(),
             addr: address.clone(),
-            aliases: records.iter().map(|record| record.name.clone()).collect(),
+            aliases,
             object_location: object_record.and_then(|record| record.object_location.clone()),
             binding: object_record
                 .and_then(|record| record.binding.clone())
@@ -1262,9 +1325,13 @@ impl ConsoleProgram {
         candidates.sort_by_key(|entry| entry.addr.get_offset());
         candidates.dedup_by_key(|entry| entry.addr.get_offset());
         if candidates.len() > 1 {
-            if matches!(selector, EntrySelector::Name(_)) {
+            if let EntrySelector::Name(want) = selector {
                 if let Some(entry) = self.lone_elf_definition(&candidates) {
                     return Ok(entry);
+                }
+                let want = kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
+                if self.keep_direct_candidates(&mut candidates, &want) {
+                    return self.one_candidate(selector, candidates);
                 }
             }
             if let Some(entry) = self.lone_executable_candidate(&candidates) {
@@ -3385,6 +3452,7 @@ fn empty_program(
         symbol_underscore_prefix: false,
         load_notes: Vec::new(),
         elf_functions: Default::default(),
+        loader_aliases: BTreeMap::new(),
     }
 }
 
@@ -3882,6 +3950,7 @@ pub fn bootstrap_from_object_with_isa(
     let import_slots: Vec<(u64, u64)> = loader.import_slot_ranges().to_vec();
     let elfv1_tocs = loader.elfv1_descriptors().entry_tocs();
     let elf_functions = loader.elf_function_provenance().clone();
+    let loader_aliases = loader.func_symbol_aliases();
 
     // (kuna `litpoolconst`) The image's executable read-only regions, read off the
     // same loader: `r-x` memory cannot be written, so the literal-pool words the
@@ -4007,6 +4076,11 @@ pub fn bootstrap_from_object_with_isa(
         }
     }
     prog.elf_functions = elf_functions;
+    for (raw, name) in loader_aliases {
+        let name = kuna_decomp::kuna_symbolnamebound::bound_scope_path(&name, "::").into_owned();
+        let vma = prog.thumb_normalized(raw);
+        prog.loader_aliases.entry(vma).or_default().push(name);
+    }
     prog.pending_entry_thumb = entry_thumb_walk;
     // conf->readLoaderSymbols("::"): install the ELF symbols as FunctionSymbols.
     // The deferred analysis commit at `read symbols` REQUIRES this to have run
