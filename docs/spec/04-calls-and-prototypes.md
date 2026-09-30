@@ -2863,9 +2863,9 @@ The argument side keeps counting the no-op, and a returned register the body
 touches, if only through it, does not hold call-site trials as a claim
 otherwise does (`body_touches`): heritage visits it with the option off as
 well, so its trials exist there, and they are scored as they are there. On ARM
-`r0` is both the return register and the first argument, and in `return
-f(g(a0))` (`bl g; bl f; pop {r4,pc}`) the `r0` at `f` is `g`'s result; leaving
-that trial unscored printed `g(a0); return f();`. A wrapper that writes the
+`r0` is both the return register and the first argument, and in `bl g; bl f; pop
+{r4,pc}` the `r0` at `f` is `g`'s result: it prints `v1 = g(a0); return
+f(v1);`, where leaving that trial unscored printed `g(a0); return f();`. A wrapper that writes the
 register itself before its call (`mov r0,#5; bl f; pop {r4,pc}`) still touches
 it and stays `void`. The witness is
 `decompiler/crates/kuna-cli/tests/arm_wrapper_returns.rs`, which builds its ARM
@@ -2875,19 +2875,13 @@ callee's result, and `return provider(provider(a0))` keeps its inner call's
 argument. Its controls keep `void`: a void callee, a two-function cycle, an
 indirect call, the argument write above, and a declared `void` prototype on the
 wrapper or on its callee; a write after the call returns what was written, and
-`store(provider(a0))` keeps its argument. Over 56 debug-stripped ARM firmware
-binaries of the decbench O2 and O2-noinline corpora (libopencm3, nuttx, chibios,
-FreeRTOS, RIOT, crazyflie), 36 functions gain a return. DWARF confirms 29; the
-other 7 are the `void` wrapper shape above (nuttx's `*outstream_putc`, which end
-in a call to the matching `puts`, libgcc's `_Unwind_SetGR`, and two entries kuna
-finds inside nuttx's `vsyslog`). Four more (`vfprintf`, `vdprintf`) now return
-`int`, as DWARF says, where they returned `unsigned int`. Callers follow the new
-return types: seven calls lose an `(int)` cast now that `asprintf` and
-`nx_asprintf` return `int`, and sixteen `getopt` callers compare against
-`0xffffffff`, because `getopt` repeats the `unsigned int` recovered for
-`getopt_common` where DWARF says `int`. Over the 272 ELF fixtures one function
-changes, the synthetic Cortex-M reset handler of `cortexm_aifcorroborate_le32`,
-which ends in `bl` to a helper recovered as returning `r1:r0`.
+`store(provider(a0))` keeps its argument. Thumb (`pop {r4,pc}`, `pop.w
+{r4,lr}; bx lr`) and little- and big-endian MIPS (`jal provider; ...; jr ra`)
+wrappers have their own cases there, the MIPS ones in a linked image because
+kuna does not apply a MIPS object's relocations. The measured rates are under
+**Default** below. Over the 272 ELF fixtures one function changes, the synthetic
+Cortex-M reset handler of `cortexm_aifcorroborate_le32`, which ends in `bl` to a
+helper recovered as returning `r1:r0`.
 
 The witnesses are `passthroughpair_x86_64` and `passthroughpair_le32` under
 `tests/cli/passthrough-returns-a-register-pair-a-tail-call-leaves.json` and its
@@ -2976,6 +2970,23 @@ gzip's `char *gzip_base_name` is the same code and is right). The rate follows
 the project's style, not the optimisation level. The evidence is
 `docs/features/passthrough/dwarf-confirmation.md`; set `off` to get upstream's
 reading back, for the returns as much as the arguments.
+
+On ARM and MIPS the return arm also takes a wrapper that calls and then returns
+(`bl f; pop {r4,pc}`, `jal f; ...; jr ra`; the injected no-op above). Over 92
+debug-stripped ARM firmware binaries of the decbench O2 and O2-noinline corpora,
+223 functions gain a return that way: DWARF confirms 182 and says `void` for 39,
+and 2 are entries kuna finds 0x12 bytes into nuttx's `vsyslog`, which has no
+subprogram of its own there (182 of 221 checkable, 82.4%). Two projects carry
+most of the misses: betaflight (49 of 74) and cleanflight (28 of 34) are built
+with `-Og`, which turns off sibling calls, so each of their one-line `void`
+wrappers ends in `bl f; pop {..,pc}` rather than a tail `b f`. Without them it is
+105 of 113 (92.9%); the same corpus's tail-jump returns are 157 of 164 (95.7%),
+and on 64 x86-64 binaries the tail and `call; ret` returns are 93.4% and 94.6%.
+The misses are the one shape above: nuttx's `*outstream_putc` end in a call to
+the matching `puts`, libgcc's `_Unwind_SetGR` in `_Unwind_VRS_Set`. A wrapper
+also repeats its callee's recovered type, so the nuttx callers of `getopt`
+compare against `0xffffffff` because `getopt_common` is recovered as returning
+`unsigned int`. No MIPS corpus with DWARF was measured.
 
 ### (kuna) `callbacktype` — the prototype of the slot a callback is passed to
 
