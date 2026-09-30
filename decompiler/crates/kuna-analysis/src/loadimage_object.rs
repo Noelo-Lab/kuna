@@ -87,6 +87,14 @@ pub(crate) fn reloc_objects_enabled() -> bool {
     }
 }
 
+/// The `(addr, name)` pairs of `aliases` that neither `primary` nor an earlier
+/// alias already carries.
+fn distinct_aliases(primary: &[FuncSym], aliases: Vec<FuncSym>) -> Vec<FuncSym> {
+    let mut known: HashSet<(u64, Vec<u8>)> =
+        primary.iter().map(|s| (s.addr, s.name.clone())).collect();
+    aliases.into_iter().filter(|s| known.insert((s.addr, s.name.clone()))).collect()
+}
+
 /// Demangle a loader funcsym name (the kuna analog of Ghidra's
 /// `GnuDemanglerAnalyzer`; see [`crate::demangle`]).  Applied to every
 /// `.symtab` / PLT / `.dynsym` name *after* `@VERSION` stripping and *before* it
@@ -467,6 +475,9 @@ pub struct ObjectLoadImage {
     executable_segments: Vec<(u64, u64)>,
     /// Function symbols, in symbol-table order.
     funcsyms: Vec<FuncSym>,
+    /// ELF function names that share an address with an earlier name in
+    /// [`Self::funcsyms`]; see [`ObjectLoadImage::func_symbol_aliases`].
+    funcsym_aliases: Vec<FuncSym>,
     /// Relocatable-object section coordinates. Empty for linked images.
     reloc_sections: Vec<crate::loader::reloc_object::RelocSectionInfo>,
     /// Relocatable-object function provenance. Empty for linked images.
@@ -827,11 +838,13 @@ impl ObjectLoadImage {
         //      `ElfDefaultGotPltMarkup`; see [`crate::loader::elf_plt`]),
         //   3. `.dynsym` defined functions, for stripped-but-dynamic binaries
         //      whose `.symtab` is gone.
+        // An ELF name the address dedup drops is kept in `aliases` instead.
         // (kuna `symbolnamechars`, GH-340) Read the gate ONCE for the whole walk:
         // a large image carries a few hundred thousand names and the mode is a
         // process env var.
         let namechars = symbolnamechars_mode();
         let mut funcsyms: Vec<FuncSym> = Vec::new();
+        let mut aliases: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
         let mut elf_functions = ElfFunctionProvenance::default();
         let is_elf = file.format() == object::BinaryFormat::Elf;
@@ -876,6 +889,8 @@ impl ObjectLoadImage {
             let name = demangle_funcsym_name(name, namechars);
             if seen.insert(addr) || !elfv1.0.is_empty() {
                 funcsyms.push(FuncSym { addr, name });
+            } else if is_elf {
+                aliases.push(FuncSym { addr, name });
             }
         }
 
@@ -885,8 +900,11 @@ impl ObjectLoadImage {
         // `elf_plt::resolve_plt_imports`.
         for p in fmt.resolve_imports(&file, bytes) {
             if is_elf { elf_functions.imports.insert(if arm32_decoder { p.addr & !1 } else { p.addr }); }
+            let name = demangle_funcsym_name(p.name, namechars);
             if seen.insert(p.addr) {
-                funcsyms.push(FuncSym { addr: p.addr, name: demangle_funcsym_name(p.name, namechars) });
+                funcsyms.push(FuncSym { addr: p.addr, name });
+            } else if is_elf {
+                aliases.push(FuncSym { addr: p.addr, name });
             }
         }
 
@@ -916,6 +934,8 @@ impl ObjectLoadImage {
             let name = demangle_funcsym_name(name, namechars);
             if seen.insert(addr) || !elfv1.0.is_empty() {
                 funcsyms.push(FuncSym { addr, name });
+            } else if is_elf {
+                aliases.push(FuncSym { addr, name });
             }
         }
 
@@ -923,6 +943,7 @@ impl ObjectLoadImage {
             let mut aliases = HashSet::new();
             funcsyms.retain(|s| aliases.insert((s.addr, s.name.clone())));
         }
+        let funcsym_aliases = distinct_aliases(&funcsyms, aliases);
 
         // (kuna) MIPS GOT external slots → constant ranges, so the engine folds the
         // `lw $t9, off($gp)` indirect-call load to the stub address and resolves the
@@ -963,6 +984,7 @@ impl ObjectLoadImage {
             segment_info,
             executable_segments,
             funcsyms,
+            funcsym_aliases,
             reloc_sections: Vec::new(),
             reloc_symbols: Vec::new(),
             datasyms,
@@ -1065,9 +1087,11 @@ impl ObjectLoadImage {
 
         // Defined functions (rebased) + extern call targets, demangled + deduped
         // by address — the same `seen`/`demangle_funcsym_name` discipline the
-        // linked path's `.symtab` loop uses.
+        // linked path's `.symtab` loop uses, including its ELF alias list.
         let namechars = symbolnamechars_mode();
+        let is_elf = file.format() == object::BinaryFormat::Elf;
         let mut funcsyms: Vec<FuncSym> = Vec::new();
+        let mut aliases: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
         for (addr, name) in layout.funcsyms {
             if addr == 0 {
@@ -1080,8 +1104,11 @@ impl ObjectLoadImage {
             let name = demangle_funcsym_name(name, namechars);
             if seen.insert(addr) {
                 funcsyms.push(FuncSym { addr, name });
+            } else if is_elf {
+                aliases.push(FuncSym { addr, name });
             }
         }
+        let funcsym_aliases = distinct_aliases(&funcsyms, aliases);
 
         Ok(ObjectLoadImage {
             filename: filename.to_string(),
@@ -1097,6 +1124,7 @@ impl ObjectLoadImage {
             segment_info: Vec::new(),
             executable_segments: Vec::new(),
             funcsyms,
+            funcsym_aliases,
             reloc_sections,
             reloc_symbols,
             // A relocatable object's symbol addresses are section-relative and are
@@ -1232,6 +1260,17 @@ impl ObjectLoadImage {
     /// Names are lossy-UTF-8 decoded (the marshal convention stores them as bytes).
     pub fn func_symbols(&self) -> Vec<(u64, String)> {
         self.funcsyms
+            .iter()
+            .map(|s| (s.addr, String::from_utf8_lossy(&s.name).into_owned()))
+            .collect()
+    }
+
+    /// The ELF function names [`Self::func_symbols`] leaves out because an
+    /// earlier name holds the same address (a local veneer ahead of its global, a
+    /// weak alias beside its strong symbol). Lookup-only aliases, never the
+    /// reported name; raw addresses, Thumb bit included.
+    pub fn func_symbol_aliases(&self) -> Vec<(u64, String)> {
+        self.funcsym_aliases
             .iter()
             .map(|s| (s.addr, String::from_utf8_lossy(&s.name).into_owned()))
             .collect()
@@ -1453,7 +1492,7 @@ impl LoadImage for ObjectLoadImage {
             .map(|addr| addr.wadd(badjust)).collect();
         self.elf_functions.imports = self.elf_functions.imports.drain()
             .map(|addr| addr.wadd(badjust)).collect();
-        for s in &mut self.funcsyms {
+        for s in self.funcsyms.iter_mut().chain(&mut self.funcsym_aliases) {
             s.addr = s.addr.wadd(badjust);
         }
         for s in &mut self.section_metadata {
@@ -1860,6 +1899,14 @@ pub fn coff_language_ids() -> Vec<(String, Option<String>)> {
 }
 
 #[cfg(test)]
+#[path = "../tests/fixtures/arm_aliases.rs"]
+mod alias_test_fixture;
+
+#[cfg(test)]
+#[path = "loadimage_object/alias_tests.rs"]
+mod alias_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use kuna_base::space::{addrspace_flags, spacetype, AddrSpaceManager, ConstantSpace};
@@ -1902,7 +1949,7 @@ mod tests {
     }
 
     /// const(0) + ram(1) processor space (little endian, 8-byte addresses).
-    fn manager() -> AddrSpaceManager {
+    pub(super) fn manager() -> AddrSpaceManager {
         let mut m = AddrSpaceManager::new();
         m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
         m.insert_space(Rc::new(AddrSpace::new(

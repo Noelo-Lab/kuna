@@ -493,7 +493,25 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   definition in both selector resolution and canonical name lookup; both entries
   remain in the inventory. Multiple executable definitions or unclassified
   executable competitors remain ambiguous, and explicit address selection
-  remains literal. Loaders that publish no section
+  remains literal. An ELF load, linked or relocatable, still reports one name
+  per address (the first in `.symtab`, import-stub, `.dynsym` order, the one the
+  symbol table installs for call sites; a PowerPC64 ELFv1 image keeps every
+  name, as before), but no longer discards the other distinct names there: they
+  become lookup-only aliases
+  (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (ObjectLoadImage::func_symbol_aliases)`,
+  raw addresses with any Thumb bit), which the console appends to the
+  canonical entry at the normalized address. So a local veneer name, a
+  `.localalias` or a strong symbol ahead of its weak alias no longer hides the
+  name after it, and an exported name that also labels a PLT stub selects the
+  definition by the rule above instead of the stub. An alias never becomes the
+  reported name, so `kuna functions` and whole-binary output keep the name
+  its callers print. Nor does it outbid a function's own name: when that rule
+  does not settle a name, the candidates it reaches only through a loader alias
+  are dropped before the remaining tie-breaks, so a static `shared` still wins
+  over another function's same-address alias `shared` and a name that selected
+  one function keeps selecting it. An alias whose address no entry holds yet
+  (discovery has not named it) is still a candidate there, so a lookup sees the
+  same candidates with or without discovery. Loaders that publish no section
   records, including the XML corpus loader, prove a numeric VMA by probing one
   byte from the load image instead. Which sections are memory-resident
   is the one question that stays per-format — ELF's `SHF_ALLOC` bit and COFF's
