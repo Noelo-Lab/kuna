@@ -1938,7 +1938,10 @@ mod tests {
         // and kuna-arm-volatile-loads / every read of a volatile LDM survives
         // and kuna-arm-float-return / an ARM hard-float function returns its
         // whole VFP result
-        assert_eq!(count, 363, "corpus file count drifted");
+        // and kuna-address-only-local + kuna-address-split-local / an
+        // address-only local takes its object's type unless a split neighbour
+        // lies inside the address width
+        assert_eq!(count, 364, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

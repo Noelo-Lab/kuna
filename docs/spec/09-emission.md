@@ -37,8 +37,14 @@ An address-only local is declared from its mapped object's type
 (`kuna_addressdecl.rs`), rather than the pointer-width constant used to reference
 it. Thus a four-byte scalar reached through a saved `int *` remains an `int`,
 even on a 64-bit target. Real storage representatives still determine their
-own declarations, including wider and overlapping accesses. This corrects the
-declaration without extending `castobject`'s permission to retype escaped locals.
+own declarations, including wider and overlapping accesses. When another
+directly accessed Symbol lies wholly inside the address width from the object's
+start, the frame map has likely split one wider object, so the declaration keeps
+the address width rather than shrink to the piece. A buffer whose other part
+is reached only through pointer arithmetic leaves no such neighbour, so its
+first piece is declared at the piece's type, as a directly accessed piece
+already is. This corrects the declaration without extending `castobject`'s
+permission to retype escaped locals.
 
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`

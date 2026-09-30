@@ -1,0 +1,26 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- Synthetic assembly: read_split saves &amp;obj (rbp-0x18) in a stack pointer,
+     stores its argument straight into rbp-0x14, calls write_word(x, p, 0), and
+     returns the four bytes read through p. The direct store splits the frame
+     map at rbp-0x14, so the four-byte symbol at rbp-0x18 is only a piece of the
+     object the program reaches through the address. Declaring that piece as
+     int4 would let a callee's wider write run past it; the declaration keeps
+     the address width instead.
+     Handwritten x86-64 SysV code; no external fixture is required. -->
+<bytechunk space="ram" offset="0x1000">89f8c1e00889068d0417c3</bytechunk>
+<bytechunk space="ram" offset="0x1100">554889e54883ec20897de48b45e48945ec488d45e8488945f0488b4df08b45e4ba000000004889ce89c7e8d1feffff488b45f08b00c9c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="write_word"/>
+<symbol space="ram" offset="0x1100" name="read_split"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 write_word(int4 x, int4 *p, int4 o);</com>
+  <com>parse line extern int4 read_split(int4 x);</com>
+  <com>load function read_split</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Address-split local #1: a split neighbour inside the address width keeps that width" min="1" max="1">^  int8 v1;$</stringmatch>
+<stringmatch name="Address-split local #2: the object is not narrowed to the piece the frame map split off" min="0" max="0">^  int4 v1;$</stringmatch>
+<stringmatch name="Address-split local #3: the saved pointer still reaches the object" min="1" max="1">v3 = &amp;v1;</stringmatch>
+</decompilertest>

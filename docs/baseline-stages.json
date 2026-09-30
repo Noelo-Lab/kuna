@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1571,
-    1571
+    1574,
+    1574
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -37,6 +37,9 @@
     "data:Address-only local #1: both passes declare the four-byte object",
     "data:Address-only local #2: the saved pointer reaches that object",
     "data:Address-only local #3: the address width is never the object width",
+    "data:Address-split local #1: a split neighbour inside the address width keeps that width",
+    "data:Address-split local #2: the object is not narrowed to the piece the frame map split off",
+    "data:Address-split local #3: the saved pointer still reaches the object",
     "data:BRANCHFLIP #1: default pipeline keeps the negated `== 0` guard (opt-in is default-off)",
     "data:BRANCHFLIP #2: `option branchflip on` flips to the positive `!= 0` guard (angr-style)",
     "data:BRANCHFLIP #3: the flip is logged so its effect is observable",
