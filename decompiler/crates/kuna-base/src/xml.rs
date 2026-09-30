@@ -1947,7 +1947,10 @@ mod tests {
         // compound statement (GH-783)
         // and kuna-ownreturn / an argument moved back into its own register
         // across a call stays a returned half and a parameter
-        assert_eq!(count, 371, "corpus file count drifted");
+        // and kuna-veneer-tailcall / a veneer to another function's entry is a
+        // tail call when its prototype is locked or it lies outside the extent
+        // (GH-781)
+        assert_eq!(count, 372, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

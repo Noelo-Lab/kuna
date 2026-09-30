@@ -132,6 +132,43 @@ fn indirect_branch_returns_false() {
 }
 
 #[test]
+fn indirect_branch_with_a_sole_foreign_destination_is_a_tail_call() {
+    let mut fd = build_fd();
+    let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x18d0);
+    assert!(kuna_is_tail_call_table(&fd, op, true, true, false, true, false), "locked");
+    assert!(kuna_is_tail_call_table(&fd, op, true, true, false, false, true), "out of extent");
+    assert!(
+        !kuna_is_tail_call_table(&fd, op, true, true, false, false, false),
+        "no prototype, inside the extent"
+    );
+    assert!(!kuna_is_tail_call_table(&fd, op, false, true, false, true, true), "gate off");
+    assert!(!kuna_is_tail_call_table(&fd, op, true, false, false, true, true), "not a function");
+    assert!(!kuna_is_tail_call_table(&fd, op, true, true, true, true, true), "its own entry");
+    let direct = build_branch_op(&mut fd, OpCode::CPUI_BRANCH, 0x18d0);
+    assert!(!kuna_is_tail_call_table(&fd, direct, true, true, false, true, true), "direct jump");
+}
+
+#[test]
+fn tailcalljump_values_split_direct_from_computed_jumps() {
+    let gates = |v| tail_call_mode(v).map(|(jumps, tables, _)| (jumps, tables)).unwrap();
+    assert_eq!(gates("on"), (true, true));
+    assert_eq!(gates("direct"), (true, false));
+    assert_eq!(gates("off"), (false, false));
+    assert!(tail_call_mode("tables").is_err());
+}
+
+#[test]
+fn a_table_has_a_sole_destination_only_when_every_entry_agrees() {
+    let fd = build_fd();
+    let at = |off| Address::new(proc_space(&fd), off);
+    assert_eq!(kuna_sole_destination(false, [at(0x18d0)]), Some(at(0x18d0)));
+    assert_eq!(kuna_sole_destination(false, [at(0x18d0), at(0x18d0)]), Some(at(0x18d0)));
+    assert_eq!(kuna_sole_destination(false, [at(0x18d0), at(0x18e0)]), None);
+    assert_eq!(kuna_sole_destination(false, []), None);
+    assert_eq!(kuna_sole_destination(true, [at(0x18d0)]), None, "an override stays a table");
+}
+
+#[test]
 fn call_returns_false() {
     let mut fd = build_fd();
     // A real CALL is already a call, not a jump to recover.

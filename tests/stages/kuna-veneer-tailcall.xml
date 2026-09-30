@@ -1,0 +1,117 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7">
+<!--
+    GH-781: an exact ARM veneer bound turns a valid tail transfer into
+    halt_missing.
+
+    A linker veneer loads its target from a literal and jumps through a
+    register:
+
+        0x1000 veneer:     ldr r1,[pc,#0]   ; r1 = *(0x1008) = 0x1010
+        0x1004             bx  r1
+        0x1008             .word 0x1010
+        0x1010 arm_helper: add r0,r0,#1
+        0x1014             bx  lr
+
+    Jump-table recovery reads the read-only literal and yields a one-entry
+    table whose only target is arm_helper's entry.  The follower walked INTO
+    arm_helper as a single-case switch; with the veneer's exact extent
+    declared (`function bounds 0x1000 0x1008`) the target lies outside it,
+    so the case became halt_missing() under a "flows out of bounds" warning.
+
+    Stage / sub-stage: P2 "flow-classification".  The P0 assertion is
+    `option tailcalljump on|direct`: under `on` such a jump is a tail call
+    when the callee's prototype is locked or the destination is outside the
+    declared extent; `direct` keeps the flow into the destination.
+
+    The image also holds an `ldr pc,[pc,#-4]` veneer to 0x1020, which is not
+    a function (out of bounds in both passes); a Thumb veneer at 0x1028 to
+    thumb_helper, where neither side has a prototype but the helper is
+    outside the extent (a tail call whose target register r1 = 0x1031 is not
+    an argument); an
+    unbounded veneer at 0x1038 to arm_helper (a tail call because the
+    callee's prototype is declared); and an unbounded veneer at 0x1048 to
+    plain_helper, which has no prototype, so it keeps the copied-in body
+    that states its return value in both passes.  bare_veneer at 0x1060 is
+    the bounded A32 form with no prototype on either side: a tail call whose
+    target register r1 = plain_helper is not an argument.
+
+    Pass 1 (option tailcalljump direct) reproduces the bug: #1, #4.
+    Pass 2 (on): #2, #3 and #6 are the tail calls; #5 and #7 hold in both.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+00109fe511ff2fe11010000000000000010080e21eff2fe1
+04f01fe520100000020080e21eff2fe1
+0049084731100000013070470000a0e1
+00109fe511ff2fe11010000000000000
+00109fe511ff2fe15810000000000000
+030080e21eff2fe1
+00109fe511ff2fe15810000000000000
+</bytechunk>
+</binaryimage>
+<script>
+  <com>option readonly on</com>
+  <com>set context TMode 1 [ram,0x1028] [ram,0x1033]</com>
+  <com>function bounds 0x1000 0x1008 as veneer</com>
+  <com>function bounds 0x1010 0x1018 as arm_helper</com>
+  <com>function bounds 0x1018 0x1020 as far_veneer</com>
+  <com>function bounds 0x1028 0x102c as thumb_veneer</com>
+  <com>function bounds 0x1030 0x1034 as thumb_helper</com>
+  <com>function bounds 0x1038 as open_veneer</com>
+  <com>function bounds 0x1048 as plain_veneer</com>
+  <com>function bounds 0x1058 as plain_helper</com>
+  <com>function bounds 0x1060 0x1068 as bare_veneer</com>
+  <com>parse line extern unsigned int veneer(unsigned int value);</com>
+  <com>parse line extern unsigned int arm_helper(unsigned int value);</com>
+  <com>parse line extern unsigned int far_veneer(unsigned int value);</com>
+  <com>parse line extern unsigned int open_veneer(unsigned int value);</com>
+  <com>parse line extern unsigned int plain_veneer(unsigned int value);</com>
+  <com>option tailcalljump direct</com>
+  <com>lo fu veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu thumb_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu far_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu open_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu plain_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bare_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option tailcalljump on</com>
+  <com>lo fu veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu thumb_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu far_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu open_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu plain_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bare_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="VENEERTAILCALL #1: direct, a bounded veneer's transfer is lost to halt_missing" min="3" max="3">halt_missing\(\); // warn: Function flow out of bounds: r0x0000(1004 flows to r0x00001010|102a flows to r0x00001030|1064 flows to r0x00001058)</stringmatch>
+<stringmatch name="VENEERTAILCALL #2: on, a veneer to a declared prototype tail-calls it, bounded or not" min="2" max="2">return arm_helper\(value\); // tail-call</stringmatch>
+<stringmatch name="VENEERTAILCALL #3: on, a bounded veneer tail-calls a helper with no prototype, A32 and Thumb" min="2" max="2">(thumb|plain)_helper\(a0\); // tail-call</stringmatch>
+<stringmatch name="VENEERTAILCALL #4: direct, the unbounded veneer copies arm_helper's body in" min="1" max="1">return value \+ 1;</stringmatch>
+<stringmatch name="VENEERTAILCALL #5: a helper with no prototype keeps its copied-in body in both passes" min="2" max="2">return value \+ 3;</stringmatch>
+<stringmatch name="VENEERTAILCALL #6: the register that carried the target is not an argument" min="0" max="0">_helper\(.*(0x1031|0x1058|plain_helper|arm_helper)</stringmatch>
+<stringmatch name="VENEERTAILCALL #7: a target that is not a function stays out of bounds" min="2" max="2">halt_missing\(\); // warn: Function flow out of bounds: r0x00001018 flows to r0x00001020</stringmatch>
+<stringmatch name="VENEERTAILCALL #8: every recovered tail call is logged" min="4" max="4">// tail-call</stringmatch>
+</decompilertest>

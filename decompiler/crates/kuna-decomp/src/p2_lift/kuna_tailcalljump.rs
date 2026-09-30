@@ -46,9 +46,26 @@
 //!     the user wants this instruction followed intraprocedurally.  It therefore
 //!     vetoes the lower-priority tail-call inference even when the destination is
 //!     also a known function entry.
+//!
+//! ## Computed jumps with one destination
+//!
+//! A veneer or long-branch stub loads its target from a literal and jumps
+//! through a register (`ldr r1,[pc]; bx r1`, `ldr pc,[pc,#-4]`).  Jump-table
+//! recovery reads the read-only literal and yields a one-entry table.  When that
+//! sole destination is another known function's entry, the jump is the same tail
+//! call a direct `jmp` to it would be: [`kuna_sole_table_destination`] names the
+//! destination and [`kuna_is_tail_call_table`] decides for the `CPUI_BRANCHIND`
+//! under `tailcalljump on`.  The tail call is taken only where it loses nothing:
+//! the callee's prototype is locked, so it states the call's arguments and
+//! return, or the destination is outside a declared extent, where following it
+//! can only reach a `halt_missing()`.  Otherwise the flow follows the table as
+//! before, so a callee with no prototype keeps its body in the veneer.
 
 use crate::funcdata::Funcdata;
 use crate::context::OpId;
+use crate::jumptable::JumpTable;
+use kuna_base::address::Address;
+use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::ElementId;
 use kuna_num::opcodes::OpCode;
 
@@ -140,6 +157,62 @@ pub fn kuna_is_tail_call_branch(
         return false;
     }
     true
+}
+
+/// (kuna) The one address every entry of a recovered, non-override jump table
+/// names, or `None` when the table is empty, an override, or has two targets.
+pub fn kuna_sole_table_destination(jt: &JumpTable) -> Option<Address> {
+    kuna_sole_destination(
+        jt.is_override(),
+        (0..jt.num_entries()).map(|i| jt.get_address_by_index(i)),
+    )
+}
+
+/// (kuna) [`kuna_sole_table_destination`] over the table's `targets`.
+pub fn kuna_sole_destination(
+    is_override: bool,
+    targets: impl IntoIterator<Item = Address>,
+) -> Option<Address> {
+    if is_override {
+        return None;
+    }
+    let mut targets = targets.into_iter();
+    let dest = targets.next()?;
+    targets.all(|t| t == dest).then_some(dest)
+}
+
+/// (kuna) Parse `option tailcalljump on|direct|off` into the
+/// `(tail_call_jumps, tail_call_tables)` gates: `on` recovers direct jumps and
+/// one-destination computed jumps, `direct` only direct jumps.
+pub fn tail_call_mode(p1: &str) -> KunaResult<(bool, bool, &'static str)> {
+    match p1 {
+        "" | "on" => Ok((true, true, "Tail-call jump recovery turned on")),
+        "direct" => Ok((true, false, "Tail-call jump recovery limited to direct jumps")),
+        "off" => Ok((false, false, "Tail-call jump recovery turned off")),
+        other => Err(KunaError::parse(format!(
+            "Unknown tailcalljump value: {other} (expected on|direct|off)"
+        ))),
+    }
+}
+
+/// (kuna) Is the computed jump `op`, whose recovered jump table has the single
+/// destination `dest`, a tail call?  The gate is on, `dest` is another known
+/// function's entry, and either that callee's prototype is locked or `dest`
+/// lies outside the function's declared extent.
+pub fn kuna_is_tail_call_table(
+    data: &Funcdata,
+    op: OpId,
+    gate: bool,
+    dest_is_known_function: bool,
+    dest_is_self: bool,
+    callee_proto_locked: bool,
+    dest_outside_extent: bool,
+) -> bool {
+    gate
+        && dest_is_known_function
+        && !dest_is_self
+        && (callee_proto_locked || dest_outside_extent)
+        && data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_BRANCHIND)
 }
 
 #[cfg(test)]
