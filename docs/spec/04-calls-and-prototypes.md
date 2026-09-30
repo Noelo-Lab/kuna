@@ -2122,6 +2122,16 @@ onto the survivor `struct_59 *a0` and still passed its child as
 names no superseded structure is still read by the redo: it states a current
 type, as any callee's does. A function is never offered its own statement
 (`seed_protoorder_types`), so its call to itself reads nothing on any pass.
+The types a function's callers stated for it (`calleevote`, below) are forgotten
+input by input rather than as a whole: an input whose stated type names a
+superseded structure loses its statement, and the function's other inputs keep
+what their callers passed
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleevote.rs (forget_naming)`).
+Forgetting the whole list made tar's `exclude_add_pattern_buffer (struct exclude
+*, char *)`, redone for its record, print the buffer its callers pass as `char *`
+as `unsigned long`. On the 45 castbench binaries at the defaults no function is
+redone with such a list, so the output there is unchanged; `fieldtype on`, which
+moves which records are superseded, reached the tar case.
 
 The option has three live values, because there are two different things a
 recovered prototype can be asked to say and only one of them is safe to say by

@@ -1,0 +1,134 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Cast campaign, lever `fieldtype`: a synthesized record's field that some
+    access holds as a pointer is declared as that pointer.
+
+    structsynth types a field from the widest access it measured, and among
+    accesses of one width the first it meets decides. At -O0 a field is
+    reloaded for every use, so the first load of a buffer field is the one an
+    integer add reads, and the field is declared int8 although the next load
+    hands it to memmove. Every pointer use then prints a cast back:
+
+        memmove((void *)a0->field_0x0,(void *)(a0->field_0x0 + (a0->field_0x8 - a0->field_0x10)),a0->field_0x10);
+
+    Stage / sub-stage: P5 "aggregate-union". The P0 assertion
+    `option fieldtype on|off` decides whether structsynth declares such a field
+    as the most specific pointer its accesses prove: a value dereferenced,
+    called, handed to a declared pointer parameter or returned by a function
+    declared to return one. A type a value picks up by being merged with
+    another value is not proof, and a field some access divides, shifts,
+    multiplies or compares with sign stays a number.
+
+    The fixture is decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_x86_64.c.
+    Built by gcc -O0:
+
+        buf_shift:   sort's fillbuf - the buffer is added to, then handed to
+                     memmove; it becomes the void * memmove proves (the char *
+                     the loop walks reaches it only through the loop's phi)
+        ent_release: ls's free_ent - a context compared with a sentinel, then
+                     handed to strlen and free
+        ops_run:     a function-pointer field compared with zero, then called
+        range_walk:  sort's mergelines_node - two walking pointers and the two
+                     end pointers nothing but the loop test compares them with;
+                     the end pointers take the walking pointers' type. The
+                     pointer differences cast both sides back to an integer,
+                     the price of the right type
+        cell_val:    a control - a union member read as a double and as a
+                     pointer stays raw bytes in both passes
+        slot_post:   a control - an index read at a table, then handed to
+                     write as its buffer, stays a number in both passes
+
+    Built by clang -O2, with `option operand_refs on` so the "NULL" constant is
+    a string as the CLI's default mode makes it:
+
+        pctx_print:  a control, e2fsck's expand_percent_expression - the number
+                     is compared first, then every case sinks into one fprintf,
+                     so the number and the string reach it through one register
+                     typed char *. The number stays a number in both passes
+
+    Pass 1 (`option fieldtype off`, the default) reproduces the casts and pass 2
+    (`option fieldtype on`) is the fix.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_gcc_O0_x86_64</com>
+  <com>option fieldtype off</com>
+  <com>read symbols</com>
+  <com>lo fu buf_shift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ent_release</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ops_run</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu range_walk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cell_val</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu slot_post</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_gcc_O0_x86_64</com>
+  <com>option fieldtype on</com>
+  <com>read symbols</com>
+  <com>lo fu buf_shift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ent_release</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ops_run</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu range_walk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cell_val</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu slot_post</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_clang_O2_x86_64</com>
+  <com>option operand_refs on</com>
+  <com>option fieldtype off</com>
+  <com>read symbols</com>
+  <com>lo fu pctx_print</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fieldtype_clang_O2_x86_64</com>
+  <com>option operand_refs on</com>
+  <com>option fieldtype on</com>
+  <com>read symbols</com>
+  <com>lo fu pctx_print</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="fieldtype #1: with the option off the buffer is an integer and memmove gets it through two casts - the bug" min="1" max="1">memmove\(\(void \*\)a0->field_0x0,\(void \*\)\(a0->field_0x0 \+ \(a0->field_0x8 - a0->field_0x10\)\),a0->field_0x10\);</stringmatch>
+<stringmatch name="fieldtype #2: with the option on the buffer is the void * memmove proves and memmove takes it as it is" min="1" max="1">memmove\(a0->field_0x0,\(void \*\)\(\(int8\)a0->field_0x0 \+ \(a0->field_0x8 - a0->field_0x10\)\),a0->field_0x10\);</stringmatch>
+<stringmatch name="fieldtype #3: with the option on the loop takes the buffer as it is, and indexes it as the char * it walks" min="1" max="1">for \(v1 = a0->field_0x0; v1 [&lt;] &amp;\(\(char \*\)a0->field_0x0\)\[a0->field_0x8\]; v1 = &amp;v1\[1\]\)</stringmatch>
+<stringmatch name="fieldtype #4: with the option off strlen gets the context through a cast" min="1" max="1">v2 = strlen\(\(char \*\)a0->field_0x10\);</stringmatch>
+<stringmatch name="fieldtype #5: with the option on the context is the char * strlen takes" min="1" max="1">v2 = strlen\(a0->field_0x10\);</stringmatch>
+<stringmatch name="fieldtype #6: with the option off the function pointer is called through a cast" min="1" max="1">v1 = \(\*\(code \*\)a0->field_0x8\)\(a0->field_0x10\);</stringmatch>
+<stringmatch name="fieldtype #7: with the option on the function pointer is called as it is" min="1" max="1">v1 = \(\*a0->field_0x8\)\(a0->field_0x10\);</stringmatch>
+<stringmatch name="fieldtype #8: with the option off the walking pointers are dereferenced through casts" min="1" max="1">v1 = v1 \* 7 \+ \(\*\(int8 \*\)a0->field_0x0 - \*\(int8 \*\)a0->field_0x8\);</stringmatch>
+<stringmatch name="fieldtype #9: with the option on they are dereferenced and stepped as pointers" min="1" max="1">a0->field_0x8 = &amp;a0->field_0x8\[-1\];</stringmatch>
+<stringmatch name="fieldtype #10: the end pointers take the walking pointers' type, so the loop test needs no cast in either pass" min="2" max="2">while \(\(a0->field_0x0 != a0->field_0x10 &amp;&amp; \(a0->field_0x8 != a0->field_0x18\)\)\)</stringmatch>
+<stringmatch name="fieldtype #11: a union member read as a double and as a pointer stays raw bytes in both passes" min="2" max="2">v2 = \*\(float8 \*\)a0->field_0x8;</stringmatch>
+<stringmatch name="fieldtype #12: an index read at a table and handed to write stays a number in both passes, so write gets it through a cast" min="2" max="2">v3 = \(void \*\)a1->field_0x8;</stringmatch>
+<stringmatch name="fieldtype #13: a number merged with a string on its way to fprintf stays a number in both passes" min="4" max="4">v1 = \(char \*\)a3->field_0x0;</stringmatch>
+</decompilertest>
