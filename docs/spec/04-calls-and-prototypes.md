@@ -1722,7 +1722,8 @@ real return value when both of the following hold:
   the function executed an instruction to move the argument into the return
   register, while the *same* address means the register was never touched and the
   caller's value is passing straight through — leftover, which is precisely what
-  the sibling rule exists to drop.
+  the sibling rule exists to drop, unless the function moved it out to another
+  register and back (below).
 
 A weaker version of the placement test was tried and rejected. It also rescued
 the pair when *every* half was an untouched incoming argument, on the theory that
@@ -1732,6 +1733,42 @@ resurrected the GH-6990 SPARC symptom, because a *void* `main` that touches
 nothing leaves `o0:o1` passing through and SPARC passes arguments in those same
 registers. Nothing local to the pair separates the two, so the placement test is
 applied per half with no exception.
+
+One shape does reach the same address with the function's hand on it: an
+argument carried across a call in a callee-saved register and moved back into its
+own register to be returned. `unsigned long long own(unsigned a, unsigned b) {
+ext(); return (unsigned long long)b << 32 | a; }` on ARM keeps `a` in `r5` and `b`
+in `r4` across `bl ext`, then ends `mov r0,r5; mov r1,r4`. Once copy propagation
+has collapsed the moves, `r1` reaches the RETURN as the caller's own `r1`, the
+placement test read it as leftover, and the function printed `unsigned int
+own(unsigned int a0) { ext(); return a0; }`: the high word and the parameter `b`
+were gone. On AArch64 the high half was sometimes the one kept, returning `b`
+alone in place of the whole value.
+
+The moves are still in the IR when return recovery builds the pair, so it
+records then (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_retinputhalf.rs`,
+`note_moved_back_returns`) each used output register whose value at some RETURN
+walks back through moves, phis and non-creating indirects to its own input by way
+of another register. The repair skips the placement test for a recorded register
+at every RETURN; the half must still be parameter storage. The record is per
+register because a function returns in one storage: once one path moves the
+argument back to return it, the same register left untouched on an early return
+is that argument passing through, and keeping the pair at one RETURN but not the
+other would give the function two return widths. A move is a COPY, or the `or`
+or `add` with zero and the self-`or` that MIPS, SPARC, RISC-V and PowerPC's `mr`
+lift to before the rules reduce them.
+
+Two kinds of copy are not moves. An incidental copy (Xtensa's register-window
+swap around a `call8`) is walked through without counting. A move to another
+storage made by an instruction that also writes the stack pointer ends the path:
+SPARC's `save` and `restore` copy every `%o` register to its `%i` register and
+back, so a SPARC function that never touches `%o1` has the moved-out-and-back
+shape on every return, and both instructions move the stack pointer, as does the
+`pop` of a pushed register. `tests/stages/gh6990-returnpair.xml` keeps that
+SPARC function returning one register, and `tests/stages/kuna-ownreturn.xml`
+pins the ARM shapes. The same functions on a big-endian target keep both halves,
+in the order the pair is joined in, which is swapped on big-endian until that
+join is fixed.
 
 The predicate runs inside `ActionOutputPrototype`, which is scheduled *before*
 `ActionInputPrototype`, so the proto's own parameter list is not fixated yet and

@@ -195,8 +195,10 @@ fn computes_everywhere(data: &Funcdata, vn: VarnodeId, placed_at: Option<&Addres
 /// a different address was moved into the return register by an instruction the
 /// function executed, while a terminal at the same address is the caller's
 /// register passing straight through untouched -- leftover, and exactly what this
-/// module exists to drop. `None` drops the placement test and is the shape-only
-/// question the unit tests ask. See [`crate::kuna_retinputhalf`].
+/// module exists to drop. `None` drops the placement test: the pair repair passes
+/// it for a half the function moved out of its register and back
+/// ([`crate::kuna_retinputhalf::is_moved_back`]), and the unit tests ask the
+/// shape-only question with it. See [`crate::kuna_retinputhalf`].
 fn computes_from(data: &Funcdata, vn: VarnodeId, depth: u32, placed_at: Option<&Address>) -> bool {
     if depth >= MAX_DEPTH {
         return true;
@@ -356,8 +358,11 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
         };
         let hi_slot = slot_storage(data, whole, lo_size, hi_size).unwrap_or(hi_addr);
         let lo_slot = slot_storage(data, whole, 0, lo_size).unwrap_or(lo_addr);
-        let hi_real = computes_from(data, hi, 0, Some(&hi_slot));
-        let lo_real = computes_from(data, lo, 0, Some(&lo_slot));
+        let placed = |slot: &Address, size: i32| {
+            (!crate::kuna_retinputhalf::is_moved_back(data, slot, size)).then(|| slot.clone())
+        };
+        let hi_real = computes_from(data, hi, 0, placed(&hi_slot, hi_size).as_ref());
+        let lo_real = computes_from(data, lo, 0, placed(&lo_slot, lo_size).as_ref());
         let keep = match (hi_real, lo_real) {
             // Both halves carry a value: a genuine wide return. Leave it alone.
             (true, true) => continue,
