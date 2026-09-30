@@ -1997,6 +1997,34 @@ Three properties of that mapping are load-bearing, each measured on
   temporary durably needs the dynamic-hash channel
   (`Funcdata::seed_dynamic_recommendations`), which this does not use.
 
+(kuna) **Every `name`/`type` in one batch reads its identifier against the same
+pass.** A batch is the directives applied between two decompiles: the
+in-process surface's list, or the script's `rename`/`retype` lines. Mapping a
+register local's Symbol used to clear the analysis (after upstream
+`IfcTypeVarnode`), which emptied the HighVariables the next directive looks its
+identifier up in, so of two independent renames the second always answered
+`No symbol named:`, in either order. Nothing needs that clear -- both surfaces
+rebuild the IR from the scope for the second pass -- so the pass is left intact,
+and `Funcdata::kuna_directive_symbols` records every Symbol the batch renamed,
+retyped or created, keyed by the identifier the pass printed for it.
+`decompiler/crates/kuna-console/src/kuna_hightarget.rs` then gives an identifier
+two readings, in order:
+
+1. the variable the pass printed under it, whatever an earlier directive renamed
+   it to, so directives on different locals do not depend on their order and
+   `name a b` with `name b a` swaps the two;
+2. otherwise the variable an earlier directive in the batch gave that name, so
+   `name v1 rc` followed by `type rc unsigned int` retypes `rc`.
+
+The first reading wins where both exist, because it is the name the caller was
+shown. A second directive on a local the batch already mapped edits that Symbol
+rather than mapping another, and it keeps the register's width, so `type rc
+char *` on a 4-byte register is still `Storage is 4 bytes, the stated type is
+8`. A Symbol the batch mapped over one register does not count as the pass's
+own claim on a neighbouring register view either. On the stack, `name v2
+credbuf` followed by `type v2 char[8]` now retypes `credbuf` where it used to
+be rejected, and still maps one Symbol over the slot.
+
 (kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
 carries.** The operand says which function the signature describes; the
 declaration supplies the return type, the parameter types and the parameter

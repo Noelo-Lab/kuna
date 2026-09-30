@@ -2803,10 +2803,13 @@ decomp_command!(
 
 decomp_command!(
     /// C++ `IfcRename`: `rename <oldname> <newname>` (ifacedecomp.cc:1332).
+    ///
+    /// (kuna) Resolved by `crate::kuna_hightarget::apply_local`, which also
+    /// reaches a register-resident local (a HighVariable the printer named, with
+    /// no Symbol behind it) and reads `oldname` against the output the renames
+    /// since the last `decompile` started from.
     IfcRename,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        use kuna_decomp::database::symbol_category;
-        use kuna_decomp::varnode::varnode_flags;
         s.skip_ws();
         let oldname = s.read_token();
         s.skip_ws();
@@ -2819,45 +2822,10 @@ decomp_command!(
             return Err(IfaceError::parse("Missing new name"));
         }
         let dcp = dcp_mut(status)?;
-        let sym_list = dcp.read_symbol(&oldname)?;
-        if sym_list.is_empty() {
-            // (kuna) The local scope backs the stack slots and the parameters
-            // only; a register-resident local exists solely as the HighVariable
-            // the printer named (`v6 // rax`), so fall back to mapping a Symbol
-            // over that high's storage at its use point
-            // (`crate::kuna_hightarget`).
-            let fd = dcp
-                .fd
-                .as_mut()
-                .ok_or_else(|| IfaceError::execution("No function selected"))?;
-            let target = crate::kuna_hightarget::resolve_printed_local(fd, &oldname)
-                .map_err(IfaceError::execution)?;
-            let ct = target.dtype.clone();
-            return crate::kuna_hightarget::bind_printed_local(fd, &target, &newname, ct)
-                .map_err(IfaceError::execution);
-        }
-        if sym_list.len() > 1 {
-            return Err(IfaceError::execution(format!("More than one symbol named: {oldname}")));
-        }
-        let sym = sym_list[0];
+        dcp.read_symbol(&oldname)?;
         let fd = dcp.fd.as_mut().expect("read_symbol succeeded => fd present");
-        let lm = fd
-            .get_scope_local_mut()
-            .ok_or_else(|| IfaceError::execution("Function has no local scope"))?;
-        // C++: if (sym->getCategory() == function_parameter)
-        //        dcp->fd->getFuncProto().setInputLock(true);
-        if lm.symbol_category(sym) == symbol_category::FUNCTION_PARAMETER {
-            fd.get_func_proto_mut().set_input_lock(true);
-            let lm = fd.get_scope_local_mut().expect("local scope present");
-            lm.rename_symbol(sym, &newname)
-                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-            lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
-        } else {
-            lm.rename_symbol(sym, &newname)
-                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-            lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
-        }
-        Ok(())
+        crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None)
+            .map_err(IfaceError::execution)
     }
 );
 
@@ -2878,11 +2846,10 @@ decomp_command!(
 decomp_command!(
     /// C++ `IfcRetype`: `retype <symbolname> <typedeclaration>`
     /// (ifacedecomp.cc:1390).  Change the data-type (and optionally the name) of
-    /// a symbol resolved by name in the current function's scope.
+    /// a symbol resolved by name in the current function's scope (resolved as
+    /// `IfcRename` resolves it).
     IfcRetype,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        use kuna_decomp::database::symbol_category;
-        use kuna_decomp::varnode::varnode_flags;
         s.skip_ws();
         let name = s.read_token();
         if name.is_empty() {
@@ -2903,44 +2870,10 @@ decomp_command!(
                 .map_err(|e| IfaceError::parse(e.explain().to_string()))?
         };
         let dcp = dcp_mut(status)?;
-        let sym_list = dcp.read_symbol(&name)?;
-        if sym_list.is_empty() {
-            // (kuna) See `IfcRename` above: a register-resident local has no
-            // Symbol to retype, so map a locked one over its storage instead.
-            let fd = dcp
-                .fd
-                .as_mut()
-                .ok_or_else(|| IfaceError::execution("No function selected"))?;
-            let target = crate::kuna_hightarget::resolve_printed_local(fd, &name)
-                .map_err(IfaceError::execution)?;
-            return crate::kuna_hightarget::bind_printed_local(fd, &target, &newname, ct)
-                .map_err(IfaceError::execution);
-        }
-        if sym_list.len() > 1 {
-            return Err(IfaceError::execution(format!("More than one symbol named : {name}")));
-        }
-        let sym = sym_list[0];
+        dcp.read_symbol(&name)?;
         let fd = dcp.fd.as_mut().expect("read_symbol succeeded => fd present");
-        // C++: if (sym->getCategory()==function_parameter)
-        //        dcp->fd->getFuncProto().setInputLock(true);
-        let is_param = fd
-            .get_scope_local()
-            .map(|lm| lm.symbol_category(sym) == symbol_category::FUNCTION_PARAMETER)
-            .unwrap_or(false);
-        if is_param {
-            fd.get_func_proto_mut().set_input_lock(true);
-        }
-        let lm = fd
-            .get_scope_local_mut()
-            .ok_or_else(|| IfaceError::execution("Function has no local scope"))?;
-        lm.retype_symbol(sym, ct).map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-        lm.set_attribute(sym, varnode_flags::typelock);
-        if !newname.is_empty() && newname != name {
-            lm.rename_symbol(sym, &newname)
-                .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
-            lm.set_attribute(sym, varnode_flags::namelock);
-        }
-        Ok(())
+        crate::kuna_hightarget::apply_local(fd, &name, &newname, Some(ct))
+            .map_err(IfaceError::execution)
     }
 );
 

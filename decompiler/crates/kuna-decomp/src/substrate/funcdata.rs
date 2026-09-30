@@ -138,6 +138,18 @@ pub struct FrameSlot {
     pub size: int4,
 }
 
+/// (kuna `--assert`) A local-scope Symbol a `name`/`type` directive touched on
+/// this pass: see [`Funcdata::kuna_directive_symbols`].
+#[derive(Clone, Debug)]
+pub struct DirectiveSymbol {
+    pub symbol: crate::database::SymbolId,
+    /// The identifier the pass printed for the variable the Symbol stands for.
+    pub printed: String,
+    /// For a Symbol a directive mapped over a register-resident local, the width
+    /// of that storage, which a later stated type still has to match.
+    pub bound_size: Option<int4>,
+}
+
 pub struct Funcdata {
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -330,6 +342,12 @@ pub struct Funcdata {
     /// is what lets the front-ends report the rejection (`--assert` ledger, exit
     /// code) while still emitting the C.
     kuna_rejected_flow: Vec<(Address, kuna_base::types::uint4, String)>,
+    /// (kuna `--assert`) The local-scope Symbols the `name`/`type` directives
+    /// applied to THIS pass renamed, retyped or created, each keyed back to the
+    /// identifier the pass printed for its variable.  A rebuilt `Funcdata` starts
+    /// empty, so the entries are exactly one batch: the directives between two
+    /// decompiles.
+    kuna_directive_symbols: Vec<DirectiveSymbol>,
     /// (kuna, ghidra Phase 4) WIRE-ONLY symbols the encode-time link pass
     /// synthesized for named HighVariables the analysis deliberately left
     /// symbol-less — see [`crate::database::WireSymbol`].  They are encoded
@@ -553,6 +571,7 @@ impl Funcdata {
             kuna_infertypes_settled: false,
             kuna_pipeline_failure: None,
             kuna_rejected_flow: Vec::new(),
+            kuna_directive_symbols: Vec::new(),
             kuna_wire_symbols: Vec::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
@@ -731,6 +750,20 @@ impl Funcdata {
     /// (kuna) The flow overrides this function's flow follow refused.
     pub fn kuna_rejected_flow_overrides(&self) -> &[(Address, kuna_base::types::uint4, String)] {
         &self.kuna_rejected_flow
+    }
+
+    /// (kuna `--assert`) The Symbols a `name`/`type` directive touched on this pass.
+    pub fn kuna_directive_symbols(&self) -> &[DirectiveSymbol] {
+        &self.kuna_directive_symbols
+    }
+
+    /// (kuna `--assert`) Record that a directive touched `entry.symbol`.  The
+    /// first record wins, so the identifier kept is the one the pass printed.
+    pub fn kuna_record_directive_symbol(&mut self, entry: DirectiveSymbol) {
+        if self.kuna_directive_symbols.iter().any(|d| d.symbol == entry.symbol) {
+            return;
+        }
+        self.kuna_directive_symbols.push(entry);
     }
 
     /// (kuna `rustabi`) Record what a probe of `entry`'s body proved about the
@@ -2897,6 +2930,7 @@ impl Funcdata {
         // id and hand the GUI the wrong rename target.
         self.kuna_wire_symbols.clear();
         self.kuna_wire_symbol_for_high.clear();
+        self.kuna_directive_symbols.clear();
         // (kuna `slotptr`) The evidence names ops by SeqNum, which a rebuilt op
         // bank reissues.
         self.slot_evidence.borrow_mut().clear();

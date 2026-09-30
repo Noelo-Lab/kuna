@@ -26,14 +26,36 @@
 //! redeclaration, in a body that goes on to use both.  Measured on the witness
 //! (`sub_1005350` of the `graphy` VM).  So a target carries the representative's
 //! own use point, which is the address `linkSymbol` queries with.
+//!
+//! # A batch reads the names it was shown
+//!
+//! Every `name`/`type` applied between two decompiles is one batch, and each
+//! one's identifier is read against the output that batch started from, not
+//! against what the directives before it did.  Mapping a Symbol used to clear
+//! the analysis, which emptied the HighVariables the NEXT directive resolves
+//! against, so of two independent renames the second always answered `No symbol
+//! named:` -- in either order.  The pass is now left intact and
+//! [`Funcdata::kuna_directive_symbols`] keeps every Symbol the batch touched
+//! keyed by the identifier the pass printed for it, which gives [`resolve_local`]
+//! two readings of an identifier:
+//!
+//! 1. the variable the pass printed under it, whatever an earlier directive in
+//!    the batch renamed it to -- so directives on different variables do not
+//!    depend on their order, and `name a b` with `name b a` is a swap;
+//! 2. failing that, the variable an earlier directive in the batch gave that
+//!    name, so `name v1 rc` followed by `type rc unsigned int` retypes `rc`.
+//!
+//! The first reading wins where both exist, because it is the one the caller
+//! could see.
 
 use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype::{IPTR_CONSTANT, IPTR_INTERNAL, IPTR_JOIN};
 use kuna_base::types::int4;
+use kuna_decomp::database::{symbol_category, SymbolId};
 use kuna_decomp::dtype::Datatype;
-use kuna_decomp::funcdata::Funcdata;
+use kuna_decomp::funcdata::{DirectiveSymbol, Funcdata};
 use kuna_decomp::varnode::varnode_flags;
 
 /// The storage a printed local occupies, in the shape `Scope::addSymbol` takes.
@@ -50,13 +72,124 @@ pub struct PrintedLocal {
     pub dtype: Rc<Datatype>,
 }
 
-/// Find the HighVariable the printer declared as `name`.
+/// What a `name`/`type` identifier resolved to.
+pub enum LocalTarget {
+    /// A Symbol: a stack slot, a parameter, or a register local an earlier
+    /// directive in the batch already mapped.
+    Symbol(SymbolId),
+    /// A register-resident local no Symbol backs yet.
+    Printed(PrintedLocal),
+}
+
+/// Resolve the identifier a `name`/`type` directive names, by the two readings
+/// in the module docs.
 ///
-/// `Err` is the message the caller reports verbatim; a name no high answers to
-/// keeps the legacy `No symbol named:` wording, because at that point the
-/// directive has missed both namespaces and the scope's answer is the one an
-/// agent has already been taught to read.
-pub fn resolve_printed_local(fd: &mut Funcdata, name: &str) -> Result<PrintedLocal, String> {
+/// `Err` is the message the caller reports verbatim; a name nothing answers to
+/// keeps the legacy `No symbol named:` wording, the one an agent has already
+/// been taught to read.
+pub fn resolve_local(fd: &mut Funcdata, name: &str) -> Result<LocalTarget, String> {
+    let touched = fd.kuna_directive_symbols().to_vec();
+    let mut printed: Vec<SymbolId> =
+        touched.iter().filter(|d| d.printed == name).map(|d| d.symbol).collect();
+    if let Some(lm) = fd.get_scope_local() {
+        printed.extend(
+            lm.query_by_name(name)
+                .into_iter()
+                .filter(|sym| !touched.iter().any(|d| d.symbol == *sym)),
+        );
+    }
+    match printed.len() {
+        0 => {}
+        1 => return Ok(LocalTarget::Symbol(printed[0])),
+        n => return Err(format!("More than one symbol named: {name} ({n})")),
+    }
+    if let Some(target) = resolve_printed_local(fd, name, &touched)? {
+        return Ok(LocalTarget::Printed(target));
+    }
+    let given: Vec<SymbolId> = match fd.get_scope_local() {
+        Some(lm) => touched
+            .iter()
+            .filter(|d| d.printed != name && lm.database().symbol(d.symbol).name == name)
+            .map(|d| d.symbol)
+            .collect(),
+        None => Vec::new(),
+    };
+    match given.len() {
+        0 => Err(format!("No symbol named: {name}")),
+        1 => Ok(LocalTarget::Symbol(given[0])),
+        n => Err(format!("More than one symbol named: {name} ({n})")),
+    }
+}
+
+/// Apply one `name`/`type` directive to the local `name` resolves to: rename it
+/// to `newname` (empty keeps the name) and, for a `type`, retype it to `retype`.
+pub fn apply_local(
+    fd: &mut Funcdata,
+    name: &str,
+    newname: &str,
+    retype: Option<Rc<Datatype>>,
+) -> Result<(), String> {
+    let sym = match resolve_local(fd, name)? {
+        LocalTarget::Printed(target) => {
+            let ct = retype.unwrap_or_else(|| target.dtype.clone());
+            let symbol = bind_printed_local(fd, &target, newname, ct)?;
+            fd.kuna_record_directive_symbol(DirectiveSymbol {
+                symbol,
+                printed: name.to_string(),
+                bound_size: Some(target.size),
+            });
+            return Ok(());
+        }
+        LocalTarget::Symbol(sym) => sym,
+    };
+    let bound_size = fd
+        .kuna_directive_symbols()
+        .iter()
+        .find(|d| d.symbol == sym)
+        .and_then(|d| d.bound_size);
+    if let (Some(size), Some(ct)) = (bound_size, retype.as_ref()) {
+        check_width(size, ct)?;
+    }
+    // A parameter's storage is model-derived; locking its name or type locks the
+    // input side of the prototype too (C++ `IfcRename`/`IfcRetype`).
+    let lm = fd.get_scope_local().ok_or_else(|| "Function has no local scope".to_string())?;
+    let current = lm.database().symbol(sym).name.clone();
+    if lm.symbol_category(sym) == symbol_category::FUNCTION_PARAMETER {
+        fd.get_func_proto_mut().set_input_lock(true);
+    }
+    let lm = fd
+        .get_scope_local_mut()
+        .ok_or_else(|| "Function has no local scope".to_string())?;
+    match retype {
+        None => {
+            lm.rename_symbol(sym, newname).map_err(|e| e.explain().to_string())?;
+            lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
+        }
+        Some(ct) => {
+            lm.retype_symbol(sym, ct).map_err(|e| e.explain().to_string())?;
+            lm.set_attribute(sym, varnode_flags::typelock);
+            if !newname.is_empty() && newname != current {
+                lm.rename_symbol(sym, newname).map_err(|e| e.explain().to_string())?;
+                lm.set_attribute(sym, varnode_flags::namelock);
+            }
+        }
+    }
+    fd.kuna_record_directive_symbol(DirectiveSymbol {
+        symbol: sym,
+        printed: current,
+        bound_size: None,
+    });
+    Ok(())
+}
+
+/// Find the HighVariable the printer declared as `name`; `Ok(None)` when no
+/// high answers to it.  `touched` is the batch so far: a Symbol it mapped over
+/// neighbouring storage is not the pass's own and does not claim this one.
+fn resolve_printed_local(
+    fd: &mut Funcdata,
+    name: &str,
+    touched: &[DirectiveSymbol],
+) -> Result<Option<PrintedLocal>, String> {
     let mut ids: Vec<_> = fd
         .high_bank()
         .iter()
@@ -76,7 +209,7 @@ pub fn resolve_printed_local(fd: &mut Funcdata, name: &str) -> Result<PrintedLoc
         })
     });
     match ids.len() {
-        0 => return Err(format!("No symbol named: {name}")),
+        0 => return Ok(None),
         1 => {}
         n => return Err(format!("More than one variable named: {name} ({n})")),
     }
@@ -131,16 +264,17 @@ pub fn resolve_printed_local(fd: &mut Funcdata, name: &str) -> Result<PrintedLoc
         }
     }
     // The scope already owns this storage, so the high is a stack local or a
-    // parameter that the by-name query missed for some OTHER reason -- most often
-    // because an earlier directive in the same batch renamed its Symbol while the
-    // high still reports the name the first pass printed.  Mapping a second
-    // Symbol over storage a Symbol already covers would put two entries on one
-    // stack slot; the caller's `No symbol named:` is the right answer there.
-    if fd
-        .get_scope_local()
-        .is_some_and(|lm| lm.containing_symbol_for_storage(&addr).is_some())
-    {
-        return Err(format!("No symbol named: {name}"));
+    // parameter the by-name query missed.  Mapping a second Symbol over storage
+    // a Symbol already covers would put two entries on one stack slot, so this is
+    // a miss.  A Symbol the batch itself mapped over a register is keyed to its
+    // own use point and does not count.
+    let owned = fd.get_scope_local().is_some_and(|lm| {
+        lm.symbols_containing_storage(&addr).into_iter().any(|sym| {
+            !touched.iter().any(|d| d.symbol == sym && d.bound_size.is_some())
+        })
+    });
+    if owned {
+        return Ok(None);
     }
     // C++ `Varnode::getUsePoint` (varnode.cc:715), which `Funcdata::linkSymbol`
     // passes to the local-scope container query.
@@ -148,16 +282,28 @@ pub fn resolve_printed_local(fd: &mut Funcdata, name: &str) -> Result<PrintedLoc
         Some(op) => op.get_addr().clone(),
         None => &fd.get_address().clone() + -1,
     };
-    Ok(PrintedLocal { addr, size, usepoint, dtype })
+    Ok(Some(PrintedLocal { addr, size, usepoint, dtype }))
+}
+
+/// A Symbol covers `ct.get_size()` bytes from the storage address, so a type
+/// wider than the target is a statement about the NEXT variable along: `type
+/// v1 char *` on a 4-byte `v1 // eax` maps 8 bytes at EAX's address, i.e. RAX,
+/// and comes back `applied` with `v1` untouched.  The width is the one thing
+/// the caller cannot see from the C, so say it.
+fn check_width(size: int4, ct: &Datatype) -> Result<(), String> {
+    if ct.get_size() != size {
+        return Err(format!("Storage is {size} bytes, the stated type is {}", ct.get_size()));
+    }
+    Ok(())
 }
 
 /// Map an isolated, locked Symbol over a printed local's storage — the mapping
 /// `type varnode %REG(pc)` makes, keyed by the emitter's identifier instead of a
 /// hand-written varnode specifier.
 ///
-/// The analysis is cleared first (C++ `IfcTypeVarnode`'s `clearAnalysis`) so the
-/// caller's next `decompile` reads the new Symbol; the Symbol is locked, so the
-/// `clearUnlocked` that clear performs does not take it back.
+/// Unlike C++ `IfcTypeVarnode` this does not clear the analysis: every caller
+/// decompiles again from the scope, and the pass's HighVariables are what the
+/// rest of the batch resolves its identifiers against (see the module docs).
 ///
 /// An EMPTY `name` -- what a bare `type v6 <T>` passes, since it states no
 /// identifier -- leaves the Symbol for the naming pass to number, and that is
@@ -169,25 +315,13 @@ pub fn resolve_printed_local(fd: &mut Funcdata, name: &str) -> Result<PrintedLoc
 /// of the safe choice is that a retyped local can come back under a different
 /// number; the storage comment (`// rax`) is what identifies it across the two
 /// passes, and an explicit `type v6 <T> <newname>` pins a name outright.
-pub fn bind_printed_local(
+fn bind_printed_local(
     fd: &mut Funcdata,
     target: &PrintedLocal,
     name: &str,
     ct: Rc<Datatype>,
-) -> Result<(), String> {
-    // A Symbol covers `ct.get_size()` bytes from the storage address, so a type
-    // wider than the target is a statement about the NEXT variable along: `type
-    // v1 char *` on a 4-byte `v1 // eax` maps 8 bytes at EAX's address, i.e. RAX,
-    // and comes back `applied` with `v1` untouched.  The width is the one thing
-    // the caller cannot see from the C, so say it.
-    if ct.get_size() != target.size {
-        return Err(format!(
-            "Storage is {} bytes, the stated type is {}",
-            target.size,
-            ct.get_size()
-        ));
-    }
-    fd.clear();
+) -> Result<SymbolId, String> {
+    check_width(target.size, &ct)?;
     let scope = fd
         .get_scope_local_mut()
         .ok_or_else(|| "Function has no local scope".to_string())?;
@@ -199,5 +333,5 @@ pub fn bind_printed_local(
     if !name.is_empty() {
         scope.set_attribute(sym, varnode_flags::namelock);
     }
-    Ok(())
+    Ok(sym)
 }

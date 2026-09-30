@@ -474,6 +474,14 @@ without a storage comment) has no location a symbol can be mapped to; the
 directive is `rejected` with `Not addressable storage` rather than accepted and
 dropped.
 
+**Every `name`/`type` in one run reads the output you were shown.** Each
+directive's identifier is looked up in the C kuna printed before any of them
+applied, so directives on different locals work in any order, and
+`name v1 v2` with `name v2 v1` swaps the two. A later directive may also use a
+name an earlier one gave (`name v1 rc` then `type rc unsigned int`); when an
+identifier is both a printed name and a new name given to a different local,
+the printed one wins.
+
 **Write the type in C.** The standard scalar keywords — `void`, `char`, `short`,
 `int`, `long`, `float`, `double`, `signed`, `unsigned`, `_Bool`, `wchar_t` — are
 accepted in any legal combination, in return position, in parameter position and

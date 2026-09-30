@@ -2645,6 +2645,28 @@ impl Database {
         bestentry
     }
 
+    /// Every entry [`Self::find_container_ignore_usepoint`] chooses among, not
+    /// only the smallest.
+    pub fn find_containers_ignore_usepoint(
+        &self,
+        scope: ScopeId,
+        addr: &Address,
+        size: int4,
+    ) -> Vec<EntryRef> {
+        let Some(space) = addr.get_space() else { return Vec::new() };
+        let space_index = space.get_index() as usize;
+        let Some(rangemap) = self.scopes[scope].maptable.get(space_index).and_then(|m| m.as_ref())
+        else {
+            return Vec::new();
+        };
+        let end = addr.get_offset().wrapping_add(size as uintb).wrapping_sub(1);
+        rangemap
+            .find_subsorts(addr.get_offset(), EntrySubsort::minimal(), EntrySubsort::maximal())
+            .filter(|&idx| self.mapped_entry(scope, space_index, idx).get_last() >= end)
+            .map(|idx| EntryRef::Mapped { space_index, idx })
+            .collect()
+    }
+
     /// C++ `ScopeInternal::findClosestFit` (`database.cc:2312-2347`).
     pub fn find_closest_fit(
         &self,
