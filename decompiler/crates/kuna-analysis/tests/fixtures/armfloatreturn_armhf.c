@@ -7,7 +7,9 @@
  * float in s0.  twocalls/twocallsf pass the parameter to a first call and a
  * computed value in the same register to a second one.  bump returns an int
  * in r0 while half's double is still in d0; second leaves d0 unused below the
- * double it returns; w2 reads its two floats as the halves of d0. */
+ * double it returns; w2 reads its two floats as the halves of d0.  a3, a7
+ * and a6 return half's result on one path and a computed double on the
+ * other. */
 volatile double sink;
 volatile int counter;
 __attribute__((noinline)) double scale(double x) { sink = x; return x * 1.5; }
@@ -21,3 +23,6 @@ __attribute__((noinline)) double half(double x) { counter++; return x * 0.5; }
 int bump(double x, int k) { half(x); return k + 1; }
 double second(double x, double y) { return y; }
 double w2(float a, float b) { return (double)a * b; }
+double a3(double x) { if (x > 1.0) return half(x); return x * 3.0; }
+double a7(double x) { if (x > 1.0) return half(x); return 2.5; }
+double a6(double x, int k) { double r = k ? half(x) : x * 3.0; counter = k; return r; }

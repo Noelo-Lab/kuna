@@ -647,3 +647,36 @@ fn an_int_return_beats_a_double_left_in_d0_by_a_call() {
         }
     }
 }
+
+/// A double one path takes from a call and another computes is returned on both.
+#[test]
+fn a_double_returned_from_a_call_on_one_path_keeps_the_other_path() {
+    let fixture = common::fixture("armfloatreturn_armhf.o");
+    let (code, err, rc) = common::run_kuna(&[
+        "decompile-all",
+        &fixture,
+        "--mode",
+        "aggressive",
+        "--option",
+        "armfloatreturn",
+        "on",
+    ]);
+    assert_eq!(rc, 0, "{err}");
+    let body = |name: &str| {
+        code.split(&format!("// Function: {name} @"))
+            .nth(1)
+            .and_then(|b| b.split("// Function:").next())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let a3 = body("a3");
+    assert!(a3.contains("double a3(double a0)"), "{a3}");
+    assert!(a3.contains("half(a0)"), "{a3}");
+    assert!(a3.contains("return a0 * 3.0;"), "{a3}");
+    let a7 = body("a7");
+    assert!(a7.contains("double a7(double a0)"), "{a7}");
+    assert!(a7.contains("return 2.5;"), "{a7}");
+    let a6 = body("a6");
+    assert!(a6.contains("double a6(double a0,int a1)"), "{a6}");
+    assert!(a6.contains("a0 * 3.0"), "{a6}");
+}

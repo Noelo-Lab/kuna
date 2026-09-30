@@ -715,6 +715,18 @@ impl ParamEntry {
         None
     }
 
+    /// (kuna) `armfloatreturn`: a seeded `d` entry is one register, the
+    /// double-width view of its two `s` entries, not a two-piece join. Drop the
+    /// per-piece extra checks overlap resolution gave it, and let it share the
+    /// first-in-class standing of its low `s` entry, so a value a call left in
+    /// it is judged as it would be in that `s` register.
+    pub(crate) fn kuna_whole_register(&mut self, first: bool) {
+        self.flags &= !(param_entry_flags::EXTRACHECK_LOW | param_entry_flags::EXTRACHECK_HIGH);
+        if first {
+            self.flags |= param_entry_flags::FIRST_STORAGE;
+        }
+    }
+
     /// Mark this entry's `first_storage` flag based on the previous entry in
     /// `prev_list` (the entries decoded before this one) (C++ `resolveFirst`).
     /// In the C++ `--iter` reaches this entry (the last on the list) and

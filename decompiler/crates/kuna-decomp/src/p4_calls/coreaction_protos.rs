@@ -1895,7 +1895,7 @@ fn update_input_types(
         // it is a narrow STUB(W4 findDisjointCover) that does not fire).
         let is_persist = data.vbank().get(vn).map(|v| v.is_persist()).unwrap_or(false);
         let addr = active.get_trial(i).get_address().clone();
-        let ty = crate::kuna_armfloatreturn::unused_vfp_type(data, active.get_trial(i))
+        let ty = crate::kuna_armfloatreturn::unused_vfp_type(data, active, triallist, i)
             .or_else(|| data.high_get_type(vn))
             .unwrap_or_else(|| Rc::new(crate::dtype::Datatype::new(1, crate::dtype::type_metatype::TYPE_UNKNOWN)));
         let _ = is_persist;

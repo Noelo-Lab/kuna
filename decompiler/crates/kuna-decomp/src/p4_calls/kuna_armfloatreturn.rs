@@ -52,7 +52,7 @@ fn add_pairs(list: &mut ParamListStandard, manager: &AddrSpaceManager, limit: us
         {
             continue;
         }
-        if let Ok(entry) = ParamEntry::seed(
+        if let Ok(mut entry) = ParamEntry::seed(
             lo.get_group(),
             type_class::TYPECLASS_FLOAT,
             lo.get_space().clone(),
@@ -66,6 +66,7 @@ fn add_pairs(list: &mut ParamListStandard, manager: &AddrSpaceManager, limit: us
             list.get_entry(),
             manager,
         ) {
+            entry.kuna_whole_register(lo.is_first_in_class());
             list.push_entry(entry);
         }
     }
@@ -495,26 +496,51 @@ fn halves_only(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
         })
 }
 
-/// The type of an unused parameter that only fills a VFP slot below a used one:
-/// a float of its width, so the printed prototype puts the next parameter in the
-/// same register (an integer type would move it to the core registers).
-pub fn unused_vfp_type(data: &Funcdata, trial: &crate::fspec::ParamTrial) -> Option<Rc<crate::dtype::Datatype>> {
+/// The type of an unused parameter that only fills a VFP slot below a used
+/// floating-point one: a float of its width, so the printed prototype puts the
+/// next parameter in the same register (an integer type would move it to the
+/// core registers). Below a VFP parameter recovery typed as an integer, the
+/// filler keeps its default type too.
+pub fn unused_vfp_type(
+    data: &mut Funcdata,
+    active: &ParamActive,
+    triallist: &[VarnodeId],
+    i: i32,
+) -> Option<Rc<crate::dtype::Datatype>> {
+    let trial = active.get_trial(i);
     if !data.get_arch().arm_float_return || !trial.is_unref() {
         return None;
     }
     let size = trial.get_size();
-    let vfp = data
-        .get_func_proto()
-        .model()
-        .input()
-        .get_entry()
-        .iter()
-        .any(|e| {
-            e.get_type() == type_class::TYPECLASS_FLOAT
-                && e.get_size() == size
-                && e.justified_contain(trial.get_address(), size) == 0
-        });
-    if !vfp {
+    let offset = trial.get_address().get_offset();
+    let later: Vec<VarnodeId> = {
+        let entries = data.get_func_proto().model().input().get_entry();
+        let vfp = |addr: &Address, size: i32| {
+            entries.iter().any(|e| {
+                e.get_type() == type_class::TYPECLASS_FLOAT
+                    && e.get_size() == size
+                    && e.justified_contain(addr, size) == 0
+            })
+        };
+        if !vfp(trial.get_address(), size) {
+            return None;
+        }
+        (0..active.get_num_trials())
+            .map(|j| active.get_trial(j))
+            .filter(|t| {
+                t.is_used()
+                    && !t.is_unref()
+                    && t.get_address().get_offset() > offset
+                    && vfp(t.get_address(), t.get_size())
+            })
+            .filter_map(|t| triallist.get((t.get_slot() - 1) as usize).copied())
+            .collect()
+    };
+    let float_after = later.into_iter().any(|vn| {
+        data.high_get_type(vn)
+            .is_some_and(|ty| ty.get_metatype() == type_metatype::TYPE_FLOAT)
+    });
+    if !float_after {
         return None;
     }
     data.get_arch().types()?.get_base(size, type_metatype::TYPE_FLOAT).ok()

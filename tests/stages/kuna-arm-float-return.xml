@@ -20,7 +20,8 @@
     the whole double, takes the d0 parameter, narrows a float converted from
     a double to s0, keeps an integer return in r0 while d0 is also written
     or still holds a callee's double, fills an unused d0 below a used d1 with
-    one double, and does not make two floats in s0/s1 one 8-byte parameter.
+    one double, does not make two floats in s0/s1 one 8-byte parameter, and
+    returns a double that one path takes from a call and another computes.
 -->
 <bytechunk space="ram" offset="0x1000">080bb7ee1eff2fe1</bytechunk>
 <symbol space="ram" offset="0x1000" name="raw_fixed"/>
@@ -63,6 +64,15 @@
   <com>lo fu w2</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu a3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a7</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a6</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtlf_armhf</com>
   <com>option armfloatreturn off</com>
@@ -95,6 +105,15 @@
   <com>lo fu w2</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu a3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a7</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a6</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtlf_armhf</com>
   <com>option armfloatreturn on</com>
@@ -120,4 +139,10 @@
 <stringmatch name="armfloatreturn #14: off loses both double parameters of second" min="1" max="1">void second\(void\)</stringmatch>
 <stringmatch name="armfloatreturn #15: on fills the unused d0 below the returned d1 with one double" min="1" max="1">float8 second\(float8 a0,float8 a1\)</stringmatch>
 <stringmatch name="armfloatreturn #16: two floats read as the halves of d0 are not one integer parameter in either pass" min="2" max="2">w2\(void\)</stringmatch>
+<stringmatch name="armfloatreturn #17: off returns neither path of a3 as a double" min="1" max="1">unsigned int a3\(void\)</stringmatch>
+<stringmatch name="armfloatreturn #18: on a3 returns the call result on one path and its own product on the other" min="1" max="1">float8 a3\(float8 a0\)</stringmatch>
+<stringmatch name="armfloatreturn #19: on the computed path of a3 keeps its value" min="1" max="1">return a0 \* 3\.0;</stringmatch>
+<stringmatch name="armfloatreturn #20: on the constant path of a7 keeps 2.5" min="1" max="1">return 2\.5;</stringmatch>
+<stringmatch name="armfloatreturn #21: on a6 returns the double both arms of its join assign" min="1" max="1">float8 a6\(float8 a0,int4 a1\)</stringmatch>
+<stringmatch name="armfloatreturn #22: off a6 returns nothing" min="1" max="1">void a6\(int4 a0\)</stringmatch>
 </decompilertest>

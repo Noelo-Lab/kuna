@@ -3656,8 +3656,18 @@ double fills both single-register groups when holes are filled, so the
 s-register it covers is not a missing parameter, and an unused `d` slot below a
 used double parameter is filled by one 8-byte parameter rather than two 4-byte
 ones (`double second(double x, double y) { return y; }` keeps `y` second). An
-unused parameter that only fills a VFP slot is typed `float` or `double`, so the
-printed prototype still puts the next parameter in its register.
+unused parameter that only fills a VFP slot below a float-typed one is typed
+`float` or `double`, so the printed prototype still puts that parameter in its
+register; below an integer-typed half it keeps its default type.
+
+Each added `d` entry is one register, the double-width view of its two `s`
+entries, not a join of two pieces: overlap resolution would give it the
+per-piece checks of a containing entry, which drop a trial formed on some path
+by what a call left behind, and a lower standing than the first float entry.
+It gets neither, so a return that is a call's result on one path and computed
+on another (`if (x > 1.0) return half(x); return x * 3.0;`) is judged as it is
+in `s0`, and both paths keep their value instead of the function printing
+`void`.
 
 An 8-byte `d` input that no op reads whole -- every read, through casts, copies
 or a right shift by 32, ends in a 4-byte piece -- holds two floats in `s0` and
@@ -3671,7 +3681,9 @@ function computes and only returns (not a call's output), a VFP return trial
 whose value at every RETURN is only what a call left in the register is marked
 inactive. `half(x); return k + 1;` returns `k + 1` in `r0`, not `half`'s
 double; a function that returns `half`'s result and merely uses `r0` as scratch
-keeps the double. After the output trials are scored, a single used trial in
+keeps the double. The machine code cannot tell every case apart: a `void`
+function that calls `half` last and leaves `d0` alone, or an `int` stored as
+well as returned, looks like one returning `half`'s double. After the output trials are scored, a single used trial in
 `s0` or `d0` gives the returned value a float or double type before constant
 folding can drop its storage.
 
