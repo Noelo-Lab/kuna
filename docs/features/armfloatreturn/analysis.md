@@ -16,7 +16,7 @@ aggressive` with the option off and on (run after `make binaries`):
 python3 docs/features/armfloatreturn/corpus.py --output ../tmp/armfloatreturn-corpus
 ```
 
-45 files, 482 functions, 92 changed; `corpus.diff` is the whole diff. No
+46 files, 489 functions, 95 changed; `corpus.diff` is the whole diff. No
 `softfp` or soft-float object changes, and no ARM fixture changes other than the
 three hard-float ones with floating-point code (`armfloatreturn_armhf.o`,
 `fmtabi_armhf`, `fmtlf_armhf`). The Thumb objects change exactly as the ARM ones.
@@ -33,6 +33,11 @@ Every changed function:
   or still holds a callee's double (`bump`: `half(a0); return a1 + 1;`, where
   the wider `d0` used to win and printed `double bump(double a0) { return
   half(a0); }`); `half` itself returns its double.
+- A double returned from a call on one path and computed on another: `a3`,
+  `a7`, `a6` return both (`if (1.0 < a0) return (double)half(a0); return a0 *
+  3.0;`). The added `d0` entry used to carry the per-piece checks overlap
+  resolution gives a containing entry, so the call path's value dropped the
+  whole return and these printed `void`, losing `x * 3.0` and `2.5`.
 - Holes and float pairs: `second` fills the unused `d0` below the `d1` it
   returns with one `double` parameter (it printed `(unsigned int,unsigned
   int,double)`); `w2` reads two floats as the halves of `d0` and gets no
@@ -54,6 +59,10 @@ Every changed function:
   right type; the punning prints as an integer expression cast to the float
   type, and `integer_bits` types its `r0` parameter `float` because its bits
   are negated into the float result.
+
+A `void` function whose last call leaves a double in `d0` (`half(x); gi = k *
+3;`) prints that double as its return in `decompile-all`: the code is the same
+as returning `half`'s result, as it is for a float callee in `s0`.
 
 Homogeneous float aggregates are not reconstructed. `mkf2`, `mkf4` and `mkd2`
 here print `void` either way, but a `struct { double a, b; }` or a `_Complex

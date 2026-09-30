@@ -1,49 +1,49 @@
 {
-  "base": "e2723f8d62107c5f41f4c245bd299ca5d88071bd",
+  "base": "9032e73be1d9ad2ceed4d37980b68d1a406629cb",
   "option": "armfloatreturn",
   "default": "off",
   "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/armfloatreturn_armhf.o",
   "fixture_source": "decompiler/crates/kuna-analysis/tests/fixtures/armfloatreturn_armhf.c",
-  "stage_test": "tests/stages/kuna-arm-float-return.xml (16 assertions: raw image control, relocatable object and linked fmtlf_armhf with the option off and on, plus the bump/second/w2 controls)",
+  "stage_test": "tests/stages/kuna-arm-float-return.xml (22 assertions: raw image control, relocatable object and linked fmtlf_armhf with the option off and on, plus the bump/second/w2 and a3/a7/a6 cases)",
   "mode": "aggressive",
   "measurement": {
     "method": "min of N interleaved runs of origin/main, this branch with the option off, and on",
     "repro_decompile_fixed_o": {
-      "runs": 31,
-      "base": 0.0801,
-      "off": 0.0808,
-      "on": 0.0647,
-      "off_vs_base_percent": 0.9,
-      "on_vs_base_percent": -19.2
-    },
-    "fmtlf_armhf_decompile_all": {
-      "runs": 31,
-      "base": 0.075,
-      "off": 0.0731,
-      "on": 0.0733,
-      "off_vs_base_percent": -2.5,
+      "runs": 21,
+      "base": 0.082,
+      "off": 0.0826,
+      "on": 0.0801,
+      "off_vs_base_percent": 0.7,
       "on_vs_base_percent": -2.3
     },
+    "fmtlf_armhf_decompile_all": {
+      "runs": 21,
+      "base": 0.1064,
+      "off": 0.1051,
+      "on": 0.1062,
+      "off_vs_base_percent": -1.2,
+      "on_vs_base_percent": -0.2
+    },
     "armfloatreturn_armhf_o_decompile_all": {
-      "runs": 31,
-      "base": 0.0573,
-      "off": 0.057,
-      "on": 0.0573,
-      "off_vs_base_percent": -0.5,
-      "on_vs_base_percent": 0.1
+      "runs": 21,
+      "base": 0.0883,
+      "off": 0.0882,
+      "on": 0.0888,
+      "off_vs_base_percent": -0.1,
+      "on_vs_base_percent": 0.6
     },
     "libopencm3_O2_usart_stdio_decompile_all": {
       "runs": 5,
-      "base": 18.63,
-      "off": 18.738,
-      "on": 18.676,
-      "off_vs_base_percent": 0.6,
-      "on_vs_base_percent": 0.3
+      "base": 19.545,
+      "off": 19.096,
+      "on": 18.89,
+      "off_vs_base_percent": -2.3,
+      "on_vs_base_percent": -3.3
     }
   },
   "blast_radius": {
     "elf_fixtures": {
-      "files": 273,
+      "files": 274,
       "option_off_vs_main": "byte-identical",
       "option_on_changed_files": [
         "armfloatreturn_armhf.o",
@@ -59,9 +59,9 @@
     }
   },
   "corpus": {
-    "files": 45,
-    "functions": 482,
-    "changed": 92,
+    "files": 46,
+    "functions": 489,
+    "changed": 95,
     "diff": "corpus.diff",
     "review": "analysis.md",
     "replay": "corpus.py"

@@ -1007,9 +1007,9 @@
  {
 -  double v1; // d0
 -
--  dat_400170 = v1;
+-  dat_400208 = v1;
 -  return SUB84(v1 * 1.5,0);
-+  dat_400170 = a0;
++  dat_400208 = a0;
 +  return a0 * 1.5;
  }
 
@@ -1049,7 +1049,7 @@
  }
 
  // Function: twocallsf @ 0x400080
-@@ -46,41 +39,37 @@
+@@ -46,78 +39,61 @@
  }
 
  // Function: keep @ 0x4000ac
@@ -1069,7 +1069,7 @@
  {
 -  double v1; // d0
 -
-   dat_400178 += 1;
+   dat_400210 += 1;
 -  return SUB84(v1 * 0.5,0);
 +  return a0 * 0.5;
  }
@@ -1100,6 +1100,55 @@
 
 -  return SUB84((double)(float)v1 * (double)(float)((unsigned long long)v1 >> 0x20),0);
 +  return (double)(float)v1 * (double)(float)((unsigned long long)v1 >> 0x20);
+ }
+
+ // Function: a3 @ 0x400114
+-unsigned int a3(void)
++double a3(double a0)
+ {
+-  unsigned int v1; // s0
+-  double v2; // d0
+-
+-  if (1.0 < v2) {
+-    half();
+-    return v1;
+-  }
+-  return SUB84(v2 * 3.0,0);
++  if (1.0 < a0)
++    return (double)half(a0);
++  return a0 * 3.0;
+ }
+
+ // Function: a7 @ 0x40013c
+-unsigned int a7(void)
++double a7(double a0)
+ {
+-  unsigned int v1; // s0
+-  double v2; // d0
+-
+-  if (1.0 < v2) {
+-    half();
+-    return v1;
+-  }
+-  return 0;
++  if (1.0 < a0)
++    return (double)half(a0);
++  return 2.5;
+ }
+
+ // Function: a6 @ 0x400160
+-void a6(int a0) // return-dupe
++double a6(double a0,int a1) // ternary
+ {
+-  if (a0) {
+-    half();
+-    dat_400210 = a0;
+-    return;
+-  }
+-  dat_400210 = a0;
++  a0 = (a1) ? (double)half(a0) : a0 * 3.0; // branch-flip
++  dat_400210 = a1;
++  return a0;
  }
 
 --- fmtabi_armhf off
