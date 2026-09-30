@@ -1261,7 +1261,6 @@ mod tests {
             object_location: None,
             callee_hints: hints,
             synth: None,
-            pointerargs: None,
             detail: None,
         }
     }

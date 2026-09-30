@@ -709,7 +709,6 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
             }
         };
         let targets = jobs::read_spec(&dir.join(jobs::spec_name(idx)).to_string_lossy())?;
-        prog.arch().kuna_pointerargs.borrow_mut().start();
         let answers: Vec<Vec<Option<String>>> =
             targets.iter().map(|t| t.synth.clone().unwrap_or_default()).collect();
         let entries = rehydrate_entries(&prog, targets)?;
@@ -781,7 +780,6 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
             }
             if converge {
                 converge_synthesized_structs(&mut prog, &opts, &replay, &mut held);
-                kuna_console::project::converge_pointer_arguments(&mut prog, &opts, &replay, &mut held);
                 for r in &held {
                     out.push(r)?;
                 }
@@ -2269,7 +2267,6 @@ mod provenance_json_tests {
             object_location: None,
             callee_hints: Vec::new(),
             synth: None,
-            pointerargs: None,
             detail: None,
         };
 

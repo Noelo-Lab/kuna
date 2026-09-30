@@ -6789,7 +6789,8 @@ impl PrintC {
             for i in 1..nin {
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
                     let cast = if self.out_lang == crate::kuna_lang::OutLang::C {
-                        crate::kuna_pointerargs::argument_cast(&PointerView { pc: self, fd }, fd, arch, op, i)
+                        let view = PointerView { pc: self, fd };
+                        crate::kuna_pointerargs::argument_cast(&view, fd, arch, op, i)
                     } else {
                         None
                     };
@@ -10195,9 +10196,12 @@ impl crate::kuna_pointerargs::PrintedPointers for PointerView<'_> {
     }
 
     fn address(&self, high: crate::context::HighVariableId) -> Option<String> {
+        use crate::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
         let h = self.fd.high_bank().get(high)?;
-        if h.kuna_symbol_type().is_some_and(|t| matches!(t.get_metatype(),
-            crate::dtype::type_metatype::TYPE_ARRAY | crate::dtype::type_metatype::TYPE_STRUCT | crate::dtype::type_metatype::TYPE_UNION)) {
+        if h
+            .kuna_symbol_type()
+            .is_some_and(|t| matches!(t.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION))
+        {
             return None;
         }
         let (name, offset, _) = self.pc.emitted_high_symbol(self.fd, high)?;
@@ -10206,8 +10210,6 @@ impl crate::kuna_pointerargs::PrintedPointers for PointerView<'_> {
         }
         self.pc.pointer_decls.address(&name)
     }
-
-
 }
 
 /// (kuna `castimplied`) The printer's answers to what

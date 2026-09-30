@@ -117,8 +117,6 @@ pub struct FuncResult {
     /// shard hook, so the parent can name every `struct_N` as the serial run
     /// does. `None` everywhere else.
     pub synth: Option<kuna_decomp::kuna_structsynth::shard::FunctionRecord>,
-    /// Internal emission facts for reconciling independent workers.
-    pub pointerargs: Option<kuna_decomp::kuna_pointerargs::Record>,
     /// The token source map, captured only when the caller asked for it
     /// ([`DecompileOptions::want_tokens`]).
     pub detail: Option<Box<crate::inspect::FuncDetail>>,
@@ -285,38 +283,18 @@ fn decompile_batch(
 ) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
     // Only the surfaces that can decide a function again pay for the replay list.
-    let replay = if targets.len() > 1 || prog.arch().struct_synth.fires() || prog.arch().elem_ptr {
+    let replay = if prog.arch().struct_synth.fires() || prog.arch().elem_ptr {
         targets.clone()
     } else {
         Vec::new()
     };
-    prog.arch().kuna_pointerargs.borrow_mut().start();
     kuna_decomp::kuna_elemptr::start(prog.arch_mut(), targets.len() <= 1);
     let mut pending = targets.into_iter();
     decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| out.push(r));
     converge_synthesized_structs(prog, opts, &replay, &mut out);
     converge_element_globals(prog, opts, &replay, &mut out);
-    converge_pointer_arguments(prog, opts, &replay, &mut out);
-    prog.arch().kuna_pointerargs.borrow_mut().stop();
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
     out
-}
-
-/// Reprint only callers that preceded a conflicting pointer parameter declaration.
-/// The declarations affect emission, never parameter recovery or local storage.
-pub fn converge_pointer_arguments(
-    prog: &mut ConsoleProgram, opts: &DecompileOptions,
-    targets: &[FunctionEntry], out: &mut [FuncResult],
-) {
-    let redo = prog.arch().kuna_pointerargs.borrow().disagreements(|ty| {
-        kuna_decomp::printc::type_to_c_string(prog.arch(), ty)
-    });
-    for (i, target) in targets.iter().enumerate() {
-        if i < out.len() && redo.contains(&target.addr.get_offset()) {
-            let again = decompile_entry(prog, target.clone(), opts);
-            if redo_replaces(&out[i], &again) { out[i] = again; }
-        }
-    }
 }
 
 /// (kuna `elemptr`) Decide again the functions that typed a global some other
@@ -533,7 +511,6 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
-                pointerargs: None,
                 detail: None,
             });
             continue;
@@ -567,7 +544,6 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
-                pointerargs: None,
                 detail: None,
             });
             continue;
@@ -589,7 +565,6 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
-                pointerargs: None,
                 detail: None,
             });
             continue;
@@ -825,7 +800,6 @@ pub fn decompile_pulled(
                         object_location,
                         callee_hints,
                         synth: None,
-                        pointerargs: prog.arch().kuna_pointerargs.borrow().record(fd.get_address(), |ty| kuna_decomp::printc::type_to_c_string(prog.arch(), ty)),
                         detail,
                     }),
                     Err(_) => sink(FuncResult {
@@ -844,7 +818,6 @@ pub fn decompile_pulled(
                         object_location,
                         callee_hints: Vec::new(),
                         synth: None,
-                        pointerargs: None,
                         detail: None,
                     }),
                 }
@@ -865,7 +838,6 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
-                pointerargs: None,
                 detail: None,
             }),
         }
@@ -1555,7 +1527,6 @@ mod tests {
             object_location: None,
             callee_hints: vec![],
             synth: None,
-            pointerargs: None,
             detail: None,
         }
     }

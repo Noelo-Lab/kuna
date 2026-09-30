@@ -97,10 +97,8 @@ pub(crate) fn decompile_callee_first(
     }
     converge_element_globals_callee_first(prog, &targets, &plan, &base, &mut slots);
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
-    let mut out: Vec<_> = slots.into_iter().flatten().collect();
-    kuna_console::project::converge_pointer_arguments(prog, &base, &targets, &mut out);
     prog.arch().kuna_pointerargs.borrow_mut().stop();
-    out
+    slots.into_iter().flatten().collect()
 }
 
 /// (kuna `elemptr`) [`kuna_console::project::converge_element_globals`] in plan

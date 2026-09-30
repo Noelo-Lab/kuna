@@ -33,19 +33,28 @@ normalization defaults (DIV-34 brace placement, DIV-35 NULL printing,
 DIV-36 compound assignments, DIV-37 truthy conditions, DIV-38 single-statement
 brace elision, DIV-39 inline warning slugs) in `docs/history.md`.
 
-Buffered batches check addresses of scalar locals against the character pointer
-parameters in the callee definitions they actually print (`kuna_pointerargs.rs`).
-The check uses final local declarations and requires a parameter to match both
-its position and finalized ABI storage. A call to a byte-writing callee casts
-the address of an eight-byte local; it never shrinks that local. Character
-pointers can access the object representation without violating C aliasing rules. Arrays,
-composite objects, retained casts and existing pointer expressions keep their
-conversion policy. A caller printed before a conflicting declaration is rendered
-again after the batch. Worker results carry these emission facts; if independent
-workers disagree, the batch is replayed in order by one fresh worker, including
-structure convergence. These definitions affect only emission, so `protoorder
-off` still disables interprocedural type inference. Calls outside a buffered
-batch, trials and call-site-only overrides supply no batch declaration.
+**Byte-pointer arguments
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_pointerargs.rs`).** A
+callee-first run (`decompile-all` and `decompile-project` with `protoorder` on,
+the default) remembers the parameter declarations of every function it has
+printed. When a caller printed later passes the address of a whole scalar local
+or parameter where such a callee declares a character pointer (`char *`,
+`unsigned char *`, or an undefined byte, which prints as `char`), and the
+parameter has the call's finalized ABI storage at that position, the address is
+cast to the parameter's type: `sink((unsigned char *)&v1)` for `unsigned long
+v1`. The local keeps its declared type and width; C lets a character pointer
+access any object's bytes, so the cast is the conversion C requires and nothing
+else changes. There is no cast when the local already has the parameter's
+pointee type or differs from it only in the signedness of a byte (`char`
+against `unsigned char`), when the argument is an array, structure, union,
+member or any other pointer expression, for a varargs call, or where a per-call
+prototype override applies. Only declarations printed before the caller count,
+so a caller printed before its callee inside a call-graph cycle keeps the uncast
+call; a function decompiled again later in the run sees every declaration
+printed by then. Outside a callee-first run (`--jobs` workers, `protoorder off`,
+`decompile-graph`, streamed exports and single-function `kuna decompile`)
+nothing is recorded and calls print unchanged, so `--jobs N` still matches
+`--jobs 1 --option protoorder off`, as it does for `protoorder` itself.
 
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
