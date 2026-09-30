@@ -3219,8 +3219,10 @@ impl PrintC {
                 decls.iter().map(|(_, name)| name.as_str()),
                 occupied.iter().map(String::as_str),
             );
+            let globals = fd.get_arch().global_name_scope();
+            let taken = |name: &str| globals.as_ref().is_some_and(|g| g.has_symbol_name(name));
             for (high, name) in &mut decls {
-                let unique = names.unique(name);
+                let unique = names.unique_with(name, &taken);
                 if unique != *name {
                     self.local_name_overrides.insert(*high, unique.clone());
                     *name = unique;
@@ -3905,7 +3907,8 @@ impl PrintC {
         // head_comment_type | instr_comment_type (printlanguage.cc:586-589).
         let tp = ct::HEADER | ct::WARNINGHEADER | ct::USER2 | ct::WARNING;
         let mut db = CommentDatabaseInternal::new();
-        for w in arch.commentdb.comments() {
+        let fad = fd.get_address();
+        for w in arch.commentdb.comments().iter().filter(|w| &w.func_addr == fad) {
             db.add_comment(w.tp, &w.func_addr, &w.addr, w.text.as_bytes());
         }
         // option_unplaced is off by default (C++ resetDefaultsPrintC).
@@ -9285,7 +9288,6 @@ fn declaration_occupied_names(
     names: impl IntoIterator<Item = String>,
 ) -> Vec<String> {
     let mut names: Vec<String> = names.into_iter().collect();
-    names.extend(fd.get_arch().global_symbol_names());
     let name_style = fd.get_arch().kuna_name_style();
     names.extend((0..fd.num_calls()).filter_map(|index| {
         let call = fd.get_call_specs(index);
