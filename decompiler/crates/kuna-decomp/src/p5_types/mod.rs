@@ -29,4 +29,5 @@ pub mod kuna_pebnames; // (kuna) type the Windows TEB segment base so PEB/TEB fi
 pub mod kuna_structmerge; // (kuna) merge a synthesized record with the claims of a sibling reader
 pub mod kuna_structheadless; // (kuna) a closed function's parameter read only past its start is a record
 pub mod kuna_fieldtype; // (kuna) a synthesized field some access holds as a pointer is declared as that pointer
+pub mod kuna_completedrecord; // (kuna) a pointer to a record's pre-completion stub names the completed record
 pub mod kuna_structsynth; // (kuna) synthesize a struct type from a pointer parameter's constant-offset dereferences

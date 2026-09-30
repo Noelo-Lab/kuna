@@ -67,11 +67,12 @@
 //! while its fields are being built. The interned shell is registered BEFORE the
 //! members are walked, so the inner resolution finds it by name and the pointer
 //! is built against it; [`TypeWalk::begin_aggregate`] additionally refuses the
-//! re-entrant *population* so the recursion cannot restart. Documented LOSS: the
-//! `Rc<Datatype>` the inner pointer captured is the pre-completion shell (kuna's
-//! interned types are immutable, so completing one mints a new `Rc` — the same
-//! model the wire `decode_composite` path lives with), so `n->next->val` chains
-//! one level less than `n->val`. The name still renders.
+//! re-entrant *population* so the recursion cannot restart. The `Rc<Datatype>` the
+//! inner pointer captured is the pre-completion shell (kuna's interned types are
+//! immutable, so completing one mints a new `Rc` — the same model the wire
+//! `decode_composite` path lives with); the decompiler reads a pointer to a
+//! record's own shell as a pointer to the completed record
+//! (`kuna_decomp::kuna_completedrecord`), so `n->next->val` reads through.
 //!
 //! ## Out of scope for THIS module
 //!

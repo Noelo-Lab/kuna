@@ -189,16 +189,16 @@ fn only_a_records_own_shell_resolves_to_the_record() {
     ];
     let st = ledger::lookup_or_mint(&f, fields, 0x10, &[], &[0], OFF).unwrap();
     let shell_ptr = Rc::clone(&st.get_field(0).unwrap().field_type);
-    let resolved = resolve_self_pointer(&f, &shell_ptr).unwrap();
+    let resolved = crate::kuna_completedrecord::resolve_completed_pointer(&f, &shell_ptr).unwrap();
     assert!(Rc::ptr_eq(&resolved.get_ptr_to().unwrap(), &st));
     assert_eq!(resolved.get_size(), 8);
 
     let complete = f.get_type_pointer(8, Rc::clone(&st), 1).unwrap();
-    assert!(resolve_self_pointer(&f, &complete).is_none(), "already the completed record");
+    assert!(crate::kuna_completedrecord::resolve_completed_pointer(&f, &complete).is_none(), "already the completed record");
     let orphan = f.get_type_struct("struct_7").unwrap();
     let orphan_ptr = f.get_type_pointer(8, orphan, 1).unwrap();
-    assert!(resolve_self_pointer(&f, &orphan_ptr).is_none(), "a shell with no completed record");
-    assert!(resolve_self_pointer(&f, &long).is_none());
+    assert!(crate::kuna_completedrecord::resolve_completed_pointer(&f, &orphan_ptr).is_none(), "a shell with no completed record");
+    assert!(crate::kuna_completedrecord::resolve_completed_pointer(&f, &long).is_none());
 }
 
 #[test]

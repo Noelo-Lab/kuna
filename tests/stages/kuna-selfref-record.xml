@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-782 (kuna): a C declaration could not name a record before its body.
+    `struct Node { struct Node *next; };` failed at the inner `struct Node`
+    ("Identifier does not represent a struct as required"), as did a callback
+    member taking the enclosing record, two records pointing at each other, and
+    the forward declaration `typedef struct Node Node;`.  And a pointer built to
+    a record before the record was completed (every self pointer, including a
+    DWARF one) named the member-less stub, so a walk down a list printed
+    `((int4 *)n->next)[2]` rather than `n->next->val`.
+
+    Stage / sub-stage: P0 knowledge (the C-declaration grammar declares an
+    unknown tag incomplete inside a member list or as a bare forward declaration)
+    and P5 type propagation (a LOAD/STORE value typed as a pointer to a record's
+    stub takes the pointer to the completed record).  No option: a strict fix.
+
+    The fixture (SysV x86-64, clang -O2):
+
+        second_val: mov rax,[rdi]; mov eax,[rax+8]          n->next->val
+        third_val:  mov rax,[rdi]; mov rax,[rax];
+                    mov eax,[rax+8]                         n->next->next->val
+        a_b_a_x:    mov rax,[rdi]; mov rax,[rax];
+                    mov rax,[rax+8]                         p->b->a->x
+        a_b_y:      mov rax,[rdi]; mov eax,[rax+8]          p->b->y
+
+    `Node` is declared ahead of its body, `Link` names itself inside its own
+    body, and `A`/`B` point at each other with `B` first named inside `A`.
+-->
+<bytechunk space="ram" offset="0x100000">
+488b078b4008c3000000000000000000488b07488b008b4008c3000000000000488b07488b00488b4008c30000000000488b078b4008c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="second_val"/>
+<symbol space="ram" offset="0x100010" name="third_val"/>
+<symbol space="ram" offset="0x100020" name="a_b_a_x"/>
+<symbol space="ram" offset="0x100030" name="a_b_y"/>
+</binaryimage>
+<script>
+  <com>parse line struct Node Node;</com>
+  <com>parse line struct Node { Node *next; int4 val; };</com>
+  <com>parse line struct Link { struct Link *next; int4 val; };</com>
+  <com>parse line struct A { struct B *b; int8 x; };</com>
+  <com>parse line struct B { struct A *a; int4 y; };</com>
+  <com>parse line extern int4 second_val(Node *n);</com>
+  <com>parse line extern int4 third_val(struct Link *n);</com>
+  <com>parse line extern int8 a_b_a_x(struct A *p);</com>
+  <com>parse line extern int4 a_b_y(A *p);</com>
+  <com>lo fu second_val</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu third_val</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a_b_a_x</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu a_b_y</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="selfref #1: a list link declared ahead of its body reads as a field" min="1" max="1">return n->next->val;</stringmatch>
+<stringmatch name="selfref #2: a record naming itself reads two links down" min="1" max="1">return n->next->next->val;</stringmatch>
+<stringmatch name="selfref #3: two records that point at each other read through both" min="1" max="1">return p->b->a->x;</stringmatch>
+<stringmatch name="selfref #4: a sibling first named inside a member list reads as a field" min="1" max="1">return p->b->y;</stringmatch>
+<stringmatch name="selfref #5: no read through a link prints as offset arithmetic" min="0" max="0">\[2\]</stringmatch>
+</decompilertest>

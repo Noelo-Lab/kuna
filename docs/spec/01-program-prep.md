@@ -2074,9 +2074,12 @@ moves.
   `struct node { struct node *next; }` reaches its own DIE while its fields are
   being built, so the shell is interned **before** the members are walked and the
   inner resolution finds it by name, with the walk guard refusing a re-entrant
-  population. LOSS: because an interned type is immutable in kuna, completing one
-  mints a new handle, so the pointer the inner frame captured still refers to the
-  pre-completion shell — the name renders but the chain is one level shorter.
+  population. Because an interned type is immutable in kuna, completing one mints
+  a new handle, so the pointer the inner frame captured still refers to the
+  pre-completion shell; the decompiler reads a pointer to a record's own shell as
+  a pointer to the completed record (chapter 05 §5.1), so the chain reads through.
+  A record reached only through a sibling (`struct a { struct b *b; }` /
+  `struct b { struct a *a; }` in one unit) keeps the shell one level down.
   `DW_TAG_variant_part`/`DW_TAG_variant`/`DW_AT_discr`, the Rust tagged-enum
   encoding, are not read by this arm; the sibling `dwarfvariants` increment below
   reads them, and with it off a Rust enum recovers its width and no fields. Same

@@ -2122,6 +2122,30 @@ decided by the construction action, not by the token — `oldStruct` rejects a t
 that names something other than a struct with the kind error it always had, so
 `struct int4` is refused for saying `struct`, not for being unparseable.
 
+(kuna) **A tag may be named before its body.** Upstream's `oldStruct` and
+`oldUnion` accept only a tag the type factory already holds, so a record could
+not mention itself — `typedef struct Node { struct Node *next; };` failed at the
+inner `struct Node`, and so did a callback member `void (*cb)(struct Node *)` —
+two records could not point at each other, and the forward declaration
+`typedef struct Node Node;` was refused because `Node` was not yet known. C
+declares such a tag as an incomplete type, and so does the grammar
+(`decompiler/crates/kuna-console/src/grammar/kuna_forwardtags.rs`). Inside a
+member list any unknown tag is declared: the enclosing record's own, a sibling
+defined later, an opaque handle. Outside every member list only a `typedef`
+directive or a `parse line` may declare one, and only when the declaration is the
+tag alone (`struct Node;`, or `struct Node Node;`, which is what the `typedef`
+directive hands the grammar for `typedef struct Node Node;` — the name and the tag
+are one entry in the factory's single namespace). Any other mention of an unknown
+tag keeps upstream's error, so a misspelled tag in a `prototype`, `type`, `data`,
+`param` or `return` directive, or behind a pointer in a declaration, is still
+refused rather than silently becoming an opaque type. The stub is the one
+`newStruct`/`newUnion` completes when the body arrives, so the tag is one type
+throughout; the factory records it as declared ahead, which is what lets a
+pointer built to the stub read the completed record's members (chapter 05 §5.1).
+A member holding a declared-but-incomplete record by value — the record itself,
+directly or as an array element, or a sibling not yet defined — is rejected with
+C's `has incomplete type`, and a parse that fails withdraws every tag it declared.
+
 (kuna) **A name that is also a type name is still a name.** The same
 `findByName` classification reaches the declarator, where C says the identifier
 being declared hides any type of that spelling. Upstream's `direct_declarator`

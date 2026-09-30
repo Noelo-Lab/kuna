@@ -134,6 +134,44 @@ back — and the two inline unit tests (`dependent_order_nested_struct`,
 `dependent_order_pointer_cycle`) pin both facts: the raw tree order really is
 container-first, and the DFS reorders it.
 
+(kuna) **A pointer built before its record was completed.** Upstream completes
+a struct or union in place (`TypeFactory::setFields`), so a pointer built to the
+incomplete stub sees the members as soon as they arrive. An interned kuna type
+is immutable: completing one erases the stub and interns a completed copy under
+the same name and id, and every pointer built earlier still names the member-less
+stub. A record that points at itself (`struct node { struct node *next; }`)
+always has such a member, because the member is built before the record is
+complete — a DWARF import, a parsed declaration and a synthesized structure alike
+— and so does a pointer to a tag a C declaration named ahead of its body
+(`struct Node;`, or a sibling record first named inside a member list; §0's
+assertion grammar). Every access through one printed as offset arithmetic, and
+every value moved between it and the completed record's own pointer printed a
+cast between two spellings of one type (`u = (_user *)u->next`).
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_completedrecord.rs
+(resolve_completed_pointer)` gives the pointer to the completed record in place of
+a pointer to its stub when the two are provably one type: the factory holds a
+complete record of the stub's name, id and kind, and either one of that record's
+own members (or an array member's element) points at that exact stub, or the C
+grammar recorded the tag as declared ahead of its body
+(`decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(TypeFactory::kuna_note_declared_ahead)`, a side table by name and id). A stub
+matched to a definition by name alone — a DWARF declaration in one compilation
+unit completed by a definition from another, which is how zlib's opaque
+`struct internal_state` meets deflate's layout while inflate uses its own — is
+left alone, since the reader of inflate is better served by offsets than by
+deflate's member names. The resolution runs where a value is typed through a
+pointer: the `LOAD`/`STORE` value edge of the propagation lattice
+(`coreaction_infertypes.rs (propagate_load_store)`) and the load and store cast
+tokens of chapter 09. Over eighteen `-g` builds (dash, cronie, sysvinit, zlib,
+gzip, bzip2, libedit, diffutils, expat, mirai, FreeRTOS, RIOT, libopencm3) it
+changed 124 of 3,536 functions. In 102 the only difference is casts that
+disappeared; the other 22 read through a list link as members
+(`u->prev->next = u->next`, was `*(_user **)u->prev = u->next`). One of those,
+FreeRTOS's `vListInsert`, prints its list walk as a `while` rather than a `for`:
+the condition now reads the member at offset 0 (`pxIterator->pxNext->xItemValue`),
+one step further from the loop variable than `BlockWhileDo::findLoopVariable`
+searches.
+
 **The data organization.** The factory also carries the target's C scalar
 widths, decoded from the compiler spec's `<data_organization>` by
 `decompiler/crates/kuna-decomp/src/infra/architecture.rs
@@ -2078,17 +2116,10 @@ therefore mints it around its incomplete shell
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/ledger.rs (mint)`):
 `get_type_struct`, a pointer to the shell, then the members. That is the model
 a DWARF `struct node { struct node *next; }` already lives with (chapter 01), and
-it costs the same thing there: a value loaded through the self pointer has a type
-with no members, and every read through it printed as
-`*(long **)((long)v1 + 8)`. For a synthesized structure the shell is resolved.
-Where a `LOAD` or `STORE` value type is a pointer to such a shell, and the
-completed structure of that name is a synthesized one that itself points at that
-exact shell,
-`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth.rs (resolve_self_pointer)`
-gives the pointer to the completed structure instead. It is called from the
-propagation edge (`coreaction_infertypes.rs (propagate_load_store)`) and from the
-load and store cast tokens of chapter 09. A DWARF forward declaration, or any
-other incomplete type, is left alone. A node three links down then reads
+a value loaded through the self pointer would have a type with no members, and
+every read through it would print as `*(long **)((long)v1 + 8)`. The shell is
+resolved by the rule every record lives by (§5.1, a pointer built before its
+record was completed). A node three links down then reads
 `v3->field_0x18`, not `*(uint1 *)&v3[3]`. In the ledger a self pointer is keyed
 `SELF` rather than by its pointee's name (`ledger.rs (SELF_KEY)`), so two
 self-pointing layouts of one shape are one record whatever each was going to be

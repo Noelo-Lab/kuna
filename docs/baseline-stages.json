@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1588,
-    1588
+    1593,
+    1593
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1488,6 +1488,11 @@
     "data:returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)",
     "data:rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy",
     "data:rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)",
+    "data:selfref #1: a list link declared ahead of its body reads as a field",
+    "data:selfref #2: a record naming itself reads two links down",
+    "data:selfref #3: two records that point at each other read through both",
+    "data:selfref #4: a sibling first named inside a member list reads as a field",
+    "data:selfref #5: no read through a link prints as offset arithmetic",
     "data:short UTF-16 #1: explicit wchar_t mapping replaces narrow exact-address data",
     "data:short UTF-16 #2: the one-byte rendering is gone",
     "data:short UTF-16 #3: adjacent wide literal is preserved",

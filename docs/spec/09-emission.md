@@ -530,11 +530,10 @@ one gets a CAST (or a `PTRSUB #0`, by the same struct-offset-0 test) inserted
 implied value that is not feeding a RETURN forces the cast even when the
 lattice would allow silence — the user's declared type must stay visible.
 A LOAD's token, and the type a STORE asks of its value, is the pointee of the
-address; when that pointee is a synthesized structure's pointer to its own
-incomplete shell (`structsynth nest`, chapter 05), both take the pointer to the
-completed structure instead (`coreaction_casts.rs (resolve_self_pointer)`), the
-same type the lattice gave the value, so no cast is printed between a node and
-the link it was loaded from.
+address; when that pointee is a pointer to a record's pre-completion stub
+(chapter 05 §5.1), both take the pointer to the completed record instead
+(`coreaction_casts.rs (resolve_completed)`), the same type the lattice gave the
+value, so no cast is printed between a node and the link it was loaded from.
 
 **Union edges.** A value whose data-type still `needs_resolution()` (a union,
 or a pointer to one) is resolved per read/write edge: `coreaction_casts.rs

@@ -4132,6 +4132,18 @@ pub trait TypeFactory {
     fn kuna_variant_layouts(&self) -> Vec<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
         Vec::new()
     }
+
+    /// (kuna) Record that the incomplete struct or union `ct` was declared ahead
+    /// of its body by a C declaration, so a pointer built to it stands for the
+    /// record a later body completes ([`crate::kuna_completedrecord`]).  A side
+    /// table keyed by name and id; a no-op except in the concrete container.
+    fn kuna_note_declared_ahead(&self, _ct: &Datatype) {}
+
+    /// (kuna) Was `ct` declared ahead of its body
+    /// ([`Self::kuna_note_declared_ahead`])?
+    fn kuna_declared_ahead(&self, _ct: &Datatype) -> bool {
+        false
+    }
 }
 
 // =============================================================================
@@ -4767,6 +4779,9 @@ pub struct TypeFactoryImpl {
     /// the interned type name.  Read by nothing in the analysis -- see
     /// [`TypeFactory::kuna_record_variant_layout`].
     variant_layouts: RefCell<BTreeMap<String, Rc<crate::kuna_dwarfvariants::VariantLayout>>>,
+    /// (kuna) The records a C declaration declared ahead of their body, by name
+    /// and id ([`TypeFactory::kuna_note_declared_ahead`]).
+    declared_ahead: RefCell<std::collections::BTreeSet<(String, uint8)>>,
 }
 
 impl Default for TypeFactoryImpl {
@@ -4802,6 +4817,7 @@ impl TypeFactoryImpl {
             manager: RefCell::new(None),
             remote_types: RefCell::new(None),
             variant_layouts: RefCell::new(BTreeMap::new()),
+            declared_ahead: RefCell::new(std::collections::BTreeSet::new()),
         }
     }
 
@@ -7169,6 +7185,12 @@ impl TypeFactory for TypeFactoryImpl {
     }
     fn kuna_variant_layouts(&self) -> Vec<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
         self.variant_layouts.borrow().values().map(Rc::clone).collect()
+    }
+    fn kuna_note_declared_ahead(&self, ct: &Datatype) {
+        self.declared_ahead.borrow_mut().insert((ct.get_name().to_string(), ct.get_id()));
+    }
+    fn kuna_declared_ahead(&self, ct: &Datatype) -> bool {
+        self.declared_ahead.borrow().contains(&(ct.get_name().to_string(), ct.get_id()))
     }
 }
 

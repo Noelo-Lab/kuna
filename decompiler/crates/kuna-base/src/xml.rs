@@ -1943,7 +1943,9 @@ mod tests {
         // lies inside the address width
         // and kuna-bit-reinterpret-declared / a float constant stored to a float
         // global stays a float literal and a register move reinterprets once
-        assert_eq!(count, 368, "corpus file count drifted");
+        // and kuna-selfref-record / a record declared ahead of its body, or
+        // naming itself, reads through its links as fields
+        assert_eq!(count, 369, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

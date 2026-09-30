@@ -178,7 +178,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::context::VarnodeId;
-use crate::dtype::{type_metatype, Datatype, DatatypeKind, TypeFactory, TypeField};
+use crate::dtype::{type_metatype, Datatype, TypeFactory, TypeField};
 use crate::funcdata::Funcdata;
 
 /// (kuna `structsynth`) The program-wide layout ledger: which minted `struct_N`
@@ -1336,39 +1336,6 @@ pub fn points_at_headless_record(ct: &Datatype) -> bool {
     let Some(pt) = ct.get_ptr_to() else { return false };
     ledger::minted_number(&pt).is_some()
         && ledger::layout_of(&pt).is_some_and(|l| l.fields.len() >= 2 && l.fields.first().is_some_and(|f| f.offset > 0))
-}
-
-/// (kuna `structsynth nest`) The completed record a pointer to its own shell
-/// stands for, or `None` for any other type.
-///
-/// A record that points at itself is minted around its incomplete shell
-/// (`ledger::mint`), so the field's pointer names a type with no members, and a
-/// value loaded through it would print every access as raw offset arithmetic
-/// (`*(long **)((long)v1 + 8)`). A LOAD or STORE whose value type is such a
-/// pointer takes the pointer to the completed record instead. Only a shell the
-/// completed synthesized record itself points at is resolved; a DWARF forward
-/// declaration, or any other incomplete type, is left alone.
-pub fn resolve_self_pointer(types: &dyn TypeFactory, ct: &Datatype) -> Option<Rc<Datatype>> {
-    let DatatypeKind::Pointer { ptrto, spaceid: None, truncate: None, wordsize } = &ct.kind else {
-        return None;
-    };
-    if !ptrto.is_incomplete()
-        || ptrto.get_metatype() != type_metatype::TYPE_STRUCT
-        || !ptrto.get_name().starts_with("struct_")
-    {
-        return None;
-    }
-    let full = types.find_by_name(ptrto.get_name()).ok().flatten()?;
-    if full.is_incomplete() || ledger::minted_number(&full).is_none() {
-        return None;
-    }
-    let holds = (0..full.num_depend())
-        .filter_map(|i| full.get_field(i))
-        .any(|f| f.field_type.get_ptr_to().is_some_and(|p| Rc::ptr_eq(&p, ptrto)));
-    if !holds {
-        return None;
-    }
-    types.get_type_pointer(ct.get_size(), full, *wordsize).ok()
 }
 
 /// (kuna) `ActionStructSynth` -- synthesize `struct_N` over a dereferenced

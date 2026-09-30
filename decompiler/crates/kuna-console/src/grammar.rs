@@ -1261,6 +1261,13 @@ pub struct CParse<'a> {
     lastdecls: Option<Vec<TypeDeclarator>>,
     /// One-token lookahead buffer (the parser pulls tokens via [`CParse::next`]).
     pushed: Option<PToken>,
+    /// (kuna) How many struct/union member lists enclose the current token.
+    member_depth: u32,
+    /// (kuna) May a tag named outside every member list be declared by this
+    /// parse ([`parse_c`] only).
+    loose_tags_ok: bool,
+    /// (kuna) The tags this parse declared incomplete ([`kuna_forwardtags`]).
+    forward_tags: Vec<kuna_forwardtags::ForwardTag>,
 }
 
 impl<'a> CParse<'a> {
@@ -1296,6 +1303,9 @@ impl<'a> CParse<'a> {
             lasterror: String::new(),
             lastdecls: None,
             pushed: None,
+            member_depth: 0,
+            loose_tags_ok: false,
+            forward_tags: Vec::new(),
         }
     }
 
@@ -1334,6 +1344,8 @@ impl<'a> CParse<'a> {
         self.lastdecls = None;
         self.lexer.clear();
         self.pushed = None;
+        self.member_depth = 0;
+        self.forward_tags.clear();
     }
 
     /// C++ `CParse::setError(const string &msg)` (`grammar.cc:1318-1328`).
@@ -1343,6 +1355,11 @@ impl<'a> CParse<'a> {
     /// reproduced.  Errors only set `lasterror` once (the C++ `lex` short-circuits
     /// once `lasterror` is non-empty).
     fn set_error(&mut self, msg: &str) {
+        self.lasterror = self.located(msg);
+    }
+
+    /// The `setError` text for `msg` at the current token, without recording it.
+    fn located(&self, msg: &str) -> String {
         let mut s = String::new();
         s.push_str(msg);
         // writeLocation (grammar.cc:596-601).
@@ -1360,7 +1377,7 @@ impl<'a> CParse<'a> {
             }
             s.push_str("^--\n");
         }
-        self.lasterror = s;
+        s
     }
 
     /// C++ `CParse::lookupIdentifier(const string &nm)` (`grammar.cc:1236-1272`).
@@ -1899,7 +1916,10 @@ impl<'a> CParse<'a> {
         let ident = self.tag_identifier()?;
         if matches!(self.peek()?, PToken::Punct(b'{')) {
             self.next()?;
-            let declist = self.struct_declaration_list()?;
+            self.member_depth += 1;
+            let declist = self.struct_declaration_list();
+            self.member_depth -= 1;
+            let declist = declist?;
             self.expect_punct(b'}')?;
             if is_struct {
                 self.new_struct(&ident, declist)
@@ -2450,6 +2470,11 @@ impl<'a> CParse<'a> {
                 return Err(KunaError::parse(self.lasterror.clone()));
             }
             let field_type = decl.build_type(self.factory, &self.org)?;
+            if self.is_incomplete_member(&res, &field_type) {
+                self.reject_incomplete_member(decl, &field_type);
+                self.factory.destroy_type(&res)?;
+                return Err(KunaError::parse(self.lasterror.clone()));
+            }
             if decl.get_num_bits() != 0 {
                 bitlist.push(TypeBitField::new(
                     sublist.len() as int4,
@@ -2475,10 +2500,14 @@ impl<'a> CParse<'a> {
     }
 
     /// C++ `CParse::oldStruct` (`grammar.cc:1087-1094`).
+    ///
+    /// (kuna) A tag that names no type yet is declared incomplete, as C declares
+    /// it, where [`CParse::may_declare_tag`] allows.
     fn old_struct(&mut self, ident: &str) -> KunaResult<Rc<Datatype>> {
         let res = self.factory.find_by_name(ident)?;
         match &res {
             Some(tp) if tp.get_metatype() == type_metatype::TYPE_STRUCT => Ok(tp.clone()),
+            None if self.may_declare_tag() => self.declare_tag(ident, false),
             _ => {
                 self.set_error("Identifier does not represent a struct as required");
                 Err(KunaError::parse(self.lasterror.clone()))
@@ -2498,6 +2527,11 @@ impl<'a> CParse<'a> {
                 return Err(KunaError::parse(self.lasterror.clone()));
             }
             let field_type = decl.build_type(self.factory, &self.org)?;
+            if self.is_incomplete_member(&res, &field_type) {
+                self.reject_incomplete_member(decl, &field_type);
+                self.factory.destroy_type(&res)?;
+                return Err(KunaError::parse(self.lasterror.clone()));
+            }
             sublist.push(TypeField::new(i as int4, 0, decl.get_identifier(), field_type));
         }
         match self.factory.assign_raw_fields_union(&res, sublist) {
@@ -2511,10 +2545,13 @@ impl<'a> CParse<'a> {
     }
 
     /// C++ `CParse::oldUnion` (`grammar.cc:1123-1130`).
+    ///
+    /// (kuna) An unknown tag is declared as [`CParse::old_struct`] declares one.
     fn old_union(&mut self, ident: &str) -> KunaResult<Rc<Datatype>> {
         let res = self.factory.find_by_name(ident)?;
         match &res {
             Some(tp) if tp.get_metatype() == type_metatype::TYPE_UNION => Ok(tp.clone()),
+            None if self.may_declare_tag() => self.declare_tag(ident, true),
             _ => {
                 self.set_error("Identifier does not represent a union as required");
                 Err(KunaError::parse(self.lasterror.clone()))
@@ -2594,6 +2631,7 @@ impl<'a> CParse<'a> {
         match self.parse_document(doctype) {
             Ok(()) => Ok(true),
             Err(e) => {
+                self.discard_forward_tags();
                 if self.lasterror.is_empty() {
                     // No recorded parse error: this is a thrown exception (boundary /
                     // LowlevelError), which the C++ runParse never catches.
@@ -2697,13 +2735,27 @@ pub fn parse_c(
     set_prototype: impl FnOnce(PrototypePieces, &str) -> KunaResult<()>,
 ) -> KunaResult<()> {
     let mut parser = CParse::with_models(factory, org, 4096, models);
+    parser.loose_tags_ok = true;
     if !parser.parse_stream(input.as_bytes().to_vec(), DocType::Declaration)? {
         return Err(KunaError::parse(parser.get_error().to_string()));
     }
-    let decls = parser
-        .take_result_declarations()
-        .filter(|d| !d.is_empty())
-        .ok_or_else(|| KunaError::parse("Did not parse a datatype"))?;
+    let decls = parser.take_result_declarations().unwrap_or_default();
+    let res = parser
+        .settle_loose_tags(&decls)
+        .and_then(|()| declare_c(&decls, factory, org, set_prototype));
+    parser.settle(res)
+}
+
+/// The store-writes of [`parse_c`] for its parsed declarations.
+fn declare_c(
+    decls: &[TypeDeclarator],
+    factory: &dyn TypeFactory,
+    org: DataOrg,
+    set_prototype: impl FnOnce(PrototypePieces, &str) -> KunaResult<()>,
+) -> KunaResult<()> {
+    if decls.is_empty() {
+        return Err(KunaError::parse("Did not parse a datatype"));
+    }
     if decls.len() > 1 {
         return Err(KunaError::parse("Parsed multiple declarations"));
     }
@@ -2746,6 +2798,8 @@ pub fn parse_c(
     }
     Ok(())
 }
+
+mod kuna_forwardtags;
 
 #[cfg(test)]
 mod tests;

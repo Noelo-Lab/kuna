@@ -1018,8 +1018,8 @@ fn propagate_load_store(
             }
         }
         let value = propagate_from_pointer(tlst, alttype, out_size)?;
-        // (kuna `structsynth nest`) A record's pointer to itself names its shell.
-        Some(crate::kuna_structsynth::resolve_self_pointer(tlst, &value).unwrap_or(value))
+        // (kuna) A pointer built before its record was completed names the stub.
+        Some(crate::kuna_completedrecord::resolve_completed_pointer(tlst, &value).unwrap_or(value))
     }
 }
 
