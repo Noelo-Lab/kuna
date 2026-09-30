@@ -907,6 +907,23 @@ impl ActionFuncLink {
                 let _ = data.op_insert_input(op, pvn, nin);
             }
         }
+        if data.get_arch().arm_float_args && inputlocked && !varargs {
+            let call = data.get_call_specs(idx);
+            let resolved_format = data
+                .obank()
+                .get(call.get_op())
+                .is_some_and(|op| data.get_override().is_format_call(op.get_addr()));
+            let registers_only = (0..call.proto().num_params()).all(|i| {
+                call.proto().get_param(i).is_some_and(|p| {
+                    p.get_address().get_space().is_some_and(|s| {
+                        s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR
+                    })
+                })
+            });
+            if resolved_format && registers_only {
+                spacebase = None;
+            }
+        }
         if let Some(sb) = spacebase {
             // create_placeholder needs `&mut FuncCallSpecs` + `&mut Funcdata`;
             // splice the spec out and put it back at the same index (no cross-call
@@ -1022,6 +1039,9 @@ impl Action for ActionFuncLink {
             ActionFuncLink::func_link_output(i, data);
         }
         crate::p4_calls::kuna_passthrough::claim_untouched_registers(data);
+        for i in 0..size {
+            crate::kuna_armfloatargs::link_call_inputs(data, i);
+        }
         0
     }
 }
@@ -1262,6 +1282,7 @@ impl Action for ActionActiveParam {
                 // the next slot is on the stack -- the ABI reaches the stack
                 // only past a full register file.
                 fc.get_active_input().set_stack_arg_gap(stack_arg_gap);
+                crate::kuna_armfloatargs::mark_single_floats(&mut fc, data);
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.
                 let _ = fc.resolve_and_derive_input_map(&manager_rc);

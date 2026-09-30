@@ -1311,6 +1311,10 @@ pub struct ParamActive {
     /// (kuna) `condexeret`: where the output trials stand with respect to the one
     /// retry pass; see [`crate::p4_calls::kuna_condexeret`].
     cond_exe_retry: crate::p4_calls::kuna_condexeret::CondExeRetry,
+    /// (kuna) `armfloatargs`: the callee's stated single-precision inputs, which a
+    /// hole below a later double keeps as words; see
+    /// [`crate::p4_calls::kuna_armfloatargs`].
+    single_floats: Vec<Address>,
 }
 
 impl ParamActive {
@@ -1330,6 +1334,7 @@ impl ParamActive {
             own_input_gap: false,      // (kuna) inputparamgap
             stack_arg_gap: false,      // (kuna) stackarggap
             cond_exe_retry: Default::default(), // (kuna) condexeret
+            single_floats: Vec::new(), // (kuna) armfloatargs
         }
     }
 
@@ -1460,6 +1465,11 @@ impl ParamActive {
     /// property of the call, not of one pass.
     pub fn set_stack_arg_gap(&mut self, val: bool) {
         self.stack_arg_gap = val;
+    }
+
+    /// (kuna) `armfloatargs`: record the callee's stated single-precision inputs.
+    pub fn set_single_floats(&mut self, addrs: Vec<Address>) {
+        self.single_floats = addrs;
     }
     /// (kuna) `condexeret`: the state of the retry pass.
     pub fn cond_exe_retry(&self) -> &crate::p4_calls::kuna_condexeret::CondExeRetry {
@@ -2862,7 +2872,11 @@ impl ParamListStandard {
                     } else {
                         type_class::TYPECLASS_GENERAL
                     };
-                    let whole = self.whole_double_hole(&hitlist, i);
+                    let whole = self.whole_double_hole(&hitlist, i).filter(|&w| {
+                        let e = &self.entry[w];
+                        let base = Address::new(e.get_space().clone(), e.get_base());
+                        !active.single_floats.contains(&base)
+                    });
                     if let Some(w) = whole {
                         covered = i + self.entry[w].get_all_groups().len();
                     }

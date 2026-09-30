@@ -1943,7 +1943,9 @@ mod tests {
         // lies inside the address width
         // and kuna-bit-reinterpret-declared / a float constant stored to a float
         // global stays a float literal and a register move reinterprets once
-        assert_eq!(count, 368, "corpus file count drifted");
+        // and kuna-arm-float-arguments / ARM hard-float inputs keep their VFP
+        // widths and caller/callee storage
+        assert_eq!(count, 369, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

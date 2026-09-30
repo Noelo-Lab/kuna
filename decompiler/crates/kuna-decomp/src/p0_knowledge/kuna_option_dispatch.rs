@@ -293,6 +293,10 @@ kuna_options! { self, p1;
         self.arg_clobber = val;
         Ok(msg)
     },
+    "armfloatargs" => {
+        self.arm_float_args = on_or_off(p1)?;
+        Ok(format!("ARM floating argument recovery turned {p1}"))
+    },
     "armfloatreturn" => {
         self.arm_float_return = on_or_off(p1)?;
         Ok(format!("ARM floating return recovery turned {p1}"))

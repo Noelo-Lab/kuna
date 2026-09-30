@@ -1,0 +1,30 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7">
+<!-- Existing redistributable fixture, source beside it. The stripped cross-bank
+     signature uses VFP then core order; the variadic destination uses base AAPCS. -->
+<bytechunk space="ram" offset="0x1000">1eff2fe1</bytechunk>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtlf_armhf</com>
+  <com>option armfloatreturn on</com>
+  <com>option armfloatargs off</com>
+  <com>option formatstring full</com>
+  <com>read symbols</com>
+  <com>lo fu show2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtlf_armhf</com>
+  <com>option armfloatreturn on</com>
+  <com>option armfloatargs on</com>
+  <com>option formatstring full</com>
+  <com>read symbols</com>
+  <com>lo fu show2</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="ARM-FLOAT-ARGS #1: off retains the integer-typed VFP bits" min="1" max="1">void show2\(unsigned long long a0,unsigned int a1\)</stringmatch>
+<stringmatch name="ARM-FLOAT-ARGS #2: on recovers the floating width and core input" min="1" max="1">void show2\(float8 a0,int4 a1\)</stringmatch>
+<stringmatch name="ARM-FLOAT-ARGS #3: the variadic destination keeps the source values" min="2" max="2">__printf_chk\(2,"n=%d v=%lf\\n",a1,a0\);</stringmatch>
+</decompilertest>

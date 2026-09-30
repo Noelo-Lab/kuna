@@ -206,7 +206,14 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
     if !stated.arity_sound || stated.vararg_tail.iter().any(|a| a == addr) {
         return None;
     }
-    let stated_size = stated.inputs.iter().find(|(a, _, _)| a == addr).map(|(_, s, _)| *s)?;
+    let (stated_size, stated_type) = stated
+        .inputs
+        .iter()
+        .find(|(a, _, _)| a == addr)
+        .map(|(_, s, t)| (*s, t))?;
+    if crate::kuna_armfloatargs::partial_float(data, stated_size, stated_type, size) {
+        return None;
+    }
     let facts = data.kuna_callee_entry_through(entry).or_else(|| data.kuna_callee_entry_dead(entry))?;
     let size = size.min(stated_size);
     if !facts.proves_input(addr, size) {
@@ -903,7 +910,7 @@ pub fn capture(fc: &mut FuncCallSpecs, data: &Funcdata) -> Option<PendingPassThr
             .get(vn)
             .map(|v| v.is_input() && !v.is_written() && *v.get_addr() == addr && v.get_size() == size)
             .unwrap_or(false);
-        if !own_input {
+        if !own_input && !crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, size) {
             continue;
         }
         if let Some(width) = stated_width(data, fc, &addr, size) {
@@ -958,7 +965,14 @@ fn extend_one(data: &mut Funcdata, p: &PendingPassThrough) -> bool {
     }
     let mut storage = current;
     for (addr, width, vn) in added {
-        let Some(vsize) = data.vbank().get(vn).filter(|v| v.is_input() && *v.get_addr() == addr).map(|v| v.get_size())
+        let Some(vsize) = data
+            .vbank()
+            .get(vn)
+            .filter(|v| {
+                (v.is_input() && *v.get_addr() == addr)
+                    || crate::kuna_armfloatargs::is_forwarded_input(data, vn, &addr, width)
+            })
+            .map(|v| v.get_size())
         else {
             return false;
         };

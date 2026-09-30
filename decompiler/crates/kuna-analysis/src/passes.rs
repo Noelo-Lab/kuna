@@ -586,7 +586,10 @@ fn listing_consumer_passes(arch: &Architecture) -> Vec<(bool, Box<dyn AnalysisPa
         // walks. `full` runs it too — the decompile-time loop then covers only
         // the sites it declined.
         (
-            arch.analysis_formatstring.resolves_at_load(&arch.archid),
+            arch.analysis_formatstring.resolves_at_load(&arch.archid)
+                || (arch.analysis_formatstring
+                    != kuna_decomp::kuna_formatstring::FormatStringMode::Off
+                    && kuna_decomp::kuna_armfloatargs::applies(arch)),
             Box::new(crate::formatstring::kuna_fmtstatic::FormatStringStaticPass),
         ),
     ]

@@ -1,5 +1,48 @@
 # 04 — Calls & prototypes
 
+`armfloatargs on` (default off) recovers scalar ARM32 VFP inputs only when
+the container states the hard-float ABI. Floating operations and proven callee
+contracts supply the type evidence; same-width copies and contiguous pieces
+can carry that evidence back to an input. A double consumed as a whole stays
+one eight-byte input, including when an overlapping call result is only four
+bytes. Unknown calls and ambiguous ABI attributes do not establish scalar
+floating parameters; a floating aggregate or vector is seen only as the scalar
+words or doubles its reads show. This option widens input storage
+independently of `armfloatreturn`.
+
+A d-register input that the function reads only as its two words becomes the
+two s-register inputs rather than an eight-byte value with no parameter. This
+covers a double whose halves go to integer helpers and two single-precision
+inputs that heritage joined because another access covers the whole register.
+At a call, the callee's stated single-precision parameters are taken word by
+word out of a d-register range the call may not take whole, and an argument
+hole below a later double follows the callee's stated words instead of the
+whole register. Values written into s0 and s1 after an earlier double result
+therefore reach the call as written. A word the caller forwards is never passed
+as the callee's stated double.
+
+Declared prototypes keep their parameter order. For stripped functions whose
+core and VFP banks do not reveal source order, recovery uses the model's VFP
+then core order consistently. Whole-program callers use the established
+`protoorder types` and `passthrough on` contract propagation; a single-function
+run without a callee contract cannot recover an untouched forwarded argument.
+Forwarding and wrapper-return claims are established before synthetic narrowing
+inputs are inserted. If heritage splits a forwarded double around a float result,
+same-width copies and contiguous incoming pieces still establish the original
+input for call recovery. A computed value or an earlier call's result does not.
+Resolved variadic format calls use explicit base AAPCS storage, including
+their floating arguments, rather than the non-variadic VFP convention.
+`formatstring off` disables that source of type evidence.
+
+Three call shapes stay incomplete. A double that the caller forwards untouched,
+but of which only one word is live in the caller, is omitted from the call. When
+a call site recovers its core-register arguments but not a forwarded VFP
+argument that the callee's prototype lists first, the recovered arguments print
+from the first position, so a core argument can stand in a VFP parameter's
+place. Words that a callee only uses as integers are typed as integers, which
+the model would pass in core registers, so no caller takes them from the
+callee's recovered prototype.
+
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer
 value as argument evidence. This retains a passed local address despite other
