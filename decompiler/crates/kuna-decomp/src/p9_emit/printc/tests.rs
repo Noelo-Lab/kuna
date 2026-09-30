@@ -232,6 +232,90 @@ mod stack_pointer_high_leaf {
     }
 
     #[test]
+    fn address_only_locals_use_the_object_type_and_storage_locals_keep_their_width() {
+        for (reference, object_size, want) in [(true, 4, "int4"), (true, 8, "int8"), (false, 4, "int8")] {
+            let (mut fd, register) = build_fd();
+            let named_int = |size| {
+                let mut t = Datatype::new(size, type_metatype::TYPE_INT);
+                t.name = format!("int{size}");
+                t.display_name = t.name.clone();
+                Rc::new(t)
+            };
+            let vn = if reference {
+                let vn = fd.new_constant(8, 0xffff_ffff_ffff_fff0);
+                fd.vbank_mut().get_mut(vn).unwrap().update_type(named_int(8));
+                vn
+            } else {
+                fd.new_varnode(8, &Address::new(register, 0x20), Some(named_int(8)))
+            };
+            fd.set_high_level();
+            let high = fd.vbank().get(vn).unwrap().get_high().unwrap();
+            let h = fd.high_bank_mut().get_mut(high).unwrap();
+            h.set_kuna_name("local");
+            h.set_symbol_type(named_int(object_size));
+            h.set_symbol_offset(0);
+            let p = PrintC::new();
+            let (front, back, array, _) = p.rendered_local_decl(&fd, &bare_arch(), high);
+            assert_eq!(front, want, "reference={reference}, object_size={object_size}");
+            assert!(back.is_empty() && array.is_none());
+        }
+    }
+
+    #[test]
+    fn an_address_only_local_keeps_the_address_width_when_a_split_neighbour_lies_inside_it() {
+        use kuna_base::space::{SpacebaseSpace, VarnodeStorage};
+        let named_int = |size: int4| {
+            let mut t = Datatype::new(size, type_metatype::TYPE_INT);
+            t.name = format!("int{size}");
+            t.display_name = t.name.clone();
+            Rc::new(t)
+        };
+        for (neighbour, want) in [(None, "int4"), (Some((-0x10, 4)), "int8"), (Some((-0x10, 8)), "int4")] {
+            let mut manage = AddrSpaceManager::new();
+            manage.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+            manage.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+            let register = Rc::new(AddrSpace::new(
+                spacetype::IPTR_PROCESSOR,
+                "register",
+                false,
+                8,
+                1,
+                2,
+                addrspace_flags::hasphysical,
+                1,
+                1,
+            ));
+            manage.insert_space(Rc::clone(&register)).unwrap();
+            manage.insert_space(Rc::new(SpacebaseSpace::new("stack", 3, 8, &register, 1, true, false))).unwrap();
+            let stack = Rc::clone(manage.get_stack_space().unwrap());
+            let sp = VarnodeStorage { space: Some(Rc::clone(&register)), offset: 0x20, size: 8 };
+            manage.add_spacebase_pointer(&stack, &sp, 8, true).unwrap();
+            let glb = Rc::new(ArchContext::new(manage));
+            let mut fd = Funcdata::new("f", "f", glb, Address::new(register, 0x1000), 0x1000, 0x20).unwrap();
+            let at = |off: i64| Address::new(Rc::clone(&stack), stack.wrap_offset(off as u64));
+            let inv = Address::new_invalid();
+            let lm = fd.get_scope_local_mut().unwrap();
+            let local = lm.add_symbol("local", named_int(4), &at(-0x14), &inv).unwrap();
+            if let Some((off, size)) = neighbour {
+                lm.add_symbol("next", named_int(size), &at(off), &inv).unwrap();
+                fd.new_varnode(size, &at(off), Some(named_int(size)));
+            }
+            let vn = fd.new_constant(8, stack.wrap_offset(-0x14i64 as u64));
+            fd.vbank_mut().get_mut(vn).unwrap().update_type(named_int(8));
+            fd.set_high_level();
+            let high = fd.vbank().get(vn).unwrap().get_high().unwrap();
+            let h = fd.high_bank_mut().get_mut(high).unwrap();
+            h.set_kuna_name("local");
+            h.set_symbol_type(named_int(4));
+            h.set_symbol_offset(0);
+            h.set_kuna_ref_symbol(local);
+            let p = PrintC::new();
+            let (front, _, _, _) = p.rendered_local_decl(&fd, &bare_arch(), high);
+            assert_eq!(front, want, "neighbour={neighbour:?}");
+        }
+    }
+
+    #[test]
     fn constant_symbol_reference_is_not_a_scalar_whole_storage_sibling() {
         let (mut fd, register) = build_fd();
         let partial = fd.new_varnode(

@@ -3432,6 +3432,9 @@ impl PrintC {
         // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
         let (mut type_name, comment) = self.local_decl_type_and_comment(fd, arch, high);
         let rt = self.rt_ctx; // (kuna) realtypes ctx for the composite/array relabel
+        if let Some(object) = crate::kuna_addressdecl::object_type(fd, high) {
+            type_name = type_name_for_decl(&object, rt);
+        }
 
         // C++ `emitVarDecl` declares the whole *Symbol*'s type (printc.cc:1719
         // `sym->getType()`), not the partial member Varnode's type.  When the
