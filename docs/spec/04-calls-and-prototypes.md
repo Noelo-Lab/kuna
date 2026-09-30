@@ -2845,6 +2845,50 @@ reaches the RETURN through an ordinary INDIRECT, not the call's creation; keepin
 callee's value, as an integer -- and spread to its callers. Such a forwarder
 keeps the option-off `void`.
 
+**A value the function computes itself is its return value.** The claim rests
+on the function computing nothing of its own, and "no op touches the return
+register" only says that for the claimed register. `float f(int x, float y) {
+g(x); return y * 2.0f; }` leaves `g`'s result untouched in the integer return
+register and computes its own in the float one: x86-64 gcc `call g; movss
+4(%rsp),%xmm0; addss %xmm0,%xmm0; ret`, ARM hard-float `bl g; vadd.f32
+s0,s16,s16; pop {r11,pc}`, MIPS `jal g; ...; add.s $f0,$f0,$f0; jr ra`. With
+both trials active `fillinMap` finds no rule that joins two storage classes,
+and its fallback prefers the more general entry, so the function rendered `int
+f(int a0) { return g(a0); }` and lost its float parameter. At the same point as
+the pair check, `returns_own_value` runs the output model's `fillinMap` on a
+copy of the trials with the claimed ones inactive, which is the return value the
+option-off run would give the function. Upstream accepts a trial there only for
+a value the function wrote and hands to the RETURN alone (a float temporary
+also stored to memory fails `ancestorOpUse`), and a convention returns a value
+in one class, so when that derivation uses a register of another storage class
+than a claimed one, the claim is dropped and the function returns what it
+computed. Three things keep the claim. The zeroed upper lanes a `movss` load
+leaves in `xmm0` are accepted trials but derive no return value. A register of
+the same class can be the rest of the claimed value: ARM `bl g; mov r1,#0; pop
+{r11,pc}` still returns `g`'s result. And a value that is zero at every RETURN
+(`is_zero`: a zero constant, `x ^ x`, `x - x`, or a copy, extension,
+truncation, concatenation or conversion of zeros) is not evidence, because it
+is also what `-fzero-call-used-regs` writes into every call-used register the
+function does not return in: openssh's forwarders end `call f; ...; pxor
+%xmm0,%xmm0; ...; ret`, and `sshkey_certify` would otherwise lose the `int` it
+forwards. The cost of that is a function that calls and then returns `0.0`,
+which keeps the callee's result as it did before. The x86-64 `struct { long;
+double; }` that the gcc model's `join_dual_class` rule returns in `rax` and
+`xmm0` is the one shape the class test reads wrong; it is left as the
+option-off run renders it. The rule composes with `armfloatreturn`, which only
+adds the float entries the output model derives from. The witness is
+`decompiler/crates/kuna-cli/tests/passthrough_own_return.rs`, which builds ARM, AArch64,
+x86-64 and little- and big-endian MIPS objects in the test: a float computed
+from the function's own float parameter after the call, a float constant
+loaded after it (ARM, with `armfloatreturn` off and on) and an x86-64 double,
+with a plain wrapper, the ARM `r1` write and an x86-64 forwarder ending in the
+`-fzero-call-used-regs` scrub as controls that keep their callee's result.
+Base against head `decompile-all` over the 274 ELF fixtures and 562
+debug-stripped decbench binaries (98 ARM firmware images at O0, O2 and
+O2-noinline, run again with `armfloatreturn on`, and 464 x86-64 binaries at O2
+and O2-noinline) changes no function. Without the zero test the same run turned
+the nine copies of openssh's `sshkey_certify` into `return 0;`.
+
 **An injected no-op is not a touch of the returned register.** The ARM compiler
 specs stand in for the `setISAMode` user op, the mode switch of every `bx lr`
 and `pop {...,pc}`, with a p-code injection whose body is `r0 = r0`, marked
