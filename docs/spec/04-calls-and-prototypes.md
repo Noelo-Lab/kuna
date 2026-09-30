@@ -3633,45 +3633,57 @@ property `protoorder`'s argument types have.
 
 ### ARM scalar VFP contracts
 
-`armfloatreturn` (off by default) preserves whole scalar VFP return trials when
-an ARM ELF container states the VFP procedure-call convention. A linked EABI5
-image can state it in its float-ABI flags; a relocatable object must supply
-`Tag_ABI_VFP_args=1` in `.ARM.attributes`. Conflicting, malformed, scoped,
-custom, soft-float, or absent attribute evidence is declined. Explicit
-prototypes and return storage retain precedence, including variadic contracts.
+The ARM default model (`ARM.cspec`) lists the VFP registers only as the 4-byte
+`s0`-`s15`. A hard-float function returns a `double` in `d0`, which overlaps
+`s0` and `s1`, so return recovery cuts it to its low word:
+`vmov.f64 d0,#1.5; bx lr` prints `unsigned int fixed(void) { return 0; }`, and a
+`double` parameter read from `d0` is never a parameter at all.
 
-The selected per-function model gains overlapping double-register input entries
-and the scalar return entry over s0/d0. Other VFP registers are not scalar return
-storage: a temporary in d1 through d3 must not displace an integer result in r0. A whole double consumes both single-register
-groups, preventing a fictitious hole from discarding the next parameter. Scalar
-four- and eight-byte VFP return trials seed floating types before constant
-folding loses their storage. Before choosing a return width, a bounded walk checks
-whether every normal exit combines a new four-byte result in s0 with upper bytes
-left over from an earlier d0 value. Those trials shrink to s0 regardless of the
-opcode producing the low word: constants, loads, copied inputs and integer bit
-operations do not justify adding the old upper word to a return. Copies and joins
-are checked at both widths. A predicated join may still carry the older d0 value
-alongside the partial writes: that value is accepted only when it is exactly a
-source of their retained upper bytes. A distinct eight-byte result is not treated
-as stale. Reassembling the unchanged halves of the same double
-does not establish a partial write; complete doubles, mixed-width exits and
-incomplete or cyclic proofs retain their trials.
+`armfloatreturn` (off by default; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
+changes this only for an ARM ELF whose container states the VFP procedure-call
+standard. The loader decides that once per image
+(`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs`): a linked
+EABI5 executable or shared object must carry the hard-float ABI flag in its
+header, and any `.ARM.attributes` it has must agree; a relocatable object must
+say `Tag_ABI_VFP_args=1` in `.ARM.attributes`. Soft-float, `softfp`,
+conflicting, malformed, section- or symbol-scoped attributes, a raw image and
+the Ghidra front-end all state nothing, and the option then changes nothing.
 
-This width inference cannot distinguish a float result from deliberate partial-word
-editing of a double. Such code needs an explicit double output contract, which
-bypasses narrowing and preserves both words. The return/caller contract can also forward a float
-argument that reaches a first direct call unchanged, even when the caller uses
-that register later. A widened double argument at a call needs a declared or
-recovered callee parameter; a live VFP register alone does not make it an
-argument to an unknown call. Canonical-storage checks for recovered nonvariadic VFP
-parameters do not mistake an open recovery prefix for a variadic declaration.
+On such an image each function's copy of the default model gains an 8-byte
+float entry for every `d0`-`d7` register over its two s-register entries, on
+input, and one for `d0` on output. A whole double fills both single-register
+groups when holes are filled, so the s-register it covers is not a missing
+parameter. Only `d0` is return storage: a temporary left in `d1`-`d3` does not
+displace an integer returned in `r0`. After the output trials are scored, a
+single used trial in `s0` or `d0` gives the returned value a float or double
+type before constant folding can drop its storage.
 
-This is scalar inference, not aggregate or vector ABI reconstruction. Such
-contracts require explicit types. The raw stage pins absence of ABI evidence;
-synthetic ELF CLI cases cover single/double constants, a memory return, arithmetic,
-two double parameters, a caller, double-to-float narrowing (arithmetic, memory,
-and conditional exits), float-to-double widening, metadata controls, and explicit
-overrides.
-ABI references: [AAPCS32](https://github.com/ARM-software/abi-aa/blob/main/aapcs32/aapcs32.rst),
+A float result is written to `s0`, the low half of `d0`, so a function that
+converts a double to float leaves `d0` holding the new low word and the old high
+word. Before the return width is fixed, a bounded walk checks every normal
+return: if each one returns such a piece -- a fresh 4-byte write joined to the
+high word of an earlier `d0` value, through copies and joins, where a
+predicated join may also carry that earlier value itself -- the trial shrinks
+to `s0`. Whole doubles, mixed-width exits, reassembled halves of one double,
+and incomplete or cyclic proofs keep the 8-byte trial. The walk cannot tell a
+float result from code that deliberately edits the low word of a double; that
+code needs an explicit `double` output contract, which skips the walk.
+
+At a call, a live `d` register becomes an 8-byte argument only when the callee
+says it takes one: a locked prototype with a parameter there, or a prototype
+`protoorder` recovered (in a callee-first `decompile-all`) whose list is
+arity-sound and has a float parameter in that register. A live `d0` alone at an
+unknown call is not an argument. For that arity check a recovered VFP parameter
+reads the recovered list as closed, because a variadic callee receives even its
+fixed floats in `r0`-`r3`.
+
+Declared prototypes and explicit return storage keep precedence throughout.
+This is scalar inference, not aggregate or vector ABI reconstruction:
+homogeneous float aggregates in `s0`-`s3` or `d0`-`d3` still need declared
+types. The stage test `tests/stages/kuna-arm-float-return.xml` runs a raw image,
+a relocatable object and a linked PIE with the option off and on; the CLI tests
+in `decompiler/crates/kuna-cli/tests/arm_float_returns.rs` cover narrowing,
+widening, metadata controls and explicit contracts. ABI references:
+[AAPCS32](https://github.com/ARM-software/abi-aa/blob/main/aapcs32/aapcs32.rst),
 [AAELF32](https://github.com/ARM-software/abi-aa/blob/main/aaelf32/aaelf32.rst), and
 [Addenda32](https://github.com/ARM-software/abi-aa/blob/main/addenda32/addenda32.rst).

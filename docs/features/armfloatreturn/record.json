@@ -1,37 +1,67 @@
 {
-  "base": "a1091b59115b14cf3a8e68822e697e39008c4e10",
+  "base": "4d6408d1bc41e8a0437fde57b066ac147bc11b5f",
   "option": "armfloatreturn",
   "default": "off",
-  "fixture": "returns-hard.o",
-  "fixture_source": "fixtures/returns.c",
+  "fixture": "decompiler/crates/kuna-analysis/tests/fixtures/armfloatreturn_armhf.o",
+  "fixture_source": "decompiler/crates/kuna-analysis/tests/fixtures/armfloatreturn_armhf.c",
+  "stage_test": "tests/stages/kuna-arm-float-return.xml (12 assertions: raw image control, relocatable object and linked fmtlf_armhf with the option off and on)",
   "mode": "aggressive",
   "measurement": {
-    "method": "Nine alternating off/on invocations; discard the first pair; report medians. Other validation was running on the host. This is a synthetic-case measurement, not a preset benchmark.",
-    "off": {
-      "wall": 0.21636663051322103,
-      "cpu": 0.18938250000000006
+    "method": "min of 11 interleaved runs of origin/main, this branch with the option off, and on; other builds were running on the host",
+    "repro_decompile_fixed_o": {
+      "base": 0.069,
+      "off": 0.068,
+      "on": 0.067,
+      "off_vs_base_percent": -0.5,
+      "on_vs_base_percent": -2.0
     },
-    "on": {
-      "wall": 0.2166936530265957,
-      "cpu": 0.18075900000000034
+    "fmtlf_armhf_decompile_all": {
+      "base": 0.0797,
+      "off": 0.081,
+      "on": 0.0797,
+      "off_vs_base_percent": 1.7,
+      "on_vs_base_percent": 0.0,
+      "note": "min of 31 on a quieter host; the min-of-11 run under load read +3.2% / +6.1%"
     },
-    "delta_percent": {
-      "wall": 0.151,
-      "cpu": -4.553
+    "libopencm3_O2_usart_stdio_decompile_all": {
+      "base": 19.095,
+      "off": 18.544,
+      "on": 18.714,
+      "off_vs_base_percent": -2.9,
+      "on_vs_base_percent": -2.0
     },
-    "all_invocations_succeeded": true
+    "armfloatreturn_armhf_o_decompile_all": {
+      "base": 0.057,
+      "off": 0.0572,
+      "on": 0.0572,
+      "off_vs_base_percent": 0.3,
+      "on_vs_base_percent": 0.3,
+      "note": "min of 31"
+    }
   },
-  "datatests": {
-    "off_passed": 675,
-    "on_passed": 675,
-    "baseline_changed": false
+  "blast_radius": {
+    "elf_fixtures": {
+      "files": 272,
+      "option_off_vs_main": "byte-identical",
+      "option_on_changed_files": [
+        "fmtabi_armhf",
+        "fmtlf_armhf"
+      ]
+    },
+    "decbench_hard_float_firmware": {
+      "files": 72,
+      "functions": 5434,
+      "changed": 16,
+      "note": "12 in libgcc __gnu_Unwind_{Save,Restore}_VFP{,_D} stubs, 2 of their callers' local types, 2 data words decoded as code"
+    }
   },
   "corpus": {
-    "files": 7,
-    "functions": 47,
-    "changed": 7,
+    "files": 45,
+    "functions": 478,
+    "changed": 88,
     "diff": "corpus.diff",
-    "review": "analysis.md"
+    "review": "analysis.md",
+    "replay": "corpus.py"
   },
-  "limitations": "Opt-in; automatic preset promotion deferred. See analysis.md."
+  "limitations": "Opt-in; scalar only (homogeneous float aggregates stay unrecovered); a double argument at a call needs a declared or protoorder-recovered callee prototype; a float result and a deliberate low-word edit of a double look alike and the latter needs an explicit double return. See analysis.md."
 }

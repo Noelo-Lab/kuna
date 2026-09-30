@@ -5,42 +5,52 @@ now requires ARM ELF VFP calling-convention evidence, preserves overlapping doub
 storage, and types the scalar return before constant folding. Explicit declarations
 win; absent, conflicting, custom and soft-float metadata stay conservative.
 
-Every changed function in the corpus is classified here:
+## Corpus
 
-- `returns-hard.o:scale`: recovers its double input and complete arithmetic result.
-- `returns-hard.o:fixed`: recovers 1.5 instead of its zero low word.
-- `returns-hard.o:wrapper`: forwards the double argument and uses the full call result.
-- `returns-hard.o:read_double` and `fmtlf_armhf:rd`: return the complete parsed double.
-  The failure call keeps zero arguments; a live VFP register is not argument evidence.
-- `fmtlf_armhf:main`: uses rd's actual result instead of an unconnected d0 value.
-- `fmtlf_armhf:show2`: retains a previously missing eight-byte VFP input. Its mixed
-  integer/VFP parameter types, ordering and caller agreement are still unresolved.
-  The original tree already loses that double argument. This task does not claim
-  general mixed-bank or variadic argument recovery; use an explicit prototype.
-
-Synthetic regressions additionally cover two double parameters, a float constant,
-a memory double, a true integer return, malformed metadata, and explicit contracts.
-Aggregate and vector reconstruction remain outside scalar return inference.
-
-The seven-file corpus contains 47 functions. All synthetic input source is in
-`fixtures/`; `fmtlf_armhf` and its C source are already in the repository's
-`kuna-analysis` tests. No third-party binary was added. Replay after `make` using
-Python 3, `arm-linux-gnueabi-as`, and the GNU ARM soft/hard-float cross-compilers:
+`corpus.py` builds every `fixtures/*.c` with clang as hard-float ARM, hard-float
+Thumb, `softfp` and soft-float objects, adds every ARM ELF fixture in
+`decompiler/crates/kuna-analysis/tests/fixtures`, and diffs `decompile-all --mode
+aggressive` with the option off and on (run after `make binaries`):
 
 ```sh
 python3 docs/features/armfloatreturn/corpus.py --output ../tmp/armfloatreturn-corpus
 ```
 
-`corpus.diff` contains every changed function, with trailing whitespace trimmed.
-The replay directory retains the raw outputs. The other functions are byte-identical.
-Compiler versions can affect synthetic instruction selection; the Rust regressions
-use fixed instruction bytes and construct their ELF metadata directly.
+45 files, 478 functions, 88 changed; `corpus.diff` is the whole diff. No
+`softfp` or soft-float object changes, and no ARM fixture changes other than the
+three hard-float ones with floating-point code (`armfloatreturn_armhf.o`,
+`fmtabi_armhf`, `fmtlf_armhf`). The Thumb objects change exactly as the ARM ones.
+Every changed function:
 
-Both runtime settings pass the original 675 assertions without a baseline change.
-The new raw stage checks conservative behavior when the frontend cannot supply
-the required evidence; the synthetic ELF CLI tests exercise the positive path.
-The option stays off by default and is absent from automatic presets. Broader
-architecture/corpus and speed evidence is required before preset promotion.
+- Return type and parameters recovered, meaning unchanged: `scale`, `fixed`,
+  `fixedf`, `twoargs`, `cmp`, `loopsum`, `pick`, `wrapper`, `fwd` and `fwdf`
+  (forwarders, through `passthrough`), `twocalls` (both calls keep their
+  arguments), `narrow`, `widen`, `keep_double`, `mixed_load`, the `double_*`
+  paths, `constant_paths`, `loaded_paths`, `copied_paths`, `double_low_bits`,
+  `rd`, `read_double`, `f_sum` (which also gains the stack-passed `a` it hands
+  to `__printf_chk`).
+- An integer return stays in `r0` while `d0` is also written: `keep`, `to_int`.
+- Callers: `fmtabi_armhf:main` passes `(double)argc, 0.5` to `f_sum` and `argc`
+  to `f_conv`; `fmtlf_armhf:main` returns `(int)rd(argv[0])`.
+- Partial: `many` recovers its eight `d` parameters but not the ninth double on
+  the stack; `mixargs` lists the VFP parameters before the `r0` integer, the
+  model's order, as it does with the option off; `fmtlf_armhf:show2` gains its
+  `d0` parameter (typed `unsigned long long`, it is only stored), but `main`
+  still passes only `argc`: that recovered list is not canonical storage for
+  its types, so it is no caller contract.
+- Better return, arguments as with the option off: `callext` (extern `g`/`h`
+  state no prototype, so a live `d0` is not their argument), `fwdw` (the float
+  argument to `scalef` is lost either way), `fwdn` (its phantom `r0`/`r1`
+  arguments are identical with the option off).
+- Union bit manipulation: `lowbits`, `setlow` and `integer_bits` return the
+  right type; the punning prints as an integer expression cast to the float
+  type, and `integer_bits` types its `r0` parameter `float` because its bits
+  are negated into the float result.
+
+Homogeneous float aggregates (`mkf2`, `mkf4`, `mkd2`) print `void` with the
+option off and on: this is scalar inference only.
+
+The option stays off by default and out of the presets.
 
 Scalar return inference is restricted to s0/d0. Synthetic controls set d1, d2
 or d3 to 1.5 while returning integer 7 in r0; all must still return 7. Merely
@@ -64,7 +74,7 @@ The synthetic compiler reproducer is included in `fixtures/narrow.c`:
 
 ```sh
 mkdir -p ../tmp/arm-float-narrow
-arm-linux-gnueabihf-gcc -O2 -marm -mfpu=vfpv3-d16 -c \
+clang --target=armv7a-linux-gnueabihf -marm -mfloat-abi=hard -mfpu=vfpv3-d16 -O2 -c \
   docs/features/armfloatreturn/fixtures/narrow.c -o ../tmp/arm-float-narrow/narrow.o
 decompiler/target/release/kuna decompile ../tmp/arm-float-narrow/narrow.o narrow \
   --mode aggressive --option armfloatreturn on
@@ -97,8 +107,22 @@ not require a cross-compiler.
 
 Partial-word double manipulation is inherently ambiguous without a return
 contract. For example, `double_low_bits` deliberately clears the low word of a
-double through a union; its last register write has the same width as a float
-return. Use `--assert 'prototype double_low_bits double double_low_bits(double)'`
+double through a union; built with GCC its last register write has the same
+width as a float return (clang masks the whole register, and keeps `double`).
+Use `--assert 'prototype double_low_bits double double_low_bits(double)'`
 to retain the whole double. A regression verifies that this declaration preserves
 the high word and its arithmetic in both option settings. Ordinary eight-byte
 constant, load, copy, arithmetic and conversion results retain their width.
+
+## Tests
+
+- `tests/stages/kuna-arm-float-return.xml` runs a raw image (no evidence, the
+  option is inert), the relocatable `armfloatreturn_armhf.o`
+  (`Tag_ABI_VFP_args=1`) and the linked `fmtlf_armhf` (hard-float header flag)
+  with the option off, which reproduces the truncation, and on.
+- `decompiler/crates/kuna-cli/tests/arm_float_returns.rs` builds ELF objects from
+  fixed instruction words for the metadata controls, narrowing, widening, mixed
+  paths and explicit contracts, and runs the fixture's `twocalls`/`twocallsf`: a
+  parameter passed to a first call must leave the second call the value computed
+  in the same register.
+- Unit tests cover the attribute parser and the narrowing walk.

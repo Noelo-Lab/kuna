@@ -592,3 +592,28 @@ fn declared_double_with_a_partial_word_edit_keeps_all_eight_bytes() {
         assert!(code.contains("a0 * a0"), "{code}");
     }
 }
+
+/// A VFP parameter passed to a first call leaves a second call its own argument.
+#[test]
+fn a_later_call_keeps_the_argument_computed_in_the_same_register() {
+    let fixture = common::fixture("armfloatreturn_armhf.o");
+    for option in ["off", "on"] {
+        let (code, err, rc) = common::run_kuna(&[
+            "decompile-all",
+            &fixture,
+            "--mode",
+            "aggressive",
+            "--option",
+            "armfloatreturn",
+            option,
+        ]);
+        assert_eq!(rc, 0, "{err}");
+        assert!(code.contains("float twocallsf(float a0)"), "{option}: {code}");
+        assert!(code.contains("return scalef(a0 * 3.0) + 1.0;"), "{option}: {code}");
+        if option == "on" {
+            assert!(code.contains("double twocalls(double a0)"), "{code}");
+            assert!(code.contains("  scale(a0);\n"), "{code}");
+            assert!(code.contains("return scale(a0 * 3.0) + 1.0;"), "{code}");
+        }
+    }
+}

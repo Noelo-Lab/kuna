@@ -2,12 +2,32 @@
 use crate::{
     context::VarnodeId,
     dtype::{type_class, type_metatype},
-    fspec::{ParamActive, ParamEntry, ParamListStandard, ProtoModel},
+    fspec::{ParamActive, ParamEntry, ParamListStandard, PrototypePieces, ProtoModel},
     funcdata::Funcdata,
+    infra::architecture::Architecture,
 };
 use kuna_base::{address::Address, space::AddrSpaceManager};
 use kuna_num::opcodes::OpCode;
+use std::borrow::Cow;
 use std::rc::Rc;
+
+/// The option is on and the loaded ARM image states the VFP procedure-call standard.
+pub fn applies(arch: &Architecture) -> bool {
+    arch.arm_float_return
+        && arch.archid.starts_with("ARM:")
+        && arch.translate().loader_rc().borrow().arm_vfp_args()
+}
+
+/// A recovered prototype's open tail read as a closed list for the canonical-storage
+/// check: a variadic callee receives even its fixed floats in r0-r3, so a recovered
+/// VFP parameter already rules the variadic reading out.
+pub fn closed_recovery<'a>(arch: &Architecture, pieces: &'a PrototypePieces) -> Cow<'a, PrototypePieces> {
+    if applies(arch) {
+        Cow::Owned(PrototypePieces { first_var_arg_slot: -1, ..pieces.clone() })
+    } else {
+        Cow::Borrowed(pieces)
+    }
+}
 
 fn add_pairs(list: &mut ParamListStandard, manager: &AddrSpaceManager, limit: usize) {
     let entries: Vec<_> = list
@@ -342,70 +362,6 @@ pub fn type_returns(data: &mut Funcdata, active: &ParamActive) {
             value.update_type_locked(ty.clone(), true, false);
         }
     }
-}
-
-/// An argument can be touched after a call while still arriving unchanged at it.
-/// Refuse loops, earlier calls, and writes on any incoming path.
-pub fn input_reaches_call(
-    data: &Funcdata,
-    call: crate::context::OpId,
-    addr: &Address,
-    size: i32,
-) -> bool {
-    if !data
-        .get_func_proto()
-        .model()
-        .input()
-        .get_entry()
-        .iter()
-        .any(|e| {
-            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) == 0
-        })
-    {
-        return false;
-    }
-    let Some(block) = data.obank().get(call).and_then(|o| o.get_parent()) else {
-        return false;
-    };
-    let mut pending = vec![(block, data.op_previous_op(call))];
-    let mut seen = std::collections::HashSet::new();
-    let mut budget = 256;
-    while let Some((block, mut current)) = pending.pop() {
-        if !seen.insert(block) || seen.len() > 16 {
-            return false;
-        }
-        while let Some(id) = current {
-            if budget == 0 {
-                return false;
-            }
-            budget -= 1;
-            let Some(op) = data.obank().get(id) else {
-                return false;
-            };
-            if matches!(
-                op.code(),
-                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER
-            ) {
-                return false;
-            }
-            if let Some(out) = op.get_out().and_then(|v| data.vbank().get(v)) {
-                if out.get_addr().get_space().map(|s| s.get_index())
-                    == addr.get_space().map(|s| s.get_index())
-                    && out.get_offset() < addr.get_offset().saturating_add(size as u64)
-                    && addr.get_offset() < out.get_offset().saturating_add(out.get_size() as u64)
-                {
-                    return false;
-                }
-            }
-            current = data.op_previous_op(id);
-        }
-        let incoming = data.bblocks_ref().block(block);
-        for i in 0..incoming.size_in() {
-            let parent = incoming.get_in(i);
-            pending.push((parent, data.bb_op_tail(parent)));
-        }
-    }
-    true
 }
 
 /// A widened call-argument trial needs a callee contract; a live d-register

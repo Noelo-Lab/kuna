@@ -1763,8 +1763,10 @@ impl Heritage {
             // parameter trial and append the argument Varnode to the CALL op.  This
             // is what makes a register/stack argument appear as a call argument —
             // the `func(args)` rendering this wave targets.
-            if fc.is_input_active() && tryregister
-                && crate::kuna_armfloatreturn::call_input_allowed(fd, fc, &trans_addr, size) {
+            if fc.is_input_active()
+                && tryregister
+                && crate::kuna_armfloatreturn::call_input_allowed(fd, fc, &trans_addr, size)
+            {
                 let ic = fc.proto().characterize_as_input_param(&trans_addr, size);
                 // Upstream's nesting, not a collapsed `&&`: the ContainedBy arm is an
                 // `else if` on the CHARACTERIZATION alone, so an existing trial on a
@@ -1868,7 +1870,9 @@ impl Heritage {
             return;
         }
         let trunc_size = vdata.size as int4;
-        if !crate::kuna_armfloatreturn::call_input_allowed(fd, fc, &trunc_addr, trunc_size) { return; }
+        if !crate::kuna_armfloatreturn::call_input_allowed(fd, fc, &trunc_addr, trunc_size) {
+            return;
+        }
         let truncate_amount = addr.justified_contain(size, &trunc_addr, trunc_size, false);
         debug_assert!(
             truncate_amount >= 0,

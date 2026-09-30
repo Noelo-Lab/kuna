@@ -432,6 +432,8 @@ struct DataSym {
 pub struct ObjectLoadImage {
     /// Name of the loadimage (the `LoadImage` base-class `filename` member).
     filename: String,
+    /// (kuna) The ARM container states the VFP procedure-call standard
+    /// ([`crate::loader::kuna_armfloatabi::vfp_args`]).
     arm_vfp_args: bool,
     /// The resolved SLEIGH language id (the `getArchType` payload).
     archtype: Vec<u8>,

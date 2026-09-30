@@ -82,5 +82,5 @@ pub mod macho_stubs;
 pub mod mips_markers;
 pub mod noreturn;
 pub mod pe_iat;
-
+// (kuna) `armfloatreturn`: does an ARM ELF state the VFP procedure-call standard?
 pub mod kuna_armfloatabi;

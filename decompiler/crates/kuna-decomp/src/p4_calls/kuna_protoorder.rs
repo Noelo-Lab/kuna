@@ -1634,14 +1634,8 @@ fn arity_claim_sound(
     pieces: &PrototypePieces,
     storage: &[(Address, int4)],
 ) -> bool {
-    // The recovered prefix is open for call-site recovery, not evidence that
-    // the callee is variadic. ARM variadics move even fixed floats to r0-r3.
-    let fixed;
-    let pieces = if arch.arm_float_return && arch.archid.starts_with("ARM:")
-        && arch.translate().loader_rc().borrow().arm_vfp_args() {
-        fixed = PrototypePieces { first_var_arg_slot: -1, ..pieces.clone() };
-        &fixed
-    } else { pieces };
+    let closed = crate::kuna_armfloatreturn::closed_recovery(arch, pieces);
+    let pieces = &*closed;
     let Some(facts) = entry_facts(arch, entry) else { return false };
     if !storage.iter().all(|(a, _)| crate::kuna_calleearitybody::is_register(a)) {
         return false;

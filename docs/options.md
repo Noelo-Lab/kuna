@@ -2965,8 +2965,8 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 
 - **Symptoms:** a double return becomes SUB84 or zero; an ARM hard-float function loses its d0 parameter; a caller reads an undefined floating result.
 - **What it does:** Recover complete scalar VFP return values and the double-width argument storage they use when an ARM ELF container states the VFP procedure-call standard.
-- **When to flip:** Turn on when ARM hard-float code truncates a double return to its low word or loses a double input. Requires consistent ELF ABI evidence; soft-float, missing metadata, and explicit prototypes keep their existing contracts.
-- **Where / provenance:** P4/active-input-trial-scoring · kuna · correctness-fix · arm-hard-float-return
+- **When to flip:** Turn on when ARM hard-float code truncates a double return to its low word or loses a double input. Requires consistent ELF ABI evidence; soft-float, missing metadata, and explicit prototypes keep their existing contracts. A double argument at a call needs the callee's declared or protoorder-recovered prototype, so it appears in a callee-first decompile-all, not in a single-function decompile.
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · arm-hard-float-return
 - **Example:** `option armfloatreturn on`
 
 ## Programmatic use

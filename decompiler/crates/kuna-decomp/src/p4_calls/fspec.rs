@@ -2057,6 +2057,8 @@ impl ParamListStandard {
         }
     }
 
+    /// (kuna) `armfloatreturn`: let a whole double trial fill both of its
+    /// single-register groups, so the s-register it covers is no hole.
     pub(crate) fn preserve_whole_float_groups(&mut self) {
         self.whole_float_groups = true;
     }
@@ -2797,12 +2799,15 @@ impl ParamListStandard {
                         }
                     }
                     let groups = self.entry[eidx].get_all_groups();
-                    let groups = if self.whole_float_groups && self.entry[eidx].get_type() == type_class::TYPECLASS_FLOAT {
-                        groups.as_slice()
-                    } else { &groups[..1] };
-                    for &grp in groups {
-                        while (hitlist.len() as i32) <= grp { hitlist.push(None); }
-                        if hitlist[grp as usize].is_none() { hitlist[grp as usize] = Some(eidx); }
+                    let whole = self.whole_float_groups
+                        && self.entry[eidx].get_type() == type_class::TYPECLASS_FLOAT;
+                    for &grp in if whole { &groups[..] } else { &groups[..1] } {
+                        while (hitlist.len() as i32) <= grp {
+                            hitlist.push(None);
+                        }
+                        if hitlist[grp as usize].is_none() {
+                            hitlist[grp as usize] = Some(eidx);
+                        }
                     }
                 }
             }

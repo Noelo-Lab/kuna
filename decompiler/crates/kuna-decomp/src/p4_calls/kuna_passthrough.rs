@@ -167,8 +167,6 @@ pub struct PassThroughClaim {
     /// The CALL ops that own a RETURN-VALUE trial for it: the tail calls whose
     /// result every RETURN of the function hands back.
     pub ret_owners: Vec<OpId>,
-    /// The body independently reads or writes this range.
-    pub body_touches: bool,
 }
 
 /// How many bytes of `[addr, addr+size)` the callee of `fc` takes as a
@@ -428,11 +426,9 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
                 continue;
             }
             let claimed = claims.iter().any(|c| c.addr == addr && c.size == size);
-            if !claimed && touched(data, &addr, stated_size)
-                && !(data.get_arch().arm_float_return && crate::kuna_armfloatreturn::input_reaches_call(data, op, &addr, stated_size)) {
+            if !claimed && touched(data, &addr, stated_size) {
                 continue;
             }
-            let body_touches = touched(data, &addr, stated_size);
             let nin = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
             let vn = data.new_varnode(size, &addr, None);
             if data.op_insert_input(op, vn, nin).is_err() {
@@ -444,7 +440,7 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
             ai.get_trial_mut(t).set_slot(nin);
             match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
                 Some(c) => c.arg_owners.push(op),
-                None => claims.push(PassThroughClaim { body_touches, addr, size, arg_owners: vec![op], ret_owners: Vec::new() }),
+                None => claims.push(PassThroughClaim { addr, size, arg_owners: vec![op], ret_owners: Vec::new() }),
             }
         }
     }
@@ -615,7 +611,7 @@ fn claim_tail_return(
         }
         match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
             Some(c) => c.ret_owners.extend(producers.iter().copied()),
-            None => claims.push(PassThroughClaim { addr, size, arg_owners: Vec::new(), ret_owners: producers.clone(), body_touches: false }),
+            None => claims.push(PassThroughClaim { addr, size, arg_owners: Vec::new(), ret_owners: producers.clone() }),
         }
     }
 }
@@ -702,9 +698,7 @@ pub fn tail_return_type(data: &Funcdata, op: OpId, size: int4) -> Option<std::rc
 /// visited, and an earlier call keeps the return value a later read of the
 /// range asks for (a Cortex-M `double` returned in r0:r1).
 pub fn suppresses_return_trial(data: &Funcdata, addr: &Address, size: int4) -> bool {
-    data.kuna_passthrough_claims().iter().any(|c| {
-        (!c.body_touches || !c.ret_owners.is_empty()) && overlaps_claim(std::slice::from_ref(c), addr, size)
-    })
+    overlaps_claim(data.kuna_passthrough_claims(), addr, size)
 }
 
 /// Does `[addr, addr+size)` share a byte with any claimed range?
