@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1551,
-    1551
+    1564,
+    1564
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -161,6 +161,13 @@
     "data:DWARFVARIANTS #7: on, and so does variant B, so three variants are not two",
     "data:DWARFVARIANTS #8: a plain C-shaped struct in the same image renders identically in BOTH passes",
     "data:DWARFVARIANTS #9: and so does a fieldless enum, which rustc emits as an enumeration type this pass never sees",
+    "data:ELFALIASNAMES #1: the exported name no longer selects the PLT stub",
+    "data:ELFALIASNAMES #2: the exported name decompiles the definition",
+    "data:ELFALIASNAMES #3: both names reach the same body",
+    "data:ELFALIASNAMES #4: the call through the PLT keeps its name",
+    "data:ELFALIASNAMES #5: an alias spelled like a static function still selects that function",
+    "data:ELFALIASNAMES #6: the alias's own definition keeps its name and body",
+    "data:ELFALIASNAMES #7: no name is reported ambiguous",
     "data:ELFMAIN #1: off, the entry is an anonymous sub with a body-driven signature",
     "data:ELFMAIN #2: off, the argument vector has no element type, so the string it holds is an integer",
     "data:ELFMAIN #3: default, the libc-start argument is named and declared, in both images",
@@ -980,7 +987,13 @@
     "data:armfloatreturn #14: off loses both double parameters of second",
     "data:armfloatreturn #15: on fills the unused d0 below the returned d1 with one double",
     "data:armfloatreturn #16: two floats read as the halves of d0 are not one integer parameter in either pass",
+    "data:armfloatreturn #17: off returns neither path of a3 as a double",
+    "data:armfloatreturn #18: on a3 returns the call result on one path and its own product on the other",
+    "data:armfloatreturn #19: on the computed path of a3 keeps its value",
     "data:armfloatreturn #1: a raw image states no calling convention, so both passes return the zero low word of 1.5",
+    "data:armfloatreturn #20: on the constant path of a7 keeps 2.5",
+    "data:armfloatreturn #21: on a6 returns the double both arms of its join assign",
+    "data:armfloatreturn #22: off a6 returns nothing",
     "data:armfloatreturn #2: an explicit double prototype on the raw image and the on pass return 1.5",
     "data:armfloatreturn #3: off returns the zero low word of the double constant in the object",
     "data:armfloatreturn #4: off cuts the double that scale returns to its low word",

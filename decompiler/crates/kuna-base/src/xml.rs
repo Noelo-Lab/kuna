@@ -1933,9 +1933,11 @@ mod tests {
         // pointer is declared as that pointer
         // and kuna-ppc-nested-operands + kuna-parisc-nested-operands /
         // nested SLEIGH operand expressions evaluate
+        // and kuna-elfaliasnames / an ELF name sharing its address with an
+        // earlier symbol still selects that function
         // and kuna-arm-float-return / an ARM hard-float function returns its
         // whole VFP result
-        assert_eq!(count, 360, "corpus file count drifted");
+        assert_eq!(count, 361, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
