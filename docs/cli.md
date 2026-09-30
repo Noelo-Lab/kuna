@@ -1532,7 +1532,7 @@ Behaviors specific to `decompile-all`:
   `aliases` carries the rest (`[]` when there is only one). `--functions <name>` matches
   aliases too, so any name that used to select a function still does: an ELF alias
   spelled like a different function's own name never takes that name over, except from
-  an import stub (a definition still wins over its own PLT stub). On ARM the Thumb
+  an import stub (a definition wins over a same-named PLT stub). On ARM the Thumb
   mode bit is folded out of symbol addresses, so a function whose ELF `st_value` is odd
   (`compute` at `0x100b9`) is reported once, at its real even entry — and `--addr` accepts
   either spelling, resolving an odd ARM address to the entry it belongs to instead of
