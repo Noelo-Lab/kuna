@@ -720,6 +720,48 @@ global — a global already has heritage's persist `RETURN-COPY` (§3.1) keeping
 its last store printed, so the brake has nothing to add there. `option
 tiedstorekeep off` restores upstream's behavior exactly.
 
+**Keeping a pointer stored to a global out of the global's markers**
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pointeestorekeep.rs
+(declines)`, a strict fix, no option, issue #767). When a register value is
+stored to a persistent global and the value is also used as an address (the
+address of a `LOAD` or `STORE`, or the base of a `PTRADD` or `PTRSUB`, directly
+or through the `+` and `-` that offset it, following the `COPY`s, `INDIRECT`s
+and `MULTIEQUAL`s that carry it unchanged), `RulePropagateCopy` leaves the
+store's `COPY` as the input of the global's marker (a call's `INDIRECT`, a join's
+`MULTIEQUAL`) and of a `COPY` into the same global. Without that the `COPY`
+dies, chapter 06's forced marker merge joins the value with the global, and
+`gc = q; x = q[1] + q[2]; touch();` printed `gc = &a0[a1]; v1 = gc[2];`: a
+dereference in the pointee type of a global kuna never declares. The walk runs
+before types exist, when `q + 1` is still an integer add, so every add on the way
+to an address counts; after 256 varnodes it answers yes. Two stores keep
+upstream's propagation. A value that is only the global read back through
+`COPY`s, `INDIRECT`s and `MULTIEQUAL`s prints as the global because it is the
+global. And when an earlier value of the global is still read after the store,
+directly or through a copy into a register, the forced merge keeps the value
+apart by trimming anyway, while keeping the store in place would make chapter 06
+copy that earlier value at its definition, possibly above a pointer store that
+changes the global (dash's `set_curjob` unlinks the list head through such a
+pointer and then reads the head again).
+
+The same function covers the loads the binary makes. Any other reader of the
+global's `COPY` output is a load of the global after the store (`-O0` reloads a
+global for every use). When that reader uses what it loads as an address, in the
+slot above or through a `COPY` or an add leading to one, and the stored value is
+not itself used as an address, `RulePropagateCopy` leaves it reading the global.
+The stored value then still joins the global in chapter 06, and the dereference
+prints through the global the binary reads rather than through the register it
+stored, so `*--line_num_start = '1'` still prints as
+`line_num_start = &line_num_start[-1]; *line_num_start = '1';` at `-O0`, and a
+load after a store through a pointer that may point at the global stays a load:
+`gi = &a0[a1]; *a2 = a0; return gi[1];`, where kuna printed
+`return (&a0[a1])[1];`. When the stored value is dereferenced from its register
+as well, it is kept apart from the global anyway, and the loads are left to
+upstream: keeping some of them on the global would split one value between the
+global and a register at every load, and `Merge` would reconcile the two with
+copies the binary never makes (a flex scanner's `yylex` printed a dozen extra
+stores to `yytext`). A parameter's store keeps upstream's handling, since a
+parameter never merges with a global.
+
 **Keeping a loop counter's write-back** (`option loopcounterstore`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_loopcounterstore.rs
 (declines)`, default-on) is the same refusal for the same op, on a different
