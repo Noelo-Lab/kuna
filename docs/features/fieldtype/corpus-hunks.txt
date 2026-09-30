@@ -1,0 +1,71 @@
+# fieldtype: every function the option changes, castbench full (45 binaries), --option fieldtype on vs off (off == main 632437155 byte for byte), one build
+# hunks.py OFF ON (classes in its docstring); OTHER sub-classified by otherclass.py and read by hand (below)
+O0/coreutils/ls {'ARITH': 1, 'RENAME': 49, 'CAST': 4, 'SIG': 1}
+O0/coreutils/sort {'CAST': 5, 'ARITH': 2, 'RENAME': 27, 'SIG': 1}
+O0/coreutils/du {'RENAME': 53, 'CAST': 6, 'OTHER': 1, 'SIG': 1}
+O0/coreutils/cp {'RENAME': 50, 'OTHER': 1, 'CAST': 4, 'SIG': 1}
+O0/coreutils/tail {'RENAME': 13, 'CAST': 4, 'SIG': 1}
+O0/coreutils/wc {'RENAME': 1, 'CAST': 1}
+O0/grep/grep {'RENAME': 91, 'OTHER': 3, 'CAST': 6, 'SIG': 1}
+O0/diffutils/cmp {'OTHER': 1}
+O0/diffutils/diff {'OTHER': 4, 'CAST': 6, 'RENAME': 20, 'SIG': 1}
+O0/diffutils/diff3 {'OTHER': 1}
+O0/diffutils/sdiff {'OTHER': 1}
+O0/tar/tar {'RENAME': 288, 'CAST': 17, 'OTHER': 11, 'ARITH': 4, 'SIG': 3}
+O0/findutils/find {'RENAME': 154, 'OTHER': 2, 'CAST': 6, 'SIG': 1, 'ARITH': 1}
+O2/coreutils/ls {'CAST': 2, 'MERGE': 1}
+O2/coreutils/sort {'CAST': 2, 'MERGE': 1}
+O2/coreutils/du {'RENAME': 13, 'MERGE': 3, 'CAST': 4}
+O2/coreutils/cp {'MERGE': 2, 'CAST': 2}
+O2/coreutils/tail {'CAST': 2, 'MERGE': 1}
+O2/grep/grep {'RENAME': 38, 'ARITH': 1, 'MERGE': 3, 'CAST': 4}
+O2/diffutils/cmp {'CAST': 2}
+O2/diffutils/diff {'OTHER': 2, 'MERGE': 2, 'CAST': 6, 'RENAME': 12}
+O2/diffutils/diff3 {'CAST': 2}
+O2/diffutils/sdiff {'CAST': 2}
+O2/tar/tar {'RENAME': 75, 'CAST': 9, 'OTHER': 7, 'MERGE': 4, 'ARITH': 5, 'DECL': 1}
+O2/findutils/find {'RENAME': 102, 'OTHER': 1, 'MERGE': 2, 'CAST': 3, 'ARITH': 1}
+O2-noinline/coreutils/ls {'RENAME': 16, 'SIG': 1, 'MERGE': 1, 'CAST': 1}
+O2-noinline/coreutils/sort {'RENAME': 27, 'SIG': 1, 'MERGE': 1, 'CAST': 1}
+O2-noinline/coreutils/du {'RENAME': 54, 'CAST': 2, 'SIG': 1, 'MERGE': 1}
+O2-noinline/coreutils/cp {'RENAME': 55, 'SIG': 1, 'MERGE': 1, 'CAST': 1}
+O2-noinline/coreutils/tail {'RENAME': 16, 'SIG': 1, 'MERGE': 1, 'CAST': 1}
+O2-noinline/grep/grep {'RENAME': 43, 'ARITH': 1, 'CAST': 2, 'SIG': 1, 'MERGE': 1}
+O2-noinline/diffutils/diff {'OTHER': 1, 'CAST': 2, 'SIG': 1, 'RENAME': 20, 'MERGE': 1}
+O2-noinline/tar/tar {'RENAME': 281, 'OTHER': 10, 'DECL': 3, 'CAST': 5, 'SIG': 1, 'MERGE': 2, 'ARITH': 7}
+O2-noinline/findutils/find {'RENAME': 159, 'CAST': 2, 'SIG': 1, 'MERGE': 1, 'ARITH': 1}
+TOTAL {'ARITH': 24, 'RENAME': 1657, 'CAST': 116, 'SIG': 20, 'OTHER': 46, 'MERGE': 29, 'DECL': 4} changed functions 1896
+
+# OTHER (46 functions), signals per function (otherclass.py):
+8 ('same-names', 'subscript')
+7 ('subscript',)
+7 ('rename', 'same-names', 'subscript')
+5 ('null',)
+5 ()
+4 ('null', 'rename', 'same-names', 'subscript')
+3 ('merge',)
+2 ('merge', 'same-names')
+2 ('merge', 'rename', 'same-names', 'subscript')
+1 ('signature', 'subscript')
+1 ('rename', 'same-names')
+1 ('dat', 'subscript')
+
+# Reading of the 46 OTHER functions (every one read; the 14 whose lines carry no automatic signal are listed by
+# otherclass.py). All are the option's documented effect:
+#  - subscript: arithmetic on a field now declared a pointer prints in the pointer's own terms, the offset scaled
+#    by the element (`*(int8 *)(a0->field_0x18 + 0x140)` -> `a0->field_0x18[0x28]`, 8-byte elements; tar's
+#    pax/sparse records, find, grep); the same address.
+#  - a constant stored into or compared with a pointer field spelled as that pointer: `NULL` for 0,
+#    `0xffffffffffffffff` for -1 compared with a pointer (grep/cmp/diff/diff3/sdiff mmap results), `-1` for
+#    0xffffffffffffffff stored through a `long *` (grep), `'\n'` for 10 compared through a `char *` (diff):
+#    the same bits.
+#  - `*&v->field_0x20` for `*(v + 0x20)` (diff): the member's address, the same address.
+#  - merge: a register local whose type followed the field is merged with, or split from, another; every such
+#    function's statements match once variable names are erased, except tar 0x54f10/0x50b50, which re-associate
+#    one sum (`*(v + a1 * 0x10 + 8)` for `v = a1 * 0x10 + base; *(v + 8)`, and in the loop `v3 = -0x20 - v4`
+#    with `base` added back per step for `v7 = base - v4`): read line by line, the same addresses.
+#  - tar 0x429c6: a field load folded into the call argument that used it (`v = sub_4077c(..., a0[8] & 0x44 ...)`
+#    for `t = a0[8]; if (sub_4077c(..., t & 0x44 ...))`): still evaluated before the call.
+#  - signature: grep O0 0xd6b4 `unsigned long a2` -> `long a2`, a parameter stored through a field now proven
+#    `long *`; the only signature change in 20,230 functions.
+# No function changes its argument count, variable count or variable sizes (JSON variables[], 20,230 functions).

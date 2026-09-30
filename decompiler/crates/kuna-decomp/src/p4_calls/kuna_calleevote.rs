@@ -204,8 +204,14 @@ impl Ledger {
         if names.is_empty() {
             return;
         }
-        self.stated
-            .retain(|_, stated| !stated.inputs.iter().any(|t| crate::kuna_protoorder::names_type(&t.ct, names)));
+        let names_one = |t: &Typed| crate::kuna_protoorder::names_type(&t.ct, names);
+        for stated in self.stated.values_mut() {
+            if stated.inputs.iter().any(names_one) {
+                let inputs = stated.inputs.iter().filter(|t| !names_one(t)).cloned().collect();
+                *stated = Rc::new(CallerTypes { inputs });
+            }
+        }
+        self.stated.retain(|_, stated| !stated.inputs.is_empty());
     }
 }
 
@@ -492,11 +498,13 @@ pub fn decide_ledger_under(
     decided
 }
 
-/// Forget every statement that names one of `names`, through any depth of
-/// pointer: the `structsynth` convergence sweep's superseded structures. The
+/// Forget every input statement that names one of `names`, through any depth
+/// of pointer: the `structsynth` convergence sweep's superseded structures. The
 /// sweep decompiles a function naming one again so that it takes the
 /// survivor, and a statement made before the survivor existed would give it
-/// the superseded one back.
+/// the superseded one back. The function's other inputs keep what its callers
+/// stated: tar's `exclude_add_pattern_buffer (struct exclude *, char *)` is
+/// redone for its record and its callers still pass the buffer as `char *`.
 pub fn forget_statements_naming(arch: &mut Architecture, names: &[String]) {
     arch.kuna_calleevote.forget_naming(names);
 }
