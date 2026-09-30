@@ -310,6 +310,25 @@ fn a_statement_naming_a_superseded_record_is_forgotten() {
     assert!(!l.stated.contains_key(&CALLEE));
 }
 
+/// Forgetting a superseded record forgets only the input that names it: tar's
+/// `exclude_add_pattern_buffer` is redone for its `struct exclude *` and its
+/// callers still pass the buffer as `char *`.
+#[test]
+fn only_the_input_naming_a_superseded_record_is_forgotten() {
+    let r = reg();
+    let rec = ptr_to(record("struct_2"));
+    let text = ptr_to(char1());
+    let mut l = Ledger::default();
+    l.stated.insert(
+        CALLEE,
+        Rc::new(CallerTypes { inputs: vec![typed(&r, 0x38, &rec), typed(&r, 0x30, &text)] }),
+    );
+    l.forget_naming(&["struct_2".to_string()]);
+    let kept = l.stated.get(&CALLEE).expect("the character pointer is still stated");
+    assert!(kept.at(&at(&r, 0x38), 8).is_none());
+    assert!(Rc::ptr_eq(&kept.at(&at(&r, 0x30), 8).expect("stated").ct, &text));
+}
+
 /// A `char **` one caller passes as the address of its own frame object marks
 /// the statement, so the callee's redo can refuse it where it reads past that
 /// one pointer; a statement no caller passes that way is unmarked.

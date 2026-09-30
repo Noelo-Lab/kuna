@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1520,
-    1520
+    1532,
+    1532
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1224,6 +1224,19 @@
     "data:elemptr #7: with the option on a .data table of ints is read by subscript",
     "data:elemptr #8: a record walked by a stride keeps its integer form in both passes",
     "data:elemptr #9: a pointer read at two widths is not an array in either pass",
+    "data:fieldtype #10: the end pointers take the walking pointers' type, so the loop test needs no cast in either pass",
+    "data:fieldtype #11: a union member read as a double and as a pointer stays raw bytes in both passes",
+    "data:fieldtype #12: an index read at a table and handed to write stays a number in both passes, so write gets it through a cast",
+    "data:fieldtype #13: a number merged with a string on its way to fprintf stays a number in both passes",
+    "data:fieldtype #1: with the option off the buffer is an integer and memmove gets it through two casts - the bug",
+    "data:fieldtype #2: with the option on the buffer is the void * memmove proves and memmove takes it as it is",
+    "data:fieldtype #3: with the option on the loop takes the buffer as it is, and indexes it as the char * it walks",
+    "data:fieldtype #4: with the option off strlen gets the context through a cast",
+    "data:fieldtype #5: with the option on the context is the char * strlen takes",
+    "data:fieldtype #6: with the option off the function pointer is called through a cast",
+    "data:fieldtype #7: with the option on the function pointer is called as it is",
+    "data:fieldtype #8: with the option off the walking pointers are dereferenced through casts",
+    "data:fieldtype #9: with the option on they are dereferenced and stepped as pointers",
     "data:finalorder #1: no statement is emitted after an unconditional goto",
     "data:finalorder #2: the body does not open with a label",
     "data:finalorder #3: the body opens with an indented statement",
@@ -1317,7 +1330,6 @@
     "data:narrowload #7: a declared record's flag word keeps the whole-field compare",
     "data:narrowload #8: a byte store into an 8-byte element stays one byte wide",
     "data:narrowload #9: a masked byte compare of a declared field through a call result reads 1 byte",
-    "data:nested PPC operand: full rotation and mask",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
     "data:opcode-seam #1: the function emits a real body (was: no output, seam panic)",
