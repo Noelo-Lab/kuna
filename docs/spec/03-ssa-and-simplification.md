@@ -1330,15 +1330,28 @@ consumed bits and nonzero mask are
 disjoint (skipping constants and COPYs of nonzero constants, which would
 recurse).
 
-Before dead-code or early-removal rules discard an unused LOAD,
-`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_volatileload.rs` proves its
-address through a bounded graph of constant integer operations. A load from an
-explicitly volatile range stays live until normal volatile lowering can consume
-it, including later heritage passes. The proof respects operation widths, visits
-at most 64 varnodes, declines cycles and unknown inputs, and never reads memory.
-This preserves each access in a load-multiple instruction even when its later
-address expressions exceed the general dead-code lookahead limit. Ordinary
-unused loads keep the existing removal rules.
+A read from a volatile range becomes a `read_volatile` user op only once its
+address is a constant: `RuleLoadVarnode` turns the LOAD into a COPY of the
+memory varnode, which carries the range's `volatile` property, and
+`ActionVarnodeProps` rewrites that read. An address computed in registers (a
+`movw`/`movt` pair feeding an ARM `ldm`, or an x86 base register plus
+displacements) folds only in the rule pool, after `ActionDeadCode` has already
+run, so a read whose value the program discards used to be deleted first (the
+general `lastChanceLoad` lookahead sees through only three levels of binary
+operations). So before any removal path discards a LOAD,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_volatileload.rs` evaluates
+its address through a bounded graph of constant integer operations and asks the
+same local and global property query a new varnode at that address would get.
+When the answer is `volatile`, the LOAD is kept: `lastChanceLoad` holds it on
+every heritage pass, including a LOAD whose readers consume none of its bits
+(which the sweep would otherwise replace with zero as never consumed),
+`RuleEarlyRemoval` skips it, and `ActionVarnodeProps` keeps its `autolivehold`
+pin. Each access therefore survives, in program order, until the ordinary
+lowering above takes over. The evaluation respects operation widths, visits at
+most 64 varnodes, declines cycles, phi nodes and unknown inputs, and never reads
+memory, so an address that reaches the LOAD through a stack slot is not proven.
+Like the lowering, it tests the property at the access's first byte. Loads from
+any address outside a volatile range keep the existing removal rules.
 
 **Block-graph cleanup** (mainloop tail): `ActionUnreachable` deletes blocks
 flow cannot reach (`Funcdata::remove_unreachable_blocks`); `ActionDoNothing`

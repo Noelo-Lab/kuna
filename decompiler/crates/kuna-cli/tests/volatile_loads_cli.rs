@@ -95,3 +95,56 @@ fn unused_multiple_load_destinations_keep_their_volatile_reads() {
         }
     }
 }
+
+/// `mov ecx,0x50000000; add rcx,4` three times, then four `mov eax,[rcx-N]`
+/// reads that each overwrite the last, then `xor eax,eax; ret`.
+#[test]
+fn register_addressed_x86_volatile_reads_survive_into_a_dead_register() {
+    let bytes = "b9000000504883c1044883c1044883c1048b018b41fc8b41f88b41f431c0c3";
+    let image: Vec<u8> = (0..bytes.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&bytes[i..i + 2], 16).unwrap())
+        .collect();
+    let path = common::scratch_file("x86-volatile-reads", "bin");
+    std::fs::write(&path, image).unwrap();
+    for marked in [false, true] {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        cmd.args([
+            "decompile",
+            path.to_str().unwrap(),
+            "0x1000",
+            "--addr",
+            "--raw-image",
+            "--base",
+            "0x1000",
+            "--target",
+            "x86:LE:64:default",
+            "--mode",
+            "aggressive",
+        ]);
+        if marked {
+            cmd.args(["--assert", "volatile 0x50000000+16", "--assert-strict"]);
+        }
+        let result = cmd.output().unwrap();
+        let code = String::from_utf8_lossy(&result.stdout);
+        assert!(
+            result.status.success(),
+            "{code}\n{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let mut previous = None;
+        for offset in [0xc, 0x8, 0x4, 0x0] {
+            let name = format!("dat_{:08x}", 0x50000000 + offset);
+            assert_eq!(
+                code.matches(&name).count(),
+                usize::from(marked),
+                "marked={marked}\n{code}"
+            );
+            if marked {
+                let at = code.find(&name).unwrap();
+                assert!(previous.is_none_or(|p| p < at), "read order: {code}");
+                previous = Some(at);
+            }
+        }
+    }
+}

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1532,
-    1532
+    1536,
+    1536
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1525,6 +1525,10 @@
     "data:unrolledguard #2 / jtsharepartial #1: both fixes recover every interleaved table as a switch, independently (1 pass1 + 16 pass2 unrolledguard + 16 pass3 shipped default = 33)",
     "data:varargstackargs #1: option off drops the stack-passed variadic argument (bug reproduced)",
     "data:varargstackargs #2: option on recovers the variadic argument the ABI passes on the stack",
+    "data:volatile LDM: first read",
+    "data:volatile LDM: fourth read",
+    "data:volatile LDM: second read",
+    "data:volatile LDM: third read",
     "data:whiledo-complex #1: compound while condition forces overflow syntax (valid C)",
     "data:whiledo-complex #2: no statement is inlined inside a while-parens condition (plain form absent)",
     "data:whiledo-complex #3: the bound check is a proper if statement in the loop body",
