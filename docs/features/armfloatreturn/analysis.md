@@ -16,7 +16,7 @@ aggressive` with the option off and on (run after `make binaries`):
 python3 docs/features/armfloatreturn/corpus.py --output ../tmp/armfloatreturn-corpus
 ```
 
-45 files, 478 functions, 88 changed; `corpus.diff` is the whole diff. No
+45 files, 482 functions, 92 changed; `corpus.diff` is the whole diff. No
 `softfp` or soft-float object changes, and no ARM fixture changes other than the
 three hard-float ones with floating-point code (`armfloatreturn_armhf.o`,
 `fmtabi_armhf`, `fmtlf_armhf`). The Thumb objects change exactly as the ARM ones.
@@ -29,7 +29,15 @@ Every changed function:
   paths, `constant_paths`, `loaded_paths`, `copied_paths`, `double_low_bits`,
   `rd`, `read_double`, `f_sum` (which also gains the stack-passed `a` it hands
   to `__printf_chk`).
-- An integer return stays in `r0` while `d0` is also written: `keep`, `to_int`.
+- An integer return stays in `r0` while `d0` is also written (`keep`, `to_int`)
+  or still holds a callee's double (`bump`: `half(a0); return a1 + 1;`, where
+  the wider `d0` used to win and printed `double bump(double a0) { return
+  half(a0); }`); `half` itself returns its double.
+- Holes and float pairs: `second` fills the unused `d0` below the `d1` it
+  returns with one `double` parameter (it printed `(unsigned int,unsigned
+  int,double)`); `w2` reads two floats as the halves of `d0` and gets no
+  8-byte `unsigned long long` parameter (it prints the option-off `(void)`
+  with the returned `double`).
 - Callers: `fmtabi_armhf:main` passes `(double)argc, 0.5` to `f_sum` and `argc`
   to `f_conv`; `fmtlf_armhf:main` returns `(int)rd(argv[0])`.
 - Partial: `many` recovers its eight `d` parameters but not the ninth double on
@@ -47,8 +55,15 @@ Every changed function:
   type, and `integer_bits` types its `r0` parameter `float` because its bits
   are negated into the float result.
 
-Homogeneous float aggregates (`mkf2`, `mkf4`, `mkd2`) print `void` with the
-option off and on: this is scalar inference only.
+Homogeneous float aggregates are not reconstructed. `mkf2`, `mkf4` and `mkd2`
+here print `void` either way, but a `struct { double a, b; }` or a `_Complex
+double` whose members are computed prints as a `double` returning only its
+first member (`double pair2(double a0) { return a0 + a0; }`); it needs a
+declared type. Two floats read as the halves of `d0` below a used VFP
+parameter (`double mixed(float a, double b, float c)`, `c` back-filled into
+`s1`) keep that slot as one `unsigned long long` parameter so that `b` stays
+second, and `float d2f(double)`, whose `d0` is read in two 4-byte pieces,
+prints `(unsigned int,unsigned int)` either way.
 
 The option stays off by default and out of the presets.
 
