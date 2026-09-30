@@ -1931,9 +1931,7 @@ mod tests {
         // parameter stay two variables
         // and kuna-fieldtype / a synthesized field the program uses as a
         // pointer is declared as that pointer
-        // and kuna-arm-wrapper-return / a wrapper without caller evidence keeps
-        // its void return
-        assert_eq!(count, 358, "corpus file count drifted");
+        assert_eq!(count, 357, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

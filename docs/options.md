@@ -969,8 +969,6 @@ Three tiers:
 | decompiling the callee reports an undefined16 return but every call site shows no output | [`callretpair`](#callretpair) |
 | a 16-byte struct return (JSValue, div_t, a fat pointer, a two-word value) is lost at the call site | [`callretpair`](#callretpair) |
 | a tag-and-payload pair is tested right after a call and the tag variable is never assigned | [`callretpair`](#callretpair) |
-| a wrapper is declared void although its caller consumes its result | [`wrapperreturn`](#wrapperreturn) |
-| a returning call at a wrapper exit has no return statement | [`wrapperreturn`](#wrapperreturn) |
 
 ## Toggleable transforms
 
@@ -2959,14 +2957,6 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: it is the upstream behaviour of a branch kuna stubbed, and the alternative is a call with no output whose result is read through variables that have no definition anywhere in the program. 0/675 byte-identical on the datatest corpus. Keep it on whenever a call is followed by reads of a second return register -- on x86-64 the tell is a `// rdx` local that is declared and read but never assigned, next to a call rendered as a bare statement, while decompiling the callee on its own reports an `undefined16` return. That shape is what every 16-byte struct return looks like: a `JSValue`, a `div_t`, a Go or Rust two-word value, any `struct { void *; long; }`. The pair is rendered as a raw 16-byte container with `SUB168` extracting the halves until a later pass gives it an aggregate type, so the gain is that the payload EXISTS and is connected to its producer, not that it is spelled well. Set off to restore the stub -- worth trying when a call acquires a 16-byte output whose second half the disassembly shows is a clobber rather than a value (the callee-body veto only fires on a callee the bounded decode can read to every RETURN, so a callee containing a call cannot be refuted), or to bisect whether this arm rather than trial scoring changed a call's surroundings.
 - **Where / provenance:** P4/output-prototype · ghidra · correctness-fix · repipe-bytecode-reader-return-discarded
 - **Example:** `option callretpair off`
-
-### `wrapperreturn` -- on | off, default `off`
-
-- **Symptoms:** a wrapper is declared void although its caller consumes its result; a returning call at a wrapper exit has no return statement.
-- **What it does:** Recover a wrapper's return when a direct caller consumes it and every normal exit preserves a proven callee result in the same register. Bounded feedback connects caller uses to providers through forwarding wrappers; cycles cannot supply their own return proof.
-- **When to flip:** Turn on for serial whole-program ARM analysis when a caller assigns a wrapper's result but the wrapper is declared void. Requires protoorder and passthrough. Explicit prototypes take precedence; isolated and sharded functions supply no caller evidence.
-- **Where / provenance:** P4/active-input-trial-scoring · kuna · correctness-fix · arm-wrapper-return
-- **Example:** `option wrapperreturn on`
 
 ## Programmatic use
 

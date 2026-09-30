@@ -2845,6 +2845,50 @@ reaches the RETURN through an ordinary INDIRECT, not the call's creation; keepin
 callee's value, as an integer -- and spread to its callers. Such a forwarder
 keeps the option-off `void`.
 
+**An injected no-op is not a touch of the returned register.** The ARM compiler
+specs stand in for the `setISAMode` user op, the mode switch of every `bx lr`
+and `pop {...,pc}`, with a p-code injection whose body is `r0 = r0`, marked
+`incidentalcopy`; the MIPS specs do the same with `v0 = v0` for `jr ra`. That
+COPY reads and writes the return register at every return, so by the test above
+an ARM `push {r4,lr}; bl provider; pop {r4,pc}` touched `r0` and stayed `void
+wrapper(unsigned int *a0) { provider(a0); }` while the x86-64 `call provider;
+ret` it compiles from got `return provider(a0);`. Upstream marks an injection's
+COPYs incidental so that parameter recovery walks through them, and a COPY of a
+storage range onto itself moves nothing, so the tail-return rule does not count
+either of its Varnodes, and `returns_tail_result` follows the RETURN's Varnode
+back through it to the call's creation. Both architectures now take the
+callee's result on the same terms as x86-64, with no caller involved.
+
+The argument side keeps counting the no-op, and a returned register the body
+touches, if only through it, does not hold call-site trials as a claim
+otherwise does (`body_touches`): heritage visits it with the option off as
+well, so its trials exist there, and they are scored as they are there. On ARM
+`r0` is both the return register and the first argument, and in `return
+f(g(a0))` (`bl g; bl f; pop {r4,pc}`) the `r0` at `f` is `g`'s result; leaving
+that trial unscored printed `g(a0); return f();`. A wrapper that writes the
+register itself before its call (`mov r0,#5; bl f; pop {r4,pc}`) still touches
+it and stays `void`. The witness is
+`decompiler/crates/kuna-cli/tests/arm_wrapper_returns.rs`, which builds its ARM
+object in the test: a wrapper ending in `pop {r4,pc}`, one ending in `bx lr`,
+one whose caller ignores the result and a three-deep chain of them return their
+callee's result, and `return provider(provider(a0))` keeps its inner call's
+argument. Its controls keep `void`: a void callee, a two-function cycle, an
+indirect call, the argument write above, and a declared `void` prototype on the
+wrapper or on its callee; a write after the call returns what was written, and
+`store(provider(a0))` keeps its argument. Over 56 debug-stripped ARM firmware
+binaries of the decbench O2 and O2-noinline corpora (libopencm3, nuttx, chibios,
+FreeRTOS, RIOT, crazyflie), 36 functions gain a return. DWARF confirms 29; the
+other 7 are the `void` wrapper shape above (nuttx's `*outstream_putc`, which end
+in a call to the matching `puts`, libgcc's `_Unwind_SetGR`, and two entries kuna
+finds inside nuttx's `vsyslog`). Four more (`vfprintf`, `vdprintf`) now return
+`int`, as DWARF says, where they returned `unsigned int`. Callers follow the new
+return types: seven calls lose an `(int)` cast now that `asprintf` and
+`nx_asprintf` return `int`, and sixteen `getopt` callers compare against
+`0xffffffff`, because `getopt` repeats the `unsigned int` recovered for
+`getopt_common` where DWARF says `int`. Over the 272 ELF fixtures one function
+changes, the synthetic Cortex-M reset handler of `cortexm_aifcorroborate_le32`,
+which ends in `bl` to a helper recovered as returning `r1:r0`.
+
 The witnesses are `passthroughpair_x86_64` and `passthroughpair_le32` under
 `tests/cli/passthrough-returns-a-register-pair-a-tail-call-leaves.json` and its
 ARM twin; a forwarder that writes `rdx` after the call and the `xmm0:xmm1`
@@ -3630,32 +3674,3 @@ narrowed by `--addr`, `--functions` or a triage filter, `--jobs N`, a raw image
 and `--option protoorder off`. A single-function decompile therefore still
 prints the conversion that the whole-binary listing leaves out, the same
 property `protoorder`'s argument types have.
-
-### Caller-supported ARM wrapper returns
-
-`wrapperreturn` (off by default) lets a serial, callee-first whole-program run
-retry an ARM function when a direct caller actually consumes its result. Every
-normal exit must preserve the same register from a direct call whose recovered
-return is already supported by its body or by a previously proved wrapper.
-Unused results, indirect calls, uncertain joins, cycles without a producing
-leaf, clobbers, conflicting producer types, and declared prototypes provide no
-new inference. Identity copies in an ARM pop epilogue preserve the result.
-
-The ledger propagates a demand through wrappers, with at most 128 recovery
-attempts and four attempts per selected function in the aggregate. After a
-contract changes, affected callers are refreshed once in callee order. A failed
-retry keeps the previous result. Argument registers are forwarded only when the
-callee consumes them and every incoming path reaches the first call without a
-write; subsequent uses keep their ordinary return trials. This feedback requires
-`protoorder` and `passthrough`; a single-function console run or a parallel worker
-has no caller ledger and remains conservative. Explicit prototypes still win.
-The synthetic CLI regression covers the complete chain; the stage regression
-pins absence of caller evidence on the console surface.
-
-Wrapper return evidence also accepts a declared non-void producer, with its
-actual forwarded inputs; a declared void producer still blocks recovery.
-Identity copies and contiguous register pieces must trace to the same producing
-call. Only an unambiguous consuming caller lets this proof override the heuristic
-that rejects an unexplained call-created return value. This preserves a complete
-VFP result when combined with ABI-aware scalar return recovery, without using an
-unused call result as caller evidence.

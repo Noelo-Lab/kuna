@@ -1,3 +1,6 @@
+//! `passthrough` hands back the result of an ARM wrapper's call
+//! (`push {r4,lr}; bl provider; pop {r4,pc}`) the way it already does for an
+//! x86-64 `call provider; ret`, and keeps every refusal the rule has.
 mod common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
@@ -16,10 +19,11 @@ fn image(kind: &str) -> Vec<u8> {
     };
     let wrapper = add(
         "wrapper",
-        if kind == "overwrite" {
-            &[0xe92d4010, 0xeb000000, 0xe3a00007, 0xe8bd8010]
-        } else {
-            &[0xe92d4010, 0xeb000000, 0xe8bd8010]
+        match kind {
+            "overwrite" => &[0xe92d4010, 0xeb000000, 0xe3a00007, 0xe8bd8010],
+            "setarg" => &[0xe92d4010, 0xe3a00005, 0xeb000000, 0xe8bd8010],
+            "bxlr" => &[0xe52de004, 0xeb000000, 0xe49de004, 0xe12fff1e],
+            _ => &[0xe92d4010, 0xeb000000, 0xe8bd8010],
         },
     );
     let provider = add(
@@ -42,12 +46,30 @@ fn image(kind: &str) -> Vec<u8> {
     );
     let void_wrapper = add("void_wrapper", &[0xe92d4010, 0xeb000000, 0xe8bd8010]);
     let sink = add("sink", &[0xe5801000, 0xe12fff1e]);
+    let store = add("store", &[0xe3a01009, 0xe5801000, 0xe12fff1e]);
+    let chain_void = add(
+        "chain_void",
+        &[0xe92d4010, 0xeb000000, 0xeb000000, 0xe8bd8010],
+    );
+    let chain_ret = add(
+        "chain_ret",
+        &[0xe92d4010, 0xeb000000, 0xeb000000, 0xe8bd8010],
+    );
+    let call = if kind == "setarg" {
+        wrapper + 2
+    } else {
+        wrapper + 1
+    };
     for (call, target) in [
-        (wrapper + 1, if kind == "cycle" { middle } else { provider }),
+        (call, if kind == "cycle" { middle } else { provider }),
         (middle + 1, wrapper),
         (outer + 1, middle),
         (consumer + 1, if kind == "chain" { outer } else { wrapper }),
         (void_wrapper + 1, sink),
+        (chain_void + 1, provider),
+        (chain_void + 2, store),
+        (chain_ret + 1, provider),
+        (chain_ret + 2, provider),
     ] {
         words[call] = 0xeb000000 | ((target as i32 - call as i32 - 2) as u32 & 0xffffff);
     }
@@ -72,6 +94,7 @@ fn image(kind: &str) -> Vec<u8> {
     }
     object.write().unwrap()
 }
+
 fn function<'a>(text: &'a str, name: &str) -> &'a str {
     let marker = format!("// Function: {name} @");
     text.split(&marker)
@@ -81,7 +104,8 @@ fn function<'a>(text: &'a str, name: &str) -> &'a str {
         .next()
         .unwrap()
 }
-fn run(kind: &str, on: bool, assertion: Option<&str>) -> String {
+
+fn run(kind: &str, passthrough: bool, assertion: Option<&str>) -> String {
     let path = common::scratch_file("arm-wrapper-returns", "o");
     std::fs::write(&path, image(kind)).unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
@@ -90,10 +114,10 @@ fn run(kind: &str, on: bool, assertion: Option<&str>) -> String {
         path.to_str().unwrap(),
         "--mode",
         "aggressive",
-        "--option",
-        "wrapperreturn",
-        if on { "on" } else { "off" },
     ]);
+    if !passthrough {
+        command.args(["--option", "passthrough", "off"]);
+    }
     if let Some(assertion) = assertion {
         command.args(["--assert", assertion, "--assert-strict"]);
     }
@@ -110,41 +134,69 @@ fn run(kind: &str, on: bool, assertion: Option<&str>) -> String {
     );
     text
 }
+
 #[test]
-fn consumed_results_have_consistent_contracts_through_a_chain() {
-    for kind in ["direct", "chain"] {
+fn a_call_then_return_wrapper_hands_back_its_callee_result() {
+    for kind in ["direct", "bxlr", "unused"] {
         let text = run(kind, true, None);
         assert!(
-            function(&text, "wrapper").contains("return provider(a0);"),
-            "{text}"
+            function(&text, "wrapper").contains("unsigned int wrapper(unsigned int *a0)"),
+            "{kind}: {text}"
         );
-        if kind == "chain" {
-            assert!(
-                function(&text, "middle").contains("return wrapper(a0);"),
-                "{text}"
-            );
-            assert!(
-                function(&text, "outer").contains("return middle(a0);"),
-                "{text}"
-            );
-            assert!(function(&text, "consumer").contains("outer(a0)"), "{text}");
-        } else {
-            assert!(
-                function(&text, "consumer").contains("wrapper(a0)"),
-                "{text}"
-            );
-        }
         assert!(
-            !function(&text, "consumer").contains("void consumer"),
-            "{text}"
+            function(&text, "wrapper").contains("return provider(a0);"),
+            "{kind}: {text}"
+        );
+        assert!(
+            function(&text, "consumer").contains("wrapper(a0)"),
+            "{kind}: {text}"
         );
         let off = run(kind, false, None);
-        assert!(function(&off, "wrapper").contains("void wrapper("), "{off}");
+        assert!(
+            function(&off, "wrapper").contains("void wrapper("),
+            "{kind}: {off}"
+        );
     }
+    let text = run("direct", true, None);
+    assert!(
+        function(&text, "chain_void").contains("void chain_void("),
+        "{text}"
+    );
+    assert!(
+        function(&text, "chain_void").contains("store((unsigned int *)provider(a0));"),
+        "{text}"
+    );
+    assert!(
+        function(&text, "chain_ret").contains("unsigned int chain_ret("),
+        "{text}"
+    );
+    assert!(
+        function(&text, "chain_ret").contains("return provider("),
+        "{text}"
+    );
+    assert!(
+        function(&text, "chain_ret").contains("provider(a0)"),
+        "{text}"
+    );
+    let text = run("chain", true, None);
+    assert!(
+        function(&text, "wrapper").contains("return provider(a0);"),
+        "{text}"
+    );
+    assert!(
+        function(&text, "middle").contains("return wrapper(a0);"),
+        "{text}"
+    );
+    assert!(
+        function(&text, "outer").contains("return middle(a0);"),
+        "{text}"
+    );
+    assert!(function(&text, "consumer").contains("outer(a0)"), "{text}");
 }
+
 #[test]
-fn silence_clobbers_cycles_indirect_calls_and_explicit_void_are_not_evidence() {
-    for kind in ["unused", "sink", "cycle", "indirect"] {
+fn clobbers_cycles_indirect_calls_and_void_callees_are_not_evidence() {
+    for kind in ["sink", "cycle", "indirect"] {
         let text = run(kind, true, None);
         assert!(
             function(&text, "wrapper").contains("void wrapper("),
@@ -157,6 +209,13 @@ fn silence_clobbers_cycles_indirect_calls_and_explicit_void_are_not_evidence() {
         !function(&text, "wrapper").contains("return provider"),
         "{text}"
     );
+    let text = run("setarg", true, None);
+    assert!(
+        function(&text, "wrapper").contains("void wrapper("),
+        "{text}"
+    );
+    assert!(function(&text, "wrapper").contains("provider("), "{text}");
+    assert!(!function(&text, "wrapper").contains("provider()"), "{text}");
     let text = run(
         "direct",
         true,
@@ -164,23 +223,6 @@ fn silence_clobbers_cycles_indirect_calls_and_explicit_void_are_not_evidence() {
     );
     assert!(
         function(&text, "wrapper").contains("void wrapper("),
-        "{text}"
-    );
-}
-
-#[test]
-fn declared_provider_results_are_evidence_but_declared_void_is_not() {
-    let text = run(
-        "direct",
-        true,
-        Some("prototype provider unsigned int provider(unsigned int *p)"),
-    );
-    assert!(
-        function(&text, "wrapper").contains("return provider(a0);"),
-        "{text}"
-    );
-    assert!(
-        function(&text, "consumer").contains("wrapper(a0)"),
         "{text}"
     );
     let text = run(

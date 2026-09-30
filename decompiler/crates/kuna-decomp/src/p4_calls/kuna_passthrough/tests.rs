@@ -76,6 +76,18 @@ fn a_return_claim_covers_the_return_register() {
     assert!(overlaps_claim(&claims, &rax, 4), "eax too");
 }
 
+#[test]
+fn a_return_claim_the_body_touches_leaves_call_site_trials_to_scoring() {
+    let sp = reg_space();
+    let r0 = Address::new(Rc::clone(&sp), RAX);
+    let mut touched = claim(&sp, RAX, 4, &[], &[7]);
+    touched.body_touches = true;
+    assert!(!holds_trials(&[touched.clone()], &r0, 4), "the option-off run has these trials too");
+    assert!(holds_trials(&[claim(&sp, RAX, 4, &[], &[7])], &r0, 4), "an untouched return register is the claim's alone");
+    touched.arg_owners.push(op(1));
+    assert!(holds_trials(&[touched], &r0, 4), "a forwarded argument always holds its trials");
+}
+
 fn facts(reads: Vec<(int4, u64, int4)>) -> CalleeEntryDead {
     CalleeEntryDead::from_parts(REG, reads, vec![vec![]], true)
 }

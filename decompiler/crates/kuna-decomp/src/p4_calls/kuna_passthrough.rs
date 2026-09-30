@@ -120,7 +120,10 @@
 //! at a RETURN, so [`returns_tail_result`] accepts the one planted at a claimed
 //! call, whose output then takes the callee's recovered return type
 //! ([`tail_return_type`]). A register pair is kept whole or not at all
-//! ([`keep_tail_return_whole`]).
+//! ([`keep_tail_return_whole`]). The `r0 = r0` an ARM return's mode switch is
+//! injected as (`v0 = v0` on MIPS) is not a touch of the returned register
+//! ([`is_injected_noop`]), so `bl f; pop {r4,pc}` hands back `f`'s result as
+//! `call f; ret` does.
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -167,7 +170,8 @@ pub struct PassThroughClaim {
     /// The CALL ops that own a RETURN-VALUE trial for it: the tail calls whose
     /// result every RETURN of the function hands back.
     pub ret_owners: Vec<OpId>,
-    /// The body independently reads or writes this range.
+    /// Some op of the function reads or writes the range itself, so heritage
+    /// visits it with the option off too.
     pub body_touches: bool,
 }
 
@@ -203,7 +207,7 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
     let stated_size = stated.inputs.iter().find(|(a, _, _)| a == addr).map(|(_, s, _)| *s)?;
     let facts = data.kuna_callee_entry_through(entry).or_else(|| data.kuna_callee_entry_dead(entry))?;
     let size = size.min(stated_size);
-    if !facts.proves_input(addr, size) && !crate::kuna_wrapperreturn::forwarded_input(data,entry,addr,size) {
+    if !facts.proves_input(addr, size) {
         return None;
     }
     let width = facts.live_input_width(addr, size).unwrap_or(size);
@@ -319,6 +323,12 @@ fn is_register(addr: &Address) -> bool {
 
 /// Does any Varnode of the function share a byte with `[addr, addr+size)`?
 fn touched(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    touched_by(data, addr, size, false)
+}
+
+/// [`touched`], with the two sides of an injected no-op ([`is_injected_noop`])
+/// not counted.
+fn touched_by(data: &Funcdata, addr: &Address, size: int4, past_noops: bool) -> bool {
     let off = addr.get_offset();
     let end = off.wrapping_add(size as u64);
     let lo = Address::new(
@@ -331,10 +341,30 @@ fn touched(data: &Funcdata, addr: &Address, size: int4) -> bool {
             .get(id)
             .map(|v| {
                 let voff = v.get_offset();
-                voff < end && off < voff.wrapping_add(v.get_size() as u64)
+                let noop = past_noops
+                    && match v.get_def() {
+                        Some(def) => is_injected_noop(data, def),
+                        None => v.descend_iter().next().is_some() && v.descend_iter().all(|op| is_injected_noop(data, op)),
+                    };
+                !noop && voff < end && off < voff.wrapping_add(v.get_size() as u64)
             })
             .unwrap_or(false)
     })
+}
+
+/// Is `op` an injected COPY of a storage range onto itself?
+///
+/// The ARM compiler specs inject the `setISAMode` of every `bx lr` and
+/// `pop {...,pc}` as `r0 = r0` (MIPS: `v0 = v0` at `jr ra`), marked incidental
+/// so parameter recovery walks through it; it moves nothing.
+fn is_injected_noop(data: &Funcdata, op: OpId) -> bool {
+    let Some(o) = data.obank().get(op) else { return false };
+    if o.code() != OpCode::CPUI_COPY || !o.is_incidental_copy() {
+        return false;
+    }
+    let out = o.get_out().and_then(|v| data.vbank().get(v));
+    let inp = o.get_in(0).and_then(|v| data.vbank().get(v));
+    matches!((out, inp), (Some(a), Some(b)) if a.get_addr() == b.get_addr() && a.get_size() == b.get_size())
 }
 
 /// The calls no other call can execute before: the first CALL or CALLIND of a
@@ -401,9 +431,10 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
     if variadic {
         return;
     }
-    let returned_call_result = crate::kuna_wrapperreturn::claim(data)
-        .map(|(addr, size, producers)| (vec![(addr, size)], producers))
-        .or_else(|| stated_tail_return(data));
+    let returned_call_result = stated_tail_return(data).map(|(pieces, producers)| {
+        let pieces: Vec<_> = pieces.into_iter().map(|(a, s)| (touched(data, &a, s), a, s)).collect();
+        (pieces, producers)
+    });
     let vararg: Vec<OpId> = (0..data.num_calls())
         .filter(|&i| set_up_as_variadic(data, i))
         .map(|i| data.get_call_specs(i).get_op())
@@ -430,11 +461,9 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
                 continue;
             }
             let claimed = claims.iter().any(|c| c.addr == addr && c.size == size);
-            if !claimed && touched(data, &addr, stated_size)
-                && !(data.get_arch().wrapper_return && crate::kuna_wrapperreturn::input_reaches_call(data, op, &addr, stated_size)) {
+            if !claimed && touched(data, &addr, stated_size) {
                 continue;
             }
-            let body_touches = touched(data, &addr, stated_size);
             let nin = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
             let vn = data.new_varnode(size, &addr, None);
             if data.op_insert_input(op, vn, nin).is_err() {
@@ -446,7 +475,9 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
             ai.get_trial_mut(t).set_slot(nin);
             match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
                 Some(c) => c.arg_owners.push(op),
-                None => claims.push(PassThroughClaim { body_touches, addr, size, arg_owners: vec![op], ret_owners: Vec::new() }),
+                None => {
+                    claims.push(PassThroughClaim { addr, size, arg_owners: vec![op], ret_owners: Vec::new(), body_touches: false })
+                }
             }
         }
     }
@@ -555,7 +586,7 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     let pieces = register_pieces(data, &addr, size)?;
     let proto = data.get_func_proto();
     let free = |(a, s): &(Address, int4)| {
-        !touched(data, a, *s) && proto.characterize_as_output(a, *s) != crate::fspec::Containment::NoContainment
+        !touched_by(data, a, *s, true) && proto.characterize_as_output(a, *s) != crate::fspec::Containment::NoContainment
     };
     pieces.iter().all(free).then_some((pieces, producers))
 }
@@ -590,7 +621,7 @@ fn register_pieces(data: &Funcdata, addr: &Address, size: int4) -> Option<Vec<(A
 fn claim_tail_return(
     data: &mut Funcdata,
     claims: &mut Vec<PassThroughClaim>,
-    ret: (Vec<(Address, int4)>, Vec<OpId>),
+    ret: (Vec<(bool, Address, int4)>, Vec<OpId>),
 ) {
     let (pieces, producers) = ret;
     let rets: Vec<OpId> = data
@@ -602,7 +633,7 @@ fn claim_tail_return(
     if nins.len() != rets.len() || nins.iter().any(|&n| n != nins[0]) {
         return;
     }
-    for (k, (addr, size)) in pieces.into_iter().enumerate() {
+    for (k, (body_touches, addr, size)) in pieces.into_iter().enumerate() {
         let slot = nins[0] + k as int4;
         for &r in &rets {
             let vn = data.new_varnode(size, &addr, None);
@@ -617,7 +648,13 @@ fn claim_tail_return(
         }
         match claims.iter_mut().find(|c| c.addr == addr && c.size == size) {
             Some(c) => c.ret_owners.extend(producers.iter().copied()),
-            None => claims.push(PassThroughClaim { addr, size, arg_owners: Vec::new(), ret_owners: producers.clone(), body_touches: false }),
+            None => claims.push(PassThroughClaim {
+                addr,
+                size,
+                arg_owners: Vec::new(),
+                ret_owners: producers.clone(),
+                body_touches,
+            }),
         }
     }
 }
@@ -628,7 +665,8 @@ fn claim_tail_return(
 /// The scoring arm of `ActionReturnRecovery`. Upstream's `ancestorOpUse`
 /// refuses an INDIRECT creation outright ("an indication of an output trial"),
 /// so a callee whose return value is still recovered from trials never reaches
-/// a RETURN; a claimed tail call's creation is the callee's stated result.
+/// a RETURN; a claimed tail call's creation is the callee's stated result, read
+/// directly or through an injected no-op ([`is_injected_noop`]).
 pub fn returns_tail_result(data: &Funcdata, vn: VarnodeId, addr: &Address, size: int4) -> bool {
     if !data.get_arch().pass_through {
         return false;
@@ -637,10 +675,11 @@ pub fn returns_tail_result(data: &Funcdata, vn: VarnodeId, addr: &Address, size:
     if v.get_addr() != addr || v.get_size() != size {
         return false;
     }
-    if data.get_arch().wrapper_return {
-        return crate::kuna_wrapperreturn::returns_claimed_result(data, vn, addr, size);
+    let mut def = v.get_def();
+    while let Some(d) = def.filter(|&d| is_injected_noop(data, d)) {
+        def = data.obank().get(d).and_then(|o| o.get_in(0)).and_then(|i| data.vbank().get(i)).and_then(|i| i.get_def());
     }
-    let Some(def) = v.get_def().and_then(|d| data.obank().get(d)) else { return false };
+    let Some(def) = def.and_then(|d| data.obank().get(d)) else { return false };
     if !def.is_indirect_creation() {
         return false;
     }
@@ -690,14 +729,6 @@ pub fn tail_return_type(data: &Funcdata, op: OpId, size: int4) -> Option<std::rc
         return None;
     }
     let fc = (0..data.num_calls()).map(|i| data.get_call_specs(i)).find(|fc| fc.get_op() == op)?;
-    if data.get_arch().wrapper_return && fc.proto().is_output_locked() {
-        let out = fc.proto().get_output();
-        let ty = out.get_type()?;
-        let claimed = data.kuna_passthrough_claims().iter().any(|claim| {
-            claim.ret_owners.contains(&op) && out.get_address() == claim.addr && claim.size == size
-        });
-        return (claimed && out.get_size() == size && ty.get_size() == size).then(|| ty.clone());
-    }
     let (_, osize, ct) = data.kuna_protoorder_types(fc.get_entry_address())?.output.as_ref()?;
     (*osize == size && ct.get_size() == size).then(|| std::rc::Rc::clone(ct))
 }
@@ -715,9 +746,7 @@ pub fn tail_return_type(data: &Funcdata, op: OpId, size: int4) -> Option<std::rc
 /// visited, and an earlier call keeps the return value a later read of the
 /// range asks for (a Cortex-M `double` returned in r0:r1).
 pub fn suppresses_return_trial(data: &Funcdata, addr: &Address, size: int4) -> bool {
-    data.kuna_passthrough_claims().iter().any(|c| {
-        (!c.body_touches || !c.ret_owners.is_empty()) && overlaps_claim(std::slice::from_ref(c), addr, size)
-    })
+    overlaps_claim(data.kuna_passthrough_claims(), addr, size)
 }
 
 /// Does `[addr, addr+size)` share a byte with any claimed range?
@@ -739,9 +768,20 @@ fn overlaps_claim(claims: &[PassThroughClaim], addr: &Address, size: int4) -> bo
 /// an unreferenced one `fillinMap` adds only to fill a hole before a later
 /// argument. Left to `AncestorRealistic`, a register that reaches the call
 /// through an earlier call is "killed by call", definitely not used, and
-/// `forceNoUse` drops every argument after it.
+/// `forceNoUse` drops every argument after it. A returned register the body
+/// touches itself (ARM `r0` at a `pop {r4,pc}`) has its trials with the option
+/// off as well, and they are scored as they are there.
 pub fn claimed_range(data: &Funcdata, addr: &Address, size: int4) -> bool {
-    data.get_arch().pass_through && overlaps_claim(data.kuna_passthrough_claims(), addr, size)
+    data.get_arch().pass_through && holds_trials(data.kuna_passthrough_claims(), addr, size)
+}
+
+/// Does `[addr, addr+size)` share a byte with a claim that keeps call-site
+/// trials unscored: any claim but a return register the body touches itself?
+fn holds_trials(claims: &[PassThroughClaim], addr: &Address, size: int4) -> bool {
+    claims
+        .iter()
+        .filter(|c| !(c.arg_owners.is_empty() && c.body_touches))
+        .any(|c| overlaps_claim(std::slice::from_ref(c), addr, size))
 }
 
 /// The forwarded registers a finalized call may still take, captured before its

@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_248() {
-    assert_eq!(kuna_num_settables(), 248);
-    assert_eq!(SETTABLE_TABLE.len(), 248);
+fn settable_count_is_247() {
+    assert_eq!(kuna_num_settables(), 247);
+    assert_eq!(SETTABLE_TABLE.len(), 247);
 }
 
 #[test]
-fn tier_counts_are_78_core_104_transform_66_analysis() {
+fn tier_counts_are_77_core_104_transform_66_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_78_core_104_transform_66_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (78, 104, 66));
+    assert_eq!((core, transform, analysis), (77, 104, 66));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_107() {
+fn option_values_live_value_present_for_106() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -729,8 +729,7 @@ fn option_values_live_value_present_for_107() {
     // 103 -> 104: +1 for `elemptr` (live_field = elem_ptr).
     // 104 -> 105: +1 for `condexeret` (live_field = cond_exe_ret).
     // 105 -> 106: +1 for `fieldtype` (live_field = field_type).
-    // 106 -> 107: +1 for `wrapperreturn` (live_field = wrapper_return).
-    assert_eq!(with_live, 107);
+    assert_eq!(with_live, 106);
 }
 
 #[test]
@@ -912,8 +911,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 243 -> 244: +1 for `elemptr`.
     // 244 -> 245: +1 for `condexeret`; its P4 row sits mid-table.
     // 245 -> 246: +1 for `fieldtype`.
-    // 246 -> 247: +1 for `wrapperreturn`.
-    assert_eq!(json.matches("},\n").count(), 247);
+    assert_eq!(json.matches("},\n").count(), 246);
 }
 
 #[test]

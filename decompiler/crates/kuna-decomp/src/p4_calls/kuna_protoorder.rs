@@ -1663,8 +1663,7 @@ fn recovered_output(
     if ct.get_metatype() == type_metatype::TYPE_VOID {
         return None;
     }
-    if !crate::kuna_returnuncomputed::every_return_computes(data)
-        && !crate::kuna_wrapperreturn::proven_output(data) {
+    if !crate::kuna_returnuncomputed::every_return_computes(data) {
         return None;
     }
     let addr = out.get_address();
@@ -1707,7 +1706,7 @@ fn state_recovered_types(
         .zip(pieces.intypes.iter())
         .map(|((addr, size), ct)| (addr.clone(), *size, Rc::clone(ct)))
         .collect();
-    if inputs.is_empty() && !(arch.wrapper_return && arch.archid.starts_with("ARM:") && output.is_some()) {
+    if inputs.is_empty() {
         return Err(Decline::VoidVoid);
     }
     let Some(key) = stated_key(entry) else {

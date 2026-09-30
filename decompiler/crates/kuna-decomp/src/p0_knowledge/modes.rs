@@ -470,8 +470,6 @@ mod tests {
         /// asked for was run over the 110 stripped non-x86-64 decbench twins and all
         /// four passed it, so they are in `AGGRESSIVE_OVERRIDES` above.
         const UNEVALUATED: &[&str] = &[
-            // Caller feedback needs a broader ARM corpus and workload measurement before preset promotion.
-            "wrapperreturn",
             // Stack-address liveness can be incidental; synthetic regressions and
             // a local speed measurement do not justify a broad preset flip.
             "stackaddrargtrial",
