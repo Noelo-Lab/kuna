@@ -5,6 +5,8 @@
 # as `int4 index; // ebx` and `int4 sum; // r12d`.  `three_locals` adds r13d,
 # and `stack_pair` keeps two ints on the stack by passing their addresses to
 # `fill`, so the same batches can be stated on register and stack locals.
+# `pick_flag` holds a pointer in rax and then an int in eax: two locals whose
+# storage overlaps, the pair a single batch cannot give two Symbols.
 #
 #   clang -c localnamebatch_x86_64.s -o localnamebatch_x86_64.o
 #   ld --build-id=none -e two_locals localnamebatch_x86_64.o -o localnamebatch_x86_64
@@ -73,6 +75,38 @@ stack_pair:
     add $24, %rsp
     ret
 .size stack_pair, .-stack_pair
+
+.globl pick_flag
+.type pick_flag,@function
+pick_flag:
+    sub $8, %rsp
+    call lookup
+    mov %rax, %rdi
+    xor %eax, %eax
+    test %rdi, %rdi
+    je .Lnone
+    call probe
+    test %eax, %eax
+    setne %al
+    movzbl %al, %eax
+.Lnone:
+    add $8, %rsp
+    ret
+.size pick_flag, .-pick_flag
+
+.globl lookup
+.type lookup,@function
+lookup:
+    xor %eax, %eax
+    ret
+.size lookup, .-lookup
+
+.globl probe
+.type probe,@function
+probe:
+    xor %eax, %eax
+    ret
+.size probe, .-probe
 
 .globl observe
 .type observe,@function

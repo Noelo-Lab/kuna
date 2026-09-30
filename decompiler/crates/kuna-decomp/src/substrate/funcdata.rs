@@ -145,9 +145,9 @@ pub struct DirectiveSymbol {
     pub symbol: crate::database::SymbolId,
     /// The identifier the pass printed for the variable the Symbol stands for.
     pub printed: String,
-    /// For a Symbol a directive mapped over a register-resident local, the width
-    /// of that storage, which a later stated type still has to match.
-    pub bound_size: Option<int4>,
+    /// For a Symbol a directive mapped over a register-resident local, that
+    /// storage and its width, which a later stated type still has to match.
+    pub bound: Option<(Address, int4)>,
 }
 
 pub struct Funcdata {

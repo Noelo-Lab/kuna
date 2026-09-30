@@ -28,8 +28,8 @@
   "repeat": 1,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/localnamebatch_x86_64",
-    "binary_sha256": "4b33355e2724ad3a5ff9e2c5c403c4e7bd4bcc3046505d60d41844ba8199bfb2",
-    "binary_size": 4944,
+    "binary_sha256": "e790ac71c6c9aa57bd80be411dde02faa297471e7bd51571c1bb09e37519aed2",
+    "binary_size": 5080,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/localnamebatch_x86_64",
     "selector": "two_locals",

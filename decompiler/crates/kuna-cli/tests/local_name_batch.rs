@@ -195,3 +195,27 @@ fn later_directives_keep_the_rejections() {
         ["\"type x unsigned int\": \"More than one symbol named: x (2)\""]
     );
 }
+
+/// `pick_flag` holds a pointer in rax and then an int in eax.  Given a Symbol
+/// each, the second pass folded them into one variable (`text._0_4_ = 0`), so
+/// the later directive is rejected and names the one it lost to.
+#[test]
+fn overlapping_register_locals_reject_the_later_directive() {
+    let prototypes = [
+        "prototype lookup char *lookup(void)",
+        "prototype probe int probe(char *s)",
+        "prototype pick_flag int pick_flag(void)",
+    ];
+    let text = "name s text";
+    let flag = "name v1 flag";
+    for (order, applied, rejected_detail) in [
+        ([text, flag], "char *text; // rax", "\"name v1 flag\": \"Storage of v1 overlaps s, which an earlier directive already changed\""),
+        ([flag, text], "uint4 flag; // eax", "\"name s text\": \"Storage of s overlaps v1, which an earlier directive already changed\""),
+    ] {
+        let directives: Vec<&str> = prototypes.iter().copied().chain(order).collect();
+        let (code, rejected) = decompile("pick_flag", &directives);
+        assert_eq!(rejected, [rejected_detail], "{code}");
+        assert!(code.contains(applied), "{code}");
+        assert!(!code.contains("_0_4_"), "two locals were folded into one:\n{code}");
+    }
+}

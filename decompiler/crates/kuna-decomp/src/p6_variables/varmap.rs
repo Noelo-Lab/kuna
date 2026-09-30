@@ -2017,16 +2017,6 @@ impl ScopeLocal {
         Some((sym, self.db.symbol(sym).dtype.clone()))
     }
 
-    /// Every Symbol whose entry contains the base byte of `addr`, whatever its
-    /// use point: the whole set [`Self::containing_symbol_for_storage`] picks from.
-    pub fn symbols_containing_storage(&self, addr: &Address) -> Vec<crate::database::SymbolId> {
-        self.db
-            .find_containers_ignore_usepoint(self.scope, addr, 1)
-            .into_iter()
-            .map(|eref| self.db.entry(self.scope, eref).symbol)
-            .collect()
-    }
-
     /// The category of the Symbol that **contains** a storage location (C++
     /// `Scope::queryProperties`/`findContainer` semantics, `database.cc:2128`), or
     /// `None` when no Symbol entry covers the *whole* `[addr, addr+size)` range.

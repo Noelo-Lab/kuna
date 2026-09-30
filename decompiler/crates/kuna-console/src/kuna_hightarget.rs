@@ -46,7 +46,10 @@
 //!    name, so `name v1 rc` followed by `type rc unsigned int` retypes `rc`.
 //!
 //! The first reading wins where both exist, because it is the one the caller
-//! could see.
+//! could see.  Two register locals whose storage overlaps (`char *s // rax`
+//! then `uint4 v1 // eax`) cannot both be given a Symbol in one batch -- the
+//! second pass merges them into one variable -- so the later of the two is
+//! rejected, naming the earlier.
 
 use std::rc::Rc;
 
@@ -136,7 +139,7 @@ pub fn apply_local(
             fd.kuna_record_directive_symbol(DirectiveSymbol {
                 symbol,
                 printed: name.to_string(),
-                bound_size: Some(target.size),
+                bound: Some((target.addr.clone(), target.size)),
             });
             return Ok(());
         }
@@ -146,7 +149,7 @@ pub fn apply_local(
         .kuna_directive_symbols()
         .iter()
         .find(|d| d.symbol == sym)
-        .and_then(|d| d.bound_size);
+        .and_then(|d| d.bound.as_ref().map(|(_, size)| *size));
     if let (Some(size), Some(ct)) = (bound_size, retype.as_ref()) {
         check_width(size, ct)?;
     }
@@ -174,17 +177,12 @@ pub fn apply_local(
             }
         }
     }
-    fd.kuna_record_directive_symbol(DirectiveSymbol {
-        symbol: sym,
-        printed: current,
-        bound_size: None,
-    });
+    fd.kuna_record_directive_symbol(DirectiveSymbol { symbol: sym, printed: current, bound: None });
     Ok(())
 }
 
 /// Find the HighVariable the printer declared as `name`; `Ok(None)` when no
-/// high answers to it.  `touched` is the batch so far: a Symbol it mapped over
-/// neighbouring storage is not the pass's own and does not claim this one.
+/// high answers to it.  `touched` is the batch so far.
 fn resolve_printed_local(
     fd: &mut Funcdata,
     name: &str,
@@ -263,17 +261,28 @@ fn resolve_printed_local(
             return Err(format!("Storage of {name} is shared by another variable"));
         }
     }
+    // Two Symbols the batch mapped over overlapping registers (`eax` inside
+    // `rax`) are the same trap at different widths: the second pass folds both
+    // variables into one (`text._0_4_ = 0`).  One per register per batch.
+    let clash = touched.iter().find(|d| {
+        d.bound.as_ref().is_some_and(|(at, width)| {
+            at.overlap(0, &addr, size) >= 0 || addr.overlap(0, at, *width) >= 0
+        })
+    });
+    if let Some(earlier) = clash {
+        return Err(format!(
+            "Storage of {name} overlaps {}, which an earlier directive already changed",
+            earlier.printed
+        ));
+    }
     // The scope already owns this storage, so the high is a stack local or a
     // parameter the by-name query missed.  Mapping a second Symbol over storage
     // a Symbol already covers would put two entries on one stack slot, so this is
-    // a miss.  A Symbol the batch itself mapped over a register is keyed to its
-    // own use point and does not count.
-    let owned = fd.get_scope_local().is_some_and(|lm| {
-        lm.symbols_containing_storage(&addr).into_iter().any(|sym| {
-            !touched.iter().any(|d| d.symbol == sym && d.bound_size.is_some())
-        })
-    });
-    if owned {
+    // a miss.
+    if fd
+        .get_scope_local()
+        .is_some_and(|lm| lm.containing_symbol_for_storage(&addr).is_some())
+    {
         return Ok(None);
     }
     // C++ `Varnode::getUsePoint` (varnode.cc:715), which `Funcdata::linkSymbol`

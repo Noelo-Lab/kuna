@@ -2020,10 +2020,13 @@ The first reading wins where both exist, because it is the name the caller was
 shown. A second directive on a local the batch already mapped edits that Symbol
 rather than mapping another, and it keeps the register's width, so `type rc
 char *` on a 4-byte register is still `Storage is 4 bytes, the stated type is
-8`. A Symbol the batch mapped over one register does not count as the pass's
-own claim on a neighbouring register view either. On the stack, `name v2
-credbuf` followed by `type v2 char[8]` now retypes `credbuf` where it used to
-be rejected, and still maps one Symbol over the slot.
+8`. Two register locals whose storage overlaps -- `char *s; // rax` and a
+later `uint4 v1; // eax` -- cannot both be given a Symbol: the second pass folds
+them into one variable (`s._0_4_ = 0`), so the later directive is rejected with
+`Storage of v1 overlaps s, which an earlier directive already changed`. That is
+the one rejection that depends on order, and it names the directive it lost to.
+On the stack, `name v2 credbuf` followed by `type v2 char[8]` now retypes
+`credbuf` where it used to be rejected, and still maps one Symbol over the slot.
 
 (kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
 carries.** The operand says which function the signature describes; the
