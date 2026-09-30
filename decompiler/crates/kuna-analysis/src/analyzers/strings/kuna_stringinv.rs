@@ -240,9 +240,22 @@ fn utf16_text(bytes: &[u8]) -> String {
 /// committed either way: this is a read-only query over the parsed object, so no
 /// invocation of the engine can change because of it.
 pub fn inventory(file: &object::File, q: &Query) -> Inventory {
+    inventory_with_ranges(file, q, None)
+}
+
+/// Scan only regions wholly contained in the loader's mapped image.
+pub fn inventory_in_image(file: &object::File, q: &Query, ranges: &[(u64, u64)]) -> Inventory {
+    inventory_with_ranges(file, q, Some(ranges))
+}
+
+fn inventory_with_ranges(file: &object::File, q: &Query, ranges: Option<&[(u64, u64)]>) -> Inventory {
     let sections = section_regions(file);
     let from_segments = sections.is_empty();
-    let regions = if from_segments { segment_regions(file) } else { sections };
+    let mut regions = if from_segments { segment_regions(file) } else { sections };
+    if let Some(ranges) = ranges {
+        regions.retain(|r| r.vma.checked_add(r.data.len() as u64)
+            .is_some_and(|end| ranges.iter().any(|&(lo, hi)| r.vma >= lo && end <= hi)));
+    }
 
     let mut runs: Vec<(Run, Encoding)> = Vec::new();
     // One reading answers the 1-byte width. The UTF-8 one is a superset of the

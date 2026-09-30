@@ -1427,6 +1427,15 @@ and is not a C string. The markup passes are unaffected: they ask for
 `Termination::Nul` and commit exactly the facts they always did, so no emitted C
 moves. `kuna strings --termination nul` is that same view as a report.
 
+For a relocatable object, the inventory applies the load-time option bridge before
+scanning and uses the existing `relocrebase` view. Section bytes, string addresses
+and the xref walk therefore share the loader's synthetic address space. The scan
+keeps only regions wholly contained in that view's mapped ranges, excluding
+discarded linker/debug sections. This also applies with `--no-xrefs`: skipping
+reference attribution does not change a literal's address. Explicitly disabling
+`relocrebase` retains the raw pre-link inventory; linked images keep their usual
+addresses and query schema.
+
 The same query takes a second reading of the **1-byte** width, for the same
 reason and with the same confinement to the report
 (`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_utf8strings.rs
