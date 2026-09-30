@@ -198,9 +198,51 @@ fn segment_regions<'d>(file: &'d object::File<'d>) -> Vec<Region<'d>> {
     out
 }
 
-/// The region holding `addr`, if any.
-fn region_of<'a, 'd>(regions: &'a [Region<'d>], addr: u64) -> Option<&'a Region<'d>> {
-    regions.iter().find(|r| addr >= r.vma && addr - r.vma < r.data.len() as u64)
+/// Keep the regions wholly inside one of `ranges`. Sorted by start, with the
+/// furthest end any range up to it reaches, one binary search answers a region.
+fn retain_within(regions: &mut Vec<Region<'_>>, ranges: &[(u64, u64)]) {
+    let mut sorted = ranges.to_vec();
+    sorted.sort_unstable();
+    let reach: Vec<u64> = sorted
+        .iter()
+        .scan(0, |far, &(_, hi)| {
+            *far = hi.max(*far);
+            Some(*far)
+        })
+        .collect();
+    regions.retain(|r| {
+        let Some(end) = r.vma.checked_add(r.data.len() as u64) else { return false };
+        let n = sorted.partition_point(|&(lo, _)| lo <= r.vma);
+        n > 0 && end <= reach[n - 1]
+    });
+}
+
+/// The regions' `(start, index)` pairs sorted by start, when no two regions
+/// overlap: then the first region holding an address is the only one, and
+/// [`region_of`] can binary-search for it instead of scanning.
+fn disjoint_index(regions: &[Region<'_>]) -> Option<Vec<(u64, usize)>> {
+    let mut starts: Vec<(u64, usize)> =
+        regions.iter().enumerate().map(|(i, r)| (r.vma, i)).collect();
+    starts.sort_unstable();
+    let end = |i: usize| u128::from(regions[i].vma) + regions[i].data.len() as u128;
+    starts.windows(2).all(|w| end(w[0].1) <= u128::from(w[1].0)).then_some(starts)
+}
+
+/// The first region, in image order, holding `addr`, if any.
+fn region_of<'a, 'd>(
+    regions: &'a [Region<'d>],
+    index: Option<&[(u64, usize)]>,
+    addr: u64,
+) -> Option<&'a Region<'d>> {
+    let holds = |r: &Region<'_>| addr >= r.vma && addr - r.vma < r.data.len() as u64;
+    match index {
+        Some(starts) => {
+            let n = starts.partition_point(|&(vma, _)| vma <= addr);
+            let region = &regions[starts[n.checked_sub(1)?].1];
+            holds(region).then_some(region)
+        }
+        None => regions.iter().find(|r| holds(r)),
+    }
 }
 
 /// Does `name` (a region's own name) satisfy a `--section` operand? The leading
@@ -240,9 +282,21 @@ fn utf16_text(bytes: &[u8]) -> String {
 /// committed either way: this is a read-only query over the parsed object, so no
 /// invocation of the engine can change because of it.
 pub fn inventory(file: &object::File, q: &Query) -> Inventory {
+    inventory_with_ranges(file, q, None)
+}
+
+/// Scan only regions wholly contained in the loader's mapped image.
+pub fn inventory_in_image(file: &object::File, q: &Query, ranges: &[(u64, u64)]) -> Inventory {
+    inventory_with_ranges(file, q, Some(ranges))
+}
+
+fn inventory_with_ranges(file: &object::File, q: &Query, ranges: Option<&[(u64, u64)]>) -> Inventory {
     let sections = section_regions(file);
     let from_segments = sections.is_empty();
-    let regions = if from_segments { segment_regions(file) } else { sections };
+    let mut regions = if from_segments { segment_regions(file) } else { sections };
+    if let Some(ranges) = ranges {
+        retain_within(&mut regions, ranges);
+    }
 
     let mut runs: Vec<(Run, Encoding)> = Vec::new();
     // One reading answers the 1-byte width. The UTF-8 one is a superset of the
@@ -272,9 +326,10 @@ pub fn inventory(file: &object::File, q: &Query) -> Inventory {
         );
     }
 
+    let index = disjoint_index(&regions);
     let mut strings: Vec<FoundString> = Vec::new();
     for (run, encoding) in runs {
-        let Some(region) = region_of(&regions, run.addr) else {
+        let Some(region) = region_of(&regions, index.as_deref(), run.addr) else {
             continue;
         };
         if let Some(want) = &q.section {
@@ -457,6 +512,56 @@ mod tests {
             scan_utf16_runs(&data, 0, 5, Termination::Any),
             vec![Run { addr: 0, visible_len: 10, nul_terminated: false }]
         );
+    }
+
+    /// The binary search keeps exactly the regions the pairwise rule keeps, with
+    /// ranges that overlap, touch, repeat, or are empty or inverted.
+    #[test]
+    fn retain_within_matches_the_pairwise_rule() {
+        let ranges =
+            [(0x60, 0x40), (0x10, 0x20), (0x20, 0x30), (0x0, 0x18), (0x50, 0x50), (0x10, 0x20)];
+        let data = [0u8; 0x40];
+        for vma in 0..0x60u64 {
+            for len in 0..0x20usize {
+                let mut regions = vec![Region { name: None, vma, data: &data[..len] }];
+                retain_within(&mut regions, &ranges);
+                let end = vma + len as u64;
+                let want = ranges.iter().any(|&(lo, hi)| vma >= lo && end <= hi);
+                assert_eq!(!regions.is_empty(), want, "[{vma:#x}, {end:#x})");
+            }
+        }
+        let mut edge = vec![Region { name: None, vma: u64::MAX, data: &data[..1] }];
+        retain_within(&mut edge, &[(0, u64::MAX)]);
+        assert!(edge.is_empty(), "an extent that overflows is never inside");
+    }
+
+    /// The indexed lookup answers every address as the linear scan does, and an
+    /// overlap keeps the scan so the first region in image order still wins.
+    #[test]
+    fn region_of_matches_the_linear_scan() {
+        let data = [0u8; 0x20];
+        let mk = |spans: &[(&str, u64, usize)]| -> Vec<Region<'_>> {
+            spans
+                .iter()
+                .map(|&(n, vma, len)| Region { name: Some(n.into()), vma, data: &data[..len] })
+                .collect()
+        };
+        let spans = [("a", 0x40, 0x10), ("b", 0x10, 0x8), ("c", 0x18, 0x8), ("d", 0x30, 0x4)];
+        let disjoint = mk(&spans);
+        assert!(disjoint_index(&disjoint).is_some());
+        let mut overlap = vec![("early", 0x44, 0x8)];
+        overlap.extend(spans);
+        overlap.push(("late", 0x12, 0x4));
+        let overlapping = mk(&overlap);
+        assert!(disjoint_index(&overlapping).is_none());
+        for addr in 0..0x60u64 {
+            for regions in [&disjoint, &overlapping] {
+                let linear =
+                    regions.iter().find(|r| addr >= r.vma && addr - r.vma < r.data.len() as u64);
+                let found = region_of(regions, disjoint_index(regions).as_deref(), addr);
+                assert_eq!(found.map(|r| &r.name), linear.map(|r| &r.name), "{addr:#x}");
+            }
+        }
     }
 
     #[test]
