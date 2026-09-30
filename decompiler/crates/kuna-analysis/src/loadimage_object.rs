@@ -1949,7 +1949,7 @@ mod tests {
     }
 
     /// const(0) + ram(1) processor space (little endian, 8-byte addresses).
-    fn manager() -> AddrSpaceManager {
+    pub(super) fn manager() -> AddrSpaceManager {
         let mut m = AddrSpaceManager::new();
         m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
         m.insert_space(Rc::new(AddrSpace::new(

@@ -97,3 +97,31 @@ fn arm_aliases_select_the_definition_instead_of_its_import() {
         }
     }
 }
+
+/// A same-address alias spelled like another function's own name does not
+/// take that name over: `shared` is both an alias of the global `twin` and a
+/// static function, and still selects the static one it selected before.
+#[test]
+fn an_alias_never_outbids_a_function_of_the_same_name() {
+    let binary = common::fixture("elfaliasclash_x86_64");
+    let (functions, stderr, code) = common::run_kuna(&["functions", &binary, "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+    let functions: serde_json::Value = serde_json::from_str(&functions).unwrap();
+    let twin = functions["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "twin")
+        .unwrap();
+    assert!(twin["aliases"].as_array().unwrap().iter().any(|a| a == "shared"), "{twin}");
+
+    let (text, stderr, code) = common::run_kuna(&["decompile", &binary, "shared"]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(text.contains("a0 + -5"), "{text}");
+    let (json, stderr, code) = common::run_kuna(&["decompile", &binary, "shared", "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(json.contains("\"address_hex\": \"0x1155\""), "{json}");
+    let (_, stderr, code) =
+        common::run_kuna(&["decompile-all", &binary, "--functions", "shared,twin", "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+}

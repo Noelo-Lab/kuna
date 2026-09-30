@@ -17,6 +17,13 @@
     of the entry, and the definition wins over its import stub, so both names
     reach the veneer's body. The reported name at that address, and the name
     call sites print, stay `__answer_from_arm` / `answer` as before.
+
+    The second load is the guard on the other side: in `elfaliasclash_x86_64`
+    (gcc, `elfaliasclash_x86_64.c` + `elfaliasclash_b_x86_64.c`) `shared` is
+    both a global alias of `twin` and a static function of its own. An alias
+    never outbids a function of the same name, so `shared` still selects the
+    static `x - 5`, as it did before the aliases existed, instead of failing as
+    ambiguous.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -36,10 +43,22 @@ c3
   <com>load function caller</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfaliasclash_x86_64</com>
+  <com>read symbols</com>
+  <com>load function shared</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function twin</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="ELFALIASNAMES #1: the exported name no longer selects the PLT stub" min="0" max="0">jump-as-call</stringmatch>
 <stringmatch name="ELFALIASNAMES #2: the exported name decompiles the definition" min="1" max="1">unsigned int answer\(void\)</stringmatch>
 <stringmatch name="ELFALIASNAMES #3: both names reach the same body" min="2" max="2">return 7;</stringmatch>
 <stringmatch name="ELFALIASNAMES #4: the call through the PLT keeps its name" min="1" max="1">  answer\(\);</stringmatch>
+<stringmatch name="ELFALIASNAMES #5: an alias spelled like a static function still selects that function" min="1" max="1">return a0 \+ -5;</stringmatch>
+<stringmatch name="ELFALIASNAMES #6: the alias's own definition keeps its name and body" min="1" max="1">return a0 \* 3 \+ 1;</stringmatch>
+<stringmatch name="ELFALIASNAMES #7: no name is reported ambiguous" min="0" max="0">ambiguous</stringmatch>
 </decompilertest>

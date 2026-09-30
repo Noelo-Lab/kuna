@@ -42,6 +42,14 @@ fn elf_alias_names_survive_both_symbol_tables_and_rebasing() {
                     assert!(provenance.definitions.contains(&0x1000));
                     assert!(provenance.imports.contains(&0x2000));
                     assert!(primary.iter().any(|(addr, name)| *addr == 0x2000 && name == "answer"));
+                    let mut shifted = image;
+                    shifted.attach_to_space(Rc::clone(
+                        super::tests::manager().get_default_code_space().unwrap(),
+                    ));
+                    shifted.adjust_vma(0x10000);
+                    let moved: Vec<_> =
+                        aliases.iter().map(|(addr, name)| (addr + 0x10000, name.clone())).collect();
+                    assert_eq!(shifted.func_symbol_aliases(), moved, "{tag}: aliases follow the shift");
                 }
             }
         }

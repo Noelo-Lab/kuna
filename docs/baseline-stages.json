@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1536,
-    1536
+    1539,
+    1539
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -165,6 +165,9 @@
     "data:ELFALIASNAMES #2: the exported name decompiles the definition",
     "data:ELFALIASNAMES #3: both names reach the same body",
     "data:ELFALIASNAMES #4: the call through the PLT keeps its name",
+    "data:ELFALIASNAMES #5: an alias spelled like a static function still selects that function",
+    "data:ELFALIASNAMES #6: the alias's own definition keeps its name and body",
+    "data:ELFALIASNAMES #7: no name is reported ambiguous",
     "data:ELFMAIN #1: off, the entry is an anonymous sub with a body-driven signature",
     "data:ELFMAIN #2: off, the argument vector has no element type, so the string it holds is an integer",
     "data:ELFMAIN #3: default, the libc-start argument is named and declared, in both images",

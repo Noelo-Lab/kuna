@@ -1,6 +1,6 @@
 //! Synthetic ELF32 aliases and an import sharing the definition's name.
 //! A test-time generator, not a fixture source: included by the loader's
-//! `alias_tests` and by `kuna-cli/tests/arm_symbol_aliases.rs`.
+//! `alias_tests` and by `kuna-cli/tests/elf_symbol_aliases.rs`.
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope,
