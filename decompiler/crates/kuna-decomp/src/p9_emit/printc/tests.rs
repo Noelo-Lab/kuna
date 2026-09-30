@@ -2279,6 +2279,131 @@ mod w10_printc_cast_render {
         p.emit_mut().output_str().to_string()
     }
 
+    #[test]
+    fn only_a_cast_reinterprets_float_bits_even_with_cast_printing_disabled() {
+        for opcode in [OpCode::CPUI_CAST, OpCode::CPUI_COPY] {
+            for size in [4, 8] {
+                let mut fd = build_fd();
+                let op = mk_op(&mut fd, 1, 0x20, opcode);
+                let bits = if size == 4 { 0xbf800000 } else { 0xbff0000000000000 };
+                let input = fd.new_constant(size, bits);
+                fd.vbank_mut().get_mut(input).unwrap().update_type(named("bits", size, type_metatype::TYPE_UINT));
+                fd.op_set_input(op, input, 0).unwrap();
+                let out = fd.new_varnode(size, &Address::new(ram(&fd), 0x400),
+                    Some(named(if size == 4 { "float" } else { "double" }, size, type_metatype::TYPE_FLOAT)));
+                fd.op_set_output(op, out).unwrap();
+                for nocasts in [false, true] {
+                    let mut p = PrintC::new();
+                    p.set_no_cast_printing(nocasts);
+                    p.set_output_stream();
+                    p.op_push_ir(&fd, &bare_arch(), op, None);
+                    let text = p.emit_mut().output_str();
+                    if opcode == OpCode::CPUI_CAST {
+                        assert!(text.contains("union {") && text.ends_with(".to"), "{opcode:?} {size}: {text}");
+                    } else {
+                        assert!(!text.contains("union"), "{opcode:?} {size}: {text}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn float_constant_storage_transfers_keep_nan_payloads() {
+        for (size, payload) in [(4, 0xffa12345), (8, 0xfff0123456789abc)] {
+            let mut fd = build_fd();
+            let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CAST);
+            let input = fd.new_constant(size, payload);
+            fd.vbank_mut().get_mut(input).unwrap().update_type(named("float", size, type_metatype::TYPE_FLOAT));
+            fd.op_set_input(op, input, 0).unwrap();
+            let out = fd.new_varnode(size, &Address::new(ram(&fd), 0x400),
+                Some(named("bits", size, type_metatype::TYPE_UINT)));
+            fd.op_set_output(op, out).unwrap();
+            for language in ["c", "rust"] {
+                let mut p = PrintC::new();
+                p.set_name(language);
+                p.set_output_stream();
+                p.op_push_ir(&fd, &bare_arch(), op, None);
+                let text = p.emit_mut().output_str();
+                let want = if language == "rust" { format!("0x{payload:x}u{}", size * 8) }
+                    else { format!("0x{payload:x}") };
+                assert_eq!(text, want);
+            }
+        }
+    }
+
+    #[test]
+    fn a_bit_transfer_evaluates_an_implied_call_once() {
+        let mut fd = build_fd();
+        let call = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CALL);
+        let callee = fd.new_constant(8, 0x2000);
+        fd.op_set_input(call, callee, 0).unwrap();
+        let value = fd.new_varnode(8, &Address::new(ram(&fd), 0x400),
+            Some(named("double", 8, type_metatype::TYPE_FLOAT)));
+        fd.op_set_output(call, value).unwrap();
+        fd.vbank_mut().get_mut(value).unwrap().set_implied();
+        let cast = mk_op(&mut fd, 1, 0x24, OpCode::CPUI_CAST);
+        fd.op_set_input(cast, value, 0).unwrap();
+        let out = fd.new_varnode(8, &Address::new(ram(&fd), 0x408),
+            Some(named("bits", 8, type_metatype::TYPE_UINT)));
+        fd.op_set_output(cast, out).unwrap();
+        for language in ["c", "rust"] {
+            let mut p = PrintC::new();
+            p.set_name(language);
+            p.set_output_stream();
+            p.op_push_ir(&fd, &bare_arch(), cast, None);
+            let text = p.emit_mut().output_str();
+            assert_eq!(text.matches("func_0x2000()").count(), 1, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_signed_bit_transfer_names_the_signed_word_in_the_union() {
+        for (size, float, word) in [(4, "float", "int"), (8, "double", "long long")] {
+            let mut fd = build_fd();
+            let call = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CALL);
+            let callee = fd.new_constant(8, 0x2000);
+            fd.op_set_input(call, callee, 0).unwrap();
+            let value = fd.new_varnode(size, &Address::new(ram(&fd), 0x400),
+                Some(named(float, size, type_metatype::TYPE_FLOAT)));
+            fd.op_set_output(call, value).unwrap();
+            fd.vbank_mut().get_mut(value).unwrap().set_implied();
+            let cast = mk_op(&mut fd, 1, 0x24, OpCode::CPUI_CAST);
+            fd.op_set_input(cast, value, 0).unwrap();
+            let out = fd.new_varnode(size, &Address::new(ram(&fd), 0x408),
+                Some(named("sword", size, type_metatype::TYPE_INT)));
+            fd.op_set_output(cast, out).unwrap();
+            let mut p = PrintC::new();
+            p.set_output_stream();
+            p.op_push_ir(&fd, &bare_arch(), cast, None);
+            let text = p.emit_mut().output_str();
+            assert_eq!(text, format!("((union {{ {float} from; {word} to; }}){{ .from = func_0x2000() }}).to"));
+        }
+    }
+
+    #[test]
+    fn unknown_call_returns_do_not_establish_integer_storage_transfers() {
+        for meta in [type_metatype::TYPE_UNKNOWN, type_metatype::TYPE_UINT] {
+            let mut fd = build_fd();
+            let call = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CALL);
+            let callee = fd.new_constant(8, 0x2000);
+            fd.op_set_input(call, callee, 0).unwrap();
+            let value = fd.new_varnode(4, &Address::new(ram(&fd), 0x400), Some(named("word", 4, meta)));
+            fd.op_set_output(call, value).unwrap();
+            fd.vbank_mut().get_mut(value).unwrap().set_implied();
+            let cast = mk_op(&mut fd, 1, 0x24, OpCode::CPUI_CAST);
+            fd.op_set_input(cast, value, 0).unwrap();
+            let out = fd.new_varnode(4, &Address::new(ram(&fd), 0x408),
+                Some(named("float", 4, type_metatype::TYPE_FLOAT)));
+            fd.op_set_output(cast, out).unwrap();
+            let mut p = PrintC::new();
+            p.set_output_stream();
+            p.op_push_ir(&fd, &bare_arch(), cast, None);
+            let text = p.emit_mut().output_str();
+            assert_eq!(text.contains("union {"), meta == type_metatype::TYPE_UINT, "{text}");
+        }
+    }
+
     /// FAITHFULNESS (1a): a `CPUI_CAST` whose output is `int8` renders
     /// `(int8)<operand>` — the `(` `)` typecast token (printc.cc:36) wrapping the
     /// type name from the OUTPUT varnode and the in0 operand.

@@ -5444,6 +5444,10 @@ impl PrintC {
         read_op: Option<OpId>,
         opc: OpCode,
     ) {
+        if let Some(transfer) = crate::kuna_bitcast::storage_transfer(fd, arch.decl_high_type, op) {
+            self.op_bit_transfer_ir(fd, arch, op, transfer);
+            return;
+        }
         match opc {
             // INT_SEXT (printc.cc:819 opIntSext) / INT_ZEXT (printc.cc:806 opIntZext):
             // the cast-strategy decides whether the extension renders as an explicit
@@ -6047,6 +6051,65 @@ impl PrintC {
         }
         if let Some(ct) = &cast_ty {
             self.push_cast_close(ct);
+        }
+    }
+
+    fn op_bit_transfer_ir(
+        &mut self, fd: &Funcdata, arch: &Architecture, op: OpId,
+        transfer: crate::kuna_bitcast::Transfer,
+    ) {
+        use crate::dtype::type_metatype;
+        use crate::printlanguage::SyntaxHighlight;
+        static C_BITS: OpToken = op_token("", " }).to", 2, 66, false, TokenType::Postsurround, 0, 0);
+        static RUST_BITS: OpToken = op_token("(", ").to_bits()", 2, 66, false, TokenType::Postsurround, 0, 0);
+        let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
+        let signed = transfer.target.get_metatype() == type_metatype::TYPE_INT;
+        let input = fd.vbank().get(transfer.input).unwrap();
+        let bits = if transfer.size == 4 { "u32" } else { "u64" };
+        let literal = |v: &crate::varnode::Varnode| {
+            Atom::syntax(format!("0x{:x}{bits}", v.get_offset()), TagType::Syntax, SyntaxHighlight::const_color)
+        };
+        if rust && transfer.to_float {
+            self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+            self.push_atom(&Atom::syntax(
+                if transfer.size == 4 { "f32::from_bits" } else { "f64::from_bits" },
+                TagType::FuncToken, SyntaxHighlight::funcname_color));
+            let word = declared_variable_type(fd, arch.decl_high_type, transfer.input)
+                .is_some_and(|t| type_name_for_decl(&t, self.rt_ctx).0 == bits);
+            if input.is_constant() {
+                self.push_atom(&literal(input));
+            } else if word {
+                self.push_vn_ir(fd, arch, transfer.input, op);
+            } else {
+                self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                self.push_vn_ir(fd, arch, transfer.input, op);
+                self.push_atom(&Atom::syntax(bits, TagType::TypeToken, SyntaxHighlight::type_color));
+            }
+        } else if rust || input.is_constant() && !transfer.to_float {
+            if signed { self.push_cast_open(&transfer.target, op); }
+            if !input.is_constant() {
+                self.push_op(&RUST_BITS, Some(op_key(op)));
+                self.push_atom(&Atom::syntax("", TagType::BlankToken, SyntaxHighlight::no_color));
+                self.push_vn_ir(fd, arch, transfer.input, op);
+            } else if rust {
+                self.push_atom(&literal(input));
+            } else {
+                self.push_constant_ir(input.get_offset(), transfer.size, op);
+            }
+            if signed { self.push_cast_close(&transfer.target); }
+        } else {
+            let word = match (transfer.size, signed) {
+                (4, false) => "unsigned int",
+                (4, true) => "int",
+                (_, false) => "unsigned long long",
+                (_, true) => "long long",
+            };
+            let float = if transfer.size == 4 { "float" } else { "double" };
+            let (from, to) = if transfer.to_float { (word, float) } else { (float, word) };
+            self.push_op(&C_BITS, Some(op_key(op)));
+            self.push_atom(&Atom::syntax(format!("((union {{ {from} from; {to} to; }}){{ .from = "),
+                TagType::TypeToken, SyntaxHighlight::type_color));
+            self.push_vn_ir(fd, arch, transfer.input, op);
         }
     }
 
