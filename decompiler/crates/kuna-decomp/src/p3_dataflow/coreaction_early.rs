@@ -551,6 +551,7 @@ impl Action for ActionVarnodeProps {
                             }
                         }
                     }
+                    skip |= def.is_some_and(|op| crate::p3_dataflow::kuna_volatileload::is_volatile(data, op));
                     if !skip {
                         data.vbank_mut()
                             .get_mut(vn)

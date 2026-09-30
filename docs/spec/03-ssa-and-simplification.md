@@ -1311,7 +1311,8 @@ drives §3.1; `ActionNonzeroMask` recomputes the known-zero-bits fact
 (`Funcdata::calc_nz_mask`) that dozens of rules consult (§3.5's booleanmask
 and flagcompare among them); `ActionVarnodeProps` applies storage-derived
 properties — after the first heritage pass it releases the `autolivehold`
-pins (except on values still LOADed through a constant/read-only pointer),
+pins (except on values still LOADed through a constant/read-only pointer or
+a proven volatile address),
 replaces *read-only* storage with its image constant when
 `readonlypropagate` is set — or, with that program-wide switch off, when the
 varnode lies in one of the loader's `dynrelocs` ranges, the `PT_GNU_RELRO`-frozen
@@ -1328,6 +1329,55 @@ the Windows loader writes there. The action also folds to zero any varnode whose
 consumed bits and nonzero mask are
 disjoint (skipping constants and COPYs of nonzero constants, which would
 recurse).
+
+A read from a volatile range becomes a `read_volatile` user op only once its
+address is a constant: `RuleLoadVarnode` turns the LOAD into a COPY of the
+memory varnode, which carries the range's `volatile` property, and
+`ActionVarnodeProps` rewrites that read. An address computed in registers (a
+`movw`/`movt` pair feeding an ARM `ldm`, or an x86 base register plus
+displacements) folds only in the rule pool, after `ActionDeadCode` has already
+run, so a read whose value the program discards used to be deleted first when
+the address sat deeper than the general `lastChanceLoad` lookahead (three
+levels of binary operations). So before any removal path discards a LOAD,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_volatileload.rs` evaluates
+its address through a bounded graph of constant integer operations and asks the
+same local and global property query a new varnode at that address would get.
+When the answer is `volatile`, the LOAD is kept: `lastChanceLoad` holds it on
+every heritage pass, including a LOAD whose readers consume none of its bits
+(which the sweep would otherwise replace with zero as never consumed),
+`RuleEarlyRemoval` skips it, and `ActionVarnodeProps` keeps its `autolivehold`
+pin. Each access therefore survives, in program order, until the ordinary
+lowering above takes over.
+
+The hardware reads a memory operand once per instruction, but SLEIGH lifts an
+operand the flag macros re-load (x86 `add`/`or`/`and`/`inc` on memory, MSP430
+`add src,x(Rn)`) as several LOADs of the same address, some of them after the
+instruction's own store. So a volatile LOAD is neither held nor protected when
+another live LOAD at the same instruction address reads the same storage and is
+used, is already held, or was lifted first: one read per address per
+instruction survives, the used one when there is one. Load-multiple
+instructions read distinct addresses and keep every access. The key is the
+instruction and the resolved address, not the operand, so two different
+operands that resolve to the same volatile word also merge into one read when
+the instruction's result is discarded (x86 `cmpsd` with `rsi` equal to `rdi`,
+or MSP430 `cmp @r5,0(r5)`, with the flags unused); when the result is used,
+both reads survive. The rule applies whichever path would have held the
+LOAD, so it also removes the re-reads the eventual-constant hold kept for
+shallow addresses. It does not reach an operand whose address is a constant at
+lift time: those reads are memory varnodes from the start, not LOADs, and each
+becomes its own `read_volatile`.
+
+The evaluation respects operation widths, never reads memory, and declines phi
+nodes, unknown inputs and cycles; constant leaves are free, and one proof may
+evaluate at most 64 written varnodes beyond those `lastChanceLoad` already
+proved in the same pass, so a long post-increment chain costs one step per LOAD.
+An address that reaches the LOAD through a stack slot is not proven. Like the
+lowering, the property is tested at the access's first byte. A range declared
+both `readonly` and `volatile` over memory the image does not map prints each
+kept read as a self-assignment at the function's exit. The volatile ranges
+include those a processor specification declares (MSP430, AVR, 8051, PIC and
+others), so default output changes on those processors; loads from any other
+address keep the existing removal rules.
 
 **Block-graph cleanup** (mainloop tail): `ActionUnreachable` deletes blocks
 flow cannot reach (`Funcdata::remove_unreachable_blocks`); `ActionDoNothing`
