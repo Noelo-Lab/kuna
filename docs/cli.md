@@ -1520,12 +1520,19 @@ Behaviors specific to `decompile-all`:
   entry address exactly once. A function can carry several names: a `.symtab` symbol
   plus a debug-info one (`macho_dwarf.o` has `_l0` and `first_byte` at `0x0`), a
   decorated/undecorated PE pair, or the generated `sub_<addr>` placeholder an analysis
-  pass registers over an already-named entry. `name` reports the most informative of
+  pass registers over an already-named entry. An ELF image can also give one address
+  several symbol-table names — a weak alias beside its strong symbol (`fflush` beside
+  `_IO_fflush` in static glibc), a versioned or compatibility spelling, a veneer or
+  `.localalias` beside the global it shares a body with. The first of those in
+  `.symtab`, PLT, `.dynsym` order is the loader's name for the address, the one call
+  sites print; the others are only ever `aliases`. `name` reports the most informative of
   them — a real symbol beats a synthesized `_INIT_<i>`/`_FINI_<i>`/`_DT_INIT`/`_DT_FINI`
   table name, which beats a generated `sub_`/`func_`/`FUN_`/`LAB_` placeholder; ties
   prefer the unprefixed spelling (`main` over `_main`), then the shorter name — and
   `aliases` carries the rest (`[]` when there is only one). `--functions <name>` matches
-  aliases too, so any name that used to select a function still does. On ARM the Thumb
+  aliases too, so any name that used to select a function still does: an ELF alias
+  spelled like a different function's own name never takes that name over, except from
+  an import stub (a definition wins over a same-named PLT stub). On ARM the Thumb
   mode bit is folded out of symbol addresses, so a function whose ELF `st_value` is odd
   (`compute` at `0x100b9`) is reported once, at its real even entry — and `--addr` accepts
   either spelling, resolving an odd ARM address to the entry it belongs to instead of
