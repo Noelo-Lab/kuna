@@ -1935,7 +1935,8 @@ mod tests {
         // nested SLEIGH operand expressions evaluate
         // and kuna-elfaliasnames / an ELF name sharing its address with an
         // earlier symbol still selects that function
-        assert_eq!(count, 360, "corpus file count drifted");
+        // and kuna-arm-volatile-loads / every read of a volatile LDM survives
+        assert_eq!(count, 361, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
