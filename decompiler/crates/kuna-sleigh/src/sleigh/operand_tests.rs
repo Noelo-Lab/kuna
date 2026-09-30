@@ -123,3 +123,36 @@ fn invalid_and_recursive_operand_references_return_errors() {
         .to_string()
         .contains("maximum operand expression depth"));
 }
+
+#[test]
+fn constructor_off_the_walk_resolves_no_operands() {
+    let (table, ctx, engine) = setup(true);
+    let mut walker = ParserWalker::new(&ctx, &table, &engine);
+    walker.base_state();
+    assert!(walker
+        .operand_value(0, 0, 1)
+        .unwrap_err()
+        .to_string()
+        .contains("outside current context"));
+    let oob = OobWalker {
+        ctx: &ctx,
+        cross: None,
+        engine: &engine,
+        table: &table,
+        state: OobState {
+            ct: ConstructorRef {
+                table_id: 0,
+                ct_id: 0,
+            },
+            offset: 3,
+            node: None,
+        },
+        depth: 1,
+    };
+    assert!(oob
+        .operand_value(1, 0, 0)
+        .unwrap_err()
+        .to_string()
+        .contains("not resolved"));
+    assert_eq!(oob.operand_value(3, 0, 0).unwrap(), 0x14);
+}

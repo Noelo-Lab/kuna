@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1532,
-    1532
+    1535,
+    1535
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1330,6 +1330,9 @@
     "data:narrowload #7: a declared record's flag word keeps the whole-field compare",
     "data:narrowload #8: a byte store into an 8-byte element stays one byte wide",
     "data:narrowload #9: a masked byte compare of a declared field through a call result reads 1 byte",
+    "data:nested PA-RISC operand: backward call target",
+    "data:nested PA-RISC operand: forward call target",
+    "data:nested PPC operand: full rotation and mask",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
     "data:opcode-seam #1: the function emits a real body (was: no output, seam panic)",

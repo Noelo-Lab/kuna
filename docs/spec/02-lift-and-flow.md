@@ -208,13 +208,20 @@ probes also use this authoritative map, so a warmed zero-filled loader window ca
 invent a mapped target. This recovers incomplete flow without inferring a
 different ISA or claiming that an unavailable path returns.
 
-**Operand expressions.** A SLEIGH operand's defining expression may reference
-another operand. Evaluation retains the simulated constructor-relative offset
-at each level, the resolved child offsets, and the instruction's context words
-and address context. Nested references are bounded by the parse-depth limit;
-invalid references fail decoding instead of indexing an absent operand. The
-PowerPC rotate-and-mask constructors exercise this path; their lifted values
-and record flags are checked independently of the printed instruction.
+**Nested operand expressions.** An operand's defining expression may name
+another operand of the same constructor: the PowerPC64 `rldic`, `rldimi` and
+`rldcr` masks and every PA-RISC immediate branch target and 11-bit immediate
+do. An operand named in an expression is evaluated at the out-of-band state its
+constructor sets up
+(`decompiler/crates/kuna-sleigh/src/sleigh.rs (OobWalker)`, the C++
+`setOutOfBandState`), and an operand named inside that operand's own
+expression is evaluated from the same state. A constructor-relative operand is
+offset from the state's simulated offset, as upstream does; an operand whose
+offset depends on an earlier variable-length operand reads its resolved child
+of the real constructor node, where upstream would index the temporary state,
+which has no children. A reference to another constructor, an operand not yet
+resolved, or a chain deeper than the parse-depth limit fails that instruction's
+decode instead of reading outside the tree.
 
 **Decode scratch storage.** Every SLEIGH translation checks out a parser
 context from the engine-local pool
