@@ -123,7 +123,9 @@
 //! ([`keep_tail_return_whole`]). The `r0 = r0` an ARM return's mode switch is
 //! injected as (`v0 = v0` on MIPS) is not a touch of the returned register
 //! ([`is_injected_noop`]), so `bl f; pop {r4,pc}` hands back `f`'s result as
-//! `call f; ret` does.
+//! `call f; ret` does. The claim yields to a return value the function computes
+//! itself in another storage class ([`returns_own_value`]): `bl f;
+//! vadd.f32 s0,s16,s16; pop {r4,pc}` returns `s0`, not `f`'s leftover `r0`.
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
@@ -696,15 +698,17 @@ fn is_tail_return_piece(data: &Funcdata, addr: &Address, size: int4) -> bool {
     data.kuna_passthrough_claims().iter().any(|c| c.addr == *addr && c.size == size && !c.ret_owners.is_empty())
 }
 
-/// Take a claimed return value whole or not at all, once `ActionReturnRecovery`
-/// has scored its trials for the last time.
+/// Take a claimed return value whole or not at all, and only when the function
+/// returns nothing of its own, once `ActionReturnRecovery` has scored its trials
+/// for the last time.
 ///
 /// Every register of a claimed pair must have been accepted as the tail call's
 /// result ([`returns_tail_result`]). One the callee's model does not kill -- the
 /// `xmm1` of a `struct { double, double }` on the x86-64 gcc model -- reaches
 /// the RETURN through an ordinary INDIRECT instead, and keeping the other
 /// register alone would return half the callee's value as the whole of the
-/// function's. Inert with the option off, and for a one-register claim.
+/// function's. And the claim yields to a value the function computes itself in
+/// another storage class ([`returns_own_value`]). Inert with the option off.
 pub fn keep_tail_return_whole(data: &Funcdata, active: &mut crate::fspec::ParamActive) {
     if !data.get_arch().pass_through {
         return;
@@ -712,10 +716,85 @@ pub fn keep_tail_return_whole(data: &Funcdata, active: &mut crate::fspec::ParamA
     let claimed: Vec<int4> = (0..active.get_num_trials())
         .filter(|&i| is_tail_return_piece(data, active.get_trial(i).get_address(), active.get_trial(i).get_size()))
         .collect();
-    if claimed.iter().any(|&i| !active.get_trial(i).is_active()) {
+    if claimed.iter().any(|&i| !active.get_trial(i).is_active()) || returns_own_value(data, active, &claimed) {
         for i in claimed {
             active.get_trial_mut(i).mark_inactive();
         }
+    }
+}
+
+/// Does the function return a value of its own, in another storage class than
+/// a claimed register?
+///
+/// The value is what the output model derives from the trials the claim does
+/// not own, which upstream accepts only for a value the function wrote and
+/// hands to the RETURN alone: the `s0` of `bl f; vadd.f32 s0,s16,s16;
+/// pop {r4,pc}`, the `xmm0` of `call f; addss %xmm0,%xmm0; ret`. A convention
+/// returns a value in one class, so the callee's integer result left in `r0` is
+/// a leftover, not a second half. Three things keep the claim: the zeroed upper
+/// lanes `movss` leaves in `xmm0`, which derive nothing; a register of the same
+/// class (the `r1` of `bl f; mov r1,#0`), which can be the rest of the claimed
+/// value; and a value that is zero at every RETURN ([`is_zero`]), which is also
+/// what `-fzero-call-used-regs` leaves in every call-used register the function
+/// does not return in (openssh's `call f; ...; pxor %xmm0,%xmm0; ret`).
+fn returns_own_value(data: &Funcdata, active: &crate::fspec::ParamActive, claimed: &[int4]) -> bool {
+    let proto = data.get_func_proto();
+    let Some(out) = proto.has_model().then(|| proto.model().output_list()).flatten() else { return false };
+    let class = |t: &crate::fspec::ParamTrial| {
+        out.get_entry().iter().find(|e| e.intersects(t.get_address(), t.get_size())).map(|e| e.get_type())
+    };
+    let theirs: Vec<_> = claimed.iter().filter_map(|&i| class(active.get_trial(i))).collect();
+    if theirs.is_empty() {
+        return false;
+    }
+    let mut own = active.clone();
+    for &i in claimed {
+        own.get_trial_mut(i).mark_inactive();
+    }
+    let manager = data.get_arch().manage.clone();
+    if proto.derive_output_map(&mut own, &manager).is_err() {
+        return false;
+    }
+    let rets: Vec<OpId> = data
+        .obank()
+        .iter_code(OpCode::CPUI_RETURN)
+        .filter(|&r| data.obank().get(r).map(|o| !o.is_dead() && o.get_halt_type() == 0).unwrap_or(false))
+        .collect();
+    let used: Vec<&crate::fspec::ParamTrial> =
+        (0..own.get_num_trials()).map(|i| own.get_trial(i)).filter(|t| t.is_used()).collect();
+    let nonzero = used.iter().any(|t| {
+        rets.iter().any(|&r| match data.obank().get(r).and_then(|o| o.get_in(t.get_slot())) {
+            Some(vn) => !is_zero(data, vn, ZERO_DEPTH),
+            None => false,
+        })
+    });
+    nonzero && used.iter().filter_map(|t| class(t)).any(|c| theirs.iter().any(|&k| k != c))
+}
+
+/// How many defining ops [`is_zero`] follows.
+const ZERO_DEPTH: u32 = 8;
+
+/// Is `vn` zero whatever the function's inputs: a zero constant, `x ^ x`,
+/// `x - x`, or a copy, extension, truncation, concatenation or conversion of
+/// zeros?
+fn is_zero(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    let Some(v) = data.vbank().get(vn) else { return false };
+    if v.is_constant() {
+        return v.get_offset() == 0;
+    }
+    let Some(o) = v.get_def().filter(|_| depth > 0).and_then(|d| data.obank().get(d)) else { return false };
+    let zero = |k: int4| o.get_in(k).is_some_and(|i| is_zero(data, i, depth - 1));
+    match o.code() {
+        OpCode::CPUI_COPY
+        | OpCode::CPUI_INT_ZEXT
+        | OpCode::CPUI_INT_SEXT
+        | OpCode::CPUI_SUBPIECE
+        | OpCode::CPUI_FLOAT_INT2FLOAT
+        | OpCode::CPUI_FLOAT_FLOAT2FLOAT => zero(0),
+        OpCode::CPUI_PIECE | OpCode::CPUI_INT_OR => zero(0) && zero(1),
+        OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_SUB => o.get_in(0) == o.get_in(1) || (zero(0) && zero(1)),
+        OpCode::CPUI_INT_AND | OpCode::CPUI_INT_MULT => zero(0) || zero(1),
+        _ => false,
     }
 }
 
