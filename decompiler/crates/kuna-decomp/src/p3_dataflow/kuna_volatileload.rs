@@ -139,8 +139,9 @@ pub(crate) fn is_volatile_with(data: &Funcdata, id: OpId, memo: &mut Memo) -> bo
 
 /// Whether a volatile LOAD repeats a read its instruction already makes:
 /// another live LOAD at the same instruction address reads the same storage
-/// and either `kept` holds for it or it was lifted first. The hardware reads
-/// an operand once, however often the SLEIGH flag macros re-load it.
+/// and either `kept` holds for it or it was lifted first, so one read per
+/// address per instruction survives however often the SLEIGH flag macros
+/// re-load an operand.
 pub(crate) fn rereads(
     data: &Funcdata,
     id: OpId,
@@ -276,7 +277,7 @@ mod tests {
         }
     }
     #[test]
-    fn a_second_load_of_one_instruction_operand_is_a_reread() {
+    fn a_second_load_of_one_address_in_an_instruction_is_a_reread() {
         let mut fd = function(1);
         let space = fd.new_constant(4, 2);
         let load = |fd: &mut Funcdata, offset: u64| {

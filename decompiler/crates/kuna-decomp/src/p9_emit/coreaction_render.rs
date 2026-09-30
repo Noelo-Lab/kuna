@@ -2207,7 +2207,7 @@ fn dc_is_eventual_constant(data: &Funcdata, vn: VarnodeId, max_binary: i32, max_
 /// 1, hold un-consumed LOADs from eventual-constant addresses alive. A LOAD
 /// proven to read a volatile range is held on every pass, including one whose
 /// readers consume none of its bits (which the sweep would otherwise delete as
-/// never consumed), unless it re-reads an operand its instruction already reads.
+/// never consumed), unless its instruction already reads that address.
 fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> bool {
     use crate::p3_dataflow::kuna_volatileload;
     if data.is_jumptable_recovery_on() {

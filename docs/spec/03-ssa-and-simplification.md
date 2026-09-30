@@ -1354,9 +1354,14 @@ operand the flag macros re-load (x86 `add`/`or`/`and`/`inc` on memory, MSP430
 `add src,x(Rn)`) as several LOADs of the same address, some of them after the
 instruction's own store. So a volatile LOAD is neither held nor protected when
 another live LOAD at the same instruction address reads the same storage and is
-used, is already held, or was lifted first: one read per operand survives, the
-used one when there is one. Load-multiple instructions read distinct addresses
-and keep every access. The rule applies whichever path would have held the
+used, is already held, or was lifted first: one read per address per
+instruction survives, the used one when there is one. Load-multiple
+instructions read distinct addresses and keep every access. The key is the
+instruction and the resolved address, not the operand, so two different
+operands that resolve to the same volatile word also merge into one read when
+the instruction's result is discarded (x86 `cmpsd` with `rsi` equal to `rdi`,
+or MSP430 `cmp @r5,0(r5)`, with the flags unused); when the result is used,
+both reads survive. The rule applies whichever path would have held the
 LOAD, so it also removes the re-reads the eventual-constant hold kept for
 shallow addresses. It does not reach an operand whose address is a constant at
 lift time: those reads are memory varnodes from the start, not LOADs, and each
