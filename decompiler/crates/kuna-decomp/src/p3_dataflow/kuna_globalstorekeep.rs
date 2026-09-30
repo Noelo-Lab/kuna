@@ -65,18 +65,22 @@ pub fn reads_signedness(code: OpCode, slot: int4, size: int4, other_const: Optio
 }
 
 /// Must `RulePropagateCopy` leave `vn`, the output of `COPY invn`, as the input
-/// of `op`?  Only when `vn` is a global and `invn` a value the function
-/// computes (a parameter never merges with a global, so its store keeps
-/// upstream's handling).
+/// of `op`?  Only when `vn` is a global, `invn` a value the function computes
+/// (a parameter never merges with a global, so its store keeps upstream's
+/// handling), and some operation reads that value, a copy of it or an
+/// expression computed from it, sign-sensitively.
 ///
-/// An `op` that writes something other than this global reads the global
-/// itself: the binary loads it back after the store.  It keeps that read
-/// always, so a value kept apart from the global never stands in for a load the
-/// binary makes (after `gi = u; *p = k;` the load of `gi` may see `k`).  The
-/// global's own marker, or a `COPY` into the same global (what a duplicated join
-/// block leaves of its marker), keeps it only when some operation reads the
-/// value, a copy of it or an expression computed from it, sign-sensitively.
-pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bool {
+/// `op` is then either the global's own marker, or a `COPY` into the same
+/// global (what a duplicated join block leaves of its marker), or a load: an
+/// operation the binary makes on the global after the store.  A load that
+/// upstream lets through reads the value from then on.  After `gi = u; *p = k;`
+/// that load may see `k`, so the value must keep printing as the global: the
+/// store and the value are marked
+/// ([`Varnode::is_global_load`](crate::varnode::Varnode::is_global_load)), the
+/// mark follows the value into the global's markers and later stores, and
+/// chapter 06 never keeps a marked value apart.  A marked store takes
+/// upstream's handling from then on.
+pub fn declines(data: &mut Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bool {
     let (Some(v), Some(iv)) = (data.vbank().get(vn), data.vbank().get(invn)) else {
         return false;
     };
@@ -86,12 +90,24 @@ pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bo
     let Some(reader) = data.obank().get(op) else {
         return false;
     };
+    let out = reader.get_out();
     let own = (reader.is_marker() || reader.code() == OpCode::CPUI_COPY)
-        && reader
-            .get_out()
+        && out
             .and_then(|o| data.vbank().get(o))
-            .is_some_and(|out| out.get_addr() == v.get_addr() && out.get_size() == v.get_size());
-    !own || value_read_sign_sensitively(data, invn)
+            .is_some_and(|o| o.get_addr() == v.get_addr() && o.get_size() == v.get_size());
+    let marked = v.is_global_load() || iv.is_global_load();
+    if !marked && value_read_sign_sensitively(data, invn) {
+        return true;
+    }
+    if marked || !own {
+        let targets = [Some(vn), Some(invn), out.filter(|_| own)];
+        for x in targets.into_iter().flatten() {
+            if let Some(x) = data.vbank_mut().get_mut(x) {
+                x.set_global_load();
+            }
+        }
+    }
+    false
 }
 
 /// Is the result of `code` typed after its operand in `slot`, and the same bits

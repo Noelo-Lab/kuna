@@ -46,11 +46,38 @@ pub fn keeps_apart(ctx: &mut dyn MergeContext, a: HighVariableId, b: HighVariabl
     if ctx.high_is_persist(value) || ctx.high_is_addr_tied(value) {
         return false;
     }
-    let r = read_sign_sensitively(ctx, value) && !holds_global(ctx, value, global);
-    if std::env::var_os("KUNA_GV_DEBUG").is_some() {
-        eprintln!("GV keeps_apart global={:?} value={:?} -> {}", global, value, r);
+    if loaded(ctx, global, value) {
+        return false;
     }
-    r
+    read_sign_sensitively(ctx, value) && !holds_global(ctx, value, global)
+}
+
+/// Does a load the binary makes of `global` read `value` instead?  Chapter 03
+/// marks the value, and each store of it into the global, when it lets such a
+/// load through ([`Varnode::is_global_load`](crate::varnode::Varnode::is_global_load)).
+/// The value then has to print as the global, so the join must happen.
+fn loaded(ctx: &mut dyn MergeContext, global: HighVariableId, value: HighVariableId) -> bool {
+    for i in 0..ctx.high_num_instances(value) {
+        let vn = ctx.high_get_instance(value, i);
+        if ctx.vn_is_global_load(vn) {
+            return true;
+        }
+    }
+    for i in 0..ctx.high_num_instances(global) {
+        let g = ctx.high_get_instance(global, i);
+        if !ctx.vn_is_global_load(g) {
+            continue;
+        }
+        let Some(def) = ctx.vn_def(g) else {
+            continue;
+        };
+        for slot in 0..ctx.op_num_input(def) {
+            if ctx.op_in(def, slot).and_then(|x| ctx.vn_high(x)) == Some(value) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Does an operation read `value` sign-sensitively ([`reads_signedness`]),

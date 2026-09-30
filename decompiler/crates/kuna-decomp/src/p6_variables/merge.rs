@@ -285,6 +285,10 @@ pub trait MergeContext: HighContext {
     fn vn_constant_value(&self, _vn: VarnodeId) -> Option<u64> {
         None
     }
+    /// (kuna) Does a load of a global `vn` was stored to read `vn` instead?
+    fn vn_is_global_load(&self, _vn: VarnodeId) -> bool {
+        false
+    }
     /// `vn->getCover()` — the member's (already rebuilt) Cover, or `None`.
     fn vn_cover_ref(&self, vn: VarnodeId) -> Option<Cover>;
     /// `vn->getCreateIndex()`.

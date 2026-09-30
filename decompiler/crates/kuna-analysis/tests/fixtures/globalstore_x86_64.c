@@ -14,7 +14,12 @@
  * computed from the stored value against a constant; a fold moves that constant
  * across the `+`, `-`, `~` or `^` (`u + 1 == 0` becomes `u == 0xffff`),
  * `w_carry16` tests the carry of `u + 5` and `w_meld16` ors two compares that
- * merge into `u < 2`. */
+ * merge into `u < 2`.  `w_realias`, `w_rephi`, `w_reboth` and `w_recopy` store
+ * to a plain `int` and then store through a pointer that may point at it, so
+ * the compiler loads the global back: that load must print as a read of the
+ * global, while `w_reboth` and `w_recopy` also use the value from its register.
+ * At -O0 `w_rephi` shows a separate, older defect (the load that feeds the join
+ * prints as the value), so that build keeps it from the source. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +30,8 @@ volatile unsigned usink;
 volatile unsigned char csink;
 volatile unsigned short hsink;
 volatile short shsink;
+int gre;
+int gre2;
 unsigned long res;
 int retsel;
 struct words { char pad[0x40002]; char rb[2][0x20001]; } words;
@@ -55,6 +62,10 @@ int w_not16(int a, int k);
 int w_xor16(int a, int k);
 int w_carry16(unsigned a, int k);
 int w_meld16(unsigned a, int k);
+int w_realias(unsigned a, int *p, int k);
+int w_rephi(unsigned a, int *p, int k, int c);
+int w_reboth(unsigned a, int *p, int k);
+int w_recopy(unsigned a, int *p, int k);
 
 #ifndef GLOBALSTORE_HARNESS
 #define NI __attribute__((noinline))
@@ -104,6 +115,18 @@ NI int w_not16(int a, int k) { int r = 7; if (k) { unsigned short u = a * 3; hsi
 NI int w_xor16(int a, int k) { int r = 7; if (k) { unsigned short u = a * 3; hsink = u; unsigned short w = u ^ 0x7fff; r = w == 0x8000; } return r * 2 + 1; }
 NI int w_meld16(unsigned a, int k) { int r = 7; if (k) { unsigned short u = a * 3; shsink = u; r = (u == 0) | (u == 1); } return r * 2 + 1; }
 NI int w_carry16(unsigned a, int k) { int r = 7; if (k) { unsigned short u = a * 3; shsink = u; unsigned short t; r = __builtin_add_overflow(u, (unsigned short)5, &t); } return r * 2 + 1; }
+NI int w_realias(unsigned a, int *p, int k) { unsigned u = a * 3; gre = u; *p = k; return gre / 16; }
+NI int w_reboth(unsigned a, int *p, int k) { unsigned u = a * 3; gre = u; *p = k; return (gre >> 4) + (int)(u >> 4); }
+NI int w_recopy(unsigned a, int *p, int k) { unsigned u = a * 3; gre = u; *p = k; gre2 = gre; return (int)(u >> 4); }
+#endif
+#if !defined(GLOBALSTORE_HARNESS) || defined(GLOBALSTORE_KEEP_REPHI)
+__attribute__((noinline)) int w_rephi(unsigned a, int *p, int k, int c) {
+  unsigned u = a * 3;
+  gre = u;
+  *p = k;
+  int v = c ? gre : 7;
+  return v / 16;
+}
 #endif
 
 int main(void) {
@@ -167,6 +190,21 @@ int main(void) {
     hf = hf * 1000003 + (unsigned)w_carry16(v, 1) + (unsigned)w_meld16(v * 0x5555u, 1) * 9 + hsink + (unsigned)shsink * 3 + csink;
   }
   printf("fold %lx %u %d %u\n", hf, hsink, shsink, csink);
+  for (unsigned t = 0; t < sizeof vals / sizeof *vals; t++) {
+    unsigned v = vals[t];
+    int other = 0;
+    int a1 = w_realias(v, &gre, -77);
+    int a2 = w_realias(v, &other, -77);
+    int b1 = w_rephi(v, &gre, -77, 1);
+    int b2 = w_rephi(v, &other, -77, 1);
+    int b3 = w_rephi(v, &gre, -77, 0);
+    int c1 = w_reboth(v, &gre, -77);
+    int c2 = w_reboth(v, &other, -77);
+    int d1 = w_recopy(v, &gre, -77);
+    int d1g = gre2;
+    int d2 = w_recopy(v, &other, -77);
+    printf("realias %08x %d %d %d %d %d %d %d %d %d %d %d %d\n", v, a1, a2, b1, b2, b3, c1, c2, d1, d1g, d2, gre2, gre);
+  }
   printf("%lu\n", h);
   return 0;
 }

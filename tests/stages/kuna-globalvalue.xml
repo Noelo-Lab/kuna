@@ -27,6 +27,14 @@
     refuses the copy-shadow join, so the value keeps its own type and the store
     keeps its place, ahead of a later pointer store that may alias the global.
 
+    A load the binary makes of the global after such a pointer store must still
+    print as the global (`w_realias`: `gre = u; *p = k; return gre / 16;`
+    returns -4 when p points at gre).  RulePropagateCopy leaves the load on the
+    global while the value is read sign-sensitively, and otherwise marks the
+    value so that Merge joins it with the global as before (#17-#20).  At -O0
+    the binary loads `retsel` and `res` back right after storing them, so
+    those loads print as the globals too (#5, #6, #9, #21).
+
     The wrapper only supplies the harness architecture (`load file` needs one).
     The pass loads globalstore_gcc_O0_x86_64 (built from globalstore_x86_64.c
     beside it).
@@ -81,17 +89,26 @@
   <com>load function w_not16</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function w_realias</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_reboth</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_recopy</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="globalvalue #1: the unsigned value keeps its own variable and cast" min="1" max="1">v1 = \(uint4\)\(a0 \* 3\) &gt;&gt; 4;</stringmatch>
 <stringmatch name="globalvalue #2: the unsigned store is not read back through the global" min="0" max="0">v1 = sink &gt;&gt; 4;</stringmatch>
 <stringmatch name="globalvalue #3: the signed value keeps its own variable" min="1" max="1">v1 = a0 \* 3 &gt;&gt; 4;</stringmatch>
 <stringmatch name="globalvalue #4: the signed store is not read back through the global" min="0" max="0">v1 = usink &gt;&gt; 4;</stringmatch>
-<stringmatch name="globalvalue #5: the flipped value is stored from its own variable" min="1" max="1">retsel = v[0-9]+;</stringmatch>
-<stringmatch name="globalvalue #6: the widening reads the value, not the global" min="0" max="0">\(int8\)retsel</stringmatch>
+<stringmatch name="globalvalue #5: the flipped value is stored where the binary stores it" min="1" max="1">retsel = 1 - retsel;</stringmatch>
+<stringmatch name="globalvalue #6: the widening reads the global the binary loads back" min="1" max="1">v[0-9]+ = \(int8\)retsel;</stringmatch>
 <stringmatch name="globalvalue #7: the conversion reads the value" min="1" max="1">\(float8\)\(a0 \* 3\)</stringmatch>
 <stringmatch name="globalvalue #8: the conversion does not read the global" min="0" max="0">\(float8\)usink</stringmatch>
-<stringmatch name="globalvalue #9: the strtoul result is stored once, where the binary stores it" min="1" max="1">res = v[0-9]+;</stringmatch>
+<stringmatch name="globalvalue #9: the strtoul result is stored where the binary stores it" min="1" max="1">res = strtoul\(a1,&amp;v[0-9]+,0\);</stringmatch>
 <stringmatch name="globalvalue #10: the byte compare does not read the global" min="0" max="0">csink == </stringmatch>
 <stringmatch name="globalvalue #11: the value read through + keeps its own variable" min="1" max="1">v1 = a0 \* 3 \+ 1 &gt;&gt; 4;</stringmatch>
 <stringmatch name="globalvalue #12: no value read through + is read back through the global" min="0" max="0">usink \+ 1</stringmatch>
@@ -99,4 +116,9 @@
 <stringmatch name="globalvalue #14: the joined value is stored from its own variable" min="1" max="1">usink = a[0-9]+;</stringmatch>
 <stringmatch name="globalvalue #15: a short compare a fold rewrote reads the value" min="3" max="3">v1 = \(int2\)\(a0 \* 3\) == -1;</stringmatch>
 <stringmatch name="globalvalue #16: no short compare reads the global back" min="0" max="0">hsink == </stringmatch>
+<stringmatch name="globalvalue #17: the load after a pointer store reads the global" min="1" max="1">if \(gre &lt;= -1\)</stringmatch>
+<stringmatch name="globalvalue #18: the register use keeps the value and the load reads the global" min="1" max="1">\(\(uint4\)\(a0 \* 3\) &gt;&gt; 4\) \+ \(\(int4\)gre &gt;&gt; 4\)</stringmatch>
+<stringmatch name="globalvalue #19: the load copied to another global reads the global" min="1" max="1">gre2 = gre;</stringmatch>
+<stringmatch name="globalvalue #21: the range check loads the strtoul result back from the global" min="1" max="1">\(res &lt;= 0xff\)</stringmatch>
+<stringmatch name="globalvalue #20: no load after a pointer store reads the value's variable" min="0" max="0">\(int4\)v[0-9]+ &gt;&gt; 4\)</stringmatch>
 </decompilertest>

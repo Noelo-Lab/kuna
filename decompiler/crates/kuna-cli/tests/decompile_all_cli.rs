@@ -7024,19 +7024,24 @@ int main(void) {
 /// `w_sub16`, `w_not16` and `w_xor16` compare a short or a byte computed with
 /// `+`, `-`, `~` or `^` against a constant, which a fold later moves across that
 /// operator (`hsink = a0 * 3; v1 = hsink == -1;`), `w_carry16` tests a carry,
-/// and `w_meld16` ors two compares that merge into `shsink < 2`.  Each is decompiled and, with the globals given their real types,
-/// compiled by gcc and clang against the fixture's own `main` and must print
-/// what the binary prints.  clang -O2's `w_first` is taken from the source: its
-/// printed form has defects outside this test.
+/// and `w_meld16` ors two compares that merge into `shsink < 2`.  `w_realias`,
+/// `w_rephi`, `w_reboth` and `w_recopy` store to a plain `int` and then through a
+/// pointer that the harness points at it, so the load the binary makes afterwards
+/// must still print as the global.  Each is decompiled and, with the globals given
+/// their real types, compiled by gcc and clang against the fixture's own `main`
+/// and must print what the binary prints.  clang -O2's `w_first` and gcc -O0's
+/// `w_rephi` are taken from the source: their printed forms have defects outside
+/// this test.
 #[test]
 fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
     const FUNCS: &str = "w_branch,w_line,w_loop,w_less,w_div,w_signed,w_order,w_once,w_alias,w_sext,w_i2f,w_eqc,\
-                         w_sadd,w_xordiv,w_f,w_sidx,w_cond,w_fold16,w_fold8,w_neg16,w_sub16,w_not16,w_xor16,w_carry16,w_meld16";
+                         w_sadd,w_xordiv,w_f,w_sidx,w_cond,w_fold16,w_fold8,w_neg16,w_sub16,w_not16,w_xor16,w_carry16,w_meld16,\
+                         w_realias,w_reboth,w_recopy";
     const DECLS: &str = "#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n#include <stdbool.h>\n\
                          extern volatile int sink;\nextern volatile int sink2;\nextern volatile unsigned int usink;\n\
                          extern volatile unsigned char csink;\nextern volatile unsigned short hsink;\n\
                          extern volatile short shsink;\nextern unsigned long res;\nextern int retsel;\n\
-                         extern char words[];\n";
+                         extern char words[];\nextern int gre;\nextern int gre2;\n";
     let sp = specs();
     let fixtures_dir = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
     let harness = fixtures_dir.join("globalstore_x86_64.c");
@@ -7054,7 +7059,12 @@ fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
             }
         };
         let keep_first = fixture.contains("clang");
-        let funcs = if keep_first { FUNCS.to_string() } else { format!("{FUNCS},w_first") };
+        let keep_rephi = fixture.contains("gcc_O0");
+        let funcs = format!(
+            "{FUNCS}{}{}",
+            if keep_first { "" } else { ",w_first" },
+            if keep_rephi { "" } else { ",w_rephi" }
+        );
         let (stdout, stderr, ok) =
             run_kuna(&["decompile-all", bin.as_str(), "--functions", funcs.as_str(), "--sleighpath", sp.as_str()]);
         assert!(ok, "kuna decompile-all failed on {fixture}: {stderr}");
@@ -7078,6 +7088,9 @@ fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
             let mut args = vec!["-std=gnu11", "-w", "-O0", "-DGLOBALSTORE_HARNESS"];
             if keep_first {
                 args.push("-DGLOBALSTORE_KEEP_FIRST");
+            }
+            if keep_rephi {
+                args.push("-DGLOBALSTORE_KEEP_REPHI");
             }
             let out = Command::new(cc)
                 .args(&args)

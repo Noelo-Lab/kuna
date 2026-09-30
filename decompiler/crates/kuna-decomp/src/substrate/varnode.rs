@@ -154,6 +154,9 @@ pub mod addl_flags {
     pub const stop_uppropagation: uint2 = 0x800;
     /// The varnode is implied but also has a data-type that needs resolution
     pub const has_implied_field: uint2 = 0x1000;
+    /// (kuna) A load of a global the value was stored to reads this value instead
+    /// (`p3_dataflow/kuna_globalstorekeep.rs`)
+    pub const global_load: uint2 = 0x2000;
 }
 
 /// Number of inline `OpId` slots a `descend` list keeps before spilling to the
@@ -812,6 +815,14 @@ impl Varnode {
     pub fn clear_consume_vacuous(&mut self) {
         self.addlflags &= !addl_flags::vacconsume;
     }
+    /// (kuna) Does a load of a global this value was stored to read the value?
+    pub fn is_global_load(&self) -> bool {
+        (self.addlflags & addl_flags::global_load) != 0
+    }
+    /// (kuna) Record that a load of a global this value was stored to reads it.
+    pub fn set_global_load(&mut self) {
+        self.addlflags |= addl_flags::global_load;
+    }
 
     // --- Boolean attribute predicates (C++ inline is*/has*) ---------------
 
@@ -1174,7 +1185,8 @@ impl Varnode {
                 | varnode_flags::precislo
                 | varnode_flags::precishi);
         self.set_flags(vflags);
-        let aflags = src_addl & (addl_flags::writemask | addl_flags::ptrflow | addl_flags::stack_store);
+        let aflags =
+            src_addl & (addl_flags::writemask | addl_flags::ptrflow | addl_flags::stack_store | addl_flags::global_load);
         self.addlflags |= aflags;
     }
 
