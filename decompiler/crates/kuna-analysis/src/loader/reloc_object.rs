@@ -35,7 +35,8 @@
 //!    absolute, relative, PLT-relative, and image-offset fields support
 //!    8/16/32/64-bit widths in the object's byte order. [`super::reloc_apply`]
 //!    additionally decodes ARM branch/data fields, AArch64 branch/page/low-12
-//!    fields, and PowerPC64 `REL24`/TOC fields without overwriting opcode bits.
+//!    fields, PowerPC64 `REL24`/TOC fields, and 32-bit SPARC call, `sethi`/`or`
+//!    split-immediate, and `DISP32` fields without overwriting opcode bits.
 //!    `A` is the entry's addend for a RELA table and the in-place field value for
 //!    a REL-style one (COFF, 32-bit ELF). Entries that cannot be applied are left
 //!    untouched and grouped by architecture, relocation type, and failure
@@ -638,6 +639,15 @@ fn relocation_name(architecture: Architecture, r_type: u32) -> &'static str {
         (Architecture::PowerPc64, object::elf::R_PPC64_TOC16_HA) => "R_PPC64_TOC16_HA",
         (Architecture::PowerPc64, object::elf::R_PPC64_TOC16_LO_DS) => "R_PPC64_TOC16_LO_DS",
         (Architecture::PowerPc64, object::elf::R_PPC64_TOC) => "R_PPC64_TOC",
+        (Architecture::Sparc | Architecture::Sparc32Plus, object::elf::R_SPARC_WDISP30) => {
+            "R_SPARC_WDISP30"
+        }
+        (Architecture::Sparc | Architecture::Sparc32Plus, object::elf::R_SPARC_HI22) => {
+            "R_SPARC_HI22"
+        }
+        (Architecture::Sparc | Architecture::Sparc32Plus, object::elf::R_SPARC_LO10) => {
+            "R_SPARC_LO10"
+        }
         _ => "ELF relocation",
     }
 }

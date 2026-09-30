@@ -56,7 +56,8 @@ each unlaid `.debug_*` section's relocations applied, and each ELF symbol shifte
 by its own section's delta — so a pass never has to know it is reading a `.o`. A
 fact that still lands in no laid-out section is dropped, not passed through.
 The relocated snapshot uses the loader's architecture-aware encoder: generic
-8/16/32/64-bit fields plus ARM, AArch64, and PowerPC64 instruction relocations.
+8/16/32/64-bit fields plus ARM, AArch64, PowerPC64, and 32-bit SPARC
+instruction relocations.
 Failures remain unmodified and enter the loader's bounded grouped diagnostic;
 analysis passes therefore consume one consistent image and do not duplicate ISA
 relocation logic or emit their own per-entry warning stream.
