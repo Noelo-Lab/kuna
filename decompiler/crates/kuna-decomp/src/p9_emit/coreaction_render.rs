@@ -2207,12 +2207,21 @@ fn dc_is_eventual_constant(data: &Funcdata, vn: VarnodeId, max_binary: i32, max_
 /// 1, hold un-consumed LOADs from eventual-constant addresses alive. A LOAD
 /// proven to read a volatile range is held on every pass, including one whose
 /// readers consume none of its bits (which the sweep would otherwise delete as
-/// never consumed).
+/// never consumed), unless it re-reads an operand its instruction already reads.
 fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> bool {
+    use crate::p3_dataflow::kuna_volatileload;
     if data.is_jumptable_recovery_on() {
         return false;
     }
+    let consumed_load = |data: &Funcdata, load: OpId| {
+        data.obank()
+            .get(load)
+            .and_then(|o| o.get_out())
+            .and_then(|v| data.vbank().get(v))
+            .is_some_and(|v| v.is_consume_vacuous() && v.get_consume() != 0)
+    };
     let loads: Vec<OpId> = data.obank().iter_code(OpCode::CPUI_LOAD).collect();
+    let mut memo = kuna_volatileload::Memo::new();
     let mut res = false;
     for op in loads {
         let o = data.obank().get(op).expect("lastChanceLoad: stale op");
@@ -2231,10 +2240,14 @@ fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> bo
             continue;
         }
         let ptr = o.get_in(1).expect("LOAD ptr");
-        let eventual = (!vacuous
-            && data.get_heritage_pass() <= 1
-            && dc_is_eventual_constant(data, ptr, 3, 1))
-            || crate::p3_dataflow::kuna_volatileload::is_volatile(data, op);
+        let volatile = kuna_volatileload::is_volatile_with(data, op, &mut memo);
+        if volatile && kuna_volatileload::rereads(data, op, &mut memo, consumed_load) {
+            continue;
+        }
+        let eventual = volatile
+            || (!vacuous
+                && data.get_heritage_pass() <= 1
+                && dc_is_eventual_constant(data, ptr, 3, 1));
         if eventual {
             dc_push_consumed(data, !0u64, vn, worklist);
             data.vbank_mut().get_mut(vn).expect("lastChanceLoad: stale out").set_auto_live_hold();

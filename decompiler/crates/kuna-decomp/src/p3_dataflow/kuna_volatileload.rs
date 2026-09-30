@@ -9,116 +9,161 @@ use kuna_base::{
     space::AddrSpace,
 };
 use kuna_num::opcodes::OpCode;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+/// Values proven for written varnodes: `Some` is the constant, `None` a
+/// varnode proven not to be one. Valid while the op graph is unchanged.
+pub(crate) type Memo = BTreeMap<VarnodeId, Option<u64>>;
+
+/// Written varnodes one proof may evaluate beyond those already in the memo.
+const BUDGET: u32 = 64;
+
+/// Fold `id` through constant integer operations. Constant leaves are free;
+/// a failure caused by the exhausted budget or a cycle is not memoized.
 fn constant(
     data: &Funcdata,
     id: VarnodeId,
-    memo: &mut BTreeMap<VarnodeId, Option<u64>>,
+    memo: &mut Memo,
+    visiting: &mut BTreeSet<VarnodeId>,
+    budget: &mut u32,
 ) -> Option<u64> {
     if let Some(value) = memo.get(&id) {
         return *value;
     }
-    if memo.len() >= 64 {
-        return None;
-    }
-    memo.insert(id, None);
     let node = data.vbank().get(id)?;
-    if !(1..=8).contains(&node.get_size()) {
+    let size = node.get_size();
+    if !(1..=8).contains(&size) {
         return None;
     }
-    let value = if node.is_constant() {
-        node.get_offset()
-    } else {
-        let op = data.obank().get(node.get_def()?)?;
-        let input = op.get_in(0)?;
-        let a = constant(data, input, memo)?;
-        match op.code() {
-            OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT => a,
-            OpCode::CPUI_INT_SEXT => {
-                let bits = data.vbank().get(input)?.get_size() * 8;
-                ((a << (64 - bits)) as i64 >> (64 - bits)) as u64
-            }
-            OpCode::CPUI_INT_ADD
-            | OpCode::CPUI_INT_SUB
-            | OpCode::CPUI_INT_AND
-            | OpCode::CPUI_INT_OR
-            | OpCode::CPUI_INT_XOR
-            | OpCode::CPUI_INT_LEFT
-            | OpCode::CPUI_INT_RIGHT
-            | OpCode::CPUI_INT_MULT => {
-                let b = constant(data, op.get_in(1)?, memo)?;
-                match op.code() {
-                    OpCode::CPUI_INT_ADD => a.wrapping_add(b),
-                    OpCode::CPUI_INT_SUB => a.wrapping_sub(b),
-                    OpCode::CPUI_INT_AND => a & b,
-                    OpCode::CPUI_INT_OR => a | b,
-                    OpCode::CPUI_INT_XOR => a ^ b,
-                    OpCode::CPUI_INT_LEFT => {
-                        if b >= 64 {
-                            0
-                        } else {
-                            a << b
-                        }
-                    }
-                    OpCode::CPUI_INT_RIGHT => {
-                        if b >= 64 {
-                            0
-                        } else {
-                            a >> b
-                        }
-                    }
-                    _ => a.wrapping_mul(b),
+    if node.is_constant() {
+        return Some(node.get_offset() & calc_mask(size));
+    }
+    if *budget == 0 || !visiting.insert(id) {
+        return None;
+    }
+    *budget -= 1;
+    let value = node
+        .get_def()
+        .and_then(|def| data.obank().get(def))
+        .and_then(|op| {
+            let input = op.get_in(0)?;
+            let a = constant(data, input, memo, visiting, budget)?;
+            let value = match op.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT => a,
+                OpCode::CPUI_INT_SEXT => {
+                    let bits = data.vbank().get(input)?.get_size() * 8;
+                    ((a << (64 - bits)) as i64 >> (64 - bits)) as u64
                 }
-            }
-            _ => return None,
-        }
-    } & calc_mask(node.get_size());
-    memo.insert(id, Some(value));
-    Some(value)
+                OpCode::CPUI_INT_ADD
+                | OpCode::CPUI_INT_SUB
+                | OpCode::CPUI_INT_AND
+                | OpCode::CPUI_INT_OR
+                | OpCode::CPUI_INT_XOR
+                | OpCode::CPUI_INT_LEFT
+                | OpCode::CPUI_INT_RIGHT
+                | OpCode::CPUI_INT_MULT => {
+                    let b = constant(data, op.get_in(1)?, memo, visiting, budget)?;
+                    match op.code() {
+                        OpCode::CPUI_INT_ADD => a.wrapping_add(b),
+                        OpCode::CPUI_INT_SUB => a.wrapping_sub(b),
+                        OpCode::CPUI_INT_AND => a & b,
+                        OpCode::CPUI_INT_OR => a | b,
+                        OpCode::CPUI_INT_XOR => a ^ b,
+                        OpCode::CPUI_INT_LEFT => {
+                            if b >= 64 {
+                                0
+                            } else {
+                                a << b
+                            }
+                        }
+                        OpCode::CPUI_INT_RIGHT => {
+                            if b >= 64 {
+                                0
+                            } else {
+                                a >> b
+                            }
+                        }
+                        _ => a.wrapping_mul(b),
+                    }
+                }
+                _ => return None,
+            };
+            Some(value & calc_mask(size))
+        });
+    visiting.remove(&id);
+    if value.is_some() || *budget > 0 {
+        memo.insert(id, value);
+    }
+    value
 }
 
-/// Prove the access address without reading memory or guessing an input register.
-pub(crate) fn is_volatile(data: &Funcdata, id: OpId) -> bool {
-    let Some(op) = data
+/// The volatile storage `(space index, byte offset, size)` a LOAD reads, when
+/// its pointer folds to a constant without reading memory or guessing an input.
+fn target(data: &Funcdata, id: OpId, memo: &mut Memo) -> Option<(i32, u64, i32)> {
+    let op = data
         .obank()
         .get(id)
-        .filter(|o| o.code() == OpCode::CPUI_LOAD)
-    else {
-        return false;
-    };
-    let Some(out) = op.get_out().and_then(|v| data.vbank().get(v)) else {
-        return false;
-    };
-    let Some(space) = op
-        .get_in(0)
-        .and_then(|v| data.vbank().get(v))
-        .filter(|v| v.is_constant())
-    else {
-        return false;
-    };
+        .filter(|o| o.get_opcode().map(|t| t.get_opcode()) == Some(OpCode::CPUI_LOAD))?;
+    let size = data.vbank().get(op.get_out()?)?.get_size();
+    let space = data.vbank().get(op.get_in(0)?).filter(|v| v.is_constant())?;
     let manager = data.get_arch().manage();
     if space.get_offset() >= manager.num_spaces() as u64 {
-        return false;
+        return None;
     }
-    let Some(space) = manager.get_space(space.get_offset() as i32) else {
-        return false;
-    };
-    let Some(pointer) = op.get_in(1) else {
-        return false;
-    };
-    let Some(offset) = constant(data, pointer, &mut BTreeMap::new()) else {
-        return false;
-    };
+    let space = manager.get_space(space.get_offset() as i32)?;
+    let mut budget = BUDGET;
+    let offset = constant(data, op.get_in(1)?, memo, &mut BTreeSet::new(), &mut budget)?;
     let addr = Address::new(
         space.clone(),
         AddrSpace::address_to_byte(offset, space.get_word_size()),
     );
-    let properties = data.query_local_properties(&addr, out.get_size(), op.get_addr())
+    let properties = data.query_local_properties(&addr, size, op.get_addr())
         | data
             .get_arch()
-            .query_global_properties(&addr, out.get_size(), op.get_addr());
-    properties & varnode_flags::volatil != 0
+            .query_global_properties(&addr, size, op.get_addr());
+    (properties & varnode_flags::volatil != 0).then(|| (space.get_index(), addr.get_offset(), size))
+}
+
+/// Whether a LOAD provably reads volatile storage.
+pub(crate) fn is_volatile(data: &Funcdata, id: OpId) -> bool {
+    is_volatile_with(data, id, &mut Memo::new())
+}
+
+/// [`is_volatile`] sharing `memo` across the LOADs of one unchanged op graph.
+pub(crate) fn is_volatile_with(data: &Funcdata, id: OpId, memo: &mut Memo) -> bool {
+    target(data, id, memo).is_some()
+}
+
+/// Whether a volatile LOAD repeats a read its instruction already makes:
+/// another live LOAD at the same instruction address reads the same storage
+/// and either `kept` holds for it or it was lifted first. The hardware reads
+/// an operand once, however often the SLEIGH flag macros re-load it.
+pub(crate) fn rereads(
+    data: &Funcdata,
+    id: OpId,
+    memo: &mut Memo,
+    kept: impl Fn(&Funcdata, OpId) -> bool,
+) -> bool {
+    let Some(want) = target(data, id, memo) else {
+        return false;
+    };
+    let Some(op) = data.obank().get(id) else {
+        return false;
+    };
+    let time = op.get_time();
+    let siblings: Vec<OpId> = data
+        .obank()
+        .iter_at(op.get_addr())
+        .map(|(_, sibling)| sibling)
+        .filter(|&sibling| sibling != id)
+        .collect();
+    siblings.into_iter().any(|sibling| {
+        data.obank().get(sibling).is_some_and(|o| {
+            !o.is_dead()
+                && target(data, sibling, memo) == Some(want)
+                && (kept(data, sibling) || o.get_time() < time)
+        })
+    })
 }
 
 #[cfg(test)]

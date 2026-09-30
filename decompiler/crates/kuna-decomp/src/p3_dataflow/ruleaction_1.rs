@@ -53,6 +53,7 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::expression::TermOrder;
 use crate::funcdata::Funcdata;
+use crate::p3_dataflow::kuna_volatileload;
 use crate::context::{OpId, VarnodeId};
 
 /// `sizeof(uintb)` from the C++ — the rules cap at 8-byte precision
@@ -132,7 +133,16 @@ impl Rule for RuleEarlyRemoval {
             }
         }
 
-        if crate::p3_dataflow::kuna_volatileload::is_volatile(data, op) {
+        let mut memo = kuna_volatileload::Memo::new();
+        if kuna_volatileload::is_volatile_with(data, op, &mut memo)
+            && !kuna_volatileload::rereads(data, op, &mut memo, |data, load| {
+                data.obank()
+                    .get(load)
+                    .and_then(|o| o.get_out())
+                    .and_then(|v| data.vbank().get(v))
+                    .is_some_and(|v| !v.has_no_descend() || v.is_auto_live())
+            })
+        {
             return 0;
         }
         // Get rid of unused op
