@@ -510,6 +510,15 @@ mod tests {
             // that pin the pointer spelling `protoorder` and `ptrfromuse` produce.
             // Full evaluation: docs/features/charptr/default-on-evaluation.md.
             "charptr",
+            // (kuna `fieldtype`) Declare a synthesized field some access holds as
+            // a pointer as that pointer. Every flip criterion passes (0/675,
+            // stages, test-cli, the 444-slice typesweep unmoved, 191 casts fewer
+            // on the shared set) except fields-only layout precision, .8713 ->
+            // .8693: the layout ledger shares a record only on exact field-type
+            // agreement, and a field re-typed in one reader and not another moves
+            // which record the other is answered with. Full evaluation:
+            // docs/features/fieldtype/default-on-evaluation.md.
+            "fieldtype",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

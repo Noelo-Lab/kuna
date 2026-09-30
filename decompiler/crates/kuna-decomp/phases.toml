@@ -4681,6 +4681,28 @@ tier = "transform"
 symptoms = "a parameter is declared `void *` and every read of it is `((T *)a0)[K]` or `*(T *)((long)a0 + K)` with no read at offset 0|a function reads a record's later members and the listing shows a cast per access|`statx_to_stat` or a `fileinfo` accessor renders as casts of an untyped pointer|a record reader keeps `void *` while a sibling that reads the first member gets `struct_N *`"
 
 [[settable]]
+option = "fieldtype"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P5"
+subphase = "aggregate-union"
+strength = "HARD"
+rewind = "P5"
+issue = "castcampaign-fieldtype"
+summary = "Declare a synthesized record's field as the pointer the program uses it as. `structsynth` types each field from the widest access it measured, and among accesses of one width the first one it meets decides, so at -O0, where a field is reloaded for every use, the load that feeds an integer add decides: coreutils `sort` -O0 `fillbuf` declares `buffer.buf` as `long field_0x0` although the next load hands it to `memmove`, and every read prints a cast back (`memmove((void *)a0->field_0x0,(void *)((a0->field_0x8 - a0->field_0x20) + a0->field_0x0),a0->field_0x20)`); `ls` -O0 `free_ent` declares the security context `long` and prints `free((void *)a0->field_0xb0)` and `freecon((char *)a0->field_0xb0)`; a function-pointer field compared with zero before it is called is declared `unsigned long` and the call prints as `(*(void *)a0->field_0x40)(*v3)`, which is not C. When on, the accesses whose value the program uses as a pointer are the evidence: a value (or a copy or cast of it) that a load or store goes through, that an indirect call jumps to, that a declared pointer parameter takes, or that a function declared to return a pointer returned. The type a value picks up by being merged with another value is not evidence, so a register that carries a number on one path and a string on another does not make the number a `char *`. A field of which such an access carries a pointer, and no access a float, is declared as the most specific pointer they carry -- a record, named aggregate or code pointee outranks a scalar one, which outranks an undefined one, which outranks `void` -- provided that pointer is the only one of its rank or the only one of its rank a declared parameter the value is passed to names, and the first access does not already carry a pointer whose pointee outranks it. A field whose value is loaded and compared with a value loaded from a field so declared takes the same pointer, since C compares a pointer only with a compatible one. A field some access divides, takes a remainder of, shifts, multiplies (other than negates), compares with sign, sign-extends or converts to a float keeps its type: an index or a hash stays a number even where it is once handed to a `void *` parameter. Integer accesses of a re-typed field are unchanged: the printer casts the pointer where an operation needs a number. `free_ent` prints `free(a0->field_0xb0)` and `freecon(a0->field_0xb0)`, and the call prints `(*a0->field_0x40)(*v3)`. Acts only where `structsynth` synthesizes a record."
+use_when = "Default OFF. Flip it on when a synthesized record declares a field as an integer and every pointer use of it prints a cast back -- `(char *)a0->field_0x0`, `free((void *)a0->field_0xb0)`, `(*(void *)a0->field_0x40)(...)` -- and you want the field declared as the pointer the program uses it as; on the 4,815 functions kuna and IDA both emit it removes 134 casts in 53 functions and adds 35 in 14 (net -99). It is off because the record a function shares with another is decided by exact field-type agreement, so a field re-typed in one reader moves which record another reader is answered with, and the fields-only layout precision of the eight-build layout census drops (docs/features/fieldtype/default-on-evaluation.md). A field proven only as a pointer to undefined words (`unsigned long *` for a record kuna reads by the word) can make the locals it is read into, which stay `long`, pay a cast per read: sort -O0 `mergelines_node` gains 20. It never turns a field into a number: a field whose first access already carries a pointer keeps it, and an integer that is only ever added and handed to a declared `void *` parameter cannot be told from an address and is declared `void *`."
+example = "option fieldtype on"
+source_decompiler = "kuna"
+inspiration = "The cast census (casts kuna prints against IDA over 4,815 address-matched functions): 362 casts sit on a synthesized record's member, 135 of them an integer-declared field read as a pointer. IDA prints the same accesses through an integer-typed base (`*(char **)(a1 + 24)`); a record whose pointer field is declared a pointer prints them with none."
+change_kind = "type-inference"
+tier = "transform"
+symptoms = "a synthesized record declares long field_0x0 and every read of it is (char *)a0->field_0x0|free((void *)a0->field_0xb0) on a struct_N field|a function-pointer field prints as (*(void *)a0->field_0x40)(...)|a record's buffer field is used in pointer arithmetic that prints as (char *)(a0->field_0x8 + a0->field_0x0)"
+live_field = "field_type"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "framelayout"
 values = "on|off"
 default = "on"

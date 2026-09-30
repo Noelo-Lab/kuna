@@ -1160,6 +1160,10 @@ pub struct ArchContext {
     /// (kuna) `option structheadless`: may a closed function's parameter be a
     /// record read only past its start?
     pub struct_headless: crate::p5_types::kuna_structheadless::StructHeadlessMode,
+    /// (kuna) `option fieldtype`: is a synthesized field some access holds as a
+    /// pointer declared as that pointer?  See
+    /// [`kuna_fieldtype`](crate::p5_types::kuna_fieldtype).
+    pub field_type: bool,
     /// (kuna) `option switchselector`: refuse a recovered lowered-switch record
     /// whose synthesized BRANCHIND would not get the switch value as its
     /// selector. Checked during [`lowered-switch detection`](crate::kuna_loweredswitch::ActionLowerSwitchDetect::detect).
@@ -1570,6 +1574,7 @@ impl ArchContext {
             struct_synth_shard: None,
             struct_merge: crate::p5_types::kuna_structmerge::StructMergeMode::Off, // (kuna) option structmerge, default `off`; the real value is copied from the engine Architecture in `build_arch_handle`
             struct_headless: crate::p5_types::kuna_structheadless::StructHeadlessMode::Off, // (kuna) option structheadless, default `off`; the real value is copied from the engine Architecture in `build_arch_handle`
+            field_type: false, // (kuna) option fieldtype, copied from Architecture
             codescalar: false,           // (kuna) option codescalar
             bool_byte: true, // (kuna) option boolbyte (default on)
             unknown_byte_is_char: false, // (kuna) realtypes + C output

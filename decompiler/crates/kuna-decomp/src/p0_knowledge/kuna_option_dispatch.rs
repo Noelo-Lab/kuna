@@ -162,6 +162,11 @@ kuna_options! { self, p1;
         self.struct_headless = mode;
         Ok(msg)
     },
+    "fieldtype" => {
+        let (val, msg) = crate::kuna_fieldtype::OptionFieldType.apply(p1)?;
+        self.field_type = val;
+        Ok(msg)
+    },
     "decodehalt" => on_off!(decode_halt, "Decode-failure halt reporting"),
     "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
     "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
