@@ -65,12 +65,17 @@ pub fn reads_signedness(code: OpCode, slot: int4, size: int4, other_const: Optio
 }
 
 /// Must `RulePropagateCopy` leave `vn`, the output of `COPY invn`, as the input
-/// of `op`?  True when `vn` is a global, `op` is a marker (the global's own, or
-/// the one a joined branch builds from it) or a `COPY` into the same global (what
-/// a duplicated join block leaves of its marker), `invn` is a value the function
+/// of `op`?  Only when `vn` is a global and `invn` a value the function
 /// computes (a parameter never merges with a global, so its store keeps
-/// upstream's handling), and some operation reads that value, a copy of it or an
-/// expression computed from it, sign-sensitively.
+/// upstream's handling).
+///
+/// An `op` that writes something other than this global reads the global
+/// itself: the binary loads it back after the store.  It keeps that read
+/// always, so a value kept apart from the global never stands in for a load the
+/// binary makes (after `gi = u; *p = k;` the load of `gi` may see `k`).  The
+/// global's own marker, or a `COPY` into the same global (what a duplicated join
+/// block leaves of its marker), keeps it only when some operation reads the
+/// value, a copy of it or an expression computed from it, sign-sensitively.
 pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bool {
     let (Some(v), Some(iv)) = (data.vbank().get(vn), data.vbank().get(invn)) else {
         return false;
@@ -81,15 +86,12 @@ pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bo
     let Some(reader) = data.obank().get(op) else {
         return false;
     };
-    if !reader.is_marker() {
-        let Some(out) = reader.get_out().and_then(|o| data.vbank().get(o)) else {
-            return false;
-        };
-        if reader.code() != OpCode::CPUI_COPY || out.get_addr() != v.get_addr() || out.get_size() != v.get_size() {
-            return false;
-        }
-    }
-    value_read_sign_sensitively(data, invn)
+    let own = (reader.is_marker() || reader.code() == OpCode::CPUI_COPY)
+        && reader
+            .get_out()
+            .and_then(|o| data.vbank().get(o))
+            .is_some_and(|out| out.get_addr() == v.get_addr() && out.get_size() == v.get_size());
+    !own || value_read_sign_sensitively(data, invn)
 }
 
 /// Is the result of `code` typed after its operand in `slot`, and the same bits

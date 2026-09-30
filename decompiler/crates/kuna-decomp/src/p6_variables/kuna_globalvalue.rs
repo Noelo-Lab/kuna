@@ -46,7 +46,11 @@ pub fn keeps_apart(ctx: &mut dyn MergeContext, a: HighVariableId, b: HighVariabl
     if ctx.high_is_persist(value) || ctx.high_is_addr_tied(value) {
         return false;
     }
-    read_sign_sensitively(ctx, value) && !holds_global(ctx, value, global)
+    let r = read_sign_sensitively(ctx, value) && !holds_global(ctx, value, global);
+    if std::env::var_os("KUNA_GV_DEBUG").is_some() {
+        eprintln!("GV keeps_apart global={:?} value={:?} -> {}", global, value, r);
+    }
+    r
 }
 
 /// Does an operation read `value` sign-sensitively ([`reads_signedness`]),
