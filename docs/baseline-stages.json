@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1532,
-    1532
+    1536,
+    1536
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -161,6 +161,10 @@
     "data:DWARFVARIANTS #7: on, and so does variant B, so three variants are not two",
     "data:DWARFVARIANTS #8: a plain C-shaped struct in the same image renders identically in BOTH passes",
     "data:DWARFVARIANTS #9: and so does a fieldless enum, which rustc emits as an enumeration type this pass never sees",
+    "data:ELFALIASNAMES #1: the exported name no longer selects the PLT stub",
+    "data:ELFALIASNAMES #2: the exported name decompiles the definition",
+    "data:ELFALIASNAMES #3: both names reach the same body",
+    "data:ELFALIASNAMES #4: the call through the PLT keeps its name",
     "data:ELFMAIN #1: off, the entry is an anonymous sub with a body-driven signature",
     "data:ELFMAIN #2: off, the argument vector has no element type, so the string it holds is an integer",
     "data:ELFMAIN #3: default, the libc-start argument is named and declared, in both images",

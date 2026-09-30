@@ -52,6 +52,7 @@ fn arm_aliases_select_the_definition_instead_of_its_import() {
                 for name in ["answer_alias", "__answer_from_arm"] {
                     assert_eq!(prog.find_entry_by_name(name).unwrap().addr, entry.addr);
                 }
+                assert_eq!(entry.name, "__answer_from_arm", "the first name stays reported");
                 assert_eq!(entry.aliases.len(), 2);
                 assert_eq!(prog.find_entry_at(definition).unwrap().name, entry.name);
                 if veneer {

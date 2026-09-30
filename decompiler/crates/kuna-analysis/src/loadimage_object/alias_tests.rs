@@ -7,49 +7,41 @@ fn elf_alias_names_survive_both_symbol_tables_and_rebasing() {
             for reverse in [false, true] {
                 let bytes = alias_test_fixture::image(veneer, reverse, linked);
                 let image = ObjectLoadImage::from_bytes("synthetic-aliases", &bytes).unwrap();
-                let definition = image
-                    .funcsyms
+                let primary = image.func_symbols();
+                let aliases = image.func_symbol_aliases();
+                let tag = format!("linked={linked} veneer={veneer} reverse={reverse}");
+                let definition = primary
                     .iter()
-                    .find(|s| s.name == b"__answer_from_arm")
-                    .unwrap()
-                    .addr;
-                for name in [b"answer".as_slice(), b"answer_alias", b"__answer_from_arm"] {
+                    .find(|(_, name)| name == "__answer_from_arm")
+                    .unwrap_or_else(|| panic!("{tag}: the first name keeps the address"))
+                    .0;
+                assert_eq!(
+                    primary.iter().filter(|(addr, _)| *addr == definition).count(),
+                    1,
+                    "{tag}: one reported name per address"
+                );
+                for name in ["answer", "answer_alias"] {
                     assert_eq!(
-                        image
-                            .funcsyms
-                            .iter()
-                            .filter(|s| s.addr == definition && s.name == name)
-                            .count(),
+                        aliases.iter().filter(|(a, n)| *a == definition && n == name).count(),
                         1,
-                        "{linked} {veneer} {reverse}: {name:?}"
+                        "{tag}: {name}"
                     );
                 }
                 assert_eq!(
-                    image.funcsyms.len(),
-                    3 + usize::from(veneer) + usize::from(linked)
+                    primary.len() + aliases.len(),
+                    3 + usize::from(veneer) + usize::from(linked),
+                    "{tag}: .dynsym repeats collapse onto the .symtab names"
                 );
                 if veneer {
-                    let thumb = image
-                        .funcsyms
-                        .iter()
-                        .find(|s| s.name == b"__real_answer")
-                        .unwrap();
-                    assert_eq!(
-                        thumb.addr,
-                        definition + 17,
-                        "preserve the encoded Thumb state"
-                    );
+                    let (thumb, _) =
+                        primary.iter().find(|(_, name)| name == "__real_answer").unwrap();
+                    assert_eq!(*thumb, definition + 17, "{tag}: the Thumb bit stays raw");
                 }
                 if linked {
-                    assert!(image
-                        .elf_function_provenance()
-                        .definitions
-                        .contains(&0x1000));
-                    assert!(image.elf_function_provenance().imports.contains(&0x2000));
-                    assert!(image
-                        .funcsyms
-                        .iter()
-                        .any(|s| s.addr == 0x2000 && s.name == b"answer"));
+                    let provenance = image.elf_function_provenance();
+                    assert!(provenance.definitions.contains(&0x1000));
+                    assert!(provenance.imports.contains(&0x2000));
+                    assert!(primary.iter().any(|(addr, name)| *addr == 0x2000 && name == "answer"));
                 }
             }
         }

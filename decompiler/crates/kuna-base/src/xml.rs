@@ -1931,7 +1931,9 @@ mod tests {
         // parameter stay two variables
         // and kuna-fieldtype / a synthesized field the program uses as a
         // pointer is declared as that pointer
-        assert_eq!(count, 357, "corpus file count drifted");
+        // and kuna-elfaliasnames / an ELF name sharing its address with an
+        // earlier symbol still selects that function
+        assert_eq!(count, 358, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

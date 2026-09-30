@@ -493,7 +493,19 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   definition in both selector resolution and canonical name lookup; both entries
   remain in the inventory. Multiple executable definitions or unclassified
   executable competitors remain ambiguous, and explicit address selection
-  remains literal. Loaders that publish no section
+  remains literal. An ELF load, linked or relocatable, still reports one name
+  per address (the first in `.symtab`, import-stub, `.dynsym` order, the one the
+  symbol table installs for call sites; a PowerPC64 ELFv1 image keeps every
+  name, as before), but no longer discards the other distinct names there: they
+  become lookup-only aliases
+  (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (ObjectLoadImage::func_symbol_aliases)`,
+  raw addresses with any Thumb bit), which the console appends to the
+  canonical entry at the normalized address. So a local veneer name, a
+  `.localalias` or a strong symbol ahead of its weak alias no longer hides the
+  name after it, and an exported name that also labels a PLT stub selects the
+  definition by the rule above instead of the stub. An alias never becomes the
+  reported name, so `kuna functions` and whole-binary output keep the name
+  its callers print. Loaders that publish no section
   records, including the XML corpus loader, prove a numeric VMA by probing one
   byte from the load image instead. Which sections are memory-resident
   is the one question that stays per-format — ELF's `SHF_ALLOC` bit and COFF's
@@ -3514,14 +3526,6 @@ discovered name at that address
 records the declared spelling, and both canonicalizers sort it first); the
 discovered names stay as aliases, so a name-keyed lookup still resolves through
 them.
-
-The ELF loader retains distinct function names from both symbol tables and
-import stubs, including aliases in relocatable objects. Only repeated
-address/name pairs are removed. Raw symbol addresses keep their Thumb state
-until the console groups names at normalized code entries. A local veneer name
-therefore cannot hide a global definition and make its name select a PLT stub;
-definition/import provenance still decides whether a name collision has one
-useful definition or is genuinely ambiguous.
 
 The same `entryoff`-is-not-a-VMA fact is what every *reporting* surface has to
 know, so it is stated once as

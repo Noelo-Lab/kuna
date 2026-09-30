@@ -1,0 +1,45 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    An ELF function name that shares its address with an earlier symbol still
+    selects that function (loader-tier fix, no option).
+
+    The XML wrapper only provides the harness architecture. The script clears it
+    and loads a real ARM32 shared object built from committed assembly
+    (`armveneeralias_le32.s`, clang + ld.lld): the exported `answer` sits at the
+    same address as the local ARM veneer name `__answer_from_arm`, which comes
+    first in `.symtab`, and a Thumb `caller` reaches `answer` through the PLT, so
+    `answer` also labels the PLT stub.
+
+    The loader used to keep one name per address, so `answer` survived only on
+    the PLT stub and `load function answer` decompiled the stub:
+    `(*dat_30274)(); // jump-as-call`. The dropped names are now kept as aliases
+    of the entry, and the definition wins over its import stub, so both names
+    reach the veneer's body. The reported name at that address, and the name
+    call sites print, stay `__answer_from_arm` / `answer` as before.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armveneeralias_le32</com>
+  <com>read symbols</com>
+  <com>load function answer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function __answer_from_arm</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ELFALIASNAMES #1: the exported name no longer selects the PLT stub" min="0" max="0">jump-as-call</stringmatch>
+<stringmatch name="ELFALIASNAMES #2: the exported name decompiles the definition" min="1" max="1">unsigned int answer\(void\)</stringmatch>
+<stringmatch name="ELFALIASNAMES #3: both names reach the same body" min="2" max="2">return 7;</stringmatch>
+<stringmatch name="ELFALIASNAMES #4: the call through the PLT keeps its name" min="1" max="1">  answer\(\);</stringmatch>
+</decompilertest>
