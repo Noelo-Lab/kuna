@@ -276,6 +276,13 @@ struct Slot {
     ctype: Option<Rc<Datatype>>,
     /// What every access of that width said the bytes are.
     seen: Kinds,
+    /// (kuna `fieldtype`) Every access of that width, in the order it was
+    /// recorded, with the value it loaded or stored; kept only while the option
+    /// or its trace is on.
+    accesses: Vec<(Option<Rc<Datatype>>, Option<VarnodeId>)>,
+    /// (kuna `fieldtype`) The pointer the accesses settled on, which the field
+    /// takes over whatever the first access carried.
+    pointer: Option<Rc<Datatype>>,
 }
 
 /// The value classes the accesses of one slot carried.
@@ -309,6 +316,9 @@ impl Slot {
     /// The type the field commits to, or `None` when the accesses disagree. Sign
     /// is contested only for an integer field: a pointer has no sign to get wrong.
     fn committed(&self) -> Option<&Rc<Datatype>> {
+        if let Some(p) = self.pointer.as_ref() {
+            return Some(p);
+        }
         let ct = self.ctype.as_ref()?;
         let integer = matches!(
             ct.get_metatype(),
@@ -349,7 +359,7 @@ struct Evidence {
 }
 
 impl Evidence {
-    /// Record one access.
+    /// Record one access, with the value it loaded or stored when known.
     ///
     /// A field's type is the one every access of its width agrees on. A signed
     /// access beside an unsigned or undefined one leaves the field `undefined<N>`:
@@ -359,8 +369,9 @@ impl Evidence {
     /// scalar that reads the same bits as both, and a `long` or `undefined8`
     /// field read as `double` prints `(double)p->field_0x8`, a value conversion of
     /// bits the binary reinterprets (`movsd 0x8(%rdi)`), where a byte array makes
-    /// every access cast the address instead.
-    fn record(&mut self, off: intb, width: int4, ctype: Option<Rc<Datatype>>) {
+    /// every access cast the address instead. An access with a value is kept, so
+    /// [`crate::kuna_fieldtype`] can read what every access of the widest width says.
+    fn record_access(&mut self, off: intb, width: int4, ctype: Option<Rc<Datatype>>, value: Option<VarnodeId>) {
         let slot = self.slots.entry(off).or_default();
         if width < slot.width {
             return;
@@ -369,15 +380,25 @@ impl Evidence {
             slot.width = width;
             slot.seen = Kinds::default();
             slot.ctype = ctype.clone();
+            slot.accesses.clear();
         }
         if let Some(t) = ctype.as_deref() {
             slot.seen.note(t);
         }
+        if value.is_some() {
+            slot.accesses.push((ctype, value));
+        }
+    }
+
+    /// [`Evidence::record_access`] for an access with no value.
+    #[cfg(test)]
+    fn record(&mut self, off: intb, width: int4, ctype: Option<Rc<Datatype>>) {
+        self.record_access(off, width, ctype, None);
     }
 
     /// Take another base's accesses in as if they had been made through this
     /// one, in order after its own: the same widest-wins and agreement rules
-    /// [`Evidence::record`] applies, and the other base's negative evidence.
+    /// [`Evidence::record_access`] applies, and the other base's negative evidence.
     fn absorb(&mut self, other: &Evidence) {
         for (off, theirs) in other.slots.iter() {
             let slot = self.slots.entry(*off).or_default();
@@ -392,6 +413,7 @@ impl Evidence {
             slot.seen.unsigned |= theirs.seen.unsigned;
             slot.seen.float |= theirs.seen.float;
             slot.seen.other |= theirs.seen.other;
+            slot.accesses.extend(theirs.accesses.iter().cloned());
         }
         self.dynamic_offset |= other.dynamic_offset;
         self.integer_use |= other.integer_use;
@@ -560,6 +582,7 @@ fn vn_type(data: &mut Funcdata, vn: VarnodeId) -> Option<Rc<Datatype>> {
 /// Walk the op bank once and accumulate the access evidence per base.
 fn collect(data: &mut Funcdata) -> BTreeMap<VarnodeId, Evidence> {
     let mut ev: BTreeMap<VarnodeId, Evidence> = BTreeMap::new();
+    let keep_values = data.get_arch().field_type || crate::kuna_fieldtype::trace_on();
 
     for opc in [OpCode::CPUI_LOAD, OpCode::CPUI_STORE] {
         let ops: Vec<_> = data.obank().iter_code(opc).collect();
@@ -573,7 +596,7 @@ fn collect(data: &mut Funcdata) -> BTreeMap<VarnodeId, Evidence> {
             let ctype = vn_type(data, value);
             let stored = if opc == OpCode::CPUI_STORE { stored_text(data, value, width) } else { None };
             let e = ev.entry(base).or_default();
-            e.record(off, width, ctype);
+            e.record_access(off, width, ctype, keep_values.then_some(value));
             match stored {
                 Some(Some(true)) => e.text_store = true,
                 Some(None) => {}
@@ -886,12 +909,29 @@ fn synthesize(data: &mut Funcdata) -> bool {
     let nests = data.get_arch().struct_synth.nests();
     let ptrsize = types.get_size_of_pointer();
     let mut asks = Vec::new();
+    let field_type = data.get_arch().field_type;
     for (base, e) in raw.iter() {
-        let e = e.pruned();
+        let mut e = e.pruned();
         if !accepts(data, *base, &e) {
             continue;
         }
+        if field_type {
+            let chosen = {
+                let fields: Vec<_> = e.slots.values().map(|s| (s.width, s.ctype.as_ref(), s.accesses.as_slice())).collect();
+                crate::kuna_fieldtype::pointer_fields(data, *base, &fields)
+            };
+            for (slot, p) in e.slots.values_mut().zip(chosen) {
+                slot.pointer = p;
+            }
+        }
         let Some((mut fields, size)) = fields_for(types.as_ref(), &e) else { continue };
+        if crate::kuna_fieldtype::trace_on() {
+            let rows: Vec<_> = fields
+                .iter()
+                .filter_map(|f| e.slots.get(&(f.offset as intb)).map(|s| (f, s.width, s.accesses.as_slice())))
+                .collect();
+            crate::kuna_fieldtype::trace(data, *base, &rows);
+        }
         let selfs = if nests {
             let cx = nest::Nesting { ev: &raw, types: types.as_ref(), ptr_size: ptrsize };
             nest::nest_fields(data, &cx, &e, &mut fields, size, 0)
