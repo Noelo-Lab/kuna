@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1544,
-    1544
+    1551,
+    1551
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -976,6 +976,10 @@
     "data:armfloatreturn #10: on keeps the integer return in r0 while d0 is also written",
     "data:armfloatreturn #11: off returns the parsed double of the linked PIE as an integer",
     "data:armfloatreturn #12: on returns the parsed double of the linked PIE",
+    "data:armfloatreturn #13: an int computed after a call returning a double stays the result in both passes",
+    "data:armfloatreturn #14: off loses both double parameters of second",
+    "data:armfloatreturn #15: on fills the unused d0 below the returned d1 with one double",
+    "data:armfloatreturn #16: two floats read as the halves of d0 are not one integer parameter in either pass",
     "data:armfloatreturn #1: a raw image states no calling convention, so both passes return the zero low word of 1.5",
     "data:armfloatreturn #2: an explicit double prototype on the raw image and the on pass return 1.5",
     "data:armfloatreturn #3: off returns the zero low word of the double constant in the object",
@@ -1342,6 +1346,9 @@
     "data:narrowload #7: a declared record's flag word keeps the whole-field compare",
     "data:narrowload #8: a byte store into an 8-byte element stays one byte wide",
     "data:narrowload #9: a masked byte compare of a declared field through a call result reads 1 byte",
+    "data:nested PA-RISC operand: backward call target",
+    "data:nested PA-RISC operand: forward call target",
+    "data:nested PPC operand: full rotation and mask",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
     "data:opcode-seam #1: the function emits a real body (was: no output, seam panic)",
