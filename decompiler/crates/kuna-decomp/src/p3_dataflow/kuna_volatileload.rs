@@ -9,12 +9,12 @@ use kuna_base::{
     space::AddrSpace,
 };
 use kuna_num::opcodes::OpCode;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 fn constant(
     data: &Funcdata,
     id: VarnodeId,
-    memo: &mut HashMap<VarnodeId, Option<u64>>,
+    memo: &mut BTreeMap<VarnodeId, Option<u64>>,
 ) -> Option<u64> {
     if let Some(value) = memo.get(&id) {
         return *value;
@@ -107,7 +107,7 @@ pub(crate) fn is_volatile(data: &Funcdata, id: OpId) -> bool {
     let Some(pointer) = op.get_in(1) else {
         return false;
     };
-    let Some(offset) = constant(data, pointer, &mut HashMap::new()) else {
+    let Some(offset) = constant(data, pointer, &mut BTreeMap::new()) else {
         return false;
     };
     let addr = Address::new(
@@ -183,23 +183,23 @@ mod tests {
         let a = fd.new_constant(4, 0xfffffff0);
         let b = fd.new_constant(4, 0x50000010);
         let (_, mut value) = operation(&mut fd, OpCode::CPUI_INT_ADD, 4, &[a, b]);
-        assert_eq!(constant(&fd, value, &mut HashMap::new()), Some(0x50000000));
+        assert_eq!(constant(&fd, value, &mut BTreeMap::new()), Some(0x50000000));
         let neg = fd.new_constant(1, 0x80);
         let (_, sext) = operation(&mut fd, OpCode::CPUI_INT_SEXT, 8, &[neg]);
         assert_eq!(
-            constant(&fd, sext, &mut HashMap::new()),
+            constant(&fd, sext, &mut BTreeMap::new()),
             Some(0xffffffffffffff80)
         );
         let unknown = fd.new_unique(4, None);
         let (_, unproved) = operation(&mut fd, OpCode::CPUI_INT_ADD, 4, &[value, unknown]);
-        assert_eq!(constant(&fd, unproved, &mut HashMap::new()), None);
+        assert_eq!(constant(&fd, unproved, &mut BTreeMap::new()), None);
         let (cycle, cyclic) = operation(&mut fd, OpCode::CPUI_COPY, 4, &[value]);
         fd.op_set_input(cycle, cyclic, 0).unwrap();
-        assert_eq!(constant(&fd, cyclic, &mut HashMap::new()), None);
+        assert_eq!(constant(&fd, cyclic, &mut BTreeMap::new()), None);
         for _ in 0..64 {
             value = operation(&mut fd, OpCode::CPUI_COPY, 4, &[value]).1;
         }
-        assert_eq!(constant(&fd, value, &mut HashMap::new()), None);
+        assert_eq!(constant(&fd, value, &mut BTreeMap::new()), None);
     }
     #[test]
     fn only_proven_volatile_loads_are_kept_with_word_addresses_converted() {
@@ -210,7 +210,7 @@ mod tests {
                 let ptr = fd.new_constant(4, offset / word_size as u64);
                 let (load, value) = operation(&mut fd, OpCode::CPUI_LOAD, 4, &[space, ptr]);
                 assert_eq!(is_volatile(&fd, load), expected);
-                assert_eq!(constant(&fd, value, &mut HashMap::new()), None);
+                assert_eq!(constant(&fd, value, &mut BTreeMap::new()), None);
             }
             let ptr = fd.new_unique(4, None);
             let (load, _) = operation(&mut fd, OpCode::CPUI_LOAD, 4, &[space, ptr]);
