@@ -2973,8 +2973,8 @@ reading back, for the returns as much as the arguments.
 
 On ARM and MIPS the return arm also takes a wrapper that calls and then returns
 (`bl f; pop {r4,pc}`, `jal f; ...; jr ra`; the injected no-op above). Over 92
-debug-stripped ARM firmware binaries of the decbench O2 and O2-noinline corpora,
-223 functions gain a return that way: DWARF confirms 182 and says `void` for 39,
+debug-stripped ARM firmware binaries of the decbench O0, O2 and O2-noinline
+corpora, 223 functions gain a return that way: DWARF confirms 182 and says `void` for 39,
 and 2 are entries kuna finds 0x12 bytes into nuttx's `vsyslog`, which has no
 subprogram of its own there (182 of 221 checkable, 82.4%). Two projects carry
 most of the misses: betaflight (49 of 74) and cleanflight (28 of 34) are built
