@@ -1,0 +1,13 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:64:default">
+<!-- Synthetic rldic r3,r3,2,30; blr. -->
+<bytechunk space="ram" offset="0x1000">786317884e800020</bytechunk>
+<symbol space="ram" offset="0x1000" name="rotate_mask"/>
+</binaryimage>
+<script>
+  <com>load function rotate_mask</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="nested PPC operand: full rotation and mask" min="1" max="1">return \(.* &amp; 0xffffffff\) &lt;&lt; 2;</stringmatch>
+</decompilertest>

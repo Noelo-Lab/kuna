@@ -1931,7 +1931,9 @@ mod tests {
         // parameter stay two variables
         // and kuna-fieldtype / a synthesized field the program uses as a
         // pointer is declared as that pointer
-        assert_eq!(count, 357, "corpus file count drifted");
+        // and kuna-ppc-nested-operands + kuna-parisc-nested-operands /
+        // nested SLEIGH operand expressions evaluate
+        assert_eq!(count, 359, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
