@@ -2149,6 +2149,29 @@ that happens to be spelled with a keyword resolve to exactly the interned type
 they always did. Only combinations, and the keywords the type factory does not
 name, take the width-driven path.
 
+(kuna) **An `enum` is laid out and numbered as C lays it out.** Upstream's
+`newEnum` interns every parsed enum at the type factory's `enumsize`, which
+`setupSizes` fills with the default data space's address size — eight bytes on
+x86-64, AArch64 and every other 64-bit target — so a struct member after an enum
+field landed four bytes past where the compiler put it
+(`struct Packet { enum Mode mode; float gain; int value; }` read `value` as
+`gain`). And `assignValues` numbers an enumerator with no `=` from one past the
+largest explicit constant, so `enum Color { RED, GREEN, BLUE }` was 1, 2, 3 and a
+function returning 2 printed `return GREEN;`. The grammar now follows C
+(`decompiler/crates/kuna-console/src/grammar/kuna_enumlayout.rs`): an enumerator
+with no `=` is one past the enumerator before it, the first zero, and the enum is
+as wide as `int` from the compiler spec's `<data_organization>` unless a constant
+does not fit, in which case it takes the first of `long` and `long long` that
+holds every constant — the rule gcc and clang apply, and one no vendored compiler
+spec overrides (none declares an enum size). A C23 fixed underlying type
+(`enum Small : unsigned char { ... }`) sets the width and signedness outright,
+which is how a `-fshort-enums` or packed enum is stated; it must be an integer
+type, the declaration must carry the body, and a constant the type cannot
+represent is refused rather than truncated. Two constants that land on one
+value are still refused as a duplicate, since the value-to-name map cannot hold
+both. Only the C grammar interns an enum at a default width; DWARF and the Ghidra
+wire give theirs explicitly and are unaffected.
+
 (kuna) **A tag survives being declared.** `findByName` is also how the lexer
 classifies every other identifier, so the moment `struct JSValue { … };` interns
 the tag, `JSValue` stops reaching the parser as an identifier and comes back as

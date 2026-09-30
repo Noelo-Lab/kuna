@@ -62,6 +62,8 @@ use kuna_base::types::{int4, uint4, uintb};
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeBitField, TypeFactory, TypeField};
 use kuna_decomp::fspec::PrototypePieces;
 
+mod kuna_enumlayout;
+
 // =============================================================================
 // Default-data-space context (the `glb->getDefaultDataSpace()` info the C++
 // pointer-modifier reads)
@@ -2007,9 +2009,13 @@ impl<'a> CParse<'a> {
     }
 
     /// `enum_specifier` (`grammar.y:134-140`).
+    ///
+    /// (kuna) A C23 fixed underlying type (`enum E : unsigned char { ... }`) may
+    /// follow the tag; it requires a body ([`kuna_enumlayout`]).
     fn enum_specifier(&mut self) -> KunaResult<Rc<Datatype>> {
         self.next()?; // ENUM
         let ident = self.tag_identifier()?;
+        let underlying = self.enum_underlying_type()?;
         if matches!(self.peek()?, PToken::Punct(b'{')) {
             self.next()?;
             let vecenum = self.enumerator_list()?;
@@ -2018,10 +2024,10 @@ impl<'a> CParse<'a> {
                 self.next()?;
             }
             self.expect_punct(b'}')?;
-            self.new_enum(&ident, vecenum)
+            self.new_enum(&ident, vecenum, underlying)
         } else {
             // `ENUM IDENTIFIER` -> oldEnum.
-            if ident.is_empty() {
+            if ident.is_empty() || underlying.is_some() {
                 return self.syntax_error();
             }
             self.old_enum(&ident)
@@ -2524,23 +2530,34 @@ impl<'a> CParse<'a> {
 
     /// C++ `CParse::newEnum` (`grammar.cc:1156-1180`).
     ///
-    /// Ports the body up to the factory store-write: build the `(name,value,
-    /// assigned)` lists from the parsed enumerators and run
-    /// `TypeEnum::assignValues` (the duplicate-value check + free-value fill,
-    /// `Datatype::assign_values`).  Installing the resulting value-map into the
-    /// interned enum stub (`glb->types->setEnumValues`) is the W6 type-factory
-    /// boundary, so this errs after the value computation.  // STUB(w6-fspec-2)
-    fn new_enum(&mut self, ident: &str, vecenum: Vec<Enumerator>) -> KunaResult<Rc<Datatype>> {
-        // An interned (incomplete) enum stub (C++ getTypeEnum).
-        let res = self.factory.get_type_enum(ident)?;
-        let mut namelist: Vec<String> = Vec::new();
-        let mut vallist: Vec<uintb> = Vec::new();
-        let mut assignlist: Vec<bool> = Vec::new();
-        for e in &vecenum {
-            namelist.push(e.enumconstant.clone());
-            vallist.push(e.value);
-            assignlist.push(e.constantassigned);
+    /// Build the `(name,value,assigned)` lists from the parsed enumerators, run
+    /// `TypeEnum::assignValues` (the duplicate-value check,
+    /// `Datatype::assign_values`) and install the value map on the interned enum.
+    ///
+    /// (kuna) The constants and the width are C's rather than upstream's
+    /// ([`kuna_enumlayout`]): an enumerator with no `=` is one past the one before
+    /// it, and the enum is `int`-wide unless a constant needs more, or as wide as
+    /// its C23 underlying type.
+    fn new_enum(
+        &mut self,
+        ident: &str,
+        vecenum: Vec<Enumerator>,
+        underlying: Option<Rc<Datatype>>,
+    ) -> KunaResult<Rc<Datatype>> {
+        let vallist = kuna_enumlayout::enum_constants(&vecenum);
+        if let Some(tp) = &underlying {
+            if let Some(name) = kuna_enumlayout::enumerator_out_of_range(tp, &vecenum, &vallist) {
+                self.set_error(&format!("Enumerator {name} does not fit the underlying type"));
+                return Err(KunaError::parse(self.lasterror.clone()));
+            }
         }
+        // An interned (incomplete) enum stub (C++ getTypeEnum).
+        let res = match self.enum_layout(underlying.as_ref(), &vallist) {
+            Some((size, meta)) => self.factory.get_type_enum_sized(ident, size, meta)?,
+            None => self.factory.get_type_enum(ident)?,
+        };
+        let namelist: Vec<String> = vecenum.iter().map(|e| e.enumconstant.clone()).collect();
+        let assignlist = vec![true; vecenum.len()];
         // Reports duplicate-value errors with the same explain text as the C++
         // (C++ TypeEnum::assignValues).
         match Datatype::assign_values(res.get_size(), res.get_name(), &namelist, &vallist, &assignlist)
