@@ -596,8 +596,9 @@ fn descend(
     // executable section, the partition is not the runtime one — decline to gate
     // on it (the decode's own "no bytes here" error bounds the walk) and decline
     // to classify data references against it (they would all be wrong).
-    let sections_are_runtime = !exec.is_empty() && seeds.iter().any(|&s| in_range(&exec, s));
-    let mapped = if sections_are_runtime { mapped_ranges(file) } else { Vec::new() };
+    let exec_set = range_union(exec.clone());
+    let sections_are_runtime = !exec.is_empty() && seeds.iter().any(|&s| in_range(&exec_set, s));
+    let mapped = if sections_are_runtime { range_union(mapped_ranges(file)) } else { Vec::new() };
 
     // Paint the decode-mode context (ARM `TMode` / MIPS `ISA_MODE`) before the
     // first decode, exactly as the Listing walk does — without it a Thumb
@@ -610,7 +611,7 @@ fn descend(
 
     let mut seed_set: BTreeSet<u64> = seeds.iter().copied().collect();
     if sections_are_runtime {
-        seed_set.retain(|&s| in_range(&exec, s));
+        seed_set.retain(|&s| in_range(&exec_set, s));
     }
 
     // The space a direct memory operand lives in (`ram` on every vendored
@@ -685,7 +686,9 @@ fn descend(
             Some(entry) => entry,
             None => match pending_focus.pop() {
                 Some(f) => {
-                    if st.decoded.contains(&f) || (sections_are_runtime && !in_range(&exec, f)) {
+                    if st.decoded.contains(&f)
+                        || (sections_are_runtime && !in_range(&exec_set, f))
+                    {
                         continue;
                     }
                     st.funcs.insert(f);
@@ -734,7 +737,7 @@ fn descend(
             if vma != entry && seed_set.contains(&vma) {
                 continue;
             }
-            if sections_are_runtime && !in_range(&exec, vma) {
+            if sections_are_runtime && !in_range(&exec_set, vma) {
                 continue; // out of bounds (the `flow.rs` gate)
             }
             let Some(len) = decode(translate, vma, &code_space, &mut cap) else {
@@ -1478,9 +1481,25 @@ fn mapped_ranges(file: &object::File) -> Vec<(u64, u64)> {
     out
 }
 
-/// Does `vma` land in any `[lo, hi)` of a sorted, possibly overlapping range list?
+/// Does `vma` land in any `[lo, hi)` of `ranges`? They must be sorted by start
+/// and disjoint, as [`range_union`] leaves them, so one binary search answers.
 pub(super) fn in_range(ranges: &[(u64, u64)], vma: u64) -> bool {
-    ranges.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
+    let n = ranges.partition_point(|&(lo, _)| lo <= vma);
+    n > 0 && vma < ranges[n - 1].1
+}
+
+/// The same address set as `ranges`, as the sorted, disjoint spans [`in_range`]
+/// searches: overlapping and touching ranges are merged.
+pub(super) fn range_union(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
+    ranges.sort_unstable();
+    let mut out: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());
+    for (lo, hi) in ranges {
+        match out.last_mut() {
+            Some(last) if lo <= last.1 => last.1 = last.1.max(hi),
+            _ => out.push((lo, hi)),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1911,6 +1930,21 @@ mod tests {
         let mapped = mapped_ranges(&file);
         assert_eq!(mapped, vec![(0x1000, 0x100d), (0x2000, 0x200e)]);
         assert!(in_range(&mapped, 0x2000), "the string the LEA forms reads as unmapped");
+    }
+
+    /// A binary search over the union answers every address exactly as the
+    /// pairwise rule over the raw ranges does.
+    #[test]
+    fn in_range_over_the_union_matches_the_pairwise_rule() {
+        let ranges =
+            vec![(0x60, 0x40), (0x10, 0x20), (0x20, 0x30), (0x0, 0x18), (0x50, 0x50), (0x38, 0x3c)];
+        let union = range_union(ranges.clone());
+        assert!(union.windows(2).all(|w| w[0].1 < w[1].0), "{union:x?}");
+        for vma in 0..0x70 {
+            let want = ranges.iter().any(|&(lo, hi)| vma >= lo && vma < hi);
+            assert_eq!(in_range(&union, vma), want, "{vma:#x}");
+        }
+        assert!(!in_range(&range_union(Vec::new()), 0));
     }
 
     /// The fallback is the no-section-table arm only: an image that has sections

@@ -112,17 +112,17 @@ pub fn run(argv: &[String]) -> i32 {
 
 /// Scan, attribute, filter, render — the whole command in one pass.
 pub(crate) fn query(args: &StringsArgs) -> Result<String, String> {
-    let options =
-        mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
-    let _loadtime_env = crate::loadtime::apply_to_process(&options, args.slice.as_deref(), 1);
     let bytes = crate::image::image_bytes(
         &args.binary,
         kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref()),
     )?;
+    let options =
+        mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
+    let _loadtime_env = crate::loadtime::apply_to_process(&options, args.slice.as_deref(), 1);
     let raw = kuna_analysis::loadimage_object::parse_object(&bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
     let view = kuna_analysis::loader::kuna_relocrebase::rebased_view(&raw, &bytes);
-    let (file, _) = kuna_analysis::loader::kuna_relocrebase::select(raw, &bytes, &view);
+    let (file, scanned) = kuna_analysis::loader::kuna_relocrebase::select(raw, &bytes, &view);
 
     let query = kuna_stringinv::Query {
         min_len: args.min_length,
@@ -132,7 +132,7 @@ pub(crate) fn query(args: &StringsArgs) -> Result<String, String> {
         section: args.section.clone(),
         termination: args.termination,
     };
-    let inv = match &view {
+    let inv = match view.as_ref().filter(|v| v.bytes.as_ptr() == scanned.as_ptr()) {
         Some(view) => kuna_stringinv::inventory_in_image(&file, &query, &view.ranges),
         None => kuna_stringinv::inventory(&file, &query),
     };
@@ -171,7 +171,7 @@ pub(crate) fn query(args: &StringsArgs) -> Result<String, String> {
             .map(|found| Row { found, xrefs_count: 0, functions: Vec::new() })
             .collect()
     } else {
-        attribute(args, &file, found)?
+        attribute(args, options, &file, found)?
     };
 
     if truncated_filter {
@@ -192,11 +192,10 @@ pub(crate) fn query(args: &StringsArgs) -> Result<String, String> {
 /// reaches this literal" per row.
 fn attribute(
     args: &StringsArgs,
+    options: Vec<(String, String)>,
     file: &object::File,
     found: Vec<FoundString>,
 ) -> Result<Vec<Row>, String> {
-    let options =
-        mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
     let load = Args {
         binary: args.binary.clone(),
         json: args.json,
