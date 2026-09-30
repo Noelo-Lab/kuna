@@ -2845,6 +2845,44 @@ reaches the RETURN through an ordinary INDIRECT, not the call's creation; keepin
 callee's value, as an integer -- and spread to its callers. Such a forwarder
 keeps the option-off `void`.
 
+**An injected no-op is not a touch of the returned register.** The ARM compiler
+specs stand in for the `setISAMode` user op, the mode switch of every `bx lr`
+and `pop {...,pc}`, with a p-code injection whose body is `r0 = r0`, marked
+`incidentalcopy`; the MIPS specs do the same with `v0 = v0` for `jr ra`. That
+COPY reads and writes the return register at every return, so by the test above
+an ARM `push {r4,lr}; bl provider; pop {r4,pc}` touched `r0` and stayed `void
+wrapper(unsigned int *a0) { provider(a0); }` while the x86-64 `call provider;
+ret` it compiles from got `return provider(a0);`. Upstream marks an injection's
+COPYs incidental so that parameter recovery walks through them, and a COPY of a
+storage range onto itself moves nothing, so the tail-return rule does not count
+either of its Varnodes, and `returns_tail_result` follows the RETURN's Varnode
+back through it to the call's creation. Both architectures now take the
+callee's result on the same terms as x86-64, with no caller involved.
+
+The argument side keeps counting the no-op, and a returned register the body
+touches, if only through it, does not hold call-site trials as a claim
+otherwise does (`body_touches`): heritage visits it with the option off as
+well, so its trials exist there, and they are scored as they are there. On ARM
+`r0` is both the return register and the first argument, and in `bl g; bl f; pop
+{r4,pc}` the `r0` at `f` is `g`'s result: it prints `v1 = g(a0); return
+f(v1);`, where leaving that trial unscored printed `g(a0); return f();`. A wrapper that writes the
+register itself before its call (`mov r0,#5; bl f; pop {r4,pc}`) still touches
+it and stays `void`. The witness is
+`decompiler/crates/kuna-cli/tests/arm_wrapper_returns.rs`, which builds its ARM
+object in the test: a wrapper ending in `pop {r4,pc}`, one ending in `bx lr`,
+one whose caller ignores the result and a three-deep chain of them return their
+callee's result, and `return provider(provider(a0))` keeps its inner call's
+argument. Its controls keep `void`: a void callee, a two-function cycle, an
+indirect call, the argument write above, and a declared `void` prototype on the
+wrapper or on its callee; a write after the call returns what was written, and
+`store(provider(a0))` keeps its argument. Thumb (`pop {r4,pc}`, `pop.w
+{r4,lr}; bx lr`) and little- and big-endian MIPS (`jal provider; ...; jr ra`)
+wrappers have their own cases there, the MIPS ones in a linked image because
+kuna does not apply a MIPS object's relocations. The measured rates are under
+**Default** below. Over the 272 ELF fixtures one function changes, the synthetic
+Cortex-M reset handler of `cortexm_aifcorroborate_le32`, which ends in `bl` to a
+helper recovered as returning `r1:r0`.
+
 The witnesses are `passthroughpair_x86_64` and `passthroughpair_le32` under
 `tests/cli/passthrough-returns-a-register-pair-a-tail-call-leaves.json` and its
 ARM twin; a forwarder that writes `rdx` after the call and the `xmm0:xmm1`
@@ -2932,6 +2970,23 @@ gzip's `char *gzip_base_name` is the same code and is right). The rate follows
 the project's style, not the optimisation level. The evidence is
 `docs/features/passthrough/dwarf-confirmation.md`; set `off` to get upstream's
 reading back, for the returns as much as the arguments.
+
+On ARM and MIPS the return arm also takes a wrapper that calls and then returns
+(`bl f; pop {r4,pc}`, `jal f; ...; jr ra`; the injected no-op above). Over 92
+debug-stripped ARM firmware binaries of the decbench O0, O2 and O2-noinline
+corpora, 223 functions gain a return that way: DWARF confirms 182 and says `void` for 39,
+and 2 are entries kuna finds 0x12 bytes into nuttx's `vsyslog`, which has no
+subprogram of its own there (182 of 221 checkable, 82.4%). Two projects carry
+most of the misses: betaflight (49 of 74) and cleanflight (28 of 34) are built
+with `-Og`, which turns off sibling calls, so each of their one-line `void`
+wrappers ends in `bl f; pop {..,pc}` rather than a tail `b f`. Without them it is
+105 of 113 (92.9%); the same corpus's tail-jump returns are 157 of 164 (95.7%),
+and on 64 x86-64 binaries the tail and `call; ret` returns are 93.4% and 94.6%.
+The misses are the one shape above: nuttx's `*outstream_putc` end in a call to
+the matching `puts`, libgcc's `_Unwind_SetGR` in `_Unwind_VRS_Set`. A wrapper
+also repeats its callee's recovered type, so the nuttx callers of `getopt`
+compare against `0xffffffff` because `getopt_common` is recovered as returning
+`unsigned int`. No MIPS corpus with DWARF was measured.
 
 ### (kuna) `callbacktype` — the prototype of the slot a callback is passed to
 
