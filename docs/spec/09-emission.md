@@ -46,6 +46,30 @@ first piece is declared at the piece's type, as a directly accessed piece
 already is. This corrects the declaration without extending `castobject`'s
 permission to retype escaped locals.
 
+A same-width `CAST` between an integer and a 32- or 64-bit float is a bit
+reinterpretation, not a numeric conversion (`kuna_bitcast.rs`). Only a `CAST`
+qualifies: `ActionSetCasts` inserts one wherever the merged types of a value
+and its reader disagree, so a `COPY` between the two kinds is either fed by
+such a `CAST` already or writes an undefined destination that takes the bits
+as they are. Each side's kind is the type the printed C gives it: a named
+variable's declared type (a parameter's prototype type), and the value's own
+type for an unnamed intermediate. A member varnode's own type can be stale
+after merging and is not consulted for a named variable; reading it would print
+a float constant stored to a float global as its integer bits, and would send a
+value copied between registers through two opposite unions. C emits an
+anonymous union compound literal,
+`((union { unsigned int from; float to; }){ .from = x }).to`, which evaluates
+`x` once; a signed result names the signed word (`int`, `long long`) as the
+member instead of adding a cast. Rust
+emits `f32::from_bits`/`f64::from_bits`, converting the operand with `as
+u32`/`as u64` unless its declared type already is that word, or `to_bits()`. A
+floating constant read as an integer prints its stored bits, preserving NaN
+payloads. An untyped call result does not establish an integer return contract
+and keeps its existing conversion. These operations stay visible under cosmetic
+cast suppression. `FLOAT_INT2FLOAT`, `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` keep
+their numeric conversion behavior. The representation uses the target's
+ordinary 32-/64-bit integer and IEEE float storage widths.
+
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
 — a comparison against zero carries no information beyond the value's own

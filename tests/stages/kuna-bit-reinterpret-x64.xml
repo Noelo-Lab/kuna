@@ -1,0 +1,43 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- Synthetic GCC -O2 code from the union transfers and numeric casts in
+     the corresponding CLI runtime test. bits32 flips the sign bit; the other
+     transfers preserve the input bits. No external binary is required. -->
+<bytechunk space="ram" offset="0x1000">f30f1efa8d8700000080660f6ec0c390f30f1efa660f7ec0c30f1f8000000000f30f1efa66480f6ec7c3660f1f440000f30f1efa66480f7ec0c3660f1f440000f30f1efa660fefc0f30f2ac7c30f1f00f30f1efaf30f2cc0c30f1f8000000000f30f1efa660fefc0f2480f2ac7c36690f30f1efaf2480f2cc0c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="bits32"/>
+<symbol space="ram" offset="0x1010" name="unbits32"/>
+<symbol space="ram" offset="0x1020" name="bits64"/>
+<symbol space="ram" offset="0x1030" name="unbits64"/>
+<symbol space="ram" offset="0x1040" name="numeric32"/>
+<symbol space="ram" offset="0x1050" name="trunc32"/>
+</binaryimage>
+<script>
+  <com>parse line extern float4 bits32(uint4 x);</com>
+  <com>parse line extern uint4 unbits32(float4 x);</com>
+  <com>parse line extern float8 bits64(uint8 x);</com>
+  <com>parse line extern uint8 unbits64(float8 x);</com>
+  <com>parse line extern float4 numeric32(int4 x);</com>
+  <com>parse line extern int4 trunc32(float4 x);</com>
+  <com>load function bits32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function unbits32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function bits64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function unbits64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function numeric32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function trunc32</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Bit reinterpret x64 #1: storage transfers use a union" min="4" max="4">union \{</stringmatch>
+<stringmatch name="Bit reinterpret x64 #2: numeric integer conversion stays a cast" min="1" max="1">return \(float4\)x;</stringmatch>
+<stringmatch name="Bit reinterpret x64 #3: numeric float truncation stays a cast" min="1" max="1">return \(int4\)x;</stringmatch>
+</decompilertest>

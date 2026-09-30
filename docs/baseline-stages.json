@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1574,
-    1574
+    1588,
+    1588
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -49,6 +49,20 @@
     "data:BRANCHFLIP-ARMSWAP #4: branchflip off is the un-flipped reference, both siblings nested",
     "data:BRANCHFLIP-ARMSWAP #5: no else-if collapse of a statement-carrying arm",
     "data:BRANCHFLIP-ARMSWAP #6: no sibling if escapes to the outer statement indent",
+    "data:Bit reinterpret arm #1: storage transfers use a union",
+    "data:Bit reinterpret arm #2: numeric integer conversion stays a cast",
+    "data:Bit reinterpret arm #3: numeric float truncation stays a cast",
+    "data:Bit reinterpret declared #1: a float constant stored to a float global stays a float literal",
+    "data:Bit reinterpret declared #2: the stored constant never prints as its integer bits",
+    "data:Bit reinterpret declared #3: a word moved into a float register is reinterpreted once",
+    "data:Bit reinterpret declared #4: no transfer round-trips back to an integer",
+    "data:Bit reinterpret declared #5: a merged word returned as a double is reinterpreted, not converted",
+    "data:Bit reinterpret thumb #1: storage transfers use a union",
+    "data:Bit reinterpret thumb #2: numeric integer conversion stays a cast",
+    "data:Bit reinterpret thumb #3: numeric float truncation stays a cast",
+    "data:Bit reinterpret x64 #1: storage transfers use a union",
+    "data:Bit reinterpret x64 #2: numeric integer conversion stays a cast",
+    "data:Bit reinterpret x64 #3: numeric float truncation stays a cast",
     "data:CALLBACKTYPE #1: with no recorded call site the comparator keeps its own parameters in both passes",
     "data:CALLBACKTYPE #2: the slot's void \\* is never claimed from the function's shape",
     "data:CALLBACKTYPE #3: the handler gains no parameter without the signal call site",
