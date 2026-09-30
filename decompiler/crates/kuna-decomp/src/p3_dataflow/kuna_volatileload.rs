@@ -105,7 +105,10 @@ fn target(data: &Funcdata, id: OpId, memo: &mut Memo) -> Option<(i32, u64, i32)>
         .get(id)
         .filter(|o| o.get_opcode().map(|t| t.get_opcode()) == Some(OpCode::CPUI_LOAD))?;
     let size = data.vbank().get(op.get_out()?)?.get_size();
-    let space = data.vbank().get(op.get_in(0)?).filter(|v| v.is_constant())?;
+    let space = data
+        .vbank()
+        .get(op.get_in(0)?)
+        .filter(|v| v.is_constant())?;
     let manager = data.get_arch().manage();
     if space.get_offset() >= manager.num_spaces() as u64 {
         return None;
@@ -222,29 +225,36 @@ mod tests {
         let vn = fd.new_unique_out(size, op).unwrap();
         (op, vn)
     }
+    fn fold(fd: &Funcdata, id: VarnodeId) -> Option<u64> {
+        let mut budget = BUDGET;
+        constant(fd, id, &mut Memo::new(), &mut BTreeSet::new(), &mut budget)
+    }
     #[test]
     fn constant_proof_respects_widths_unknowns_cycles_and_budget() {
         let mut fd = function(1);
         let a = fd.new_constant(4, 0xfffffff0);
         let b = fd.new_constant(4, 0x50000010);
         let (_, mut value) = operation(&mut fd, OpCode::CPUI_INT_ADD, 4, &[a, b]);
-        assert_eq!(constant(&fd, value, &mut BTreeMap::new()), Some(0x50000000));
+        assert_eq!(fold(&fd, value), Some(0x50000000));
         let neg = fd.new_constant(1, 0x80);
         let (_, sext) = operation(&mut fd, OpCode::CPUI_INT_SEXT, 8, &[neg]);
-        assert_eq!(
-            constant(&fd, sext, &mut BTreeMap::new()),
-            Some(0xffffffffffffff80)
-        );
+        assert_eq!(fold(&fd, sext), Some(0xffffffffffffff80));
         let unknown = fd.new_unique(4, None);
         let (_, unproved) = operation(&mut fd, OpCode::CPUI_INT_ADD, 4, &[value, unknown]);
-        assert_eq!(constant(&fd, unproved, &mut BTreeMap::new()), None);
+        assert_eq!(fold(&fd, unproved), None);
         let (cycle, cyclic) = operation(&mut fd, OpCode::CPUI_COPY, 4, &[value]);
         fd.op_set_input(cycle, cyclic, 0).unwrap();
-        assert_eq!(constant(&fd, cyclic, &mut BTreeMap::new()), None);
+        assert_eq!(fold(&fd, cyclic), None);
+        let mut sum = value;
+        for _ in 0..63 {
+            let four = fd.new_constant(4, 4);
+            sum = operation(&mut fd, OpCode::CPUI_INT_ADD, 4, &[sum, four]).1;
+        }
+        assert_eq!(fold(&fd, sum), Some(0x50000000 + 63 * 4));
         for _ in 0..64 {
             value = operation(&mut fd, OpCode::CPUI_COPY, 4, &[value]).1;
         }
-        assert_eq!(constant(&fd, value, &mut BTreeMap::new()), None);
+        assert_eq!(fold(&fd, value), None);
     }
     #[test]
     fn only_proven_volatile_loads_are_kept_with_word_addresses_converted() {
@@ -255,7 +265,7 @@ mod tests {
                 let ptr = fd.new_constant(4, offset / word_size as u64);
                 let (load, value) = operation(&mut fd, OpCode::CPUI_LOAD, 4, &[space, ptr]);
                 assert_eq!(is_volatile(&fd, load), expected);
-                assert_eq!(constant(&fd, value, &mut BTreeMap::new()), None);
+                assert_eq!(fold(&fd, value), None);
             }
             let ptr = fd.new_unique(4, None);
             let (load, _) = operation(&mut fd, OpCode::CPUI_LOAD, 4, &[space, ptr]);
@@ -264,5 +274,24 @@ mod tests {
             let (copy, _) = operation(&mut fd, OpCode::CPUI_COPY, 4, &[other]);
             assert!(!is_volatile(&fd, copy));
         }
+    }
+    #[test]
+    fn a_second_load_of_one_instruction_operand_is_a_reread() {
+        let mut fd = function(1);
+        let space = fd.new_constant(4, 2);
+        let load = |fd: &mut Funcdata, offset: u64| {
+            let ptr = fd.new_constant(4, offset);
+            let (op, _) = operation(fd, OpCode::CPUI_LOAD, 4, &[space, ptr]);
+            fd.obank_mut().mark_alive(op);
+            op
+        };
+        let first = load(&mut fd, 0x50000000);
+        let second = load(&mut fd, 0x50000000);
+        let plain = load(&mut fd, 0x50000004);
+        let memo = &mut Memo::new();
+        assert!(!rereads(&fd, first, memo, |_, _| false));
+        assert!(rereads(&fd, second, memo, |_, _| false));
+        assert!(rereads(&fd, first, memo, |_, op| op == second));
+        assert!(!rereads(&fd, plain, memo, |_, _| true));
     }
 }
