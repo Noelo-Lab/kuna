@@ -125,7 +125,7 @@ added an index once passed to `write`'s `void *`, a hash of a pointer kept in an
 evidence restricted to uses and the number test, all of these keep their integer
 types, the disjoint typesweep is 454 -> 454 perfect with 0 better and 0 worse,
 and the 444-slice typesweep 1,674 -> 1,674 with 0 and 0. The price is the wins
-that rested on a merged type: castbench 32,073 -> 31,974 (53 functions fewer by
+that rested on a merged type: castbench 32,073 -> 31,974 on main 632437155 (53 functions fewer by
 134, 14 more by 35) against 31,900 for the first rule.
 
 Variants measured and not taken:

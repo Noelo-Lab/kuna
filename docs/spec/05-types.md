@@ -1664,8 +1664,8 @@ lo) >> 5` over a `long *`, prints both sides cast to `long` where the integer fi
 printed none. That is the price of the right type. The same holds when the proven
 pointee is only a guess: `mergelines_node` at `-O0` proves `lo` a pointer to 8-byte
 words, the locals it is read into stay `long`, and each read pays a cast. Over the
-45 castbench binaries the casts on the 4,815 functions kuna and IDA both emit fall
-from 32,073 to 31,974 (`docs/features/fieldtype/record.json`). It stays off
+45 castbench binaries it removes 134 casts in 53 of the 4,815 functions kuna and
+IDA both emit and adds 35 in 14 (`docs/features/fieldtype/record.json`). It stays off
 because of the ledger below: a reader shares a record only on exact field-type
 agreement, so a field one reader re-types moves which record another reader is
 answered with (`docs/features/fieldtype/default-on-evaluation.md`).
