@@ -1634,6 +1634,8 @@ fn arity_claim_sound(
     pieces: &PrototypePieces,
     storage: &[(Address, int4)],
 ) -> bool {
+    let closed = crate::kuna_armfloatreturn::closed_recovery(arch, pieces);
+    let pieces = &*closed;
     let Some(facts) = entry_facts(arch, entry) else { return false };
     if !storage.iter().all(|(a, _)| crate::kuna_calleearitybody::is_register(a)) {
         return false;

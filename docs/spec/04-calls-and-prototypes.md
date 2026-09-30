@@ -3685,3 +3685,90 @@ narrowed by `--addr`, `--functions` or a triage filter, `--jobs N`, a raw image
 and `--option protoorder off`. A single-function decompile therefore still
 prints the conversion that the whole-binary listing leaves out, the same
 property `protoorder`'s argument types have.
+
+### ARM scalar VFP contracts
+
+The ARM default model (`ARM.cspec`) lists the VFP registers only as the 4-byte
+`s0`-`s15`. A hard-float function returns a `double` in `d0`, which overlaps
+`s0` and `s1`, so return recovery cuts it to its low word:
+`vmov.f64 d0,#1.5; bx lr` prints `unsigned int fixed(void) { return 0; }`, and a
+`double` parameter read from `d0` is never a parameter at all.
+
+`armfloatreturn` (off by default; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
+changes this only for an ARM ELF whose container states the VFP procedure-call
+standard. The loader decides that once per image
+(`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs`): a linked
+EABI5 executable or shared object must carry the hard-float ABI flag in its
+header, and any `.ARM.attributes` it has must agree; a relocatable object must
+say `Tag_ABI_VFP_args=1` in `.ARM.attributes`. Soft-float, `softfp`,
+conflicting, malformed, section- or symbol-scoped attributes, a raw image and
+the Ghidra front-end all state nothing, and the option then changes nothing.
+
+On such an image each function's copy of the default model gains an 8-byte
+float entry for every `d0`-`d7` register over its two s-register entries, on
+input, and one for `d0` on output; `d1`-`d3` are not return storage. A whole
+double fills both single-register groups when holes are filled, so the
+s-register it covers is not a missing parameter, and an unused `d` slot below a
+used double parameter is filled by one 8-byte parameter rather than two 4-byte
+ones (`double second(double x, double y) { return y; }` keeps `y` second). An
+unused parameter that only fills a VFP slot below a float-typed one is typed
+`float` or `double`, so the printed prototype still puts that parameter in its
+register; below an integer-typed half it keeps its default type.
+
+Each added `d` entry is one register, the double-width view of its two `s`
+entries, not a join of two pieces: overlap resolution would give it the
+per-piece checks of a containing entry, which drop a trial formed on some path
+by what a call left behind, and a lower standing than the first float entry.
+It gets neither, so a return that is a call's result on one path and computed
+on another (`if (x > 1.0) return half(x); return x * 3.0;`) is judged as it is
+in `s0`, and both paths keep their value instead of the function printing
+`void`.
+
+An 8-byte `d` input that no op reads whole -- every read, through casts, copies
+or a right shift by 32, ends in a 4-byte piece -- holds two floats in `s0` and
+`s1`, not a double, and is not made one 8-byte parameter. It keeps that slot only
+when a later VFP input is read, so the later parameter keeps its position.
+
+Return trials are scored as usual, and the wider `d0` entry then wins the
+fill-in over a 4-byte `r0`. A value a call left in `d0` is therefore retired
+first: when an integer return trial holds, at every RETURN, a value the
+function computes and only returns (not a call's output), a VFP return trial
+whose value at every RETURN is only what a call left in the register is marked
+inactive. `half(x); return k + 1;` returns `k + 1` in `r0`, not `half`'s
+double; a function that returns `half`'s result and merely uses `r0` as scratch
+keeps the double. The machine code cannot tell every case apart: a `void`
+function that calls `half` last and leaves `d0` alone, or an `int` stored as
+well as returned, looks like one returning `half`'s double. After the output trials are scored, a single used trial in
+`s0` or `d0` gives the returned value a float or double type before constant
+folding can drop its storage.
+
+A float result is written to `s0`, the low half of `d0`, so a function that
+converts a double to float leaves `d0` holding the new low word and the old high
+word. Before the return width is fixed, a bounded walk checks every normal
+return: if each one returns such a piece -- a fresh 4-byte write joined to the
+high word of an earlier `d0` value, through copies and joins, where a
+predicated join may also carry that earlier value itself -- the trial shrinks
+to `s0`. Whole doubles, mixed-width exits, reassembled halves of one double,
+and incomplete or cyclic proofs keep the 8-byte trial. The walk cannot tell a
+float result from code that deliberately edits the low word of a double; that
+code needs an explicit `double` output contract, which skips the walk.
+
+At a call, a live `d` register becomes an 8-byte argument only when the callee
+says it takes one: a locked prototype with a parameter there, or a prototype
+`protoorder` recovered (in a callee-first `decompile-all`) whose list is
+arity-sound and has a float parameter in that register. A live `d0` alone at an
+unknown call is not an argument. For that arity check a recovered VFP parameter
+reads the recovered list as closed, because a variadic callee receives even its
+fixed floats in `r0`-`r3`.
+
+Declared prototypes and explicit return storage keep precedence throughout.
+This is scalar inference, not aggregate or vector ABI reconstruction: a
+homogeneous float aggregate returned in `d0`-`d3` (`struct { double a, b; }`,
+`_Complex double`) prints as a `double` holding only its first member, and needs
+a declared type. The stage test `tests/stages/kuna-arm-float-return.xml` runs a raw image,
+a relocatable object and a linked PIE with the option off and on; the CLI tests
+in `decompiler/crates/kuna-cli/tests/arm_float_returns.rs` cover narrowing,
+widening, metadata controls and explicit contracts. ABI references:
+[AAPCS32](https://github.com/ARM-software/abi-aa/blob/main/aapcs32/aapcs32.rst),
+[AAELF32](https://github.com/ARM-software/abi-aa/blob/main/aaelf32/aaelf32.rst), and
+[Addenda32](https://github.com/ARM-software/abi-aa/blob/main/addenda32/addenda32.rst).

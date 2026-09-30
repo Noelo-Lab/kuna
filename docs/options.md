@@ -969,6 +969,9 @@ Three tiers:
 | decompiling the callee reports an undefined16 return but every call site shows no output | [`callretpair`](#callretpair) |
 | a 16-byte struct return (JSValue, div_t, a fat pointer, a two-word value) is lost at the call site | [`callretpair`](#callretpair) |
 | a tag-and-payload pair is tested right after a call and the tag variable is never assigned | [`callretpair`](#callretpair) |
+| a double return becomes SUB84 or zero | [`armfloatreturn`](#armfloatreturn) |
+| an ARM hard-float function loses its d0 parameter | [`armfloatreturn`](#armfloatreturn) |
+| a caller reads an undefined floating result | [`armfloatreturn`](#armfloatreturn) |
 
 ## Toggleable transforms
 
@@ -2957,6 +2960,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: it is the upstream behaviour of a branch kuna stubbed, and the alternative is a call with no output whose result is read through variables that have no definition anywhere in the program. 0/675 byte-identical on the datatest corpus. Keep it on whenever a call is followed by reads of a second return register -- on x86-64 the tell is a `// rdx` local that is declared and read but never assigned, next to a call rendered as a bare statement, while decompiling the callee on its own reports an `undefined16` return. That shape is what every 16-byte struct return looks like: a `JSValue`, a `div_t`, a Go or Rust two-word value, any `struct { void *; long; }`. The pair is rendered as a raw 16-byte container with `SUB168` extracting the halves until a later pass gives it an aggregate type, so the gain is that the payload EXISTS and is connected to its producer, not that it is spelled well. Set off to restore the stub -- worth trying when a call acquires a 16-byte output whose second half the disassembly shows is a clobber rather than a value (the callee-body veto only fires on a callee the bounded decode can read to every RETURN, so a callee containing a call cannot be refuted), or to bisect whether this arm rather than trial scoring changed a call's surroundings.
 - **Where / provenance:** P4/output-prototype · ghidra · correctness-fix · repipe-bytecode-reader-return-discarded
 - **Example:** `option callretpair off`
+
+### `armfloatreturn` -- on | off, default `off`
+
+- **Symptoms:** a double return becomes SUB84 or zero; an ARM hard-float function loses its d0 parameter; a caller reads an undefined floating result.
+- **What it does:** Recover complete scalar VFP return values and the double-width argument storage they use when an ARM ELF container states the VFP procedure-call standard.
+- **When to flip:** Turn on when ARM hard-float code truncates a double return to its low word or loses a double input. Requires consistent ELF ABI evidence; soft-float, missing metadata, and explicit prototypes keep their existing contracts. A double argument at a call needs the callee's declared or protoorder-recovered prototype, so it appears in a callee-first decompile-all, not in a single-function decompile.
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · arm-hard-float-return
+- **Example:** `option armfloatreturn on`
 
 ## Programmatic use
 

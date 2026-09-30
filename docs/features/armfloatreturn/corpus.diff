@@ -1,0 +1,1230 @@
+--- calls-hard-arm.o off
++++ calls-hard-arm.o on
+@@ -1,10 +1,8 @@
+ // Function: scale @ 0x400000
+-unsigned int scale(void)
++double scale(double a0)
+ {
+-  double v1; // d0
+-
+-  dat_400358 = v1;
+-  return SUB84(v1 * 1.5,0);
++  dat_400358 = a0;
++  return a0 * 1.5;
+ }
+
+ // Function: scalef @ 0x400020
+@@ -15,46 +13,40 @@
+ }
+
+ // Function: fixed @ 0x400040
+-unsigned int fixed(void)
++double fixed(void)
+ {
+-  return 0;
++  return 1.5;
+ }
+
+ // Function: fixedf @ 0x400048
+-unsigned int fixedf(void)
++float fixedf(void)
+ {
+-  return 0x40200000;
++  return 2.5;
+ }
+
+ // Function: fwd @ 0x400050
+-void fwd(void)
++double fwd(double a0)
+ {
+-  scale();
++  return scale(a0);
+ }
+
+ // Function: fwdf @ 0x40005c
+-float fwdf(void)
++float fwdf(float a0)
+ {
+-  return scalef();
++  return scalef(a0);
+ }
+
+ // Function: wrapper @ 0x400068
+-unsigned int wrapper(void)
++double wrapper(double a0)
+ {
+-  double v1; // d0
+-
+-  scale();
+-  return SUB84(v1 + 0.5,0);
++  return scale(a0) + 0.5;
+ }
+
+ // Function: twocalls @ 0x40007c
+-unsigned int twocalls(void)
++double twocalls(double a0)
+ {
+-  double v1; // d0
+-
+-  scale();
+-  scale();
+-  return SUB84(v1 + 1.0,0);
++  scale(a0);
++  return scale(a0 * 3.0) + 1.0;
+ }
+
+ // Function: twocallsf @ 0x4000a8
+@@ -67,67 +59,45 @@
+ // Function: fwdn @ 0x4000d4
+ float fwdn(unsigned int a0,unsigned int a1)
+ {
+-  return (float)(double)scale(a0,a1);
++  return (float)scale(a0,a1);
+ }
+
+ // Function: fwdw @ 0x4000e4
+-float fwdw(void)
++double fwdw(void)
+ {
+-  float v1; // s0
+-  double v2; // d0
+-
+-  scalef();
+-  v2 = (double)v1;
+-  return v1;
++  return (double)scalef();
+ }
+
+ // Function: twoargs @ 0x4000f4
+-unsigned int twoargs(void)
++double twoargs(double a0,double a1)
+ {
+-  double v1; // d0
+-  double v2; // d1
+-
+-  return SUB84(v1 * v2,0);
++  return a0 * a1;
+ }
+
+ // Function: mixargs @ 0x4000fc
+-unsigned int mixargs(float a0,int a1)
++double mixargs(double a0,float a1,int a2)
+ {
+-  double v1; // d0
+-
+-  return SUB84((double)a0 + (double)(long long)a1 * v1,0);
++  return (double)a1 + (double)(long long)a2 * a0;
+ }
+
+ // Function: many @ 0x400114
+-unsigned int many(void)
++double many(double a0,double a1,double a2,double a3,double a4,double a5,double a6,double a7)
+ {
+-  double v1; // d0
+-  double v2; // d1
+-  double v3; // d2
+-  double v4; // d3
+-  double v5; // d4
+-  double v6; // d5
+-  double v7; // d6
+-  double v8; // d7
+-  double v9; // stack + 0x0
++  double v1; // stack + 0x0
+
+-  return SUB84(v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9,0);
++  return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + v1;
+ }
+
+ // Function: to_int @ 0x40013c
+-unsigned int to_int(void)
++unsigned int to_int(double a0)
+ {
+-  double v1; // d0
+-
+-  return (int)(long long)(v1 + v1);
++  return (int)(long long)(a0 + a0);
+ }
+
+ // Function: keep @ 0x40014c
+-unsigned int keep(double *a0)
++unsigned int keep(double a0,double *a1)
+ {
+-  double v1; // d0
+-
+-  *a0 = v1 + v1;
++  *a1 = a0 + a0;
+   return 1;
+ }
+
+@@ -139,60 +109,53 @@
+ }
+
+ // Function: cmp @ 0x40016c
+-bool cmp(void)
++bool cmp(double a0,double a1)
+ {
+-  double v1; // d0
+-  double v2; // d1
+-
+-  return v1 < v2;
++  return a0 < a1;
+ }
+
+ // Function: loopsum @ 0x400180
+-unsigned int loopsum(double *a0,int a1)
++double loopsum(double *a0,int a1)
+ {
+   double v1; // d0
+   double v2; // d1
+
+   v1 = 0.0;
+   if (a1 <= 0)
+-    return 0;
++    return v1;
+   do {
+     v2 = *a0;
+     a0 = &a0[1];
+     a1 -= 1;
+     v1 = v1 + v2;
+   } while (a1);
+-  return SUB84(v1,0);
++  return v1;
+ }
+
+ // Function: pick @ 0x4001a8
+-unsigned int pick(int a0)
++double pick(double a0,double a1,int a2)
+ {
+-  double v1; // d0
+-  double v2; // d1
+-  double v3;
++  double v1;
+
+-  v3 = v1;
+-  if (a0 <= -1)
+-    v3 = -0.0;
+-  v3 = v3 + v2;
+-  if (4 <= a0)
+-    v3 = v1;
+-  return SUB84(v3,0);
++  v1 = a0;
++  if (a2 <= -1)
++    v1 = -0.0;
++  v1 = v1 + a1;
++  if (4 <= a2)
++    v1 = a0;
++  return v1;
+ }
+
+ // Function: lowbits @ 0x4001d8
+-float lowbits(unsigned int a0)
++float lowbits(unsigned long long a0,unsigned int a1)
+ {
+-  unsigned long long v1; // d0
+-
+-  return (float)(double)((v1 & 0xffffffff00000000) + (unsigned long long)a0);
++  return (float)(double)((a0 & 0xffffffff00000000) + (unsigned long long)a1);
+ }
+
+ // Function: setlow @ 0x4001e8
+-unsigned int setlow(unsigned int a0)
++double setlow(unsigned long long a0,unsigned int a1)
+ {
+-  return a0;
++  return (double)((a0 & 0xffffffff00000000) + (unsigned long long)a1);
+ }
+
+ // Function: mkf2 @ 0x4001f4
+@@ -220,14 +183,12 @@
+ }
+
+ // Function: callext @ 0x400238
+-unsigned int callext(void)
++double callext(void)
+ {
+   double v1; // d0
+-  double v2; // d0
+
+-  g();
+-  h();
+-  return SUB84(v1 + v2,0);
++  v1 = (double)g();
++  return v1 + (double)h();
+ }
+
+ // Function: ll @ 0x400260
+--- calls-hard-thumb.o off
++++ calls-hard-thumb.o on
+@@ -1,10 +1,8 @@
+ // Function: scale @ 0x400000
+-unsigned int scale(void)
++double scale(double a0)
+ {
+-  double v1; // d0
+-
+-  dat_400300 = v1;
+-  return SUB84(v1 * 1.5,0);
++  dat_400300 = a0;
++  return a0 * 1.5;
+ }
+
+ // Function: scalef @ 0x40001c
+@@ -15,46 +13,40 @@
+ }
+
+ // Function: fixed @ 0x400038
+-unsigned int fixed(void)
++double fixed(void)
+ {
+-  return 0;
++  return 1.5;
+ }
+
+ // Function: fixedf @ 0x40003e
+-unsigned int fixedf(void)
++float fixedf(void)
+ {
+-  return 0x40200000;
++  return 2.5;
+ }
+
+ // Function: fwd @ 0x400044
+-void fwd(void)
++double fwd(double a0)
+ {
+-  scale();
++  return scale(a0);
+ }
+
+ // Function: fwdf @ 0x40004c
+-float fwdf(void)
++float fwdf(float a0)
+ {
+-  return scalef();
++  return scalef(a0);
+ }
+
+ // Function: wrapper @ 0x400054
+-unsigned int wrapper(void)
++double wrapper(double a0)
+ {
+-  double v1; // d0
+-
+-  scale();
+-  return SUB84(v1 + 0.5,0);
++  return scale(a0) + 0.5;
+ }
+
+ // Function: twocalls @ 0x400064
+-unsigned int twocalls(void)
++double twocalls(double a0)
+ {
+-  double v1; // d0
+-
+-  scale();
+-  scale();
+-  return SUB84(v1 + 1.0,0);
++  scale(a0);
++  return scale(a0 * 3.0) + 1.0;
+ }
+
+ // Function: twocallsf @ 0x40008c
+@@ -67,67 +59,45 @@
+ // Function: fwdn @ 0x4000b4
+ float fwdn(unsigned int a0,unsigned int a1)
+ {
+-  return (float)(double)scale(a0,a1);
++  return (float)scale(a0,a1);
+ }
+
+ // Function: fwdw @ 0x4000c0
+-float fwdw(void)
++double fwdw(void)
+ {
+-  float v1; // s0
+-  double v2; // d0
+-
+-  scalef();
+-  v2 = (double)v1;
+-  return v1;
++  return (double)scalef();
+ }
+
+ // Function: twoargs @ 0x4000cc
+-unsigned int twoargs(void)
++double twoargs(double a0,double a1)
+ {
+-  double v1; // d0
+-  double v2; // d1
+-
+-  return SUB84(v1 * v2,0);
++  return a0 * a1;
+ }
+
+ // Function: mixargs @ 0x4000d2
+-unsigned int mixargs(float a0,int a1)
++double mixargs(double a0,float a1,int a2)
+ {
+-  double v1; // d0
+-
+-  return SUB84((double)a0 + (double)(long long)a1 * v1,0);
++  return (double)a1 + (double)(long long)a2 * a0;
+ }
+
+ // Function: many @ 0x4000e8
+-unsigned int many(void)
++double many(double a0,double a1,double a2,double a3,double a4,double a5,double a6,double a7)
+ {
+-  double v1; // d0
+-  double v2; // d1
+-  double v3; // d2
+-  double v4; // d3
+-  double v5; // d4
+-  double v6; // d5
+-  double v7; // d6
+-  double v8; // d7
+-  double v9; // stack + 0x0
++  double v1; // stack + 0x0
+
+-  return SUB84(v1 + v2 + v3 + v4 + v5 + v6 + v7 + v8 + v9,0);
++  return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + v1;
+ }
+
+ // Function: to_int @ 0x40010e
+-unsigned int to_int(void)
++unsigned int to_int(double a0)
+ {
+-  double v1; // d0
+-
+-  return (int)(long long)(v1 + v1);
++  return (int)(long long)(a0 + a0);
+ }
+
+ // Function: keep @ 0x40011c
+-unsigned int keep(double *a0)
++unsigned int keep(double a0,double *a1)
+ {
+-  double v1; // d0
+-
+-  *a0 = v1 + v1;
++  *a1 = a0 + a0;
+   return 1;
+ }
+
+@@ -139,60 +109,53 @@
+ }
+
+ // Function: cmp @ 0x400134
+-bool cmp(void)
++bool cmp(double a0,double a1)
+ {
+-  double v1; // d0
+-  double v2; // d1
+-
+-  return v1 < v2;
++  return a0 < a1;
+ }
+
+ // Function: loopsum @ 0x400148
+-unsigned int loopsum(double *a0,int a1)
++double loopsum(double *a0,int a1)
+ {
+   double v1; // d0
+   double v2; // d1
+
+   v1 = 0.0;
+   if (a1 <= 0)
+-    return 0;
++    return v1;
+   do {
+     v2 = *a0;
+     a0 = &a0[1];
+     a1 -= 1;
+     v1 = v1 + v2;
+   } while (a1);
+-  return SUB84(v1,0);
++  return v1;
+ }
+
+ // Function: pick @ 0x400168
+-unsigned int pick(int a0)
++double pick(double a0,double a1,int a2)
+ {
+-  double v1; // d0
+-  double v2; // d1
+-  double v3;
++  double v1;
+
+-  v3 = v1;
+-  if (a0 <= -1)
+-    v3 = -0.0;
+-  v3 = v3 + v2;
+-  if (4 <= a0)
+-    v3 = v1;
+-  return SUB84(v3,0);
++  v1 = a0;
++  if (a2 <= -1)
++    v1 = -0.0;
++  v1 = v1 + a1;
++  if (4 <= a2)
++    v1 = a0;
++  return v1;
+ }
+
+ // Function: lowbits @ 0x400198
+-float lowbits(unsigned int a0)
++float lowbits(unsigned long long a0,unsigned int a1)
+ {
+-  unsigned long long v1; // d0
+-
+-  return (float)(double)((v1 & 0xffffffff00000000) + (unsigned long long)a0);
++  return (float)(double)((a0 & 0xffffffff00000000) + (unsigned long long)a1);
+ }
+
+ // Function: setlow @ 0x4001a6
+-unsigned int setlow(unsigned int a0)
++double setlow(unsigned long long a0,unsigned int a1)
+ {
+-  return a0;
++  return (double)((a0 & 0xffffffff00000000) + (unsigned long long)a1);
+ }
+
+ // Function: mkf2 @ 0x4001b0
+@@ -220,14 +183,12 @@
+ }
+
+ // Function: callext @ 0x4001e8
+-unsigned int callext(void)
++double callext(void)
+ {
+   double v1; // d0
+-  double v2; // d0
+
+-  g();
+-  h();
+-  return SUB84(v1 + v2,0);
++  v1 = (double)g();
++  return v1 + (double)h();
+ }
+
+ // Function: ll @ 0x40020c
+--- constants-hard-arm.o off
++++ constants-hard-arm.o on
+@@ -1,64 +1,58 @@
+ // Function: constant_paths @ 0x400000
+-unsigned int constant_paths(unsigned int a0,unsigned int a1) // return-dupe
++float constant_paths(unsigned int a0,unsigned int a1) // return-dupe
+ {
+   if ((double)CONCAT44(a1,a0) * (double)CONCAT44(a1,a0) <= 1.5)
+-    return 0x40000000;
+-  return 0x3f800000;
++    return 2.0;
++  return 1.0;
+ }
+
+ // Function: loaded_paths @ 0x400020
+-unsigned int loaded_paths(int a0)
++float loaded_paths(double a0,int a1)
+ {
+-  double v1; // d0
+-
+-  return *(unsigned int *)(a0 + (unsigned int)(v1 * v1 <= 1.5) * 4);
++  return *(float *)(a1 + (unsigned int)(a0 * a0 <= 1.5) * 4);
+ }
+
+ // Function: copied_paths @ 0x400044
+-unsigned int copied_paths(unsigned int a0,unsigned int a1)
++float copied_paths(double a0,float a1,float a2)
+ {
+-  double v1; // d0
+-
+-  if (1.5 < v1 * v1)
+-    a1 = a0;
+-  return a1;
++  if (1.5 < a0 * a0)
++    a2 = a1;
++  return a2;
+ }
+
+ // Function: double_paths @ 0x400060
+-unsigned int double_paths(void)
++double double_paths(double a0) // return-dupe
+ {
+-  return 0;
++  if (a0 * a0 <= 1.5)
++    return 2.0;
++  return 1.0;
+ }
+
+ // Function: double_loaded_paths @ 0x400080
+-unsigned int double_loaded_paths(unsigned long long *a0)
++double double_loaded_paths(double a0,unsigned long long *a1)
+ {
+-  double v1; // d0
+-
+-  return (int)a0[v1 * v1 <= 1.5];
++  return (double)a1[a0 * a0 <= 1.5];
+ }
+
+ // Function: double_copied_paths @ 0x4000a4
+-unsigned int double_copied_paths(unsigned int a0,unsigned int a1,unsigned int a2)
++double double_copied_paths(double a0,double a1,double a2)
+ {
+-  double v1; // d0
+-
+-  if (1.5 < v1 * v1)
+-    a2 = a0;
++  if (1.5 < a0 * a0)
++    a2 = a1;
+   return a2;
+ }
+
+ // Function: integer_bits @ 0x4000c0
+-unsigned int integer_bits(unsigned int a0,unsigned int a1,unsigned int a2) // early-return
++float integer_bits(unsigned int a0,unsigned int a1,float a2) // early-return
+ {
+   if ((double)CONCAT44(a1,a0) * (double)CONCAT44(a1,a0) <= 1.5)
+-    return 0x40000000;
+-  return a2 ^ 0x80000000;
++    return 2.0;
++  return -a2;
+ }
+
+ // Function: double_low_bits @ 0x4000e4
+-unsigned int double_low_bits(void)
++double double_low_bits(double a0)
+ {
+-  return 0;
++  return (double)((unsigned long long)(a0 * a0) & 0xffffffff00000000);
+ }
+
+--- constants-hard-thumb.o off
++++ constants-hard-thumb.o on
+@@ -1,64 +1,58 @@
+ // Function: constant_paths @ 0x400000
+-unsigned int constant_paths(unsigned int a0,unsigned int a1) // return-dupe
++float constant_paths(unsigned int a0,unsigned int a1) // return-dupe
+ {
+   if ((double)CONCAT44(a1,a0) * (double)CONCAT44(a1,a0) <= 1.5)
+-    return 0x40000000;
+-  return 0x3f800000;
++    return 2.0;
++  return 1.0;
+ }
+
+ // Function: loaded_paths @ 0x400020
+-unsigned int loaded_paths(int a0)
++float loaded_paths(double a0,int a1)
+ {
+-  double v1; // d0
+-
+-  return *(unsigned int *)(a0 + (unsigned int)(v1 * v1 <= 1.5) * 4);
++  return *(float *)(a1 + (unsigned int)(a0 * a0 <= 1.5) * 4);
+ }
+
+ // Function: copied_paths @ 0x400040
+-unsigned int copied_paths(unsigned int a0,unsigned int a1)
++float copied_paths(double a0,float a1,float a2)
+ {
+-  double v1; // d0
+-
+-  if (1.5 < v1 * v1)
+-    a1 = a0;
+-  return a1;
++  if (1.5 < a0 * a0)
++    a2 = a1;
++  return a2;
+ }
+
+ // Function: double_paths @ 0x40005c
+-unsigned int double_paths(void)
++double double_paths(double a0) // return-dupe
+ {
+-  return 0;
++  if (a0 * a0 <= 1.5)
++    return 2.0;
++  return 1.0;
+ }
+
+ // Function: double_loaded_paths @ 0x40007c
+-unsigned int double_loaded_paths(unsigned long long *a0)
++double double_loaded_paths(double a0,unsigned long long *a1)
+ {
+-  double v1; // d0
+-
+-  return (int)a0[v1 * v1 <= 1.5];
++  return (double)a1[a0 * a0 <= 1.5];
+ }
+
+ // Function: double_copied_paths @ 0x40009c
+-unsigned int double_copied_paths(unsigned int a0,unsigned int a1,unsigned int a2)
++double double_copied_paths(double a0,double a1,double a2)
+ {
+-  double v1; // d0
+-
+-  if (1.5 < v1 * v1)
+-    a2 = a0;
++  if (1.5 < a0 * a0)
++    a2 = a1;
+   return a2;
+ }
+
+ // Function: integer_bits @ 0x4000b8
+-unsigned int integer_bits(unsigned int a0,unsigned int a1,unsigned int a2) // early-return
++float integer_bits(unsigned int a0,unsigned int a1,float a2) // early-return
+ {
+   if ((double)CONCAT44(a1,a0) * (double)CONCAT44(a1,a0) <= 1.5)
+-    return 0x40000000;
+-  return a2 ^ 0x80000000;
++    return 2.0;
++  return -a2;
+ }
+
+ // Function: double_low_bits @ 0x4000dc
+-unsigned int double_low_bits(void)
++double double_low_bits(double a0)
+ {
+-  return 0;
++  return (double)((unsigned long long)(a0 * a0) & 0xffffffff00000000);
+ }
+
+--- mixed-hard-arm.o off
++++ mixed-hard-arm.o on
+@@ -10,13 +10,11 @@
+ }
+
+ // Function: mixed_load @ 0x400020
+-float mixed_load(float *a0)
++float mixed_load(double a0,float *a1)
+ {
+-  double v1; // d0
+-
+-  if (v1 <= 0.0)
+-    return (float)(v1 * v1);
+-  return *a0;
++  if (a0 <= 0.0)
++    return (float)(a0 * a0);
++  return *a1;
+ }
+
+ // Function: mixed_input @ 0x40003c
+@@ -31,36 +29,32 @@
+ }
+
+ // Function: double_constant @ 0x400058
+-unsigned int double_constant(void)
++double double_constant(double a0)
+ {
+-  double v1; // d0
+-  unsigned int v2; // s2
++  double v1; // d1
+
+-  v2 = SUB84(v1 * v1,0);
+-  if (0.0 < v1)
+-    v2 = 0;
+-  return v2;
++  v1 = a0 * a0;
++  if (0.0 < a0)
++    v1 = 1.0;
++  return v1;
+ }
+
+ // Function: double_load @ 0x400074
+-unsigned int double_load(unsigned long long *a0)
++double double_load(double a0,double *a1)
+ {
+-  double v1; // d0
+-
+-  if (v1 <= 0.0)
+-    return SUB84(v1 * v1,0);
+-  return (int)*a0;
++  if (a0 <= 0.0)
++    return a0 * a0;
++  return *a1;
+ }
+
+ // Function: double_input @ 0x40008c
+-unsigned int double_input(unsigned int a0)
++double double_input(double a0,double a1)
+ {
+-  double v1; // d0
+-  unsigned int v2;
++  double v1;
+
+-  v2 = SUB84(v1 * v1,0);
+-  if (0.0 < v1)
+-    v2 = a0;
+-  return v2;
++  v1 = a0 * a0;
++  if (0.0 < a0)
++    v1 = a1;
++  return v1;
+ }
+
+--- mixed-hard-thumb.o off
++++ mixed-hard-thumb.o on
+@@ -10,13 +10,11 @@
+ }
+
+ // Function: mixed_load @ 0x400020
+-float mixed_load(float *a0)
++float mixed_load(double a0,float *a1)
+ {
+-  double v1; // d0
+-
+-  if (v1 <= 0.0)
+-    return (float)(v1 * v1);
+-  return *a0;
++  if (a0 <= 0.0)
++    return (float)(a0 * a0);
++  return *a1;
+ }
+
+ // Function: mixed_input @ 0x40003a
+@@ -31,36 +29,32 @@
+ }
+
+ // Function: double_constant @ 0x400056
+-unsigned int double_constant(void)
++double double_constant(double a0)
+ {
+-  double v1; // d0
+-  unsigned int v2; // s2
++  double v1; // d1
+
+-  v2 = SUB84(v1 * v1,0);
+-  if (0.0 < v1)
+-    v2 = 0;
+-  return v2;
++  v1 = a0 * a0;
++  if (0.0 < a0)
++    v1 = 1.0;
++  return v1;
+ }
+
+ // Function: double_load @ 0x400072
+-unsigned int double_load(unsigned long long *a0)
++double double_load(double a0,double *a1)
+ {
+-  double v1; // d0
+-
+-  if (v1 <= 0.0)
+-    return SUB84(v1 * v1,0);
+-  return (int)*a0;
++  if (a0 <= 0.0)
++    return a0 * a0;
++  return *a1;
+ }
+
+ // Function: double_input @ 0x400088
+-unsigned int double_input(unsigned int a0)
++double double_input(double a0,double a1)
+ {
+-  double v1; // d0
+-  unsigned int v2;
++  double v1;
+
+-  v2 = SUB84(v1 * v1,0);
+-  if (0.0 < v1)
+-    v2 = a0;
+-  return v2;
++  v1 = a0 * a0;
++  if (0.0 < a0)
++    v1 = a1;
++  return v1;
+ }
+
+--- narrow-hard-arm.o off
++++ narrow-hard-arm.o on
+@@ -1,23 +1,19 @@
+ // Function: narrow @ 0x400000
+-float narrow(void)
++float narrow(double a0)
+ {
+-  double v1; // d0
+-
+-  return (float)(v1 + v1);
++  return (float)(a0 + a0);
+ }
+
+ // Function: widen @ 0x40000c
+-unsigned int widen(float a0)
++double widen(float a0)
+ {
+-  return SUB84((double)(a0 + a0),0);
++  return (double)(a0 + a0);
+ }
+
+ // Function: keep_double @ 0x400018
+-unsigned int keep_double(void)
++double keep_double(double a0)
+ {
+-  double v1; // d0
+-
+-  return SUB84(v1 + v1,0);
++  return a0 + a0;
+ }
+
+ // Function: narrow_paths @ 0x400020
+--- narrow-hard-thumb.o off
++++ narrow-hard-thumb.o on
+@@ -1,23 +1,19 @@
+ // Function: narrow @ 0x400000
+-float narrow(void)
++float narrow(double a0)
+ {
+-  double v1; // d0
+-
+-  return (float)(v1 + v1);
++  return (float)(a0 + a0);
+ }
+
+ // Function: widen @ 0x40000a
+-unsigned int widen(float a0)
++double widen(float a0)
+ {
+-  return SUB84((double)(a0 + a0),0);
++  return (double)(a0 + a0);
+ }
+
+ // Function: keep_double @ 0x400014
+-unsigned int keep_double(void)
++double keep_double(double a0)
+ {
+-  double v1; // d0
+-
+-  return SUB84(v1 + v1,0);
++  return a0 + a0;
+ }
+
+ // Function: narrow_paths @ 0x40001a
+--- returns-hard-arm.o off
++++ returns-hard-arm.o on
+@@ -1,24 +1,19 @@
+ // Function: scale @ 0x400000
+-unsigned int scale(void)
++double scale(double a0)
+ {
+-  double v1; // d0
+-
+-  return SUB84(v1 * 1.5,0);
++  return a0 * 1.5;
+ }
+
+ // Function: fixed @ 0x40000c
+-unsigned int fixed(void)
++double fixed(void)
+ {
+-  return 0;
++  return 1.5;
+ }
+
+ // Function: wrapper @ 0x400014
+-unsigned int wrapper(void)
++double wrapper(double a0)
+ {
+-  double v1; // d0
+-
+-  scale();
+-  return SUB84(v1 + 0.5,0);
++  return scale(a0) + 0.5;
+ }
+
+ // Function: integer_value @ 0x400028
+@@ -28,7 +23,7 @@
+ }
+
+ // Function: read_double @ 0x400030
+-unsigned int read_double(unsigned int a0)
++double read_double(unsigned int a0)
+ {
+   unsigned int v1; // stack - 0x10
+   unsigned int v2; // stack - 0xc
+@@ -36,6 +31,6 @@
+   v2 = 0;
+   v1 = 0;
+   sscanf(a0,0x400088,&v1);
+-  return v1;
++  return (double)CONCAT44(v2,v1);
+ }
+
+--- returns-hard-thumb.o off
++++ returns-hard-thumb.o on
+@@ -1,24 +1,19 @@
+ // Function: scale @ 0x400000
+-unsigned int scale(void)
++double scale(double a0)
+ {
+-  double v1; // d0
+-
+-  return SUB84(v1 * 1.5,0);
++  return a0 * 1.5;
+ }
+
+ // Function: fixed @ 0x40000a
+-unsigned int fixed(void)
++double fixed(void)
+ {
+-  return 0;
++  return 1.5;
+ }
+
+ // Function: wrapper @ 0x400010
+-unsigned int wrapper(void)
++double wrapper(double a0)
+ {
+-  double v1; // d0
+-
+-  scale();
+-  return SUB84(v1 + 0.5,0);
++  return scale(a0) + 0.5;
+ }
+
+ // Function: integer_value @ 0x400020
+@@ -28,7 +23,7 @@
+ }
+
+ // Function: read_double @ 0x400024
+-unsigned int read_double(unsigned int a0)
++double read_double(unsigned int a0)
+ {
+   unsigned int v1; // stack - 0x10
+   unsigned int v2; // stack - 0xc
+@@ -36,6 +31,6 @@
+   v1 = 0;
+   v2 = 0;
+   sscanf(a0,0x40006c,&v1);
+-  return v1;
++  return (double)CONCAT44(v2,v1);
+ }
+
+--- armfloatreturn_armhf.o off
++++ armfloatreturn_armhf.o on
+@@ -1,10 +1,8 @@
+ // Function: scale @ 0x400000
+-unsigned int scale(void)
++double scale(double a0)
+ {
+-  double v1; // d0
+-
+-  dat_400208 = v1;
+-  return SUB84(v1 * 1.5,0);
++  dat_400208 = a0;
++  return a0 * 1.5;
+ }
+
+ // Function: scalef @ 0x400020
+@@ -15,27 +13,22 @@
+ }
+
+ // Function: fixed @ 0x400040
+-unsigned int fixed(void)
++double fixed(void)
+ {
+-  return 0;
++  return 1.5;
+ }
+
+ // Function: narrow @ 0x400048
+-float narrow(void)
++float narrow(double a0)
+ {
+-  double v1; // d0
+-
+-  return (float)(v1 + v1);
++  return (float)(a0 + a0);
+ }
+
+ // Function: twocalls @ 0x400054
+-unsigned int twocalls(void)
++double twocalls(double a0)
+ {
+-  double v1; // d0
+-
+-  scale();
+-  scale();
+-  return SUB84(v1 + 1.0,0);
++  scale(a0);
++  return scale(a0 * 3.0) + 1.0;
+ }
+
+ // Function: twocallsf @ 0x400080
+@@ -46,78 +39,61 @@
+ }
+
+ // Function: keep @ 0x4000ac
+-unsigned int keep(double *a0)
++unsigned int keep(double a0,double *a1)
+ {
+-  double v1; // d0
+-
+-  *a0 = v1 + v1;
++  *a1 = a0 + a0;
+   return 1;
+ }
+
+ // Function: half @ 0x4000bc
+-unsigned int half(void)
++double half(double a0)
+ {
+-  double v1; // d0
+-
+   dat_400210 += 1;
+-  return SUB84(v1 * 0.5,0);
++  return a0 * 0.5;
+ }
+
+ // Function: bump @ 0x4000e8
+-int bump(int a0)
++int bump(double a0,int a1)
+ {
+-  half();
+-  return a0 + 1;
++  half(a0);
++  return a1 + 1;
+ }
+
+ // Function: second @ 0x4000fc
+-void second(void)
++double second(double a0,double a1)
+ {
+-  return;
++  return a1;
+ }
+
+ // Function: w2 @ 0x400104
+-unsigned int w2(void)
++double w2(void)
+ {
+   unsigned long long v1; // d0
+
+-  return SUB84((double)(float)v1 * (double)(float)((unsigned long long)v1 >> 0x20),0);
++  return (double)(float)v1 * (double)(float)((unsigned long long)v1 >> 0x20);
+ }
+
+ // Function: a3 @ 0x400114
+-unsigned int a3(void)
++double a3(double a0)
+ {
+-  unsigned int v1; // s0
+-  double v2; // d0
+-
+-  if (1.0 < v2) {
+-    half();
+-    return v1;
+-  }
+-  return SUB84(v2 * 3.0,0);
++  if (1.0 < a0)
++    return (double)half(a0);
++  return a0 * 3.0;
+ }
+
+ // Function: a7 @ 0x40013c
+-unsigned int a7(void)
++double a7(double a0)
+ {
+-  unsigned int v1; // s0
+-  double v2; // d0
+-
+-  if (1.0 < v2) {
+-    half();
+-    return v1;
+-  }
+-  return 0;
++  if (1.0 < a0)
++    return (double)half(a0);
++  return 2.5;
+ }
+
+ // Function: a6 @ 0x400160
+-void a6(int a0) // return-dupe
++double a6(double a0,int a1) // ternary
+ {
+-  if (a0) {
+-    half();
+-    dat_400210 = a0;
+-    return;
+-  }
+-  dat_400210 = a0;
++  a0 = (a1) ? (double)half(a0) : a0 * 3.0; // branch-flip
++  dat_400210 = a1;
++  return a0;
+ }
+
+--- fmtabi_armhf off
++++ fmtabi_armhf on
+@@ -38,10 +38,10 @@
+ }
+
+ // Function: main @ 0x410
+-unsigned int main(unsigned int a0,unsigned int *a1)
++unsigned int main(int a0,unsigned int *a1)
+ {
+-  f_conv();
+-  f_sum();
++  f_conv(a0);
++  f_sum((double)(long long)a0,0.5);
+   f_is(a0,*a1);
+   return 0;
+ }
+@@ -102,12 +102,9 @@
+ }
+
+ // Function: f_sum @ 0x564
+-void f_sum(void)
++void f_sum(double a0,double a1)
+ {
+-  double v1; // d0
+-  double v2; // d1
+-
+-  __printf_chk(2,"sum=%f a=%f\n",SUB84(v1 + v2,0),(int)((unsigned long long)(v1 + v2) >> 0x20));
++  __printf_chk(2,"sum=%f a=%f\n",SUB84(a0 + a1,0),(int)((unsigned long long)(a0 + a1) >> 0x20),a0);
+ }
+
+ // Function: f_is @ 0x594
+--- fmtlf_armhf off
++++ fmtlf_armhf on
+@@ -55,12 +55,12 @@
+ // Function: main @ 0x4f8
+ unsigned int main(unsigned int a0,unsigned int *a1)
+ {
+-  double v1; // d0
++  char *v1; // r0
+
+   show();
+   show2(a0);
+-  rd((char *)*a1);
+-  return (int)(long long)v1;
++  v1 = (char *)*a1;
++  return (int)(long long)rd(v1);
+ }
+
+ // Function: _start @ 0x540
+@@ -119,22 +119,22 @@
+ }
+
+ // Function: show2 @ 0x670
+-void show2(unsigned int a0)
++void show2(unsigned long long a0,unsigned int a1)
+ {
+-  __printf_chk(2,"n=%d v=%lf\n",a0);
++  __printf_chk(2,"n=%d v=%lf\n",a1,a0);
+ }
+
+ // Function: rd @ 0x69c
+-unsigned int rd(char *a0)
++double rd(char *a0)
+ {
+-  unsigned long long v1; // stack - 0x18
++  double v1; // stack - 0x18
+   int v2; // stack - 0xc
+
+   v2 = *dat_1ff0;
+-  v1 = 0;
++  v1 = 0.0;
+   __isoc99_sscanf(a0,"%lf",&v1,0);
+   if (v2 == *dat_1ff0)
+-    return (int)v1;
++    return v1;
+   __stack_chk_fail(); // no-return
+ }

@@ -926,6 +926,9 @@ pub struct ArchContext {
     /// [`crate::p4_calls::kuna_passthrough`]; it needs a prototype `protoorder`
     /// parked, which no fixture has, so the seam carries the shipped default.
     pub pass_through: bool,
+    /// (kuna) `armfloatreturn` is on and the image states the ARM VFP calling
+    /// convention.  Read by [`crate::p4_calls::kuna_armfloatreturn`].
+    pub arm_float_return: bool,
     /// (kuna) let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (`calleedeadarg`).  Read by
     /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
@@ -1618,6 +1621,7 @@ impl ArchContext {
             // when there is no callee to ask, so the fixture seam carries the
             // shipped default.
             arg_clobber: true, // (kuna) option argclobber (default on)
+            arm_float_return: false, // (kuna) option armfloatreturn (default off)
             pass_through: true, // (kuna) option passthrough (default on)
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.

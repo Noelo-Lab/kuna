@@ -1936,7 +1936,9 @@ mod tests {
         // and kuna-elfaliasnames / an ELF name sharing its address with an
         // earlier symbol still selects that function
         // and kuna-arm-volatile-loads / every read of a volatile LDM survives
-        assert_eq!(count, 361, "corpus file count drifted");
+        // and kuna-arm-float-return / an ARM hard-float function returns its
+        // whole VFP result
+        assert_eq!(count, 362, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

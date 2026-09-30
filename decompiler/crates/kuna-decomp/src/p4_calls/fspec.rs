@@ -715,6 +715,18 @@ impl ParamEntry {
         None
     }
 
+    /// (kuna) `armfloatreturn`: a seeded `d` entry is one register, the
+    /// double-width view of its two `s` entries, not a two-piece join. Drop the
+    /// per-piece extra checks overlap resolution gave it, and let it share the
+    /// first-in-class standing of its low `s` entry, so a value a call left in
+    /// it is judged as it would be in that `s` register.
+    pub(crate) fn kuna_whole_register(&mut self, first: bool) {
+        self.flags &= !(param_entry_flags::EXTRACHECK_LOW | param_entry_flags::EXTRACHECK_HIGH);
+        if first {
+            self.flags |= param_entry_flags::FIRST_STORAGE;
+        }
+    }
+
     /// Mark this entry's `first_storage` flag based on the previous entry in
     /// `prev_list` (the entries decoded before this one) (C++ `resolveFirst`).
     /// In the C++ `--iter` reaches this entry (the last on the list) and
@@ -1932,6 +1944,8 @@ pub struct ParamListStandard {
     /// STUB — the output TRIAL recovery keeps the legacy fallback while only the
     /// `assignAddress` (locked-param storage) rule chain is wired.
     use_fillin_fallback: bool,
+    /// `armfloatreturn`: a whole VFP trial occupies every single-register group.
+    whole_float_groups: bool,
 }
 
 impl std::fmt::Debug for ParamListStandard {
@@ -1970,6 +1984,7 @@ impl Clone for ParamListStandard {
             model_rules: self.model_rules.clone(),
             spacebase: self.spacebase.clone(),
             use_fillin_fallback: self.use_fillin_fallback,
+            whole_float_groups: self.whole_float_groups,
         };
         res.populate_resolver();
         res
@@ -2050,7 +2065,36 @@ impl ParamListStandard {
             model_rules: Vec::new(),
             spacebase: None,
             use_fillin_fallback: true,
+            whole_float_groups: false,
         }
+    }
+
+    /// (kuna) `armfloatreturn`: let a whole double trial fill both of its
+    /// single-register groups, so the s-register it covers is no hole.
+    pub(crate) fn preserve_whole_float_groups(&mut self) {
+        self.whole_float_groups = true;
+    }
+
+    /// (kuna) `armfloatreturn`: the d-register entry that fills the hole at
+    /// group `grp` whole, when every group it covers is missing and a later
+    /// hit is itself a double. An unused `double` before a used one is one
+    /// 8-byte parameter, not two s-registers.
+    fn whole_double_hole(&self, hitlist: &[Option<usize>], grp: usize) -> Option<usize> {
+        if !self.whole_float_groups {
+            return None;
+        }
+        let double = |e: &ParamEntry| e.get_type() == type_class::TYPECLASS_FLOAT && e.get_size() == 8;
+        let (idx, entry) = self
+            .entry
+            .iter()
+            .enumerate()
+            .find(|(_, e)| double(e) && e.get_all_groups().first() == Some(&(grp as int4)))?;
+        let end = grp + entry.get_all_groups().len();
+        let hole = (grp..end).all(|g| hitlist.get(g).is_some_and(|h| h.is_none()));
+        let later = hitlist[end.min(hitlist.len())..]
+            .iter()
+            .any(|h| h.is_some_and(|e| double(&self.entry[e])));
+        (hole && later).then_some(idx)
     }
 
     /// Get the list of parameter entries (C++ `getEntry`).
@@ -2788,12 +2832,16 @@ impl ParamListStandard {
                             int_count += 1;
                         }
                     }
-                    let grp = self.entry[eidx].get_group();
-                    while (hitlist.len() as i32) <= grp {
-                        hitlist.push(None);
-                    }
-                    if hitlist[grp as usize].is_none() {
-                        hitlist[grp as usize] = Some(eidx);
+                    let groups = self.entry[eidx].get_all_groups();
+                    let whole = self.whole_float_groups
+                        && self.entry[eidx].get_type() == type_class::TYPECLASS_FLOAT;
+                    for &grp in if whole { &groups[..] } else { &groups[..1] } {
+                        while (hitlist.len() as i32) <= grp {
+                            hitlist.push(None);
+                        }
+                        if hitlist[grp as usize].is_none() {
+                            hitlist[grp as usize] = Some(eidx);
+                        }
                     }
                 }
             }
@@ -2801,8 +2849,12 @@ impl ParamListStandard {
 
         // Fill in unreferenced trials for missing groups.  `i` is the group
         // index (passed to selectUnreferenceEntry), not just a position.
+        let mut covered = 0usize;
         #[allow(clippy::needless_range_loop)]
         for i in 0..hitlist.len() {
+            if i < covered {
+                continue;
+            }
             match hitlist[i] {
                 None => {
                     let pref = if float_count > int_count {
@@ -2810,7 +2862,11 @@ impl ParamListStandard {
                     } else {
                         type_class::TYPECLASS_GENERAL
                     };
-                    let curentry = match self.select_unreference_entry(i as i32, pref) {
+                    let whole = self.whole_double_hole(&hitlist, i);
+                    if let Some(w) = whole {
+                        covered = i + self.entry[w].get_all_groups().len();
+                    }
+                    let curentry = match whole.or_else(|| self.select_unreference_entry(i as i32, pref)) {
                         Some(c) => c,
                         None => continue,
                     };

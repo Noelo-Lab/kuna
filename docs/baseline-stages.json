@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1546,
-    1546
+    1568,
+    1568
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -980,6 +980,28 @@
     "data:argclobber-forward #1: the non-clobber path writes the caller's own parameter, so the trailing argument survives both passes",
     "data:argclobber-forward #2: and caller4 keeps the second parameter that argument reads",
     "data:argclobber-guards #1: the callee reads rdx before writing it, so the trailing argument survives both passes",
+    "data:armfloatreturn #10: on keeps the integer return in r0 while d0 is also written",
+    "data:armfloatreturn #11: off returns the parsed double of the linked PIE as an integer",
+    "data:armfloatreturn #12: on returns the parsed double of the linked PIE",
+    "data:armfloatreturn #13: an int computed after a call returning a double stays the result in both passes",
+    "data:armfloatreturn #14: off loses both double parameters of second",
+    "data:armfloatreturn #15: on fills the unused d0 below the returned d1 with one double",
+    "data:armfloatreturn #16: two floats read as the halves of d0 are not one integer parameter in either pass",
+    "data:armfloatreturn #17: off returns neither path of a3 as a double",
+    "data:armfloatreturn #18: on a3 returns the call result on one path and its own product on the other",
+    "data:armfloatreturn #19: on the computed path of a3 keeps its value",
+    "data:armfloatreturn #1: a raw image states no calling convention, so both passes return the zero low word of 1.5",
+    "data:armfloatreturn #20: on the constant path of a7 keeps 2.5",
+    "data:armfloatreturn #21: on a6 returns the double both arms of its join assign",
+    "data:armfloatreturn #22: off a6 returns nothing",
+    "data:armfloatreturn #2: an explicit double prototype on the raw image and the on pass return 1.5",
+    "data:armfloatreturn #3: off returns the zero low word of the double constant in the object",
+    "data:armfloatreturn #4: off cuts the double that scale returns to its low word",
+    "data:armfloatreturn #5: on returns the whole double and takes the d0 parameter",
+    "data:armfloatreturn #6: on returns the double constant",
+    "data:armfloatreturn #7: off loses the parameter of a float return converted from a double",
+    "data:armfloatreturn #8: on keeps the float return in s0 and takes the double parameter",
+    "data:armfloatreturn #9: off loses the double parameter of an integer function",
     "data:boolbyte #10: the slot both controls hand to the callee stays a character in both passes -- the INDIRECT a call leaves on it is not identity, and one byte of a bigger object is not a declaration of its own",
     "data:boolbyte #11: with the option off a truncation whose destination a comparison already made bool prints as the raw SUB41 intrinsic -- an undeclared identifier",
     "data:boolbyte #12: with the option on the same truncation prints as the cast it is",
