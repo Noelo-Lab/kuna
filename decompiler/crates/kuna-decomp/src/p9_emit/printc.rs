@@ -1356,13 +1356,18 @@ impl PrintEmit {
 // to the active leaf.  Required AND default-provided methods are ALL forwarded
 // so no call can fall through to a `PrintEmit` default that would diverge from
 // the leaf (`EmitNoMarkup` overrides `tag_line`/`clear`; see the type doc).
+// The statement and brace calls also keep the dangling-label record
+// (`kuna_labelstmt`).
 impl Emit for PrintEmit {
     fn state(&self) -> &EmitBase { pe_forward!(self.state()) }
     fn state_mut(&mut self) -> &mut EmitBase { pe_forward!(self.state_mut()) }
 
     fn begin_document(&mut self) -> int4 { pe_forward!(self.begin_document()) }
     fn end_document(&mut self, id: int4) { pe_forward!(self.end_document(id)) }
-    fn begin_function(&mut self) -> int4 { pe_forward!(self.begin_function()) }
+    fn begin_function(&mut self) -> int4 {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.begin_function())
+    }
     fn end_function(&mut self, id: int4) { pe_forward!(self.end_function(id)) }
     fn begin_block(&mut self, blockref: int4) -> int4 { pe_forward!(self.begin_block(blockref)) }
     fn end_block(&mut self, id: int4) { pe_forward!(self.end_block(id)) }
@@ -1374,7 +1379,10 @@ impl Emit for PrintEmit {
     fn end_return_type(&mut self, id: int4) { pe_forward!(self.end_return_type(id)) }
     fn begin_var_decl(&mut self, markup: &MarkupRef) -> int4 { pe_forward!(self.begin_var_decl(markup)) }
     fn end_var_decl(&mut self, id: int4) { pe_forward!(self.end_var_decl(id)) }
-    fn begin_statement(&mut self, markup: &MarkupRef) -> int4 { pe_forward!(self.begin_statement(markup)) }
+    fn begin_statement(&mut self, markup: &MarkupRef) -> int4 {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.begin_statement(markup))
+    }
     fn end_statement(&mut self, id: int4) { pe_forward!(self.end_statement(id)) }
     fn begin_func_proto(&mut self) -> int4 { pe_forward!(self.begin_func_proto()) }
     fn end_func_proto(&mut self, id: int4) { pe_forward!(self.end_func_proto(id)) }
@@ -1412,9 +1420,18 @@ impl Emit for PrintEmit {
     fn get_indent_increment(&self) -> int4 { pe_forward!(self.get_indent_increment()) }
     fn set_indent_increment(&mut self, val: int4) { pe_forward!(self.set_indent_increment(val)) }
     fn spaces(&mut self, num: int4, bump: int4) { pe_forward!(self.spaces(num, bump)) }
-    fn open_brace_indent(&mut self, brace: &str, style: EmitBraceStyle) -> int4 { pe_forward!(self.open_brace_indent(brace, style)) }
-    fn open_brace(&mut self, brace: &str, style: EmitBraceStyle) { pe_forward!(self.open_brace(brace, style)) }
-    fn close_brace_indent(&mut self, brace: &str, id: int4) { pe_forward!(self.close_brace_indent(brace, id)) }
+    fn open_brace_indent(&mut self, brace: &str, style: EmitBraceStyle) -> int4 {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.open_brace_indent(brace, style))
+    }
+    fn open_brace(&mut self, brace: &str, style: EmitBraceStyle) {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.open_brace(brace, style))
+    }
+    fn close_brace_indent(&mut self, brace: &str, id: int4) {
+        self.settle_dangling_label();
+        pe_forward!(self.close_brace_indent(brace, id))
+    }
     fn set_pending_brace(&mut self, style: EmitBraceStyle) { pe_forward!(self.set_pending_brace(style)) }
     fn has_pending_brace(&self) -> bool { pe_forward!(self.has_pending_brace()) }
     fn cancel_pending_brace(&mut self) { pe_forward!(self.cancel_pending_brace()) }
@@ -3877,6 +3894,7 @@ impl PrintC {
         self.emit.tag_line_indent(0);
         self.emit.print(&self.block_label_name(fd, bl), SyntaxHighlight::NoColor);
         self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+        self.emit.note_label();
     }
 
     /// C++ `PrintC::emitAnyLabelStatement` (printc.cc:3354): find the entry basic
@@ -4695,8 +4713,10 @@ impl PrintC {
                 self.emit_block(fd, arch, caseblk);
                 // Blocks that formally exit the switch need an explicit `break;`
                 // (unless it is the last case, whose fall-through is the close).
+                // A last case still ending on its label gets one (kuna_labelstmt).
                 let isexit = fd.sblocks_ref().block(blk).switch_caseblocks()[i].isexit;
-                if isexit && i != ncase - 1 {
+                let last = i == ncase - 1;
+                if (isexit && !last) || (last && self.emit.label_dangling()) {
                     self.emit.tag_line();
                     self.emit_goto_statement(fd, caseblk, caseblk, crate::block::block_flags::f_break_goto);
                 }
@@ -4778,6 +4798,7 @@ impl PrintC {
             value,
         );
         self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+        self.emit.note_label();
     }
 
     fn emit_numeric_case_label(&mut self, value: uintb, size: int4, signed: bool, op: Option<OpId>) {
@@ -4818,6 +4839,7 @@ impl PrintC {
             }
         }
         self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+        self.emit.note_label();
     }
 
     /// First op of a case block (C++ `FlowBlock::firstOp` → front-leaf basic

@@ -22,6 +22,7 @@ pub mod kuna_addressdecl;
 pub mod kuna_bitcast;
 pub mod kuna_truthycond;
 pub mod kuna_braceelide;
+pub mod kuna_labelstmt; // (kuna) every printed C label labels a statement
 pub mod kuna_warnstyle;
 pub mod kuna_arraycoverwidth;
 pub mod kuna_emptystrconst;

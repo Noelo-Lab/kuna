@@ -793,6 +793,31 @@ same switch-width, signedness, and integer-format rules as op-backed labels,
 but are emitted as plain syntax with no fabricated `opref`; `default:` remains
 an unvalued label.
 
+**Every label labels a statement.** The statement structure the printer emits
+is valid C99/C11/C17 and does not rely on C23's relaxed label placement. In
+those dialects a label is part of a labeled statement, so `case 2:`, `default:` or `label_10ad:`
+directly before a closing brace is a syntax error ("label at end of compound
+statement"). The shape arises whenever the labeled code prints nothing: a switch
+arm whose jump-table entry is a branch-only block that leaves the switch, a
+`default:` that is also a goto target at the end of the switch, or a goto target
+that is only the jump back to a loop head or the join before a closing brace.
+The emitter keeps a record of whether a label was the last thing printed
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_labelstmt.rs`, held on the emitter
+state so both the plain-text and the markup leaf see it): the case, default and
+goto label writers set it, and starting a statement or opening a brace clears
+it, while a comment does not. The last arm of a switch that still ends on a
+label gets `break;` (`printc.rs (PrintC::emit_block_switch)`), which leaves the
+switch exactly as falling off its end does. Any other closing brace reached
+with the record set, including a loop body's and the function's own, first
+prints the null statement `;` on its own line. A label followed by another
+label, a statement, or a nested block is untouched, so output that was already
+valid does not change. The Rust back-end (§9.6) needs no counterpart: it prints
+labels as comments and an empty arm as `N => { }`. The ARM and x86-64 shapes are
+pinned by `tests/stages/kuna-labelstmt-arm.xml` and
+`tests/stages/kuna-labelstmt-x64.xml`, and the kuna-cli round trip
+`emitted_label_statements.rs` compiles the printed functions with
+`-std=c11 -pedantic-errors` and checks that they behave like their source.
+
 **Pending-brace ownership.** The `else if` collapse is a *lazy* brace. An
 if-node that is itself the else-clause of its parent registers a brace with the
 emitter (`printc.rs (PrintC::emit_block_if)`); the brace opens only if
