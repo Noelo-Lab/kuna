@@ -1956,6 +1956,8 @@ pub struct ParamListStandard {
     use_fillin_fallback: bool,
     /// `armfloatreturn`: a whole VFP trial occupies every single-register group.
     whole_float_groups: bool,
+    /// `armfloatargs`: an s-register that only aligns a later double is no hole.
+    backfill_holes: bool,
 }
 
 impl std::fmt::Debug for ParamListStandard {
@@ -1995,6 +1997,7 @@ impl Clone for ParamListStandard {
             spacebase: self.spacebase.clone(),
             use_fillin_fallback: self.use_fillin_fallback,
             whole_float_groups: self.whole_float_groups,
+            backfill_holes: self.backfill_holes,
         };
         res.populate_resolver();
         res
@@ -2076,6 +2079,7 @@ impl ParamListStandard {
             spacebase: None,
             use_fillin_fallback: true,
             whole_float_groups: false,
+            backfill_holes: false,
         }
     }
 
@@ -2083,6 +2087,38 @@ impl ParamListStandard {
     /// single-register groups, so the s-register it covers is no hole.
     pub(crate) fn preserve_whole_float_groups(&mut self) {
         self.whole_float_groups = true;
+    }
+
+    /// (kuna) `armfloatargs`: leave the back-fill slot below a double unfilled.
+    pub(crate) fn skip_backfill_holes(&mut self) {
+        self.backfill_holes = true;
+    }
+
+    /// (kuna) `armfloatargs`: group `grp` is the upper half of a d-register whose
+    /// lower half holds a single and every later VFP hit is a double. AAPCS-VFP
+    /// places those doubles past the pair without this slot, so leaving it out
+    /// keeps the remaining parameters in the storage the convention assigns.
+    fn backfill_hole(&self, hitlist: &[Option<usize>], grp: usize) -> bool {
+        if !self.backfill_holes || grp == 0 {
+            return false;
+        }
+        let float = |e: usize, size: int4| {
+            self.entry[e].get_type() == type_class::TYPECLASS_FLOAT && self.entry[e].get_size() == size
+        };
+        let paired = self.entry.iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT
+                && e.get_size() == 8
+                && e.get_all_groups().as_slice() == [grp as int4 - 1, grp as int4]
+        });
+        if !paired || !hitlist[grp - 1].is_some_and(|e| float(e, 4)) {
+            return false;
+        }
+        let mut later = hitlist[grp + 1..]
+            .iter()
+            .flatten()
+            .filter(|&&e| self.entry[e].get_type() == type_class::TYPECLASS_FLOAT)
+            .peekable();
+        later.peek().is_some() && later.all(|&e| float(e, 8))
     }
 
     /// (kuna) `armfloatreturn`: the d-register entry that fills the hole at
@@ -2866,6 +2902,7 @@ impl ParamListStandard {
                 continue;
             }
             match hitlist[i] {
+                None if self.backfill_hole(&hitlist, i) => {}
                 None => {
                     let pref = if float_count > int_count {
                         type_class::TYPECLASS_FLOAT

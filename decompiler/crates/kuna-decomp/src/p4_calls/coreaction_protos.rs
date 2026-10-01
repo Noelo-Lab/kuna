@@ -1286,6 +1286,7 @@ impl Action for ActionActiveParam {
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.
                 let _ = fc.resolve_and_derive_input_map(&manager_rc);
+                crate::kuna_armfloatargs::cap_stated_inputs(&mut fc, data);
                 // (kuna `formatstring`) A resolved format call's declared
                 // arguments are arguments whatever the positional rules made
                 // of the gap in front of them.

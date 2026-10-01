@@ -184,15 +184,129 @@ fn single_arguments_written_over_a_double_result_are_read_as_written() {
 }
 
 #[test]
-fn a_double_input_read_as_words_stays_an_input_without_armfloatreturn() {
-    let code = decompile_with(&word_input_image(), &["armfloatargs", "on"]);
-    assert!(
-        code.contains("unsigned int chk(unsigned int a0,unsigned int a1)"),
-        "{code}"
-    );
-    assert!(!code.contains("// d0"), "{code}");
-    let off = decompile_with(&word_input_image(), &["armfloatargs", "off"]);
-    assert!(off.contains("chk(void)"), "{off}");
+fn armfloatargs_without_armfloatreturn_changes_nothing() {
+    for bytes in [image(Some(1)), word_input_image(), backfill_image(false)] {
+        assert_eq!(
+            decompile_with(&bytes, &["armfloatargs", "on"]),
+            decompile_with(&bytes, &["armfloatargs", "off"])
+        );
+    }
+}
+
+#[test]
+fn a_double_read_only_as_integer_words_is_left_to_armfloatreturn() {
+    let on = decompile(&word_input_image(), "on");
+    assert_eq!(on, decompile(&word_input_image(), "off"));
+}
+
+/// The argument count of every call to `name` in an indented statement.
+fn call_arities(code: &str, name: &str) -> Vec<usize> {
+    let pattern = format!("{name}(");
+    let skip = pattern.len();
+    code.lines()
+        .filter(|line| line.starts_with(' '))
+        .flat_map(|line| {
+            line.match_indices(pattern.as_str())
+                .map(move |(at, _)| &line[at + skip..])
+                .collect::<Vec<_>>()
+        })
+        .map(|args| {
+            let (mut depth, mut count, mut any) = (0, 1, false);
+            for c in args.chars() {
+                match c {
+                    '(' => depth += 1,
+                    ')' if depth == 0 => break,
+                    ')' => depth -= 1,
+                    ',' if depth == 0 => count += 1,
+                    _ => {}
+                }
+                any |= !c.is_whitespace();
+            }
+            if any {
+                count
+            } else {
+                0
+            }
+        })
+        .collect()
+}
+
+// clang -O0 and -O2 hard-float ARM output of g1(float,float,float,double) and
+// top(n) = g1(n*1.0f, n*2.0f, n*3.0f, n*4.0). The double goes to d2, so s3 is a
+// back-fill slot no parameter occupies; at -O2 the caller also leaves 3.0f in s6.
+fn backfill_image(optimized: bool) -> Vec<u8> {
+    if optimized {
+        image_from_words(
+            &[
+                0xee300a60, 0xeeb71ac1, 0xeeb70ac0, 0xee010b02, 0xe12fff1e, 0xe92d4800, 0xee000a10,
+                0xeeb12b00, 0xeeb81bc0, 0xeeb80ac0, 0xeeb03a08, 0xee212b02, 0xee201a03, 0xee700a00,
+                0xebfffff0, 0xeebd0bc0, 0xee100a10, 0xe8bd8800,
+            ],
+            &[("g1", 0, 20), ("top", 20, 52)],
+            Some(1),
+        )
+    } else {
+        image_from_words(
+            &[
+                0xe24dd018, 0xed8d0a05, 0xedcd0a04, 0xed8d1a03, 0xed8d2b00, 0xed9d0a05, 0xed9d1a04,
+                0xee300a41, 0xeeb70ac0, 0xed9d1a03, 0xeeb71ac1, 0xed9d2b00, 0xee010b02, 0xe28dd018,
+                0xe12fff1e, 0xe92d4800, 0xe1a0b00d, 0xe24dd008, 0xe58d0004, 0xe59d0004, 0xee000a10,
+                0xeeb80ac0, 0xeeb71a00, 0xee200a01, 0xe59d0004, 0xee010a10, 0xeeb81ac1, 0xeeb02a00,
+                0xee610a02, 0xe59d0004, 0xee010a10, 0xeeb81ac1, 0xeeb02a08, 0xee211a02, 0xe59d0004,
+                0xee020a10, 0xeeb82bc2, 0xeeb13b00, 0xee222b03, 0xebffffd7, 0xeebd0bc0, 0xee100a10,
+                0xe1a0d00b, 0xe8bd8800,
+            ],
+            &[("g1", 0, 60), ("top", 60, 116)],
+            Some(1),
+        )
+    }
+}
+
+#[test]
+fn a_backfill_slot_below_a_double_is_neither_a_parameter_nor_an_argument() {
+    for optimized in [false, true] {
+        let code = decompile(&backfill_image(optimized), "on");
+        for expected in [
+            "double g1(float a0,float a1,float a2,double a3)",
+            "unsigned int top(int a0)",
+        ] {
+            assert!(code.contains(expected), "missing {expected}\n{code}");
+        }
+        assert_eq!(call_arities(&code, "g1"), [4], "{code}");
+        let off = decompile(&backfill_image(optimized), "off");
+        assert!(
+            off.contains("double g1(unsigned long long a0,float a1,float a2,double a3)"),
+            "{off}"
+        );
+        if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+            continue;
+        }
+        let source = common::scratch_file("arm-float-backfill", "c");
+        let executable = common::scratch_file("arm-float-backfill", "exe");
+        std::fs::write(
+            &source,
+            format!(
+                "{code}\nint main(void) {{ return g1(1.0f, 2.0f, 3.0f, 4.0) != 11.0 || top(3) != 105; }}\n"
+            ),
+        )
+        .unwrap();
+        let compile = Command::new("cc")
+            .args(["-std=c11", "-O2", "-Werror", "-o"])
+            .arg(&executable)
+            .arg(&source)
+            .env("TMPDIR", source.parent().unwrap())
+            .output()
+            .unwrap();
+        assert!(
+            compile.status.success(),
+            "{}\n{code}",
+            String::from_utf8_lossy(&compile.stderr)
+        );
+        assert!(
+            Command::new(executable).status().unwrap().success(),
+            "{code}"
+        );
+    }
 }
 
 // Authored ARM instructions: narrowing callees, tail/ordinary wrappers, and
@@ -437,6 +551,7 @@ fn compiled_arm_and_thumb_sources_preserve_mixed_values_and_declared_order_contr
     if common::process::optional_output(Command::new("arm-linux-gnueabihf-gcc").arg("--version"))
         .is_none()
     {
+        eprintln!("compiled_arm_and_thumb_sources: skipping (no `arm-linux-gnueabihf-gcc`)");
         return;
     }
     let source = common::scratch_file("arm-float-mixed-source", "c");

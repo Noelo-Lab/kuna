@@ -16,8 +16,8 @@ Three authored-instruction regressions fail before forwarding claims are made
 ahead of synthetic reads and reconstructed incoming pieces are recognized.
 Recovered mixed callers and callees were compiled as host C and executed to
 check the integer and floating values. Soft-float and absent/ambiguous ABI
-metadata controls retain baseline output. Input recovery also works with
-`armfloatreturn` off; that setting retains legacy return recovery.
+metadata controls retain baseline output. The option takes effect only with
+`armfloatreturn` on; alone it leaves output unchanged.
 
 The stage uses the existing redistributable `fmtlf_armhf` fixture and its adjacent
 source. The original corpus remains 675/675. The stage baseline adds four passing
@@ -53,8 +53,8 @@ Three option-on defects were corrected, each inside the option:
   the stated words. Previously the call read a stale d0 (an earlier double
   result) and lost its own float result.
 - A d-register input read only as its two words becomes the two s-register
-  inputs. Previously, with `armfloatreturn` off, it became an uninitialized
-  local (Cortex-M4F `double` helpers; betaflight `sub_80094e0`).
+  inputs when floating operations consume both words (see the second round
+  below for the integer-word case).
 - Passthrough no longer hands one forwarded word to a stated double.
 
 Option-off output of all 359 in-repo binaries stays byte-identical to main in
@@ -67,3 +67,21 @@ arguments; the spec lists that shape as a known limitation.
 On an idle host, betaflight (5,087 functions, `--mode aggressive`) took a median
 46.20 s user time with the option off and 46.52 s on (+0.7%, three runs each);
 twenty `fmtlf_armhf` runs took 1.91 s and 1.95 s.
+
+## Second review corrections
+
+Three option-on shapes printed calls that disagreed with their callees:
+
+- `g1(float, float, float, double)`: the callee listed the back-fill slot s3
+  as `float a3`, so its callers read s3 (a stale half of d1, or at -O0 a phantom
+  input of the caller) and, at -O2, also the 3.0f the caller left in s6. The
+  back-fill slot is no longer filled in, and a call takes exactly the VFP inputs
+  an arity-sound callee contract states. Six clang ARM/Thumb builds (-O0 to -Os)
+  of that source now compile and return the source's values on the host.
+- A double read only as two integer words (Cortex-M4F code handing it to
+  `__aeabi_dmul`; crazyflie `enqueueTDOA`, newlib `__d2b`) became two
+  integer-typed s-register parameters that no caller passes. Words are now split
+  only when floating operations consume both; integer words keep the
+  `armfloatreturn` output.
+- With `armfloatreturn` off, an unused leading float parameter moved the next
+  argument into its place. The option now requires `armfloatreturn`.

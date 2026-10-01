@@ -3373,9 +3373,7 @@ impl Architecture {
         ctx.arm_float_args = crate::kuna_armfloatargs::applies(self);
         ctx.defaultfp = self.defaultfp.as_ref().map(|model| {
             if ctx.arm_float_return {
-                crate::kuna_armfloatreturn::model(model, ctx.manage())
-            } else if ctx.arm_float_args {
-                crate::kuna_armfloatreturn::input_model(model, ctx.manage())
+                crate::kuna_armfloatreturn::model(model, ctx.manage(), ctx.arm_float_args)
             } else {
                 model.clone()
             }

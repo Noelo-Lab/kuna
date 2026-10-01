@@ -42,10 +42,10 @@ impl Action for ActionArmFloatArgs {
     }
 }
 
+/// The option is on over `armfloatreturn`'s widened model, whose positional
+/// rules keep an unused leading VFP parameter in its slot.
 pub fn applies(arch: &Architecture) -> bool {
-    arch.arm_float_args
-        && arch.archid.starts_with("ARM:")
-        && arch.translate().loader_rc().borrow().arm_vfp_args()
+    arch.arm_float_args && crate::kuna_armfloatreturn::applies(arch)
 }
 
 /// Keep a proven double argument independent of an overlapping float call result.
@@ -162,6 +162,50 @@ pub fn mark_single_floats(call: &mut FuncCallSpecs, data: &Funcdata) {
     }
 }
 
+/// A call whose callee states an arity-sound contract takes only the VFP inputs
+/// it states. An unstated VFP trial is dropped only where the callee's body,
+/// followed through its own calls, provably neither reads nor forwards that
+/// register: a back-fill slot, or a value the caller left behind.
+pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata) {
+    if !data.get_arch().arm_float_args || call.is_input_locked() || !call.proto().has_model() {
+        return;
+    }
+    let entry = call.get_entry_address().clone();
+    let Some(stated) = data.kuna_protoorder_types(&entry).filter(|s| s.arity_sound) else {
+        return;
+    };
+    let (Some(dead), Some(forward)) = (
+        data.kuna_callee_entry_dead(&entry),
+        data.kuna_callee_forward(&entry),
+    ) else {
+        return;
+    };
+    let drop: Vec<i32> = {
+        let entries = call.proto().model().input().get_entry();
+        let active = call.active_input();
+        (0..active.get_num_trials())
+            .filter(|&i| {
+                let t = active.get_trial(i);
+                let (addr, size) = (t.get_address(), t.get_size());
+                t.is_used()
+                    && entries.iter().any(|e| {
+                        e.get_type() == type_class::TYPECLASS_FLOAT
+                            && e.justified_contain(addr, size) >= 0
+                    })
+                    && !stated
+                        .inputs
+                        .iter()
+                        .any(|(a, s, _)| a == addr && *s == size)
+                    && !dead.proves_read(addr, size)
+                    && forward.transfer_free(addr, size)
+            })
+            .collect()
+    };
+    for i in drop {
+        call.get_active_input().get_trial_mut(i).mark_no_use();
+    }
+}
+
 /// A word of a stated floating parameter is not that parameter.
 pub fn partial_float(data: &Funcdata, stated_size: i32, stated: &Datatype, size: i32) -> bool {
     data.get_arch().arm_float_args
@@ -257,22 +301,48 @@ fn read_words(data: &mut Funcdata, vn: VarnodeId, words: [VarnodeId; 2], shift: 
     }
 }
 
-/// A d-register input read only as its two words holds the two s-register inputs.
-fn split_word_inputs(data: &mut Funcdata) {
+/// A d-register input read only as two words that floating operations consume
+/// holds two s-register inputs. Words read only as integers stay one input: they
+/// may be a double handed to an integer helper.
+fn split_word_inputs(data: &mut Funcdata, typed: &[(Address, i32)]) {
+    let floating = |addr: &Address| typed.iter().any(|(a, s)| *s == 4 && a == addr);
     let inputs: Vec<VarnodeId> = data
         .vbank()
         .iter_def_flag(varnode_flags::input)
         .filter(|&vn| {
             data.vbank().get(vn).is_some_and(|v| {
+                let high = v.get_addr() + 4;
                 v.get_size() == 8
                     && !v.has_no_descend()
                     && single_entry(data, v.get_addr())
-                    && single_entry(data, &(v.get_addr() + 4))
+                    && single_entry(data, &high)
+                    && floating(v.get_addr())
+                    && floating(&high)
             }) && crate::kuna_armfloatreturn::halves_only(data, vn, 4)
         })
         .collect();
     for vn in inputs {
         split_input(data, vn);
+    }
+}
+
+/// A right shift by whole bytes: its shifted value and the byte count, so a
+/// truncation of it is a truncation of that value further up.
+fn byte_shift(data: &Funcdata, vn: VarnodeId) -> (VarnodeId, u64) {
+    let shifted = data
+        .vbank()
+        .get(vn)
+        .and_then(|v| v.get_def())
+        .and_then(|id| data.obank().get(id))
+        .filter(|op| matches!(op.code(), OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT))
+        .and_then(|op| {
+            let amount = data.vbank().get(op.get_in(1)?)?;
+            (amount.is_constant() && amount.get_offset() % 8 == 0)
+                .then(|| (op.get_in(0), amount.get_offset() / 8))
+        });
+    match shifted {
+        Some((Some(source), bytes)) => (source, bytes),
+        _ => (vn, 0),
     }
 }
 
@@ -292,17 +362,20 @@ fn input_storage(data: &Funcdata, vn: VarnodeId, budget: &mut usize) -> Option<(
             (source.1 == value.get_size()).then_some(source)
         }
         OpCode::CPUI_SUBPIECE => {
-            let source = input_storage(data, op.get_in(0)?, budget)?;
             let offset = data.vbank().get(op.get_in(1)?)?;
-            if !offset.is_constant()
-                || offset.get_offset().checked_add(value.get_size() as u64)? > source.1 as u64
-            {
+            if !offset.is_constant() {
+                return None;
+            }
+            let (whole, shift) = byte_shift(data, op.get_in(0)?);
+            let offset = offset.get_offset().checked_add(shift)?;
+            let source = input_storage(data, whole, budget)?;
+            if offset.checked_add(value.get_size() as u64)? > source.1 as u64 {
                 return None;
             }
             let displacement = if source.0.is_big_endian() {
-                source.1 as u64 - offset.get_offset() - value.get_size() as u64
+                source.1 as u64 - offset - value.get_size() as u64
             } else {
-                offset.get_offset()
+                offset
             };
             Some((&source.0 + displacement as i64, value.get_size()))
         }
@@ -418,8 +491,8 @@ pub fn prepare_inputs(data: &mut Funcdata) {
     {
         return;
     }
-    split_word_inputs(data);
     let candidates = typed_inputs(data);
+    split_word_inputs(data, &candidates);
     for (addr, size) in candidates {
         if !matches!(size, 4 | 8)
             || !data

@@ -74,21 +74,17 @@ fn add_pairs(list: &mut ParamListStandard, manager: &AddrSpaceManager, limit: us
     list.populate_resolver();
 }
 
-pub fn input_model(model: &Rc<ProtoModel>, manager: &AddrSpaceManager) -> Rc<ProtoModel> {
+/// The default model widened with the d-registers; `backfill` (option
+/// `armfloatargs`) also leaves the AAPCS-VFP back-fill slot out of the inputs.
+pub fn model(model: &Rc<ProtoModel>, manager: &AddrSpaceManager, backfill: bool) -> Rc<ProtoModel> {
     if model.is_merged() {
         return model.clone();
     }
     let mut result = (**model).clone();
     add_pairs(result.input_mut(), manager, 8);
-    Rc::new(result)
-}
-
-pub fn model(model: &Rc<ProtoModel>, manager: &AddrSpaceManager) -> Rc<ProtoModel> {
-    if model.is_merged() {
-        return model.clone();
+    if backfill {
+        result.input_mut().skip_backfill_holes();
     }
-    let mut result = (**model).clone();
-    add_pairs(result.input_mut(), manager, 8);
     add_pairs(result.output_mut(), manager, 1);
     Rc::new(result)
 }

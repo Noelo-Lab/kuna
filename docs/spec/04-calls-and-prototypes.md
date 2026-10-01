@@ -1,25 +1,42 @@
 # 04 — Calls & prototypes
 
 `armfloatargs on` (default off) recovers scalar ARM32 VFP inputs only when
-the container states the hard-float ABI. Floating operations and proven callee
-contracts supply the type evidence; same-width copies and contiguous pieces
-can carry that evidence back to an input. A double consumed as a whole stays
-one eight-byte input, including when an overlapping call result is only four
-bytes. Unknown calls and ambiguous ABI attributes do not establish scalar
+the container states the hard-float ABI and `armfloatreturn` is on. Alone it
+changes nothing: the inputs it recovers rely on that option's widened
+d-register model and on its rule that keeps an unused VFP parameter in its
+slot. Floating operations and proven callee contracts supply the type evidence;
+same-width copies, contiguous pieces and truncations of a right shift by whole
+bytes can carry that evidence back to an input. A double consumed as a whole
+stays one eight-byte input, including when an overlapping call result is only
+four bytes. Unknown calls and ambiguous ABI attributes do not establish scalar
 floating parameters; a floating aggregate or vector is seen only as the scalar
-words or doubles its reads show. This option widens input storage
-independently of `armfloatreturn`.
+words or doubles its reads show.
 
-A d-register input that the function reads only as its two words becomes the
-two s-register inputs rather than an eight-byte value with no parameter. This
-covers a double whose halves go to integer helpers and two single-precision
-inputs that heritage joined because another access covers the whole register.
+A d-register input that the function reads only as its two words, each of
+which a floating operation consumes or a callee states as a float, becomes the
+two s-register inputs: heritage joined two single-precision parameters because
+another access covers the whole register. Words read only as integers, such as
+a double handed to a base-AAPCS helper in core registers, are left as
+`armfloatreturn` alone leaves them.
+
+The AAPCS-VFP back-fill slot is not a parameter. When a single-precision
+parameter fills the low half of a d-register and every later VFP parameter is a
+double, the high half is the slot the convention skips: `f(float, float, float,
+double)` passes the double in d2 and leaves s3 empty. Recovery leaves that slot
+out instead of filling it with an unused `float`, so the recovered list is the
+one the convention assigns and a caller has no reason to read s3.
+
 At a call, the callee's stated single-precision parameters are taken word by
-word out of a d-register range the call may not take whole, and an argument
-hole below a later double follows the callee's stated words instead of the
-whole register. Values written into s0 and s1 after an earlier double result
-therefore reach the call as written. A word the caller forwards is never passed
-as the callee's stated double.
+word out of a d-register range the call may not take whole, so values written
+into s0 and s1 after an earlier double result reach the call as written. When
+the callee's recovered contract is arity-sound, the call drops each VFP input
+the contract does not state, provided the callee's body, followed through its
+own calls, neither reads nor forwards that register. An s-register in which the
+caller happens to leave a value, such as a constant it used for its own
+arithmetic or a stale half of an earlier double, is then not an argument. A
+callee whose body is cut short or reaches code no walk accounts for keeps every
+argument its callers recover. A word the caller forwards is never passed as the
+callee's stated double.
 
 Declared prototypes keep their parameter order. For stripped functions whose
 core and VFP banks do not reveal source order, recovery uses the model's VFP
@@ -34,14 +51,20 @@ Resolved variadic format calls use explicit base AAPCS storage, including
 their floating arguments, rather than the non-variadic VFP convention.
 `formatstring off` disables that source of type evidence.
 
-Three call shapes stay incomplete. A double that the caller forwards untouched,
-but of which only one word is live in the caller, is omitted from the call. When
-a call site recovers its core-register arguments but not a forwarded VFP
-argument that the callee's prototype lists first, the recovered arguments print
-from the first position, so a core argument can stand in a VFP parameter's
-place. Words that a callee only uses as integers are typed as integers, which
-the model would pass in core registers, so no caller takes them from the
-callee's recovered prototype.
+Five call shapes stay incomplete. A double that the caller forwards untouched,
+but of which only one word is live in the caller, is omitted from the call. A
+wrapper that forwards a single-precision argument from the upper half of a
+d-register without touching it, such as the third float of
+`w(float, float, float)`, recovers none of its VFP arguments. When a call site
+recovers its core-register arguments but not a forwarded VFP argument that the
+callee's prototype lists first, the recovered arguments print from the first
+position, so a core argument can stand in a VFP parameter's place. A VFP
+parameter that the callee never reads and the caller never sets, because an
+earlier call clobbered its register, ends the call's VFP arguments there: the
+later ones are missing rather than moved. A double that a callee reads only as
+two integer words is outside this option. Single-precision FPUs such as the
+Cortex-M4F hand every double to base-AAPCS helpers this way, so such a callee
+and its callers keep what `armfloatreturn` alone recovers for them.
 
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer
