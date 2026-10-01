@@ -79,12 +79,11 @@ pub fn reads_signedness(code: OpCode, slot: int4, size: int4, other_const: Optio
 ///
 /// `op` is then either the global's own marker, or a `COPY` into the same
 /// global (what a duplicated join block leaves of its marker), or a load: an
-/// operation the binary makes on the global after the store.  (A `PIECE` that
+/// operation the binary makes on the global after the store.  A `PIECE` that
 /// joins the stored part into the whole of a wider global is neither, and stays
-/// upstream's.)  A load that
-/// upstream lets through reads the value from then on.  After `gi = u; *p = k;`
-/// that load may see `k`, so the value must keep printing as the global: the
-/// store and the value are marked
+/// upstream's.  A load that upstream lets through reads the value from then on,
+/// and after `gi = u; *p = k;` that load may see `k`, so the value must keep
+/// printing as the global: the store and the value are marked
 /// ([`Varnode::is_global_load`](crate::varnode::Varnode::is_global_load)), the
 /// mark follows the value into the global's markers and later stores, and
 /// chapter 06 never keeps a marked value apart.  A marked store takes
