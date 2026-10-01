@@ -65,11 +65,13 @@
     `put`'s name `obj`, which the global owns, so its declaration is renamed
     `obj_1`, but the field stores (pieces with no declaration of their own) and
     the second call's argument (collapsed onto the first) kept `obj` and wrote
-    the global.  s4: the script renames `v2` to `v1`, two stack slots now share
-    a name, the second is declared `v1_1`, but `&v2` (a reference, not a
-    declaration) kept printing `&v1`; under Ghidra names, which carry no storage
-    comment, the two slots also printed identical `int8 v1;` lines and were
-    collapsed into one variable.  gc: the local takes `release`'s name `node`
+    the global.  s4: the script renames both stack slots to `w`, so two slots
+    share a name, the second is declared `w_1`, but `&v2` (a reference, not a
+    declaration) kept printing `&w`; under Ghidra names, which carry no storage
+    comment, the two slots also printed identical `int8 w;` lines and were
+    collapsed into one variable.  Renaming only `v2` to `v1` must not collide at
+    all: the untouched slot's default name skips the one the rename locked, so
+    the caller's `v1` stays on the slot it named.  gc: the local takes `release`'s name `node`
     and is declared `node_1`; the `node[...]` array accesses are references to
     the global and must keep its name.  stackreturn: the slot is declared
     `perf_ret_1`, and its 2- and 4-byte views must follow it rather than read
@@ -187,6 +189,12 @@ c3c3c3
   <com>rename v2 v1</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu s4</com>
+  <com>decompile</com>
+  <com>rename v1 w</com>
+  <com>rename v2 w</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>lo fu gc</com>
   <com>decompile</com>
   <com>print C</com>
@@ -210,6 +218,12 @@ c3c3c3
   <com>lo fu s4</com>
   <com>decompile</com>
   <com>rename v2 v1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu s4</com>
+  <com>decompile</com>
+  <com>rename v1 w</com>
+  <com>rename v2 w</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu gc</com>
@@ -236,6 +250,12 @@ c3c3c3
   <com>lo fu s4</com>
   <com>decompile</com>
   <com>rename v2 v1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu s4</com>
+  <com>decompile</com>
+  <com>rename v1 w</com>
+  <com>rename v2 w</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu gc</com>
@@ -268,10 +288,10 @@ take\(pt\);</stringmatch>
 obj_1\.a = c \* (7|3);
 put\(obj_1,(1|2)\);</stringmatch>
 <stringmatch name="calleenamedlocals #11: the global is only read, never written or passed" min="0" max="0">^ +obj\.(a|b) = |put\(obj,</stringmatch>
-<stringmatch name="calleenamedlocals #12: both renamed slots are declared in every pass" min="3" max="3">^  int8 v1_1;</stringmatch>
-<stringmatch name="calleenamedlocals #13: the second slot's address follows its new name" min="3" max="3">v1_1 = n \* 5;
-touchl\(&amp;v1_1\);
-return v1 \+ v1_1 \* 100;</stringmatch>
+<stringmatch name="calleenamedlocals #12: both renamed slots are declared in every pass" min="3" max="3">^  int8 w_1;</stringmatch>
+<stringmatch name="calleenamedlocals #13: the second slot's address follows its new name" min="3" max="3">w_1 = n \* 5;
+touchl\(&amp;w_1\);
+return w \+ w_1 \* 100;</stringmatch>
 <stringmatch name="calleenamedlocals #14: gc declares the local under a suffix and passes it" min="3" max="3">^  Item \*node_1;$</stringmatch>
 <stringmatch name="calleenamedlocals #15: gc's array accesses keep the global's name" min="3" max="3">\*\(int4 \*\)&amp;node\[\(\(uint4\)(v1|uVar1) &amp; 7\) \* 8UL \+ 4\] = \*\(int4 \*\)&amp;node\[</stringmatch>
 <stringmatch name="calleenamedlocals #16: the global is never indexed through the local" min="0" max="0">node_1\[</stringmatch>
@@ -279,4 +299,10 @@ return v1 \+ v1_1 \* 100;</stringmatch>
 small_ret = \(int4\)perf_ret_1;
 perf_ret_1\._2_2_ = big\(2,0x1e\);
 big_ret = CONCAT44\(perf_ret_1\._4_4_,\(unsigned int\)perf_ret_1\);</stringmatch>
+<stringmatch name="calleenamedlocals #18: the slot renamed v1 keeps it and the other takes a fresh default" min="3" max="3">v2 = n \* 3;
+touchl\(&amp;v2\);
+v1 = n \* 5;
+touchl\(&amp;v1\);
+return v2 \+ v1 \* 100;</stringmatch>
+<stringmatch name="calleenamedlocals #19: no slot is declared under a suffix of the caller's v1" min="0" max="0">v1_1</stringmatch>
 </decompilertest>

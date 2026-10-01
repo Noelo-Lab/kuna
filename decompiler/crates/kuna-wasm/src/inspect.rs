@@ -1,14 +1,17 @@
 //! The study view's documents: `inspect` (one function with its token source
 //! map and instruction listing), `read` (raw bytes), `xrefs` (one function's
-//! references), and the target, section and type facts `list` adds for it.
+//! references), `strings` (the string literals and who uses them), and the
+//! target, section and type facts `list` adds for it.
 
 use std::collections::BTreeMap;
 
 use kuna_console::assertions::Outcome;
 use kuna_console::disasm::{hex, mapped_run_end, read_upto};
 use kuna_console::engine::{ConsoleProgram, FunctionEntry};
+use kuna_analysis::loader::kuna_relocrebase::RebasedView;
+use kuna_analysis::strings::kuna_stringinv::{self, Termination};
 use kuna_console::inspect::{
-    function_rows, function_xrefs, section_rows, SectionRow, XrefRow, FUNCTION_ROW_CAP,
+    function_rows, function_xrefs, section_rows, string_uses, SectionRow, XrefRow, FUNCTION_ROW_CAP,
 };
 use kuna_console::project::FuncResult;
 
@@ -295,6 +298,75 @@ pub fn xrefs_json(
         .raw("callers", &rows(&refs.callers, "from"))
         .raw("callees", &rows(&refs.callees, "at"))
         .raw("data_refs", &rows(&refs.data_refs, "at"))
+        .raw("assertions", &assertions_json(assertions))
+        .end()
+}
+
+/// The `strings` document: `{binary, scanned, count, strings:[{address,
+/// address_hex, text, length, encoding, section, in_code, uses:[{name, address,
+/// address_hex, at, at_hex, kind, instruction, via}]}], assertions}`. The rows
+/// are `kuna strings --encoding all`'s (minimum length 5, any ending); `in_code`
+/// marks a row inside an executable section, and a use's `via` is
+/// `{name, address, address_hex}` of the data word it reads the string's address
+/// from, else null.
+pub fn strings_json(
+    binary: &str,
+    prog: &ConsoleProgram,
+    file: &object::File,
+    rebased: Option<&RebasedView>,
+    assertions: &[Outcome],
+) -> String {
+    use object::{Object, ObjectSection, SectionKind};
+    let query = kuna_stringinv::Query {
+        min_len: 5,
+        ascii: true,
+        utf8: true,
+        utf16: true,
+        section: None,
+        termination: Termination::Any,
+    };
+    let inv = match rebased {
+        Some(view) => kuna_stringinv::inventory_in_image(file, &query, &view.ranges),
+        None => kuna_stringinv::inventory(file, &query),
+    };
+    let code: Vec<(u64, u64)> = file
+        .sections()
+        .filter(|s| s.kind() == SectionKind::Text)
+        .map(|s| (s.address(), s.address().saturating_add(s.size())))
+        .collect();
+    let extents: Vec<(u64, u64)> =
+        inv.strings.iter().map(|s| (s.addr, u64::from(s.byte_len))).collect();
+    let uses = string_uses(prog, file, &extents);
+    let rows = arr(inv.strings.iter().zip(&uses).map(|(s, uses)| {
+        let uses = arr(uses.iter().map(|u| {
+            let via = u.via.as_ref().map_or_else(
+                || "null".to_string(),
+                |(slot, name)| Obj::new().opt_str("name", name.as_deref()).addr("address", *slot).end(),
+            );
+            Obj::new()
+                .opt_str("name", u.row.name.as_deref())
+                .addr("address", prog.output_code_offset(u.row.address))
+                .addr("at", prog.output_code_offset(u.row.site))
+                .str("kind", u.row.kind)
+                .str("instruction", &u.row.instruction)
+                .raw("via", &via)
+                .end()
+        }));
+        Obj::new()
+            .addr("address", s.addr)
+            .str("text", &s.text)
+            .num("length", s.char_len)
+            .str("encoding", s.encoding.as_str())
+            .opt_str("section", s.section.as_deref())
+            .bool("in_code", code.iter().any(|&(lo, hi)| s.addr >= lo && s.addr < hi))
+            .raw("uses", &uses)
+            .end()
+    }));
+    Obj::new()
+        .str("binary", binary)
+        .str("scanned", if inv.from_segments { "segments" } else { "sections" })
+        .num("count", inv.strings.len())
+        .raw("strings", &rows)
         .raw("assertions", &assertions_json(assertions))
         .end()
 }

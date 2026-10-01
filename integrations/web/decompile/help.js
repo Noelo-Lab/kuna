@@ -3,7 +3,7 @@
 // line. DOM-free: returns the dialog's HTML for app.js to mount.
 
 const TOP_KEYS = [
-  ['/', 'Search functions'],
+  ['/', 'Search the list on the left'],
   ['Space', 'Switch between the code and assembly'],
   ['1 – 4', 'Code · Assembly · Bytes · Stack'],
   ['s', 'Side by side'],
@@ -14,7 +14,7 @@ const TOP_KEYS = [
 ];
 
 const KEYS = [
-  ['/', 'search functions'],
+  ['/', 'search the list on the left: functions or strings'],
   ['Space', 'switch between the code and assembly'],
   ['1 2 3 4', 'Code · Assembly · Bytes · Stack'],
   ['s', 'side by side (the code next to the assembly)'],
@@ -67,7 +67,7 @@ export function helpHtml() {
   return '<div class="hh"><h2 id="helptitle">How to use Kuna</h2>' +
     '<button class="d2-iconbtn small" data-act="help-close" aria-label="Close" title="Close">×</button></div>' +
     '<div class="hb2">' +
-    '<p>Pick a function on the left. Click a line of code to see the assembly it becomes; click a name to learn about it, and double-click to rename it. Turn on <b>Show hints</b> for tips and for cards that explain what the pointer rests on. Your changes are kept in this browser.</p>' +
+    '<p>Pick a function on the left. To find text such as a flag or a password prompt, switch the list to <b>Strings</b>, search, and click a function under a string to go to the code that uses it. Click a line of code to see the assembly it becomes; click a name to learn about it, and double-click to rename it. Turn on <b>Show hints</b> for tips and for cards that explain what the pointer rests on. Your changes are kept in this browser.</p>' +
     `<h3>Keyboard</h3><table>${rows(TOP_KEYS)}</table>` +
     `<details id="helpall"><summary>All shortcuts</summary><table>${rows(KEYS)}</table></details>` +
     '<h3>Working together</h3><p><b>Collaborate</b> makes an invite link. The person who opens it sends you a reply link; open it and you are in the same session: you see each other\'s changes and pointers, and anyone can change anything. Alt+click a line (or press <kbd>p</kbd>) to point the others to it.</p>' +

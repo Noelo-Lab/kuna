@@ -1,6 +1,7 @@
 //! The study view's commands on the browser example (`sample.elf`): `inspect`
 //! against `decompile`, the instruction listing against the C and the file,
-//! `read`, and the `--assert` plane end to end.
+//! `read`, and the `--assert` plane end to end; and `strings` on the crackme
+//! example (`crackme.elf`).
 
 use std::path::PathBuf;
 
@@ -10,11 +11,15 @@ use crate::{run_request, Request};
 use serde_json::Value;
 
 fn fixture() -> (String, String) {
+    fixture_named("sample.elf")
+}
+
+fn fixture_named(name: &str) -> (String, String) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
         .canonicalize()
         .expect("repository root");
-    let binary = root.join("integrations/web/test/fixtures/sample.elf");
+    let binary = root.join("integrations/web/test/fixtures").join(name);
     let specs = root.join("specs");
     (
         binary.to_str().unwrap().to_string(),
@@ -23,7 +28,11 @@ fn fixture() -> (String, String) {
 }
 
 fn run(cmd: &str, args: &[&str], asserts: &[&str]) -> Result<Value, String> {
-    let (binary, specs) = fixture();
+    run_on("sample.elf", cmd, args, asserts)
+}
+
+fn run_on(name: &str, cmd: &str, args: &[&str], asserts: &[&str]) -> Result<Value, String> {
+    let (binary, specs) = fixture_named(name);
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let asserts: Vec<String> = asserts.iter().map(|s| s.to_string()).collect();
     let out = run_request(&Request {
@@ -272,4 +281,54 @@ fn xrefs_names_both_ends_of_every_reference() {
     assert_eq!(callers[0]["address_hex"].as_str(), Some("0x1198"));
     assert_eq!(callers[0]["instruction"].as_str(), Some("CALL 0x1161"));
     assert!(callers[0].get("from_hex").is_some());
+}
+
+/// `strings` names the function behind every use of a literal, at the
+/// instruction that makes it: one loaded directly (the failure message, from
+/// `check` and `main`) and one read through the global pointer that holds it
+/// (the flag, through `secret`, twice in `check`).
+#[test]
+fn strings_names_who_uses_each_literal_including_through_a_pointer() {
+    let doc = run_on("crackme.elf", "strings", &[], &[]).expect("strings");
+    let rows = doc["strings"].as_array().expect("array");
+    assert_eq!(doc["count"].as_u64(), Some(rows.len() as u64));
+    let row = |text: &str| {
+        rows.iter()
+            .find(|s| s["text"].as_str() == Some(text))
+            .unwrap_or_else(|| panic!("{text:?} is listed: {rows:?}"))
+    };
+    let users = |text: &str| -> Vec<String> {
+        row(text)["uses"]
+            .as_array()
+            .expect("uses")
+            .iter()
+            .map(|u| u["name"].as_str().unwrap_or("?").to_string())
+            .collect()
+    };
+    assert_eq!(users("Nope, that is not the flag."), vec!["check", "main"]);
+    assert_eq!(users("Enter the flag: "), vec!["main"]);
+    assert_eq!(users("Correct! You found the flag."), vec!["main"]);
+    assert_eq!(row("Enter the flag: ")["uses"][0]["via"], Value::Null);
+    assert_eq!(row("Enter the flag: ")["in_code"], Value::Bool(false));
+
+    let flag = row("flag{str1ngs_4re_3asy}");
+    assert_eq!(flag["section"].as_str(), Some(".rodata"));
+    let uses = flag["uses"].as_array().expect("uses");
+    assert_eq!(uses.len(), 2, "{uses:?}");
+    let check = run_on("crackme.elf", "inspect", &["check"], &[]).expect("inspect check");
+    let sites: Vec<&str> = check["function"]["instructions"]
+        .as_array()
+        .expect("instructions")
+        .iter()
+        .filter_map(|i| i["address_hex"].as_str())
+        .collect();
+    for u in uses {
+        assert_eq!(u["name"].as_str(), Some("check"));
+        assert_eq!(u["address_hex"], check["function"]["address_hex"]);
+        assert_eq!(u["kind"].as_str(), Some("read"));
+        assert_eq!(u["via"]["name"].as_str(), Some("secret"));
+        let slot = u["via"]["address_hex"].as_str().expect("pointer address");
+        assert!(u["instruction"].as_str().expect("text").contains(slot), "{u:?}");
+        assert!(sites.contains(&u["at_hex"].as_str().expect("site")), "{u:?} is an instruction of check");
+    }
 }

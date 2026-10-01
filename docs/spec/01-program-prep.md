@@ -471,7 +471,8 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   absolute, relative, PLT-relative, and image-offset fields at 8/16/32/64 bits in
   the object's byte order, plus the instruction fields and ABI formulas for ARM
   `CALL`/`JUMP24`/Thumb branches/`REL32`/`PREL31`, AArch64 branch/page/low-12
-  forms, and PowerPC64 `REL24`/TOC forms. An entry that cannot be encoded is left
+  forms, PowerPC64 `REL24`/TOC forms, and 32-bit SPARC `WDISP30`/`WPLT30`/
+  `HI22`/`LO10`/`PC22`/`PC10`/`DISP32` forms. An entry that cannot be encoded is left
   untouched and classified by reason (unsupported, unresolved target, missing
   TOC, section bounds, required veneer, alignment, range, or invalid encoding).
   The loader reports exact failure totals in at most eight groups with three
@@ -531,7 +532,17 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   not infer state from their synthetic slot address. AArch64 branch, page, and
   low-12 relocations preserve the instruction's opcode/register fields, while
   PowerPC64 `REL24` and TOC-family relocations preserve big-endian instruction
-  layout and DS-form low bits.
+  layout and DS-form low bits. SPARC `WDISP30` and `WPLT30` rewrite the 30-bit
+  word displacement of a `call`, computing `S + A - P` modulo 2³² so a call
+  can cross the signed-address boundary or wrap around address zero;
+  `HI22` writes bits 31..10 of `S + A` into a
+  `sethi` and `LO10` the low ten bits into a format-3 immediate, leaving the
+  upper `simm13` bits as the GNU linker does; `PC22`/`PC10` are the same two
+  fields over `S + A - P`, and `DISP32` is the 32-bit PC-relative data word.
+  The split forms truncate rather than range-check, and reject a REL-style
+  implicit addend, which cannot be reassembled from one half. SPARC64 (V9)
+  instruction relocations, and GOT/TLS forms that need linker-built tables,
+  remain unsupported.
 
   An undefined symbol reached through any branch or call instruction field —
   not only a call-spelled one — is bound to a named extern slot. A tail call is
@@ -3944,6 +3955,39 @@ than 2 instructions, no bad byte or out-of-range flow) *and* its prologue matche
 start fingerprint shared by at least 4 already-discovered functions
 (`FINGERPRINT_THRESHOLD`) — the exhaustive gap oracle for functions with no
 static or accepted pointer-table root.
+
+The gap cursor caches its current undefined span instead of repeating Listing
+lookups at every candidate. The next known instruction still bounds subroutine
+validation; an executable-range boundary only bounds cursor advancement. Once
+the cursor advances, cached decode successes and failures below it are retired:
+validation never decodes below its candidate. Forward results retain their first
+decode, including across processor-context changes. This bounds retention on long
+rejected padding runs without imposing a discovery cutoff or a universal cache
+size limit on branch-heavy inputs. Shared immutable records avoid copying text
+and flow vectors on cache hits; fingerprint equality remains two mnemonics and
+their total instruction length. The validation walk reuses its visited-address
+hash set and work stack, preserving successor order and the 4,000-step limit.
+Accepted bodies are converted back to address-sorted sets. One already-decoded,
+fixed-stride fall-through prefix can stand in for its visited addresses on the
+next overlapping validation. Its deferred branch targets and information flags
+are replayed in their original order under the same validation policy. All prefix
+instructions still count toward the step limit; backward edges into the prefix
+are already visited, and accepted bodies include every prefix address. Terminal
+instructions, missing fall-throughs and stride changes end the prefix. Cache
+retirement trims it, so reuse never skips a new decode or a context update.
+
+AIF obtains flow and assembly through `Translate::one_instruction_with_assembly`
+(`decompiler/crates/kuna-sleigh/src/translate.rs`). Its default implementation
+performs the original lift followed by best-effort assembly. SLEIGH reuses the
+resolved parse for instructions without context commits or delay slots; otherwise
+it reparses assembly after the lift, preserving the context updates and consumed
+length. P-code errors still fail the probe, while assembly errors do not replace
+a successful lift. Emitters must leave the image and translation context unchanged.
+The combined SLEIGH path retains at most eight constructor decisions keyed by the
+full instruction buffer, context words, table and operand offset. Each address
+still evaluates operands, applies context changes and generates p-code normally;
+this is not a cache of lifted instructions. Pattern-mask capture bypasses the
+cache, and changing the processor spec invalidates it.
 
 (kuna, GH-299) That gap walk slides its cursor **one byte at a time**, because the
 undefined partition is byte-granular by construction, so every byte of every hole is

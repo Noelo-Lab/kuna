@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1595,
-    1595
+    1597,
+    1597
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1073,6 +1073,8 @@
     "data:calleenamedlocals #15: gc's array accesses keep the global's name",
     "data:calleenamedlocals #16: the global is never indexed through the local",
     "data:calleenamedlocals #17: the slot's narrow views follow its renamed declaration",
+    "data:calleenamedlocals #18: the slot renamed v1 keeps it and the other takes a fresh default",
+    "data:calleenamedlocals #19: no slot is declared under a suffix of the caller's v1",
     "data:calleenamedlocals #1: the representative is declared in every pass",
     "data:calleenamedlocals #2: the member is declared under its own name in every pass",
     "data:calleenamedlocals #3: the representative is loaded, consumed and flagged",

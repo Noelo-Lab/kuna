@@ -2115,11 +2115,7 @@ fn bind_proto_partial_piece(
                     .get_scope_local_mut()
                     .and_then(|lm| lm.link_symbol_root(&root_addr, base))
                     .map(|(n, _, _)| n)
-                    .unwrap_or_else(|| {
-                        let n = format!("v{base}");
-                        *base += 1;
-                        n
-                    }),
+                    .unwrap_or_else(|| default_v_name(data, base)),
             };
             (name, info.sym_off, info.sym_type)
         }
@@ -2142,11 +2138,7 @@ fn bind_proto_partial_piece(
                         root_names.insert(n.clone());
                         n
                     }
-                    None => {
-                        let n = format!("v{base}");
-                        *base += 1;
-                        n
-                    }
+                    None => default_v_name(data, base),
                 },
             };
             taken.insert(name.clone());
@@ -2457,21 +2449,35 @@ fn build_func_param_name_recmap(
 /// no prefix (so the ghidra name degenerates to `Var<index>`, matching the C++
 /// empty-`printNameBase` case).
 fn kuna_default_local_name(
-    arch: &crate::context::ArchContext,
+    data: &Funcdata,
     ct: Option<&crate::dtype::Datatype>,
     base: &mut int4,
 ) -> String {
     use crate::database::DatabaseArch;
+    let arch = data.get_arch();
     if arch.name_style_angr() {
-        let n = format!("v{base}");
-        *base += 1;
-        n
+        default_v_name(data, base)
     } else {
         // buildVariableName local arm: `<printNameBase>` + "Var" + index.
         let prefix = ct.map(|c| arch.type_name_base(c)).unwrap_or_default();
-        let n = format!("{prefix}Var{base}");
-        *base += 1;
-        n
+        next_default_name(data, base, |i| format!("{prefix}Var{i}"))
+    }
+}
+
+/// `v<base++>`, past any name a name-locked local Symbol holds
+/// (`ScopeLocal::next_default_name`).
+fn default_v_name(data: &Funcdata, base: &mut int4) -> String {
+    next_default_name(data, base, |i| format!("v{i}"))
+}
+
+fn next_default_name(data: &Funcdata, base: &mut int4, render: impl Fn(int4) -> String) -> String {
+    match data.get_scope_local() {
+        Some(lm) => lm.next_default_name(base, render),
+        None => {
+            let name = render(*base);
+            *base += 1;
+            name
+        }
     }
 }
 
@@ -3051,7 +3057,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 // (`iVar1`/`uVar1`/...).  Pick the rep's data-type for the prefix
                 // (the same type that renders the declaration, e.g. `int4`).
                 let rep_ty = data.vbank().get(name_rep.unwrap()).map(|v| v.get_type().clone());
-                kuna_default_local_name(data.get_arch(), rep_ty.as_deref(), &mut base)
+                kuna_default_local_name(data, rep_ty.as_deref(), &mut base)
             }
         };
         taken.insert(name.clone());
