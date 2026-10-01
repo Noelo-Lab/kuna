@@ -1451,3 +1451,17 @@ fn forward_record_alias_completes_without_erasing_tag() {
     parse("struct Container { NodeAlias value; };");
     assert_eq!(f.find_by_name("Container").unwrap().unwrap().get_size(), 8);
 }
+
+#[test]
+fn anonymous_member_records_stay_distinct() {
+    let f = factory();
+    let parse = |s| super::parse_c(s, &f, org(), &[], |_, _| Ok(()));
+    parse("struct Outer { struct { int4 a; } first; struct { int8 b; } second; union { int4 c; } third; union { int2 d; } fourth; };")
+        .unwrap();
+    let outer = f.find_by_name("Outer").unwrap().unwrap();
+    assert_eq!(outer.get_size(), 24);
+    let sizes: Vec<_> = (0..4).map(|i| outer.get_field(i).unwrap().field_type.get_size()).collect();
+    assert_eq!(sizes, [4, 8, 4, 2]);
+    assert!(parse("struct Bad { struct { struct Missing m; } inner; };").is_err());
+    parse("struct Again { struct { uint2 z; } first; };").unwrap();
+}

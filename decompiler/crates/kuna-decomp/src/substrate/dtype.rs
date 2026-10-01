@@ -898,10 +898,12 @@ pub struct Datatype {
     pub align_size: int4,
     /// The concrete subclass payload
     pub kind: DatatypeKind,
-    /// Stable identity for an incomplete record and its completed replacement.
-    /// Pointers may outlive the stub in the factory; the weak link lets them
-    /// see its fields without creating an owning recursive Rc cycle. This cell
-    /// is installed before interning, so dependency ordering remains stable.
+    /// Stable identity for an incomplete record and its completed replacement,
+    /// on a record the C grammar declared ([`TypeFactory::kuna_declare_record`])
+    /// and the typedefs made of it while incomplete. Pointers may outlive the
+    /// stub in the factory; the weak link lets them see its fields without
+    /// creating an owning recursive Rc cycle. This cell is installed before
+    /// interning, so dependency ordering remains stable.
     record_completion: Option<Rc<RefCell<std::rc::Weak<Datatype>>>>,
 }
 
@@ -3977,6 +3979,18 @@ pub trait TypeFactory {
     ) -> KunaResult<Rc<Datatype>>;
     /// Create an (empty) union (C++ `getTypeUnion`).
     fn get_type_union(&self, n: &str) -> KunaResult<Rc<Datatype>>;
+    /// (kuna) The incomplete struct or union a C declaration names by its tag
+    /// ahead of the body: [`Self::get_type_struct`] / [`Self::get_type_union`],
+    /// except that a pointer built to a new stub reads the record its body later
+    /// completes, as upstream's in-place completion does. A type already holding
+    /// the name is returned unchanged.
+    fn kuna_declare_record(&self, n: &str, is_union: bool) -> KunaResult<Rc<Datatype>> {
+        if is_union {
+            self.get_type_union(n)
+        } else {
+            self.get_type_struct(n)
+        }
+    }
     /// Create a partial union (C++ `getTypePartialUnion`).
     fn get_type_partial_union(
         &self,
@@ -5286,8 +5300,7 @@ impl TypeFactoryImpl {
     }
 
     /// C++ `TypeFactory::setFields(...,TypeStruct*,...)` (type.cc:3960-3973):
-    /// Re-key the completed struct and publish it to pointers created while
-    /// its tag was incomplete. Pointer dependency keys keep the shell identity.
+    /// re-key the completed struct ([`Self::publish_completed_record`]).
     fn set_fields_struct(
         &self,
         ct: &Rc<Datatype>,
@@ -5300,7 +5313,6 @@ impl TypeFactoryImpl {
         if !ct.is_incomplete() {
             return Err(KunaError::lowlevel("Can only set fields on an incomplete structure"));
         }
-        self.erase_interned(ct, true);
         let mut newct = (**ct).clone();
         newct.set_struct_fields(fd, bit, new_size, new_align);
         newct.flags &= !flags::type_incomplete;
@@ -5310,14 +5322,7 @@ impl TypeFactoryImpl {
                 | flags::type_incomplete
                 | flags::has_bitfields);
         let newrc = Rc::new(newct);
-        if let Err(err) = self.insert(Rc::clone(&newrc)) {
-            self.insert(Rc::clone(ct))?;
-            return Err(err);
-        }
-        if let Some(link) = &ct.record_completion {
-            *link.borrow_mut() = Rc::downgrade(&newrc);
-        }
-        self.complete_record_typedefs(&newrc)?;
+        self.publish_completed_record(ct, &newrc)?;
         Ok(newrc)
     }
 
@@ -5334,21 +5339,31 @@ impl TypeFactoryImpl {
         if !ct.is_incomplete() {
             return Err(KunaError::lowlevel("Can only set fields on an incomplete union"));
         }
-        self.erase_interned(ct, true);
         let mut newct = (**ct).clone();
         newct.set_union_fields(fd, new_size, new_align);
         newct.flags &= !flags::type_incomplete;
         newct.flags |= extra_flags & (flags::variable_length | flags::type_incomplete);
         let newrc = Rc::new(newct);
-        if let Err(err) = self.insert(Rc::clone(&newrc)) {
+        self.publish_completed_record(ct, &newrc)?;
+        Ok(newrc)
+    }
+
+    /// Re-key the completion `newrc` of the incomplete record `ct`. A record the
+    /// C grammar declared ([`TypeFactory::kuna_declare_record`]) also leaves the
+    /// name index, and the pointers built to it and the typedefs made of it read
+    /// the completion from then on; any other stub keeps the upstream re-keying.
+    fn publish_completed_record(&self, ct: &Rc<Datatype>, newrc: &Rc<Datatype>) -> KunaResult<()> {
+        let Some(link) = &ct.record_completion else {
+            self.erase_interned(ct, false);
+            return self.insert(Rc::clone(newrc));
+        };
+        self.erase_interned(ct, true);
+        if let Err(err) = self.insert(Rc::clone(newrc)) {
             self.insert(Rc::clone(ct))?;
             return Err(err);
         }
-        if let Some(link) = &ct.record_completion {
-            *link.borrow_mut() = Rc::downgrade(&newrc);
-        }
-        self.complete_record_typedefs(&newrc)?;
-        Ok(newrc)
+        *link.borrow_mut() = Rc::downgrade(newrc);
+        self.complete_record_typedefs(newrc)
     }
 
     /// C++ `TypeFactory::setEnumValues` (type.cc:4013-4019): install the
@@ -5395,7 +5410,7 @@ impl TypeFactoryImpl {
         res.flags &= !flags::coretype; // Not a core type
         res.typedef_imm = Some(Rc::clone(ct));
         // A typedef has its own identity/spelling, not the tag's completion key.
-        res.record_completion = if ct.is_incomplete() {
+        res.record_completion = if ct.is_incomplete() && ct.record_completion.is_some() {
             Some(Rc::new(RefCell::new(std::rc::Weak::new())))
         } else {
             None
@@ -5897,7 +5912,6 @@ impl TypeFactoryImpl {
             meta,
         );
         stub.flags |= flags::type_incomplete | b.extra_flags(forcecore);
-        stub.record_completion = Some(Rc::new(RefCell::new(std::rc::Weak::new())));
         stub.kind = if is_union {
             DatatypeKind::Union { field: Vec::new() }
         } else {
@@ -6510,11 +6524,11 @@ impl TypeFactoryImpl {
 
     /// Create an (empty) incomplete structure (C++ `getTypeStruct`,
     /// type.cc:4388-4396).
-    fn get_type_struct_impl(&self, n: &str) -> KunaResult<Rc<Datatype>> {
+    fn get_type_struct_impl(&self, n: &str, declared: bool) -> KunaResult<Rc<Datatype>> {
         // TypeStruct(): incomplete, no fields.
         let mut tmp = Datatype::new_with_align(0, -1, type_metatype::TYPE_STRUCT);
         tmp.flags |= flags::type_incomplete;
-        tmp.record_completion = Some(Rc::new(RefCell::new(std::rc::Weak::new())));
+        tmp.record_completion = declared.then(|| Rc::new(RefCell::new(std::rc::Weak::new())));
         tmp.kind = DatatypeKind::Struct { field: Vec::new(), bitfield: Vec::new() };
         tmp.name = n.to_string();
         tmp.display_name = n.to_string();
@@ -6558,13 +6572,13 @@ impl TypeFactoryImpl {
 
     /// Create an (empty) incomplete union (C++ `getTypeUnion`,
     /// type.cc:4414-4422).
-    fn get_type_union_impl(&self, n: &str) -> KunaResult<Rc<Datatype>> {
+    fn get_type_union_impl(&self, n: &str, declared: bool) -> KunaResult<Rc<Datatype>> {
         let mut tmp = Datatype::new_with_align(0, -1, type_metatype::TYPE_UNION);
         // C++ `TypeUnion()` ctor (type.hh:625): flags |= (type_incomplete |
         // needs_resolution).  Every union "needs resolution" — its accessed field
         // is recovered from the data flow by `ScoreUnionFields`/`resolveInFlow`.
         tmp.flags |= flags::type_incomplete | flags::needs_resolution;
-        tmp.record_completion = Some(Rc::new(RefCell::new(std::rc::Weak::new())));
+        tmp.record_completion = declared.then(|| Rc::new(RefCell::new(std::rc::Weak::new())));
         tmp.kind = DatatypeKind::Union { field: Vec::new() };
         tmp.name = n.to_string();
         tmp.display_name = n.to_string();
@@ -7144,7 +7158,7 @@ impl TypeFactory for TypeFactoryImpl {
         self.get_type_array_impl(as_, ao)
     }
     fn get_type_struct(&self, n: &str) -> KunaResult<Rc<Datatype>> {
-        self.get_type_struct_impl(n)
+        self.get_type_struct_impl(n, false)
     }
     fn get_type_partial_struct(
         &self,
@@ -7155,7 +7169,14 @@ impl TypeFactory for TypeFactoryImpl {
         self.get_type_partial_struct_impl(contain, off, sz)
     }
     fn get_type_union(&self, n: &str) -> KunaResult<Rc<Datatype>> {
-        self.get_type_union_impl(n)
+        self.get_type_union_impl(n, false)
+    }
+    fn kuna_declare_record(&self, n: &str, is_union: bool) -> KunaResult<Rc<Datatype>> {
+        if is_union {
+            self.get_type_union_impl(n, true)
+        } else {
+            self.get_type_struct_impl(n, true)
+        }
     }
     fn get_type_partial_union(
         &self,
@@ -8707,6 +8728,35 @@ mod tests {
         outer.collect_bit_fields(0, &mut res, 0, 8);
         assert_eq!(res.len(), 3);
         assert!(res.iter().all(|t| t.offset == 4));
+    }
+
+    /// Only a record the C grammar declared reads through its completion: a stub
+    /// from `get_type_struct` (the DWARF and library importers' shell) completed
+    /// later leaves a pointer built to it naming the stub, as before.
+    #[test]
+    fn only_a_declared_record_completes_its_earlier_pointers() {
+        use type_metatype::*;
+        let f = factory();
+        f.set_core_type("int4", 4, TYPE_INT, false).unwrap();
+        f.cache_core_types().unwrap();
+        let int4 = f.get_base(4, TYPE_INT).unwrap();
+        for declared in [false, true] {
+            let name = if declared { "Declared" } else { "Imported" };
+            let stub = if declared {
+                f.kuna_declare_record(name, false).unwrap()
+            } else {
+                f.get_type_struct(name).unwrap()
+            };
+            let early = f.get_type_pointer(8, Rc::clone(&stub), 1).unwrap();
+            let fields = vec![
+                TypeField::new(0, 0, "next", Rc::clone(&early)),
+                TypeField::new(1, 8, "value", Rc::clone(&int4)),
+            ];
+            let full = f.set_fields_struct_raw(&stub, fields, Vec::new(), 16, 8, 0).unwrap();
+            let seen = early.get_ptr_to().unwrap();
+            assert_eq!(Rc::ptr_eq(&seen, &full), declared, "{name}");
+            assert_eq!(seen.is_incomplete(), !declared, "{name}");
+        }
     }
 
     #[test]

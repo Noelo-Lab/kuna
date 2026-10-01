@@ -163,7 +163,7 @@ fn a_record_that_points_at_itself_is_minted_around_its_shell() {
     for i in 0..2 {
         let pointee = st.get_field(i).unwrap().field_type.get_ptr_to().unwrap();
         assert_eq!(pointee.get_name(), st.get_name());
-        assert!(Rc::ptr_eq(&pointee, &st), "self pointers follow the completed record");
+        assert!(pointee.is_incomplete(), "the self pointer names the shell");
     }
     let layout = ledger::layout_of(&st).unwrap();
     assert_eq!(layout.fields[0].ty, ledger::SELF_KEY);
@@ -176,10 +176,11 @@ fn a_record_that_points_at_itself_is_minted_around_its_shell() {
     assert_ne!(plain.get_name(), st.get_name());
 }
 
-/// The factory now resolves a self pointer directly. The synthesis-specific
-/// fallback must leave already-complete targets and orphan shells alone.
+/// A value loaded through the self pointer names the shell, which has no
+/// members; the value type resolves to the completed record so the reads
+/// through it render as fields. Nothing else resolves.
 #[test]
-fn completed_record_pointers_need_no_synthesis_specific_resolution() {
+fn only_a_records_own_shell_resolves_to_the_record() {
     let f = core_factory();
     let long = f.get_base(8, type_metatype::TYPE_INT).unwrap();
     let fields = vec![
@@ -188,9 +189,9 @@ fn completed_record_pointers_need_no_synthesis_specific_resolution() {
     ];
     let st = ledger::lookup_or_mint(&f, fields, 0x10, &[], &[0], OFF).unwrap();
     let shell_ptr = Rc::clone(&st.get_field(0).unwrap().field_type);
-    assert!(Rc::ptr_eq(&shell_ptr.get_ptr_to().unwrap(), &st));
-    assert!(resolve_self_pointer(&f, &shell_ptr).is_none());
-    assert_eq!(shell_ptr.get_size(), 8);
+    let resolved = resolve_self_pointer(&f, &shell_ptr).unwrap();
+    assert!(Rc::ptr_eq(&resolved.get_ptr_to().unwrap(), &st));
+    assert_eq!(resolved.get_size(), 8);
 
     let complete = f.get_type_pointer(8, Rc::clone(&st), 1).unwrap();
     assert!(resolve_self_pointer(&f, &complete).is_none(), "already the completed record");

@@ -2445,17 +2445,22 @@ impl<'a> CParse<'a> {
     /// C++ `CParse::newStruct` (`grammar.cc:1055-1085`).
     ///
     /// Complete the stub registered before parsing the record body. A failed
-    /// body leaves it incomplete, so existing forward pointers remain valid
-    /// when a subsequent declaration supplies a correct definition.
+    /// body leaves a tagged stub incomplete, so existing forward pointers remain
+    /// valid when a subsequent declaration supplies a correct definition; an
+    /// anonymous record is built fresh and destroyed on failure, as upstream.
     fn new_struct(&mut self, ident: &str, declist: Vec<TypeDeclarator>) -> KunaResult<Rc<Datatype>> {
-        let res = self.old_struct(ident)?;
+        let res = if ident.is_empty() {
+            self.factory.get_type_struct(ident)?
+        } else {
+            self.old_struct(ident)?
+        };
         let is_big_endian = self.factory.is_big_endian();
         let mut sublist: Vec<TypeField> = Vec::new();
         let mut bitlist: Vec<TypeBitField> = Vec::new();
         for decl in &declist {
             if !decl.is_valid()? {
                 self.set_error("Invalid structure declarator");
-                return Err(KunaError::parse(self.lasterror.clone()));
+                return self.abandon_record(ident, &res);
             }
             let field_type = decl.build_type(self.factory, &self.org)?;
             if decl.get_num_bits() != 0 {
@@ -2476,9 +2481,18 @@ impl<'a> CParse<'a> {
             Ok(completed) => Ok(completed),
             Err(err) => {
                 self.set_error(err.explain());
-                Err(KunaError::parse(self.lasterror.clone()))
+                self.abandon_record(ident, &res)
             }
         }
+    }
+
+    /// The parse error for a record body that failed: an anonymous record's
+    /// stub is destroyed, a tagged one stays declared.
+    fn abandon_record(&mut self, ident: &str, res: &Rc<Datatype>) -> KunaResult<Rc<Datatype>> {
+        if ident.is_empty() {
+            self.factory.destroy_type(res)?;
+        }
+        Err(KunaError::parse(self.lasterror.clone()))
     }
 
     /// C++ `CParse::oldStruct` (`grammar.cc:1087-1094`).
@@ -2486,7 +2500,7 @@ impl<'a> CParse<'a> {
         let res = self.factory.find_by_name(ident)?;
         match &res {
             Some(tp) if tp.get_metatype() == type_metatype::TYPE_STRUCT => Ok(tp.clone()),
-            None => self.factory.get_type_struct(ident),
+            None => self.factory.kuna_declare_record(ident, false),
             _ => {
                 self.set_error("Identifier does not represent a struct as required");
                 Err(KunaError::parse(self.lasterror.clone()))
@@ -2496,12 +2510,16 @@ impl<'a> CParse<'a> {
 
     /// C++ `CParse::newUnion` (`grammar.cc:1096-1121`).
     fn new_union(&mut self, ident: &str, declist: Vec<TypeDeclarator>) -> KunaResult<Rc<Datatype>> {
-        let res = self.old_union(ident)?;
+        let res = if ident.is_empty() {
+            self.factory.get_type_union(ident)?
+        } else {
+            self.old_union(ident)?
+        };
         let mut sublist: Vec<TypeField> = Vec::new();
         for (i, decl) in declist.iter().enumerate() {
             if !decl.is_valid()? {
                 self.set_error("Invalid union declarator");
-                return Err(KunaError::parse(self.lasterror.clone()));
+                return self.abandon_record(ident, &res);
             }
             let field_type = decl.build_type(self.factory, &self.org)?;
             sublist.push(TypeField::new(i as int4, 0, decl.get_identifier(), field_type));
@@ -2510,7 +2528,7 @@ impl<'a> CParse<'a> {
             Ok(completed) => Ok(completed),
             Err(err) => {
                 self.set_error(err.explain());
-                Err(KunaError::parse(self.lasterror.clone()))
+                self.abandon_record(ident, &res)
             }
         }
     }
@@ -2520,7 +2538,7 @@ impl<'a> CParse<'a> {
         let res = self.factory.find_by_name(ident)?;
         match &res {
             Some(tp) if tp.get_metatype() == type_metatype::TYPE_UNION => Ok(tp.clone()),
-            None => self.factory.get_type_union(ident),
+            None => self.factory.kuna_declare_record(ident, true),
             _ => {
                 self.set_error("Identifier does not represent a union as required");
                 Err(KunaError::parse(self.lasterror.clone()))
