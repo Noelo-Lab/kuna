@@ -1358,6 +1358,8 @@ impl Heritage {
         read: &mut [crate::context::VarnodeId],
         write: &mut Vec<crate::context::VarnodeId>,
     ) {
+        let guard_stack_bytes = add_indirects
+            && super::kuna_stackstoreguard::enabled(fd, addr, write);
         for slot in 0..read.len() {
             let vn = read[slot];
             let descend = fd.vbank().get(vn).expect("guard: stale read vn").num_descend();
@@ -1478,8 +1480,8 @@ impl Heritage {
                     .map(|s| s.get_type() != spacetype::IPTR_INTERNAL)
                     .unwrap_or(false);
             if high_ptr_possible {
-                if level >= LEVEL_FULL {
-                    self.guard_stores(fd, addr, size, write);
+                if level >= LEVEL_FULL || guard_stack_bytes {
+                    self.guard_stores(fd, addr, size, write, level < LEVEL_FULL);
                 }
                 self.guard_loads(fd, fl, addr, size, write);
             }
@@ -2475,30 +2477,33 @@ impl Heritage {
         }
     }
 
-    /// Guard STORE ops (C++ `Heritage::guardStores`, `heritage.cc:1539`).
-    ///
-    /// STUB(W4): adding an INDIRECT across an aliasing STORE needs
-    /// `Funcdata::newIndirectOp` (the INDIRECT-marker factory, a W4 op-build
-    /// primitive) and `Varnode::getSpaceFromConst` on the STORE's space-id
-    /// input.  This is only reached when `highPtrPossible` is true (a recovered
-    /// high pointer), which is false in the merged tree, so it is unreached on
-    /// the critical path; the C++ body folds in with the W4 INDIRECT factory.
+    /// Guard possible STORE aliases; the narrow policy admits only indexed byte stores.
     fn guard_stores(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         addr: &Address,
         size: int4,
         write: &mut Vec<crate::context::VarnodeId>,
+        indexed_bytes_only: bool,
     ) {
         use crate::op::pcodeop_flags;
         use kuna_num::opcodes::OpCode;
 
         let spc = addr.get_space().expect("guard_stores: addr space").clone();
         let container = spc.get_contain().cloned();
-        let stores: Vec<crate::context::OpId> = fd.obank().iter_code(OpCode::CPUI_STORE).collect();
+        let stores: Vec<crate::context::OpId> = if indexed_bytes_only {
+            self.store_guard.iter()
+                .filter(|guard| Rc::ptr_eq(&guard.spc, &spc)
+                    && fd.obank().get(guard.op).and_then(|op| op.get_in(2))
+                        .and_then(|vn| fd.vbank().get(vn)).is_some_and(|vn| vn.get_size() == 1))
+                .map(|guard| guard.op)
+                .collect()
+        } else {
+            fd.obank().iter_code(OpCode::CPUI_STORE).collect()
+        };
         for op in stores {
             let dead = fd.obank().get(op).map(|o| o.is_dead()).unwrap_or(true);
-            if dead {
+            if dead || fd.obank().get(op).is_none_or(|o| o.code() != OpCode::CPUI_STORE) {
                 continue;
             }
             let store_space = match fd.obank().get(op).and_then(|o| o.get_in(0)) {

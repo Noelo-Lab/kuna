@@ -1,0 +1,50 @@
+stackstoreguard off
+void inspect_bytes(uint1 *a0)
+{
+  uint1 *v1; // r0
+  uint1 *v2;
+  uint1 *v3; // r1
+  int4 v4; // r3
+  uint1 v5 [8];
+
+  v4 = 3;
+  v2 = v5;
+  do {
+    v1 = &a0[1];
+    v3 = &v2[1];
+    *v2 = *a0;
+    v4 -= 1;
+    a0 = v1;
+    v2 = v3;
+  } while (v4);
+  return;
+}
+
+stackstoreguard on
+void inspect_bytes(uint1 *a0) // return-dupe
+{
+  uint1 *v1; // r0
+  uint1 *v2;
+  uint1 *v3; // r1
+  int4 v4; // r3
+  uint1 v5 [8]; // stack - 0x10
+
+  v5[0] = 0;
+  v5[1] = 0;
+  v5[2] = 0;
+  v5[3] = 0;
+  v4 = 3;
+  v2 = v5;
+  do {
+    v1 = &a0[1];
+    v3 = &v2[1];
+    *v2 = *a0;
+    v4 -= 1;
+    a0 = v1;
+    v2 = v3;
+  } while (v4);
+  if (!v5[0])
+    return;
+  helper();
+  return;
+}

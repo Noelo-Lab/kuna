@@ -474,9 +474,27 @@ in front of it, so a value written through a pointer is not assumed to leave
 the directly-addressed slot alone. That is what upstream always does; it is not
 kuna's default because the INDIRECT chain survives into the emitted C as
 write-backs of values a slot already holds and as globals hoisted into
-temporaries, and it recovers nothing the LOAD guard does not.
+temporaries. This broader policy remains opt-in.
 
-At `off` neither runs, which is what kuna shipped before the option.
+`option stackstoreguard` (default on) also enables STORE guards at
+`indexaliasguard load` for constant-initialized stack slots. Before normalizing
+partial reads, it checks for a constant write (through COPY, SUBPIECE or
+integer extension) and the processor's stack space. Only byte STOREs already
+recorded by indexed stack-pointer discovery qualify; globals, unknown pointers
+and wider stores retain the explicit `full` policy. The gate lives in
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
+
+This bounded policy prevents an initializer from flowing unchanged across a
+byte-fill loop into a later direct byte or word read. Otherwise constant
+folding can delete a reachable condition and side-effecting call. Guards
+conservatively describe a possible write; they do not invent its value or
+prove its range. General store-alias recovery remains outside this policy:
+applying every indexed store guard changes parameter and aggregate recovery
+in existing cases, so it is not enabled by this option.
+
+Turning `stackstoreguard off` restores the previous load-only behavior without
+changing the explicit `full` policy. `indexaliasguard off` suppresses both
+families, including the narrow stack-store guard.
 
 **The dead-code delay machinery and the dead-definition gate.** Dead-code
 removal is only *allowed* in a space once heritage there is past the space's

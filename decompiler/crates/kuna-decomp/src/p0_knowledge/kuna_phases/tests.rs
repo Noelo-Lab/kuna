@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_248() {
-    assert_eq!(kuna_num_settables(), 248);
-    assert_eq!(SETTABLE_TABLE.len(), 248);
+fn settable_count_is_249() {
+    assert_eq!(kuna_num_settables(), 249);
+    assert_eq!(SETTABLE_TABLE.len(), 249);
 }
 
 #[test]
-fn tier_counts_are_78_core_104_transform_66_analysis() {
+fn tier_counts_are_79_core_104_transform_66_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_78_core_104_transform_66_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (78, 104, 66));
+    assert_eq!((core, transform, analysis), (79, 104, 66));
 }
 
 #[test]
@@ -730,7 +730,7 @@ fn option_values_live_value_present_for_107() {
     // 104 -> 105: +1 for `condexeret` (live_field = cond_exe_ret).
     // 105 -> 106: +1 for `fieldtype` (live_field = field_type).
     // 106 -> 107: +1 for `armfloatreturn` (live_field = arm_float_return).
-    assert_eq!(with_live, 107);
+    assert_eq!(with_live, 108);
 }
 
 #[test]
@@ -913,7 +913,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 244 -> 245: +1 for `condexeret`; its P4 row sits mid-table.
     // 245 -> 246: +1 for `fieldtype`.
     // 246 -> 247: +1 for `armfloatreturn`.
-    assert_eq!(json.matches("},\n").count(), 247);
+    assert_eq!(json.matches("},\n").count(), 248);
 }
 
 #[test]

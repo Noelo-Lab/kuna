@@ -3563,6 +3563,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "stackstoreguard"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "heritage-guard"
+strength = "HARD"
+rewind = "P3"
+issue = "indexed-stack-store-paths"
+summary = "Guard constant-initialized stack slots across indexed byte stores recognized by heritage. An INDIRECT marks the store's possible effect before an initializer can replace a later direct byte or word read and delete a reachable branch or call. The narrow policy requires a constant write and a recorded stack-derived byte STORE; other store widths and unknown/global aliases still require indexaliasguard full."
+use_when = "On by default: a byte-copy loop fills an initialized stack buffer, but a later direct read appears constant and its dependent call vanishes. Turn off to restore the previous load-only policy. indexaliasguard off disables both guard families; indexaliasguard full retains broad store guarding regardless of this setting."
+example = "option stackstoreguard off"
+source_decompiler = "ghidra"
+inspiration = "Heritage::guardStores: a computed store may change a directly addressed stack slot"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a stack byte written through an incrementing pointer still reads as its initial value|a call after a stack-buffer fill loop disappears|indexaliasguard full restores a branch depending on a stack store"
+live_field = "stack_store_guard"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "indexaliasguard"
 values = "off|load|full"
 default = "load"

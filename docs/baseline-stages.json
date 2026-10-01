@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1595,
-    1595
+    1598,
+    1598
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -836,6 +836,9 @@
     "data:STACK ADDRESS #1: default loses the output argument",
     "data:STACK ADDRESS #2: enabled retains the local address",
     "data:STACK ADDRESS #3: only the default folds the output to zero",
+    "data:STACK STORE #1: both settings retain the byte-copy loop",
+    "data:STACK STORE #2: only the guarded read retains the dependent call",
+    "data:STACK STORE #3: only the guarded read retains its nonzero test",
     "data:STACK WORD #1: default loses the pointer",
     "data:STACK WORD #2: enabled retains all four arguments",
     "data:STACK WORD #3: enabled preserves the output-dependent condition",

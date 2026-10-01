@@ -864,6 +864,9 @@ Three tiers:
 | array written through a computed index capped at 4 elements regardless of the real extent | [`loadguardrange`](#loadguardrange) |
 | decompile-project output recompiles into a stack overflow the binary does not have | [`loadguardrange`](#loadguardrange) |
 | servo/config fields validated and stored from uninitialized stack locals | [`loadguardrange`](#loadguardrange) |
+| a stack byte written through an incrementing pointer still reads as its initial value | [`stackstoreguard`](#stackstoreguard) |
+| a call after a stack-buffer fill loop disappears | [`stackstoreguard`](#stackstoreguard) |
+| indexaliasguard full restores a branch depending on a stack store | [`stackstoreguard`](#stackstoreguard) |
 | stack array declared and read but never initialised in the emitted C | [`indexaliasguard`](#indexaliasguard) |
 | a run of direct frame stores vanishes when the same slots are later read through a pointer | [`indexaliasguard`](#indexaliasguard) |
 | constants loaded from .rdata into a local buffer do not appear in the decompilation | [`indexaliasguard`](#indexaliasguard) |
@@ -2768,6 +2771,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** ON by default (upstream Ghidra's stock behavior; 0/675 datatest ablation). The OFF symptom is self-contradictory C: a stack array declared with a too-small extent (int2 v5 [4]) subscripted by an index the enclosing guard proves reaches past it (if (5 < v2) ... v5[v2] = ...), with the tail elements split off as separate stack scalars that are read (range-checked, stored into structs) but never assigned -- a fake buffer overflow plus fake uninitialized reads, which also break the decompile-project recompile path. Flip OFF only to reproduce kuna's pre-GH-182 output or to bisect whether a stack-frame layout change came from guard refinement.
 - **Where / provenance:** P3/load-guard-range · ghidra-upstream · correctness-fix · GH-182
 - **Example:** `option loadguardrange off`
+
+### `stackstoreguard` -- on | off, default `on`
+
+- **Symptoms:** a stack byte written through an incrementing pointer still reads as its initial value; a call after a stack-buffer fill loop disappears; indexaliasguard full restores a branch depending on a stack store.
+- **What it does:** Guard constant-initialized stack slots across indexed byte stores recognized by heritage. An INDIRECT marks the store's possible effect before an initializer can replace a later direct byte or word read and delete a reachable branch or call. The narrow policy requires a constant write and a recorded stack-derived byte STORE; other store widths and unknown/global aliases still require indexaliasguard full.
+- **When to flip:** On by default: a byte-copy loop fills an initialized stack buffer, but a later direct read appears constant and its dependent call vanishes. Turn off to restore the previous load-only policy. indexaliasguard off disables both guard families; indexaliasguard full retains broad store guarding regardless of this setting.
+- **Where / provenance:** P3/heritage-guard · ghidra · correctness-fix · indexed-stack-store-paths
+- **Example:** `option stackstoreguard off`
 
 ### `indexaliasguard` -- off | load | full, default `load`
 
