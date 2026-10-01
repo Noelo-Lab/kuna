@@ -1082,8 +1082,8 @@ unported shells: `jumptable.rs (JumpTable::set_override)` and the
 `recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is on, the constant-destination model above (Trivial exists only as the label-time fallback). Likewise upstream's
 multistage *restart* accounting — persisting a table whose size disagrees at
 `matchModel` time and restarting the whole function — is a recorded loss: kuna
-keeps the flow-recovered addresses instead (`jumptable.rs
-(JumpTable::match_model)`).
+keeps the flow-recovered addresses instead and lets the row check below decide
+which values label them (`jumptable.rs (JumpTable::match_model)`).
 
 ### The late check: labels, normalization folding, guard folding
 
@@ -1091,15 +1091,29 @@ A table recovered mid-simplification may disagree with fully-simplified
 dataflow, so the model is re-derived late, against the finished function, by
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionSwitchNorm)`: for each unlabelled table, `match_model` saves the
-flow-time model and recovers a fresh instance, preferring the complete original
-normalized range (bounds, stride and width), rather than only its entry count.
-If the new range differs, the existing guard-bound recovery paths are tried even
-when that range is below `jumptablemax`. Before reusing original labels, matching
-checks the ordered normalized values and destinations; equal counts or range
-representations do not prove that a selector-map LOAD preserved the mapping.
-An incompatible model is dropped and the existing trivial target-address-label
-fallback retains the original guards with a warning. Multistage restart remains
-unimplemented. On a compatible model,
+flow-time model and recovers a fresh instance (preferring a variable whose
+range size matches the known table size). The fresh model must account for the
+table's rows before its labels are used (`jumptable.rs
+(JumpTable::choose_label_values)`). Each row keeps the normalized value the
+flow-time model gave it; when every such value emulates through the fresh
+model's path to that row's recorded destination (`jumptable.rs
+(JumpBasicModel::reproduces_rows)`), the labels come from the flow-time values
+as they always have. Only destinations are compared, never the two ranges: a
+byte index whose guard lies beyond the guard search spans the whole byte late,
+while its flow-time range was cut back to the table by the sanity check, and a
+late guard can exclude a row the table still lists. Otherwise, when the fresh
+model's own values rebuild the whole table row for row (`jumptable.rs
+(JumpBasicModel::rebuilds_rows)`), the labels come from those values; this
+covers a fresh normalized variable that is offset from the flow-time one. When
+neither holds — typically because the fresh
+variable is a mapped selector, an index already looked up in a byte map in
+front of the target table — the model is dropped with a header warning and the
+trivial model described below labels the cases by address. While it
+re-recovers, a basic model whose chosen variable fails both tests also tries the
+guard-bound recovery paths (`switchmodbound`, `switchguardbound`,
+`switchsharedcase`, `switchmultipred`) exactly as an over-sized table does, so
+that a guarded index in front of the map can still be found. Flow-time recovery
+(including the second stage of a multistage table) checks no rows. Then
 `jumptable.rs (JumpTable::recover_labels)` computes the *case labels* by
 reverse-emulating the normalization chain from the normalized variable back to
 the unnormalized one (`jumptable.rs (JumpBasicModel::backup2_switch)`, exact

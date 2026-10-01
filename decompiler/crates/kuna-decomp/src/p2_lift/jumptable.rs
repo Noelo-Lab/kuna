@@ -926,8 +926,6 @@ pub trait JumpValues {
     fn truncate(&mut self, nm: int4);
     /// Return the number of values the variables can take (C++ `getSize`).
     fn get_size(&self) -> uintb;
-    /// The underlying normalized range, when this iterator has one.
-    fn get_range(&self) -> Option<&CircleRange> { None }
     /// Return \b true if the given value is in the set of possible values.
     fn contains(&self, val: uintb) -> KunaResult<bool>;
     /// Initialize \b this for iterating over the set of possible values; returns
@@ -1048,8 +1046,6 @@ impl JumpValues for JumpValuesRange {
         self.range.get_size()
     }
 
-    fn get_range(&self) -> Option<&CircleRange> { Some(&self.range) }
-
     fn contains(&self, val: uintb) -> KunaResult<bool> {
         Ok(self.range.contains_val(val))
     }
@@ -1165,8 +1161,6 @@ impl JumpValues for JumpValuesRangeDefault {
     fn get_size(&self) -> uintb {
         self.base.range.get_size() + 1
     }
-
-    fn get_range(&self) -> Option<&CircleRange> { Some(&self.base.range) }
 
     fn contains(&self, val: uintb) -> KunaResult<bool> {
         if self.extravalue == val {
@@ -1889,6 +1883,31 @@ struct LoopCarriedWalk {
     seeds: Vec<(VarnodeId, uintb)>,
 }
 
+/// The rows of a flow-time table: each row's normalized value (`None` when
+/// the row has no reversible value) and its recovered destination.  A model
+/// re-recovered against the finished function must account for every row
+/// before it labels the table.
+struct LabelRows {
+    values: Vec<Option<uintb>>,
+    addresses: Vec<Address>,
+}
+
+impl LabelRows {
+    /// Pair `orig`'s values with the table, in the order `build_labels_basic`
+    /// consumes them; rows past the end of its values have none.
+    fn new(orig: &JumpBasicModel, addresses: &[Address]) -> Option<LabelRows> {
+        let mut jr = orig.jrange.as_ref()?.clone_box();
+        let mut values = Vec::with_capacity(addresses.len());
+        let mut more = jr.initialize_for_reading();
+        while more && values.len() < addresses.len() {
+            values.push(jr.is_reversible().then(|| jr.get_value()));
+            more = jr.next().ok()?;
+        }
+        values.resize(addresses.len(), None);
+        Some(LabelRows { values, addresses: addresses.to_vec() })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // JumpBasicModel (the instance JumpBasic, jumptable.cc:1062-1786)
 // ---------------------------------------------------------------------------
@@ -1907,12 +1926,12 @@ struct LoopCarriedWalk {
 /// `// STUB(structuring/W6)` — recorded as losses; they are reached only at
 /// label/guard-fold time, after the BRANCHIND addresses are recovered.
 pub struct JumpBasicModel {
+    /// The flow-time rows a late re-recovery must account for before its
+    /// labels are trusted (set only by [`JumpTable::match_model`]).
+    label_rows: Option<Rc<LabelRows>>,
     /// Range of values for the (normalized) switch variable (C++ `jrange`).
     /// Boxed as a trait object so [`JumpValuesRangeDefault`] (model 2) fits.
     jrange: Option<Box<dyn JumpValues>>,
-    /// Normalized range from flow discovery; its width, bounds and stride
-    /// must survive model matching, not merely its number of entries.
-    expected_range: Option<CircleRange>,
     /// Set of PcodeOps and Varnodes producing the final target addresses.
     path_meld: PathMeld,
     /// Any guards associated with the model (C++ `selectguards`).
@@ -1943,8 +1962,8 @@ impl JumpBasicModel {
     /// Construct an empty basic model (C++ `JumpBasic(JumpTable*)`).
     pub fn new() -> JumpBasicModel {
         JumpBasicModel {
+            label_rows: None,
             jrange: None,
-            expected_range: None,
             path_meld: PathMeld::new(),
             selectguards: Vec::new(),
             varnode_index: 0,
@@ -1966,26 +1985,6 @@ impl JumpBasicModel {
     /// The normalized value iterator (C++ `getValueRange`).
     fn jrange(&self) -> &dyn JumpValues {
         &**self.jrange.as_ref().expect("JumpBasic: jrange not set")
-    }
-
-    /// Labels from a previous model may only be reused for the same ordered
-    /// normalized values. Equal destination vectors alone are insufficient if
-    /// the ranges have shifted; differing widths can still represent identical
-    /// finite values. The extra default arm has no reversible numeric label.
-    fn matches_label_domain(&self, original: &Self) -> KunaResult<bool> {
-        let mut current = self.jrange().clone_box();
-        let mut previous = original.jrange().clone_box();
-        let mut more_current = current.initialize_for_reading();
-        let mut more_previous = previous.initialize_for_reading();
-        while more_current && more_previous {
-            if current.is_reversible() != previous.is_reversible()
-                || (current.is_reversible() && current.get_value() != previous.get_value()) {
-                return Ok(false);
-            }
-            more_current = current.next()?;
-            more_previous = previous.next()?;
-        }
-        Ok(more_current == more_previous)
     }
 
     /// Calculate the range of values in `vn` that direct control-flow to the
@@ -2051,17 +2050,13 @@ impl JumpBasicModel {
         }
         let mut i: uint4 = 1;
         while (i as int4) < self.path_meld.num_common_varnode() {
-            if self.expected_range.as_ref() == Some(&rng)
-                || (self.expected_range.is_none() && maxsize == matchsize as uintb) {
+            if maxsize == matchsize as uintb {
                 return;
             }
             let vni = self.path_meld.get_varnode(i as int4);
             self.calc_range(fd, vni, &mut rng);
             let sz = rng.get_size();
-            // A compact selector map can have a smaller domain than the
-            // original guarded index. Prefer the complete previously recovered
-            // range even when it is not the current minimum.
-            if sz < maxsize || self.expected_range.as_ref() == Some(&rng) {
+            if sz < maxsize {
                 // Don't accept a 1-byte switch var unless there is an explicit
                 // guard or table lookup between the byte and the indirect jump.
                 let vsize = fd.vbank().get(vni).unwrap().get_size();
@@ -2574,6 +2569,10 @@ impl JumpBasicModel {
 
     /// Recover details of the model from the BRANCHIND (C++
     /// `JumpBasic::recoverModel`, `jumptable.cc:1565`).
+    ///
+    /// (kuna) A normalized variable that cannot label the flow-time rows it is
+    /// matched against goes through the same bound-recovery fallbacks as an
+    /// unbounded one.
     fn recover_model_basic(
         &mut self,
         fd: &mut Funcdata,
@@ -2589,13 +2588,7 @@ impl JumpBasicModel {
             .and_then(|o| o.get_parent())
             .ok_or_else(|| KunaError::lowlevel("recoverModel: switch op has no parent block"))?;
         self.find_normalized(fd, parent, -1, matchsize, maxtablesize, indop)?;
-        let incompatible_range = self.expected_range.as_ref().is_some_and(|expected| {
-            self.jrange().get_range() != Some(expected)
-        });
-        if self.jrange().get_size() > maxtablesize as uintb || incompatible_range {
-            // A bounded byte-map result is not a substitute for the original
-            // guarded index. Try the existing guard recovery paths on a model
-            // mismatch too, before accepting a different label domain.
+        if self.jrange().get_size() > maxtablesize as uintb || !self.can_label_rows(fd, indop) {
             // (kuna) GH-9191: the basic model could not bound the table.  When
             // `option switchmodbound on`, look for a modulo/and-mask bound on the
             // LOAD-table index and re-bound the table to [0, N).
@@ -3676,6 +3669,64 @@ impl JumpBasicModel {
         }
     }
 
+    /// Whether this model can label the flow-time rows it was asked to match,
+    /// through their original values or through its own (true when it was not
+    /// asked to match any).
+    fn can_label_rows(&self, fd: &Funcdata, indop: OpId) -> bool {
+        self.label_rows.as_ref().is_none_or(|rows| {
+            self.reproduces_rows(fd, indop, rows) || self.rebuilds_rows(fd, indop, rows)
+        })
+    }
+
+    /// Whether every reversible flow-time row's value reaches that row's
+    /// destination through this model's path, so that the value reverses
+    /// through this model's normalization to a label selecting the row's code.
+    fn reproduces_rows(&self, fd: &Funcdata, indop: OpId, rows: &LabelRows) -> bool {
+        let mut jr = self.jrange().clone_box();
+        if !jr.initialize_for_reading() || !jr.is_reversible() {
+            return rows.values.iter().all(Option::is_none);
+        }
+        let (Some(startop), Some(startvn)) = (jr.get_start_op(), jr.get_start_varnode()) else {
+            return false;
+        };
+        let mut emul = EmulateFunction::new(fd);
+        for &(seed_vn, seed_val) in self.loop_carried_seeds.iter() {
+            emul.seed_varnode_value(seed_vn, seed_val);
+        }
+        let (spc, mask) = Self::destination_space(fd, indop);
+        rows.values.iter().zip(rows.addresses.iter()).all(|(val, addr)| match *val {
+            None => true,
+            Some(v) => emul
+                .emulate_path(v, &self.path_meld, startop, startvn)
+                .is_ok_and(|raw| Self::destination(&spc, mask, raw) == *addr),
+        })
+    }
+
+    /// Whether this model's own values rebuild the flow-time table row for row.
+    fn rebuilds_rows(&self, fd: &Funcdata, indop: OpId, rows: &LabelRows) -> bool {
+        let mut addresses = Vec::new();
+        self.build_addresses_basic(fd, indop, &mut addresses, None, None).is_ok()
+            && addresses == rows.addresses
+    }
+
+    /// The space of `indop`'s destinations and the function-pointer
+    /// alignment mask applied to each.
+    fn destination_space(fd: &Funcdata, indop: OpId) -> (Rc<AddrSpace>, uintb) {
+        let mut mask: uintb = !0u64;
+        let bit = fd.get_arch().funcptr_align;
+        if bit != 0 {
+            mask = (mask >> bit) << bit;
+        }
+        let spc = Rc::clone(fd.obank().get(indop).unwrap().get_addr().get_space().unwrap());
+        (spc, mask)
+    }
+
+    /// The destination address for an emulated path value.
+    fn destination(spc: &Rc<AddrSpace>, mask: uintb, raw: uintb) -> Address {
+        let addr = AddrSpace::address_to_byte(raw, spc.get_word_size()) & mask;
+        Address::new(Rc::clone(spc), addr)
+    }
+
     /// Build the explicit address table by emulating the switch calculation for
     /// each value in `jrange` (C++ `JumpBasic::buildAddresses`,
     /// `jumptable.cc:1588`).
@@ -3697,12 +3748,7 @@ impl JumpBasicModel {
             emul.seed_varnode_value(seed_vn, seed_val);
         }
 
-        let mut mask: uintb = !0u64;
-        let bit = fd.get_arch().funcptr_align;
-        if bit != 0 {
-            mask = (mask >> bit) << bit;
-        }
-        let spc = Rc::clone(fd.obank().get(indop).unwrap().get_addr().get_space().unwrap());
+        let (spc, mask) = Self::destination_space(fd, indop);
 
         let mut jr = self.jrange().clone_box();
         let mut notdone = jr.initialize_for_reading();
@@ -3714,10 +3760,8 @@ impl JumpBasicModel {
             let startvn = jr
                 .get_start_varnode()
                 .ok_or_else(|| KunaError::lowlevel("buildAddresses: no start vn"))?;
-            let mut addr = emul.emulate_path(val, &self.path_meld, startop, startvn)?;
-            addr = AddrSpace::address_to_byte(addr, spc.get_word_size());
-            addr &= mask;
-            addresstable.push(Address::new(Rc::clone(&spc), addr));
+            let raw = emul.emulate_path(val, &self.path_meld, startop, startvn)?;
+            addresstable.push(Self::destination(&spc, mask, raw));
             if let Some(lc) = loadcounts.as_mut() {
                 let count = emul
                     .loadpoints_len()
@@ -4103,7 +4147,6 @@ impl JumpModel for JumpBasicModel {
         // C++ JumpBasic::clone only clones the JumpValues iterator.
         let mut res = JumpBasicModel::new();
         res.is_model2 = self.is_model2;
-        res.expected_range = self.expected_range.clone();
         if let Some(jr) = &self.jrange {
             res.jrange = Some(jr.clone_box());
         }
@@ -4111,8 +4154,8 @@ impl JumpModel for JumpBasicModel {
     }
 
     fn clear(&mut self) {
+        self.label_rows = None;
         self.jrange = None;
-        self.expected_range = None;
         self.path_meld.clear();
         self.selectguards.clear();
         self.normalvn = None;
@@ -5031,7 +5074,11 @@ impl JumpTable {
     /// the `jumpassist` userop family — `// STUB(W4)`, recorded as a loss).  Each
     /// model's `recoverModel` emulation-drives the index range over the landed
     /// [`EmulateFunction`].
-    fn recover_model(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
+    fn recover_model(
+        &mut self,
+        fd: &mut Funcdata,
+        rows: Option<Rc<LabelRows>>,
+    ) -> KunaResult<()> {
         let max_table_size = fd.get_arch().max_jumptable_size;
         let indirect = self.indirect.unwrap();
         if let Some(model) = self.jmodel.as_mut() {
@@ -5051,12 +5098,8 @@ impl JumpTable {
         // the basic models cover the corpus switches.
 
         // Try the basic model.
-        let expected_range = self.origmodel.as_ref()
-            .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
-            .and_then(|m| m.jrange.as_ref())
-            .and_then(|r| r.get_range()).cloned();
         let mut jbasic = JumpBasicModel::new();
-        jbasic.expected_range = expected_range.clone();
+        jbasic.label_rows = rows;
         jbasic.is_partial = self.partial_table;
         let basic_ok = jbasic.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?;
         // Stash the basic model's path-meld for model 2's piggyback.
@@ -5067,7 +5110,6 @@ impl JumpTable {
         }
         // Try model 2 (default-path).
         let mut jbasic2 = JumpBasicModel::new_model2();
-        jbasic2.expected_range = expected_range;
         jbasic2.is_partial = self.partial_table;
         jbasic2.initialize_start(&basic_path);
         let m2_ok = jbasic2.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?;
@@ -5095,7 +5137,7 @@ impl JumpTable {
     /// Recover the raw jump-table addresses (C++ `JumpTable::recoverAddresses`,
     /// `jumptable.cc:2773`).
     pub fn recover_addresses(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
-        self.recover_model(fd)?;
+        self.recover_model(fd, None)?;
         if self.jmodel.is_none() {
             return Err(KunaError::lowlevel(format!(
                 "Could not recover jumptable at {:?}. Too many branches",
@@ -5184,10 +5226,9 @@ impl JumpTable {
     /// Try to match the JumpTable model to the existing function
     /// (C++ `JumpTable::matchModel`, `jumptable.cc:2833`).
     ///
-    /// STUB(W4): the multistage-restart accounting on a table-size mismatch
-    /// (`Override::insertMultistageJump` + `setRestartPending`) is the W4 override
-    /// table; here a mismatch is recorded as a loss and the table keeps its (flow-
-    /// recovered) addresses.  The model recovery itself is real.
+    /// The table keeps its flow-recovered addresses; the multistage restart
+    /// upstream takes on a size mismatch is replaced by a row check that
+    /// decides which values may label them ([`Self::choose_label_values`]).
     pub fn match_model(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         if !self.is_recovered() {
             return Err(KunaError::lowlevel(
@@ -5204,36 +5245,46 @@ impl JumpTable {
                 // fd->warning("Switch is manually overridden", opaddress) STUB(W4)
             }
         }
-        self.recover_model(fd)?; // Create a current instance of the model
-        if let Some(model) = self.jmodel.as_ref() {
-            if !model.is_override() && self.origmodel.is_some() {
-                // Labels are attached to the original address rows. Range size
-                // (even full range equality) cannot prove that a table lookup
-                // has preserved their order. Check the actual destinations
-                // before folding the selector and reusing the original labels.
-                let same_domain = match (
-                    model.as_any().downcast_ref::<JumpBasicModel>(),
-                    self.origmodel.as_ref().unwrap().as_any().downcast_ref::<JumpBasicModel>(),
-                ) {
-                    (Some(current), Some(original)) => current.matches_label_domain(original)?,
-                    _ => true,
-                };
-                let mut current_addresses = Vec::new();
-                let verified = same_domain && model.build_addresses(
-                    fd, self.indirect.unwrap(), &mut current_addresses, None, None,
-                ).is_ok() && current_addresses == self.addresstable;
-                if !verified {
-                    // ActionSwitchNorm still calls foldInGuards after matching.
-                    // Drop the rejected model atomically so the existing trivial
-                    // recovery keeps raw target-address labels and all guards.
-                    self.jmodel = None;
-                    fd.warning_header(
-                        "Could not verify switch model against original destinations; retaining raw target-address labels",
-                    );
-                }
-            }
+        let rows = self
+            .origmodel
+            .as_ref()
+            .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
+            .and_then(|m| LabelRows::new(m, &self.addresstable))
+            .map(Rc::new);
+        self.recover_model(fd, rows.clone())?; // Create a current instance of the model
+        if let Some(rows) = rows {
+            self.choose_label_values(fd, &rows);
         }
         Ok(())
+    }
+
+    /// Choose the values that label \b this table after a late re-recovery:
+    /// the flow-time values when the new model reproduces their rows, the new
+    /// model's own values when they rebuild the table, and otherwise none (the
+    /// model is dropped, so the trivial model labels each case by address).
+    ///
+    /// Stands in for the upstream multistage restart on a table mismatch
+    /// (`Override::insertMultistageJump`/`setRestartPending`, not ported).
+    fn choose_label_values(&mut self, fd: &mut Funcdata, rows: &LabelRows) {
+        let indop = self.indirect.unwrap();
+        let Some(model) = self
+            .jmodel
+            .as_ref()
+            .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
+        else {
+            return;
+        };
+        if model.reproduces_rows(fd, indop, rows) {
+            return;
+        }
+        if model.rebuilds_rows(fd, indop, rows) {
+            self.origmodel = None;
+            return;
+        }
+        self.jmodel = None;
+        fd.warning_header(
+            "Switch model does not reproduce the recovered table; cases are labelled by address",
+        );
     }
 
     /// Recover the case labels for \b this jump-table

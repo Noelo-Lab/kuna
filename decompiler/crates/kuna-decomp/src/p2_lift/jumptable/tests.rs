@@ -583,21 +583,20 @@ fn jumptable_decode_missing_label_after_labeled_is_error() {
     assert_eq!(decoded.get_label_by_index(1), NO_LABEL);
 }
 
-
 #[test]
-fn label_domain_rejects_equal_counts_with_shifted_values_or_stride() {
-    fn model(range: CircleRange) -> JumpBasicModel {
-        let mut values = JumpValuesRange::new();
-        values.set_range(range);
-        let mut model = JumpBasicModel::new();
-        model.jrange = Some(Box::new(values));
-        model
-    }
-    let original = model(CircleRange::new(0, 4, 4, 1));
-    let shifted = model(CircleRange::new(10, 14, 4, 1));
-    let strided = model(CircleRange::new(0, 8, 4, 2));
-    let byte = model(CircleRange::new(0, 4, 1, 1));
-    assert!(!shifted.matches_label_domain(&original).unwrap());
-    assert!(!strided.matches_label_domain(&original).unwrap());
-    assert!(byte.matches_label_domain(&original).unwrap());
+fn label_rows_pair_values_with_rows_in_label_order() {
+    let mut range = JumpValuesRange::new();
+    range.set_range(CircleRange::new(4, 10, 4, 1));
+    let mut basic = JumpBasicModel::new();
+    basic.jrange = Some(Box::new(range));
+    let rows = LabelRows::new(&basic, &vec![Address::default(); 3]).unwrap();
+    assert_eq!(rows.values, vec![Some(4), Some(5), Some(6)]);
+
+    let mut with_default = JumpValuesRangeDefault::new();
+    with_default.set_range(CircleRange::new(0, 2, 4, 1));
+    with_default.set_extra_value(9);
+    let mut model2 = JumpBasicModel::new_model2();
+    model2.jrange = Some(Box::new(with_default));
+    let rows = LabelRows::new(&model2, &vec![Address::default(); 4]).unwrap();
+    assert_eq!(rows.values, vec![Some(0), Some(1), None, None]);
 }
