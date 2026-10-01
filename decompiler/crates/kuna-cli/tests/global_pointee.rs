@@ -6,7 +6,7 @@ use common::process;
 use std::process::Command;
 
 const FUNCS: &str = "p_int,r_short,r_char,r_rec,r_long,r_void,w_long,w_short,m_call,m_join,m_write,m_loop,g_reread,g_alias,\
-                     g_reload,g_write,g_before,g_diff,g_twice";
+                     g_reload,g_write,g_before,g_diff,g_twice,g_old,g_branch";
 
 const DECLS: &str = "struct rec { int a; short b; long c; };\nextern char *gc;\nextern short *gs;\nextern int *gi;\n\
                      extern long *gl;\nextern struct rec *gr;\nextern void *gv;\nextern long gd;\nvoid touch(void);\n";
@@ -16,7 +16,7 @@ const WANT: &str =
                     w_long 3000009 -9 -8 24\nw_short 1 21 42 4\nm_call 65 12 1\nm_join 44 4 0 4 3\n\
                     m_write 29 77 78 16 4\nm_loop 221 32\ng_reread 37 4\ng_alias 22 8 0 8 0\n\
                     g_reload 51 37 0\ng_write 82 80 0\ng_before 99 85 0\ng_diff 17 5 0\n\
-                    g_twice 99 99 85 85 4\n";
+                    g_twice 99 99 85 85 4\ng_old 91 77 0\ng_branch 37 6 0\n";
 
 /// `globalpointee_x86_64.c` stores `int *`, `short *`, `char *`, `long *` and
 /// record pointers to `char *`, `short *`, `int *`, `long *`, `struct rec *` and

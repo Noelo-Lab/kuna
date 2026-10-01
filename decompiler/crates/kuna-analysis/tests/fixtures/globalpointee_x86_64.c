@@ -9,11 +9,13 @@
  * store before a call (`m_call`), inside a branch (`m_join`) or a loop
  * (`m_loop`), and `g_` read through the global itself: `g_reread` as the source
  * says, `g_alias` after a pointer store that may point at the global, so its
- * load of `gi` must stay a load.  `g_reload`, `g_write`, `g_before`, `g_diff`
- * and `g_twice` also read the value from its register, and are called with
- * the pointer they store through pointing at the global itself: each load of
- * the global after that store must still read the global, `g_diff` without
- * dereferencing it, and `g_twice` keeps what it loaded between two stores. */
+ * load of `gi` must stay a load.  `g_reload`, `g_write`, `g_before`, `g_diff`,
+ * `g_twice`, `g_old` and `g_branch` also read the value from its register, and
+ * are called with the pointer they store through pointing at the global
+ * itself: each load of the global after that store must still read the global,
+ * `g_diff` without dereferencing it, `g_twice` keeps what it loaded between
+ * two stores, `g_old` reads the global's earlier value after the store, and
+ * `g_branch` stores in both arms of a branch. */
 #include <stdio.h>
 
 struct rec { int a; short b; long c; };
@@ -54,6 +56,8 @@ int g_write(int *p, int k, int **pp, int *r);
 int g_before(int *p, int k, int **pp);
 long g_diff(int *p, int k, long *pp);
 int g_twice(int *p, int k, int **pp, int **pp2);
+int g_old(int *p, int k, int **pp);
+int g_branch(int *p, int k, int **pp, int c);
 
 #ifndef GLOBALPOINTEE_HARNESS
 #define NI __attribute__((noinline))
@@ -76,6 +80,8 @@ NI int g_write(int *p, int k, int **pp, int *r) { int *q = p + k; gi = q; q[0] =
 NI int g_before(int *p, int k, int **pp) { int *q = p + k; int x = q[3]; gi = q; *pp = p; return gi[1] + x; }
 NI long g_diff(int *p, int k, long *pp) { int *q = p + k; gd = (long)q; int x = q[1]; *pp = (long)p; return gd - (long)p + x; }
 NI int g_twice(int *p, int k, int **pp, int **pp2) { int *q = p + k; gi = q; int x = q[3]; *pp = p; int *r = gi; *pp2 = p + 1; return r[1] + x; }
+NI int g_old(int *p, int k, int **pp) { int *old = gi; int *q = p + k; gi = q; int x = q[2]; *pp = p; return gi[1] + x + old[0]; }
+NI int g_branch(int *p, int k, int **pp, int c) { int *q; if (c) { q = p + k; gi = q; } else { q = p + k + 1; gi = q; } int x = q[1]; *pp = p; return *gi + x; }
 #endif
 
 #define OFF(g, base) ((long)((char *)(g) - (char *)(base)))
@@ -160,6 +166,16 @@ int main(void) {
   r = g_twice(ia, 2, &gi, &o2);
   printf(" %ld", r);
   r = g_twice(ia, 2, &gi, &gi);
+  printf(" %ld %ld\n", r, OFF(gi, ia));
+  gi = ia + 9;
+  r = g_old(ia, 2, &other);
+  printf("g_old %ld", r);
+  gi = ia + 9;
+  r = g_old(ia, 2, &gi);
+  printf(" %ld %ld\n", r, OFF(gi, ia));
+  r = g_branch(ia, 2, &other, 1);
+  printf("g_branch %ld", r);
+  r = g_branch(ia, 2, &gi, 0);
   printf(" %ld %ld\n", r, OFF(gi, ia));
   return 0;
 }

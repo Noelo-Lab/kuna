@@ -763,10 +763,17 @@ on the global, lies on a path from the store to the load (`(written_between)`,
 walked backward from the load; past 2048 operations, or at a block the store
 does not reach, the answer is yes), whether or not the load is used as an
 address: `*a2 = a0; return v1 + gi[1];` at `-O0` and `-O2`, and
-`*a2 = a0; return (gd - a0) + (long)v2;` for a load that is subtracted. Two cases
-keep upstream's propagation instead, because the value joins the global anyway
-and prints as it: the value already feeds one of the global's markers, or an
-earlier value of the global is read after the store as above. A register copy of
+`*a2 = a0; return (gd - a0) + (long)v2;` for a load that is subtracted. Only a
+store whose earlier value the global's own marker carries past it
+(`(marks_after)`, above) keeps upstream's propagation of its loads; an earlier
+value read after the store through a register does not, so
+`old = gi; gi = q; ... *pp = p; return gi[1] + x + old[0];` keeps its load.
+`RulePushMulti` leaves a global's `MULTIEQUAL` in place when one of its inputs
+is a store kept for the global's markers (`(keeps_join)`), rather than replace
+it with an existing join of the stored values: at `-O0`,
+`if (c) { q = p + k; gi = q; } else { q = p + k + 1; gi = q; }` stores a frame
+variable's value in both arms, and the replacement made the load after
+`*pp = p` read the frame variable. A register copy of
 such a load is the same read: `RulePropagateCopy` does not put the global back
 into a reader of the copy when a write lies between the copy and the reader, and
 chapter 06 keeps the copy as its own variable, so

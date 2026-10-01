@@ -21,12 +21,14 @@
     copy-shadow join, so the value keeps its own variable and type.  A load of
     the global the binary makes after the store stays a load: g_alias stores
     through a pointer that may point at gi before reading gi[1], and kuna used
-    to print `return (&a0[a1])[1];`.  g_reload, g_before, g_write, g_diff and
-    g_twice also read the value from its register; a load of the global after
-    a store through a pointer still reads the global, and g_twice keeps the
-    value it loaded between two such stores in a variable of its own.
+    to print `return (&a0[a1])[1];`.  g_reload, g_before, g_write, g_diff,
+    g_twice, g_old and g_branch also read the value from its register; a load
+    of the global after a store through a pointer still reads the global,
+    g_twice keeps the value it loaded between two such stores in a variable of
+    its own, g_old still reads the global's earlier value, and g_branch stores
+    in both arms of a branch.
 
-    Every assertion below fails on the unfixed tree, and #9 to #13 fail on a
+    Every assertion below fails on the unfixed tree, and #9 to #15 fail on a
     tree that keeps the value apart without keeping those loads.  The wrapper only supplies
     the harness architecture (`load file` needs one).  The pass loads
     globalpointee_gcc_O2_x86_64 and globalpointee_gcc_O0_x86_64 (built from
@@ -76,6 +78,12 @@
   <com>load function g_twice</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function g_old</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function g_branch</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/globalpointee_gcc_O0_x86_64</com>
   <com>read symbols</com>
@@ -109,6 +117,12 @@
   <com>load function g_twice</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function g_old</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function g_branch</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="globalpointee #1: no stored pointer is indexed or dereferenced through a global" min="0" max="0">(\bg[clrsv]\[|\*g[clrsv]\b)</stringmatch>
@@ -133,4 +147,10 @@
   return (\(gd - a0\) \+ \(int8\)v2|\(int8\)v1 \+ \(gd - a0\));</stringmatch>
 <stringmatch name="globalpointee #13: a load between two pointer stores keeps its own variable" min="2" max="2">v2 = gi;
   \*a3 = </stringmatch>
+<stringmatch name="globalpointee #14: the load after a pointer store reads the global while its earlier value is read too" min="2" max="2">v1 = \(&amp;a0\[a1\]\)\[2\];
+  \*a2 = a0;
+  return (\*v2 \+ gi\[1\] \+ v1|v1 \+ gi\[1\] \+ \*v2);</stringmatch>
+<stringmatch name="globalpointee #15: a pointer stored in both arms keeps its variable, the load after the pointer store reads the global" min="2" max="2">v1 = v2\[1\];
+  \*a2 = a0;
+  return v1 \+ \*gi;</stringmatch>
 </decompilertest>
