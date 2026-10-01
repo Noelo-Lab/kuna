@@ -898,6 +898,11 @@ pub struct Datatype {
     pub align_size: int4,
     /// The concrete subclass payload
     pub kind: DatatypeKind,
+    /// Stable identity for an incomplete record and its completed replacement.
+    /// Pointers may outlive the stub in the factory; the weak link lets them
+    /// see its fields without creating an owning recursive Rc cycle. This cell
+    /// is installed before interning, so dependency ordering remains stable.
+    record_completion: Option<Rc<RefCell<std::rc::Weak<Datatype>>>>,
 }
 
 impl Datatype {
@@ -922,6 +927,7 @@ impl Datatype {
             alignment: align,
             align_size: s,
             kind: DatatypeKind::Base,
+            record_completion: None,
         }
     }
 
@@ -1226,8 +1232,8 @@ impl Datatype {
     /// Get a specific component sub-type by index (C++ `getDepend`).
     pub fn get_depend(&self, index: int4) -> Option<Rc<Datatype>> {
         match &self.kind {
-            DatatypeKind::Pointer { ptrto, .. } => Some(Rc::clone(ptrto)),
-            DatatypeKind::PointerRel { ptrto, .. } => Some(Rc::clone(ptrto)),
+            DatatypeKind::Pointer { ptrto, .. } => Some(Self::completed_record(ptrto)),
+            DatatypeKind::PointerRel { ptrto, .. } => Some(Self::completed_record(ptrto)),
             DatatypeKind::Array { arrayof, .. } => Some(Rc::clone(arrayof)),
             DatatypeKind::Struct { field, .. } => {
                 // cast: index is a valid component index (0..numDepend); negative
@@ -1249,16 +1255,16 @@ impl Datatype {
     /// W6.  Returns `None` for non-pointers (the C++ null).
     pub fn get_ptr_into(&self) -> KunaResult<Option<(Rc<Datatype>, int4)>> {
         match &self.kind {
-            DatatypeKind::Pointer { ptrto, .. } => Ok(Some((Rc::clone(ptrto), 0))),
+            DatatypeKind::Pointer { ptrto, .. } => Ok(Some((Self::completed_record(ptrto), 0))),
             DatatypeKind::PointerRel { ptrto, parent, offset, .. } => {
                 // C++ TypePointerRel::getPtrInto (type.cc:3060-3070): a relative
                 // pointer into a STRUCT/UNION points directly at the composite
                 // (off = 0); otherwise it points `offset` into the parent.
                 let meta = ptrto.get_metatype();
                 if meta == type_metatype::TYPE_STRUCT || meta == type_metatype::TYPE_UNION {
-                    Ok(Some((Rc::clone(ptrto), 0)))
+                    Ok(Some((Self::completed_record(ptrto), 0)))
                 } else {
-                    Ok(Some((Rc::clone(parent), *offset)))
+                    Ok(Some((Self::completed_record(parent), *offset)))
                 }
             }
             _ => Ok(None),
@@ -1312,14 +1318,22 @@ impl Datatype {
         }
     }
 
+    /// Resolve a record stub without changing its immutable interning key.
+    fn completed_record(ct: &Rc<Datatype>) -> Rc<Datatype> {
+        ct.record_completion
+            .as_ref()
+            .and_then(|link| link.borrow().upgrade())
+            .unwrap_or_else(|| Rc::clone(ct))
+    }
+
     // -- Pointer accessors (TypePointer, type.hh:471-473) -------------------
 
     /// Get the pointed-to Datatype (C++ `TypePointer::getPtrTo`).  Returns
     /// `None` if this is not a pointer kind.
     pub fn get_ptr_to(&self) -> Option<Rc<Datatype>> {
         match &self.kind {
-            DatatypeKind::Pointer { ptrto, .. } => Some(Rc::clone(ptrto)),
-            DatatypeKind::PointerRel { ptrto, .. } => Some(Rc::clone(ptrto)),
+            DatatypeKind::Pointer { ptrto, .. } => Some(Self::completed_record(ptrto)),
+            DatatypeKind::PointerRel { ptrto, .. } => Some(Self::completed_record(ptrto)),
             _ => None,
         }
     }
@@ -1384,7 +1398,7 @@ impl Datatype {
     /// `TypePointerRel::getParent`).  `None` for non-relative-pointers.
     pub fn get_rel_parent(&self) -> Option<Rc<Datatype>> {
         match &self.kind {
-            DatatypeKind::PointerRel { parent, .. } => Some(Rc::clone(parent)),
+            DatatypeKind::PointerRel { parent, .. } => Some(Self::completed_record(parent)),
             _ => None,
         }
     }
@@ -1442,6 +1456,8 @@ impl Datatype {
     pub fn evaluate_thru_parent(&self, addr_off: u64) -> Option<bool> {
         match &self.kind {
             DatatypeKind::PointerRel { ptrto, wordsize, parent, offset, .. } => {
+                let ptrto = Self::completed_record(ptrto);
+                let parent = Self::completed_record(parent);
                 let byte_off = AddrSpace::address_to_byte(addr_off, *wordsize);
                 if ptrto.get_metatype() == type_metatype::TYPE_STRUCT
                     && byte_off < ptrto.get_size() as u64
@@ -1849,7 +1865,7 @@ impl Datatype {
             }
             return Ok(if self.id < op.get_id() { -1 } else { 1 });
         }
-        ptrto.compare(op_ptrto, level) // Compare whats pointed to
+        Self::completed_record(ptrto).compare(&Self::completed_record(op_ptrto), level)
     }
 
     /// Borrow a `TypeStruct`'s `field`/`bitfield` payload, used where the C++
@@ -2068,9 +2084,15 @@ impl Datatype {
             return 0;
         }
         // cast: `as_ptr` addresses ordered like the C++ raw pointers.
-        let pa = Rc::as_ptr(a) as usize;
-        let pb = Rc::as_ptr(b) as usize;
-        if pa < pb {
+        let identity = |ct: &Rc<Datatype>| {
+            ct.record_completion.as_ref()
+                .map_or(Rc::as_ptr(ct) as usize, |link| Rc::as_ptr(link) as usize)
+        };
+        let pa = identity(a);
+        let pb = identity(b);
+        if pa == pb {
+            0
+        } else if pa < pb {
             -1
         } else {
             1
@@ -2954,7 +2976,9 @@ impl Datatype {
         match &self.kind {
             // TypePointer::isPtrsubMatching (type.cc:1260-1312).
             DatatypeKind::Pointer { ptrto, wordsize, .. } => {
-                Datatype::is_ptrsub_matching_pointer(ptrto, *wordsize, off, extra, multiplier)
+                Datatype::is_ptrsub_matching_pointer(
+                    &Self::completed_record(ptrto), *wordsize, off, extra, multiplier,
+                )
             }
             // TypePointerRel::isPtrsubMatching (type.cc:3138-3147): if a stripped
             // (formal) form exists, defer to the inherited TypePointer body;
@@ -2962,13 +2986,13 @@ impl Datatype {
             DatatypeKind::PointerRel { ptrto, wordsize, stripped, parent, offset } => {
                 if stripped.is_some() {
                     return Datatype::is_ptrsub_matching_pointer(
-                        ptrto, *wordsize, off, extra, multiplier,
+                        &Self::completed_record(ptrto), *wordsize, off, extra, multiplier,
                     );
                 }
                 let i_off = AddrSpace::address_to_byte_int(off, *wordsize);
                 let extra = AddrSpace::address_to_byte_int(extra, *wordsize);
                 let i_off = i_off + *offset as int8 + extra;
-                Ok(i_off >= 0 && i_off <= parent.get_size() as int8)
+                Ok(i_off >= 0 && i_off <= Self::completed_record(parent).get_size() as int8)
             }
             _ => Ok(false), // base default
         }
@@ -3187,7 +3211,7 @@ impl Datatype {
                     let ct_ptrto = ct
                         .get_ptr_to()
                         .ok_or_else(|| Datatype::pointer_invariant_err("findCompatibleResolve"))?;
-                    return ptrto.find_compatible_resolve(&ct_ptrto);
+                    return Self::completed_record(ptrto).find_compatible_resolve(&ct_ptrto);
                 }
                 Ok(-1)
             }
@@ -5172,6 +5196,9 @@ impl TypeFactoryImpl {
     /// C++ `TypeFactory::setName` (type.cc:3923-3937): rename an interned
     /// data-type, re-keying both trees.  Returns the renamed (new) `Rc`.
     fn set_name_impl(&self, ct: &Rc<Datatype>, n: &str) -> KunaResult<Rc<Datatype>> {
+        if ct.get_name() == n {
+            return Ok(Rc::clone(ct));
+        }
         self.erase_interned(ct, ct.id != 0); // nametree.erase only if it had an id
         let mut newct = (**ct).clone();
         newct.name = n.to_string();
@@ -5181,6 +5208,11 @@ impl TypeFactoryImpl {
         }
         let newrc = Rc::new(newct);
         self.insert(Rc::clone(&newrc))?; // tree.insert + nametree.insert
+        if !newrc.is_incomplete() {
+            if let Some(link) = &ct.record_completion {
+                *link.borrow_mut() = Rc::downgrade(&newrc);
+            }
+        }
         Ok(newrc)
     }
 
@@ -5200,6 +5232,11 @@ impl TypeFactoryImpl {
         newct.set_display_format(format);
         let newrc = Rc::new(newct);
         self.insert(Rc::clone(&newrc))?;
+        if !newrc.is_incomplete() {
+            if let Some(link) = &ct.record_completion {
+                *link.borrow_mut() = Rc::downgrade(&newrc);
+            }
+        }
         Ok(newrc)
     }
 
@@ -5212,6 +5249,15 @@ impl TypeFactoryImpl {
         mut fd: Vec<TypeField>,
         mut bit: Vec<TypeBitField>,
     ) -> KunaResult<Rc<Datatype>> {
+        for field in &fd {
+            let mut ty = Rc::clone(&field.field_type);
+            while let Some(element) = ty.get_array_base() {
+                ty = element;
+            }
+            if ty.is_incomplete() {
+                return Err(KunaError::lowlevel("Record field has incomplete by-value type"));
+            }
+        }
         // TypeStruct::assignFieldOffsets(fd,bit,newSize,newAlign,flags).
         let (new_size, new_align, extra_flags) = Datatype::assign_field_offsets(&mut fd, &mut bit)?;
         self.set_fields_struct(ct, fd, bit, new_size, new_align, extra_flags)
@@ -5225,16 +5271,23 @@ impl TypeFactoryImpl {
         ct: &Rc<Datatype>,
         mut fd: Vec<TypeField>,
     ) -> KunaResult<Rc<Datatype>> {
+        for field in &fd {
+            let mut ty = Rc::clone(&field.field_type);
+            while let Some(element) = ty.get_array_base() {
+                ty = element;
+            }
+            if ty.is_incomplete() {
+                return Err(KunaError::lowlevel("Record field has incomplete by-value type"));
+            }
+        }
         // TypeUnion::assignFieldOffsets(fd,newSize,newAlign,ct).
         let (new_size, new_align) = Datatype::assign_union_field_offsets(&mut fd, ct.get_name())?;
         self.set_fields_union(ct, fd, new_size, new_align, 0)
     }
 
     /// C++ `TypeFactory::setFields(...,TypeStruct*,...)` (type.cc:3960-3973):
-    /// re-key a completed struct into the trees.  // STUB(W6 recalcPointerSubmeta):
-    /// the C++ also recomputes the submeta of pointers that already point at this
-    /// struct; the console construction flow has no such prior pointers, so that
-    /// refinement is a no-op here.
+    /// Re-key the completed struct and publish it to pointers created while
+    /// its tag was incomplete. Pointer dependency keys keep the shell identity.
     fn set_fields_struct(
         &self,
         ct: &Rc<Datatype>,
@@ -5247,7 +5300,7 @@ impl TypeFactoryImpl {
         if !ct.is_incomplete() {
             return Err(KunaError::lowlevel("Can only set fields on an incomplete structure"));
         }
-        self.erase_interned(ct, false);
+        self.erase_interned(ct, true);
         let mut newct = (**ct).clone();
         newct.set_struct_fields(fd, bit, new_size, new_align);
         newct.flags &= !flags::type_incomplete;
@@ -5257,7 +5310,14 @@ impl TypeFactoryImpl {
                 | flags::type_incomplete
                 | flags::has_bitfields);
         let newrc = Rc::new(newct);
-        self.insert(Rc::clone(&newrc))?;
+        if let Err(err) = self.insert(Rc::clone(&newrc)) {
+            self.insert(Rc::clone(ct))?;
+            return Err(err);
+        }
+        if let Some(link) = &ct.record_completion {
+            *link.borrow_mut() = Rc::downgrade(&newrc);
+        }
+        self.complete_record_typedefs(&newrc)?;
         Ok(newrc)
     }
 
@@ -5274,13 +5334,20 @@ impl TypeFactoryImpl {
         if !ct.is_incomplete() {
             return Err(KunaError::lowlevel("Can only set fields on an incomplete union"));
         }
-        self.erase_interned(ct, false);
+        self.erase_interned(ct, true);
         let mut newct = (**ct).clone();
         newct.set_union_fields(fd, new_size, new_align);
         newct.flags &= !flags::type_incomplete;
         newct.flags |= extra_flags & (flags::variable_length | flags::type_incomplete);
         let newrc = Rc::new(newct);
-        self.insert(Rc::clone(&newrc))?;
+        if let Err(err) = self.insert(Rc::clone(&newrc)) {
+            self.insert(Rc::clone(ct))?;
+            return Err(err);
+        }
+        if let Some(link) = &ct.record_completion {
+            *link.borrow_mut() = Rc::downgrade(&newrc);
+        }
+        self.complete_record_typedefs(&newrc)?;
         Ok(newrc)
     }
 
@@ -5327,13 +5394,48 @@ impl TypeFactoryImpl {
         res.id = id; // and new id
         res.flags &= !flags::coretype; // Not a core type
         res.typedef_imm = Some(Rc::clone(ct));
+        // A typedef has its own identity/spelling, not the tag's completion key.
+        res.record_completion = if ct.is_incomplete() {
+            Some(Rc::new(RefCell::new(std::rc::Weak::new())))
+        } else {
+            None
+        };
         res.set_display_format(format);
         let resrc = Rc::new(res);
         self.insert(Rc::clone(&resrc))?;
-        // C++ also stashes incomplete typedefs for later completion
-        // (`incompleteTypedef`); the console parse_C flow only typedefs complete
-        // types, so that deferred list is unused here.  // STUB(W6)
+        // Incomplete aliases are completed when their tag is defined.
         Ok(resrc)
+    }
+
+    /// Complete aliases without renaming/removing the C tag they refer to.
+    fn complete_record_typedefs(&self, completed: &Rc<Datatype>) -> KunaResult<()> {
+        if completed.is_incomplete() {
+            return Ok(());
+        }
+        let aliases: Vec<_> = self.store.borrow().nametree.iter().filter(|alias| {
+            alias.is_incomplete() && alias.get_typedef().is_some_and(|base| {
+                Rc::ptr_eq(&Datatype::completed_record(base), completed)
+            })
+        }).cloned().collect();
+        for alias in aliases {
+            let mut ready = (**completed).clone();
+            ready.name = alias.name.clone();
+            ready.display_name = alias.display_name.clone();
+            ready.id = alias.id;
+            ready.typedef_imm = Some(Rc::clone(completed));
+            ready.record_completion = alias.record_completion.clone();
+            let ready = Rc::new(ready);
+            self.erase_interned(&alias, true);
+            if let Err(err) = self.insert(Rc::clone(&ready)) {
+                self.insert(Rc::clone(&alias))?;
+                return Err(err);
+            }
+            if let Some(link) = &alias.record_completion {
+                *link.borrow_mut() = Rc::downgrade(&ready);
+            }
+            self.complete_record_typedefs(&ready)?;
+        }
+        Ok(())
     }
 
     /// C++ `TypeFactory::destroyType` (type.cc:4645-4655): remove a data-type
@@ -5795,6 +5897,7 @@ impl TypeFactoryImpl {
             meta,
         );
         stub.flags |= flags::type_incomplete | b.extra_flags(forcecore);
+        stub.record_completion = Some(Rc::new(RefCell::new(std::rc::Weak::new())));
         stub.kind = if is_union {
             DatatypeKind::Union { field: Vec::new() }
         } else {
@@ -6411,6 +6514,7 @@ impl TypeFactoryImpl {
         // TypeStruct(): incomplete, no fields.
         let mut tmp = Datatype::new_with_align(0, -1, type_metatype::TYPE_STRUCT);
         tmp.flags |= flags::type_incomplete;
+        tmp.record_completion = Some(Rc::new(RefCell::new(std::rc::Weak::new())));
         tmp.kind = DatatypeKind::Struct { field: Vec::new(), bitfield: Vec::new() };
         tmp.name = n.to_string();
         tmp.display_name = n.to_string();
@@ -6460,6 +6564,7 @@ impl TypeFactoryImpl {
         // needs_resolution).  Every union "needs resolution" — its accessed field
         // is recovered from the data flow by `ScoreUnionFields`/`resolveInFlow`.
         tmp.flags |= flags::type_incomplete | flags::needs_resolution;
+        tmp.record_completion = Some(Rc::new(RefCell::new(std::rc::Weak::new())));
         tmp.kind = DatatypeKind::Union { field: Vec::new() };
         tmp.name = n.to_string();
         tmp.display_name = n.to_string();
@@ -6819,18 +6924,22 @@ impl TypeFactoryImpl {
     ) -> KunaResult<(Option<Rc<Datatype>>, int8, Option<Rc<Datatype>>, int8)> {
         match &ptr.kind {
             DatatypeKind::Pointer { ptrto, wordsize, .. } => {
-                self.down_chain_pointer(ptr, ptrto, *wordsize, off, allow_array_wrap)
+                self.down_chain_pointer(
+                    ptr, &Datatype::completed_record(ptrto), *wordsize, off, allow_array_wrap,
+                )
             }
             DatatypeKind::PointerRel { ptrto, wordsize, parent, offset, .. } => {
                 // TypePointerRel::downChain (type.cc:3120-3136).
+                let ptrto = Datatype::completed_record(ptrto);
                 let ptrto_meta = ptrto.get_metatype();
                 if off >= 0
                     && off < ptrto.get_size() as int8
                     && (ptrto_meta == type_metatype::TYPE_STRUCT
                         || ptrto_meta == type_metatype::TYPE_ARRAY)
                 {
-                    return self.down_chain_pointer(ptr, ptrto, *wordsize, off, allow_array_wrap);
+                    return self.down_chain_pointer(ptr, &ptrto, *wordsize, off, allow_array_wrap);
                 }
+                let parent = Datatype::completed_record(parent);
                 // Convert off to be relative to the parent container.  C++:
                 // `int8 relOff = (off + offset) & calc_mask(size);` — the int8 `&`
                 // uintb promotes to uint8, masks, then truncates back to int8.
@@ -6840,7 +6949,7 @@ impl TypeFactoryImpl {
                     return Ok((None, off, None, 0)); // Don't shift beyond container
                 }
                 let orig_pointer =
-                    self.get_type_pointer_impl(ptr.size, Rc::clone(parent), *wordsize)?;
+                    self.get_type_pointer_impl(ptr.size, Rc::clone(&parent), *wordsize)?;
                 let off = rel_off;
                 if rel_off == 0 && *offset != 0 {
                     // Recovering the start of the parent is still downchaining.
