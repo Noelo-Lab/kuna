@@ -3945,6 +3945,39 @@ start fingerprint shared by at least 4 already-discovered functions
 (`FINGERPRINT_THRESHOLD`) — the exhaustive gap oracle for functions with no
 static or accepted pointer-table root.
 
+The gap cursor caches its current undefined span instead of repeating Listing
+lookups at every candidate. The next known instruction still bounds subroutine
+validation; an executable-range boundary only bounds cursor advancement. Once
+the cursor advances, cached decode successes and failures below it are retired:
+validation never decodes below its candidate. Forward results retain their first
+decode, including across processor-context changes. This bounds retention on long
+rejected padding runs without imposing a discovery cutoff or a universal cache
+size limit on branch-heavy inputs. Shared immutable records avoid copying text
+and flow vectors on cache hits; fingerprint equality remains two mnemonics and
+their total instruction length. The validation walk reuses its visited-address
+hash set and work stack, preserving successor order and the 4,000-step limit.
+Accepted bodies are converted back to address-sorted sets. One already-decoded,
+fixed-stride fall-through prefix can stand in for its visited addresses on the
+next overlapping validation. Its deferred branch targets and information flags
+are replayed in their original order under the same validation policy. All prefix
+instructions still count toward the step limit; backward edges into the prefix
+are already visited, and accepted bodies include every prefix address. Terminal
+instructions, missing fall-throughs and stride changes end the prefix. Cache
+retirement trims it, so reuse never skips a new decode or a context update.
+
+AIF obtains flow and assembly through `Translate::one_instruction_with_assembly`
+(`decompiler/crates/kuna-sleigh/src/translate.rs`). Its default implementation
+performs the original lift followed by best-effort assembly. SLEIGH reuses the
+resolved parse for instructions without context commits or delay slots; otherwise
+it reparses assembly after the lift, preserving the context updates and consumed
+length. P-code errors still fail the probe, while assembly errors do not replace
+a successful lift. Emitters must leave the image and translation context unchanged.
+The combined SLEIGH path retains at most eight constructor decisions keyed by the
+full instruction buffer, context words, table and operand offset. Each address
+still evaluates operands, applies context changes and generates p-code normally;
+this is not a cache of lifted instructions. Pattern-mask capture bypasses the
+cache, and changing the processor spec invalidates it.
+
 (kuna, GH-299) That gap walk slides its cursor **one byte at a time**, because the
 undefined partition is byte-granular by construction, so every byte of every hole is
 a candidate function start and both acceptance tests are applied to addresses that

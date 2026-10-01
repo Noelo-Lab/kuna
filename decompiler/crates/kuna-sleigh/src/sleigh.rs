@@ -1520,6 +1520,19 @@ pub struct Sleigh {
     capture_patterns: std::cell::Cell<bool>,
     /// Reusable storage for the main instruction and its delay-slot contexts.
     ctx_vec: RefCell<Vec<ResolvedCtx>>,
+    assembly_buffers: RefCell<(String, String)>,
+    constructor_matches: RefCell<Vec<ConstructorMatch>>,
+}
+
+/// A constructor decision reads only instruction bits (relative to the operand
+/// offset) and context words. Keep at most eight matches; operand evaluation and
+/// lifting still run at each address, including all context changes.
+struct ConstructorMatch {
+    table: u32,
+    offset: u32,
+    bytes: [u8; MAX_INSTRUCTION_LEN as usize],
+    context: Vec<u32>,
+    constructor: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -1581,6 +1594,8 @@ impl Sleigh {
             pcode_cacher: RefCell::new(PcodeCacher::new()),
             capture_patterns: std::cell::Cell::new(false),
             ctx_vec: RefCell::new(Vec::new()),
+            assembly_buffers: RefCell::new((String::new(), String::new())),
+            constructor_matches: RefCell::new(Vec::new()),
         }
     }
 
@@ -1601,6 +1616,7 @@ impl Sleigh {
     /// `manager_mut` through this to insert the fspec/iop/join spaces during
     /// `restoreFromSpec`, LOSS-132).
     pub fn base_mut(&mut self) -> &mut SleighBase {
+        self.constructor_matches.get_mut().clear();
         &mut self.base
     }
 
@@ -1694,6 +1710,7 @@ impl Sleigh {
     /// the file name from the `<sleigh>` tag; the Rust caller passes the raw
     /// compressed file contents).
     pub fn initialize_from_sla(&mut self, sla_bytes: &[u8]) -> KunaResult<()> {
+        self.constructor_matches.get_mut().clear();
         if !self.base.is_initialized() {
             // The C++ `FormatDecode decoder(this)` aliases the
             // `AddrSpaceManager` that `SleighBase::decode` simultaneously
@@ -1765,8 +1782,37 @@ impl Sleigh {
         }
     }
 
+    fn resolve_cached(
+        &self,
+        subtable: &crate::slghsymbol::SubtableSymbol,
+        table: u32,
+        walker: &ParserWalker<'_>,
+    ) -> KunaResult<u32> {
+        let offset = walker.ctx.state[walker.point()].offset;
+        let mut saved = self.constructor_matches.borrow_mut();
+        if let Some(previous) = saved.iter().find(|previous|
+            previous.table == table && previous.offset == offset &&
+            previous.bytes == walker.ctx.buf && previous.context == walker.ctx.context) {
+            return Ok(previous.constructor);
+        }
+        let constructor = subtable.resolve(walker)?;
+        let mut previous = if saved.len() == 8 {
+            saved.remove(0)
+        } else {
+            ConstructorMatch { table, offset, bytes: walker.ctx.buf,
+                context: Vec::new(), constructor }
+        };
+        previous.table = table;
+        previous.offset = offset;
+        previous.bytes = walker.ctx.buf;
+        previous.context.clone_from(&walker.ctx.context);
+        previous.constructor = constructor;
+        saved.push(previous);
+        Ok(constructor)
+    }
+
     /// C++ `Sleigh::resolve`: build the constructor tree (disassembly state).
-    fn resolve(&self, pos: &mut ParserContext) -> KunaResult<()> {
+    fn resolve(&self, pos: &mut ParserContext, reuse_matches: bool) -> KunaResult<()> {
         self.load_fill_context(pos)?;
         // loadContext: pull context words for the current address.
         {
@@ -1794,6 +1840,8 @@ impl Sleigh {
             if capture {
                 let (pat, ct) = subtable.resolve_matched(&reader)?;
                 (*ct, Some(pat.clone()))
+            } else if reuse_matches {
+                (self.resolve_cached(subtable, root, &reader)?, None)
             } else {
                 (subtable.resolve(&reader)?, None)
             }
@@ -1808,9 +1856,10 @@ impl Sleigh {
         while walker.is_state() {
             let ct = walker.get_constructor()?;
             let mut oper = walker.get_operand();
-            let numoper = table.get_constructor(ct)?.get_num_operands();
+            let constructor = table.get_constructor(ct)?;
+            let numoper = constructor.get_num_operands();
             while oper < numoper {
-                let opid = table.get_constructor(ct)?.get_operand(oper)?;
+                let opid = constructor.get_operand(oper)?;
                 let opsym = table
                     .find_symbol_by_id(opid)
                     .ok_or_else(|| KunaError::sleigh("resolve: operand undefined"))?;
@@ -1835,7 +1884,7 @@ impl Sleigh {
                         if capture {
                             resolve_triple_matched(table, tsym, &reader)?
                         } else {
-                            (resolve_triple(table, tsym, &reader)?, None)
+                            (resolve_triple(table, tsym, &reader, reuse_matches)?, None)
                         }
                     };
                     if let Some(subct_id) = subct {
@@ -1857,11 +1906,11 @@ impl Sleigh {
                 oper += 1;
             }
             if oper >= numoper {
-                let ct_minlen = table.get_constructor(ct)?.get_minimum_length();
+                let ct_minlen = constructor.get_minimum_length();
                 walker.calc_current_length(ct_minlen, numoper);
                 walker.pop_operand();
                 // delay slot
-                let handle = table.get_constructor(ct)?.get_templ();
+                let handle = constructor.get_templ();
                 if let Some(h) = handle {
                     let ds = self.base.templates[h].delay_slot();
                     if ds > 0 {
@@ -1885,9 +1934,10 @@ impl Sleigh {
         while walker.is_state() {
             let ct = walker.get_constructor()?;
             let mut oper = walker.get_operand();
-            let numoper = table.get_constructor(ct)?.get_num_operands();
+            let constructor = table.get_constructor(ct)?;
+            let numoper = constructor.get_num_operands();
             while oper < numoper {
-                let opid = table.get_constructor(ct)?.get_operand(oper)?;
+                let opid = constructor.get_operand(oper)?;
                 let opsym = table
                     .find_symbol_by_id(opid)
                     .ok_or_else(|| KunaError::sleigh("resolveHandles: operand undefined"))?;
@@ -1932,7 +1982,7 @@ impl Sleigh {
                 oper += 1;
             }
             if oper >= numoper {
-                let handle = table.get_constructor(ct)?.get_templ();
+                let handle = constructor.get_templ();
                 if let Some(h) = handle {
                     if let Some(res) = self.base.templates[h].get_result() {
                         let mut hand = FixedHandle::default();
@@ -1957,8 +2007,17 @@ impl Sleigh {
         addr: &Address,
         state: ParseState,
     ) -> KunaResult<ParserContextGuard> {
+        self.obtain_context_with_match_cache(addr, state, false)
+    }
+
+    fn obtain_context_with_match_cache(
+        &self,
+        addr: &Address,
+        state: ParseState,
+        reuse_matches: bool,
+    ) -> KunaResult<ParserContextGuard> {
         let mut pos = self.checkout_context(addr);
-        self.resolve(&mut pos)?;
+        self.resolve(&mut pos, reuse_matches)?;
         if state == ParseState::Disassembly {
             return Ok(pos);
         }
@@ -2092,10 +2151,16 @@ fn resolve_triple(
     table: &SymbolTable,
     id: u32,
     walker: &ParserWalker<'_>,
+    reuse_matches: bool,
 ) -> KunaResult<Option<u32>> {
     let sym = table
         .find_symbol_by_id(id)
         .ok_or_else(|| KunaError::sleigh("triple symbol undefined"))?;
+    if reuse_matches {
+        if let SymbolKind::Subtable(subtable) = sym.kind() {
+            return walker.engine.resolve_cached(subtable, id, walker).map(Some);
+        }
+    }
     sym.resolve(walker)
 }
 
@@ -2323,12 +2388,7 @@ impl Sleigh {
         body.clear();
         let result = (|| {
             let pos = self.obtain_context(baseaddr, ParseState::Disassembly)?;
-            let table = &self.base.symtab;
-            let mut walker = ParserWalker::new(&pos, table, self);
-            walker.base_state();
-            let ct = walker.get_constructor_inner()?;
-            table.get_constructor(ct)?.print_mnemonic(mnemonic, &mut walker, table)?;
-            table.get_constructor(ct)?.print_body(body, &mut walker, table)?;
+            self.render_assembly(&pos, mnemonic, body)?;
             Ok(pos.get_length())
         })();
         if result.is_err() {
@@ -2338,13 +2398,27 @@ impl Sleigh {
         result
     }
 
+    fn render_assembly(
+        &self,
+        pos: &ParserContext,
+        mnemonic: &mut String,
+        body: &mut String,
+    ) -> KunaResult<()> {
+        let table = &self.base.symtab;
+        let mut walker = ParserWalker::new(pos, table, self);
+        walker.base_state();
+        let ct = walker.get_constructor_inner()?;
+        table.get_constructor(ct)?.print_mnemonic(mnemonic, &mut walker, table)?;
+        table.get_constructor(ct)?.print_body(body, &mut walker, table)
+    }
+
     /// C++ `Translate::oneInstruction`.
     pub fn one_instruction(
         &self,
         emit: &mut dyn PcodeEmit,
         baseaddr: &Address,
     ) -> KunaResult<i32> {
-        self.one_instruction_with_map(emit, baseaddr, None)
+        self.one_instruction_with_map(emit, baseaddr, None, None)
     }
 
     pub fn one_instruction_checked(
@@ -2353,7 +2427,18 @@ impl Sleigh {
         baseaddr: &Address,
         image: &dyn ImageBytes,
     ) -> KunaResult<i32> {
-        self.one_instruction_with_map(emit, baseaddr, Some(image))
+        self.one_instruction_with_map(emit, baseaddr, Some(image), None)
+    }
+
+    /// Reuse this instruction's parse only when lifting cannot change the
+    /// context or next-instruction address used by the assembly renderer.
+    pub fn one_instruction_with_assembly(
+        &self,
+        pcode: &mut dyn PcodeEmit,
+        assembly: &mut dyn AssemblyEmit,
+        baseaddr: &Address,
+    ) -> KunaResult<i32> {
+        self.one_instruction_with_map(pcode, baseaddr, None, Some(assembly))
     }
 
     fn check_mapped_instruction(image: &dyn ImageBytes, addr: &Address, len: i32) -> KunaResult<()> {
@@ -2376,6 +2461,7 @@ impl Sleigh {
         emit: &mut dyn PcodeEmit,
         baseaddr: &Address,
         image: Option<&dyn ImageBytes>,
+        assembly: Option<&mut dyn AssemblyEmit>,
     ) -> KunaResult<i32> {
         let alignment = self.base.base.get_alignment();
         // C++ `(baseaddr.getOffset() % alignment) != 0`; clippy prefers the
@@ -2388,7 +2474,7 @@ impl Sleigh {
         if let Some(image) = image {
             Self::check_mapped_instruction(image, baseaddr, 1)?;
         }
-        let mut pos = self.obtain_context(baseaddr, ParseState::Pcode)?;
+        let mut pos = self.obtain_context_with_match_cache(baseaddr, ParseState::Pcode, assembly.is_some())?;
         if let Some(image) = image {
             Self::check_mapped_instruction(image, baseaddr, pos.get_length())?;
             if pos.get_delay_slot() > 0 {
@@ -2479,8 +2565,28 @@ impl Sleigh {
         cache.resolve_relatives()?;
         cache.emit(baseaddr, emit);
         *self.pcode_cacher.borrow_mut() = cache;
+        let rendered = assembly.as_ref().and_then(|_| {
+            let pos = &contexts[0].ctx;
+            if !pos.contextcommit.is_empty() || pos.get_delay_slot() != 0 {
+                return None;
+            }
+            let (mut mnemonic, mut body) = std::mem::take(&mut *self.assembly_buffers.borrow_mut());
+            mnemonic.clear();
+            body.clear();
+            let valid = self.render_assembly(pos, &mut mnemonic, &mut body).is_ok();
+            Some((mnemonic, body, valid))
+        });
         contexts.clear();
         *self.ctx_vec.borrow_mut() = contexts;
+        if let Some(assembly) = assembly {
+            match rendered {
+                Some((mnemonic, body, valid)) => {
+                    if valid { assembly.dump(baseaddr, &mnemonic, &body); }
+                    *self.assembly_buffers.borrow_mut() = (mnemonic, body);
+                }
+                None => { let _ = self.print_assembly(assembly, baseaddr); }
+            }
+        }
         Ok(fall_offset)
     }
 }
@@ -2557,6 +2663,15 @@ impl Translate for Sleigh {
     }
     fn print_assembly(&self, emit: &mut dyn AssemblyEmit, baseaddr: &Address) -> KunaResult<i32> {
         Sleigh::print_assembly(self, emit, baseaddr)
+    }
+
+    fn one_instruction_with_assembly(
+        &self,
+        pcode: &mut dyn PcodeEmit,
+        assembly: &mut dyn AssemblyEmit,
+        baseaddr: &Address,
+    ) -> KunaResult<i32> {
+        Sleigh::one_instruction_with_assembly(self, pcode, assembly, baseaddr)
     }
     fn print_assembly_into(
         &self,
