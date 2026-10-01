@@ -1,5 +1,5 @@
 // app.js — the /decompile2 study view: loads a program into the decompiler
-// Worker, lists its functions in plain groups, and shows one function as
+// Worker, lists its functions (and, on request, its strings) in plain groups, and shows one function as
 // linked views (C code, side by side, assembly, bytes, stack) with an Explain
 // panel. Every engine string is escaped by the pure renderers this module
 // mounts; this file owns the DOM, the operation model and the keyboard.
@@ -39,6 +39,7 @@ import { archFrom, nopFill } from './arch.js';
 import { explain, idioms } from './mnemonics.js';
 import { frameModel, renderFrame, slotIndex } from './stack-frame.js';
 import { renderXrefs, renderLocalCalls, localCallees } from './xrefs-view.js';
+import { renderStringList } from './strings-view.js';
 import { helpHtml } from './help.js';
 
 const $ = (id) => document.getElementById(id);
@@ -50,6 +51,8 @@ const els = {
   crumb: $('crumb'), crumbName: $('crumbname'), crumbCount: $('crumbcount'), fnsBtn: $('fnsbtn'),
   progress: $('progress'), work: $('work'), codearea: $('codearea'), tip: $('tip'), tipBtn: $('tipbtn'),
   narrow: $('narrownote'), list: $('fnlist'), filter: $('fnfilter'), none: $('fnnone'),
+  sideTabs: $('sidetabs'), fnPanel: $('fnpanel'), strPanel: $('strpanel'),
+  strFilter: $('strfilter'), strList: $('strlist'), strNone: $('strnone'),
   empty: $('empty'), drop: $('dropzone'), dropVeil: $('dropveil'),
   welcomeOpen: $('welcomeopen'),
   vhead: $('vhead'), vname: $('vname'), explain: $('explainbtn'),
@@ -86,6 +89,10 @@ const state = {
   remoteQueued: false,
   remoteTimer: 0,
   remoteLabel: '',
+  side: 'fns',
+  strings: null,
+  stringsOpen: {},
+  strSel: null,
 };
 const CACHE_MAX = 32;
 
@@ -319,6 +326,10 @@ function resetList() {
   els.filter.classList.remove('bad');
   els.filter.removeAttribute('title');
   els.none.hidden = true;
+  state.strings = null;
+  state.strSel = null;
+  els.strFilter.value = '';
+  renderStrings();
 }
 
 function resetBinary() {
@@ -404,6 +415,7 @@ function refreshRowNames() {
     entry.row.title = shown === entry.fn.name ? entry.fn.address_hex : `${entry.fn.address_hex} · first called ${entry.fn.name}`;
     entry.key = searchKey({ ...entry.fn, aliases: [...(entry.fn.aliases || []), shown] });
   }
+  if (state.strings?.doc) renderStrings();
 }
 
 function buildSidebar(functions) {
@@ -566,7 +578,181 @@ async function indexBinary(source, { keep = null, shared = null } = {}) {
   const fromHash = state.byAddr.get((location.hash || '').slice(1).toLowerCase());
   const first = (keep && state.byAddr.get(keep)) || fromHash || state.firstFn;
   if (first) openFunction(first, { replace: true });
+  if (state.side === 'strs') loadStrings();
 }
+
+// ── strings ────────────────────────────────────────────────────────────────
+
+/** Show the function list or the string list in the sidebar; the strings are found the first time they are shown. */
+function setSide(side) {
+  state.side = side;
+  for (const btn of els.sideTabs.querySelectorAll('[role=tab]')) {
+    const on = btn.dataset.side === side;
+    btn.setAttribute('aria-selected', String(on));
+    btn.tabIndex = on ? 0 : -1;
+  }
+  els.fnPanel.hidden = side !== 'fns';
+  els.strPanel.hidden = side !== 'strs';
+  if (side === 'strs') loadStrings();
+}
+
+els.sideTabs.addEventListener('click', (e) => {
+  const btn = e.target.closest('[role=tab]');
+  if (btn) setSide(btn.dataset.side);
+});
+els.sideTabs.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  setSide(state.side === 'fns' ? 'strs' : 'fns');
+  els.sideTabs.querySelector('[aria-selected=true]').focus();
+});
+
+/** Ask the engine for the program's strings once per program, when nothing else is running. */
+function loadStrings() {
+  if (!state.inventory || state.strings) return;
+  if (!state.caps.inspect) {
+    state.strings = { error: 'Finding strings needs a newer version of the decompiler.' };
+    renderStrings();
+    return;
+  }
+  const hash = state.binary.hash;
+  state.strings = { loading: true };
+  renderStrings();
+  whenIdle(async () => {
+    if (!state.strings?.loading || state.binary?.hash !== hash) return;
+    const op = beginOperation('strings');
+    op.onCancel = () => {
+      state.strings = op.explicit ? { stopped: true } : null;
+      if (!op.explicit && state.side === 'strs') queueMicrotask(loadStrings);
+      else renderStrings();
+    };
+    setStatus(`Finding the strings in ${state.binary.name}…`);
+    const t0 = performance.now();
+    try {
+      const doc = await state.kuna.strings();
+      if (!isCurrent(op)) return;
+      for (const s of doc.strings) s.address_hex = s.address_hex.toLowerCase();
+      state.strings = { doc };
+      const n = doc.strings.length;
+      setStatus(`Found ${n.toLocaleString('en-US')} string${n === 1 ? '' : 's'} in ${state.binary.name}`, 'ok',
+        `found in ${Math.round(performance.now() - t0)} ms`);
+    } catch (e) {
+      if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return;
+      state.strings = { error: `Could not find the strings: ${errorLine(e)}` };
+      setStatus('Could not find the strings', 'err', e.message);
+    } finally {
+      finishOperation(op);
+    }
+    renderStrings();
+  });
+}
+
+const stringNameOf = (addrHex, name) => (state.byAddr.has(addrHex) ? displayName(state.byAddr.get(addrHex)) : name || addrHex);
+
+function renderStrings() {
+  const st = state.strings;
+  els.strFilter.disabled = !state.inventory;
+  const note = (html) => {
+    els.strList.innerHTML = '';
+    els.strNone.innerHTML = html;
+    els.strNone.hidden = !html;
+  };
+  if (!state.inventory) return note('');
+  if (!st || st.loading) return note('Finding the strings…');
+  if (st.stopped) return note('Stopped. <button class="d2-link" data-act="strings-load">Find the strings</button>');
+  if (st.error) return note(`${escapeHtml(st.error)} <button class="d2-link" data-act="strings-load">Try again</button>`);
+  const query = compileQuery(els.strFilter.value);
+  els.strFilter.classList.toggle('bad', !!query.error);
+  if (query.error) els.strFilter.title = query.error;
+  else els.strFilter.removeAttribute('title');
+  const { html, matches } = renderStringList(st.doc.strings, {
+    query, open: state.stringsOpen, nameOf: stringNameOf, selected: state.strSel,
+  });
+  if (!st.doc.strings.length) return note('No text was found in this program');
+  if (!matches) return note(escapeHtml(query.error ? `That search is not valid: ${query.error}` : 'No strings match'));
+  els.strList.innerHTML = html;
+  els.strNone.hidden = true;
+}
+
+/** Open the function holding the instruction at `atHex` with that instruction selected, its line of code in view. */
+function goToUse(fnHex, atHex) {
+  if (!state.inventory) return;
+  if (!['c', 'asm', 'split'].includes(state.view)) setView('c');
+  const fn = state.byAddr.get(fnHex) || containingFunction(atHex);
+  if (!fn) {
+    showDataAt(atHex);
+  } else if (state.current?.fn === fn && !state.opening) {
+    selectTarget({ addr: atHex }, null);
+  } else {
+    openFunction(fn, { focusAddr: atHex });
+  }
+}
+
+function markString(row) {
+  for (const el of els.strList.querySelectorAll('.str.sel')) el.classList.remove('sel');
+  row.classList.add('sel');
+  state.strSel = row.dataset.addr;
+}
+
+const visibleStrings = () => [...els.strList.querySelectorAll('details[open] .str .sx')];
+
+let strRender = 0;
+els.strFilter.addEventListener('input', () => {
+  cancelAnimationFrame(strRender);
+  strRender = requestAnimationFrame(renderStrings);
+});
+els.strFilter.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (els.strFilter.value) { els.strFilter.value = ''; renderStrings(); } else els.strFilter.blur();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    renderStrings();
+    visibleStrings()[0]?.click();
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    visibleStrings()[0]?.focus();
+  }
+});
+els.strList.addEventListener('toggle', (e) => {
+  const group = e.target.dataset?.group;
+  if (group && compileQuery(els.strFilter.value).empty) state.stringsOpen[group] = e.target.open;
+}, true);
+els.strList.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const shown = visibleStrings();
+  const at = shown.indexOf(document.activeElement);
+  if (at < 0) return;
+  e.preventDefault();
+  shown[at + (e.key === 'ArrowDown' ? 1 : -1)]?.focus();
+});
+els.strList.addEventListener('click', (e) => {
+  const row = e.target.closest('.str');
+  if (!row) return;
+  const link = e.target.closest('a.xt[data-sites]');
+  if (link) {
+    e.preventDefault();
+    markString(row);
+    const sites = link.dataset.sites.split(' ');
+    const here = state.current?.fn.address_hex === link.dataset.fn ? sites.indexOf(state.sel?.addr) : -1;
+    goToUse(link.dataset.fn, sites[(here + 1) % sites.length]);
+  } else if (e.target.closest('.sx')) {
+    markString(row);
+    const first = row.querySelector('a.xt[data-sites]');
+    if (first) goToUse(first.dataset.fn, first.dataset.sites.split(' ')[0]);
+    else showDataAt(row.dataset.addr);
+  } else {
+    return;
+  }
+  if (narrowView.matches) {
+    els.work.classList.remove('fns');
+    els.fnsBtn.setAttribute('aria-expanded', 'false');
+  }
+});
+els.strNone.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-act=strings-load]')) return;
+  state.strings = null;
+  loadStrings();
+});
 
 /** The student's own stored session for a binary (moving one an earlier version stored under its FNV key). */
 function restoreSession(hash, bytes = null, name = 'binary') {
@@ -1776,12 +1962,14 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   switch (e.key) {
-    case '/':
-      if (els.filter.disabled) return;
+    case '/': {
+      const search = state.side === 'strs' ? els.strFilter : els.filter;
+      if (search.disabled) return;
       e.preventDefault();
-      els.filter.focus();
-      els.filter.select();
+      search.focus();
+      search.select();
       break;
+    }
     case ' ':
       e.preventDefault();
       setView(state.view === 'asm' ? 'c' : 'asm');
