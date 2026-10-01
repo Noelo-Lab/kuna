@@ -1683,6 +1683,21 @@ impl ScopeLocal {
         Some((symbol.get_display_name().to_string(), sym_off, symbol.dtype.clone()))
     }
 
+    /// The next default name `render` produces from `base`, skipping any a
+    /// name-locked Symbol of this scope already holds.  A caller-named local
+    /// (`name v3 v1`) keeps its Symbol through the second pass, and handing the
+    /// same `v1` to an untouched neighbour made the printer suffix one of the two
+    /// -- often the caller's.  Without such a Symbol this is `render(base++)`.
+    pub fn next_default_name(&self, base: &mut int4, render: impl Fn(int4) -> String) -> String {
+        loop {
+            let name = render(*base);
+            *base += 1;
+            if !self.db.find_by_name(self.scope, &name).iter().any(|&s| self.db.symbol(s).is_name_locked()) {
+                return name;
+            }
+        }
+    }
+
     /// C++ `ActionNameVars`'s namerec rename (coreaction.cc:3087-3094): if the
     /// Symbol covering `(addr, size)` has an undefined name and the access covers
     /// the whole Symbol (the high `getSymbolOffset() < 0` gate), rename it to the
@@ -1733,8 +1748,7 @@ impl ScopeLocal {
                 }
                 None => {
                     // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm).
-                    let newname = format!("v{}", *base);
-                    *base += 1;
+                    let newname = self.next_default_name(base, |i| format!("v{i}"));
                     // makeNameUnique then renameSymbol.
                     let _ = self.db.rename_symbol(sym, &newname);
                 }
@@ -1783,8 +1797,7 @@ impl ScopeLocal {
         }
         // newname = scope->buildDefaultName(sym, base, vn) (angr `vN` arm); then
         // scope->renameSymbol(sym, newname).
-        let newname = format!("v{}", *base);
-        *base += 1;
+        let newname = self.next_default_name(base, |i| format!("v{i}"));
         let _ = self.db.rename_symbol(sym, &newname);
         Some(newname)
     }
@@ -1941,8 +1954,7 @@ impl ScopeLocal {
             (addr.get_offset().wrapping_sub(entry_addr_off) as int4).wrapping_add(entry_off);
         // ActionNameVars::apply: rename the undefined-named Symbol to `vN` once.
         if self.db.symbol(sym).is_name_undefined() {
-            let newname = format!("v{}", *base);
-            *base += 1;
+            let newname = self.next_default_name(base, |i| format!("v{i}"));
             let _ = self.db.rename_symbol(sym, &newname);
         }
         let symbol = self.db.symbol(sym);

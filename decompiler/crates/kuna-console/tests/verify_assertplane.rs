@@ -151,15 +151,22 @@ fn prototype_type_and_name_all_reach_the_emitted_c() {
     assert!(!code.contains("char v2 [8]"), "the original buffer survived:\n{code}");
 }
 
-/// A directive is applied in the order it was given: `type` then `name` retypes
-/// and then renames, where the reverse order leaves the second naming a symbol
-/// the first already renamed away.  The rejection is reported, not swallowed.
+/// Every directive reads its identifier against the first pass's output, so
+/// `name` then `type` on the printed `v2` lands exactly as `type` then `name`
+/// does (`prototype_type_and_name_all_reach_the_emitted_c`), and a directive
+/// that misses is reported without rolling back the ones that took: an agent
+/// batching forty renames against a re-decompiled binary does not lose the
+/// other 39.
 #[test]
-fn directive_order_is_the_callers_order_and_a_miss_is_reported() {
+fn directive_order_does_not_matter_and_a_miss_is_reported() {
     let (code, report) = decompile_with(vec![
         directive(
             "name v2 credbuf",
             Body::Name { func: None, symbol: "v2".into(), newname: "credbuf".into() },
+        ),
+        directive(
+            "name v9 nothing",
+            Body::Name { func: None, symbol: "v9".into(), newname: "nothing".into() },
         ),
         directive(
             "type v2 char[16]",
@@ -168,10 +175,9 @@ fn directive_order_is_the_callers_order_and_a_miss_is_reported() {
     ]);
     assert_eq!(report[0].status, "applied");
     assert_eq!(report[1].status, "rejected");
-    assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v2"));
-    // The rename still took, so the run is not all-or-nothing: an agent batching
-    // forty renames against a re-decompiled binary does not lose the other 39.
-    assert!(code.contains("credbuf"), "the applied half was rolled back:\n{code}");
+    assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v9"));
+    assert_eq!(report[2].status, "applied");
+    assert!(code.contains("char credbuf [16];"), "the rename+retype did not land:\n{code}");
 }
 
 /// `param` — a locked input storage and name (`map param`).
@@ -786,11 +792,11 @@ fn a_name_no_local_answers_to_is_still_no_symbol_named() {
     assert_eq!(report[0].detail.as_deref(), Some("No symbol named: v9"));
 }
 
-/// The scope owns the stack slots, so a directive that misses there because an
-/// EARLIER directive in the same batch renamed the Symbol must not fall through
+/// The scope owns the stack slots, so a directive naming a slot an EARLIER
+/// directive in the same batch renamed must reach that Symbol, not fall through
 /// and map a second Symbol over the same slot.  `v2` is `char v2 [8]` on the
-/// stack; after `name v2 credbuf` the high still reports `v2`, and the second
-/// directive has to be the rejection it always was.
+/// stack; after `name v2 credbuf` the pass still printed `v2`, so `type v2`
+/// retypes `credbuf`, and the slot is declared once.
 #[test]
 fn a_renamed_stack_local_does_not_get_a_second_symbol() {
     let (code, report) = decompile_with(vec![
@@ -803,12 +809,7 @@ fn a_renamed_stack_local_does_not_get_a_second_symbol() {
             Body::Type { func: None, symbol: "v2".into(), decl: "char[8]".into() },
         ),
     ]);
-    assert_eq!(report[0].status, "applied");
-    assert_eq!(report[1].status, "rejected");
-    assert_eq!(report[1].detail.as_deref(), Some("No symbol named: v2"));
-    assert_eq!(
-        code.matches("credbuf").count(),
-        code.matches("credbuf").count().max(1),
-        "the rename vanished:\n{code}"
-    );
+    all_applied(&report);
+    assert_eq!(code.matches("char credbuf [8];").count(), 1, "the slot is not declared once:\n{code}");
+    assert!(!code.contains(" v2 ["), "a second Symbol took the slot:\n{code}");
 }
