@@ -509,6 +509,21 @@ kuna decompile ./qjs main \
   --assert 'prototype sub_875e0 struct JSValue JS_ReadObject(void *ctx,char *buf,unsigned long len,unsigned int flags)'
 ```
 
+A record may name its own tag, a sibling record defined by a later `typedef`, or
+a tag declared ahead of its body (`typedef struct Node;`), as C allows, and the
+decompiled code reads through those pointers as fields (`n->next->next->val`),
+including from a prototype stated before the body:
+
+```bash
+kuna decompile ./a.out walk \
+  --assert 'typedef struct Node;' \
+  --assert 'prototype walk int walk(struct Node *n)' \
+  --assert 'typedef struct Node { struct Node *next; int val; void (*visit)(struct Node *n); };'
+```
+
+A record cannot hold itself, or a tag that has no body yet, by value, and a
+record that already has a body cannot be given another.
+
 **`<func>` is what the prototype binds to, not the name inside the
 declaration.** The reason to state a signature at all is usually that the
 function has no name worth keeping, so the declaration gets written under the
