@@ -221,3 +221,103 @@ fn the_broad_guard_and_explicit_off_settings_remain_available() {
     }
     std::fs::remove_file(input).unwrap();
 }
+
+#[test]
+fn byte_reads_after_indexed_stores_keep_their_offsets_on_mips() {
+    // clang -O0 for MIPS: zero two stack words, store 1 and 2 at computed
+    // byte offsets, then read two fixed bytes and return first * 10 + second.
+    let mut words: Vec<u32> = vec![
+        0x27bdffe8, 0xafbf0014, 0xafbe0010, 0x03a0f025, 0xafc4000c, 0xafc50008, 0x24010000,
+        0xafc00000, 0x24010000, 0xafc00004, 0x27c10000, 0x8fc2000c, 0x24030007, 0x00431024,
+        0x00221021, 0x24010001, 0xa0410000, 0x27c10000, 0x8fc20008, 0x24030007, 0x00431024,
+        0x00221021, 0x24010002, 0xa0410000, 0x93c10000, 0x302100ff, 0x2402000a, 0x70220802,
+        0x93c20001, 0x304200ff, 0x00221021, 0x03c0e825, 0x8fbe0010, 0x8fbf0014, 0x27bd0018,
+        0x03e00008, 0x00000000,
+    ];
+    let compilers: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(
+        !compilers.is_empty(),
+        "a C compiler is required for semantic validation"
+    );
+    for (target, first) in [("MIPS:BE:32:default", 0), ("MIPS:LE:32:default", 2)] {
+        words[24] = 0x93c10000 | first;
+        let bytes: Vec<u8> = if target.contains(":BE:") {
+            words.iter().flat_map(|w| w.to_be_bytes()).collect()
+        } else {
+            words.iter().flat_map(|w| w.to_le_bytes()).collect()
+        };
+        let input = common::scratch_file("indexed-stack-bytes", "bin");
+        std::fs::write(&input, bytes).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args([
+                "decompile",
+                input.to_str().unwrap(),
+                "0x1000",
+                "--raw-image",
+                "--target",
+                target,
+                "--base",
+                "0x1000",
+                "--define-function",
+                "0x1000=two_idx",
+                "--assert",
+                "prototype two_idx int two_idx(int,int)",
+                "--assert-strict",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{target}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let printed = String::from_utf8(output.stdout).unwrap();
+        let src = common::scratch_file("indexed-stack-bytes", "c");
+        let exe = common::scratch_file("indexed-stack-bytes", "exe");
+        std::fs::write(
+            &src,
+            format!(
+                r#"
+{printed}
+int main(void) {{
+    for (int i = 0; i < 16; ++i)
+        for (int j = 0; j < 16; ++j) {{
+            unsigned char b[8] = {{0}};
+            b[i & 7] = 1;
+            b[j & 7] = 2;
+            if (two_idx(i, j) != b[{first}] * 10 + b[1]) return 1;
+        }}
+    return 0;
+}}
+"#
+            ),
+        )
+        .unwrap();
+        for cc in &compilers {
+            for level in ["-O0", "-O2"] {
+                let compile = Command::new(cc)
+                    .args(["-std=c11", level])
+                    .arg(&src)
+                    .arg("-o")
+                    .arg(&exe)
+                    .output()
+                    .unwrap();
+                assert!(
+                    compile.status.success(),
+                    "{target} {cc}: {}\n{printed}",
+                    String::from_utf8_lossy(&compile.stderr)
+                );
+                assert!(
+                    Command::new(&exe).status().unwrap().success(),
+                    "{target} {cc} {level}: {printed}"
+                );
+            }
+        }
+        for path in [input, src, exe] {
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+}

@@ -622,6 +622,19 @@ group):
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs` | signed div/mod idioms, segments, pointer flow, predication, float compares | `RuleSignDiv2`, `RuleSignMod2nOpt`, `RuleModOpt`, `RuleSegment`, `RulePtrFlow`, `RuleConditionalMove` (group `conditionalexe`), `RuleFloatCast`, `RuleIgnoreNan` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, cleanup-pool `RuleExpandLoad` |
 
+`RulePullsubIndirect`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs (RulePullsubIndirect)`)
+narrows an INDIRECT whose readers are all SUBPIECEs to the bytes they use, from
+the lowest used byte to the highest. The new output piece starts at the lowest
+used byte, and kuna slices the piece of the INDIRECT's input at that same byte,
+as `RulePullsubMulti` does. Upstream slices the input at the offset of whichever
+SUBPIECE triggered the rule, so when another reader uses a lower byte the input
+piece holds the wrong bytes; on a big-endian space it also sits below the
+original storage, and the emitted C copies a value that does not exist into the
+read bytes. The stack STORE guards of §3.1 (`stackstoreguard`) are the common
+source of such INDIRECTs: two direct byte reads of an initialized buffer after
+an indexed byte store.
+
 The pointer/division family in `ruleaction_6.rs` resolves opcode changes through
 the canonical `TypeOp` table and applies them with `Funcdata::op_set_opcode`.
 That mutation is infallible; its helper returns no `Result`, so rules do not

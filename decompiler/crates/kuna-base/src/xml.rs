@@ -1945,6 +1945,8 @@ mod tests {
         // global stays a float literal and a register move reinterprets once
         // and kuna-labelstmt-arm + kuna-labelstmt-x64 / a label never ends a
         // compound statement (GH-783)
+        // and kuna-stackstoreguard / a byte copied into an initialized stack
+        // buffer through a walking pointer still reaches the later test and call
         assert_eq!(count, 371, "corpus file count drifted");
     }
 

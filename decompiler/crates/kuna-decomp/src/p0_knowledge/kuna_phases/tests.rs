@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_107() {
+fn option_values_live_value_present_for_108() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -730,6 +730,7 @@ fn option_values_live_value_present_for_107() {
     // 104 -> 105: +1 for `condexeret` (live_field = cond_exe_ret).
     // 105 -> 106: +1 for `fieldtype` (live_field = field_type).
     // 106 -> 107: +1 for `armfloatreturn` (live_field = arm_float_return).
+    // 107 -> 108: +1 for `stackstoreguard` (live_field = stack_store_guard, default-on).
     assert_eq!(with_live, 108);
 }
 
@@ -913,6 +914,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 244 -> 245: +1 for `condexeret`; its P4 row sits mid-table.
     // 245 -> 246: +1 for `fieldtype`.
     // 246 -> 247: +1 for `armfloatreturn`.
+    // 247 -> 248: +1 for `stackstoreguard`.
     assert_eq!(json.matches("},\n").count(), 248);
 }
 
