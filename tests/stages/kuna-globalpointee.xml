@@ -129,11 +129,8 @@
   return v1 \+ gi\[1\];</stringmatch>
 <stringmatch name="globalpointee #11: the load after a store through another pointer reads the global" min="2" max="2">\*a2 = a3;
   return (v1|a0\[1\]) \+ \*gi;</stringmatch>
-<stringmatch name="globalpointee #12: a load not used as an address after a pointer store reads the global" min="2" max="2">(gd = v1;
-  \*a2 = a0;
-  return \(gd - a0\)|v1 = \*\(int4 \*\)\(v2 \+ 4\);
-  \*a2 = a0;
-  return \(int8\)v1 \+ \(gd - a0\))</stringmatch>
+<stringmatch name="globalpointee #12: a load not used as an address after a pointer store reads the global" min="2" max="2">\*a2 = a0;
+  return (\(gd - a0\) \+ \(int8\)v2|\(int8\)v1 \+ \(gd - a0\));</stringmatch>
 <stringmatch name="globalpointee #13: a load between two pointer stores keeps its own variable" min="2" max="2">v2 = gi;
   \*a3 = </stringmatch>
 </decompilertest>
