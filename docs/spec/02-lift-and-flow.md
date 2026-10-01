@@ -500,36 +500,49 @@ into a table whose every entry names the same address
 (`kuna_tailcalljump.rs (kuna_sole_table_destination)`). Under `on`,
 `flow.rs (FlowInfo::recover_jump_tables)` turns that jump into a tail call when
 the address is another known function's entry and one of two things holds
-(`kuna_tailcalljump.rs (kuna_is_tail_call_table)`): the callee's prototype is
-input-locked (declared, DWARF, a library signature), so it states the call's
-arguments and return value; or the address lies outside the function's
-declared extent, where following it can only end in `halt_missing()`. The
-table is then dropped and `flow.rs (FlowInfo::recover_table_tail_call)` gives
-the BRANCHIND a code reference to that entry, as upstream `RuleSwitchSingle`
-does for a one-destination switch, and the now-direct jump takes the direct
-rewrite above (`flow.rs (FlowInfo::recover_tail_call)`): a CALL with the
-callee's call spec, then the artificial RETURN or the callee's no-return halt,
-and the `tailcalljump:` warning. The register the jump read its target from
-(`flow.rs (FlowInfo::jump_target_carrier)`, traced through the COPY and mask
-ops of the jump's own instruction) is recorded on the call spec, and input
-recovery marks a trial on it unused
+(`kuna_tailcalljump.rs (kuna_is_tail_call_table)`):
+
+- the address lies outside the function's declared extent, where following
+  it can only end in `halt_missing()`; or
+- the call states everything the callee's body would
+  (`kuna_tailcalljump.rs (tail_call_states_the_body)`). The callee's prototype
+  is stated: input-locked on its symbol, or parked as pieces by a
+  declaration, DWARF or a library signature, which `ActionDefaultParams`
+  copies into the call (`kuna_tailcalljump.rs (stated_by_pieces)`), so it
+  fixes the call's arguments. And either the callee returns nothing, or the
+  function's own output is stated (its own prototype is declared or parked).
+  A function whose output is left to recovery never takes a tail call's
+  return value, so with an unstated output the call would print `void` where
+  the copied-in body returns the callee's result.
+
+The table is then dropped and `flow.rs (FlowInfo::recover_table_tail_call)`
+gives the BRANCHIND a code reference to that entry, as upstream
+`RuleSwitchSingle` does for a one-destination switch, and the now-direct jump
+takes the direct rewrite above (`flow.rs (FlowInfo::recover_tail_call)`): a
+CALL with the callee's call spec, then the artificial RETURN or the callee's
+no-return halt, and the `tailcalljump:` warning. The register the jump read
+its target from (`flow.rs (FlowInfo::jump_target_carrier)`, traced through
+the COPY and mask ops of the jump's own instruction) is recorded on the call
+spec, and input recovery marks a trial on it unused
 (`funcdata_callsite.rs (check_input_trial_use)`): its value is the callee's
 own address, never an argument.
 
-A callee with no locked prototype inside an open extent keeps the old
-behaviour: the follower walks into it as a one-case `switch`, because
-`RuleSwitchSingle`, which upstream uses to collapse that switch, is a stub
-here. That copied-in body is wrong in structure, but it still shows the
-callee's return value and the arguments it reads. A call to a callee with no
-prototype would lose both, because kuna cannot recover a tail call's arguments
-or return value without them, and a whole-binary `decompile-all` does not
-recover them later either: `protoorder` orders callees from the Listing's call
-edges, which do not include veneers. The same holds for a multi-entry table
-whose entries all name one function. Outside a declared extent a callee with
-no prototype is still tail-called, and is printed with whatever arguments the
-caller's own registers show. A destination that is not a known function
-entry keeps the table, and outside a declared extent it still meets the
-out-of-bounds halt.
+In every other case the old behaviour stays: the follower walks into the
+callee as a one-case `switch`, because `RuleSwitchSingle`, which upstream
+uses to collapse that switch, is a stub here. That copied-in body is wrong in
+structure, but it still shows the callee's return value and the arguments it
+reads, which a call with no stated prototype would lose: kuna cannot recover
+a tail call's arguments or return value without one, and a whole-binary
+`decompile-all` does not recover them later either, because `protoorder`
+orders callees from the Listing's call edges, which do not include veneers.
+The same holds for a multi-entry table whose entries all name one function.
+Outside a declared extent a callee with no prototype is still tail-called and
+is printed with whatever arguments the function's own registers show and no
+return value, exactly as a direct `b f` there is. A destination that is not a
+known function entry keeps the table, and outside a declared extent it still
+meets the out-of-bounds halt. A `flow ... branch` override cannot veto this
+per site: `override_flow` refuses `branch` on a computed jump, so the only
+switch is the option value.
 
 **(kuna) Frame-teardown tail jumps — `option tailcallframe`, default on
 (DIV-109), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_tailcallframe.rs

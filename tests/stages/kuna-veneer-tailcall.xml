@@ -34,10 +34,15 @@
     plain_helper, which has no prototype, so it keeps the copied-in body
     that states its return value in both passes.  bare_veneer at 0x1060 is
     the bounded A32 form with no prototype on either side: a tail call whose
-    target register r1 = plain_helper is not an argument.
+    target register r1 = plain_helper is not an argument.  ret_veneer at
+    0x1070 is the unbounded veneer to arm_helper with no prototype of its
+    own: a call would drop the value arm_helper returns, since kuna's own
+    return recovery never takes a tail call's result, so it keeps the
+    copied-in body in both passes.
 
     Pass 1 (option tailcalljump direct) reproduces the bug: #1, #4.
-    Pass 2 (on): #2, #3 and #6 are the tail calls; #5 and #7 hold in both.
+    Pass 2 (on): #2, #3 and #6 are the tail calls; #5, #7 and #9 hold in
+    both.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">
 00109fe511ff2fe11010000000000000010080e21eff2fe1
@@ -47,6 +52,7 @@
 00109fe511ff2fe15810000000000000
 030080e21eff2fe1
 00109fe511ff2fe15810000000000000
+00109fe511ff2fe11010000000000000
 </bytechunk>
 </binaryimage>
 <script>
@@ -61,6 +67,7 @@
   <com>function bounds 0x1048 as plain_veneer</com>
   <com>function bounds 0x1058 as plain_helper</com>
   <com>function bounds 0x1060 0x1068 as bare_veneer</com>
+  <com>function bounds 0x1070 as ret_veneer</com>
   <com>parse line extern unsigned int veneer(unsigned int value);</com>
   <com>parse line extern unsigned int arm_helper(unsigned int value);</com>
   <com>parse line extern unsigned int far_veneer(unsigned int value);</com>
@@ -85,6 +92,9 @@
   <com>lo fu bare_veneer</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu ret_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option tailcalljump on</com>
   <com>lo fu veneer</com>
   <com>decompile</com>
@@ -104,6 +114,9 @@
   <com>lo fu bare_veneer</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu ret_veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="VENEERTAILCALL #1: direct, a bounded veneer's transfer is lost to halt_missing" min="3" max="3">halt_missing\(\); // warn: Function flow out of bounds: r0x0000(1004 flows to r0x00001010|102a flows to r0x00001030|1064 flows to r0x00001058)</stringmatch>
@@ -114,4 +127,5 @@
 <stringmatch name="VENEERTAILCALL #6: the register that carried the target is not an argument" min="0" max="0">_helper\(.*(0x1031|0x1058|plain_helper|arm_helper)</stringmatch>
 <stringmatch name="VENEERTAILCALL #7: a target that is not a function stays out of bounds" min="2" max="2">halt_missing\(\); // warn: Function flow out of bounds: r0x00001018 flows to r0x00001020</stringmatch>
 <stringmatch name="VENEERTAILCALL #8: every recovered tail call is logged" min="4" max="4">// tail-call</stringmatch>
+<stringmatch name="VENEERTAILCALL #9: a veneer with no output of its own keeps the body of a callee that returns a value" min="2" max="2">return a0 \+ 1;</stringmatch>
 </decompilertest>

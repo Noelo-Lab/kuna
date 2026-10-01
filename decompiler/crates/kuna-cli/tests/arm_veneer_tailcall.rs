@@ -1,8 +1,9 @@
 //! A veneer that jumps through a literal to another function is a tail call
-//! when the callee's prototype is declared or the veneer's exact extent leaves
-//! the callee outside it (GH-781).  A callee with no prototype inside an open
-//! extent keeps its copied-in body, and a target that is not a function keeps
-//! the out-of-bounds halt.
+//! when the veneer's exact extent leaves the callee outside it (GH-781), or
+//! when the callee's prototype is declared and its return value, if any,
+//! reaches a declared veneer output.  Otherwise an open extent keeps the
+//! copied-in body, and a target that is not a function keeps the out-of-bounds
+//! halt.
 
 #[path = "common/arm_images.rs"]
 #[allow(dead_code)]
@@ -193,4 +194,38 @@ fn open_veneer_to_a_helper_without_a_prototype_keeps_its_body() {
     );
     assert!(c.contains("return a0 + 1;"), "{c}");
     assert!(!c.contains("// tail-call"), "{c}");
+}
+
+#[test]
+fn open_veneer_with_no_output_of_its_own_keeps_the_body_of_a_helper_that_returns() {
+    let c = decompile(
+        &ldr_bx_veneer(),
+        "arm",
+        &[
+            "function 0x10000=veneer",
+            "function 0x10010-0x10018=arm_helper",
+            "readonly 0x10008+4",
+            PROTOS[1],
+        ],
+        &[],
+    );
+    assert!(c.contains("return a0 + 1;"), "{c}");
+    assert!(!c.contains("// tail-call"), "{c}");
+}
+
+#[test]
+fn open_veneer_tail_calls_a_declared_helper_that_returns_nothing() {
+    let c = decompile(
+        &ldr_bx_veneer(),
+        "arm",
+        &[
+            "function 0x10000=veneer",
+            "function 0x10010-0x10018=arm_helper",
+            "readonly 0x10008+4",
+            "prototype 0x10010 void arm_helper(unsigned int value)",
+        ],
+        &[],
+    );
+    assert!(c.contains("arm_helper(a0); // tail-call"), "{c}");
+    assert!(!c.contains("switch"), "{c}");
 }
