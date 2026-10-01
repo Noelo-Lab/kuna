@@ -85,8 +85,8 @@ fn absolute_fixture(map: &[u8], targets: &[u32], retry_bound: usize) -> Vec<u8> 
 /// SysV `pick(p, a, b)`: `k = *p - 'A'` is bounded to 0..3 three branches
 /// before a relative table dispatch on `k`, out of reach of the guard search,
 /// so the selector range is the full byte and the table ends at its first
-/// far entry.
-fn far_guard_fixture() -> Vec<u8> {
+/// far entry.  `past` overrides the entries after that far entry.
+fn far_guard_fixture(past: &[i32]) -> Vec<u8> {
     let mut code = vec![
         0x0f, 0xb6, 0x07, 0x83, 0xe8, 0x41, 0x3c, 0x03, 0x77, 0x38, 0x85, 0xf6, 0x74, 0x3a, 0x85,
         0xd2, 0x74, 0x3c, 0x83, 0xfe, 0x05, 0x74, 0x3d, 0x0f, 0xb6, 0xc0, 0x48, 0x8d, 0x0d, 0x3b,
@@ -102,8 +102,9 @@ fn far_guard_fixture() -> Vec<u8> {
     for entry in [-0x32i32, -0x2c, -0x26, -0x20] {
         code.extend(entry.to_le_bytes());
     }
-    for _ in 4..256 {
-        code.extend(0x4000_0000i32.to_le_bytes());
+    code.extend(0x4000_0000i32.to_le_bytes());
+    for entry in (5..256).map(|i| past.get(i - 5).copied().unwrap_or(0x4000_0000)) {
+        code.extend(entry.to_le_bytes());
     }
     elf(&code)
 }
@@ -394,8 +395,19 @@ fn assert_index_selector(c: &str) {
 
 #[test]
 fn wider_late_selector_range_keeps_index_labels() {
+    wider_late_selector_range(&[]);
+}
+
+/// Entry 5 lies past the far entry that ends the table and repeats row 0's
+/// target; the guard keeps `k` from ever reading it.
+#[test]
+fn entry_past_the_table_end_keeps_index_labels() {
+    wider_late_selector_range(&[-0x32]);
+}
+
+fn wider_late_selector_range(past: &[i32]) {
     let c = decompile(
-        &far_guard_fixture(),
+        &far_guard_fixture(past),
         &[
             "function 0x401000-0x40105a=pick",
             "prototype pick int pick(unsigned char *p, int a, int b)",
