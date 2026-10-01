@@ -1091,8 +1091,15 @@ A table recovered mid-simplification may disagree with fully-simplified
 dataflow, so the model is re-derived late, against the finished function, by
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionSwitchNorm)`: for each unlabelled table, `match_model` saves the
-flow-time model and recovers a fresh instance (preferring a variable whose
-range size matches the known table size), then
+flow-time model and recovers a fresh instance, preferring the complete original
+normalized range (bounds, stride and width), rather than only its entry count.
+If the new range differs, the existing guard-bound recovery paths are tried even
+when that range is below `jumptablemax`. Before reusing original labels, matching
+checks the ordered normalized values and destinations; equal counts or range
+representations do not prove that a selector-map LOAD preserved the mapping.
+An incompatible model is dropped and the existing trivial target-address-label
+fallback retains the original guards with a warning. Multistage restart remains
+unimplemented. On a compatible model,
 `jumptable.rs (JumpTable::recover_labels)` computes the *case labels* by
 reverse-emulating the normalization chain from the normalized variable back to
 the unnormalized one (`jumptable.rs (JumpBasicModel::backup2_switch)`, exact
