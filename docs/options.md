@@ -44,6 +44,7 @@ Three tiers:
 | leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning | [`tailcalljump`](#tailcalljump) |
 | jmp to a plt stub inlined into the caller instead of a named tail call | [`tailcalljump`](#tailcalljump) |
 | plt thunk body absorbed where func(...) is expected | [`tailcalljump`](#tailcalljump) |
+| a veneer renders as switch(0x...) with one case holding another function's body, or halt_missing() with a 'flows out of bounds' warning | [`tailcalljump`](#tailcalljump) |
 | a function decompiled by address continues into an unrelated function's body | [`tailcallframe`](#tailcallframe) |
 | an event/listener callback emits a second routine's UI strings and callees | [`tailcallframe`](#tailcallframe) |
 | the same callee is emitted twice in one function, once as a named call and once inlined | [`tailcallframe`](#tailcallframe) |
@@ -1042,13 +1043,13 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P2/inline-inject · ida · correctness-fix · kuna-cortexmpriv
 - **Example:** `option cortexmpriv on`
 
-### `tailcalljump` -- on | off, default `on`
+### `tailcalljump` -- on | direct | off, default `on`
 
-- **Symptoms:** leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning; jmp to a plt stub inlined into the caller instead of a named tail call; plt thunk body absorbed where func(...) is expected.
-- **What it does:** Recover an -O2 tail jump (a direct `jmp` to another function's entry, e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) so the callee resolves by name and its return value flows out, instead of flowing into the callee (which inlines a PLT thunk and mis-renders it as a `(*dat_...)(...)` indirect call with a 'Treating indirect jump as call' warning). When it fires it logs a `tailcalljump: recovered tail call` warning at the branch site so the introduced call is observable.
-- **When to flip:** A leaf function ends in `jmp <func>@plt` and kuna would emit `(*dat_...)(...)` + a 'Treating indirect jump as call' marker instead of `func(...)`. On by default (DIV-14) = the named call plus a `tailcalljump: recovered tail call` WARNING; flip OFF to restore the upstream flow-into-callee rendering (the two affected datatests, Long double #1/#2, opt out per-test).
+- **Symptoms:** leaf function ends in a (*dat_...)(...) computed call with a 'Treating indirect jump as call' warning; jmp to a plt stub inlined into the caller instead of a named tail call; plt thunk body absorbed where func(...) is expected; a veneer renders as switch(0x...) with one case holding another function's body, or halt_missing() with a 'flows out of bounds' warning.
+- **What it does:** Recover an -O2 tail jump (a direct `jmp` to another function's entry, e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) so the callee resolves by name and its return value flows out, instead of flowing into the callee (which inlines a PLT thunk and mis-renders it as a `(*dat_...)(...)` indirect call with a 'Treating indirect jump as call' warning). `on` also takes a computed jump whose recovered jump table names one destination, when that destination is another known function's entry: an ARM veneer or long-branch stub (`ldr r1,[pc]; bx r1`, `ldr pc,[pc,#-4]`), an x86 `jmp *GOT` in a `-fno-plt` build, or a jump through a read-only function-pointer slot, which kuna otherwise renders as a one-case `switch` copying the callee's body in, or as `halt_missing()` when the stub's exact extent is declared. That jump becomes the same tail call when the destination lies outside the function's declared extent, or when the callee's prototype is stated (declared, DWARF, a library signature, a demangled C++ name), so it fixes the call's arguments, and either that prototype states a `void` return or the function's own output is stated, so the return value reaches it. A prototype with no return type (a demangled C++ name) leaves the return unknown, not `void`. Otherwise the copied-in body stays: it states the arguments and return value a call could not. The register that carried the target address is never taken as an argument of the call. `direct` recovers only direct jumps. When it fires it logs a `tailcalljump: recovered tail call` warning at the branch site so the introduced call is observable.
+- **When to flip:** On by default. A leaf function ends in `jmp <func>@plt` and kuna would emit `(*dat_...)(...)` + a 'Treating indirect jump as call' marker instead of `func(...)`, or a veneer (an ARM long-branch stub, an x86 `-fno-plt` `jmp *GOT`) renders as `switch(0x...)` with one case, or as `halt_missing()` with a 'flows out of bounds' warning under a declared extent. Set `direct` to keep direct-jump tail calls but follow a veneer's computed jump into its destination as before; set `off` to restore the upstream flow-into-callee rendering for both (the two affected datatests, Long double #1/#2, opt out per-test).
 - **Where / provenance:** P2/flow-classification · angr · structure-recovery · angr-tee-O2-tail-jumps
-- **Example:** `option tailcalljump on`
+- **Example:** `option tailcalljump direct`
 
 ### `tailcallframe` -- on | off, default `on`
 

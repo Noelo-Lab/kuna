@@ -6659,6 +6659,10 @@ pub struct FuncCallSpecs {
     /// declares, while this call still carries the open tail it sheds after
     /// trial scoring. See [`crate::p4_calls::kuna_formattail`].
     format_arity: Option<int4>,
+    /// (kuna `tailcalljump`) The register that carried a computed jump's target
+    /// into this tail call.  Its value is the callee's own address, so input
+    /// recovery never takes it as an argument.
+    jump_target_storage: Option<(Address, int4)>,
 }
 
 impl FuncCallSpecs {
@@ -6693,6 +6697,7 @@ impl FuncCallSpecs {
             final_input_storage: Vec::new(), // (kuna) calleearity
             zext_trimmed: Vec::new(),        // (kuna) truncarg
             format_arity: None,              // (kuna) formatstring
+            jump_target_storage: None,       // (kuna) tailcalljump
         }
     }
 
@@ -6723,6 +6728,7 @@ impl FuncCallSpecs {
         res.isbadjumptable = self.isbadjumptable;
         res.proto.copy(&self.proto); // Copy the FuncProto portion
         res.format_arity = self.format_arity;
+        res.jump_target_storage = self.jump_target_storage.clone();
         res
     }
 
@@ -7067,6 +7073,22 @@ impl FuncCallSpecs {
     /// (kuna `formatstring`) Set or clear [`Self::format_arity`].
     pub fn set_format_arity(&mut self, arity: Option<int4>) {
         self.format_arity = arity;
+    }
+
+    /// (kuna `tailcalljump`) Record the register that carried this tail call's
+    /// computed target.  See [`Self::carries_jump_target`].
+    pub fn set_jump_target_storage(&mut self, storage: (Address, int4)) {
+        self.jump_target_storage = Some(storage);
+    }
+
+    /// (kuna `tailcalljump`) Does an input trial at `addr`/`size` overlap the
+    /// register that carried this tail call's computed target?
+    pub fn carries_jump_target(&self, addr: &Address, size: int4) -> bool {
+        self.jump_target_storage.as_ref().is_some_and(|(start, len)| {
+            start.get_space().map(|s| s.get_index()) == addr.get_space().map(|s| s.get_index())
+                && addr.get_offset() < start.get_offset() + *len as u64
+                && start.get_offset() < addr.get_offset() + size as u64
+        })
     }
 
     /// (kuna `truncarg`) Is input `slot`, still `size` bytes wide in a call with

@@ -184,6 +184,11 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                 }
             }
         } else if {
+            let t = data.get_call_specs(idx).active_input().get_trial(i);
+            data.get_call_specs(idx).carries_jump_target(t.get_address(), t.get_size())
+        } {
+            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
+        } else if {
             // (kuna) `passthrough`: a trial on a range the pass claimed is left
             // where the option-off run's hole-filling trial would start.
             let t = data.get_call_specs(idx).active_input().get_trial(i);

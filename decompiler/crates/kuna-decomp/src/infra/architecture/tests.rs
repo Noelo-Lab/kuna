@@ -129,6 +129,7 @@ fn kuna_anchor_flags_default_to_div_values() {
     // (kuna) DIV-13 default-on sweep: the 10 angr structuring/switch flags are now
     // default-on (per-test opt-out keeps the datatest/stage corpora at parity).
     assert!(arch.tail_call_jumps);
+    assert!(arch.tail_call_tables);
     assert!(arch.switch_multi_pred);
     assert!(arch.region_loop_refine);
     assert!(arch.reduce_return_gotos);
