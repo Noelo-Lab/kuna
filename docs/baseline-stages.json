@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1597,
-    1597
+    1601,
+    1601
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -22,6 +22,9 @@
     "data:ARM FRAME SPILL #2: reload recovers the fourth argument",
     "data:ARM POP #1: returns the value in r0",
     "data:ARM POP #2: no jump-as-call return",
+    "data:ARM-FLOAT-ARGS #1: off retains the integer-typed VFP bits",
+    "data:ARM-FLOAT-ARGS #2: on recovers the floating width and core input",
+    "data:ARM-FLOAT-ARGS #3: the variadic destination keeps the source values",
     "data:ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero",
     "data:ARRAYCOVERWIDTH #2: and so does bank B's",
     "data:ARRAYCOVERWIDTH #3: the swap's first leg carries the transfer width on both sides",
@@ -451,6 +454,7 @@
     "data:KUNA-CALLPLACEHOLDER #3: no call reads the return-address slot as an argument",
     "data:KUNA-CATALOG #10: fast whole-project discovery is default-off but live-toggleable",
     "data:KUNA-CATALOG #11: mapped ELF x86 flow recovery is default-on in P2",
+    "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
     "data:KUNA-CATALOG #2: arraynotation documented as default-on, P9 pointer-notation",
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
