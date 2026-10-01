@@ -19,8 +19,9 @@
     `__ftol()` calls, with no trace of the float loads that fed them.
 
     Pass 2 is the shipped default. The synthesized callfixup replaces each CALL
-    with the helper's p-code, so both conversions render as plain C casts of the
-    fields they actually read. The `(int4)(int8)` shape is deliberate: `_ftol`
+    with the helper's p-code. The fields are declared as integer words, so their
+    bits are first reinterpreted as float before numeric truncation. The
+    `(int4)(int8)` shape is deliberate: `_ftol`
     returns an __int64, and modelling it at 32 bits would silently produce the
     wrong high word for an `(__int64)d` conversion.
 
@@ -48,8 +49,8 @@ c3
   <com>quit</com>
 </script>
 <stringmatch name="MSVCFTOL #1: off yields two argument-less helper calls, on yields none" min="2" max="2">__ftol\(\)</stringmatch>
-<stringmatch name="MSVCFTOL #2: on, the first conversion casts the field it actually reads" min="1" max="1">\(float4\)a0\[6\]</stringmatch>
-<stringmatch name="MSVCFTOL #3: on, the second conversion casts the field it actually reads" min="1" max="1">\(float4\)a0\[7\]</stringmatch>
+<stringmatch name="MSVCFTOL #2: on, the first conversion casts the field it actually reads" min="1" max="1">union \{ unsigned int from; float to;.*a0\[6\]</stringmatch>
+<stringmatch name="MSVCFTOL #3: on, the second conversion casts the field it actually reads" min="1" max="1">union \{ unsigned int from; float to;.*a0\[7\]</stringmatch>
 <stringmatch name="MSVCFTOL #4: on, both conversions truncate at the helper's real 64-bit width" min="2" max="2">\(int4\)\(int8\)</stringmatch>
 <stringmatch name="MSVCFTOL #5: on, the call is replaced by an injection" min="1" max="1">// injected</stringmatch>
 </decompilertest>

@@ -1941,7 +1941,11 @@ mod tests {
         // and kuna-address-only-local + kuna-address-split-local / an
         // address-only local takes its object's type unless a split neighbour
         // lies inside the address width
-        assert_eq!(count, 364, "corpus file count drifted");
+        // and kuna-bit-reinterpret-declared / a float constant stored to a float
+        // global stays a float literal and a register move reinterprets once
+        // and kuna-labelstmt-arm + kuna-labelstmt-x64 / a label never ends a
+        // compound statement (GH-783)
+        assert_eq!(count, 370, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

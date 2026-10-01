@@ -1,0 +1,35 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- Hand-assembled x86-64 in GCC -O2 shape. clampg multiplies and adds into
+     the float global g at 0x1068 and clamps it: the upper clamp stores the
+     constant 1998.0f with an integer move (movl $0x44f9c000, g). s_select
+     moves an unsigned word into the float return register (movd), and
+     s_ternary moves a merged 64-bit word into the double return register
+     (movq). Each transfer is judged by the types the printed C declares, so
+     the constant stays a float literal, s_select reinterprets once, and
+     s_ternary is reinterpreted rather than converted. -->
+<bytechunk space="ram" offset="0x1000">f30f590560000000f30f58c80f2f0d4d000000760bc7054900000000c0f944c3f30f10053c000000f30f5fc1f30f110534000000c366662e0f1f84000000000083ff647604660f6ec7c3660f1f44000085ff480f44f266480f6ec6c30f1f400000c0f94400c0f9c400000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="clampg"/>
+<symbol space="ram" offset="0x1040" name="s_select"/>
+<symbol space="ram" offset="0x1050" name="s_ternary"/>
+</binaryimage>
+<script>
+  <com>parse line extern void clampg(float4 a, float4 b);</com>
+  <com>parse line extern float4 s_select(uint4 x, float4 y);</com>
+  <com>parse line extern float8 s_ternary(int4 c, uint8 a, uint8 b);</com>
+  <com>load function clampg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function s_select</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function s_ternary</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Bit reinterpret declared #1: a float constant stored to a float global stays a float literal" min="1" max="1">= 1998\.0;</stringmatch>
+<stringmatch name="Bit reinterpret declared #2: the stored constant never prints as its integer bits" min="0" max="0">0x44f9c000</stringmatch>
+<stringmatch name="Bit reinterpret declared #3: a word moved into a float register is reinterpreted once" min="1" max="1">y = \(\(union \{ unsigned int from; float to; \}\)\{ \.from = x \}\)\.to;</stringmatch>
+<stringmatch name="Bit reinterpret declared #4: no transfer round-trips back to an integer" min="0" max="0">union \{ float from;</stringmatch>
+<stringmatch name="Bit reinterpret declared #5: a merged word returned as a double is reinterpreted, not converted" min="1" max="1">return \(\(union \{ unsigned long long from; double to; \}\)\{ \.from = [ab] \}\)\.to;</stringmatch>
+</decompilertest>

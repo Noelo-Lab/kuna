@@ -1356,13 +1356,18 @@ impl PrintEmit {
 // to the active leaf.  Required AND default-provided methods are ALL forwarded
 // so no call can fall through to a `PrintEmit` default that would diverge from
 // the leaf (`EmitNoMarkup` overrides `tag_line`/`clear`; see the type doc).
+// The statement and brace calls also keep the dangling-label record
+// (`kuna_labelstmt`).
 impl Emit for PrintEmit {
     fn state(&self) -> &EmitBase { pe_forward!(self.state()) }
     fn state_mut(&mut self) -> &mut EmitBase { pe_forward!(self.state_mut()) }
 
     fn begin_document(&mut self) -> int4 { pe_forward!(self.begin_document()) }
     fn end_document(&mut self, id: int4) { pe_forward!(self.end_document(id)) }
-    fn begin_function(&mut self) -> int4 { pe_forward!(self.begin_function()) }
+    fn begin_function(&mut self) -> int4 {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.begin_function())
+    }
     fn end_function(&mut self, id: int4) { pe_forward!(self.end_function(id)) }
     fn begin_block(&mut self, blockref: int4) -> int4 { pe_forward!(self.begin_block(blockref)) }
     fn end_block(&mut self, id: int4) { pe_forward!(self.end_block(id)) }
@@ -1374,7 +1379,10 @@ impl Emit for PrintEmit {
     fn end_return_type(&mut self, id: int4) { pe_forward!(self.end_return_type(id)) }
     fn begin_var_decl(&mut self, markup: &MarkupRef) -> int4 { pe_forward!(self.begin_var_decl(markup)) }
     fn end_var_decl(&mut self, id: int4) { pe_forward!(self.end_var_decl(id)) }
-    fn begin_statement(&mut self, markup: &MarkupRef) -> int4 { pe_forward!(self.begin_statement(markup)) }
+    fn begin_statement(&mut self, markup: &MarkupRef) -> int4 {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.begin_statement(markup))
+    }
     fn end_statement(&mut self, id: int4) { pe_forward!(self.end_statement(id)) }
     fn begin_func_proto(&mut self) -> int4 { pe_forward!(self.begin_func_proto()) }
     fn end_func_proto(&mut self, id: int4) { pe_forward!(self.end_func_proto(id)) }
@@ -1412,9 +1420,18 @@ impl Emit for PrintEmit {
     fn get_indent_increment(&self) -> int4 { pe_forward!(self.get_indent_increment()) }
     fn set_indent_increment(&mut self, val: int4) { pe_forward!(self.set_indent_increment(val)) }
     fn spaces(&mut self, num: int4, bump: int4) { pe_forward!(self.spaces(num, bump)) }
-    fn open_brace_indent(&mut self, brace: &str, style: EmitBraceStyle) -> int4 { pe_forward!(self.open_brace_indent(brace, style)) }
-    fn open_brace(&mut self, brace: &str, style: EmitBraceStyle) { pe_forward!(self.open_brace(brace, style)) }
-    fn close_brace_indent(&mut self, brace: &str, id: int4) { pe_forward!(self.close_brace_indent(brace, id)) }
+    fn open_brace_indent(&mut self, brace: &str, style: EmitBraceStyle) -> int4 {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.open_brace_indent(brace, style))
+    }
+    fn open_brace(&mut self, brace: &str, style: EmitBraceStyle) {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.open_brace(brace, style))
+    }
+    fn close_brace_indent(&mut self, brace: &str, id: int4) {
+        self.settle_dangling_label();
+        pe_forward!(self.close_brace_indent(brace, id))
+    }
     fn set_pending_brace(&mut self, style: EmitBraceStyle) { pe_forward!(self.set_pending_brace(style)) }
     fn has_pending_brace(&self) -> bool { pe_forward!(self.has_pending_brace()) }
     fn cancel_pending_brace(&mut self) { pe_forward!(self.cancel_pending_brace()) }
@@ -3219,8 +3236,10 @@ impl PrintC {
                 decls.iter().map(|(_, name)| name.as_str()),
                 occupied.iter().map(String::as_str),
             );
+            let globals = fd.get_arch().global_name_scope();
+            let taken = |name: &str| globals.as_ref().is_some_and(|g| g.has_symbol_name(name));
             for (high, name) in &mut decls {
-                let unique = names.unique(name);
+                let unique = names.unique_with(name, &taken);
                 if unique != *name {
                     self.local_name_overrides.insert(*high, unique.clone());
                     *name = unique;
@@ -3875,6 +3894,7 @@ impl PrintC {
         self.emit.tag_line_indent(0);
         self.emit.print(&self.block_label_name(fd, bl), SyntaxHighlight::NoColor);
         self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+        self.emit.note_label();
     }
 
     /// C++ `PrintC::emitAnyLabelStatement` (printc.cc:3354): find the entry basic
@@ -3905,7 +3925,8 @@ impl PrintC {
         // head_comment_type | instr_comment_type (printlanguage.cc:586-589).
         let tp = ct::HEADER | ct::WARNINGHEADER | ct::USER2 | ct::WARNING;
         let mut db = CommentDatabaseInternal::new();
-        for w in arch.commentdb.comments() {
+        let fad = fd.get_address();
+        for w in arch.commentdb.comments().iter().filter(|w| &w.func_addr == fad) {
             db.add_comment(w.tp, &w.func_addr, &w.addr, w.text.as_bytes());
         }
         // option_unplaced is off by default (C++ resetDefaultsPrintC).
@@ -4693,7 +4714,8 @@ impl PrintC {
                 // Blocks that formally exit the switch need an explicit `break;`
                 // (unless it is the last case, whose fall-through is the close).
                 let isexit = fd.sblocks_ref().block(blk).switch_caseblocks()[i].isexit;
-                if isexit && i != ncase - 1 {
+                let last = i == ncase - 1;
+                if (isexit && !last) || (last && self.emit.label_dangling()) {
                     self.emit.tag_line();
                     self.emit_goto_statement(fd, caseblk, caseblk, crate::block::block_flags::f_break_goto);
                 }
@@ -4775,6 +4797,7 @@ impl PrintC {
             value,
         );
         self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+        self.emit.note_label();
     }
 
     fn emit_numeric_case_label(&mut self, value: uintb, size: int4, signed: bool, op: Option<OpId>) {
@@ -4815,6 +4838,7 @@ impl PrintC {
             }
         }
         self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+        self.emit.note_label();
     }
 
     /// First op of a case block (C++ `FlowBlock::firstOp` → front-leaf basic
@@ -5444,6 +5468,10 @@ impl PrintC {
         read_op: Option<OpId>,
         opc: OpCode,
     ) {
+        if let Some(transfer) = crate::kuna_bitcast::storage_transfer(fd, arch.decl_high_type, op) {
+            self.op_bit_transfer_ir(fd, arch, op, transfer);
+            return;
+        }
         match opc {
             // INT_SEXT (printc.cc:819 opIntSext) / INT_ZEXT (printc.cc:806 opIntZext):
             // the cast-strategy decides whether the extension renders as an explicit
@@ -6047,6 +6075,65 @@ impl PrintC {
         }
         if let Some(ct) = &cast_ty {
             self.push_cast_close(ct);
+        }
+    }
+
+    fn op_bit_transfer_ir(
+        &mut self, fd: &Funcdata, arch: &Architecture, op: OpId,
+        transfer: crate::kuna_bitcast::Transfer,
+    ) {
+        use crate::dtype::type_metatype;
+        use crate::printlanguage::SyntaxHighlight;
+        static C_BITS: OpToken = op_token("", " }).to", 2, 66, false, TokenType::Postsurround, 0, 0);
+        static RUST_BITS: OpToken = op_token("(", ").to_bits()", 2, 66, false, TokenType::Postsurround, 0, 0);
+        let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
+        let signed = transfer.target.get_metatype() == type_metatype::TYPE_INT;
+        let input = fd.vbank().get(transfer.input).unwrap();
+        let bits = if transfer.size == 4 { "u32" } else { "u64" };
+        let literal = |v: &crate::varnode::Varnode| {
+            Atom::syntax(format!("0x{:x}{bits}", v.get_offset()), TagType::Syntax, SyntaxHighlight::const_color)
+        };
+        if rust && transfer.to_float {
+            self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+            self.push_atom(&Atom::syntax(
+                if transfer.size == 4 { "f32::from_bits" } else { "f64::from_bits" },
+                TagType::FuncToken, SyntaxHighlight::funcname_color));
+            let word = declared_variable_type(fd, arch.decl_high_type, transfer.input)
+                .is_some_and(|t| type_name_for_decl(&t, self.rt_ctx).0 == bits);
+            if input.is_constant() {
+                self.push_atom(&literal(input));
+            } else if word {
+                self.push_vn_ir(fd, arch, transfer.input, op);
+            } else {
+                self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                self.push_vn_ir(fd, arch, transfer.input, op);
+                self.push_atom(&Atom::syntax(bits, TagType::TypeToken, SyntaxHighlight::type_color));
+            }
+        } else if rust || input.is_constant() && !transfer.to_float {
+            if signed { self.push_cast_open(&transfer.target, op); }
+            if !input.is_constant() {
+                self.push_op(&RUST_BITS, Some(op_key(op)));
+                self.push_atom(&Atom::syntax("", TagType::BlankToken, SyntaxHighlight::no_color));
+                self.push_vn_ir(fd, arch, transfer.input, op);
+            } else if rust {
+                self.push_atom(&literal(input));
+            } else {
+                self.push_constant_ir(input.get_offset(), transfer.size, op);
+            }
+            if signed { self.push_cast_close(&transfer.target); }
+        } else {
+            let word = match (transfer.size, signed) {
+                (4, false) => "unsigned int",
+                (4, true) => "int",
+                (_, false) => "unsigned long long",
+                (_, true) => "long long",
+            };
+            let float = if transfer.size == 4 { "float" } else { "double" };
+            let (from, to) = if transfer.to_float { (word, float) } else { (float, word) };
+            self.push_op(&C_BITS, Some(op_key(op)));
+            self.push_atom(&Atom::syntax(format!("((union {{ {from} from; {to} to; }}){{ .from = "),
+                TagType::TypeToken, SyntaxHighlight::type_color));
+            self.push_vn_ir(fd, arch, transfer.input, op);
         }
     }
 
@@ -9222,7 +9309,6 @@ fn declaration_occupied_names(
     names: impl IntoIterator<Item = String>,
 ) -> Vec<String> {
     let mut names: Vec<String> = names.into_iter().collect();
-    names.extend(fd.get_arch().global_symbol_names());
     let name_style = fd.get_arch().kuna_name_style();
     names.extend((0..fd.num_calls()).filter_map(|index| {
         let call = fd.get_call_specs(index);
