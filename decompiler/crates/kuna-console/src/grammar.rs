@@ -794,8 +794,9 @@ impl TypeModifier {
             }
             TypeModifier::Function { paramlist, dotdotdot } => {
                 // FunctionModifier::modType (grammar.cc:2306-2325): build a
-                // PrototypePieces describing the pointed-to function and intern a
-                // TypeCode for it via glb->types->getTypeCode(proto).
+                // PrototypePieces describing the pointed-to function (no parameter
+                // names, as upstream) and intern a TypeCode for it under the
+                // declarator's calling convention (proto.model = decl->getModel).
                 let outtype = match base {
                     Some(b) => b,
                     None => factory.get_type_void()?,
@@ -803,7 +804,6 @@ impl TypeModifier {
                 let intypes = function_get_in_types(paramlist, factory, org)?;
                 let proto = PrototypePieces {
                     outtype: Some(outtype),
-                    innames: function_get_in_names(paramlist),
                     first_var_arg_slot: if *dotdotdot { intypes.len() as int4 } else { -1 },
                     intypes,
                     ..PrototypePieces::default()

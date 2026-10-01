@@ -2711,17 +2711,10 @@ truncating the fall-through here"
         {
             let op_addr =
                 self.data.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
-            let pieces = self
-                .data
-                .get_override()
-                .find_proto_override(&op_addr)
-                .and_then(|ov| ov.pieces())
-                .cloned();
-            if let Some(proto) = self.data.get_override().find_proto_override(&op_addr)
-                .and_then(|ov| ov.prototype())
-            {
+            let ov = self.data.get_override().find_proto_override(&op_addr);
+            if let Some(proto) = ov.and_then(|ov| ov.prototype()) {
                 fc.proto_mut().copy(proto);
-            } else if let Some(pieces) = pieces {
+            } else if let Some(pieces) = ov.and_then(|ov| ov.pieces()).cloned() {
                 if let Some(proto) = self.env.build_override_proto(&pieces)? {
                     fc.proto_mut().copy(&proto);
                     if self.data.get_override().is_format_call(&op_addr) {

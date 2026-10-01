@@ -1412,15 +1412,49 @@ already committed guards and trials under the wrong prototype; edits cannot be
 made backwards, but the Override survives `Funcdata::clear`, so the re-run
 lifts the truth.
 
-The sibling `FuncCallSpecs::force_set` — forcing a *recovered* function-pointer
-prototype onto a call site, upstream's other deindirect arm — carries the same
-restart contract ((kuna) reason `ProtoForced`) and input-lock tail, but its
-override-persist and success-commit halves are documented port seams, and the
-`ActionDeindirect` arm that would invoke it (a typed function-pointer reaching
-the CALLIND after type recovery starts) is not wired; such a site today keeps
-its model-recovered argument list. This does not include the literal import-slot
-case above: `ActionDefaultParams` consumes that already-present global type
-before input trials start and needs no target rewrite or restart. Restarts triggered here are refused during
+`ActionDeindirect` has a second arm for a CALLIND whose target does not
+resolve to a function but whose *type* says what it calls. Once type recovery
+has started, if the target Varnode's read-facing type is a pointer to a code
+type that carries a prototype — a function-pointer struct field, local or
+parameter declared through the C grammar — and the call site's inputs are not
+yet locked, the arm forces that prototype onto the site with
+`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs (FuncCallSpecs::force_set)`.
+The lock test is what makes the arm fire at most once per site, and it is also
+why an existing lock wins: a user `override prototype` at the call address, or
+a prototype an earlier pass already forced, is never replaced. A target with no
+declared prototype (an untyped `void *` field, or a code type without one)
+leaves the site on its model-recovered argument list.
+
+`force_set` first saves a copy of the full `FuncProto` — model, storage, locks
+and all — into the function's Override store keyed by the call address
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
+(FuncProtoOverride::prototype)`). It then tries `late_restriction`, the same
+in-place merge as above. On success it commits the new input and output lists
+to the CALL op straight away, and the arm reports a change so the enclosing
+stackstall loop runs its rules again over the new inputs. On failure it sets
+restart-pending ((kuna) reason `ProtoForced`). Either way the site's input is
+locked afterwards. On the re-run, `FlowInfo::build_call_specs` reads the saved
+`FuncProto` before it looks for a parsed-pieces override, so the restarted call
+site starts under the declared storage rather than one rebuilt from the bare
+types under the default model, which would lose a non-default convention.
+
+That is why the code type keeps what the declaration said. The grammar's
+function modifier builds the pointed-to prototype under the calling convention
+its declarator names (`void (__stdcall *cb)(int)`, or `MSABI` on a SysV image),
+resolved through the model registry the architecture shares into the type
+factory, and falls back to the default model when the name is not registered,
+as upstream's `TypeDeclarator::getModel` does. A `...` in the field's parameter
+list marks the prototype varargs, so trailing arguments the binary passes are
+kept. Parameter names are not carried into the code type, as upstream: code
+types compare equal regardless of names, so a name would be borrowed by
+whichever matching pointer type was built first. Because the forced prototype
+is locked, it also overrides the argument count the binary sets up, as in
+Ghidra: a call that casts the pointer to a wider signature prints with the
+declared arguments.
+
+This does not include the literal import-slot case above: `ActionDefaultParams`
+consumes that already-present global type before input trials start and needs
+no target rewrite or restart. Restarts triggered here are refused during
 jump-table sub-decompilation like every other feedback edge (00 §0.7).
 
 **The prototype wire encode.** The recovered prototype marshals out for the

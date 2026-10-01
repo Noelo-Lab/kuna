@@ -77,6 +77,7 @@ fn run(msabi: bool, typed: bool) -> String {
         cmd.args(["--assert", &decl]);
     }
     let out = cmd.output().expect("run kuna");
+    let _ = std::fs::remove_dir_all(&dir);
     assert!(
         out.status.success(),
         "{}",

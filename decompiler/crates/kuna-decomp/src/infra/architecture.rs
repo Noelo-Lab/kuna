@@ -4631,6 +4631,12 @@ impl Architecture {
         self.defaultfp = Some(model);
     }
 
+    /// Share `defaultfp` and the named models into the type factory, which the
+    /// C++ factory reads live through `glb`; re-run after either changes.
+    fn share_proto_models(&self) {
+        self.types.set_proto_models(self.defaultfp.clone(), self.proto_models.clone());
+    }
+
     // -----------------------------------------------------------------------
     // init / restoreFromSpec pipeline (architecture.cc:1395 / sleigh_arch.cc)
     // -----------------------------------------------------------------------
@@ -6152,9 +6158,8 @@ impl Architecture {
         // `TypeFactory` reaches both through its `Architecture *glb`; the kuna
         // factory is standalone, so the link is established once here, right
         // after `defaultfp` is finalized.
-        self.types
-            .set_proto_context(self.defaultfp.clone(), self.translate.manager_rc());
-        self.types.set_proto_models(self.proto_models.clone());
+        self.types.set_proto_context(self.translate.manager_rc());
+        self.share_proto_models();
         self.build_action();
         self.print.initialize_from_architecture();
         // C++ `symboltab->adjustCaches()` (architecture.cc, end of restoreFromSpec)
@@ -6265,6 +6270,7 @@ impl ArchOptionContext for Architecture {
             // and defaultfp stay the same object (C++ shared-pointer identity).
             let name = fp.get_name().to_string();
             self.proto_models.insert(name, Rc::clone(fp));
+            self.share_proto_models();
         }
     }
     fn set_function_extra_pop(&mut self, name: &str, _expop: int4) -> KunaResult<()> {
@@ -6280,6 +6286,7 @@ impl ArchOptionContext for Architecture {
         match self.proto_models.get(name).cloned() {
             Some(model) => {
                 self.defaultfp = Some(model);
+                self.share_proto_models();
                 Ok(())
             }
             None => Err(KunaError::lowlevel(format!("Unknown prototype model :{name}"))),

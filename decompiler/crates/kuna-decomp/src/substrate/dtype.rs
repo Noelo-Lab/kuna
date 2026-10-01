@@ -3850,6 +3850,17 @@ pub trait TypeFactory {
         ))
     }
 
+    /// [`Self::get_type_code_proto`] under the calling convention the declarator
+    /// named (C++ `proto.model = decl->getModel(glb)`).  A factory without a
+    /// model registry, like an unregistered name upstream, uses the default model.
+    fn get_type_code_proto_named(
+        &self,
+        proto: &crate::fspec::PrototypePieces,
+        _model: &str,
+    ) -> KunaResult<Rc<Datatype>> {
+        self.get_type_code_proto(proto)
+    }
+
     // -- Pointer construction (type.hh:900-902,913-916) ---------------------
 
     /// Construct a pointer data-type, stripping an ARRAY level (C++
@@ -3861,18 +3872,6 @@ pub trait TypeFactory {
         ws: uint4,
     ) -> KunaResult<Rc<Datatype>>;
 
-    /// Build a function-pointer signature under its explicitly declared ABI.
-    fn get_type_code_proto_named(
-        &self,
-        proto: &crate::fspec::PrototypePieces,
-        model: &str,
-    ) -> KunaResult<Rc<Datatype>> {
-        if model.is_empty() {
-            self.get_type_code_proto(proto)
-        } else {
-            Err(KunaError::lowlevel("named function-pointer ABI is unavailable"))
-        }
-    }
     /// Construct an absolute pointer data-type (C++ `getTypePointer`).
     fn get_type_pointer(&self, s: int4, pt: Rc<Datatype>, ws: uint4) -> KunaResult<Rc<Datatype>>;
     /// Construct a named pointer data-type (C++ `getTypePointer(...,const string&)`).
@@ -4764,9 +4763,11 @@ pub struct TypeFactoryImpl {
     /// [`Architecture`](crate::architecture::Architecture).  `None` until init.
     /// Used by `getTypeCode(PrototypePieces)` -> `TypeCode::setPrototype` as the
     /// model a parsed function-pointer declarator resolves to (`decl->getModel`
-    /// returns `defaultfp` when the C declarator carries no model name, which is
-    /// always the case for a `void (*)(int4)` field).
+    /// returns `defaultfp` when the C declarator carries no model name, as in a
+    /// `void (*)(int4)` field).
     defaultfp: RefCell<Option<Rc<crate::fspec::ProtoModel>>>,
+    /// The architecture's named prototype models, for a declarator that names
+    /// one (`void (__stdcall *)(int4)`).  Empty until init.
     proto_models: RefCell<BTreeMap<String, Rc<crate::fspec::ProtoModel>>>,
     /// The engine's address-space manager (C++ `glb` is itself the
     /// `AddrSpaceManager`), shared from the owning architecture.  `None` until
@@ -4820,23 +4821,25 @@ impl TypeFactoryImpl {
         }
     }
 
-    /// Share named ABI models for explicitly qualified function-pointer declarations.
-    pub fn set_proto_models(&self, models: BTreeMap<String, Rc<crate::fspec::ProtoModel>>) {
+    /// Share the architecture's default and named prototype models (C++
+    /// `glb->defaultfp` / `glb->getModel`) into the factory, so a parsed
+    /// function-pointer declarator gets the convention it names, or the default.
+    /// The owning architecture re-shares them whenever an option replaces one.
+    pub fn set_proto_models(
+        &self,
+        defaultfp: Option<Rc<crate::fspec::ProtoModel>>,
+        models: BTreeMap<String, Rc<crate::fspec::ProtoModel>>,
+    ) {
+        *self.defaultfp.borrow_mut() = defaultfp;
         *self.proto_models.borrow_mut() = models;
     }
 
-    /// Share the architecture's default prototype model + address-space manager
-    /// into the factory so `getTypeCode(PrototypePieces)` (the nested
-    /// function-pointer `buildType` path) can run `TypeCode::setPrototype`.  The
-    /// C++ `TypeFactory` holds the `Architecture *glb` and reaches both directly;
-    /// the kuna factory is a standalone object, so the owning architecture wires
-    /// these in during `init`.
-    pub fn set_proto_context(
-        &self,
-        defaultfp: Option<Rc<crate::fspec::ProtoModel>>,
-        manager: Rc<kuna_base::space::AddrSpaceManager>,
-    ) {
-        *self.defaultfp.borrow_mut() = defaultfp;
+    /// Share the engine's address-space manager into the factory so
+    /// `getTypeCode(PrototypePieces)` (the nested function-pointer `buildType`
+    /// path) can run `TypeCode::setPrototype`.  The C++ `TypeFactory` holds the
+    /// `Architecture *glb` and reaches it directly; the kuna factory is a
+    /// standalone object, so the owning architecture wires it in during `init`.
+    pub fn set_proto_context(&self, manager: Rc<kuna_base::space::AddrSpaceManager>) {
         *self.manager.borrow_mut() = Some(manager);
     }
 
@@ -6181,14 +6184,14 @@ impl TypeFactoryImpl {
     /// (`updateAllTypes(sig)`), and locks input + output.  The C++ `sig.model` is
     /// the prototype model the declarator resolved (`decl->getModel(glb)`); a
     /// parsed function-pointer field carries no model name, so it resolves to
-    /// `glb->defaultfp`, wired in via [`Self::set_proto_context`].
+    /// `glb->defaultfp`, wired in via [`Self::set_proto_models`].
     fn make_type_code_proto(
         &self,
         proto: &crate::fspec::PrototypePieces,
     ) -> KunaResult<Rc<Datatype>> {
         let model = self.defaultfp.borrow().clone().ok_or_else(|| {
             KunaError::lowlevel(
-                "getTypeCode(PrototypePieces): no default prototype model (set_proto_context \
+                "getTypeCode(PrototypePieces): no default prototype model (set_proto_models \
                  not run)",
             )
         })?;
@@ -7005,12 +7008,11 @@ impl TypeFactory for TypeFactoryImpl {
         proto: &crate::fspec::PrototypePieces,
         model: &str,
     ) -> KunaResult<Rc<Datatype>> {
-        if model.is_empty() {
-            return self.make_type_code_proto(proto);
+        let named = self.proto_models.borrow().get(model).cloned();
+        match named {
+            Some(model) => self.get_type_code_proto_model(proto, model),
+            None => self.make_type_code_proto(proto),
         }
-        let model = self.proto_models.borrow().get(model).cloned()
-            .ok_or_else(|| KunaError::lowlevel("unknown function-pointer calling convention"))?;
-        self.make_type_code_proto_with_model(proto, model)
     }
 
     fn get_type_pointer_strip_array(

@@ -7306,10 +7306,10 @@ impl FuncCallSpecs {
         let mut newinput: Vec<Option<VarnodeId>> = Vec::new();
         let mut newoutput: Vec<VarnodeId> = Vec::new();
 
+        let site = self.op_addr(data);
         let mut saved = FuncProto::new();
         saved.copy(fp);
-        let site = self.op_addr(data);
-        data.get_override_mut().insert_proto_override(site, Box::new(saved));
+        data.get_override_mut().insert_proto_override(site.clone(), Box::new(saved));
 
         if self.late_restriction(data, fp, &mut newinput, &mut newoutput)? {
             self.commit_new_inputs(data, &mut newinput)?;
@@ -7318,7 +7318,6 @@ impl FuncCallSpecs {
             // Too late to make restrictions to correct prototype: force a restart.
             data.set_restart_pending(true);
             // (kuna) restart observability
-            let site = self.op_addr(data);
             restartlog.record_at(data, KunaRestartReason::ProtoForced, &site);
         }
         // Regardless of what happened, lock the prototype so it doesn't happen again.
