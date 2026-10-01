@@ -957,6 +957,11 @@ classified:
   argument. That is visible as deleted basic blocks, not merely as a shorter
   argument list. (kuna) `callsitestackargs` (default-on) selects which address
   is probed; `off` restores the truncating behavior for bisection.
+- **Jump-target register** (kuna, `tailcalljump on`): a tail call that flow
+  recovered from a veneer's computed jump (chapter 02) records the register the
+  jump read its target from (`fspec.rs (FuncCallSpecs::carries_jump_target)`).
+  A register trial overlapping it is no-use: at the call it holds the callee's
+  own address, so `ldr r1,=f; bx r1` never prints `f(a0,f)`.
 - **Ancestor analysis** (`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
   (AncestorRealistic, Funcdata::ancestor_op_use)`): the trial is *active* only
   if the value reaching the call has a realistic def chain (not an INDIRECT
