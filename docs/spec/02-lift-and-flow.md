@@ -507,13 +507,26 @@ the address is another known function's entry and one of two things holds
 - the call states everything the callee's body would
   (`kuna_tailcalljump.rs (tail_call_states_the_body)`). The callee's prototype
   is stated: input-locked on its symbol, or parked as pieces by a
-  declaration, DWARF or a library signature, which `ActionDefaultParams`
-  copies into the call (`kuna_tailcalljump.rs (stated_by_pieces)`), so it
-  fixes the call's arguments. And either the callee returns nothing, or the
-  function's own output is stated (its own prototype is declared or parked).
-  A function whose output is left to recovery never takes a tail call's
-  return value, so with an unstated output the call would print `void` where
-  the copied-in body returns the callee's result.
+  declaration, DWARF, a library signature or a demangled C++ name, which
+  `ActionDefaultParams` copies into the call
+  (`kuna_tailcalljump.rs (stated_by_pieces)`), so it fixes the call's
+  arguments. And either that prototype says the callee returns nothing, or the
+  function's own output is stated. A function whose output is left to
+  recovery never takes a tail call's return value, so with an unstated output
+  the call would print `void` where the copied-in body returns the callee's
+  result.
+
+  Only a stated `void` says the callee returns nothing: a `void` return type
+  in the pieces, or a locked `void` output on the symbol's prototype
+  (`kuna_tailcalljump.rs (stated_by_proto)`). Pieces with no return type
+  leave the return to recovery, which is what `cppsig` parks, because a C++
+  mangled name encodes the arguments but not the return type; such a return
+  is unknown, not `void`. The function's own output counts as stated only
+  when its parked pieces name a return type or return storage, or its
+  symbol's prototype locks the output
+  (`kuna_tailcalljump.rs (output_stated_by_pieces)`). So a C++ veneer or a
+  `-mlong-calls` stub into a C++ function keeps the copied-in body unless
+  DWARF or a declaration states a return type.
 
 The table is then dropped and `flow.rs (FlowInfo::recover_table_tail_call)`
 gives the BRANCHIND a code reference to that entry, as upstream
