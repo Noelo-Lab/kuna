@@ -494,6 +494,19 @@ well as the scope (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 ... sequence. Two highs that denote one object are unaffected: they share a
 name through their shared Symbol, never through a recommendation.
 
+**A default name skips one a caller locked.** The `vN` allocator (and the
+`<prefix>Var<N>` arm under Ghidra names) used to hand out `v<base++>` without
+looking at the scope, so after `name v3 v1` the untouched local that came first
+in location order also became `v1`, and the printer's collision suffix then
+turned one of the two -- often the caller's -- into `v1_1`: the requested name
+landed on a variable nobody named. Every default now comes from
+`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
+(ScopeLocal::next_default_name)`, which advances `base` past any name a
+name-locked Symbol of the local scope already holds. A default index is still
+consumed per local, so a function with no such Symbol -- every run without a
+`name`/`type` directive or a locked name of the form `vN` -- numbers its locals
+exactly as before.
+
 Two recommendation paths share a name on purpose. A name recommendation
 recorded for a storage location names every high at that storage alike, as the
 renamed Symbol does upstream; it is only recorded, so a later callee name cannot

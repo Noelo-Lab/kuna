@@ -2012,12 +2012,17 @@ two readings, in order:
 
 1. the variable the pass printed under it, whatever an earlier directive renamed
    it to, so directives on different locals do not depend on their order and
-   `name a b` with `name b a` swaps the two;
+   `name a b` with `name b a` swaps the two (the untouched locals' `vN` defaults
+   skip the names the swap locked; chapter [06](06-variables-and-merge.md));
 2. otherwise the variable an earlier directive in the batch gave that name, so
    `name v1 rc` followed by `type rc unsigned int` retypes `rc`.
 
 The first reading wins where both exist, because it is the name the caller was
-shown. A second directive on a local the batch already mapped edits that Symbol
+shown -- unless an earlier directive already renamed that printed variable
+away. In `name v2 tmp`, `name v1 v2`, `type v2 unsigned int` both readings of
+`v2` name a variable the caller has moved and nothing says which was meant, so
+the directive is rejected as `Ambiguous name: v2 is both the local printed as v2
+(now tmp) and the local printed as v1 (now v2)`. A second directive on a local the batch already mapped edits that Symbol
 rather than mapping another, and it keeps the register's width, so `type rc
 char *` on a 4-byte register is still `Storage is 4 bytes, the stated type is
 8`. Two register locals whose storage overlaps -- `char *s; // rax` and a

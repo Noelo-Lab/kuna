@@ -46,7 +46,10 @@
 //!    name, so `name v1 rc` followed by `type rc unsigned int` retypes `rc`.
 //!
 //! The first reading wins where both exist, because it is the one the caller
-//! could see.  Two register locals whose storage overlaps (`char *s // rax`
+//! could see -- unless the printed variable was itself renamed away earlier in
+//! the batch, as in `name v2 tmp`, `name v1 v2`, `type v2 ...`.  There both
+//! readings name a variable the caller has already moved, nothing says which
+//! was meant, and the directive is rejected naming both.  Two register locals whose storage overlaps (`char *s // rax`
 //! then `uint4 v1 // eax`) cannot both be given a Symbol in one batch -- the
 //! second pass merges them into one variable -- so the later of the two is
 //! rejected, naming the earlier.
@@ -101,22 +104,33 @@ pub fn resolve_local(fd: &mut Funcdata, name: &str) -> Result<LocalTarget, Strin
                 .filter(|sym| !touched.iter().any(|d| d.symbol == *sym)),
         );
     }
+    let current = |sym: SymbolId| {
+        fd.get_scope_local().map(|lm| lm.database().symbol(sym).name.clone()).unwrap_or_default()
+    };
+    let given: Vec<&DirectiveSymbol> =
+        touched.iter().filter(|d| d.printed != name && current(d.symbol) == name).collect();
     match printed.len() {
         0 => {}
-        1 => return Ok(LocalTarget::Symbol(printed[0])),
+        1 => {
+            let now = current(printed[0]);
+            if now != name {
+                if let Some(other) = given.iter().find(|d| d.symbol != printed[0]) {
+                    return Err(format!(
+                        "Ambiguous name: {name} is both the local printed as {name} (now {}) \
+                         and the local printed as {} (now {name})",
+                        if now.is_empty() { "unnamed" } else { now.as_str() },
+                        other.printed
+                    ));
+                }
+            }
+            return Ok(LocalTarget::Symbol(printed[0]));
+        }
         n => return Err(format!("More than one symbol named: {name} ({n})")),
     }
+    let given: Vec<SymbolId> = given.iter().map(|d| d.symbol).collect();
     if let Some(target) = resolve_printed_local(fd, name, &touched)? {
         return Ok(LocalTarget::Printed(target));
     }
-    let given: Vec<SymbolId> = match fd.get_scope_local() {
-        Some(lm) => touched
-            .iter()
-            .filter(|d| d.printed != name && lm.database().symbol(d.symbol).name == name)
-            .map(|d| d.symbol)
-            .collect(),
-        None => Vec::new(),
-    };
     match given.len() {
         0 => Err(format!("No symbol named: {name}")),
         1 => Ok(LocalTarget::Symbol(given[0])),

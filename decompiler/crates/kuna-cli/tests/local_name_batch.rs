@@ -219,3 +219,40 @@ fn overlapping_register_locals_reject_the_later_directive() {
         assert!(!code.contains("_0_4_"), "two locals were folded into one:\n{code}");
     }
 }
+
+/// `v2` was printed for a local an earlier directive renamed to `tmp`, and an
+/// earlier directive gave `v2` to another local: neither reading is the one the
+/// caller could see, so the directive is rejected rather than picked.
+#[test]
+fn a_name_renamed_away_and_given_to_another_local_is_ambiguous() {
+    let directives = ["name v2 tmp", "name v1 v2", "type v2 unsigned int"];
+    let detail = "\"type v2 unsigned int\": \"Ambiguous name: v2 is both the local printed as v2 \
+                  (now tmp) and the local printed as v1 (now v2)\"";
+    let (code, rejected) = decompile("stack_pair", &directives);
+    assert_eq!(rejected, [detail], "{code}");
+    assert!(code.contains("int4 v2; // stack - 0x10"), "{code}");
+    assert!(code.contains("int4 tmp [3]; // stack - 0xc"), "{code}");
+    let (code, rejected) = decompile("two_locals", &directives);
+    assert_eq!(rejected, [detail], "{code}");
+    assert!(!code.contains("uint4"), "{code}");
+}
+
+/// The untouched local's default skips the names the swap locked: it used to
+/// take `v1` itself and push the caller's `v1` to `v1_1`.
+#[test]
+fn a_swap_among_three_locals_keeps_every_name() {
+    let expected = ["int4 v3; // ebx", "int4 v2; // r12d", "int4 v1; // r13d"];
+    let code = applies("three_locals", &["name v1 v3", "name v3 v1"], &expected);
+    assert!(!code.contains("_1"), "{code}");
+    let rotated = ["int4 v2; // ebx", "int4 v3; // r12d", "int4 v1; // r13d"];
+    applies(
+        "three_locals",
+        &["name v1 v2", "name v2 v3", "name v3 v1"],
+        &rotated,
+    );
+    applies(
+        "three_locals",
+        &["name v3 v1"],
+        &["int4 v1; // r13d", "int4 v2; // ebx", "int4 v3; // r12d"],
+    );
+}

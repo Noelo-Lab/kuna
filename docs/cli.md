@@ -480,7 +480,9 @@ applied, so directives on different locals work in any order, and
 `name v1 v2` with `name v2 v1` swaps the two. A later directive may also use a
 name an earlier one gave (`name v1 rc` then `type rc unsigned int`); when an
 identifier is both a printed name and a new name given to a different local,
-the printed one wins. Two register locals that share a register at different
+the printed one wins, unless an earlier directive already renamed the printed
+one away (`name v2 tmp`, `name v1 v2`, `type v2 ...`): that is `rejected` as an
+ambiguous name. Two register locals that share a register at different
 widths (`char *s; // rax` and `uint4 v1; // eax`) cannot both be named in one
 run: the second is `rejected` with `Storage of v1 overlaps s`.
 

@@ -270,6 +270,17 @@ impl IfaceDecompData {
         }
     }
 
+    /// The current function, for a command naming its local `name`: the
+    /// namespace and no-function diagnostics [`Self::read_symbol`] gives.
+    pub fn local_symbol_fd(&mut self, name: &str) -> Result<&mut Funcdata, IfaceError> {
+        if name.contains("::") {
+            return Err(IfaceError::parse(format!("Bad namespace for symbol: {name}")));
+        }
+        self.fd.as_mut().ok_or_else(|| {
+            IfaceError::execution("global symbol scope lookup not yet wired (no function selected)")
+        })
+    }
+
     /// C++ `IfaceDecompData::clearArchitecture()`.
     pub fn clear_architecture(&mut self) {
         self.conf = None;
@@ -2821,9 +2832,7 @@ decomp_command!(
         if newname.is_empty() {
             return Err(IfaceError::parse("Missing new name"));
         }
-        let dcp = dcp_mut(status)?;
-        dcp.read_symbol(&oldname)?;
-        let fd = dcp.fd.as_mut().expect("read_symbol succeeded => fd present");
+        let fd = dcp_mut(status)?.local_symbol_fd(&oldname)?;
         crate::kuna_hightarget::apply_local(fd, &oldname, &newname, None)
             .map_err(IfaceError::execution)
     }
@@ -2869,9 +2878,7 @@ decomp_command!(
             crate::grammar::parse_type(&typetext, prog.arch().types(), org)
                 .map_err(|e| IfaceError::parse(e.explain().to_string()))?
         };
-        let dcp = dcp_mut(status)?;
-        dcp.read_symbol(&name)?;
-        let fd = dcp.fd.as_mut().expect("read_symbol succeeded => fd present");
+        let fd = dcp_mut(status)?.local_symbol_fd(&name)?;
         crate::kuna_hightarget::apply_local(fd, &name, &newname, Some(ct))
             .map_err(IfaceError::execution)
     }
