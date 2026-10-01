@@ -134,6 +134,43 @@ back — and the two inline unit tests (`dependent_order_nested_struct`,
 `dependent_order_pointer_cycle`) pin both facts: the raw tree order really is
 container-first, and the DFS reorders it.
 
+(kuna) **A record the C grammar declared completes the pointers built to it.**
+Upstream completes a struct or union in place (`TypeFactory::setFields`), so a
+pointer built to the incomplete stub sees the members as soon as they arrive. An
+interned kuna type is immutable: completing one interns a completed copy under
+the same name and id, and a pointer built earlier still names the member-less
+stub. A record's pointer to itself is always such a pointer, because its member
+is built before the record is complete, and so is a pointer to a tag a
+declaration named ahead of its body (a forward `struct Node;`, a sibling record
+first named inside a member list, a parameter declared before the body
+arrived); every access through one printed as offset arithmetic
+(`*(int *)(*(long *)n + 8)` for `n->next->value`). A stub the C grammar
+declares (`decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(TypeFactory::kuna_declare_record)`, chapter 00's assertion grammar) therefore
+carries a completion link, a shared cell holding a weak reference to the record
+that completes it. Completing the stub fills the cell
+(`TypeFactoryImpl::publish_completed_record`), takes the stub out of the name
+index, and completes every typedef made of the stub while it was incomplete
+(`TypeFactoryImpl::complete_record_typedefs`), which keeps the typedef's own
+name. Every accessor that hands out what a pointer points at follows the cell
+(`Datatype::completed_record`: `get_ptr_to`, `get_ptr_into`, `get_depend`, the
+relative pointer's parent, `down_chain`, `is_ptrsub_matching`), and the
+dependency comparison keys a linked record by its cell rather than its `Rc`, so
+a pointer to the stub and a pointer to the completed record intern as one
+pointer. The reference is weak, so a record that points at itself is not an
+owning cycle. Renaming a completed record (`typedef struct Node { ... }
+Renamed;`) moves the cell to the renamed copy. A record held by value while it
+is still incomplete, directly or as an array element, is rejected
+(`TypeFactoryImpl::assign_raw_fields_struct`). Only a grammar-declared record
+carries the cell: a stub from `get_type_struct` or `get_type_union` (the DWARF,
+library-prototype and Objective-C importers, a decoded type, a synthesized
+structure's shell) is completed with upstream's re-keying alone, so a DWARF
+`struct node { struct node *next; }` keeps the shell one level down (chapter 01)
+and a synthesized structure keeps `resolve_self_pointer` (§5.2). Extending the
+link to DWARF needs the importer's merge-by-name fixed first: it completes one
+unit's forward declaration with another unit's definition of the same tag, so a
+link would read an opaque pointer in a third unit as the wrong layout.
+
 **The data organization.** The factory also carries the target's C scalar
 widths, decoded from the compiler spec's `<data_organization>` by
 `decompiler/crates/kuna-decomp/src/infra/architecture.rs

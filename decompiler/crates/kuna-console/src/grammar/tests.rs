@@ -661,18 +661,11 @@ fn reject_multiple_type_specifiers() {
 }
 
 #[test]
-fn reject_old_struct_not_a_struct() {
-    // `struct nosuchstruct` (no body) where the identifier names no struct ->
-    // the oldStruct error text (grammar.cc:1087-1094).  The name must lex as an
-    // IDENTIFIER (an unknown name), since a registered type lexes as TYPE_NAME
-    // and `struct TYPE_NAME` is a plain syntax error.
+fn unknown_struct_tag_creates_forward_declaration() {
     let f = factory();
-    let err = parse_protopieces("extern struct nosuchstruct f(void);", &f, org()).unwrap_err();
-    assert!(
-        err.explain().contains("Identifier does not represent a struct as required"),
-        "got: {}",
-        err.explain()
-    );
+    let p = parse_protopieces("extern struct Later *f(void);", &f, org()).unwrap();
+    assert!(p.outtype.unwrap().get_ptr_to().unwrap().is_incomplete());
+    assert!(f.find_by_name("Later").unwrap().is_some());
 }
 
 #[test]
@@ -1309,4 +1302,166 @@ fn a_type_name_may_end_a_scoped_name() {
     let p = parse_protopieces("extern int4 ns::code(int4 a);", &f, org())
         .expect("a scoped name may end in a type name");
     assert_eq!(p.name, "ns::code");
+}
+
+#[test]
+fn recursive_record_fields_follow_completed_tag() {
+    let f = factory();
+    super::parse_c(
+        "struct Node { struct Node *next; int4 value; };",
+        &f,
+        org(),
+        &[],
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    let node = f.find_by_name("Node").unwrap().unwrap();
+    assert_eq!(node.get_size(), 8);
+    let next = node.get_field(0).unwrap().field_type.get_ptr_to().unwrap();
+    assert!(!next.is_incomplete());
+    assert_eq!(next.get_size(), 8);
+    assert!(node
+        .get_field(0)
+        .unwrap()
+        .field_type
+        .is_ptrsub_matching(4, 0, 0)
+        .unwrap());
+}
+
+#[test]
+fn forward_record_completion_preserves_pointer_interning() {
+    let f = factory();
+    let parse = |s| super::parse_c(s, &f, org(), &[], |_, _| Ok(())).unwrap();
+    parse("typedef struct Node Node;");
+    let before = parse_type("struct Node *", &f, org()).unwrap().0;
+    parse("struct Node { struct Node *next; int4 value; };");
+    let node = f.find_by_name("Node").unwrap().unwrap();
+    assert_eq!(node.get_size(), 8);
+    assert!(!before.get_ptr_to().unwrap().is_incomplete());
+    let after = parse_type("struct Node *", &f, org()).unwrap().0;
+    assert!(
+        std::rc::Rc::ptr_eq(&before, &after),
+        "completion must preserve pointer interning"
+    );
+    let nested = node.get_field(0).unwrap().field_type.get_ptr_to().unwrap();
+    assert_eq!(nested.get_field(1).unwrap().name, "value");
+}
+
+#[test]
+fn mutually_recursive_structs_and_union_pointer_complete() {
+    let f = factory();
+    let parse = |s| super::parse_c(s, &f, org(), &[], |_, _| Ok(())).unwrap();
+    parse("struct A { struct B *b; int4 value; };");
+    parse("struct B { struct A *a; };");
+    parse("union U { union U *next; int4 value; };");
+    let a = f.find_by_name("A").unwrap().unwrap();
+    let b = a.get_field(0).unwrap().field_type.get_ptr_to().unwrap();
+    assert_eq!(b.get_size(), 4);
+    assert_eq!(
+        b.get_field(0)
+            .unwrap()
+            .field_type
+            .get_ptr_to()
+            .unwrap()
+            .get_size(),
+        8
+    );
+    let u = f.find_by_name("U").unwrap().unwrap();
+    assert!(!u
+        .get_field(0)
+        .unwrap()
+        .field_type
+        .get_ptr_to()
+        .unwrap()
+        .is_incomplete());
+}
+
+#[test]
+fn incomplete_value_field_rejected_without_poisoning_forward_pointer() {
+    let f = factory();
+    let parse = |s| super::parse_c(s, &f, org(), &[], |_, _| Ok(()));
+    parse("struct Node;").unwrap();
+    let before = parse_type("struct Node *", &f, org()).unwrap().0;
+    assert!(parse("struct Node { struct Node impossible; };").is_err());
+    assert!(parse("struct Node { struct Node impossible[2]; };").is_err());
+    parse("struct Node { int4 value; };").unwrap();
+    assert_eq!(before.get_ptr_to().unwrap().get_size(), 4);
+    assert!(parse("struct Node { int8 replacement; };").is_err());
+    assert_eq!(f.find_by_name("Node").unwrap().unwrap().get_size(), 4);
+    assert!(parse("union Wrong { struct Wrong *p; };").is_err());
+}
+
+#[test]
+fn recursive_record_completion_does_not_leak_owning_cycle() {
+    let node_weak = {
+        let f = factory();
+        super::parse_c(
+            "struct Node { struct Node *next; };",
+            &f,
+            org(),
+            &[],
+            |_, _| Ok(()),
+        )
+        .unwrap();
+        let node = f.find_by_name("Node").unwrap().unwrap();
+        std::rc::Rc::downgrade(&node)
+    };
+    assert!(node_weak.upgrade().is_none());
+}
+
+#[test]
+fn recursive_record_rename_and_complete_typedef_keep_targets() {
+    let f = factory();
+    super::parse_c(
+        "typedef struct Node { struct Node *next; int4 value; } Renamed;",
+        &f,
+        org(),
+        &[],
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    let node = f.find_by_name("Renamed").unwrap().unwrap();
+    assert_eq!(
+        node.get_field(0)
+            .unwrap()
+            .field_type
+            .get_ptr_to()
+            .unwrap()
+            .get_size(),
+        8
+    );
+    let alias = f.get_typedef(&node, "Alias", 0, 0).unwrap();
+    let pointer = f.get_type_pointer(4, alias, 1).unwrap();
+    assert_eq!(pointer.get_ptr_to().unwrap().get_name(), "Alias");
+}
+
+#[test]
+fn forward_record_alias_completes_without_erasing_tag() {
+    let f = factory();
+    let parse = |s| super::parse_c(s, &f, org(), &[], |_, _| Ok(())).unwrap();
+    parse("typedef struct Node NodeAlias;");
+    let before = parse_type("NodeAlias *", &f, org()).unwrap().0;
+    parse("struct Node { NodeAlias *next; int4 value; };");
+    let alias = f.find_by_name("NodeAlias").unwrap().unwrap();
+    assert_eq!(alias.get_size(), 8);
+    assert_eq!(before.get_ptr_to().unwrap().get_name(), "NodeAlias");
+    assert_eq!(before.get_ptr_to().unwrap().get_size(), 8);
+    let tag = f.find_by_name("Node").unwrap().unwrap();
+    assert_eq!(tag.get_size(), 8);
+    parse("struct Container { NodeAlias value; };");
+    assert_eq!(f.find_by_name("Container").unwrap().unwrap().get_size(), 8);
+}
+
+#[test]
+fn anonymous_member_records_stay_distinct() {
+    let f = factory();
+    let parse = |s| super::parse_c(s, &f, org(), &[], |_, _| Ok(()));
+    parse("struct Outer { struct { int4 a; } first; struct { int8 b; } second; union { int4 c; } third; union { int2 d; } fourth; };")
+        .unwrap();
+    let outer = f.find_by_name("Outer").unwrap().unwrap();
+    assert_eq!(outer.get_size(), 24);
+    let sizes: Vec<_> = (0..4).map(|i| outer.get_field(i).unwrap().field_type.get_size()).collect();
+    assert_eq!(sizes, [4, 8, 4, 2]);
+    assert!(parse("struct Bad { struct { struct Missing m; } inner; };").is_err());
+    parse("struct Again { struct { uint2 z; } first; };").unwrap();
 }
