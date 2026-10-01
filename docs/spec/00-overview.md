@@ -2149,6 +2149,36 @@ that happens to be spelled with a keyword resolve to exactly the interned type
 they always did. Only combinations, and the keywords the type factory does not
 name, take the width-driven path.
 
+(kuna) **An `enum` is laid out and numbered as C lays it out.** Upstream's
+`newEnum` interns every parsed enum at the type factory's `enumsize`, which
+`setupSizes` fills with the default data space's address size — eight bytes on
+x86-64, AArch64 and every other 64-bit target — so a struct member after an enum
+field landed four bytes past where the compiler put it
+(`struct Packet { enum Mode mode; float gain; int value; }` read `value` as
+`gain`). And `assignValues` numbers an enumerator with no `=` from one past the
+largest explicit constant, so `enum Color { RED, GREEN, BLUE }` was 1, 2, 3 and a
+function returning 2 printed `return GREEN;`. The grammar now follows C
+(`decompiler/crates/kuna-console/src/grammar/kuna_enumlayout.rs`): an enumerator
+with no `=` is one past the enumerator before it, the first zero, and the enum
+takes the underlying type gcc and clang give it (MSVC, which always uses `int`,
+agrees on the width whenever every constant fits `int`). With no
+negative constant that is the first of `unsigned int`, `unsigned long` and
+`unsigned long long` that holds every constant; with one it is the first of
+`int`, `long` and `long long`, and the enum is signed, which is what makes
+`enum Sign { NEG = -1, ZERO, POS }` four bytes wide and lets `e < ZERO` read as
+a signed comparison. The widths come from the compiler spec's
+`<data_organization>`, and no vendored spec declares an enum size of its own.
+Bare-metal ARM is the exception the spec cannot see: gcc for `arm-none-eabi`
+defaults to `-fshort-enums`, so its enums are as narrow as their constants. A
+C23 fixed underlying type (`enum Small : unsigned char { ... }`) states that
+layout, or any other: it sets the width and signedness outright, may be any
+integer type or `_Bool`, requires the body, and refuses a constant the type
+cannot represent rather than truncating it. C lets two enumerators share a
+constant (`enum Op { NOP, ADD, SUB, LAST = 2 }`); the enum's value map names a
+value once, so the first enumerator keeps it and the later alias is not
+recorded. Only the C grammar interns an enum at a default width; DWARF and the
+Ghidra wire give theirs explicitly and are unaffected.
+
 (kuna) **A tag survives being declared.** `findByName` is also how the lexer
 classifies every other identifier, so the moment `struct JSValue { … };` interns
 the tag, `JSValue` stops reaching the parser as an identifier and comes back as
@@ -2163,6 +2193,25 @@ production before, with or without a body. Which type the tag names is still
 decided by the construction action, not by the token — `oldStruct` rejects a tag
 that names something other than a struct with the kind error it always had, so
 `struct int4` is refused for saying `struct`, not for being unparseable.
+
+(kuna) **A tag may be named before its body.** Upstream's `oldStruct` and
+`oldUnion` reject a tag that names no type yet, so a record could not mention
+itself (`typedef struct Node { struct Node *next; };`, or a callback member
+`void (*cb)(struct Node *)`), two records could not point at each other, and the
+forward declaration `typedef struct Node Node;` was refused. C declares such a
+tag as an incomplete record, and the grammar now does the same
+(`decompiler/crates/kuna-console/src/grammar.rs (CParse::old_struct)` through
+`TypeFactory::kuna_declare_record`). A tagged body declares its tag before its
+members are read, so the members can name it; a body for a tag that is already
+complete is refused (`Cannot redefine a completed record`), and a member that
+holds an incomplete record by value, or an array of one, is refused as C refuses
+it. A failed body leaves its tag declared but incomplete, so a pointer an
+earlier declaration built still names the stub a later, correct body completes;
+an anonymous record is built fresh each time and destroyed on failure, as
+upstream does. `typedef struct Node Node;` keeps the tag under its own name, and
+a typedef made of a record while it is incomplete is completed with the record.
+A pointer built to the declared stub reads the completed record (chapter 05,
+§5.1), so `node->next->next->value` prints as fields.
 
 (kuna) **A name that is also a type name is still a name.** The same
 `findByName` classification reaches the declarator, where C says the identifier
