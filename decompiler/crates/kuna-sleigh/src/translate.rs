@@ -482,6 +482,20 @@ pub trait Translate: RegisterLookup {
     /// \param baseaddr is the address of the machine instruction to disassemble
     fn print_assembly(&self, emit: &mut dyn AssemblyEmit, baseaddr: &Address) -> KunaResult<i32>;
 
+    /// Lift an instruction and capture its assembly text. Assembly failure is
+    /// best-effort: it does not replace a successful lift or its consumed length.
+    /// Emitters must not change the image or translation context during this call.
+    fn one_instruction_with_assembly(
+        &self,
+        pcode: &mut dyn PcodeEmit,
+        assembly: &mut dyn AssemblyEmit,
+        baseaddr: &Address,
+    ) -> KunaResult<i32> {
+        let length = self.one_instruction(pcode, baseaddr)?;
+        let _ = self.print_assembly(assembly, baseaddr);
+        Ok(length)
+    }
+
     /// Disassemble into reusable caller-owned strings.
     ///
     /// Both output strings are cleared before decoding and remain empty if
@@ -1509,6 +1523,13 @@ mod tests {
             .is_err());
         assert!(mnemonic.is_empty());
         assert!(body.is_empty());
+
+        let mut combined_ops = CollectEmit::default();
+        let mut combined_text = CollectAsm(Vec::new());
+        assert_eq!(dyn_trans.one_instruction_with_assembly(
+            &mut combined_ops, &mut combined_text, &error_addr).unwrap(), 4);
+        assert_eq!(combined_ops.ops.len(), 1);
+        assert_eq!(combined_text.0, vec![(4, "PARTIAL".into(), "assembly".into())]);
     }
 
     /// The VarnodeStorage <-> VarnodeData conversions are exact and the two

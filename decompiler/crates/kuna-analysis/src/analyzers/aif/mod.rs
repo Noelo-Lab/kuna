@@ -100,13 +100,13 @@
 //!   (`docs/history/analysis-port-buildplan.md` §1.3) is "build the sound substitute" — this
 //!   is that substitute, kept off by default.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::rc::Rc;
 
 use kuna_base::space::AddrSpace;
 use kuna_sleigh::translate::Translate;
 
-use crate::listing::{decode::decode_one, FlowKind, Listing};
+use crate::listing::{decode::{decode_one_with_assembly, Decoded}, FlowKind, Listing};
 
 pub mod kuna_aifcorroborate;
 pub mod kuna_aifstrict;
@@ -171,12 +171,12 @@ impl AnalysisPass for AggressiveInstructionFinderPass {
 /// instruction bytes (see the module LOSS note): operand-insensitive, so functions
 /// with the same prologue opcodes but different operand immediates share a
 /// fingerprint, the same equivalence class the mask histogram forms.
-type Fingerprint = (Vec<String>, u64);
+type Fingerprint = ([Rc<str>; FINGERPRINT_INSNS], u64);
 
 /// A speculative decoder over the loadimage bytes, used to probe undefined gaps.
 ///
 /// It wraps the live SLEIGH decoder ([`Translate::one_instruction`] via
-/// [`decode_one`]) plus the code space + executable-range universe, and decodes one
+/// [`decode_one_with_assembly`]) plus the code space + executable-range universe, and decodes one
 /// candidate instruction at a time — the kuna analog of the upstream
 /// `PseudoDisassembler` that re-decodes gap bytes without persisting them. It caches
 /// each speculative decode so a re-probe of the same VMA is free.
@@ -186,7 +186,51 @@ struct GapDecoder<'a> {
     exec_ranges: &'a [(u64, u64)],
     /// `vma -> Some(insn)` on a good decode, `vma -> None` on an undecodable byte
     /// (so a re-probe is cached too).
-    cache: BTreeMap<u64, Option<ProbedInsn>>,
+    cache: BTreeMap<u64, Option<Rc<ProbedInsn>>>,
+    spare: Option<Rc<ProbedInsn>>,
+    scratch: Decoded,
+    mnemonics: Vec<Rc<str>>,
+    visited: HashSet<u64>,
+    worklist: Vec<u64>,
+    linear_run: Option<LinearRun>,
+    linear_events: VecDeque<RunEvent>,
+    #[cfg(test)]
+    peak_cache_len: usize,
+    #[cfg(test)]
+    decoded_addresses: Vec<u64>,
+    #[cfg(test)]
+    validation_steps: usize,
+}
+
+/// An already-decoded, fixed-stride fall-through prefix. Its deferred branches
+/// and information flags are replayed in their original order.
+#[derive(Clone, Copy)]
+struct LinearRun {
+    start: u64,
+    end: u64,
+    stride: u64,
+    strict: bool,
+}
+
+struct RunEvent {
+    addr: u64,
+    branches: Vec<u64>,
+    adds_info: bool,
+    corroborated: bool,
+}
+
+impl LinearRun {
+    fn contains(self, addr: u64) -> bool {
+        self.start <= addr && addr < self.end && (addr - self.start) % self.stride == 0
+    }
+
+    fn count(self) -> usize {
+        ((self.end - self.start) / self.stride) as usize
+    }
+
+    fn addresses(self) -> impl Iterator<Item = u64> {
+        (0..self.count()).map(move |i| self.start + i as u64 * self.stride)
+    }
 }
 
 /// A speculatively-decoded instruction (the gap-probe analog of [`crate::listing::Insn`]).
@@ -198,7 +242,7 @@ struct ProbedInsn {
     is_terminal: bool,
     fall_through: Option<u64>,
     flows: Vec<u64>,
-    mnemonic: String,
+    mnemonic: Rc<str>,
     operands: String,
 }
 
@@ -208,7 +252,17 @@ impl<'a> GapDecoder<'a> {
         code_space: Rc<AddrSpace>,
         exec_ranges: &'a [(u64, u64)],
     ) -> Self {
-        GapDecoder { translate, code_space, exec_ranges, cache: BTreeMap::new() }
+        GapDecoder {
+            translate, code_space, exec_ranges, cache: BTreeMap::new(),
+            spare: None, scratch: Decoded::default(), mnemonics: Vec::new(),
+            visited: HashSet::new(), worklist: Vec::new(), linear_run: None, linear_events: VecDeque::new(),
+            #[cfg(test)]
+            peak_cache_len: 0,
+            #[cfg(test)]
+            decoded_addresses: Vec::new(),
+            #[cfg(test)]
+            validation_steps: 0,
+        }
     }
 
     fn in_exec(&self, vma: u64) -> bool {
@@ -217,55 +271,93 @@ impl<'a> GapDecoder<'a> {
 
     /// Speculatively decode the instruction at `vma`. `None` if out of range or
     /// undecodable. Caches the result (good or bad).
-    fn probe(&mut self, vma: u64) -> Option<ProbedInsn> {
+    fn probe(&mut self, vma: u64) -> Option<Rc<ProbedInsn>> {
         if let Some(cached) = self.cache.get(&vma) {
             return cached.clone();
         }
         let result = self.decode_uncached(vma);
         self.cache.insert(vma, result.clone());
+        #[cfg(test)]
+        {
+            self.peak_cache_len = self.peak_cache_len.max(self.cache.len());
+            self.decoded_addresses.push(vma);
+        }
         result
     }
 
-    fn decode_uncached(&self, vma: u64) -> Option<ProbedInsn> {
-        if !self.in_exec(vma) {
-            return None;
+    /// Only the monotonically advancing gap walk may retire results. Validation
+    /// never decodes below its candidate; forward results must keep their first
+    /// decode even when a later instruction changes processor context.
+    fn retire_before(&mut self, cursor: u64) {
+        if let Some(run) = &mut self.linear_run {
+            if cursor >= run.end {
+                self.linear_run = None;
+            } else if cursor > run.start {
+                run.start += (cursor - run.start).div_ceil(run.stride) * run.stride;
+            }
         }
-        // `want_assembly = true`: the prologue fingerprint below is built from the
-        // mnemonic text.
-        let decoded = decode_one(self.translate, vma, &self.code_space, true, false).ok()?;
-        if decoded.len == 0 {
-            return None;
+        while self.linear_events.front().is_some_and(|event| event.addr < cursor) {
+            self.linear_events.pop_front();
         }
+        while self.cache.first_key_value().is_some_and(|(&addr, _)| addr < cursor) {
+            if let Some((_, Some(mut retired))) = self.cache.pop_first() {
+                if Rc::get_mut(&mut retired).is_some() { self.spare = Some(retired); }
+            }
+        }
+    }
+
+    fn decode_uncached(&mut self, vma: u64) -> Option<Rc<ProbedInsn>> {
+        if !self.in_exec(vma) { return None; }
+        decode_one_with_assembly(self.translate, vma, &self.code_space, &mut self.scratch).ok()?;
+        let decoded = &self.scratch;
+        if decoded.len == 0 { return None; }
         let c = crate::listing::classify::classify(&decoded.ops, vma, decoded.len);
-        Some(ProbedInsn {
-            len: decoded.len,
-            kind: c.flow.kind,
-            is_call: c.flow.is_call,
-            is_terminal: c.flow.is_terminal,
-            fall_through: c.fall_through,
-            flows: c.flows,
-            mnemonic: decoded.mnemonic,
-            operands: decoded.operands,
-        })
+        let mnemonic = if let Some(existing) = self.mnemonics.iter()
+            .find(|m| m.as_ref() == decoded.mnemonic) {
+            Rc::clone(existing)
+        } else {
+            let value: Rc<str> = Rc::from(decoded.mnemonic.as_str());
+            if self.mnemonics.len() == 16 { self.mnemonics.remove(0); }
+            self.mnemonics.push(Rc::clone(&value));
+            value
+        };
+        if let Some(mut spare) = self.spare.take() {
+            let record = Rc::get_mut(&mut spare).expect("retired record is exclusively owned");
+            record.len = decoded.len;
+            record.kind = c.flow.kind;
+            record.is_call = c.flow.is_call;
+            record.is_terminal = c.flow.is_terminal;
+            record.fall_through = c.fall_through;
+            record.flows.clone_from(&c.flows);
+            record.mnemonic = mnemonic;
+            record.operands.clone_from(&decoded.operands);
+            Some(spare)
+        } else {
+            Some(Rc::new(ProbedInsn {
+                len: decoded.len, kind: c.flow.kind, is_call: c.flow.is_call,
+                is_terminal: c.flow.is_terminal, fall_through: c.fall_through,
+                flows: c.flows, mnemonic, operands: decoded.operands.clone(),
+            }))
+        }
     }
 
     /// The fingerprint of the candidate prologue at `entry` (the first
     /// [`FINGERPRINT_INSNS`] speculatively-decoded instructions). `None` if the
     /// prologue does not decode contiguously or carries an empty mnemonic.
     fn fingerprint(&mut self, entry: u64) -> Option<Fingerprint> {
-        let mut mnems: Vec<String> = Vec::with_capacity(FINGERPRINT_INSNS);
+        let mut mnems: [Option<Rc<str>>; FINGERPRINT_INSNS] = std::array::from_fn(|_| None);
         let mut total_len: u64 = 0;
         let mut vma = entry;
-        for _ in 0..FINGERPRINT_INSNS {
+        for mnemonic in &mut mnems {
             let insn = self.probe(vma)?;
             if insn.mnemonic.is_empty() {
                 return None;
             }
-            mnems.push(insn.mnemonic.clone());
+            *mnemonic = Some(Rc::clone(&insn.mnemonic));
             total_len += insn.len as u64;
             vma = vma.checked_add(insn.len as u64)?;
         }
-        Some((mnems, total_len))
+        Some((mnems.map(Option::unwrap), total_len))
     }
 }
 
@@ -296,7 +388,7 @@ fn fingerprint_in_listing(
     entry: u64,
 ) -> Option<Fingerprint> {
     fingerprint_over_listing(listing, entry, |vma| {
-        decoder.probe(vma).map(|p| (p.mnemonic, p.len))
+        decoder.probe(vma).map(|p| (p.mnemonic.to_string(), p.len))
     })
 }
 
@@ -307,10 +399,10 @@ fn fingerprint_over_listing(
     entry: u64,
     mut redecode: impl FnMut(u64) -> Option<(String, u32)>,
 ) -> Option<Fingerprint> {
-    let mut mnems: Vec<String> = Vec::with_capacity(FINGERPRINT_INSNS);
+    let mut mnems: [Option<Rc<str>>; FINGERPRINT_INSNS] = std::array::from_fn(|_| None);
     let mut total_len: u64 = 0;
     let mut vma = entry;
-    for _ in 0..FINGERPRINT_INSNS {
+    for slot in &mut mnems {
         let insn = listing.instruction_at(vma)?;
         let len = insn.len;
         let mnemonic = if listing.has_assembly() {
@@ -325,11 +417,11 @@ fn fingerprint_over_listing(
         if mnemonic.is_empty() {
             return None;
         }
-        mnems.push(mnemonic);
+        *slot = Some(mnemonic.into());
         total_len += len as u64;
         vma = vma.checked_add(len as u64)?;
     }
-    Some((mnems, total_len))
+    Some((mnems.map(Option::unwrap), total_len))
 }
 
 /// Build the function-start fingerprint histogram over every DISCOVERED function
@@ -440,17 +532,65 @@ fn check_valid_subroutine_with_policy(
     gap_hi: u64,
     strict: bool,
 ) -> Option<(BTreeSet<u64>, bool)> {
-    let mut body: BTreeSet<u64> = BTreeSet::new();
-    let mut worklist: Vec<u64> = vec![entry];
+    let mut body = std::mem::take(&mut decoder.visited);
+    let mut worklist = std::mem::take(&mut decoder.worklist);
+    body.clear();
+    worklist.clear();
+    let mut prefix = LinearRun { start: entry, end: entry, stride: 1, strict };
+    if let Some(run) = decoder.linear_run.filter(|run| run.strict == strict && run.contains(entry)) {
+        if entry >= gap_lo && entry < gap_hi {
+            let count = ((run.end.min(gap_hi) - entry) / run.stride)
+                .min(MAX_FOLLOW_INSNS as u64);
+            prefix.end = entry + count * run.stride;
+            prefix.stride = run.stride;
+        }
+    }
+    while decoder.linear_events.front().is_some_and(|event| event.addr < prefix.start) {
+        decoder.linear_events.pop_front();
+    }
+    while decoder.linear_events.back().is_some_and(|event| event.addr >= prefix.end) {
+        decoder.linear_events.pop_back();
+    }
+    let mut flags = (false, false);
+    for event in &decoder.linear_events {
+        worklist.extend_from_slice(&event.branches);
+        flags.0 |= event.adds_info;
+        flags.1 |= event.corroborated;
+    }
+    decoder.linear_run = (prefix.count() != 0).then_some(prefix);
+    worklist.push(prefix.end);
+    let accepted = follow_subroutine(
+        decoder, listing, gap_lo, gap_hi, strict, prefix, flags, &mut body, &mut worklist);
+    let result = accepted.map(|corroborated| (
+        prefix.addresses().chain(body.iter().copied()).collect(), corroborated));
+    decoder.visited = body;
+    decoder.worklist = worklist;
+    result
+}
+
+fn follow_subroutine(
+    decoder: &mut GapDecoder,
+    listing: &Listing,
+    gap_lo: u64,
+    gap_hi: u64,
+    strict: bool,
+    prefix: LinearRun,
+    flags: (bool, bool),
+    body: &mut HashSet<u64>,
+    worklist: &mut Vec<u64>,
+) -> Option<bool> {
     let mut did_terminate = false;
-    let mut adds_info = false;
-    let mut corroborated = false;
-    let mut steps = 0usize;
+    let (mut adds_info, mut corroborated) = flags;
+    let mut steps = prefix.count();
+    let mut linear = prefix;
+    let mut extend_linear = true;
 
     while let Some(vma) = worklist.pop() {
-        if body.contains(&vma) {
+        if prefix.contains(vma) || body.contains(&vma) {
             continue; // already followed (the VisitStat dedup)
         }
+        #[cfg(test)]
+        { decoder.validation_steps += 1; }
         steps += 1;
         if steps > MAX_FOLLOW_INSNS {
             if strict {
@@ -463,6 +603,7 @@ fn check_valid_subroutine_with_policy(
         // in already-discovered code) is a legitimate flow into existing code, not a
         // byte we must re-decode. Only bytes INSIDE the gap are "must-decode-here".
         if vma < gap_lo || vma >= gap_hi {
+            extend_linear = false;
             // Outside the gap: if it is decoded code, "adds info"; otherwise (data /
             // undecoded outside the gap) it is a bad flow target → reject.
             if listing.is_instruction_start(vma) {
@@ -491,15 +632,18 @@ fn check_valid_subroutine_with_policy(
         body.insert(vma);
 
         if insn.is_terminal {
-            did_terminate = true;
+            extend_linear = false;            did_terminate = true;
             continue;
         }
         if matches!(insn.kind, FlowKind::ComputedJump) {
-            // A computed/indirect jump with no static target is a terminate signal.
+            extend_linear = false;            // A computed/indirect jump with no static target is a terminate signal.
             did_terminate = true;
             continue;
         }
 
+        let mut event = RunEvent {
+            addr: vma, branches: Vec::new(), adds_info: false, corroborated: false,
+        };
         for &target in &insn.flows {
             if !decoder.in_exec(target) {
                 return None; // flow leaves the executable image (`!memory.contains`)
@@ -507,15 +651,34 @@ fn check_valid_subroutine_with_policy(
             if insn.is_call {
                 // Upstream: "calls always add info".
                 corroborated = true;
+                event.corroborated = true;
                 if !strict || listing.is_instruction_start(target) {
                     adds_info = true;
+                    event.adds_info = true;
                 }
             } else {
                 // Upstream: "jumps must jump to existing code".
                 if listing.is_instruction_start(target) {
                     corroborated = true;
+                    event.corroborated = true;
                 }
+                if extend_linear { event.branches.push(target); }
                 worklist.push(target); // branch target → intra-routine successor
+            }
+        }
+        if extend_linear {
+            let fall = vma.checked_add(u64::from(insn.len));
+            if vma == linear.end && fall.is_some() && insn.fall_through == fall
+                && (linear.count() == 0 || linear.stride == u64::from(insn.len))
+            {
+                linear.stride = u64::from(insn.len);
+                linear.end = fall.unwrap();
+                decoder.linear_run = Some(linear);
+                if event.adds_info || event.corroborated || !event.branches.is_empty() {
+                    decoder.linear_events.push_back(event);
+                }
+            } else {
+                extend_linear = false;
             }
         }
         if let Some(fall) = insn.fall_through {
@@ -523,13 +686,13 @@ fn check_valid_subroutine_with_policy(
         }
     }
 
-    if body.len() < MIN_SUBROUTINE_INSNS {
+    if prefix.count() + body.len() < MIN_SUBROUTINE_INSNS {
         return None; // `numInstr <= 2`
     }
     if !did_terminate && !adds_info {
         return None; // `didTerminate || didCallValidSubroutine`
     }
-    Some((body, corroborated))
+    Some(corroborated)
 }
 
 /// Run the AIF gap-walk (Ghidra's `added`) and return the accepted gap-start
@@ -556,12 +719,21 @@ pub fn run_aif(
     aifstrict: bool,
     aifcorroborate: bool,
 ) -> Vec<u64> {
+    let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
+    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate)
+}
+
+fn run_aif_with_decoder(
+    listing: &Listing,
+    decoder: &mut GapDecoder,
+    aifstrict: bool,
+    aifcorroborate: bool,
+) -> Vec<u64> {
     if listing.function_count() < MINIMUM_FUNCTION_COUNT || listing.num_instructions() == 0 {
         return Vec::new();
     }
 
-    let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
-    let hist = build_fingerprint_histogram(listing, &mut decoder);
+    let hist = build_fingerprint_histogram(listing, decoder);
     if !hist.values().any(|&c| c >= FINGERPRINT_THRESHOLD) {
         return Vec::new();
     }
@@ -573,13 +745,21 @@ pub fn run_aif(
     // undefined executable VMA. Probe it, then advance past whatever we resolved
     // (the accepted body, or one byte on a reject) and continue.
     let mut cursor = listing.first_undefined_after(0);
+    let mut scan_end = 0;
+    let mut gap_hi = u64::MAX;
     while let Some(gap_start) = cursor {
+        decoder.retire_before(gap_start);
         // The extent of THIS contiguous undefined gap: from `gap_start` up to the
         // next decoded instruction start (or, if none, an open upper bound). Only
         // this interior is "must-decode-here"; flows past it into discovered code
         // are legitimate.
-        let next_code = listing.next_instruction_start_after(gap_start);
-        let gap_hi = next_code.unwrap_or(u64::MAX);
+        if gap_start >= scan_end {
+            gap_hi = listing.next_instruction_start_after(gap_start).unwrap_or(u64::MAX);
+            let exec_hi = listing.exec_ranges().iter()
+                .find(|&&(lo, hi)| lo <= gap_start && gap_start < hi)
+                .map(|&(_, hi)| hi).expect("undefined address belongs to an executable range");
+            scan_end = gap_hi.min(exec_hi);
+        }
 
         // (kuna, `aifstrict`) The cursor slides to the next instruction-alignment
         // boundary rather than the next byte, and only an aligned address or a
@@ -592,7 +772,7 @@ pub fn run_aif(
         let probe_here =
             !aifstrict || kuna_aifstrict::probe_allowed(listing, gap_start);
         if probe_here && !claimed.contains(&gap_start) {
-            match probe_gap_start(&mut decoder, listing, &hist, gap_start, gap_hi, aifcorroborate)
+            match probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate)
             {
                 Probe::Accept(body) => {
                     accepted.insert(gap_start);
@@ -616,10 +796,12 @@ pub fn run_aif(
         }
 
         // Advance to the next undefined gap strictly after the address we consumed.
-        match listing.first_undefined_after(advanced.saturating_sub(1)) {
-            Some(n) if n > gap_start => cursor = Some(n),
-            _ => break,
-        }
+        cursor = if advanced > gap_start && advanced < scan_end {
+            Some(advanced)
+        } else {
+            listing.first_undefined_after(advanced.saturating_sub(1))
+                .filter(|&next| next > gap_start)
+        };
     }
 
     accepted.into_iter().collect()
@@ -1009,6 +1191,9 @@ fn is_thumb_function_prologue(data: &[u8]) -> bool {
 }
 
 #[cfg(test)]
+mod gap_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::listing::Insn;
@@ -1113,7 +1298,7 @@ mod tests {
         let agreeing = |vma: u64| Some((if vma == 0x1000 { "PUSH" } else { "MOV" }.to_string(), 4));
         assert_eq!(
             fingerprint_over_listing(&textless, 0x1000, agreeing),
-            Some((vec!["PUSH".to_string(), "MOV".to_string()], 8))
+            Some((["PUSH".into(), "MOV".into()], 8))
         );
 
         // Disagreement on the FIRST instruction (a 2-byte Thumb/MIPS16 re-decode of
@@ -1144,7 +1329,7 @@ mod tests {
             Listing::from_insns_for_test(vec![insn(0x1000, "PUSH"), insn(0x1004, "MOV")], true);
         assert_eq!(
             fingerprint_over_listing(&with_text, 0x1000, |_| panic!("must not re-decode")),
-            Some((vec!["PUSH".to_string(), "MOV".to_string()], 8))
+            Some((["PUSH".into(), "MOV".into()], 8))
         );
     }
 
@@ -1153,9 +1338,9 @@ mod tests {
         // Two prologues with the same mnemonic sequence + total length collide
         // (the masked-bytes equivalence class). Differing only by operand text (not
         // captured in the mnemonic) keeps them in the same bucket.
-        let a: Fingerprint = (vec!["PUSH".into(), "MOV".into()], 4);
-        let b: Fingerprint = (vec!["PUSH".into(), "MOV".into()], 4);
-        let c: Fingerprint = (vec!["PUSH".into(), "SUB".into()], 4);
+        let a: Fingerprint = (["PUSH".into(), "MOV".into()], 4);
+        let b: Fingerprint = (["PUSH".into(), "MOV".into()], 4);
+        let c: Fingerprint = (["PUSH".into(), "SUB".into()], 4);
         let mut hist: BTreeMap<Fingerprint, usize> = BTreeMap::new();
         *hist.entry(a.clone()).or_insert(0) += 1;
         *hist.entry(b).or_insert(0) += 1; // same key → count 2
