@@ -1872,6 +1872,9 @@ impl Rule for RulePullsubIndirect {
         if !RulePullsubMulti::acceptable_size(new_size) {
             return 0;
         }
+        if super::kuna_stackstoreguard::keeps_store_indirect_whole(data, vn, targ_op) {
+            return 0;
+        }
         let outvn = data.obank().get(op).expect("RulePullsubIndirect: stale op").get_out().expect(
             "RulePullsubIndirect: SUBPIECE has no output",
         );

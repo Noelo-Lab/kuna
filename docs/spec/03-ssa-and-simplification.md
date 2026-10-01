@@ -635,6 +635,20 @@ read bytes. The stack STORE guards of §3.1 (`stackstoreguard`) are the common
 source of such INDIRECTs: two direct byte reads of an initialized buffer after
 an indexed byte store.
 
+With `stackstoreguard` on, the rule leaves a stack STORE INDIRECT whole when one
+of its SUBPIECE readers reads more than one byte (a SUBPIECE that only feeds
+another INDIRECT, left behind by an earlier narrowing, does not count). The
+narrowed piece would be a separate stack location from the slot the store
+indexes, so the variable map would declare it as its own local: the read would
+no longer see the store, and the store's base would become an address-only
+local declared at pointer width and printed with that stride
+(`long v1; (&v1)[i & 3] = j; return v2;`). Kept whole, the slot is one local
+that both the store and the read address
+(`unsigned int v1; ((char *)&v1)[i & 3] = j; return v1._1_2_;`). Byte readers
+still narrow, because a byte piece maps as an element of the byte array the
+store indexes. The check is `keeps_store_indirect_whole` in
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
+
 The pointer/division family in `ruleaction_6.rs` resolves opcode changes through
 the canonical `TypeOp` table and applies them with `Funcdata::op_set_opcode`.
 That mutation is infallible; its helper returns no `Result`, so rules do not

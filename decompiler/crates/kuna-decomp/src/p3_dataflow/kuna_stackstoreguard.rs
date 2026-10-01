@@ -44,3 +44,33 @@ fn constant_write(fd: &crate::funcdata::Funcdata, mut vn: crate::context::Varnod
     }
     false
 }
+
+/// Keep a stack slot's STORE INDIRECT whole instead of narrowing it to a
+/// piece that some read uses as one multi-byte value: that piece would print
+/// as a separate local the store never reaches. Byte reads may still narrow,
+/// since a byte piece prints as an element of the array the store indexes.
+pub(super) fn keeps_store_indirect_whole(
+    fd: &crate::funcdata::Funcdata,
+    vn: crate::context::VarnodeId,
+    store: crate::context::OpId,
+) -> bool {
+    use kuna_num::opcodes::OpCode;
+    if !fd.get_arch().stack_store_guard
+        || fd.obank().get(store).is_none_or(|op| op.code() != OpCode::CPUI_STORE)
+    {
+        return false;
+    }
+    let Some(slot) = fd.vbank().get(vn) else {
+        return false;
+    };
+    fd.get_arch().manage().get_stack_space().is_some_and(|s| Rc::ptr_eq(s, slot.get_space()))
+        && slot.descend_iter().any(|op| {
+            let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()).and_then(|o| fd.vbank().get(o)) else {
+                return false;
+            };
+            out.get_size() > 1
+                && out.descend_iter().any(|use_op| {
+                    fd.obank().get(use_op).is_some_and(|u| u.code() != OpCode::CPUI_INDIRECT)
+                })
+        })
+}

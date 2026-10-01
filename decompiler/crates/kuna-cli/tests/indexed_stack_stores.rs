@@ -321,3 +321,167 @@ int main(void) {{
         }
     }
 }
+
+/// `name._<off>_<size>_` read as the bytes at that offset, for a little-endian host.
+fn lower_piece_reads(c: &str) -> String {
+    let mut out = String::new();
+    let mut rest = c;
+    while let Some(pos) = rest.find("._") {
+        let (head, tail) = rest.split_at(pos);
+        let fields: Vec<&str> = tail[2..].splitn(3, '_').collect();
+        let start = head
+            .rfind(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+            .map_or(0, |p| p + 1);
+        match (fields.as_slice(), start < head.len()) {
+            ([off, size, _], true) if off.parse::<u8>().is_ok() && size.parse::<u8>().is_ok() => {
+                out.push_str(&head[..start]);
+                out.push_str(&format!("kuna_piece(&{}, {off}, {size})", &head[start..]));
+                rest = &tail[2 + off.len() + 1 + size.len() + 1..];
+            }
+            _ => {
+                out.push_str(&rest[..pos + 2]);
+                rest = &rest[pos + 2..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+#[test]
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
+    // gcc and clang -O2 -fno-stack-protector -fcf-protection=none of
+    //   f:  union { unsigned w; unsigned char b[4]; } u; u.w = 0x01020304;
+    //       u.b[i & 3] = j; return u.b[1] | u.b[2] << 8;
+    //   fq: the same over eight bytes, u.q = 0x0102030405060708, u.b[i & 7] = j
+    //   fk: u.q = 0; u.b[i & 7] = j; u.b[(j >> 1) & 7] = 5;
+    //       return (int)(u.q >> 8) & 0xffff;
+    let functions: [(&str, &[u8]); 4] = [
+        (
+            "f_gcc",
+            &[
+                0x83, 0xe7, 0x03, 0xc7, 0x44, 0x24, 0xfc, 0x04, 0x03, 0x02, 0x01, 0x40, 0x88, 0x74,
+                0x3c, 0xfc, 0x0f, 0xb7, 0x44, 0x24, 0xfd, 0xc3,
+            ],
+        ),
+        (
+            "fq_gcc",
+            &[
+                0x48, 0xb8, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x83, 0xe7, 0x07, 0x48,
+                0x89, 0x44, 0x24, 0xf8, 0x40, 0x88, 0x74, 0x3c, 0xf8, 0x0f, 0xb7, 0x44, 0x24, 0xf9,
+                0xc3,
+            ],
+        ),
+        (
+            "fk_gcc",
+            &[
+                0x48, 0xc7, 0x44, 0x24, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x83, 0xe7, 0x07, 0x40, 0x88,
+                0x74, 0x3c, 0xf8, 0xd1, 0xfe, 0x83, 0xe6, 0x07, 0xc6, 0x44, 0x34, 0xf8, 0x05, 0x0f,
+                0xb7, 0x44, 0x24, 0xf9, 0xc3,
+            ],
+        ),
+        (
+            "f_clang",
+            &[
+                0xc7, 0x44, 0x24, 0xf8, 0x04, 0x03, 0x02, 0x01, 0x83, 0xe7, 0x03, 0x40, 0x88, 0x74,
+                0x3c, 0xf8, 0x0f, 0xb7, 0x44, 0x24, 0xf9, 0xc3,
+            ],
+        ),
+    ];
+    let compilers: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(
+        !compilers.is_empty(),
+        "a C compiler is required for semantic validation"
+    );
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
+    let section = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    for (name, code) in functions {
+        let value = obj.append_section_data(section, code, 32);
+        obj.add_symbol(Symbol {
+            name: format!("binary_{name}").into_bytes(),
+            value,
+            size: code.len() as u64,
+            kind: SymbolKind::Text,
+            scope: SymbolScope::Linkage,
+            weak: false,
+            section: SymbolSection::Section(section),
+            flags: SymbolFlags::None,
+        });
+    }
+    let input = common::scratch_file("indexed-stack-words", "o");
+    std::fs::write(&input, obj.write().unwrap()).unwrap();
+    let mut printed = String::new();
+    let mut checks = String::new();
+    for (name, _) in functions {
+        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(["decompile", input.to_str().unwrap(), &format!("binary_{name}")])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let text = String::from_utf8(output.stdout).unwrap();
+        printed.push_str(&text.replace(&format!("binary_{name}("), &format!("printed_{name}(")));
+        checks.push_str(&format!(
+            "int binary_{name}(int, int);\n\
+             static int check_{name}(int i, int j) {{ return printed_{name}(i, j) == binary_{name}(i, j); }}\n"
+        ));
+    }
+    let names: Vec<_> = functions.iter().map(|(name, _)| format!("check_{name}")).collect();
+    let src = common::scratch_file("indexed-stack-words", "c");
+    let exe = common::scratch_file("indexed-stack-words", "exe");
+    std::fs::write(
+        &src,
+        format!(
+            r#"
+#include <string.h>
+static unsigned long long kuna_piece(const void *p, int off, int size) {{
+    unsigned long long v = 0;
+    memcpy(&v, (const char *)p + off, size);
+    return v;
+}}
+{printed}
+{checks}
+int main(void) {{
+    int (*checks[])(int, int) = {{{names}}};
+    for (unsigned k = 0; k < sizeof checks / sizeof *checks; ++k)
+        for (int i = 0; i < 16; ++i)
+            for (int j = 0; j < 256; ++j)
+                if (!checks[k](i, j)) return 1 + k;
+    return 0;
+}}
+"#,
+            printed = lower_piece_reads(&printed),
+            names = names.join(", "),
+        ),
+    )
+    .unwrap();
+    for cc in &compilers {
+        for level in ["-O0", "-O2"] {
+            let compile = Command::new(cc)
+                .args(["-std=c11", level])
+                .arg(&src)
+                .arg(&input)
+                .arg("-o")
+                .arg(&exe)
+                .output()
+                .unwrap();
+            assert!(
+                compile.status.success(),
+                "{cc}: {}\n{printed}",
+                String::from_utf8_lossy(&compile.stderr)
+            );
+            let run = Command::new(&exe).status().unwrap();
+            assert!(run.success(), "{cc} {level}: {run}\n{printed}");
+        }
+    }
+    for path in [input, src, exe] {
+        std::fs::remove_file(path).unwrap();
+    }
+}
