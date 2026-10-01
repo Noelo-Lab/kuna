@@ -37,6 +37,20 @@ fn ordinary_and_default_case_labels_are_unchanged() {
     assert_eq!(print.emit_mut().output_str(), "\ncase 0xff:\ndefault:");
 }
 
+/// A case or default label is a label like any other: one that reaches a
+/// closing brace with nothing after it gets a statement (`kuna_labelstmt`).
+#[test]
+fn case_and_default_labels_before_a_closing_brace_get_a_statement() {
+    let mut print = PrintC::new();
+    print.set_output_stream();
+    let id = print.emit_mut().open_brace_indent("{", EmitBraceStyle::SameLine);
+    print.emit_numeric_case_label(1, 4, false, None);
+    print.emit_default_case_label(0, &MarkupRef::none());
+    print.emit_mut().close_brace_indent("}", id);
+
+    assert_eq!(print.emit_mut().output_str(), " {\n  case 1:\n  default:\n  ;\n}");
+}
+
 /// `option indentincrement` lives on the emitter leaf, and a markup render
 /// swaps the leaf twice: the setting must survive both swaps.
 #[test]

@@ -1356,13 +1356,18 @@ impl PrintEmit {
 // to the active leaf.  Required AND default-provided methods are ALL forwarded
 // so no call can fall through to a `PrintEmit` default that would diverge from
 // the leaf (`EmitNoMarkup` overrides `tag_line`/`clear`; see the type doc).
+// The statement and brace calls also keep the dangling-label record
+// (`kuna_labelstmt`).
 impl Emit for PrintEmit {
     fn state(&self) -> &EmitBase { pe_forward!(self.state()) }
     fn state_mut(&mut self) -> &mut EmitBase { pe_forward!(self.state_mut()) }
 
     fn begin_document(&mut self) -> int4 { pe_forward!(self.begin_document()) }
     fn end_document(&mut self, id: int4) { pe_forward!(self.end_document(id)) }
-    fn begin_function(&mut self) -> int4 { pe_forward!(self.begin_function()) }
+    fn begin_function(&mut self) -> int4 {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.begin_function())
+    }
     fn end_function(&mut self, id: int4) { pe_forward!(self.end_function(id)) }
     fn begin_block(&mut self, blockref: int4) -> int4 { pe_forward!(self.begin_block(blockref)) }
     fn end_block(&mut self, id: int4) { pe_forward!(self.end_block(id)) }
@@ -1374,7 +1379,10 @@ impl Emit for PrintEmit {
     fn end_return_type(&mut self, id: int4) { pe_forward!(self.end_return_type(id)) }
     fn begin_var_decl(&mut self, markup: &MarkupRef) -> int4 { pe_forward!(self.begin_var_decl(markup)) }
     fn end_var_decl(&mut self, id: int4) { pe_forward!(self.end_var_decl(id)) }
-    fn begin_statement(&mut self, markup: &MarkupRef) -> int4 { pe_forward!(self.begin_statement(markup)) }
+    fn begin_statement(&mut self, markup: &MarkupRef) -> int4 {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.begin_statement(markup))
+    }
     fn end_statement(&mut self, id: int4) { pe_forward!(self.end_statement(id)) }
     fn begin_func_proto(&mut self) -> int4 { pe_forward!(self.begin_func_proto()) }
     fn end_func_proto(&mut self, id: int4) { pe_forward!(self.end_func_proto(id)) }
@@ -1412,9 +1420,18 @@ impl Emit for PrintEmit {
     fn get_indent_increment(&self) -> int4 { pe_forward!(self.get_indent_increment()) }
     fn set_indent_increment(&mut self, val: int4) { pe_forward!(self.set_indent_increment(val)) }
     fn spaces(&mut self, num: int4, bump: int4) { pe_forward!(self.spaces(num, bump)) }
-    fn open_brace_indent(&mut self, brace: &str, style: EmitBraceStyle) -> int4 { pe_forward!(self.open_brace_indent(brace, style)) }
-    fn open_brace(&mut self, brace: &str, style: EmitBraceStyle) { pe_forward!(self.open_brace(brace, style)) }
-    fn close_brace_indent(&mut self, brace: &str, id: int4) { pe_forward!(self.close_brace_indent(brace, id)) }
+    fn open_brace_indent(&mut self, brace: &str, style: EmitBraceStyle) -> int4 {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.open_brace_indent(brace, style))
+    }
+    fn open_brace(&mut self, brace: &str, style: EmitBraceStyle) {
+        self.state_mut().dangling_label = false;
+        pe_forward!(self.open_brace(brace, style))
+    }
+    fn close_brace_indent(&mut self, brace: &str, id: int4) {
+        self.settle_dangling_label();
+        pe_forward!(self.close_brace_indent(brace, id))
+    }
     fn set_pending_brace(&mut self, style: EmitBraceStyle) { pe_forward!(self.set_pending_brace(style)) }
     fn has_pending_brace(&self) -> bool { pe_forward!(self.has_pending_brace()) }
     fn cancel_pending_brace(&mut self) { pe_forward!(self.cancel_pending_brace()) }
@@ -1542,6 +1559,8 @@ pub struct PrintC {
     /// same-named unique whole owner exists. Their references are relative to
     /// their own declared object, not the overlap group's synthetic symbol.
     local_name_standalones: std::collections::HashSet<crate::context::HighVariableId>,
+    /// Final C declarations, including storage and symbol overrides.
+    pointer_decls: crate::kuna_pointerargs::Declarations,
     /// (kuna `signedness`) The declared-signedness decision for the function
     /// being emitted: which integer locals the operation set says to declare
     /// signed or unsigned, and which of those declarations actually got written
@@ -1588,6 +1607,7 @@ impl PrintC {
             local_name_overrides: std::collections::HashMap::new(),
             local_name_aliases: std::collections::HashMap::new(),
             local_name_standalones: std::collections::HashSet::new(),
+            pointer_decls: crate::kuna_pointerargs::Declarations::default(),
             sign_plan: crate::kuna_typeround::SignPlan::default(),
             cast_implied: crate::kuna_castimplied::ImpliedCasts::default(),
             stmt_op: None,
@@ -2428,6 +2448,10 @@ impl PrintC {
         self.local_name_overrides.clear();
         self.local_name_aliases.clear();
         self.local_name_standalones.clear();
+        self.pointer_decls.clear();
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            arch.kuna_pointerargs.borrow_mut().definition(fd);
+        }
         // (kuna `signedness`) Round the declared signedness of this function's
         // integer locals from the operations applied to them.  Computed before
         // any declaration is written and consumed by
@@ -2786,6 +2810,7 @@ impl PrintC {
                     Some(ty) => {
                         let (front, back) = declarator_parts(ty, self.rt_ctx);
                         self.cast_implied.record_param(name, format!("{front}{back}"));
+                        self.pointer_decls.record(name, &front, &back, false);
                         // C++ `pushTypeStart(type, noident)`: the separating token is
                         // `type_expr_nospace` only when there is no identifier AND no
                         // declarator modifier (`noident && typestack.size()==1`); else
@@ -3219,8 +3244,10 @@ impl PrintC {
                 decls.iter().map(|(_, name)| name.as_str()),
                 occupied.iter().map(String::as_str),
             );
+            let globals = fd.get_arch().global_name_scope();
+            let taken = |name: &str| globals.as_ref().is_some_and(|g| g.has_symbol_name(name));
             for (high, name) in &mut decls {
-                let unique = names.unique(name);
+                let unique = names.unique_with(name, &taken);
                 if unique != *name {
                     self.local_name_overrides.insert(*high, unique.clone());
                     *name = unique;
@@ -3296,6 +3323,7 @@ impl PrintC {
             if array_count.is_none() {
                 self.cast_implied.record_local(*high, format!("{decl_type}{decl_back}"));
             }
+            self.pointer_decls.record(name, &decl_type, &decl_back, array_count.is_some());
             self.emit.tag_line();
             let id = self.emit.begin_var_decl(&markup);
             match self.lang().forms.decl {
@@ -3875,6 +3903,7 @@ impl PrintC {
         self.emit.tag_line_indent(0);
         self.emit.print(&self.block_label_name(fd, bl), SyntaxHighlight::NoColor);
         self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+        self.emit.note_label();
     }
 
     /// C++ `PrintC::emitAnyLabelStatement` (printc.cc:3354): find the entry basic
@@ -3905,7 +3934,8 @@ impl PrintC {
         // head_comment_type | instr_comment_type (printlanguage.cc:586-589).
         let tp = ct::HEADER | ct::WARNINGHEADER | ct::USER2 | ct::WARNING;
         let mut db = CommentDatabaseInternal::new();
-        for w in arch.commentdb.comments() {
+        let fad = fd.get_address();
+        for w in arch.commentdb.comments().iter().filter(|w| &w.func_addr == fad) {
             db.add_comment(w.tp, &w.func_addr, &w.addr, w.text.as_bytes());
         }
         // option_unplaced is off by default (C++ resetDefaultsPrintC).
@@ -4693,7 +4723,8 @@ impl PrintC {
                 // Blocks that formally exit the switch need an explicit `break;`
                 // (unless it is the last case, whose fall-through is the close).
                 let isexit = fd.sblocks_ref().block(blk).switch_caseblocks()[i].isexit;
-                if isexit && i != ncase - 1 {
+                let last = i == ncase - 1;
+                if (isexit && !last) || (last && self.emit.label_dangling()) {
                     self.emit.tag_line();
                     self.emit_goto_statement(fd, caseblk, caseblk, crate::block::block_flags::f_break_goto);
                 }
@@ -4775,6 +4806,7 @@ impl PrintC {
             value,
         );
         self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+        self.emit.note_label();
     }
 
     fn emit_numeric_case_label(&mut self, value: uintb, size: int4, signed: bool, op: Option<OpId>) {
@@ -4815,6 +4847,7 @@ impl PrintC {
             }
         }
         self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+        self.emit.note_label();
     }
 
     /// First op of a case block (C++ `FlowBlock::firstOp` → front-leaf basic
@@ -6845,7 +6878,19 @@ impl PrintC {
             }
             for i in 1..nin {
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
+                    let cast = if self.out_lang == crate::kuna_lang::OutLang::C {
+                        let view = PointerView { pc: self, fd };
+                        crate::kuna_pointerargs::argument_cast(&view, fd, arch, op, i)
+                    } else {
+                        None
+                    };
+                    if let Some(ct) = &cast {
+                        self.push_cast_open(ct, op);
+                    }
                     self.push_vn_ir(fd, arch, vn, op);
+                    if let Some(ct) = &cast {
+                        self.push_cast_close(ct);
+                    }
                 }
             }
         } else {
@@ -9285,7 +9330,6 @@ fn declaration_occupied_names(
     names: impl IntoIterator<Item = String>,
 ) -> Vec<String> {
     let mut names: Vec<String> = names.into_iter().collect();
-    names.extend(fd.get_arch().global_symbol_names());
     let name_style = fd.get_arch().kuna_name_style();
     names.extend((0..fd.num_calls()).filter_map(|index| {
         let call = fd.get_call_specs(index);
@@ -10227,6 +10271,34 @@ impl IntegerLiteral {
 fn cast_strategy_for(arch: &Architecture) -> Option<CastStrategyC> {
     let tlst = arch.types_rc() as std::rc::Rc<dyn crate::dtype::TypeFactory>;
     Some(CastStrategyC::new(tlst))
+}
+
+struct PointerView<'a> {
+    pc: &'a PrintC,
+    fd: &'a Funcdata,
+}
+
+impl crate::kuna_pointerargs::PrintedPointers for PointerView<'_> {
+    fn spell(&self, ty: &std::rc::Rc<crate::dtype::Datatype>) -> String {
+        let (front, back) = declarator_parts(ty, self.pc.rt_ctx);
+        front + &back
+    }
+
+    fn address(&self, high: crate::context::HighVariableId) -> Option<String> {
+        use crate::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
+        let h = self.fd.high_bank().get(high)?;
+        if h
+            .kuna_symbol_type()
+            .is_some_and(|t| matches!(t.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION))
+        {
+            return None;
+        }
+        let (name, offset, _) = self.pc.emitted_high_symbol(self.fd, high)?;
+        if offset > 0 {
+            return None;
+        }
+        self.pc.pointer_decls.address(&name)
+    }
 }
 
 /// (kuna `castimplied`) The printer's answers to what

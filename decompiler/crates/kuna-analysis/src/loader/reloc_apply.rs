@@ -8,7 +8,9 @@
 //!
 //! Supported instruction families are ARM `CALL`/`JUMP24`, Thumb call/jump,
 //! `REL32`, and `PREL31`; AArch64 branch, ADRP page, ADD low-12, and scaled load/
-//! store low-12 forms; and PowerPC64 `REL24`, TOC16 variants, and TOC64. Generic
+//! store low-12 forms; PowerPC64 `REL24`, TOC16 variants, and TOC64; and SPARC
+//! `WDISP30`/`WPLT30` calls, the `HI22`/`LO10` and `PC22`/`PC10` `sethi`/`or`
+//! pairs, and `DISP32`. Generic
 //! absolute, relative, PLT-relative, and image-offset relocations support
 //! 8/16/32/64-bit fields. Application preserves REL implicit addends and object
 //! endianness, and returns a specific failure classification rather than
@@ -57,6 +59,9 @@ enum Specific {
     Ppc64Rel24,
     Ppc64Toc16 { form: PpcHalf },
     Ppc64Toc64,
+    SparcWdisp30,
+    SparcHi22 { pc: bool },
+    SparcLo10 { pc: bool },
     Generic { bits: u8 },
 }
 
@@ -144,6 +149,7 @@ impl RelocationSpec {
                     | Specific::ArmThumbBranch24
                     | Specific::Aarch64Branch26
                     | Specific::Ppc64Rel24
+                    | Specific::SparcWdisp30
             )
     }
 }
@@ -166,7 +172,10 @@ fn classify_info(
         (Architecture::Arm, Some(elf::R_ARM_NONE))
         | (Architecture::Arm, Some(elf::R_ARM_V4BX))
         | (Architecture::Aarch64, Some(elf::R_AARCH64_NONE))
-        | (Architecture::PowerPc64, Some(elf::R_PPC64_NONE)) => return Ok(None),
+        | (Architecture::PowerPc64, Some(elf::R_PPC64_NONE))
+        | (Architecture::Sparc | Architecture::Sparc32Plus, Some(elf::R_SPARC_NONE)) => {
+            return Ok(None)
+        }
 
         (Architecture::Arm, Some(elf::R_ARM_CALL)) => Some((Specific::ArmBranch24, true)),
         (Architecture::Arm, Some(elf::R_ARM_JUMP24)) => Some((Specific::ArmBranch24, false)),
@@ -236,6 +245,26 @@ fn classify_info(
             false,
         )),
         (Architecture::PowerPc64, Some(elf::R_PPC64_TOC)) => Some((Specific::Ppc64Toc64, false)),
+
+        (
+            Architecture::Sparc | Architecture::Sparc32Plus,
+            Some(elf::R_SPARC_WDISP30 | elf::R_SPARC_WPLT30),
+        ) => Some((Specific::SparcWdisp30, true)),
+        (Architecture::Sparc | Architecture::Sparc32Plus, Some(elf::R_SPARC_DISP32)) => {
+            Some((Specific::PcRelativeData, false))
+        }
+        (Architecture::Sparc | Architecture::Sparc32Plus, Some(elf::R_SPARC_HI22)) => {
+            Some((Specific::SparcHi22 { pc: false }, false))
+        }
+        (Architecture::Sparc | Architecture::Sparc32Plus, Some(elf::R_SPARC_PC22)) => {
+            Some((Specific::SparcHi22 { pc: true }, false))
+        }
+        (Architecture::Sparc | Architecture::Sparc32Plus, Some(elf::R_SPARC_LO10)) => {
+            Some((Specific::SparcLo10 { pc: false }, false))
+        }
+        (Architecture::Sparc | Architecture::Sparc32Plus, Some(elf::R_SPARC_PC10)) => {
+            Some((Specific::SparcLo10 { pc: true }, false))
+        }
         _ => None,
     };
 
@@ -343,6 +372,13 @@ fn apply_info(
             ppc64_toc16(field, little_endian, reloc, symbol, toc, form)
         }
         Specific::Ppc64Toc64 => ppc64_toc64(field, little_endian, reloc, toc),
+        Specific::SparcWdisp30 => sparc_wdisp30(field, little_endian, reloc, symbol, place),
+        Specific::SparcHi22 { pc } => {
+            sparc_hi22(field, little_endian, reloc, symbol, pc.then_some(place))
+        }
+        Specific::SparcLo10 { pc } => {
+            sparc_lo10(field, little_endian, reloc, symbol, pc.then_some(place))
+        }
         Specific::Generic { bits } => generic(field, little_endian, reloc, symbol, place, bits),
     }
 }
@@ -664,6 +700,74 @@ fn ppc64_toc64(
     let toc = toc.ok_or(RelocationFailure::MissingToc)?;
     let value = toc as i128 + explicit_plus_implicit(reloc, read_signed(field, le));
     write_integer(field, le, value as u64);
+    Ok(())
+}
+
+/// `call disp30`: format 1 (`op` = 01), word displacement `(S + A - P) >> 2`.
+/// The 30-bit word field spans the whole 32-bit address space. Compute the
+/// byte displacement with wrapping 32-bit arithmetic before shifting it.
+fn sparc_wdisp30(
+    field: &mut [u8],
+    le: bool,
+    reloc: RelocationInfo,
+    symbol: u64,
+    place: u64,
+) -> Result<(), RelocationFailure> {
+    let mut insn = read_u32(field, le);
+    if insn >> 30 != 0b01 {
+        return Err(RelocationFailure::InvalidEncoding);
+    }
+    let implicit = sign_extend(((insn & 0x3fff_ffff) as i128) << 2, 32);
+    let symbol = u32::try_from(symbol).map_err(|_| RelocationFailure::OutOfRange)?;
+    let place = u32::try_from(place).map_err(|_| RelocationFailure::OutOfRange)?;
+    let value = symbol
+        .wrapping_add(explicit_plus_implicit(reloc, implicit) as u32)
+        .wrapping_sub(place);
+    require_aligned(i128::from(value), 4)?;
+    insn = (insn & 0xc000_0000) | ((value >> 2) & 0x3fff_ffff);
+    write_u32(field, le, insn);
+    Ok(())
+}
+
+/// `sethi %hi(S + A), rd` (`HI22`) or `%pc22(S + A - P)` (`PC22`): format 2
+/// with `op2` = 100, imm22 = bits 31..10. Like the GNU linker, the value is
+/// truncated to 32 bits rather than range-checked. SPARC uses RELA; a REL
+/// spelling cannot carry the low 10 bits of an addend, so it is rejected.
+fn sparc_hi22(
+    field: &mut [u8],
+    le: bool,
+    reloc: RelocationInfo,
+    symbol: u64,
+    place: Option<u64>,
+) -> Result<(), RelocationFailure> {
+    let mut insn = read_u32(field, le);
+    if insn & 0xc1c0_0000 != 0x0100_0000 || reloc.implicit_addend {
+        return Err(RelocationFailure::InvalidEncoding);
+    }
+    let value = symbol as i128 + reloc.addend as i128 - place.unwrap_or(0) as i128;
+    insn = (insn & !0x003f_ffff) | (((value >> 10) as u32) & 0x003f_ffff);
+    write_u32(field, le, insn);
+    Ok(())
+}
+
+/// `%lo(S + A)` (`LO10`) or `%pc10(S + A - P)` (`PC10`): the low 10 bits into
+/// the simm13 field of a format-3 instruction (`op` = 1x) with the immediate
+/// bit `i` set. Only the ten relocated bits are replaced, as the GNU linker
+/// does, and nothing is range-checked: the value is a truncation by definition.
+fn sparc_lo10(
+    field: &mut [u8],
+    le: bool,
+    reloc: RelocationInfo,
+    symbol: u64,
+    place: Option<u64>,
+) -> Result<(), RelocationFailure> {
+    let mut insn = read_u32(field, le);
+    if insn >> 31 != 1 || insn & 0x2000 == 0 || reloc.implicit_addend {
+        return Err(RelocationFailure::InvalidEncoding);
+    }
+    let value = symbol as i128 + reloc.addend as i128 - place.unwrap_or(0) as i128;
+    insn = (insn & !0x3ff) | ((value as u32) & 0x3ff);
+    write_u32(field, le, insn);
     Ok(())
 }
 
@@ -1656,5 +1760,139 @@ mod tests {
             );
             assert_eq!(field, before);
         }
+    }
+}
+
+#[cfg(test)]
+mod sparc_tests {
+    use super::*;
+
+    fn rela(r_type: u32, addend: i64) -> RelocationInfo {
+        RelocationInfo {
+            kind: RelocationKind::Unknown,
+            encoding: RelocationEncoding::Unknown,
+            size: 0,
+            addend,
+            implicit_addend: false,
+            r_type: Some(r_type),
+        }
+    }
+
+    fn patch(r_type: u32, addend: i64, insn: u32, symbol: u64, place: u64) -> Result<u32, RelocationFailure> {
+        let info = rela(r_type, addend);
+        let spec = classify_info(Architecture::Sparc, info)?.expect("not a no-op");
+        assert_eq!(spec.width(), 4);
+        let mut field = insn.to_be_bytes();
+        apply_info(spec, info, &mut field, false, symbol, place, None, None)?;
+        Ok(u32::from_be_bytes(field))
+    }
+
+    #[test]
+    fn sparc_none_is_a_no_op_on_both_32_bit_machines() {
+        for arch in [Architecture::Sparc, Architecture::Sparc32Plus] {
+            assert!(classify_info(arch, rela(elf::R_SPARC_NONE, 0)).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn sparc_wdisp30_encodes_forward_backward_and_addend_displacements() {
+        assert_eq!(patch(elf::R_SPARC_WDISP30, 0, 0x4000_0000, 0x40_0100, 0x40_0000), Ok(0x4000_0040));
+        assert_eq!(patch(elf::R_SPARC_WDISP30, 0, 0x4000_0000, 0x40_0000, 0x40_0010), Ok(0x7fff_fffc));
+        assert_eq!(patch(elf::R_SPARC_WDISP30, 8, 0x4000_0000, 0x40_0000, 0x40_0000), Ok(0x4000_0002));
+        assert_eq!(
+            patch(elf::R_SPARC_WDISP30, 0, 0x4000_0000, 0x8000_0000, 0x40_0000),
+            Ok(0x4000_0000 | (0x7fc0_0000u32 >> 2))
+        );
+    }
+
+    #[test]
+    fn sparc_calls_wrap_displacements_in_the_32_bit_address_space() {
+        for r_type in [elf::R_SPARC_WDISP30, elf::R_SPARC_WPLT30] {
+            assert_eq!(
+                patch(r_type, 0, 0x4000_0000, 0xf000_0000, 0x40_0004),
+                Ok(0x7bef_ffff)
+            );
+            assert_eq!(
+                patch(r_type, 0, 0x4000_0000, 0x40_0004, 0xf000_0000),
+                Ok(0x4410_0001)
+            );
+            assert_eq!(
+                patch(r_type, 8, 0x4000_0000, 0xffff_fffc, 0x40_0000),
+                Ok(0x7ff0_0001)
+            );
+        }
+    }
+
+    #[test]
+    fn sparc_pc_relative_forms_subtract_the_place() {
+        assert_eq!(patch(elf::R_SPARC_WPLT30, 0, 0x4000_0000, 0x40_0100, 0x40_0000), Ok(0x4000_0040));
+        assert_eq!(patch(elf::R_SPARC_DISP32, 4, 0, 0x40_0000, 0x40_0010), Ok(0xffff_fff4));
+        let (symbol, place) = (0x40_2000u64, 0x40_0008u64);
+        let sethi = patch(elf::R_SPARC_PC22, 4, 0x0300_0000, symbol, place).unwrap();
+        let or = patch(elf::R_SPARC_PC10, 8, 0x8210_6000, symbol, place + 4).unwrap();
+        assert_eq!(((sethi & 0x3f_ffff) << 10) | (or & 0x3ff), (symbol + 4 - place) as u32);
+        let backward = patch(elf::R_SPARC_PC22, 0, 0x0300_0000, 0x40_0000, 0x40_1000).unwrap();
+        assert_eq!(backward & 0x3f_ffff, 0x3f_fffc);
+    }
+
+    #[test]
+    fn sparc_wdisp30_is_a_code_target_and_rejects_bad_fields() {
+        let spec = classify_info(Architecture::Sparc, rela(elf::R_SPARC_WDISP30, 0)).unwrap().unwrap();
+        assert!(spec.is_call() && spec.targets_code());
+        assert_eq!(
+            patch(elf::R_SPARC_WDISP30, 0, 0x0100_0000, 0x40_0100, 0x40_0000),
+            Err(RelocationFailure::InvalidEncoding)
+        );
+        assert_eq!(
+            patch(elf::R_SPARC_WDISP30, 2, 0x4000_0000, 0x40_0100, 0x40_0000),
+            Err(RelocationFailure::Misaligned)
+        );
+        assert_eq!(
+            patch(elf::R_SPARC_WDISP30, 0, 0x4000_0000, 0x1_0040_0000, 0x40_0000),
+            Err(RelocationFailure::OutOfRange)
+        );
+    }
+
+    #[test]
+    fn sparc_hi22_lo10_pair_reassembles_the_address() {
+        let symbol = 0x2000_2108u64;
+        let sethi = patch(elf::R_SPARC_HI22, 4, 0x0300_0000, symbol, 0).unwrap();
+        let or = patch(elf::R_SPARC_LO10, 4, 0x8210_6000, symbol, 0).unwrap();
+        assert_eq!(sethi, 0x0300_0000 | ((symbol as u32 + 4) >> 10));
+        assert_eq!(or, 0x8210_6000 | ((symbol as u32 + 4) & 0x3ff));
+        assert_eq!(((sethi & 0x3f_ffff) << 10) | (or & 0x3ff), symbol as u32 + 4);
+    }
+
+    #[test]
+    fn sparc_lo10_keeps_the_upper_simm13_bits_like_the_gnu_linker() {
+        assert_eq!(patch(elf::R_SPARC_LO10, 0, 0xc200_7c00, 0x1234_5678, 0), Ok(0xc200_7e78));
+        assert_eq!(patch(elf::R_SPARC_LO10, -4, 0xc200_6000, 0x1000, 0), Ok(0xc200_63fc));
+    }
+
+    #[test]
+    fn sparc_split_fields_reject_wrong_instructions_and_rel_addends() {
+        assert_eq!(patch(elf::R_SPARC_HI22, 0, 0x8210_6000, 0x1000, 0), Err(RelocationFailure::InvalidEncoding));
+        assert_eq!(patch(elf::R_SPARC_LO10, 0, 0x0300_0000, 0x1000, 0), Err(RelocationFailure::InvalidEncoding));
+        assert_eq!(patch(elf::R_SPARC_LO10, 0, 0x8210_4001, 0x1000, 0), Err(RelocationFailure::InvalidEncoding));
+        for r_type in [elf::R_SPARC_HI22, elf::R_SPARC_LO10] {
+            let mut info = rela(r_type, 0);
+            info.implicit_addend = true;
+            let spec = classify_info(Architecture::Sparc, info).unwrap().unwrap();
+            let before = if r_type == elf::R_SPARC_HI22 { 0x0300_0000u32 } else { 0x8210_6000 };
+            let mut field = before.to_be_bytes();
+            assert_eq!(
+                apply_info(spec, info, &mut field, false, 0x1000, 0, None, None),
+                Err(RelocationFailure::InvalidEncoding)
+            );
+            assert_eq!(u32::from_be_bytes(field), before);
+        }
+    }
+
+    #[test]
+    fn sparc64_instruction_relocations_stay_unsupported() {
+        assert_eq!(
+            classify_info(Architecture::Sparc64, rela(elf::R_SPARC_WDISP30, 0)).err(),
+            Some(RelocationFailure::Unsupported)
+        );
     }
 }

@@ -1,5 +1,5 @@
 // decompile2-worker.mjs — the study view's RPC surface through the real module
-// Worker: `inspect`, `read`, `xrefs` and per-call `--assert` directives.
+// Worker: `inspect`, `read`, `xrefs`, `strings` and per-call `--assert` directives.
 //
 // Skips (exit 0, with a message) while the built wasm predates those commands,
 // so it is green before the engine side lands and meaningful after it.
@@ -145,6 +145,18 @@ try {
   const renamedRefs = await client.xrefs('main', { assertions: [`function ${sumTo.address_hex}=summation`] });
   assert.ok(renamedRefs.callees.some((c) => c.name === 'summation'), 'a function rename reaches xrefs');
   checks.push('xrefs callers/callees/data + rename');
+
+  // strings: who uses each literal, at the instruction, also through a pointer.
+  await client.load(new Uint8Array(await readFile(fixture('crackme.elf'))), { fileName: 'crackme.elf' });
+  const strings = await client.strings();
+  const literal = (t) => strings.strings.find((s) => s.text === t);
+  assert.deepEqual(literal('Nope, that is not the flag.').uses.map((u) => u.name), ['check', 'main']);
+  const flag = literal('flag{str1ngs_4re_3asy}');
+  assert.ok(flag.uses.length === 2 && flag.uses.every((u) => u.name === 'check' && u.via?.name === 'secret'),
+    'the flag is used by check, through the pointer secret');
+  const check = await client.inspect('check');
+  assert.ok(flag.uses.every((u) => check.function.instructions.some((i) => i.address_hex === u.at_hex)), 'each use is one of its instructions');
+  checks.push('strings with their users');
 
   // The page names a refused directive from this error: exit code, and the directive quoted.
   await assert.rejects(

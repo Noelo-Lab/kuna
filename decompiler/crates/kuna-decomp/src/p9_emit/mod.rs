@@ -22,10 +22,12 @@ pub mod kuna_addressdecl;
 pub mod kuna_bitcast;
 pub mod kuna_truthycond;
 pub mod kuna_braceelide;
+pub mod kuna_labelstmt; // (kuna) every printed C label labels a statement
 pub mod kuna_warnstyle;
 pub mod kuna_arraycoverwidth;
 pub mod kuna_emptystrconst;
 pub mod kuna_truncarg;
+pub mod kuna_pointerargs; // (kuna) a scalar's address passed to a character-pointer parameter
 pub mod kuna_castimplied; // (kuna) casts C's own conversions already perform
 pub mod kuna_castternary; // (kuna) a conditional arm keeps no cast the conditional performs
 pub mod kuna_castwiden; // (kuna) a 64-bit widening C performs by itself keeps no cast

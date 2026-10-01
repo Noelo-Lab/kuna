@@ -139,15 +139,26 @@ impl DeclNameUniquifier {
 
     /// Return `base` when it is free, otherwise the first free `<base>_<n>`.
     pub fn unique(&mut self, base: &str) -> String {
+        self.unique_with(base, &|_| false)
+    }
+
+    /// [`unique`](Self::unique) where `taken` also reports identifiers owned
+    /// outside the function, such as globals, which are occupied exactly as if
+    /// they had been passed to [`new`](Self::new).
+    pub fn unique_with(&mut self, base: &str, taken: &dyn Fn(&str) -> bool) -> String {
         match self.names.get_mut(base) {
             Some(state @ NameState::Reserved) => {
                 *state = NameState::Assigned { next_suffix: 1 };
-                return base.to_owned();
+                if !taken(base) {
+                    return base.to_owned();
+                }
             }
             None => {
                 self.names
                     .insert(base.to_owned(), NameState::Assigned { next_suffix: 1 });
-                return base.to_owned();
+                if !taken(base) {
+                    return base.to_owned();
+                }
             }
             Some(NameState::Assigned { .. }) => {}
         }
@@ -160,6 +171,9 @@ impl DeclNameUniquifier {
                 *next_suffix += 1;
                 candidate
             };
+            if taken(&candidate) {
+                continue;
+            }
             if let std::collections::hash_map::Entry::Vacant(entry) = self.names.entry(candidate) {
                 let name = entry.key().clone();
                 entry.insert(NameState::Assigned { next_suffix: 1 });

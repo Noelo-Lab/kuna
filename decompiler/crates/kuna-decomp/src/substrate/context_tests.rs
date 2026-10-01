@@ -68,6 +68,21 @@ fn global_symbol_name_snapshot_exposes_names_reserved_from_local_suffixes() {
     assert_eq!(globals.symbol_names().collect::<Vec<_>>(), ["value_1", "callee_1"]);
 }
 
+#[test]
+fn global_symbol_name_lookup_matches_the_snapshot_names() {
+    let ram = space(1);
+    let globals = query(vec![
+        entry(&ram, 0x1000, 4, 0, "value_1", true, RangeList::new()),
+        entry(&ram, 0x1004, 4, 4, "value_1", true, RangeList::new()),
+        entry(&ram, 0x2000, 1, 0, "callee_1", true, RangeList::new()),
+    ]);
+    assert!(globals.has_symbol_name("value_1"));
+    assert!(globals.has_symbol_name("callee_1"));
+    assert!(!globals.has_symbol_name("value"));
+    assert!(!globals.has_symbol_name("value_2"));
+    assert!(!GlobalQuery::default().has_symbol_name("value_1"));
+}
+
 fn typed_entry(
     space: &Rc<AddrSpace>,
     first: u64,

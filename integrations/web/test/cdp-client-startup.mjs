@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+import { PassThrough } from 'node:stream';
+import { mock } from 'node:test';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -72,8 +76,178 @@ async function rejected(path, pattern, options = {}) {
   return failure;
 }
 
+const turn = () => new Promise(resolve => setImmediate(resolve));
+
+async function controlled(check, { startupTimeoutMs = 4000, mode } = {}) {
+  const stderr = new PassThrough();
+  const child = Object.assign(new EventEmitter(), {
+    stderr, exitCode: null, signalCode: null,
+    kill() {
+      if (this.exitCode === null && this.signalCode === null) exit(null, 'SIGKILL');
+      return true;
+    },
+  });
+  let closed = false;
+  const maybeClose = () => {
+    if (!closed && stderr.closed && (child.exitCode !== null || child.signalCode !== null)) {
+      closed = true;
+      child.emit('close', child.exitCode, child.signalCode);
+    }
+  };
+  const exit = (code = 7, signal = null) => {
+    child.exitCode = code;
+    child.signalCode = signal;
+    child.emit('exit', code, signal);
+    maybeClose();
+  };
+  stderr.once('close', maybeClose);
+  const timers = new Set();
+  let outcome;
+  let settlements = 0;
+  mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+  const schedule = globalThis.setTimeout;
+  const cancel = globalThis.clearTimeout;
+  mock.method(globalThis, 'setTimeout', (callback, delay, ...args) => {
+    const timer = schedule(() => { timers.delete(timer); callback(...args); }, delay);
+    timers.add(timer);
+    return timer;
+  });
+  mock.method(globalThis, 'clearTimeout', timer => { timers.delete(timer); cancel(timer); });
+  mock.method(childProcess, 'spawn', (_path, args) => {
+    if (mode === 'throw') throw new Error('synthetic spawn exception');
+    if (mode === 'ready' || mode === 'invalid') {
+      const profile = args.find(arg => arg.startsWith('--user-data-dir=')).slice(16);
+      writeFileSync(join(profile, 'DevToolsActivePort'), mode === 'ready' ? '12345\n' : 'invalid\n');
+    }
+    return child;
+  });
+  syncBuiltinESMExports();
+  const pending = launchChrome('controlled-browser', { startupTimeoutMs }).then(
+    chrome => { settlements++; outcome = chrome; },
+    error => { settlements++; outcome = error; },
+  );
+  const advance = async ms => { mock.timers.tick(ms); await turn(); };
+  try {
+    await check({ child, stderr, exit, advance, result: () => outcome });
+    assert.ok(outcome, 'startup must settle');
+    await pending;
+    if (!(outcome instanceof Error)) {
+      outcome.close();
+      outcome.close();
+    }
+    await turn();
+    assert.equal(settlements, 1);
+    assert.equal(timers.size, 0, 'startup must dispose its timers');
+    noProfiles();
+    if (mode !== 'throw') {
+      assert.equal(stderr.destroyed, true);
+      for (const event of ['data', 'end', 'close', 'error']) {
+        assert.equal(stderr.listenerCount(event), 0, `stderr ${event} listener leaked`);
+      }
+      for (const event of ['exit', 'close', 'error']) {
+        assert.equal(child.listenerCount(event), 0, `child ${event} listener leaked`);
+      }
+    }
+  } finally {
+    stderr.destroy();
+    await turn();
+    mock.restoreAll();
+    mock.timers.reset();
+    syncBuiltinESMExports();
+  }
+}
+
+async function controlledCases() {
+  let count = 0;
+  await controlled(async ({ stderr, exit, advance, result }) => {
+    exit();
+    await advance(50);
+    assert.equal(result(), undefined, 'wait for diagnostics delivered after exit');
+    stderr.end('delayed-startup-sentinel\n');
+    await advance(0);
+    assert.match(result().message, /code 7/);
+    assert.equal(result().message.match(/delayed-startup-sentinel/g)?.length, 1);
+    assert.equal(Date.now(), 50, 'EOF should finish without awaiting the grace deadline');
+  });
+  count++;
+
+  for (const mode of ['buffered', 'late-buffered', 'ended', 'held', 'delayed', 'flood', 'signal', 'error-before', 'error-during', 'closed']) {
+    await controlled(async ({ stderr, exit, advance, result }) => {
+      if (mode === 'buffered') { stderr.pause(); stderr.write('buffered-sentinel\n'); }
+      if (mode === 'ended') { stderr.end('ended-sentinel\n'); await advance(0); }
+      if (mode === 'error-before') { stderr.pause(); stderr.write('before-error-sentinel\n'); stderr.destroy(new Error('synthetic pipe failure')); await advance(0); }
+      if (mode === 'closed') { stderr.pause(); stderr.write('closed-sentinel\n'); stderr.destroy(); await advance(0); }
+      exit(mode === 'signal' ? null : 7, mode === 'signal' ? 'SIGTERM' : null);
+      await advance(50);
+      if (['ended', 'error-before', 'closed'].includes(mode)) {
+        assert.ok(result() instanceof Error, `${mode} must finish without the grace`);
+      } else {
+        assert.equal(result(), undefined);
+        if (mode === 'error-during') {
+          stderr.pause();
+          stderr.write('before-error-sentinel\n');
+          stderr.destroy(new Error('synthetic pipe failure'));
+          await advance(0);
+          assert.match(result().message, /before-error-sentinel/);
+        } else {
+          for (let i = 0; i < 4; i++) {
+            await advance(50);
+            if (mode === 'flood') stderr.write('x'.repeat(20000) + 'tail-sentinel\n');
+          }
+          if (mode === 'delayed' || mode === 'signal') stderr.write('delayed-sentinel\n');
+          await advance(49);
+          if (mode === 'late-buffered') { stderr.pause(); stderr.write('buffered-sentinel\n'); }
+          assert.equal(result(), undefined, 'held pipe waits for the fixed grace');
+          await advance(1);
+          assert.ok(result() instanceof Error, 'data cannot extend the grace');
+          assert.equal(Date.now(), 300);
+        }
+      }
+      assert.match(result().message, mode === 'signal' ? /signal SIGTERM/ : /code 7/);
+      if (mode === 'buffered' || mode === 'late-buffered') assert.equal(result().message.match(/buffered-sentinel/g)?.length, 1);
+      if (mode === 'error-before') assert.match(result().message, /before-error-sentinel/);
+      if (mode === 'closed') assert.match(result().message, /closed-sentinel/);
+      if (mode === 'ended') assert.match(result().message, /ended-sentinel/);
+      if (mode === 'delayed' || mode === 'signal') assert.match(result().message, /delayed-sentinel/);
+      if (mode === 'flood') {
+        assert.ok(result().message.endsWith('tail-sentinel'));
+        assert.ok(result().message.length < 9000);
+      }
+    });
+    count++;
+  }
+
+  await controlled(async ({ stderr, exit, advance, result }) => {
+    await advance(50);
+    exit();
+    await advance(50);
+    assert.equal(result(), undefined);
+    await advance(200);
+    stderr.write('past-startup-deadline\n');
+    await advance(50);
+    assert.match(result().message, /code 7[\s\S]*past-startup-deadline/);
+    assert.equal(Date.now(), 350);
+  }, { startupTimeoutMs: 100 });
+  count++;
+
+  for (const mode of ['timeout', 'ready', 'invalid', 'spawn-error', 'throw']) {
+    await controlled(async ({ child, advance, result }) => {
+      if (mode === 'spawn-error') child.emit('error', new Error('synthetic spawn error'));
+      await advance(mode === 'timeout' || mode === 'spawn-error' ? 50 : 0);
+      if (mode === 'ready') assert.equal(result().port, 12345);
+      else assert.match(result().message, {
+        timeout: /within 50 ms/, invalid: /invalid DevTools port/,
+        'spawn-error': /Could not start Chrome: synthetic spawn error/, throw: /synthetic spawn exception/,
+      }[mode]);
+    }, { startupTimeoutMs: 50, mode });
+    count++;
+  }
+  return count;
+}
+
 let cases = 0;
 try {
+  cases += await controlledCases();
   const started = performance.now();
   const early = await rejected(executable('early'), /code 7/);
   assert.match(early.message, /sentinel-chrome-startup-failure/);

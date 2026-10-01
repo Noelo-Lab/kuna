@@ -1,0 +1,39 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t:default">
+<!--
+    GH-783: a label must be followed by a statement before C23.
+
+    probe is an ARM switch whose last arm, case 2, is a branch-only table
+    entry that leaves the switch.  The printer used to end the switch with
+    the bare label `case 2:` before the closing brace, which C99/C11/C17
+    reject as "label at end of compound statement".  The label now gets
+    `break;`.  probe_control has the same dispatch with an assignment in
+    case 2; its last arm stays unchanged, with no break added.
+
+    Source shape: value = 0; switch (selector) { case 0: value = 7; break;
+    case 1: value = 9; break; case 2: break; } *output = value;
+-->
+<bytechunk space="ram" offset="0x1000">0030a0e3020050e300f18f90060000ea010000ea020000ea030000ea0730a0e3010000ea0930a0e3ffffffea003081e51eff2fe10000000000000000000000000030a0e3020050e300f18f90070000ea010000ea020000ea030000ea0730a0e3020000ea0930a0e3000000ea0b30a0e3003081e51eff2fe1</bytechunk>
+<symbol space="ram" offset="0x1000" name="probe"/>
+<symbol space="ram" offset="0x1040" name="probe_control"/>
+</binaryimage>
+<script>
+  <com>parse line extern void probe(uint4 selector, uint4 *output);</com>
+  <com>parse line extern void probe_control(uint4 selector, uint4 *output);</com>
+  <com>load function probe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function probe_control</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Label statement arm #1: the empty last case gets break" min="1" max="1">case 2:$
+break;$</stringmatch>
+<stringmatch name="Label statement arm #2: no case label directly before a blank line" min="0" max="0">case 2:$
+^\s*$</stringmatch>
+<stringmatch name="Label statement arm #3: the control's last case is unchanged" min="1" max="1">case 2:$
+= 0xb;$
+^\s*$
+^\s*\}$</stringmatch>
+<stringmatch name="Label statement arm #4: one break per non-last arm plus the empty last arm" min="5" max="5">break;$</stringmatch>
+</decompilertest>

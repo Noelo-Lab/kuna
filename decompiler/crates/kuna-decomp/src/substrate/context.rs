@@ -172,6 +172,8 @@ pub struct GlobalQuery {
     pub owned: kuna_base::address::RangeList,
     /// The boolean-property map (C++ `Database::flagbase`), for `getProperty`.
     pub flagbase: kuna_base::partmap::PartMap<Address, uint4>,
+    /// Every entry's symbol name, built on first use by [`GlobalQuery::has_symbol_name`].
+    symbol_name_set: std::cell::OnceCell<std::collections::BTreeSet<Box<str>>>,
 }
 
 /// Prototype evidence attached to an exact memory slot feeding a `CALLIND`.
@@ -295,6 +297,7 @@ impl GlobalQuery {
             space_indexes,
             owned,
             flagbase,
+            symbol_name_set: std::cell::OnceCell::new(),
         }
     }
 
@@ -314,6 +317,15 @@ impl GlobalQuery {
     /// that care about uniqueness can collect these into a set.
     pub fn symbol_names(&self) -> impl Iterator<Item = &str> {
         self.entries.iter().map(|entry| entry.symbol_name.as_str())
+    }
+
+    /// Whether any entry of this snapshot carries `name`. The set is built once
+    /// per snapshot, so a declaration pass asks by name instead of copying every
+    /// global identifier for every function it prints.
+    pub fn has_symbol_name(&self, name: &str) -> bool {
+        self.symbol_name_set
+            .get_or_init(|| self.symbol_names().map(Box::from).collect())
+            .contains(name)
     }
 
     fn index_for_space(&self, space_index: int4) -> Option<&GlobalSpaceIndex> {
@@ -1972,19 +1984,15 @@ impl ArchContext {
         }
     }
 
-    /// Snapshot the identifiers visible from the global scope for local-name
-    /// allocation. In remote mode this reads the merged cache accumulated while
+    /// The global-scope snapshot local-name allocation checks identifiers
+    /// against. In remote mode this is the merged cache accumulated while
     /// resolving the function; standalone mode reads the frozen per-function
     /// Database snapshot.
-    pub fn global_symbol_names(&self) -> Vec<String> {
-        let query = self
-            .remote_scope
+    pub fn global_name_scope(&self) -> Option<Rc<GlobalQuery>> {
+        self.remote_scope
             .as_ref()
             .map(|remote| remote.snapshot())
-            .or_else(|| self.global_query.clone());
-        query
-            .map(|query| query.symbol_names().map(str::to_string).collect())
-            .unwrap_or_default()
+            .or_else(|| self.global_query.clone())
     }
 
     /// The global-scope read source for one address: the ghidra-mode
