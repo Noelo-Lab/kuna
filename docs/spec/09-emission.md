@@ -33,6 +33,43 @@ normalization defaults (DIV-34 brace placement, DIV-35 NULL printing,
 DIV-36 compound assignments, DIV-37 truthy conditions, DIV-38 single-statement
 brace elision, DIV-39 inline warning slugs) in `docs/history.md`.
 
+An address-only local is declared from its mapped object's type
+(`kuna_addressdecl.rs`), rather than the pointer-width constant used to reference
+it. Thus a four-byte scalar reached through a saved `int *` remains an `int`,
+even on a 64-bit target. Real storage representatives still determine their
+own declarations, including wider and overlapping accesses. When another
+directly accessed Symbol lies wholly inside the address width from the object's
+start, the frame map has likely split one wider object, so the declaration keeps
+the address width rather than shrink to the piece. A buffer whose other part
+is reached only through pointer arithmetic leaves no such neighbour, so its
+first piece is declared at the piece's type, as a directly accessed piece
+already is. This corrects the declaration without extending `castobject`'s
+permission to retype escaped locals.
+
+A same-width `CAST` between an integer and a 32- or 64-bit float is a bit
+reinterpretation, not a numeric conversion (`kuna_bitcast.rs`). Only a `CAST`
+qualifies: `ActionSetCasts` inserts one wherever the merged types of a value
+and its reader disagree, so a `COPY` between the two kinds is either fed by
+such a `CAST` already or writes an undefined destination that takes the bits
+as they are. Each side's kind is the type the printed C gives it: a named
+variable's declared type (a parameter's prototype type), and the value's own
+type for an unnamed intermediate. A member varnode's own type can be stale
+after merging and is not consulted for a named variable; reading it would print
+a float constant stored to a float global as its integer bits, and would send a
+value copied between registers through two opposite unions. C emits an
+anonymous union compound literal,
+`((union { unsigned int from; float to; }){ .from = x }).to`, which evaluates
+`x` once; a signed result names the signed word (`int`, `long long`) as the
+member instead of adding a cast. Rust
+emits `f32::from_bits`/`f64::from_bits`, converting the operand with `as
+u32`/`as u64` unless its declared type already is that word, or `to_bits()`. A
+floating constant read as an integer prints its stored bits, preserving NaN
+payloads. An untyped call result does not establish an integer return contract
+and keeps its existing conversion. These operations stay visible under cosmetic
+cast suppression. `FLOAT_INT2FLOAT`, `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` keep
+their numeric conversion behavior. The representation uses the target's
+ordinary 32-/64-bit integer and IEEE float storage widths.
+
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
 — a comparison against zero carries no information beyond the value's own
@@ -778,6 +815,30 @@ arm has no p-code op available as a token-markup anchor. Such labels use the
 same switch-width, signedness, and integer-format rules as op-backed labels,
 but are emitted as plain syntax with no fabricated `opref`; `default:` remains
 an unvalued label.
+
+**Every label labels a statement.** Label placement in the printed C is valid
+C99/C11/C17 and does not rely on C23. In those dialects a label is part of a
+labeled statement, so `case 2:`, `default:` or `label_10ad:` directly before a
+closing brace is a syntax error ("label at end of compound statement"). The shape arises whenever the labeled code prints nothing: a switch
+arm whose jump-table entry is a branch-only block that leaves the switch, a
+`default:` that is also a goto target at the end of the switch, or a goto target
+that is only the jump back to a loop head or the join before a closing brace.
+The emitter keeps a record of whether a label was the last thing printed
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_labelstmt.rs`, held on the emitter
+state so both the plain-text and the markup leaf see it): the case, default and
+goto label writers set it, and starting a statement or opening a brace clears
+it, while a comment does not. The last arm of a switch that still ends on a
+label gets `break;` (`printc.rs (PrintC::emit_block_switch_c)`), which leaves the
+switch exactly as falling off its end does. Any other closing brace reached
+with the record set, including a loop body's and the function's own, first
+prints the null statement `;` on its own line. A label followed by another
+label, a statement, or a nested block is untouched, so output that was already
+valid does not change. The Rust back-end (§9.6) needs no counterpart: it prints
+labels as comments and an empty arm as `N => { }`. The ARM and x86-64 shapes are
+pinned by `tests/stages/kuna-labelstmt-arm.xml` and
+`tests/stages/kuna-labelstmt-x64.xml`, and the kuna-cli round trip
+`emitted_label_statements.rs` compiles the printed functions with
+`-std=c11 -pedantic-errors` and checks that they behave like their source.
 
 **Pending-brace ownership.** The `else if` collapse is a *lazy* brace. An
 if-node that is itself the else-clause of its parent registers a brace with the

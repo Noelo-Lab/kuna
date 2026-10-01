@@ -6,15 +6,16 @@
 //!   kuna_wasm <binary> <spec-root> inspect <name>|0x<addr> [OPTIONS]
 //!   kuna_wasm <binary> <spec-root> read 0x<addr> <len> [OPTIONS]
 //!   kuna_wasm <binary> <spec-root> xrefs <name>|0x<addr> [OPTIONS]
+//!   kuna_wasm <binary> <spec-root> strings [OPTIONS]
 //!   kuna_wasm <binary> <spec-root> project [<display-name>] [OPTIONS]
 //! OPTIONS: --mode MODE, --language LANG, and repeatable --assert DIRECTIVE.
 //!
 //! `<binary>` and `<spec-root>` are paths in the (virtual) filesystem. Writes a
 //! JSON document to stdout (`list`/`decompile`: the shape of
-//! `kuna decompile-all --json` plus a per-function `"kind"`; `inspect`/`read`/`xrefs`:
-//! the study view's documents; `project`: the whole-binary
-//! `.c`/`.h`/`.asm`/`README.md` artifacts — named after `<display-name>`,
-//! default the binary's basename — as one document); errors go to stderr with a
+//! `kuna decompile-all --json` plus a per-function `"kind"`;
+//! `inspect`/`read`/`xrefs`/`strings`: the study view's documents; `project`:
+//! the whole-binary `.c`/`.h`/`.asm`/`README.md` artifacts — named after
+//! `<display-name>`, default the binary's basename — as one document); errors go to stderr with a
 //! nonzero exit code. See `kuna_wasm::run_request` and
 //! `docs/web-integration.md`.
 
@@ -57,7 +58,7 @@ fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
     if argv.len() < 4 {
         eprintln!(
-            "usage: {} <binary> <spec-root> <list|decompile|inspect|read|xrefs|project> \
+            "usage: {} <binary> <spec-root> <list|decompile|inspect|read|xrefs|strings|project> \
              [name|0xaddr|0xaddr len|display-name] [--mode auto|reliable|aggressive|fast] \
              [--language auto|c|rust] [--assert DIRECTIVE]...",
             argv[0]

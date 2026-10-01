@@ -20,11 +20,13 @@ export function findChrome() {
 }
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+const STDERR_DRAIN_MS = 250;
 
 /**
  * Launch headless Chrome (with any extra `flags`); resolves `{port, child,
  * close}` once it publishes its DevTools port. A cold start on a busy CI
- * runner can take well over ten seconds, so it waits up to a minute.
+ * runner can take well over ten seconds, so it waits up to a minute. An early
+ * exit allows up to 250 ms more for stderr, even past the startup deadline.
  */
 export async function launchChrome(chromePath = findChrome(), { width = 1280, height = 860, flags = [], startupTimeoutMs = 60000 } = {}) {
   if (!chromePath) throw new Error('Chrome executable not found');
@@ -33,6 +35,7 @@ export async function launchChrome(chromePath = findChrome(), { width = 1280, he
   }
   const profile = mkdtempSync(join(tmpdir(), 'kuna-cdp-'));
   let child;
+  let dispose = () => {};
   const cleanup = () => {
     try { rmSync(profile, { recursive: true, force: true }); } catch (_) { /* retried when the child closes */ }
   };
@@ -50,17 +53,50 @@ export async function launchChrome(chromePath = findChrome(), { width = 1280, he
       '--remote-debugging-port=0', `--user-data-dir=${profile}`,
       `--window-size=${width},${height}`, ...flags, 'about:blank',
     ], { stdio: ['ignore', 'ignore', 'pipe'] });
-    child.once('close', cleanup);
+    child.once('close', () => { dispose(); cleanup(); });
     child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-8192); });
+    let chunks = 0;
+    const capture = (chunk) => { chunks++; stderr = (stderr + chunk).slice(-8192); };
+    child.stderr.on('data', capture);
+    const readBuffered = () => {
+      const before = chunks;
+      const chunk = child.stderr.read();
+      // Closed/errored streams can return buffered data without emitting 'data'.
+      if (chunk !== null && chunks === before) capture(chunk);
+    };
+    let stderrDone = false;
+    let finishDrain;
+    const onStderrDone = () => { readBuffered(); stderrDone = true; finishDrain?.(); };
+    child.stderr.once('end', onStderrDone);
+    child.stderr.once('close', onStderrDone);
+    child.stderr.on('error', onStderrDone);
+    const drainStderr = () => new Promise((resolve) => {
+      const done = () => { clearTimeout(timer); finishDrain = undefined; resolve(); };
+      const timer = setTimeout(() => { readBuffered(); done(); }, STDERR_DRAIN_MS);
+      finishDrain = done;
+      readBuffered();
+      child.stderr.resume();
+      if (stderrDone || child.stderr.readableEnded || child.stderr.closed) done();
+    });
     let spawnError;
     let exited;
-    child.once('error', (error) => { spawnError = error; });
-    child.once('exit', (code, signal) => { exited = { code, signal }; });
+    const onError = (error) => { spawnError = error; };
+    const onExit = (code, signal) => { exited = { code, signal }; };
+    child.once('error', onError);
+    child.once('exit', onExit);
+    dispose = () => {
+      readBuffered();
+      finishDrain?.();
+      child.stderr.removeListener('data', capture);
+      for (const event of ['end', 'close', 'error']) child.stderr.removeListener(event, onStderrDone);
+      child.removeListener('error', onError);
+      child.removeListener('exit', onExit);
+    };
     const deadline = Date.now() + startupTimeoutMs;
     for (;;) {
       if (spawnError) throw failure(`Could not start Chrome: ${spawnError.message}`);
       if (exited) {
+        await drainStderr();
         throw failure(`Chrome exited before publishing its DevTools port (${exited.signal ? `signal ${exited.signal}` : `code ${exited.code}`})`);
       }
       let portFile = '';

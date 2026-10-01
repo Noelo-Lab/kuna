@@ -85,14 +85,30 @@
   </header>
 
   <div class="d2-body welcome" id="work">
-    <aside id="sidebar" aria-label="Functions">
-      <div class="d2-search">
-        <input class="d2-input" id="fnfilter" type="search" disabled placeholder="Search functions"
-               autocomplete="off" autocapitalize="off" spellcheck="false"
-               aria-label="Search functions" aria-controls="fnlist">
+    <aside id="sidebar" aria-label="Functions and strings">
+      <div class="d2-seg d2-sidetabs" id="sidetabs" role="tablist" aria-label="Lists">
+        <button role="tab" id="side-fns" data-side="fns" aria-controls="fnpanel" aria-selected="true">Functions</button>
+        <button role="tab" id="side-strs" data-side="strs" aria-controls="strpanel" aria-selected="false" tabindex="-1"
+                title="The text in the program, and the functions that use it">Strings</button>
       </div>
-      <div id="fnlist"></div>
-      <p class="d2-fnnone" id="fnnone" hidden>No functions match</p>
+      <div class="d2-sidepanel" id="fnpanel" role="tabpanel" aria-labelledby="side-fns">
+        <div class="d2-search">
+          <input class="d2-input" id="fnfilter" type="search" disabled placeholder="Search functions"
+                 autocomplete="off" autocapitalize="off" spellcheck="false"
+                 aria-label="Search functions" aria-controls="fnlist">
+        </div>
+        <div id="fnlist"></div>
+        <p class="d2-fnnone" id="fnnone" hidden>No functions match</p>
+      </div>
+      <div class="d2-sidepanel" id="strpanel" role="tabpanel" aria-labelledby="side-strs" hidden>
+        <div class="d2-search">
+          <input class="d2-input" id="strfilter" type="search" disabled placeholder="Search strings, like flag"
+                 autocomplete="off" autocapitalize="off" spellcheck="false"
+                 aria-label="Search strings" aria-controls="strlist">
+        </div>
+        <div id="strlist"></div>
+        <p class="d2-fnnone" id="strnone" hidden></p>
+      </div>
     </aside>
 
     <main class="d2-main" id="main">

@@ -181,3 +181,22 @@ fn allocation_matches_a_first_free_name_reference() {
         }
     }
 }
+
+#[test]
+fn identifiers_taken_outside_the_function_match_reserving_them_up_front() {
+    let cases: [(&[&str], &[&str], &[&str]); 4] = [
+        (&["value", "value", "callee", "callee"], &[], &["value_1", "callee_1"]),
+        (&["value", "value", "debug_name", "debug_name"], &["value"], &["debug_name"]),
+        (&["word", "word", "word_1", "word"], &["a0"], &["word", "word_2"]),
+        (&["v2", "v2", "v2", "v2_1"], &[], &["v2_1", "v2_3", "v2_4"]),
+    ];
+    for (locals, occupied, globals) in cases {
+        let mut reserved =
+            DeclNameUniquifier::new(locals.iter().copied(), occupied.iter().chain(globals).copied());
+        let mut queried = DeclNameUniquifier::new(locals.iter().copied(), occupied.iter().copied());
+        let taken = |name: &str| globals.contains(&name);
+        for &name in locals {
+            assert_eq!(queried.unique_with(name, &taken), reserved.unique(name), "{locals:?} {globals:?}");
+        }
+    }
+}

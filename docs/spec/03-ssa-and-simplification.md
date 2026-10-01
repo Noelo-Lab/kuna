@@ -923,6 +923,14 @@ per-field transfers using recovered types — described with the type system in
 chapter 05, as is lane division (`ActionLaneDivide` in stackstall, over
 `subflow.rs (LaneDivide)` (built over `transform.rs (TransformManager)`)).
 
+When `SplitDatatype` divides a constant, `kuna_constantbytes.rs` extracts
+byte ranges from its 64-bit payload and returns zero beyond that payload.
+For `PIECE` and `INT_ZEXT`, extraction respects the low operand's declared
+byte width, including ranges that cross into the high operand. Both endian
+orders use the same bounded extraction after mapping the field offset; no
+shift wraps at the host word width. Output pieces wider than the host payload
+still decline the extended-constant rewrite.
+
 **Which copies the split declines** (`subflow.rs
 (SplitDatatype::test_copy_constraints)`). Upstream refuses a COPY whose input is
 a function input, whose input and output are address-tied at the *same* address

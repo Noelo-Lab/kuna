@@ -1,0 +1,44 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!-- Synthetic GCC -O2 code from the union transfers and numeric casts in
+     the corresponding CLI runtime test. bits32 flips the sign bit; the other
+     transfers preserve the input bits. No external binary is required. -->
+<bytechunk space="ram" offset="0x1000">00f1004300ee103a704700bf82b08ded010a019802b0704741ec100b704700bf51ec100b704700bf00ee100ab8eec00a704700bffdeec07a17ee900a704700bf08b5fff7feff41ec100b08bd08b551ec100bfff7feff08bd</bytechunk>
+<symbol space="ram" offset="0x1000" name="bits32"/>
+<symbol space="ram" offset="0x100c" name="unbits32"/>
+<symbol space="ram" offset="0x1018" name="bits64"/>
+<symbol space="ram" offset="0x1020" name="unbits64"/>
+<symbol space="ram" offset="0x1028" name="numeric32"/>
+<symbol space="ram" offset="0x1034" name="trunc32"/>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x1000] [ram,0x1100]</com>
+  <com>parse line extern float4 bits32(uint4 x);</com>
+  <com>parse line extern uint4 unbits32(float4 x);</com>
+  <com>parse line extern float8 bits64(uint8 x);</com>
+  <com>parse line extern uint8 unbits64(float8 x);</com>
+  <com>parse line extern float4 numeric32(int4 x);</com>
+  <com>parse line extern int4 trunc32(float4 x);</com>
+  <com>load function bits32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function unbits32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function bits64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function unbits64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function numeric32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function trunc32</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Bit reinterpret thumb #1: storage transfers use a union" min="4" max="4">union \{</stringmatch>
+<stringmatch name="Bit reinterpret thumb #2: numeric integer conversion stays a cast" min="1" max="1">return \(float4\)\(int8\)x;</stringmatch>
+<stringmatch name="Bit reinterpret thumb #3: numeric float truncation stays a cast" min="1" max="1">return \(int4\)x;</stringmatch>
+</decompilertest>

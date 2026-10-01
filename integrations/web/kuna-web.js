@@ -4,7 +4,7 @@
 // function or all of them), `project` (whole-binary .c/.h/.asm/README
 // export — the "Download Binary Source" zip), and the study-view commands
 // `inspect` (one function with its token/line/instruction maps), `read` (raw
-// bytes) and `xrefs`. Every command takes the edit session as repeated
+// bytes), `xrefs` and `strings`. Every command takes the edit session as repeated
 // `--assert <directive>` arguments.
 //
 // It loads the `kuna_wasm` WebAssembly module (the engine's in-process decompile
@@ -122,7 +122,7 @@ function parseLdefs(text, dir, map) {
 /**
  * Load the decompiler once: compile the wasm and preload the small spec files.
  * `.sla` files are fetched lazily per binary. Returns `{ list, decompile,
- * project, inspect, read, xrefs, formatName, engine, buildId }`; every
+ * project, inspect, read, xrefs, strings, formatName, engine, buildId }`; every
  * command takes `{ mode, language, assertions }`. `buildId()` is the engine's
  * build id, the SHA-256 of the exact wasm bytes compiled here. `engine`
  * ({module, build, bundle}) is what was loaded; passed back in (with `specs`,
@@ -296,6 +296,10 @@ export async function loadKuna({ wasmUrl, specRoot, smallBundleUrl, engine = nul
     /** Callers, callees and data references of one function. */
     async xrefs(binaryBytes, target, options = {}) {
       return command(binaryBytes, 'xrefs', target, options);
+    },
+    /** Every string literal with the instructions that use it. */
+    async strings(binaryBytes, options = {}) {
+      return command(binaryBytes, 'strings', undefined, options);
     },
     /**
      * Export the whole binary as a recompile-oriented project (every function,

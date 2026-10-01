@@ -37,6 +37,20 @@ fn ordinary_and_default_case_labels_are_unchanged() {
     assert_eq!(print.emit_mut().output_str(), "\ncase 0xff:\ndefault:");
 }
 
+/// A case or default label is a label like any other: one that reaches a
+/// closing brace with nothing after it gets a statement (`kuna_labelstmt`).
+#[test]
+fn case_and_default_labels_before_a_closing_brace_get_a_statement() {
+    let mut print = PrintC::new();
+    print.set_output_stream();
+    let id = print.emit_mut().open_brace_indent("{", EmitBraceStyle::SameLine);
+    print.emit_numeric_case_label(1, 4, false, None);
+    print.emit_default_case_label(0, &MarkupRef::none());
+    print.emit_mut().close_brace_indent("}", id);
+
+    assert_eq!(print.emit_mut().output_str(), " {\n  case 1:\n  default:\n  ;\n}");
+}
+
 /// `option indentincrement` lives on the emitter leaf, and a markup render
 /// swaps the leaf twice: the setting must survive both swaps.
 #[test]
@@ -229,6 +243,90 @@ mod stack_pointer_high_leaf {
 
         assert_eq!(render_leaf(&fd, scratch_unique, op), unique_name);
         assert!(unique_name.starts_with("Unique"));
+    }
+
+    #[test]
+    fn address_only_locals_use_the_object_type_and_storage_locals_keep_their_width() {
+        for (reference, object_size, want) in [(true, 4, "int4"), (true, 8, "int8"), (false, 4, "int8")] {
+            let (mut fd, register) = build_fd();
+            let named_int = |size| {
+                let mut t = Datatype::new(size, type_metatype::TYPE_INT);
+                t.name = format!("int{size}");
+                t.display_name = t.name.clone();
+                Rc::new(t)
+            };
+            let vn = if reference {
+                let vn = fd.new_constant(8, 0xffff_ffff_ffff_fff0);
+                fd.vbank_mut().get_mut(vn).unwrap().update_type(named_int(8));
+                vn
+            } else {
+                fd.new_varnode(8, &Address::new(register, 0x20), Some(named_int(8)))
+            };
+            fd.set_high_level();
+            let high = fd.vbank().get(vn).unwrap().get_high().unwrap();
+            let h = fd.high_bank_mut().get_mut(high).unwrap();
+            h.set_kuna_name("local");
+            h.set_symbol_type(named_int(object_size));
+            h.set_symbol_offset(0);
+            let p = PrintC::new();
+            let (front, back, array, _) = p.rendered_local_decl(&fd, &bare_arch(), high);
+            assert_eq!(front, want, "reference={reference}, object_size={object_size}");
+            assert!(back.is_empty() && array.is_none());
+        }
+    }
+
+    #[test]
+    fn an_address_only_local_keeps_the_address_width_when_a_split_neighbour_lies_inside_it() {
+        use kuna_base::space::{SpacebaseSpace, VarnodeStorage};
+        let named_int = |size: int4| {
+            let mut t = Datatype::new(size, type_metatype::TYPE_INT);
+            t.name = format!("int{size}");
+            t.display_name = t.name.clone();
+            Rc::new(t)
+        };
+        for (neighbour, want) in [(None, "int4"), (Some((-0x10, 4)), "int8"), (Some((-0x10, 8)), "int4")] {
+            let mut manage = AddrSpaceManager::new();
+            manage.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+            manage.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+            let register = Rc::new(AddrSpace::new(
+                spacetype::IPTR_PROCESSOR,
+                "register",
+                false,
+                8,
+                1,
+                2,
+                addrspace_flags::hasphysical,
+                1,
+                1,
+            ));
+            manage.insert_space(Rc::clone(&register)).unwrap();
+            manage.insert_space(Rc::new(SpacebaseSpace::new("stack", 3, 8, &register, 1, true, false))).unwrap();
+            let stack = Rc::clone(manage.get_stack_space().unwrap());
+            let sp = VarnodeStorage { space: Some(Rc::clone(&register)), offset: 0x20, size: 8 };
+            manage.add_spacebase_pointer(&stack, &sp, 8, true).unwrap();
+            let glb = Rc::new(ArchContext::new(manage));
+            let mut fd = Funcdata::new("f", "f", glb, Address::new(register, 0x1000), 0x1000, 0x20).unwrap();
+            let at = |off: i64| Address::new(Rc::clone(&stack), stack.wrap_offset(off as u64));
+            let inv = Address::new_invalid();
+            let lm = fd.get_scope_local_mut().unwrap();
+            let local = lm.add_symbol("local", named_int(4), &at(-0x14), &inv).unwrap();
+            if let Some((off, size)) = neighbour {
+                lm.add_symbol("next", named_int(size), &at(off), &inv).unwrap();
+                fd.new_varnode(size, &at(off), Some(named_int(size)));
+            }
+            let vn = fd.new_constant(8, stack.wrap_offset(-0x14i64 as u64));
+            fd.vbank_mut().get_mut(vn).unwrap().update_type(named_int(8));
+            fd.set_high_level();
+            let high = fd.vbank().get(vn).unwrap().get_high().unwrap();
+            let h = fd.high_bank_mut().get_mut(high).unwrap();
+            h.set_kuna_name("local");
+            h.set_symbol_type(named_int(4));
+            h.set_symbol_offset(0);
+            h.set_kuna_ref_symbol(local);
+            let p = PrintC::new();
+            let (front, _, _, _) = p.rendered_local_decl(&fd, &bare_arch(), high);
+            assert_eq!(front, want, "neighbour={neighbour:?}");
+        }
     }
 
     #[test]
@@ -2193,6 +2291,131 @@ mod w10_printc_cast_render {
         p.set_output_stream();
         p.op_type_cast_ir(fd, &arch, op);
         p.emit_mut().output_str().to_string()
+    }
+
+    #[test]
+    fn only_a_cast_reinterprets_float_bits_even_with_cast_printing_disabled() {
+        for opcode in [OpCode::CPUI_CAST, OpCode::CPUI_COPY] {
+            for size in [4, 8] {
+                let mut fd = build_fd();
+                let op = mk_op(&mut fd, 1, 0x20, opcode);
+                let bits = if size == 4 { 0xbf800000 } else { 0xbff0000000000000 };
+                let input = fd.new_constant(size, bits);
+                fd.vbank_mut().get_mut(input).unwrap().update_type(named("bits", size, type_metatype::TYPE_UINT));
+                fd.op_set_input(op, input, 0).unwrap();
+                let out = fd.new_varnode(size, &Address::new(ram(&fd), 0x400),
+                    Some(named(if size == 4 { "float" } else { "double" }, size, type_metatype::TYPE_FLOAT)));
+                fd.op_set_output(op, out).unwrap();
+                for nocasts in [false, true] {
+                    let mut p = PrintC::new();
+                    p.set_no_cast_printing(nocasts);
+                    p.set_output_stream();
+                    p.op_push_ir(&fd, &bare_arch(), op, None);
+                    let text = p.emit_mut().output_str();
+                    if opcode == OpCode::CPUI_CAST {
+                        assert!(text.contains("union {") && text.ends_with(".to"), "{opcode:?} {size}: {text}");
+                    } else {
+                        assert!(!text.contains("union"), "{opcode:?} {size}: {text}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn float_constant_storage_transfers_keep_nan_payloads() {
+        for (size, payload) in [(4, 0xffa12345), (8, 0xfff0123456789abc)] {
+            let mut fd = build_fd();
+            let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CAST);
+            let input = fd.new_constant(size, payload);
+            fd.vbank_mut().get_mut(input).unwrap().update_type(named("float", size, type_metatype::TYPE_FLOAT));
+            fd.op_set_input(op, input, 0).unwrap();
+            let out = fd.new_varnode(size, &Address::new(ram(&fd), 0x400),
+                Some(named("bits", size, type_metatype::TYPE_UINT)));
+            fd.op_set_output(op, out).unwrap();
+            for language in ["c", "rust"] {
+                let mut p = PrintC::new();
+                p.set_name(language);
+                p.set_output_stream();
+                p.op_push_ir(&fd, &bare_arch(), op, None);
+                let text = p.emit_mut().output_str();
+                let want = if language == "rust" { format!("0x{payload:x}u{}", size * 8) }
+                    else { format!("0x{payload:x}") };
+                assert_eq!(text, want);
+            }
+        }
+    }
+
+    #[test]
+    fn a_bit_transfer_evaluates_an_implied_call_once() {
+        let mut fd = build_fd();
+        let call = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CALL);
+        let callee = fd.new_constant(8, 0x2000);
+        fd.op_set_input(call, callee, 0).unwrap();
+        let value = fd.new_varnode(8, &Address::new(ram(&fd), 0x400),
+            Some(named("double", 8, type_metatype::TYPE_FLOAT)));
+        fd.op_set_output(call, value).unwrap();
+        fd.vbank_mut().get_mut(value).unwrap().set_implied();
+        let cast = mk_op(&mut fd, 1, 0x24, OpCode::CPUI_CAST);
+        fd.op_set_input(cast, value, 0).unwrap();
+        let out = fd.new_varnode(8, &Address::new(ram(&fd), 0x408),
+            Some(named("bits", 8, type_metatype::TYPE_UINT)));
+        fd.op_set_output(cast, out).unwrap();
+        for language in ["c", "rust"] {
+            let mut p = PrintC::new();
+            p.set_name(language);
+            p.set_output_stream();
+            p.op_push_ir(&fd, &bare_arch(), cast, None);
+            let text = p.emit_mut().output_str();
+            assert_eq!(text.matches("func_0x2000()").count(), 1, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_signed_bit_transfer_names_the_signed_word_in_the_union() {
+        for (size, float, word) in [(4, "float", "int"), (8, "double", "long long")] {
+            let mut fd = build_fd();
+            let call = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CALL);
+            let callee = fd.new_constant(8, 0x2000);
+            fd.op_set_input(call, callee, 0).unwrap();
+            let value = fd.new_varnode(size, &Address::new(ram(&fd), 0x400),
+                Some(named(float, size, type_metatype::TYPE_FLOAT)));
+            fd.op_set_output(call, value).unwrap();
+            fd.vbank_mut().get_mut(value).unwrap().set_implied();
+            let cast = mk_op(&mut fd, 1, 0x24, OpCode::CPUI_CAST);
+            fd.op_set_input(cast, value, 0).unwrap();
+            let out = fd.new_varnode(size, &Address::new(ram(&fd), 0x408),
+                Some(named("sword", size, type_metatype::TYPE_INT)));
+            fd.op_set_output(cast, out).unwrap();
+            let mut p = PrintC::new();
+            p.set_output_stream();
+            p.op_push_ir(&fd, &bare_arch(), cast, None);
+            let text = p.emit_mut().output_str();
+            assert_eq!(text, format!("((union {{ {float} from; {word} to; }}){{ .from = func_0x2000() }}).to"));
+        }
+    }
+
+    #[test]
+    fn unknown_call_returns_do_not_establish_integer_storage_transfers() {
+        for meta in [type_metatype::TYPE_UNKNOWN, type_metatype::TYPE_UINT] {
+            let mut fd = build_fd();
+            let call = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CALL);
+            let callee = fd.new_constant(8, 0x2000);
+            fd.op_set_input(call, callee, 0).unwrap();
+            let value = fd.new_varnode(4, &Address::new(ram(&fd), 0x400), Some(named("word", 4, meta)));
+            fd.op_set_output(call, value).unwrap();
+            fd.vbank_mut().get_mut(value).unwrap().set_implied();
+            let cast = mk_op(&mut fd, 1, 0x24, OpCode::CPUI_CAST);
+            fd.op_set_input(cast, value, 0).unwrap();
+            let out = fd.new_varnode(4, &Address::new(ram(&fd), 0x408),
+                Some(named("float", 4, type_metatype::TYPE_FLOAT)));
+            fd.op_set_output(cast, out).unwrap();
+            let mut p = PrintC::new();
+            p.set_output_stream();
+            p.op_push_ir(&fd, &bare_arch(), cast, None);
+            let text = p.emit_mut().output_str();
+            assert_eq!(text.contains("union {"), meta == type_metatype::TYPE_UINT, "{text}");
+        }
     }
 
     /// FAITHFULNESS (1a): a `CPUI_CAST` whose output is `int8` renders

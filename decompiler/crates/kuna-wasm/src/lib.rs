@@ -18,8 +18,8 @@
 //! Every command takes repeatable `--assert <directive>` — the CLI's override
 //! plane ([`kuna_console::assertsyntax`] / [`kuna_console::assertions`]), applied
 //! in the CLI's order — and reports what became of each directive in an
-//! `assertions` array. `inspect` and `read` are the study view's documents
-//! ([`inspect`]).
+//! `assertions` array. `inspect`, `read`, `xrefs` and `strings` are the study
+//! view's documents ([`inspect`]).
 //!
 //! # Why WASI
 //! The decompiler touches the outside world only through plain `std::fs` path
@@ -87,6 +87,8 @@ enum Cmd {
     Read { addr: u64, len: u64 },
     /// One function's callers, callees and data references.
     Xrefs(Selector),
+    /// Every string literal with the instructions that use it.
+    Strings,
 }
 
 /// One front-end invocation: the argv of `kuna_wasm` as data.
@@ -203,6 +205,10 @@ fn parse_command(cmd: &str, args: &[String], binary: &str) -> Result<Cmd, String
             at_most(1)?;
             Cmd::Xrefs(Selector::parse(arg.ok_or("`xrefs` needs a function name or 0x address")?))
         }
+        "strings" => {
+            at_most(0)?;
+            Cmd::Strings
+        }
         "read" => {
             let [addr, len] = args else {
                 return Err("`read` needs <0xADDR> <LEN>".to_string());
@@ -218,7 +224,7 @@ fn parse_command(cmd: &str, args: &[String], binary: &str) -> Result<Cmd, String
         }
         other => {
             return Err(format!(
-                "unknown command: {other:?} (want `list`, `decompile`, `project`, `inspect`, `read` or `xrefs`)"
+                "unknown command: {other:?} (want `list`, `decompile`, `project`, `inspect`, `read`, `xrefs` or `strings`)"
             ))
         }
     })
@@ -293,6 +299,16 @@ pub fn run_request(req: &Request) -> Result<String, String> {
             let file = kuna_analysis::loadimage_object::parse_object(&*bytes)
                 .map_err(|e| format!("could not parse {binary}: {e}"))?;
             Ok(inspect::xrefs_json(binary, &prog, &file, &target, &prog.assertion_outcomes()))
+        }
+        Cmd::Strings => {
+            let bytes = kuna_analysis::loader::elf_shdr::read_image(binary)
+                .map_err(|e| format!("could not read {binary}: {e}"))?;
+            let raw = kuna_analysis::loadimage_object::parse_object(&*bytes)
+                .map_err(|e| format!("could not parse {binary}: {e}"))?;
+            let view = kuna_analysis::loader::kuna_relocrebase::rebased_view(&raw, &bytes);
+            let (file, scanned) = kuna_analysis::loader::kuna_relocrebase::select(raw, &bytes, &view);
+            let rebased = view.as_ref().filter(|v| v.bytes.as_ptr() == scanned.as_ptr());
+            Ok(inspect::strings_json(binary, &prog, &file, rebased, &prog.assertion_outcomes()))
         }
         Cmd::Inspect(ref selector) => {
             let targets = resolve_targets(&prog, &command)?;
@@ -595,7 +611,7 @@ fn resolve_targets(
         Cmd::DecompileAddr(vma) | Cmd::Inspect(Selector::Addr(vma)) | Cmd::Xrefs(Selector::Addr(vma)) => {
             one(&EntrySelector::Numeric(*vma))
         }
-        Cmd::List | Cmd::Project(_) | Cmd::Read { .. } => {
+        Cmd::List | Cmd::Project(_) | Cmd::Read { .. } | Cmd::Strings => {
             Err("this command selects no decompile targets".to_string())
         }
     }
@@ -812,6 +828,8 @@ mod tests {
         assert!(parse("read", &["16", "16"]).is_err());
         assert!(matches!(parse("xrefs", &["0x1161"]), Ok(Cmd::Xrefs(Selector::Addr(0x1161)))));
         assert!(matches!(parse("project", &[]), Ok(Cmd::Project(name)) if name == "bin"));
+        assert!(matches!(parse("strings", &[]), Ok(Cmd::Strings)));
+        assert!(parse("strings", &["flag"]).unwrap_err().contains("at most 0"));
         assert!(parse("frobnicate", &[]).is_err());
     }
 
@@ -822,6 +840,7 @@ mod tests {
         assert!(command_wants_fast_funcdisc(&Cmd::DecompileAll));
         assert!(command_wants_fast_funcdisc(&Cmd::Project("binary".into())));
         assert!(command_wants_fast_funcdisc(&Cmd::List));
+        assert!(command_wants_fast_funcdisc(&Cmd::Strings));
         assert!(!command_wants_fast_funcdisc(&Cmd::Inspect(Selector::Addr(0x1234))));
         assert!(command_wants_fast_funcdisc(&Cmd::Inspect(Selector::Name("main".into()))));
         assert!(!command_wants_fast_funcdisc(&Cmd::Read { addr: 0x1234, len: 4 }));
