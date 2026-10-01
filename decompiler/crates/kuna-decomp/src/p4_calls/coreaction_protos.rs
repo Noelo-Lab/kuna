@@ -1283,10 +1283,11 @@ impl Action for ActionActiveParam {
                 // only past a full register file.
                 fc.get_active_input().set_stack_arg_gap(stack_arg_gap);
                 crate::kuna_armfloatargs::mark_single_floats(&mut fc, data);
+                let written = crate::kuna_armfloatargs::written_inputs(&fc, data);
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.
                 let _ = fc.resolve_and_derive_input_map(&manager_rc);
-                crate::kuna_armfloatargs::cap_stated_inputs(&mut fc, data);
+                crate::kuna_armfloatargs::cap_stated_inputs(&mut fc, data, &written);
                 // (kuna `formatstring`) A resolved format call's declared
                 // arguments are arguments whatever the positional rules made
                 // of the gap in front of them.

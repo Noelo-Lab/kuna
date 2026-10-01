@@ -37,22 +37,30 @@ At a call, the callee's stated single-precision parameters are taken word by
 word out of a d-register range the call may not take whole, so values written
 into s0 and s1 after an earlier double result reach the call as written. When
 the callee's recovered contract is arity-sound, the call takes the VFP inputs
-that contract states, so caller and callee agree on every VFP position. A
-stated input is an argument even where the positional rules ended the list in
-front of it: a constant the caller left in d1 for its own arithmetic is the
-argument for an ignored `double` the callee states there, and the used double
-after it stays in place. A stated input the caller never wrote, in front of a
-later one it did, is passed as whatever value reaches the call. A positional
-filler the contract skips while stating a later VFP input, such as the back-fill
-slot, is dropped. Any other unstated VFP input is dropped only where the
-callee's body, followed through its own calls, neither reads nor forwards that
-register: an s-register in which the caller happens to leave a value, such as a
-constant it used for its own arithmetic or a stale half of an earlier double,
-is then not an argument, while a callee whose body is cut short or reaches code
-no walk accounts for keeps every argument its callers recover. A stated input
-the call holds only in part, or that overlaps an unstated argument the call
-keeps, leaves the call's arguments as recovered. A word the caller forwards is
-never passed as the callee's stated double.
+that contract states up to the last one the caller wrote for the call or the
+callee's body, followed through its own calls, is seen to read, so caller and
+callee agree on every VFP position in front of it. A stated input there is an
+argument even where the positional rules ended the list before it: a constant
+the caller left in d1 for its own arithmetic is the argument for an ignored
+`double` the callee states there, and the used double after it stays in place.
+A stated input there that the caller never wrote is passed as whatever value
+reaches the call, which is how a wrapper forwards its own inputs. Stated inputs
+past that point stay as the call recovered them, so a contract that lists more
+registers than anything is seen to use adds no argument. A positional filler
+the contract skips while stating a later VFP input, such as the back-fill slot,
+is dropped. Any other unstated VFP input is dropped only where the callee's
+body, followed through its own calls, neither reads nor forwards that register:
+an s-register in which the caller happens to leave a value, such as a constant
+it used for its own arithmetic or a stale half of an earlier double, is then
+not an argument, while a callee whose body is cut short or reaches code no walk
+accounts for keeps every argument its callers recover. A stated input the
+caller's own scoring ruled out has already lost its value, so it is kept, as
+zero, only where the callee's body provably ignores the register; where the
+callee reads it, or where the call holds a stated input only in part or under
+an unstated argument it keeps, the call's arguments stay as recovered. A call
+that recovered no argument at all, to a callee that also states core-register
+inputs, is left to the rescue that recovers both banks. A word the caller
+forwards is never passed as the callee's stated double.
 
 Declared prototypes keep their parameter order. For stripped functions whose
 core and VFP banks do not reveal source order, recovery uses the model's VFP

@@ -197,19 +197,27 @@ pub fn mark_own_reads(active: &mut crate::fspec::ParamActive, data: &Funcdata) {
     }
 }
 
-/// A call whose callee states an arity-sound contract takes the VFP inputs that
-/// contract states, so the call and the callee agree on every VFP position.
-///
-/// A stated input becomes an argument whatever the positional rules made of the
-/// slots in front of it: a value the caller wrote but the trial scoring took for
-/// its own, or, in front of a later stated input, whatever reaches the call where
-/// the caller never wrote the register. A positional filler the contract skips
-/// while stating a later VFP input, such as the AAPCS-VFP back-fill slot, is
-/// dropped. Any other unstated VFP input is dropped only where the callee's body,
-/// followed through its own calls, provably neither reads nor forwards that
-/// register. A stated input the call holds only in part, or under an unstated
-/// argument it keeps, leaves the positions as recovered.
-pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata) {
+/// The VFP input trials the caller's own data flow scored as arguments, taken
+/// before the positional rules run.
+pub fn written_inputs(call: &FuncCallSpecs, data: &Funcdata) -> Vec<(Address, i32)> {
+    if !data.get_arch().arm_float_args {
+        return Vec::new();
+    }
+    let active = call.active_input();
+    (0..active.get_num_trials())
+        .map(|i| active.get_trial(i))
+        .filter(|t| t.is_active())
+        .map(|t| (t.get_address().clone(), t.get_size()))
+        .collect()
+}
+
+/// Bind a call's VFP inputs to its callee's arity-sound contract, up to the
+/// last stated input the caller wrote or the callee provably reads: stated
+/// inputs in front of it become arguments, and a filler the contract skips is
+/// dropped. Another unstated input goes only where the callee neither reads nor
+/// forwards it. A stated input the scoring released and the callee reads, or
+/// one held in part, leaves the call as recovered.
+pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata, written: &[(Address, i32)]) {
     if !data.get_arch().arm_float_args || call.is_input_locked() || !call.proto().has_model() {
         return;
     }
@@ -248,6 +256,9 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata) {
             )
         })
         .collect();
+    if wanted.len() < stated.inputs.len() && !trials.iter().any(|(_, _, _, used, _)| *used) {
+        return;
+    }
     let mut drop = Vec::new();
     let mut kept = Vec::new();
     for (i, addr, size, used, unref) in &trials {
@@ -264,13 +275,44 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata) {
             kept.push((addr.clone(), *size));
         }
     }
+    let reads = data
+        .kuna_callee_entry_through(&entry)
+        .or_else(|| data.kuna_callee_entry_dead(&entry));
+    let reached = wanted
+        .iter()
+        .filter(|(addr, size)| {
+            written.iter().any(|(a, s)| a == addr && s == size)
+                || trials
+                    .iter()
+                    .any(|(_, a, s, used, _)| *used && a == addr && s == size)
+                || reads.is_some_and(|r| r.proves_input(addr, *size))
+        })
+        .map(|(a, _)| a)
+        .fold(None::<&Address>, |last, a| match last {
+            Some(l) if !above(a, l) => Some(l),
+            _ => Some(a),
+        });
+    let ignored = |addr: &Address, size: i32| {
+        data.kuna_callee_entry_dead(&entry)
+            .is_some_and(|d| d.proves_dead(addr, size))
+    };
     let mut bind = Vec::new();
     let mut missing = Vec::new();
     let mut partial = false;
     for (addr, size) in &wanted {
+        if !reached.is_some_and(|last| last == addr || above(last, addr)) {
+            continue;
+        }
         let exact = trials.iter().find(|(_, a, s, _, _)| a == addr && s == size);
         partial |= kept.iter().any(|(a, s)| overlaps(addr, *size, a, *s));
         match exact {
+            Some((i, _, _, false, _)) if active.get_trial(*i).is_definitely_not_used() => {
+                if ignored(addr, *size) {
+                    bind.push(*i);
+                } else {
+                    partial = true;
+                }
+            }
             Some((i, _, _, false, _)) => bind.push(*i),
             Some(_) => {}
             None if trials
@@ -294,12 +336,6 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata) {
         t.mark_active();
         t.mark_used();
     }
-    let present: Vec<&Address> = wanted
-        .iter()
-        .map(|(a, _)| a)
-        .filter(|a| !missing.iter().any(|(m, _)| m == *a))
-        .collect();
-    missing.retain(|(addr, _)| present.iter().any(|a| above(a, addr)));
     if missing.is_empty() {
         return;
     }

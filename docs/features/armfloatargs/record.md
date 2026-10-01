@@ -90,27 +90,46 @@ Three option-on shapes printed calls that disagreed with their callees:
 
 Three option-on shapes still printed calls that disagreed with their callees;
 `armfloatargs_calls.c` (fixtures in `kuna-analysis/tests/fixtures`, clang 14,
-ARM and Thumb at -O0, -O2 and Thumb -Os) holds one of each:
+ARM and Thumb at -O0 and -O2, and Thumb -Os) holds one of each:
 
 - `x3(float, float, float, double)` passes its double to `k7(float, float,
-  double, float)` in d1. The call's argument was typed by comparing the
-  caller's storage (d2) with the callee's (d1), so the double stayed two words
-  and `x3` printed a phantom `s3` and two integer words its callers never
-  passed. A value passed to a call now takes the type the callee states for the
-  slot it is passed in.
+  double, float)` in d1. The argument was typed by comparing the caller's
+  storage (d2) with the callee's (d1), so the double stayed two words and `x3`
+  printed a phantom `s3` and two integer words its callers never passed. A value
+  passed to a call now takes the type the callee states for the slot it is
+  passed in.
 - A call into a non-leaf back-fill callee kept a positional filler in `s3` on
   Thumb, and `fn5(float a, float unused, double d)` lost `unused` although its
-  -O0 body spills it from `s1`, so the call passed three arguments to a
-  two-parameter callee. The back-fill rule now leaves in a slot the function's
-  own body reads (a probe of its own entry, taken only with the option on), and
-  a call drops a filler its callee's contract skips below a stated input.
+  -O0 body spills it from `s1`. The back-fill rule now keeps a slot the
+  function's own body reads (a probe of its own entry, taken only with the
+  option on), and a call drops a filler its callee's contract skips.
 - `yd(float a, double unused, double d)`: clang leaves a scratch constant in
   d1, the trial scoring took it for the caller's own value, and the inactive
   chain ended the argument list there, dropping `d`. A call to a callee with an
-  arity-sound contract now takes every VFP input the contract states, filling a
-  stated slot the caller never wrote when a later stated input follows.
+  arity-sound contract now takes the contract's VFP inputs up to the last one
+  the caller wrote for the call or the callee is seen to read.
 
-With the option on, each of the five builds now prints `x3`, `v2`, `fn5` and
-`yd` with exactly their callees' parameters, and the printed C, compiled on the
+That frontier, and two more limits, came from a firmware sweep. A wrapper such
+as betaflight's `cosf` (`sinf(x + pi/2)`) states sixteen floats because its
+forwarding walk into `sinf` cannot finish; binding every stated input gave its
+callers sixteen arguments and their own callers phantom parameters, so inputs
+past the frontier are left alone. A stated input the caller's scoring rules out
+has had its value replaced by zero, so it is kept only where the callee
+provably ignores the register. A call that recovered no argument at all to a
+callee with core-register inputs is left to the empty-call rescue, which
+recovers both banks.
+
+With the option on, each of the five builds prints `x3`, `v2`, `fn5` and `yd`
+with exactly their callees' parameters, and the printed C, compiled on the
 host, computes the source's `top`; before, every build failed at least one of
-the four. Option-off output is unchanged: every new path is gated on the option.
+the four. On 20 firmware images (cf2, cleanflight and betaflight at O0, O2 and
+O2-noinline, libopencm3, RIOT, ChibiOS, NuttX, FreeRTOS), option-off output is
+byte-identical to the previous head and to `armfloatreturn` alone. With the
+option on, 12 images are unchanged against the previous head and 8 change in
+6-48 functions each; the callees whose callers disagree with them on arity fall
+by 4-31 per image, and one cf2 callee
+becomes newly inconsistent because its recovered prototype gained the float the
+binary passes in `s0` while a caller still lacks a core argument the compiler
+kept live across an earlier call (`-fipa-ra`). Spot checks against the
+disassembly (`sqrtf`, `__ieee754_rem_pio2f`, `__kernel_sinf` and pt2-filter
+calls) show the added arguments carry the values the binary passes.
