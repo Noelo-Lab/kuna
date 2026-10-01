@@ -2,8 +2,9 @@
 //! and moves it back into its own argument register to return it (`mov r4,r1;
 //! bl ext; mov r1,r4`) returns that register: the pair keeps both halves and the
 //! argument stays a parameter. The ARM and Thumb builds are compiled back from
-//! the printed C and compared with the source; the 128-bit AArch64 and x86-64
-//! returns print as a byte container, so those are checked by their text.
+//! the printed C and compared with the source, as is a RISC-V 32 shift whose
+//! zero-shift path moves only the high word back; the 128-bit AArch64 and
+//! x86-64 returns print as a byte container, so those are checked by their text.
 mod common;
 use common::process;
 use object::write::{Object, Relocation, Symbol, SymbolSection};
@@ -121,6 +122,32 @@ const X64: Image = Image {
     addend: -4,
     thumb: false,
 };
+
+/// clang -O2 RISC-V 32 of compiler-rt's `__ashrdi3` shape ([`ASHR_SOURCE`]):
+/// `mv a3,a1` copies the high word aside at entry, and the zero-shift path
+/// returns `a` with `mv a1,a3; ret`, leaving `a0` untouched.
+const RV32: Image = Image {
+    arch: Architecture::Riscv32,
+    e_flags: 0x5,
+    text: "13770602ae8609ef1dc2b3d5c64013070002118fb396e6003355c500558d8280\
+           93d5f641130506fe33d5a6408280b6858280",
+    functions: &[("ashr", 0x00, 0x32)],
+    calls: &[],
+    r_type: 0,
+    addend: 0,
+    thumb: false,
+};
+
+const ASHR_SOURCE: &str = r#"
+typedef long long di;
+typedef union { di all; struct { unsigned low; int high; } s; } dw;
+di s_ashr(di a, int b) {
+  dw in, r; in.all = a;
+  if (b & 32) { r.s.high = in.s.high >> 31; r.s.low = in.s.high >> (b - 32); }
+  else { if (b == 0) return a; r.s.high = in.s.high >> b; r.s.low = (in.s.high << (32 - b)) | (in.s.low >> b); }
+  return r.all;
+}
+"#;
 
 fn object(image: &Image) -> Vec<u8> {
     let hex: String = image.text.split_whitespace().collect();
@@ -307,4 +334,62 @@ fn a_128_bit_pair_keeps_the_argument_returned_in_its_own_register() {
             "{stem}: a one-register return stays one register\n{printed}"
         );
     }
+}
+
+/// Moving back only the high word proves the pair is returned: the zero-shift
+/// path hands back both words of `a`, never the high word alone.
+#[test]
+fn a_shift_that_returns_its_argument_unchanged_returns_both_words() {
+    let compilers: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "the round trip requires a C compiler");
+    let stem = "own-return-rv32";
+    let printed = decompile(stem, &RV32);
+    let body = function(&printed, "ashr");
+    assert!(
+        body.contains("unsigned long long ashr(unsigned int a0,int a1,unsigned int a2)"),
+        "{stem}\n{printed}"
+    );
+    assert!(body.contains("return CONCAT44(a1,a0);"), "{stem}\n{printed}");
+    let src = common::scratch_file(stem, "c");
+    let exe = common::scratch_file(stem, "exe");
+    std::fs::write(
+        &src,
+        format!(
+            r#"
+#define CONCAT44(h, l) ((unsigned long long)(unsigned int)(h) << 32 | (unsigned int)(l))
+{printed}
+{ASHR_SOURCE}
+int main(void) {{
+    unsigned long long v[] = {{0x1122334455667788ull, 0x8000000000000001ull, 0xffffffff00000000ull, 5}};
+    for (unsigned i = 0; i < sizeof(v) / sizeof(*v); ++i)
+        for (int b = 0; b < 64; ++b)
+            if (ashr((unsigned)v[i], (int)(v[i] >> 32), b) != (unsigned long long)s_ashr((di)v[i], b)) return 1;
+    return 0;
+}}
+"#
+        ),
+    )
+    .unwrap();
+    for cc in &compilers {
+        for level in ["-O0", "-O2"] {
+            let compile = Command::new(cc)
+                .args(["-std=gnu11", "-w", level, "-o"])
+                .arg(&exe)
+                .arg(&src)
+                .output()
+                .unwrap();
+            assert!(
+                compile.status.success(),
+                "{stem} {cc} {level}: {}\n{printed}",
+                String::from_utf8_lossy(&compile.stderr)
+            );
+            let status = Command::new(&exe).status().unwrap();
+            assert!(status.success(), "{stem} {cc} {level}: {status}\n{printed}");
+        }
+    }
+    std::fs::remove_file(src).unwrap();
+    std::fs::remove_file(exe).unwrap();
 }

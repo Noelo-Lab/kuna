@@ -109,7 +109,18 @@
 //! register and back, so a SPARC function that never touches `%o1` has this
 //! shape on every return; both instructions move the stack pointer, as does the
 //! `pop` of a pushed register. Nor does an incidental copy: Xtensa's `call8`
-//! swaps the argument registers out and back around the call.
+//! swaps the argument registers out and back around the call. Nor does a move
+//! followed, on its way to the RETURN, by a call or a CALLOTHER: an inline system
+//! call (`svc`, `ecall`, `sc`) reads its arguments from registers the p-code does
+//! not show, so `r1 = b; svc 0` in an `int` function is the call's argument, not
+//! a returned half.
+//!
+//! Moving a register back proves only that the function returns it. When the
+//! moved-back register is the high register of the pair and the low one reaches
+//! that RETURN as the function's own untouched argument, the pair is the
+//! function's argument handed back whole (an early `return a;` in a 64-bit
+//! shift that copied the high word aside), and the repair keeps the pair. The
+//! high register is never returned alone on the strength of the move.
 //!
 //! Gated by `option retinputhalf on|off`.
 
@@ -117,7 +128,7 @@ use kuna_base::address::Address;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
-use crate::context::{OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 use crate::fspec::ParamActive;
 use crate::funcdata::Funcdata;
 
@@ -199,16 +210,57 @@ fn move_source(data: &Funcdata, op: &crate::op::PcodeOp) -> Option<VarnodeId> {
     }
 }
 
-/// Is `vn`, read by a RETURN as the half stored at `addr`/`size`, the function's
-/// own input at that storage moved out to another register and back?
+/// Can an op that reads registers its p-code does not show -- a CALLOTHER such
+/// as `svc`, or a call -- run after `from` and before `to`?
+fn call_between(data: &Funcdata, from: OpId, to: OpId) -> bool {
+    let parent = |op: OpId| data.obank().get(op).and_then(|o| o.get_parent());
+    let (Some(fb), Some(tb)) = (parent(from), parent(to)) else { return false };
+    let graph = data.bblocks_ref();
+    let reach = |start: BlockId, forward: bool| {
+        let mut seen: std::collections::HashSet<BlockId> = std::collections::HashSet::new();
+        let mut work = vec![start];
+        while let Some(b) = work.pop() {
+            let blk = graph.block(b);
+            let n = if forward { blk.size_out() } else { blk.size_in() };
+            for i in 0..n {
+                let next = if forward { blk.get_out(i) } else { blk.get_in(i) };
+                if seen.insert(next) {
+                    work.push(next);
+                }
+            }
+        }
+        seen
+    };
+    let is_call = |op: &OpId| {
+        data.obank()
+            .get(*op)
+            .is_some_and(|o| matches!(o.code(), OpCode::CPUI_CALLOTHER | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
+    };
+    let after = reach(fb, true);
+    let before = reach(tb, false);
+    let to_at = data.bb_ops(tb).iter().position(|&o| o == to).unwrap_or(usize::MAX);
+    let reaches_to = |b: BlockId, at: usize| (b == tb && at < to_at) || before.contains(&b);
+    let from_ops = data.bb_ops(fb);
+    let from_at = from_ops.iter().position(|&o| o == from).unwrap_or(usize::MAX);
+    if from_ops.iter().enumerate().any(|(i, op)| i > from_at && is_call(op) && reaches_to(fb, i)) {
+        return true;
+    }
+    after
+        .iter()
+        .any(|&b| data.bb_ops(b).iter().enumerate().any(|(i, op)| is_call(op) && reaches_to(b, i)))
+}
+
+/// Is `vn`, read by the RETURN `ret` as the half stored at `addr`/`size`, the
+/// function's own input at that storage moved out to another register and back?
 ///
 /// Walks moves, phis and non-creating indirects back to the unwritten input at
 /// exactly `addr`/`size`, and answers yes when the path passes through another
 /// register of `addr`'s space. A move to a different storage made by an
-/// instruction that also writes the stack pointer ends the path, and an
+/// instruction that also writes the stack pointer ends the path, as does the
+/// move back when a call or a CALLOTHER can run between it and `ret`, and an
 /// incidental copy (Xtensa's register-window swap around a `call8`) is walked
 /// through without counting as a move.
-pub fn moved_back(data: &Funcdata, vn: VarnodeId, addr: &Address, size: int4) -> bool {
+pub fn moved_back(data: &Funcdata, vn: VarnodeId, addr: &Address, size: int4, ret: OpId) -> bool {
     let Some(space) = addr.get_space().map(|s| s.get_index()) else { return false };
     let mut seen: std::collections::HashSet<(VarnodeId, bool)> = std::collections::HashSet::new();
     let mut work: Vec<(VarnodeId, bool)> = vec![(vn, false)];
@@ -244,6 +296,9 @@ pub fn moved_back(data: &Funcdata, vn: VarnodeId, addr: &Address, size: int4) ->
                     continue;
                 }
                 let elsewhere = sa.get_space().is_some_and(|sp| sp.get_index() == space) && sa != addr;
+                if elsewhere && !left && call_between(data, def, ret) {
+                    continue;
+                }
                 work.push((src, left || elsewhere));
             }
         }
@@ -273,7 +328,7 @@ pub fn note_moved_back_returns(data: &mut Funcdata, active: &ParamActive, return
                 .get(ret)
                 .filter(|o| !o.is_dead() && o.get_halt_type() == 0)
                 .and_then(|o| o.get_in(t.get_slot()))
-                .is_some_and(|vn| moved_back(data, vn, t.get_address(), t.get_size()))
+                .is_some_and(|vn| moved_back(data, vn, t.get_address(), t.get_size(), ret))
         });
         if moved {
             found.push((t.get_address().clone(), t.get_size()));

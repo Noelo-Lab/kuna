@@ -1758,17 +1758,43 @@ other would give the function two return widths. A move is a COPY, or the `or`
 or `add` with zero and the self-`or` that MIPS, SPARC, RISC-V and PowerPC's `mr`
 lift to before the rules reduce them.
 
-Two kinds of copy are not moves. An incidental copy (Xtensa's register-window
+Three kinds of copy are not moves. An incidental copy (Xtensa's register-window
 swap around a `call8`) is walked through without counting. A move to another
 storage made by an instruction that also writes the stack pointer ends the path:
 SPARC's `save` and `restore` copy every `%o` register to its `%i` register and
 back, so a SPARC function that never touches `%o1` has the moved-out-and-back
 shape on every return, and both instructions move the stack pointer, as does the
-`pop` of a pushed register. `tests/stages/gh6990-returnpair.xml` keeps that
-SPARC function returning one register, and `tests/stages/kuna-ownreturn.xml`
-pins the ARM shapes. The same functions on a big-endian target keep both halves,
-in the order the pair is joined in, which is swapped on big-endian until that
-join is fixed.
+`pop` of a pushed register. And a move back that a call or a CALLOTHER can follow
+on some path to the RETURN ends the path too. An inline system call reads its
+arguments from registers its p-code does not show: ARM `svc`, AArch64 `svc`,
+RISC-V `ecall` and PowerPC `sc` lift to a CALLOTHER with no register inputs. So
+`int sys2nr(int a, int b) { ext(); r0 = a; r1 = b; svc 0; return r0 + 1; }`
+moves `b` back into `r1` for the kernel, not for its caller, and stays an `int`
+function. The reachability is block-level: the move's block after the move, every
+block reachable from it, and only those from which the RETURN's block can be
+reached (the RETURN's own block counts up to the RETURN).
+
+Moving a register back proves that the function returns it, not that it
+returns that register alone. The high register can be moved back while the
+low one is left untouched: compiler-rt's `__ashrdi3` on RISC-V 32 copies the high word aside at entry (`mv a3,a1`) and, when the shift is zero,
+returns `a` with `mv a1,a3; ret`, leaving `a0` as it arrived. The recorded high
+half is real and the low half fails the placement test, which would send the
+RETURN down the keep-the-high-half arm and hand back the high word as the whole
+value. Instead, when the high half is real only through the record and the low
+half at that RETURN is the function's own argument passing through (real once
+the placement test is dropped), the pair stays: the function returns the
+argument whole. Any other low half takes the answer the strict rule gives, so
+the record never returns the high register alone. A low register moved back
+needs no such rule: the repair keeps the low half whenever the high one is not
+real anyway.
+
+`tests/stages/gh6990-returnpair.xml` keeps the SPARC function returning one
+register, and `tests/stages/kuna-ownreturn.xml` pins the ARM shapes, the `svc`
+control and a hand-written `__ashrdi3` shape; `kuna-cli/tests/own_register_returns.rs`
+compiles the ARM, Thumb and RISC-V 32 output back and runs it against the
+source. The same functions on a big-endian target keep both halves, in the
+order the pair is joined in, which is swapped on big-endian until that join is
+fixed.
 
 The predicate runs inside `ActionOutputPrototype`, which is scheduled *before*
 `ActionInputPrototype`, so the proto's own parameter list is not fixated yet and
