@@ -3,7 +3,8 @@
 // with ?student=true (hover cards with them), load the fixture through the
 // file input, open main, hover a line, switch to Assembly, rename a variable,
 // patch a byte, reload to see the session restored, the Collaborate button,
-// the /decompile2/ redirect, and the layout at 1024 and 820 px. Any uncaught
+// the /decompile2/ redirect, the layout at 1024 and 820 px, and the Strings
+// list taking a search for "flag" to the code that uses it. Any uncaught
 // page exception fails the run.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
@@ -346,6 +347,59 @@ try {
   }
   assert.ok(!/decompile2\//.test(await (await fetch(`${server.base}/decompile/`)).text()), '/decompile/ does not link to /decompile2/ either');
   done.push('the nav links to /decompile/, and nothing to /decompile2/');
+
+  await page.navigate(`${server.base}/decompile/`);
+  await ready('before the crackme');
+  await openSample(page, 'crackme.elf');
+  await page.waitFor(`/check/.test(document.getElementById('ccode').textContent)`, { what: 'crackme main', timeout: 60000 });
+  await idle('crackme open');
+  assert.deepEqual(await page.call(() => [document.getElementById('fnpanel').hidden, document.getElementById('strpanel').hidden]), [false, true],
+    'the sidebar starts on the functions');
+  await page.click('#side-strs');
+  await page.waitFor(`document.querySelectorAll('#strlist .str').length > 0`, { what: 'the strings', timeout: 60000 });
+  assert.equal(await page.call(() => document.getElementById('fnpanel').hidden), true, 'Strings replaces the function list');
+  await page.click('#strfilter');
+  await page.type('flag');
+  await page.waitFor(`document.querySelectorAll('#strlist .str').length === 4`, { what: 'the search', timeout: 10000 });
+  assert.deepEqual(await page.call(() => [...document.querySelectorAll('#strlist .str .sx')].map((b) => b.textContent)),
+    ['flag{str1ngs_4re_3asy}', 'Nope, that is not the flag.', 'Enter the flag: ', 'Correct! You found the flag.'], 'what matches "flag", used strings first');
+  assert.match(await text('#strlist .str[data-addr="0x2004"] .su'), /^Used in check ×2 through the pointer secret$/);
+  const flagLink = '#strlist .str[data-addr="0x2004"] a.xt';
+  const sites = (await page.call((s) => document.querySelector(s).dataset.sites, flagLink)).split(' ');
+  await page.click(flagLink);
+  await page.waitFor(`document.getElementById('vname').textContent === 'check' && document.querySelector('#ccode .d2-cl.hl-sel') !== null`, { what: 'check, at the use', timeout: 60000 });
+  assert.match(await text('#ccode .d2-cl.hl-sel'), /secret/, 'the selected line is the one reading the flag pointer');
+  assert.equal(await page.call(() => document.getElementById('asmcode').getAttribute('aria-activedescendant')), `a-${sites[0]}`, 'at its first use');
+  await page.click(flagLink);
+  await page.waitFor(`document.getElementById('asmcode').getAttribute('aria-activedescendant') === 'a-${sites[1]}'`, { what: 'the next use', timeout: 10000 });
+  assert.match(await text('#ccode .d2-cl.hl-sel'), /strcmp\(input,secret\)/, 'a second click goes to its next use');
+  await page.click('#strlist .str[data-addr="0x2037"] .sx');
+  await page.waitFor(`document.getElementById('vname').textContent === 'main' && /Enter the flag/.test(document.querySelector('#ccode .d2-cl.hl-sel')?.textContent || '')`, { what: 'main at the prompt', timeout: 60000 });
+  await page.call(() => document.querySelector('#strlist .str[data-addr="0x2004"] .sx').focus());
+  await page.key(' ', { code: 'Space' });
+  await page.waitFor(`document.getElementById('vname').textContent === 'check'`, { what: 'Space on a string', timeout: 60000 });
+  assert.equal(await page.call(() => document.getElementById('tab-c').getAttribute('aria-selected')), 'true', 'Space opens the string, not the Assembly view');
+  await page.key('/');
+  assert.equal(await page.call(() => document.activeElement.id), 'strfilter', '/ searches the list that is open');
+  await page.call(() => { const i = document.getElementById('strfilter'); i.value = 'ld-linux'; i.dispatchEvent(new Event('input')); return true; });
+  await page.waitFor(`document.querySelectorAll('#strlist .str').length === 1`, { what: 'an unused string', timeout: 10000 });
+  await page.click('#strlist .str .sx');
+  await page.waitFor(`document.getElementById('tab-bytes').getAttribute('aria-selected') === 'true'`, { what: 'its bytes', timeout: 30000 });
+  await page.click('#side-fns');
+  assert.equal(await page.call(() => document.getElementById('fnpanel').hidden), false, 'back to the functions');
+  await setSelect('mode', 'fast');
+  await page.waitFor(`document.querySelectorAll('#fnlist .fn').length > 3 && document.getElementById('vname').textContent === 'check'`, { what: 'reopened in Fast', timeout: 60000 });
+  await idle('before Cancel');
+  await page.call(() => {
+    [...document.querySelectorAll('#fnlist .fn')].find((row) => row.textContent === 'main').click();
+    document.getElementById('side-strs').click();
+    document.getElementById('cancelbtn').click();
+    return true;
+  });
+  assert.match(await text('#strnone'), /^Stopped\. Find the strings$/, 'Cancel while the strings wait their turn says so');
+  await page.click('#strnone [data-act=strings-load]');
+  await page.waitFor(`document.querySelectorAll('#strlist .str').length > 0`, { what: 'the strings again', timeout: 60000 });
+  await noExceptions('Strings: search "flag", go to each use, show an unused string\'s bytes');
 
   console.log(`DECOMPILE2 BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
 } finally {
