@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1601,
-    1601
+    1620,
+    1620
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -726,6 +726,16 @@
     "data:OVERLAPBRANCH #1: the branch target wins, so the real add-chain stream is recovered in the default pass only",
     "data:OVERLAPBRANCH #2: the out-of-image call the swallowed decode invents survives only in the overlapbranch-off pass",
     "data:OVERLAPBRANCH #3: the bogus global the swallowed decode invents survives only in the overlapbranch-off pass",
+    "data:OWNRETURN #10: with option retinputhalf off ashr_hi's early return drops the high word",
+    "data:OWNRETURN #1: the high word moved back into r1 is kept, and b stays a parameter",
+    "data:OWNRETURN #2: own, own_cond, both returns of two_ret and the early return of ashr_hi return both words",
+    "data:OWNRETURN #3: own_cond, which moves the values on both paths, keeps the pair",
+    "data:OWNRETURN #4: keep_int stays a one-register function in both passes",
+    "data:OWNRETURN #5: with option retinputhalf off the strict rule drops the high word and b",
+    "data:OWNRETURN #6: two_ret returns the pair on both paths",
+    "data:OWNRETURN #7: sys2nr, whose move back into r1 feeds the svc, stays an int function",
+    "data:OWNRETURN #8: ashr_hi, whose early return moves back only the high word, returns the pair",
+    "data:OWNRETURN #9: the high word is never returned alone",
     "data:P1: TOTAL shared() epilogue count across both passes is 3 (off clones to 2, on dedups to 1)",
     "data:P1: default (crossjumprevert off) emits the condensed cross-jump goto",
     "data:P1: on recovers three constant early returns from the shared epilogue (off merges to none)",
@@ -960,6 +970,15 @@
     "data:UNSIGNED-BYTE-VM-SELECTOR #3: low case remains in both passes",
     "data:UNSIGNED-BYTE-VM-SELECTOR #4: off reproduces the impossible negative label",
     "data:UNSIGNED-BYTE-VM-SELECTOR #5: default preserves the unsigned label",
+    "data:VENEERTAILCALL #1: direct, a bounded veneer's transfer is lost to halt_missing",
+    "data:VENEERTAILCALL #2: on, a veneer to a declared prototype tail-calls it, bounded or not",
+    "data:VENEERTAILCALL #3: on, a bounded veneer tail-calls a helper with no prototype, A32 and Thumb",
+    "data:VENEERTAILCALL #4: direct, the unbounded veneer copies arm_helper's body in",
+    "data:VENEERTAILCALL #5: a helper with no prototype keeps its copied-in body in both passes",
+    "data:VENEERTAILCALL #6: the register that carried the target is not an argument",
+    "data:VENEERTAILCALL #7: a target that is not a function stays out of bounds",
+    "data:VENEERTAILCALL #8: every recovered tail call is logged",
+    "data:VENEERTAILCALL #9: a veneer with no output of its own keeps the body of a callee that returns a value",
     "data:VOIDTAILRETURN #1: the bare trailing return; is printed by EXACTLY ONE of the two passes - the shipped default keeps it, `option voidtailreturn on` elides it (2 would mean the option did nothing)",
     "data:VOIDTAILRETURN #2: both passes really emitted the function, so #1 cannot pass vacuously on a pass that produced no C",
     "data:ZEROIDIOMUSE #1: off, the watchdog call inside the loop has an empty argument list",

@@ -1691,6 +1691,7 @@ impl Action for ActionReturnRecovery {
             crate::kuna_armfloatreturn::narrow_returns(data, &mut active);
             let manager_rc = data.get_arch().manage.clone();
             let _ = data.get_func_proto().derive_output_map(&mut active, &manager_rc);
+            crate::kuna_retinputhalf::note_moved_back_returns(data, &active, &return_ops);
             let return_single = data.get_arch().return_single;
             for &op in &return_ops {
                 let o = match data.obank().get(op) {

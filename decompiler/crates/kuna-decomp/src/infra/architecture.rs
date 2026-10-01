@@ -484,8 +484,13 @@ pub struct Architecture {
     pub msvc_ftol: bool,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
-    /// flowing into the callee (`option tailcalljump`, default off).
+    /// flowing into the callee (`option tailcalljump on|direct`).
     pub tail_call_jumps: bool,
+    /// (kuna `tailcalljump on`) Also recover a computed jump whose only
+    /// destination is another function's entry (a veneer) as a tail call, when
+    /// the destination lies outside a declared extent or the callee's stated
+    /// prototype loses nothing.  Off under `option tailcalljump direct|off`.
+    pub tail_call_tables: bool,
     /// (kuna `tailcallframe`) Recover a direct `jmp` whose target is NOT a known
     /// function as a tail call when the instructions immediately before it tear
     /// down exactly the frame the entry block built — the callback-only callee no
@@ -2434,6 +2439,7 @@ impl Architecture {
             decode_halt: false, // (kuna) option decodehalt; reset_defaults sets the shipped default
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
+            tail_call_tables: false, // (kuna) option tailcalljump; reset_defaults sets the shipped default
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
             tail_call_saved: false, // (kuna) option tailcallsaved; reset_defaults sets the shipped default
             call_trampoline: false, // (kuna) option calltrampoline; reset_defaults sets the shipped default
@@ -2742,6 +2748,7 @@ impl Architecture {
         self.fastfail_noreturn = true; // (kuna) DIV-119 default-on: REMOVES CODE. Ends the flow at a Windows `int 0x29` (`__fastfail`), whose SLEIGH lifting is a call with no matching push and so gains 8 bytes of stack pointer from the cspec's `extrapop` at every site. Windows-cspec-gated and shape-gated on `swi(0x29:1)`, so it is structurally inert on the datatest corpus and byte-identical there (0/675); restore the unbalanced fall-through with `option fastfailnoreturn off`
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
+        self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
         self.tail_call_saved = true; // (kuna) DIV-157 default-on: a run that raises the stack pointer without loading a single byte back through it is cdecl argument cleanup, not a frame teardown, so `push ebx; push esi; ...; call f; add esp,8; jmp L` no longer truncates the function at an internal join. Narrows `tailcallframe` only; 0/675 byte-identical on the datatest corpus. Restore the delta-only test with `option tailcallsaved off`
         self.call_trampoline = true; // (kuna) DIV-144 default-on: RESTORES CODE. Flows a `call` whose callee discards the pushed return address and jumps back into the stream (the Beria-family protector fragment) through as a branch, instead of decoding a fall-through at a return address control never reaches -- which on the witness lifts a junk byte into a store to a global that does not exist and puts the rest of the body one byte out of phase. Requires the callee's raw p-code to pass through `entrySP + ptrsize` and end in a direct branch to an address the symbol table does NOT know as a function entry, so an ordinary tail-call thunk (`add esp,4; jmp printf`) never matches; byte-identical (0/675) on the datatest corpus. Restore the fall-through decode with `option calltrampoline off`

@@ -480,6 +480,36 @@ impl FlowEnvironment for ArchFlowEnv {
         )
     }
 
+    fn is_tail_call_table(
+        &self,
+        fd: &Funcdata,
+        op: crate::context::OpId,
+        dest: &Address,
+        dest_outside_extent: bool,
+    ) -> bool {
+        let glb = fd.get_arch();
+        crate::kuna_tailcalljump::kuna_is_tail_call_table(
+            fd,
+            op,
+            self.arch().tail_call_tables,
+            self.query_call(dest).is_some(),
+            dest == fd.get_address(),
+            dest_outside_extent,
+            || {
+                use crate::kuna_tailcalljump::{
+                    output_stated_by_pieces, stated_by_pieces, stated_by_proto,
+                };
+                let own = fd.get_address();
+                let stated = stated_by_proto(glb.query_callee_proto(dest).as_deref())
+                    .or_else(|| stated_by_pieces(glb.callee_proto_pieces(dest).as_ref()));
+                let own_output_stated =
+                    output_stated_by_pieces(glb.callee_proto_pieces(own).as_ref())
+                        || glb.query_callee_proto(own).is_some_and(|p| p.is_output_locked());
+                crate::kuna_tailcalljump::tail_call_states_the_body(stated, own_output_stated)
+            },
+        )
+    }
+
     fn is_return_discarding_trampoline(&self, dest: &Address) -> bool {
         // (kuna `calltrampoline`) Fast-path the gate: this runs at every direct
         // CALL site, and off it must not touch the decoder.
