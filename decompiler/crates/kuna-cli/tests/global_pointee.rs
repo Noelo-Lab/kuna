@@ -5,24 +5,29 @@ mod common;
 use common::process;
 use std::process::Command;
 
-const FUNCS: &str = "p_int,r_short,r_char,r_rec,r_long,r_void,w_long,w_short,m_call,m_join,m_write,m_loop,g_reread,g_alias";
+const FUNCS: &str = "p_int,r_short,r_char,r_rec,r_long,r_void,w_long,w_short,m_call,m_join,m_write,m_loop,g_reread,g_alias,\
+                     g_reload,g_write,g_before,g_diff,g_twice";
 
 const DECLS: &str = "struct rec { int a; short b; long c; };\nextern char *gc;\nextern short *gs;\nextern int *gi;\n\
-                     extern long *gl;\nextern struct rec *gr;\nextern void *gv;\nvoid touch(void);\n";
+                     extern long *gl;\nextern struct rec *gr;\nextern void *gv;\nextern long gd;\nvoid touch(void);\n";
 
 const WANT: &str =
     "p_int 51 8\nr_short 20 6\nr_char 72 4\nr_rec 199986 16\nr_long 7000021 16\nr_void 179 20\n\
                     w_long 3000009 -9 -8 24\nw_short 1 21 42 4\nm_call 65 12 1\nm_join 44 4 0 4 3\n\
-                    m_write 29 77 78 16 4\nm_loop 221 32\ng_reread 37 4\ng_alias 22 8 0 8 0\n";
+                    m_write 29 77 78 16 4\nm_loop 221 32\ng_reread 37 4\ng_alias 22 8 0 8 0\n\
+                    g_reload 51 37 0\ng_write 82 80 0\ng_before 99 85 0\ng_diff 17 5 0\n\
+                    g_twice 99 99 85 85 4\n";
 
 /// `globalpointee_x86_64.c` stores `int *`, `short *`, `char *`, `long *` and
 /// record pointers to `char *`, `short *`, `int *`, `long *`, `struct rec *` and
 /// `void *` globals and reads or writes through the value, around a call, a
 /// branch and a loop.  Each build's printed functions, compiled by gcc and clang
 /// at -O0 and -O2 against the fixture's own `main` with every global declared
-/// as in the source, must print what the binary prints.  Only `g_reread` and
-/// `g_alias`, which load the global back, may dereference a global; `g_alias`
-/// is called with a pointer to `gi` itself, so its load must stay a load.
+/// as in the source, must print what the binary prints.  Only the `g_`
+/// functions, which load the global back, may dereference a global.  They are
+/// called with the pointer they store through pointing at the global itself,
+/// so each load after that store must stay a load, and `g_twice` must keep
+/// what it loaded between its two stores.
 #[test]
 fn a_pointer_stored_to_a_global_is_not_dereferenced_through_the_global() {
     let harness = common::fixture("globalpointee_x86_64.c");

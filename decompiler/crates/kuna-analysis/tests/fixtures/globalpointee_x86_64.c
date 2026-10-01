@@ -9,7 +9,11 @@
  * store before a call (`m_call`), inside a branch (`m_join`) or a loop
  * (`m_loop`), and `g_` read through the global itself: `g_reread` as the source
  * says, `g_alias` after a pointer store that may point at the global, so its
- * load of `gi` must stay a load. */
+ * load of `gi` must stay a load.  `g_reload`, `g_write`, `g_before`, `g_diff`
+ * and `g_twice` also read the value from its register, and are called with
+ * the pointer they store through pointing at the global itself: each load of
+ * the global after that store must still read the global, `g_diff` without
+ * dereferencing it, and `g_twice` keeps what it loaded between two stores. */
 #include <stdio.h>
 
 struct rec { int a; short b; long c; };
@@ -20,6 +24,7 @@ int *gi;
 long *gl;
 struct rec *gr;
 void *gv;
+long gd;
 int touched;
 
 #if defined(__clang__)
@@ -44,6 +49,11 @@ void m_write(int *p, int k, int v);
 int m_loop(int *p, int n);
 int g_reread(int *p, int k);
 int g_alias(int *p, int k, int **pp);
+int g_reload(int *p, int k, int **pp);
+int g_write(int *p, int k, int **pp, int *r);
+int g_before(int *p, int k, int **pp);
+long g_diff(int *p, int k, long *pp);
+int g_twice(int *p, int k, int **pp, int **pp2);
 
 #ifndef GLOBALPOINTEE_HARNESS
 #define NI __attribute__((noinline))
@@ -61,6 +71,11 @@ NI void m_write(int *p, int k, int v) { int *q = p + k; gs = (short *)q; q[1] = 
 NI int m_loop(int *p, int n) { int s = 0; for (int i = 0; i < n; i++) { int *q = p + i * 2; gc = (char *)q; s += q[1]; } return s; }
 NI int g_reread(int *p, int k) { gi = p + k; return gi[1] + gi[2]; }
 NI int g_alias(int *p, int k, int **pp) { gi = p + k; *pp = p; return gi[1]; }
+NI int g_reload(int *p, int k, int **pp) { int *q = p + k; gi = q; int x = q[2]; *pp = p; return gi[1] + x; }
+NI int g_write(int *p, int k, int **pp, int *r) { int *q = p + k; gi = q; q[0] = 5; *pp = r; return *gi + q[1]; }
+NI int g_before(int *p, int k, int **pp) { int *q = p + k; int x = q[3]; gi = q; *pp = p; return gi[1] + x; }
+NI long g_diff(int *p, int k, long *pp) { int *q = p + k; gd = (long)q; int x = q[1]; *pp = (long)p; return gd - (long)p + x; }
+NI int g_twice(int *p, int k, int **pp, int **pp2) { int *q = p + k; gi = q; int x = q[3]; *pp = p; int *r = gi; *pp2 = p + 1; return r[1] + x; }
 #endif
 
 #define OFF(g, base) ((long)((char *)(g) - (char *)(base)))
@@ -116,6 +131,35 @@ int main(void) {
   r = g_alias(ia, 2, &other);
   printf("g_alias %ld %ld %ld", r, OFF(gi, ia), OFF(other, ia));
   r = g_alias(ia, 2, &gi);
+  printf(" %ld %ld\n", r, OFF(gi, ia));
+  int jb[16];
+  for (int i = 0; i < 16; i++)
+    jb[i] = i * 100 + 3;
+  r = g_reload(ia, 2, &other);
+  printf("g_reload %ld", r);
+  r = g_reload(ia, 2, &gi);
+  printf(" %ld %ld\n", r, OFF(gi, ia));
+  r = g_write(ia, 4, &other, jb);
+  printf("g_write %ld", r);
+  r = g_write(ia, 4, &gi, jb);
+  printf(" %ld %ld\n", r, OFF(gi, jb));
+  r = g_before(ia, 2, &other);
+  printf("g_before %ld", r);
+  r = g_before(ia, 2, &gi);
+  printf(" %ld %ld\n", r, OFF(gi, ia));
+  long lo = 0;
+  r = g_diff(ia, 3, &lo);
+  printf("g_diff %ld", r);
+  r = g_diff(ia, 3, &gd);
+  printf(" %ld %ld\n", r, OFF(gd, ia));
+  int *o2 = 0;
+  r = g_twice(ia, 2, &other, &o2);
+  printf("g_twice %ld", r);
+  r = g_twice(ia, 2, &other, &gi);
+  printf(" %ld", r);
+  r = g_twice(ia, 2, &gi, &o2);
+  printf(" %ld", r);
+  r = g_twice(ia, 2, &gi, &gi);
   printf(" %ld %ld\n", r, OFF(gi, ia));
   return 0;
 }

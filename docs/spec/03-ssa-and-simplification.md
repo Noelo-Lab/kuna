@@ -741,26 +741,48 @@ directly or through a copy into a register, the forced merge keeps the value
 apart by trimming anyway, while keeping the store in place would make chapter 06
 copy that earlier value at its definition, possibly above a pointer store that
 changes the global (dash's `set_curjob` unlinks the list head through such a
-pointer and then reads the head again).
+pointer and then reads the head again). An earlier value also counts as read
+after the store when the global's own `MULTIEQUAL` reads it on an edge from a
+block the store dominates, or an `INDIRECT` after the store reads it
+(`(marks_after)`). Heritage never builds that; it is what remains when a
+pointer `STORE` becomes the global's `COPY` after the global's heritage, and
+keeping the store there made Merge restore the earlier value with copies (a
+flex scanner's `yylex` at `-O2`).
 
 The same function covers the loads the binary makes. Any other reader of the
 global's `COPY` output is a load of the global after the store (`-O0` reloads a
-global for every use). When that reader uses what it loads as an address, in the
-slot above or through a `COPY` or an add leading to one, and the stored value is
-not itself used as an address, `RulePropagateCopy` leaves it reading the global.
-The stored value then still joins the global in chapter 06, and the dereference
-prints through the global the binary reads rather than through the register it
-stored, so `*--line_num_start = '1'` still prints as
-`line_num_start = &line_num_start[-1]; *line_num_start = '1';` at `-O0`, and a
-load after a store through a pointer that may point at the global stays a load:
-`gi = &a0[a1]; *a2 = a0; return gi[1];`, where kuna printed
-`return (&a0[a1])[1];`. When the stored value is dereferenced from its register
-as well, it is kept apart from the global anyway, and the loads are left to
-upstream: keeping some of them on the global would split one value between the
-global and a register at every load, and `Merge` would reconcile the two with
-copies the binary never makes (a flex scanner's `yylex` printed a dozen extra
-stores to `yytext`). A parameter's store keeps upstream's handling, since a
-parameter never merges with a global.
+global for every use). Under the default `indexaliasguard load` heritage puts no
+`INDIRECT` on a global at a pointer `STORE`, so that load reads the `COPY` even
+when a `STORE` between them may have changed the global, and rewritten to read
+the stored value it prints the register where the binary reads memory: once the
+value is kept apart from the global, `gi = q; x = q[2]; *pp = p; return gi[1] + x;`
+printed `return v2 + v1[1];`, which returns 72 instead of 52 when `pp` points at
+`gi`. So when the stored value is used as an address, `RulePropagateCopy` leaves
+a load reading the global when a `STORE`, or a call heritage gave no `INDIRECT`
+on the global, lies on a path from the store to the load (`(written_between)`,
+walked backward from the load; past 2048 operations, or at a block the store
+does not reach, the answer is yes), whether or not the load is used as an
+address: `*a2 = a0; return v1 + gi[1];` at `-O0` and `-O2`, and
+`*a2 = a0; return (gd - a0) + (long)v2;` for a load that is subtracted. Two cases
+keep upstream's propagation instead, because the value joins the global anyway
+and prints as it: the value already feeds one of the global's markers, or an
+earlier value of the global is read after the store as above. A register copy of
+such a load is the same read: `RulePropagateCopy` does not put the global back
+into a reader of the copy when a write lies between the copy and the reader, and
+chapter 06 keeps the copy as its own variable, so
+`r = gi; *pp2 = p + 1; return r[1];` keeps `r` where the binary loads it rather
+than reading `gi` after the second store.
+
+When the stored value is not used as an address it joins the global in chapter
+06, and a load that uses what it reads as an address, in the slot above or
+through a `COPY` or an add leading to one, keeps reading the global, so the
+dereference prints through the global the binary reads rather than through the
+register it stored: `*--line_num_start = '1'` still prints as
+`line_num_start = &line_num_start[-1]; *line_num_start = '1';` at `-O0`, and
+`gi = &a0[a1]; *a2 = a0; return gi[1];` keeps its load where kuna printed
+`return (&a0[a1])[1];`. Other loads of such a value, and the stores of a
+parameter, a frame variable or a constant, keep upstream's handling: a load
+after a pointer store can still print the stored value there (issue #792).
 
 **Keeping a loop counter's write-back** (`option loopcounterstore`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_loopcounterstore.rs

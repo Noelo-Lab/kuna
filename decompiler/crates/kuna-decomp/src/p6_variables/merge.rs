@@ -383,6 +383,10 @@ pub trait MergeContext: HighContext {
 
     /// (kuna) `option tiedphitrim`: [`crate::p6_variables::kuna_tiedphitrim`].
     fn kuna_tied_phi_trim(&self) -> bool;
+    /// (kuna) [`crate::p6_variables::kuna_pointeevalue::load_crosses_write`].
+    fn vn_loads_across_write(&self, _vn: VarnodeId) -> bool {
+        false
+    }
 
     // --- Cover construction for a single read (eliminateIntersect) --------
     /// Build the [`Cover`] of the single read of `vn` by `op` (the C++

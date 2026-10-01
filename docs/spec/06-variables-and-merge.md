@@ -1462,7 +1462,22 @@ a0[1];`. A value that is only the global read back through `COPY`s, `CAST`s and
 `MULTIEQUAL`s is still joined. The forced marker merges are upstream's; chapter
 03's `kuna_pointeestorekeep` keeps the store's `COPY` out of the global's markers
 so they never take such a value, and keeps a load of the global the binary makes
-reading the global, so a `-O0` reload still prints as the global.
+reading the global, so a `-O0` reload, or any load after a pointer store that
+may change the global, still prints as the global.
+
+A register copy of such a load (`r = gi` where `gi` holds a stored value, the
+input of a `COPY` that `kuna_pointeestorekeep.rs (loads_stored_global)`
+recognizes) is a read of memory at the point of the load. When a `STORE`, or a
+call with no `INDIRECT` on the global, lies between the copy and one of its
+readers (`kuna_pointeestorekeep.rs (written_between)`), the copy's own
+copy-shadow join with the global is refused too, and `ActionMarkImplied`'s
+`checkImpliedCover` keeps the copy explicit (`kuna_pointeevalue.rs
+(load_crosses_write)`): joined, or printed inline at its reader, the read would
+move past a write that may change the global, which the Cover tests cannot see
+because kuna's SSA puts no `INDIRECT` on a global at a `STORE`. So
+`gi = q; *pp = p; r = gi; *pp2 = p + 1; return r[1] + x;` prints
+`*a2 = a0; v2 = gi; *a3 = &a0[1]; return v1 + v2[1];` rather than
+`return v1 + gi[1];` after the second store.
 
 **(kuna, GH-468) `option tiedphitrim` — a loop that reads memory does not
 store what it reads** (default **on**, DIV-182). A HighVariable that holds an

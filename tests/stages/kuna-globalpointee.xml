@@ -21,9 +21,13 @@
     copy-shadow join, so the value keeps its own variable and type.  A load of
     the global the binary makes after the store stays a load: g_alias stores
     through a pointer that may point at gi before reading gi[1], and kuna used
-    to print `return (&a0[a1])[1];`.
+    to print `return (&a0[a1])[1];`.  g_reload, g_before, g_write, g_diff and
+    g_twice also read the value from its register; a load of the global after
+    a store through a pointer still reads the global, and g_twice keeps the
+    value it loaded between two such stores in a variable of its own.
 
-    Every assertion below fails on the unfixed tree.  The wrapper only supplies
+    Every assertion below fails on the unfixed tree, and #9 to #13 fail on a
+    tree that keeps the value apart without keeping those loads.  The wrapper only supplies
     the harness architecture (`load file` needs one).  The pass loads
     globalpointee_gcc_O2_x86_64 and globalpointee_gcc_O0_x86_64 (built from
     globalpointee_x86_64.c beside them).
@@ -57,6 +61,21 @@
   <com>load function g_alias</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function g_reload</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function g_before</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function g_write</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function g_diff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function g_twice</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/globalpointee_gcc_O0_x86_64</com>
   <com>read symbols</com>
@@ -75,6 +94,21 @@
   <com>load function g_alias</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function g_reload</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function g_before</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function g_write</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function g_diff</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function g_twice</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="globalpointee #1: no stored pointer is indexed or dereferenced through a global" min="0" max="0">(\bg[clrsv]\[|\*g[clrsv]\b)</stringmatch>
@@ -86,4 +120,20 @@
   touch\(\);</stringmatch>
 <stringmatch name="globalpointee #7: the load after a store that may alias the global stays a load" min="2" max="2">return gi\[1\];</stringmatch>
 <stringmatch name="globalpointee #8: the chars are read through the value, not the int global" min="1" max="1">return \(int4\)a0\[1\] \+ \(int4\)a0\[5\];</stringmatch>
+<stringmatch name="globalpointee #9: the load after a store through a pointer reads the global, the value its register" min="2" max="2">v1 = \(&amp;a0\[a1\]\)\[2\];
+  \*a2 = a0;
+  return v1 \+ gi\[1\];</stringmatch>
+<stringmatch name="globalpointee #10: a value read before its store keeps its register, the load after the pointer store reads the global" min="2" max="2">v1 = \(&amp;a0\[a1\]\)\[3\];
+  gi = &amp;a0\[a1\];
+  \*a2 = a0;
+  return v1 \+ gi\[1\];</stringmatch>
+<stringmatch name="globalpointee #11: the load after a store through another pointer reads the global" min="2" max="2">\*a2 = a3;
+  return (v1|a0\[1\]) \+ \*gi;</stringmatch>
+<stringmatch name="globalpointee #12: a load not used as an address after a pointer store reads the global" min="2" max="2">(gd = v1;
+  \*a2 = a0;
+  return \(gd - a0\)|v1 = \*\(int4 \*\)\(v2 \+ 4\);
+  \*a2 = a0;
+  return \(int8\)v1 \+ \(gd - a0\))</stringmatch>
+<stringmatch name="globalpointee #13: a load between two pointer stores keeps its own variable" min="2" max="2">v2 = gi;
+  \*a3 = </stringmatch>
 </decompilertest>

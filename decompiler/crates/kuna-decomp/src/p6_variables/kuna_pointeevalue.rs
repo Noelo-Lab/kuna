@@ -18,18 +18,28 @@
 //! by its own uses, and the `COPY` prints as the store.
 //! `p3_dataflow/kuna_pointeestorekeep.rs` keeps that `COPY` alive in the first
 //! place when a marker would otherwise swallow it.
+//!
+//! The binary's own loads of the global stay loads there too, and a register
+//! copy of one that a later `STORE` may outdate ([`load_crosses_write`]) is kept
+//! out of the global's variable and out of the implied set, so it prints as its
+//! own statement where the binary loads it.
 
 use std::collections::BTreeSet;
 
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{HighVariableId, VarnodeId};
+use crate::funcdata::Funcdata;
 use crate::merge::MergeContext;
-use crate::p3_dataflow::kuna_pointeestorekeep::{offsets_address, reads_pointee, WALK_BOUND};
+use crate::p3_dataflow::kuna_pointeestorekeep::{
+    loads_stored_global, offsets_address, reads_pointee, written_between, WALK_BOUND,
+};
 use crate::varnode::varnode_flags;
 
 /// Must the HighVariables of `vn1` and `vn2` stay apart because one is a global
-/// and the other a value used as an address that is not the global's own value?
+/// and the other a value used as an address that is not the global's own value,
+/// or a load of the global that a later write may outdate
+/// ([`load_crosses_write`])?
 pub fn keeps_apart(ctx: &mut dyn MergeContext, vn1: VarnodeId, vn2: VarnodeId) -> bool {
     let (Some(a), Some(b)) = (ctx.vn_high(vn1), ctx.vn_high(vn2)) else {
         return false;
@@ -47,7 +57,16 @@ pub fn keeps_apart(ctx: &mut dyn MergeContext, vn1: VarnodeId, vn2: VarnodeId) -
     if ctx.high_is_persist(value) || ctx.high_is_addr_tied(value) || ctx.high_is_input(value) {
         return false;
     }
+    if loaded_from(ctx, vn1, vn2) || loaded_from(ctx, vn2, vn1) {
+        return true;
+    }
     used_as_address(ctx, value) && !holds_global(ctx, value, global)
+}
+
+/// Is `vn` the output of the `COPY` that loads `global` and a write may outdate
+/// the load before a reader ([`load_crosses_write`])?
+fn loaded_from(ctx: &dyn MergeContext, vn: VarnodeId, global: VarnodeId) -> bool {
+    ctx.vn_def(vn).is_some_and(|d| ctx.op_in(d, 0) == Some(global)) && ctx.vn_loads_across_write(vn)
 }
 
 fn instances(ctx: &dyn MergeContext, high: HighVariableId) -> Vec<VarnodeId> {
@@ -154,4 +173,22 @@ fn holds_global(ctx: &mut dyn MergeContext, value: HighVariableId, global: HighV
         }
     }
     true
+}
+
+/// Is `vn` a register copy of a global holding a stored value
+/// ([`loads_stored_global`]) with a write between it and one of its readers
+/// ([`written_between`])?  Chapter 03 keeps such a load; joined with the
+/// global, or printed inline at its reader, it would read the global after a
+/// write that may change it, since kuna's SSA puts no `INDIRECT` on a global at
+/// a `STORE` to show the Cover tests the conflict.
+pub fn load_crosses_write(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = data.vbank().get(vn) else {
+        return false;
+    };
+    if !v.get_def().is_some_and(|d| loads_stored_global(data, d)) {
+        return false;
+    }
+    v.descend_iter()
+        .filter(|&r| data.obank().get(r).is_some_and(|o| !o.is_dead()))
+        .any(|r| written_between(data, vn, r))
 }

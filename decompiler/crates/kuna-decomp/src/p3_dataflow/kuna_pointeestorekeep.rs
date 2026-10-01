@@ -13,13 +13,19 @@
 //! [`declines`] keeps that `COPY` when the value reaches the address of a `LOAD`
 //! or `STORE`, or the base of a `PTRADD` or `PTRSUB`, directly or through the
 //! additions that offset it; chapter 06's `kuna_pointeevalue` then refuses the
-//! optional join, so the value keeps its own variable.  It also keeps an
-//! ordinary reader of the global's `COPY` reading the global when that reader
-//! uses it as an address and the stored value is not otherwise one: such a
-//! reader is a load of the global the binary makes (`-O0` reloads every
-//! global), and it keeps printing as one.  This runs
-//! before types exist, when `q + 1` is still an integer addition, so every `+`
-//! leading to an address counts.
+//! optional join, so the value keeps its own variable.  This runs before types
+//! exist, when `q + 1` is still an integer addition, so every `+` leading to an
+//! address counts.
+//!
+//! Any other reader of the `COPY` is a load of the global the binary makes.
+//! kuna's SSA gives a pointer `STORE` no effect on a global, so a load after
+//! `gi = q; *pp = p;` still reads the `COPY`, and rewritten to read `q` it would
+//! print the register where the binary reads memory `*pp` may have changed.
+//! [`declines`] keeps such a load on the global ([`written_between`]), and keeps
+//! a register copy of it from being moved past a later `STORE`.  A load that
+//! uses what it reads as an address keeps reading the global too when the
+//! stored value is not otherwise one, so the dereference prints through the
+//! global the binary reads.
 
 use std::collections::BTreeSet;
 
@@ -57,14 +63,22 @@ pub fn offsets_address(code: OpCode, slot: int4) -> bool {
 pub const WALK_BOUND: usize = 256;
 
 /// Must `RulePropagateCopy` leave `vn`, the output of `COPY invn`, as the input
-/// of `op`?  Only when `vn` is a global and `invn` a value the function
-/// computes (a parameter never merges with a global) that is not just the
-/// global read back.  A marker, or a `COPY` into the same global, keeps `vn`
-/// when the stored value is used as an address and no earlier value of the
-/// global is read after the store.  Any other reader is a load of the global
-/// the binary makes, and keeps `vn` when it uses what it loads as an address
-/// while the stored value itself is not one: the value then still joins the
-/// global, and the dereference prints through the global the binary reads.
+/// of `op`?
+///
+/// When `vn` is a register and `invn` a global holding a stored value, `vn` is
+/// a load of that global ([`loads_stored_global`]), and stays in `op` when a
+/// write lies between the load and `op`.  Otherwise only when `vn` is a global
+/// and `invn` a value the function computes (a parameter never merges with a
+/// global) that is not just the global read back.  A marker, or a `COPY` into
+/// the same global, keeps `vn` when the stored value is used as an address and
+/// no earlier value of the global is read after the store.  Any other reader is
+/// a load of the global the binary makes.  When the stored value is used as an
+/// address, the load keeps `vn` when a write lies between the store and the
+/// load, unless the value already feeds the global's marker or an earlier
+/// value of the global is read after the store: the value then joins the global
+/// anyway.  When it is not, the load keeps `vn` when it uses what it loads as
+/// an address: the value then still joins the global, and the dereference
+/// prints through the global the binary reads.
 pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bool {
     let (Some(v), Some(iv), Some(reader)) = (
         data.vbank().get(vn),
@@ -73,7 +87,11 @@ pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bo
     ) else {
         return false;
     };
-    if !v.is_persist() || !computed(iv) || holds_global(data, invn, v) {
+    if !v.is_persist() {
+        return v.get_def().is_some_and(|d| loads_stored_global(data, d))
+            && written_between(data, vn, op);
+    }
+    if !computed(iv) || holds_global(data, invn, v) {
         return false;
     }
     let same = |o: Option<VarnodeId>| {
@@ -83,14 +101,108 @@ pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bo
     if reader.is_marker() || (reader.code() == OpCode::CPUI_COPY && same(reader.get_out())) {
         used_as_address(data, invn) && !old_value_read_after(data, vn)
     } else {
-        reads_address(data, op, vn) && !used_as_address(data, invn)
+        if !used_as_address(data, invn) {
+            return reads_address(data, op, vn);
+        }
+        !feeds_marker(data, invn, v) && written_between(data, vn, op) && !old_value_read_after(data, vn)
     }
 }
 
+/// How many operations [`written_between`] reads before it answers yes.
+const OP_BOUND: usize = 2048;
+
+/// Can an operation on some path from `vn`'s definition to `reader` change the
+/// global without an `INDIRECT` that says so: a `STORE` through a pointer, or a
+/// call heritage gave no `INDIRECT` on the global?  `vn` is the global's `COPY`
+/// output, or a register copy of the global.  A load after such an operation
+/// reads memory that operation may have written, so it has to stay a load.  The
+/// paths are walked backward from `reader` to the definition; past [`OP_BOUND`]
+/// operations, or at a block no path from the definition reaches, the answer is
+/// yes.
+pub fn written_between(data: &Funcdata, vn: VarnodeId, reader: OpId) -> bool {
+    let Some(v) = data.vbank().get(vn) else {
+        return true;
+    };
+    let Some(def) = v.get_def() else {
+        return true;
+    };
+    let global = if v.is_persist() {
+        Some(vn)
+    } else {
+        data.obank().get(def).and_then(|o| o.get_in(0))
+    };
+    let Some(g) = global.and_then(|g| data.vbank().get(g)) else {
+        return true;
+    };
+    let (gaddr, gsize) = (g.get_addr(), g.get_size());
+    let guarded = |mut cur: Option<OpId>| {
+        while let Some(o) = cur.and_then(|c| data.obank().get(c)) {
+            if o.code() != OpCode::CPUI_INDIRECT {
+                return false;
+            }
+            if o
+                .get_out()
+                .and_then(|out| data.vbank().get(out))
+                .is_some_and(|out| out.get_addr() == gaddr && out.get_size() == gsize)
+            {
+                return true;
+            }
+            cur = o.basic_neighbours().0;
+        }
+        false
+    };
+    let Some(start) = data.obank().get(reader) else {
+        return true;
+    };
+    let Some(block) = start.get_parent() else {
+        return true;
+    };
+    let mut work = vec![(block, start.basic_neighbours().0)];
+    let mut scanned = BTreeSet::new();
+    let mut budget = OP_BOUND;
+    while let Some((bl, mut cur)) = work.pop() {
+        let mut reached = false;
+        while let Some(o) = cur {
+            if o == def {
+                reached = true;
+                break;
+            }
+            let Some(op) = data.obank().get(o) else {
+                return true;
+            };
+            let writes = op.code() == OpCode::CPUI_STORE
+                || matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND);
+            if writes && !guarded(op.basic_neighbours().0) {
+                return true;
+            }
+            budget = match budget.checked_sub(1) {
+                Some(b) => b,
+                None => return true,
+            };
+            cur = op.basic_neighbours().0;
+        }
+        if reached {
+            continue;
+        }
+        let b = data.bblocks_ref().block(bl);
+        if b.size_in() == 0 {
+            return true;
+        }
+        for i in 0..b.size_in() {
+            let pred = b.get_in(i);
+            if scanned.insert(pred) {
+                work.push((pred, data.bb_op_tail(pred)));
+            }
+        }
+    }
+    false
+}
+
 /// Is an earlier value of the global that `vn`'s `COPY` stores to still read
-/// after the store, directly or through a copy into a register?  The global's
-/// forced merge then keeps the stored value apart anyway, and keeping the store
-/// in place would only make chapter 06 copy that earlier value far from where
+/// after the store, directly or through a copy into a register, or carried past
+/// it by the global's own marker ([`marks_after`])?  The global's forced merge
+/// then keeps the stored value apart anyway, and keeping the store or a load of
+/// it in place would only make chapter 06 copy that earlier value far from where
 /// the binary reads it.
 fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(v) = data.vbank().get(vn) else {
@@ -117,6 +229,9 @@ fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
         };
         if w == vn || wv.get_def().is_some_and(|d| d == store || after(store, d)) {
             continue;
+        }
+        if wv.descend_iter().any(|r| marks_after(data, store, r, w)) {
+            return true;
         }
         let mut readers: Vec<OpId> = wv.descend_iter().collect();
         let mut seen = BTreeSet::new();
@@ -145,6 +260,88 @@ fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
         }
     }
     false
+}
+
+/// Does `r`, a marker of the global, carry `w`, a value of the global from
+/// before `store`, past `store`: a `MULTIEQUAL` reading it on an edge from a
+/// block that `store` dominates, or an `INDIRECT` after `store`?  Heritage never
+/// builds that; it is left behind when a pointer `STORE` turns into the
+/// global's `COPY` after the global's heritage, and the joins still read the
+/// value from before it.
+fn marks_after(data: &Funcdata, store: OpId, r: OpId, w: VarnodeId) -> bool {
+    let (Some(rop), Some(sop)) = (data.obank().get(r), data.obank().get(store)) else {
+        return false;
+    };
+    let (Some(rb), Some(sb)) = (rop.get_parent(), sop.get_parent()) else {
+        return false;
+    };
+    if rop.is_dead() {
+        return false;
+    }
+    match rop.code() {
+        OpCode::CPUI_MULTIEQUAL => {
+            let b = data.bblocks_ref().block(rb);
+            (0..rop.num_input().min(b.size_in())).any(|i| {
+                rop.get_in(i) == Some(w) && data.bblocks_ref().dominates(sb, Some(b.get_in(i)))
+            })
+        }
+        OpCode::CPUI_INDIRECT if rop.get_in(0) == Some(w) => {
+            if rb == sb {
+                sop.get_seq_num().get_order() < rop.get_seq_num().get_order()
+            } else {
+                data.bblocks_ref().dominates(sb, Some(rb))
+            }
+        }
+        _ => false,
+    }
+}
+
+/// Does `value` already feed a marker of `global` directly, so that chapter
+/// 06's forced merge joins the two whatever is decided here?
+fn feeds_marker(data: &Funcdata, value: VarnodeId, global: &Varnode) -> bool {
+    data.vbank().get(value).is_some_and(|x| {
+        x.descend_iter().any(|r| {
+            data.obank().get(r).is_some_and(|o| {
+                !o.is_dead()
+                    && o.is_marker()
+                    && o.get_out().and_then(|out| data.vbank().get(out)).is_some_and(|out| {
+                        out.get_addr() == global.get_addr() && out.get_size() == global.get_size()
+                    })
+            })
+        })
+    })
+}
+
+/// Is `op` a `COPY` that reads a global holding a stored value
+/// ([`holds_stored_value`]) into a register: a load of the global the binary
+/// makes after the store, which [`declines`] keeps when a write lies between it
+/// and its reader?
+pub fn loads_stored_global(data: &Funcdata, op: OpId) -> bool {
+    let Some(o) = data.obank().get(op) else {
+        return false;
+    };
+    o.code() == OpCode::CPUI_COPY
+        && o.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| !v.is_persist())
+        && o.get_in(0).is_some_and(|g| {
+            data.vbank().get(g).is_some_and(|gv| gv.is_persist()) && holds_stored_value(data, g)
+        })
+}
+
+/// Is `g`, a global's varnode, written by a `COPY` of a value the function
+/// computes that is not the global read back: the store this module keeps?
+fn holds_stored_value(data: &Funcdata, g: VarnodeId) -> bool {
+    let Some(gv) = data.vbank().get(g) else {
+        return false;
+    };
+    let Some(def) = gv.get_def().and_then(|d| data.obank().get(d)) else {
+        return false;
+    };
+    if def.code() != OpCode::CPUI_COPY {
+        return false;
+    }
+    def.get_in(0).is_some_and(|x| {
+        data.vbank().get(x).is_some_and(|xv| computed(xv)) && !holds_global(data, x, gv)
+    })
 }
 
 /// Is `v` a value the function computes: not a global, a frame location, a
