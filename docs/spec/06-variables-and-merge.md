@@ -503,9 +503,15 @@ landed on a variable nobody named. Every default now comes from
 `decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 (ScopeLocal::next_default_name)`, which advances `base` past any name a
 name-locked Symbol of the local scope already holds. A default index is still
-consumed per local, so a function with no such Symbol -- every run without a
-`name`/`type` directive or a locked name of the form `vN` -- numbers its locals
-exactly as before.
+consumed per local, so a function with no such Symbol numbers its locals exactly
+as before. Without a `name`/`type` directive such a Symbol comes from the binary
+or another directive: a DWARF parameter or local, or a declared prototype's
+parameter, named like a default (`v1`, or `iVar1` under Ghidra names). It keeps
+its name and the untouched locals skip it, where an unrelated local used to take
+`v1` as well and push the source's own `v1` to `v1_1`. The skip holds even when
+that DWARF local is not bound to a printed variable, so the printed numbering
+can start past it. The change is names only; upstream `buildVariableName` bumps
+the index past a taken name the same way.
 
 Two recommendation paths share a name on purpose. A name recommendation
 recorded for a storage location names every high at that storage alike, as the

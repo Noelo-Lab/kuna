@@ -5,8 +5,9 @@
 # as `int4 index; // ebx` and `int4 sum; // r12d`.  `three_locals` adds r13d,
 # and `stack_pair` keeps two ints on the stack by passing their addresses to
 # `fill`, so the same batches can be stated on register and stack locals.
-# `pick_flag` holds a pointer in rax and then an int in eax: two locals whose
-# storage overlaps, the pair a single batch cannot give two Symbols.
+# `mixed_pair` keeps one int in ebx and one on the stack, the pair a name can
+# move between.  `pick_flag` holds a pointer in rax and then an int in eax: two
+# locals whose storage overlaps, the pair a single batch cannot give two Symbols.
 #
 #   clang -c localnamebatch_x86_64.s -o localnamebatch_x86_64.o
 #   ld --build-id=none -e two_locals localnamebatch_x86_64.o -o localnamebatch_x86_64
@@ -76,6 +77,28 @@ stack_pair:
     ret
 .size stack_pair, .-stack_pair
 
+.globl mixed_pair
+.type mixed_pair,@function
+mixed_pair:
+    push %rbx
+    sub $16, %rsp
+    xor %ebx, %ebx
+.Lmixed:
+    add $1, %ebx
+    lea 12(%rsp), %rdi
+    call fill_one
+    mov %ebx, %edi
+    mov 12(%rsp), %esi
+    call observe
+    cmp $4, %ebx
+    jl .Lmixed
+    mov 12(%rsp), %eax
+    add %ebx, %eax
+    add $16, %rsp
+    pop %rbx
+    ret
+.size mixed_pair, .-mixed_pair
+
 .globl pick_flag
 .type pick_flag,@function
 pick_flag:
@@ -119,6 +142,13 @@ observe:
 observe3:
     ret
 .size observe3, .-observe3
+
+.globl fill_one
+.type fill_one,@function
+fill_one:
+    movl $3, (%rdi)
+    ret
+.size fill_one, .-fill_one
 
 .globl fill
 .type fill,@function

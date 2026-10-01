@@ -7,14 +7,23 @@
 //! drives `decomp_dbg` through a console script, `--json` runs in-process.
 //!
 //! Fixture: `kuna-analysis/tests/fixtures/localnamebatch_x86_64` (source beside
-//! it): two and three independent register locals, and two stack locals.
+//! it): two and three independent register locals, two stack locals, and one of
+//! each.
 
 mod common;
 
 /// The decompiled C and the rejected directives of one run, from the text
 /// surface and from `--json`.  Both must agree before either is returned.
 fn decompile(function: &str, directives: &[&str]) -> (String, Vec<String>) {
-    let binary = common::fixture("localnamebatch_x86_64");
+    decompile_fixture("localnamebatch_x86_64", function, directives)
+}
+
+fn decompile_fixture(
+    fixture: &str,
+    function: &str,
+    directives: &[&str],
+) -> (String, Vec<String>) {
+    let binary = common::fixture(fixture);
     let mut args = vec!["decompile", &binary, function, "--mode", "reliable"];
     for directive in directives {
         args.extend(["--assert", directive]);
@@ -141,6 +150,13 @@ fn a_swap_exchanges_the_two_names() {
         &["name v1 v2", "name v2 v1"],
         &["int4 v2; // stack - 0x10", "fill(&v2,v1);"],
     );
+    for swap in [["name v1 v2", "name v2 v1"], ["name v2 v1", "name v1 v2"]] {
+        applies(
+            "mixed_pair",
+            &swap,
+            &["int4 v1; // stack - 0xc", "int4 v2; // ebx", "observe(v2,v1);"],
+        );
+    }
 }
 
 /// A later directive may name a local by what the pass printed or by what an
@@ -166,15 +182,30 @@ fn a_renamed_local_answers_to_either_name() {
     );
 }
 
-/// A printed name wins over a name an earlier directive gave: after `name v1 v2`
-/// the identifier `v2` still means the variable printed as `v2`.
+/// After `name v1 v2` the identifier `v2` names two locals: the one printed as
+/// `v2` and the one just given that name.  Nothing says which a later `type` or
+/// `name` means, so it is rejected rather than picked, whichever of the two is on
+/// the stack and whichever in a register.
 #[test]
-fn a_printed_name_outranks_a_name_given_in_the_batch() {
-    applies(
-        "two_locals",
-        &["name v1 v2", "type v2 unsigned int s"],
-        &["int4 v2; // ebx", "uint4 s; // r12d"],
-    );
+fn a_printed_name_given_to_another_local_is_ambiguous() {
+    for (function, from, to, declared) in [
+        ("two_locals", "v1", "v2", "int4 v1; // r12d"),
+        ("stack_pair", "v1", "v2", "int4 v2; // stack - 0x10"),
+        ("mixed_pair", "v2", "v1", "int4 v2; // ebx"),
+        ("mixed_pair", "v1", "v2", "int4 v1; // stack - 0xc"),
+    ] {
+        let rename = format!("name {from} {to}");
+        for second in [format!("type {to} unsigned int"), format!("name {to} foo")] {
+            let (code, rejected) = decompile(function, &[&rename, &second]);
+            let detail = format!(
+                "\"{second}\": \"Ambiguous name: {to} is both the local printed as {to} and the \
+                 local printed as {from} (now {to})\""
+            );
+            assert_eq!(rejected, [detail], "{function}:\n{code}");
+            assert!(code.contains(declared), "{function} {second}:\n{code}");
+            assert!(!code.contains("uint4") && !code.contains("foo"), "{function}:\n{code}");
+        }
+    }
 }
 
 /// A register-backed Symbol a directive created keeps its storage width for a
@@ -255,4 +286,26 @@ fn a_swap_among_three_locals_keeps_every_name() {
         &["name v3 v1"],
         &["int4 v1; // r13d", "int4 v2; // ebx", "int4 v3; // r12d"],
     );
+}
+
+/// A source local or parameter named like a default (`v1` in DWARF) is a
+/// name-locked Symbol, so the numbering skips it as it skips a caller's name.
+/// An unrelated local used to take `v1` too, which pushed the source's own `v1`
+/// to `v1_1` (`widest`) or put a `v1_1` beside the parameter `v1` (`same_kind`).
+#[test]
+fn a_source_name_of_the_default_form_keeps_it() {
+    for (function, declarations) in [
+        ("same_kind", &["int4 same_kind(item *v1,item *v2)", "int4 v3; // eax"][..]),
+        (
+            "widest",
+            &["int8 v1; // stack - 0x18", "int4 v3; // stack - 0x1c", "v1 = *values;"][..],
+        ),
+    ] {
+        let (code, rejected) = decompile_fixture("dwarfvnames_x86_64", function, &[]);
+        assert!(rejected.is_empty(), "{rejected:?}");
+        assert!(!code.contains("v1_1"), "{code}");
+        for decl in declarations {
+            assert!(code.contains(decl), "{function}: no `{decl}`:\n{code}");
+        }
+    }
 }

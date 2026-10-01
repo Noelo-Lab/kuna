@@ -36,7 +36,7 @@
 //! against, so of two independent renames the second always answered `No symbol
 //! named:` -- in either order.  The pass is now left intact and
 //! [`Funcdata::kuna_directive_symbols`] keeps every Symbol the batch touched
-//! keyed by the identifier the pass printed for it, which gives [`resolve_local`]
+//! keyed by the identifier the pass printed for it, which gives `resolve_local`
 //! two readings of an identifier:
 //!
 //! 1. the variable the pass printed under it, whatever an earlier directive in
@@ -45,20 +45,23 @@
 //! 2. failing that, the variable an earlier directive in the batch gave that
 //!    name, so `name v1 rc` followed by `type rc unsigned int` retypes `rc`.
 //!
-//! The first reading wins where both exist, because it is the one the caller
-//! could see -- unless the printed variable was itself renamed away earlier in
-//! the batch, as in `name v2 tmp`, `name v1 v2`, `type v2 ...`.  There both
-//! readings name a variable the caller has already moved, nothing says which
-//! was meant, and the directive is rejected naming both.  Two register locals whose storage overlaps (`char *s // rax`
-//! then `uint4 v1 // eax`) cannot both be given a Symbol in one batch -- the
-//! second pass merges them into one variable -- so the later of the two is
-//! rejected, naming the earlier.
+//! Where both readings exist and name different variables -- `name v1 v2`, then
+//! `type v2 ...` -- nothing says which was meant, and the directive is rejected
+//! naming both.  The one exception is a `name` whose new name the pass also
+//! printed, on a variable that still carries the identifier (`name v1 v2`,
+//! `name v2 v1`): the caller is permuting the names it was shown, and the first
+//! reading is what makes swaps and rotations work.  Two
+//! register locals whose storage overlaps (`char *s // rax` then `uint4 v1 //
+//! eax`) cannot both be given a Symbol in one batch -- the second pass merges
+//! them into one variable -- so the later of the two is rejected, naming the
+//! earlier.
 
 use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype::{IPTR_CONSTANT, IPTR_INTERNAL, IPTR_JOIN};
 use kuna_base::types::int4;
+use kuna_decomp::context::HighVariableId;
 use kuna_decomp::database::{symbol_category, SymbolId};
 use kuna_decomp::dtype::Datatype;
 use kuna_decomp::funcdata::{DirectiveSymbol, Funcdata};
@@ -88,12 +91,16 @@ pub enum LocalTarget {
 }
 
 /// Resolve the identifier a `name`/`type` directive names, by the two readings
-/// in the module docs.
+/// in the module docs.  `renaming_to` is the new name of a `name` directive.
 ///
 /// `Err` is the message the caller reports verbatim; a name nothing answers to
 /// keeps the legacy `No symbol named:` wording, the one an agent has already
 /// been taught to read.
-pub fn resolve_local(fd: &mut Funcdata, name: &str) -> Result<LocalTarget, String> {
+fn resolve_local(
+    fd: &mut Funcdata,
+    name: &str,
+    renaming_to: Option<&str>,
+) -> Result<LocalTarget, String> {
     let touched = fd.kuna_directive_symbols().to_vec();
     let mut printed: Vec<SymbolId> =
         touched.iter().filter(|d| d.printed == name).map(|d| d.symbol).collect();
@@ -104,38 +111,78 @@ pub fn resolve_local(fd: &mut Funcdata, name: &str) -> Result<LocalTarget, Strin
                 .filter(|sym| !touched.iter().any(|d| d.symbol == *sym)),
         );
     }
-    let current = |sym: SymbolId| {
-        fd.get_scope_local().map(|lm| lm.database().symbol(sym).name.clone()).unwrap_or_default()
-    };
-    let given: Vec<&DirectiveSymbol> =
-        touched.iter().filter(|d| d.printed != name && current(d.symbol) == name).collect();
-    match printed.len() {
-        0 => {}
-        1 => {
-            let now = current(printed[0]);
-            if now != name {
-                if let Some(other) = given.iter().find(|d| d.symbol != printed[0]) {
-                    return Err(format!(
-                        "Ambiguous name: {name} is both the local printed as {name} (now {}) \
-                         and the local printed as {} (now {name})",
-                        if now.is_empty() { "unnamed" } else { now.as_str() },
-                        other.printed
-                    ));
-                }
-            }
-            return Ok(LocalTarget::Symbol(printed[0]));
-        }
-        n => return Err(format!("More than one symbol named: {name} ({n})")),
+    if printed.len() > 1 {
+        return Err(format!("More than one symbol named: {name} ({})", printed.len()));
     }
-    let given: Vec<SymbolId> = given.iter().map(|d| d.symbol).collect();
+    // The name a Symbol carries now; `None` for one a bare `type` left for the
+    // naming pass to number, which the caller has not renamed.
+    let current = |sym: SymbolId| {
+        fd.get_scope_local()
+            .map(|lm| lm.database().symbol(sym))
+            .filter(|symbol| !symbol.is_name_undefined())
+            .map(|symbol| symbol.name.clone())
+    };
+    let given: Vec<&DirectiveSymbol> = touched
+        .iter()
+        .filter(|d| d.printed != name && current(d.symbol).as_deref() == Some(name))
+        .collect();
+    let printed = printed.first().copied();
+    let printed_high = printed.is_none() && !printed_highs(fd, name).is_empty();
+    if let Some(other) = given.first().filter(|_| printed.is_some() || printed_high) {
+        let moved = printed.and_then(current).filter(|now| now != name);
+        let permutes =
+            moved.is_none() && renaming_to.is_some_and(|new| printed_by_pass(fd, new, &touched));
+        if !permutes {
+            let moved = moved.map(|now| format!(" (now {now})")).unwrap_or_default();
+            return Err(format!(
+                "Ambiguous name: {name} is both the local printed as {name}{moved} \
+                 and the local printed as {} (now {name})",
+                other.printed
+            ));
+        }
+    }
+    if let Some(sym) = printed {
+        return Ok(LocalTarget::Symbol(sym));
+    }
     if let Some(target) = resolve_printed_local(fd, name, &touched)? {
         return Ok(LocalTarget::Printed(target));
     }
     match given.len() {
-        0 => Err(format!("No symbol named: {name}")),
-        1 => Ok(LocalTarget::Symbol(given[0])),
+        1 if !printed_high => Ok(LocalTarget::Symbol(given[0].symbol)),
+        0 | 1 => Err(format!("No symbol named: {name}")),
         n => Err(format!("More than one symbol named: {name} ({n})")),
     }
+}
+
+/// Did the pass print a local as `name`: a Symbol the batch touched under it, an
+/// untouched Symbol still holding it, or a HighVariable the printer declared.
+fn printed_by_pass(fd: &Funcdata, name: &str, touched: &[DirectiveSymbol]) -> bool {
+    touched.iter().any(|d| d.printed == name)
+        || fd.get_scope_local().is_some_and(|lm| {
+            lm.query_by_name(name).iter().any(|sym| !touched.iter().any(|d| d.symbol == *sym))
+        })
+        || printed_highs(fd, name)
+            .into_iter()
+            .any(|id| fd.high_bank().get(id).is_some_and(|h| !h.kuna_global()))
+}
+
+/// The HighVariables the printer declared as `name`.
+fn printed_highs(fd: &Funcdata, name: &str) -> Vec<HighVariableId> {
+    fd.high_bank()
+        .iter()
+        .filter(|(_, h)| h.kuna_name() == Some(name))
+        // A CONCAT piece shares its root's name and carries the root's in-symbol
+        // offset; the root (offset -1) is the declaration and the only nameable
+        // target, exactly as the printer's decl loop decides it.
+        .filter(|(_, h)| h.kuna_symbol_offset() < 0)
+        // A high all of whose instances are constants is a `&symbol` reference
+        // the printer renders inline, not storage anything can be mapped over.
+        .filter(|(_, h)| {
+            (0..h.num_instances())
+                .any(|i| fd.vbank().get(h.get_instance(i)).is_some_and(|v| !v.is_constant()))
+        })
+        .map(|(id, _)| id)
+        .collect()
 }
 
 /// Apply one `name`/`type` directive to the local `name` resolves to: rename it
@@ -146,7 +193,7 @@ pub fn apply_local(
     newname: &str,
     retype: Option<Rc<Datatype>>,
 ) -> Result<(), String> {
-    let sym = match resolve_local(fd, name)? {
+    let sym = match resolve_local(fd, name, retype.is_none().then_some(newname))? {
         LocalTarget::Printed(target) => {
             let ct = retype.unwrap_or_else(|| target.dtype.clone());
             let symbol = bind_printed_local(fd, &target, newname, ct)?;
@@ -202,24 +249,7 @@ fn resolve_printed_local(
     name: &str,
     touched: &[DirectiveSymbol],
 ) -> Result<Option<PrintedLocal>, String> {
-    let mut ids: Vec<_> = fd
-        .high_bank()
-        .iter()
-        .filter(|(_, h)| h.kuna_name() == Some(name))
-        // A CONCAT piece shares its root's name and carries the root's in-symbol
-        // offset; the root (offset -1) is the declaration and the only nameable
-        // target, exactly as the printer's decl loop decides it.
-        .filter(|(_, h)| h.kuna_symbol_offset() < 0)
-        .map(|(id, _)| id)
-        .collect();
-    // A high all of whose instances are constants is a `&symbol` reference the
-    // printer renders inline, not storage anything can be mapped over.
-    ids.retain(|&id| {
-        fd.high_bank().get(id).is_some_and(|h| {
-            (0..h.num_instances())
-                .any(|i| fd.vbank().get(h.get_instance(i)).is_some_and(|v| !v.is_constant()))
-        })
-    });
+    let ids = printed_highs(fd, name);
     match ids.len() {
         0 => return Ok(None),
         1 => {}
@@ -331,9 +361,9 @@ fn check_width(size: int4, ct: &Datatype) -> Result<(), String> {
 /// An EMPTY `name` -- what a bare `type v6 <T>` passes, since it states no
 /// identifier -- leaves the Symbol for the naming pass to number, and that is
 /// deliberate.  Binding the printed identifier back as a namelocked Symbol reads
-/// better (the target keeps the name the caller typed) and produces INVALID C:
-/// the `vN` allocator does not consult the scope, so it hands the same `v5` to
-/// an unrelated temporary and the printer declares `v5` twice in one body
+/// better (the target keeps the name the caller typed) but produced INVALID C
+/// when the `vN` allocator did not consult the scope: it handed the same `v5` to
+/// an unrelated temporary and the printer declared `v5` twice in one body
 /// (measured on the witness for `type v5 char *` and `type v7 short`).  The cost
 /// of the safe choice is that a retyped local can come back under a different
 /// number; the storage comment (`// rax`) is what identifies it across the two

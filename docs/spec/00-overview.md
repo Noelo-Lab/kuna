@@ -2017,21 +2017,27 @@ two readings, in order:
 2. otherwise the variable an earlier directive in the batch gave that name, so
    `name v1 rc` followed by `type rc unsigned int` retypes `rc`.
 
-The first reading wins where both exist, because it is the name the caller was
-shown -- unless an earlier directive already renamed that printed variable
-away. In `name v2 tmp`, `name v1 v2`, `type v2 unsigned int` both readings of
-`v2` name a variable the caller has moved and nothing says which was meant, so
-the directive is rejected as `Ambiguous name: v2 is both the local printed as v2
-(now tmp) and the local printed as v1 (now v2)`. A second directive on a local the batch already mapped edits that Symbol
-rather than mapping another, and it keeps the register's width, so `type rc
-char *` on a 4-byte register is still `Storage is 4 bytes, the stated type is
-8`. Two register locals whose storage overlaps -- `char *s; // rax` and a
-later `uint4 v1; // eax` -- cannot both be given a Symbol: the second pass folds
-them into one variable (`s._0_4_ = 0`), so the later directive is rejected with
-`Storage of v1 overlaps s, which an earlier directive already changed`. That is
-the one rejection that depends on order, and it names the directive it lost to.
-On the stack, `name v2 credbuf` followed by `type v2 char[8]` now retypes
-`credbuf` where it used to be rejected, and still maps one Symbol over the slot.
+Where both readings exist and name different variables, nothing says which was
+meant: after `name v1 v2`, the identifier `v2` in `type v2 unsigned int` or
+`name v2 x` is both the variable printed as `v2` and the one just given that
+name, so the directive is rejected as `Ambiguous name: v2 is both the local
+printed as v2 and the local printed as v1 (now v2)`, and the message says `(now
+tmp)` after the first when an earlier directive renamed it away. The one
+exception is a `name` directive whose new name the pass also printed, on a
+variable that still carries the identifier: `name v2 v1` after `name v1 v2`, or
+each step of a rotation. That caller is permuting the names it was shown, so the
+first reading applies; the second would only undo or chain the earlier rename
+onto a name another local still prints. A second directive on a local the batch
+already mapped edits that Symbol rather than mapping another, and it keeps the
+register's width, so `type rc char *` on a 4-byte register is still `Storage is
+4 bytes, the stated type is 8`. Two register locals whose storage overlaps --
+`char *s; // rax` and a later `uint4 v1; // eax` -- cannot both be given a
+Symbol: the second pass folds them into one variable (`s._0_4_ = 0`), so the
+later directive is rejected with `Storage of v1 overlaps s, which an earlier
+directive already changed`. That is the one rejection that depends on order, and
+it names the directive it lost to. On the stack, `name v2 credbuf` followed by
+`type v2 char[8]` now retypes `credbuf` where it used to be rejected, and still
+maps one Symbol over the slot.
 
 (kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
 carries.** The operand says which function the signature describes; the
