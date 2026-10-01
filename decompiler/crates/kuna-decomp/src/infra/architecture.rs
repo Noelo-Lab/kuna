@@ -6154,6 +6154,7 @@ impl Architecture {
         // after `defaultfp` is finalized.
         self.types
             .set_proto_context(self.defaultfp.clone(), self.translate.manager_rc());
+        self.types.set_proto_models(self.proto_models.clone());
         self.build_action();
         self.print.initialize_from_architecture();
         // C++ `symboltab->adjustCaches()` (architecture.cc, end of restoreFromSpec)

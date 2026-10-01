@@ -1241,11 +1241,24 @@ impl Action for ActionDeindirect {
                 continue;
             }
 
-            // C++ data.hasTypeRecoveryStarted() function-pointer prototype arm
-            // (coreaction.cc:1274-1293, fc->forceSet from an attached TypeCode
-            // prototype) is not exercised by the deindirect datatests and its
-            // commit path (`FuncCallSpecs::forceSet` -> commitNewInputs/Outputs) is
-            // still a W4 stub; left for a follow-up.  No change applied here.
+            // Apply only an attached code-pointer signature after type recovery.
+            // Existing call-site locks (including explicit overrides) take precedence.
+            if data.has_type_recovery_started() && !data.get_call_specs(i).is_input_locked() {
+                let proto = data.obank().get(op).and_then(|o| o.get_in(0))
+                    .and_then(|target| data.vbank().get(target))
+                    .map(|target| target.get_type_read_facing(op))
+                    .filter(|ty| ty.get_metatype() == type_metatype::TYPE_PTR)
+                    .and_then(|ty| ty.get_ptr_to())
+                    .and_then(|ty| ty.get_code_prototype().cloned());
+                if let Some(proto) = proto {
+                    let mut fc = data.replace_call_specs(i);
+                    let mut restartlog = crate::kuna_restartlog::RestartLog::new();
+                    let result = fc.force_set(data, &proto, &mut restartlog);
+                    data.restore_call_specs_at(i, fc);
+                    result.expect("ActionDeindirect: applying pointer prototype failed");
+                    count += 1;
+                }
+            }
         }
         let _ = count; // change is observed through the rewritten ops / restart flag
         0

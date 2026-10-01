@@ -7295,9 +7295,8 @@ impl FuncCallSpecs {
     ///
     /// The C++ records the recovered prototype into the override manager
     /// (`insertProtoOverride`), tries `lateRestriction`, commits or schedules a
-    /// restart, then locks the input.  The override insertion and the
-    /// success-commit are W4 `Funcdata` surfaces (`// STUB(w6-fspec-3 W4)`); the
-    /// restart-recorder branch and the input-lock bookkeeping are ported in full.
+    /// restart, then locks the input. Preserve the full prototype in the override
+    /// store: rebuilding from types alone would lose its calling convention.
     pub fn force_set(
         &mut self,
         data: &mut Funcdata,
@@ -7307,11 +7306,14 @@ impl FuncCallSpecs {
         let mut newinput: Vec<Option<VarnodeId>> = Vec::new();
         let mut newoutput: Vec<VarnodeId> = Vec::new();
 
-        // data.getOverride().insertProtoOverride(op->getAddr(), copy(fp));
-        // STUB(w6-fspec-3 W4): the override store is a W4 Funcdata surface.
+        let mut saved = FuncProto::new();
+        saved.copy(fp);
+        let site = self.op_addr(data);
+        data.get_override_mut().insert_proto_override(site, Box::new(saved));
 
         if self.late_restriction(data, fp, &mut newinput, &mut newoutput)? {
-            // commitNewInputs/commitNewOutputs — STUB(w6-fspec-3 W4)
+            self.commit_new_inputs(data, &mut newinput)?;
+            self.commit_new_outputs(data, &mut newoutput)?;
         } else {
             // Too late to make restrictions to correct prototype: force a restart.
             data.set_restart_pending(true);

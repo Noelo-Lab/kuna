@@ -3860,6 +3860,19 @@ pub trait TypeFactory {
         pt: Rc<Datatype>,
         ws: uint4,
     ) -> KunaResult<Rc<Datatype>>;
+
+    /// Build a function-pointer signature under its explicitly declared ABI.
+    fn get_type_code_proto_named(
+        &self,
+        proto: &crate::fspec::PrototypePieces,
+        model: &str,
+    ) -> KunaResult<Rc<Datatype>> {
+        if model.is_empty() {
+            self.get_type_code_proto(proto)
+        } else {
+            Err(KunaError::lowlevel("named function-pointer ABI is unavailable"))
+        }
+    }
     /// Construct an absolute pointer data-type (C++ `getTypePointer`).
     fn get_type_pointer(&self, s: int4, pt: Rc<Datatype>, ws: uint4) -> KunaResult<Rc<Datatype>>;
     /// Construct a named pointer data-type (C++ `getTypePointer(...,const string&)`).
@@ -4754,6 +4767,7 @@ pub struct TypeFactoryImpl {
     /// returns `defaultfp` when the C declarator carries no model name, which is
     /// always the case for a `void (*)(int4)` field).
     defaultfp: RefCell<Option<Rc<crate::fspec::ProtoModel>>>,
+    proto_models: RefCell<BTreeMap<String, Rc<crate::fspec::ProtoModel>>>,
     /// The engine's address-space manager (C++ `glb` is itself the
     /// `AddrSpaceManager`), shared from the owning architecture.  `None` until
     /// init.  `getTypeCode(PrototypePieces)` needs it for
@@ -4799,10 +4813,16 @@ impl TypeFactoryImpl {
             truncate_big_endian: Cell::new(false),
             store: RefCell::new(FactoryStore::new()),
             defaultfp: RefCell::new(None),
+            proto_models: RefCell::new(BTreeMap::new()),
             manager: RefCell::new(None),
             remote_types: RefCell::new(None),
             variant_layouts: RefCell::new(BTreeMap::new()),
         }
+    }
+
+    /// Share named ABI models for explicitly qualified function-pointer declarations.
+    pub fn set_proto_models(&self, models: BTreeMap<String, Rc<crate::fspec::ProtoModel>>) {
+        *self.proto_models.borrow_mut() = models;
     }
 
     /// Share the architecture's default prototype model + address-space manager
@@ -6978,6 +6998,19 @@ impl TypeFactory for TypeFactoryImpl {
         proto: &crate::fspec::PrototypePieces,
     ) -> KunaResult<Rc<Datatype>> {
         self.make_type_code_proto(proto)
+    }
+
+    fn get_type_code_proto_named(
+        &self,
+        proto: &crate::fspec::PrototypePieces,
+        model: &str,
+    ) -> KunaResult<Rc<Datatype>> {
+        if model.is_empty() {
+            return self.make_type_code_proto(proto);
+        }
+        let model = self.proto_models.borrow().get(model).cloned()
+            .ok_or_else(|| KunaError::lowlevel("unknown function-pointer calling convention"))?;
+        self.make_type_code_proto_with_model(proto, model)
     }
 
     fn get_type_pointer_strip_array(

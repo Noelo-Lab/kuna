@@ -775,6 +775,7 @@ impl TypeModifier {
         base: Option<Rc<Datatype>>,
         factory: &dyn TypeFactory,
         org: &DataOrg,
+        model: &str,
     ) -> KunaResult<Rc<Datatype>> {
         match self {
             TypeModifier::Pointer { .. } => {
@@ -791,7 +792,7 @@ impl TypeModifier {
                 })?;
                 factory.get_type_array(*arraysize, base)
             }
-            TypeModifier::Function { paramlist, .. } => {
+            TypeModifier::Function { paramlist, dotdotdot } => {
                 // FunctionModifier::modType (grammar.cc:2306-2325): build a
                 // PrototypePieces describing the pointed-to function and intern a
                 // TypeCode for it via glb->types->getTypeCode(proto).
@@ -800,23 +801,14 @@ impl TypeModifier {
                     None => factory.get_type_void()?,
                 };
                 let intypes = function_get_in_types(paramlist, factory, org)?;
-                // Varargs is encoded as an extra null pointer in paramlist; the
-                // Rust `paramlist` never holds that null (CParse::newFunc popped it
-                // into the modifier's `dotdotdot`, grammar.cc:2605-2618), so this
-                // C++ `paramlist.back() == 0` check never fires — transcribed
-                // faithfully (firstVarArgSlot stays -1 exactly as upstream).
-                //
-                // proto.model = decl->getModel(glb): a parsed function-pointer
-                // field carries no model name, so getModel returns glb->defaultfp;
-                // the factory supplies it inside getTypeCode(proto).  The kuna
-                // PrototypePieces carries no `model` field (// STUB(w6-fspec-2)).
                 let proto = PrototypePieces {
                     outtype: Some(outtype),
+                    innames: function_get_in_names(paramlist),
+                    first_var_arg_slot: if *dotdotdot { intypes.len() as int4 } else { -1 },
                     intypes,
-                    first_var_arg_slot: -1,
                     ..PrototypePieces::default()
                 };
-                factory.get_type_code_proto(&proto)
+                factory.get_type_code_proto_named(&proto, model)
             }
         }
     }
@@ -958,7 +950,7 @@ impl TypeDeclarator {
     pub fn build_type(&self, factory: &dyn TypeFactory, org: &DataOrg) -> KunaResult<Rc<Datatype>> {
         let mut restype = self.basetype.clone();
         for m in self.mods.iter().rev() {
-            restype = Some(m.mod_type(restype, factory, org)?);
+            restype = Some(m.mod_type(restype, factory, org, &self.model)?);
         }
         restype.ok_or_else(|| KunaError::lowlevel("grammar: declarator has no base type"))
     }
@@ -999,7 +991,7 @@ impl TypeDeclarator {
         // function modifier (grammar.cc:812-820).
         let mut outtype = self.basetype.clone();
         for m in self.mods.iter().skip(1).rev() {
-            outtype = Some(m.mod_type(outtype, factory, org)?);
+            outtype = Some(m.mod_type(outtype, factory, org, &self.model)?);
         }
         pieces.outtype = outtype;
         Ok(true)
