@@ -304,6 +304,29 @@ where the binary's 32-bit write zero-extended it. It is left alone because
 nearly every `int` argument on x86-64 is such a trim, and the cast would land
 on all of them to fix the few whose callee reads the full register.
 
+**Byte-pointer arguments
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_pointerargs.rs`).** A
+callee-first run (`decompile-all` and `decompile-project` with `protoorder` on,
+the default) remembers the parameter declarations of every function it has
+printed. When a caller printed later passes the address of a whole scalar local
+or parameter where such a callee declares a character pointer (`char *`,
+`unsigned char *`, or an undefined byte, which prints as `char`), and the
+parameter has the call's finalized ABI storage at that position, the address is
+cast to the parameter's type: `sink((unsigned char *)&v1)` for `unsigned long
+v1`. The local keeps its declared type and width; C lets a character pointer
+access any object's bytes, so the cast is the conversion C requires and nothing
+else changes. There is no cast when the local already has the parameter's
+pointee type or differs from it only in the signedness of a byte (`char`
+against `unsigned char`), when the argument is an array, structure, union,
+member or any other pointer expression, for a varargs call, or where a per-call
+prototype override applies. Only declarations printed before the caller count,
+so a caller printed before its callee inside a call-graph cycle keeps the uncast
+call; a function decompiled again later in the run sees every declaration
+printed by then. Outside a callee-first run (`--jobs` workers, `protoorder off`,
+`decompile-graph`, streamed exports and single-function `kuna decompile`)
+nothing is recorded and calls print unchanged, so `--jobs N` still matches
+`--jobs 1 --option protoorder off`, as it does for `protoorder` itself.
+
 **Casts C already performs (kuna `castimplied`).** `is_extension_cast_implied`
 hides an extension only when integer arithmetic, or a comparison against an
 explicit operand of the same metatype, reads it; for every other reader, and for
@@ -792,6 +815,30 @@ arm has no p-code op available as a token-markup anchor. Such labels use the
 same switch-width, signedness, and integer-format rules as op-backed labels,
 but are emitted as plain syntax with no fabricated `opref`; `default:` remains
 an unvalued label.
+
+**Every label labels a statement.** Label placement in the printed C is valid
+C99/C11/C17 and does not rely on C23. In those dialects a label is part of a
+labeled statement, so `case 2:`, `default:` or `label_10ad:` directly before a
+closing brace is a syntax error ("label at end of compound statement"). The shape arises whenever the labeled code prints nothing: a switch
+arm whose jump-table entry is a branch-only block that leaves the switch, a
+`default:` that is also a goto target at the end of the switch, or a goto target
+that is only the jump back to a loop head or the join before a closing brace.
+The emitter keeps a record of whether a label was the last thing printed
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_labelstmt.rs`, held on the emitter
+state so both the plain-text and the markup leaf see it): the case, default and
+goto label writers set it, and starting a statement or opening a brace clears
+it, while a comment does not. The last arm of a switch that still ends on a
+label gets `break;` (`printc.rs (PrintC::emit_block_switch_c)`), which leaves the
+switch exactly as falling off its end does. Any other closing brace reached
+with the record set, including a loop body's and the function's own, first
+prints the null statement `;` on its own line. A label followed by another
+label, a statement, or a nested block is untouched, so output that was already
+valid does not change. The Rust back-end (§9.6) needs no counterpart: it prints
+labels as comments and an empty arm as `N => { }`. The ARM and x86-64 shapes are
+pinned by `tests/stages/kuna-labelstmt-arm.xml` and
+`tests/stages/kuna-labelstmt-x64.xml`, and the kuna-cli round trip
+`emitted_label_statements.rs` compiles the printed functions with
+`-std=c11 -pedantic-errors` and checks that they behave like their source.
 
 **Pending-brace ownership.** The `else if` collapse is a *lazy* brace. An
 if-node that is itself the else-clause of its parent registers a brace with the

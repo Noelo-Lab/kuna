@@ -155,6 +155,7 @@ node integrations/web/test/decompile2-session.mjs
 node integrations/web/test/decompile2-bytes.mjs
 node integrations/web/test/decompile2-learn.mjs
 node integrations/web/test/decompile2-groups.mjs
+node integrations/web/test/decompile2-strings.mjs
 node integrations/web/test/decompile2-collab.mjs
 node integrations/web/test/decompile2-collab-cases.mjs
 node integrations/web/test/decompile2-collab-sync.mjs
@@ -163,7 +164,7 @@ node integrations/web/test/decompile2-collab-fuzz.mjs [--runs 2000] [--seed 1]
 # G2. Exported sessions replayed by the native CLI (skips without decompiler/target/release/kuna).
 node integrations/web/test/decompile2-replay.mjs
 
-# H. The decompiler page's commands through the real Worker (inspect, read, --assert).
+# H. The decompiler page's commands through the real Worker (inspect, read, xrefs, strings, --assert).
 node integrations/web/test/decompile2-worker.mjs
 
 # I. The decompiler page in headless Chrome over the DevTools protocol (skips without Chrome).

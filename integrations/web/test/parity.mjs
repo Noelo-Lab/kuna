@@ -8,8 +8,8 @@
 //      wasm port is a faithful decompiler, not a degraded one.
 //
 // It runs `list` + several `decompile` cases + a whole-binary `project` export
-// + the study view's `inspect`/`read`/`xrefs` (with `--assert` directives) over each
-// committed fixture (x86-64 ELF + AArch64 object) and diffs native vs
+// + the study view's `inspect`/`read`/`xrefs`/`strings` (with `--assert` directives) over each
+// committed fixture (x86-64 ELFs + AArch64 object) and diffs native vs
 // wasm (normalizing only the absolute `binary` path, which legitimately differs
 // between the host FS and the guest's virtual FS; `project` gets the same
 // explicit display name on both sides, so its artifacts match as-is). Specs
@@ -63,6 +63,11 @@ const FIXTURES = [
       ['project', 'sample_aarch64.o'], ['inspect', 'sum_to'], ['xrefs', 'sum_to']],
   },
   {
+    fixture: join(here, 'fixtures/crackme.elf'),
+    arch: 'x86-64 crackme',
+    cases: [['strings'], ['strings', '--mode', 'fast']],
+  },
+  {
     fixture: join(here, 'fixtures/sample_macho.o'),
     arch: 'macho-x86-64',
     cases: [['list'], ['decompile'], ['decompile', '_add'], ['project', 'sample_macho.o'],
@@ -99,7 +104,7 @@ for (const { fixture, arch, cases } of FIXTURES) {
       fail(`native != wasm for \`${label}\``);
     }
     // project emits a files map, inspect one function, read the bytes
-    const want = { project: '"files"', inspect: '"function"', read: '"bytes"', xrefs: '"callers"' }[c[0]]
+    const want = { project: '"files"', inspect: '"function"', read: '"bytes"', xrefs: '"callers"', strings: '"uses"' }[c[0]]
       || '"functions"';
     if (!n.includes(want)) fail(`\`${label}\` produced no ${want} payload`);
     console.log(`\x1b[32mOK\x1b[0m   ${label}  (${w.length} bytes, native==wasm)`);

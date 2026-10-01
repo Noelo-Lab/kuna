@@ -1,7 +1,8 @@
 //! What a single-function study view needs beyond the batch record: the token
 //! source map of the rendered C ([`FuncDetail`]), the function's instruction
-//! listing ([`function_rows`]), its references ([`function_xrefs`]) and the
-//! image's section table with file offsets ([`section_rows`]).
+//! listing ([`function_rows`]), its references ([`function_xrefs`]), the uses
+//! of the image's string literals ([`string_uses`]) and the image's section
+//! table with file offsets ([`section_rows`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -195,5 +196,124 @@ pub fn function_xrefs(prog: &ConsoleProgram, file: &object::File, entry: u64) ->
     out.callers.sort_by_key(|r| (r.site, r.address));
     out.callees.sort_by_key(|r| (r.site, r.address));
     out.data_refs.sort_by_key(|r| (r.site, r.address));
+    out
+}
+
+/// One instruction that uses a string literal. `row` names the function the
+/// instruction sits in, as a caller row does; `via` is the data word holding
+/// the string's address, with its symbol name, when the instruction reads that
+/// word instead of naming the string (`static const char *secret = "…"`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StringUse {
+    pub row: XrefRow,
+    pub via: Option<(u64, Option<String>)>,
+}
+
+/// The uses of each string extent `(address, byte length)` in `strings`, in the
+/// order given: every data reference landing anywhere in the extent, plus every
+/// data reference to a pointer-aligned data word whose value is the start of a
+/// string outside executable sections ([`pointer_slots`]). A branch into an
+/// extent, or a reference to a function's entry or its Thumb address, is code
+/// that happens to read as text, and a word pointing into code is a jump table
+/// or a function pointer, so none of them is a use; nor is a load or store
+/// into a string inside code, which is a literal-pool access (firmware keeps
+/// its strings there, used by address). The reference walk is the
+/// one behind [`function_xrefs`], built once for the whole set. Each list is in
+/// instruction order.
+pub fn string_uses(prog: &ConsoleProgram, file: &object::File, strings: &[(u64, u64)]) -> Vec<Vec<StringUse>> {
+    use kuna_analysis::listing::xrefs as xr;
+    if strings.is_empty() {
+        return Vec::new();
+    }
+    let names: BTreeMap<u64, String> = prog
+        .function_entries_canonical()
+        .into_iter()
+        .map(|e| (e.addr.get_offset(), e.name))
+        .collect();
+    let data: BTreeMap<u64, String> =
+        prog.global_data_symbols().into_iter().map(|(name, vma, _)| (vma, name)).collect();
+    let inventory: Vec<u64> = names.keys().copied().collect();
+    let seeds = xr::discovery_seeds(file, &inventory, prog.arch().analysis_funcstart_patterns);
+    let index = xr::build(file, prog.arch(), prog.arch().translate(), &seeds);
+    let code: Vec<(u64, u64)> = {
+        use object::{Object, ObjectSection, SectionKind};
+        file.sections()
+            .filter(|s| s.kind() == SectionKind::Text)
+            .map(|s| (s.address(), s.address().saturating_add(s.size())))
+            .collect()
+    };
+    let in_code = |addr: u64| code.iter().any(|&(lo, hi)| addr >= lo && addr < hi);
+    let pointed = strings.iter().map(|&(addr, _)| addr).filter(|&addr| addr != 0 && !in_code(addr)).collect();
+    let slots = pointer_slots(file, &pointed);
+    let is_data = |r: &&xr::Xref| !matches!(r.kind, xr::XrefKind::Call | xr::XrefKind::Jump);
+    let is_entry = |vma: u64| names.contains_key(&vma) || (vma & 1 == 1 && names.contains_key(&(vma & !1)));
+    let use_of = |r: &xr::Xref, via: Option<u64>| {
+        let function = index.function_containing(r.from);
+        StringUse {
+            row: XrefRow {
+                name: function.and_then(|f| names.get(&f).cloned()),
+                address: function.unwrap_or(r.from),
+                site: r.from,
+                kind: r.kind.as_str(),
+                instruction: r.instruction.clone(),
+            },
+            via: via.map(|slot| (slot, data.get(&slot).cloned())),
+        }
+    };
+    strings
+        .iter()
+        .map(|&(addr, len)| {
+            let code_text = in_code(addr);
+            let mut uses: Vec<StringUse> = (addr..addr.saturating_add(len.max(1)))
+                .filter(|&vma| !is_entry(vma))
+                .flat_map(|vma| index.refs_to(vma))
+                .filter(|r| if code_text { r.kind == xr::XrefKind::Data } else { is_data(r) })
+                .map(|r| use_of(r, None))
+                .collect();
+            if !is_entry(addr) {
+                for &slot in slots.get(&addr).into_iter().flatten() {
+                    uses.extend(index.refs_to(slot).iter().filter(is_data).map(|r| use_of(r, Some(slot))));
+                }
+            }
+            uses.sort_by_key(|u| (u.row.site, u.via.as_ref().map(|v| v.0)));
+            uses.dedup_by_key(|u| (u.row.site, u.via.as_ref().map(|v| v.0)));
+            uses
+        })
+        .collect()
+}
+
+/// The pointer-aligned words of `file`'s initialized data sections whose value
+/// is one of `targets`, keyed by that value. Words are read at the image's
+/// pointer width and byte order, as the file stores them.
+fn pointer_slots(file: &object::File, targets: &BTreeSet<u64>) -> BTreeMap<u64, Vec<u64>> {
+    use object::{Object, ObjectSection, SectionKind};
+    let width: u64 = if file.is_64() { 8 } else { 4 };
+    let little = file.is_little_endian();
+    let mut out: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
+    for section in file.sections() {
+        if !matches!(
+            section.kind(),
+            SectionKind::Data | SectionKind::ReadOnlyData | SectionKind::ReadOnlyDataWithRel
+        ) {
+            continue;
+        }
+        let Ok(bytes) = section.data() else { continue };
+        let base = section.address();
+        let skip = (width - base % width) % width;
+        let Some(aligned) = bytes.get(skip as usize..) else { continue };
+        for (i, word) in aligned.chunks_exact(width as usize).enumerate() {
+            let mut buf = [0u8; 8];
+            let value = if little {
+                buf[..word.len()].copy_from_slice(word);
+                u64::from_le_bytes(buf)
+            } else {
+                buf[8 - word.len()..].copy_from_slice(word);
+                u64::from_be_bytes(buf)
+            };
+            if targets.contains(&value) {
+                out.entry(value).or_default().push(base + skip + i as u64 * width);
+            }
+        }
+    }
     out
 }

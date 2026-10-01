@@ -77,6 +77,11 @@ Cargo's unoptimized default.
   `kuna test --datatests --datatests-dir tests/stages --save-baseline docs/baseline-stages.json`.
 - `docs/options.md` is generated — after touching option metadata:
   `decompiler/target/release/kuna catalog --markdown > docs/options.md`.
+- When doing builds and tests on a local system, always be aware of the total RAM available on the machine.
+  You should always stay below 90% RAM usage. If you detect it occuring, kill it, then request help
+  from the user and if it is ok to allow it.
+- A core principle of Kuna is speed. Always check that a new feature on by default does not majorly slow
+  down Kuna.
 
 ## The `kuna` CLI
 

@@ -471,7 +471,8 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   absolute, relative, PLT-relative, and image-offset fields at 8/16/32/64 bits in
   the object's byte order, plus the instruction fields and ABI formulas for ARM
   `CALL`/`JUMP24`/Thumb branches/`REL32`/`PREL31`, AArch64 branch/page/low-12
-  forms, and PowerPC64 `REL24`/TOC forms. An entry that cannot be encoded is left
+  forms, PowerPC64 `REL24`/TOC forms, and 32-bit SPARC `WDISP30`/`WPLT30`/
+  `HI22`/`LO10`/`PC22`/`PC10`/`DISP32` forms. An entry that cannot be encoded is left
   untouched and classified by reason (unsupported, unresolved target, missing
   TOC, section bounds, required veneer, alignment, range, or invalid encoding).
   The loader reports exact failure totals in at most eight groups with three
@@ -531,7 +532,17 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   not infer state from their synthetic slot address. AArch64 branch, page, and
   low-12 relocations preserve the instruction's opcode/register fields, while
   PowerPC64 `REL24` and TOC-family relocations preserve big-endian instruction
-  layout and DS-form low bits.
+  layout and DS-form low bits. SPARC `WDISP30` and `WPLT30` rewrite the 30-bit
+  word displacement of a `call`, computing `S + A - P` modulo 2³² so a call
+  can cross the signed-address boundary or wrap around address zero;
+  `HI22` writes bits 31..10 of `S + A` into a
+  `sethi` and `LO10` the low ten bits into a format-3 immediate, leaving the
+  upper `simm13` bits as the GNU linker does; `PC22`/`PC10` are the same two
+  fields over `S + A - P`, and `DISP32` is the 32-bit PC-relative data word.
+  The split forms truncate rather than range-check, and reject a REL-style
+  implicit addend, which cannot be reassembled from one half. SPARC64 (V9)
+  instruction relocations, and GOT/TLS forms that need linker-built tables,
+  remain unsupported.
 
   An undefined symbol reached through any branch or call instruction field —
   not only a call-spelled one — is bound to a named extern slot. A tail call is

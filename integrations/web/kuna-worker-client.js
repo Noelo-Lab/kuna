@@ -250,6 +250,10 @@ export class KunaWorkerClient {
     return this.#call('xrefs', { target, assertions });
   }
 
+  async strings({ assertions = [] } = {}) {
+    return this.#call('strings', { assertions });
+  }
+
   async project(displayName, { assertions = [] } = {}) {
     const result = await this.#call('project', { displayName, assertions });
     return { ...result, bytes: new Uint8Array(result.bytes) };
