@@ -793,11 +793,10 @@ same switch-width, signedness, and integer-format rules as op-backed labels,
 but are emitted as plain syntax with no fabricated `opref`; `default:` remains
 an unvalued label.
 
-**Every label labels a statement.** The statement structure the printer emits
-is valid C99/C11/C17 and does not rely on C23's relaxed label placement. In
-those dialects a label is part of a labeled statement, so `case 2:`, `default:` or `label_10ad:`
-directly before a closing brace is a syntax error ("label at end of compound
-statement"). The shape arises whenever the labeled code prints nothing: a switch
+**Every label labels a statement.** Label placement in the printed C is valid
+C99/C11/C17 and does not rely on C23. In those dialects a label is part of a
+labeled statement, so `case 2:`, `default:` or `label_10ad:` directly before a
+closing brace is a syntax error ("label at end of compound statement"). The shape arises whenever the labeled code prints nothing: a switch
 arm whose jump-table entry is a branch-only block that leaves the switch, a
 `default:` that is also a goto target at the end of the switch, or a goto target
 that is only the jump back to a loop head or the join before a closing brace.
@@ -806,7 +805,7 @@ The emitter keeps a record of whether a label was the last thing printed
 state so both the plain-text and the markup leaf see it): the case, default and
 goto label writers set it, and starting a statement or opening a brace clears
 it, while a comment does not. The last arm of a switch that still ends on a
-label gets `break;` (`printc.rs (PrintC::emit_block_switch)`), which leaves the
+label gets `break;` (`printc.rs (PrintC::emit_block_switch_c)`), which leaves the
 switch exactly as falling off its end does. Any other closing brace reached
 with the record set, including a loop body's and the function's own, first
 prints the null statement `;` on its own line. A label followed by another

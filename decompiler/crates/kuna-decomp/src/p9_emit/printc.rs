@@ -4713,7 +4713,6 @@ impl PrintC {
                 self.emit_block(fd, arch, caseblk);
                 // Blocks that formally exit the switch need an explicit `break;`
                 // (unless it is the last case, whose fall-through is the close).
-                // A last case still ending on its label gets one (kuna_labelstmt).
                 let isexit = fd.sblocks_ref().block(blk).switch_caseblocks()[i].isexit;
                 let last = i == ncase - 1;
                 if (isexit && !last) || (last && self.emit.label_dangling()) {
