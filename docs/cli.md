@@ -499,6 +499,13 @@ kuna decompile ./a.out sub_140004dcc --json \
   --assert 'prototype VirtualAlloc void *VirtualAlloc(void *p,unsigned int n,unsigned int a,unsigned int b)'
 ```
 
+An `enum` takes the layout gcc and clang give it: `int`-wide (signed if a
+constant is negative) unless a constant needs `long long`, with its unvalued
+constants counting on from the one before. gcc for `arm-none-eabi` defaults to
+`-fshort-enums`, which makes enums as narrow as their constants; state that
+layout, or any packed enum, with C23's underlying type, `typedef enum Mode :
+unsigned char { IDLE, RUN };`.
+
 **A parameter may be named after a type.** kuna interns a type called `code`,
 and a `-g` binary interns every DWARF type name it uses, so the name you want
 for a parameter is often already a type name; the declaration still reads it as

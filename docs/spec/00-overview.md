@@ -2149,6 +2149,36 @@ that happens to be spelled with a keyword resolve to exactly the interned type
 they always did. Only combinations, and the keywords the type factory does not
 name, take the width-driven path.
 
+(kuna) **An `enum` is laid out and numbered as C lays it out.** Upstream's
+`newEnum` interns every parsed enum at the type factory's `enumsize`, which
+`setupSizes` fills with the default data space's address size — eight bytes on
+x86-64, AArch64 and every other 64-bit target — so a struct member after an enum
+field landed four bytes past where the compiler put it
+(`struct Packet { enum Mode mode; float gain; int value; }` read `value` as
+`gain`). And `assignValues` numbers an enumerator with no `=` from one past the
+largest explicit constant, so `enum Color { RED, GREEN, BLUE }` was 1, 2, 3 and a
+function returning 2 printed `return GREEN;`. The grammar now follows C
+(`decompiler/crates/kuna-console/src/grammar/kuna_enumlayout.rs`): an enumerator
+with no `=` is one past the enumerator before it, the first zero, and the enum
+takes the underlying type gcc and clang give it (MSVC, which always uses `int`,
+agrees on the width whenever every constant fits `int`). With no
+negative constant that is the first of `unsigned int`, `unsigned long` and
+`unsigned long long` that holds every constant; with one it is the first of
+`int`, `long` and `long long`, and the enum is signed, which is what makes
+`enum Sign { NEG = -1, ZERO, POS }` four bytes wide and lets `e < ZERO` read as
+a signed comparison. The widths come from the compiler spec's
+`<data_organization>`, and no vendored spec declares an enum size of its own.
+Bare-metal ARM is the exception the spec cannot see: gcc for `arm-none-eabi`
+defaults to `-fshort-enums`, so its enums are as narrow as their constants. A
+C23 fixed underlying type (`enum Small : unsigned char { ... }`) states that
+layout, or any other: it sets the width and signedness outright, may be any
+integer type or `_Bool`, requires the body, and refuses a constant the type
+cannot represent rather than truncating it. C lets two enumerators share a
+constant (`enum Op { NOP, ADD, SUB, LAST = 2 }`); the enum's value map names a
+value once, so the first enumerator keeps it and the later alias is not
+recorded. Only the C grammar interns an enum at a default width; DWARF and the
+Ghidra wire give theirs explicitly and are unaffected.
+
 (kuna) **A tag survives being declared.** `findByName` is also how the lexer
 classifies every other identifier, so the moment `struct JSValue { … };` interns
 the tag, `JSValue` stops reaching the parser as an identifier and comes back as
