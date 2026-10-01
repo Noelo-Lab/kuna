@@ -56,7 +56,7 @@ export function usersOf(s) {
     const key = String(u.address_hex || at).toLowerCase();
     const prev = seen.get(key);
     if (prev) {
-      prev.sites.push(at);
+      if (!prev.sites.includes(at)) prev.sites.push(at);
       continue;
     }
     seen.set(key, {

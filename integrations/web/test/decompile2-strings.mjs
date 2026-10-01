@@ -35,6 +35,8 @@ checks.push('groups + one-line text');
 assert.deepEqual(usersOf(flag), [{ address_hex: '0x1209', name: 'check', at_hex: '0x1229', sites: ['0x1229', '0x1253'], via: 'secret' }],
   'one entry per function, its uses in order, and the pointer it reads');
 assert.deepEqual(usersOf(nope).map((u) => u.name), ['check', 'main']);
+assert.deepEqual(usersOf(str('both', '0x30', [use('f', '0x10', '0x14'), use('f', '0x10', '0x14', { name: 'p', address_hex: '0x40' })]))[0].sites,
+  ['0x14'], 'an instruction that reaches it both ways is one place');
 assert.deepEqual(usersOf(str('x', '0x1', [use(null, '0x5000', '0x5000', { name: null, address_hex: '0x4018' })])),
   [{ address_hex: '0x5000', name: null, at_hex: '0x5000', sites: ['0x5000'], via: '0x4018' }], 'an unnamed pointer by address');
 

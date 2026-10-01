@@ -184,6 +184,10 @@ els.cancel.addEventListener('click', () => {
   const refresh = state.remoteQueued && cancelled.kind !== 'remote' && cancelled.kind !== 'edit';
   idleQueue.length = 0;
   state.remoteQueued = false;
+  if (state.strings?.loading) {
+    state.strings = { stopped: true };
+    renderStrings();
+  }
   syncButtons();
   setStatus(state.inventory ? `Stopped. ${state.binary.name} is still open` : 'Stopped', state.inventory ? 'ok' : '');
   if (refresh) scheduleRemoteInspect();
@@ -329,7 +333,9 @@ function resetList() {
   state.strings = null;
   state.strSel = null;
   els.strFilter.value = '';
-  renderStrings();
+  els.strFilter.disabled = true;
+  els.strList.innerHTML = '';
+  els.strNone.hidden = true;
 }
 
 function resetBinary() {
@@ -601,6 +607,11 @@ els.sideTabs.addEventListener('click', (e) => {
   if (btn) setSide(btn.dataset.side);
 });
 els.sideTabs.addEventListener('keydown', (e) => {
+  if (e.key === ' ' && e.target.closest('[role=tab]')) {
+    e.preventDefault();
+    setSide(e.target.closest('[role=tab]').dataset.side);
+    return;
+  }
   if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
   setSide(state.side === 'fns' ? 'strs' : 'fns');
   els.sideTabs.querySelector('[aria-selected=true]').focus();
@@ -718,6 +729,11 @@ els.strList.addEventListener('toggle', (e) => {
   if (group && compileQuery(els.strFilter.value).empty) state.stringsOpen[group] = e.target.open;
 }, true);
 els.strList.addEventListener('keydown', (e) => {
+  if (e.key === ' ' && e.target.closest('.sx, a.xt')) {
+    e.preventDefault();
+    e.target.click();
+    return;
+  }
   if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
   const shown = visibleStrings();
   const at = shown.indexOf(document.activeElement);

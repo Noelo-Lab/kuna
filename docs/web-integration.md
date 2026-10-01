@@ -251,11 +251,14 @@ section, in_code, uses:[{name, address, address_hex, at, at_hex, kind, instructi
 via}]}], assertions}`. A use is a `data`, `read` or `write` reference into the literal
 from the same reference walk, built once for the whole image, `address` naming the
 function that holds the instruction `at`. It also counts the uses of a pointer-aligned word in an
-initialized data section that holds the string's address (`static const char *secret =
-"flag{…}"` is read through `secret`, never by its own address); `via` is then that
-word's `{name, address, address_hex}`, else null. A branch into a literal, and any
-reference to a function's entry, is code that happens to read as text, so neither is a
-use; `in_code` marks a row inside an executable section. `list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
+initialized data section that holds the address of a string outside code (`static const
+char *secret = "flag{…}"` is read through `secret`, never by its own address); `via` is
+then that word's `{name, address, address_hex}`, else null. These are code that happens to
+read as text, so none of them is a use: a branch into a literal, a reference to a
+function's entry or its Thumb address, a word pointing into code (a jump table, a function
+pointer), and a load or store into a literal inside code (a literal pool; firmware keeps
+its strings in code and uses them by address). `in_code` marks a row inside an executable
+section. `list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
 file_offset, file_size, executable, writable}]` (allocated sections, in address order;
 `file_size` is how many of the section's bytes the file holds from `file_offset`, which a
 PE section's virtual size can exceed; `writable` follows the segment that maps the

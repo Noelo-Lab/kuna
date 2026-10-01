@@ -210,12 +210,16 @@ pub struct StringUse {
 }
 
 /// The uses of each string extent `(address, byte length)` in `strings`, in the
-/// order given: every data reference landing anywhere in the extent (a branch
-/// into one, or any reference to a function's entry, is code that happens to
-/// read as text), plus every
-/// reference to a pointer-aligned data word whose value is the string's start
-/// ([`pointer_slots`]). The reference walk is the one behind [`function_xrefs`],
-/// built once for the whole set. Each list is in instruction order.
+/// order given: every data reference landing anywhere in the extent, plus every
+/// data reference to a pointer-aligned data word whose value is the start of a
+/// string outside executable sections ([`pointer_slots`]). A branch into an
+/// extent, or a reference to a function's entry or its Thumb address, is code
+/// that happens to read as text, and a word pointing into code is a jump table
+/// or a function pointer, so none of them is a use; nor is a load or store
+/// into a string inside code, which is a literal-pool access (firmware keeps
+/// its strings there, used by address). The reference walk is the
+/// one behind [`function_xrefs`], built once for the whole set. Each list is in
+/// instruction order.
 pub fn string_uses(prog: &ConsoleProgram, file: &object::File, strings: &[(u64, u64)]) -> Vec<Vec<StringUse>> {
     use kuna_analysis::listing::xrefs as xr;
     if strings.is_empty() {
@@ -231,7 +235,18 @@ pub fn string_uses(prog: &ConsoleProgram, file: &object::File, strings: &[(u64, 
     let inventory: Vec<u64> = names.keys().copied().collect();
     let seeds = xr::discovery_seeds(file, &inventory, prog.arch().analysis_funcstart_patterns);
     let index = xr::build(file, prog.arch(), prog.arch().translate(), &seeds);
-    let slots = pointer_slots(file, &strings.iter().map(|&(addr, _)| addr).collect());
+    let code: Vec<(u64, u64)> = {
+        use object::{Object, ObjectSection, SectionKind};
+        file.sections()
+            .filter(|s| s.kind() == SectionKind::Text)
+            .map(|s| (s.address(), s.address().saturating_add(s.size())))
+            .collect()
+    };
+    let in_code = |addr: u64| code.iter().any(|&(lo, hi)| addr >= lo && addr < hi);
+    let pointed = strings.iter().map(|&(addr, _)| addr).filter(|&addr| addr != 0 && !in_code(addr)).collect();
+    let slots = pointer_slots(file, &pointed);
+    let is_data = |r: &&xr::Xref| !matches!(r.kind, xr::XrefKind::Call | xr::XrefKind::Jump);
+    let is_entry = |vma: u64| names.contains_key(&vma) || (vma & 1 == 1 && names.contains_key(&(vma & !1)));
     let use_of = |r: &xr::Xref, via: Option<u64>| {
         let function = index.function_containing(r.from);
         StringUse {
@@ -248,15 +263,16 @@ pub fn string_uses(prog: &ConsoleProgram, file: &object::File, strings: &[(u64, 
     strings
         .iter()
         .map(|&(addr, len)| {
+            let code_text = in_code(addr);
             let mut uses: Vec<StringUse> = (addr..addr.saturating_add(len.max(1)))
-                .filter(|vma| !names.contains_key(vma))
+                .filter(|&vma| !is_entry(vma))
                 .flat_map(|vma| index.refs_to(vma))
-                .filter(|r| !matches!(r.kind, xr::XrefKind::Call | xr::XrefKind::Jump))
+                .filter(|r| if code_text { r.kind == xr::XrefKind::Data } else { is_data(r) })
                 .map(|r| use_of(r, None))
                 .collect();
-            if !names.contains_key(&addr) {
+            if !is_entry(addr) {
                 for &slot in slots.get(&addr).into_iter().flatten() {
-                    uses.extend(index.refs_to(slot).iter().map(|r| use_of(r, Some(slot))));
+                    uses.extend(index.refs_to(slot).iter().filter(is_data).map(|r| use_of(r, Some(slot))));
                 }
             }
             uses.sort_by_key(|u| (u.row.site, u.via.as_ref().map(|v| v.0)));

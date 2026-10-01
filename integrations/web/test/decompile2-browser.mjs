@@ -375,6 +375,10 @@ try {
   assert.match(await text('#ccode .d2-cl.hl-sel'), /strcmp\(input,secret\)/, 'a second click goes to its next use');
   await page.click('#strlist .str[data-addr="0x2037"] .sx');
   await page.waitFor(`document.getElementById('vname').textContent === 'main' && /Enter the flag/.test(document.querySelector('#ccode .d2-cl.hl-sel')?.textContent || '')`, { what: 'main at the prompt', timeout: 60000 });
+  await page.call(() => document.querySelector('#strlist .str[data-addr="0x2004"] .sx').focus());
+  await page.key(' ', { code: 'Space' });
+  await page.waitFor(`document.getElementById('vname').textContent === 'check'`, { what: 'Space on a string', timeout: 60000 });
+  assert.equal(await page.call(() => document.getElementById('tab-c').getAttribute('aria-selected')), 'true', 'Space opens the string, not the Assembly view');
   await page.key('/');
   assert.equal(await page.call(() => document.activeElement.id), 'strfilter', '/ searches the list that is open');
   await page.call(() => { const i = document.getElementById('strfilter'); i.value = 'ld-linux'; i.dispatchEvent(new Event('input')); return true; });
@@ -383,6 +387,18 @@ try {
   await page.waitFor(`document.getElementById('tab-bytes').getAttribute('aria-selected') === 'true'`, { what: 'its bytes', timeout: 30000 });
   await page.click('#side-fns');
   assert.equal(await page.call(() => document.getElementById('fnpanel').hidden), false, 'back to the functions');
+  await setSelect('mode', 'fast');
+  await page.waitFor(`document.querySelectorAll('#fnlist .fn').length > 3 && document.getElementById('vname').textContent === 'check'`, { what: 'reopened in Fast', timeout: 60000 });
+  await idle('before Cancel');
+  await page.call(() => {
+    [...document.querySelectorAll('#fnlist .fn')].find((row) => row.textContent === 'main').click();
+    document.getElementById('side-strs').click();
+    document.getElementById('cancelbtn').click();
+    return true;
+  });
+  assert.match(await text('#strnone'), /^Stopped\. Find the strings$/, 'Cancel while the strings wait their turn says so');
+  await page.click('#strnone [data-act=strings-load]');
+  await page.waitFor(`document.querySelectorAll('#strlist .str').length > 0`, { what: 'the strings again', timeout: 60000 });
   await noExceptions('Strings: search "flag", go to each use, show an unused string\'s bytes');
 
   console.log(`DECOMPILE2 BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
