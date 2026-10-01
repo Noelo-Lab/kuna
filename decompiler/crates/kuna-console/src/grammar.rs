@@ -2536,8 +2536,9 @@ impl<'a> CParse<'a> {
     ///
     /// (kuna) The constants and the width are C's rather than upstream's
     /// ([`kuna_enumlayout`]): an enumerator with no `=` is one past the one before
-    /// it, and the enum is `int`-wide unless a constant needs more, or as wide as
-    /// its C23 underlying type.
+    /// it, the enum is `int`-wide (signed when a constant is negative) unless a
+    /// constant needs more, or as wide as its C23 underlying type, and a second
+    /// enumerator of one constant is an alias the value map does not keep.
     fn new_enum(
         &mut self,
         ident: &str,
@@ -2556,10 +2557,9 @@ impl<'a> CParse<'a> {
             Some((size, meta)) => self.factory.get_type_enum_sized(ident, size, meta)?,
             None => self.factory.get_type_enum(ident)?,
         };
-        let namelist: Vec<String> = vecenum.iter().map(|e| e.enumconstant.clone()).collect();
-        let assignlist = vec![true; vecenum.len()];
-        // Reports duplicate-value errors with the same explain text as the C++
-        // (C++ TypeEnum::assignValues).
+        let (namelist, vallist) = kuna_enumlayout::named_constants(&vecenum, &vallist, res.get_size());
+        let assignlist = vec![true; namelist.len()];
+        // C++ TypeEnum::assignValues (the value map; no duplicate remains).
         match Datatype::assign_values(res.get_size(), res.get_name(), &namelist, &vallist, &assignlist)
         {
             Ok(namemap) => {

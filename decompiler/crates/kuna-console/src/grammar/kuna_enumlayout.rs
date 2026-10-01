@@ -7,11 +7,13 @@
 //! enumerator with no `=` from one past the largest explicit value, so `enum {
 //! A, B }` was `A=1, B=2`.
 //!
-//! C gives an enumeration the width of `int` unless a constant does not fit, and
-//! numbers an enumerator with no `=` one past the enumerator before it, the first
-//! from zero. A C23 fixed underlying type (`enum E : unsigned char { ... }`) gives
-//! the width and signedness outright, which is how a `-fshort-enums` or packed
-//! enum is declared.
+//! An enumerator with no `=` is one past the enumerator before it, the first
+//! zero. The enumeration takes gcc's and clang's underlying type: with no
+//! negative constant the first of `unsigned int`, `unsigned long` and `unsigned
+//! long long` that holds every constant, otherwise the first of `int`, `long` and
+//! `long long`. A C23 fixed underlying type (`enum E : unsigned char { ... }`)
+//! gives the width and signedness outright, which is how a `-fshort-enums` enum
+//! (gcc's default for `arm-none-eabi`) or a packed one is declared.
 
 use std::rc::Rc;
 
@@ -23,7 +25,7 @@ use super::{CParse, Enumerator};
 
 impl CParse<'_> {
     /// The optional `: type` after an enum's tag (C23), which must name an
-    /// integer type.
+    /// integer type or `_Bool`.
     pub(super) fn enum_underlying_type(&mut self) -> KunaResult<Option<Rc<Datatype>>> {
         if !matches!(self.peek()?, super::PToken::Punct(b':')) {
             return Ok(None);
@@ -34,7 +36,11 @@ impl CParse<'_> {
             return self.syntax_error();
         };
         let meta = tp.get_metatype();
-        if tp.is_enum_type() || (meta != type_metatype::TYPE_INT && meta != type_metatype::TYPE_UINT) {
+        let integer = matches!(
+            meta,
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_BOOL
+        );
+        if tp.is_enum_type() || !integer {
             self.set_error("An enum's underlying type must be an integer type");
             return Err(KunaError::parse(self.lasterror.clone()));
         }
@@ -43,32 +49,46 @@ impl CParse<'_> {
 
     /// The width and enum meta-type for constants `values`: the underlying
     /// type's when one was given, else the first of `int`, `long` and `long long`
-    /// wide enough for every constant.  `None` when the factory knows no `int`
-    /// width, so the caller keeps upstream's default.
+    /// that holds every constant, signed when one is negative.  `None` when the
+    /// factory knows no `int` width, so the caller keeps upstream's default.
     pub(super) fn enum_layout(
         &self,
         underlying: Option<&Rc<Datatype>>,
         values: &[uintb],
     ) -> Option<(int4, type_metatype)> {
         if let Some(tp) = underlying {
-            let meta = if tp.get_metatype() == type_metatype::TYPE_INT {
-                type_metatype::TYPE_ENUM_INT
-            } else {
-                type_metatype::TYPE_ENUM_UINT
-            };
+            let meta = if is_signed(tp) { type_metatype::TYPE_ENUM_INT } else { type_metatype::TYPE_ENUM_UINT };
             return Some((tp.get_size(), meta));
         }
         let int = self.factory.get_size_of_int();
         if int <= 0 {
             return None;
         }
-        let widest = values.iter().copied().max().unwrap_or(0);
+        let signed = values.iter().any(|&v| (v as i64) < 0);
         let size = [int, self.factory.get_size_of_long(), self.factory.get_size_of_long_long(), 8]
             .into_iter()
             .filter(|&s| s >= int && s <= 8)
-            .find(|&s| s == 8 || widest <= kuna_base::address::calc_mask(s))
+            .find(|&s| values.iter().all(|&v| fits(v, s, signed)))
             .unwrap_or(8);
-        Some((size, type_metatype::TYPE_ENUM_UINT))
+        let meta = if signed { type_metatype::TYPE_ENUM_INT } else { type_metatype::TYPE_ENUM_UINT };
+        Some((size, meta))
+    }
+}
+
+/// Is the integer type `tp` signed?
+fn is_signed(tp: &Datatype) -> bool {
+    tp.get_metatype() == type_metatype::TYPE_INT
+}
+
+/// Does the constant `v` (two's complement in 64 bits) fit `size` bytes of a
+/// signed or unsigned integer?
+fn fits(v: uintb, size: int4, signed: bool) -> bool {
+    let v = v as i64 as i128;
+    let bits = 8 * size.clamp(1, 8) as u32;
+    if signed {
+        v >= -(1i128 << (bits - 1)) && v < (1i128 << (bits - 1))
+    } else {
+        v >= 0 && v < (1i128 << bits)
     }
 }
 
@@ -79,11 +99,14 @@ pub(super) fn enumerator_out_of_range<'e>(
     vecenum: &'e [Enumerator],
     values: &[uintb],
 ) -> Option<&'e str> {
-    let mut max = kuna_base::address::calc_mask(tp.get_size());
-    if tp.get_metatype() == type_metatype::TYPE_INT {
-        max >>= 1;
-    }
-    vecenum.iter().zip(values).find(|(_, &v)| v > max).map(|(e, _)| e.enumconstant.as_str())
+    let in_range = |v: uintb| {
+        if tp.get_metatype() == type_metatype::TYPE_BOOL {
+            v <= 1
+        } else {
+            fits(v, tp.get_size(), is_signed(tp))
+        }
+    };
+    vecenum.iter().zip(values).find(|(_, &v)| !in_range(v)).map(|(e, _)| e.enumconstant.as_str())
 }
 
 /// C's constants for `vecenum`: an enumerator with no `=` is one past the one
@@ -98,6 +121,20 @@ pub(super) fn enum_constants(vecenum: &[Enumerator]) -> Vec<uintb> {
             v
         })
         .collect()
+}
+
+/// The `(name, constant)` pairs an enum of `size` bytes can name: C allows two
+/// enumerators one constant, but a value names one constant, so the first
+/// enumerator of a value keeps it and a later alias is dropped.
+pub(super) fn named_constants(vecenum: &[Enumerator], values: &[uintb], size: int4) -> (Vec<String>, Vec<uintb>) {
+    let mask = kuna_base::address::calc_mask(size);
+    let mut seen = std::collections::BTreeSet::new();
+    vecenum
+        .iter()
+        .zip(values)
+        .filter(|(_, &v)| seen.insert(v & mask))
+        .map(|(e, &v)| (e.enumconstant.clone(), v))
+        .unzip()
 }
 
 #[cfg(test)]

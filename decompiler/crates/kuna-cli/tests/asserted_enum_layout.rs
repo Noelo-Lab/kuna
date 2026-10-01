@@ -122,6 +122,46 @@ fn an_unvalued_enumerator_counts_on_from_the_one_before() {
     std::fs::remove_file(input).unwrap();
 }
 
+/// `enum Neg2 { NA = -5, NB, NC, ND, NE, NF }; struct S10 { enum Neg2 n; char
+/// c; int v; };` read back by clang -O2: `c` at +4, `v` at +8, `e == NB`.
+const S10_X86_64: [(&str, &[u8]); 3] = [
+    ("get_v", &[0x8b, 0x47, 0x08, 0xc3]),
+    ("get_c", &[0x8a, 0x47, 0x04, 0xc3]),
+    ("is_nb", &[0x31, 0xc0, 0x83, 0xff, 0xfc, 0x0f, 0x94, 0xc0, 0xc3]),
+];
+const S10_I386: [(&str, &[u8]); 3] = [
+    ("get_v", &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0x08, 0xc3]),
+    ("get_c", &[0x8b, 0x44, 0x24, 0x04, 0x8a, 0x40, 0x04, 0xc3]),
+    ("is_nb", &[0x31, 0xc0, 0x83, 0x7c, 0x24, 0x04, 0xfc, 0x0f, 0x94, 0xc0, 0xc3]),
+];
+
+const S10: [&str; 6] = [
+    "typedef enum Neg2 { NA = -5, NB, NC, ND, NE, NF };",
+    "typedef struct S10 { enum Neg2 n; char c; int v; };",
+    "prototype get_v int get_v(struct S10 *p)",
+    "prototype get_c char get_c(struct S10 *p)",
+    "prototype is_nb int is_nb(enum Neg2 e)",
+    "typedef enum Op { OP_NOP, OP_ADD, OP_SUB, OP_LAST = 2 };",
+];
+
+/// A negative constant makes the enum a signed `int`, as wide as `int` on
+/// every target: it once made the enum eight bytes wide, on i386 too.  An
+/// enumerator sharing another's constant is an alias C allows, not an error.
+#[test]
+fn a_negative_constant_keeps_the_enum_int_wide() {
+    for (stem, arch, functions) in [
+        ("enum-neg-x86-64", Architecture::X86_64, &S10_X86_64),
+        ("enum-neg-i386", Architecture::I386, &S10_I386),
+    ] {
+        let input = object_file(stem, arch, functions);
+        for (func, read) in [("get_v", "return p->v;"), ("get_c", "return p->c;"), ("is_nb", "e == NB")] {
+            let code = decompile(&input, func, &S10);
+            assert!(code.contains(read), "{stem} {func}: {code}");
+        }
+        std::fs::remove_file(input).unwrap();
+    }
+}
+
 /// A `-fshort-enums` build states its one-byte enum with C23's underlying type.
 #[test]
 fn a_c23_underlying_type_sets_the_width() {
@@ -132,6 +172,7 @@ fn a_c23_underlying_type_sets_the_width() {
     );
     let decls = [
         "typedef enum Small : unsigned char { S0, S1, S2 };",
+        "typedef enum Flag : _Bool { OFF, ON };",
         "typedef struct Tiny { enum Small s; unsigned char b; short h; };",
         "prototype read_h int read_h(const struct Tiny *t)",
         "prototype read_s enum Small read_s(const struct Tiny *t)",
@@ -142,14 +183,19 @@ fn a_c23_underlying_type_sets_the_width() {
 }
 
 /// The printed x86-64 functions, compiled against the same declarations,
-/// read the members the machine code reads.
+/// read the members and compare the constants the machine code does.
 #[test]
-fn the_printed_packet_readers_round_trip() {
+fn the_printed_readers_round_trip() {
     let input = object_file("enum-roundtrip", Architecture::X86_64, &X86_64);
-    let printed: String = ["read_value", "read_gain", "read_mode"]
+    let mut printed: String = ["read_value", "read_gain", "read_mode"]
         .into_iter()
         .map(|f| decompile(&input, f, &PACKET) + "\n")
         .collect();
+    std::fs::remove_file(input).unwrap();
+    let input = object_file("enum-roundtrip-neg", Architecture::X86_64, &S10_X86_64);
+    for f in ["get_v", "get_c", "is_nb"] {
+        printed.push_str(&(decompile(&input, f, &S10) + "\n"));
+    }
     let compilers: Vec<_> = ["gcc", "clang"]
         .into_iter()
         .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
@@ -163,10 +209,17 @@ fn the_printed_packet_readers_round_trip() {
             r#"
 typedef enum Mode {{ FIRST = 1, SECOND = 2 }} Mode;
 typedef struct Packet {{ Mode mode; float gain; int value; }} Packet;
+typedef enum Neg2 {{ NA = -5, NB, NC, ND, NE, NF }} Neg2;
+typedef struct S10 {{ Neg2 n; char c; int v; }} S10;
 {printed}
 int main(void) {{
     Packet p = {{ SECOND, 2.5f, 42 }};
-    return !(read_value(&p) == 42 && read_gain(&p) == 2.5f && read_mode(&p) == SECOND);
+    if (!(read_value(&p) == 42 && read_gain(&p) == 2.5f && read_mode(&p) == SECOND)) return 1;
+    for (int x = -8; x < 8; x++) {{
+        S10 s = {{ (Neg2)x, (char)(x * 3), x * 1000 }};
+        if (get_v(&s) != x * 1000 || get_c(&s) != (char)(x * 3) || is_nb((Neg2)x) != (x == NB)) return 2;
+    }}
+    return 0;
 }}
 "#
         ),
