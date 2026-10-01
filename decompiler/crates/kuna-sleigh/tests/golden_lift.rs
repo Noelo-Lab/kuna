@@ -30,7 +30,7 @@ use kuna_sleigh::globalcontext::ContextInternal;
 use kuna_sleigh::loadimage::LoadImage;
 use kuna_sleigh::loadimage_xml::{register_loadimage_xml_ids, LoadImageXml};
 use kuna_sleigh::sleigh::Sleigh;
-use kuna_sleigh::translate::PcodeEmit;
+use kuna_sleigh::translate::{AssemblyEmit, PcodeEmit};
 
 /// Repository root (the test reads corpus XML + built `.sla` files from it).
 fn repo_root() -> PathBuf {
@@ -195,7 +195,7 @@ impl LoadImage for DummyImg {
 }
 
 /// Run one fixture and return the produced body lines.
-fn run_fixture(fix: &Fixture) -> Vec<String> {
+fn fixture_engine(fix: &Fixture) -> Sleigh {
     let root = repo_root();
     let xml = std::fs::read(root.join(&fix.corpus)).expect("read corpus xml");
     let mut store = DocumentStorage::new();
@@ -226,6 +226,11 @@ fn run_fixture(fix: &Fixture) -> Vec<String> {
     img.open(sleigh.base().manager(), &registry).expect("open corpus image");
     sleigh.set_loader(Box::new(img));
 
+    sleigh
+}
+
+fn run_fixture(fix: &Fixture) -> Vec<String> {
+    let sleigh = fixture_engine(fix);
     let mut out: Vec<String> = Vec::new();
     for (space, off) in &fix.lift_points {
         let spc = Rc::clone(
@@ -319,3 +324,52 @@ fixture_test!(golden_lift_lzcount, "lzcount.txt");
 fixture_test!(golden_lift_promotecompare, "promotecompare.txt");
 fixture_test!(golden_lift_readvolatile, "readvolatile.txt");
 fixture_test!(golden_lift_skipnext2, "skipnext2.txt");
+
+
+#[derive(Default, Debug, PartialEq, Eq)]
+struct Assembly(Option<(String, String)>);
+impl AssemblyEmit for Assembly {
+    fn dump(&mut self, _: &Address, mnemonic: &str, body: &str) {
+        self.0 = Some((mnemonic.to_string(), body.to_string()));
+    }
+}
+
+#[test]
+fn combined_decode_matches_sequential_decode_across_all_lift_languages() {
+    let directory = repo_root().join("tests/golden/vectors/lift");
+    let mut fixtures = 0;
+    let mut instructions = 0;
+    for entry in std::fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|x| x.to_str()) != Some("txt") { continue; }
+        let fix = parse_fixture(&std::fs::read_to_string(&path).unwrap());
+        let old = fixture_engine(&fix);
+        let new = fixture_engine(&fix);
+        fixtures += 1;
+        for (space, off) in &fix.lift_points {
+            let mut offset = *off;
+            for _ in 0..80 {
+                let a = Address::new(Rc::clone(old.base().manager().get_space_by_name(space).unwrap()), offset);
+                let b = Address::new(Rc::clone(new.base().manager().get_space_by_name(space).unwrap()), offset);
+                let mut old_ops = LiftEmit { buf: Vec::new(), manager: old.base().manager() };
+                let mut new_ops = LiftEmit { buf: Vec::new(), manager: new.base().manager() };
+                let mut old_text = Assembly::default(); let mut new_text = Assembly::default();
+                let old_len = old.one_instruction(&mut old_ops, &a).map_err(|e| format!("{e:?}"));
+                if old_len.is_ok() { let _ = old.print_assembly(&mut old_text, &a); }
+                let new_len = new.one_instruction_with_assembly(&mut new_ops, &mut new_text, &b)
+                    .map_err(|e| format!("{e:?}"));
+                assert_eq!(new_len, old_len, "{} at {offset:#x}", fix.sla_rel);
+                assert_eq!(new_ops.buf, old_ops.buf, "p-code: {} at {offset:#x}", fix.sla_rel);
+                assert_eq!(new_text, old_text, "assembly: {} at {offset:#x}", fix.sla_rel);
+                let old_context = old.with_context_db_mut(|db| db.get_context(&a).to_vec());
+                let new_context = new.with_context_db_mut(|db| db.get_context(&b).to_vec());
+                assert_eq!(new_context, old_context, "context: {} at {offset:#x}", fix.sla_rel);
+                let Ok(length) = old_len else { break };
+                instructions += 1;
+                offset = offset.wrapping_add(length as u64);
+            }
+        }
+    }
+    assert_eq!(fixtures, 16);
+    assert!(instructions >= 1000, "only {instructions} instructions compared");
+}
