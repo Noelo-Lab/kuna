@@ -1,5 +1,8 @@
 //! Native switches must keep the selector and its case labels in one domain.
-use std::path::PathBuf;
+mod common;
+use common::process;
+
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// An x86-64 executable whose single segment maps `body` at 0x401000.
@@ -29,8 +32,9 @@ fn elf(body: &[u8]) -> Vec<u8> {
 }
 
 /// MSABI dispatch: bounded `mode - 5`, a byte map, a relative target table,
-/// and a stored-mode retry backedge.
-fn compact_fixture(map: &[u8], targets: &[u32]) -> Vec<u8> {
+/// and a stored-mode retry backedge that re-dispatches `store->mode - 5` when
+/// it is at most `retry_bound`.
+fn compact_fixture(map: &[u8], targets: &[u32], retry_bound: usize) -> Vec<u8> {
     let mut code = vec![
         0x83, 0xc2, 0xfb, 0x83, 0xfa, 0x03, 0x0f, 0x87, 0x43, 0, 0, 0, 0x4c, 0x8d, 0x05, 0xed,
         0xef, 0xff, 0xff, 0x48, 0x63, 0xc2, 0x41, 0x0f, 0xb6, 0x84, 0, 0x55, 0x10, 0, 0, 0x41,
@@ -41,7 +45,7 @@ fn compact_fixture(map: &[u8], targets: &[u32]) -> Vec<u8> {
     ];
     assert_eq!(code.len(), 85);
     code[5] = (map.len() - 1) as u8;
-    code[72] = (map.len() - 1) as u8;
+    code[72] = retry_bound as u8;
     let table_at = (0x1000 + code.len() + map.len() + 3) & !3;
     code[35..39].copy_from_slice(&(table_at as u32).to_le_bytes());
     code.extend(map);
@@ -108,10 +112,10 @@ fn decompile(image: &[u8], asserts: &[&str], options: &[&str]) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
-fn run(map: &[u8], targets: &[u32], guarded: bool) -> String {
+fn run(image: &[u8], guarded: bool) -> String {
     let options: &[&str] = if guarded { &[] } else { &["switchmultipred"] };
     decompile(
-        &compact_fixture(map, targets),
+        image,
         &[
             "typedef struct ModeStore { unsigned int mode; };",
             "function 0x401000-0x401055=compact_dispatch",
@@ -121,10 +125,127 @@ fn run(map: &[u8], targets: &[u32], guarded: bool) -> String {
     )
 }
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn compilers() -> Vec<&'static str> {
+    let found: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!found.is_empty(), "the round trip requires a C compiler");
+    found
+}
+
+/// Compile the printed `compact_dispatch` with every available compiler at
+/// -O0 and -O2, map the fixture at its link address, and compare the printed
+/// function with the fixture's own code for every mode against each stored
+/// mode in `stores`.  An alarm turns a printed loop that never exits into a
+/// failure.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn round_trip(image: &[u8], printed: &str, stores: &[u32]) {
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("fixture.elf");
+    std::fs::write(&binary, image).unwrap();
+    let list = |values: &mut dyn Iterator<Item = u32>| {
+        values
+            .map(|v| format!("{v}u"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let probes = || (0..48).chain([0x7f, 0x80, 0xff, 0x100, 0xffff_fffb, 0xffff_ffff]);
+    let src = scratch.path().join("round_trip.c");
+    std::fs::write(
+        &src,
+        format!(
+            r#"#define _GNU_SOURCE
+#include <fcntl.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <sys/mman.h>
+#include <unistd.h>
+typedef int int4;
+typedef unsigned int uint4;
+typedef unsigned char uint1;
+typedef unsigned long uint8;
+typedef struct ModeStore {{ unsigned int mode; }} ModeStore;
+{printed}
+static const unsigned modes[] = {{{modes}}};
+static const unsigned stores[] = {{{stores}}};
+int main(int argc, char **argv) {{
+  int fd = open(argv[1], O_RDONLY);
+  off_t size = lseek(fd, 0, SEEK_END);
+  if (mmap((void *)0x400000, size, PROT_READ | PROT_EXEC, MAP_PRIVATE | MAP_FIXED_NOREPLACE, fd, 0) != (void *)0x400000)
+    return 2;
+  int (__attribute__((ms_abi)) *native)(ModeStore *, unsigned) = (void *)0x401000;
+  int bad = 0;
+  alarm(20);
+  for (unsigned i = 0; i < sizeof modes / sizeof *modes; i++)
+    for (unsigned j = 0; j < sizeof stores / sizeof *stores; j++) {{
+      ModeStore a = {{stores[j]}}, b = {{stores[j]}};
+      int want = native(&a, modes[i]), got = compact_dispatch(&b, modes[i]);
+      if (want != got) {{
+        printf("mode=%u stored=%u native=%d printed=%d\n", modes[i], stores[j], want, got);
+        bad = 1;
+      }}
+    }}
+  return bad;
+}}
+"#,
+            modes = list(&mut probes()),
+            stores = list(&mut stores.iter().copied()),
+        ),
+    )
+    .unwrap();
+    let exe = scratch.path().join("round_trip");
+    for cc in compilers() {
+        for level in ["-O0", "-O2"] {
+            let compile = Command::new(cc)
+                .args(["-w", "-fPIE", "-pie", level])
+                .arg(&src)
+                .arg("-o")
+                .arg(&exe)
+                .output()
+                .unwrap();
+            assert!(
+                compile.status.success(),
+                "{cc} {level}: {}\n{printed}",
+                String::from_utf8_lossy(&compile.stderr)
+            );
+            let run = Command::new(&exe).arg(&binary).output().unwrap();
+            assert!(
+                run.status.success(),
+                "{cc} {level}: {} {}\n{printed}",
+                run.status,
+                String::from_utf8_lossy(&run.stdout)
+            );
+        }
+    }
+}
+
+/// The stored modes for which the fixture's retry backedge terminates: every
+/// value except those that re-dispatch to the retry target itself.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn terminating_stores(map: &[u8], targets: &[u32], retry_bound: usize) -> Vec<u32> {
+    (0..48u32)
+        .chain([0x7f, 0x80, 0xff, 0x100, 0xffff_fffb, 0xffff_ffff])
+        .filter(|&stored| {
+            let index = stored.wrapping_sub(5) as usize;
+            stored == 8 || index > retry_bound || targets[map[index] as usize] != 0x1038
+        })
+        .collect()
+}
+
+fn checked(map: &[u8], targets: &[u32], retry_bound: usize, guarded: bool) -> String {
+    let image = compact_fixture(map, targets, retry_bound);
+    let c = run(&image, guarded);
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    round_trip(&image, &c, &terminating_stores(map, targets, retry_bound));
+    c
+}
+
 /// Index 2 reads map byte 1 (return 240); index 3 reads map byte 2 (retry).
 #[test]
 fn permuted_byte_map_keeps_original_index_labels() {
-    let c = run(&[0, 3, 1, 2], &[0x102c, 0x1032, 0x1038, 0x104f], true);
+    let c = checked(&[0, 3, 1, 2], &[0x102c, 0x1032, 0x1038, 0x104f], 3, true);
     assert!(
         c.contains("switch(mode)"),
         "selector is in a different domain: {c}"
@@ -141,12 +262,13 @@ fn permuted_byte_map_keeps_original_index_labels() {
 
 #[test]
 fn compressed_map_with_duplicate_default_targets_keeps_all_index_labels() {
-    let c = run(
+    let c = checked(
         &[
             0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 1, 4, 4, 0, 4, 4, 4, 2, 2, 4, 0, 4, 4, 4, 4, 4, 4, 3,
             4, 4, 4, 4, 4, 4, 4, 0,
         ],
         &[0x102c, 0x1032, 0x1038, 0x104f, 0x104f],
+        36,
         true,
     );
     assert!(
@@ -166,7 +288,7 @@ fn compressed_map_with_duplicate_default_targets_keeps_all_index_labels() {
 
 #[test]
 fn missing_guard_recovery_retains_raw_target_labels() {
-    let c = run(&[0, 3, 1, 2], &[0x102c, 0x1032, 0x1038, 0x104f], false);
+    let c = checked(&[0, 3, 1, 2], &[0x102c, 0x1032, 0x1038, 0x104f], 3, false);
     assert!(
         c.contains("case 0x401032:"),
         "lost raw return240 target: {c}"
@@ -179,6 +301,24 @@ fn missing_guard_recovery_retains_raw_target_labels() {
     assert!(
         !c.contains("case 2:"),
         "reused original-index labels on a raw target: {c}"
+    );
+}
+
+/// The retry backedge re-dispatches only index 0 (`store->mode == 5`), so the
+/// loop must reset the index to 0 before it dispatches again.  A late model that
+/// cannot label the table's rows leaves the cases labelled by address instead
+/// of reading that constant as a default value and losing the reset.
+#[test]
+fn constant_retry_index_survives_a_rejected_late_model() {
+    let c = checked(&[0, 1, 1, 1, 1], &[0x1032, 0x1038, 0x102c, 0x104f], 0, true);
+    assert!(c.contains("mode = 0"), "lost the retry index reset: {c}");
+    assert!(
+        c.contains("case 0x401032:\n          return 0xf0;"),
+        "lost the raw return240 target: {c}"
+    );
+    assert!(
+        c.contains("cases are labelled by address"),
+        "dropped model without a warning: {c}"
     );
 }
 

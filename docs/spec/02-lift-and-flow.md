@@ -1107,12 +1107,19 @@ model's own values rebuild the whole table row for row (`jumptable.rs
 covers a fresh normalized variable that is offset from the flow-time one. When
 neither holds — typically because the fresh
 variable is a mapped selector, an index already looked up in a byte map in
-front of the target table — the model is dropped with a header warning and the
-trivial model described below labels the cases by address. While it
-re-recovers, a basic model whose chosen variable fails both tests also tries the
-guard-bound recovery paths (`switchmodbound`, `switchguardbound`,
-`switchsharedcase`, `switchmultipred`) exactly as an over-sized table does, so
-that a guarded index in front of the map can still be found. Flow-time recovery
+front of the target table — the basic model first tries the guard-bound
+recovery paths (`switchmodbound`, `switchguardbound`, `switchsharedcase`,
+`switchmultipred`) exactly as an over-sized table does, so that a guarded index
+in front of the map can still be found. If none applies, no other model is
+tried: JumpBasic2 and the constant-destination model are reached only when the
+basic model could not bound the table at all, as on the flow-time path. A
+JumpBasic2 model can take the constant input of a loop-carried selector as its
+default value, and the printed loop then loses that assignment on its back
+edge. The model is dropped with a header warning (`jumptable.rs
+(JumpTable::drop_model_for_rows)`) and the trivial model described below
+labels the cases by address. A model found through a guard-bound path, or a
+JumpBasic2 model after an over-sized basic one, faces the same two tests once
+recovery ends and is dropped the same way when it fails both. Flow-time recovery
 (including the second stage of a multistage table) checks no rows. Then
 `jumptable.rs (JumpTable::recover_labels)` computes the *case labels* by
 reverse-emulating the normalization chain from the normalized variable back to

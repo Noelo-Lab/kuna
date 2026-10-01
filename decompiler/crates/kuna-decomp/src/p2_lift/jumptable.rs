@@ -1929,6 +1929,10 @@ pub struct JumpBasicModel {
     /// The flow-time rows a late re-recovery must account for before its
     /// labels are trusted (set only by [`JumpTable::match_model`]).
     label_rows: Option<Rc<LabelRows>>,
+    /// Whether the bounded switch variable could not label `label_rows`.  A
+    /// model rejected for that reason is not followed by any other model
+    /// ([`JumpTable::recover_model`]).
+    rows_rejected: bool,
     /// Range of values for the (normalized) switch variable (C++ `jrange`).
     /// Boxed as a trait object so [`JumpValuesRangeDefault`] (model 2) fits.
     jrange: Option<Box<dyn JumpValues>>,
@@ -1963,6 +1967,7 @@ impl JumpBasicModel {
     pub fn new() -> JumpBasicModel {
         JumpBasicModel {
             label_rows: None,
+            rows_rejected: false,
             jrange: None,
             path_meld: PathMeld::new(),
             selectguards: Vec::new(),
@@ -2572,7 +2577,8 @@ impl JumpBasicModel {
     ///
     /// (kuna) A normalized variable that cannot label the flow-time rows it is
     /// matched against goes through the same bound-recovery fallbacks as an
-    /// unbounded one.
+    /// unbounded one; when none applies the model is rejected with
+    /// `rows_rejected` set.
     fn recover_model_basic(
         &mut self,
         fd: &mut Funcdata,
@@ -2588,7 +2594,9 @@ impl JumpBasicModel {
             .and_then(|o| o.get_parent())
             .ok_or_else(|| KunaError::lowlevel("recoverModel: switch op has no parent block"))?;
         self.find_normalized(fd, parent, -1, matchsize, maxtablesize, indop)?;
-        if self.jrange().get_size() > maxtablesize as uintb || !self.can_label_rows(fd, indop) {
+        let unbounded = self.jrange().get_size() > maxtablesize as uintb;
+        self.rows_rejected = !unbounded && !self.can_label_rows(fd, indop);
+        if unbounded || self.rows_rejected {
             // (kuna) GH-9191: the basic model could not bound the table.  When
             // `option switchmodbound on`, look for a modulo/and-mask bound on the
             // LOAD-table index and re-bound the table to [0, N).
@@ -4155,6 +4163,7 @@ impl JumpModel for JumpBasicModel {
 
     fn clear(&mut self) {
         self.label_rows = None;
+        self.rows_rejected = false;
         self.jrange = None;
         self.path_meld.clear();
         self.selectguards.clear();
@@ -5073,7 +5082,8 @@ impl JumpTable {
     /// Walks `JumpBasic` then `JumpBasic2` (the `JumpAssisted`/CALLOTHER model is
     /// the `jumpassist` userop family — `// STUB(W4)`, recorded as a loss).  Each
     /// model's `recoverModel` emulation-drives the index range over the landed
-    /// [`EmulateFunction`].
+    /// [`EmulateFunction`].  (kuna) A basic model rejected because it cannot
+    /// label the matched flow-time `rows` ends the walk with no model.
     fn recover_model(
         &mut self,
         fd: &mut Funcdata,
@@ -5106,6 +5116,10 @@ impl JumpTable {
         let basic_path = jbasic.get_path_meld().clone();
         if basic_ok {
             self.jmodel = Some(Box::new(jbasic));
+            return Ok(());
+        }
+        if jbasic.rows_rejected {
+            self.drop_model_for_rows(fd);
             return Ok(());
         }
         // Try model 2 (default-path).
@@ -5281,6 +5295,12 @@ impl JumpTable {
             self.origmodel = None;
             return;
         }
+        self.drop_model_for_rows(fd);
+    }
+
+    /// Drop the model of a table whose flow-time rows no recovered model can
+    /// label, so the trivial model labels each case by address.
+    fn drop_model_for_rows(&mut self, fd: &mut Funcdata) {
         self.jmodel = None;
         fd.warning_header(
             "Switch model does not reproduce the recovered table; cases are labelled by address",
