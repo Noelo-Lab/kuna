@@ -1,0 +1,69 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "two_locals",
+    "--mode",
+    "reliable",
+    "--json",
+    "--assert-strict",
+    "--assert",
+    "prototype two_locals int two_locals(void)",
+    "--assert",
+    "prototype observe void observe(int index, int sum)",
+    "--assert",
+    "name two_locals::index iteration",
+    "--assert",
+    "name two_locals::sum accumulator"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/localnamebatch_x86_64",
+    "binary_sha256": "d5e2ae87ffbef679f395eaa498c91e41e06b45c57efa176f9ed108a81854d32f",
+    "binary_size": 5200,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/localnamebatch_x86_64",
+    "selector": "two_locals",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stderr_absent": [
+      "No symbol named:"
+    ],
+    "json": [
+      {
+        "path": "assertions[2].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "assertions[3].status",
+        "op": "eq",
+        "value": "applied"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "int4 iteration; // ebx"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "int4 accumulator; // r12d"
+      }
+    ]
+  },
+  "notes": "Issue #784: two `name` directives on two different register locals, each accepted alone, used to reject the second with `No symbol named:` (in either order) because mapping the first local's Symbol cleared the pass the second resolves against. The code clauses stop an inert directive."
+}

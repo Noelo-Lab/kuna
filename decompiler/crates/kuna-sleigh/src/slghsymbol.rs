@@ -3535,6 +3535,7 @@ impl SymbolTable {
 
     /// `findSymbol(id)` at sites where C++ dereferences the result
     /// immediately (an error instead of UB).
+    #[inline]
     fn symbol(&self, id: u32) -> KunaResult<&SleighSymbol> {
         self.find_symbol_by_id(id).ok_or_else(|| {
             KunaError::sleigh(format!(
@@ -3564,6 +3565,7 @@ impl SymbolTable {
     }
 
     /// Resolve a symbol id that C++ blind-casts to `SubtableSymbol*`.
+    #[inline]
     fn subtable_symbol(&self, id: u32) -> KunaResult<&SubtableSymbol> {
         match &self.symbol(id)?.kind {
             SymbolKind::Subtable(v) => Ok(v),
@@ -3575,6 +3577,7 @@ impl SymbolTable {
 
     /// Look up a [`Constructor`] by reference (C++ navigates
     /// `SubtableSymbol*`/`Constructor*` pointers).
+    #[inline]
     pub fn get_constructor(&self, ctref: ConstructorRef) -> KunaResult<&Constructor> {
         self.subtable_symbol(ctref.table_id)?
             .get_constructor(ctref.ct_id)
