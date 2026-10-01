@@ -377,6 +377,21 @@ pub trait FlowEnvironment {
         false
     }
 
+    /// (kuna `tailcalljump`) Same question as
+    /// [`is_tail_call_branch`](FlowEnvironment::is_tail_call_branch) for a
+    /// `CPUI_BRANCHIND` whose recovered jump table has the single destination
+    /// `dest`, which may lie outside the declared extent.  See
+    /// [`kuna_is_tail_call_table`](crate::kuna_tailcalljump::kuna_is_tail_call_table).
+    fn is_tail_call_table(
+        &self,
+        _fd: &Funcdata,
+        _op: OpId,
+        _dest: &Address,
+        _dest_outside_extent: bool,
+    ) -> bool {
+        false
+    }
+
     /// (kuna `tailcallframe`) Same question as
     /// [`is_tail_call_branch`](FlowEnvironment::is_tail_call_branch) for a `dest`
     /// the symbol table does NOT know: does the run of instructions ending at
@@ -1339,51 +1354,11 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         *startbasic = true;
                     } else if let Some(tailkind) = self.tail_call_kind(curop, &destaddr) {
                         // (kuna) tee-O2 tail-jump: a direct `jmp` to another known
-                        // function's entry is a tail call.  Rewrite BRANCH -> CALL
-                        // (so the callee resolves by name and its return value
-                        // flows out) + an artificial RETURN, instead of
+                        // function's entry is a tail call, instead of
                         // new_address()-following the jump INTO the callee (which
                         // would inline a PLT thunk and mis-render it as a
-                        // `(*dat_...)(...)` indirect call).  The rewrite + halt-
-                        // insert + cursor re-derive mirror the CPUI_CALL arm and
-                        // `truncate_indirect_jump` / `setup_callind_specs`.
-                        self.data.op_set_opcode_code(curop, OpCode::CPUI_CALL);
-                        // (kuna) logging contract: this option-gated pass is
-                        // output-changing — it introduces a *new* CALL where the
-                        // jump used to flow into the callee.  Emit an observable
-                        // warning at the branch site so the recovered tail call is
-                        // attributable in the output (`WARNING:` comment) and in the
-                        // restart/warning log.
-                        let site = self
-                            .data
-                            .obank()
-                            .get(curop)
-                            .expect("tail-call: stale call op")
-                            .get_addr()
-                            .clone();
-                        let mut destbuf = String::new();
-                        let _ = destaddr.print_raw(&mut destbuf);
-                        self.data.warning(
-                            &format!(
-                                "{tailkind}: recovered tail call -> introduced call to {destbuf}"
-                            ),
-                            &site,
-                        );
-                        let no_return = self.setup_call_specs(curop)?;
-                        if !no_return {
-                            // Terminate flow with a normal return after the tail
-                            // call (a noreturn callee already had its halt planted
-                            // by check_for_flow_modification).
-                            let addr = self
-                                .data
-                                .obank()
-                                .get(curop)
-                                .expect("tail-call: stale call op")
-                                .get_addr()
-                                .clone();
-                            let truncop = self.artificial_halt(&addr, 0)?;
-                            self.data.op_dead_insert_after(truncop, curop);
-                        }
+                        // `(*dat_...)(...)` indirect call).
+                        self.recover_tail_call(curop, &destaddr, tailkind)?;
                         // Re-derive the successor AFTER the halt insertion so the
                         // next iteration picks up the planted RETURN (the CPUI_CALL
                         // arm's `cursor = dead_next(curop)` idiom).
@@ -1524,6 +1499,113 @@ following this call as a branch"
             .get_in(0)
             .expect("branch in0 is null (C++ UB)");
         self.data.vbank().get(in0).expect("branch_in0_addr: stale vn").get_addr().clone()
+    }
+
+    /// (kuna) Rewrite the jump `op` to `destaddr` as a tail call: a CALL with a
+    /// full call spec (so the callee resolves by name and its return value flows
+    /// out) followed by an artificial RETURN, unless the callee is no-return and
+    /// its halt is already planted.  The mirror of the CPUI_CALL arm and
+    /// `truncate_indirect_jump`.  The `{tailkind}: recovered tail call` warning at
+    /// the site makes the introduced call attributable.
+    fn recover_tail_call(
+        &mut self,
+        op: OpId,
+        destaddr: &Address,
+        tailkind: &str,
+    ) -> KunaResult<()> {
+        self.data.op_set_opcode_code(op, OpCode::CPUI_CALL);
+        let site =
+            self.data.obank().get(op).expect("tail-call: stale call op").get_addr().clone();
+        let mut destbuf = String::new();
+        let _ = destaddr.print_raw(&mut destbuf);
+        self.data.warning(
+            &format!("{tailkind}: recovered tail call -> introduced call to {destbuf}"),
+            &site,
+        );
+        if !self.setup_call_specs(op)? {
+            let truncop = self.artificial_halt(&site, 0)?;
+            self.data.op_dead_insert_after(truncop, op);
+        }
+        Ok(())
+    }
+
+    /// (kuna `tailcalljump`) The destination of the computed jump `op` when its
+    /// recovered table `jt_idx` names exactly one address and the environment
+    /// accepts that address as a tail-call target.
+    fn tail_call_table_dest(&self, op: OpId, jt_idx: usize) -> Option<Address> {
+        let dest = crate::kuna_tailcalljump::kuna_sole_table_destination(
+            self.data.get_jump_table(jt_idx as int4),
+        )?;
+        let outside = dest < self.baddr || self.eaddr < dest;
+        self.env.is_tail_call_table(&self.data, op, &dest, outside).then_some(dest)
+    }
+
+    /// (kuna `tailcalljump`) Turn the computed jump `op` into a tail call to its
+    /// sole table destination `dest`: the input becomes a code reference to
+    /// `dest`, exactly as upstream `RuleSwitchSingle` rewrites a one-destination
+    /// switch, and the resulting direct jump takes the direct tail-call rewrite.
+    /// The register that carried the address is recorded on the call spec so it
+    /// is not recovered as an argument.
+    fn recover_table_tail_call(&mut self, op: OpId, dest: &Address) -> KunaResult<()> {
+        let oldin = self.data.obank().get(op).and_then(|o| o.get_in(0));
+        let carrier = self.jump_target_carrier(op);
+        let coderef = self.data.new_code_ref(dest);
+        self.data.op_set_input(op, coderef, 0)?;
+        if let Some(vn) = oldin {
+            let free = self
+                .data
+                .vbank()
+                .get(vn)
+                .is_some_and(|v| !v.is_written() && v.has_no_descend());
+            if free {
+                self.data.delete_varnode(vn)?;
+            }
+        }
+        self.recover_tail_call(op, dest, "tailcalljump")?;
+        if let (Some(storage), Some(idx)) = (carrier, self.data.get_call_specs_index(op)) {
+            self.data.get_call_specs_mut(idx).set_jump_target_storage(storage);
+        }
+        Ok(())
+    }
+
+    /// (kuna `tailcalljump`) The register a computed jump `op` reads its target
+    /// from (`bx r1`, `mov pc,ip`), traced back through the COPY and mask ops of
+    /// the jump's own instruction to a register that instruction does not write;
+    /// `None` when the target is computed from no single register
+    /// (`ldr pc,[pc,#-4]`).
+    fn jump_target_carrier(&self, op: OpId) -> Option<(Address, int4)> {
+        let (obank, vbank) = (self.data.obank(), self.data.vbank());
+        let seq = obank.get(op)?.get_seq_num().clone();
+        let earlier: Vec<OpId> =
+            obank.iter_at(seq.get_addr()).filter(|(s, _)| **s < seq).map(|(_, id)| id).collect();
+        let mut want = vbank.get(obank.get(op)?.get_in(0)?)?;
+        let mut limit = earlier.len();
+        loop {
+            let pos = earlier[..limit].iter().rposition(|&id| {
+                obank
+                    .get(id)
+                    .and_then(|o| o.get_out())
+                    .and_then(|out| vbank.get(out))
+                    .is_some_and(|out| out.get_addr() == want.get_addr())
+            });
+            let Some(pos) = pos else {
+                return crate::p4_calls::kuna_calleearitybody::is_register(want.get_addr())
+                    .then(|| (want.get_addr().clone(), want.get_size()));
+            };
+            let def = obank.get(earlier[pos])?;
+            if !matches!(def.code(), OpCode::CPUI_COPY | OpCode::CPUI_INT_AND) {
+                return None;
+            }
+            let mut inputs = (0..def.num_input())
+                .filter_map(|i| def.get_in(i))
+                .filter_map(|vn| vbank.get(vn))
+                .filter(|v| !v.is_constant());
+            want = inputs.next()?;
+            if inputs.next().is_some() {
+                return None;
+            }
+            limit = pos;
+        }
     }
 
     /// (kuna) Which tail-jump rule, if either, claims this direct `CPUI_BRANCH`?
@@ -3410,6 +3492,15 @@ truncating the fall-through here"
             );
             match mode {
                 Ok(Some(jt_idx)) => {
+                    let tail = (!for_inline).then(|| self.tail_call_table_dest(op, jt_idx));
+                    if let Some(dest) = tail.flatten() {
+                        self.data.remove_jump_table(jt_idx);
+                        for idx in new_tables.iter_mut().filter(|idx| **idx > jt_idx) {
+                            *idx -= 1;
+                        }
+                        self.recover_table_tail_call(op, &dest)?;
+                        continue;
+                    }
                     // jt->isPartial(): if incomplete and there is more flow, the
                     // C++ re-queues into `notreached`.  Single-pass: mark complete.
                     if self.data.get_jump_table(jt_idx as int4).is_partial() {

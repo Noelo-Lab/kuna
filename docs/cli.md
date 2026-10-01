@@ -499,6 +499,13 @@ kuna decompile ./a.out sub_140004dcc --json \
   --assert 'prototype VirtualAlloc void *VirtualAlloc(void *p,unsigned int n,unsigned int a,unsigned int b)'
 ```
 
+An `enum` takes the layout gcc and clang give it: `int`-wide (signed if a
+constant is negative) unless a constant needs `long long`, with its unvalued
+constants counting on from the one before. gcc for `arm-none-eabi` defaults to
+`-fshort-enums`, which makes enums as narrow as their constants; state that
+layout, or any packed enum, with C23's underlying type, `typedef enum Mode :
+unsigned char { IDLE, RUN };`.
+
 **A parameter may be named after a type.** kuna interns a type called `code`,
 and a `-g` binary interns every DWARF type name it uses, so the name you want
 for a parameter is often already a type name; the declaration still reads it as
@@ -522,6 +529,21 @@ kuna decompile ./qjs main \
   --assert 'typedef struct JSValue { unsigned long payload; long tag; };' \
   --assert 'prototype sub_875e0 struct JSValue JS_ReadObject(void *ctx,char *buf,unsigned long len,unsigned int flags)'
 ```
+
+A record may name its own tag, a sibling record defined by a later `typedef`, or
+a tag declared ahead of its body (`typedef struct Node;`), as C allows, and the
+decompiled code reads through those pointers as fields (`n->next->next->val`),
+including from a prototype stated before the body:
+
+```bash
+kuna decompile ./a.out walk \
+  --assert 'typedef struct Node;' \
+  --assert 'prototype walk int walk(struct Node *n)' \
+  --assert 'typedef struct Node { struct Node *next; int val; void (*visit)(struct Node *n); };'
+```
+
+A record cannot hold itself, or a tag that has no body yet, by value, and a
+record that already has a body cannot be given another.
 
 **`<func>` is what the prototype binds to, not the name inside the
 declaration.** The reason to state a signature at all is usually that the

@@ -169,7 +169,12 @@ kuna_options! { self, p1;
     },
     "decodehalt" => on_off!(decode_halt, "Decode-failure halt reporting"),
     "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
-    "tailcalljump" => on_off!(tail_call_jumps, "Tail-call jump recovery"),
+    "tailcalljump" => {
+        let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
+        self.tail_call_jumps = jumps;
+        self.tail_call_tables = tables;
+        Ok(msg.to_string())
+    },
     "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),
     "tailcallsaved" => {
         on_off!(tail_call_saved, "Saved-register restore test for a frame teardown")

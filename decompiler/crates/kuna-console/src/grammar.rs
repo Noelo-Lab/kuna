@@ -62,6 +62,8 @@ use kuna_base::types::{int4, uint4, uintb};
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeBitField, TypeFactory, TypeField};
 use kuna_decomp::fspec::PrototypePieces;
 
+mod kuna_enumlayout;
+
 // =============================================================================
 // Default-data-space context (the `glb->getDefaultDataSpace()` info the C++
 // pointer-modifier reads)
@@ -1899,6 +1901,19 @@ impl<'a> CParse<'a> {
         let ident = self.tag_identifier()?;
         if matches!(self.peek()?, PToken::Punct(b'{')) {
             self.next()?;
+            // Make the tag visible while parsing its own fields, including
+            // nested function-pointer parameters. The factory completes it below.
+            if !ident.is_empty() {
+                let record = if is_struct {
+                    self.old_struct(&ident)?
+                } else {
+                    self.old_union(&ident)?
+                };
+                if !record.is_incomplete() {
+                    self.set_error("Cannot redefine a completed record");
+                    return Err(KunaError::parse(self.lasterror.clone()));
+                }
+            }
             let declist = self.struct_declaration_list()?;
             self.expect_punct(b'}')?;
             if is_struct {
@@ -2007,9 +2022,13 @@ impl<'a> CParse<'a> {
     }
 
     /// `enum_specifier` (`grammar.y:134-140`).
+    ///
+    /// (kuna) A C23 fixed underlying type (`enum E : unsigned char { ... }`) may
+    /// follow the tag; it requires a body ([`kuna_enumlayout`]).
     fn enum_specifier(&mut self) -> KunaResult<Rc<Datatype>> {
         self.next()?; // ENUM
         let ident = self.tag_identifier()?;
+        let underlying = self.enum_underlying_type()?;
         if matches!(self.peek()?, PToken::Punct(b'{')) {
             self.next()?;
             let vecenum = self.enumerator_list()?;
@@ -2018,10 +2037,10 @@ impl<'a> CParse<'a> {
                 self.next()?;
             }
             self.expect_punct(b'}')?;
-            self.new_enum(&ident, vecenum)
+            self.new_enum(&ident, vecenum, underlying)
         } else {
             // `ENUM IDENTIFIER` -> oldEnum.
-            if ident.is_empty() {
+            if ident.is_empty() || underlying.is_some() {
                 return self.syntax_error();
             }
             self.old_enum(&ident)
@@ -2431,23 +2450,23 @@ impl<'a> CParse<'a> {
 
     /// C++ `CParse::newStruct` (`grammar.cc:1055-1085`).
     ///
-    /// Builds the field list and would call `glb->types->assignRawFields(...)`.
-    /// The mutating factory orchestrator (`assignRawFields` re-keys the interned
-    /// stub) is a W6 type-factory boundary, so this errs after validating the
-    /// declarators (preserving the C++ "Invalid structure declarator" message).
-    /// // STUB(w6-fspec-2) — see LOSS-006 restoration.
+    /// Complete the stub registered before parsing the record body. A failed
+    /// body leaves a tagged stub incomplete, so existing forward pointers remain
+    /// valid when a subsequent declaration supplies a correct definition; an
+    /// anonymous record is built fresh and destroyed on failure, as upstream.
     fn new_struct(&mut self, ident: &str, declist: Vec<TypeDeclarator>) -> KunaResult<Rc<Datatype>> {
-        // Create the (incomplete) stub for recursion before any field references
-        // it (C++ getTypeStruct).
-        let res = self.factory.get_type_struct(ident)?;
+        let res = if ident.is_empty() {
+            self.factory.get_type_struct(ident)?
+        } else {
+            self.old_struct(ident)?
+        };
         let is_big_endian = self.factory.is_big_endian();
         let mut sublist: Vec<TypeField> = Vec::new();
         let mut bitlist: Vec<TypeBitField> = Vec::new();
         for decl in &declist {
             if !decl.is_valid()? {
                 self.set_error("Invalid structure declarator");
-                self.factory.destroy_type(&res)?;
-                return Err(KunaError::parse(self.lasterror.clone()));
+                return self.abandon_record(ident, &res);
             }
             let field_type = decl.build_type(self.factory, &self.org)?;
             if decl.get_num_bits() != 0 {
@@ -2462,16 +2481,24 @@ impl<'a> CParse<'a> {
                 sublist.push(TypeField::new(0, -1, decl.get_identifier(), field_type));
             }
         }
-        // On a LowlevelError the C++ records setError + destroyType + returns
-        // null (a parse failure).
+        // Preserve the incomplete shell on errors: prior pointers already own
+        // it, and a later successful definition must complete that same shell.
         match self.factory.assign_raw_fields_struct(&res, sublist, bitlist) {
             Ok(completed) => Ok(completed),
             Err(err) => {
                 self.set_error(err.explain());
-                let _ = self.factory.destroy_type(&res);
-                Err(KunaError::parse(self.lasterror.clone()))
+                self.abandon_record(ident, &res)
             }
         }
+    }
+
+    /// The parse error for a record body that failed: an anonymous record's
+    /// stub is destroyed, a tagged one stays declared.
+    fn abandon_record(&mut self, ident: &str, res: &Rc<Datatype>) -> KunaResult<Rc<Datatype>> {
+        if ident.is_empty() {
+            self.factory.destroy_type(res)?;
+        }
+        Err(KunaError::parse(self.lasterror.clone()))
     }
 
     /// C++ `CParse::oldStruct` (`grammar.cc:1087-1094`).
@@ -2479,6 +2506,7 @@ impl<'a> CParse<'a> {
         let res = self.factory.find_by_name(ident)?;
         match &res {
             Some(tp) if tp.get_metatype() == type_metatype::TYPE_STRUCT => Ok(tp.clone()),
+            None => self.factory.kuna_declare_record(ident, false),
             _ => {
                 self.set_error("Identifier does not represent a struct as required");
                 Err(KunaError::parse(self.lasterror.clone()))
@@ -2488,14 +2516,16 @@ impl<'a> CParse<'a> {
 
     /// C++ `CParse::newUnion` (`grammar.cc:1096-1121`).
     fn new_union(&mut self, ident: &str, declist: Vec<TypeDeclarator>) -> KunaResult<Rc<Datatype>> {
-        // The (incomplete) stub (C++ getTypeUnion).
-        let res = self.factory.get_type_union(ident)?;
+        let res = if ident.is_empty() {
+            self.factory.get_type_union(ident)?
+        } else {
+            self.old_union(ident)?
+        };
         let mut sublist: Vec<TypeField> = Vec::new();
         for (i, decl) in declist.iter().enumerate() {
             if !decl.is_valid()? {
                 self.set_error("Invalid union declarator");
-                self.factory.destroy_type(&res)?;
-                return Err(KunaError::parse(self.lasterror.clone()));
+                return self.abandon_record(ident, &res);
             }
             let field_type = decl.build_type(self.factory, &self.org)?;
             sublist.push(TypeField::new(i as int4, 0, decl.get_identifier(), field_type));
@@ -2504,8 +2534,7 @@ impl<'a> CParse<'a> {
             Ok(completed) => Ok(completed),
             Err(err) => {
                 self.set_error(err.explain());
-                let _ = self.factory.destroy_type(&res);
-                Err(KunaError::parse(self.lasterror.clone()))
+                self.abandon_record(ident, &res)
             }
         }
     }
@@ -2515,6 +2544,7 @@ impl<'a> CParse<'a> {
         let res = self.factory.find_by_name(ident)?;
         match &res {
             Some(tp) if tp.get_metatype() == type_metatype::TYPE_UNION => Ok(tp.clone()),
+            None => self.factory.kuna_declare_record(ident, true),
             _ => {
                 self.set_error("Identifier does not represent a union as required");
                 Err(KunaError::parse(self.lasterror.clone()))
@@ -2524,25 +2554,36 @@ impl<'a> CParse<'a> {
 
     /// C++ `CParse::newEnum` (`grammar.cc:1156-1180`).
     ///
-    /// Ports the body up to the factory store-write: build the `(name,value,
-    /// assigned)` lists from the parsed enumerators and run
-    /// `TypeEnum::assignValues` (the duplicate-value check + free-value fill,
-    /// `Datatype::assign_values`).  Installing the resulting value-map into the
-    /// interned enum stub (`glb->types->setEnumValues`) is the W6 type-factory
-    /// boundary, so this errs after the value computation.  // STUB(w6-fspec-2)
-    fn new_enum(&mut self, ident: &str, vecenum: Vec<Enumerator>) -> KunaResult<Rc<Datatype>> {
-        // An interned (incomplete) enum stub (C++ getTypeEnum).
-        let res = self.factory.get_type_enum(ident)?;
-        let mut namelist: Vec<String> = Vec::new();
-        let mut vallist: Vec<uintb> = Vec::new();
-        let mut assignlist: Vec<bool> = Vec::new();
-        for e in &vecenum {
-            namelist.push(e.enumconstant.clone());
-            vallist.push(e.value);
-            assignlist.push(e.constantassigned);
+    /// Build the `(name,value,assigned)` lists from the parsed enumerators, run
+    /// `TypeEnum::assignValues` (the duplicate-value check,
+    /// `Datatype::assign_values`) and install the value map on the interned enum.
+    ///
+    /// (kuna) The constants and the width are C's rather than upstream's
+    /// ([`kuna_enumlayout`]): an enumerator with no `=` is one past the one before
+    /// it, the enum is `int`-wide (signed when a constant is negative) unless a
+    /// constant needs more, or as wide as its C23 underlying type, and a second
+    /// enumerator of one constant is an alias the value map does not keep.
+    fn new_enum(
+        &mut self,
+        ident: &str,
+        vecenum: Vec<Enumerator>,
+        underlying: Option<Rc<Datatype>>,
+    ) -> KunaResult<Rc<Datatype>> {
+        let vallist = kuna_enumlayout::enum_constants(&vecenum);
+        if let Some(tp) = &underlying {
+            if let Some(name) = kuna_enumlayout::enumerator_out_of_range(tp, &vecenum, &vallist) {
+                self.set_error(&format!("Enumerator {name} does not fit the underlying type"));
+                return Err(KunaError::parse(self.lasterror.clone()));
+            }
         }
-        // Reports duplicate-value errors with the same explain text as the C++
-        // (C++ TypeEnum::assignValues).
+        // An interned (incomplete) enum stub (C++ getTypeEnum).
+        let res = match self.enum_layout(underlying.as_ref(), &vallist) {
+            Some((size, meta)) => self.factory.get_type_enum_sized(ident, size, meta)?,
+            None => self.factory.get_type_enum(ident)?,
+        };
+        let (namelist, vallist) = kuna_enumlayout::named_constants(&vecenum, &vallist, res.get_size());
+        let assignlist = vec![true; namelist.len()];
+        // C++ TypeEnum::assignValues (the value map; no duplicate remains).
         match Datatype::assign_values(res.get_size(), res.get_name(), &namelist, &vallist, &assignlist)
         {
             Ok(namemap) => {
@@ -2724,7 +2765,9 @@ pub fn parse_c(
         if decl.get_identifier().is_empty() {
             return Err(KunaError::parse("Missing identifier for typedef"));
         }
-        if ct.get_metatype() == type_metatype::TYPE_STRUCT {
+        if ct.get_metatype() == type_metatype::TYPE_STRUCT
+            && (ct.get_name().is_empty() || ct.get_name() == decl.get_identifier())
+        {
             factory.set_name(&ct, decl.get_identifier())?;
         } else {
             factory.get_typedef(&ct, decl.get_identifier(), 0, 0)?;
