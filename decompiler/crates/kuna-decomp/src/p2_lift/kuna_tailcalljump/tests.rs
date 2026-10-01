@@ -135,17 +135,51 @@ fn indirect_branch_returns_false() {
 fn indirect_branch_with_a_sole_foreign_destination_is_a_tail_call() {
     let mut fd = build_fd();
     let op = build_branch_op(&mut fd, OpCode::CPUI_BRANCHIND, 0x18d0);
-    assert!(kuna_is_tail_call_table(&fd, op, true, true, false, true, false), "locked");
-    assert!(kuna_is_tail_call_table(&fd, op, true, true, false, false, true), "out of extent");
+    let yes = || true;
+    let no = || false;
+    assert!(kuna_is_tail_call_table(&fd, op, true, true, false, false, yes), "locked");
+    assert!(kuna_is_tail_call_table(&fd, op, true, true, false, true, no), "out of extent");
     assert!(
-        !kuna_is_tail_call_table(&fd, op, true, true, false, false, false),
+        !kuna_is_tail_call_table(&fd, op, true, true, false, false, no),
         "no prototype, inside the extent"
     );
-    assert!(!kuna_is_tail_call_table(&fd, op, false, true, false, true, true), "gate off");
-    assert!(!kuna_is_tail_call_table(&fd, op, true, false, false, true, true), "not a function");
-    assert!(!kuna_is_tail_call_table(&fd, op, true, true, true, true, true), "its own entry");
+    assert!(!kuna_is_tail_call_table(&fd, op, false, true, false, true, yes), "gate off");
+    assert!(!kuna_is_tail_call_table(&fd, op, true, false, false, true, yes), "not a function");
+    assert!(!kuna_is_tail_call_table(&fd, op, true, true, true, true, yes), "its own entry");
     let direct = build_branch_op(&mut fd, OpCode::CPUI_BRANCH, 0x18d0);
-    assert!(!kuna_is_tail_call_table(&fd, direct, true, true, false, true, true), "direct jump");
+    assert!(!kuna_is_tail_call_table(&fd, direct, true, true, false, true, yes), "direct jump");
+    let asked = std::cell::Cell::new(false);
+    kuna_is_tail_call_table(&fd, op, false, true, false, false, || {
+        asked.set(true);
+        true
+    });
+    assert!(!asked.get(), "a closed gate never looks the callee up");
+}
+
+#[test]
+fn parked_pieces_state_the_call_unless_they_only_map_the_return() {
+    use crate::fspec::{ParameterPieces, PrototypePieces};
+    let int = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+    let void = Rc::new(Datatype::new(0, type_metatype::TYPE_VOID));
+    let stated = |returns_value| Some(StatedCallee { returns_value });
+    assert_eq!(stated_by_pieces(None), None);
+    assert_eq!(stated_by_pieces(Some(&PrototypePieces::default())), stated(false), "f(void)");
+    let int_f = PrototypePieces { outtype: Some(int.clone()), ..Default::default() };
+    assert_eq!(stated_by_pieces(Some(&int_f)), stated(true), "int f(void)");
+    let void_f = PrototypePieces { outtype: Some(void), intypes: vec![int], ..Default::default() };
+    assert_eq!(stated_by_pieces(Some(&void_f)), stated(false), "void f(int)");
+    let return_only =
+        PrototypePieces { output_storage: Some(ParameterPieces::default()), ..Default::default() };
+    assert_eq!(stated_by_pieces(Some(&return_only)), None, "map return");
+}
+
+#[test]
+fn a_tail_call_returning_a_value_needs_the_callers_output_stated() {
+    let stated = |returns_value| Some(StatedCallee { returns_value });
+    assert!(tail_call_states_the_body(stated(true), true));
+    assert!(!tail_call_states_the_body(stated(true), false), "would print void");
+    assert!(tail_call_states_the_body(stated(false), false), "returns nothing");
+    assert!(!tail_call_states_the_body(None, true), "no callee prototype");
 }
 
 #[test]
