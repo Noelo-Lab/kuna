@@ -1425,6 +1425,32 @@ a prototype an earlier pass already forced, is never replaced. A target with no
 declared prototype (an untyped `void *` field, or a code type without one)
 leaves the site on its model-recovered argument list.
 
+A prototype that passes or returns a floating-point value (a `float` or
+`double`, or a struct, union or array holding one) is forced only under the
+image's floating-point convention
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_typedcallabi.rs`). A
+declarator that names no convention gets the default model, which passes such
+values in floating-point registers. A soft-float image passes them in integer
+registers, so forcing that storage there would print uninitialized
+floating-point register locals as the arguments and drop the ones the caller
+set. The loader reads what the container states
+(`decompiler/crates/kuna-analysis/src/loader/kuna_floatabi.rs`): ARM's
+`Tag_ABI_VFP_args` (an `aeabi` subsection without it means the core-register
+base variant) or a linked EABI5 header's float flag, MIPS `.MIPS.abiflags` and
+`Tag_GNU_MIPS_ABI_FP`, PowerPC `Tag_GNU_Power_ABI_FP`, and the RISC-V header's
+float-ABI bits; x86 and AArch64 always use floating-point registers. A
+hard-float image gets the prototype as declared. A soft-float image gets it
+rebuilt from the same types under the spec's soft-float model (ARM's
+`__stdcall_softfp`), or not at all where the spec has none (MIPS, PowerPC,
+RISC-V), which leaves the recovered arguments. An image that states nothing (a
+clang PowerPC object, a raw image, the Ghidra front-end) gets the prototype
+only when some op of the function other than a call, return or SSA join reads
+or writes a register the model passes floating-point values in, since
+soft-float code never touches them; a function whose only floating-point
+traffic is forwarding its own argument keeps the recovered arguments there. A
+prototype that names its own convention, or holds no floating-point value, is
+forced as declared on every image.
+
 `force_set` first saves a copy of the full `FuncProto` — model, storage, locks
 and all — into the function's Override store keyed by the call address
 (`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs

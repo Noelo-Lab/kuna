@@ -1254,7 +1254,8 @@ impl Action for ActionDeindirect {
                     .map(|target| target.get_type_read_facing(op))
                     .filter(|ty| ty.get_metatype() == type_metatype::TYPE_PTR)
                     .and_then(|ty| ty.get_ptr_to())
-                    .and_then(|ty| ty.get_code_prototype().cloned());
+                    .and_then(|ty| ty.get_code_prototype().cloned())
+                    .and_then(|proto| crate::kuna_typedcallabi::admit(data, proto));
                 if let Some(proto) = proto {
                     let mut fc = data.replace_call_specs(i);
                     let mut restartlog = crate::kuna_restartlog::RestartLog::new();
