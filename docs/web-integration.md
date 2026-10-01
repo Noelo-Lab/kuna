@@ -160,18 +160,19 @@ driver (`--option protoorder`, `docs/cli.md`), while this command calls the shar
 batch directly, so the browser's call-argument types and `struct_N` numbering are the
 ones `--option protoorder off` produces.
 
-**The study view's commands: `inspect`, `read`, `xrefs`, and `--assert`.** Every command also
+**The study view's commands: `inspect`, `read`, `xrefs`, `strings`, and `--assert`.** Every command also
 takes a repeatable `--assert <directive>` — the CLI's override plane, parsed by the same
 grammar (`kuna_console::assertsyntax`, one directive per value; a value with a line break
 is refused) and applied in the CLI's order (read-only propagation when a `readonly` range
 implies it, `set_assertions` + the image-scoped directives before the analysis commit, the
 program-scoped ones after it, the function- and symbol-scoped ones inside the decompile
-loop). Three more commands serve the study view:
+loop). Four more commands serve the study view:
 
 ```
 kuna_wasm <binary> <spec-root> inspect <name|0xADDR> [--mode M] [--language L] [--assert D]...
 kuna_wasm <binary> <spec-root> read <0xADDR> <LEN> [--assert D]...
 kuna_wasm <binary> <spec-root> xrefs <name|0xADDR> [--mode M] [--assert D]...
+kuna_wasm <binary> <spec-root> strings [--mode M] [--assert D]...
 ```
 
 Because every request is a fresh process, the page's edit session IS its directive list: it
@@ -243,7 +244,21 @@ from, from_hex, kind, instruction}], callees:[{name, address, address_hex, at, a
 kind, instruction}], data_refs:[…as callees…], assertions}` — a caller's `address` is the
 calling function's entry and `from` the calling instruction; callees are calls and jumps
 that leave the function (`kind` `call`/`jump`), data refs are `data` (address taken),
-`read` and `write`; all three lists are in instruction order. `list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
+`read` and `write`; all three lists are in instruction order. `strings` lists the rows
+`kuna strings --encoding all` finds (minimum length 5, any ending) with who uses each:
+`{binary, scanned, count, strings:[{address, address_hex, text, length, encoding,
+section, in_code, uses:[{name, address, address_hex, at, at_hex, kind, instruction,
+via}]}], assertions}`. A use is a `data`, `read` or `write` reference into the literal
+from the same reference walk, built once for the whole image, `address` naming the
+function that holds the instruction `at`. It also counts the uses of a pointer-aligned word in an
+initialized data section that holds the address of a string outside code (`static const
+char *secret = "flag{…}"` is read through `secret`, never by its own address); `via` is
+then that word's `{name, address, address_hex}`, else null. These are code that happens to
+read as text, so none of them is a use: a branch into a literal, a reference to a
+function's entry or its Thumb address, a word pointing into code (a jump table, a function
+pointer), and a load or store into a literal inside code (a literal pool; firmware keeps
+its strings in code and uses them by address). `in_code` marks a row inside an executable
+section. `list` adds `language`, `target`, `sections:[{name, address, address_hex, size,
 file_offset, file_size, executable, writable}]` (allocated sections, in address order;
 `file_size` is how many of the section's bytes the file holds from `file_offset`, which a
 PE section's virtual size can exceed; `writable` follows the segment that maps the
@@ -290,7 +305,7 @@ front-end remains the source of truth for the 500 KiB and 2 MiB thresholds.
 The Worker session carries the binary, the mode **and the output language** to every
 request. `setBinary` once stored only the mode, so the first page's Language control
 never reached the engine; `test/worker.mjs` loads with `rust` and asserts Rust comes back. Every Worker method (`list`, `decompile`,
-`inspect`, `read`, `xrefs`, `project`) also takes an `assertions` list, which
+`inspect`, `read`, `xrefs`, `strings`, `project`) also takes an `assertions` list, which
 `wasmCommandArgs` appends as one `--assert <directive>` pair each, after the mode and
 language; an empty list produces exactly the argv the flag's absence always did
 (`test/auto-mode.mjs` pins both). A failed request keeps what the engine said: the error
@@ -558,6 +573,7 @@ source tree):
 | `groups.js` | the function list's three groups and the function to open first |
 | `bytes-view.js` / `arch.js` | the hex dump and the patched file; no-op fills |
 | `mnemonics.js` / `stack-frame.js` / `xrefs-view.js` / `help.js` | instruction notes and idioms; the frame diagram; calls and callers in words; the help dialog |
+| `strings-view.js` | the sidebar's Strings list: its three groups, the users of each string, the search and the row cap |
 | `prefs.js` / `addr.js` | view settings (`kuna.d2.prefs`, v3 with the v1 and v2 migrations) and `hintsOn`; addresses as hex strings and BigInt |
 | `collab/` | *Working together* (below), loaded with a dynamic `import()` only when a session starts or an invite or reply link is opened: `collab.js` (dialogs, the roster, following), `sync.js` (the page's side: the Session ⇄ register sync, joining and leaving, where a session is stored), `group.js` (the protocol: hello, snapshots, relayed introductions, file transfer, digests, limits), `link.js` (WebRTC and BroadcastChannel links), `replica.js` (registers, `validOp`, digests, the register-based undo), `wire.js` (messages and their checks, invite and reply codes), `sdp.js`, `presence.js` (pointers and pings), `collab.css`; all but `collab.js`, `link.js` and `presence.js` are DOM-free (SHA-256 is `../sha256.js`, shared with the page) |
 
@@ -697,6 +713,17 @@ comes from the engine's `xrefs` on request (*Find who calls it*, or `x`), each c
 linked to the calling instruction and saying how it refers ("Called by _start (uses its
 address)"), plus "Uses data at …". If the request fails, the panel keeps the callees and
 says why.
+
+**Strings.** The sidebar switches between *Functions* and *Strings*. The first time the
+Strings list is shown the page asks the engine for `strings` (once per program and mode,
+when nothing else is running) and lists the text in three groups: *Used by the code*
+(open), *Not used directly* and *Inside machine code*. Each used string says which
+functions use it ("Used in check ×2 through the pointer secret"). A function's name opens
+it with the using instruction selected, so the line of code holding the string is
+highlighted, and clicking it again steps to its next use there; clicking the string goes
+to its first use, or for an unused one shows its bytes. The search works as the function
+search does (terms or `/regex/`, `/` to focus it) and opens the groups it matches in. At
+most 300 rows of a group are drawn; the search reaches the rest.
 
 **Working together.** Several people can work on one program at once, with no server:
 each person's page renames, retypes, notes and patches, and everyone sees the others'
@@ -958,8 +985,8 @@ skips it as too costly):
    browser shim implements) and asserts its output is **byte-identical to the native
    `kuna_wasm`** across `list` + `decompile {…}` + a whole-binary `project` export for each
    fixture (20 cases across ELF x86-64, ELF AArch64, and Mach-O x86-64, one of them
-   `--language rust` so the second output language is proven to cross the boundary too).
-   This proves the port is faithful, not degraded.
+   `--language rust` so the second output language is proven to cross the boundary too),
+   plus `strings` on `crackme.elf`. This proves the port is faithful, not degraded.
 2. **`test/glue.mjs`** — imports the shipped `kuna-web.js` (which drives the vendored
    `@bjorn3` shim) and decompiles over HTTP against `dist/`, exercising the exact browser
    code path minus the DOM — and specifically the **robust lazy-spec mechanism**: it
@@ -986,7 +1013,7 @@ skips it as too costly):
    same wasm under a new ETag, then another wasm), a restarted Worker downloads neither the
    wasm nor a spec file, still decompiles, and keeps the id; a Worker that cannot hand its
    module over makes the id unknown.
-4. **The decompiler page.** Five build-free suites import the page's modules from the source
+4. **The decompiler page.** Six build-free suites import the page's modules from the source
    tree: **`test/decompile2-render.mjs`** (the shared highlighter's `scan` — `highlight*`
    output pinned byte for byte — token-stream rendering and the per-line fallback,
    escaping, the index, the diff, assembly rows as comments and as headings, the easy
@@ -1002,8 +1029,11 @@ skips it as too costly):
    for every fixture mnemonic, idioms, the `sum_to` frame and its rows, the overflow
    callout, calls and callers in words, the glossary). They read contract fixtures generated from the native CLI
    by `test/make-inspect-fixtures.mjs` (`test/fixtures/inspect-{main,sum_to,add}.json`,
-   `list-sample.json`). **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
-   `xrefs` and `--assert` through the real Worker, and pins the refusal error the page
+   `list-sample.json`). **`test/decompile2-strings.mjs`** (build-free) covers the
+   Strings list: groups, one-line text, users with their pointers, escaping, search and
+   the row cap. **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
+   `xrefs`, `strings` and `--assert` through the real Worker (`strings` on
+   `fixtures/crackme.elf`), and pins the refusal error the page
    relies on (exit code plus the quoted directive); it skips with a message on a wasm
    without `inspect`. **`test/decompile2-collab.mjs`** (build-free) covers live sessions:
    2000 random rounds of registers over the full key set, the mode included, converge to
@@ -1143,7 +1173,8 @@ skips it as too costly):
 
 Fixtures (all benign, small, reproducible from the committed source via the comment
 header): `sample.elf` (x86-64 ELF, rich body — call chain + `for`-loop), `sample_aarch64.o`
-(AArch64), `sample_macho.o` (Mach-O x86-64 — a second *format*). **PE** executables were
+(AArch64), `sample_macho.o` (Mach-O x86-64 — a second *format*), `crackme.elf` (x86-64
+ELF, a flag check whose strings are used directly and through a pointer). **PE** executables were
 verified separately against a real PE (152 functions) through the browser lazy path; no
 benign PE is committed because this environment has no PE linker.
 

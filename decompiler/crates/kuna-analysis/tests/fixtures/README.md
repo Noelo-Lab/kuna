@@ -23,6 +23,7 @@ real ELF parser.
 | `elfaliasclash_x86_64` | 16 KB dynamic x86-64 PIE built from `elfaliasclash_x86_64.c` + `elfaliasclash_b_x86_64.c` (`gcc -O1`, Ubuntu gcc 11.4.0, SHA-256 `3b99d2b6ec4ad89d8301c41ac0973eee8132ca6f748b10a55f0b361e9cf926a3`): `shared` is both a global alias of `twin` (same address) and a static function of its own | a same-address alias spelled like another function's own name never takes that name over: `shared` still selects the static function at `0x1155`. `tests/stages/kuna-elfaliasnames.xml` and `kuna-cli/tests/elf_symbol_aliases.rs` |
 | `et_rel_status_arm.o` | project-authored ARM32 **ET_REL** object from `et_rel_status_arm.s` | architecture-specific `R_ARM_CALL`/data relocation application and return recovery when a status value is both returned on the normal path and passed to an explicit no-return call on a terminal guard-failure path; `status_caller` consumes the recovered result |
 | `et_rel_status_aarch64.o` | project-authored AArch64 **ET_REL** object from `et_rel_status_aarch64.s` | `R_AARCH64_CALL26`, page/low-12 relocation application, and the same status-return/no-return-path recovery shape on the 64-bit ABI; `status_caller` consumes the recovered result |
+| `et_rel_calls_sparc.o` | project-authored 32-bit SPARC **ET_REL** object from `et_rel_calls_sparc.s` | `R_SPARC_WDISP30` calls to a local function and an undefined extern, and `R_SPARC_HI22`/`R_SPARC_LO10` pairs addressing a `.data` global and a `.rodata` literal (`kuna-console/tests/verify_et_rel_sparc_calls.rs`) |
 | `entry_selectors_x86_64.o` | synthetic x86-64 **ET_REL** object produced from `entry_selectors_{a,b}_x86_64.s` | relocatable-object entry selection: two local `STT_FUNC` definitions share the name `duplicate_local` and raw offset zero but live in distinct `.text.selector_a` / `.text.selector_b` sections, so name and bare-offset selection must report both candidates while a section-qualified selector is exact |
 | `fauxware` | classic non-PIE x86-64, not stripped (the angr `fauxware` sample) | `.plt` classic stubs (`FF 25` rip-rel), `.symtab` defined functions; `.eh_frame` FDE starts (`s1_entry`: 7 FDE starts incl. `_start`/`main`/`register_tm_clones`) |
 | `cet_pie_x86_64` | PIE x86-64 with CET (`.plt.sec`) | `endbr64; FF 25` CET stubs, naming at the `.plt.sec` call target |
@@ -166,9 +167,11 @@ entry_selectors_b_x86_64.o`; the two intermediate objects are not retained.
 synthetic assembly under the repository's Apache-2.0 license. Regenerate them
 with `arm-linux-gnueabi-as -o et_rel_status_arm.o et_rel_status_arm.s` and
 `aarch64-linux-gnu-as -o et_rel_status_aarch64.o et_rel_status_aarch64.s`.
+`et_rel_calls_sparc.o` is authored the same way; regenerate it with
+`sparc64-linux-gnu-as -32 -Av8 -o et_rel_calls_sparc.o et_rel_calls_sparc.s`.
 These two committed objects provide the end-to-end ARM/AArch64 status-return
 proof. In-memory relocation and layout tests cover the complete supported
-ARM/AArch64/PowerPC64 and generic-width matrix, REL/RELA addends, both byte
+ARM/AArch64/PowerPC64/SPARC and generic-width matrix, REL/RELA addends, both byte
 orders, local and external targets, interworking, bounds/range/alignment errors,
 missing TOCs, malformed encodings, and bounded diagnostic aggregation; no
 proprietary object is part of the regression suite.
