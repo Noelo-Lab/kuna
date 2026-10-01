@@ -195,8 +195,11 @@ fn computes_everywhere(data: &Funcdata, vn: VarnodeId, placed_at: Option<&Addres
 /// a different address was moved into the return register by an instruction the
 /// function executed, while a terminal at the same address is the caller's
 /// register passing straight through untouched -- leftover, and exactly what this
-/// module exists to drop. `None` drops the placement test and is the shape-only
-/// question the unit tests ask. See [`crate::kuna_retinputhalf`].
+/// module exists to drop. `None` drops the placement test: the pair repair asks
+/// it of a half the function moved out of its register and back
+/// ([`crate::kuna_retinputhalf::is_moved_back`]) and of the low half beside one,
+/// and the unit tests ask the shape-only question with it. See
+/// [`crate::kuna_retinputhalf`].
 fn computes_from(data: &Funcdata, vn: VarnodeId, depth: u32, placed_at: Option<&Address>) -> bool {
     if depth >= MAX_DEPTH {
         return true;
@@ -356,11 +359,26 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
         };
         let hi_slot = slot_storage(data, whole, lo_size, hi_size).unwrap_or(hi_addr);
         let lo_slot = slot_storage(data, whole, 0, lo_size).unwrap_or(lo_addr);
-        let hi_real = computes_from(data, hi, 0, Some(&hi_slot));
-        let lo_real = computes_from(data, lo, 0, Some(&lo_slot));
-        let keep = match (hi_real, lo_real) {
+        let hi_placed = computes_from(data, hi, 0, Some(&hi_slot));
+        let lo_placed = computes_from(data, lo, 0, Some(&lo_slot));
+        let moved = |vn: VarnodeId, slot: &Address, size: i32| {
+            crate::kuna_retinputhalf::is_moved_back(data, slot, size) && computes_from(data, vn, 0, None)
+        };
+        let hi_moved = !hi_placed && moved(hi, &hi_slot, hi_size);
+        let lo_moved = !lo_placed && moved(lo, &lo_slot, lo_size);
+        let keep = match (hi_placed || hi_moved, lo_placed || lo_moved) {
             // Both halves carry a value: a genuine wide return. Leave it alone.
             (true, true) => continue,
+            // The high register is real only because the function moved its
+            // argument back into it, which says the function returns the pair:
+            // a low half that is the function's own argument, untouched, is
+            // that argument handed back. Never the high register alone.
+            (true, false) if hi_moved => {
+                if computes_from(data, lo, 0, None) {
+                    continue;
+                }
+                lo
+            }
             // One return register holds both halves, so its high bits are not a
             // return value of their own: handing them back alone would return
             // them in place of the whole register.
