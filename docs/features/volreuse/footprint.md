@@ -150,4 +150,6 @@ one each: four print the same text on both arms (the counter's vocabulary is per
 file), and tar O2 `0x2c570` is a split (`strchr` and `open` results keep their
 own variables instead of being read back from `dat_82d78`/`dat_82a34`).
 
-TYPESWEEP_PLACEHOLDER
+Typesweep (444 slices, 10,748 functions, main `0729b8b05` against this
+revision): 10,748 same, 0 improved, 0 worse, 1,674 perfect on both arms, mean
+0.3753; the exported variable count is unchanged in every function.
