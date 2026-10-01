@@ -2,7 +2,7 @@
 mod common;
 use common::process;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 /// An x86-64 executable whose single segment maps `body` at 0x401000.
