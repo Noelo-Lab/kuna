@@ -711,6 +711,9 @@ pub struct EmitBase {
     /// frame closes its `else { … }` brace only when its own brace opened, never
     /// on a stale sibling/descendant fire (the shared-slot bug).
     pub pend_fired: Vec<(u64, int4)>,
+    /// (kuna) A C label was the last thing printed: no statement or opening
+    /// brace has followed it yet (see [`crate::kuna_labelstmt`]).
+    pub dangling_label: bool,
 }
 
 impl Default for EmitBase {
@@ -731,6 +734,7 @@ impl EmitBase {
             pend_gen_ctr: 0,
             pend_reg_gen: 0,
             pend_fired: Vec::new(),
+            dangling_label: false,
         }
     }
     /// C++ `Emit::resetDefaultsInternal()`.

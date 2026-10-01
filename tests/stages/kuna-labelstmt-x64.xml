@@ -1,0 +1,46 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-783: a label must be followed by a statement before C23.
+
+    last_case (clang -O0) is a switch whose last arm, case 7, is empty:
+    its table entry is a jump-only block to the code after the switch.  The
+    printer used to end the switch with the bare label `case 7:`; it now
+    gets `break;`.
+
+    skip_blanks (gcc -O2) enters its loop through a goto whose target is
+    the end of the loop body, so the body used to end with the bare label
+    `label_10ad:` before the `} while` brace.  The label now gets the null
+    statement `;`.  Both shapes are errors ("label at end of compound
+    statement") in C99/C11/C17.
+
+    Source: last_case(unsigned selector, unsigned *out) { unsigned v = 1;
+    switch (selector) { case 1: v = 7; break; case 3: v = 9; break;
+    case 4: v = 13; break; case 6: v = 5; break; case 7: break;
+    default: v = 21; break; } *out = v; }
+    skip_blanks(char **cpp) { char *cp; for (cp = *cpp; *cp == ' ' ||
+    *cp == '\t'; cp++) ; *cpp = cp; }
+    The jump table sits at 0x10b8, after the code.
+-->
+<bytechunk space="ram" offset="0x1000">554889e5897dfc488975f0c745ec010000008b45fc83c0ff89c148894de083e8060f8749000000488b45e0488d0d86000000486304814801c8ffe0c745ec07000000e930000000c745ec09000000e924000000c745ec0d000000e918000000c745ec05000000e90c000000e907000000c745ec150000008b4dec488b45f089085dc3662e0f1f8400000000000f1f4000488b070fb61080fa2075120f1f4400000fb650014883c00180fa2074f380fa0974ee488907c3669083ffffffb8ffffff8fffffff9bffffffb8ffffffa7ffffffb3ffffff</bytechunk>
+<symbol space="ram" offset="0x1000" name="last_case"/>
+<symbol space="ram" offset="0x1090" name="skip_blanks"/>
+</binaryimage>
+<script>
+  <com>parse line extern void last_case(uint4 selector, uint4 *out);</com>
+  <com>parse line extern void skip_blanks(char **cpp);</com>
+  <com>load function last_case</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function skip_blanks</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Label statement x64 #1: the empty last case gets break" min="1" max="1">case 7:$
+break;$</stringmatch>
+<stringmatch name="Label statement x64 #2: the loop-end goto label gets a null statement" min="1" max="1">^label_10ad:$
+^\s*;$
+^\s*\} while</stringmatch>
+<stringmatch name="Label statement x64 #3: no label directly before a blank line or a closing brace" min="0" max="0">:$
+^\s*\}?\s*$</stringmatch>
+</decompilertest>
