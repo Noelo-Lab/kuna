@@ -5,12 +5,12 @@
 //! registers the caller never set and drops the arguments it did set.
 use crate::{
     context::{ArchContext, VarnodeId},
-    dtype::{type_class, type_metatype, Datatype},
+    dtype::type_class,
     fspec::{FuncProto, ProtoModel, PrototypePieces},
     funcdata::Funcdata,
     infra::architecture::Architecture,
 };
-use kuna_base::address::Address;
+use kuna_base::{address::Address, space::AddrSpace};
 use kuna_num::opcodes::OpCode;
 use std::rc::Rc;
 
@@ -38,13 +38,18 @@ pub fn soft_model(arch: &Architecture, evidence: Option<bool>) -> Option<Rc<Prot
 }
 
 /// The prototype to force at a CALLIND typed with `proto`, or `None` to leave the
-/// call to model recovery.  A prototype that carries no floating-point value, or
-/// names its own convention, is forced as declared.  Otherwise the image decides:
-/// hard-float keeps it; soft-float rebuilds it under the soft-float model, or
-/// declines when the spec has none; an image that states nothing keeps it only
-/// when this function computes with the model's floating-point registers.
+/// call to model recovery.  A prototype that puts no parameter or return value in
+/// the model's floating-point registers, or names its own convention, is forced as
+/// declared.  Otherwise the image decides: hard-float keeps it; soft-float rebuilds
+/// it under the soft-float model, or declines when the spec has none; an image
+/// that states nothing keeps it only when this function computes with those
+/// registers.
 pub fn admit(data: &Funcdata, proto: Rc<FuncProto>) -> Option<Rc<FuncProto>> {
-    if !proto.has_model() || !carries_float(&proto) {
+    if !proto.has_model() {
+        return Some(proto);
+    }
+    let entries = float_entries(proto.model());
+    if !uses_float_storage(&proto, &entries) {
         return Some(proto);
     }
     let arch = data.get_arch();
@@ -55,30 +60,59 @@ pub fn admit(data: &Funcdata, proto: Rc<FuncProto>) -> Option<Rc<FuncProto>> {
     match arch.float_arg_registers {
         Some(true) => Some(proto),
         Some(false) => rebuild(arch, &proto),
-        None => uses_float_registers(data, proto.model()).then_some(proto),
+        None => uses_float_registers(data, &entries).then_some(proto),
     }
 }
 
-fn carries_float(proto: &FuncProto) -> bool {
-    let output = proto.get_output().get_type().cloned();
-    (0..proto.num_params())
-        .filter_map(|i| proto.get_param(i).and_then(|p| p.get_type().cloned()))
-        .chain(output)
-        .any(|ty| holds_float(&ty, 8))
+/// The (space index, offset, size) of each floating-point entry of the model.
+fn float_entries(model: &ProtoModel) -> Vec<(i32, u64, u64)> {
+    model
+        .input()
+        .get_entry()
+        .iter()
+        .chain(model.output().get_entry())
+        .filter(|e| e.get_type() == type_class::TYPECLASS_FLOAT)
+        .map(|e| {
+            (
+                e.get_space().get_index(),
+                e.get_base(),
+                e.get_size().max(0) as u64,
+            )
+        })
+        .collect()
 }
 
-fn holds_float(ty: &Datatype, depth: u32) -> bool {
-    match ty.get_metatype() {
-        type_metatype::TYPE_FLOAT => true,
-        type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION | type_metatype::TYPE_ARRAY
-            if depth > 0 =>
-        {
-            (0..ty.num_depend())
-                .filter_map(|i| ty.get_depend(i))
-                .any(|field| holds_float(&field, depth - 1))
+fn overlaps(entries: &[(i32, u64, u64)], space: &AddrSpace, offset: u64, size: u64) -> bool {
+    entries.iter().any(|&(index, base, len)| {
+        index == space.get_index() && base < offset + size && offset < base + len
+    })
+}
+
+/// Some parameter or the return value lives in a floating-point entry, directly or
+/// as a piece of a join.
+fn uses_float_storage(proto: &FuncProto, entries: &[(i32, u64, u64)]) -> bool {
+    let in_entry = |addr: Address, size: i32| {
+        let Some(space) = addr.get_space() else {
+            return false;
+        };
+        if addr.is_join() {
+            return space.find_join(addr.get_offset()).is_ok_and(|rec| {
+                (0..rec.num_pieces()).any(|i| {
+                    let piece = rec.get_piece(i);
+                    piece
+                        .space
+                        .as_ref()
+                        .is_some_and(|s| overlaps(entries, s, piece.offset, u64::from(piece.size)))
+                })
+            });
         }
-        _ => false,
-    }
+        overlaps(entries, space, addr.get_offset(), size.max(0) as u64)
+    };
+    let output = proto.get_output();
+    (0..proto.num_params())
+        .filter_map(|i| proto.get_param(i))
+        .any(|p| in_entry(p.get_address(), p.get_size()))
+        || (output.get_size() > 0 && in_entry(output.get_address(), output.get_size()))
 }
 
 fn rebuild(arch: &ArchContext, proto: &FuncProto) -> Option<Rc<FuncProto>> {
@@ -94,35 +128,22 @@ fn rebuild(arch: &ArchContext, proto: &FuncProto) -> Option<Rc<FuncProto>> {
     Some(Rc::new(soft))
 }
 
-/// Some op other than a call, return or SSA join reads or writes a register the
-/// model passes floating-point values in.  Soft-float code never touches them.
-fn uses_float_registers(data: &Funcdata, model: &ProtoModel) -> bool {
-    let entries: Vec<(i32, u64, u64)> = model
-        .input()
-        .get_entry()
-        .iter()
-        .chain(model.output().get_entry())
-        .filter(|e| e.get_type() == type_class::TYPECLASS_FLOAT)
-        .map(|e| {
-            (
-                e.get_space().get_index(),
-                e.get_base(),
-                e.get_size().max(0) as u64,
-            )
-        })
-        .collect();
+/// Some op other than a call, return or SSA join reads or writes a floating-point
+/// entry's register.  Soft-float code never touches them.
+fn uses_float_registers(data: &Funcdata, entries: &[(i32, u64, u64)]) -> bool {
     if entries.is_empty() {
         return false;
     }
     let float_register = |vn: VarnodeId| {
         data.vbank().get(vn).is_some_and(|v| {
-            let addr: &Address = v.get_addr();
-            let (Some(space), size) = (addr.get_space(), v.get_size().max(0) as u64) else {
-                return false;
-            };
-            let offset = addr.get_offset();
-            entries.iter().any(|&(index, base, len)| {
-                index == space.get_index() && base < offset + size && offset < base + len
+            let addr = v.get_addr();
+            addr.get_space().is_some_and(|space| {
+                overlaps(
+                    entries,
+                    space,
+                    addr.get_offset(),
+                    v.get_size().max(0) as u64,
+                )
             })
         })
     };
