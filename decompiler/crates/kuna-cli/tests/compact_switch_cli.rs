@@ -56,6 +56,32 @@ fn compact_fixture(map: &[u8], targets: &[u32], retry_bound: usize) -> Vec<u8> {
     elf(&code)
 }
 
+/// The same dispatch in GCC's non-PIC shape: a zero-extended index loads the
+/// map byte at an absolute address and jumps through an absolute 8-byte
+/// table, and the retry backedge re-enters at the zero extension.
+fn absolute_fixture(map: &[u8], targets: &[u32], retry_bound: usize) -> Vec<u8> {
+    let mut code = vec![
+        0x83, 0xea, 0x05, 0xb8, 0x0e, 0x01, 0, 0, 0x83, 0xfa, 0x03, 0x0f, 0x87, 0x35, 0, 0, 0,
+        0x89, 0xd2, 0x0f, 0xb6, 0x82, 0, 0, 0, 0, 0x3e, 0xff, 0x24, 0xc5, 0, 0, 0, 0, 0xb8, 0x2c,
+        0x01, 0, 0, 0xc3, 0xb8, 0xf0, 0, 0, 0, 0xc3, 0x8b, 0x11, 0x83, 0xfa, 0x08, 0x74, 0x0c,
+        0x83, 0xea, 0x05, 0x83, 0xfa, 0x03, 0x0f, 0x86, 0xd0, 0xff, 0xff, 0xff, 0xb8, 0x0e, 0x01,
+        0, 0, 0xc3,
+    ];
+    assert_eq!(code.len(), 71);
+    code[10] = (map.len() - 1) as u8;
+    code[58] = retry_bound as u8;
+    let map_at = 0x401000 + code.len();
+    let table_at = (map_at + map.len() + 7) & !7;
+    code[22..26].copy_from_slice(&(map_at as u32).to_le_bytes());
+    code[30..34].copy_from_slice(&(table_at as u32).to_le_bytes());
+    code.extend(map);
+    code.resize(table_at - 0x401000, 0);
+    for &target in targets {
+        code.extend(u64::from(target).to_le_bytes());
+    }
+    elf(&code)
+}
+
 /// SysV `pick(p, a, b)`: `k = *p - 'A'` is bounded to 0..3 three branches
 /// before a relative table dispatch on `k`, out of reach of the guard search,
 /// so the selector range is the full byte and the table ends at its first
@@ -112,13 +138,14 @@ fn decompile(image: &[u8], asserts: &[&str], options: &[&str]) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
-fn run(image: &[u8], guarded: bool) -> String {
+fn run(image: &[u8], end: u32, guarded: bool) -> String {
     let options: &[&str] = if guarded { &[] } else { &["switchmultipred"] };
+    let function = format!("function 0x401000-{end:#x}=compact_dispatch");
     decompile(
         image,
         &[
             "typedef struct ModeStore { unsigned int mode; };",
-            "function 0x401000-0x401055=compact_dispatch",
+            &function,
             "prototype compact_dispatch int MSABI compact_dispatch(struct ModeStore *store, unsigned int mode)",
         ],
         options,
@@ -224,21 +251,29 @@ int main(int argc, char **argv) {{
 /// The stored modes for which the fixture's retry backedge terminates: every
 /// value except those that re-dispatch to the retry target itself.
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn terminating_stores(map: &[u8], targets: &[u32], retry_bound: usize) -> Vec<u32> {
+fn terminating_stores(map: &[u8], targets: &[u32], retry: u32, retry_bound: usize) -> Vec<u32> {
     (0..48u32)
         .chain([0x7f, 0x80, 0xff, 0x100, 0xffff_fffb, 0xffff_ffff])
         .filter(|&stored| {
             let index = stored.wrapping_sub(5) as usize;
-            stored == 8 || index > retry_bound || targets[map[index] as usize] != 0x1038
+            stored == 8 || index > retry_bound || targets[map[index] as usize] != retry
         })
         .collect()
 }
 
 fn checked(map: &[u8], targets: &[u32], retry_bound: usize, guarded: bool) -> String {
     let image = compact_fixture(map, targets, retry_bound);
-    let c = run(&image, guarded);
+    let c = run(&image, 0x401055, guarded);
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    round_trip(&image, &c, &terminating_stores(map, targets, retry_bound));
+    round_trip(&image, &c, &terminating_stores(map, targets, 0x1038, retry_bound));
+    c
+}
+
+fn checked_absolute(map: &[u8], targets: &[u32], retry_bound: usize) -> String {
+    let image = absolute_fixture(map, targets, retry_bound);
+    let c = run(&image, 0x401047, true);
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    round_trip(&image, &c, &terminating_stores(map, targets, 0x40102e, retry_bound));
     c
 }
 
@@ -319,6 +354,41 @@ fn constant_retry_index_survives_a_rejected_late_model() {
     assert!(
         c.contains("cases are labelled by address"),
         "dropped model without a warning: {c}"
+    );
+}
+
+/// Index 0 reads map byte 4, whose row repeats row 0's target, so the map
+/// byte agrees with the index labels on every row; map byte 4 itself has no
+/// index label.
+#[test]
+fn repeated_table_row_does_not_label_a_map_byte() {
+    let c = checked(&[4, 1, 2, 3], &[0x102c, 0x1032, 0x1038, 0x104f, 0x102c], 3, true);
+    assert_index_selector(&c);
+}
+
+/// The same repeated row through GCC's absolute byte map and 8-byte table.
+#[test]
+fn repeated_absolute_table_row_does_not_label_a_map_byte() {
+    let c = checked_absolute(
+        &[4, 1, 2, 3],
+        &[0x401022, 0x401028, 0x40102e, 0x401041, 0x401022],
+        3,
+    );
+    assert_index_selector(&c);
+}
+
+fn assert_index_selector(c: &str) {
+    assert!(
+        c.contains("switch(mode)"),
+        "selector is in a different domain: {c}"
+    );
+    assert!(
+        c.contains("case 0:\n        return 300;"),
+        "lost index0/300: {c}"
+    );
+    assert!(
+        !c.contains("switch(*(char *)"),
+        "kept mapped byte with raw-index labels: {c}"
     );
 }
 

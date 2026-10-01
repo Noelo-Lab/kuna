@@ -3686,9 +3686,11 @@ impl JumpBasicModel {
         })
     }
 
-    /// Whether every reversible flow-time row's value reaches that row's
-    /// destination through this model's path, so that the value reverses
-    /// through this model's normalization to a label selecting the row's code.
+    /// Whether the flow-time row values label this model's variable: every
+    /// reversible row's value reaches that row's destination through this
+    /// model's path, and no other value in this model's range reaches any
+    /// row's destination (a mapped byte can match every row only through a
+    /// repeated table entry).
     fn reproduces_rows(&self, fd: &Funcdata, indop: OpId, rows: &LabelRows) -> bool {
         let mut jr = self.jrange().clone_box();
         if !jr.initialize_for_reading() || !jr.is_reversible() {
@@ -3702,12 +3704,31 @@ impl JumpBasicModel {
             emul.seed_varnode_value(seed_vn, seed_val);
         }
         let (spc, mask) = Self::destination_space(fd, indop);
-        rows.values.iter().zip(rows.addresses.iter()).all(|(val, addr)| match *val {
+        let mut reach = |v: uintb| {
+            emul.emulate_path(v, &self.path_meld, startop, startvn)
+                .ok()
+                .map(|raw| Self::destination(&spc, mask, raw))
+        };
+        let labelled = rows.values.iter().zip(rows.addresses.iter()).all(|(val, addr)| match *val {
             None => true,
-            Some(v) => emul
-                .emulate_path(v, &self.path_meld, startop, startvn)
-                .is_ok_and(|raw| Self::destination(&spc, mask, raw) == *addr),
-        })
+            Some(v) => reach(v).as_ref() == Some(addr),
+        });
+        if !labelled {
+            return false;
+        }
+        let values: BTreeSet<uintb> = rows.values.iter().flatten().copied().collect();
+        let targets: BTreeSet<&Address> = rows.addresses.iter().collect();
+        loop {
+            let v = jr.get_value();
+            if !values.contains(&v) && reach(v).is_some_and(|dest| targets.contains(&dest)) {
+                return false;
+            }
+            match jr.next() {
+                Ok(true) => {}
+                Ok(false) => return true,
+                Err(_) => return false,
+            }
+        }
     }
 
     /// Whether this model's own values rebuild the flow-time table row for row.
