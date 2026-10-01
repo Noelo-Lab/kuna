@@ -487,7 +487,7 @@ impl FlowEnvironment for ArchFlowEnv {
         dest: &Address,
         dest_outside_extent: bool,
     ) -> bool {
-        let callee = fd.get_arch();
+        let glb = fd.get_arch();
         crate::kuna_tailcalljump::kuna_is_tail_call_table(
             fd,
             op,
@@ -496,12 +496,15 @@ impl FlowEnvironment for ArchFlowEnv {
             dest == fd.get_address(),
             dest_outside_extent,
             || {
-                use crate::kuna_tailcalljump::{stated_by_pieces, stated_by_proto};
+                use crate::kuna_tailcalljump::{
+                    output_stated_by_pieces, stated_by_pieces, stated_by_proto,
+                };
                 let own = fd.get_address();
-                let stated = stated_by_proto(callee.query_callee_proto(dest).as_deref())
-                    .or_else(|| stated_by_pieces(callee.callee_proto_pieces(dest).as_ref()));
-                let own_output_stated = callee.callee_proto_pieces(own).is_some()
-                    || callee.query_callee_proto(own).is_some_and(|p| p.is_output_locked());
+                let stated = stated_by_proto(glb.query_callee_proto(dest).as_deref())
+                    .or_else(|| stated_by_pieces(glb.callee_proto_pieces(dest).as_ref()));
+                let own_output_stated =
+                    output_stated_by_pieces(glb.callee_proto_pieces(own).as_ref())
+                        || glb.query_callee_proto(own).is_some_and(|p| p.is_output_locked());
                 crate::kuna_tailcalljump::tail_call_states_the_body(stated, own_output_stated)
             },
         )

@@ -161,24 +161,51 @@ fn parked_pieces_state_the_call_unless_they_only_map_the_return() {
     use crate::fspec::{ParameterPieces, PrototypePieces};
     let int = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
     let void = Rc::new(Datatype::new(0, type_metatype::TYPE_VOID));
-    let stated = |returns_value| Some(StatedCallee { returns_value });
+    let stated = |returns_nothing| Some(StatedCallee { returns_nothing });
     assert_eq!(stated_by_pieces(None), None);
-    assert_eq!(stated_by_pieces(Some(&PrototypePieces::default())), stated(false), "f(void)");
     let int_f = PrototypePieces { outtype: Some(int.clone()), ..Default::default() };
-    assert_eq!(stated_by_pieces(Some(&int_f)), stated(true), "int f(void)");
-    let void_f = PrototypePieces { outtype: Some(void), intypes: vec![int], ..Default::default() };
-    assert_eq!(stated_by_pieces(Some(&void_f)), stated(false), "void f(int)");
+    assert_eq!(stated_by_pieces(Some(&int_f)), stated(false), "int f(void)");
+    let void_f =
+        PrototypePieces { outtype: Some(void), intypes: vec![int.clone()], ..Default::default() };
+    assert_eq!(stated_by_pieces(Some(&void_f)), stated(true), "void f(int)");
     let return_only =
         PrototypePieces { output_storage: Some(ParameterPieces::default()), ..Default::default() };
     assert_eq!(stated_by_pieces(Some(&return_only)), None, "map return");
 }
 
 #[test]
+fn pieces_without_a_return_type_leave_the_return_unknown() {
+    use crate::fspec::PrototypePieces;
+    let int = Rc::new(Datatype::new(4, type_metatype::TYPE_INT));
+    let demangled = PrototypePieces { intypes: vec![int.clone(), int], ..Default::default() };
+    let unknown = Some(StatedCallee { returns_nothing: false });
+    assert_eq!(stated_by_pieces(Some(&demangled)), unknown, "g(int,int) from _Z1gii");
+    assert_eq!(stated_by_pieces(Some(&PrototypePieces::default())), unknown, "g() from _Z1gv");
+    assert!(!output_stated_by_pieces(Some(&demangled)), "a demangled veneer states no output");
+    assert!(!output_stated_by_pieces(None));
+    assert!(
+        !tail_call_states_the_body(stated_by_pieces(Some(&demangled)), false),
+        "a demangled callee called from a veneer with no stated output keeps its body"
+    );
+}
+
+#[test]
+fn a_function_states_its_output_only_with_a_return_type_or_storage() {
+    use crate::fspec::{ParameterPieces, PrototypePieces};
+    let void = Rc::new(Datatype::new(0, type_metatype::TYPE_VOID));
+    let void_f = PrototypePieces { outtype: Some(void), ..Default::default() };
+    assert!(output_stated_by_pieces(Some(&void_f)), "void f(void)");
+    let return_only =
+        PrototypePieces { output_storage: Some(ParameterPieces::default()), ..Default::default() };
+    assert!(output_stated_by_pieces(Some(&return_only)), "map return");
+}
+
+#[test]
 fn a_tail_call_returning_a_value_needs_the_callers_output_stated() {
-    let stated = |returns_value| Some(StatedCallee { returns_value });
-    assert!(tail_call_states_the_body(stated(true), true));
-    assert!(!tail_call_states_the_body(stated(true), false), "would print void");
-    assert!(tail_call_states_the_body(stated(false), false), "returns nothing");
+    let stated = |returns_nothing| Some(StatedCallee { returns_nothing });
+    assert!(tail_call_states_the_body(stated(false), true));
+    assert!(!tail_call_states_the_body(stated(false), false), "would print void");
+    assert!(tail_call_states_the_body(stated(true), false), "returns nothing");
     assert!(!tail_call_states_the_body(None, true), "no callee prototype");
 }
 

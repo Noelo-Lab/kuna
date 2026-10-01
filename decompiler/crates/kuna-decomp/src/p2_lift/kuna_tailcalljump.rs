@@ -220,43 +220,53 @@ pub fn kuna_is_tail_call_table(
 }
 
 /// (kuna) What a callee's stated prototype fixes about a call to it: the
-/// call's arguments, and whether it returns a value.
+/// call's arguments, and whether the callee returns nothing.  A prototype that
+/// states no return type (a `cppsig` signature: the mangling encodes none)
+/// leaves the return to recovery, so it does not say the callee returns nothing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StatedCallee {
-    pub returns_value: bool,
+    pub returns_nothing: bool,
 }
 
 /// (kuna) The prototype pieces parked on a callee (declared, DWARF, a library
-/// signature), as a call to it gets them from `ActionDefaultParams`.  A
-/// `map return` park states only the output and leaves the inputs to recovery,
-/// so it states no call.
+/// signature, a demangled C++ name), as a call to it gets them from
+/// `ActionDefaultParams`.  A `map return` park states only the output and
+/// leaves the inputs to recovery, so it states no call.  Only a stated `void`
+/// return says the callee returns nothing.
 pub fn stated_by_pieces(pieces: Option<&PrototypePieces>) -> Option<StatedCallee> {
     let p = pieces?;
-    let no_outtype = p.outtype.is_none();
-    if no_outtype && p.intypes.is_empty() && p.output_storage.is_some() {
+    if p.outtype.is_none() && p.intypes.is_empty() && p.output_storage.is_some() {
         return None;
     }
-    let void = p.outtype.as_ref().is_some_and(|t| t.get_metatype() == type_metatype::TYPE_VOID);
-    let returns_nothing = void || (no_outtype && p.output_storage.is_none());
-    Some(StatedCallee { returns_value: !returns_nothing })
+    let returns_nothing =
+        p.outtype.as_ref().is_some_and(|t| t.get_metatype() == type_metatype::TYPE_VOID);
+    Some(StatedCallee { returns_nothing })
 }
 
 /// (kuna) The code prototype on a callee's symbol, which flow copies into the
-/// call spec, when it locks the inputs.
+/// call spec, when it locks the inputs.  Only a locked `void` output says the
+/// callee returns nothing.
 pub fn stated_by_proto(proto: Option<&FuncProto>) -> Option<StatedCallee> {
     let p = proto.filter(|p| p.is_input_locked())?;
-    let void = !p.has_store()
-        || p.get_output_type().is_none_or(|t| t.get_metatype() == type_metatype::TYPE_VOID);
-    Some(StatedCallee { returns_value: !void })
+    let returns_nothing = p.is_output_locked()
+        && p.get_output_type().is_some_and(|t| t.get_metatype() == type_metatype::TYPE_VOID);
+    Some(StatedCallee { returns_nothing })
+}
+
+/// (kuna) Do the pieces parked on a function lock its output when its own
+/// decompile applies them?  Pieces with neither a return type nor return
+/// storage (a `cppsig` signature) leave the output to recovery.
+pub fn output_stated_by_pieces(pieces: Option<&PrototypePieces>) -> bool {
+    pieces.is_some_and(|p| p.outtype.is_some() || p.output_storage.is_some())
 }
 
 /// (kuna) Does a tail call to `callee` state everything the callee's body,
 /// copied in, would?  Its prototype fixes the call's arguments, and its return
-/// value reaches the caller's: it returns nothing, or the caller's own output
-/// is stated.  A caller whose output is left to recovery never takes a tail
-/// call's return value, so it would print `void`.
+/// value reaches the caller's: it is stated to return nothing, or the caller's
+/// own output is stated.  A caller whose output is left to recovery never takes
+/// a tail call's return value, so it would print `void`.
 pub fn tail_call_states_the_body(callee: Option<StatedCallee>, own_output_stated: bool) -> bool {
-    callee.is_some_and(|c| !c.returns_value || own_output_stated)
+    callee.is_some_and(|c| c.returns_nothing || own_output_stated)
 }
 
 #[cfg(test)]

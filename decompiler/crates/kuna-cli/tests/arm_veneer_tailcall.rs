@@ -229,3 +229,43 @@ fn open_veneer_tail_calls_a_declared_helper_that_returns_nothing() {
     assert!(c.contains("arm_helper(a0); // tail-call"), "{c}");
     assert!(!c.contains("switch"), "{c}");
 }
+
+fn demangled_veneers() -> String {
+    let code = words(&[
+        0xe59fc000, 0xe12fff1c, 0x10018, 0xe59fc000, 0xe12fff1c, 0x10018, 0xe0800001, 0xe12fff1e,
+    ]);
+    let image = arm_images::elf(
+        &code,
+        &[],
+        &[(0, "_Z3venii", 12), (12, "ven_c", 12), (24, "_Z2g2ii", 8)],
+    );
+    let path = common::scratch_file("arm-veneer-demangled", "elf");
+    std::fs::write(&path, image).unwrap();
+    let specs = common::repo_root().join("specs");
+    let (stdout, stderr, code) = common::run_kuna(&[
+        "decompile-all",
+        path.to_str().unwrap(),
+        "--sleighpath",
+        specs.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{stdout}\n{stderr}");
+    stdout
+}
+
+fn function_text<'a>(all: &'a str, name: &str) -> &'a str {
+    let start = all.find(&format!("// Function: {name} @")).unwrap_or_else(|| panic!("{all}"));
+    let rest = &all[start..];
+    rest[1..].find("// Function: ").map_or(rest, |end| &rest[..end + 1])
+}
+
+#[test]
+fn veneer_to_a_demangled_callee_keeps_the_body_its_unknown_return_needs() {
+    let all = demangled_veneers();
+    assert!(function_text(&all, "g2").contains("int g2(int a0,int a1)"), "{all}");
+    for veneer in ["ven", "ven_c"] {
+        let c = function_text(&all, veneer);
+        assert!(c.contains(&format!("int {veneer}(int a0,int a1)")), "{c}");
+        assert!(c.contains("return a0 + a1;"), "{c}");
+        assert!(!c.contains("// tail-call"), "{c}");
+    }
+}
