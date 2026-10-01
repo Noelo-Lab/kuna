@@ -197,6 +197,17 @@ fn armfloatargs_without_armfloatreturn_changes_nothing() {
 fn a_double_read_only_as_integer_words_is_left_to_armfloatreturn() {
     let on = decompile(&word_input_image(), "on");
     assert_eq!(on, decompile(&word_input_image(), "off"));
+    // Cortex-M4F (single-precision FPU) at -O0: scale(int *, double, int)
+    // hands its double to __aeabi_dmul as two words, and use() calls it.
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../kuna-analysis/tests/fixtures/armfloatargs_m4f.o");
+    let bytes = std::fs::read(fixture).unwrap();
+    let on = decompile(&bytes, "on");
+    assert!(
+        !on.contains("float scale(unsigned int a0,unsigned int a1,int *a2"),
+        "{on}"
+    );
+    assert_eq!(on, decompile(&bytes, "off"));
 }
 
 /// The argument count of every call to `name` in an indented statement.
