@@ -4,9 +4,12 @@
 the container states the hard-float ABI and `armfloatreturn` is on. Alone it
 changes nothing: the inputs it recovers rely on that option's widened
 d-register model and on its rule that keeps an unused VFP parameter in its
-slot. Floating operations and proven callee contracts supply the type evidence;
-same-width copies, contiguous pieces and truncations of a right shift by whole
-bytes can carry that evidence back to an input. A double consumed as a whole
+slot. Floating operations and proven callee contracts supply the type evidence:
+a value passed to a call takes the type the callee states for the slot it is
+passed in, so a wrapper that moves its double from d2 to d1 for its callee still
+reads one double. Same-width copies, contiguous pieces and truncations of a
+right shift by whole bytes can carry that evidence back to an input. A double
+consumed as a whole
 stays one eight-byte input, including when an overlapping call result is only
 four bytes. Unknown calls and ambiguous ABI attributes do not establish scalar
 floating parameters; a floating aggregate or vector is seen only as the scalar
@@ -24,19 +27,32 @@ parameter fills the low half of a d-register and every later VFP parameter is a
 double, the high half is the slot the convention skips: `f(float, float, float,
 double)` passes the double in d2 and leaves s3 empty. Recovery leaves that slot
 out instead of filling it with an unused `float`, so the recovered list is the
-one the convention assigns and a caller has no reason to read s3.
+one the convention assigns and a caller has no reason to read s3. A slot the
+function's own body reads before writing is a parameter all the same: at -O0,
+`f(float a, float unused, double d)` spills `unused` from s1, and a bounded
+decode of the body from its entry sees that read, so s1 stays in the list and
+its callers pass it.
 
 At a call, the callee's stated single-precision parameters are taken word by
 word out of a d-register range the call may not take whole, so values written
 into s0 and s1 after an earlier double result reach the call as written. When
-the callee's recovered contract is arity-sound, the call drops each VFP input
-the contract does not state, provided the callee's body, followed through its
-own calls, neither reads nor forwards that register. An s-register in which the
-caller happens to leave a value, such as a constant it used for its own
-arithmetic or a stale half of an earlier double, is then not an argument. A
-callee whose body is cut short or reaches code no walk accounts for keeps every
-argument its callers recover. A word the caller forwards is never passed as the
-callee's stated double.
+the callee's recovered contract is arity-sound, the call takes the VFP inputs
+that contract states, so caller and callee agree on every VFP position. A
+stated input is an argument even where the positional rules ended the list in
+front of it: a constant the caller left in d1 for its own arithmetic is the
+argument for an ignored `double` the callee states there, and the used double
+after it stays in place. A stated input the caller never wrote, in front of a
+later one it did, is passed as whatever value reaches the call. A positional
+filler the contract skips while stating a later VFP input, such as the back-fill
+slot, is dropped. Any other unstated VFP input is dropped only where the
+callee's body, followed through its own calls, neither reads nor forwards that
+register: an s-register in which the caller happens to leave a value, such as a
+constant it used for its own arithmetic or a stale half of an earlier double,
+is then not an argument, while a callee whose body is cut short or reaches code
+no walk accounts for keeps every argument its callers recover. A stated input
+the call holds only in part, or that overlaps an unstated argument the call
+keeps, leaves the call's arguments as recovered. A word the caller forwards is
+never passed as the callee's stated double.
 
 Declared prototypes keep their parameter order. For stripped functions whose
 core and VFP banks do not reveal source order, recovery uses the model's VFP
@@ -51,17 +67,14 @@ Resolved variadic format calls use explicit base AAPCS storage, including
 their floating arguments, rather than the non-variadic VFP convention.
 `formatstring off` disables that source of type evidence.
 
-Six call shapes stay incomplete. A double that the caller forwards untouched,
+Five call shapes stay incomplete. A double that the caller forwards untouched,
 but of which only one word is live in the caller, is omitted from the call. A
 wrapper that forwards a single-precision argument from the upper half of a
 d-register without touching it, such as the third float of `w(float, float,
 float)`, recovers none of its VFP arguments. When a call site recovers its
 core-register arguments but not a forwarded VFP argument that the callee's
 prototype lists first, the recovered arguments print from the first position, so
-a core argument can stand in a VFP parameter's place. A VFP parameter that the
-callee never reads and the caller never sets, because an earlier call clobbered
-its register, ends the call's VFP arguments there: the later ones are missing
-rather than moved. A floating argument that goes on the stack because the VFP
+a core argument can stand in a VFP parameter's place. A floating argument that goes on the stack because the VFP
 registers are full, such as the ninth parameter of `f(double, ..., double,
 float)` after eight doubles, is not recovered on either side. A double that a
 callee reads only as two integer words is outside this option. Single-precision

@@ -85,3 +85,32 @@ Three option-on shapes printed calls that disagreed with their callees:
   `armfloatreturn` output.
 - With `armfloatreturn` off, an unused leading float parameter moved the next
   argument into its place. The option now requires `armfloatreturn`.
+
+## Third review corrections
+
+Three option-on shapes still printed calls that disagreed with their callees;
+`armfloatargs_calls.c` (fixtures in `kuna-analysis/tests/fixtures`, clang 14,
+ARM and Thumb at -O0, -O2 and Thumb -Os) holds one of each:
+
+- `x3(float, float, float, double)` passes its double to `k7(float, float,
+  double, float)` in d1. The call's argument was typed by comparing the
+  caller's storage (d2) with the callee's (d1), so the double stayed two words
+  and `x3` printed a phantom `s3` and two integer words its callers never
+  passed. A value passed to a call now takes the type the callee states for the
+  slot it is passed in.
+- A call into a non-leaf back-fill callee kept a positional filler in `s3` on
+  Thumb, and `fn5(float a, float unused, double d)` lost `unused` although its
+  -O0 body spills it from `s1`, so the call passed three arguments to a
+  two-parameter callee. The back-fill rule now leaves in a slot the function's
+  own body reads (a probe of its own entry, taken only with the option on), and
+  a call drops a filler its callee's contract skips below a stated input.
+- `yd(float a, double unused, double d)`: clang leaves a scratch constant in
+  d1, the trial scoring took it for the caller's own value, and the inactive
+  chain ended the argument list there, dropping `d`. A call to a callee with an
+  arity-sound contract now takes every VFP input the contract states, filling a
+  stated slot the caller never wrote when a later stated input follows.
+
+With the option on, each of the five builds now prints `x3`, `v2`, `fn5` and
+`yd` with exactly their callees' parameters, and the printed C, compiled on the
+host, computes the source's `top`; before, every build failed at least one of
+the four. Option-off output is unchanged: every new path is gated on the option.

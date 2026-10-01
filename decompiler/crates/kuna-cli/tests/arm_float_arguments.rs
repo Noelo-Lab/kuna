@@ -320,6 +320,93 @@ fn a_backfill_slot_below_a_double_is_neither_a_parameter_nor_an_argument() {
     }
 }
 
+// clang 14 hard-float ARM and Thumb builds of `armfloatargs_calls.c`: a wrapper
+// that passes its double on in another slot (x3), a non-leaf callee with a
+// back-fill slot (v2), an unused float an -O0 callee spills (fn5) and an
+// unused double ahead of a used one (yd), all called from `top`.
+#[test]
+fn calls_take_exactly_the_vfp_inputs_their_callee_states() {
+    let fixtures =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../kuna-analysis/tests/fixtures");
+    let has_cc = common::process::optional_output(Command::new("cc").arg("--version")).is_some();
+    let driver = common::scratch_file("arm-float-calls-driver", "c");
+    std::fs::write(
+        &driver,
+        "#include <stdio.h>\nint top(int);\nint main(void) { long s = 0;\n\
+         for (int n = 1; n < 9; n++) s = s * 31 + top(n);\nprintf(\"%ld\\n\", s); return 0; }\n",
+    )
+    .unwrap();
+    let expected = has_cc.then(|| {
+        let reference = common::scratch_file("arm-float-calls-reference", "exe");
+        compile_and_run(
+            &[fixtures.join("armfloatargs_calls.c"), driver.clone()],
+            &reference,
+        )
+    });
+    for build in ["arm-O0", "arm-O2", "thumb-O0", "thumb-O2", "thumb-Os"] {
+        let bytes = std::fs::read(fixtures.join(format!("armfloatargs_calls_{build}.o"))).unwrap();
+        let code = decompile_with(&bytes, &["armfloatreturn", "on", "armfloatargs", "on"]);
+        let spilled = build.ends_with("O0");
+        let fn5 = if spilled {
+            ("fn5", "double fn5(float a0,float a1,double a2)", 3)
+        } else {
+            ("fn5", "double fn5(float a0,double a1)", 2)
+        };
+        for (name, signature, arity) in [
+            ("x3", "double x3(float a0,float a1,float a2,double a3)", 4),
+            ("v2", "double v2(float a0,float a1,float a2,double a3)", 4),
+            ("yd", "double yd(float a0,double a1,double a2)", 3),
+            fn5,
+        ] {
+            assert!(
+                code.contains(signature),
+                "{build}: missing {signature}\n{code}"
+            );
+            assert_eq!(
+                call_arities(&code, name),
+                [arity],
+                "{build}: {name}\n{code}"
+            );
+        }
+        if spilled {
+            assert!(
+                code.contains("(float)(long long)a0 * 3.0,"),
+                "{build}\n{code}"
+            );
+        }
+        let Some(expected) = &expected else {
+            continue;
+        };
+        let emitted = common::scratch_file("arm-float-calls-emitted", "c");
+        let executable = common::scratch_file("arm-float-calls-emitted", "exe");
+        std::fs::write(&emitted, &code).unwrap();
+        assert_eq!(
+            &compile_and_run(&[emitted, driver.clone()], &executable),
+            expected,
+            "{build}\n{code}"
+        );
+    }
+}
+
+/// Compile `sources` with the host compiler and return what the program prints.
+fn compile_and_run(sources: &[std::path::PathBuf], executable: &std::path::Path) -> String {
+    let compile = Command::new("cc")
+        .args(["-std=c11", "-O0", "-w", "-o"])
+        .arg(executable)
+        .args(sources)
+        .env("TMPDIR", executable.parent().unwrap())
+        .output()
+        .unwrap();
+    assert!(
+        compile.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let run = Command::new(executable).output().unwrap();
+    assert!(run.status.success());
+    String::from_utf8(run.stdout).unwrap()
+}
+
 // Authored ARM instructions: narrowing callees, tail/ordinary wrappers, and
 // callers forwarding d0 plus d1 or s2 before consuming the s0 result.
 fn forwarding_image() -> Vec<u8> {
