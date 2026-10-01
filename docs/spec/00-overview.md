@@ -1997,6 +1997,48 @@ Three properties of that mapping are load-bearing, each measured on
   temporary durably needs the dynamic-hash channel
   (`Funcdata::seed_dynamic_recommendations`), which this does not use.
 
+(kuna) **Every `name`/`type` in one batch reads its identifier against the same
+pass.** A batch is the directives applied between two decompiles: the
+in-process surface's list, or the script's `rename`/`retype` lines. Mapping a
+register local's Symbol used to clear the analysis (after upstream
+`IfcTypeVarnode`), which emptied the HighVariables the next directive looks its
+identifier up in, so of two independent renames the second always answered
+`No symbol named:`, in either order. Nothing needs that clear -- both surfaces
+rebuild the IR from the scope for the second pass -- so the pass is left intact,
+and `Funcdata::kuna_directive_symbols` records every Symbol the batch renamed,
+retyped or created, keyed by the identifier the pass printed for it.
+`decompiler/crates/kuna-console/src/kuna_hightarget.rs` then gives an identifier
+two readings, in order:
+
+1. the variable the pass printed under it, whatever an earlier directive renamed
+   it to, so directives on different locals do not depend on their order and
+   `name a b` with `name b a` swaps the two (the untouched locals' `vN` defaults
+   skip the names the swap locked; chapter [06](06-variables-and-merge.md));
+2. otherwise the variable an earlier directive in the batch gave that name, so
+   `name v1 rc` followed by `type rc unsigned int` retypes `rc`.
+
+Where both readings exist and name different variables, nothing says which was
+meant: after `name v1 v2`, the identifier `v2` in `type v2 unsigned int` or
+`name v2 x` is both the variable printed as `v2` and the one just given that
+name, so the directive is rejected as `Ambiguous name: v2 is both the local
+printed as v2 and the local printed as v1 (now v2)`, and the message says `(now
+tmp)` after the first when an earlier directive renamed it away. The one
+exception is a `name` directive whose new name the pass also printed, on a
+variable that still carries the identifier: `name v2 v1` after `name v1 v2`, or
+each step of a rotation. That caller is permuting the names it was shown, so the
+first reading applies; the second would only undo or chain the earlier rename
+onto a name another local still prints. A second directive on a local the batch
+already mapped edits that Symbol rather than mapping another, and it keeps the
+register's width, so `type rc char *` on a 4-byte register is still `Storage is
+4 bytes, the stated type is 8`. Two register locals whose storage overlaps --
+`char *s; // rax` and a later `uint4 v1; // eax` -- cannot both be given a
+Symbol: the second pass folds them into one variable (`s._0_4_ = 0`), so the
+later directive is rejected with `Storage of v1 overlaps s, which an earlier
+directive already changed`. That is the one rejection that depends on order, and
+it names the directive it lost to. On the stack, `name v2 credbuf` followed by
+`type v2 char[8]` now retypes `credbuf` where it used to be rejected, and still
+maps one Symbol over the slot.
+
 (kuna) **A `prototype` directive binds to `<func>`, whatever name its declaration
 carries.** The operand says which function the signature describes; the
 declaration supplies the return type, the parameter types and the parameter
