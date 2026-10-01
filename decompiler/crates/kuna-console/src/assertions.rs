@@ -1079,10 +1079,11 @@ pub fn has_symbol_scoped(prog: &ConsoleProgram, name: &str, single: bool) -> boo
 /// `decompile` sequence, which is the only order in which these can work: the
 /// local a directive names does not exist until a decompile has produced it.
 ///
-/// Directives are applied in the order the caller gave them, so
-/// `type v2 char[16]` followed by `name v2 credbuf` means what it reads like
-/// (the reverse order would leave the second directive naming a symbol the first
-/// had already renamed).
+/// Every directive's identifier is read against the first pass's output, so
+/// directives on different locals do not depend on their order, and
+/// `name v2 credbuf` then `type v2 char[16]` retypes `credbuf`.  An identifier
+/// that output does not contain may name what an earlier directive renamed a
+/// local to (`crate::kuna_hightarget` has both rules).
 pub fn apply_symbol_scoped(
     prog: &mut ConsoleProgram,
     fd: &mut Funcdata,
@@ -1112,67 +1113,17 @@ fn apply_one_symbol_scoped(
     fd: &mut Funcdata,
     body: &Body,
 ) -> Result<(), String> {
-    use kuna_decomp::database::symbol_category;
-    use kuna_decomp::varnode::varnode_flags;
-    let (symbol, retype) = match body {
-        Body::Name { symbol, .. } => (symbol.as_str(), None),
+    match body {
+        Body::Name { symbol, newname, .. } => {
+            crate::kuna_hightarget::apply_local(fd, symbol, newname, None)
+        }
         Body::Type { symbol, decl, .. } => {
-            let org = data_org(prog);
-            let parsed = crate::grammar::parse_type(decl, prog.arch().types(), org)
+            let (ct, newname) = crate::grammar::parse_type(decl, prog.arch().types(), data_org(prog))
                 .map_err(|e| e.explain().to_string())?;
-            (symbol.as_str(), Some(parsed))
+            crate::kuna_hightarget::apply_local(fd, symbol, &newname, Some(ct))
         }
-        _ => return Err("internal: not a symbol-scoped directive".into()),
-    };
-    let found = fd
-        .get_scope_local()
-        .map(|lm| lm.query_by_name(symbol))
-        .unwrap_or_default();
-    match found.len() {
-        // (kuna) A register-resident local is a HighVariable the printer named,
-        // with no Symbol behind it, so the scope query cannot see it -- map a
-        // locked Symbol over its storage instead (`crate::kuna_hightarget`).
-        0 => {
-            let target = crate::kuna_hightarget::resolve_printed_local(fd, symbol)?;
-            let (bind, ct) = match (body, retype) {
-                (Body::Name { newname, .. }, _) => (newname.clone(), target.dtype.clone()),
-                (Body::Type { .. }, Some((ct, newname))) => (newname.clone(), ct),
-                _ => unreachable!("symbol-scoped directive kinds are exhausted above"),
-            };
-            return crate::kuna_hightarget::bind_printed_local(fd, &target, &bind, ct);
-        }
-        1 => {}
-        n => return Err(format!("More than one symbol named: {symbol} ({n})")),
+        _ => Err("internal: not a symbol-scoped directive".into()),
     }
-    let sym = found[0];
-    // A parameter's storage is model-derived; locking its name or type locks the
-    // input side of the prototype too (C++ `IfcRename`/`IfcRetype`).
-    let is_param = fd
-        .get_scope_local()
-        .map(|lm| lm.symbol_category(sym) == symbol_category::FUNCTION_PARAMETER)
-        .unwrap_or(false);
-    if is_param {
-        fd.get_func_proto_mut().set_input_lock(true);
-    }
-    let lm = fd
-        .get_scope_local_mut()
-        .ok_or_else(|| "Function has no local scope".to_string())?;
-    match (body, retype) {
-        (Body::Name { newname, .. }, _) => {
-            lm.rename_symbol(sym, newname).map_err(|e| e.explain().to_string())?;
-            lm.set_attribute(sym, varnode_flags::namelock | varnode_flags::typelock);
-        }
-        (Body::Type { .. }, Some((ct, newname))) => {
-            lm.retype_symbol(sym, ct).map_err(|e| e.explain().to_string())?;
-            lm.set_attribute(sym, varnode_flags::typelock);
-            if !newname.is_empty() && newname != symbol {
-                lm.rename_symbol(sym, &newname).map_err(|e| e.explain().to_string())?;
-                lm.set_attribute(sym, varnode_flags::namelock);
-            }
-        }
-        _ => unreachable!("symbol-scoped directive kinds are exhausted above"),
-    }
-    Ok(())
 }
 
 /// Does any directive assert a read-only range?
