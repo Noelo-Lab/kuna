@@ -7846,14 +7846,18 @@ impl FuncCallSpecs {
             return Ok(());
         }
 
-        let (paddr, psize) = {
+        let (paddr, psize, is_bool) = {
             let param = self.proto.get_output();
-            (param.get_address(), param.get_size())
+            let is_bool = param
+                .get_type()
+                .map(|t| t.get_metatype() == crate::dtype::type_metatype::TYPE_BOOL)
+                .unwrap_or(false);
+            (param.get_address(), param.get_size(), is_bool)
         };
         self.activeoutput.register_trial(&paddr, psize);
-        // (The BOOL/typeRecovery opMarkCalculatedBool arm is not reached by the
-        // deindirect datatests and needs a W4 surface; omitted faithfully — psize==1
-        // BOOL outputs do not occur here.)
+        if psize == 1 && is_bool && data.is_type_recovery_on() {
+            data.op_mark_calculated_bool(self.op);
+        }
 
         // Find a Varnode that exactly matches the param size.
         let exact_match = newoutput
