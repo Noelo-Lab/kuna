@@ -1616,8 +1616,9 @@ never refuses, so it never trims. Trimming there would print the store as a new
 later — a pointer store that may alias the global, or a call. Chapter 03 keeps
 the store's `COPY` out of the marker whenever the value has a reader that is
 sign-sensitive then or that a later rule makes so, so a value this forced merge
-joins with a global has no such reader. A parameter never merges with a global,
-so its stores keep upstream's handling too.
+joins with a global has no such reader, unless a load of the global already
+reads the value; that value prints as the global, as on upstream. A parameter
+never merges with a global, so its stores keep upstream's handling too.
 
 Not covered: the same join decides the *pointee* type an access through the
 value takes. `int *q = p + k; gc = (char *)q; return q[1] + q[2];` prints as
