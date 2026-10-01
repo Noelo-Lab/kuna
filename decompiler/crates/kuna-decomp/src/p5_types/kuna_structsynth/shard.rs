@@ -731,8 +731,10 @@ fn reaches(ct: &Rc<Datatype>, seen: &mut std::collections::HashMap<*const Dataty
         return false;
     }
     let parts: Vec<Rc<Datatype>> = match &ct.kind {
-        DatatypeKind::Pointer { ptrto, .. } => vec![Rc::clone(ptrto)],
-        DatatypeKind::PointerRel { ptrto, parent, .. } => vec![Rc::clone(ptrto), Rc::clone(parent)],
+        DatatypeKind::Pointer { .. } => ct.get_ptr_to().into_iter().collect(),
+        DatatypeKind::PointerRel { parent, .. } => {
+            ct.get_ptr_to().into_iter().chain(std::iter::once(Rc::clone(parent))).collect()
+        },
         DatatypeKind::Array { arrayof, .. } => vec![Rc::clone(arrayof)],
         DatatypeKind::PartialStruct { container, .. } | DatatypeKind::PartialUnion { container, .. } => {
             vec![Rc::clone(container)]
