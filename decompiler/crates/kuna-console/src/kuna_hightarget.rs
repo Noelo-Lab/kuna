@@ -130,8 +130,8 @@ fn resolve_local(
     let printed_high = printed.is_none() && !printed_highs(fd, name).is_empty();
     if let Some(other) = given.first().filter(|_| printed.is_some() || printed_high) {
         let moved = printed.and_then(current).filter(|now| now != name);
-        let permutes =
-            moved.is_none() && renaming_to.is_some_and(|new| printed_by_pass(fd, new, &touched));
+        let permutes = moved.is_none()
+            && renaming_to.is_some_and(|new| new != name && printed_by_pass(fd, new, &touched));
         if !permutes {
             let moved = moved.map(|now| format!(" (now {now})")).unwrap_or_default();
             return Err(format!(

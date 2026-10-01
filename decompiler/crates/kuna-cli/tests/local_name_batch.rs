@@ -185,7 +185,8 @@ fn a_renamed_local_answers_to_either_name() {
 /// After `name v1 v2` the identifier `v2` names two locals: the one printed as
 /// `v2` and the one just given that name.  Nothing says which a later `type` or
 /// `name` means, so it is rejected rather than picked, whichever of the two is on
-/// the stack and whichever in a register.
+/// the stack and whichever in a register.  Only a rename to another printed name
+/// (a swap) reads the printed one.
 #[test]
 fn a_printed_name_given_to_another_local_is_ambiguous() {
     for (function, from, to, declared) in [
@@ -195,7 +196,11 @@ fn a_printed_name_given_to_another_local_is_ambiguous() {
         ("mixed_pair", "v1", "v2", "int4 v1; // stack - 0xc"),
     ] {
         let rename = format!("name {from} {to}");
-        for second in [format!("type {to} unsigned int"), format!("name {to} foo")] {
+        for second in [
+            format!("type {to} unsigned int"),
+            format!("name {to} foo"),
+            format!("name {to} {to}"),
+        ] {
             let (code, rejected) = decompile(function, &[&rename, &second]);
             let detail = format!(
                 "\"{second}\": \"Ambiguous name: {to} is both the local printed as {to} and the \
