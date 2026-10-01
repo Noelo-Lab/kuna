@@ -104,7 +104,9 @@ pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bo
         if !used_as_address(data, invn) {
             return reads_address(data, op, vn);
         }
-        !feeds_marker(data, invn, v) && written_between(data, vn, op) && !old_value_read_after(data, vn)
+        !feeds_marker(data, invn, v)
+            && written_between(data, vn, op)
+            && !old_value_read_after(data, vn)
     }
 }
 
@@ -140,8 +142,7 @@ pub fn written_between(data: &Funcdata, vn: VarnodeId, reader: OpId) -> bool {
             if o.code() != OpCode::CPUI_INDIRECT {
                 return false;
             }
-            if o
-                .get_out()
+            if o.get_out()
                 .and_then(|out| data.vbank().get(out))
                 .is_some_and(|out| out.get_addr() == gaddr && out.get_size() == gsize)
             {
@@ -304,9 +305,12 @@ fn feeds_marker(data: &Funcdata, value: VarnodeId, global: &Varnode) -> bool {
             data.obank().get(r).is_some_and(|o| {
                 !o.is_dead()
                     && o.is_marker()
-                    && o.get_out().and_then(|out| data.vbank().get(out)).is_some_and(|out| {
-                        out.get_addr() == global.get_addr() && out.get_size() == global.get_size()
-                    })
+                    && o.get_out()
+                        .and_then(|out| data.vbank().get(out))
+                        .is_some_and(|out| {
+                            out.get_addr() == global.get_addr()
+                                && out.get_size() == global.get_size()
+                        })
             })
         })
     })
@@ -321,7 +325,9 @@ pub fn loads_stored_global(data: &Funcdata, op: OpId) -> bool {
         return false;
     };
     o.code() == OpCode::CPUI_COPY
-        && o.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| !v.is_persist())
+        && o.get_out()
+            .and_then(|v| data.vbank().get(v))
+            .is_some_and(|v| !v.is_persist())
         && o.get_in(0).is_some_and(|g| {
             data.vbank().get(g).is_some_and(|gv| gv.is_persist()) && holds_stored_value(data, g)
         })

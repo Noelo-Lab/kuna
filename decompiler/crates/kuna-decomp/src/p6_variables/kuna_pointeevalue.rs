@@ -66,7 +66,9 @@ pub fn keeps_apart(ctx: &mut dyn MergeContext, vn1: VarnodeId, vn2: VarnodeId) -
 /// Is `vn` the output of the `COPY` that loads `global` and a write may outdate
 /// the load before a reader ([`load_crosses_write`])?
 fn loaded_from(ctx: &dyn MergeContext, vn: VarnodeId, global: VarnodeId) -> bool {
-    ctx.vn_def(vn).is_some_and(|d| ctx.op_in(d, 0) == Some(global)) && ctx.vn_loads_across_write(vn)
+    ctx.vn_def(vn)
+        .is_some_and(|d| ctx.op_in(d, 0) == Some(global))
+        && ctx.vn_loads_across_write(vn)
 }
 
 fn instances(ctx: &dyn MergeContext, high: HighVariableId) -> Vec<VarnodeId> {
