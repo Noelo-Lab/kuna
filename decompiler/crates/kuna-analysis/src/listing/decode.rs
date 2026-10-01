@@ -112,12 +112,15 @@ struct AsmCapture {
 
 impl AssemblyEmit for AsmCapture {
     fn dump(&mut self, _addr: &Address, mnem: &str, body: &str) {
-        self.mnemonic = mnem.to_string();
-        self.operands = body.to_string();
+        self.mnemonic.clear();
+        self.mnemonic.push_str(mnem);
+        self.operands.clear();
+        self.operands.push_str(body);
     }
 }
 
 /// One decoded instruction's raw output.
+#[derive(Default)]
 pub struct Decoded {
     /// The fall-through byte length (the `one_instruction` return; folds in
     /// delay slots — design §4.3 gotcha 3).
@@ -179,6 +182,31 @@ pub fn decode_one(
         operands: asm.operands,
         stored_scalar_values: cap.stored_scalar_values,
     })
+}
+
+/// AIF needs both flow and text for each new speculative decode. The combined
+/// translator operation can reuse its parse without changing either result.
+pub(crate) fn decode_one_with_assembly(
+    translate: &dyn Translate,
+    vma: u64,
+    code_space: &Rc<AddrSpace>,
+    decoded: &mut Decoded,
+) -> KunaResult<()> {
+    let addr = Address::new(Rc::clone(code_space), vma);
+    decoded.ops.clear();
+    decoded.mnemonic.clear();
+    decoded.operands.clear();
+    let mut cap = OpCapture { ops: std::mem::take(&mut decoded.ops), ..Default::default() };
+    let mut asm = AsmCapture {
+        mnemonic: std::mem::take(&mut decoded.mnemonic),
+        operands: std::mem::take(&mut decoded.operands),
+    };
+    let length = translate.one_instruction_with_assembly(&mut cap, &mut asm, &addr);
+    decoded.ops = cap.ops;
+    decoded.mnemonic = asm.mnemonic;
+    decoded.operands = asm.operands;
+    decoded.len = length?.max(0) as u32;
+    Ok(())
 }
 
 /// The mnemonic at `vma` alone, for a consumer that has already decoded the
