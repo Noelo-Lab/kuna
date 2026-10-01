@@ -943,6 +943,12 @@ errors remain failures, not browser-test skips. Process exit is observed separat
 from stderr closure, since a descendant may retain the pipe after the browser
 dies. Closing the launcher also releases its stderr stream; exit status and
 captured diagnostics are retained even when the pipe would remain open.
+After detecting an early exit, the launcher drains buffered stderr and allows
+up to 250 ms for remaining diagnostics. This grace is additional to
+`startupTimeoutMs`; it ends sooner when stderr ends, closes, or errors. Incoming
+data cannot extend the grace, and only the last 8,192 characters are retained.
+Successful startup and timeouts waiting for a running browser receive no extra
+delay.
 
 Five layers, spanning **multiple formats and architectures**. The first four need no
 browser and run in CI; the last drives headless Chrome and runs **locally only** (CI
