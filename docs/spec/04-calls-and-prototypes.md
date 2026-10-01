@@ -51,20 +51,23 @@ Resolved variadic format calls use explicit base AAPCS storage, including
 their floating arguments, rather than the non-variadic VFP convention.
 `formatstring off` disables that source of type evidence.
 
-Five call shapes stay incomplete. A double that the caller forwards untouched,
+Six call shapes stay incomplete. A double that the caller forwards untouched,
 but of which only one word is live in the caller, is omitted from the call. A
 wrapper that forwards a single-precision argument from the upper half of a
-d-register without touching it, such as the third float of
-`w(float, float, float)`, recovers none of its VFP arguments. When a call site
-recovers its core-register arguments but not a forwarded VFP argument that the
-callee's prototype lists first, the recovered arguments print from the first
-position, so a core argument can stand in a VFP parameter's place. A VFP
-parameter that the callee never reads and the caller never sets, because an
-earlier call clobbered its register, ends the call's VFP arguments there: the
-later ones are missing rather than moved. A double that a callee reads only as
-two integer words is outside this option. Single-precision FPUs such as the
-Cortex-M4F hand every double to base-AAPCS helpers this way, so such a callee
-and its callers keep what `armfloatreturn` alone recovers for them.
+d-register without touching it, such as the third float of `w(float, float,
+float)`, recovers none of its VFP arguments. When a call site recovers its
+core-register arguments but not a forwarded VFP argument that the callee's
+prototype lists first, the recovered arguments print from the first position, so
+a core argument can stand in a VFP parameter's place. A VFP parameter that the
+callee never reads and the caller never sets, because an earlier call clobbered
+its register, ends the call's VFP arguments there: the later ones are missing
+rather than moved. A floating argument that goes on the stack because the VFP
+registers are full, such as the ninth parameter of `f(double, ..., double,
+float)` after eight doubles, is not recovered on either side. A double that a
+callee reads only as two integer words is outside this option. Single-precision
+FPUs such as the Cortex-M4F hand every double to base-AAPCS helpers this way, so
+such a callee and its callers keep what `armfloatreturn` alone recovers for
+them.
 
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer
