@@ -1,7 +1,9 @@
-//! Whether an ELF says its floating-point arguments travel in floating-point
-//! registers (a hard-float procedure-call standard) or in integer registers
-//! (soft-float): ARM build attributes and header flags, the MIPS ABI flags and
-//! GNU attributes, the PowerPC GNU attributes, and the RISC-V header flags.
+//! Whether an ELF says its floating-point arguments, doubles included, travel in
+//! floating-point registers (a double-precision hard-float procedure-call
+//! standard) or in integer registers (soft-float): ARM build attributes and
+//! header flags, the MIPS ABI flags and GNU attributes, the PowerPC GNU
+//! attributes, and the RISC-V header flags.  A single-precision convention, which
+//! passes doubles in integer registers, and anything unstated are `None`.
 use super::kuna_armfloatabi::{string, uleb, word};
 use object::{Object, ObjectSection};
 
@@ -37,7 +39,7 @@ pub fn float_arg_registers(file: &object::File<'_>) -> Option<bool> {
         A::Riscv32 | A::Riscv64 => match file.flags() {
             object::FileFlags::Elf { e_flags, .. } => match e_flags & 6 {
                 0 => Some(false),
-                4 | 6 => Some(true),
+                4 => Some(true),
                 _ => None,
             },
             _ => None,
@@ -276,8 +278,10 @@ mod tests {
         for (flags, expected) in [
             (0, Some(false)),
             (2, None),
+            (3, None),
             (4, Some(true)),
             (5, Some(true)),
+            (6, None),
         ] {
             let bytes = elf(Architecture::Riscv64, Endianness::Little, flags, &[]);
             assert_eq!(evidence(&bytes), expected, "{flags:#x}");

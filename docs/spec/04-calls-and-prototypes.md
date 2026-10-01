@@ -1426,32 +1426,36 @@ declared prototype (an untyped `void *` field, or a code type without one)
 leaves the site on its model-recovered argument list.
 
 A prototype whose storage puts a parameter or the return value in one of its
-model's floating-point entries is forced only under the image's
-floating-point convention
+model's floating-point entries is forced only where the image states a
+convention that keeps such values, doubles included, in floating-point
+registers
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_typedcallabi.rs`). A
 declarator that names no convention gets the default model, which passes
 floating-point values in floating-point registers where it can. A soft-float
-image passes them in integer registers, so forcing that storage there would
-print uninitialized floating-point register locals as the arguments and drop
-the ones the caller set. A floating-point value the default model already
-places in integer registers or on the stack (a MIPS `double` after an `int`, a
-variadic argument) has the same storage under both conventions, so such a
-prototype is forced as declared everywhere. The loader reads what the container states
+image passes them in integer registers, and a single-float one passes doubles
+in integer registers, so forcing the default storage there would print
+uninitialized floating-point register locals as the arguments and drop the ones
+the caller set. A floating-point value the default model already places in
+integer registers or on the stack (a MIPS `double` after an `int`, a variadic
+argument) has the same storage under every convention, so such a prototype is
+forced as declared everywhere. The loader reads what the container states
 (`decompiler/crates/kuna-analysis/src/loader/kuna_floatabi.rs`): ARM's
 `Tag_ABI_VFP_args` (an `aeabi` subsection without it means the core-register
 base variant) or a linked EABI5 header's float flag, MIPS `.MIPS.abiflags` and
 `Tag_GNU_MIPS_ABI_FP`, PowerPC `Tag_GNU_Power_ABI_FP`, and the RISC-V header's
-float-ABI bits; x86 and AArch64 always use floating-point registers. A
-hard-float image gets the prototype as declared. A soft-float image gets it
-rebuilt from the same types under the spec's soft-float model (ARM's
-`__stdcall_softfp`), or not at all where the spec has none (MIPS, PowerPC,
-RISC-V), which leaves the recovered arguments. An image that states nothing (a
-clang PowerPC object, a raw image, the Ghidra front-end) gets the prototype
-only when some op of the function other than a call, return or SSA join reads
-or writes a register the model passes floating-point values in, since
-soft-float code never touches them; a function whose only floating-point
-traffic is forwarding its own argument keeps the recovered arguments there. A
-prototype that names its own convention is forced as declared on every image.
+float-ABI bits; x86 and AArch64 always use floating-point registers. Only a
+double-precision hard-float convention counts as hard: MIPS `fp_abi` 1, 5, 6
+or 7, PowerPC hard double, RISC-V lp64d/ilp32d, ARM's VFP variant. A hard-float
+image gets the prototype as declared. A soft-float image gets it rebuilt from
+the same types under the spec's soft-float model (ARM's `__stdcall_softfp`), or
+not at all where the spec has none (MIPS, PowerPC, RISC-V), which leaves the
+recovered arguments. A single-float image (RISC-V lp64f/ilp32f, MIPS `fp_abi`
+2, PowerPC single-precision) and an image that states nothing (a raw image, a
+clang PowerPC or attribute-less ARM object, a Mach-O, the Ghidra front-end)
+keep the recovered arguments too. The instructions a function executes do not
+decide it: ARM `softfp` and single-float code compute with floating-point
+registers yet pass doubles, or every value, in integer registers. A prototype
+that names its own convention is forced as declared on every image.
 
 `force_set` first saves a copy of the full `FuncProto` — model, storage, locks
 and all — into the function's Override store keyed by the call address

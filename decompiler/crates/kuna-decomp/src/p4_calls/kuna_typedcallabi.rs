@@ -1,24 +1,25 @@
 //! The convention a declared function-pointer prototype is forced under at an
 //! indirect call.  A declarator that names no convention gets the default model,
-//! which passes floating-point values in floating-point registers; a soft-float
-//! image passes them in integer registers, so forcing that storage there reads
-//! registers the caller never set and drops the arguments it did set.
+//! which passes floating-point values in floating-point registers.  An image may
+//! pass them in integer registers (soft-float) or keep doubles out of the
+//! floating-point registers (single-float); forcing the default storage there
+//! reads registers the caller never set and drops the arguments it did set.
 use crate::{
-    context::{ArchContext, VarnodeId},
+    context::ArchContext,
     dtype::type_class,
     fspec::{FuncProto, ProtoModel, PrototypePieces},
     funcdata::Funcdata,
     infra::architecture::Architecture,
 };
 use kuna_base::{address::Address, space::AddrSpace};
-use kuna_num::opcodes::OpCode;
 use std::rc::Rc;
 
 /// The ARM model for the base (core-register) procedure-call standard.
 const SOFT_FLOAT_MODEL: &str = "__stdcall_softfp";
 
-/// Whether the image passes floating-point arguments in floating-point
-/// registers: x86 and AArch64 always do; elsewhere the container decides.
+/// Whether the image passes floating-point arguments, doubles included, in
+/// floating-point registers: x86 and AArch64 always do; elsewhere only the
+/// convention the container states decides.
 pub fn image_evidence(arch: &Architecture) -> Option<bool> {
     if arch.archid.starts_with("x86:") || arch.archid.starts_with("AARCH64:") {
         return Some(true);
@@ -40,10 +41,9 @@ pub fn soft_model(arch: &Architecture, evidence: Option<bool>) -> Option<Rc<Prot
 /// The prototype to force at a CALLIND typed with `proto`, or `None` to leave the
 /// call to model recovery.  A prototype that puts no parameter or return value in
 /// the model's floating-point registers, or names its own convention, is forced as
-/// declared.  Otherwise the image decides: hard-float keeps it; soft-float rebuilds
-/// it under the soft-float model, or declines when the spec has none; an image
-/// that states nothing keeps it only when this function computes with those
-/// registers.
+/// declared.  Otherwise the stated convention decides: hard-float keeps it;
+/// soft-float rebuilds it under the soft-float model, or declines when the spec
+/// has none; single-float or no stated convention declines.
 pub fn admit(data: &Funcdata, proto: Rc<FuncProto>) -> Option<Rc<FuncProto>> {
     if !proto.has_model() {
         return Some(proto);
@@ -60,7 +60,7 @@ pub fn admit(data: &Funcdata, proto: Rc<FuncProto>) -> Option<Rc<FuncProto>> {
     match arch.float_arg_registers {
         Some(true) => Some(proto),
         Some(false) => rebuild(arch, &proto),
-        None => uses_float_registers(data, &entries).then_some(proto),
+        None => None,
     }
 }
 
@@ -126,40 +126,4 @@ fn rebuild(arch: &ArchContext, proto: &FuncProto) -> Option<Rc<FuncProto>> {
     soft.set_input_lock(true);
     soft.set_output_lock(true);
     Some(Rc::new(soft))
-}
-
-/// Some op other than a call, return or SSA join reads or writes a floating-point
-/// entry's register.  Soft-float code never touches them.
-fn uses_float_registers(data: &Funcdata, entries: &[(i32, u64, u64)]) -> bool {
-    if entries.is_empty() {
-        return false;
-    }
-    let float_register = |vn: VarnodeId| {
-        data.vbank().get(vn).is_some_and(|v| {
-            let addr = v.get_addr();
-            addr.get_space().is_some_and(|space| {
-                overlaps(
-                    entries,
-                    space,
-                    addr.get_offset(),
-                    v.get_size().max(0) as u64,
-                )
-            })
-        })
-    };
-    data.obank().iter_alive().any(|id| {
-        data.obank().get(id).is_some_and(|op| {
-            !matches!(
-                op.code(),
-                OpCode::CPUI_MULTIEQUAL
-                    | OpCode::CPUI_INDIRECT
-                    | OpCode::CPUI_CALL
-                    | OpCode::CPUI_CALLIND
-                    | OpCode::CPUI_RETURN
-            ) && (op.get_out().is_some_and(float_register)
-                || (0..op.num_input())
-                    .filter_map(|i| op.get_in(i))
-                    .any(float_register))
-        })
-    })
 }
