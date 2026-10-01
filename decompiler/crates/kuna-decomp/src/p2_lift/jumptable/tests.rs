@@ -582,3 +582,22 @@ fn jumptable_decode_missing_label_after_labeled_is_error() {
     assert_eq!(decoded.get_label_by_index(0), 7);
     assert_eq!(decoded.get_label_by_index(1), NO_LABEL);
 }
+
+
+#[test]
+fn label_domain_rejects_equal_counts_with_shifted_values_or_stride() {
+    fn model(range: CircleRange) -> JumpBasicModel {
+        let mut values = JumpValuesRange::new();
+        values.set_range(range);
+        let mut model = JumpBasicModel::new();
+        model.jrange = Some(Box::new(values));
+        model
+    }
+    let original = model(CircleRange::new(0, 4, 4, 1));
+    let shifted = model(CircleRange::new(10, 14, 4, 1));
+    let strided = model(CircleRange::new(0, 8, 4, 2));
+    let byte = model(CircleRange::new(0, 4, 1, 1));
+    assert!(!shifted.matches_label_domain(&original).unwrap());
+    assert!(!strided.matches_label_domain(&original).unwrap());
+    assert!(byte.matches_label_domain(&original).unwrap());
+}

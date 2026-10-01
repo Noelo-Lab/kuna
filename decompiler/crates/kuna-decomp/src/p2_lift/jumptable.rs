@@ -926,6 +926,8 @@ pub trait JumpValues {
     fn truncate(&mut self, nm: int4);
     /// Return the number of values the variables can take (C++ `getSize`).
     fn get_size(&self) -> uintb;
+    /// The underlying normalized range, when this iterator has one.
+    fn get_range(&self) -> Option<&CircleRange> { None }
     /// Return \b true if the given value is in the set of possible values.
     fn contains(&self, val: uintb) -> KunaResult<bool>;
     /// Initialize \b this for iterating over the set of possible values; returns
@@ -1046,6 +1048,8 @@ impl JumpValues for JumpValuesRange {
         self.range.get_size()
     }
 
+    fn get_range(&self) -> Option<&CircleRange> { Some(&self.range) }
+
     fn contains(&self, val: uintb) -> KunaResult<bool> {
         Ok(self.range.contains_val(val))
     }
@@ -1161,6 +1165,8 @@ impl JumpValues for JumpValuesRangeDefault {
     fn get_size(&self) -> uintb {
         self.base.range.get_size() + 1
     }
+
+    fn get_range(&self) -> Option<&CircleRange> { Some(&self.base.range) }
 
     fn contains(&self, val: uintb) -> KunaResult<bool> {
         if self.extravalue == val {
@@ -1904,6 +1910,9 @@ pub struct JumpBasicModel {
     /// Range of values for the (normalized) switch variable (C++ `jrange`).
     /// Boxed as a trait object so [`JumpValuesRangeDefault`] (model 2) fits.
     jrange: Option<Box<dyn JumpValues>>,
+    /// Normalized range from flow discovery; its width, bounds and stride
+    /// must survive model matching, not merely its number of entries.
+    expected_range: Option<CircleRange>,
     /// Set of PcodeOps and Varnodes producing the final target addresses.
     path_meld: PathMeld,
     /// Any guards associated with the model (C++ `selectguards`).
@@ -1935,6 +1944,7 @@ impl JumpBasicModel {
     pub fn new() -> JumpBasicModel {
         JumpBasicModel {
             jrange: None,
+            expected_range: None,
             path_meld: PathMeld::new(),
             selectguards: Vec::new(),
             varnode_index: 0,
@@ -1956,6 +1966,26 @@ impl JumpBasicModel {
     /// The normalized value iterator (C++ `getValueRange`).
     fn jrange(&self) -> &dyn JumpValues {
         &**self.jrange.as_ref().expect("JumpBasic: jrange not set")
+    }
+
+    /// Labels from a previous model may only be reused for the same ordered
+    /// normalized values. Equal destination vectors alone are insufficient if
+    /// the ranges have shifted; differing widths can still represent identical
+    /// finite values. The extra default arm has no reversible numeric label.
+    fn matches_label_domain(&self, original: &Self) -> KunaResult<bool> {
+        let mut current = self.jrange().clone_box();
+        let mut previous = original.jrange().clone_box();
+        let mut more_current = current.initialize_for_reading();
+        let mut more_previous = previous.initialize_for_reading();
+        while more_current && more_previous {
+            if current.is_reversible() != previous.is_reversible()
+                || (current.is_reversible() && current.get_value() != previous.get_value()) {
+                return Ok(false);
+            }
+            more_current = current.next()?;
+            more_previous = previous.next()?;
+        }
+        Ok(more_current == more_previous)
     }
 
     /// Calculate the range of values in `vn` that direct control-flow to the
@@ -2021,13 +2051,17 @@ impl JumpBasicModel {
         }
         let mut i: uint4 = 1;
         while (i as int4) < self.path_meld.num_common_varnode() {
-            if maxsize == matchsize as uintb {
+            if self.expected_range.as_ref() == Some(&rng)
+                || (self.expected_range.is_none() && maxsize == matchsize as uintb) {
                 return;
             }
             let vni = self.path_meld.get_varnode(i as int4);
             self.calc_range(fd, vni, &mut rng);
             let sz = rng.get_size();
-            if sz < maxsize {
+            // A compact selector map can have a smaller domain than the
+            // original guarded index. Prefer the complete previously recovered
+            // range even when it is not the current minimum.
+            if sz < maxsize || self.expected_range.as_ref() == Some(&rng) {
                 // Don't accept a 1-byte switch var unless there is an explicit
                 // guard or table lookup between the byte and the indirect jump.
                 let vsize = fd.vbank().get(vni).unwrap().get_size();
@@ -2555,7 +2589,13 @@ impl JumpBasicModel {
             .and_then(|o| o.get_parent())
             .ok_or_else(|| KunaError::lowlevel("recoverModel: switch op has no parent block"))?;
         self.find_normalized(fd, parent, -1, matchsize, maxtablesize, indop)?;
-        if self.jrange().get_size() > maxtablesize as uintb {
+        let incompatible_range = self.expected_range.as_ref().is_some_and(|expected| {
+            self.jrange().get_range() != Some(expected)
+        });
+        if self.jrange().get_size() > maxtablesize as uintb || incompatible_range {
+            // A bounded byte-map result is not a substitute for the original
+            // guarded index. Try the existing guard recovery paths on a model
+            // mismatch too, before accepting a different label domain.
             // (kuna) GH-9191: the basic model could not bound the table.  When
             // `option switchmodbound on`, look for a modulo/and-mask bound on the
             // LOAD-table index and re-bound the table to [0, N).
@@ -4063,6 +4103,7 @@ impl JumpModel for JumpBasicModel {
         // C++ JumpBasic::clone only clones the JumpValues iterator.
         let mut res = JumpBasicModel::new();
         res.is_model2 = self.is_model2;
+        res.expected_range = self.expected_range.clone();
         if let Some(jr) = &self.jrange {
             res.jrange = Some(jr.clone_box());
         }
@@ -4071,6 +4112,7 @@ impl JumpModel for JumpBasicModel {
 
     fn clear(&mut self) {
         self.jrange = None;
+        self.expected_range = None;
         self.path_meld.clear();
         self.selectguards.clear();
         self.normalvn = None;
@@ -5009,7 +5051,12 @@ impl JumpTable {
         // the basic models cover the corpus switches.
 
         // Try the basic model.
+        let expected_range = self.origmodel.as_ref()
+            .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
+            .and_then(|m| m.jrange.as_ref())
+            .and_then(|r| r.get_range()).cloned();
         let mut jbasic = JumpBasicModel::new();
+        jbasic.expected_range = expected_range.clone();
         jbasic.is_partial = self.partial_table;
         let basic_ok = jbasic.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?;
         // Stash the basic model's path-meld for model 2's piggyback.
@@ -5020,6 +5067,7 @@ impl JumpTable {
         }
         // Try model 2 (default-path).
         let mut jbasic2 = JumpBasicModel::new_model2();
+        jbasic2.expected_range = expected_range;
         jbasic2.is_partial = self.partial_table;
         jbasic2.initialize_start(&basic_path);
         let m2_ok = jbasic2.recover_model(fd, indirect, self.addresstable.len() as uint4, max_table_size)?;
@@ -5158,11 +5206,31 @@ impl JumpTable {
         }
         self.recover_model(fd)?; // Create a current instance of the model
         if let Some(model) = self.jmodel.as_ref() {
-            if model.get_table_size() != self.addresstable.len() as int4 {
-                // STUB(W4): the multistage-restart path
-                // (Override::insertMultistageJump / setRestartPending) is the W4
-                // override table; a (1 -> >1) mismatch would request a restart.
-                // Recorded as a loss: the flow-recovered address table is kept.
+            if !model.is_override() && self.origmodel.is_some() {
+                // Labels are attached to the original address rows. Range size
+                // (even full range equality) cannot prove that a table lookup
+                // has preserved their order. Check the actual destinations
+                // before folding the selector and reusing the original labels.
+                let same_domain = match (
+                    model.as_any().downcast_ref::<JumpBasicModel>(),
+                    self.origmodel.as_ref().unwrap().as_any().downcast_ref::<JumpBasicModel>(),
+                ) {
+                    (Some(current), Some(original)) => current.matches_label_domain(original)?,
+                    _ => true,
+                };
+                let mut current_addresses = Vec::new();
+                let verified = same_domain && model.build_addresses(
+                    fd, self.indirect.unwrap(), &mut current_addresses, None, None,
+                ).is_ok() && current_addresses == self.addresstable;
+                if !verified {
+                    // ActionSwitchNorm still calls foldInGuards after matching.
+                    // Drop the rejected model atomically so the existing trivial
+                    // recovery keeps raw target-address labels and all guards.
+                    self.jmodel = None;
+                    fd.warning_header(
+                        "Could not verify switch model against original destinations; retaining raw target-address labels",
+                    );
+                }
             }
         }
         Ok(())
