@@ -379,6 +379,9 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
     >,
+    /// (kuna `armfloatargs`) The same probe of this function's own body, read by
+    /// its own input recovery ([`crate::kuna_armfloatargs::mark_own_reads`]).
+    kuna_own_entry_dead: Option<std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>>,
     /// (kuna `passthrough`) The same probes with what each direct call's target
     /// takes added ([`crate::kuna_calleedeadarg::reads_through_calls`]), for the
     /// callees `protoorder` stated a prototype for.  Read only by
@@ -576,6 +579,7 @@ impl Funcdata {
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
             kuna_callee_entry_dead: std::collections::HashMap::new(),
+            kuna_own_entry_dead: None,
             kuna_callee_entry_through: std::collections::HashMap::new(),
             kuna_callee_forward: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
@@ -807,6 +811,18 @@ impl Funcdata {
     ) -> Option<&crate::kuna_calleedeadarg::CalleeEntryDead> {
         let sp = entry.get_space()?;
         self.kuna_callee_entry_dead.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna `armfloatargs`) Record the entry-liveness probe of this function's
+    /// own body.
+    pub fn kuna_set_own_entry_dead(&mut self, dead: std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>) {
+        self.kuna_own_entry_dead = Some(dead);
+    }
+
+    /// (kuna `armfloatargs`) The entry-liveness probe of this function's own
+    /// body, if one was taken.
+    pub fn kuna_own_entry_dead(&self) -> Option<&crate::kuna_calleedeadarg::CalleeEntryDead> {
+        self.kuna_own_entry_dead.as_deref()
     }
 
     /// (kuna `passthrough`) Record the probe of `entry`'s body with what its

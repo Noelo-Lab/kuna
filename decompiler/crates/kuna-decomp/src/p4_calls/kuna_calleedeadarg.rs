@@ -1000,6 +1000,14 @@ pub fn seed_callee_entry_dead(
     arch: &mut crate::architecture::Architecture,
     data: &mut Funcdata,
 ) {
+    if crate::kuna_armfloatargs::applies(arch) && !data.get_address().is_invalid() {
+        let reg_idx =
+            arch.manage().get_space_by_name("register").map(|s| s.get_index()).unwrap_or(-1);
+        let own = data.get_address().clone();
+        if let Some(d) = (reg_idx >= 0).then(|| probe_cached(arch, &own, reg_idx)).flatten() {
+            data.kuna_set_own_entry_dead(d);
+        }
+    }
     let body_arity = arch.callee_arity && arch.callee_arity_body;
     // `argclobber` reads this probe only as a veto on a drop its recovered-
     // prototype clause already admitted, so with nothing parked it can never

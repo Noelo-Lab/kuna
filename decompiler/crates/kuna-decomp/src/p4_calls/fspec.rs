@@ -1315,6 +1315,9 @@ pub struct ParamActive {
     /// hole below a later double keeps as words; see
     /// [`crate::p4_calls::kuna_armfloatargs`].
     single_floats: Vec<Address>,
+    /// (kuna) `armfloatargs`: s-registers the function's body reads on entry,
+    /// which are parameters even where they would be a back-fill slot.
+    read_singles: Vec<Address>,
 }
 
 impl ParamActive {
@@ -1335,6 +1338,7 @@ impl ParamActive {
             stack_arg_gap: false,      // (kuna) stackarggap
             cond_exe_retry: Default::default(), // (kuna) condexeret
             single_floats: Vec::new(), // (kuna) armfloatargs
+            read_singles: Vec::new(),  // (kuna) armfloatargs
         }
     }
 
@@ -1470,6 +1474,11 @@ impl ParamActive {
     /// (kuna) `armfloatargs`: record the callee's stated single-precision inputs.
     pub fn set_single_floats(&mut self, addrs: Vec<Address>) {
         self.single_floats = addrs;
+    }
+
+    /// (kuna) `armfloatargs`: record the s-registers the body reads on entry.
+    pub fn set_read_singles(&mut self, addrs: Vec<Address>) {
+        self.read_singles = addrs;
     }
     /// (kuna) `condexeret`: the state of the retry pass.
     pub fn cond_exe_retry(&self) -> &crate::p4_calls::kuna_condexeret::CondExeRetry {
@@ -2097,9 +2106,21 @@ impl ParamListStandard {
     /// (kuna) `armfloatargs`: group `grp` is the upper half of a d-register whose
     /// lower half holds a single and every later VFP hit is a double. AAPCS-VFP
     /// places those doubles past the pair without this slot, so leaving it out
-    /// keeps the remaining parameters in the storage the convention assigns.
-    fn backfill_hole(&self, hitlist: &[Option<usize>], grp: usize) -> bool {
+    /// keeps the remaining parameters in the storage the convention assigns. A
+    /// slot the body reads on entry, such as one spilled at -O0, is a parameter.
+    fn backfill_hole(&self, active: &ParamActive, hitlist: &[Option<usize>], grp: usize) -> bool {
         if !self.backfill_holes || grp == 0 {
+            return false;
+        }
+        let read = self.entry.iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT
+                && e.get_size() == 4
+                && e.get_group() == grp as int4
+                && active
+                    .read_singles
+                    .contains(&Address::new(e.get_space().clone(), e.get_base()))
+        });
+        if read {
             return false;
         }
         let float = |e: usize, size: int4| {
@@ -2902,7 +2923,7 @@ impl ParamListStandard {
                 continue;
             }
             match hitlist[i] {
-                None if self.backfill_hole(&hitlist, i) => {}
+                None if self.backfill_hole(active, &hitlist, i) => {}
                 None => {
                     let pref = if float_count > int_count {
                         type_class::TYPECLASS_FLOAT

@@ -154,18 +154,61 @@ pub fn stated_singles(
 }
 
 /// Keep a hole the callee states as s-register words from taking a whole
-/// d-register.
+/// d-register, and a slot the callee's body reads from being a back-fill hole.
 pub fn mark_single_floats(call: &mut FuncCallSpecs, data: &Funcdata) {
     if data.get_arch().arm_float_args {
         let words = stated_words(data, call);
+        let read = call.proto().has_model().then(|| {
+            read_singles(
+                call.proto().model().input().get_entry(),
+                data.kuna_callee_entry_dead(call.get_entry_address()),
+            )
+        });
         call.get_active_input().set_single_floats(words);
+        call.get_active_input()
+            .set_read_singles(read.unwrap_or_default());
     }
 }
 
-/// A call whose callee states an arity-sound contract takes only the VFP inputs
-/// it states. An unstated VFP trial is dropped only where the callee's body,
+/// The s-register parameter slots a body reads before writing, by its probe.
+fn read_singles(
+    entries: &[crate::fspec::ParamEntry],
+    probe: Option<&crate::kuna_calleedeadarg::CalleeEntryDead>,
+) -> Vec<Address> {
+    let Some(probe) = probe else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter(|e| e.get_type() == type_class::TYPECLASS_FLOAT && e.get_size() == 4)
+        .map(|e| Address::new(e.get_space().clone(), e.get_base()))
+        .filter(|a| probe.proves_read(a, 4))
+        .collect()
+}
+
+/// A slot the function's own body reads on entry is one of its parameters,
+/// even where it would be a back-fill slot.
+pub fn mark_own_reads(active: &mut crate::fspec::ParamActive, data: &Funcdata) {
+    if data.get_arch().arm_float_args && data.get_func_proto().has_model() {
+        active.set_read_singles(read_singles(
+            data.get_func_proto().model().input().get_entry(),
+            data.kuna_own_entry_dead(),
+        ));
+    }
+}
+
+/// A call whose callee states an arity-sound contract takes the VFP inputs that
+/// contract states, so the call and the callee agree on every VFP position.
+///
+/// A stated input becomes an argument whatever the positional rules made of the
+/// slots in front of it: a value the caller wrote but the trial scoring took for
+/// its own, or, in front of a later stated input, whatever reaches the call where
+/// the caller never wrote the register. A positional filler the contract skips
+/// while stating a later VFP input, such as the AAPCS-VFP back-fill slot, is
+/// dropped. Any other unstated VFP input is dropped only where the callee's body,
 /// followed through its own calls, provably neither reads nor forwards that
-/// register: a back-fill slot, or a value the caller left behind.
+/// register. A stated input the call holds only in part, or under an unstated
+/// argument it keeps, leaves the positions as recovered.
 pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata) {
     if !data.get_arch().arm_float_args || call.is_input_locked() || !call.proto().has_model() {
         return;
@@ -174,36 +217,115 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata) {
     let Some(stated) = data.kuna_protoorder_types(&entry).filter(|s| s.arity_sound) else {
         return;
     };
-    let (Some(dead), Some(forward)) = (
-        data.kuna_callee_entry_dead(&entry),
-        data.kuna_callee_forward(&entry),
-    ) else {
-        return;
+    let entries = call.proto().model().input().get_entry().to_vec();
+    let vfp = |addr: &Address, size: i32| {
+        entries.iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) >= 0
+        })
     };
-    let drop: Vec<i32> = {
-        let entries = call.proto().model().input().get_entry();
-        let active = call.active_input();
-        (0..active.get_num_trials())
-            .filter(|&i| {
-                let t = active.get_trial(i);
-                let (addr, size) = (t.get_address(), t.get_size());
-                t.is_used()
-                    && entries.iter().any(|e| {
-                        e.get_type() == type_class::TYPECLASS_FLOAT
-                            && e.justified_contain(addr, size) >= 0
-                    })
-                    && !stated
-                        .inputs
-                        .iter()
-                        .any(|(a, s, _)| a == addr && *s == size)
-                    && !dead.proves_read(addr, size)
-                    && forward.transfer_free(addr, size)
-            })
-            .collect()
+    let wanted: Vec<(Address, i32)> = stated
+        .inputs
+        .iter()
+        .filter(|(a, s, _)| vfp(a, *s))
+        .map(|(a, s, _)| (a.clone(), *s))
+        .collect();
+    let probes = data
+        .kuna_callee_entry_dead(&entry)
+        .zip(data.kuna_callee_forward(&entry));
+    let overlaps = |a: &Address, s: i32, b: &Address, t: i32| {
+        a.overlap(0, b, t) >= 0 || b.overlap(0, a, s) >= 0
     };
-    for i in drop {
-        call.get_active_input().get_trial_mut(i).mark_no_use();
+    let active = call.active_input();
+    let trials: Vec<_> = (0..active.get_num_trials())
+        .map(|i| {
+            let t = active.get_trial(i);
+            (
+                i,
+                t.get_address().clone(),
+                t.get_size(),
+                t.is_used(),
+                t.is_unref(),
+            )
+        })
+        .collect();
+    let mut drop = Vec::new();
+    let mut kept = Vec::new();
+    for (i, addr, size, used, unref) in &trials {
+        if !used || !vfp(addr, *size) || wanted.iter().any(|(a, s)| a == addr && s == size) {
+            continue;
+        }
+        let filler = *unref && wanted.iter().any(|(a, _)| above(a, addr));
+        let unreached = probes.is_some_and(|(dead, forward)| {
+            !dead.proves_read(addr, *size) && forward.transfer_free(addr, *size)
+        });
+        if filler || unreached {
+            drop.push(*i);
+        } else {
+            kept.push((addr.clone(), *size));
+        }
     }
+    let mut bind = Vec::new();
+    let mut missing = Vec::new();
+    let mut partial = false;
+    for (addr, size) in &wanted {
+        let exact = trials.iter().find(|(_, a, s, _, _)| a == addr && s == size);
+        partial |= kept.iter().any(|(a, s)| overlaps(addr, *size, a, *s));
+        match exact {
+            Some((i, _, _, false, _)) => bind.push(*i),
+            Some(_) => {}
+            None if trials
+                .iter()
+                .any(|(_, a, s, _, _)| overlaps(addr, *size, a, *s)) =>
+            {
+                partial = true
+            }
+            None => missing.push((addr.clone(), *size)),
+        }
+    }
+    let active = call.get_active_input();
+    for i in drop {
+        active.get_trial_mut(i).mark_no_use();
+    }
+    if partial {
+        return;
+    }
+    for i in bind {
+        let t = active.get_trial_mut(i);
+        t.mark_active();
+        t.mark_used();
+    }
+    let present: Vec<&Address> = wanted
+        .iter()
+        .map(|(a, _)| a)
+        .filter(|a| !missing.iter().any(|(m, _)| m == *a))
+        .collect();
+    missing.retain(|(addr, _)| present.iter().any(|a| above(a, addr)));
+    if missing.is_empty() {
+        return;
+    }
+    for (addr, size) in missing {
+        let Some(e) = entries.iter().position(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT
+                && e.get_size() == size
+                && e.justified_contain(&addr, size) == 0
+        }) else {
+            continue;
+        };
+        let at = active.get_num_trials();
+        active.register_trial(&addr, size);
+        let t = active.get_trial_mut(at);
+        t.mark_unref();
+        t.set_entry(Some(e), 0);
+        t.mark_active();
+        t.mark_used();
+    }
+    active.sort_trials(&entries);
+}
+
+/// Is `a` a later slot than `b` in the same register file?
+fn above(a: &Address, b: &Address) -> bool {
+    a.get_space().map(|s| s.get_index()) == b.get_space().map(|s| s.get_index())
+        && a.get_offset() > b.get_offset()
 }
 
 /// A word of a stated floating parameter is not that parameter.
@@ -464,14 +586,25 @@ fn typed_inputs(data: &Funcdata) -> Vec<(Address, i32)> {
                         && p.get_type()
                             .is_some_and(|t| t.get_metatype() == type_metatype::TYPE_FLOAT)
                 });
+                let passed = call
+                    .final_input_storage()
+                    .get((slot - 1) as usize)
+                    .filter(|_| call.final_input_storage().len() as i32 + 1 == op.num_input())
+                    .cloned()
+                    .or_else(|| {
+                        call.proto()
+                            .get_param(slot - 1)
+                            .map(|p| (p.get_address(), p.get_size()))
+                    });
                 let recovered = data
                     .kuna_protoorder_types(call.get_entry_address())
                     .is_some_and(|s| {
                         s.arity_sound
                             && s.inputs.iter().any(|(a, z, t)| {
-                                a == &storage.0
-                                    && *z == storage.1
+                                *z == storage.1
                                     && t.get_metatype() == type_metatype::TYPE_FLOAT
+                                    && (a == &storage.0
+                                        || passed.as_ref().is_some_and(|(p, n)| a == p && *n == *z))
                             })
                     });
                 if declared || recovered {
