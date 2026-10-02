@@ -505,6 +505,15 @@ pub fn unread_slot(data: &Funcdata, call: &FuncCallSpecs, addr: &Address, size: 
         && never_reads(data, call.get_entry_address(), addr, size)
 }
 
+/// Does `[addr, addr+size)` lie in a VFP input slot of `call`, with the option on?
+pub fn vfp_slot(data: &Funcdata, call: &FuncCallSpecs, addr: &Address, size: i32) -> bool {
+    data.get_arch().arm_float_args
+        && call.proto().has_model()
+        && call.proto().model().input().get_entry().iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) >= 0
+        })
+}
+
 /// Does the callee at `entry` never read `[addr, addr+size)`? Every path
 /// writes it first, or the body only returns without touching it where it lies
 /// outside the callee's result, which such a path would hand back unchanged.

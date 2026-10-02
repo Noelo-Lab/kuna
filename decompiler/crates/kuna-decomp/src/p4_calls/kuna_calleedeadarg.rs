@@ -1241,8 +1241,8 @@ pub(crate) fn is_leftover_call_result(data: &Funcdata, vn: VarnodeId, depth: u32
 /// 1. the value in the register is an earlier call's leftover result, not
 ///    something the caller placed there ([`is_leftover_call_result`]); and
 /// 2. the callee overwrites that register on every path from its entry, before
-///    ever reading it ([`CalleeEntryDead::proves_dead`]; with `armfloatargs`
-///    on, by instructions that always run).
+///    ever reading it ([`CalleeEntryDead::proves_dead`]; for a VFP register
+///    with `armfloatargs` on, by instructions that always run).
 ///
 /// Answers `false` with the option off, for a non-register trial, for an
 /// indirect call, and for every callee the probe could not fully cover.
@@ -1260,8 +1260,11 @@ pub fn trial_is_dead_in_callee(
     if entry.is_invalid() {
         return false;
     }
+    let call = data.get_call_specs(call_idx);
     let dead = match data.kuna_callee_entry_dead(entry) {
-        Some(d) if data.get_arch().arm_float_args => d.proves_dead_firmly(trial_addr, trial_size),
+        Some(d) if crate::kuna_armfloatargs::vfp_slot(data, call, trial_addr, trial_size) => {
+            d.proves_dead_firmly(trial_addr, trial_size)
+        }
         Some(d) => d.proves_dead(trial_addr, trial_size),
         None => false,
     };
