@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1700,
-    1700
+    1707,
+    1707
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -836,6 +836,13 @@
     "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",
     "data:REALTYPES #4: no xunknown placeholder remains",
     "data:REALTYPES #5: no undefined placeholder remains",
+    "data:RETCALLHALF #1: the caller hands back the callee's whole result",
+    "data:RETCALLHALF #2: every caller that changes only the high word returns eight bytes",
+    "data:RETCALLHALF #3: a sign-extended call result is a long long",
+    "data:RETCALLHALF #4: a constant high word beside the call's result",
+    "data:RETCALLHALF #5: no caller prints as void",
+    "data:RETCALLHALF #6: a dead smull word, a hardening zero, a dummy pop and an svc argument stay void",
+    "data:RETCALLHALF #7: a caller that changes only the low word keeps its int",
     "data:RETINPUTHALF #1: by default the returned RDX half that is a passthrough argument is kept, and the argument stays in the signature",
     "data:RETINPUTHALF #2: the passthrough half is written from the second argument",
     "data:RETINPUTHALF #3: with the option off the bug returns: the half is dropped AND the argument vanishes (a one-argument wide)",

@@ -170,7 +170,7 @@ pub fn is_input_parameter(data: &Funcdata, vn: VarnodeId) -> bool {
 const MOVE_BUDGET: u32 = 64;
 
 /// Does the instruction at `pc` write the stack pointer?
-fn writes_stack_pointer(data: &Funcdata, pc: &Address) -> bool {
+pub(crate) fn writes_stack_pointer(data: &Funcdata, pc: &Address) -> bool {
     let Some(stackspc) = data.get_arch().manage().get_stack_space().cloned() else { return false };
     let Ok(sp) = stackspc.get_spacebase(0) else { return false };
     let Some(spspace) = sp.space.as_ref() else { return false };
@@ -212,7 +212,7 @@ fn move_source(data: &Funcdata, op: &crate::op::PcodeOp) -> Option<VarnodeId> {
 
 /// Can an op that reads registers its p-code does not show -- a CALLOTHER such
 /// as `svc`, or a call -- run after `from` and before `to`?
-fn call_between(data: &Funcdata, from: OpId, to: OpId) -> bool {
+pub(crate) fn call_between(data: &Funcdata, from: OpId, to: OpId) -> bool {
     let parent = |op: OpId| data.obank().get(op).and_then(|o| o.get_parent());
     let (Some(fb), Some(tb)) = (parent(from), parent(to)) else { return false };
     let graph = data.bblocks_ref();

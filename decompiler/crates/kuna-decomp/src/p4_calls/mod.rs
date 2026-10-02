@@ -19,6 +19,7 @@ pub mod kuna_exclusivearguse; // (kuna) a dereference on the other arm of a bran
 pub mod kuna_noreturnretuse;
 pub mod kuna_returnpair;
 pub mod kuna_retinputhalf;
+pub mod kuna_retcallhalf; // (kuna) a call's result handed back beside a computed second return register
 pub mod kuna_retpushedhalf;
 pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;
