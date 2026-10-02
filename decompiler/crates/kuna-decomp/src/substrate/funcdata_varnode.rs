@@ -2240,6 +2240,20 @@ impl Funcdata {
                     OpCode::CPUI_INDIRECT => {
                         cur_flags |= traverse_flags::indirectalt;
                     }
+                    // (kuna) `syscallregs` — a system call reading the value as
+                    // an argument is a call site, not a step the value flows
+                    // through: its result is the kernel's.  The value is then not
+                    // also a returned register half, and stays free to be another
+                    // call's argument.  See
+                    // [`crate::p2_lift::kuna_syscallregs::reads_as_argument`].
+                    OpCode::CPUI_CALLOTHER
+                        if crate::p2_lift::kuna_syscallregs::reads_as_argument(self, op, vn) =>
+                    {
+                        if self.obank().get(opmatch).map(|m| m.code()) != Some(OpCode::CPUI_RETURN) {
+                            continue;
+                        }
+                        res = false;
+                    }
                     OpCode::CPUI_COPY => {
                         let out = o.get_out();
                         let out_internal = out

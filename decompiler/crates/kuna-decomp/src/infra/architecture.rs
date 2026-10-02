@@ -443,6 +443,12 @@ pub struct Architecture {
     /// argument registers unconditionally.  See
     /// [`kuna_x64syscall`](crate::kuna_x64syscall).
     pub x64_syscall: crate::kuna_x64syscall::X64SyscallMode,
+    /// (kuna `syscallregs`) When the ARM/AArch64/RISC-V/MIPS/PowerPC system-call
+    /// user-op writes its result register and reads the registers the function
+    /// sets up for it: `off`, `auto` (the default: only on an image the loader
+    /// identified as an operating system's user-space program) or `on`.  See
+    /// [`kuna_syscallregs`](crate::kuna_syscallregs).
+    pub syscall_regs: crate::kuna_syscallregs::SyscallRegsMode,
     /// (kuna `pebnames`) When the Windows thread-environment segment base (`GS`
     /// on x86-64, `FS` on x86) is typed `TEB *`: `off`, `auto` (the default: only
     /// on an image the loader proved is a Windows user-mode PE) or `on` (any image
@@ -469,6 +475,12 @@ pub struct Architecture {
     /// FACT, not an option: written once at `load file` and the thing `option
     /// pebnames auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
     pub image_windows_user: bool,
+    /// (kuna) Did the loader identify the image as a program for an operating
+    /// system's user space (an ELF with a program interpreter, a dynamic section
+    /// naming a shared object, an ABI-tag note, or a Linux/BSD `EI_OSABI`)?  A
+    /// FACT, not an option: written once at `load file` and the thing `option
+    /// syscallregs auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
+    pub image_os_userland: bool,
     /// (kuna `decodehalt`) Does an artificial halt planted because the DECODE
     /// failed report itself?  On (the default) renders the three decode-failure
     /// halt types as upstream's `halt_baddata()` / `halt_unimplemented()` /
@@ -2435,6 +2447,8 @@ impl Architecture {
             fastfail_noreturn: false, // (kuna) option fastfailnoreturn; reset_defaults sets the shipped default
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
+            syscall_regs: crate::kuna_syscallregs::SyscallRegsMode::Off, // (kuna) option syscallregs; reset_defaults sets the shipped default
+            image_os_userland: false, // (kuna) a load-time fact; set by the console's `load file`
             peb_names: crate::kuna_pebnames::PebNamesMode::Off, // (kuna) option pebnames; reset_defaults sets the shipped default
             struct_synth: crate::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth; reset_defaults sets the shipped default
             struct_synth_shard: None,
@@ -2746,6 +2760,7 @@ impl Architecture {
         self.rodata_string = true; // (kuna) DIV-113 default-on: a read-only string block copy collapses to builtin_strncpy instead of the invalid-C partial-symbol slice assignments. Byte-identical (0/675) — the corpus carries no data symbols, so the covering-string-symbol guard never fires. Restore the slice assignments with `option rodatastring off`
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
         self.int3_pad = crate::kuna_int3pad::Int3PadMode::Warn; // (kuna) DIV-128 default `warn`: ADDS A COMMENT ONLY. Names the `int3` pad control ran into, which x86 SLEIGH lifts to `intloc = swi(3); call [intloc]` and the printer renders as an ordinary indirect call. Shape-gated on a `swi` CALLOTHER with the 1-byte constant vector 3, so it is structurally inert wherever no `int3` is decoded and byte-identical on the datatest corpus (0/675); `option int3pad halt` also ends the flow at the pad, `option int3pad off` restores the unannotated rendering
+        self.syscall_regs = crate::kuna_syscallregs::SyscallRegsMode::Auto; // (kuna) default `auto`: on an image the loader identified as an operating system's user-space program, the system call writes its result register and reads the number register and the leading argument registers the function writes on every path to it. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option syscallregs on` acts on any image, `off` restores the zero-effect CALLOTHER
         self.x64_syscall = crate::kuna_x64syscall::X64SyscallMode::Off; // (kuna) default-OFF: with a RUNTIME syscall number nothing can say how many argument registers the callee reads, so both answers the option offers are modelling judgements rather than facts; ON in the `aggressive` preset, which `auto` selects under 500 KiB
         self.peb_names = crate::kuna_pebnames::PebNamesMode::Auto; // (kuna) DIV-175 default `auto`: TYPES ONLY. Types the Windows TEB segment base (`GS_OFFSET`/`FS_OFFSET`) as `TEB *teb` so PEB/TEB field reads render by name. Gated on a Windows compiler spec AND the loader's user-mode-PE fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option pebnames on` trusts the compiler spec alone, `off` restores the untyped register
         self.struct_synth = crate::kuna_structsynth::StructSynthMode::Locals; // (kuna) structsynth default `locals`: a pointer parameter, or a pointer a call returned, read at two or more constant offsets is declared `struct_N *` and the reads render as fields. Moves 0/675 datatest assertions; `option structsynth param` restores parameters only, `off` the raw offset arithmetic
@@ -3547,6 +3562,10 @@ impl Architecture {
         ctx.linux_syscall = self.linux_syscall; // linuxsyscall
         ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
         ctx.x64_syscall = self.x64_syscall; // (kuna) x64syscall
+        ctx.syscall_regs = self.syscall_regs.fires(self.image_os_userland); // (kuna) syscallregs
+        ctx.syscall_regs_family = crate::kuna_syscallregs::SyscallFamily::from_archid(&self.archid);
+        ctx.syscall_regs_userops =
+            crate::kuna_syscallregs::userop_ids(&self.userops, ctx.syscall_regs_family);
         ctx.peb_names = self.peb_names.fires(
             crate::kuna_fastfailnoreturn::archid_is_windows(self.get_description()),
             self.image_windows_user,

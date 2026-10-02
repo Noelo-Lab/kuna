@@ -4028,6 +4028,11 @@ pub fn bootstrap_from_object_with_isa(
     // auto` acts only when it is.
     sleigh.base_mut().unwrap().image_windows_user =
         kuna_analysis::loader::format::pe::is_windows_user_mode_image(&bytes);
+    // (kuna `syscallregs`) And whether this is a program for an operating
+    // system's user space, whose system calls return a result: `option
+    // syscallregs auto` acts only when it is.
+    sleigh.base_mut().unwrap().image_os_userland =
+        kuna_analysis::loader::format::elf_userland::is_os_userland_image(&bytes);
     // (kuna `formatstring`) And one more: does this target pass a variadic
     // argument the way it passes a named one? On AArch64 that is the container's
     // answer (Apple puts every vararg on the stack), which only the image knows.

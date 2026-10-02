@@ -210,6 +210,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "castwiden" => conf.cast_widen.as_str(),
         // (kuna `narrowext`) Three-valued, so it reports its own token.
         "narrowext" => conf.narrow_ext.as_str(),
+        // (kuna `syscallregs`) Three-valued, so it reports its own token.
+        "syscallregs" => conf.syscall_regs.as_str(),
         "retpushedhalf" => on_off(conf.ret_pushed_half),
         "inputparamgap" => on_off(conf.input_param_gap),
         // (kuna `rustabi`) Three-valued, so it reports its own token.

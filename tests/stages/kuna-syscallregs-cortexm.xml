@@ -1,0 +1,53 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:Cortex">
+<!--
+    The control for option syscallregs on bare-metal code.  A Cortex-M RTOS
+    uses `svc` for a privilege change or a context switch, and its handler
+    leaves every register alone, so the compiler keeps live values in r0
+    across the instruction.  FreeRTOS's MPU port raises privilege with `svc 2`
+    and returns the r0 = 0 it set before it:
+
+        8564: f3ef 8014   mrs   r0, control
+              f010 0f01   tst.w r0, #1
+              bf1a        itte  ne
+              2000        movne r0, #0
+              df02        svcne 2
+              2001        moveq r0, #1
+              4770        bx    lr
+
+    (RTOSDemo.axf, xPortRaisePrivilege: returns 0 when it had to raise
+    privilege and 1 when the core was already privileged.)
+
+    Stage / sub-stage: P2 flow-classification.
+    P0 assertion:      option syscallregs off|auto|on  (default auto).
+
+    Pass 1 is the default `auto`, which acts only on an image the loader
+    identified as a program for an operating system's user space: the svc keeps
+    its old model and the function returns the r0 it set.  Pass 2 is
+    `option syscallregs off`, the same.  Pass 3, `option syscallregs on`, shows
+    the control is not vacuous: forced, the svc writes r0, which this handler
+    does not do.
+-->
+<bytechunk space="ram" offset="0x8564" readonly="true">
+eff3148010f0010f1abf002002df012070470020
+</bytechunk>
+<symbol space="ram" offset="0x8564" name="xPortRaisePrivilege"/>
+</binaryimage>
+<script>
+  <com>lo fu xPortRaisePrivilege</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs off</com>
+  <com>lo fu xPortRaisePrivilege</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs on</com>
+  <com>lo fu xPortRaisePrivilege</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SYSCALLREGS-CORTEXM #1: by default and with option syscallregs off the function returns a bool" min="2" max="2">bool xPortRaisePrivilege\(void\)</stringmatch>
+<stringmatch name="SYSCALLREGS-CORTEXM #2: by default and with option syscallregs off it returns the r0 it set before the svc" min="2" max="2">return !v1;</stringmatch>
+<stringmatch name="SYSCALLREGS-CORTEXM #3: forced on, the svc writes r0, so the default is what keeps this function right" min="1" max="1">v2 = software_interrupt\(2\);</stringmatch>
+</decompilertest>

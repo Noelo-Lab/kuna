@@ -1,0 +1,104 @@
+<decompilertest>
+<binaryimage arch="RISCV:LE:64:default">
+<!--
+    An inline system call (`ecall`) lifts to a CALLOTHER with no register inputs
+    and no output, so the a0 a function sets up for it still holds that value
+    afterwards. `pair` returns the two argument registers it set up as a register pair, and
+    `after` doubles its argument: it reads back the a0 it saved, not the result.
+
+    Stage / sub-stage: P2 flow-classification.
+    P0 assertion:      option syscallregs off|auto|on  (default auto).
+
+    Source (clang -O2 -target riscv64-linux-gnu -c, the .text bytes verbatim below):
+
+        long pair(long a, long b) {
+          register long a0 asm("a0") = b; register long a1 asm("a1") = a;
+          register long a7 asm("a7") = 64;
+          asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+          return a0;
+        }
+        long after(long x) {
+          register long a0 asm("a0"); register long a7 asm("a7") = 172;
+          asm volatile("ecall" : "=r"(a0) : "r"(a7) : "memory");
+          if (a0 < 0) return -1;
+          return a0 + x;
+        }
+        long fence(long a) { asm volatile("fence.i" ::: "memory"); return a; }
+        long retry(long fd, char *buf, long n) {
+          long r;
+          do {
+            register long x0 asm("a0") = fd; register char *x1 asm("a1") = buf;
+            register long x2 asm("a2") = n; register long x8 asm("a7") = 63;
+            asm volatile("ecall" : "+r"(x0) : "r"(x1), "r"(x2), "r"(x8) : "memory");
+            r = x0;
+          } while (r == -4);
+          return r;
+        }
+
+    Pass 1 (option syscallregs on) gives the ecall its effects: it writes a0,
+    and it reads the number register a7 and then the argument registers in
+    order, up to the first one the function did not write on every path to
+    it.  Pass 2 (option syscallregs off) is the old model, and so is pass 3,
+    the default `auto`: it acts only on an image the loader identified as a
+    program for an operating system's user space, which a bare byte chunk is
+    not.  fence is the control: its barrier is a CALLOTHER too,
+    and nothing about it changes.  retry hands buf and n to the kernel in a1
+    and a2 untouched, and the compiler keeps fd in a3 and the constant -4 in
+    a4: the call reads a7 and a0, and neither the untouched registers nor the
+    scratch ones after them take an argument position.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+2e8693080004aa853285730000008280aa859308c00a73000000635405007d55
+82802e9582800f1000008280
+</bytechunk>
+<bytechunk space="ram" offset="0x100040" readonly="true">
+aa8671579308f003368573000000e30de5fe8280
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="pair"/>
+<symbol space="ram" offset="0x100010" name="after"/>
+<symbol space="ram" offset="0x100026" name="fence"/>
+<symbol space="ram" offset="0x100040" name="retry"/>
+</binaryimage>
+<script>
+  <com>option syscallregs on</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fence</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu retry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs off</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fence</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu retry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs auto</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SYSCALLREGS-RISCV #1: with option syscallregs on pair is a one-register function" min="1" max="1">unsigned long pair\(unsigned long a0,unsigned long a1\)</stringmatch>
+<stringmatch name="SYSCALLREGS-RISCV #2: pair returns the ecall result and shows the registers it set up" min="1" max="1">return ecall\(0x40,a1,a0,a1\);</stringmatch>
+<stringmatch name="SYSCALLREGS-RISCV #3: with option syscallregs off or auto the setup comes back as a 16-byte pair" min="2" max="2">undefined16 pair\(</stringmatch>
+<stringmatch name="SYSCALLREGS-RISCV #4: after reads the ecall result, and a1 is not shown in a0's place" min="1" max="1">v1 = ecall\(0xac\);</stringmatch>
+<stringmatch name="SYSCALLREGS-RISCV #5: after adds its argument to the ecall result" min="1" max="1">return v1 \+ a0;</stringmatch>
+<stringmatch name="SYSCALLREGS-RISCV #6: with option syscallregs off after doubles its own argument" min="1" max="1">return a0 \* 2;</stringmatch>
+<stringmatch name="SYSCALLREGS-RISCV #7: the fence.i in fence is not a system call in either pass" min="2" max="2">fence\.i\(\);</stringmatch>
+<stringmatch name="SYSCALLREGS-RISCV #8: retry tests the ecall result, which reads a7 and a0 only" min="1" max="1">\} while \(ecall\(0x3f,a0\) == -4\);</stringmatch>
+<stringmatch name="SYSCALLREGS-RISCV #9: with option syscallregs off retry tests its own fd" min="1" max="1">\} while \(a0 == -4\);</stringmatch>
+</decompilertest>

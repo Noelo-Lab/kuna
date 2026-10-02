@@ -1,0 +1,82 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default:default">
+<!--
+    An inline system call (`sc`) lifts to a CALLOTHER with no register inputs
+    and no output, so the r3 a function sets up for it still holds that value
+    afterwards. `pair` returns the two argument registers it set up as a register pair, and
+    `after` doubles its argument: it reads back the r3 it saved, not the result.
+
+    Stage / sub-stage: P2 flow-classification.
+    P0 assertion:      option syscallregs off|auto|on  (default auto).
+
+    Source (clang -O2 -target powerpc-linux-gnu -c, the .text bytes verbatim below):
+
+        long pair(long a, long b) {
+          register long r0 asm("r0") = 4;
+          register long r3 asm("r3") = b; register long r4 asm("r4") = a;
+          asm volatile("sc" : "+r"(r3) : "r"(r4), "r"(r0) : "memory", "cr0");
+          return r3;
+        }
+        long after(long x) {
+          register long r0 asm("r0") = 20; register long r3 asm("r3");
+          asm volatile("sc" : "=r"(r3), "+r"(r0) :: "memory", "cr0", "r4", "r5",
+                       "r6", "r7", "r8", "r9", "r10", "r11", "r12", "ctr");
+          if (r3 < 0) return -1;
+          return r3 + x;
+        }
+        long fence(long a) { asm volatile("sync" ::: "memory"); return a; }
+
+    Pass 1 (option syscallregs on) gives the sc its effects: it writes r3,
+    and it reads the number register r0 and then the argument registers in
+    order, up to the first one the function did not write on every path to
+    it.  Pass 2 (option syscallregs off) is the old model, and so is pass 3,
+    the default `auto`: it acts only on an image the loader identified as a
+    program for an operating system's user space, which a bare byte chunk is
+    not.  fence is the control: its barrier is a CALLOTHER too,
+    and nothing about it changes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+7c8523787c641b787ca32b7838000004440000024e8000203800000444000002
+40e300087c6300d04e8000209421ffe093a10014380000147c7d1b7844000002
+7c83ea142c03ffff3860ffff41810008480000083864000083a1001438210020
+4e8000207c0004ac4e800020
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="pair"/>
+<symbol space="ram" offset="0x10002c" name="after"/>
+<symbol space="ram" offset="0x100064" name="fence"/>
+</binaryimage>
+<script>
+  <com>option syscallregs on</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fence</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs off</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fence</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs auto</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SYSCALLREGS-PPC #1: with option syscallregs on pair is a one-register function" min="1" max="1">unsigned int pair\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC #2: pair returns the sc result and shows the registers it set up" min="1" max="1">return syscall\(4,a1,a0,a1\);</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC #3: with option syscallregs off or auto the setup comes back as a register pair" min="2" max="2">return CONCAT44\(a0,a1\);</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC #4: after reads the sc result" min="1" max="1">v1 = syscall\(0x14\);</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC #5: after adds its argument to the sc result" min="1" max="1">return v1 \+ a0;</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC #6: with option syscallregs off after doubles its own argument" min="1" max="1">return a0 \* 2;</stringmatch>
+<stringmatch name="SYSCALLREGS-PPC #7: the sync in fence is not a system call in either pass" min="2" max="2">sync\(0\);</stringmatch>
+</decompilertest>

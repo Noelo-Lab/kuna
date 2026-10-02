@@ -1,0 +1,79 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    An inline system call (`svc`) lifts to a CALLOTHER with no register inputs
+    and no output, so the x0 a function sets up for it still holds that value
+    afterwards. `pair` returns the two argument registers it set up as a register pair, and
+    `after` doubles its argument: it reads back the x0 it saved, not the result.
+
+    Stage / sub-stage: P2 flow-classification.
+    P0 assertion:      option syscallregs off|auto|on  (default auto).
+
+    Source (clang -O2 -target aarch64-linux-gnu -c, the .text bytes verbatim below):
+
+        long pair(long a, long b) {
+          register long x0 asm("x0") = b; register long x1 asm("x1") = a;
+          register long x8 asm("x8") = 64;
+          asm volatile("svc 0" : "+r"(x0) : "r"(x1), "r"(x8) : "memory");
+          return x0;
+        }
+        long after(long x) {
+          register long x0 asm("x0"); register long x8 asm("x8") = 172;
+          asm volatile("svc 0" : "=r"(x0) : "r"(x8) : "memory");
+          if (x0 < 0) return -1;
+          return x0 + x;
+        }
+        long fence(long a) { asm volatile("dmb ish" ::: "memory"); return a; }
+
+    Pass 1 (option syscallregs on) gives the svc its effects: it writes x0,
+    and it reads the number register x8 and then the argument registers in
+    order, up to the first one the function did not write on every path to
+    it.  Pass 2 (option syscallregs off) is the old model, and so is pass 3,
+    the default `auto`: it acts only on an image the loader identified as a
+    program for an operating system's user space, which a bare byte chunk is
+    not.  fence is the control: its barrier is a CALLOTHER too,
+    and nothing about it changes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+e90301aae10300aae00309aa08088052010000d4c0035fd6e90300aa88158052
+010000d40800098b1f0000f100a19fdac0035fd6bf3b03d5c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="pair"/>
+<symbol space="ram" offset="0x100018" name="after"/>
+<symbol space="ram" offset="0x100034" name="fence"/>
+</binaryimage>
+<script>
+  <com>option syscallregs on</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fence</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs off</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fence</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs auto</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SYSCALLREGS-AARCH64 #1: with option syscallregs on pair is a one-register function" min="1" max="1">unsigned long pair\(unsigned long a0,unsigned long a1\)</stringmatch>
+<stringmatch name="SYSCALLREGS-AARCH64 #2: pair returns the svc result and shows the registers it set up" min="1" max="1">return CallSupervisor\(0,0x40,a1,a0\);</stringmatch>
+<stringmatch name="SYSCALLREGS-AARCH64 #3: with option syscallregs off or auto the setup comes back as a 16-byte pair" min="2" max="2">undefined16 pair\(</stringmatch>
+<stringmatch name="SYSCALLREGS-AARCH64 #4: after reads the svc result" min="1" max="1">v1 = CallSupervisor\(0,0xac\);</stringmatch>
+<stringmatch name="SYSCALLREGS-AARCH64 #5: after adds its argument to the svc result" min="1" max="1">a0 = v1 \+ a0;</stringmatch>
+<stringmatch name="SYSCALLREGS-AARCH64 #6: with option syscallregs off after doubles its own argument" min="1" max="1">v1 = a0 \* 2;</stringmatch>
+<stringmatch name="SYSCALLREGS-AARCH64 #7: the barrier in fence is not a system call in either pass" min="2" max="2">DataMemoryBarrier\(2,3\);</stringmatch>
+</decompilertest>
