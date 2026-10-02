@@ -789,15 +789,14 @@ fn enum_signed(die: &DieSnap, dies: &BTreeMap<usize, DieSnap>) -> Option<bool> {
 }
 
 /// The plain integer an enumeration falls back to. One narrower than 32 bits
-/// takes the sign DWARF states, or none when DWARF states none, since that sign
-/// decides how a calling convention extends it (`narrowext`); a wider one stays
-/// `int`, as this arm always produced.
+/// takes the sign DWARF states, since that sign decides how a calling
+/// convention extends it (`narrowext`), and is unsigned when DWARF states none,
+/// as a named one is; a wider one stays `int`, as this arm always produced.
 fn enum_fallback(size: i32, signed: Option<bool>) -> type_metatype {
     match signed {
         _ if size >= 4 => type_metatype::TYPE_INT,
         Some(true) => type_metatype::TYPE_INT,
-        Some(false) => type_metatype::TYPE_UINT,
-        None => type_metatype::TYPE_UNKNOWN,
+        _ => type_metatype::TYPE_UINT,
     }
 }
 
@@ -812,8 +811,8 @@ fn enum_fallback(size: i32, signed: Option<bool>) -> type_metatype {
 /// `None` (and the caller falls back to the plain integer) when the enum is
 /// anonymous, has no usable members, or is not the width the type factory builds
 /// enums at — a size mismatch would misdescribe the storage, and a wrong size is
-/// worse than a missing name — or is narrower than 32 bits with no `signed`
-/// ([`enum_signed`]).
+/// worse than a missing name. It is signed only when `signed` ([`enum_signed`])
+/// says so.
 ///
 /// Member values are masked to the enum's width, matching how the printer looks a
 /// constant up: a `-1` member of a 4-byte enum is keyed `0xffffffff`, the value
@@ -825,7 +824,7 @@ fn build_enum(
     size: i32,
     signed: Option<bool>,
 ) -> Option<Rc<Datatype>> {
-    if die.name.is_empty() || (signed.is_none() && size < 4) {
+    if die.name.is_empty() {
         return None;
     }
     let mask: u64 = if size >= 8 { u64::MAX } else { (1u64 << (size * 8)) - 1 };
@@ -1259,7 +1258,7 @@ mod tests {
     /// A narrow integer's sign is what DWARF states: `char16_t` (`DW_ATE_UTF`)
     /// is unsigned, an enum without `DW_AT_encoding` (clang) takes the sign of
     /// its `DW_AT_type`, and a narrow anonymous enum falls back to an integer of
-    /// that sign, or to an unsigned-agnostic one when DWARF states none.
+    /// that sign, unsigned when DWARF states none.
     #[test]
     fn a_narrow_integer_takes_the_sign_dwarf_states() {
         let types = factory();
@@ -1298,8 +1297,8 @@ mod tests {
         assert_eq!(meta(1), (type_metatype::TYPE_UINT, false), "char16_t is unsigned");
         assert_eq!(meta(10), (type_metatype::TYPE_UINT, false), "an unsigned anonymous enum");
         assert_eq!(meta(20), (type_metatype::TYPE_INT, true), "a signed clang enum");
-        assert_eq!(meta(30), (type_metatype::TYPE_UNKNOWN, false), "no stated sign");
-        assert_eq!(meta(40), (type_metatype::TYPE_UNKNOWN, false), "no stated sign, named");
+        assert_eq!(meta(30), (type_metatype::TYPE_UINT, false), "no stated sign");
+        assert_eq!(meta(40), (type_metatype::TYPE_UINT, true), "no stated sign, named");
         assert_eq!(meta(50), (type_metatype::TYPE_INT, false), "a 4-byte enum stays int");
     }
 

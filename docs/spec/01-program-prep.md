@@ -1998,8 +1998,10 @@ moves.
   all clang emits (clang's signed enums used to read as unsigned). An enum that
   is not built (anonymous or memberless) falls back to a plain integer: `int` at
   32 bits or wider, as it always was, and below 32 bits an integer of the enum's
-  own sign, or an undefined one when DWARF states none, since that sign decides
-  how a calling convention extends the value (04 §4.4, `narrowext`). Base types
+  own sign, since that sign decides how a calling convention extends the value
+  (04 §4.4, `narrowext`); an enum whose DWARF states no sign (strict DWARF 2) is
+  unsigned, named or not, which is what the RISC-V spec's zero extension
+  assumed. Base types
   map by encoding; `DW_ATE_UTF` (`char8_t`, `char16_t`, `char32_t`, unsigned in
   C++), the Fortran character encodings and `DW_ATE_unsigned_fixed` are unsigned
   integers, where they used to fall through to a signed one;

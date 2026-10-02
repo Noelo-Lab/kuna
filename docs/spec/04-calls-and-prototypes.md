@@ -1864,8 +1864,8 @@ is unsigned whether DWARF (`DW_ATE_UTF`) or a mangled name (`Ds`) states it,
 where it used to read as `short` and the rule sign-extended a value the caller
 zero-extends; an enum takes the sign of the integer its `DW_AT_type` names when
 it has no `DW_AT_encoding`, as clang emits it; and an anonymous enum narrower
-than 32 bits falls back to an integer of its own sign, or to an undefined one
-the rule leaves alone when DWARF states no sign.
+than 32 bits falls back to an integer of its own sign, unsigned when DWARF
+states none.
 
 The value says which rules apply. `abi`, the default, applies a rule wherever
 an ABI document states it: RISC-V and LoongArch arguments and return values,
