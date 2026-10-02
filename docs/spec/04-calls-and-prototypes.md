@@ -1417,15 +1417,109 @@ already committed guards and trials under the wrong prototype; edits cannot be
 made backwards, but the Override survives `Funcdata::clear`, so the re-run
 lifts the truth.
 
-The sibling `FuncCallSpecs::force_set` — forcing a *recovered* function-pointer
-prototype onto a call site, upstream's other deindirect arm — carries the same
-restart contract ((kuna) reason `ProtoForced`) and input-lock tail, but its
-override-persist and success-commit halves are documented port seams, and the
-`ActionDeindirect` arm that would invoke it (a typed function-pointer reaching
-the CALLIND after type recovery starts) is not wired; such a site today keeps
-its model-recovered argument list. This does not include the literal import-slot
-case above: `ActionDefaultParams` consumes that already-present global type
-before input trials start and needs no target rewrite or restart. Restarts triggered here are refused during
+`ActionDeindirect` has a second arm for a CALLIND whose target does not
+resolve to a function but whose *type* says what it calls. Once type recovery
+has started, if the target Varnode's read-facing type is a pointer to a code
+type that carries a prototype — a function-pointer struct field, local or
+parameter declared through the C grammar — and the call site's inputs are not
+yet locked, the arm forces that prototype onto the site with
+`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs (FuncCallSpecs::force_set)`.
+The lock test is what makes the arm fire at most once per site, and it is also
+why an existing lock wins: a user `override prototype` at the call address, or
+a prototype an earlier pass already forced, is never replaced. A target with no
+declared prototype (an untyped `void *` field, or a code type without one)
+leaves the site on its model-recovered argument list.
+
+A prototype whose storage puts a parameter or the return value in one of its
+model's floating-point entries is forced only where the image states a
+convention that keeps such values, doubles included, in floating-point
+registers
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_typedcallabi.rs`). A
+declarator that names no convention gets the default model, which passes
+floating-point values in floating-point registers where it can. A soft-float
+image passes them in integer registers, and a single-float one passes doubles
+in integer registers, so forcing the default storage there would print
+uninitialized floating-point register locals as the arguments and drop the ones
+the caller set. A floating-point value the default model already places in
+integer registers or on the stack (a MIPS `double` after an `int`, a variadic
+argument) has the same storage under every convention, so such a prototype is
+forced as declared everywhere. The loader reads what the container states
+(`decompiler/crates/kuna-analysis/src/loader/kuna_floatabi.rs`): ARM's
+`Tag_ABI_VFP_args` (an `aeabi` subsection without it means the core-register
+base variant) or a linked EABI5 header's float flag, MIPS `.MIPS.abiflags` and
+`Tag_GNU_MIPS_ABI_FP`, PowerPC `Tag_GNU_Power_ABI_FP`, and the RISC-V header's
+float-ABI bits; x86 and AArch64 always use floating-point registers. Only a
+double-precision hard-float convention counts as hard: MIPS `fp_abi` 1, 5, 6
+or 7, PowerPC hard double, RISC-V lp64d/ilp32d, ARM's VFP variant. A hard-float
+image gets the prototype as declared. A soft-float image gets it rebuilt from
+the same types under the spec's soft-float model (ARM's `__stdcall_softfp`), or
+not at all where the spec has none (MIPS, PowerPC, RISC-V), which leaves the
+recovered arguments. A single-float image (RISC-V lp64f/ilp32f, MIPS `fp_abi`
+2, PowerPC single-precision) and an image that states nothing (a raw image, a
+clang PowerPC or attribute-less ARM object, a Mach-O, the Ghidra front-end)
+keep the recovered arguments too. The instructions a function executes do not
+decide it: ARM `softfp` and single-float code compute with floating-point
+registers yet pass doubles, or every value, in integer registers. A
+non-variadic prototype that names its own convention is forced as declared on
+every image. A variadic prototype is forced only when its return value and
+every fixed parameter each sit in one location outside the floating-point
+entries; one with a floating-point entry or a join (a register pair such as
+`long long` in `r0`/`r1`) is not forced on any image, whatever convention it
+names, and the call keeps its recovered arguments. ARM's VFP variant passes
+every value of a variadic call, the return value included, in core registers,
+and a locked variadic prototype misreads the arguments past such storage: a
+floating-point return drops the floating-point arguments recovered past the
+fixed ones (x86-64 `xmm0`, AArch64 `d0`), and a register-pair parameter prints
+a stale value for one of its words (32-bit ARM, PowerPC, RISC-V and MIPS).
+A return value narrower than the register entry that holds it (a `char`,
+`short` or `bool`, or an `int` on a 64-bit RISC-V) is forced only where the
+caller extends it itself (x86, and AArch64 other than Apple's) or the model's
+output entry extends it by its type (`extension="inttype"`: ARM, PowerPC). An
+Apple arm64 callee extends a return value narrower than 32 bits to 32 bits and
+its caller reads `w0` as it is, so there only an `int` or wider return counts
+as caller-extended. The loader reads the platform from the container
+(`decompiler/crates/kuna-analysis/src/loader/kuna_returnext.rs`): a Mach-O
+arm64 image is Apple's, and an ELF or PE one follows AAPCS64, whose caller
+extends. The `AppleSilicon` language, and an arm64 image whose container says
+neither (a raw image, the Ghidra front-end), are treated as Apple's, since the
+same bytes are correct there only if the callee extended. Elsewhere the
+callee's extension is
+modelled wrongly and the recovered call is kept: a MIPS model states no
+extension, so the rest of `v0` would print as an unassigned piece of the
+result, and the RISC-V model and Apple's AArch64 one state zero extension,
+which turns a negative `signed char`, `short` or 64-bit RISC-V `int` result
+into a large positive one.
+
+`force_set` first saves a copy of the full `FuncProto` — model, storage, locks
+and all — into the function's Override store keyed by the call address
+(`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
+(FuncProtoOverride::prototype)`). It then tries `late_restriction`, the same
+in-place merge as above. On success it commits the new input and output lists
+to the CALL op straight away, and the arm reports a change so the enclosing
+stackstall loop runs its rules again over the new inputs. On failure it sets
+restart-pending ((kuna) reason `ProtoForced`). Either way the site's input is
+locked afterwards. On the re-run, `FlowInfo::build_call_specs` reads the saved
+`FuncProto` before it looks for a parsed-pieces override, so the restarted call
+site starts under the declared storage rather than one rebuilt from the bare
+types under the default model, which would lose a non-default convention.
+
+That is why the code type keeps what the declaration said. The grammar's
+function modifier builds the pointed-to prototype under the calling convention
+its declarator names (`void (__stdcall *cb)(int)`, or `MSABI` on a SysV image),
+resolved through the model registry the architecture shares into the type
+factory, and falls back to the default model when the name is not registered,
+as upstream's `TypeDeclarator::getModel` does. A `...` in the field's parameter
+list marks the prototype varargs, so trailing arguments the binary passes are
+kept. Parameter names are not carried into the code type, as upstream: code
+types compare equal regardless of names, so a name would be borrowed by
+whichever matching pointer type was built first. Because the forced prototype
+is locked, it also overrides the argument count the binary sets up, as in
+Ghidra: a call that casts the pointer to a wider signature prints with the
+declared arguments.
+
+This does not include the literal import-slot case above: `ActionDefaultParams`
+consumes that already-present global type before input trials start and needs
+no target rewrite or restart. Restarts triggered here are refused during
 jump-table sub-decompilation like every other feedback edge (00 §0.7).
 
 **The prototype wire encode.** The recovered prototype marshals out for the
