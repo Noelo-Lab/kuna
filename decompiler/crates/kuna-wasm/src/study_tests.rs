@@ -1,7 +1,8 @@
 //! The study view's commands on the browser example (`sample.elf`): `inspect`
 //! against `decompile`, the instruction listing against the C and the file,
-//! `read`, and the `--assert` plane end to end; and `strings` on the crackme
-//! example (`crackme.elf`).
+//! `read`, and the `--assert` plane end to end; `strings` on the crackme
+//! example (`crackme.elf`); and the type definitions `inspect` prints above a
+//! function (`structs.elf`).
 
 use std::path::PathBuf;
 
@@ -331,4 +332,36 @@ fn strings_names_who_uses_each_literal_including_through_a_pointer() {
         assert!(u["instruction"].as_str().expect("text").contains(slot), "{u:?}");
         assert!(sites.contains(&u["at_hex"].as_str().expect("site")), "{u:?} is an instruction of check");
     }
+}
+
+/// `inspect` prints the definitions of the types a function uses above it
+/// (`structdefs on`), so a struct the decompiler worked out is defined where it
+/// is read. The function's own text is unchanged, `decompile` keeps the CLI's
+/// default, and the token map and line mappings follow the shifted lines.
+#[test]
+fn inspect_defines_the_types_a_function_uses_above_it() {
+    let inspected = run_on("structs.elf", "inspect", &["make_item"], &[]).expect("inspect make_item");
+    let f = &inspected["function"];
+    let code = f["code"].as_str().expect("code");
+    let plain = run_on("structs.elf", "decompile", &["make_item"], &[]).expect("decompile make_item");
+    let body = plain["functions"][0]["code"].as_str().expect("code");
+    assert!(!body.contains("struct struct_0 {"), "decompile keeps the CLI's default: {body}");
+    let preamble = code
+        .strip_suffix(body)
+        .unwrap_or_else(|| panic!("inspect is the definitions plus the decompile text:\n{code}"));
+    assert!(preamble.starts_with("typedef struct struct_0 struct_0;\n"), "{preamble}");
+    assert!(preamble.contains("\nstruct struct_0 {\n") && preamble.ends_with("};\n\n"), "{preamble}");
+    let types = f["types"].as_array().expect("types");
+    assert_eq!(types.len(), 1, "{types:?}");
+    assert_eq!(types[0]["name"].as_str(), Some("struct_0"));
+    assert_eq!(types[0]["size"].as_i64(), Some(0x28));
+    assert_eq!(f["tokens_error"], Value::Null);
+    let shift = preamble.lines().count() as u64;
+    let lines: Vec<u64> = f["instructions"]
+        .as_array()
+        .expect("instructions")
+        .iter()
+        .flat_map(|i| i["lines"].as_array().expect("lines").iter().filter_map(Value::as_u64))
+        .collect();
+    assert!(!lines.is_empty() && lines.iter().all(|&l| l > shift + 1), "{shift} {lines:?}");
 }

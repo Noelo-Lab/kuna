@@ -1,6 +1,8 @@
 // render-c.js — the study view's C pane: turns one function's code (plus the
 // engine's token stream when it has one) into escaped HTML rows, and builds
-// the line <-> instruction <-> symbol index every linked view shares.
+// the line <-> instruction <-> symbol index every linked view shares. The
+// definitions of the types a function uses, which the engine prints above it,
+// are set apart as a block of their own.
 //
 // DOM-free. Every engine string reaches HTML through escapeHtml. A line whose
 // tokens do not reproduce its text exactly falls back to the regex scanner
@@ -154,21 +156,79 @@ export function fallbackLines(code, { language } = {}) {
   return lines;
 }
 
+/**
+ * How many lines open the code with the definitions of the types the function
+ * uses (the engine's `structdefs` preamble, ending in a blank line): the lines
+ * before the signature, which is the first line holding a token that is not
+ * plain syntax, or without tokens the first line starting with the prototype.
+ * 0 when the function names no such type.
+ */
+export function preambleLength(fnData) {
+  if (!fnData.types?.length) return 0;
+  const lines = (fnData.code || '').split('\n');
+  let sig = -1;
+  if (fnData.tokens?.length) {
+    for (const t of fnData.tokens) {
+      if (t.kind && t.kind !== 'syntax' && (sig < 0 || t.line - 1 < sig)) sig = t.line - 1;
+    }
+  } else if (fnData.proto) {
+    sig = lines.findIndex((l) => l.trim().startsWith(fnData.proto));
+  }
+  if (sig <= 0 || lines[sig - 1].trim() !== '') return 0;
+  return sig;
+}
+
+/**
+ * What each preamble line defines: `[{name, opaque}]` per line (null on a blank
+ * line). A `struct X {` … `};` block belongs to X; a `typedef … X;` line to X.
+ */
+export function preambleTypes(code, length) {
+  const out = [];
+  let open = null;
+  for (const text of (code || '').split('\n').slice(0, length)) {
+    const block = /^\s*(?:typedef\s+)?(?:struct|union|enum)\s+([A-Za-z_]\w*)\s*\{/.exec(text);
+    if (block) open = block[1];
+    if (open) {
+      out.push({ name: open, opaque: false });
+      if (/^\s*\}/.test(text)) open = null;
+      continue;
+    }
+    const typedef = /\b([A-Za-z_]\w*)\s*;\s*(\/\*.*\*\/)?\s*$/.exec(text);
+    out.push(typedef ? { name: typedef[1], opaque: /\/\*\s*opaque\s*\*\//.test(text) } : null);
+  }
+  return out;
+}
+
+/** The preamble as highlighted, inert segments (`{text, cls}`), the types the function uses coloured as types. */
+function preambleSegs(code, length, typeNames) {
+  const lines = [[]];
+  for (const p of scan((code || '').split('\n').slice(0, length).join('\n'), 'c')) {
+    p.text.split('\n').forEach((part, k) => {
+      if (k > 0) lines.push([]);
+      if (part) lines[lines.length - 1].push({ text: part, cls: p.word && typeNames.has(part) ? 'tok-type' : p.cls || null });
+    });
+  }
+  return lines;
+}
+
 /** Segments for every line: engine tokens where they verify, the scanner elsewhere. */
 export function lineSegments(fnData) {
   const code = fnData.code || '';
+  const preamble = preambleLength(fnData);
+  const typed = preamble ? preambleSegs(code, preamble, new Set(fnData.types.map((t) => t.name))) : [];
   const fallback = fallbackLines(code, { language: fnData.language });
   if (!fnData.tokens?.length || fnData.tokens.length > MAX_TOKEN_SPANS) {
-    return { segs: fallback, fallbackCount: fallback.length, tokenCount: 0 };
+    return { segs: fallback.map((line, i) => (i < preamble ? typed[i] || [] : line)), fallbackCount: fallback.length, tokenCount: 0, preamble };
   }
   const exact = tokenLines(code, fnData.tokens);
   let fallbackCount = 0;
   const segs = exact.map((line, i) => {
+    if (i < preamble) return typed[i] || [];
     if (line) return line;
     fallbackCount++;
     return fallback[i] || [];
   });
-  return { segs, fallbackCount, tokenCount: fnData.tokens.length };
+  return { segs, fallbackCount, tokenCount: fnData.tokens.length, preamble };
 }
 
 const STATEMENT = /^\s*(return|if|for|while|do|switch|goto|break|continue|case|default|else)\b|=|^\s*[{}]/;
@@ -346,24 +406,30 @@ function tokenHtml(t, ctx) {
 /**
  * The C pane's HTML: one `.d2-cl#c-L<n>` row per line with a line-number and
  * address gutter, tokens as `.t` spans carrying their kind, symbol, address,
- * callee, global address and type. `ctx`: `{index, segs, fnByName, globalsByName}`.
+ * callee, global address and type. The preamble's rows are `.d2-ty`, under a
+ * heading. `ctx`: `{index, segs, preamble, fnByName, globalsByName}`.
  */
 export function renderC(fnData, ctx = {}) {
   const segs = ctx.segs || lineSegments(fnData).segs;
   const index = ctx.index || buildIndex(fnData, segs);
+  const preamble = ctx.preamble ?? preambleLength(fnData);
   if (!fnData.code && fnData.error) {
     return `<div class="d2-cl d2-err"><span class="ct">${escapeHtml(`/* ${fnData.name} — decompile error:\n   ${fnData.error} */`)}</span></div>`;
   }
   let out = '<div class="d2-chunk">';
+  if (preamble) out += '<div class="d2-tyhead" role="presentation"><span class="ln"></span><span class="la"></span><span class="ct">Types this function uses</span></div>';
   segs.forEach((line, i) => {
     if (i && i % CHUNK === 0) out += '</div><div class="d2-chunk">';
     const n = i + 1;
     const addrs = index.lineToInsns.get(n) || [];
     const band = addrs.length ? bandOf(n) : null;
-    out += `<div class="d2-cl" id="c-L${n}" role="option" data-line="${n}"` +
+    out += `<div class="d2-cl${i < preamble ? ' d2-ty' : ''}" id="c-L${n}" role="option" data-line="${n}"` +
       `${attr('data-addrs', addrs.join(' '))}${attr('data-band', band)}>` +
       `<span class="ln">${n}</span><span class="la">${escapeHtml(bare(addrs[0]))}</span><span class="ct">`;
-    for (const s of line) out += s.tok ? tokenHtml(s.tok, ctx) : escapeHtml(s.text);
+    for (const s of line) {
+      if (s.tok) out += tokenHtml(s.tok, ctx);
+      else out += s.cls ? `<span class="${s.cls}">${escapeHtml(s.text)}</span>` : escapeHtml(s.text);
+    }
     out += '</span></div>';
   });
   return out + '</div>';

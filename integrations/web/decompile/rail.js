@@ -1,6 +1,6 @@
 // rail.js — the Explain panel beside the code. Three parts: what is selected
 // (a card app.js writes), this function in plain words (what it takes and
-// returns, what it calls and who calls it, its variables and types), and the
+// returns, what it calls and who calls it, its variables), and the
 // student's changes with undo, redo and a small menu for the rest (in a live
 // session, everyone's: each row in its author's colour). The panel renders;
 // app.js acts on the `data-act` it reports.
@@ -25,12 +25,9 @@ function functionPart(fn) {
   const vars = fn.vars.length ? varsList(fn.vars, 'railvars') : '<ul class="x-list" id="railvars"></ul><p class="x-empty">No variables.</p>';
   const debug = fn.debugVars.length
     ? `<details><summary>Also in the debug info (${fn.debugVars.length})</summary>${varsList(fn.debugVars)}</details>` : '';
-  const types = fn.types.length
-    ? `<details class="x-types"><summary>Types (${fn.types.length})</summary>` +
-      fn.types.map((t) => `<pre>${escapeHtml(t.definition || t.name)}</pre>`).join('') + '</details>' : '';
   return '<section class="x-sec" id="railfn"><h3>This function</h3>' + summary +
     `<h4>Calls and callers</h4><div id="railrefsbody">${fn.refsHtml || ''}</div>` +
-    `<h4>Variables</h4>${vars}${debug}${types}</section>`;
+    `<h4>Variables</h4>${vars}${debug}</section>`;
 }
 
 const COLOR = /^#[0-9a-f]{6}$/i;

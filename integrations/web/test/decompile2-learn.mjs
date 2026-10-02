@@ -146,7 +146,7 @@ checks.push('xrefs render + local callees');
 
 // ── help ───────────────────────────────────────────────────────────────────
 const help = helpHtml();
-for (const term of ['v1, v2', 'dat_4010', 'sub_401000', 'LAB_', 'undefined4', '// rax', '// stack - 0x14', 'CONCAT44', 'SEXT48', '._4_8_']) {
+for (const term of ['v1, v2', 'dat_4010', 'struct_0', 'field_0x8', 'sub_401000', 'LAB_', 'undefined4', '// rax', '// stack - 0x14', 'CONCAT44', 'SEXT48', '._4_8_']) {
   assert.ok(help.includes(term), `glossary covers ${term}`);
 }
 for (const k of ['/', 'Space', 'n', 'y', ';', 'g', 'x', '?', 'Esc']) assert.ok(HELP_KEYS.some(([key]) => key.split(/ · | /).includes(k)), `key ${k} documented`);

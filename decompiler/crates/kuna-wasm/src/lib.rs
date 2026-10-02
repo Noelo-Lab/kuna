@@ -81,7 +81,8 @@ enum Cmd {
     /// document); the payload is the display name the artifacts are named
     /// after. Whole binary only — no `--functions` subset on this surface.
     Project(String),
-    /// One function with its token source map and instruction listing.
+    /// One function with its token source map and instruction listing, the
+    /// definitions of the types it names printed above it (`structdefs on`).
     Inspect(Selector),
     /// Raw image bytes (discovery off).
     Read { addr: u64, len: u64 },
@@ -311,6 +312,9 @@ pub fn run_request(req: &Request) -> Result<String, String> {
             Ok(inspect::strings_json(binary, &prog, &file, rebased, &prog.assertion_outcomes()))
         }
         Cmd::Inspect(ref selector) => {
+            prog.arch_mut()
+                .set_kuna_option("structdefs", "on")
+                .map_err(|e| format!("option structdefs: {}", e.explain()))?;
             let targets = resolve_targets(&prog, &command)?;
             let classifier = Classifier::new(
                 &prog,
