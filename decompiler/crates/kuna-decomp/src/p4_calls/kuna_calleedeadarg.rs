@@ -1163,7 +1163,7 @@ const MAX_LEFTOVER_DEPTH: u32 = 12;
 /// a `PIECE` or `MULTIEQUAL` has to have all of its inputs qualify. Anything
 /// else — a constant, a `LOAD`, arithmetic, or a Varnode that is a function
 /// input — answers `false`, because the caller put it there on purpose.
-fn is_leftover_call_result(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+pub(crate) fn is_leftover_call_result(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     if depth >= MAX_LEFTOVER_DEPTH {
         return false;
     }

@@ -216,10 +216,10 @@ pub fn written_inputs(call: &FuncCallSpecs, data: &Funcdata) -> Vec<(Address, i3
 /// inputs in front of it become arguments, a stated double the call holds as
 /// its two words becomes one argument where the callee reads both, a stated
 /// input the callee ignores is zero where the caller's value would widen one of
-/// its own entry registers, and a filler the contract skips is dropped. Another
-/// unstated input goes only where the callee neither reads nor forwards it. A
-/// stated input the scoring released and the callee reads, or one held in part,
-/// leaves the call as recovered.
+/// its own entry registers or is an earlier call's leftover, and a filler the
+/// contract skips is dropped. Another unstated input goes only where the callee
+/// neither reads nor forwards it. A stated input the scoring released and the
+/// callee reads, or one held in part, leaves the call as recovered.
 pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &mut Funcdata, written: &[(Address, i32)]) {
     if !data.get_arch().arm_float_args || call.is_input_locked() || !call.proto().has_model() {
         return;
@@ -444,7 +444,12 @@ fn plan_stated_inputs(
         partial |= kept.iter().any(|(a, s)| overlaps(addr, *size, a, *s));
         if let Some((i, ..)) = exact {
             let parts = passed(*i).map_or(vec![None], |vn| pieces(data, vn));
-            if ignored(addr, *size) && widens(&parts) {
+            let leftover = passed(*i).is_some_and(|vn| {
+                crate::kuna_calleedeadarg::is_leftover_call_result(data, vn, 0)
+            });
+            let unread = ignored(addr, *size)
+                || dead.is_some_and(|d| d.returns_untouched(addr, *size));
+            if unread && (widens(&parts) || leftover) {
                 zeros.push(*i);
             }
         }

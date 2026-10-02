@@ -52,12 +52,16 @@ beside an s1 it never writes, or two floats it reads apart), the argument is
 zero and the caller keeps its float parameters: `float w(float a) { return
 f(8.25, a, a, 5.25) * 3 + a; }` calls `double f(double, float, float, double)`,
 which never reads its first parameter, as `f(0.0,a0,a0,5.25)`, not with a
-double `w` would then take. A double the caller computed, forwards untouched or
-also reads whole is passed as it is. Where the callee reads the double but the
-caller's two words are not one double it forwards or reads whole, the call's
-arguments stay as recovered. A stated input there is an argument even where
-the positional rules ended the list before it: a constant
-the caller left in d1 for its own arithmetic is the argument for an ignored
+double `w` would then take. A stated input the callee never reads, because it
+writes the register first or is a leaf that returns without touching it, is
+zero as well where the caller's value for it is an earlier call's leftover,
+such as the s1 above a float an earlier call returned in s0: passing that word
+would turn the earlier call's float result into a double. A double the caller
+computed, forwards untouched or also reads whole is passed as it is. Where the
+callee reads the double but the caller's two words are not one double it
+forwards or reads whole, the call's arguments stay as recovered. A stated input
+there is an argument even where the positional rules ended the list before it:
+a constant the caller left in d1 for its own arithmetic is the argument for an ignored
 `double` the callee states there, and the used double after it stays in place.
 A stated input there that the caller never wrote is passed as whatever value
 reaches the call, which is how a wrapper forwards its own inputs. Stated inputs
