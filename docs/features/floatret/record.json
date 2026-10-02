@@ -14,8 +14,8 @@
  "change_kind": "strict correctness fix (no option)",
  "default_on": true,
  "parity": {
-  "datatests": "675/675 PARITY OK (main 9b19a9e81)",
-  "stages": "1680/1680 PARITY OK (main 9b19a9e81 1670 + 10 FLOATRET)"
+  "datatests": "675/675 PARITY OK (main e56252b2c)",
+  "stages": "1683/1683 PARITY OK (main e56252b2c 1673 + 10 FLOATRET)"
  },
  "castbench": {
   "base": "main 3c08fcfe8 (#758 on top of 94ce9314e), fresh arm .scratch/cb-main3c0; on 94ce9314e the same branch gave 32,040 -> 31,611, on 0729b8b05 32,010 -> 31,581 and on 30616a8e8 32,045 -> 31,616",
@@ -74,7 +74,7 @@
    }
   },
   "round10": "a1b97ede7 on main 29c832ea9: 31,989 -> 31,559 (0.846x -> 0.834x IDA), the same totals as 0649f0653; 5 functions differ from it (tar, above)",
-  "round11": "main 9b19a9e81 -> 2e79fb541: 31,805 -> 31,375 casts (0.846x -> 0.835x IDA); 2,378 of 20,225 functions changed. Against the previous round (main 29c832ea9 -> a1b97ede7): the 20,213 functions #837 left alone print exactly as then; of the 12 it changed, 8 carry the same delta and 4 the same delta beside main's own NULL -> 0 (tar O2-noinline sub_128e0, sub_12910, sub_12be0, sub_12c10)"
+  "round11": "main 9b19a9e81 -> 2e79fb541: 31,805 -> 31,375 casts (0.846x -> 0.835x IDA); 2,378 of 20,225 functions changed. Against the previous round (main 29c832ea9 -> a1b97ede7): the 20,213 functions #837 left alone print exactly as then; of the 12 it changed, 8 carry the same delta and 4 the same delta beside main's own NULL -> 0 (tar O2-noinline sub_128e0, sub_12910, sub_12be0, sub_12c10). On main e56252b2c (#838) the totals are the same, 31,805 -> 31,375: the 20,192 functions #838 left alone print exactly as on 9b19a9e81; of the 33 it changed, 30 carry the same delta and 3 the same delta beside its new string literals (tar O0 sub_359a8, O2-noinline sub_2c280, O2 sub_2d400)"
  },
  "corpus_footprint": {
   "castbench_45": {
@@ -891,18 +891,18 @@
   }
  },
  "gates": {
-  "code_head": "2e79fb541 on main 9b19a9e81 (#837); record-only commits after it",
+  "code_head": "a78f529ab (the ARM narrowing) rebased onto main e56252b2c (#838), stages baseline e641eae0d; record-only commit after it. The same code on main 9b19a9e81 was 2e79fb541",
   "make_test": "675/675 PARITY OK",
-  "make_test_stages": "1680/1680 PARITY OK (baseline re-recorded with SLEIGHHOME: main 1670 + the 10 FLOATRET keys, none missing)",
+  "make_test_stages": "1683/1683 PARITY OK (baseline re-recorded with SLEIGHHOME: main 1673 + the 10 FLOATRET keys, none missing)",
   "check_spec": "OK lenient + strict",
   "test_cli": "276/276",
   "catalog_check": "OK",
   "counters_check": "no drift",
   "options_md": "fresh",
   "phases_toml": "unchanged, parses (tomllib)",
-  "corpus_count": "kuna-base xml.rs 378 = tests/datatests + tests/stages",
-  "rust_test": "7,726 passed / 0 failed / 38 ignored (465 test binaries), RUST_TEST_RC=0 on 2e79fb541 (lane started 17:17:43Z, after the last code change)",
-  "lint": "make lint OK (2e79fb541)",
+  "corpus_count": "kuna-base xml.rs 379 = tests/datatests + tests/stages",
+  "rust_test": "7,727 passed / 0 failed / 38 ignored (465 test binaries), RUST_TEST_RC=0 on e641eae0d (lane started 17:45:24Z, after the rebase and build); on 2e79fb541 (main 9b19a9e81) 7,726 / 0 / 38",
+  "lint": "make lint OK (e641eae0d)",
   "test_tools": "no Python changed",
   "ci": "2e79fb541: parity gates and cargo workspace suite success"
  },
