@@ -590,9 +590,11 @@ fn a_parameter_returned_on_some_path_keeps_its_argument() {
 // and `C9` return early through `bxgt lr` (`it gt; bxgt lr` in Thumb). `C2`
 // never reads its second float, which `W2` leaves holding `GF2`'s leftover, so
 // that argument is zero and `GF2` still returns a float; `C9` reads its second
-// float only past the early return, so `W9` keeps passing its own.
+// float only past the early return, so `W9` keeps passing its own. `C3` writes
+// d0 (`vmov.f64 d0,d2`) before a conditional `vmoveq.f64 d0,d1`, so it never
+// reads its first double and `W3` passes zero there, not `GF3`'s leftover.
 #[test]
-fn a_word_unread_past_an_early_return_is_zero() {
+fn leaf_callees_with_conditional_code_take_zero_for_unread_words() {
     let fixtures =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../kuna-analysis/tests/fixtures");
     let has_cc = common::process::optional_output(Command::new("cc").arg("--version")).is_some();
@@ -610,7 +612,7 @@ fn a_word_unread_past_an_early_return_is_zero() {
     for build in ["arm-O2", "thumb-O2", "thumb-O1"] {
         let bytes = std::fs::read(fixtures.join(format!("armfloatargs_early_{build}.o"))).unwrap();
         let code = decompile_with(&bytes, &["armfloatreturn", "on", "armfloatargs", "on"]);
-        for call in ["C2(5.5,0.0,v1,", "C9(5.5,a0,v1,a1)"] {
+        for call in ["C2(5.5,0.0,v1,", "C9(5.5,a0,v1,a1)", "C3(0.0,0.0,(double)v1,a0)"] {
             assert!(code.contains(call), "{build}: lacks {call}\n{code}");
         }
         assert!(!code.contains("unsigned long long"), "{build}\n{code}");

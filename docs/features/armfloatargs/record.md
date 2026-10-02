@@ -277,3 +277,22 @@ branch. Only the leaf rule reads that second walk, which must itself end every
 path at a return with no read or conditional write of the register; every other
 answer of the walk is unchanged. The call is `C2(5.5,0.0,v1,...)` again, and a
 callee that reads the register only past its early return keeps the argument.
+
+The firm-write rule was also coarser than it says. It refused any register an
+instruction wrote under a condition anywhere in the body, so `double C3(float,
+double, double, float, int)`, which writes d0 with `vmov.f64 d0,d2` before a
+`vmoveq.f64 d0,d1`, no longer proved its first double unread, and a caller
+holding an earlier call's float result in d0 passed it and printed that result
+as a 64-bit integer (`C3(v1,0.0,(double)(float)v1,a0)`, correct as
+`C3(0.0,0.0,(double)v1,a0)` before the rule). The walk now records a
+conditional write only where nothing on that path had written the byte before,
+so a register counts as firmly written exactly when the first write on every
+path always runs.
+
+Proving more registers firmly written let the plan zero a stated double for a
+callee whose recovered contract is itself short: `double C1(double, double,
+float, float, float, int)` reads only s5, the high word of d2, before writing
+d2 whole, so it is recovered as `(double, double, int)` (a listed limitation),
+and its caller then compiled and computed the wrong value instead of failing to
+compile. A contract the callee's own body contradicts, by reading an s-register
+parameter slot no stated input covers, now shapes no call.

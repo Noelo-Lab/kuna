@@ -39,7 +39,9 @@ into s0 and s1 after an earlier double result reach the call as written. When
 the callee's recovered contract is arity-sound, the call takes the VFP inputs
 that contract states up to the last one the caller wrote for the call or the
 callee's body, followed through its own calls, is seen to read, so caller and
-callee agree on every VFP position in front of it. A stated double that the call
+callee agree on every VFP position in front of it. A contract that the callee's
+own body contradicts, by reading an s-register parameter slot no stated input
+covers, shapes no call: the call keeps the arguments it recovered. A stated double that the call
 holds as its two s-register words, because heritage split the d-register where
 the caller writes only a single-precision half of it, is passed as one value
 built from those two words where the callee's body, followed through its own
@@ -111,10 +113,11 @@ as `bxlt lr` without decoding the code after it. With the option on, the
 paths that skip such a return are decoded too, separately and each from the
 registers written before the return's condition, and only the leaf rule reads
 them, so every other rule sees the decode as before. A register counts as
-written on every path only where instructions that always run write it, and the
-leaf rule needs a decode that, past every conditional return as well, left no
-path behind, called nothing, and saw no read of the register and no conditional
-write to it. `float f(float a, float b, float c, float d, int k) { if (k > 6) c
+written on every path only where an instruction that always runs is the first
+to write it on that path, so `vmov.f64 d0,d2` followed by `vmoveq.f64 d0,d1`
+still writes d0 first, and the leaf rule needs a decode that, past every
+conditional return as well, left no path behind, called nothing, and saw no
+read of the register and no conditional first write to it. `float f(float a, float b, float c, float d, int k) { if (k > 6) c
 = a; else if (k < 4) c = (d + a) / 2; return c; }` compiles to `cmp r0,#6;
 bxgt lr; ...` and reads `b` on no path, so a caller that holds nothing of its
 own in s1, only what an earlier call left beside its float result, passes zero
@@ -161,7 +164,7 @@ whose only read of a d-register before writing it whole is the high word, such a
 `f(double, double, float, float)` at -O2 when it ignores the first float and
 then reuses `d2` as scratch, recovers neither word: the used float is read from
 an uninitialized local, as with `armfloatreturn` alone, and its callers pass
-it. A callee that returns a two-float aggregate in s0 and s1 is recovered as
+it, since that contract shapes no call. A callee that returns a two-float aggregate in s0 and s1 is recovered as
 returning one float, so a caller that reads the second member takes the call's
 result as a 64-bit integer and converts its high word by value, as with
 `armfloatreturn` alone; with the call's arguments now complete, that caller
@@ -1313,8 +1316,9 @@ classified:
   was entered with and credits none of its writes, so a conditionally-executed
   write cannot hide a later read. ARM's conditional execution branches to the
   next instruction instead, so the walk credits such a write (`vmovgt s0,s1`, a
-  Thumb IT block) on both paths. With `armfloatargs` on, a VFP range written
-  that way anywhere in the body is not proven dead; an integer register keeps
+  Thumb IT block) on both paths. With `armfloatargs` on, a VFP range that
+  some path writes that way before any instruction that always runs is not
+  proven dead; an integer register keeps
   the walk's answer, so `int pick(int a, int b, int c) { if (c > 3) a = b;
   return a; }` (`movgt r0,r1`) still loses its first argument at a caller that
   holds an earlier call's result there. With `armfloatargs` on, the paths that
