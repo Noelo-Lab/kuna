@@ -360,9 +360,14 @@ fn extend_input(
 ) {
     use kuna_num::pcoderaw::VarnodeData;
     let mut vdata = VarnodeData::default();
-    let mut res = data
-        .get_func_proto()
-        .assumed_input_extension(in_addr, in_size, &mut vdata);
+    let (mut res, stated) = crate::kuna_narrowext::or_model(
+        data.get_arch().narrow_ext.input,
+        data.get_func_proto().model().input(),
+        in_addr,
+        in_size,
+        Some(param_type),
+        &mut vdata,
+    );
     if res == OpCode::CPUI_COPY {
         return; // no extension
     }
@@ -382,6 +387,9 @@ fn extend_input(
     data.op_set_opcode_code(op, res);
     let _ = data.op_set_input(op, invn, 0);
     data.op_insert_begin(op, topbl);
+    if stated {
+        crate::kuna_narrowext::mark(data, op);
+    }
 }
 
 // =============================================================================
@@ -982,10 +990,14 @@ impl ActionFuncLink {
                 }
                 let _ = data.new_varnode_out(sz, &addr, callop);
                 let mut vdata = VarnodeData::default();
-                let mut res = data
-                    .get_call_specs(idx)
-                    .proto()
-                    .assumed_output_extension(&addr, sz, &mut vdata);
+                let (mut res, stated) = crate::kuna_narrowext::or_model(
+                    data.get_arch().narrow_ext.output,
+                    data.get_call_specs(idx).proto().model().output(),
+                    &addr,
+                    sz,
+                    Some(&outtype),
+                    &mut vdata,
+                );
                 if res == OpCode::CPUI_PIECE {
                     // Pick an extension based on type.
                     res = if metatype == crate::dtype::type_metatype::TYPE_INT {
@@ -1006,6 +1018,9 @@ impl ActionFuncLink {
                     let _ = data.op_set_input(op, invn, 0);
                     data.op_set_opcode_code(op, res);
                     data.op_insert_after(op, callop);
+                    if stated {
+                        crate::kuna_narrowext::mark(data, op);
+                    }
                 }
             }
         } else {

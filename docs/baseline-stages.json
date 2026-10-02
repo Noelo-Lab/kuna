@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1673,
-    1673
+    1687,
+    1687
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -688,6 +688,20 @@
     "data:MULBLOB #3: mulblob off reads the high half out of the blob product",
     "data:MULBLOB #4: default prints the high half over the operands themselves",
     "data:MULBLOB #5: default prints the low half the same way, with no blob left",
+    "data:NARROWEXT #10: abi, an unsigned int parameter is sign-extended",
+    "data:NARROWEXT #11: off, a signed char parameter is zero-extended",
+    "data:NARROWEXT #12: abi, a signed char parameter is sign-extended",
+    "data:NARROWEXT #13: an unsigned short result is zero-extended either way",
+    "data:NARROWEXT #14: an unsigned short parameter is zero-extended either way",
+    "data:NARROWEXT #1: off, an int result is zero-extended",
+    "data:NARROWEXT #2: abi, an int result is sign-extended",
+    "data:NARROWEXT #3: off, a signed char result is zero-extended",
+    "data:NARROWEXT #4: abi, a signed char result is sign-extended",
+    "data:NARROWEXT #5: off, an unsigned int result is zero-extended",
+    "data:NARROWEXT #6: abi, an unsigned int result is sign-extended",
+    "data:NARROWEXT #7: off, an int parameter is zero-extended",
+    "data:NARROWEXT #8: abi, an int parameter is sign-extended",
+    "data:NARROWEXT #9: off, an unsigned int parameter is zero-extended",
     "data:NULTERMINATOR #10: no array grows over the padding or the locals after its terminator",
     "data:NULTERMINATOR #11: gap_zero off declares [20]",
     "data:NULTERMINATOR #12: gap_zero on declares [21]",

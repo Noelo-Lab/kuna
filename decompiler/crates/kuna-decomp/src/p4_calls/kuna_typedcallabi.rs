@@ -9,18 +9,19 @@
 //! in core registers, and a locked variadic prototype with a floating-point
 //! return or a register-pair parameter misreads the arguments past it.  A return
 //! value narrower than its register is forced only where the model extends it by
-//! its type or the caller extends it: a MIPS model states no extension, a RISC-V
-//! one zero-extends signed values, and an Apple arm64 callee sign-extends a
-//! signed value narrower than 32 bits that the model zero-extends.  A declared
-//! function or direct-callee prototype that names no convention is laid out
-//! under the soft-float model on an ARM image that states the soft-float
-//! convention and no floating-point hardware.
+//! its type, `narrowext` states its extension, or the caller extends it: a MIPS
+//! model states no extension, a RISC-V one zero-extends signed values, and an
+//! Apple arm64 callee sign-extends a signed value narrower than 32 bits that the
+//! model zero-extends.  A declared function or direct-callee prototype that
+//! names no convention is laid out under the soft-float model on an ARM image
+//! that states the soft-float convention and no floating-point hardware.
 use crate::{
     context::ArchContext,
     dtype::{type_class, type_metatype, TypeFactory},
     fspec::{FuncProto, ProtoModel, PrototypePieces},
     funcdata::Funcdata,
     infra::architecture::Architecture,
+    kuna_narrowext::Widen,
 };
 use kuna_base::{
     address::Address,
@@ -184,6 +185,7 @@ pub fn admit(data: &Funcdata, proto: Rc<FuncProto>) -> Option<Rc<FuncProto>> {
     let arch = data.get_arch();
     if proto.get_output().get_size() < arch.caller_extends_returns_from
         && unextended_return(&proto)
+        && !abi_extended_return(arch.narrow_ext.output, &proto)
     {
         return None;
     }
@@ -263,6 +265,18 @@ fn unextended_return(proto: &FuncProto) -> bool {
         }
         _ => true,
     }
+}
+
+/// `narrowext` states the extension of the return value.
+fn abi_extended_return(rule: Option<Widen>, proto: &FuncProto) -> bool {
+    let output = proto.get_output();
+    let (Some(rule), Some(ty)) = (rule, output.get_type()) else {
+        return false;
+    };
+    let mut container = VarnodeData::default();
+    let list = proto.model().output();
+    crate::kuna_narrowext::extension(rule, list, &output.get_address(), output.get_size(), ty, &mut container)
+        .is_some()
 }
 
 /// The storage of each parameter and of a non-void return value.
