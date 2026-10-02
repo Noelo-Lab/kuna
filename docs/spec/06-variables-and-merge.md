@@ -890,7 +890,12 @@ so a byte read zero-extended keeps the array unsigned; without one it is the
 unknown byte. A reach that holds a type-locked hint, spans more than 256 bytes,
 or leaves the analyzed range keeps its hints. Constant initializers and wider
 reads then map as pieces of the one array (`v1._0_4_ = 0x1020304; v1[i & 7] =
-j; return v1._6_2_;`).
+j; return v1._6_2_;`). A reach that holds a float hint also keeps its hints, and
+the bases of the stores inside it are not absorbing (below). A float read from a
+byte array would be an integer piece, and a `(double)` cast of a piece converts
+its value instead of reinterpreting its bits, so the upstream layout stays
+(`double v1[3]; v1[0] = 3.75; ((char *)v1)[i & 7] = j; return (int)(v1[0] +
+v1[0]);`).
 
 The second is where an open range ends, which matters when the index is not
 bounded (`u.b[i]`, or a walk that starts at `&u.b[i]`). `RangeHint::attempt_join`
@@ -913,6 +918,15 @@ never absorbed this way, an aggregate type does not reopen, and an open range
 that starts anywhere else ends as upstream's does: the same split also follows a buffer
 that escapes to a call (`g(&u.b[i & 7])`), which no store guard covers and this
 option leaves alone.
+
+Neither step runs in a function where some LOAD or STORE address comes from
+the stack base through arithmetic that `pointer_reach` cannot resolve
+(`kuna_storereach.rs (has_unresolved_frame_access)`). clang's ppc32 `-O0` code
+forms `&u.s.b[i]` as `(&v1 | 4) + i`, relying on the frame's alignment; that
+store may write any slot near a resolved reach, and a slot the coalescing split
+off would be a separate local it never reaches. The whole frame keeps the
+upstream layout instead (`unsigned int v1[5]; ... *(char *)(((unsigned int)v1 |
+4) + (a0 >> 2 & 3)) = a1 + 1;`).
 
 `option stackstoreguard off` turns both off along with the guard.
 

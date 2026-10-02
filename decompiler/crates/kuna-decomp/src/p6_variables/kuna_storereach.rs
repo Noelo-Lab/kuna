@@ -13,7 +13,14 @@
 //! by one open byte array hint whose index evidence runs to the end of the
 //! reach. Its element is the most specific one-byte integer type a byte access
 //! inside the reach carries (an unsigned one when a byte is read zero-extended),
-//! or the unknown byte. A reach holding a type-locked hint keeps its hints.
+//! or the unknown byte. A reach holding a type-locked hint keeps its hints, and
+//! one holding a float hint keeps them and its stores' bases stop absorbing: a
+//! float read of a byte array would print as an integer piece.
+//!
+//! A function with a LOAD or STORE whose pointer comes from the stack base but
+//! does not resolve (`(&v1 | 4) + i`) keeps upstream's layout: that access may
+//! write or read any slot near the reach, and a split there is a separate local
+//! it no longer reaches.
 //!
 //! Whether or not the indices are bounded, the open range at a guarded store's
 //! base then absorbs every hint that starts inside a slot it absorbed
@@ -61,6 +68,9 @@ pub(crate) fn prepare_hints(
     }
     let guarded = guarded_stores(fd, space);
     reaches.retain(|(store, _, _)| guarded.contains(store));
+    if reaches.is_empty() || has_unresolved_frame_access(fd, sb) {
+        return;
+    }
     let mut bases: Vec<intb> = reaches.iter().map(|&(_, lo, _)| lo).collect();
     let mut bounded: Vec<(intb, intb)> = reaches
         .iter()
@@ -75,8 +85,10 @@ pub(crate) fn prepare_hints(
         }
     }
     for (lo, hi) in merged {
-        if let Some(start) = coalesce_range(state, space, types, lo, hi) {
-            bases.push(start);
+        match coalesce_range(state, space, types, lo, hi) {
+            Coalesce::Array(start) => bases.push(start),
+            Coalesce::Float(flo, fhi) => bases.retain(|&b| b < flo || b >= fhi),
+            Coalesce::Kept => {}
         }
     }
     bases.sort_unstable();
@@ -84,15 +96,25 @@ pub(crate) fn prepare_hints(
     state.set_absorbing_bases(bases);
 }
 
+/// What `coalesce_range` did with one reach.
+enum Coalesce {
+    /// The hints became one open byte array starting here.
+    Array(intb),
+    /// A float hint lies in this widened reach, so its hints were kept.
+    Float(intb, intb),
+    /// The hints were kept for another reason.
+    Kept,
+}
+
 /// Replace the hints overlapping `[lo, hi)`, widened over crossing hints, with one
-/// open byte array, and return where the array starts.
+/// open byte array.
 fn coalesce_range(
     state: &mut MapState,
     space: &Rc<AddrSpace>,
     types: &dyn TypeFactory,
     lo: intb,
     hi: intb,
-) -> Option<intb> {
+) -> Coalesce {
     let overlaps = |h: &RangeHint, lo: intb, hi: intb| {
         h.range_type != RangeType::Endpoint
             && h.sstart < hi
@@ -115,19 +137,29 @@ fn coalesce_range(
         }
         (lo, hi) = (nlo, nhi);
     }
+    let hints = state.hints_mut();
+    if hints
+        .iter()
+        .any(|h| overlaps(h, lo, hi) && h.type_.get_metatype() == type_metatype::TYPE_FLOAT)
+    {
+        return Coalesce::Float(lo, hi);
+    }
     let start = space.wrap_offset(lo as uintb);
     if hi - lo > MAX_REACH || !state.covers(start, (hi - lo) as int4) {
-        return None;
+        return Coalesce::Kept;
     }
     let hints = state.hints_mut();
     if hints
         .iter()
         .any(|h| overlaps(h, lo, hi) && h.is_type_lock())
     {
-        return None;
+        return Coalesce::Kept;
     }
-    let elem =
-        byte_type(hints, lo, hi).or_else(|| types.get_base(1, type_metatype::TYPE_UNKNOWN).ok())?;
+    let Some(elem) =
+        byte_type(hints, lo, hi).or_else(|| types.get_base(1, type_metatype::TYPE_UNKNOWN).ok())
+    else {
+        return Coalesce::Kept;
+    };
     hints.retain(|h| !overlaps(h, lo, hi));
     hints.push(RangeHint::new(
         start,
@@ -138,7 +170,7 @@ fn coalesce_range(
         RangeType::Open,
         (hi - lo - 1) as int4,
     ));
-    Some(lo)
+    Coalesce::Array(lo)
 }
 
 /// The most specific one-byte integer type a fixed hint in `[lo, hi)` carries.
@@ -280,6 +312,77 @@ fn pointer_reach(
         }
         _ => None,
     }
+}
+
+/// Does some LOAD or STORE address come from the stack base `sb` along a path
+/// `pointer_reach` cannot resolve?
+fn has_unresolved_frame_access(fd: &Funcdata, sb: VarnodeId) -> bool {
+    [OpCode::CPUI_LOAD, OpCode::CPUI_STORE]
+        .into_iter()
+        .any(|code| {
+            fd.obank().iter_code(code).any(|id| {
+                fd.obank()
+                    .get(id)
+                    .filter(|op| !op.is_dead())
+                    .and_then(|op| op.get_in(1))
+                    .is_some_and(|ptr| {
+                        comes_from(fd, ptr, sb) && pointer_reach(fd, ptr, sb, 0).is_none()
+                    })
+            })
+        })
+}
+
+/// Does `vn` reach `sb` through address arithmetic? Undecided past 64 values,
+/// which counts as yes.
+fn comes_from(fd: &Funcdata, vn: VarnodeId, sb: VarnodeId) -> bool {
+    let mut seen = BTreeSet::new();
+    let mut work = vec![vn];
+    while let Some(v) = work.pop() {
+        if v == sb {
+            return true;
+        }
+        if !seen.insert(v) {
+            continue;
+        }
+        if seen.len() > 64 {
+            return true;
+        }
+        let Some(op) = fd
+            .vbank()
+            .get(v)
+            .and_then(|v| v.get_def())
+            .and_then(|d| fd.obank().get(d))
+        else {
+            continue;
+        };
+        if matches!(
+            op.code(),
+            OpCode::CPUI_COPY
+                | OpCode::CPUI_CAST
+                | OpCode::CPUI_INDIRECT
+                | OpCode::CPUI_MULTIEQUAL
+                | OpCode::CPUI_PTRSUB
+                | OpCode::CPUI_PTRADD
+                | OpCode::CPUI_INT_ADD
+                | OpCode::CPUI_INT_SUB
+                | OpCode::CPUI_INT_OR
+                | OpCode::CPUI_INT_XOR
+                | OpCode::CPUI_INT_AND
+                | OpCode::CPUI_INT_ZEXT
+                | OpCode::CPUI_INT_SEXT
+                | OpCode::CPUI_SUBPIECE
+                | OpCode::CPUI_PIECE
+                | OpCode::CPUI_SEGMENTOP
+        ) {
+            let inputs = if op.code() == OpCode::CPUI_INDIRECT {
+                1
+            } else {
+                op.num_input()
+            };
+            work.extend((0..inputs).filter_map(|k| op.get_in(k)));
+        }
+    }
+    false
 }
 
 /// Is `vn` the phi output `phi` plus a constant (a pointer walk's back edge)?
