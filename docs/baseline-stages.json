@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1748,
-    1748
+    1752,
+    1752
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -256,6 +256,10 @@
     "data:FLOATRET #7: NaNs NAN cannot spell keep their bits",
     "data:FLOATRET #8: a parameter handed back untouched is its callers' to type",
     "data:FLOATRET #9: neither those NaNs nor the low half of a double in d0 is a float",
+    "data:FLOWMODE #1: off, the blx write makes the A32 helper decode as Thumb",
+    "data:FLOWMODE #2: on, the bl target keeps the A32 mode and returns a0 + 1",
+    "data:FLOWMODE #3: on, the blx target decodes as Thumb and returns 7",
+    "data:FLOWMODE #4: on, the entry passes the Thumb result to the A32 helper",
     "data:FMTSTATIC #10: ARM hard-float keeps the int parameter a %f prints",
     "data:FMTSTATIC #11: ARM hard-float prints the converted value",
     "data:FMTSTATIC #12: ARM hard-float prints a + b, not d0",
