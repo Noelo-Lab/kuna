@@ -575,6 +575,27 @@ fn cut_row_reaching_a_labelled_case_falls_back_to_the_table() {
     source_round_trip(&fixture, &c);
 }
 
+/// `pick` switches on `map[mode]`, whose modes 0 and 5 both reach the table
+/// entry 0x4001a8, and every case body ends in the shared epilogue at
+/// 0x40017c.  Mode 5's map value is cut from the flow-time rows, so the cases
+/// are labelled by address, and the case body, once it takes in a copy of the
+/// epilogue, starts at 0x40017c: the label must be the table's 0x4001a8.
+#[test]
+fn address_labels_are_the_table_values_not_the_block_starts() {
+    let fixture = SourceFixture {
+        name: "switch_shared_epilogue_mipsel",
+        pick: "0x400124",
+        base: 0x400000,
+        map: (0x400214, 7),
+        modes: 40,
+    };
+    let c = source_decompile(&fixture);
+    assert!(c.contains("switch("), "lost the switch: {c}");
+    assert!(!c.contains("case 0x40017c:"), "labelled a case by its block start: {c}");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixture, &c);
+}
+
 fn cut_row(fixture: &SourceFixture) {
     let c = source_decompile(fixture);
     assert!(c.contains("switch("), "lost the switch: {c}");

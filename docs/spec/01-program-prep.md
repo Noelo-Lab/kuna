@@ -4058,7 +4058,7 @@ Listing, planting `char[N]` facts for immediate operands that point into read-on
 data. (kuna) An immediate the instruction adds to a value it does not know, to
 form the address of a load two or more bytes wide, is left out
 (`decompiler/crates/kuna-analysis/src/analyzers/operand_refs/mod.rs
-(indexed_wide_bases)`): `jmp *table(,%rax,8)`, `call *tbl(,%rdi,8)` and
+(IndexedBases)`): `jmp *table(,%rax,8)`, `call *tbl(,%rdi,8)` and
 `movzwl map(%rdi,%rdi)` index an array of wider elements, a jump table, a table
 of function pointers or a word map, and typing its first bytes `char[N]` because
 they happen to be printable made the printer index a short literal

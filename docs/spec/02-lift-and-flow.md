@@ -1236,7 +1236,12 @@ JumpBasic2 model can take the constant input of a loop-carried selector as its
 default value, and the printed loop then loses that assignment on its back
 edge. The model is dropped with a header warning (`jumptable.rs
 (JumpTable::drop_model_for_rows)`) and the trivial model described below
-labels the cases by address. A model found through a guard-bound path, or a
+labels the cases by address. Each case is labelled with the flow-time table
+values that reach it, the values the printed selector computes, not with its
+block's start (`jumptable.rs (JumpTable::label_by_case_values)`): a case body
+that takes in lower-addressed code, such as a copy of the shared epilogue it
+branches back to, starts at an address no table entry holds, and a case under
+that label would never match. A model found through a guard-bound path, or a
 JumpBasic2 model after an over-sized basic one, faces the same two tests once
 recovery ends and is dropped the same way when it fails both. Flow-time recovery
 (including the second stage of a multistage table) checks no rows. Then
@@ -1247,7 +1252,8 @@ inversion of at most 1 add/sub and 1 extension per the table's caps); a
 non-reversible value labels `NO_LABEL` (rendered as the default). If no model
 can be recovered at all but addresses exist from flow, a trivial model labels
 the targets by index (`jumptable.rs (JumpModelTrivial)` — each target labeled
-with its own address; table size = the block's out-edge count). `fold_in_normalization` then re-points the BRANCHIND
+with its own address, its block's start; table size = the block's out-edge
+count). `fold_in_normalization` then re-points the BRANCHIND
 input at the unnormalized variable — the whole address computation becomes dead
 code and the header renders `switch(V)` — and records how many bits of `V` the
 switch actually consumes. Finally `jumptable.rs

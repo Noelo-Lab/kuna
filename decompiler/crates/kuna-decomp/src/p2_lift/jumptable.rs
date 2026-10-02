@@ -4687,6 +4687,10 @@ pub struct JumpTable {
     /// (kuna) The case labels are correct only while `default_block` stays the
     /// default, so no guard may be folded into another destination.
     default_pinned: bool,
+    /// (kuna) The flow-time table values behind each out-edge, as
+    /// `(out-edge, address)`, kept when the model is dropped so that the
+    /// trivial labels are values the switch selector computes.
+    case_values: Vec<(int4, Address)>,
     /// (kuna) Render case labels as signed integers.  Set by the lowered-switch
     /// install when the recovered switch variable is signed (the C++ derives this
     /// from `getSwitchType()`; a kuna hand-built table records it directly because
@@ -4730,6 +4734,7 @@ impl JumpTable {
             collectloads: false,
             default_is_folded: false,
             default_pinned: false,
+            case_values: Vec::new(),
             kuna_signed_labels: false,
             kuna_lowered_var: None,
         }
@@ -4762,6 +4767,7 @@ impl JumpTable {
             collectloads: op2.collectloads,
             default_is_folded: false,
             default_pinned: false,
+            case_values: Vec::new(),
             kuna_signed_labels: op2.kuna_signed_labels,
             kuna_lowered_var: op2.kuna_lowered_var.clone(),
         }
@@ -5174,6 +5180,7 @@ impl JumpTable {
         self.switch_var_consume = !0u64;
         self.default_block = -1;
         self.default_pinned = false;
+        self.case_values.clear();
         self.recover_count = 0;
         self.partial_table = false;
         // -opaddress- -maxtablesize- -collectloads- are permanent
@@ -5581,8 +5588,19 @@ impl JumpTable {
     }
 
     /// Drop the model of a table whose flow-time rows no recovered model can
-    /// label, so the trivial model labels each case by address.
+    /// label, so the trivial model labels each case by address: by the
+    /// flow-time table values that reach it.
     fn drop_model_for_rows(&mut self, fd: &mut Funcdata) {
+        self.case_values = self
+            .block2addr
+            .iter()
+            .filter_map(|pair| {
+                let address = self.addresstable.get(pair.address_index as usize)?;
+                Some((pair.block_position, address.clone()))
+            })
+            .collect();
+        self.case_values.sort();
+        self.case_values.dedup();
         self.jmodel = None;
         fd.warning_header(
             "Switch model does not reproduce the recovered table; cases are labelled by address",
@@ -5639,9 +5657,40 @@ impl JumpTable {
             self.label = label;
             self.jmodel = Some(Box::new(tm));
             r?;
+            self.label_by_case_values();
         }
         self.clear_saved_model();
         Ok(())
+    }
+
+    /// (kuna) Relabel the trivial table of a dropped model: each out-edge by
+    /// the flow-time table values that reach it, the values its selector
+    /// computes, rather than by its block's start, which a block that took in
+    /// lower-addressed code no longer shares with the table.  An out-edge no
+    /// recorded value reaches keeps its block start.
+    fn label_by_case_values(&mut self) {
+        if self.case_values.is_empty() {
+            return;
+        }
+        let starts = std::mem::take(&mut self.addresstable);
+        self.block2addr.clear();
+        self.label.clear();
+        for (pos, start) in (0..).zip(starts) {
+            let mut values: Vec<Address> = self
+                .case_values
+                .iter()
+                .filter(|(at, _)| *at == pos)
+                .map(|(_, address)| address.clone())
+                .collect();
+            if values.is_empty() {
+                values.push(start);
+            }
+            for address in values {
+                self.block2addr.push(IndexPair::new(pos, self.addresstable.len() as int4));
+                self.label.push(address.get_offset());
+                self.addresstable.push(address);
+            }
+        }
     }
 
     /// Check if this jump-table requires an additional recovery stage
