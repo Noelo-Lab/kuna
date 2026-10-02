@@ -1335,7 +1335,8 @@ fn rest_is_zero(declared: Range, value: Range, zero: Option<u32>) -> bool {
 
 /// The storage the prototype model gives a declared return value.
 fn output_storage(pieces: &PrototypePieces, arch: &Architecture) -> Option<Range> {
-    let dfp = arch.default_fp()?.clone();
+    let dfp = crate::kuna_typedcallabi::undeclared_model_for(arch, pieces)
+        .or_else(|| arch.default_fp().cloned())?;
     let void_ty = arch.types().get_type_void().ok()?;
     let types_only =
         PrototypePieces { input_storage: Vec::new(), output_storage: None, ..pieces.clone() };

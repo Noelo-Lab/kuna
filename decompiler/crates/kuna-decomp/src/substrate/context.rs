@@ -946,6 +946,10 @@ pub struct ArchContext {
     pub float_arg_registers: Option<bool>,
     /// The spec's soft-float model on a soft-float image, if it has one.
     pub soft_float_model: Option<Rc<crate::fspec::ProtoModel>>,
+    /// (kuna) The soft-float model a declaration that names no convention is
+    /// laid out under, on an image without floating-point hardware.  Read by
+    /// [`crate::p4_calls::kuna_typedcallabi::undeclared_model`].
+    pub soft_float_declarations: Option<Rc<crate::fspec::ProtoModel>>,
     /// The narrowest return value, in bytes, that the caller rather than the
     /// callee extends to its register (`i32::MAX`: none).  Read by
     /// [`crate::p4_calls::kuna_typedcallabi`].
@@ -1645,6 +1649,7 @@ impl ArchContext {
             arm_float_return: false, // (kuna) option armfloatreturn (default off)
             float_arg_registers: None,
             soft_float_model: None,
+            soft_float_declarations: None,
             caller_extends_returns_from: i32::MAX,
             pass_through: true, // (kuna) option passthrough (default on)
             // calleedeadarg only ever REMOVES an argument, and only against a
