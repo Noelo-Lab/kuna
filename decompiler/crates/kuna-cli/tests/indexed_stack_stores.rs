@@ -322,20 +322,39 @@ int main(void) {{
     }
 }
 
-/// `name._<off>_<size>_` read as the bytes at that offset, for a little-endian host.
-fn lower_piece_reads(c: &str) -> String {
+/// `name._<off>_<size>_` (also `name[k]._<off>_<size>_`) as the unsigned
+/// `size`-byte lvalue at that offset, for a little-endian host.
+fn lower_pieces(c: &str) -> String {
     let mut out = String::new();
     let mut rest = c;
     while let Some(pos) = rest.find("._") {
         let (head, tail) = rest.split_at(pos);
         let fields: Vec<&str> = tail[2..].splitn(3, '_').collect();
-        let start = head
+        let mut start = head.len();
+        while head[..start].ends_with(']') {
+            match head[..start].rfind('[') {
+                Some(open) => start = open,
+                None => break,
+            }
+        }
+        start = head[..start]
             .rfind(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
             .map_or(0, |p| p + 1);
+        let width = |size: &str| match size {
+            "1" => Some("unsigned char"),
+            "2" => Some("unsigned short"),
+            "4" => Some("unsigned int"),
+            "8" => Some("unsigned long long"),
+            _ => None,
+        };
         match (fields.as_slice(), start < head.len()) {
-            ([off, size, _], true) if off.parse::<u8>().is_ok() && size.parse::<u8>().is_ok() => {
+            ([off, size, _], true) if off.parse::<u8>().is_ok() && width(size).is_some() => {
                 out.push_str(&head[..start]);
-                out.push_str(&format!("kuna_piece(&{}, {off}, {size})", &head[start..]));
+                out.push_str(&format!(
+                    "(*({} *)((char *)&({}) + {off}))",
+                    width(size).unwrap(),
+                    &head[start..]
+                ));
                 rest = &tail[2 + off.len() + 1 + size.len() + 1..];
             }
             _ => {
@@ -357,13 +376,24 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
     //   fq: the same over eight bytes, u.q = 0x0102030405060708, u.b[i & 7] = j
     //   fk: u.q = 0; u.b[i & 7] = j; u.b[(j >> 1) & 7] = 5;
     //       return (int)(u.q >> 8) & 0xffff;
-    let functions: [(&str, &[u8]); 4] = [
+    // and gcc, with the same flags, over union { unsigned w[2]; unsigned short
+    // h[4]; unsigned char b[8]; } u:
+    //   k11 (-O0): u.w[0] = 0x01020304; u.w[1] = 0x05060708; u.b[i & 7] = j;
+    //       return u.h[0] + u.h[3] * 5;
+    //   k11u (-O0): the same with u.b[i] = j, called with i < 8
+    //   k4 (-O2): u.w[0] = 0x01020304; for (k = 0; k < (j & 3); k++)
+    //       u.b[(i + k) & 3] = j + k; return u.b[1] | u.b[2] << 8;
+    //   k8s (-O2): u.w[0] = 0x81828384; u.b[i & 3] = j;
+    //       short r; memcpy(&r, &u.b[1], 2); return r;
+    // Each entry carries the mask the caller applies to i.
+    let functions: [(&str, &[u8], u8); 8] = [
         (
             "f_gcc",
             &[
                 0x83, 0xe7, 0x03, 0xc7, 0x44, 0x24, 0xfc, 0x04, 0x03, 0x02, 0x01, 0x40, 0x88, 0x74,
                 0x3c, 0xfc, 0x0f, 0xb7, 0x44, 0x24, 0xfd, 0xc3,
             ],
+            15,
         ),
         (
             "fq_gcc",
@@ -372,6 +402,7 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
                 0x89, 0x44, 0x24, 0xf8, 0x40, 0x88, 0x74, 0x3c, 0xf8, 0x0f, 0xb7, 0x44, 0x24, 0xf9,
                 0xc3,
             ],
+            15,
         ),
         (
             "fk_gcc",
@@ -380,6 +411,7 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
                 0x74, 0x3c, 0xf8, 0xd1, 0xfe, 0x83, 0xe6, 0x07, 0xc6, 0x44, 0x34, 0xf8, 0x05, 0x0f,
                 0xb7, 0x44, 0x24, 0xf9, 0xc3,
             ],
+            15,
         ),
         (
             "f_clang",
@@ -387,6 +419,47 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
                 0xc7, 0x44, 0x24, 0xf8, 0x04, 0x03, 0x02, 0x01, 0x83, 0xe7, 0x03, 0x40, 0x88, 0x74,
                 0x3c, 0xf8, 0x0f, 0xb7, 0x44, 0x24, 0xf9, 0xc3,
             ],
+            15,
+        ),
+        (
+            "k11_gcc",
+            &[
+                0x55, 0x48, 0x89, 0xe5, 0x89, 0x7d, 0xec, 0x89, 0x75, 0xe8, 0xc7, 0x45, 0xf8, 0x04,
+                0x03, 0x02, 0x01, 0xc7, 0x45, 0xfc, 0x08, 0x07, 0x06, 0x05, 0x8b, 0x45, 0xec, 0x83,
+                0xe0, 0x07, 0x8b, 0x55, 0xe8, 0x48, 0x98, 0x88, 0x54, 0x05, 0xf8, 0x0f, 0xb7, 0x45,
+                0xf8, 0x0f, 0xb7, 0xc8, 0x0f, 0xb7, 0x45, 0xfe, 0x0f, 0xb7, 0xd0, 0x89, 0xd0, 0xc1,
+                0xe0, 0x02, 0x01, 0xd0, 0x01, 0xc8, 0x5d, 0xc3,
+            ],
+            15,
+        ),
+        (
+            "k11u_gcc",
+            &[
+                0x55, 0x48, 0x89, 0xe5, 0x89, 0x7d, 0xec, 0x89, 0x75, 0xe8, 0xc7, 0x45, 0xf8, 0x04,
+                0x03, 0x02, 0x01, 0xc7, 0x45, 0xfc, 0x08, 0x07, 0x06, 0x05, 0x8b, 0x45, 0xe8, 0x89,
+                0xc2, 0x8b, 0x45, 0xec, 0x48, 0x98, 0x88, 0x54, 0x05, 0xf8, 0x0f, 0xb7, 0x45, 0xf8,
+                0x0f, 0xb7, 0xc8, 0x0f, 0xb7, 0x45, 0xfe, 0x0f, 0xb7, 0xd0, 0x89, 0xd0, 0xc1, 0xe0,
+                0x02, 0x01, 0xd0, 0x01, 0xc8, 0x5d, 0xc3,
+            ],
+            7,
+        ),
+        (
+            "k4_gcc",
+            &[
+                0x89, 0xf1, 0xc7, 0x44, 0x24, 0xf8, 0x04, 0x03, 0x02, 0x01, 0xb8, 0x03, 0x02, 0x00,
+                0x00, 0x83, 0xe1, 0x03, 0x74, 0x1c, 0x01, 0xf9, 0x29, 0xfe, 0x89, 0xf8, 0x8d, 0x14,
+                0x3e, 0x83, 0xc7, 0x01, 0x83, 0xe0, 0x03, 0x88, 0x54, 0x04, 0xf8, 0x39, 0xcf, 0x75,
+                0xed, 0x0f, 0xb7, 0x44, 0x24, 0xf9, 0xc3,
+            ],
+            15,
+        ),
+        (
+            "k8s_gcc",
+            &[
+                0x83, 0xe7, 0x03, 0xc7, 0x44, 0x24, 0xf8, 0x84, 0x83, 0x82, 0x81, 0x40, 0x88, 0x74,
+                0x3c, 0xf8, 0x0f, 0xbf, 0x44, 0x24, 0xf9, 0xc3,
+            ],
+            15,
         ),
     ];
     let compilers: Vec<_> = ["gcc", "clang"]
@@ -399,7 +472,7 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
     );
     let mut obj = Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
     let section = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
-    for (name, code) in functions {
+    for (name, code, _) in functions {
         let value = obj.append_section_data(section, code, 32);
         obj.add_symbol(Symbol {
             name: format!("binary_{name}").into_bytes(),
@@ -416,7 +489,7 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
     std::fs::write(&input, obj.write().unwrap()).unwrap();
     let mut printed = String::new();
     let mut checks = String::new();
-    for (name, _) in functions {
+    for (name, _, mask) in functions {
         let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
             .args(["decompile", input.to_str().unwrap(), &format!("binary_{name}")])
             .output()
@@ -430,34 +503,34 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
         printed.push_str(&text.replace(&format!("binary_{name}("), &format!("printed_{name}(")));
         checks.push_str(&format!(
             "int binary_{name}(int, int);\n\
-             static int check_{name}(int i, int j) {{ return printed_{name}(i, j) == binary_{name}(i, j); }}\n"
+             static int check_{name}(int i, int j) {{ i &= {mask}; return printed_{name}(i, j) == binary_{name}(i, j); }}\n"
         ));
     }
-    let names: Vec<_> = functions.iter().map(|(name, _)| format!("check_{name}")).collect();
+    let names: Vec<_> = functions.iter().map(|(name, _, _)| format!("check_{name}")).collect();
     let src = common::scratch_file("indexed-stack-words", "c");
     let exe = common::scratch_file("indexed-stack-words", "exe");
     std::fs::write(
         &src,
         format!(
             r#"
-#include <string.h>
-static unsigned long long kuna_piece(const void *p, int off, int size) {{
-    unsigned long long v = 0;
-    memcpy(&v, (const char *)p + off, size);
-    return v;
-}}
+#define builtin_memcpy __builtin_memcpy
+#define builtin_memset __builtin_memset
+#define builtin_strncpy __builtin_strncpy
 {printed}
 {checks}
-int main(void) {{
+int atoi(const char *);
+unsigned alarm(unsigned);
+int main(int argc, char **argv) {{
     int (*checks[])(int, int) = {{{names}}};
-    for (unsigned k = 0; k < sizeof checks / sizeof *checks; ++k)
-        for (int i = 0; i < 16; ++i)
-            for (int j = 0; j < 256; ++j)
-                if (!checks[k](i, j)) return 1 + k;
+    int (*check)(int, int) = checks[atoi(argv[argc - 1])];
+    alarm(20);
+    for (int i = 0; i < 16; ++i)
+        for (int j = 0; j < 256; ++j)
+            if (!check(i, j)) return 1;
     return 0;
 }}
 "#,
-            printed = lower_piece_reads(&printed),
+            printed = lower_pieces(&printed),
             names = names.join(", "),
         ),
     )
@@ -465,7 +538,7 @@ int main(void) {{
     for cc in &compilers {
         for level in ["-O0", "-O2"] {
             let compile = Command::new(cc)
-                .args(["-std=c11", level])
+                .args(["-std=c11", "-fno-strict-aliasing", level])
                 .arg(&src)
                 .arg(&input)
                 .arg("-o")
@@ -477,8 +550,13 @@ int main(void) {{
                 "{cc}: {}\n{printed}",
                 String::from_utf8_lossy(&compile.stderr)
             );
-            let run = Command::new(&exe).status().unwrap();
-            assert!(run.success(), "{cc} {level}: {run}\n{printed}");
+            let failing: Vec<_> = functions
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| !Command::new(&exe).arg(k.to_string()).status().unwrap().success())
+                .map(|(_, (name, _, _))| *name)
+                .collect();
+            assert!(failing.is_empty(), "{cc} {level}: {failing:?} disagree\n{printed}");
         }
     }
     for path in [input, src, exe] {

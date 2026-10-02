@@ -642,12 +642,16 @@ narrowed piece would be a separate stack location from the slot the store
 indexes, so the variable map would declare it as its own local: the read would
 no longer see the store, and the store's base would become an address-only
 local declared at pointer width and printed with that stride
-(`long v1; (&v1)[i & 3] = j; return v2;`). Kept whole, the slot is one local
-that both the store and the read address
-(`unsigned int v1; ((char *)&v1)[i & 3] = j; return v1._1_2_;`). Byte readers
-still narrow, because a byte piece maps as an element of the byte array the
-store indexes. The check is `keeps_store_indirect_whole` in
-`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
+(`long v1; (&v1)[i & 3] = j; return v2;`). Kept whole, the read stays a piece
+of the slot the store indexes (`unsigned int v1; ((char *)&v1)[i] = j; return
+v1._1_2_;`). Byte readers still narrow, because a byte piece maps as an element
+of the byte array the store indexes. The check is `keeps_store_indirect_whole`
+in `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
+Keeping the slot whole does not by itself make the slot, its neighbours and the
+read one local; the stack layout decides that, and with the option on it maps
+every slot a bounded store may reach as one array and does not end an open range
+inside a slot it absorbed (chapter 06, §6.2, "An indexed store's slots are one
+local").
 
 The pointer/division family in `ruleaction_6.rs` resolves opcode changes through
 the canonical `TypeOp` table and applies them with `Funcdata::op_set_opcode`.

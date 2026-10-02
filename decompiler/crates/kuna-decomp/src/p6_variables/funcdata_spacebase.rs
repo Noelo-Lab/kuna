@@ -585,6 +585,10 @@ impl Funcdata {
         };
         state.gather_symbols(&hints);
 
+        if let Some(t) = self.get_arch().types_rc() {
+            crate::p6_variables::kuna_storereach::prepare_hints(self, &mut state, &space, t.as_ref());
+        }
+
         // (kuna) `endptrbound`: a stack pointer walk's `[start, end)` is one buffer.
         let endptr_walks = crate::kuna_endptrbound::gather_walks(self, &space);
         if let (false, Some(t)) = (endptr_walks.is_empty(), self.get_arch().types_rc()) {

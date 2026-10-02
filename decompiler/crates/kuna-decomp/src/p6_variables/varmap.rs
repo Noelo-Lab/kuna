@@ -1562,14 +1562,27 @@ impl ScopeLocal {
         }
 
         let mut cur: RangeHint = state.next().clone();
+        let mut cur_end = cur.sstart.wrapping_add(cur.size as int8);
         while state.get_next() {
             let next: RangeHint = state.next().clone();
+            let next_end = next.sstart.wrapping_add(next.size as int8);
             if next.sstart < cur.sstart.wrapping_add(cur.size as int8) {
                 // Do the ranges intersect — union them.
                 if cur.merge(&next, &self.space, types)? {
                     overlap_problems = true;
                 }
-            } else if !cur.attempt_join(&next) {
+                cur_end = cur_end.max(next_end);
+            } else if cur.range_type == RangeType::Open
+                && state.absorbing_bases.binary_search(&cur.sstart).is_ok()
+                && next.range_type != RangeType::Endpoint
+                && !next.is_type_lock()
+                && next.sstart < cur_end
+            {
+                cur.absorb(&next);
+                cur_end = cur_end.max(next_end);
+            } else if cur.attempt_join(&next) {
+                cur_end = cur_end.max(next_end);
+            } else {
                 if let Some(closed) = crate::p6_variables::kuna_nulterminator::close_at_terminator(
                     &cur,
                     &next,
@@ -1578,6 +1591,7 @@ impl ScopeLocal {
                 ) {
                     let mut fit = closed.clone();
                     if self.adjust_fit(&mut fit) && fit.size == closed.size {
+                        cur_end = cur_end.max(closed.sstart.wrapping_add(closed.size as int8));
                         cur = closed;
                         continue;
                     }
@@ -1591,6 +1605,7 @@ impl ScopeLocal {
                     self.create_entry(&cur, types)?;
                 }
                 cur = next;
+                cur_end = next_end;
             }
         }
         // The last range is artificial so we don't build an entry for it.
@@ -2488,6 +2503,9 @@ pub struct MapState {
     /// (kuna `nulterminator`) Per constant-COPY `(offset, size)`: is every such
     /// write an unread zero?  Empty unless the option is on.
     terminator_stores: std::collections::BTreeMap<(uintb, int4), bool>,
+    /// (kuna `stackstoreguard`) The sorted signed offsets where an open range
+    /// absorbs every unlocked hint that starts inside a hint it already absorbed.
+    absorbing_bases: Vec<intb>,
 }
 
 impl MapState {
@@ -2513,6 +2531,7 @@ impl MapState {
             default_type: dt,
             checker: AliasChecker::new(),
             terminator_stores: std::collections::BTreeMap::new(),
+            absorbing_bases: Vec::new(),
         }
     }
 
@@ -2762,6 +2781,13 @@ impl MapState {
         types: &dyn TypeFactory,
     ) {
         self.add_fixed_type(start, ct, flags, types);
+    }
+
+    /// (kuna `stackstoreguard`) Let an open range starting at one of the sorted
+    /// `bases` absorb the unlocked hints that start inside a hint it already
+    /// absorbed, instead of ending there.
+    pub fn set_absorbing_bases(&mut self, bases: Vec<intb>) {
+        self.absorbing_bases = bases;
     }
 
     /// (kuna `nulterminator`) Record one constant COPY into `(start, size)`;

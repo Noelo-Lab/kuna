@@ -25,6 +25,7 @@ pub mod kuna_calleepop;
 pub mod kuna_cookiescramble;
 pub mod kuna_nulterminator;
 pub mod kuna_endptrbound;
+pub(crate) mod kuna_storereach;
 pub mod kuna_castobject;
 pub mod kuna_impliedrefs;
 pub mod kuna_bytehonest;

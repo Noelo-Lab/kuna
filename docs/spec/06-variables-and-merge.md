@@ -846,6 +846,57 @@ the alias gather still hands later layouts an open hint there and the rewrite
 never changes the layout that justified it. `option endptrbound off` restores
 the neighbour-bound layout.
 
+**An indexed store's slots are one local (kuna `stackstoreguard`, default
+on).** The stack STORE guard of chapter 03 (`stackstoreguard`) keeps an
+indexed byte store such as `u.b[i & 7] = j` from being folded past: every
+constant-initialized slot it may write keeps the store's effect, and the C
+prints the store through the local at its base address. That is only right
+when every byte the store may reach, and every later read of those bytes,
+belongs to that one local. A slot mapped as a separate local is a separate C
+object, so a read of it never sees the store. Two layout decisions broke that.
+
+The first is the reach. Two four-byte constant slots written by `u.w[0]` and
+`u.w[1]` produce two fixed hints, and the store's own open hint only claims the
+first few bytes, so the store indexes one local and reads the next one.
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_storereach.rs
+(prepare_hints)` runs in `restructure_varnode` after the three gathers and
+before `endptrbound`. It takes each STORE of a one-byte value that a guard
+INDIRECT on the stack names as its effect, and resolves its pointer as the
+stack base plus constants plus indices (`kuna_storereach.rs (pointer_reach)`,
+through copies, casts, `PTRSUB`, `PTRADD` and `INT_ADD`, and through a pointer
+walk's `MULTIEQUAL` whose other inputs agree on the base). When every index has
+a known-bits mask that bounds it, the reach is `[base, base + max + 1)`.
+Overlapping reaches are united, each one is widened over every hint that
+crosses either edge, and the hints inside are replaced by one open array hint
+at the lowest byte with index evidence through the last. The element type is
+the most specific one-byte integer type a fixed hint inside the reach carries,
+so a byte read zero-extended keeps the array unsigned; without one it is the
+unknown byte. A reach that holds a type-locked hint, spans more than 256 bytes,
+or leaves the analyzed range keeps its hints. Constant initializers and wider
+reads then map as pieces of the one array (`v1._0_4_ = 0x1020304; v1[i & 7] =
+j; return v1._6_2_;`).
+
+The second is where an open range ends, which matters when the index is not
+bounded (`u.b[i]`, or a walk that starts at `&u.b[i]`). `RangeHint::attempt_join`
+lets an open range absorb a constant COPY slot even when the slot is wider than
+one element, but the range still ends where the next hint starts. A word read
+that starts inside the absorbed slot therefore became its own local, the slot's
+Varnode straddled both, and the `SUBPIECE` that defines the read was an internal
+copy of the same storage that never prints: the read was a declared local that
+is never assigned (`unsigned int v2; unsigned short v3; ... return v3 * 5;`).
+`prepare_hints` hands the base of every guarded store to
+`varmap.rs (MapState::set_absorbing_bases)`, and `varmap.rs
+(ScopeLocal::restructure)` tracks the furthest byte any hint merged or joined
+into the current range covers. An open range that starts at one of those bases
+absorbs every unlocked hint that starts before that byte instead of ending
+there, so it still ends at the next hint after it, as every open range does. A
+type-locked hint is never absorbed this way, and an open range that starts
+anywhere else ends as upstream's does: the same split also follows a buffer
+that escapes to a call (`g(&u.b[i & 7])`), which no store guard covers and this
+option leaves alone.
+
+`option stackstoreguard off` turns both off along with the guard.
+
 **An out-parameter takes the callee's declaration (kuna `castobject`, default
 on).** When two hints for the same bytes differ only in signedness, the ordering
 `RangeHint::preferred` falls back to (`type_order`) ranks `unsigned` ahead of
