@@ -495,7 +495,7 @@ c3
 <stringmatch name="FMTSTATIC #26: Win64 %td prints the whole ptrdiff_t, not its low half" min="3" max="3">printf\("%td\\n",a0 &lt;&lt; 0x20 \| 5\);</stringmatch>
 <stringmatch name="FMTSTATIC #27: Win64 %zu and %td keep the 8-byte parameter" min="6" max="6">void show_(zu|td)\(int8 a0\)</stringmatch>
 <stringmatch name="FMTSTATIC #28: the default types no ARM site, so f_is renders as off" min="2" max="2">void f_is\(unsigned int a0,unsigned int a1\)</stringmatch>
-<stringmatch name="FMTSTATIC #29: off leaves the version line's three phantom arguments" min="2" max="2">__fprintf_chk\(a8,1,"%s \(%s\) %s\\n",0x2011,"Demo Pkg",0x2004,0x20,v13,v14\);</stringmatch>
+<stringmatch name="FMTSTATIC #29: off leaves the version line's three phantom arguments while the four-byte string stays visible" min="2" max="2">__fprintf_chk\(a8,1,"%s \(%s\) %s\\n","demo","Demo Pkg",0x2004,0x20,v13,v14\);</stringmatch>
 <stringmatch name="FMTSTATIC #30: the default and full print the version line with its three strings" min="4" max="4">__fprintf_chk\(a8,1,"%s \(%s\) %s\\n","demo","Demo Pkg","1.0"\);</stringmatch>
 <stringmatch name="FMTSTATIC #31: the switch calls keep the arguments off gives them" min="9" max="9">,(v18|v10\[7\]),v2\);</stringmatch>
 <stringmatch name="FMTSTATIC #32: no switch call takes the va_list's slots" min="0" max="0">,v2,0x20,</stringmatch>

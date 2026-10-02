@@ -1958,7 +1958,7 @@ mod tests {
         // its zero-extension
         // and kuna-globalvalue / a value a sign-sensitive op reads keeps its own
         // variable instead of merging into a global it is stored to
-        assert_eq!(count, 377, "corpus file count drifted");
+        assert_eq!(count, 378, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
