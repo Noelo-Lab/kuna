@@ -1,8 +1,9 @@
 //! ARM/Thumb interworking: a `blx` selects Thumb for its own target only, a `bl`
 //! keeps its caller's mode, and neither leaks into the other helper (GH-780,
-//! option `flowmode`). By default nothing after an unconditional call is
-//! proven; `flowmode aftercall` continues past a call whose callee returns.
-//! Images outside the option's scope keep what the walk alone gives them.
+//! option `flowmode`, off by default). Under `flowmode on` nothing after an
+//! unconditional call or a user-defined operation is proven; `flowmode
+//! aftercall` continues past a call whose callee returns. Images outside the
+//! option's scope keep what the walk alone gives them.
 
 #[path = "common/arm_images.rs"]
 #[allow(dead_code)]
@@ -103,6 +104,10 @@ fn marked(stem: &str, code: &[u8]) -> PathBuf {
     path
 }
 
+fn run(args: &[&str], extra: &[&str]) -> String {
+    kuna(&[args, extra].concat())
+}
+
 fn kuna(args: &[&str]) -> String {
     let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args(args)
@@ -134,7 +139,9 @@ fn decompile_off(path: &PathBuf, addr: u64) -> String {
     decompile_with(path, addr, &["--option", "flowmode", "off"])
 }
 
+const ON: [&str; 3] = ["--option", "flowmode", "on"];
 const AFTERCALL: [&str; 3] = ["--option", "flowmode", "aftercall"];
+const VALUES: [&[&str]; 3] = [&[], &ON, &AFTERCALL];
 
 /// The body `decompile-all` printed for `name`.
 fn body(all: &str, name: &str) -> String {
@@ -163,27 +170,28 @@ fn assert_helpers(path: &PathBuf, extra: &[&str]) {
 }
 
 /// `entry: bl arm_helper; blx thumb_helper; pop {pc}`: the `bl` is the
-/// entry's first call, so its target is proven A32 by default.
+/// entry's first call, so its target is proven A32 under `flowmode on`.
 #[test]
 fn a_blx_target_mode_does_not_reach_the_arm_callee_of_an_earlier_bl() {
     let path = stripped("bl-blx", &bl_then_blx());
     for mode in ["reliable", "auto"] {
-        assert_helpers(&path, &["--mode", mode]);
+        assert_helpers(&path, &["--mode", mode, "--option", "flowmode", "on"]);
     }
     let off = decompile_off(&path, ARM_HELPER);
     assert!(off.contains("halt_missing"), "flowmode off: {off}");
+    assert_eq!(decompile_with(&path, ARM_HELPER, &[]), off);
     std::fs::remove_file(path).unwrap();
 }
 
 /// `entry: blx thumb_helper; bl arm_helper; pop {pc}` (GH-780): the `bl`
-/// follows a call, so by default nothing proves it runs and every function
+/// follows a call, so under `on` nothing proves it runs and every function
 /// prints what the walk alone gives it; `aftercall` proves it once the Thumb
 /// helper is proven to return.
 #[test]
 fn a_bl_after_a_returning_blx_is_proven_only_under_aftercall() {
     let path = stripped("blx-bl", &blx_then_bl());
     for addr in [0x10000, THUMB_HELPER, ARM_HELPER] {
-        assert_eq!(decompile_with(&path, addr, &[]), decompile_off(&path, addr));
+        assert_eq!(decompile_with(&path, addr, &ON), decompile_off(&path, addr));
     }
     assert!(decompile_off(&path, ARM_HELPER).contains("halt_missing"));
     assert_helpers(&path, &AFTERCALL);
@@ -212,7 +220,7 @@ fn a_call_proven_to_return_carries_the_mode_on_to_the_next_call() {
     assert_helpers(&path, &AFTERCALL);
     let off = decompile_off(&path, ARM_HELPER);
     assert!(off.contains("halt_missing"), "flowmode off: {off}");
-    assert_eq!(decompile_with(&path, ARM_HELPER, &[]), off);
+    assert_eq!(decompile_with(&path, ARM_HELPER, &ON), off);
     std::fs::remove_file(path).unwrap();
 }
 
@@ -239,7 +247,7 @@ fn the_instruction_after_a_call_that_never_returns_is_not_proven() {
     let path = stripped("noreturn", &code);
     let after = decompile_off(&path, 0x10058);
     assert!(after.contains("return 9;"), "{after}");
-    for extra in [&[][..], &AFTERCALL[..]] {
+    for extra in [&ON[..], &AFTERCALL[..]] {
         assert_eq!(decompile_with(&path, 0x10058, extra), after, "{extra:?}");
         assert_eq!(
             decompile_with(&path, 0x10050, extra),
@@ -252,7 +260,7 @@ fn the_instruction_after_a_call_that_never_returns_is_not_proven() {
 
 /// `entry: blx helper; bl helper; pop {pc}`: under `aftercall` two proofs
 /// give one address different modes, so nothing is painted and every
-/// function prints what the walk alone gives it, as it does by default.
+/// function prints what the walk alone gives it, as it does under `on`.
 #[test]
 fn two_proven_modes_for_one_address_paint_nothing() {
     let code = text(&[
@@ -270,7 +278,7 @@ fn two_proven_modes_for_one_address_paint_nothing() {
             &["--mode", "auto", "--option", "flowmode", "off"],
         );
         for extra in [
-            &["--mode", "auto"][..],
+            &["--mode", "auto", "--option", "flowmode", "on"][..],
             &["--mode", "auto", "--option", "flowmode", "aftercall"],
         ] {
             assert_eq!(decompile_with(&path, addr, extra), off, "{extra:?}");
@@ -282,7 +290,7 @@ fn two_proven_modes_for_one_address_paint_nothing() {
 #[test]
 fn whole_binary_decompile_keeps_each_callee_in_its_own_mode() {
     for (stem, code, extra) in [
-        ("bl-blx-all", bl_then_blx(), &[][..]),
+        ("bl-blx-all", bl_then_blx(), &ON[..]),
         ("blx-bl-all", blx_then_bl(), &AFTERCALL[..]),
     ] {
         let path = stripped(stem, &code);
@@ -429,6 +437,8 @@ fn arm_exports_are_proven_and_pointer_only_thumb_keeps_its_mode() {
     ]);
     assert!(off.contains("halt_missing"), "flowmode off: {off}");
     assert_eq!(kuna(&["decompile", lib, "arm_export"]), off);
+    let on = kuna(&["decompile", lib, "arm_export", "--option", "flowmode", "on"]);
+    assert_eq!(on, off);
     for (name, pointer_only, ternary) in [
         (
             "arm_interwork_stubs_o0_le32",
@@ -463,17 +473,19 @@ fn static_thumb_functions_after_an_arm_export_keep_their_mode() {
     ] {
         let path = fixture(name);
         let lib = path.to_str().unwrap();
-        let first = kuna(&["decompile", lib, ternary, "--addr"]);
-        assert!(
-            first.contains("a0 = (0xb <= a0) ? a0 + -10 : a0 << 1;"),
-            "{name}: {first}"
-        );
-        let second = kuna(&["decompile", lib, popcount.0, "--addr"]);
-        assert!(second.contains(popcount.1), "{name}: {second}");
-        let all = kuna(&["decompile-all", lib]);
-        for entry in [ternary, popcount.0] {
-            let header = format!("@ {entry}");
-            assert!(all.contains(&header), "{name}: no {entry} in\n{all}");
+        for extra in VALUES {
+            let first = run(&["decompile", lib, ternary, "--addr"], extra);
+            assert!(
+                first.contains("a0 = (0xb <= a0) ? a0 + -10 : a0 << 1;"),
+                "{name} {extra:?}: {first}"
+            );
+            let second = run(&["decompile", lib, popcount.0, "--addr"], extra);
+            assert!(second.contains(popcount.1), "{name} {extra:?}: {second}");
+            let all = run(&["decompile-all", lib], extra);
+            for entry in [ternary, popcount.0] {
+                let header = format!("@ {entry}");
+                assert!(all.contains(&header), "{name} {extra:?}: no {entry} in\n{all}");
+            }
         }
     }
 }
@@ -487,10 +499,12 @@ fn static_thumb_functions_after_an_arm_export_keep_their_mode() {
 fn a_pointer_only_thumb_function_keeps_the_mode_a_blx_before_it_gives() {
     let path = fixture("arm_pointer_thumb_exe_le32");
     let exe = path.to_str().unwrap();
-    let t_ptr = kuna(&["decompile", exe, "0x10172", "--addr"]);
-    assert!(t_ptr.contains("v2 += sub_10158(v1);"), "{t_ptr}");
-    let t0 = kuna(&["decompile", exe, "0x1013c", "--addr"]);
-    assert!(t0.contains("return a0 * 7 + 1;"), "{t0}");
+    for extra in VALUES {
+        let t_ptr = run(&["decompile", exe, "0x10172", "--addr"], extra);
+        assert!(t_ptr.contains("v2 += sub_10158(v1);"), "{extra:?}: {t_ptr}");
+        let t0 = run(&["decompile", exe, "0x1013c", "--addr"], extra);
+        assert!(t0.contains("return a0 * 7 + 1;"), "{extra:?}: {t0}");
+    }
 }
 
 /// Stripped armel shared objects (`arm_noreturn_fallthrough_le32.c`) where a
@@ -507,14 +521,16 @@ fn a_call_that_never_returns_leaves_the_next_function_in_its_own_mode() {
     ] {
         let path = fixture(name);
         let lib = path.to_str().unwrap();
-        let alone = kuna(&["decompile", lib, addr, "--addr"]);
-        assert!(alone.contains("v1 += v2 ^ 5;"), "{name}: {alone}");
-        let all = kuna(&["decompile-all", lib]);
-        let named = format!("sub_{}", &addr[2..]);
-        assert!(
-            body(&all, &named).contains("v1 += v2 ^ 5;"),
-            "{name}: {all}"
-        );
+        for extra in VALUES {
+            let alone = run(&["decompile", lib, addr, "--addr"], extra);
+            assert!(alone.contains("v1 += v2 ^ 5;"), "{name} {extra:?}: {alone}");
+            let all = run(&["decompile-all", lib], extra);
+            let named = format!("sub_{}", &addr[2..]);
+            assert!(
+                body(&all, &named).contains("v1 += v2 ^ 5;"),
+                "{name} {extra:?}: {all}"
+            );
+        }
     }
 }
 
@@ -525,10 +541,12 @@ fn a_call_that_never_returns_leaves_the_next_function_in_its_own_mode() {
 #[test]
 fn static_thumb_functions_after_an_unsized_arm_export_keep_their_mode() {
     let path = fixture("arm_unsized_export_le32");
-    let all = kuna(&["decompile-all", path.to_str().unwrap()]);
-    assert!(body(&all, "sub_410").contains("v1 += v2 ^ 5;"), "{all}");
-    assert!(body(&all, "sub_430").contains("a0 >>= 1"), "{all}");
-    assert!(!body(&all, "sub_430").contains("halt_"), "{all}");
+    for extra in VALUES {
+        let all = run(&["decompile-all", path.to_str().unwrap()], extra);
+        assert!(body(&all, "sub_410").contains("v1 += v2 ^ 5;"), "{extra:?}: {all}");
+        assert!(body(&all, "sub_430").contains("a0 >>= 1"), "{extra:?}: {all}");
+        assert!(!body(&all, "sub_430").contains("halt_"), "{extra:?}: {all}");
+    }
 }
 
 /// A stripped armel shared object (`arm_noreturn_site_le32.c`) where the A32
@@ -541,8 +559,33 @@ fn a_call_that_returns_elsewhere_but_not_at_its_site_leaves_the_next_function_al
     let path = fixture("arm_noreturn_site_le32");
     let lib = path.to_str().unwrap();
     let expected = "return (a0 * 8 - ((int)a1 >> 1)) + (a0 & a1);";
-    let alone = kuna(&["decompile", lib, "0x524", "--addr"]);
-    assert!(alone.contains(expected), "{alone}");
-    let all = kuna(&["decompile-all", lib]);
-    assert!(body(&all, "sub_524").contains(expected), "{all}");
+    for extra in [&[][..], &ON[..]] {
+        let alone = run(&["decompile", lib, "0x524", "--addr"], extra);
+        assert!(alone.contains(expected), "{extra:?}: {alone}");
+        let all = run(&["decompile-all", lib], extra);
+        assert!(body(&all, "sub_524").contains(expected), "{extra:?}: {all}");
+    }
+}
+
+/// A stripped armel shared object (`arm_exception_end_le32.c`): the A32
+/// export `my_exit` ends in `svc #0` and `my_trap` in `bkpt #1`, each then
+/// `__builtin_unreachable()`, so the static Thumb `u` at 0x510 and `v` at
+/// 0x56c, which the A32 `api2` calls with `blx`, come right after them.
+/// Neither exception is proven to come back, so `u` and `v` keep their Thumb
+/// decode under every value, alone and in the whole-binary run.
+#[test]
+fn an_exception_that_does_not_come_back_leaves_the_next_function_alone() {
+    let path = fixture("arm_exception_end_le32");
+    let lib = path.to_str().unwrap();
+    let u = "return (a1 & a0) + (a0 * 8 - ((int)a1 >> 1));";
+    let v = "a0 = (a0 <= a1) ? a1 * 3 + 1 : a0 - a1;";
+    for extra in VALUES {
+        for (addr, expected) in [("0x510", u), ("0x56c", v)] {
+            let alone = run(&["decompile", lib, addr, "--addr"], extra);
+            assert!(alone.contains(expected), "{addr} {extra:?}: {alone}");
+        }
+        let all = run(&["decompile-all", lib], extra);
+        assert!(body(&all, "sub_510").contains(u), "{extra:?}: {all}");
+        assert!(body(&all, "sub_56c").contains(v), "{extra:?}: {all}");
+    }
 }

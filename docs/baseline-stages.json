@@ -256,7 +256,7 @@
     "data:FLOATRET #7: NaNs NAN cannot spell keep their bits",
     "data:FLOATRET #8: a parameter handed back untouched is its callers' to type",
     "data:FLOATRET #9: neither those NaNs nor the low half of a double in d0 is a float",
-    "data:FLOWMODE #1: off, and on after an unproven call, the A32 helper decodes as Thumb",
+    "data:FLOWMODE #1: off (the default), and on after an unproven call, the A32 helper decodes as Thumb",
     "data:FLOWMODE #2: on, the first bl target keeps A32; aftercall, the bl after the blx does",
     "data:FLOWMODE #3: aftercall, the blx target decodes as Thumb and returns 7",
     "data:FLOWMODE #4: aftercall, the entry passes the Thumb result to the A32 helper",

@@ -1472,7 +1472,7 @@ pub struct Architecture {
     pub analysis_ppclocalentry: bool,
     /// (kuna) Paint the ARM mode of code a stripped image proves through control
     /// flow where the walk's own `blx` writes left the other mode (`flowmode`);
-    /// default **on**. Off leaves the context database as the walk left it.
+    /// default **off**, which leaves the context database as the walk left it.
     pub analysis_flowmode: bool,
     /// (kuna) `flowmode aftercall`: the proof also continues after an
     /// unconditional call whose callee it proves to return; default **off**.
@@ -2964,9 +2964,9 @@ impl Architecture {
         // ever withholds the duplicate second entry over a function whose global
         // entry is already a seed, so no body can be lost).
         self.analysis_ppclocalentry = true;
-        // (kuna) ARM flow-proven decode-mode paints -- default-ON (they only paint
-        // proven code whose mode the walk left wrong; GH-780).
-        self.analysis_flowmode = true;
+        // (kuna) ARM flow-proven decode-mode paints -- default-OFF (GH-780): the
+        // proof trusts a fall-through the compiler may leave unreachable.
+        self.analysis_flowmode = false;
         self.analysis_flowmode_aftercall = false;
         // (kuna) PIC base-register folding in the xref index -- default-ON. It is
         // a query surface only (no p-code, no emitted C), so no parity gate can

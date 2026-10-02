@@ -15,15 +15,15 @@
     walk leaves the A32 helper in Thumb, and the decompiler prints
     `halt_missing()` for it (a Thumb decode starting at 0x2000082).
 
-    Pass 1, `arm_interwork_bl_first_le32` (the `bl` comes first), option off:
-    the A32 helper prints `halt_missing()`.
+    Pass 1, `arm_interwork_bl_first_le32` (the `bl` comes first), the default
+    (off): the A32 helper prints `halt_missing()`.
 
-    Pass 2, the same image, the default: the entry's even address proves A32
+    Pass 2, the same image, option on: the entry's even address proves A32
     and its first call, the `bl`, proves the A32 helper, which makes no call
     and is painted A32. It returns `a0 + 1`.
 
     Pass 3, `arm_interwork_le32` (the `blx` comes first, the issue's layout),
-    the default: the `bl` comes after a call, and nothing proves that call
+    option on: the `bl` comes after a call, and nothing proves that call
     returns at its site, so nothing is painted and the helper still prints
     `halt_missing()`.
 
@@ -41,7 +41,6 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_bl_first_le32</com>
   <com>option listing on</com>
-  <com>option flowmode off</com>
   <com>read symbols</com>
   <com>load addr 0x2000080</com>
   <com>decompile</com>
@@ -78,7 +77,7 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="FLOWMODE #1: off, and on after an unproven call, the A32 helper decodes as Thumb" min="2" max="2">halt_missing</stringmatch>
+<stringmatch name="FLOWMODE #1: off (the default), and on after an unproven call, the A32 helper decodes as Thumb" min="2" max="2">halt_missing</stringmatch>
 <stringmatch name="FLOWMODE #2: on, the first bl target keeps A32; aftercall, the bl after the blx does" min="2" max="2">return a0 \+ 1;</stringmatch>
 <stringmatch name="FLOWMODE #3: aftercall, the blx target decodes as Thumb and returns 7" min="1" max="1">return 7;</stringmatch>
 <stringmatch name="FLOWMODE #4: aftercall, the entry passes the Thumb result to the A32 helper" min="1" max="1">sub_2000080\(sub_2000040\(\)\)</stringmatch>

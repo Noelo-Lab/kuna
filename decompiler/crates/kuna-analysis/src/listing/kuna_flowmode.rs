@@ -21,8 +21,8 @@
 //! A32 by the ELF for the ARM architecture. From proven code it carries on
 //! where the instruction set decides the mode:
 //!
-//! * a branch target, and the fall-through of anything but an unconditional
-//!   call, keep the mode;
+//! * a branch target keeps the mode, and so does the fall-through of an
+//!   instruction that neither calls nor runs a user-defined p-code operation;
 //! * a direct call target takes the mode the call commits there (`blx imm`
 //!   switches) or else keeps the caller's (`bl`);
 //! * the instruction after an unconditional call is not proven by that call:
@@ -31,23 +31,32 @@
 //!   function that can return), and the bytes after it are then the next
 //!   function, possibly in the other mode, or a literal pool. `flowmode
 //!   aftercall` proves them anyway once the callee is proven to return: some
-//!   return instruction is reachable from its entry through proven code.
+//!   return instruction is reachable from its entry through proven code;
+//! * the instruction after one that runs a user-defined operation (a
+//!   `CALLOTHER`: `svc`, `bkpt`, `hvc`, `smc`, `hlt`, a barrier, a
+//!   coprocessor access) is never proven by it: the operation can raise an
+//!   exception that does not come back (`svc` that exits, `bkpt` followed by
+//!   `__builtin_unreachable()`), and p-code does not say which ones do.
 //!
-//! A function is complete when the proof followed every unconditional call it
-//! makes to the instruction after it, which by default means it makes none.
-//! Only complete functions are painted, so a function is either decoded as
-//! the walk left it or entirely in its proven mode.
+//! A function is complete when the proof followed every fall-through it left
+//! unproven, which under `flowmode on` means the function makes no
+//! unconditional call and runs no user-defined operation. Only complete
+//! functions are painted, so a function is either decoded as the walk left it
+//! or entirely in its proven mode.
 //!
 //! The result does not depend on visiting order. Proof is a least fixpoint,
 //! and when two proven paths give one address different modes, or two proven
 //! instructions of different modes overlap, or a proven instruction fails to
 //! decode where the database holds the other mode, nothing is painted at all.
 //!
-//! The pass runs only on an ARM ELF that is not relocatable, has an even
-//! `e_entry` or an even function symbol, no load-time `TMode` paint at all (no
-//! mapping symbol, no Thumb function symbol, no Cortex-M vector table), and
-//! build attributes that allow A32 code, and only when the input selects no
-//! instruction set and the database holds Thumb somewhere after the walk.
+//! The pass is off by default: an ordinary instruction's fall-through or a
+//! branch target can still be unreachable, after `__builtin_unreachable()`,
+//! and lead into the next function. It runs only on an ARM ELF that is not
+//! relocatable, has an even `e_entry` or an even function symbol, no load-time
+//! `TMode` paint at all (no mapping symbol, no Thumb function symbol, no
+//! Cortex-M vector table), and build attributes that allow A32 code, and only
+//! when the input selects no instruction set and the database holds Thumb
+//! somewhere after the walk.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -55,6 +64,7 @@ use std::rc::Rc;
 use kuna_base::address::Address;
 use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
+use kuna_num::opcodes::OpCode;
 use kuna_sleigh::translate::{ContextCommitRecord, Translate};
 use object::{Object, ObjectKind, ObjectSymbol, SymbolKind};
 
@@ -238,7 +248,15 @@ struct Proven {
     calls: Vec<(u64, u32)>,
     branches: Vec<u64>,
     fall_through: Option<u64>,
-    after_call: bool,
+    next: Next,
+}
+
+/// How an instruction's fall-through is proven.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Next {
+    Proven,
+    AfterCall,
+    Unproven,
 }
 
 /// A function entry the proof reached, and what its own walk has visited.
@@ -337,7 +355,13 @@ impl Proof<'_, '_> {
                 calls,
                 branches,
                 fall_through: class.fall_through,
-                after_call: class.flow.is_call && !class.flow.is_conditional,
+                next: if decoded.ops.iter().any(|op| op.opcode == OpCode::CPUI_CALLOTHER) {
+                    Next::Unproven
+                } else if class.flow.is_call && !class.flow.is_conditional {
+                    Next::AfterCall
+                } else {
+                    Next::Proven
+                },
             },
         );
         Some(true)
@@ -354,7 +378,7 @@ impl Proof<'_, '_> {
         }
         let insn = &self.decoded[&at];
         let (returns, calls, branches) = (insn.returns, insn.calls.clone(), insn.branches.clone());
-        let (fall_through, after_call) = (insn.fall_through, insn.after_call);
+        let (fall_through, next_proof) = (insn.fall_through, insn.next);
         if returns {
             self.mark_returns(entry);
         }
@@ -369,12 +393,13 @@ impl Proof<'_, '_> {
         let Some(next) = fall_through else {
             return Some(());
         };
-        if !after_call {
-            self.work.push((entry, next));
-            return Some(());
-        }
-        if !self.mode.after_call {
-            return Some(());
+        match next_proof {
+            Next::Proven => {
+                self.work.push((entry, next));
+                return Some(());
+            }
+            Next::AfterCall if self.mode.after_call => {}
+            Next::AfterCall | Next::Unproven => return Some(()),
         }
         if let [(callee, _)] = calls[..] {
             match self.entries.get(&callee) {
@@ -387,10 +412,10 @@ impl Proof<'_, '_> {
     }
 
     /// Whether every instruction the function at `entry` can run is proven:
-    /// the walk followed each unconditional call's fall-through.
+    /// the walk followed each fall-through the proof left unproven.
     fn complete(&self, entry: &Entry) -> bool {
         entry.visited.iter().all(|at| match self.decoded.get(at) {
-            Some(insn) if insn.after_call => insn
+            Some(insn) if insn.next != Next::Proven => insn
                 .fall_through
                 .is_none_or(|next| entry.visited.contains(&next)),
             _ => true,
