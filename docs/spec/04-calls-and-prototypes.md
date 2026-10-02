@@ -1459,8 +1459,26 @@ recovered arguments. A single-float image (RISC-V lp64f/ilp32f, MIPS `fp_abi`
 clang PowerPC or attribute-less ARM object, a Mach-O, the Ghidra front-end)
 keep the recovered arguments too. The instructions a function executes do not
 decide it: ARM `softfp` and single-float code compute with floating-point
-registers yet pass doubles, or every value, in integer registers. A prototype
-that names its own convention is forced as declared on every image.
+registers yet pass doubles, or every value, in integer registers. A
+non-variadic prototype that names its own convention is forced as declared on
+every image. A variadic prototype is forced only when its return value and
+every fixed parameter each sit in one location outside the floating-point
+entries; one with a floating-point entry or a join (a register pair such as
+`long long` in `r0`/`r1`) is not forced on any image, whatever convention it
+names, and the call keeps its recovered arguments. ARM's VFP variant passes
+every value of a variadic call, the return value included, in core registers,
+and a locked variadic prototype misreads the arguments past such storage: a
+floating-point return drops the floating-point arguments recovered past the
+fixed ones (x86-64 `xmm0`, AArch64 `d0`), and a register-pair parameter prints
+a stale value for one of its words (32-bit ARM, PowerPC, RISC-V and MIPS).
+A return value narrower than the register entry that holds it (a `char`,
+`short` or `bool`, or an `int` on a 64-bit RISC-V) is forced only where the
+caller extends it itself (x86, AArch64) or the model's output entry extends it
+by its type (`extension="inttype"`: ARM, PowerPC). Elsewhere the callee's
+extension is modelled wrongly and the recovered call is kept: a MIPS model
+states no extension, so the rest of `v0` would print as an unassigned piece of
+the result, and a RISC-V model states zero extension, which turns a negative
+`signed char`, `short` or 64-bit `int` result into a large positive one.
 
 `force_set` first saves a copy of the full `FuncProto` — model, storage, locks
 and all — into the function's Override store keyed by the call address

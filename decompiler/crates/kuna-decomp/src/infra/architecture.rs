@@ -3373,6 +3373,7 @@ impl Architecture {
         ctx.arm_float_return = crate::kuna_armfloatreturn::applies(self);
         ctx.float_arg_registers = crate::kuna_typedcallabi::image_evidence(self);
         ctx.soft_float_model = crate::kuna_typedcallabi::soft_model(self, ctx.float_arg_registers);
+        ctx.caller_extends_returns = crate::kuna_typedcallabi::caller_extends(self);
         ctx.defaultfp = self.defaultfp.as_ref().map(|model| {
             if ctx.arm_float_return {
                 crate::kuna_armfloatreturn::model(model, ctx.manage())

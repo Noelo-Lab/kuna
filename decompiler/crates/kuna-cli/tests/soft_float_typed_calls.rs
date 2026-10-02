@@ -2,7 +2,9 @@
 //! at an indirect call only under the convention the image states: core
 //! registers on a soft-float ARM image, and not at all on a single-float image
 //! or one that states no convention, even when the function computes with
-//! floating-point registers.
+//! floating-point registers.  A variadic prototype with a floating-point or
+//! register-pair fixed value, and a return value narrower than a register the
+//! model does not extend by type, keep the recovered call too.
 mod common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
@@ -438,4 +440,123 @@ fn double_float_riscv_passes_declared_doubles_in_float_registers() {
     let r5 = riscv_r5(64, 5);
     assert!(r5.contains(")(4,"), "{r5}");
     assert!(!r5.contains(",4,"), "{r5}");
+}
+
+/// `int w2(struct wo *o, int k) { return (int)o->vr(k, k + 1, 0.5); }` and
+/// `int j1(struct jo *o, int k) { return o->vj(5LL, k, 1.5) + 1; }`, clang -O2
+/// for armv7 hard-float: a variadic call passes every value in core registers.
+fn arm_hard_variadic() -> Vec<u8> {
+    let w2 = vec![
+        0xe92d4800, 0xeeb60b00, 0xe590e004, 0xe1a0c001, 0xe2811001, 0xe1a0000c, 0xec532b10,
+        0xe12fff3e, 0xec410b10, 0xeebd0bc0, 0xee100a10, 0xe8bd8800,
+    ];
+    let j1 = vec![
+        0xe92d4800, 0xe24dd008, 0xe1a02001, 0xe3001000, 0xe5903000, 0xe3431ff8, 0xe3a00000,
+        0xe1cd00f0, 0xe3a00005, 0xe3a01000, 0xe12fff33, 0xe2800001, 0xe28dd008, 0xe8bd8800,
+    ];
+    image(
+        Architecture::Arm,
+        Endianness::Little,
+        &[("w2", w2), ("j1", j1)],
+        Some((
+            b".ARM.attributes",
+            attributes(b"aeabi", &[6, 10, 28, 1], Endianness::Little),
+        )),
+    )
+}
+
+#[test]
+fn variadic_prototype_with_float_or_pair_storage_keeps_the_recovered_call() {
+    let text = decompile_with(
+        &arm_hard_variadic(),
+        &[
+            "typedef struct wo { int (*vi)(int n, ...); double (*vr)(int n, ...); };".to_string(),
+            "typedef struct jo { int (*vj)(long long a, ...); };".to_string(),
+            "prototype w2 int w2(struct wo *o, int k)".to_string(),
+            "prototype j1 int j1(struct jo *o, int k)".to_string(),
+        ],
+    );
+    let w2 = function(&text, "w2");
+    assert!(w2.contains("(double)(*v1)(k,k + 1,0,0x3fe00000)"), "{w2}");
+    assert!(!w2.contains("CONCAT44"), "read the result from unset r0/r1: {w2}");
+    let j1 = function(&text, "j1");
+    assert!(j1.contains("(*v1)(5,0,k,"), "{j1}");
+    assert!(j1.contains("0x3ff80000)"), "dropped the stacked 1.5: {j1}");
+}
+
+/// `long r1(struct ro *o, int k) { return o->fi(k); }` and
+/// `long r6(struct ro *o, int k, long *p) { return p[o->fi(k)]; }`, clang -O2
+/// for RISC-V lp64d: the callee sign-extends the `int` it returns in a0.
+fn riscv_int_return() -> Vec<u8> {
+    let r1 = vec![
+        0x41, 0x11, 0x06, 0xe4, 0x10, 0x61, 0x2e, 0x85, 0x02, 0x96, 0xa2, 0x60, 0x41, 0x01,
+        0x82, 0x80,
+    ];
+    let r6 = vec![
+        0x41, 0x11, 0x06, 0xe4, 0x22, 0xe0, 0x14, 0x61, 0x32, 0x84, 0x2e, 0x85, 0x82, 0x96,
+        0x0e, 0x05, 0x22, 0x95, 0x08, 0x61, 0xa2, 0x60, 0x02, 0x64, 0x41, 0x01, 0x82, 0x80,
+    ];
+    image_bytes(
+        Architecture::Riscv64,
+        Endianness::Little,
+        5,
+        &[("r1", r1), ("r6", r6)],
+        None,
+    )
+}
+
+/// `int c3(struct co *o, int k) { return o->sc(k) * 3; }`, clang -O2 for
+/// little-endian MIPS o32: the callee sign-extends the `signed char` in v0.
+fn mips_char_return() -> Vec<u8> {
+    let c3: Vec<u8> = [
+        0x27bdffe8u32,
+        0xafbf0014,
+        0x8c990008,
+        0x0320f809,
+        0x00a02025,
+        0x00020840,
+        0x00221021,
+        0x8fbf0014,
+        0x03e00008,
+        0x27bd0018,
+    ]
+    .iter()
+    .flat_map(|word| word.to_le_bytes())
+    .collect();
+    image_bytes(
+        Architecture::Mips,
+        Endianness::Little,
+        0x70001007,
+        &[("c3", c3)],
+        None,
+    )
+}
+
+#[test]
+fn return_narrower_than_an_unextended_register_keeps_the_recovered_call() {
+    let text = decompile_with(
+        &riscv_int_return(),
+        &[
+            "typedef struct ro { int (*fi)(int k); };".to_string(),
+            "prototype r1 long r1(struct ro *o, int k)".to_string(),
+            "prototype r6 long r6(struct ro *o, int k, long *p)".to_string(),
+        ],
+    );
+    let r1 = function(&text, "r1");
+    assert!(!r1.contains("(unsigned int)"), "zero-extended the signed int: {r1}");
+    let r6 = function(&text, "r6");
+    assert!(r6.contains("p[(*v1)(k"), "{r6}");
+    assert!(!r6.contains("(unsigned int)"), "zero-extended the signed index: {r6}");
+    let text = decompile_with(
+        &mips_char_return(),
+        &[
+            "typedef struct co { char (*nc)(char c); short (*ns)(short s); \
+             signed char (*sc)(int k); };"
+                .to_string(),
+            "prototype c3 int c3(struct co *o, int k)".to_string(),
+        ],
+    );
+    let c3 = function(&text, "c3");
+    assert!(c3.contains("(*v1)(k) * 3"), "{c3}");
+    assert!(!c3.contains("// v0"), "read unset bits of v0: {c3}");
 }

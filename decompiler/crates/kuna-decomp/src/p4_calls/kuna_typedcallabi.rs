@@ -4,14 +4,22 @@
 //! pass them in integer registers (soft-float) or keep doubles out of the
 //! floating-point registers (single-float); forcing the default storage there
 //! reads registers the caller never set and drops the arguments it did set.
+//! A variadic prototype is forced only when every fixed parameter and the return
+//! value sit in one non-floating-point location: ARM passes every variadic value
+//! in core registers, and a locked variadic prototype with a floating-point
+//! return or a register-pair parameter misreads the arguments past it.  A return
+//! value narrower than its register is forced only where the model extends it by
+//! its type or the caller extends it: a MIPS model states no extension and a
+//! RISC-V one zero-extends signed values.
 use crate::{
     context::ArchContext,
-    dtype::type_class,
+    dtype::{type_class, type_metatype},
     fspec::{FuncProto, ProtoModel, PrototypePieces},
     funcdata::Funcdata,
     infra::architecture::Architecture,
 };
 use kuna_base::{address::Address, space::AddrSpace};
+use kuna_num::{opcodes::OpCode, pcoderaw::VarnodeData};
 use std::rc::Rc;
 
 /// The ARM model for the base (core-register) procedure-call standard.
@@ -21,7 +29,7 @@ const SOFT_FLOAT_MODEL: &str = "__stdcall_softfp";
 /// floating-point registers: x86 and AArch64 always do; elsewhere only the
 /// convention the container states decides.
 pub fn image_evidence(arch: &Architecture) -> Option<bool> {
-    if arch.archid.starts_with("x86:") || arch.archid.starts_with("AARCH64:") {
+    if caller_extends(arch) {
         return Some(true);
     }
     arch.translate()
@@ -29,6 +37,11 @@ pub fn image_evidence(arch: &Architecture) -> Option<bool> {
         .try_borrow()
         .ok()
         .and_then(|loader| loader.float_arg_registers())
+}
+
+/// x86 and AArch64, whose callers extend a narrow return value themselves.
+pub fn caller_extends(arch: &Architecture) -> bool {
+    arch.archid.starts_with("x86:") || arch.archid.starts_with("AARCH64:")
 }
 
 /// The spec's soft-float model, on an image that states the soft-float convention.
@@ -39,20 +52,31 @@ pub fn soft_model(arch: &Architecture, evidence: Option<bool>) -> Option<Rc<Prot
 }
 
 /// The prototype to force at a CALLIND typed with `proto`, or `None` to leave the
-/// call to model recovery.  A prototype that puts no parameter or return value in
-/// the model's floating-point registers, or names its own convention, is forced as
-/// declared.  Otherwise the stated convention decides: hard-float keeps it;
-/// soft-float rebuilds it under the soft-float model, or declines when the spec
-/// has none; single-float or no stated convention declines.
+/// call to model recovery.  A prototype whose return value is narrower than its
+/// register and extended by neither the model nor the caller is declined.  A
+/// variadic prototype is forced only when no fixed parameter or return value
+/// lives in a join or in the model's floating-point registers.  Any other
+/// prototype that puts nothing in those registers, or names its own convention,
+/// is forced as declared.  Otherwise the stated convention decides: hard-float
+/// keeps it; soft-float rebuilds it under the soft-float model, or declines when
+/// the spec has none; single-float or no stated convention declines.
 pub fn admit(data: &Funcdata, proto: Rc<FuncProto>) -> Option<Rc<FuncProto>> {
     if !proto.has_model() {
         return Some(proto);
     }
-    let entries = float_entries(proto.model());
-    if !uses_float_storage(&proto, &entries) {
+    let arch = data.get_arch();
+    if !arch.caller_extends_returns && unextended_return(&proto) {
+        return None;
+    }
+    let storage = storage(&proto);
+    let in_float = uses_float_storage(&storage, &float_entries(proto.model()));
+    if proto.is_dotdotdot() {
+        let in_join = storage.iter().any(|(addr, _)| addr.is_join());
+        return (!in_float && !in_join).then_some(proto);
+    }
+    if !in_float {
         return Some(proto);
     }
-    let arch = data.get_arch();
     let default = arch.defaultfp.as_ref().map(|model| model.get_name());
     if default.is_some_and(|name| name != proto.get_model_name()) {
         return Some(proto);
@@ -88,10 +112,53 @@ fn overlaps(entries: &[(i32, u64, u64)], space: &AddrSpace, offset: u64, size: u
     })
 }
 
-/// Some parameter or the return value lives in a floating-point entry, directly or
-/// as a piece of a join.
-fn uses_float_storage(proto: &FuncProto, entries: &[(i32, u64, u64)]) -> bool {
-    let in_entry = |addr: Address, size: i32| {
+/// A non-floating-point return value sits in the low part of a register entry
+/// for which the model states no extension by type: the callee's extension of
+/// the rest goes unmodelled (MIPS) or is modelled with the wrong sign (RISC-V).
+fn unextended_return(proto: &FuncProto) -> bool {
+    let output = proto.get_output();
+    let size = output.get_size();
+    let float = output
+        .get_type()
+        .is_some_and(|ty| ty.get_metatype() == type_metatype::TYPE_FLOAT);
+    if size <= 0 || float {
+        return false;
+    }
+    let addr = output.get_address();
+    let mut container = VarnodeData::default();
+    match proto.model().assumed_output_extension(&addr, size, &mut container) {
+        OpCode::CPUI_PIECE => false,
+        OpCode::CPUI_COPY => {
+            let Some(space) = addr.get_space() else {
+                return false;
+            };
+            let offset = addr.get_offset();
+            proto.model().output().get_entry().iter().any(|e| {
+                let len = e.get_size().max(0) as u64;
+                e.get_type() != type_class::TYPECLASS_FLOAT
+                    && e.get_space().get_index() == space.get_index()
+                    && e.get_base() <= offset
+                    && offset + size as u64 <= e.get_base() + len
+                    && (size as u64) < len
+            })
+        }
+        _ => true,
+    }
+}
+
+/// The storage of each parameter and of a non-void return value.
+fn storage(proto: &FuncProto) -> Vec<(Address, i32)> {
+    let output = proto.get_output();
+    (0..proto.num_params())
+        .filter_map(|i| proto.get_param(i))
+        .map(|p| (p.get_address(), p.get_size()))
+        .chain((output.get_size() > 0).then(|| (output.get_address(), output.get_size())))
+        .collect()
+}
+
+/// Some storage lies in a floating-point entry, directly or as a piece of a join.
+fn uses_float_storage(storage: &[(Address, i32)], entries: &[(i32, u64, u64)]) -> bool {
+    storage.iter().any(|(addr, size)| {
         let Some(space) = addr.get_space() else {
             return false;
         };
@@ -106,13 +173,8 @@ fn uses_float_storage(proto: &FuncProto, entries: &[(i32, u64, u64)]) -> bool {
                 })
             });
         }
-        overlaps(entries, space, addr.get_offset(), size.max(0) as u64)
-    };
-    let output = proto.get_output();
-    (0..proto.num_params())
-        .filter_map(|i| proto.get_param(i))
-        .any(|p| in_entry(p.get_address(), p.get_size()))
-        || (output.get_size() > 0 && in_entry(output.get_address(), output.get_size()))
+        overlaps(entries, space, addr.get_offset(), (*size).max(0) as u64)
+    })
 }
 
 fn rebuild(arch: &ArchContext, proto: &FuncProto) -> Option<Rc<FuncProto>> {
