@@ -217,6 +217,10 @@ pub struct CalleeEntryDead {
     /// Did a path end inside an instruction that had already branched, such as
     /// ARM's conditional `bxlt lr`, so the path skipping it was never walked?
     lost: bool,
+    /// The paths that skip a conditional return, walked on their own from the
+    /// bytes written before its branch when the probe was asked to follow them.
+    /// Read only by [`Self::returns_untouched`].
+    skipped: Option<Box<CalleeEntryDead>>,
     /// Did the walk cover every path with nothing abandoned?
     complete: bool,
 }
@@ -370,10 +374,10 @@ impl CalleeEntryDead {
             && !(off..off.wrapping_add(size as u64)).any(|b| self.cond_written.contains(&(idx, b)))
     }
 
-    /// Did the walk follow every path, including the one past a conditional
-    /// return or call?
+    /// Did this walk itself follow every path, including the one past a
+    /// conditional return or call?
     pub fn walked_every_path(&self) -> bool {
-        self.complete && !self.lost
+        self.complete && !self.lost && self.skipped.is_none()
     }
 
     /// Does this body call nothing and only return, leaving
@@ -383,20 +387,30 @@ impl CalleeEntryDead {
         let Some(sp) = addr.get_space() else { return false };
         let (idx, off) = (self.reg_idx, addr.get_offset());
         let end = off.wrapping_add(size.max(0) as u64);
-        self.complete
-            && size > 0
+        size > 0
             && end > off
             && !self.cuts.is_empty()
             && sp.get_index() == idx
+            && self.leaves_untouched(idx, off, end)
+    }
+
+    /// Does every path this walk covered, and every path past a conditional
+    /// return it handed to [`Self::skipped`], end at a return without reading
+    /// or conditionally writing register bytes `[off, end)`?
+    fn leaves_untouched(&self, idx: int4, off: u64, end: u64) -> bool {
+        let overlaps = |reads: &[(int4, u64, int4)]| {
+            reads
+                .iter()
+                .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
+        };
+        self.complete
             && !self.lost
             && self.named_cuts.is_empty()
             && self.opaque_cuts.len() == self.returning_opaque
-            && !self.proves_read(addr, size)
+            && !overlaps(&self.reads)
+            && !overlaps(&self.return_reads)
             && !(off..end).any(|b| self.cond_written.contains(&(idx, b)))
-            && !self
-                .return_reads
-                .iter()
-                .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
+            && self.skipped.as_deref().map_or(true, |s| s.leaves_untouched(idx, off, end))
     }
 
     /// Record one unnameable-transfer terminator, so a consumer of this
@@ -434,6 +448,7 @@ impl CalleeEntryDead {
             return_reads: Vec::new(),
             cond_written: ByteSet::new(),
             lost: false,
+            skipped: None,
             complete,
         }
     }
@@ -711,7 +726,8 @@ fn probe_cached(
     let sp = entry.get_space()?;
     let key = (sp.get_index(), entry.get_offset());
     if !arch.kuna_callee_dead_cache.contains_key(&key) {
-        let probed = probe_callee_entry_dead(arch.translate(), entry, reg_idx);
+        let follow = crate::kuna_armfloatargs::applies(arch);
+        let probed = probe_entry(arch.translate(), entry, reg_idx, follow);
         arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
     }
     arch.kuna_callee_dead_cache.get(&key).cloned()
@@ -807,19 +823,18 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
     entry: &Address,
     reg_idx: int4,
 ) -> CalleeEntryDead {
-    let mut res = CalleeEntryDead {
-        reg_idx,
-        reads: Vec::new(),
-        reads_live: Vec::new(),
-        cuts: Vec::new(),
-        opaque_cuts: Vec::new(),
-        named_cuts: Vec::new(),
-        returning_opaque: 0,
-        return_reads: Vec::new(),
-        cond_written: ByteSet::new(),
-        lost: false,
-        complete: true,
-    };
+    probe_entry(tr, entry, reg_idx, false)
+}
+
+/// [`probe_callee_entry_dead`], with `follow` also walking the paths that skip
+/// a conditional return into [`CalleeEntryDead::skipped`].
+pub fn probe_entry<T: kuna_sleigh::translate::Translate + ?Sized>(
+    tr: &T,
+    entry: &Address,
+    reg_idx: int4,
+    follow: bool,
+) -> CalleeEntryDead {
+    let mut res = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
     let Some(entry_space) = entry.get_space() else {
         res.complete = false;
         return res;
@@ -828,9 +843,49 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.complete = false;
         return res;
     }
+    let start = vec![Frame { at: entry.clone(), written: ByteSet::new() }];
+    let mut skips = Vec::new();
+    walk(tr, &mut res, start, if follow { Skips::Aside(&mut skips) } else { Skips::Dropped });
+    if res.complete && !skips.is_empty() {
+        let mut late = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
+        walk(tr, &mut late, skips, Skips::Walked);
+        res.skipped = Some(Box::new(late));
+    }
+    if !res.complete {
+        res.reads.clear();
+        res.reads_live.clear();
+        res.cuts.clear();
+        res.opaque_cuts.clear();
+        res.named_cuts.clear();
+        res.returning_opaque = 0;
+        res.return_reads.clear();
+        res.cond_written.clear();
+        res.skipped = None;
+    }
+    res
+}
+
+/// Where a walk sends the paths that skip a conditional return.
+enum Skips<'a> {
+    /// Not walked: the path ends with the return, and [`CalleeEntryDead::lost`] records it.
+    Dropped,
+    /// Collected for a separate walk.
+    Aside(&'a mut Vec<Frame>),
+    /// Walked here, as any other path.
+    Walked,
+}
+
+/// Walk every path from `todo` into `res`.
+fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
+    tr: &T,
+    res: &mut CalleeEntryDead,
+    mut todo: Vec<Frame>,
+    mut skips: Skips<'_>,
+) {
     let mut visited: HashMap<(int4, u64), ByteSet> = HashMap::new();
-    let mut todo: Vec<Frame> = vec![Frame { at: entry.clone(), written: ByteSet::new() }];
     let mut budget = MAX_PROBE_INSTRUCTIONS;
+    let follow = !matches!(skips, Skips::Dropped);
+    let mut found = Vec::new();
     while let Some(frame) = todo.pop() {
         let Some(sp) = frame.at.get_space() else {
             res.complete = false;
@@ -861,27 +916,22 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
                 continue;
             }
         };
-        match step_instruction(&mut res, &emit, frame.written, &frame.at, len) {
+        let skip = if follow { Some(&mut found) } else { None };
+        match step_instruction(res, &emit, frame.written, &frame.at, len, skip) {
             Some(next) => todo.extend(next),
             None => break,
         }
+        match &mut skips {
+            Skips::Dropped => {}
+            Skips::Aside(out) => out.append(&mut found),
+            Skips::Walked => todo.append(&mut found),
+        }
     }
-    if !res.complete {
-        res.reads.clear();
-        res.reads_live.clear();
-        res.cuts.clear();
-        res.opaque_cuts.clear();
-        res.named_cuts.clear();
-        res.returning_opaque = 0;
-        res.return_reads.clear();
-        res.cond_written.clear();
-    }
-    res
 }
 
 /// Count a user op whose instruction then only computes and returns, and keep
-/// the register reads it makes on the way.
-fn note_returning_user_op(res: &mut CalleeEntryDead, rest: &[RawOp]) {
+/// the register reads it makes on the way. Answers whether it was one.
+fn note_returning_user_op(res: &mut CalleeEntryDead, rest: &[RawOp]) -> bool {
     let returns = rest.last().is_some_and(|o| o.opc == OpCode::CPUI_RETURN);
     let flows = rest[..rest.len().saturating_sub(1)].iter().any(|o| {
         matches!(
@@ -898,7 +948,7 @@ fn note_returning_user_op(res: &mut CalleeEntryDead, rest: &[RawOp]) {
         )
     });
     if !returns || flows {
-        return;
+        return false;
     }
     res.returning_opaque += 1;
     for o in rest {
@@ -908,6 +958,25 @@ fn note_returning_user_op(res: &mut CalleeEntryDead, rest: &[RawOp]) {
             }
         }
     }
+    true
+}
+
+/// End a path at a return inside an instruction that may already have branched
+/// past it. With `skip`, each such branch's path resumes there from the bytes
+/// written before it; without, the path is lost.
+fn end_at_return(
+    res: &mut CalleeEntryDead,
+    targets: &[Address],
+    before: &[ByteSet],
+    skip: Option<&mut Vec<Frame>>,
+) -> Option<Vec<Frame>> {
+    match skip {
+        Some(out) if targets.len() == before.len() => out.extend(
+            targets.iter().zip(before).map(|(t, w)| Frame { at: t.clone(), written: w.clone() }),
+        ),
+        _ => res.lost |= !targets.is_empty(),
+    }
+    Some(Vec::new())
 }
 
 /// Is this op's result a CONSTANT whatever the register held — a compiler's way
@@ -949,17 +1018,20 @@ fn is_value_erasing(op: &RawOp) -> bool {
 ///
 /// Records every read-before-write into `res`, and returns the frames the walk
 /// should continue with (empty when the path ended). `None` means the summary
-/// was abandoned.
+/// was abandoned. With `skip`, the paths that branch past a return inside this
+/// instruction are pushed there.
 fn step_instruction(
     res: &mut CalleeEntryDead,
     emit: &EntryEmit,
     written: ByteSet,
     at: &Address,
     len: i32,
+    skip: Option<&mut Vec<Frame>>,
 ) -> Option<Vec<Frame>> {
     let incoming = written.clone();
     let mut cur = written;
     let mut targets: Vec<Address> = Vec::new();
+    let mut before: Vec<ByteSet> = Vec::new();
     let mut ends_flow = false;
     for (k, op) in emit.ops.iter().enumerate() {
         // Reads. An instruction that branches inside itself is scored against
@@ -1001,11 +1073,14 @@ fn step_instruction(
                 return Some(Vec::new());
             }
             OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCHIND => {
-                if op.opc == OpCode::CPUI_CALLOTHER && !emit.internal_flow {
-                    note_returning_user_op(res, &emit.ops[k + 1..]);
-                }
+                let returns = op.opc == OpCode::CPUI_CALLOTHER
+                    && !emit.internal_flow
+                    && note_returning_user_op(res, &emit.ops[k + 1..]);
                 res.opaque_cuts.push(cur.clone());
                 res.cuts.push(cur);
+                if returns {
+                    return end_at_return(res, &targets, &before, skip);
+                }
                 res.lost |= !targets.is_empty();
                 return Some(Vec::new());
             }
@@ -1015,8 +1090,7 @@ fn step_instruction(
             // proof would delete the arguments of every stub and thunk.
             OpCode::CPUI_RETURN => {
                 res.cuts.push(cur);
-                res.lost |= !targets.is_empty();
-                return Some(Vec::new());
+                return end_at_return(res, &targets, &before, skip);
             }
             // The `<spaceid>` operand's offset IS the space-manager index. An
             // access to the register space through LOAD/STORE is an indexed
@@ -1036,6 +1110,9 @@ fn step_instruction(
                     Some(sp) if sp.get_type() == spacetype::IPTR_CONSTANT => {}
                     Some(sp) => {
                         targets.push(Address::new(Rc::clone(sp), op.ins[0].offset));
+                        if skip.is_some() {
+                            before.push(cur.clone());
+                        }
                         if op.opc == OpCode::CPUI_BRANCH {
                             ends_flow = true;
                         }

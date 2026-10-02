@@ -1377,10 +1377,12 @@ fn entry_facts(
     if let Some(d) = arch.kuna_callee_dead_cache.get(&key) {
         return Some(Rc::clone(d));
     }
-    let probed = Rc::new(crate::kuna_calleedeadarg::probe_callee_entry_dead(
+    let follow = crate::kuna_armfloatargs::applies(arch);
+    let probed = Rc::new(crate::kuna_calleedeadarg::probe_entry(
         arch.translate(),
         entry,
         reg_idx,
+        follow,
     ));
     arch.kuna_callee_dead_cache.insert(key, Rc::clone(&probed));
     Some(probed)
