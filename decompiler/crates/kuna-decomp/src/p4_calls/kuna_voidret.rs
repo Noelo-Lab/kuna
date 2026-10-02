@@ -630,13 +630,22 @@ fn plant_piece(data: &mut Funcdata, addr: Address, size: int4) {
         let t = active.get_num_trials() - 1;
         active.get_trial_mut(t).set_slot(slot);
     }
-    data.kuna_set_forced_return_planted(true);
+    data.kuna_note_forced_return_planted(addr, size);
 }
 
 /// Must heritage leave `[addr, addr+size)` out of the function's RETURN trials
-/// because [`plant`] made the trial itself?
+/// because [`plant`] made the trial itself?  Only the pieces it planted: the
+/// `edx` of `call zsum; or $0xff,%edx` beside a planted `eax` keeps its trial.
 pub fn planted_overlaps(data: &Funcdata, addr: &Address, size: int4) -> bool {
-    data.kuna_forced_return_planted() && forced(data, addr, size)
+    data.kuna_forced_return_planted().iter().any(|(paddr, psize)| overlaps(addr, size, paddr, *psize))
+}
+
+fn overlaps(addr: &Address, size: int4, other: &Address, osize: int4) -> bool {
+    let (Some(a), Some(b)) = (addr.get_space(), other.get_space()) else { return false };
+    let (off, ooff) = (addr.get_offset(), other.get_offset());
+    a.get_index() == b.get_index()
+        && off < ooff.wrapping_add(osize.max(0) as u64)
+        && ooff < off.wrapping_add(size.max(0) as u64)
 }
 
 /// Mark active each return trial on the storage the function's callers read
@@ -675,6 +684,44 @@ pub fn score_forced(
         }
         for i in 0..active.get_num_trials() {
             score_trial(data, active, i, anchored, &live, maxancestor);
+        }
+    }
+}
+
+/// After the model has mapped the return trials, keep a forced return whole or
+/// return nothing: a trial on the callers' storage that every path sets but
+/// the model left out (the `edx` of `call big; ret`, which upstream takes for a
+/// clobbered register) would leave its callers reading a value the function
+/// no longer returns.
+pub fn whole_or_none(data: &Funcdata, active: &mut crate::fspec::ParamActive) {
+    if data.kuna_forced_return().is_empty() {
+        return;
+    }
+    let live: Vec<crate::context::OpId> = data
+        .obank()
+        .iter_code(kuna_num::opcodes::OpCode::CPUI_RETURN)
+        .filter(|&r| data.obank().get(r).is_some_and(|o| !o.is_dead() && o.get_halt_type() == 0))
+        .collect();
+    let trials: Vec<int4> = (0..active.get_num_trials())
+        .filter(|&i| {
+            let t = active.get_trial(i);
+            forced(data, t.get_address(), t.get_size())
+        })
+        .collect();
+    let set = |slot: int4| {
+        slot >= 0
+            && !live.is_empty()
+            && live.iter().all(|&r| {
+                data.obank()
+                    .get(r)
+                    .and_then(|o| o.get_in(slot))
+                    .is_some_and(|vn| defined_width(data, vn, &mut BTreeSet::new()) > 0)
+            })
+    };
+    let left = trials.iter().any(|&i| !active.get_trial(i).is_used() && set(active.get_trial(i).get_slot()));
+    if left && trials.iter().any(|&i| active.get_trial(i).is_used()) {
+        for &i in &trials {
+            active.get_trial_mut(i).mark_no_use();
         }
     }
 }
@@ -965,11 +1012,5 @@ fn narrow(
 /// Is the return trial `[addr, addr+size)` on the storage the function's
 /// callers read?
 pub fn forced(data: &Funcdata, addr: &Address, size: int4) -> bool {
-    data.kuna_forced_return().iter().any(|(faddr, fsize)| {
-        let (Some(a), Some(b)) = (addr.get_space(), faddr.get_space()) else { return false };
-        let (off, foff) = (addr.get_offset(), faddr.get_offset());
-        a.get_index() == b.get_index()
-            && off < foff.wrapping_add((*fsize).max(0) as u64)
-            && foff < off.wrapping_add(size.max(0) as u64)
-    })
+    data.kuna_forced_return().iter().any(|(faddr, fsize)| overlaps(addr, size, faddr, *fsize))
 }

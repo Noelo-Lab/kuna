@@ -4416,8 +4416,11 @@ In that decompile the function's return storage is seeded
 recovered to return. If no op of the function names the storage,
 `kuna_voidret.rs (plant)` gives every live RETURN a read of it and registers the
 return trial itself, the way `passthrough` does for a claimed tail call, and
-heritage's `guardReturns` leaves the range alone
-(`kuna_voidret.rs (planted_overlaps)`). `ActionReturnRecovery` then marks a
+heritage's `guardReturns` leaves that piece alone
+(`kuna_voidret.rs (planted_overlaps)`). Only the pieces planted are left out: in
+i386 `call zsum; or $0xff,%edx; ret`, whose callers read `edx:eax`, `eax` is
+planted and the `edx` the function writes keeps the trial heritage gives it.
+`ActionReturnRecovery` then marks a
 trial on that storage active (`kuna_voidret.rs (score_forced)`) only when the
 value is the return value at EVERY live RETURN: `AncestorRealistic` accepts it,
 and `ancestor_op_use` finds it used only on its way to the RETURN, with one
@@ -4449,7 +4452,13 @@ arguments it computes in `rax` with the `bool` it returns into one `char *`, and
 tar's `argp_parse` branched on the `int` error through a variable the merge left
 unassigned. A trial above the least significant end of the storage the callers
 read (the upper half of a `double` split in two) is returned only beside an
-accepted lower one. A path that sets nothing refuses the trial; when what it
+accepted lower one. A return the callers read in several trials is returned
+whole or not at all (`kuna_voidret.rs (whole_or_none)`, after the model maps the
+trials): when the model leaves out a trial that every path sets -- the `edx` of
+a 32-bit `call ins16; ret`, which upstream's multi-precision check takes for a
+register the call clobbered -- every trial on the callers' storage is dropped and
+the function stays `void`, since `eax` alone would hand its callers the low half
+of a 64-bit value. A path that sets nothing refuses the trial; when what it
 would return is the result of a callee still recovered `void`, the function files
 a read of that callee (`kuna_voidret.rs (void_results)`), which makes the callee
 due, and returns nothing until the callee does. The value's type is whatever it

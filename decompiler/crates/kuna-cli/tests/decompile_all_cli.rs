@@ -2952,6 +2952,31 @@ fn a_float_handed_on_through_wrappers_to_an_integer_round_trips() {
     assert!(!printed.contains("float"), "a function of the chain returns a float:\n{printed}");
 }
 
+/// `floatret_pair32_{i386_O2,arm_O0}.o`: `use` reads a 64-bit result in two
+/// registers from `hi` (`call zsum; or $0xff,%edx`) and from `wrap` (`call
+/// ins16; ret`). Returned in `eax` alone, `hi` dropped the `0xff` its high
+/// register carries, and `wrap` returned the low half of a 64-bit value. A
+/// return the callers read in two registers is returned whole or not at all.
+#[test]
+fn a_pair_return_handed_on_stays_whole_round_trips() {
+    let sp = specs();
+    let pairs: [(u32, u32); 4] = [(1, 2), (0x7fff, 0x10), (0x1000000, 0x2345), (0, 0)];
+    let want: Vec<String> = pairs.iter().map(|(a, b)| format!("{:x}", (a.wrapping_add(*b) as u64) | 0xff00000000)).collect();
+    for name in ["floatret_pair32_i386_O2.o", "floatret_pair32_arm_O0.o"] {
+        let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        assert!(!stdout.contains("unsigned int wrap("), "{name}: wrap returns half of a 64-bit value:\n{stdout}");
+        let printed = printed_functions(&stdout, &["zsum ", "hi "]);
+        assert!(printed.contains("unsigned long long hi(int a0,int a1)"), "{name}:\n{printed}");
+        let calls: String = pairs.iter().map(|(a, b)| format!("  printf(\"%llx\\n\", hi({a:#x},{b:#x}));\n")).collect();
+        let src = format!("#include <stdio.h>\n{printed}\nint main(void) {{\n{calls}  return 0;\n}}\n");
+        for (cc, got) in compile_and_run_each("floatret-pair32", &src) {
+            assert_eq!(got.lines().collect::<Vec<_>>(), want, "{name} {cc}: the printed hi returns something else:\n{printed}");
+        }
+    }
+}
+
 /// `floatret_beside_gcc_O2` (gcc -O2, stripped): `getf` returns a packed
 /// global's float on one path and `0.0f` on the other, each with its own `ret`.
 /// A value read from a global refuses the float-register vote, but the constant

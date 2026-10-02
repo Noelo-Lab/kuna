@@ -417,8 +417,8 @@ pub struct Funcdata {
     kuna_callret_data: std::rc::Rc<Vec<(u64, u64)>>,
     /// (kuna `voidret`) The return storage this function's callers read.
     kuna_forced_return: Vec<(Address, int4)>,
-    /// (kuna `voidret`) Whether the RETURN read of that storage was planted.
-    kuna_forced_return_planted: bool,
+    /// (kuna `voidret`) The pieces of that storage whose RETURN read was planted.
+    kuna_forced_return_planted: Vec<(Address, int4)>,
     /// (kuna `voidret`) A reader keeps this function's float return as another
     /// type, so the float-register vote on the return is withdrawn.
     kuna_float_return_withdrawn: bool,
@@ -615,7 +615,7 @@ impl Funcdata {
             kuna_callret_withdrawn: std::collections::HashMap::new(),
             kuna_callret_data: std::rc::Rc::new(Vec::new()),
             kuna_forced_return: Vec::new(),
-            kuna_forced_return_planted: false,
+            kuna_forced_return_planted: Vec::new(),
             kuna_float_return_withdrawn: false,
             kuna_callee_returns: std::collections::BTreeMap::new(),
             kuna_callee_params: std::collections::BTreeMap::new(),
@@ -1021,14 +1021,15 @@ impl Funcdata {
         self.kuna_float_return_withdrawn
     }
 
-    /// (kuna `voidret`) Record that the RETURN read of that storage was planted.
-    pub fn kuna_set_forced_return_planted(&mut self, planted: bool) {
-        self.kuna_forced_return_planted = planted;
+    /// (kuna `voidret`) Record that the RETURN read of one piece of that storage
+    /// was planted.
+    pub fn kuna_note_forced_return_planted(&mut self, addr: Address, size: int4) {
+        self.kuna_forced_return_planted.push((addr, size));
     }
 
-    /// (kuna `voidret`) Whether the RETURN read of that storage was planted.
-    pub fn kuna_forced_return_planted(&self) -> bool {
-        self.kuna_forced_return_planted
+    /// (kuna `voidret`) The pieces of that storage whose RETURN read was planted.
+    pub fn kuna_forced_return_planted(&self) -> &[(Address, int4)] {
+        &self.kuna_forced_return_planted
     }
 
     /// (kuna `voidret`) Score the forced return storage (see the field).
@@ -3111,7 +3112,7 @@ impl Funcdata {
         self.kuna_passthrough_vararg_calls.clear();
         self.kuna_passthrough_variadic = false;
         self.kuna_moved_back_returns.clear();
-        self.kuna_forced_return_planted = false;
+        self.kuna_forced_return_planted.clear();
         self.kuna_float_pair_halves.clear();
         self.kuna_forced_claims.clear();
     }
