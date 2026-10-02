@@ -894,10 +894,12 @@ refusal the `COPY` dies, the forced merge of the global's marker finds the store
 value and the earlier one live together and trims the stored value to its own
 variable, and every read of the global prints after the pointer store, as
 upstream prints it. A use counts when some path from the store reaches it
-without passing the earlier version's definition; a `MULTIEQUAL` uses its input
-at the end of the predecessor block it comes from, and a use of a register
-`COPY` of the earlier version counts too, since a later propagation folds the
-copy into it. A walk past 256 copies or 65,536 blocks and operations answers yes.
+without passing the earlier version's definition, which only a version defined
+in a block that dominates the store can have, since a definition dominates its
+uses; a `MULTIEQUAL` uses its input at the end of the predecessor block it
+comes from, and a use of a register `COPY` of the earlier version counts too,
+since a later propagation folds the copy into it. A walk past 256 copies or
+65,536 blocks and operations answers yes.
 Placing the copy of the earlier value at the binary's own load, which would let
 the store stay, is not done.
 

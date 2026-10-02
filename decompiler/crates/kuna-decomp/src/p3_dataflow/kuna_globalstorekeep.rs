@@ -143,8 +143,10 @@ const REACH_BOUND: usize = 1 << 16;
 ///
 /// A read is after the store when some path from the store reaches it without
 /// passing the earlier value's definition; a `MULTIEQUAL` reads at the end of
-/// the predecessor block it reads from.  Past [`WALK_BOUND`] copies or
-/// [`REACH_BOUND`] blocks and operations the answer is yes.
+/// the predecessor block it reads from.  Only a value defined in a block that
+/// dominates the store can be read so, since its definition dominates every
+/// read.  Past [`WALK_BOUND`] copies or [`REACH_BOUND`] blocks and operations
+/// the answer is yes.
 fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(v) = data.vbank().get(vn) else {
         return true;
@@ -190,6 +192,11 @@ fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
         if w == vn || wv.get_def() == Some(store) {
             continue;
         }
+        let def = wv.get_def();
+        let def_block = def.and_then(|d| data.obank().get(d)).and_then(|d| d.get_parent());
+        if def_block.is_some_and(|db| db != sb && !data.bblocks_ref().dominates(db, Some(sb))) {
+            continue;
+        }
         let Some((ops, ends)) = reads_of(data, w) else {
             return true;
         };
@@ -201,7 +208,6 @@ fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
         if !blocks.iter().any(|b| reach.contains(b)) && !ends.contains(&sb) && !later.iter().any(|o| ops.contains(o)) {
             continue;
         }
-        let def = wv.get_def();
         if let Some(i) = later.iter().position(|&o| Some(o) == def || ops.contains(&o)) {
             if Some(later[i]) == def {
                 continue;
@@ -211,7 +217,6 @@ fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
         if ends.contains(&sb) {
             return true;
         }
-        let def_block = def.and_then(|d| data.obank().get(d)).and_then(|d| d.get_parent());
         let mut work = succ(sb);
         let mut seen = BTreeSet::new();
         while let Some(b) = work.pop() {
