@@ -1164,7 +1164,8 @@ array element, the pieces land in different HighVariables and P9 prints a block 
 per-byte assignments into a `.rodata` string literal. The copies that reach the
 gate in that shape are the `return_copy` guards of §3.1 after a block clone has
 rewritten them: `substrate/funcdata_block.rs (CloneBlockOps::build_op_clone)`
-copies only the upstream flag subset, which does not carry `return_copy`, and
+copies only the upstream flag subset (plus chapter 05's `kuna_zextreturn`
+record), which does not carry `return_copy`, and
 `CloneBlockOps::patch_inputs` re-inputs the clone from a fresh COPY, so neither
 the same-address test nor the flag can recognize the clone for what it is. The
 read-only output test does, and it is the property that actually matters. The

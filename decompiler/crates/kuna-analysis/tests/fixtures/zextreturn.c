@@ -1,5 +1,6 @@
 /* Narrow integers a callee returns zero-extended (u*) or sign-extended (s*),
-   and callers that compute with the whole register (c_*).  Built with
+   callers that compute with the whole register (c_*), and a loop whose return
+   kuna duplicates into each exit on PowerPC (h_loop).  Built with
    clang 14 -fno-inline -c at -O2 for arm-linux-gnueabi (zextreturn_arm.o, and
    -O0 for zextreturn_arm_O0.o), armv7a-linux-gnueabi (_armv7),
    thumbv7-linux-gnueabi (_thumb), powerpc-linux-gnu (_ppc), riscv32-linux-gnu
@@ -23,3 +24,9 @@ int c_u16_inc(unsigned short *p, int b) { return (b * u16_inc(p)) >> 16; }
 int c_u16_sum(int b) { return (b * u16_sum(b & 0xff)) >> 4; }
 int c_s16_mul(int b) { return (b * s16_mul(b)) >> 4; }
 int c_s8_add(int b) { return (b * s8_add(b)) >> 4; }
+unsigned short h_loop(int n, short *a) {
+  short s = 0;
+  for (int i = 0; i < n; i++)
+    s += a[i];
+  return s;
+}

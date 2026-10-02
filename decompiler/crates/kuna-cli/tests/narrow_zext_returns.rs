@@ -2,17 +2,21 @@
 //! calling convention extends a return by the sign of its type, so C promotes it
 //! the way the binary extends it. Typed by its own ops instead, `k * 300` or a
 //! byte of unknown type read as `short` or `char`, and `u16_inc() * b >> 16`
-//! sign-extended the 0x8000 the binary returns as 32768.
+//! sign-extended the 0x8000 the binary returns as 32768. A RETURN that block
+//! duplication copies into each exit keeps the record (`h_loop` on PowerPC).
 mod common;
 use common::process;
 use std::process::Command;
 
 const SOURCE: &str = include_str!("../../kuna-analysis/tests/fixtures/zextreturn.c");
 
-const CALLEES: &[&str] = &["u16_mul", "u8_add", "u8_hi", "u16_inc", "u16_sum", "s16_mul", "s8_add"];
+const CALLEES: &[&str] = &["u16_mul", "u8_add", "u8_hi", "u16_inc", "u16_sum", "s16_mul", "s8_add", "h_loop"];
 const CALLERS: &[&str] = &["c_u16_mul", "c_u8_add", "c_u8_hi", "c_u16_inc", "c_u16_sum", "c_s16_mul", "c_s8_add"];
 
+/// The array `h_loop` sums is static and the program is built without PIE, so
+/// a 32-bit target's pointer arithmetic through `int` keeps its address.
 const MAIN: &str = r#"
+static short hl_arr[5];
 static const int V[] = {0, 1, -1, 3, 99, 100, 101, 109, 110, 127, 128, 155, 156, 218, 219, 227, 228,
                         0x1b4e, 0x1b4f, 0x7fff, 0x8000, 0xffff, 0x10000, 0x7fffffff, (int)0x80000000, -7,
                         0x12345678, (int)0xdeadbeef};
@@ -23,6 +27,7 @@ int main(void) {
   for (unsigned i = 0; i < sizeof V / sizeof V[0]; i++) {
     int v = V[i];
     unsigned short x = v, y = v;
+    hl_arr[0] = v, hl_arr[1] = v >> 3, hl_arr[2] = v * 7, hl_arr[3] = 0x4000, hl_arr[4] = v >> 16;
     CHECK(u16_mul(v), s_u16_mul(v));
     CHECK(u8_add(v), s_u8_add(v));
     CHECK(u8_hi(v), s_u8_hi(v));
@@ -31,6 +36,7 @@ int main(void) {
     CHECK(u16_sum(v & 0xff), s_u16_sum(v & 0xff));
     CHECK(s16_mul(v), s_s16_mul(v));
     CHECK(s8_add(v), s_s8_add(v));
+    CHECK(h_loop(i % 6, hl_arr), s_h_loop(i % 6, hl_arr));
 #ifdef CALLERS
     CHECK(c_u16_mul(v), s_c_u16_mul(v));
     CHECK(c_u8_add(v), s_c_u8_add(v));
@@ -99,7 +105,7 @@ fn a_zero_extended_narrow_return_round_trips_through_the_printed_c() {
                 let exe = src.with_extension("exe");
                 std::fs::write(&src, &program).unwrap();
                 let out = Command::new(cc)
-                    .args(["-std=gnu11", "-w", "-fwrapv", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                    .args(["-std=gnu11", "-w", "-fwrapv", "-no-pie", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                     .output()
                     .expect("spawn the C compiler");
                 assert!(

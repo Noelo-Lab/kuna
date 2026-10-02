@@ -2528,7 +2528,9 @@ and only when the output is not locked and every live RETURN carries the record
 at that width, since the function returns one type. `unsigned short` then
 becomes the function's return type (`ActionOutputPrototype`), the declaration a
 caller's printed call promotes by, so `bound * Next()` zero-extends the result as
-the machine does.
+the machine does. A RETURN that block duplication copies into another exit
+(`CloneBlockOps`, the `// return-dupe` split) carries the record with it, since
+the copy returns the same value.
 A convention that leaves the bits above a narrow return unspecified (x86,
 AArch64) or always zero-extends it (the RISC-V spec's own `zero`, which
 `narrowext off` restores) says nothing about the value's sign, and the fold's
