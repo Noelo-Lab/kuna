@@ -5,7 +5,9 @@
 //! floating-point registers.  A variadic prototype with a floating-point or
 //! register-pair fixed value, and a return value narrower than a register the
 //! model does not extend by type, keep the recovered call too, unless the caller
-//! extends it, which an Apple arm64 caller does not below 32 bits.
+//! extends it, which an Apple arm64 caller does not below 32 bits.  A declared
+//! or DWARF-described prototype of a function or of a direct callee follows the
+//! same soft-float convention on ARM.
 mod common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
@@ -646,4 +648,113 @@ fn apple_arm64_return_narrower_than_32_bits_keeps_the_recovered_call() {
     let c1 = function(&text, "c1");
     assert!(c1.contains("(*v1)(k) * 3"), "a raw image states no platform: {c1}");
     assert!(!c1.contains("(unsigned char)"), "zero-extended the signed char: {c1}");
+}
+
+/// `double s4(double a, int k) { return dmix(a, k * 2) * a; }` and
+/// `void s9(double a) { vsink(a, 1.5, a); }` calling `dmix` and `vsink`
+/// directly: clang -O2 for armv7 with `-mfloat-abi=soft` (`.ARM.attributes`
+/// without `Tag_ABI_VFP_args`) or, with `vfp`, `-mfloat-abi=hard`.
+fn arm_direct(vfp: bool) -> Vec<u8> {
+    let bl = |from: u32, to: u32| 0xeb000000 | ((to as i32 - from as i32 - 2) as u32 & 0xffffff);
+    let ret = vec![0xe12fff1e];
+    let (functions, tags) = if vfp {
+        let s4 = vec![
+            0xe92d4800,
+            0xed2d8b02,
+            0xe1a00080,
+            0xeeb08b40,
+            bl(4, 11),
+            0xee200b08,
+            0xecbd8b02,
+            0xe8bd8800,
+        ];
+        let s9 = vec![0xeeb71b08, 0xeeb02b40, 0xea000000];
+        (vec![("s4", s4), ("s9", s9), ("dmix", ret.clone()), ("vsink", ret)], vec![6, 10, 28, 1])
+    } else {
+        let s4 = vec![
+            0xe92d4830,
+            0xe1a02082,
+            0xe1a04001,
+            0xe1a05000,
+            bl(4, 18),
+            0xe1a02005,
+            0xe1a03004,
+            bl(7, 20),
+            0xe8bd8830,
+        ];
+        let s9 = vec![
+            0xe92d4800,
+            0xe24dd008,
+            0xe3003000,
+            0xe3a02000,
+            0xe3433ff8,
+            0xe88d0003,
+            bl(15, 19),
+            0xe28dd008,
+            0xe8bd8800,
+        ];
+        let functions = vec![
+            ("s4", s4),
+            ("s9", s9),
+            ("dmix", ret.clone()),
+            ("vsink", ret.clone()),
+            ("__aeabi_dmul", ret),
+        ];
+        (functions, vec![6, 10])
+    };
+    image(
+        Architecture::Arm,
+        Endianness::Little,
+        &functions,
+        Some((
+            b".ARM.attributes",
+            attributes(b"aeabi", &tags, Endianness::Little),
+        )),
+    )
+}
+
+fn direct_prototypes() -> Vec<String> {
+    [
+        "prototype dmix double dmix(double a, int k)",
+        "prototype vsink void vsink(double a, double b, double c)",
+        "prototype s4 double s4(double a, int k)",
+        "prototype s9 void s9(double a)",
+    ]
+    .map(String::from)
+    .to_vec()
+}
+
+#[test]
+fn soft_float_arm_lays_declared_prototypes_out_in_core_registers() {
+    let text = decompile_with(&arm_direct(false), &direct_prototypes());
+    let s4 = function(&text, "s4");
+    assert!(s4.contains("v1 = dmix(a,k << 1);"), "{s4}");
+    assert!(s4.contains("__aeabi_dmul(SUB84(v1,0),"), "{s4}");
+    let s9 = function(&text, "s9");
+    assert!(s9.contains("vsink(a,1.5,a);"), "{s9}");
+    for register in ["// d0", "// d1", "// d2", "// s0", "// s1"] {
+        assert!(
+            !text.contains(register),
+            "read a VFP register the caller never set: {text}"
+        );
+    }
+}
+
+#[test]
+fn hard_float_arm_lays_declared_prototypes_out_in_vfp_registers() {
+    let text = decompile_with(&arm_direct(true), &direct_prototypes());
+    assert!(function(&text, "s4").contains("return dmix(a,k << 1) * a;"), "{text}");
+    assert!(function(&text, "s9").contains("vsink(a,1.5,a);"), "{text}");
+}
+
+#[test]
+fn soft_float_arm_lays_dwarf_prototypes_out_in_core_registers() {
+    let bytes = std::fs::read(common::fixture("softfloat_dwarf_armel.o")).unwrap();
+    let text = decompile_with(&bytes, &[]);
+    let dmix = function(&text, "dmix");
+    assert!(dmix.contains("__aeabi_i2d(k)"), "{dmix}");
+    assert!(dmix.contains(" = a;"), "{dmix}");
+    let s4 = function(&text, "s4");
+    assert!(s4.contains("v1 = dmix(a,k << 1);"), "{s4}");
+    assert!(!text.contains("// r1"), "read a core register as unset: {text}");
 }
