@@ -233,9 +233,14 @@ never read when every path writes it that way, or when the callee is a leaf
 that returns without touching it and every part of it inside the storage of the
 callee's recovered result is written on every path first (statements now record
 that storage even where some return does not compute the result).
-`calleedeadarg` asks for the same firm proof in a run with the option on, so
-`int pick(int a, int b, int c)` (`movgt r0,r1`) keeps its first argument as
-well; with the option off it is unchanged.
+`calleedeadarg` asks for the same firm proof of a VFP register in a run with
+the option on, so it no longer zeroes `pick`'s first argument before these
+rules see the call; with the option off it is unchanged. Asking it of integer
+registers too fixed `int pick(int a, int b, int c)` (`movgt r0,r1`), but on
+cf2 and betaflight it kept earlier calls' leftovers in r1-r3 at soft-float
+helpers whose IT blocks write those registers, giving those calls and some
+callers phantom integer arguments, so the integer case is left to
+`calleedeadarg`.
 
 Making the walk itself follow both paths of a conditional instruction was tried
 first and rejected on the firmware sweep. A literal pool in front of a Thumb

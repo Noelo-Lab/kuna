@@ -536,10 +536,10 @@ fn ignored_stated_doubles_keep_the_callers_float_parameters() {
 }
 
 // clang 14 hard-float ARM and Thumb builds of `armfloatargs_passthrough.c`:
-// clampf/clampd return early (`bxlt lr`) and pickf/picki write their first
-// parameter only under a condition (`vmovgt.f32 s0,s1`, `movgt r0,r1`), so each
-// hands the caller's first argument back on some path. Every wrapper passes an
-// earlier call's result there, which must reach the call.
+// clampf/clampd return early (`bxlt lr`) and pickf writes its first parameter
+// only under a condition (`vmovgt.f32 s0,s1`), so each hands the caller's first
+// argument back on some path. Every wrapper passes an earlier call's result
+// there, which must reach the call.
 #[test]
 fn a_parameter_returned_on_some_path_keeps_its_argument() {
     let fixtures =
@@ -559,12 +559,11 @@ fn a_parameter_returned_on_some_path_keeps_its_argument() {
             &reference,
         )
     });
-    let calls: [(&str, &str); 5] = [
+    let calls: [(&str, &str); 4] = [
         ("wf", "clampf(v1,2.5,a0)"),
         ("wd", "clampd(v1,2.5,a0)"),
         ("wp", "pickf(v1,2.5,a0)"),
         ("wq", "pickf(v1,1.5,a0)"),
-        ("wi", "picki(v1,0x19,a0)"),
     ];
     for build in ["arm-O2", "thumb-O2", "thumb-Os"] {
         let bytes =

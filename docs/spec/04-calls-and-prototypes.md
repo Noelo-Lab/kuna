@@ -113,10 +113,9 @@ it, and the leaf rule needs a decode that left no path behind and saw no
 conditional write to the register. `float pick(float a, float b, int c) { if
 (c > 3) a = b; return a; }` compiles to `cmp r0,#3; vmovgt.f32 s0,s1; bx lr`,
 which leaves s0 untouched when the move is skipped, so a caller's
-`pick(v,2.5f,n)` keeps `v`. `calleedeadarg` asks the same question with the
-option on, so `int pick(int a, int b, int c)` built the same way (`movgt
-r0,r1`) keeps its first argument there as well. With the option off the
-decode and `calleedeadarg` are unchanged.
+`pick(v,2.5f,n)` keeps `v`. `calleedeadarg` asks the same question of a VFP
+register with the option on, so it does not clear `v` before these rules see
+the call. With the option off the decode and `calleedeadarg` are unchanged.
 
 Declared prototypes keep their parameter order. For stripped functions whose
 core and VFP banks do not reveal source order, recovery uses the model's VFP
@@ -1301,8 +1300,11 @@ classified:
   was entered with and credits none of its writes, so a conditionally-executed
   write cannot hide a later read. ARM's conditional execution branches to the
   next instruction instead, so the walk credits such a write (`vmovgt s0,s1`, a
-  Thumb IT block) on both paths; with `armfloatargs` on, a range written that
-  way anywhere in the body is not proven dead. A proven-dead register trial is scored
+  Thumb IT block) on both paths. With `armfloatargs` on, a VFP range written
+  that way anywhere in the body is not proven dead; an integer register keeps
+  the walk's answer, so `int pick(int a, int b, int c) { if (c > 3) a = b;
+  return a; }` (`movgt r0,r1`) still loses its first argument at a caller that
+  holds an earlier call's result there. A proven-dead register trial is scored
   `no-use` like any other definitely-unused trial.
 
   The same walk records a second, narrower fact for `argclobber` to read: for
