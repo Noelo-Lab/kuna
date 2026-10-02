@@ -492,9 +492,14 @@ program is open it is off, saying "Open a program first"), a ⋯ menu (*Download
 pressed; the choice is kept, and a stored "system" from an earlier build reads as
 dark). Before a file is open the body is a welcome screen: **Decompile a binary program**,
 "Open a program to generate source-like code for it running 100% in the web browser
-using WASM", and a drop zone with *Open file*. A
+using WASM", and a drop zone with *Open file* and *Paste base64*. A
 file dropped anywhere on the page opens too; the page reads the bytes before it clears
-the input, so picking the same file again works. With a file open the body is three
+the input, so picking the same file again works. A program can also arrive as base64
+text: *Paste base64* (or *Open base64 text* in the ⋯ menu) asks for it, and Ctrl+V
+outside a text field opens a pasted file or base64 text directly. `decompile/base64.js`
+accepts `base64` output with its line breaks, a `data:…;base64,` URL and the URL-safe
+alphabet, and names the program `pasted.elf`/`.exe`/`.macho`/`.bin` by its magic; a
+Ctrl+V paste under 16 bytes (a stray word such as `main` is valid base64) only warns. With a file open the body is three
 columns: the function list, the function (its name alone, with its address as the
 tooltip; *Rename* and *Signature*, the view switch, *View options*), and the Explain
 panel, which can be
@@ -1048,7 +1053,8 @@ skips it as too costly):
    by `test/make-inspect-fixtures.mjs` (`test/fixtures/inspect-{main,sum_to,add}.json`,
    `list-sample.json`). **`test/decompile2-strings.mjs`** (build-free) covers the
    Strings list: groups, one-line text, users with their pointers, escaping, search and
-   the row cap. **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
+   the row cap. **`test/decompile2-base64.mjs`** (build-free) pins which pasted texts
+   decode, to which bytes, and the name a pasted program gets. **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
    `xrefs`, `strings` and `--assert` through the real Worker (`strings` on
    `fixtures/crackme.elf`), and pins the refusal error the page
    relies on (exit code plus the quoted directive); it skips with a message on a wasm

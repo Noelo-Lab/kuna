@@ -42,6 +42,7 @@ import { frameModel, renderFrame, slotIndex } from './stack-frame.js';
 import { renderXrefs, renderLocalCalls, localCallees } from './xrefs-view.js';
 import { renderStringList } from './strings-view.js';
 import { helpHtml } from './help.js';
+import { decodeBase64, pastedName } from './base64.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -55,7 +56,7 @@ const els = {
   sideTabs: $('sidetabs'), fnPanel: $('fnpanel'), strPanel: $('strpanel'),
   strFilter: $('strfilter'), strList: $('strlist'), strNone: $('strnone'),
   empty: $('empty'), drop: $('dropzone'), dropVeil: $('dropveil'),
-  welcomeOpen: $('welcomeopen'),
+  welcomeOpen: $('welcomeopen'), welcomePaste: $('welcomepaste'), pasteBtn: $('pastebtn'),
   vhead: $('vhead'), vname: $('vname'), explain: $('explainbtn'),
   back: $('backbtn'), fwd: $('fwdbtn'), fnRename: $('fnrenamebtn'), proto: $('protobtn'),
   tabbar: $('tabbar'), tabs: $('tabs'), split: $('splitbtn'), viewBtn: $('viewbtn'), viewMenu: $('viewmenu'),
@@ -307,6 +308,8 @@ try {
   setStatus('Ready. Open a program', 'ok');
   els.pick.removeAttribute('aria-disabled');
   els.welcomeOpen.disabled = false;
+  els.welcomePaste.disabled = false;
+  els.pasteBtn.disabled = false;
 } catch (e) {
   setStatus('The decompiler could not start', 'err', e.message);
   toast('The decompiler could not start.', { kind: 'err', detail: e.message });
@@ -858,6 +861,41 @@ window.addEventListener('drop', (e) => {
   els.drop.classList.remove('over');
   const f = e.dataTransfer.files[0];
   if (f && !els.pick.hasAttribute('aria-disabled')) openFile(f);
+});
+
+/** Open `bytes` decoded from pasted base64 text. */
+async function openPasted(bytes) {
+  if (!state.kuna) return;
+  const name = pastedName(bytes);
+  if (collab && !(await collab.confirmLeave(name))) return;
+  indexBinary({ name, bytes });
+}
+
+/** Ask for base64 text and open the program it encodes. */
+async function askBase64(anchorEl) {
+  const res = await dialogs.openPopover({
+    anchorEl, title: 'Open base64 text', submitLabel: 'Open',
+    note: 'Paste a program encoded as base64 text, for example the output of: base64 a.out',
+    fields: [{ name: 'text', label: 'Base64', textarea: true, placeholder: 'f0VMRgIBAQAAAAAAAAAAAAMAPgAB…',
+      validate: (v) => (decodeBase64(v) ? '' : v.trim() ? 'This is not base64 text' : 'Paste the base64 text') }],
+  });
+  if (res) openPasted(decodeBase64(res.text));
+}
+els.welcomePaste.addEventListener('click', () => askBase64(els.welcomePaste));
+els.pasteBtn.addEventListener('click', () => askBase64(null));
+
+// A shorter paste is a stray word that happens to be base64 ("main", "0x401000"), not a program.
+const MIN_PASTED_BYTES = 16;
+document.addEventListener('paste', (e) => {
+  if (e.target.closest?.('input, textarea, select, [contenteditable]') || els.pick.hasAttribute('aria-disabled')) return;
+  const f = e.clipboardData?.files?.[0];
+  const text = f ? '' : e.clipboardData?.getData('text') || '';
+  if (!f && !text.trim()) return;
+  e.preventDefault();
+  if (f) return void openFile(f);
+  const bytes = decodeBase64(text);
+  if (bytes?.length >= MIN_PASTED_BYTES) openPasted(bytes);
+  else toast('The pasted text is not a program in base64.', { kind: 'warn', detail: 'Paste a program as base64 text, or open the file itself.' });
 });
 
 const reindex = () => {
