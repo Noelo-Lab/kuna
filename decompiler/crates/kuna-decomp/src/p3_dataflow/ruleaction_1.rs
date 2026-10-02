@@ -2109,6 +2109,11 @@ impl Rule for RulePushMulti {
             if res == 0 {
                 return 0;
             }
+            // (kuna) a global's join of stores kept for its loads stays; see
+            // [`crate::p3_dataflow::kuna_pointeestorekeep::keeps_join`].
+            if crate::p3_dataflow::kuna_pointeestorekeep::keeps_join(data, op) {
+                return 0;
+            }
             let substitute = match RulePushMulti::find_substitute(data, buf1[0], buf2[0], bl, earliest)
             {
                 None => return 0,
