@@ -533,6 +533,26 @@ fn cut_row_a_later_guard_sends_away_keeps_index_labels() {
     source_round_trip(&fixture, &c);
 }
 
+/// `pick` bounds `mode` to 0..6 and switches on `map[mode] - 9`.  Mode 5's map
+/// value falls outside the table, so the flow-time rows stop at mode 4, yet
+/// mode 6 still dispatches, to the default block that modes 0 and 4 reach.  A
+/// value printed under `default:` does not contradict the index labels.
+#[test]
+fn cut_row_reaching_the_default_keeps_index_labels() {
+    let fixture = SourceFixture {
+        name: "switch_cutrow_default_x86_64",
+        pick: "0x40410e",
+        base: 0x403000,
+        map: (0x405048, 7),
+        modes: 40,
+    };
+    let c = source_decompile(&fixture);
+    assert!(c.contains("switch(a0)"), "lost the index selector: {c}");
+    assert!(!c.contains("labelled by address"), "labelled cases by address: {c}");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixture, &c);
+}
+
 fn cut_row(fixture: &SourceFixture) {
     let c = source_decompile(fixture);
     assert!(c.contains("switch("), "lost the switch: {c}");

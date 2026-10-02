@@ -1909,14 +1909,29 @@ impl RowLoads {
 }
 
 /// The rows of a flow-time table: each row's normalized value (`None` when
-/// the row has no reversible value), its recovered destination, and the
-/// memory the flow-time model read to reach them (`None` when not recorded).
-/// A model re-recovered against the finished function must account for every
-/// row before it labels the table.
+/// the row has no reversible value), its recovered destination, the memory
+/// the flow-time model read to reach them (`None` when not recorded), and the
+/// destinations of the switch's default block.  A model re-recovered against
+/// the finished function must account for every row before it labels the
+/// table.
 struct LabelRows {
     values: Vec<Option<uintb>>,
     addresses: Vec<Address>,
     loads: Option<RowLoads>,
+    default: Vec<Address>,
+}
+
+/// How a re-recovered model's variable labels the flow-time rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RowMatch {
+    /// A row, or a value the code may dispatch, contradicts the labels.
+    Rejected,
+    /// Every row and every value the code may dispatch agrees with them.
+    Exact,
+    /// As [`RowMatch::Exact`], except that some unlabelled value the code may
+    /// dispatch reaches the default block, so the labels hold only while that
+    /// block stays the default.
+    ThroughDefault,
 }
 
 impl LabelRows {
@@ -1939,7 +1954,14 @@ impl LabelRows {
             values,
             addresses: addresses.to_vec(),
             loads: loads.cloned(),
+            default: Vec::new(),
         })
+    }
+
+    /// These rows with `default` as the destinations of the default block.
+    fn with_default(mut self, default: Vec<Address>) -> LabelRows {
+        self.default = default;
+        self
     }
 
     /// Whether a value whose emulation performed `loads` may be one the code
@@ -3740,7 +3762,8 @@ impl JumpBasicModel {
     /// asked to match any).
     fn can_label_rows(&self, fd: &Funcdata, indop: OpId) -> bool {
         self.label_rows.as_ref().is_none_or(|rows| {
-            self.reproduces_rows(fd, indop, rows) || self.rebuilds_rows(fd, indop, rows)
+            self.reproduces_rows(fd, indop, rows) != RowMatch::Rejected
+                || self.rebuilds_rows(fd, indop, rows)
         })
     }
 
@@ -3748,15 +3771,20 @@ impl JumpBasicModel {
     /// reversible row's value reaches that row's destination through this
     /// model's path, and no other value in this model's range that the code
     /// may dispatch ([`LabelRows::may_be_dispatched`]) reaches a row's
-    /// destination (a mapped byte can match every row only through a repeated
-    /// table entry).
-    fn reproduces_rows(&self, fd: &Funcdata, indop: OpId, rows: &LabelRows) -> bool {
+    /// destination printed as a labelled case (a mapped byte can match every
+    /// row only through a repeated table entry).  An unlabelled value that
+    /// reaches the default block is printed there.
+    fn reproduces_rows(&self, fd: &Funcdata, indop: OpId, rows: &LabelRows) -> RowMatch {
         let mut jr = self.jrange().clone_box();
         if !jr.initialize_for_reading() || !jr.is_reversible() {
-            return rows.values.iter().all(Option::is_none);
+            return if rows.values.iter().all(Option::is_none) {
+                RowMatch::Exact
+            } else {
+                RowMatch::Rejected
+            };
         }
         let (Some(startop), Some(startvn)) = (jr.get_start_op(), jr.get_start_varnode()) else {
-            return false;
+            return RowMatch::Rejected;
         };
         let mut emul = EmulateFunction::new(fd);
         for &(seed_vn, seed_val) in self.loop_carried_seeds.iter() {
@@ -3770,29 +3798,35 @@ impl JumpBasicModel {
                 .is_ok_and(|raw| Self::destination(&spc, mask, raw) == *addr),
         });
         if !labelled {
-            return false;
+            return RowMatch::Rejected;
         }
         let values: BTreeSet<uintb> = rows.values.iter().flatten().copied().collect();
         let targets: BTreeSet<&Address> = rows.addresses.iter().collect();
+        let mut result = RowMatch::Exact;
         loop {
             let v = jr.get_value();
             if !values.contains(&v) {
                 let (Some(op), Some(vn)) = (jr.get_start_op(), jr.get_start_varnode()) else {
-                    return false;
+                    return RowMatch::Rejected;
                 };
                 emul.set_load_collect(true);
-                let dest = emul.emulate_path(v, &self.path_meld, op, vn);
+                let dest = emul
+                    .emulate_path(v, &self.path_meld, op, vn)
+                    .map(|raw| Self::destination(&spc, mask, raw));
                 let loads = emul.take_loadpoints().unwrap_or_default();
-                if dest.is_ok_and(|raw| targets.contains(&Self::destination(&spc, mask, raw)))
-                    && rows.may_be_dispatched(&loads)
-                {
-                    return false;
+                if let Ok(dest) = &dest {
+                    if targets.contains(dest) && rows.may_be_dispatched(&loads) {
+                        if !rows.default.contains(dest) {
+                            return RowMatch::Rejected;
+                        }
+                        result = RowMatch::ThroughDefault;
+                    }
                 }
             }
             match jr.next() {
                 Ok(true) => {}
-                Ok(false) => return true,
-                Err(_) => return false,
+                Ok(false) => return result,
+                Err(_) => return RowMatch::Rejected,
             }
         }
     }
@@ -4368,7 +4402,7 @@ impl JumpBasicModel {
             pos += 1;
         }
         // There can be only one folded target.
-        if jump.has_folded_default() && jump.get_default_block() != pos {
+        if (jump.has_folded_default() || jump.default_pinned) && jump.get_default_block() != pos {
             return Ok(false);
         }
         if !fd.block_no_intervening_statement(switchbl) {
@@ -4650,6 +4684,9 @@ pub struct JumpTable {
     /// The \e default block is the target of a folded CBRANCH (cannot have a
     /// label) (C++ `defaultIsFolded`).
     default_is_folded: bool,
+    /// (kuna) The case labels are correct only while `default_block` stays the
+    /// default, so no guard may be folded into another destination.
+    default_pinned: bool,
     /// (kuna) Render case labels as signed integers.  Set by the lowered-switch
     /// install when the recovered switch variable is signed (the C++ derives this
     /// from `getSwitchType()`; a kuna hand-built table records it directly because
@@ -4692,6 +4729,7 @@ impl JumpTable {
             partial_table: false,
             collectloads: false,
             default_is_folded: false,
+            default_pinned: false,
             kuna_signed_labels: false,
             kuna_lowered_var: None,
         }
@@ -4723,6 +4761,7 @@ impl JumpTable {
             partial_table: op2.partial_table,
             collectloads: op2.collectloads,
             default_is_folded: false,
+            default_pinned: false,
             kuna_signed_labels: op2.kuna_signed_labels,
             kuna_lowered_var: op2.kuna_lowered_var.clone(),
         }
@@ -5134,6 +5173,7 @@ impl JumpTable {
         self.indirect = None;
         self.switch_var_consume = !0u64;
         self.default_block = -1;
+        self.default_pinned = false;
         self.recover_count = 0;
         self.partial_table = false;
         // -opaddress- -maxtablesize- -collectloads- are permanent
@@ -5492,7 +5532,7 @@ impl JumpTable {
             .as_ref()
             .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
             .and_then(|m| LabelRows::new(m, &self.addresstable, self.row_loads.as_ref()))
-            .map(Rc::new);
+            .map(|rows| Rc::new(rows.with_default(self.default_addresses())));
         self.recover_model(fd, rows.clone())?; // Create a current instance of the model
         if let Some(rows) = rows {
             self.choose_label_values(fd, &rows);
@@ -5516,14 +5556,28 @@ impl JumpTable {
         else {
             return;
         };
-        if model.reproduces_rows(fd, indop, rows) {
-            return;
+        match model.reproduces_rows(fd, indop, rows) {
+            RowMatch::Exact => return,
+            RowMatch::ThroughDefault => {
+                self.default_pinned = true;
+                return;
+            }
+            RowMatch::Rejected => {}
         }
         if model.rebuilds_rows(fd, indop, rows) {
             self.origmodel = None;
             return;
         }
         self.drop_model_for_rows(fd);
+    }
+
+    /// The table addresses whose block is the current default destination.
+    fn default_addresses(&self) -> Vec<Address> {
+        self.block2addr
+            .iter()
+            .filter(|pair| self.default_block >= 0 && pair.block_position == self.default_block)
+            .filter_map(|pair| self.addresstable.get(pair.address_index as usize).cloned())
+            .collect()
     }
 
     /// Drop the model of a table whose flow-time rows no recovered model can
