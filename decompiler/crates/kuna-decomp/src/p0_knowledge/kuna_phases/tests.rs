@@ -44,7 +44,7 @@ fn settable_count_is_251() {
 }
 
 #[test]
-fn tier_counts_are_80_core_105_transform_66_analysis() {
+fn tier_counts_are_80_core_105_transform_67_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_80_core_105_transform_66_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (80, 105, 66));
+    assert_eq!((core, transform, analysis), (80, 105, 67));
 }
 
 #[test]
@@ -391,6 +391,10 @@ fn option_values_live_value_present_for_108() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // `unmappedentry` above. Default-ON.
         "ppclocalentry",
+        // (kuna, GH-780) ARM flow-proven decode-mode paints -- an analysis-tier
+        // gate read console-side via kuna_live_value, like `ppclocalentry` above.
+        // Default-ON.
+        "flowmode",
         // (kuna, GH-403) PE chained-`UNWIND_INFO` `.pdata` entry suppression -- an
         // analysis-tier gate with no codegen live reader (read console-side via
         // kuna_live_value), like `ppclocalentry` above. Default-ON.
@@ -927,7 +931,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 247 -> 248: +1 for `armfloatargs`.
     // 248 -> 249: +1 for `narrowext`; its P4 row sits mid-table.
     // 249 -> 250: +1 for `syscallregs`.
-    assert_eq!(json.matches("},\n").count(), 250);
+    // 250 -> 251: +1 for `flowmode`.
+    assert_eq!(json.matches("},\n").count(), 251);
 }
 
 #[test]

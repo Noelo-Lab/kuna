@@ -468,6 +468,11 @@ Three tiers:
 | kuna functions reports size 8 for a ppc64 function that is plainly longer | [`ppclocalentry`](#ppclocalentry) |
 | a ppc64le function body is only reachable under a generated sub_<hex> name | [`ppclocalentry`](#ppclocalentry) |
 | a function entry sits 8 bytes into another function on PowerPC | [`ppclocalentry`](#ppclocalentry) |
+| an A32 function after a Thumb helper decompiles as halt_missing in a stripped ARM binary | [`flowmode`](#flowmode) |
+| flow reaches unmapped memory two bytes into an A32 instruction | [`flowmode`](#flowmode) |
+| --isa arm decompiles an ARM function correctly that the default run turns into garbage | [`flowmode`](#flowmode) |
+| a function reached with bl after a blx call decodes in the wrong instruction set | [`flowmode`](#flowmode) |
+| --option listing off fixes the decompilation of an ARM function | [`flowmode`](#flowmode) |
 | kuna strings reports xrefs_count 0 and an empty functions list for every string in a 32-bit binary | [`picbase`](#picbase) |
 | a string the disassembly plainly forms the address of has no cross-references | [`picbase`](#picbase) |
 | kuna xrefs --to a .rodata address finds nothing in a position-independent i386 executable | [`picbase`](#picbase) |
@@ -1949,6 +1954,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) on any PPC64 ELFv2 image. The tell-tale is kuna functions reporting a size-8 named function immediately followed by a size-N anonymous sub_<hex> 8 bytes later, for every function in the image, and kuna decompile <that name> returning an empty body with the funcboundflow fall-through-reached-the-next-function-entry warning. Flip off to restore the previous discovery set exactly - e.g. to see every address the walk followed as a call target, local entry points included.
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-ppclocalentry
 - **Example:** `--option ppclocalentry off`
+
+### `flowmode` -- on | off, default `on`
+
+- **Symptoms:** an A32 function after a Thumb helper decompiles as halt_missing in a stripped ARM binary; flow reaches unmapped memory two bytes into an A32 instruction; --isa arm decompiles an ARM function correctly that the default run turns into garbage; a function reached with bl after a blx call decodes in the wrong instruction set; --option listing off fixes the decompilation of an ARM function.
+- **What it does:** Paint the ARM decode mode that control flow proves over code the Listing walk left in the other mode. An interworking blx runs a SLEIGH globalset that writes the callee's mode into the context database from the target to the next point where the mode was set explicitly. A stripped image has no such point, so once a caller of a Thumb helper is decoded, every address above the helper reads as Thumb, and an A32 function placed there, called with a plain bl, decompiles as Thumb garbage. On, after the walk, kuna decodes again, without writing the mode into the database, the code whose mode the image proves: it starts at an even e_entry and at each even function symbol, keeps the mode across branches and fall-through, takes the mode a call commits at its target (blx switches, bl keeps), and continues after an unconditional call only once the callee is proven to return. Each proven instruction whose mode the database disagrees with is painted with its proven mode at the analysis commit, after every other decode-mode paint. Nothing else changes: the walk, the function inventory and every other address keep what they had. When two proofs give one address different modes, or proven instructions of different modes overlap, nothing is painted. Runs only on an ARM ELF with no mapping symbol, no Thumb function symbol, no Cortex-M vector table, an even e_entry or an even function symbol, and build attributes that allow A32 code, and not under --isa.
+- **When to flip:** On (default) on a stripped ARM image that mixes A32 and Thumb code. The tell-tale is an A32 function placed after a Thumb helper decompiling as halt_missing or halt_baddata with a warning that flow starts two bytes into an A32 instruction, while --isa arm or --option listing off prints it correctly. Flip off to leave the context database exactly as the walk leaves it.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-flowmode
+- **Example:** `--option flowmode off`
 
 ### `picbase` -- on | off, default `on`
 

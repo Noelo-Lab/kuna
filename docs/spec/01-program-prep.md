@@ -1296,33 +1296,6 @@ decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/lo
 (ArmMarkerPass)` (`arm_markers`) ports ARM's `ARM_ElfExtension`/`ArmSymbolAnalyzer`:
 `$t`/`$a` mapping symbols and the STT_FUNC odd-address convention become `TMode`
 paints, applied to the engine's `ContextDatabase` at commit, before any decode.
-(kuna) On an image with no `$a`/`$t` mapping symbols that has a Thumb function
-symbol and whose build attributes allow A32 code (not `Tag_CPU_arch_profile`
-`M`, not `Tag_ARM_ISA_use` 0; see
-`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs (thumb_only)`)
-the address bit is read both ways. Every paint above runs to the next point where
-the mode was set, so a Thumb function symbol used to carry Thumb across the A32
-function that follows it. An even STT_FUNC, which AAELF32 makes an A32 function,
-now paints `TMode=0` over exactly `[st_value, st_value + st_size)`. One without a
-size (crt `_init`/`_fini`, assembly without `.size`) paints up to the next
-function symbol, or to the next change point when no function symbol follows it,
-as a mapping symbol would: crtn's `_fini` is what keeps the `.rodata` after it
-A32, and a misresolved jump table that runs into `.rodata` then stops at the
-first undecodable word instead of decoding the data as Thumb. The paint is bounded because the symbol says nothing about
-the code after the function: in a stripped library the static Thumb functions
-placed after an A32 export have no symbol of their own, and the Thumb that the
-preceding Thumb export's paint carries is what decodes them. An unbounded A32
-paint there turned zlib's `deflate_slow`, `deflate_fast` and `longest_match`
-into A32 garbage. An image whose function symbols are all even has no Thumb
-paint to bound and keeps the plain scan: there the even paints would only cut
-short the stray `blx` writes of later speculative decodes, which changes the gap
-candidates AIF accepts in a pure A32 library. Mapping symbols already delimit
-every mode run and take precedence, and an M-profile image has no A32 state, so
-neither gets this paint. Nor does an image whose odd `e_entry` is its only Thumb
-evidence (no mapping symbol, no function symbol at the entry;
-`decompiler/crates/kuna-analysis/src/loader/arm_markers.rs (unmarked_thumb_entry)`):
-nothing there says where its Thumb code ends, so it keeps both the plain scan and
-the plain Listing walk below, and decodes as it did before.
 `decompiler/crates/kuna-analysis/src/loader/mips_markers.rs` carries the MIPS pair:
 `MipsIsaModePass` (`mips_isa`) paints `ISA_MODE` at MIPS16e/microMIPS entries
 (LSB-set or `st_other` STO-marked), and `MipsMarkerPass` (`mips_gp`) is a register
@@ -3757,94 +3730,55 @@ a refusal cannot omit it from the documentation checks. A compatibility test
 pins the existing order and spellings; the scheduling and fallback policies do
 not depend on this representation.
 
-(kuna) **The ARM decode mode follows control flow where there is evidence for
-it** (`decompiler/crates/kuna-analysis/src/listing/kuna_flowmode.rs (walk)`).
+(kuna) **Flow-proven ARM decode-mode paints** (`flowmode`, default on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_flowmode.rs (disagreeing_runs)`).
 ARM `TMode` chooses the instruction set an address decodes in, and the
 `ContextDatabase` stores it per address. An interworking call (`blx imm`) runs a
 SLEIGH `globalset` that writes the callee's mode from the target up to the next
 address where the mode was set explicitly. A stripped image has no such address,
-so once any caller of a Thumb helper was decoded, every A32 function placed after
-the helper decoded as Thumb too: a `bl` to the A32 helper at `0x2000080`, two
-instructions after a `blx` to a Thumb helper at `0x2000040`, decompiled to
-`halt_missing()` with a Thumb decode starting at `0x2000082`.
+so once the walk decodes a caller of a Thumb helper, every address above the
+helper holds Thumb: a `bl` to the A32 helper at `0x2000080`, two instructions
+after a `blx` to a Thumb helper at `0x2000040`, decompiled to `halt_missing()`
+with a Thumb decode starting at `0x2000082`.
 
-On an ARM image without mapping symbols the walk therefore decodes every
-instruction it has mode evidence for in that mode, through a context read
-override (`Translate::set_context_read_override`), the way Ghidra's disassembler
-carries its flowing context. Evidence is: the address bit of a function symbol in
-a linked ELF; an `e_entry` no symbol names, which is A32 when even (an odd one
-keeps the plain walk, below); and flow from evidenced code. A branch target,
-fall-through or direct call target of evidenced code decodes in the mode its
-instruction committed for that address (read back from
-`Translate::last_context_commits`), or else in that instruction's own mode, so
-`bl` keeps the caller's mode and `blx` switches only its own target. A call to a
-function symbol decodes in the symbol's mode, and a fall-through or branch that
-reaches it in the other mode stops there. Without that, an A32
-`base_of_encoded_value` that tail-branches into an A32 helper ending in a call
-the walk cannot prove returns fell through into the Thumb `main` after it,
-decoded `main` as A32, and split it into two functions in `decompile-all`. A
-Thumb `bx pc` in evidenced code continues in A32 at the next word, `(pc + 4) & !3`,
-as the processor does: that is the linker's Thumb-to-A32 veneer (`bx pc; nop; b
-target`), and without it the veneer's A32 half decoded as Thumb, so every
-`__X_from_thumb` veneer in an ARMv4T/v5 image printed garbage with four
-parameters, which then typed the arguments its callers pass. An
-evidenced A32 function that is one of the linker's interworking stubs (`ldr pc,
-[pc, #k]`, `ldr rX, [pc, #k]; bx rX`, or the position-independent `ldr rX, [pc,
-#k]; add rX, rX, pc; bx rX`, with the literal in read-only memory) and branches
-to a Thumb address (low bit set) makes that address a Thumb function, as the
-branch selects Thumb there at run time; on a stripped armel library this is the
-only evidence that an exported Thumb function is Thumb, since its `.dynsym` value
-is the even stub. A stub to an A32 address carries no mode change and is left to
-the decompiler, which already treats a veneer whose target is a known function as
-a tail call.
+The walk itself is not changed: its instructions, functions and references, and
+every context write it makes, stay as they are. After it, kuna decodes again the
+code whose mode the image proves, with the decode mode forced through a context
+read override (`Translate::set_context_read_override`) and `TMode` writes masked,
+so the database is not touched. Proof starts at an even `e_entry` and at every
+even function symbol, which the ELF for the ARM architecture makes A32. From
+proven code it carries the mode the way the processor does: a branch target and
+a fall-through keep it; a direct call target takes the mode the call commits
+there (read back from `Translate::last_context_commits`, so `blx imm` switches)
+or else keeps the caller's (`bl`). The instruction after an unconditional call is
+proven only once the callee is proven to return, which means a return instruction
+is reachable from its entry through proven code; a callee that is an import stub,
+a computed target, or a function that never returns leaves what follows the call
+unproven, since those bytes may be a literal pool or the next function in the
+other mode. Each function's own reachability is computed separately and the
+whole is a least fixpoint, so the result does not depend on visiting order.
 
-Every evidenced entry is walked before any entry without evidence, so a call
-with evidence reaches its target before a guess does. An entry without evidence,
-and everything reached from it, decodes in the mode the database holds for each
-address when the walk reaches it, exactly as the plain walk decodes it. The walk
-itself paints nothing, and SLEIGH's own context writes still land in the
-database, so a later walk, AIF's speculative decodes and the decompiler read what
-they would read without this walk wherever there is no evidence. That matters
-because a stripped image's Thumb code often decodes correctly only through such
-a write: in a stripped `-O0` Thumb Lua, `math_sin` is A32 in the database when
-the first walk reaches it, a later `globalset` writes Thumb over it, and the next
-walk and the decompiler read that Thumb. Freezing the first read, or painting it, turned
-dozens of such functions into A32 garbage. Equally, the libc-start `main` paint
-(`thumb_entry_paints`) runs to the next change point at commit, and in a stripped
-`-Os` Lua it is what gives `lua_geti`, far after `main`, its Thumb.
+Every proven instruction whose mode the database disagrees with after the walk is
+handed to the analysis commit (`Listing::decode_mode_paints`, emitted by
+`passes.rs (run_listing_consumers)` as the `flowmode` output), which paints it
+with its proven mode after every other decode-mode paint. Nothing else is
+painted, and the function inventory is the walk's. When two proven paths give
+one address different modes, when proven instructions of different modes
+overlap, or when a proven instruction fails to decode where the database holds
+the other mode, the proof is not trusted and nothing is painted at all.
 
-When the evidenced instructions span both modes, or one of them decoded in a
-mode the database does not hold there, the walk hands every evidenced instruction
-run to the analysis commit (`Listing::decode_mode_paints`, emitted by
-`passes.rs (run_listing_consumers)` as the `flowmode` output). The commit paints
-each run with its mode after every load-time decode-mode paint, so those still
-reach the code no evidence covers, as they do without the flow walk. The
-decompiler then reads the modes the Listing used for evidenced code, and its own
-`globalset` at a call target stops at the next painted run instead of flowing
-across it. Such a language never reaches the lane gate above; its `ContextCommit`
-constructors refuse the lanes anyway.
-
-Five kinds of image keep the plain walk. An ARM image with mapping symbols has
-every mode run delimited already. An ARM image whose build attributes rule out
-A32 code (`Tag_CPU_arch_profile` `M`, or `Tag_ARM_ISA_use` 0, read by
-`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs (thumb_only)`)
-has no A32 state, so a `blx` decoded there is not an interworking call and there
-is no second mode to carry. An ARM image whose odd `e_entry` is its only Thumb
-evidence would seed its entry as A32, since nothing has painted it; the plain
-walk's stray writes are all that gives such an image Thumb code today, and a
-paint from the entry to the next change point turned A32 functions reached only
-through pointers into Thumb, so these images are left as they were. An image
-decoded with an explicit `--isa` has its instruction set chosen by the input.
-MIPS `ISA_MODE` is not carried either: a MIPS16 function symbol paints to the
-next change point (`mips_isa`), and the `jalx` writes the plain walk makes are
-what return the MIPS32 code after it to MIPS32.
-
-What the walk does not decide: a Thumb function reached only through a pointer
-and placed where the database holds A32 (below every `blx` target, say) still
-decodes as A32, as it did before. The odd bit of a data word that points at it
-is evidence a later change may use; measured on the same stripped Thumb Lua it
-also moved which stray writes the walk makes, and `sweepstep`, which decoded
-correctly only through one of them, went wrong, so it is not used.
+The pass runs only on a linked ARM ELF whose metadata paints no `TMode` at all:
+no mapping symbol, no odd (Thumb) function symbol, no Cortex-M vector table, and
+an even `e_entry` or an even function symbol to start from. It skips an image
+whose build attributes rule out A32 code (`Tag_CPU_arch_profile` `M` or
+`Tag_ARM_ISA_use` 0, read by
+`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs (thumb_only)`),
+an image decoded with an explicit `--isa`, and an image whose database holds no
+Thumb anywhere after the walk, where there is nothing to correct. Where a symbol
+paints Thumb, those paints already run to the next change point and are what
+gives many stripped libraries' static Thumb code its mode; the same leak still
+reaches an A32 function placed after a Thumb function symbol there, and
+`flowmode` does not change it.
 
 (kuna) The seed set carries one more source, under the same `funcstart_patterns`
 gate as the prologue starts: **the entries the load-time passes have already

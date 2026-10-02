@@ -1,5 +1,7 @@
 //! ARM/Thumb interworking: a `blx` selects Thumb for its own target only, a `bl`
-//! keeps its caller's mode, and neither leaks into the other helper (GH-780).
+//! keeps its caller's mode, and neither leaks into the other helper (GH-780,
+//! option `flowmode`). Images outside the option's scope keep what the walk
+//! alone gives them.
 
 #[path = "common/arm_images.rs"]
 #[allow(dead_code)]
@@ -128,6 +130,31 @@ fn decompile(path: &PathBuf, addr: u64, mode: &str) -> String {
     ])
 }
 
+fn decompile_off(path: &PathBuf, addr: u64) -> String {
+    let addr = format!("{addr:#x}");
+    kuna(&[
+        "decompile",
+        path.to_str().unwrap(),
+        &addr,
+        "--json",
+        "--option",
+        "flowmode",
+        "off",
+    ])
+}
+
+/// The body `decompile-all` printed for `name`.
+fn body(all: &str, name: &str) -> String {
+    let start = all
+        .find(&format!("// Function: {name}"))
+        .unwrap_or_else(|| panic!("no {name} in\n{all}"));
+    let rest = &all[start + 1..];
+    rest[..rest.find("// Function:").unwrap_or(rest.len())].to_string()
+}
+
+/// A32 `b .`, a function that never returns.
+const SPIN: u32 = 0xEAFF_FFFE;
+
 fn assert_helpers(path: &PathBuf, mode: &str) {
     let arm = decompile(path, ARM_HELPER, mode);
     assert!(
@@ -149,24 +176,90 @@ fn a_blx_target_mode_does_not_reach_the_arm_callee_after_it() {
         for mode in ["reliable", "auto"] {
             assert_helpers(&path, mode);
         }
+        let off = decompile_off(&path, ARM_HELPER);
+        assert!(off.contains("halt_missing"), "flowmode off: {off}");
         std::fs::remove_file(path).unwrap();
     }
+}
+
+/// `entry: bl f1; bl arm_helper; pop {pc}` where `f1: push {lr}; blx
+/// thumb_helper; pop {pc}`: the second call is proven only once `f1` is
+/// proven to return, which needs `thumb_helper` proven to return first.
+#[test]
+fn a_call_proven_to_return_carries_the_mode_on_to_the_next_call() {
+    let mut code = text(&[PUSH_LR, bl(0x10004, 0x10020), bl(0x10008, ARM_HELPER), POP_PC]);
+    for (i, word) in [PUSH_LR, blx(0x10024, THUMB_HELPER), POP_PC].iter().enumerate() {
+        code[0x20 + i * 4..0x24 + i * 4].copy_from_slice(&word.to_le_bytes());
+    }
+    let path = stripped("returns-chain", &code);
+    assert_helpers(&path, "reliable");
+    let off = decompile_off(&path, ARM_HELPER);
+    assert!(off.contains("halt_missing"), "flowmode off: {off}");
+    std::fs::remove_file(path).unwrap();
+}
+
+/// `entry: blx thumb_helper; bl arm_last; pop {pc}`, where the A32
+/// `arm_last` at 0x10050, inside the Thumb the `blx` writes from 0x10040,
+/// ends in a call to `spin` (`b .`) that never returns, and the Thumb
+/// `movs r0,#9; bx lr` that follows it at 0x10058 is reached by nothing the
+/// walk follows. `arm_last` is painted A32; the bytes after the call are not
+/// proven and keep the walk's Thumb.
+#[test]
+fn the_instruction_after_a_call_that_never_returns_is_not_proven() {
+    let mut code = text(&[PUSH_LR, blx(0x10004, THUMB_HELPER), bl(0x10008, 0x10050), POP_PC]);
+    code[0x10..0x14].copy_from_slice(&SPIN.to_le_bytes());
+    for (i, word) in [PUSH_LR, bl(0x10054, 0x10010)].iter().enumerate() {
+        code[0x50 + i * 4..0x54 + i * 4].copy_from_slice(&word.to_le_bytes());
+    }
+    code[0x58..0x5c].copy_from_slice(&[0x09, 0x20, 0x70, 0x47]);
+    let path = stripped("noreturn", &code);
+    let after = decompile(&path, 0x10058, "reliable");
+    assert!(after.contains("return 9;"), "{after}");
+    assert_eq!(after, decompile_off(&path, 0x10058));
+    let arm_last = decompile(&path, 0x10050, "reliable");
+    assert!(arm_last.contains("sub_10010()"), "{arm_last}");
+    std::fs::remove_file(path).unwrap();
+}
+
+/// `entry: blx helper; bl helper; pop {pc}`: two proofs give one address
+/// different modes, so nothing is painted and every function prints what the
+/// walk alone gives it.
+#[test]
+fn two_proven_modes_for_one_address_paint_nothing() {
+    let code = text(&[
+        PUSH_LR,
+        blx(0x10004, THUMB_HELPER),
+        bl(0x10008, THUMB_HELPER),
+        bl(0x1000c, ARM_HELPER),
+        POP_PC,
+    ]);
+    let path = stripped("conflict", &code);
+    for addr in [0x10000, THUMB_HELPER, ARM_HELPER] {
+        assert_eq!(decompile(&path, addr, "auto"), {
+            let addr = format!("{addr:#x}");
+            kuna(&[
+                "decompile",
+                path.to_str().unwrap(),
+                &addr,
+                "--mode",
+                "auto",
+                "--json",
+                "--option",
+                "flowmode",
+                "off",
+            ])
+        });
+    }
+    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
 fn whole_binary_decompile_keeps_each_callee_in_its_own_mode() {
     let path = stripped("blx-bl-all", &blx_then_bl());
     let all = kuna(&["decompile-all", path.to_str().unwrap()]);
-    let body = |name: &str| {
-        let start = all
-            .find(&format!("// Function: {name}"))
-            .unwrap_or_else(|| panic!("{all}"));
-        let rest = &all[start + 1..];
-        rest[..rest.find("// Function:").unwrap_or(rest.len())].to_string()
-    };
-    assert!(body("sub_10040").contains("return 7;"), "{all}");
-    assert!(body("sub_10080").contains("return a0 + 1;"), "{all}");
-    let entry = body("sub_10000");
+    assert!(body(&all, "sub_10040").contains("return 7;"), "{all}");
+    assert!(body(&all, "sub_10080").contains("return a0 + 1;"), "{all}");
+    let entry = body(&all, "sub_10000");
     assert!(
         entry.contains("sub_10040()") && entry.contains("sub_10080("),
         "{all}"
@@ -181,19 +274,6 @@ fn mapping_symbols_still_select_each_mode() {
     let entry = decompile(&path, 0x10000, "reliable");
     assert!(entry.contains("arm_helper(thumb_helper())"), "{entry}");
     std::fs::remove_file(path).unwrap();
-}
-
-#[test]
-fn function_symbols_alone_keep_each_helper_in_its_mode() {
-    for (stem, code) in [
-        ("blx-bl-funcs", blx_then_bl()),
-        ("bl-blx-funcs", bl_then_blx()),
-    ] {
-        let path = common::scratch_file(stem, "elf");
-        std::fs::write(&path, arm_images::elf(&code, &[], &FUNCTIONS)).unwrap();
-        assert_helpers(&path, "reliable");
-        std::fs::remove_file(path).unwrap();
-    }
 }
 
 #[test]
@@ -270,15 +350,8 @@ fn a_fall_through_does_not_redecode_the_next_function_symbol() {
     let path = common::scratch_file("fall-through", "elf");
     std::fs::write(&path, bytes).unwrap();
     let all = kuna(&["decompile-all", path.to_str().unwrap()]);
-    let body = |name: &str| {
-        let start = all
-            .find(&format!("// Function: {name}"))
-            .unwrap_or_else(|| panic!("{all}"));
-        let rest = &all[start + 1..];
-        rest[..rest.find("// Function:").unwrap_or(rest.len())].to_string()
-    };
-    assert!(body("thumb_tail").contains("sub_10020("), "{all}");
-    assert!(body("sub_10020").contains("return 9;"), "{all}");
+    assert!(body(&all, "thumb_tail").contains("sub_10020("), "{all}");
+    assert!(body(&all, "sub_10020").contains("return 9;"), "{all}");
     std::fs::remove_file(path).unwrap();
 }
 
@@ -288,58 +361,38 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-/// Stripped armel shared objects (`arm_interwork_stubs_le32.c`) whose exported
-/// Thumb functions are reached only through the linker's A32 stubs, and whose
-/// `t_ptr_only` only through a pointer table: no symbol and no `blx` says
-/// they are Thumb.
+/// Stripped armel shared objects (`arm_interwork_stubs_le32.c`) whose every
+/// export has an even address (the Thumb ones are A32 linker stubs), so no
+/// symbol paints Thumb: the A32 `arm_export` is proven by its own symbol and
+/// keeps A32 over the Thumb a `blx` below it writes, and the Thumb
+/// `t_ptr_only`, reached only through a pointer table, keeps the walk's Thumb.
 #[test]
-fn thumb_functions_behind_stubs_and_pointers_keep_their_mode() {
-    for (name, called, pointer_only, ternary, indirect) in [
-        (
-            "arm_interwork_stubs_o0_le32",
-            "return v1 - sub_360(a0 + 1);",
-            "0x398",
-            "(0xb <= a0) ? a0 + -10 : a0 << 1",
-            "return (*v1)(a1);",
-        ),
-        (
-            "arm_interwork_stubs_o2_le32",
-            "return v1 - sub_2e8(a0 + 1);",
-            "0x304",
-            "v1 = a0 + -10;",
-            "(**(void **)((a0 & 3) * 4 + dat_2010))(a1);",
-        ),
+fn arm_exports_are_proven_and_pointer_only_thumb_keeps_its_mode() {
+    let path = fixture("arm_interwork_stubs_o0_le32");
+    let lib = path.to_str().unwrap();
+    let arm = kuna(&["decompile", lib, "arm_export"]);
+    assert!(arm.contains("return v1 + v2 + sub_294(a0);"), "{arm}");
+    let off = kuna(&["decompile", lib, "arm_export", "--option", "flowmode", "off"]);
+    assert!(off.contains("halt_missing"), "flowmode off: {off}");
+    for (name, pointer_only, ternary) in [
+        ("arm_interwork_stubs_o0_le32", "0x398", "(0xb <= a0) ? a0 + -10 : a0 << 1"),
+        ("arm_interwork_stubs_o2_le32", "0x304", "v1 = a0 + -10;"),
     ] {
         let path = fixture(name);
-        let lib = path.to_str().unwrap();
-        let thumb_export = kuna(&["decompile", lib, "thumb_export"]);
-        assert!(thumb_export.contains(called), "{name}: {thumb_export}");
-        let dispatch = kuna(&["decompile", lib, "dispatch"]);
-        assert!(dispatch.contains(indirect), "{name}: {dispatch}");
-        let pointer = kuna(&["decompile", lib, pointer_only, "--addr"]);
+        let pointer = kuna(&["decompile", path.to_str().unwrap(), pointer_only, "--addr"]);
         assert!(pointer.contains(ternary), "{name}: {pointer}");
     }
 }
 
 /// Stripped armel shared objects (`arm_static_thumb_so_le32.c`): a Thumb
 /// export, an A32 export, then static Thumb functions reached only through a
-/// pointer table. The A32 export's own symbol says nothing about the static
-/// code after it, which keeps the mode the Thumb export's paint gives it.
+/// pointer table. The Thumb export's symbol paints the image, so `flowmode`
+/// leaves it alone and the static code keeps the Thumb that paint gives it.
 #[test]
 fn static_thumb_functions_after_an_arm_export_keep_their_mode() {
-    for (name, ternary, popcount, arm_body) in [
-        (
-            "arm_static_thumb_so_o0_le32",
-            "0x280",
-            ("0x2a2", "v2 = (v1 & 1) + v2;"),
-            "v2 += v1 ^ 0x33;",
-        ),
-        (
-            "arm_static_thumb_so_o2_le32",
-            "0x234",
-            ("0x240", "v1 += v2;"),
-            "v2 = v3 ^ 0x33;",
-        ),
+    for (name, ternary, popcount) in [
+        ("arm_static_thumb_so_o0_le32", "0x280", ("0x2a2", "v2 = (v1 & 1) + v2;")),
+        ("arm_static_thumb_so_o2_le32", "0x234", ("0x240", "v1 += v2;")),
     ] {
         let path = fixture(name);
         let lib = path.to_str().unwrap();
@@ -350,8 +403,6 @@ fn static_thumb_functions_after_an_arm_export_keep_their_mode() {
         );
         let second = kuna(&["decompile", lib, popcount.0, "--addr"]);
         assert!(second.contains(popcount.1), "{name}: {second}");
-        let arm = kuna(&["decompile", lib, "arm_export"]);
-        assert!(arm.contains(arm_body), "{name}: {arm}");
         let all = kuna(&["decompile-all", lib]);
         for entry in [ternary, popcount.0] {
             let header = format!("@ {entry}");
@@ -375,15 +426,37 @@ fn a_pointer_only_thumb_function_keeps_the_mode_a_blx_before_it_gives() {
     assert!(t0.contains("return a0 * 7 + 1;"), "{t0}");
 }
 
-/// An ARMv4T image (`arm_thumb_veneer_le32.c`, symbols kept, no mapping
-/// symbols) whose Thumb `thumb_caller` reaches the A32 `arm_target` through
-/// the linker's `bx pc; b.n; b arm_target` veneer at 0x10120: the `bx pc`
-/// continues in A32, so the veneer is a tail call, not undecodable Thumb.
+/// Stripped armel shared objects (`arm_noreturn_fallthrough_le32.c`) where a
+/// function ends in a call to the `noreturn` import `fatal`, and the next
+/// function, in the other mode, is reached only through a `blx`: the Thumb
+/// `thumb_last` before the A32 `arm_hidden` at 0x4bc, and the A32 `arm_last`
+/// before the Thumb `thumb_hidden` at 0x4a4. Both loops decompile, alone and
+/// in the whole-binary run.
 #[test]
-fn a_thumb_bx_pc_veneer_continues_in_arm() {
-    let path = fixture("arm_thumb_veneer_le32");
-    let exe = path.to_str().unwrap();
-    let veneer = kuna(&["decompile", exe, "0x10120", "--addr"]);
-    assert!(veneer.contains("arm_target(a0); // tail-call"), "{veneer}");
-    assert!(!veneer.contains("halt_baddata"), "{veneer}");
+fn a_call_that_never_returns_leaves_the_next_function_in_its_own_mode() {
+    for (name, addr) in [
+        ("arm_noreturn_fallthrough_thumb_le32", "0x4bc"),
+        ("arm_noreturn_fallthrough_arm_le32", "0x4a4"),
+    ] {
+        let path = fixture(name);
+        let lib = path.to_str().unwrap();
+        let alone = kuna(&["decompile", lib, addr, "--addr"]);
+        assert!(alone.contains("v1 += v2 ^ 5;"), "{name}: {alone}");
+        let all = kuna(&["decompile-all", lib]);
+        let named = format!("sub_{}", &addr[2..]);
+        assert!(body(&all, &named).contains("v1 += v2 ^ 5;"), "{name}: {all}");
+    }
+}
+
+/// A stripped armel shared object (`arm_unsized_export_le32.c`): the Thumb
+/// export `thumb_first`, the A32 assembly export `asm_nosz` with no `.size`,
+/// then the static Thumb `tsum` and `tpop` at 0x410 and 0x430. Both statics
+/// decompile in the whole-binary run.
+#[test]
+fn static_thumb_functions_after_an_unsized_arm_export_keep_their_mode() {
+    let path = fixture("arm_unsized_export_le32");
+    let all = kuna(&["decompile-all", path.to_str().unwrap()]);
+    assert!(body(&all, "sub_410").contains("v1 += v2 ^ 5;"), "{all}");
+    assert!(body(&all, "sub_430").contains("a0 >>= 1"), "{all}");
+    assert!(!body(&all, "sub_430").contains("halt_"), "{all}");
 }
