@@ -2002,7 +2002,7 @@ impl Merge {
 
     /// Check if `subOp` is a redundant COPY relative to dominant `domOp` (C++
     /// `Merge::checkCopyPair`, `merge.cc:1112-1136`).
-    fn check_copy_pair<C: MergeContext + ?Sized>(
+    pub(crate) fn check_copy_pair<C: MergeContext + ?Sized>(
         ctx: &C,
         high: HighVariableId,
         dom_op: OpId,

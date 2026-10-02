@@ -76,9 +76,9 @@ pub const WALK_BOUND: usize = 256;
 /// a load of the global the binary makes.  When the stored value is used as an
 /// address, the load keeps `vn` when a write lies between the store and the
 /// load, unless the global's own marker carries an earlier value past the store
-/// ([`marks_after`]).  When it is not, the load keeps `vn` when it uses what it
-/// loads as an address: the value then still joins the global, and the
-/// dereference prints through the global the binary reads.
+/// ([`old_value_read_after`]).  When it is not, the load keeps `vn` when it
+/// uses what it loads as an address: the value then still joins the global, and
+/// the dereference prints through the global the binary reads.
 pub fn declines(data: &Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -> bool {
     let (Some(v), Some(iv), Some(reader)) = (
         data.vbank().get(vn),
@@ -198,73 +198,73 @@ pub fn written_between(data: &Funcdata, vn: VarnodeId, reader: OpId) -> bool {
 }
 
 /// Is an earlier value of the global that `vn`'s `COPY` stores to carried past
-/// the store by the global's own marker ([`marks_after`]), or, when
-/// `by_register`, still read after the store, directly or through a copy into a
-/// register?  The global's forced merge then keeps the stored value apart
-/// anyway, and keeping the store or a load of it in place would only make
-/// chapter 06 copy that earlier value far from where the binary reads it.
+/// the store by the global's own marker, or, when `by_register`, still read
+/// after the store, directly or through a copy into a register?  The global's
+/// forced merge then keeps the stored value apart anyway, and keeping the store
+/// or a load of it in place would only make chapter 06 copy that earlier value
+/// far from where the binary reads it.
+///
+/// A marker that carries an earlier value past the store is a `MULTIEQUAL`
+/// reading it on an edge from a block the store dominates, or an `INDIRECT`
+/// after the store.  Heritage never builds that; it is left behind when a
+/// pointer `STORE` turns into the global's `COPY` after the global's heritage,
+/// and the joins still read the value from before it.  Each `MULTIEQUAL` is
+/// read once, however many of the global's values it joins.
 fn old_value_read_after(data: &Funcdata, vn: VarnodeId, by_register: bool) -> bool {
     let Some(v) = data.vbank().get(vn) else {
         return false;
     };
-    let Some(mut store) = v.get_def().and_then(|d| Store::new(data, d)) else {
+    let Some(mut store) = v.get_def().and_then(|d| Store::new(data, d, vn)) else {
         return false;
     };
+    let mut instances = Vec::new();
+    let mut joins = Vec::new();
+    let mut walk = (Vec::new(), BTreeSet::new());
     for w in data.vbank().iter_loc_size_addr(v.get_size(), v.get_addr()) {
+        instances.push(w);
         let Some(wv) = data.vbank().get(w) else {
             continue;
         };
-        if w == vn || wv.get_def().is_some_and(|d| d == store.op || store.before(data, d)) {
-            continue;
+        let mut carried = false;
+        for r in wv.descend_iter() {
+            match data.obank().get(r).filter(|o| !o.is_dead()).map(|o| o.code()) {
+                Some(OpCode::CPUI_MULTIEQUAL) => joins.push(r),
+                Some(OpCode::CPUI_INDIRECT) => {
+                    carried = carried || store.indirect_after(data, r, w);
+                }
+                _ => {}
+            }
         }
-        if wv.descend_iter().any(|r| marks_after(data, &mut store, r, w)) {
+        if (carried || by_register)
+            && store.old(data, w)
+            && (carried || store.read_after(data, w, &mut walk))
+        {
             return true;
         }
-        if !by_register {
-            continue;
-        }
-        let mut readers: Vec<OpId> = wv.descend_iter().collect();
-        let mut seen = BTreeSet::new();
-        while let Some(r) = readers.pop() {
-            if !seen.insert(r) || seen.len() > WALK_BOUND {
-                continue;
-            }
-            let Some(rop) = data.obank().get(r) else {
-                continue;
-            };
-            if rop.is_dead() || rop.is_marker() {
-                continue;
-            }
-            if store.before(data, r) {
-                return true;
-            }
-            if rop.code() == OpCode::CPUI_COPY {
-                if let Some(out) = rop
-                    .get_out()
-                    .and_then(|o| data.vbank().get(o))
-                    .filter(|o| !o.is_persist())
-                {
-                    readers.extend(out.descend_iter());
-                }
-            }
-        }
     }
-    false
+    if joins.is_empty() {
+        return false;
+    }
+    instances.sort_unstable();
+    joins.sort_unstable();
+    joins.dedup();
+    joins.into_iter().any(|r| store.join_after(data, r, &instances))
 }
 
 /// The store [`old_value_read_after`] asks about, with the dominator-tree
 /// answers for its block kept across the global's instances.
 struct Store {
     op: OpId,
+    out: VarnodeId,
     order: u32,
     block: Option<(BlockId, DominatesMemo)>,
 }
 
 impl Store {
-    fn new(data: &Funcdata, op: OpId) -> Option<Store> {
+    fn new(data: &Funcdata, op: OpId, out: VarnodeId) -> Option<Store> {
         let o = data.obank().get(op)?;
         let block = o.get_parent().map(|b| (b, DominatesMemo::new(b)));
-        Some(Store { op, order: o.get_seq_num().get_order(), block })
+        Some(Store { op, out, order: o.get_seq_num().get_order(), block })
     }
 
     /// Does the store come before `op`: earlier in its block, or in a block
@@ -286,38 +286,96 @@ impl Store {
             .as_mut()
             .is_some_and(|(_, memo)| data.bblocks_ref().dominates_memo(memo, Some(bl)))
     }
-}
 
-/// Does `r`, a marker of the global, carry `w`, a value of the global from
-/// before `store`, past `store`: a `MULTIEQUAL` reading it on an edge from a
-/// block that `store` dominates, or an `INDIRECT` after `store`?  Heritage never
-/// builds that; it is left behind when a pointer `STORE` turns into the
-/// global's `COPY` after the global's heritage, and the joins still read the
-/// value from before it.
-fn marks_after(data: &Funcdata, store: &mut Store, r: OpId, w: VarnodeId) -> bool {
-    let Some(rop) = data.obank().get(r) else {
-        return false;
-    };
-    let (Some(rb), Some(sb)) = (rop.get_parent(), store.block.as_ref().map(|(b, _)| *b)) else {
-        return false;
-    };
-    if rop.is_dead() {
-        return false;
+    /// Is `w` a value of the global from before the store: not the store's own,
+    /// nor written at or after it?
+    fn old(&mut self, data: &Funcdata, w: VarnodeId) -> bool {
+        let Some(wv) = data.vbank().get(w) else {
+            return false;
+        };
+        w != self.out && !wv.get_def().is_some_and(|d| d == self.op || self.before(data, d))
     }
-    match rop.code() {
-        OpCode::CPUI_MULTIEQUAL => {
-            let b = data.bblocks_ref().block(rb);
-            (0..rop.num_input().min(b.size_in()))
-                .any(|i| rop.get_in(i) == Some(w) && store.dominates(data, b.get_in(i)))
+
+    /// Is `r` a live `INDIRECT` of `w` after the store?
+    fn indirect_after(&mut self, data: &Funcdata, r: OpId, w: VarnodeId) -> bool {
+        let Some(rop) = data.obank().get(r) else {
+            return false;
+        };
+        let (Some(rb), Some(sb)) = (rop.get_parent(), self.block.as_ref().map(|(b, _)| *b)) else {
+            return false;
+        };
+        if rop.is_dead() || rop.code() != OpCode::CPUI_INDIRECT || rop.get_in(0) != Some(w) {
+            return false;
         }
-        OpCode::CPUI_INDIRECT if rop.get_in(0) == Some(w) => {
-            if rb == sb {
-                store.order < rop.get_seq_num().get_order()
-            } else {
-                store.dominates(data, rb)
+        if rb == sb {
+            self.order < rop.get_seq_num().get_order()
+        } else {
+            self.dominates(data, rb)
+        }
+    }
+
+    /// Does `r`, a live `MULTIEQUAL`, read a value among `instances` (sorted)
+    /// that is from before the store on an edge from a block the store
+    /// dominates?
+    fn join_after(&mut self, data: &Funcdata, r: OpId, instances: &[VarnodeId]) -> bool {
+        let Some(rop) = data.obank().get(r) else {
+            return false;
+        };
+        if rop.is_dead() || self.block.is_none() {
+            return false;
+        }
+        let Some(rb) = rop.get_parent() else {
+            return false;
+        };
+        let b = data.bblocks_ref().block(rb);
+        (0..rop.num_input().min(b.size_in())).any(|i| {
+            rop.get_in(i).is_some_and(|x| {
+                self.dominates(data, b.get_in(i))
+                    && instances.binary_search(&x).is_ok()
+                    && data.vbank().get(x).is_some_and(|xv| xv.descend_iter().any(|d| d == r))
+                    && self.old(data, x)
+            })
+        })
+    }
+
+    /// Is `w`, or a copy of it into a register, read by an operation after the
+    /// store?  `walk` is scratch space for the readers to visit and seen.
+    fn read_after(
+        &mut self,
+        data: &Funcdata,
+        w: VarnodeId,
+        (readers, seen): &mut (Vec<OpId>, BTreeSet<OpId>),
+    ) -> bool {
+        let Some(wv) = data.vbank().get(w) else {
+            return false;
+        };
+        readers.clear();
+        seen.clear();
+        readers.extend(wv.descend_iter());
+        while let Some(r) = readers.pop() {
+            if !seen.insert(r) || seen.len() > WALK_BOUND {
+                continue;
+            }
+            let Some(rop) = data.obank().get(r) else {
+                continue;
+            };
+            if rop.is_dead() || rop.is_marker() {
+                continue;
+            }
+            if self.before(data, r) {
+                return true;
+            }
+            if rop.code() == OpCode::CPUI_COPY {
+                if let Some(out) = rop
+                    .get_out()
+                    .and_then(|o| data.vbank().get(o))
+                    .filter(|o| !o.is_persist())
+                {
+                    readers.extend(out.descend_iter());
+                }
             }
         }
-        _ => false,
+        false
     }
 }
 

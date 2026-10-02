@@ -928,10 +928,11 @@ impl MergeContext for Funcdata {
         let table = BlockTable::new();
         let mut doms: BTreeMap<BlockId, DominatesMemo> = BTreeMap::new();
         let mut writes: Option<(VarnodeId, BTreeMap<int4, Vec<CoverPoint>>)> = None;
-        crate::merge::redundant_in_order(self, copy, |dom_op, sub_op| {
+        let marked = crate::merge::redundant_in_order(self, copy, |dom_op, sub_op| {
             let dom_bl = MergeContext::op_parent(self, dom_op);
             let memo = doms.entry(dom_bl).or_insert_with(|| DominatesMemo::new(dom_bl));
-            if !self.bblocks_ref().dominates_memo(memo, Some(MergeContext::op_parent(self, sub_op))) {
+            let sub_bl = MergeContext::op_parent(self, sub_op);
+            if !self.bblocks_ref().dominates_memo(memo, Some(sub_bl)) {
                 return false;
             }
             let in_vn = MergeContext::op_in(self, dom_op, 0).unwrap();
@@ -940,7 +941,14 @@ impl MergeContext for Funcdata {
             }
             let by_block = writes.as_ref().map(|(_, w)| w).unwrap();
             !self.copy_pair_crossed(dom_op, sub_op, &table, by_block)
-        })
+        });
+        debug_assert_eq!(
+            marked,
+            crate::merge::redundant_in_order(self, copy, |dom_op, sub_op| {
+                crate::merge::Merge::check_copy_pair(self, high, dom_op, sub_op)
+            })
+        );
+        marked
     }
 
     // --- IR-surgery hooks -------------------------------------------------

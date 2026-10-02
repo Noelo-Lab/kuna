@@ -635,7 +635,8 @@ impl Cover {
             pos += 1;
             for op in ctx.descend(cur_vn) {
                 let (bl, ref_point, is_multiequal, pred_blocks) = ctx.ref_point(op, vn);
-                self.add_ref_point(ctx, bl, ref_point, is_multiequal, &pred_blocks, &mut |_, _| false);
+                let never = &mut |_, _: &CoverBlock| false;
+                self.add_ref_point(ctx, bl, ref_point, is_multiequal, &pred_blocks, never);
                 if let Some(out_vn) = ctx.out_implied(op) {
                     path.push(out_vn);
                 }

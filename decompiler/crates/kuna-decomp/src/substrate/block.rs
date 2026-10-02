@@ -975,13 +975,13 @@ pub struct KunaQualityCounts {
 /// only while the dominator tree is unchanged.
 pub struct DominatesMemo {
     top: BlockId,
-    known: std::collections::BTreeMap<BlockId, bool>,
+    known: slotmap::SecondaryMap<BlockId, bool>,
 }
 
 impl DominatesMemo {
     /// No answers yet for dominator `top`.
     pub fn new(top: BlockId) -> Self {
-        DominatesMemo { top, known: std::collections::BTreeMap::new() }
+        DominatesMemo { top, known: slotmap::SecondaryMap::new() }
     }
 }
 
@@ -1642,7 +1642,7 @@ impl BlockGraph {
             let Some(sb) = cur else {
                 break false;
             };
-            if let Some(&known) = memo.known.get(&sb) {
+            if let Some(&known) = memo.known.get(sb) {
                 break known;
             }
             if index > self.arena[sb].index {
@@ -1660,6 +1660,7 @@ impl BlockGraph {
         for sb in path {
             memo.known.insert(sb, answer);
         }
+        debug_assert_eq!(answer, self.dominates(memo.top, sub_block));
         answer
     }
 
