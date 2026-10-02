@@ -641,18 +641,21 @@ fn label_rows_judge_a_value_by_the_entries_it_reads() {
 }
 
 #[test]
-fn kept_row_loads_follow_the_sanity_truncation() {
+fn kept_row_loads_follow_the_sanity_truncation_unless_bounded() {
     let m = build_manager();
     let ram = ram_of(&m);
     let at = |off: u64, size: int4| LoadTable::single(Address::new(Rc::clone(&ram), off), size);
     let loads = vec![at(0x10, 4), at(0x14, 4), at(0x18, 4), at(0x1c, 4)];
-    let kept = JumpTable::kept_row_loads(loads.clone(), &[1, 2, 3, 4], 2).unwrap();
+    let kept = JumpTable::kept_row_loads(loads.clone(), &[1, 2, 3, 4], 2, false).unwrap();
     assert_eq!(kept.entries, vec![LoadTable::full(Address::new(Rc::clone(&ram), 0x10), 4, 2)]);
     assert_eq!(kept.reached, vec![LoadTable::full(Address::new(Rc::clone(&ram), 0x10), 4, 4)]);
     assert_eq!(kept.depth, 1);
-    let paired = JumpTable::kept_row_loads(loads.clone(), &[2, 4], 2).unwrap();
+    let bounded = JumpTable::kept_row_loads(loads.clone(), &[1, 2, 3, 4], 2, true).unwrap();
+    assert_eq!(bounded.entries, bounded.reached);
+    assert_eq!(bounded.depth, 1);
+    let paired = JumpTable::kept_row_loads(loads.clone(), &[2, 4], 2, false).unwrap();
     assert_eq!(paired.entries, vec![LoadTable::full(Address::new(Rc::clone(&ram), 0x10), 4, 4)]);
     assert_eq!(paired.depth, 2);
-    assert!(JumpTable::kept_row_loads(loads.clone(), &[], 2).is_none());
-    assert!(JumpTable::kept_row_loads(loads, &[1, 2], 0).is_none());
+    assert!(JumpTable::kept_row_loads(loads.clone(), &[], 2, false).is_none());
+    assert!(JumpTable::kept_row_loads(loads, &[1, 2], 0, true).is_none());
 }

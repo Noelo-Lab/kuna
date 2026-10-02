@@ -1174,11 +1174,18 @@ on carries no label. A fresh-range value outside the row values that reaches a
 row's destination is such an unlabelled selector value unless the memory its
 emulation reads shows the code never dispatches it (`jumptable.rs
 (LabelRows::may_be_dispatched)`). Flow-time recovery records the entries it
-read for the rows the sanity check kept, the entries it read for every row it
+read for the rows the code dispatches, the entries it read for every row it
 emulated, and the most loads it performed for one row (`jumptable.rs
-(JumpTable::recover_addresses)`). The value's last load, the entry its
-destination comes from, must be one a kept row read: a value reading past the
-table end the sanity check found is not dispatched. When its emulation
+(JumpTable::recover_addresses)`). The dispatched rows are the ones the sanity
+check kept when the flow-time range spans its variable's full width, and every
+emulated row when a guard or a mask bounds that range below the full width
+(`jumptable.rs (JumpTable::flow_range_bounded)`): every value in a bounded range
+passes the guard that bounds it, so the rows past a cut are still values the
+code can dispatch, as when an earlier row's mapped value fails a second guard
+further down the path. The value's
+last load, the entry its destination comes from, must be one a dispatched row
+read: a value reading past the table end the sanity check found in a
+full-width range is not dispatched. When its emulation
 performs no more loads than a row, the value starts at or after the flow-time
 variable on the path, and each earlier load must read an entry some flow-time
 row read, kept or cut: an index past its flow-time range reads map entries no

@@ -1883,7 +1883,7 @@ struct LoopCarriedWalk {
     seeds: Vec<(VarnodeId, uintb)>,
 }
 
-/// The memory a flow-time model read to reach the rows the sanity check kept
+/// The memory a flow-time model read to reach the rows the code dispatches
 /// and to reach every row it emulated, collapsed, and the most loads it
 /// performed for one row.
 #[derive(Debug, Clone, PartialEq)]
@@ -1944,8 +1944,9 @@ impl LabelRows {
 
     /// Whether a value whose emulation performed `loads` may be one the code
     /// dispatches.  Its last load, the entry its destination comes from, must
-    /// be one a kept flow-time row read: entries past the table end the sanity
-    /// check found are not dispatched.  When its path has no more loads than a
+    /// be one a dispatched flow-time row read ([`JumpTable::kept_row_loads`]):
+    /// in a full-width range, entries past the table end the sanity check
+    /// found are not dispatched.  When its path has no more loads than a
     /// flow-time row, it starts at or after the flow-time variable, and each
     /// earlier load must read an entry some flow-time row read, kept or cut:
     /// an index past the flow-time range reads map entries no row read.  A
@@ -5273,8 +5274,10 @@ impl JumpTable {
             self.loadpoints = loadpoints;
             r?;
             let reached = self.loadpoints.clone();
+            let bounded = self.flow_range_bounded(fd);
             self.sanity_check(fd, Some(&loadcounts))?;
-            self.row_loads = Self::kept_row_loads(reached, &loadcounts, self.addresstable.len());
+            self.row_loads =
+                Self::kept_row_loads(reached, &loadcounts, self.addresstable.len(), bounded);
             LoadTable::collapse_table(&mut self.loadpoints);
         } else {
             let mut loadcounts: Vec<int4> = Vec::new();
@@ -5290,18 +5293,46 @@ impl JumpTable {
             );
             self.addresstable = addresstable;
             r?;
+            let bounded = self.flow_range_bounded(fd);
             self.sanity_check(fd, None)?;
-            self.row_loads = Self::kept_row_loads(loads, &loadcounts, self.addresstable.len());
+            self.row_loads =
+                Self::kept_row_loads(loads, &loadcounts, self.addresstable.len(), bounded);
         }
         Ok(())
     }
 
-    /// (kuna) The loads behind the first `rows` rows, when the model counted
-    /// its loads row by row.
+    /// (kuna) Whether the flow-time basic model's range is narrower than its
+    /// variable's full width, so that a guard or a mask bounds every row it
+    /// emulates.
+    fn flow_range_bounded(&self, fd: &Funcdata) -> bool {
+        let Some(model) = self
+            .jmodel
+            .as_ref()
+            .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
+        else {
+            return false;
+        };
+        let Some(size) = model
+            .jrange
+            .as_ref()
+            .and_then(|jr| jr.get_start_varnode())
+            .and_then(|vn| fd.vbank().get(vn))
+            .map(|vn| vn.get_size())
+        else {
+            return false;
+        };
+        let rows = model.get_table_size().max(0) as uintb;
+        1u64.checked_shl(8 * size.max(0) as u32).is_none_or(|full| rows < full)
+    }
+
+    /// (kuna) The loads behind the rows the code dispatches, when the model
+    /// counted its loads row by row: the first `rows` rows, or every row it
+    /// emulated when its range is `bounded`.
     fn kept_row_loads(
         mut loads: Vec<LoadTable>,
         loadcounts: &[int4],
         rows: usize,
+        bounded: bool,
     ) -> Option<RowLoads> {
         let counts = loadcounts.get(..rows)?;
         let kept = *counts.last()? as usize;
@@ -5311,7 +5342,9 @@ impl JumpTable {
             .max()? as usize;
         let mut reached = loads.clone();
         LoadTable::collapse_table(&mut reached);
-        loads.truncate(kept);
+        if !bounded {
+            loads.truncate(kept);
+        }
         LoadTable::collapse_table(&mut loads);
         Some(RowLoads { entries: loads, reached, depth })
     }

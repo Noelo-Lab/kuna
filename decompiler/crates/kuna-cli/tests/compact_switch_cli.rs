@@ -485,10 +485,21 @@ fn byte_index_past_a_short_map_keeps_index_labels() {
 /// modes 4 and 5 still dispatch to mode 0's target.
 #[test]
 fn cut_row_index_is_still_dispatched() {
+    cut_row("switch_cutrow_mipsel");
+}
+
+/// As above, but modes 4 and 5 read a table entry that no kept row read.
+#[test]
+fn cut_row_reading_an_unread_entry_is_still_dispatched() {
+    cut_row("switch_cutrow_unread_mipsel");
+}
+
+fn cut_row(fixture: &str) {
+    let fixtures = root().join("decompiler/crates/kuna-analysis/tests/fixtures");
     let mut command = kuna();
     command
         .arg("decompile-all")
-        .arg(root().join("decompiler/crates/kuna-analysis/tests/fixtures/switch_cutrow_mipsel"))
+        .arg(fixtures.join(fixture))
         .args(["--addr", "0x400110", "--sleighpath"])
         .arg(specs());
     let c = printed(command);
@@ -497,6 +508,102 @@ fn cut_row_index_is_still_dispatched() {
         !c.contains("switch(a0)") || (c.contains("case 4:") && c.contains("case 5:")),
         "labelled the mode switch without modes 4 and 5: {c}"
     );
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixtures.join(fixture), &fixtures.join(format!("{fixture}.c")), &c);
+}
+
+/// Compile the printed MIPS `pick` for the host with every available compiler
+/// at -O0 and -O2, map the fixture's image at its link address for the data
+/// it reads, and compare it with `source`'s `pick` for modes 0..11.  The
+/// printed store to `sink` goes through `gp`, which the fixture never sets,
+/// so that line is dropped.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn source_round_trip(binary: &std::path::Path, source: &std::path::Path, printed: &str) {
+    let mut globals: Vec<&str> = printed
+        .match_indices("dat_")
+        .filter(|&(at, _)| {
+            !printed[..at].ends_with(|ch: char| ch.is_ascii_alphanumeric() || ch == '_')
+        })
+        .map(|(at, _)| {
+            let end = printed[at + 4..]
+                .find(|ch: char| !ch.is_ascii_hexdigit())
+                .map_or(printed.len(), |len| at + 4 + len);
+            &printed[at..end]
+        })
+        .filter(|name| name.len() > 4)
+        .collect();
+    globals.sort_unstable();
+    globals.dedup();
+    let globals: String = globals
+        .iter()
+        .map(|name| format!("#define {name} (*(unsigned int (*)[64])0x{})\n", &name[4..]))
+        .collect();
+    let function: String = printed
+        .lines()
+        .filter(|line| !line.contains(" + -0x7ff0) = "))
+        .map(|line| format!("{}\n", line.replace("pick(", "printed_pick(")))
+        .collect();
+    let scratch = tempfile::tempdir().unwrap();
+    let src = scratch.path().join("source_round_trip.c");
+    std::fs::write(
+        &src,
+        format!(
+            r#"#define _GNU_SOURCE
+#include <fcntl.h>
+#include <stdio.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#define pick native_pick
+#define map native_map
+#include "{source}"
+#undef pick
+#undef map
+#define map (*(unsigned char (*)[12])0x4001c4)
+{globals}{function}
+int main(int argc, char **argv) {{
+  int fd = open(argv[1], O_RDONLY);
+  off_t size = lseek(fd, 0, SEEK_END);
+  if (mmap((void *)0x400000, size, PROT_READ, MAP_PRIVATE | MAP_FIXED_NOREPLACE, fd, 0) != (void *)0x400000)
+    return 2;
+  int bad = 0;
+  for (unsigned mode = 0; mode < 12; mode++) {{
+    int want = native_pick(mode), got = printed_pick(mode);
+    if (want != got) {{
+      printf("mode=%u native=%d printed=%d\n", mode, want, got);
+      bad = 1;
+    }}
+  }}
+  return bad;
+}}
+"#,
+            source = source.display(),
+        ),
+    )
+    .unwrap();
+    let exe = scratch.path().join("source_round_trip");
+    for cc in compilers() {
+        for level in ["-O0", "-O2"] {
+            let compile = Command::new(cc)
+                .args(["-w", "-fPIE", "-pie", level])
+                .arg(&src)
+                .arg("-o")
+                .arg(&exe)
+                .output()
+                .unwrap();
+            assert!(
+                compile.status.success(),
+                "{cc} {level}: {}\n{printed}",
+                String::from_utf8_lossy(&compile.stderr)
+            );
+            let run = Command::new(&exe).arg(binary).output().unwrap();
+            assert!(
+                run.status.success(),
+                "{cc} {level}: {} {}\n{printed}",
+                run.status,
+                String::from_utf8_lossy(&run.stdout)
+            );
+        }
+    }
 }
 
 #[test]
