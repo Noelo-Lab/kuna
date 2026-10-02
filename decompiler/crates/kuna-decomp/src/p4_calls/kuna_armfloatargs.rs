@@ -235,6 +235,16 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &mut Funcdata, written:
     for join in &plan.joins {
         join_words(call, data, join);
     }
+    for &i in &plan.zeros {
+        let (slot, size) = {
+            let t = call.active_input().get_trial(i);
+            (t.get_slot(), t.get_size())
+        };
+        if slot >= 1 {
+            let zero = data.new_constant(size, 0);
+            let _ = data.op_set_input(call.get_op(), zero, slot);
+        }
+    }
     let active = call.get_active_input();
     for &i in &plan.bind {
         let t = active.get_trial_mut(i);
@@ -262,18 +272,21 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &mut Funcdata, written:
 struct StatedPlan {
     drop: Vec<i32>,
     bind: Vec<i32>,
+    zeros: Vec<i32>,
     joins: Vec<WordJoin>,
     missing: Vec<(Address, i32, usize)>,
     partial: bool,
 }
 
-/// A stated double the call holds as its low and high word trials.
+/// A stated double the call holds as its low and high word trials, passed as
+/// their PIECE or, where the callee ignores it, as zero.
 struct WordJoin {
     lo: i32,
     hi: i32,
     addr: Address,
     size: i32,
     entry: usize,
+    zero: bool,
 }
 
 fn plan_stated_inputs(
@@ -323,6 +336,18 @@ fn plan_stated_inputs(
     if wanted.len() < stated.inputs.len() && !trials.iter().any(|(_, _, _, used, _)| *used) {
         return None;
     }
+    let reads = data
+        .kuna_callee_entry_through(&entry)
+        .or_else(|| data.kuna_callee_entry_dead(&entry));
+    let passed = |i: i32| {
+        data.obank()
+            .get(call.get_op())
+            .and_then(|op| op.get_in(active.get_trial(i).get_slot()))
+    };
+    let widens = |parts: &[Option<VarnodeId>]| {
+        let parts: Option<Vec<VarnodeId>> = parts.iter().copied().collect();
+        parts.map_or(true, |parts| widens_entry(data, &parts, call.get_op()))
+    };
     let words = |addr: &Address, size: i32| -> Option<WordJoin> {
         if trials.iter().any(|(_, a, s, _, _)| a == addr && *s == size) {
             return None;
@@ -343,16 +368,25 @@ fn plan_stated_inputs(
             ((lo, 0), (hi, off)) | ((hi, off), (lo, 0)) if off * 2 == size => (lo, hi),
             _ => return None,
         };
-        Some(WordJoin { lo, hi, addr: addr.clone(), size, entry: entry_of(addr, size)? })
+        let half = size / 2;
+        let read_whole = reads.is_some_and(|r| {
+            r.proves_input(addr, half) && r.proves_input(&(addr + i64::from(half)), half)
+        });
+        let widened = widens(&[passed(lo), passed(hi)]);
+        let zero = if dead.is_some_and(|d| d.proves_dead(addr, size)) {
+            widened
+        } else if read_whole && !widened {
+            false
+        } else {
+            return None;
+        };
+        Some(WordJoin { lo, hi, addr: addr.clone(), size, entry: entry_of(addr, size)?, zero })
     };
     let pairs: Vec<WordJoin> = wanted.iter().filter_map(|(a, s)| words(a, *s)).collect();
     let taken = |i: i32| {
         let (_, a, s, used, _) = &trials[i as usize];
         *used || written.iter().any(|(w, z)| w == a && z == s)
     };
-    let reads = data
-        .kuna_callee_entry_through(&entry)
-        .or_else(|| data.kuna_callee_entry_dead(&entry));
     let reached = wanted
         .iter()
         .filter(|(addr, size)| {
@@ -397,6 +431,7 @@ fn plan_stated_inputs(
     }
     let ignored = |addr: &Address, size: i32| dead.is_some_and(|d| d.proves_dead(addr, size));
     let mut bind = Vec::new();
+    let mut zeros = Vec::new();
     let mut missing = Vec::new();
     let mut partial = false;
     for (addr, size) in &wanted {
@@ -405,6 +440,12 @@ fn plan_stated_inputs(
         }
         let exact = trials.iter().find(|(_, a, s, _, _)| a == addr && s == size);
         partial |= kept.iter().any(|(a, s)| overlaps(addr, *size, a, *s));
+        if let Some((i, ..)) = exact {
+            let parts = passed(*i).map_or(vec![None], |vn| pieces(data, vn));
+            if ignored(addr, *size) && widens(&parts) {
+                zeros.push(*i);
+            }
+        }
         match exact {
             Some((i, _, _, false, _)) if active.get_trial(*i).is_definitely_not_used() => {
                 if ignored(addr, *size) {
@@ -428,11 +469,12 @@ fn plan_stated_inputs(
             },
         }
     }
-    Some(StatedPlan { drop, bind, joins, missing, partial })
+    Some(StatedPlan { drop, bind, zeros, joins, missing, partial })
 }
 
 /// Pass a stated double held as two word trials as one argument: a PIECE of
-/// the two words takes the low word's slot, and the high word is released.
+/// the two words, or zero for a double the callee ignores, takes the low word's
+/// slot, and the high word is released.
 fn join_words(call: &mut FuncCallSpecs, data: &mut Funcdata, join: &WordJoin) {
     let op = call.get_op();
     let (lo_slot, hi_slot) = {
@@ -445,15 +487,20 @@ fn join_words(call: &mut FuncCallSpecs, data: &mut Funcdata, join: &WordJoin) {
     let (Some(lo), Some(hi)) = (call_op.get_in(lo_slot), call_op.get_in(hi_slot)) else {
         return;
     };
-    let pc = call_op.get_addr().clone();
-    let piece = data.new_op(2, pc);
-    data.op_set_opcode_code(piece, OpCode::CPUI_PIECE);
-    let Ok(whole) = data.new_unique_out(join.size, piece) else {
-        return;
+    let whole = if join.zero {
+        data.new_constant(join.size, 0)
+    } else {
+        let pc = call_op.get_addr().clone();
+        let piece = data.new_op(2, pc);
+        data.op_set_opcode_code(piece, OpCode::CPUI_PIECE);
+        let Ok(whole) = data.new_unique_out(join.size, piece) else {
+            return;
+        };
+        let _ = data.op_set_input(piece, hi, 0);
+        let _ = data.op_set_input(piece, lo, 1);
+        data.op_insert_before(piece, op);
+        whole
     };
-    let _ = data.op_set_input(piece, hi, 0);
-    let _ = data.op_set_input(piece, lo, 1);
-    data.op_insert_before(piece, op);
     let _ = data.op_set_input(op, whole, lo_slot);
     let active = call.get_active_input();
     active.get_trial_mut(join.hi).mark_no_use();
@@ -462,6 +509,61 @@ fn join_words(call: &mut FuncCallSpecs, data: &mut Funcdata, join: &WordJoin) {
     t.set_entry(Some(join.entry), 0);
     t.mark_active();
     t.mark_used();
+}
+
+/// The value `vn` as its low and high parts when it is a PIECE, else itself.
+fn pieces(data: &Funcdata, vn: VarnodeId) -> Vec<Option<VarnodeId>> {
+    let piece = data
+        .vbank()
+        .get(vn)
+        .and_then(|v| v.get_def())
+        .and_then(|d| data.obank().get(d))
+        .filter(|op| op.code() == OpCode::CPUI_PIECE);
+    match piece {
+        Some(op) if op.get_addr().is_big_endian() => vec![op.get_in(0), op.get_in(1)],
+        Some(op) => vec![op.get_in(1), op.get_in(0)],
+        None => vec![Some(vn)],
+    }
+}
+
+/// Would passing `parts`, low to high, whole to `op` read more of the
+/// function's entry registers than the function itself does? Not for values the
+/// function computed, nor for entry registers it only forwards or also reads
+/// whole elsewhere, so that the function takes them as one parameter anyway.
+fn widens_entry(data: &Funcdata, parts: &[VarnodeId], op: crate::context::OpId) -> bool {
+    let entry = |vn: VarnodeId| data.vbank().get(vn).is_some_and(|v| v.is_input());
+    if !parts.iter().any(|&p| entry(p)) {
+        return false;
+    }
+    if !parts.iter().all(|&p| entry(p)) {
+        return true;
+    }
+    let readers = |vn: VarnodeId| -> Vec<crate::context::OpId> {
+        data.descend_snapshot(vn).into_iter().filter(|&r| r != op).collect()
+    };
+    if parts.iter().all(|&p| readers(p).is_empty()) {
+        return false;
+    }
+    let whole = match parts {
+        [one] => {
+            let size = data.vbank().get(*one).map_or(0, |v| v.get_size());
+            readers(*one).into_iter().any(|r| {
+                data.obank().get(r).is_some_and(|o| {
+                    o.code() != OpCode::CPUI_SUBPIECE
+                        || o.get_out()
+                            .and_then(|out| data.vbank().get(out))
+                            .is_some_and(|out| out.get_size() >= size)
+                })
+            })
+        }
+        [lo, hi] => readers(*lo).into_iter().any(|r| {
+            data.obank()
+                .get(r)
+                .is_some_and(|o| (0..o.num_input()).any(|k| o.get_in(k) == Some(*hi)))
+        }),
+        _ => false,
+    };
+    !whole
 }
 
 /// Is `a` a later slot than `b` in the same register file?
