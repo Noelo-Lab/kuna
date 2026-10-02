@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1690,
-    1690
+    1700,
+    1700
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -246,6 +246,16 @@
     "data:FLOATGROUPING #2: exactly one of the two products prints as a flat chain",
     "data:FLOATGROUPING #3: the right-grouped sum keeps its grouping",
     "data:FLOATGROUPING #4: exactly one of the two sums prints as a flat chain",
+    "data:FLOATRET #10: a float handed on to an integer parameter keeps its bits",
+    "data:FLOATRET #1: a NaN returned in s0 is a float",
+    "data:FLOATRET #2: and prints as NAN, not its bits",
+    "data:FLOATRET #3: a function also returning calls it cannot see the type of is not a float",
+    "data:FLOATRET #4: and returns -INFINITY as its bits",
+    "data:FLOATRET #5: the quiet NaN is not returned as an integer",
+    "data:FLOATRET #6: a global returned in xmm0 is not typed a float",
+    "data:FLOATRET #7: NaNs NAN cannot spell keep their bits",
+    "data:FLOATRET #8: a parameter handed back untouched is its callers' to type",
+    "data:FLOATRET #9: neither those NaNs nor the low half of a double in d0 is a float",
     "data:FMTSTATIC #10: ARM hard-float keeps the int parameter a %f prints",
     "data:FMTSTATIC #11: ARM hard-float prints the converted value",
     "data:FMTSTATIC #12: ARM hard-float prints a + b, not d0",

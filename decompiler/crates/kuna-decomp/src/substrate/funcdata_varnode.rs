@@ -2373,7 +2373,7 @@ impl Funcdata {
         match code {
             OpCode::CPUI_INDIRECT => {
                 if self.obank().get(def).map(|o| o.is_indirect_creation()).unwrap_or(false) {
-                    return false;
+                    return self.kuna_forced_scoring() && self.only_op_use(invn, op, trial, main_flags);
                 }
                 let in0 = self.obank().get(def).and_then(|o| o.get_in(0));
                 if let Some(in0) = in0 {
@@ -2503,7 +2503,9 @@ impl Funcdata {
                 }
                 self.only_op_use(invn, op, trial, main_flags)
             }
-            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => false,
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                self.kuna_forced_scoring() && self.only_op_use(invn, op, trial, main_flags)
+            }
             _ => self.only_op_use(invn, op, trial, main_flags),
         }
     }

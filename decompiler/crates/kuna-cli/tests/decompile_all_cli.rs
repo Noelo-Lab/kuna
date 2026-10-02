@@ -2474,6 +2474,685 @@ fn a_float_in_a_general_register_keeps_its_integer_uses_round_trip() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The compilers a round trip is run with: every one of `gcc` and `clang` that
+/// runs here, or `cc` when neither does.
+fn round_trip_compilers() -> Vec<&'static str> {
+    let runs = |cc: &str| process::optional_output(Command::new(cc).arg("--version")).is_some();
+    let found: Vec<&'static str> = ["gcc", "clang"].into_iter().filter(|cc| runs(cc)).collect();
+    if found.is_empty() && runs("cc") { vec!["cc"] } else { found }
+}
+
+/// Compile `src` with each of [`round_trip_compilers`] (a pointer handed to an
+/// integer, or an integer to a pointer, is an error, as it is under CI's gcc 13
+/// and clang 18), run it, and return each compiler's stdout.
+fn compile_and_run_each(tag: &str, src: &str) -> Vec<(String, String)> {
+    let dir = std::env::temp_dir().join(format!("kuna-{tag}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("rt.c");
+    std::fs::write(&file, src).unwrap();
+    let mut out = Vec::new();
+    for cc in round_trip_compilers() {
+        let exe = dir.join(format!("rt-{cc}"));
+        let built = Command::new(cc)
+            .args(["-std=gnu11", "-w", "-Werror=int-conversion", "-Werror=implicit-function-declaration", "-o"])
+            .arg(&exe)
+            .arg(&file)
+            .output()
+            .expect("spawn the compiler");
+        assert!(built.status.success(), "{cc} rejected the printed C:\n{}\n{src}", String::from_utf8_lossy(&built.stderr));
+        let run = Command::new(&exe).output().expect("run the round trip");
+        out.push((cc.to_string(), String::from_utf8_lossy(&run.stdout).trim().to_string()));
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    out
+}
+
+/// `size` bytes of the fixture image at virtual address `vaddr`.
+fn image_bytes(path: &str, vaddr: u64, size: usize) -> Vec<u8> {
+    use object::{Object, ObjectSection};
+    let data = std::fs::read(path).unwrap();
+    let file = object::File::parse(data.as_slice()).unwrap();
+    let section = file
+        .sections()
+        .find(|s| s.address() <= vaddr && vaddr + size as u64 <= s.address() + s.size())
+        .unwrap_or_else(|| panic!("no section holds 0x{vaddr:x}"));
+    let at = (vaddr - section.address()) as usize;
+    section.data().unwrap()[at..at + size].to_vec()
+}
+
+/// The bits of a value of any printed type, for a round trip that compares
+/// what a function hands back whatever type it was printed with.
+const BITS: &str = "#define BITS(e) ({ __typeof__(e) r_ = (e); unsigned long long u_ = 0; \
+                    memcpy(&u_, &r_, sizeof r_ < 8 ? sizeof r_ : 8); u_; })\n";
+
+/// `floatret_x86_64` (clang -O0): `qnan` returns `nanf("")` through the import
+/// stub, `pick` returns `x < 0 ? qnan() : x * 2`, `wrapd` and `wrapi` hand back
+/// what their callee returned (`call; ret`), and `getf`/`getd` return a global
+/// in `xmm0`. Before, `qnan`, `wrapd` and `wrapi` were `void` while their callers
+/// read the result -- `v1 = (float)sub_1150()`, which no compiler accepts. The
+/// stub's jump returns the stub's float without a conversion, and `getf` stays
+/// `unsigned int`: one declaration of the global serves every function, and
+/// another may read it as an integer. `idf` returns its argument and stays an
+/// `unsigned int` of one: what it receives is its callers' to type. The printed
+/// functions, the stub included, are compiled against the fixture's own data
+/// and hand back the bits the fixture computes.
+#[test]
+fn a_float_register_return_and_a_read_void_result_round_trip() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_x86_64").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in [
+        "float nanf(void)",
+        "float sub_1150(void)",
+        "return nanf((char *)0x203d);",
+        "v1 = sub_1150();",
+        "unsigned int sub_11c0(void)",
+        "unsigned long sub_11d0(void)",
+        "unsigned long sub_11e0(void)",
+        "return sub_11d0();",
+        "unsigned int sub_11f0(unsigned int a0)",
+        "int sub_1210(void)",
+        "return sub_1200();",
+    ] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    for bad in ["(float)(*dat_4018)", "(float)sub_1150"] {
+        assert!(!stdout.contains(bad), "`{bad}` printed:\n{stdout}");
+    }
+    let names = ["nanf ", "sub_1150 ", "sub_1170 ", "sub_11c0 ", "sub_11d0 ", "sub_11e0 ", "sub_11f0 ", "sub_1200 ", "sub_1210 "];
+    let printed = printed_functions(&stdout, &names);
+    let mut globals = String::new();
+    let mut init = String::new();
+    for (name, ty, addr, size) in [
+        ("dat_2004", "float", 0x2004u64, 4usize),
+        ("dat_4038", "unsigned int", 0x4038, 4),
+        ("dat_4040", "unsigned long", 0x4040, 8),
+        ("dat_4048", "int", 0x4048, 4),
+    ] {
+        let bytes: Vec<String> = image_bytes(&bin, addr, size).iter().map(|b| b.to_string()).collect();
+        globals.push_str(&format!("{ty} {name};\nstatic const unsigned char {name}_b[{size}] = {{{}}};\n", bytes.join(",")));
+        init.push_str(&format!("  memcpy(&{name}, {name}_b, sizeof {name});\n"));
+    }
+    // The stub takes no parameters (its jump reads none); its caller passes nanf's.
+    let src = format!(
+        "#include <stdio.h>\n#include <string.h>\n{BITS}#define nanf(...) nanf_stub()\n\
+         static float target(void) {{ return __builtin_nanf(\"\"); }}\nfloat (*dat_4018)(void) = target;\n{globals}{printed}\n\
+         int main(void) {{\n{init}  printf(\"%llx %llx %llx %llx %llx %llx %llx\\n\", BITS(sub_1170(3.0f)), BITS(sub_1170(-3.0f)), \
+         BITS(sub_11c0()), BITS(sub_11d0()), BITS(sub_11e0()), BITS(sub_11f0({})), BITS(sub_1210()));\n  return 0;\n}}\n",
+        arg_of_bits(&printed, "sub_11f0", 0, 0x3fa0_0000)
+    );
+    for (cc, got) in compile_and_run_each("floatret-x86_64", &src) {
+        assert_eq!(
+            got, "40c00000 7fc00000 3fc00000 4002000000000000 4002000000000000 3fa00000 2a",
+            "{cc}: the printed C computes something else:\n{printed}"
+        );
+    }
+}
+
+/// `floatret_wrap_{gcc,clang}_O0`: `set_tz` and `restore_cwd` return what one
+/// of two calls returns in `eax`, `gi_as_f`/`set_gi_bits` move a float's bits
+/// through the `int` global `gi` that `use_gi` computes with, and `wrapneg`,
+/// `wrapabs`, `wrapnegd` and `twice` hand back the result of a callee whose
+/// recovery computes on the bits (`xorps`, `andps`) and returns an integer.
+/// Before, `set_tz` returned the rest of `rax` it never set (`unsigned long`,
+/// `return v2;`), `gi_as_f` returned `gi` converted to a float, and the wrappers
+/// returned `(float)absf(a0)` -- each a value the binary does not compute. The
+/// printed functions are compiled and must hand back the fixture's bits.
+#[test]
+fn a_wrapper_returns_its_callees_result_round_trip() {
+    let sp = specs();
+    let fixture = |name: &str| repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+    let bin = fixture("floatret_wrap_gcc_O0");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in ["int set_tz(char *a0)", "int restore_cwd(int a0,char *a1)", "unsigned int gi_as_f(void)", "void set_gi_bits(unsigned int a0)"] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    let printed = printed_functions(&stdout, &["set_tz ", "chdir_long ", "restore_cwd ", "gi_as_f ", "set_gi_bits ", "use_gi "]);
+    assert!(!printed.contains("CONCAT"), "a return pieces in bits no path sets:\n{printed}");
+    let src = format!(
+        "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <unistd.h>\n{BITS}int gi = 0x3fc00000;\n{printed}\n\
+         int main(void) {{\n  int r = set_tz(NULL), s = restore_cwd(-1, \"/tmp\");\n  unsigned long long g = BITS(gi_as_f());\n  \
+         set_gi_bits(0xc0f00000u);\n  printf(\"%d %d %llx %x\\n\", r, s, g, use_gi());\n  return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("floatret-wrap-gcc", &src) {
+        assert_eq!(got, "0 3 3fc00000 c0f00001", "{cc}: the printed C computes something else:\n{printed}");
+    }
+
+    let bin = fixture("floatret_wrap_clang_O0");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in [
+        "unsigned int wrapneg(unsigned int a0)",
+        "unsigned int wrapabs(unsigned int a0)",
+        "unsigned long wrapnegd(unsigned long a0)",
+        "unsigned int twice(unsigned int a0)",
+    ] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    let names = ["negf ", "absf ", "negd ", "wrapneg ", "wrapabs ", "wrapnegd ", "twice "];
+    let printed = printed_functions(&stdout, &names);
+    for bad in ["(float)", "(double)"] {
+        assert!(!printed.contains(bad), "`{bad}` converts a callee's bits:\n{printed}");
+    }
+    let mut globals = String::new();
+    let mut init = String::new();
+    for line in printed.lines() {
+        for word in line.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+            let Some(addr) = word.strip_prefix("dat_").and_then(|h| u64::from_str_radix(h, 16).ok()) else { continue };
+            if globals.contains(&format!(" {word};")) {
+                continue;
+            }
+            let bytes: Vec<String> = image_bytes(&bin, addr, 8).iter().map(|b| b.to_string()).collect();
+            globals.push_str(&format!("unsigned long {word};\nstatic const unsigned char {word}_b[8] = {{{}}};\n", bytes.join(",")));
+            init.push_str(&format!("  memcpy(&{word}, {word}_b, 8);\n"));
+        }
+    }
+    let src = format!(
+        "#include <stdio.h>\n#include <string.h>\n{BITS}{globals}{printed}\n\
+         int main(void) {{\n{init}  printf(\"%llx %llx %llx %llx\\n\", BITS(wrapneg(0x3fc00000u)) & 0xffffffff, \
+         BITS(wrapabs(0xbfa00000u)) & 0xffffffff, BITS(wrapnegd(0x3ff8000000000000ul)), BITS(twice(0x40400000u)) & 0xffffffff);\n  return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("floatret-wrap-clang", &src) {
+        assert_eq!(got, "bfc00000 3fa00000 bff8000000000000 40400000", "{cc}: the printed C computes something else:\n{printed}");
+    }
+
+    // gcc -O2 tail-jumps to the callee; the wrapper takes no parameter of its own
+    // (a separate gap), so this one is checked as text: the callee's integer bits
+    // are returned as they are, not converted.
+    let bin = fixture("floatret_wrap_gcc_O2");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in ["unsigned long wrapneg(void)", "return negf(); // tail-call", "unsigned long wrapnegd(void)", "return negd(); // tail-call"] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    let printed = printed_functions(&stdout, &["wrapneg ", "wrapabs ", "wrapnegd ", "twice "]);
+    for bad in ["(float)", "(double)"] {
+        assert!(!printed.contains(bad), "`{bad}` converts a callee's bits:\n{printed}");
+    }
+}
+
+/// `floatret_stale_gcc_O0` (gcc -O0): `find` and `slot` hand back what `lookup`
+/// and `slot_of` return (`call; ret`), and `set_e`, `get_c`, `put` and `take`
+/// reach a field through that result. `find` was `void`, so its callers printed
+/// `*(unsigned int *)(find(a0) + 0x20) = a1`, which does not compile; once the
+/// redo made `find` return `long *`, callers decompiled before it kept that
+/// text, which C scales by the pointee and writes 0x100 bytes past the record.
+/// Every reader of a function whose return a redo changed is decompiled again,
+/// and a caller that keeps the result as another class converts it. The
+/// printed functions, compiled against the fixture's own `lookup` and
+/// `slot_of`, compute what the fixture prints.
+#[test]
+fn a_reader_of_a_redone_wrapper_round_trips() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_stale_gcc_O0").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--option", "structdefs", "on", "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in ["long * find(unsigned int a0)", "long * slot(unsigned int a0)"] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    let printed = printed_functions(&stdout, &["find ", "set_e ", "get_c ", "slot ", "put ", "take "]);
+    for bad in ["find(a0) + ", "slot(a0) + "] {
+        assert!(!printed.contains(bad), "`{bad}` is arithmetic C scales by the pointee:\n{printed}");
+    }
+    let src = format!(
+        "#include <stdio.h>\n#include <string.h>\n\
+         struct rec {{ long a, b, c, d; unsigned int e, f; }};\nstruct rec table[4];\nlong *slots[4];\nstatic long store[4][4];\n\
+         long *lookup(unsigned int k) {{ struct rec *r = &table[k & 3]; r->d = r->a + r->b; return (long *)r; }}\n\
+         long *slot_of(unsigned int k) {{ long *p = slots[k & 3]; p[1] = p[0] + 1; return p; }}\n{printed}\n\
+         int main(void) {{\n  for (int i = 0; i < 4; i++) slots[i] = store[i];\n  \
+         set_e(1, 7); put(1, 11); store[1][3] = 5; table[1].c = 13;\n  \
+         printf(\"%u %ld %ld %ld\\n\", table[1].e, store[1][2], take(1), get_c(1));\n  return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("floatret-stale", &src) {
+        assert_eq!(got, "7 11 5 13", "{cc}: the printed C computes something else:\n{printed}");
+    }
+}
+
+/// `floatret_cm4.o` (Cortex-M4F, clang -O2): `qnanf_` loads 0x7fc00000 into
+/// `s0` and returns it, and `logish` tail-calls it on its error path -- the
+/// shape of crazyflie's `logf`. Before, `qnanf_` was `unsigned int` returning
+/// `0x7fc00000` and `logish` returned `(float)qnanf_()`, a value conversion of
+/// the NaN's bits that evaluates to 2143289344.0. `qp`, `sn` and `nn` return NaNs
+/// `NAN` cannot spell (a payload, a signalling NaN, a negative payload) and keep
+/// their bits, and `third` returns a `double` in `d0` whose low half is not a
+/// float. `put` and `put2` store `core`'s float through an untyped pointer,
+/// which printed `((unsigned int *)a1)[2] = core(a0)`, a conversion by value.
+/// The printed functions, compiled on the host, must compute what the source
+/// computes.
+#[test]
+fn a_nan_returned_in_s0_round_trips() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_cm4.o").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in [
+        "float qnanf_(void)",
+        "return NAN;",
+        "v1 = qnanf_();",
+        "unsigned int qp(void)",
+        "return 0x7fc00123;",
+        "return 0x7fa00000;",
+        "return 0xffc00005;",
+        "unsigned int third(void)",
+    ] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    for bad in ["0x7fc00000", "(float)qnanf_", "float third", "float qp", "float sn", "float nn", "(unsigned int *)"] {
+        assert!(!stdout.contains(bad), "`{bad}` printed:\n{stdout}");
+    }
+    assert!(stdout.contains("*(float *)(a1 + a2 * 4) = core(a0);"), "put stores core's float:\n{stdout}");
+    let printed = printed_functions(&stdout, &["qnanf_ ", "core ", "logish ", "use ", "qp ", "sn ", "nn ", "put2 "]);
+    let src = format!(
+        "#include <stdio.h>\n#include <string.h>\n#include <math.h>\n{BITS}int dat_0;\n{printed}\n\
+         int main(void) {{\n  float out[4] = {{0}};\n  put2(3.0f, out);\n  \
+         printf(\"%f %f %f %f %llx %llx %llx %llx\\n\", use(-3.0f), use(0.0f), use(4.0f), logish(-3.0f), \
+         BITS(qp()), BITS(sn()), BITS(nn()), BITS(out[2]));\n  return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("floatret-cm4", &src) {
+        assert_eq!(
+            got, "nan -inf 3.000000 nan 7fc00123 7fa00000 ffc00005 3fc00000",
+            "{cc}: the printed C computes something else:\n{printed}"
+        );
+    }
+}
+
+/// A C expression of the type the printed `name` declares its parameter `index`
+/// as, holding the bits `bits`: a round trip hands each function the bits the
+/// binary does, whichever type the listing gave the parameter.
+fn arg_of_bits(printed: &str, name: &str, index: usize, bits: u64) -> String {
+    let ty = param_type(printed, name, index);
+    format!("({{ {ty} t_; unsigned long long u_ = {bits:#x}ULL; memcpy(&t_, &u_, sizeof t_); t_; }})")
+}
+
+/// An argument for parameter `index` of the printed function `name` holding
+/// the address `expr`, whether the listing declares a pointer or a `long`.
+fn arg_of_pointer(printed: &str, name: &str, index: usize, expr: &str) -> String {
+    let ty = param_type(printed, name, index);
+    format!("({{ {ty} t_; const void *p_ = {expr}; memcpy(&t_, &p_, sizeof t_); t_; }})")
+}
+
+/// The type the printed function `name` declares for parameter `index`.
+fn param_type(printed: &str, name: &str, index: usize) -> String {
+    let head = printed
+        .lines()
+        .find(|l| !l.starts_with("//") && l.contains(&format!(" {name}(")))
+        .unwrap_or_else(|| panic!("no signature for {name}:\n{printed}"));
+    let params = &head[head.find('(').unwrap() + 1..head.rfind(')').unwrap()];
+    let param = params.split(',').nth(index).unwrap_or_else(|| panic!("{name} has no parameter {index}: {head}")).trim();
+    param.trim_end_matches(|c: char| c.is_ascii_alphanumeric() || c == '_').trim().to_string()
+}
+
+/// `floatret_calls_{clang,gcc}_O0`: `signbit_` hands its float to `f2u`, which
+/// keeps the bits as an `unsigned int`; `fetch` writes `p[1] = p[0] + 1` and
+/// hands `*(float *)p` on to `pass`, which returns it; `use` passes two floats to
+/// `mk` and `mk`'s `struct { float, float }` to `first_of`. A float vote on a
+/// value in `xmm0` printed `signbit_(float a0) { .. f2u(a0) .. }` beside
+/// `f2u(unsigned int)`, `a0[1] = (float)((int)*a0 + 1)` in `fetch`, and
+/// `use(float a0,float a1)` handing both to `mk(unsigned int,unsigned int)` --
+/// each a conversion by value where the binary moves bits. The printed functions
+/// are compiled with gcc and clang and must compute the fixture's bits. At gcc
+/// -O0, `call_f2u` hands `f2u`'s result back (`call; leave; ret`), but the
+/// argument joined from two registers keeps the call from having an output: it
+/// was printed returning a local nothing assigns, and stays `void`.
+#[test]
+fn a_float_crossing_an_integer_call_round_trips() {
+    let sp = specs();
+    let fixture = |name: &str| repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+    let bin = fixture("floatret_calls_clang_O0");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let printed = printed_functions(&stdout, &["f2u ", "signbit_ ", "pass ", "fetch ", "mk ", "first_of ", "use "]);
+    let src = format!(
+        "#include <stdio.h>\n#include <string.h>\n{BITS}\
+         #define CONCAT44(h, l) ((unsigned long)(unsigned int)(h) << 32 | (unsigned int)(l))\nunsigned int g_out;\n{printed}\n\
+         int main(void) {{\n  unsigned a[2] = {{0x3fc00000u, 0}};\n  fetch((void *)a);\n  \
+         use({}, {});\n  printf(\"%llx %x %x\\n\", BITS(signbit_({})) & 0xff, a[1], g_out);\n  return 0;\n}}\n",
+        arg_of_bits(&printed, "use", 0, 0x3fc0_0000),
+        arg_of_bits(&printed, "use", 1, 0x4020_0000),
+        arg_of_bits(&printed, "signbit_", 0, 0xbf00_0000),
+    );
+    for (cc, got) in compile_and_run_each("floatret-calls", &src) {
+        assert_eq!(got, "1 3fc00001 3fc00000", "{cc}: the printed C computes something else:\n{printed}");
+    }
+
+    let bin = fixture("floatret_calls_gcc_O0");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let body = printed_functions(&stdout, &["call_f2u "]);
+    for line in body.lines() {
+        let Some(var) = line.trim().strip_prefix("return ").and_then(|r| r.strip_suffix(';')) else { continue };
+        if var.starts_with('v') && var[1..].chars().all(|c| c.is_ascii_digit()) {
+            assert!(body.contains(&format!("{var} = ")), "call_f2u returns `{var}`, which nothing assigns:\n{body}");
+        }
+    }
+}
+
+/// `floatret_put_{cm4,a64}.o` (Cortex-M4F and AArch64, clang -O2): `putf2` moves
+/// its floats from `s0`..`s2` into `r0`..`r2` / `w0`..`w2` and tail-calls
+/// `put3`, which stores them as `u32`. A float vote on the parameters printed
+/// `putf2(float a0,..) { put3(a0,..); }` beside `put3(unsigned int,..)`, which
+/// stores 1, 2 and 7 where the binary stores the bits. The printed functions,
+/// compiled on the host, must store the bits.
+#[test]
+fn a_float_handed_on_to_an_integer_parameter_round_trips() {
+    let sp = specs();
+    for (tag, name) in [("cm4", "floatret_put_cm4.o"), ("a64", "floatret_put_a64.o")] {
+        let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        let printed = printed_functions(&stdout, &["put3 ", "putf2 "]);
+        let src = format!(
+            "#include <stdio.h>\n#include <string.h>\n{printed}\n\
+             int main(void) {{\n  unsigned s[3] = {{0}};\n  putf2({}, {}, {}, (void *)s);\n  \
+             printf(\"%x %x %x\\n\", s[0], s[1], s[2]);\n  return 0;\n}}\n",
+            arg_of_bits(&printed, "putf2", 0, 0x3fc0_0000),
+            arg_of_bits(&printed, "putf2", 1, 0x4020_0000),
+            arg_of_bits(&printed, "putf2", 2, 0x40e0_0000),
+        );
+        for (cc, got) in compile_and_run_each(&format!("floatret-put-{tag}"), &src) {
+            assert_eq!(got, "3fc00000 40200000 40e00000", "{tag} {cc}: the printed C stores something else:\n{printed}");
+        }
+    }
+}
+
+/// `floatret_pair_gcc_O2` (gcc -O2, stripped): `k2`, `k3` and `kc` return
+/// `{1.0f, 2.0f}` in `xmm0` as a `struct { float, float }`, the first two
+/// floats of three, and a `float _Complex`, and each reader copies the eight
+/// bytes into a `uint64_t` global and shifts out the upper half. A float vote
+/// typed the callees `double` and the readers printed `dat_4040 =
+/// (unsigned long)sub_11d0()`, which converts 2.0000004 to 2. The callees keep
+/// their bits and the printed functions, compiled with gcc and clang, store
+/// what the fixture stores.
+#[test]
+fn a_float_pair_held_as_an_integer_round_trips() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_pair_gcc_O2").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in ["unsigned long sub_11d0(void)", "unsigned long sub_11f0(void)", "unsigned long sub_1210(void)"] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    let printed = printed_functions(&stdout, &["sub_11d0 ", "sub_11f0 ", "sub_1210 ", "sub_1230 ", "sub_1260 ", "sub_1290 "]);
+    for bad in ["double", "(unsigned long)sub_"] {
+        assert!(!printed.contains(bad), "`{bad}` printed:\n{printed}");
+    }
+    let mut globals = String::new();
+    for line in printed.lines() {
+        for word in line.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+            if word.starts_with("dat_") && !globals.contains(&format!(" {word};")) {
+                globals.push_str(&format!("unsigned long {word};\n"));
+            }
+        }
+    }
+    let src = format!(
+        "#include <stdio.h>\n{globals}{printed}\n\
+         int main(void) {{\n  sub_1230(1);\n  sub_1260();\n  sub_1290();\n  \
+         printf(\"%lx %lx %lx %lx %lx %lx %lx\\n\", dat_4040, dat_4048, dat_4050, dat_4058, dat_4060, dat_4068, dat_4070);\n  return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("floatret-pair", &src) {
+        assert_eq!(
+            got, "400000003f800000 40000000 1 400000003f800000 40000000 400000003f800000 40000000",
+            "{cc}: the printed C stores something else:\n{printed}"
+        );
+    }
+}
+
+/// `floatret_chain_gcc_O1` (gcc -O1, stripped): `wrapd` hands on the `double`
+/// `getd` returns in `xmm0` (`call; ret`), `wrap2` hands on `wrapd`'s, and
+/// `wrapp` the `struct { float, float }` of `getp`; each reader copies the eight
+/// bytes into a `uint64_t` global. A reader keeping the bits as an integer
+/// withdrew the wrapper's float return, but the float came from the getter's
+/// own, which stayed: the wrapper still returned `double`, and the reader's
+/// `dat_40a0 = sub_1156(a0,a1)` converted 2.25 to 2. The getters are withdrawn
+/// with the wrappers, and the printed functions, compiled with gcc and clang,
+/// store the fixture's bits. `floatret_chain_mips_O0` (mipsel gcc -O0) hands a
+/// `float` in `$f0` through `wrapf` the same way: nothing on that chain is a
+/// float either, and the printed reader, run on the fixture's array mapped at a
+/// 32-bit address, stores the bits of 2.25f, where a float chain stored 2.
+#[test]
+fn a_float_handed_on_through_wrappers_to_an_integer_round_trips() {
+    let sp = specs();
+    let fixture = |name: &str| repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+    let bin = fixture("floatret_chain_gcc_O1");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let names = ["sub_1149 ", "sub_1156 ", "sub_1160 ", "sub_1181 ", "sub_118e ", "sub_1198 ", "sub_11ba ", "sub_11ff "];
+    let printed = printed_functions(&stdout, &names);
+    for want in ["unsigned long sub_1156(long a0,int a1)", "unsigned long sub_1160(long a0,int a1)", "unsigned long sub_118e(long a0,int a1)"] {
+        assert!(printed.contains(want), "missing `{want}`:\n{printed}");
+    }
+    assert!(!printed.contains("double"), "a function of the chain returns a float:\n{printed}");
+    let globals: String =
+        ["dat_40a0", "dat_40a8", "dat_40b0", "dat_40b8", "dat_40d0", "dat_40d8"].iter().map(|g| format!("unsigned long {g};\n")).collect();
+    let src = format!(
+        "#include <stdio.h>\n#include <string.h>\n\
+         double darr[4] = {{1.5, -0.0, 2.25, 3.0}};\n\
+         struct {{ float x, y; }} parr[4] = {{{{1.0f, 2.0f}}, {{3.0f, 4.0f}}, {{5.0f, 6.0f}}, {{7.0f, 8.0f}}}};\n\
+         {globals}{printed}\n\
+         int main(void) {{\n  sub_1198({}, 2);\n  sub_11ba({}, 3);\n  sub_11ff({}, 1);\n  \
+         printf(\"%lx %lx %lx %lx %lx %lx\\n\", dat_40a0, dat_40a8, dat_40b0, dat_40b8, dat_40d0, dat_40d8);\n  return 0;\n}}\n",
+        arg_of_pointer(&printed, "sub_1198", 0, "darr"),
+        arg_of_pointer(&printed, "sub_11ba", 0, "darr"),
+        arg_of_pointer(&printed, "sub_11ff", 0, "parr"),
+    );
+    for (cc, got) in compile_and_run_each("floatret-chain", &src) {
+        assert_eq!(
+            got, "4002000000000000 40020000 4008000000000000 40080000 4080000040400000 40800000",
+            "{cc}: the printed C stores something else:\n{printed}"
+        );
+    }
+    let mips = fixture("floatret_chain_mips_O0");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &mips, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let printed = printed_functions(&stdout, &["sub_40085c ", "sub_400898 ", "sub_400b78 "]);
+    for want in ["unsigned int sub_40085c(int a0,int a1)", "unsigned int sub_400898(int a0,int a1)"] {
+        assert!(printed.contains(want), "missing `{want}`:\n{printed}");
+    }
+    assert!(!printed.contains("float"), "a function of the chain returns a float:\n{printed}");
+    let src = format!(
+        "#include <stdio.h>\n#include <string.h>\n#include <sys/mman.h>\n\
+         void __stack_chk_fail(void);\nint guard_;\nint *dat_412094 = &guard_;\n\
+         unsigned int dat_4120e0, dat_4120e4, dat_4120e8, dat_4120ec;\n{printed}\n\
+         int main(void) {{\n  float farr[4] = {{1.5f, -0.0f, 2.25f, 3.0f}};\n  \
+         void *base = mmap((void *)0x20000000, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);\n  \
+         if (base != (void *)0x20000000) return 2;\n  memcpy(base, farr, sizeof farr);\n  sub_400b78({}, 2);\n  \
+         printf(\"%x %x %x %x\\n\", dat_4120e0, dat_4120e4, dat_4120e8, dat_4120ec);\n  return 0;\n}}\n",
+        arg_of_pointer(&printed, "sub_400b78", 0, "base"),
+    );
+    for (cc, got) in compile_and_run_each("floatret-chain-mips", &src) {
+        assert_eq!(got, "40100000 0 4010 0", "{cc}: the printed MIPS reader stores something else:\n{printed}");
+    }
+}
+
+/// `floatret_pair32_{i386_O2,arm_O0}.o`: `use` reads a 64-bit result in two
+/// registers from `hi` (`call zsum; or $0xff,%edx`) and from `wrap` (`call
+/// ins16; ret`). Returned in `eax` alone, `hi` dropped the `0xff` its high
+/// register carries, and `wrap` returned the low half of a 64-bit value. A
+/// return the callers read in two registers is returned whole or not at all.
+#[test]
+fn a_pair_return_handed_on_stays_whole_round_trips() {
+    let sp = specs();
+    let pairs: [(u32, u32); 4] = [(1, 2), (0x7fff, 0x10), (0x1000000, 0x2345), (0, 0)];
+    let want: Vec<String> = pairs.iter().map(|(a, b)| format!("{:x}", (a.wrapping_add(*b) as u64) | 0xff00000000)).collect();
+    for name in ["floatret_pair32_i386_O2.o", "floatret_pair32_arm_O0.o"] {
+        let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed: {stderr}");
+        assert!(!stdout.contains("unsigned int wrap("), "{name}: wrap returns half of a 64-bit value:\n{stdout}");
+        let printed = printed_functions(&stdout, &["zsum ", "hi "]);
+        assert!(printed.contains("unsigned long long hi(int a0,int a1)"), "{name}:\n{printed}");
+        let calls: String = pairs.iter().map(|(a, b)| format!("  printf(\"%llx\\n\", hi({a:#x},{b:#x}));\n")).collect();
+        let src = format!("#include <stdio.h>\n{printed}\nint main(void) {{\n{calls}  return 0;\n}}\n");
+        for (cc, got) in compile_and_run_each("floatret-pair32", &src) {
+            assert_eq!(got.lines().collect::<Vec<_>>(), want, "{name} {cc}: the printed hi returns something else:\n{printed}");
+        }
+    }
+}
+
+/// `floatret_beside_gcc_O2` (gcc -O2, stripped): `getf` returns a packed
+/// global's float on one path and `0.0f` on the other, each with its own `ret`.
+/// A value read from a global refuses the float-register vote, but the constant
+/// on the other path was voted alone, and the function returned `float` with
+/// the global in it. Every value the function returns in the register now
+/// answers for the vote.
+#[test]
+fn a_float_return_beside_a_global_read_stays_an_integer() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_beside_gcc_O2").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let printed = printed_functions(&stdout, &["sub_1180 "]);
+    for want in ["unsigned int sub_1180(int a0)", "return 0;", "return dat_4017;"] {
+        assert!(printed.contains(want), "missing `{want}`:\n{printed}");
+    }
+}
+
+/// The entry hands `f`'s `eax` to `ExitProcess`, so `f` is decompiled again to
+/// return it, and that decompile restarts once its second indirect call
+/// resolves to `ExitProcess`. The pass before the restart returned `eax`, the
+/// pass after it refused, and the first pass's output survived: `int
+/// sub_401020(..)` around a bare `return;`. No function that declares a return
+/// type prints one.
+#[test]
+fn a_return_refused_after_a_restart_leaves_the_function_void() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_restart_pe_i386.exe")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let printed = printed_functions(&stdout, &["sub_401020 "]);
+    assert!(printed.contains("void sub_401020(unsigned int a0)"), "{printed}");
+    for chunk in stdout.split("// Function: ") {
+        let mut lines = chunk.lines().skip(1);
+        let Some(sig) = lines.next() else { continue };
+        if !sig.starts_with("void ") {
+            assert!(!lines.any(|l| l.trim() == "return;"), "`{sig}` returns nothing:\n{stdout}");
+        }
+    }
+}
+
+/// `floatret_handon_gcc_O1`: `key_ssh_name` passes `key_type_plain`'s `int` to
+/// `type_name` and returns `type_name`'s pointer (`call; call; ret`), and `main`
+/// reads all of `rax`. The function names only `eax`, the first call's result,
+/// so its return was as narrow: `unsigned int key_ssh_name(..)`, which cuts the
+/// pointer to 32 bits. The printed functions are compiled against a key table
+/// whose string lies above 4 GiB and must return that string's address.
+#[test]
+fn a_pointer_handed_on_past_an_int_call_round_trips() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_handon_gcc_O1").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--option", "structdefs", "on", "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let printed = printed_functions(&stdout, &["type_name ", "key_type_plain ", "key_ssh_name "]);
+    let src = format!(
+        "#include <stdio.h>\n#include <string.h>\n#include <sys/mman.h>\n{BITS}unsigned long keytypes[8];\n{printed}\n\
+         int main(void) {{\n  char *ed = mmap((void *)0x7e0000000000ul, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);\n  \
+         strcpy(ed, \"ssh-ed25519\");\n  keytypes[0] = (unsigned long)\"ssh-rsa\"; keytypes[2] = (unsigned long)ed; keytypes[3] = 3;\n  \
+         keytypes[4] = (unsigned long)\"ecdsa\"; keytypes[5] = 2 | (415ul << 32); keytypes[7] = (unsigned long)-1;\n  \
+         unsigned char key[64] = {{3}};\n  unsigned long long r = BITS(key_ssh_name((void *)key));\n  \
+         printf(\"%d %d %s\\n\", (unsigned long)ed > 0xfffffffful, r == (unsigned long)ed, r == (unsigned long)ed ? ed : \"?\");\n  return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("floatret-handon", &src) {
+        assert_eq!(got, "1 1 ssh-ed25519", "{cc}: the printed C returns something else:\n{printed}");
+    }
+}
+
+/// `floatret_twopath_gcc_O1`: `wrap` tests `pick`'s `int` and returns one of
+/// two `getname` calls' pointers, both paths ending at one `ret`, and `main`
+/// reads all of `rax`. Heritage refines the planted `rax` at the `eax` the body
+/// names and merges each half on its own, which no rule joins again: `wrap`
+/// returned `CONCAT44(dat_4,v2)` and stored the upper half of `getname`'s
+/// pointer into `dat_4`, a register piece printed as a global the binary never
+/// writes. It stays `void`, as before a caller asked for its result.
+#[test]
+fn a_return_merged_in_pieces_stays_void() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_twopath_gcc_O1").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let printed = printed_functions(&stdout, &["wrap "]);
+    assert!(printed.contains("void wrap("), "`wrap` returns a value assembled from separately merged pieces:\n{printed}");
+    for bad in ["dat_4 =", "CONCAT44(dat_4,"] {
+        assert!(!printed.contains(bad), "`wrap` writes a register piece as a global (`{bad}`):\n{printed}");
+    }
+}
+
+/// `floatret_parse_gcc_O1.o` and `floatret_parse_armel.o` (soft-float ARM):
+/// `parse`, `parse2` and `parsef` return what `strtod` and `strtof` return, and
+/// `rp` keeps `parse`'s bits as an integer, `rp2` stores `parse2`'s `double`, and
+/// `rpf` keeps `parsef`'s bits. A relocatable object declares neither callee, so
+/// a return through them printed `unsigned long parse(..) { return strtod(..); }`,
+/// which converts the `double` by value once compiled against `<stdlib.h>`. They
+/// stay `void`, as before a caller asked for their result.
+#[test]
+fn a_return_of_an_undeclared_float_callee_stays_void() {
+    let sp = specs();
+    for name in ["floatret_parse_gcc_O1.o", "floatret_parse_armel.o"] {
+        let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
+        let printed = printed_functions(&stdout, &["parse ", "parse2 ", "parsef ", "rp ", "rp2 ", "rpf "]);
+        for want in ["void parse(", "void parse2(", "void parsef("] {
+            assert!(printed.contains(want), "{name}: missing `{want}`:\n{printed}");
+        }
+        for bad in ["return strtod(", "return strtof("] {
+            assert!(!printed.contains(bad), "{name}: `{bad}` converts the callee's float by value:\n{printed}");
+        }
+    }
+}
+
+/// `floatret_softfp_armv7` states the base procedure-call standard and has an
+/// FPU (`-mfloat-abi=softfp`, as Android `armeabi-v7a` builds do), so its
+/// imports take and return doubles in core registers: `pw` passes `r0`-`r3` to
+/// `pow`, and `rd` stores `strtod`'s `r0:r1` and passes it to `ceil`. The libc
+/// table's `double` rows laid those calls out in VFP registers and dropped the
+/// arguments and results (`pow(v1,v2)` of unset `d0`/`d1`); they are not seeded
+/// on such an image.
+#[test]
+fn soft_float_imports_keep_their_core_register_values() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_softfp_armv7").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in ["pow(a2,a3,a0,a1);", "= strtod(a0,0);", "= strtof(a0,0);", "= ceil("] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    for bad in ["double strtod(", "double pow(", "pow(v1,v2)"] {
+        assert!(!stdout.contains(bad), "`{bad}` reads VFP registers the code never sets:\n{stdout}");
+    }
+}
+
+/// `floatret_armrows_soft` and `floatret_armrows_hard` (soft-float and
+/// hard-float ARM): `clampd` returns `strtod`'s result or 0, and `rd` copies
+/// its bits into a `uint64_t`. With the libc table's `double` rows the soft
+/// image printed `double sub_10224(..)` beside `rd`'s `unsigned long long v1 =
+/// sub_10224()`, which converts 2.25 to 2, where the rows' absence returns the
+/// right `CONCAT44(v2,v1)`; the hard image printed `unsigned int sub_101f0(..)`
+/// returning `SUB84(v1,0)`, the low half of `d0`. ARM gets none of the rows.
+#[test]
+fn arm_images_get_no_double_libc_rows() {
+    let sp = specs();
+    for name in ["floatret_armrows_soft", "floatret_armrows_hard"] {
+        let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
+        for bad in ["double", "SUB84("] {
+            assert!(!stdout.contains(bad), "{name}: `{bad}` from a libc row ARM does not return whole:\n{stdout}");
+        }
+        if name.ends_with("soft") {
+            assert!(
+                stdout.contains("unsigned long long sub_10224(") && stdout.contains("return CONCAT44(v2,v1);"),
+                "{name}: `clampd` no longer returns its r0:r1 bits:\n{stdout}"
+            );
+        }
+    }
+}
+
 /// `dsum`, `norm` and `use` read their argument as `double *`, `struct P *` and
 /// `struct M *`, and each caller writes that memory with integer bits first. A
 /// pointer vote from the callee printed those stores as value conversions

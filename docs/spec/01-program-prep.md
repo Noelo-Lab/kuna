@@ -1512,7 +1512,26 @@ moves.
   redirect to. It admits no name the rule does not reach: `strtoll`, `strtoull`,
   `strtoimax`, `strtoumax` and `llabs` are the widest-imported names still
   missing, all rejected for returning a type — `long long`, `intmax_t` — whose
-  width is not fixed by the data model. The signatures
+  width is not fixed by the data model. With `float` and `double` in the
+  vocabulary (4- and 8-byte IEEE on every target the tables apply to) the same
+  rule admits `strtod`, `strtof`, `sqrt`, `pow`, `ceil`, `log2` and `modf`, and
+  still rejects `strtold` (`long double` has no fixed width). `strtod_l` is
+  added by hand: its `locale_t` is glibc's `struct __locale_struct *`, a typedef
+  the reduction does not see through, and without it gnulib's `c_strtod`, a tail
+  call to `strtod_l`, returned an integer beside `xstrtod`'s `strtod`, which then
+  converted it by value. A float-returning name fewer than three corpus binaries import
+  (`nanf`, `sqrtf`, `fabsf`) stays out, and its import stub is recovered from what
+  its callers read instead (chapter 04). These rows are seeded only on x86 and AArch64
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_typedcallabi.rs (returns_doubles_whole)`),
+  whose return recovery reads a `double` whole (`xmm0`, `ST0`, `d0`). ARM gets
+  none of them. Its default model lists only `s0`..`s7` among the outputs, so on
+  a hard-float image a function returning what it computed from `strtod` was
+  recovered as `unsigned int`, the low half of `d0`, where it had been `void`.
+  A soft-float or `-mfloat-abi=softfp` image hands a `double` around in
+  `r0:r1`, and its callers hold that as a 64-bit integer: the rows made such a
+  function `double`, which those callers then converted by value, where it had
+  returned the right `unsigned long long`. An operator-declared name
+  (`seed_declared_libc_prototype`) is refused on ARM the same way. The signatures
   themselves are reduced from the platform's own C declarations (`gcc -aux-info`
   over the standard headers, GCC's builtin types for the FORTIFY `_chk` entry
   points, the `<stdio.h>` `__REDIRECT` for the `__isoc99_*` aliases), never written

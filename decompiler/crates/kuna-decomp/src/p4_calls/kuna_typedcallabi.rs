@@ -114,6 +114,21 @@ pub fn without_fpu(arch: &Architecture) -> bool {
         .is_ok_and(|loader| loader.float_hardware() == Some(false))
 }
 
+/// Does the architecture return a `double` in one register its return recovery
+/// reads whole?  x86 (`xmm0`, `ST0`) and AArch64 (`d0`) do.  ARM's default
+/// model lists only `s0`..`s7` among its outputs, so a hard-float function
+/// returning a `double` it computed from a declared `double` is recovered as the
+/// `unsigned int` low half of `d0`; a soft-float or `softfp` image passes it in
+/// `r0:r1`, and its callers hold that as a 64-bit integer.
+pub fn returns_doubles_whole(arch: &Architecture) -> bool {
+    x86_or_aarch64(arch)
+}
+
+/// Does `pieces` declare a `float` or `double` parameter or return value?
+pub fn declares_a_float(pieces: &PrototypePieces) -> bool {
+    pieces.outtype.iter().chain(&pieces.intypes).any(|ty| ty.get_metatype() == type_metatype::TYPE_FLOAT)
+}
+
 /// The model a declared prototype that names no convention is laid out under,
 /// or `None` for the default one: the soft-float model, on an image that states
 /// the soft-float convention and no floating-point hardware ([`without_fpu`]),

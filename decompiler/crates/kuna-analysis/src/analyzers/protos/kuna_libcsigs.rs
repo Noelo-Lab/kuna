@@ -52,6 +52,7 @@ use super::{
     unambiguous_imported_function_names, Sig, Ty,
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
+use kuna_decomp::kuna_typedcallabi;
 
 /// Seed the measured libc signature extension onto imported functions.
 pub struct LibcSigsPass;
@@ -631,6 +632,25 @@ pub(super) const LIBC_EXT: &[(&str, Sig)] = &[
     ("tcflush", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::Int], vararg: -1 }),
     ("tcsendbreak", Sig { ret: Ty::Int, params: &[Ty::Int, Ty::Int], vararg: -1 }),
     ("uname", Sig { ret: Ty::Int, params: &[Ty::VoidPtr], vararg: -1 }),
+    // ---- floating point (docs/features/floatret/) ----
+    // The same corpus rule with `float` and `double` in the vocabulary: every
+    // slot is a 4- or 8-byte IEEE value on every target these tables apply to.
+    // `long double` (`strtold`) still has no fixed width and stays out. Seeded
+    // only on x86 and AArch64 (`returns_doubles_whole`): ARM recovers a
+    // function returning a `double` from these at half its width (hard-float)
+    // or beside callers holding `r0:r1` as an integer (soft-float, softfp).
+    ("ceil", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("log2", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("modf", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::VoidPtr], vararg: -1 }),
+    ("pow", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::Double], vararg: -1 }),
+    ("sqrt", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("strtod", Sig { ret: Ty::Double, params: &[Ty::CharPtr, Ty::CharPtrPtr], vararg: -1 }),
+    // `locale_t` is glibc's `struct __locale_struct *`, a typedef the reduction
+    // does not see through. Without the row gnulib's `c_strtod` (a tail call to
+    // `strtod_l`) returns an integer beside `xstrtod`'s `double`, which then
+    // converts `c_strtod`'s result by value.
+    ("strtod_l", Sig { ret: Ty::Double, params: &[Ty::CharPtr, Ty::CharPtrPtr, Ty::VoidPtr], vararg: -1 }),
+    ("strtof", Sig { ret: Ty::Float, params: &[Ty::CharPtr, Ty::CharPtrPtr], vararg: -1 }),
 ];
 
 impl AnalysisPass for LibcSigsPass {
@@ -650,6 +670,10 @@ impl AnalysisPass for LibcSigsPass {
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size, super::L);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT, types, word_size, super::L);
+        if !kuna_typedcallabi::returns_doubles_whole(ctx.arch) {
+            out.prototypes.retain(|p| !kuna_typedcallabi::declares_a_float(p));
+            out.prototypes_at.retain(|(_, p)| !kuna_typedcallabi::declares_a_float(p));
+        }
         out
     }
 }
@@ -742,6 +766,25 @@ mod tests {
             assert!(
                 !LIBC_EXT.iter().any(|(n, _)| *n == name),
                 "{name} returns long long/intmax_t and has no honest Ty spelling"
+            );
+        }
+    }
+
+    /// The floating-point rows are exactly what the corpus rule admits once
+    /// `float` and `double` are in the vocabulary, and `long double` is not.
+    #[test]
+    fn the_float_entries_are_the_measured_ones() {
+        let get = |want: &str| &LIBC_EXT.iter().find(|(n, _)| *n == want).expect(want).1;
+        assert!(matches!(get("strtod").ret, Ty::Double), "double strtod(const char *, char **)");
+        assert!(matches!(get("strtof").ret, Ty::Float), "float strtof(const char *, char **)");
+        assert!(matches!(get("strtod").params[1], Ty::CharPtrPtr));
+        assert!(matches!(get("strtod_l").ret, Ty::Double), "double strtod_l(const char *, char **, locale_t)");
+        assert!(matches!(get("strtod_l").params[..], [Ty::CharPtr, Ty::CharPtrPtr, Ty::VoidPtr]));
+        assert!(matches!(get("pow").params[..], [Ty::Double, Ty::Double]));
+        for name in ["strtold", "nanf", "fabsf", "sqrtf"] {
+            assert!(
+                !LIBC_EXT.iter().any(|(n, _)| *n == name),
+                "{name} is either long double or imported by fewer than three corpus binaries"
             );
         }
     }

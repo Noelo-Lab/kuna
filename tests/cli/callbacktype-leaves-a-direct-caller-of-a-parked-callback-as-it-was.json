@@ -39,7 +39,7 @@
       "unsigned int ent_before_g2\\(unsigned long \\*a0,unsigned long \\*a1\\)",
       "unsigned long \\* minimum_g2\\(unsigned long \\*a0,int a1\\)",
       "v2 = &a0\\[3\\];",
-      "if \\(\\(int\\)by_name_g2\\(v2,a0\\) <= -1\\)",
+      "if \\(by_name_g2\\(v2,a0\\) <= -1\\)",
       "long run_share_g6\\(long a0\\)\\n\\{\\n  return worker_g6\\(a0\\) \\* 3;",
       "long run_quiet_g6\\(long a0\\)\\n\\{\\n  return worker_g6\\(a0\\); // tail-call"
     ],
@@ -50,6 +50,6 @@
       "\\(\\(char \\*\\)(a0|v1|v2)\\)\\[0x18\\]"
     ]
   },
-  "notes": "A park changes only the parked function. compare_g/compare_c/by_name_g2/worker_g6 take their slot's prototype; every direct caller prints what it prints with the option off: search_[gc] keep struct_N *, ent_before_g2/minimum_g2 keep unsigned long * and &a0[3], run_share_g6/run_quiet_g6 keep the long they forward into worker_g6's void *.",
-  "probe_id": "p-841b1e857a48"
+  "notes": "A park changes only the parked function. compare_g/compare_c/by_name_g2/worker_g6 take their slot's prototype; every direct caller prints what it prints with the option off: search_[gc] keep struct_N *, ent_before_g2/minimum_g2 keep unsigned long * and &a0[3] (and by_name_g2's int, read without a cast), run_share_g6/run_quiet_g6 keep the long they forward.",
+  "probe_id": "p-85020bb2b94e"
 }
