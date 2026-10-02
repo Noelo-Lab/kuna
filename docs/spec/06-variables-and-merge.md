@@ -1620,12 +1620,10 @@ joins with a global has no such reader, unless a load of the global already
 reads the value; that value prints as the global, as on upstream. A parameter
 never merges with a global, so its stores keep upstream's handling too.
 
-Not covered: the same join decides the *pointee* type an access through the
-value takes. `int *q = p + k; gc = (char *)q; return q[1] + q[2];` prints as
-`gc = &a0[a1]; return gc[2] + gc[1];`, which reads bytes once `gc` is given its
-real type `char *`. Chapter 03's decision runs before types exist, when `q + 1`
-is still an integer add, so this needs a different signal there; it is tracked
-as issue #767.
+The same join also decides the *pointee* type an access through the value
+takes. That is the pointer case above (`kuna_pointeevalue.rs`, issue #767): it
+refuses the join for a value used as an address, independently of this test, so
+either refusal keeps the value apart.
 
 **(kuna) `option dynamichashmax`** — §6.3.
 
