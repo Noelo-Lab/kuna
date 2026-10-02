@@ -727,6 +727,14 @@ impl ParamEntry {
         }
     }
 
+    /// (kuna) Take `other`'s extension of a value narrower than the entry (the
+    /// spec's `extension` attribute).
+    pub(crate) fn kuna_copy_extension(&mut self, other: &ParamEntry) {
+        use param_entry_flags::*;
+        let mask = SMALLSIZE_ZEXT | SMALLSIZE_SEXT | SMALLSIZE_INTTYPE | SMALLSIZE_FLOATEXT;
+        self.flags = (self.flags & !mask) | (other.flags & mask);
+    }
+
     /// Mark this entry's `first_storage` flag based on the previous entry in
     /// `prev_list` (the entries decoded before this one) (C++ `resolveFirst`).
     /// In the C++ `--iter` reaches this entry (the last on the list) and
@@ -2100,6 +2108,12 @@ impl ParamListStandard {
     /// Get the list of parameter entries (C++ `getEntry`).
     pub fn get_entry(&self) -> &[ParamEntry] {
         &self.entry
+    }
+
+    /// (kuna) The parameter entries, for a builder that derives one model from
+    /// another.
+    pub(crate) fn kuna_entries_mut(&mut self) -> &mut [ParamEntry] {
+        &mut self.entry
     }
 
     /// Get the concrete model kind (C++ `getType`, projected to [`ParamListType`]).

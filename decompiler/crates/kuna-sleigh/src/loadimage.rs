@@ -100,6 +100,10 @@ pub trait LoadImage {
     /// (a soft-float procedure-call standard), `None` it says nothing.
     fn float_arg_registers(&self) -> Option<bool> { None }
 
+    /// Whether the container states floating-point register hardware:
+    /// `Some(false)` when it states none, `None` when it says nothing.
+    fn float_hardware(&self) -> Option<bool> { None }
+
     /// Whether the platform's callee extends a return value narrower than 32
     /// bits to 32 bits, so its caller reads that register unextended:
     /// `Some(true)` on Apple arm64, `Some(false)` on another stated arm64
