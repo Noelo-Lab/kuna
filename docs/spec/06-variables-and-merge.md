@@ -424,23 +424,25 @@ its block is dominated by an earlier COPY from the same source Varnode **and**
 nothing writes the shared HighVariable between the two — the dominance range
 `funcdata.rs (Funcdata::build_copy_pair_range)` spans the dominant COPY's write
 through to the later COPY's read of that source, and any member write landing
-inside it vetoes. The pairs of one group are tested together
-(`funcdata_merge.rs (MergeContext::redundant_copies)`): the high's other writes
-are listed by block once, the dominator answers for each earlier COPY's block are
-kept across the later ones, and each range is walked by
-`cover.rs (Cover::add_ref_point_until)`, which stops at the first block holding
-one of those writes (`funcdata.rs (Funcdata::copy_pair_crossed)`). A Cover block
-only grows while the walk runs, so a write met part way is inside the finished
-range, and a walk that meets none has seen every block as it ends: the verdict is
-the full range's, and debug builds check it against `check_copy_pair`. Building
-every range in full cost a function that stores one value to a global from many
-places the range's length for each of the quadratically many pairs (issue #818). Getting that range wrong is directly a wrong-value bug: a
+inside it vetoes. Getting that range wrong is directly a wrong-value bug: a
 `-O0` epilogue reached by several `return param;` paths puts several COPYs of one
 parameter in one variable, and if the reload that follows a call clobbering the
 same storage is called redundant and silenced, the emitted C returns the call's
-result on a path where the binary returns the parameter. Naming
-(`coreaction_cleanup.rs
-(ActionNameVars)`) and casts (`ActionSetCasts`) close the phalanx but are
+result on a path where the binary returns the parameter.
+
+The pairs of one group are tested together (`funcdata_merge.rs
+(MergeContext::redundant_copies)`): the high's other writes are listed by block
+once, the dominator answers for each earlier COPY's block are kept across the
+later ones, and each range is walked by `cover.rs (Cover::add_ref_point_until)`,
+which stops at the first block holding one of those writes (`funcdata.rs
+(Funcdata::copy_pair_crossed)`). A Cover block only grows while the walk runs,
+so a write met part way is inside the finished range, and a walk that meets none
+has seen every block as it ends: the verdict is the full range's, and debug
+builds check it against `check_copy_pair`. Building each range in full made a
+function that stores one value to a global from many places pay the range's
+length for each of the quadratically many pairs (issue #818).
+
+Naming (`coreaction_cleanup.rs (ActionNameVars)`) and casts (`ActionSetCasts`) close the phalanx but are
 policy of chapter [09](09-emission.md). One scheduled body is still inert in
 the live tree: `coreaction_cleanup.rs (ActionMergeMultiEntry)` is wired to the
 real engine (`merge.rs (Merge::merge_multi_entry)`) but its multi-entry-symbol

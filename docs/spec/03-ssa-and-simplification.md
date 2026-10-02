@@ -988,11 +988,12 @@ the store's block (`decompiler/crates/kuna-decomp/src/substrate/block.rs
 (BlockGraph::dominates_memo)`), which answers each block once however many of the
 global's varnodes sit in it, and reads each `MULTIEQUAL` that joins the global's
 values once rather than once for every value it joins
-(`kuna_pointeestorekeep.rs (Store::join_after)`). `RulePropagateCopy` asks it for
-a marker only after the marker's cheaper refusals, which never depended on it.
-The answers are the ones the per-value walk gave; before this a function storing
-one pointer to a global 600 times, with a pointer store between, took 42 s to
-decompile where it had taken 18 s before the store was kept.
+(`kuna_pointeestorekeep.rs (Store::join_after)`). The answers are the ones the
+per-value walk gave, and `RulePropagateCopy` still asks this question before
+`kuna_globalstorekeep`'s below, for every op, so a marker this one keeps never
+reaches that walk or its marking. Before this a function storing one pointer to
+a global 600 times, with a pointer store between, took about 40 s to decompile
+where it had taken 18 s before the store was kept.
 
 When the stored value is not used as an address it joins the global in chapter
 06, and a load that uses what it reads as an address, in the slot above or
