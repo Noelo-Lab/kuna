@@ -225,16 +225,26 @@ conditional move as writing s0 on both paths, so the register looked dead and
 the call bound zero. The walk also stopped at the user operation inside
 `bxlt lr`, so the code after a conditional return was never decoded.
 
-With the option on the walk now follows conditional execution per path: the
-path that skips a conditional instruction keeps the registers written before
-its condition, and a conditional return or call ends only the path that takes
-it. A register counts as never read when every path writes it first, or when
-the callee is a leaf that returns without touching it and every part of it
-inside the storage of the callee's recovered result is written on every path
-first (statements now record that storage even where some return does not
-compute the result). `calleedeadarg` reads the
-same walk in such a run, so `int pick(int a, int b, int c)` (`movgt r0,r1`)
-keeps its first argument as well; with the option off the walk is unchanged.
+With the option on, a register now counts as written on every path only where
+instructions that always run write it, and the leaf rule needs a walk that left
+no path behind and saw no conditional write to the register; the walk records
+both facts without changing what it answers anywhere else. A register counts as
+never read when every path writes it that way, or when the callee is a leaf
+that returns without touching it and every part of it inside the storage of the
+callee's recovered result is written on every path first (statements now record
+that storage even where some return does not compute the result).
+`calleedeadarg` asks for the same firm proof in a run with the option on, so
+`int pick(int a, int b, int c)` (`movgt r0,r1`) keeps its first argument as
+well; with the option off it is unchanged.
+
+Making the walk itself follow both paths of a conditional instruction was tried
+first and rejected on the firmware sweep. A literal pool in front of a Thumb
+function can decode as an IT instruction (cleanflight's `0x3fc90fdb` before
+`cosf` reads as `lsrs; itett gt`), which leaves the function's first
+instructions marked conditional. The per-path walk then saw reads of registers
+those instructions always write, and calls to such callees on cf2, cleanflight
+and betaflight gained up to sixteen phantom float arguments.
+
 Two follow-on cases came out of the sweep. A back-fill slot inside a double
 result (`L3(float, double, double)` returning in d0, with s1 never read) is
 still dropped where every path writes it first. And a stated double the callee
@@ -243,7 +253,7 @@ high word above its own float, passes zero in that word instead of turning the
 earlier result into integer bits.
 
 An earlier call's whole result passed into a slot the callee never reads is
-zero like any other leftover. Passing it on instead was tried: a float result
-held in d0 and handed to an ignored stated double was retyped as 64-bit
-integer bits, and one random program at ARMv8 -O2 went from the source's value
-to a wrong one.
+zero like any other leftover. A variant that passed such a result on instead
+was measured on the same sweeps and changed no build's outcome, so the smaller
+rule stays: the zero only lands where the callee provably never reads the
+register.
