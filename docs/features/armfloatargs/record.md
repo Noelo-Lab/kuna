@@ -172,3 +172,36 @@ wrapper that moves its d0 into r4:r5 is now `sub_8008190(float8 a0)` instead of
 `(int4 a0, uint4 a1)` and its three callers pass it the converted double they
 leave in d0 instead of nothing. Each change was checked against the
 disassembly; no callee became newly inconsistent with its callers.
+
+## Callee-ignored stated doubles
+
+Joining a stated double's two words could make a caller read a register it
+never wrote. In `float w3(float a) { return i4(8.25, a, a, 5.25) * 3 + a; }`,
+`i4(double, float, float, double)` never reads its first parameter, so clang
+leaves d0 holding `w3`'s own float in s0 and whatever s1 held on entry. Building
+the double from those words gave `w3` a phantom high word: it printed
+`float w3(double a0)`, and `top` passed it a `CONCAT44` built from an
+uninitialized local, which compiled and computed the wrong value. The same
+shape held as one d0 read (`u1`, `u2`, `u3` in `armfloatargs_ignored.c`)
+printed `float u1(double a0)` with `SUB84(a0,0)` for the float. A third shape
+had the same cause: `k3(float, float, float)` ignores its second float, `top`
+calls it with `q2`'s float result still in s0, and passing the s1 above that
+result made `q2`'s result an `unsigned long long` converted by value.
+
+The two words are now joined only where the callee's body, followed through
+its own calls, reads both of them, and never where passing them whole would
+read more of the caller's entry registers than the caller itself does. A stated
+input the callee never reads (it writes the register first, or is a leaf that
+returns without touching it) is zero where the caller's value would widen its
+own entry registers that way or is an earlier call's leftover: `w3(float a0)`
+calls `i4(0.0,a0,a0,5.25)` and `top` calls `k3(v6,0.0,v6 + 7.0)`. A double the
+caller computed, forwards untouched or also reads whole is passed as before.
+
+On 220 sources at six ARM and Thumb builds (the gen2 p/q seeds 31-60, the
+r3 a/b sets, gen3 r and the hand-written set), 463 of 1320 builds print C that
+computes the source's value, against 443 for the previous head merged with
+the same main; the 20 that changed all went from the wrong value to the right
+one, and nothing else moved. The hand-written set at arm -O3, Thumb -Oz and
+ARMv8 moved the same way (18 builds from wrong to right, none back), as did one
+Cortex-M4F build, and 60 more generated sources with mostly unused parameters
+print the same as the previous head.
