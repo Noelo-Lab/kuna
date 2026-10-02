@@ -294,5 +294,9 @@ callee whose recovered contract is itself short: `double C1(double, double,
 float, float, float, int)` reads only s5, the high word of d2, before writing
 d2 whole, so it is recovered as `(double, double, int)` (a listed limitation),
 and its caller then compiled and computed the wrong value instead of failing to
-compile. A contract the callee's own body contradicts, by reading an s-register
-parameter slot no stated input covers, now shapes no call.
+compile. A contract the callee's own body contradicts, by reading the high
+word of a d-register slot but not its low word with neither word stated, now
+shapes no call. Refusing every contract whose body reads any unstated
+s-register was measured first and rejected: -O0 bodies spill an unused trailing
+float that the contract leaves off, and twenty -O0 builds that printed the
+right value stopped compiling.

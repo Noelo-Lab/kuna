@@ -496,22 +496,25 @@ fn plan_stated_inputs(
     Some(StatedPlan { drop, bind, zeros, halves, joins, missing, partial })
 }
 
-/// Does the callee's body read an s-register parameter slot that no stated
-/// input covers? Its recovered contract then misses an input, so it does not
-/// shape the call.
+/// Does the callee's body read the high word of a d-register parameter slot
+/// whose low word it neither reads nor states, with no stated input covering
+/// that high word? The convention allocates the low word first, so its
+/// recovered contract misses an input and does not shape the call.
 fn reads_unstated(
     entries: &[crate::fspec::ParamEntry],
     dead: &crate::kuna_calleedeadarg::CalleeEntryDead,
     inputs: &[(Address, i32, std::rc::Rc<Datatype>)],
 ) -> bool {
-    entries
+    let singles: Vec<Address> = entries
         .iter()
         .filter(|e| e.get_type() == type_class::TYPECLASS_FLOAT && e.get_size() == 4)
         .map(|e| Address::new(e.get_space().clone(), e.get_base()))
-        .any(|w| {
-            dead.proves_read(&w, 4)
-                && !inputs.iter().any(|(a, s, _)| a.justified_contain(*s, &w, 4, false) >= 0)
-        })
+        .collect();
+    let stated = |w: &Address| inputs.iter().any(|(a, s, _)| a.justified_contain(*s, w, 4, false) >= 0);
+    singles.chunks_exact(2).any(|pair| {
+        let (lo, hi) = (&pair[0], &pair[1]);
+        dead.proves_read(hi, 4) && !stated(hi) && !dead.proves_read(lo, 4) && !stated(lo)
+    })
 }
 
 /// Is `[addr, addr+size)` a VFP input slot of `call` that its callee never

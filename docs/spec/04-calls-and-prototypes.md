@@ -40,8 +40,10 @@ the callee's recovered contract is arity-sound, the call takes the VFP inputs
 that contract states up to the last one the caller wrote for the call or the
 callee's body, followed through its own calls, is seen to read, so caller and
 callee agree on every VFP position in front of it. A contract that the callee's
-own body contradicts, by reading an s-register parameter slot no stated input
-covers, shapes no call: the call keeps the arguments it recovered. A stated double that the call
+own body contradicts shapes no call, and the call keeps the arguments it
+recovered: when the body reads the high word of a d-register parameter slot but
+not its low word, and the contract states neither, the convention allocated the
+low word first, so the contract misses an input. A stated double that the call
 holds as its two s-register words, because heritage split the d-register where
 the caller writes only a single-precision half of it, is passed as one value
 built from those two words where the callee's body, followed through its own
