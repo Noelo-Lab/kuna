@@ -1156,16 +1156,102 @@ fn two_conventions_in_one_declaration_are_rejected() {
     );
 }
 
+/// [`factory`] wired the way an architecture wires it after loading its
+/// compiler spec: an address-space manager, `__cdecl` as the default model, and
+/// the named models in `registered`.
+fn factory_with_models(registered: &[&str]) -> TypeFactoryImpl {
+    use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace};
+    use kuna_decomp::fspec::ProtoModel;
+    use std::rc::Rc;
+    let f = factory();
+    let mut mgr = AddrSpaceManager::new();
+    mgr.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+    let ram = AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "ram",
+        false,
+        8,
+        1,
+        1,
+        addrspace_flags::hasphysical,
+        1,
+        1,
+    );
+    mgr.insert_space(Rc::new(ram)).unwrap();
+    mgr.set_default_code_space(1).unwrap();
+    mgr.set_default_data_space(1).unwrap();
+    let mgr = Rc::new(mgr);
+    let model = |name: &str| {
+        let mut m = ProtoModel::new(&mgr);
+        m.set_name(name);
+        m.build_param_list("standard").unwrap();
+        Rc::new(m)
+    };
+    let dflt = model("__cdecl");
+    let mut models = std::collections::BTreeMap::new();
+    models.insert("__cdecl".to_string(), Rc::clone(&dflt));
+    for name in registered {
+        models.insert(name.to_string(), model(name));
+    }
+    f.set_proto_context(Rc::clone(&mgr));
+    f.set_proto_models(Some(dflt), models);
+    f
+}
+
+/// Parse one `extern` declaration whose first parameter is a function pointer
+/// and report the convention that pointer's prototype carries.
+fn callback_model(decl: &str, registered: &[&str]) -> String {
+    use std::cell::RefCell;
+    let f = factory_with_models(registered);
+    let seen: RefCell<Option<String>> = RefCell::new(None);
+    super::parse_c(decl, &f, org(), &win_models(), |pieces, _| {
+        let code = pieces.intypes[0].get_ptr_to().expect("a pointer parameter");
+        let proto = code.get_code_prototype().expect("a prototyped code type");
+        *seen.borrow_mut() = Some(proto.get_model_name().to_string());
+        Ok(())
+    })
+    .unwrap_or_else(|e| panic!("{decl:?} must parse: {}", e.explain()));
+    seen.into_inner().expect("a prototype")
+}
+
 #[test]
 fn a_convention_on_a_function_pointer_parameter_parses_as_it_did_without_one() {
     // `__stdcall` inside a parenthesised declarator (`int4 (__stdcall *cb)(int4)`)
-    // is the callback spelling every Win32 header uses.  The convention on a
-    // function-pointer PARAMETER is dropped (the parameter's type is a code
-    // pointer, which carries no model in this port), but it must not change how
-    // the declaration parses.
+    // is the callback spelling every Win32 header uses.  It must not change how
+    // the enclosing declaration parses.
+    let with = |decl: &str| {
+        let f = factory_with_models(&["__stdcall"]);
+        let seen = std::cell::RefCell::new(None);
+        super::parse_c(decl, &f, org(), &win_models(), |pieces, model| {
+            *seen.borrow_mut() = Some((model.to_string(), pieces.intypes.len()));
+            Ok(())
+        })
+        .map_err(|e| e.explain().to_string())
+        .map(|()| seen.into_inner())
+    };
+    let named = with("extern int4 f(int4 (__stdcall *cb)(int4));");
+    assert_eq!(named, Ok(Some((String::new(), 1))));
+    assert_eq!(named, with("extern int4 f(int4 (*cb)(int4));"));
+}
+
+#[test]
+fn a_function_pointer_parameter_keeps_the_convention_it_names() {
+    // The callee behind `cb` is called under the convention its declarator
+    // names (C++ `FunctionModifier::modType`: `proto.model = decl->getModel`).
     assert_eq!(
-        proto_model("extern int4 f(int4 (__stdcall *cb)(int4));", &win_models()),
-        proto_model("extern int4 f(int4 (*cb)(int4));", &win_models())
+        callback_model("extern int4 f(int4 (__stdcall *cb)(int4));", &["__stdcall"]),
+        "__stdcall"
+    );
+    assert_eq!(callback_model("extern int4 f(int4 (*cb)(int4));", &["__stdcall"]), "__cdecl");
+}
+
+#[test]
+fn an_unregistered_function_pointer_convention_falls_back_to_the_default() {
+    // C++ `TypeDeclarator::getModel` returns `glb->defaultfp` when `getModel(name)`
+    // finds nothing; the parse must not fail.
+    assert_eq!(
+        callback_model("extern int4 f(int4 (__fastcall *cb)(int4));", &["__stdcall"]),
+        "__cdecl"
     );
 }
 
