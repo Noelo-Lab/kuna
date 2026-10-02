@@ -133,3 +133,42 @@ binary passes in `s0` while a caller still lacks a core argument the compiler
 kept live across an earlier call (`-fipa-ra`). Spot checks against the
 disassembly (`sqrtf`, `__ieee754_rem_pio2f`, `__kernel_sinf` and pt2-filter
 calls) show the added arguments carry the values the binary passes.
+
+## Whole stated doubles and leaf back-fill slots
+
+Two more call shapes printed more arguments than their callee lists:
+
+- A float-returning wrapper that hands its double to `wl(double, float)` in d0
+  and uses it again after the call writes only s0 itself, so heritage reads
+  that d0 as two words and the call held them as two word trials:
+  `wl(SUB84(a0,0),SUB84(a0,4),0x40600000)`. A stated double the call holds as
+  its two words is now passed as one PIECE of them in the low word's slot, so
+  the call prints `wl(a0,3.5)`.
+- `top` passed `hole6(double, double, double, float, double, double)` the
+  back-fill slot s7, which it writes only after the call, as a seventh
+  argument, and that read gave `top` eight phantom parameters. The rule that
+  drops a VFP register the callee neither reads nor forwards never fired on
+  ARM, because every `bx lr` switches the instruction set through a user
+  operation before it returns and the forwarding walk counts a user operation
+  as an opaque transfer. The entry probe now notes a user operation whose
+  instruction then returns unconditionally, so a leaf that only returns
+  forwards nothing.
+
+On 60 generated float/double programs at six ARM and Thumb builds (-O0 to -Os),
+programs whose printed C computes the source's value went from 89 to 97 of
+360, and calls with more arguments than their callee from 36 to 7. The seven
+are all -O0 builds of a callee whose unused trailing float is only spilled,
+now listed among the limitations; with the option off the same calls also
+pass more arguments than their callee lists. On 80 hand-written and generated sources at nine builds
+including Cortex-M4F, 194 then 219 of 720 builds match, and the calls with too
+many arguments are a strict subset of the previous head's. On 23 firmware
+images (the 20 above plus betaflight O2-noinline, lcd-dma O0 and mandel
+O2-noinline), option off is byte-identical to the previous head merged with the
+same main. With the option on, 19 images are unchanged and four change: cf2
+O2-noinline in 6 functions, each a VFP argument dropped from a call to a callee
+that never reads it (`vmul.f32 s0, s0, s15; bx lr`, or `vneg` of s0-s2 into an
+empty stub), and the three betaflight builds in 4 functions each, where a `sqrt`
+wrapper that moves its d0 into r4:r5 is now `sub_8008190(float8 a0)` instead of
+`(int4 a0, uint4 a1)` and its three callers pass it the converted double they
+leave in d0 instead of nothing. Each change was checked against the
+disassembly; no callee became newly inconsistent with its callers.
