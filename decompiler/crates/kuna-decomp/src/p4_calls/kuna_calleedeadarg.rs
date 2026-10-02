@@ -212,7 +212,8 @@ pub struct CalleeEntryDead {
     return_reads: Vec<(int4, u64, int4)>,
     /// Register bytes some instruction writes only after a branch inside it,
     /// a conditionally executed write (ARM `vmovgt`, a Thumb IT block) that
-    /// the walk credits on both paths. Read by [`Self::proves_dead_firmly`].
+    /// the walk credits on both paths, where nothing on that path wrote them
+    /// before. Read by [`Self::proves_dead_firmly`].
     cond_written: ByteSet,
     /// Did a path end inside an instruction that had already branched, such as
     /// ARM's conditional `bxlt lr`, so the path skipping it was never walked?
@@ -1134,8 +1135,7 @@ fn step_instruction(
                     if sp.get_index() == res.reg_idx {
                         let idx = res.reg_idx;
                         for b in o.offset..o.offset + o.size as u64 {
-                            cur.insert((idx, b));
-                            if !targets.is_empty() {
+                            if cur.insert((idx, b)) && !targets.is_empty() {
                                 res.cond_written.insert((idx, b));
                             }
                         }

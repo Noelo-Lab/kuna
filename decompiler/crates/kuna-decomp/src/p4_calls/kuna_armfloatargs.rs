@@ -342,6 +342,9 @@ fn plan_stated_inputs(
     if wanted.len() < stated.inputs.len() && !trials.iter().any(|(_, _, _, used, _)| *used) {
         return None;
     }
+    if dead.is_some_and(|d| reads_unstated(entries, d, &stated.inputs)) {
+        return None;
+    }
     let reads = data
         .kuna_callee_entry_through(&entry)
         .or_else(|| data.kuna_callee_entry_dead(&entry));
@@ -491,6 +494,24 @@ fn plan_stated_inputs(
         }
     }
     Some(StatedPlan { drop, bind, zeros, halves, joins, missing, partial })
+}
+
+/// Does the callee's body read an s-register parameter slot that no stated
+/// input covers? Its recovered contract then misses an input, so it does not
+/// shape the call.
+fn reads_unstated(
+    entries: &[crate::fspec::ParamEntry],
+    dead: &crate::kuna_calleedeadarg::CalleeEntryDead,
+    inputs: &[(Address, i32, std::rc::Rc<Datatype>)],
+) -> bool {
+    entries
+        .iter()
+        .filter(|e| e.get_type() == type_class::TYPECLASS_FLOAT && e.get_size() == 4)
+        .map(|e| Address::new(e.get_space().clone(), e.get_base()))
+        .any(|w| {
+            dead.proves_read(&w, 4)
+                && !inputs.iter().any(|(a, s, _)| a.justified_contain(*s, &w, 4, false) >= 0)
+        })
 }
 
 /// Is `[addr, addr+size)` a VFP input slot of `call` that its callee never
