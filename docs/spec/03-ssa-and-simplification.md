@@ -981,19 +981,28 @@ chapter 06 keeps the copy as its own variable, so
 `r = gi; *pp2 = p + 1; return r[1];` keeps `r` where the binary loads it rather
 than reading `gi` after the second store.
 
-These questions are asked again every time the rule pool visits a reader, so
-each is kept linear in the global's varnodes (issue #818). The search for an
-earlier value read after the store asks the dominator tree through one memo for
-the store's block (`decompiler/crates/kuna-decomp/src/substrate/block.rs
-(BlockGraph::dominates_memo)`), which answers each block once however many of the
-global's varnodes sit in it, and reads each `MULTIEQUAL` that joins the global's
-values once rather than once for every value it joins
-(`kuna_pointeestorekeep.rs (Store::join_after)`). The answers are the ones the
-per-value walk gave, and `RulePropagateCopy` still asks this question before
-`kuna_globalstorekeep`'s below, for every op, so a marker this one keeps never
-reaches that walk or its marking. Before this a function storing one pointer to
-a global 600 times, with a pointer store between, took about 40 s to decompile
-where it had taken 18 s before the store was kept.
+These questions are asked again every time the rule pool visits a reader
+(issue #818). One search for an earlier value read after the store first sets
+aside every value of the global written at or after the store, asking the
+dominator tree through one memo for the store's block
+(`decompiler/crates/kuna-decomp/src/substrate/block.rs
+(BlockGraph::dominates_memo)`): a walk up the tree that is still going after
+eight blocks keeps its answers from there on, so a long chain of blocks below
+the store is climbed once rather than once per value, and a short walk costs
+what `dominates` does. Only the earlier values' readers are read after that, and
+each `MULTIEQUAL` among them is read once, against the earlier values that list
+it, rather than once for every value it joins
+(`kuna_pointeestorekeep.rs (Store::join_after)`); the walk through register
+copies stays bounded by `WALK_BOUND` readers per value. Beyond the first eight
+steps of each walk, one search visits each block of the dominator tree at most
+once, and it otherwise costs time linear in the global's values, the earlier
+values' readers and those joins' inputs; but the rule pool still asks it once
+per reader, so the total grows faster than the function. The answers are
+the ones the per-value walk gave, and `RulePropagateCopy` still asks this
+question before `kuna_globalstorekeep`'s below, for every op, so a marker this
+one keeps never reaches that walk or its marking. Before this a function
+storing one pointer to a global 600 times, with a pointer store between, took
+about 38 s to decompile where it had taken 16 s before the store was kept.
 
 When the stored value is not used as an address it joins the global in chapter
 06, and a load that uses what it reads as an address, in the slot above or
