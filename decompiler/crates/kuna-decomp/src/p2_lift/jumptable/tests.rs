@@ -606,32 +606,34 @@ fn label_rows_judge_a_value_by_the_entries_it_reads() {
     let m = build_manager();
     let ram = ram_of(&m);
     let at = |off: u64, size: int4| LoadTable::single(Address::new(Rc::clone(&ram), off), size);
+    let table = |off: u64, size: int4, num: int4| {
+        LoadTable::full(Address::new(Rc::clone(&ram), off), size, num)
+    };
     let mut basic = JumpBasicModel::new();
     let mut range = JumpValuesRange::new();
     range.set_range(CircleRange::new(0, 2, 4, 1));
     basic.jrange = Some(Box::new(range));
     let addrs = vec![Address::default(); 2];
     let read = RowLoads {
-        entries: vec![
-            LoadTable::full(Address::new(Rc::clone(&ram), 0x100), 1, 2),
-            LoadTable::full(Address::new(Rc::clone(&ram), 0x208), 8, 2),
-        ],
+        entries: vec![table(0x100, 1, 2), table(0x208, 8, 2)],
+        reached: vec![table(0x100, 1, 4), table(0x208, 8, 2), table(0x300, 8, 1)],
         depth: 2,
     };
     let rows = LabelRows::new(&basic, &addrs, Some(&read)).unwrap();
     assert!(rows.may_be_dispatched(&[at(0x101, 1), at(0x210, 8)]));
     assert!(rows.may_be_dispatched(&[at(0x210, 8)]));
-    assert!(!rows.may_be_dispatched(&[at(0x102, 1), at(0x210, 8)]));
+    assert!(rows.may_be_dispatched(&[at(0x103, 1), at(0x210, 8)]));
+    assert!(!rows.may_be_dispatched(&[at(0x104, 1), at(0x210, 8)]));
+    assert!(!rows.may_be_dispatched(&[at(0x103, 1), at(0x300, 8)]));
     assert!(!rows.may_be_dispatched(&[at(0x100, 1), at(0x218, 8)]));
     assert!(!rows.may_be_dispatched(&[at(0x200, 8)]));
     assert!(!rows.may_be_dispatched(&[at(0x20c, 8)]));
     assert!(!rows.may_be_dispatched(&[at(0x208, 4)]));
     assert!(rows.may_be_dispatched(&[]));
-    assert!(rows.may_be_dispatched(&[at(0x300, 2), at(0x100, 1), at(0x208, 8)]));
-    assert!(rows.may_be_dispatched(&[at(0x300, 2), at(0x400, 1), at(0x210, 8)]));
-    assert!(!rows.may_be_dispatched(&[at(0x300, 2), at(0x100, 1), at(0x218, 8)]));
+    assert!(rows.may_be_dispatched(&[at(0x500, 2), at(0x400, 1), at(0x210, 8)]));
+    assert!(!rows.may_be_dispatched(&[at(0x500, 2), at(0x100, 1), at(0x218, 8)]));
 
-    let empty = RowLoads { entries: Vec::new(), depth: 1 };
+    let empty = RowLoads { entries: Vec::new(), reached: Vec::new(), depth: 1 };
     let empty = LabelRows::new(&basic, &addrs, Some(&empty)).unwrap();
     assert!(empty.may_be_dispatched(&[at(0x400, 8)]));
     let unrecorded = LabelRows::new(&basic, &addrs, None).unwrap();
@@ -646,6 +648,7 @@ fn kept_row_loads_follow_the_sanity_truncation() {
     let loads = vec![at(0x10, 4), at(0x14, 4), at(0x18, 4), at(0x1c, 4)];
     let kept = JumpTable::kept_row_loads(loads.clone(), &[1, 2, 3, 4], 2).unwrap();
     assert_eq!(kept.entries, vec![LoadTable::full(Address::new(Rc::clone(&ram), 0x10), 4, 2)]);
+    assert_eq!(kept.reached, vec![LoadTable::full(Address::new(Rc::clone(&ram), 0x10), 4, 4)]);
     assert_eq!(kept.depth, 1);
     let paired = JumpTable::kept_row_loads(loads.clone(), &[2, 4], 2).unwrap();
     assert_eq!(paired.entries, vec![LoadTable::full(Address::new(Rc::clone(&ram), 0x10), 4, 4)]);

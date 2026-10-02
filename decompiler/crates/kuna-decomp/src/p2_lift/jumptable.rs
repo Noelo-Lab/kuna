@@ -1883,18 +1883,20 @@ struct LoopCarriedWalk {
     seeds: Vec<(VarnodeId, uintb)>,
 }
 
-/// The memory a flow-time model read to reach the rows the sanity check kept,
-/// collapsed, and the most loads it performed for one row.
+/// The memory a flow-time model read to reach the rows the sanity check kept
+/// and to reach every row it emulated, collapsed, and the most loads it
+/// performed for one row.
 #[derive(Debug, Clone, PartialEq)]
 struct RowLoads {
     entries: Vec<LoadTable>,
+    reached: Vec<LoadTable>,
     depth: usize,
 }
 
 impl RowLoads {
-    /// Whether `load` reads one of the entries.
-    fn read(&self, load: &LoadTable) -> bool {
-        self.entries.iter().any(|row| {
+    /// Whether `load` reads one of `tables`' entries.
+    fn covers(tables: &[LoadTable], load: &LoadTable) -> bool {
+        tables.iter().any(|row| {
             let span = (row.size as uintb).wrapping_mul(row.num as uintb);
             let delta = load.addr.get_offset().wrapping_sub(row.addr.get_offset());
             row.addr.get_space().map(|spc| spc.get_index())
@@ -1941,22 +1943,25 @@ impl LabelRows {
     }
 
     /// Whether a value whose emulation performed `loads` may be one the code
-    /// dispatches.  A dispatched value runs some kept flow-time row, so every
-    /// load its path shares with the flow-time path reads an entry that row
-    /// read.  A path with no more loads than a row shares all of them; a
-    /// longer one starts upstream of the flow-time variable and shares only
-    /// its last load, the entry its destination comes from.  Any value may be
-    /// dispatched when that cannot be told (no flow-time loads were recorded,
-    /// or the value loads nothing).
+    /// dispatches.  Its last load, the entry its destination comes from, must
+    /// be one a kept flow-time row read: entries past the table end the sanity
+    /// check found are not dispatched.  When its path has no more loads than a
+    /// flow-time row, it starts at or after the flow-time variable, and each
+    /// earlier load must read an entry some flow-time row read, kept or cut:
+    /// an index past the flow-time range reads map entries no row read.  A
+    /// longer path starts in front of the flow-time variable, where nothing
+    /// was recorded.  Any value may be dispatched when that cannot be told (no
+    /// flow-time loads were recorded, or it loads nothing).
     fn may_be_dispatched(&self, loads: &[LoadTable]) -> bool {
         let Some(rows) = self.loads.as_ref().filter(|rows| !rows.entries.is_empty()) else {
             return true;
         };
-        match loads.last() {
-            None => true,
-            Some(last) if loads.len() > rows.depth => rows.read(last),
-            Some(_) => loads.iter().all(|load| rows.read(load)),
-        }
+        let Some((last, before)) = loads.split_last() else {
+            return true;
+        };
+        RowLoads::covers(&rows.entries, last)
+            && (loads.len() > rows.depth
+                || before.iter().all(|load| RowLoads::covers(&rows.reached, load)))
     }
 }
 
@@ -5267,9 +5272,9 @@ impl JumpTable {
             self.addresstable = addresstable;
             self.loadpoints = loadpoints;
             r?;
+            let reached = self.loadpoints.clone();
             self.sanity_check(fd, Some(&loadcounts))?;
-            self.row_loads =
-                Self::kept_row_loads(self.loadpoints.clone(), &loadcounts, self.addresstable.len());
+            self.row_loads = Self::kept_row_loads(reached, &loadcounts, self.addresstable.len());
             LoadTable::collapse_table(&mut self.loadpoints);
         } else {
             let mut loadcounts: Vec<int4> = Vec::new();
@@ -5304,9 +5309,11 @@ impl JumpTable {
             .iter()
             .scan(0, |prev, &count| Some(count - std::mem::replace(prev, count)))
             .max()? as usize;
+        let mut reached = loads.clone();
+        LoadTable::collapse_table(&mut reached);
         loads.truncate(kept);
         LoadTable::collapse_table(&mut loads);
-        Some(RowLoads { entries: loads, depth })
+        Some(RowLoads { entries: loads, reached, depth })
     }
 
     /// Recover jump-table addresses keeping track of a possible previous stage

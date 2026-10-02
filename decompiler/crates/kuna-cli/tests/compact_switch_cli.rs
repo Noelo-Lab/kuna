@@ -152,27 +152,23 @@ fn far_guard_fixture(past: &[i32]) -> Vec<u8> {
     elf(&code)
 }
 
-fn decompile(image: &[u8], asserts: &[&str], options: &[&str]) -> String {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let specs = std::env::var_os("SLEIGHHOME")
+fn root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
+}
+
+fn specs() -> PathBuf {
+    std::env::var_os("SLEIGHHOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|| root.join("specs"));
-    let scratch = tempfile::tempdir().unwrap();
-    let binary = scratch.path().join("fixture.elf");
-    std::fs::write(&binary, image).unwrap();
-    let kuna =
-        std::env::var_os("KUNA_TEST_BIN").unwrap_or_else(|| env!("CARGO_BIN_EXE_kuna").into());
-    let mut command = Command::new(kuna);
-    command.args(["decompile-all"]).arg(&binary);
-    for option in options {
-        command.args(["--option", option, "off"]);
-    }
-    command
-        .args(["--addr", "0x401000", "--mode", "reliable", "--assert-strict", "--sleighpath"])
-        .arg(specs);
-    for assertion in asserts {
-        command.args(["--assert", assertion]);
-    }
+        .unwrap_or_else(|| root().join("specs"))
+}
+
+fn kuna() -> Command {
+    Command::new(
+        std::env::var_os("KUNA_TEST_BIN").unwrap_or_else(|| env!("CARGO_BIN_EXE_kuna").into()),
+    )
+}
+
+fn printed(mut command: Command) -> String {
     let out = command.output().unwrap();
     assert!(
         out.status.success(),
@@ -180,6 +176,24 @@ fn decompile(image: &[u8], asserts: &[&str], options: &[&str]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8(out.stdout).unwrap()
+}
+
+fn decompile(image: &[u8], asserts: &[&str], options: &[&str]) -> String {
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("fixture.elf");
+    std::fs::write(&binary, image).unwrap();
+    let mut command = kuna();
+    command.args(["decompile-all"]).arg(&binary);
+    for option in options {
+        command.args(["--option", option, "off"]);
+    }
+    command
+        .args(["--addr", "0x401000", "--mode", "reliable", "--assert-strict", "--sleighpath"])
+        .arg(specs());
+    for assertion in asserts {
+        command.args(["--assert", assertion]);
+    }
+    printed(command)
 }
 
 fn run(image: &[u8], end: u32, guarded: bool) -> String {
@@ -463,6 +477,25 @@ fn byte_index_past_a_short_map_keeps_index_labels() {
     assert!(
         !c.contains("labelled by address") && !c.contains("case 0x40"),
         "labelled cases by address: {c}"
+    );
+}
+
+/// `pick` bounds `mode` to 0..5 and switches on `map[mode] - 9`.  Mode 3's map
+/// value falls outside the table, so the flow-time rows stop at mode 2, yet
+/// modes 4 and 5 still dispatch to mode 0's target.
+#[test]
+fn cut_row_index_is_still_dispatched() {
+    let mut command = kuna();
+    command
+        .arg("decompile-all")
+        .arg(root().join("decompiler/crates/kuna-analysis/tests/fixtures/switch_cutrow_mipsel"))
+        .args(["--addr", "0x400110", "--sleighpath"])
+        .arg(specs());
+    let c = printed(command);
+    assert!(c.contains("switch("), "lost the switch: {c}");
+    assert!(
+        !c.contains("switch(a0)") || (c.contains("case 4:") && c.contains("case 5:")),
+        "labelled the mode switch without modes 4 and 5: {c}"
     );
 }
 
