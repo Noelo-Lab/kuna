@@ -7008,3 +7008,101 @@ int main(void) {
         }
     }
 }
+
+/// A value a sign-sensitive operation reads keeps its own variable rather
+/// than merging into a global it is stored to, and the store stays where the
+/// binary makes it.  `else { u = init * 3; sink = u; r = (int)(u >> 4); }` used
+/// to print `sink = init * 3; r = sink >> 4;` — the shift re-read the global, so
+/// a reader who gives `sink` its real type (`volatile int`) turned the logical
+/// shift arithmetic.  The witnesses cover both signedness directions across a
+/// branch merge, a straight line, a loop, a compare, a divide/remainder, a
+/// widening (`w_sext`, `w_first`), a conversion to `double` (`w_i2f`) and a byte
+/// compare (`w_eqc`), and `w_alias` stores before a pointer store that may alias
+/// the global.  `w_sadd`, `w_xordiv`, `w_f`, `w_sidx` and `w_cond` reach the
+/// operation through `+` or `^`, which C types after the global too
+/// (`usink = a0 * 3; v1 = usink + 1 >> 4;`).  `w_fold16`, `w_fold8`, `w_neg16`,
+/// `w_sub16`, `w_not16` and `w_xor16` compare a short or a byte computed with
+/// `+`, `-`, `~` or `^` against a constant, which a fold later moves across that
+/// operator (`hsink = a0 * 3; v1 = hsink == -1;`), `w_carry16` tests a carry,
+/// and `w_meld16` ors two compares that merge into `shsink < 2`.  `w_realias`,
+/// `w_rephi`, `w_reboth` and `w_recopy` store to a plain `int` and then through a
+/// pointer that the harness points at it, so the load the binary makes afterwards
+/// must still print as the global.  `w_ohoist`, `w_oif` and `w_oloop` load a
+/// global after a pointer store that may change it, store a new value to it and
+/// still use the value they loaded, which must not be copied out above the
+/// pointer store.  Each is decompiled and, with the globals given their real
+/// types, compiled by gcc and clang against the fixture's own `main` and must
+/// print what the binary prints.  The functions a build keeps from the source
+/// (clang -O2's `w_first`, gcc -O0's `w_rephi`, and the `w_o*` witnesses outside
+/// the builds they witness) have printed forms with defects outside this test.
+#[test]
+fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
+    const FUNCS: &str = "w_branch,w_line,w_loop,w_less,w_div,w_signed,w_order,w_once,w_alias,w_sext,w_i2f,w_eqc,\
+                         w_sadd,w_xordiv,w_f,w_sidx,w_cond,w_fold16,w_fold8,w_neg16,w_sub16,w_not16,w_xor16,w_carry16,w_meld16,\
+                         w_realias,w_reboth,w_recopy";
+    const DECLS: &str = "#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n#include <stdbool.h>\n\
+                         extern volatile int sink;\nextern volatile int sink2;\nextern volatile unsigned int usink;\n\
+                         extern volatile unsigned char csink;\nextern volatile unsigned short hsink;\n\
+                         extern volatile short shsink;\nextern unsigned long res;\nextern int retsel;\n\
+                         extern char words[];\nextern int gre;\nextern int gre2;\nextern unsigned int uold;\n\
+                         extern int gold;\n";
+    let sp = specs();
+    let fixtures_dir = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let harness = fixtures_dir.join("globalstore_x86_64.c");
+    let compilers: Vec<&str> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    for (fixture, extra, kept) in [
+        ("globalstore_gcc_O0_x86_64", ",w_first,w_oif,w_oloop", &["REPHI", "OHOIST"][..]),
+        ("globalstore_gcc_O2_x86_64", ",w_first,w_rephi,w_ohoist", &["OIF", "OLOOP"][..]),
+        ("globalstore_clang_O2_x86_64", ",w_rephi,w_oif", &["FIRST", "OHOIST", "OLOOP"][..]),
+    ] {
+        let bin = fixtures_dir.join(fixture).to_str().unwrap().to_string();
+        let want = match process::optional_output(&mut Command::new(&bin)) {
+            Some(o) => String::from_utf8_lossy(&o.stdout).to_string(),
+            None => {
+                eprintln!("globalstore round trip: the fixture {fixture} does not run here, spelling checked only");
+                continue;
+            }
+        };
+        let funcs = format!("{FUNCS}{extra}");
+        let (stdout, stderr, ok) =
+            run_kuna(&["decompile-all", bin.as_str(), "--functions", funcs.as_str(), "--sleighpath", sp.as_str()]);
+        assert!(ok, "kuna decompile-all failed on {fixture}: {stderr}");
+        assert!(
+            !stdout.contains("v1 = sink >> 4")
+                && !stdout.contains("v1 = usink >> 4")
+                && !stdout.contains("usink + 1")
+                && !stdout.contains("(sink ^ 0x10")
+                && !stdout.contains("hsink == ")
+                && !stdout.contains("csink == ")
+                && !stdout.contains("shsink < "),
+            "{fixture}: the store's value is still re-read from the global:\n{stdout}"
+        );
+        for cc in &compilers {
+            let dir = std::env::temp_dir().join(format!("kuna-globalstore-rt-{}-{fixture}-{cc}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let printed = dir.join("printed.c");
+            std::fs::write(&printed, format!("{DECLS}{stdout}\n")).unwrap();
+            let exe = dir.join("rt");
+            let mut args = vec!["-std=gnu11".to_string(), "-w".into(), "-O0".into(), "-DGLOBALSTORE_HARNESS".into()];
+            args.extend(kept.iter().map(|k| format!("-DGLOBALSTORE_KEEP_{k}")));
+            let out = Command::new(cc)
+                .args(&args)
+                .args(["-o", exe.to_str().unwrap(), printed.to_str().unwrap(), harness.to_str().unwrap()])
+                .output()
+                .expect("spawn the C compiler");
+            assert!(
+                out.status.success(),
+                "{cc} rejected the printed C ({fixture}):\n{}\n{stdout}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let run = process::required_output(&mut Command::new(&exe));
+            let got = String::from_utf8_lossy(&run.stdout).to_string();
+            let _ = std::fs::remove_dir_all(&dir);
+            assert_eq!(got, want, "{fixture} built by {cc} computes a different value than the binary:\n{stdout}");
+        }
+    }
+}
