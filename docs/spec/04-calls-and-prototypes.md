@@ -2298,6 +2298,84 @@ function; the shape it corrects is pinned by `tests/stages/kuna-returnpiece.xml`
 and by the compiled round trip over the `piecehi_*` fixtures in
 `kuna-cli/tests/decompile_all_cli.rs`.
 
+#### (kuna) A call's result beside a computed second register
+
+`unsigned long long full_or(unsigned a) { return full(a) | 0xff00000000ULL; }`
+is, on 32-bit ARM, `bl full; orr r1,r1,#255; pop {r11,lr}; bx lr`: `r0` comes
+back from `full` as it is and only `r1` is written. It printed as `void
+full_or(int a0) { full(a0); }`, in `kuna decompile` and in `decompile-all` alike,
+and so did a soft-float `double` negated (`eor r1,r1,#0x80000000`), an `int`
+call result sign-extended (`bl g; asr r1,r0,#31`) and `((u64)7 << 32) | g(a)`.
+At the RETURN `r0` is the call's INDIRECT creation, which upstream's
+`ancestorOpUse` refuses as a return value; `r1` passes, but the output model
+never returns the second register of a pair without the first, so the function
+gets no output at all. The
+`passthrough` tail claim does not help: it is made only when the function touches
+neither register of the callee's stated result.
+
+A register that is not the first of its class is never a return value of its own,
+so a function that computes one and hands it only to the RETURN returns the pair
+it belongs to. `kuna_retcallhalf::accept`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_retcallhalf.rs`) runs once
+`ActionReturnRecovery` has scored every trial for the last time, before the output
+map is derived, and makes an inactive trial active when all of these hold:
+
+* the model derives nothing from the trials as they stand, and exactly one trial
+  is active;
+* at every live RETURN the inactive trial's value is a call's untouched result:
+  the INDIRECT creation of a CALL or CALLIND, read directly, through the injected
+  no-op of an ARM or MIPS return, or through a phi of such values;
+* the active trial's value was computed on purpose at every live RETURN and is not
+  zero at all of them;
+* both trials are the same width, the register file is little-endian, and the
+  model, given the candidate, returns exactly those two registers with the
+  candidate first.
+
+"Computed on purpose" rules out the four kinds of write that reach a RETURN in a
+function returning one register or none. The other output of an instruction that
+writes two registers: an ARM `smull r1,r2,r2,r3` whose high word is a division by
+a constant leaves the low word dead in `r1`, and cleanflight's `sub_802f412`
+became `return CONCAT44(v2[0] * 0x51eb851f,v1)` without this limit. So the
+instruction producing the value, and every instruction on a phi path to it, must
+write no register wider than a flag besides its own output. A restore from the
+frame: gcc's `pop {r1,r2,r4,pc}` releases stack space, and an `-O0` reload
+`ldr r1,[sp,#4]` of a spilled argument is a half the late repair above drops
+again, which would leave `int` where `void` was. So an instruction that writes the
+stack pointer, a copy from a frame slot and a load through a stack-relative
+pointer do not count. An argument set up for a later call or system call: an
+inline `svc` lifts to a CALLOTHER that does not show which registers it reads, so
+`bl g; mov r1,#5; mov r7,#4; svc #0; bx lr` would otherwise return
+`CONCAT44(5,g())`, and the same holds for a call whose recovered arity is short.
+So no call, CALLIND or CALLOTHER may be able to run between the producing
+instruction and the RETURN, by the block-level reachability the `retinputhalf`
+moved-back test uses. And the zero `-fzero-call-used-regs` leaves in every
+call-used register a function does not return in, seen through the `PIECE` and
+`SUBPIECE` heritage splits a 32-bit `xor` into before copy propagation runs:
+x86-64 `long f(long a) { return g(a); }` built that way by gcc at `-O0` would
+otherwise come back sixteen bytes wide. The equal-width rule keeps out
+`or $0xff,%dl`, whose one-byte trial would join `RAX` into a nine-byte value with
+the upper bytes of `RDX` missing; that write still prints as before (GH-852).
+
+Three shapes stay as they were. A function that changes the low word and leaves
+the high one untouched (`bl g; orr r0,r0,#255`) is byte for byte `int f(void) {
+return (int)g() | 255; }` as well, and keeps upstream's answer. A first register
+no instruction names gets no return trial at all, so i386 code that pushes its
+arguments (`call g; or $0x12345,%edx; ret`) still prints `void` when the callee's
+result is not known (GH-853). And on a big-endian target the pair is still joined
+in little-endian order, so the rule refuses it there rather than return the
+halves swapped. gcc's `-fipa-ra`, which can set `$3` in a `jal`'s delay slot
+because it knows the callee leaves it alone, is outside what any per-function
+rule can see. The second register's value is only as good as the call's own
+output: when it is computed from a narrower piece of the call's second register,
+as a Cortex-M `uxtb r1,r1` is, the call can still lose that register and leave it
+an uninitialized local (GH-851).
+
+`tests/stages/kuna-retcallhalf.xml` pins the ARM callers and the four controls
+(the `smull` word, the hardening zero, the dummy pop and the `svc` argument) in
+single-function mode, and `kuna-cli/tests/call_result_pair_returns.rs` compiles
+the ARM, MIPS and i386 output of `decompile-all` back with gcc and clang and runs
+it against the source.
+
 #### (kuna) The register that was only ever pushed (`retpushedhalf`)
 
 The placement test asks whether the terminal arrived from a *different* address
