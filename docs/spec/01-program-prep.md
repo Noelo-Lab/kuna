@@ -4057,7 +4057,14 @@ discovery-tier measurement the GED loop cannot make.
 upstream's ELF-off default) shares the deferred slot for the same
 decoder-availability reason but does its own linear decode rather than reading the
 Listing, planting `char[N]` facts for immediate operands that point into read-only
-data.
+data. (kuna) An immediate the instruction adds to a value it does not know, to
+form the address of a load two or more bytes wide, is left out
+(`decompiler/crates/kuna-analysis/src/analyzers/operand_refs/mod.rs
+(IndexedBases)`): `jmp *table(,%rax,8)`, `call *tbl(,%rdi,8)` and
+`movzwl map(%rdi,%rdi)` index an array of wider elements, a jump table, a table
+of function pointers or a word map, and typing its first bytes `char[N]` because
+they happen to be printable made the printer index a short literal
+(`*(unsigned long *)&"7A@"[i * 8]`) instead of the table.
 
 (kuna) Three ARM-only seed scans run between the walk's first pass and those
 consumers, each re-seeding the walk and rebuilding the Listing when it finds

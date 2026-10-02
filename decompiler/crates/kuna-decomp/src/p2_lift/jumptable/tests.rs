@@ -582,3 +582,126 @@ fn jumptable_decode_missing_label_after_labeled_is_error() {
     assert_eq!(decoded.get_label_by_index(0), 7);
     assert_eq!(decoded.get_label_by_index(1), NO_LABEL);
 }
+
+#[test]
+fn label_rows_pair_values_with_rows_in_label_order() {
+    let mut range = JumpValuesRange::new();
+    range.set_range(CircleRange::new(4, 10, 4, 1));
+    let mut basic = JumpBasicModel::new();
+    basic.jrange = Some(Box::new(range));
+    let rows = LabelRows::new(&basic, &vec![Address::default(); 3], None).unwrap();
+    assert_eq!(rows.values, vec![Some(4), Some(5), Some(6)]);
+
+    let mut with_default = JumpValuesRangeDefault::new();
+    with_default.set_range(CircleRange::new(0, 2, 4, 1));
+    with_default.set_extra_value(9);
+    let mut model2 = JumpBasicModel::new_model2();
+    model2.jrange = Some(Box::new(with_default));
+    let rows = LabelRows::new(&model2, &vec![Address::default(); 4], None).unwrap();
+    assert_eq!(rows.values, vec![Some(0), Some(1), None, None]);
+}
+
+#[test]
+fn label_rows_judge_a_value_by_the_entries_it_reads() {
+    let m = build_manager();
+    let ram = ram_of(&m);
+    let at = |off: u64, size: int4| LoadTable::single(Address::new(Rc::clone(&ram), off), size);
+    let table = |off: u64, size: int4, num: int4| {
+        LoadTable::full(Address::new(Rc::clone(&ram), off), size, num)
+    };
+    let mut basic = JumpBasicModel::new();
+    let mut range = JumpValuesRange::new();
+    range.set_range(CircleRange::new(0, 2, 4, 1));
+    basic.jrange = Some(Box::new(range));
+    let addrs = vec![Address::default(); 2];
+    let read = RowLoads {
+        entries: vec![table(0x100, 1, 2), table(0x208, 8, 2)],
+        reached: vec![table(0x100, 1, 4), table(0x208, 8, 2), table(0x300, 8, 1)],
+        depth: 2,
+    };
+    let rows = LabelRows::new(&basic, &addrs, Some(&read)).unwrap();
+    assert!(rows.may_be_dispatched(&[at(0x101, 1), at(0x210, 8)]));
+    assert!(rows.may_be_dispatched(&[at(0x210, 8)]));
+    assert!(rows.may_be_dispatched(&[at(0x103, 1), at(0x210, 8)]));
+    assert!(!rows.may_be_dispatched(&[at(0x104, 1), at(0x210, 8)]));
+    assert!(!rows.may_be_dispatched(&[at(0x103, 1), at(0x300, 8)]));
+    assert!(!rows.may_be_dispatched(&[at(0x100, 1), at(0x218, 8)]));
+    assert!(!rows.may_be_dispatched(&[at(0x200, 8)]));
+    assert!(!rows.may_be_dispatched(&[at(0x20c, 8)]));
+    assert!(!rows.may_be_dispatched(&[at(0x208, 4)]));
+    assert!(rows.may_be_dispatched(&[]));
+    assert!(rows.may_be_dispatched(&[at(0x500, 2), at(0x400, 1), at(0x210, 8)]));
+    assert!(!rows.may_be_dispatched(&[at(0x500, 2), at(0x100, 1), at(0x218, 8)]));
+
+    let empty = RowLoads { entries: Vec::new(), reached: Vec::new(), depth: 1 };
+    let empty = LabelRows::new(&basic, &addrs, Some(&empty)).unwrap();
+    assert!(empty.may_be_dispatched(&[at(0x400, 8)]));
+    let unrecorded = LabelRows::new(&basic, &addrs, None).unwrap();
+    assert!(unrecorded.may_be_dispatched(&[at(0x400, 8)]));
+}
+
+#[test]
+fn kept_row_loads_follow_the_sanity_truncation_and_the_dispatched_cut_rows() {
+    let m = build_manager();
+    let ram = ram_of(&m);
+    let at = |off: u64, size: int4| LoadTable::single(Address::new(Rc::clone(&ram), off), size);
+    let table = |off: u64, num: int4| LoadTable::full(Address::new(Rc::clone(&ram), off), 4, num);
+    let loads = vec![at(0x10, 4), at(0x14, 4), at(0x18, 4), at(0x1c, 4)];
+    let kept = JumpTable::kept_row_loads(loads.clone(), &[1, 2, 3, 4], 2, &[]).unwrap();
+    assert_eq!(kept.entries, vec![table(0x10, 2)]);
+    assert_eq!(kept.reached, vec![table(0x10, 4)]);
+    assert_eq!(kept.depth, 1);
+    let all = JumpTable::kept_row_loads(loads.clone(), &[1, 2, 3, 4], 2, &[true, true]).unwrap();
+    assert_eq!(all.entries, all.reached);
+    assert_eq!(all.depth, 1);
+    let guarded =
+        JumpTable::kept_row_loads(loads.clone(), &[1, 2, 3, 4], 2, &[false, true]).unwrap();
+    assert_eq!(guarded.entries, vec![table(0x10, 2), table(0x1c, 1)]);
+    let sent_away =
+        JumpTable::kept_row_loads(loads.clone(), &[1, 2, 3, 4], 2, &[false, false]).unwrap();
+    assert_eq!(sent_away.entries, kept.entries);
+    let paired = JumpTable::kept_row_loads(loads.clone(), &[2, 4], 2, &[]).unwrap();
+    assert_eq!(paired.entries, vec![table(0x10, 4)]);
+    assert_eq!(paired.depth, 2);
+    assert!(JumpTable::kept_row_loads(loads.clone(), &[], 2, &[]).is_none());
+    assert!(JumpTable::kept_row_loads(loads, &[1, 2], 0, &[true]).is_none());
+}
+
+#[test]
+fn default_addresses_follow_the_default_block() {
+    let m = build_manager();
+    let ram = ram_of(&m);
+    let at = |off: u64| Address::new(Rc::clone(&ram), off);
+    let mut jt = JumpTable::new(at(0x1000));
+    jt.addresstable = vec![at(0x10), at(0x20), at(0x30), at(0x20), at(0x10)];
+    jt.block2addr = vec![
+        IndexPair::new(0, 0),
+        IndexPair::new(0, 4),
+        IndexPair::new(1, 1),
+        IndexPair::new(1, 3),
+        IndexPair::new(2, 2),
+    ];
+    assert!(jt.default_addresses().is_empty());
+    jt.set_default_block(0);
+    assert_eq!(jt.default_addresses(), vec![at(0x10), at(0x10)]);
+    jt.set_default_block(2);
+    assert_eq!(jt.default_addresses(), vec![at(0x30)]);
+}
+
+#[test]
+fn dropped_model_labels_each_out_edge_by_its_table_values() {
+    let m = build_manager();
+    let ram = ram_of(&m);
+    let at = |off: u64| Address::new(Rc::clone(&ram), off);
+    let mut jt = JumpTable::new(at(0x1000));
+    jt.case_values = vec![(0, at(0x1a8)), (0, at(0x1b0)), (1, at(0x170)), (2, at(0x300))];
+    jt.addresstable = vec![at(0x17c), at(0x16c), at(0x200)];
+    jt.label = vec![0x17c, 0x16c, 0x200];
+    jt.block2addr = (0..3).map(|i| IndexPair::new(i, i)).collect();
+    jt.label_by_case_values(|_, address| address.get_offset() != 0x300);
+    assert_eq!(jt.label, vec![0x1a8, 0x1b0, 0x170, 0x200]);
+    assert_eq!(jt.addresstable, vec![at(0x1a8), at(0x1b0), at(0x170), at(0x200)]);
+    let pairs: Vec<(int4, int4)> =
+        jt.block2addr.iter().map(|p| (p.block_position, p.address_index)).collect();
+    assert_eq!(pairs, vec![(0, 0), (0, 1), (1, 2), (2, 3)]);
+}
