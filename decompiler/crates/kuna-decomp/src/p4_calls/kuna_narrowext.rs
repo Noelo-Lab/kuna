@@ -7,9 +7,9 @@
 //! is sign-extended to a 64-bit register whatever its sign.  The RISC-V specs
 //! state `zero` and the LoongArch ones nothing, so a signed result reads as a
 //! large positive one, or the rest of its register as an unassigned piece.
-//! MIPS and Apple arm64 compilers extend the same way (to 32 bits only on
-//! Apple), but their ABI documents state it for arguments alone, so those two
-//! take the rule only under `compiler`.
+//! MIPS and Apple arm64 extend the same way (to 32 bits only on Apple), but
+//! their ABI documents state it for arguments alone, so their return values
+//! take the rule only under `compiler`, as their compilers implement it.
 use crate::{
     dtype::{type_class, type_metatype, Datatype},
     fspec::ParamListStandard,
@@ -80,14 +80,35 @@ pub struct Rules {
 /// The rules for `arch` under its `narrowext` value.
 pub fn rules(arch: &Architecture) -> Rules {
     let id = arch.archid.as_str();
-    let both = |w| Rules { input: Some(w), output: Some(w) };
+    let compiler = arch.narrow_ext == NarrowExtMode::Compiler;
+    let gated = |w, documented: bool| (compiler || documented).then_some(w);
     match arch.narrow_ext {
         NarrowExtMode::Off => Rules::default(),
-        _ if id.starts_with("RISCV:") || id.starts_with("Loongarch:") => both(Widen::Register),
-        NarrowExtMode::Abi => Rules::default(),
-        NarrowExtMode::Compiler if id.starts_with("MIPS:") => both(Widen::Register),
-        NarrowExtMode::Compiler if is_apple_arm64(arch) => both(Widen::Word),
-        NarrowExtMode::Compiler => Rules::default(),
+        _ if id.starts_with("RISCV:") || id.starts_with("Loongarch:") => Rules {
+            input: Some(Widen::Register),
+            output: Some(Widen::Register),
+        },
+        _ if id.starts_with("MIPS:") => Rules {
+            input: gated(Widen::Register, mips_documented(id)),
+            output: gated(Widen::Register, false),
+        },
+        _ if is_apple_arm64(arch) => Rules {
+            input: Some(Widen::Word),
+            output: gated(Widen::Word, false),
+        },
+        _ => Rules::default(),
+    }
+}
+
+/// The MIPS conventions whose documents state how arguments are extended: o32
+/// (the System V psABI) and n32/n64 (SGI's handbook), not EABI or o64.
+fn mips_documented(id: &str) -> bool {
+    let mut parts = id.split(':').skip(3);
+    let variant = parts.next().unwrap_or("");
+    match parts.next().unwrap_or("") {
+        "o32" | "n32" => true,
+        "default" => !variant.contains("32addr") && !variant.contains("32R6addr"),
+        _ => false,
     }
 }
 
