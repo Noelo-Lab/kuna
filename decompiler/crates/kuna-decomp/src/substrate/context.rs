@@ -960,6 +960,9 @@ pub struct ArchContext {
     /// (kuna) How the image passes a floating-point value in the variadic part
     /// of a call.  Read by [`crate::p4_calls::kuna_varargretreg`].
     pub vararg_floats: crate::p4_calls::kuna_varargretreg::VarargFloats,
+    /// (kuna) how a narrow integer argument or return value fills its register
+    /// (`narrowext`).  Read by [`crate::p4_calls::kuna_narrowext`].
+    pub narrow_ext: crate::kuna_narrowext::Rules,
     /// (kuna) let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (`calleedeadarg`).  Read by
     /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
@@ -1659,6 +1662,7 @@ impl ArchContext {
             soft_float_declarations: None,
             caller_extends_returns_from: i32::MAX,
             vararg_floats: Default::default(),
+            narrow_ext: crate::kuna_narrowext::Rules::default(),
             pass_through: true, // (kuna) option passthrough (default on)
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.

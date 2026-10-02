@@ -8033,7 +8033,14 @@ impl FuncCallSpecs {
                 let overlap =
                     oldaddr.justified_contain(oldsize, &paddr, psize, false);
                 let mut vardata = VarnodeData::default();
-                let mut opc = self.proto.assumed_output_extension(&paddr, psize, &mut vardata);
+                let mut opc = crate::kuna_narrowext::or_model(
+                    data.get_arch().narrow_ext.output,
+                    self.proto.model().output(),
+                    &paddr,
+                    psize,
+                    self.proto.get_output().get_type().map(|t| &**t),
+                    &mut vardata,
+                );
                 if opc != OpCode::CPUI_COPY && overlap == 0 {
                     // oldOut is a natural extension of the true output type.
                     if opc == OpCode::CPUI_PIECE {
