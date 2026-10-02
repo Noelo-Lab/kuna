@@ -14,8 +14,8 @@
  "change_kind": "strict correctness fix (no option)",
  "default_on": true,
  "parity": {
-  "datatests": "675/675 PARITY OK (on main 3c08fcfe8)",
-  "stages": "1671/1671 PARITY OK (main 3c08fcfe8 1661 + 10 FLOATRET; #3-#5 pin logish decompiled alone as unsigned int)"
+  "datatests": "675/675 PARITY OK (on main 29c832ea9)",
+  "stages": "1671/1671 PARITY OK (main 29c832ea9 1661 + 10 FLOATRET; #3-#5 pin logish decompiled alone as unsigned int)"
  },
  "castbench": {
   "base": "main 3c08fcfe8 (#758 on top of 94ce9314e), fresh arm .scratch/cb-main3c0; on 94ce9314e the same branch gave 32,040 -> 31,611, on 0729b8b05 32,010 -> 31,581 and on 30616a8e8 32,045 -> 31,616",
@@ -354,7 +354,8 @@
    "arms": "main 3c08fcfe8 vs this branch rebased onto it (6d12ed334; code = 5650aa430), decompile-all",
    "identity": "castbench 45: of 20,230 functions, the 20,082 #758 leaves alone print byte-identically to the 94ce9314e round on both arms; of the 148 it changes, 124 are untouched by this branch, 14 carry the same delta byte for byte, and 10 the same delta on #758's new locals (ls 0xa550, fmt 0x26a0 and diff 0x4f20 compared body by body). The 76 disjoint binaries: of 53,650 functions, the 53,024 #758 leaves alone are byte-identical to the 94ce9314e round; of the 626 it changes, 581 are untouched, 9 carry the same delta and 36 the same delta modulo local numbering",
    "counters": "castbench 45: void-result uses 2,123 -> 400, float conversions of an integer call 24 -> 28 (tail O2 main lseek, as before), pointer locals assigned an integer cast 191 -> 157, void-result uses incl. casts 5,031 -> 1,307; 99 binaries (castbench 45 + the 54): float conversions of an integer call 394 -> 336, void-result uses 7,595 -> 2,555, CONCAT of a killed register 873 = 873, never-assigned returns 481 -> 473, unset variables 17,953 -> 17,931; 76 binaries: 0 functions where a counter rose",
-   "mips_reader": "#758 keeps the MIPS chain reader's call result in its own variable (`v2 = sub_400898(a0,a1); dat_4120e0 = v2; dat_4120e8 = v2 >> 0x10;`); the test that pinned `dat_4120e0 = sub_400898(a0,a1);` now runs the printed chain instead"
+   "mips_reader": "#758 keeps the MIPS chain reader's call result in its own variable (`v2 = sub_400898(a0,a1); dat_4120e0 = v2; dat_4120e8 = v2 >> 0x10;`); the test that pinned `dat_4120e0 = sub_400898(a0,a1);` now runs the printed chain instead",
+   "rebase_29c832ea9": "rebased onto 29c832ea9 (#821, soft-float ARM declared float prototypes) without conflicts: the castbench 45 and the 76 disjoint binaries print byte-identically on both arms (main 3c08fcfe8 == 29c832ea9, 6d12ed334 == 2f02b3f53), so every number above stands; #821's fixture softfloat_dwarf_armel.o prints the same on main and here"
   }
  },
  "benchmark": {
@@ -546,14 +547,14 @@
   }
  },
  "gates": {
-  "make_test": "675/675 PARITY OK (6d12ed334, on main 3c08fcfe8)",
-  "make_test_stages": "1671/1671 PARITY OK (baseline = main 1661 + 10 FLOATRET keys, set-diff clean)",
+  "make_test": "675/675 PARITY OK (2f02b3f53, on main 29c832ea9)",
+  "make_test_stages": "1671/1671 PARITY OK (baseline = main 1661 + 10 FLOATRET keys, set-diff clean on 29c832ea9)",
   "check_spec": "OK lenient + strict",
   "test_cli": "276/276",
   "catalog_check": "OK",
   "counters_check": "no drift",
   "options_md": "fresh",
-  "rust_test": "7,695 passed / 0 failed / 38 ignored (464 test binaries), RUST_TEST_RC=0 on 6d12ed334",
+  "rust_test": "7,701 passed / 0 failed / 38 ignored (464 test binaries), RUST_TEST_RC=0 on 2f02b3f53 (on main 29c832ea9)",
   "lint": "make lint OK (6d12ed334)",
   "test_tools": "42 OK (no Python changed since)"
  },
@@ -573,7 +574,8 @@
   "A withdrawn function's float that comes from a callee's own float arithmetic or a declared (libc) return is not withdrawn: it is the type the machine computes, and a reader keeping it as an integer prints what main prints",
   "Where a forced or narrowed return hands back a callee kuna already types as a pointer (tar O2 sub_26100 returning sub_412d0's int *), the listing assigns a pointer to an integer without a cast: a compile error under -Werror=int-conversion, same value; main printed a void function whose result the caller used instead",
   "A function whose callers read a 64-bit value in two registers stays `void`, as main prints it, when the model maps only one of them (`call big; ret` on i386 and ARM, dtotimespec's rax:rdx): its callers still read the result of a `void` function",
-  "gcc -O0 relocatable objects: a wrapper of a double callee prints `T v1; callee(..); return v1;` of an unset v1 on main and here (the call output is never linked); this branch types v1 double, and that function's per-function round trip loses the bits where main's `unsigned long` return left the callee's xmm0 in place by accident"
+  "gcc -O0 relocatable objects: a wrapper of a double callee prints `T v1; callee(..); return v1;` of an unset v1 on main and here (the call output is never linked); this branch types v1 double, and that function's per-function round trip loses the bits where main's `unsigned long` return left the callee's xmm0 in place by accident",
+  "Relocatable objects give a libc function no prototype, so kuna does not know `strtod` returns a double there: a wrapper of it whose reader keeps the bits as an integer now returns `unsigned long` around `return strtod(a0,0);` (x86-64 gcc -O1/-O2 and clang -O0 .o; `unsigned int` around `strtof` on soft-float ARM), which converts by value against <stdlib.h>. That is the conversion main prints for a direct reader in the same object (`dat_400048 = strtod(a0,0);`); main printed the wrapper `void`, and its reader's `dat_4000d0 = parse();` did not compile. Linked binaries declare these calls, and the float return is withdrawn back to `void` there"
  ],
  "implicit_conversions": {
   "instrument": ".scratch/r4/implconv.py: an argument whose class (int/float, inferred only from declared variables, derefs of declared pointers, printed calls, casts and literals) differs from the printed callee parameter; x = callee() of the other class; return e of the other class",
