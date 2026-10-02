@@ -1163,17 +1163,27 @@ table's rows before its labels are used (`jumptable.rs
 (JumpTable::choose_label_values)`). Each row keeps the normalized value the
 flow-time model gave it; when every such value emulates through the fresh
 model's path to that row's recorded destination, and no other value in the
-fresh model's range reaches the destination of any row through a table entry
-the flow-time model read (`jumptable.rs (JumpBasicModel::reproduces_rows)`),
-the labels come from the flow-time values as they always have. The second half
-matters when the table repeats a destination, as shared case bodies and holes
-sent to the default do: a mapped byte can then agree with every index row
-through the repeat (the index 0 row reads map byte 4, and table rows 0 and 4
-hold the same target), while the map byte 4 that the code actually dispatches
-on carries no label. A fresh-range value outside the row values that reaches a
-row's destination is such an unlabelled selector value unless the memory its
-emulation reads shows the code never dispatches it (`jumptable.rs
-(LabelRows::may_be_dispatched)`). Flow-time recovery records the entries it
+fresh model's range reaches, through a table entry the flow-time model read, a
+row's destination that the switch prints as a labelled case (`jumptable.rs
+(JumpBasicModel::reproduces_rows)`), the labels come from the flow-time values
+as they always have. The second half matters when the table repeats a
+destination, as shared case bodies and holes sent to the default do: a mapped
+byte can then agree with every index row through the repeat (the index 0 row
+reads map byte 4, and table rows 0 and 4 hold the same target), while the map
+byte 4 that the code actually dispatches on carries no label. A fresh-range
+value outside the row values that reaches a row's destination is such an
+unlabelled selector value unless the memory its emulation reads shows the code
+never dispatches it (`jumptable.rs (LabelRows::may_be_dispatched)`). An
+unlabelled value is printed under `default:`, so one whose destination is the
+switch's default block, the block that most rows share when `switch_over`
+runs, agrees with the labels (`jumptable.rs (JumpTable::default_addresses)`):
+a plain `switch (map[mode])` whose last mode was cut from the rows still
+dispatches it to the default. Labels that rely on this keep that default for
+the rest of the run (`jumptable.rs (JumpTable::choose_label_values)`), and a
+guard whose out-of-range target is any other block is left in place rather
+than folded into the switch (`jumptable.rs
+(JumpBasicModel::fold_in_one_guard)`), because the fold would make its target
+the default and send the unlabelled value there. Flow-time recovery records the entries it
 read for the rows the code dispatches, the entries it read for every row it
 emulated, and the most loads it performed for one row (`jumptable.rs
 (JumpTable::recover_addresses)`). The dispatched rows are the ones the sanity
@@ -1244,7 +1254,9 @@ switch actually consumes. Finally `jumptable.rs
 (JumpBasicModel::fold_in_one_guard)` folds each surviving guard CBRANCH into
 the switch: its out-of-range edge becomes the switch's *default* edge (adding
 the target as a new label-less destination, or marking an existing destination
-as default and collapsing the CBRANCH to a constant predicate); a fold clears
+as default and collapsing the CBRANCH to a constant predicate). Once a fold
+has set the default, a later fold must target the same block, as must every
+fold on a table whose labels rely on its current default; a fold clears
 the structuring so the new edge is re-structured, and the constant-predicate
 residue is severed on the re-run by `ActionDeterminedBranch`. Before
 structuring, any table still without a default marks its most-targeted

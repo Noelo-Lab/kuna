@@ -666,3 +666,24 @@ fn kept_row_loads_follow_the_sanity_truncation_and_the_dispatched_cut_rows() {
     assert!(JumpTable::kept_row_loads(loads.clone(), &[], 2, &[]).is_none());
     assert!(JumpTable::kept_row_loads(loads, &[1, 2], 0, &[true]).is_none());
 }
+
+#[test]
+fn default_addresses_follow_the_default_block() {
+    let m = build_manager();
+    let ram = ram_of(&m);
+    let at = |off: u64| Address::new(Rc::clone(&ram), off);
+    let mut jt = JumpTable::new(at(0x1000));
+    jt.addresstable = vec![at(0x10), at(0x20), at(0x30), at(0x20), at(0x10)];
+    jt.block2addr = vec![
+        IndexPair::new(0, 0),
+        IndexPair::new(0, 4),
+        IndexPair::new(1, 1),
+        IndexPair::new(1, 3),
+        IndexPair::new(2, 2),
+    ];
+    assert!(jt.default_addresses().is_empty());
+    jt.set_default_block(0);
+    assert_eq!(jt.default_addresses(), vec![at(0x10), at(0x10)]);
+    jt.set_default_block(2);
+    assert_eq!(jt.default_addresses(), vec![at(0x30)]);
+}
