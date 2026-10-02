@@ -1,5 +1,5 @@
-//! (kuna) `calleearitylive` — extend a PARTIALLY recovered argument list, with
-//! the callee's own body as the discriminator.
+//! (kuna) `calleearitylive` — extend a PARTIALLY recovered argument list with
+//! callee-body or matching-format evidence.
 //!
 //! # The gap
 //!
@@ -30,10 +30,10 @@
 //! because a `CBRANCH` also reads that value, and `fillinMap`'s positional rule
 //! then drops `r8d` behind the hole it leaves.
 //!
-//! # The discriminator
+//! # The discriminators
 //!
 //! The sibling alone cannot settle this: it is exactly the evidence the sweep
-//! showed was not enough. What settles it is the **callee's own body**, read
+//! showed was not enough. The usual discriminator is the **callee's own body**, read
 //! with the same bounded decode
 //! [`calleedeadarg`](crate::p4_calls::kuna_calleedeadarg) already takes for the
 //! subtractive direction — and read for two things at once:
@@ -47,6 +47,12 @@
 //!   `x5`, `x6` and `x7` too — registers a five-argument witness does not claim
 //!   — and the extension is declined. A fixed-arity callee reads exactly the
 //!   argument registers its prototype names and no more.
+//!
+//! A stripped printf-like body is variadic and cannot pass that test. For that
+//! case [`kuna_formatwitness`](crate::p4_calls::kuna_formatwitness) accepts the
+//! sibling only when both calls carry the same constant first argument, its
+//! bytes parse as a conservative printf format, and the sibling's final arity
+//! exactly matches the format.
 //!
 //! Everything else is [`calleearity`](crate::p4_calls::kuna_calleearity)'s,
 //! unchanged: register storage only, real Varnodes only, all-or-nothing, and
@@ -278,7 +284,13 @@ fn extend_one(data: &mut Funcdata, p: &PendingExtend) -> bool {
                 && o.num_input() == keep as int4 => {}
         _ => return false,
     }
-    let witness = best_witness_for(&p.entry, p.op, data);
+    let format_witness = crate::p4_calls::kuna_formatwitness::best_witness(&p.entry, p.op, data);
+    let format_agrees = !format_witness.is_empty();
+    let witness = if format_agrees {
+        format_witness
+    } else {
+        best_witness_for(&p.entry, p.op, data)
+    };
     if witness.len() <= p.recovered.len() {
         return false;
     }
@@ -309,7 +321,7 @@ fn extend_one(data: &mut Funcdata, p: &PendingExtend) -> bool {
     if entries.is_empty() {
         return false;
     }
-    if !callee_body_agrees(data, &p.entry, &entries, &witness, tail) {
+    if !format_agrees && !callee_body_agrees(data, &p.entry, &entries, &witness, tail) {
         return false;
     }
     let mut newparam: Vec<VarnodeId> = Vec::new();
