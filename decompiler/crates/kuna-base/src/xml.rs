@@ -1954,7 +1954,9 @@ mod tests {
         // through its own variable, not through the global
         // and kuna-zextpair / a 64-bit return whose high register is zero keeps
         // its zero-extension
-        assert_eq!(count, 374, "corpus file count drifted");
+        // and kuna-globalvalue / a value a sign-sensitive op reads keeps its own
+        // variable instead of merging into a global it is stored to
+        assert_eq!(count, 375, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

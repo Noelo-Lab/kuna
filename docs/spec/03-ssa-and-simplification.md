@@ -831,6 +831,94 @@ renderer therefore looks through a `COPY` of an **implied** two-input value and
 decides on the inner op; a `COPY` of an *explicit* value is left alone, because
 there the statement really is `out = <that name>`.
 
+**Keeping a global store whose value is read sign-sensitively**
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalstorekeep.rs
+(declines)`, a strict fix, no option) is the same refusal once more, for a
+persistent global. When a register value is stored to a global and an operation
+also reads that value where its declared signedness decides the result — a
+`>>`, a divide, remainder or ordered compare, an extension, an integer-to-float
+conversion, or a sub-`int` `==`/`!=` that is not against a constant with the
+operand's top bit clear — `RulePropagateCopy`
+leaves the store's `COPY` as the input of the global's own markers, of a
+`COPY` into the same global (what a duplicated join block leaves of the
+global's `MULTIEQUAL`), and of every load of the global. The value is everything chapter 06 would join with it:
+it is followed through the `COPY`s, `INDIRECT`s and `MULTIEQUAL`s that carry it
+unchanged, in both directions, so a reader of a stack reload at `-O0` or of a
+join counts. An expression computed from it is followed forward too when C
+gives the result the operand's type: `+`, `-`, `*`, the bitwise operators, `~`,
+unary `-` and the shifted operand of `<<` compute the same bits whatever the
+signedness, but `sink + 1 >> 4` shifts the way `sink` is declared, so a
+sign-sensitive reader of `u + 1` counts as a reader of `u`. Globals and
+constants end the walk, and a walk that visits more than 256 varnodes answers
+yes, which keeps the store and every load where the binary makes them.
+
+The decision cannot wait for the other rules: once the `COPY` is gone, chapter
+06's join of the value into the global's marker is forced. So the walk also
+counts a reader that a rule running later turns sign-sensitive. A fold moves a
+compare's constant onto the value: `RuleEqual2Constant`, `RuleEqual2Zero`,
+`RuleXorCollapse` and `RuleShiftCompare` rewrite `u + 1 == 0` as `u == 0xffff`,
+and do the same across `-`, `*`, `^`, `~`, unary `-` and `<<`. A sub-`int`
+`==`/`!=` on an expression computed through one of those therefore counts
+whatever its constant; through `&` and `|` alone no rule moves the constant,
+so there it counts only as above. `RuleCarryElim` turns a carry into an ordered
+compare (`carry(u, c)` is `-c <= u`), `RuleAndZext` turns the low half of a
+concatenation into a zero extension, and `RuleRangeMeld` merges two compares of
+the value against constants that a boolean `&&`/`||` (or a `&`/`|` of the two
+results) combines into one ordered compare when their ranges join into one
+(`u == 0 || u == 1` is `u < 2`; `u == 10 || u == -1` stays). All three count;
+for the last the walk asks the rule's own question, pulling both compares back
+to the value and combining their ranges. Every other rule that creates a sign-sensitive
+operation (the divide, remainder and sign-test recognizers, the float
+conversions, `RuleSborrow`, `RuleScarry`, `RuleSignShift`, `RuleTestSign`,
+`RuleZextCommute`) starts from a shift, an extension, a divide or an ordered
+compare that the walk already counts, and the rules that turn an ordered compare
+into `==` only remove a reader.
+
+Without the refusal the `COPY` dies, the store survives only as
+chapter 06's join of the value into the global, and the reader prints as a read
+of the global in the global's signedness; with it, chapter 06 keeps the value
+apart and the `COPY` prints at the binary's own store, ahead of any later
+pointer store or call.
+
+The refusal holds only while no earlier value of the global is still used after
+the store (`old_value_read_after`). kuna's heritage gives a pointer `STORE` no
+effect on a global, so in `*p = k; old = g; n = old * 3 + inc; if (n >> 20)
+return 7; g = n; return old == 5 ? 1 : old;` the binary's load of `old` after
+`*p = k` reads the version of `g` the function entered with, and that version is
+still used after `g = n`. With the store's `COPY` kept, both versions are live
+after the store, and chapter 06 has to give the earlier one its own variable: it
+copies it right where that version is defined, here the function entry (a call's
+`INDIRECT` or a loop head's `MULTIEQUAL` elsewhere), above `*p = k`, so the
+printed C reads the global before the pointer store may change it. Without the
+refusal the `COPY` dies, the forced merge of the global's marker finds the stored
+value and the earlier one live together and trims the stored value to its own
+variable, and every read of the global prints after the pointer store, as
+upstream prints it. A use counts when some path from the store reaches it
+without passing the earlier version's definition, which only a version defined
+in a block that dominates the store can have, since a definition dominates its
+uses; a `MULTIEQUAL` uses its input at the end of the predecessor block it
+comes from, and a use of a register `COPY` of the earlier version counts too,
+since a later propagation folds the copy into it. A walk past 256 copies or
+65,536 blocks and operations answers yes.
+Placing the copy of the earlier value at the binary's own load, which would let
+the store stay, is not done.
+
+A load is any other reader of the store's `COPY`: an operation that writes
+something other than the global itself (a `PIECE` that joins the stored part
+into the whole of a wider global is left to upstream). kuna's heritage puts no
+`INDIRECT` on a global at a pointer `STORE`, so after `gi = u; *p = k;` the
+binary's load of `gi` is still the store's `COPY`, and propagating `u` into it
+would stand the value in for memory that `*p` may have changed. While the
+refusal above holds, the load keeps the `COPY` too, so it prints as the
+global (`gi = a0 * 3; *a1 = a2; ... if (gi <= -1)`) while the value's own uses
+keep the value. A load the refusal lets through marks the value and the store
+(the `global_load` bit of the varnode's additional flags); the mark follows the
+value into the global's markers and later stores, a marked store takes
+upstream's propagation from then on, and chapter 06 never keeps a marked value
+apart, so the load prints as the global exactly as before. A parameter's store
+is left to upstream, since a parameter never merges with a global, and so is a
+constant's. Every other propagation is upstream's.
+
 **Retyping an op mid-rule.** A rule that rewrites an op in place usually changes
 its op-code, and the op-code is not just a tag: `set_opcode` caches the
 op-code's *property word* (`unary`/`binary`/`booloutput`/`commutative`/`marker`/
