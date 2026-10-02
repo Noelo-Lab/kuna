@@ -1558,20 +1558,13 @@ impl Heritage {
         };
         for fc in qlst.iter_mut() {
             let op = fc.get_op();
-            let is_assignment =
-                fd.obank().get(op).map(|o| o.is_assignment()).unwrap_or(false);
-            if is_assignment {
-                if let Some(outvn) = fd.obank().get(op).and_then(|o| o.get_out()) {
-                    let matches = fd
-                        .vbank()
-                        .get(outvn)
-                        .map(|v| v.get_addr() == addr && v.get_size() == size)
-                        .unwrap_or(false);
-                    if matches {
-                        continue;
-                    }
-                }
-            }
+            let own_output = fd
+                .obank()
+                .get(op)
+                .filter(|o| o.is_assignment())
+                .and_then(|o| o.get_out())
+                .and_then(|outvn| fd.vbank().get(outvn))
+                .is_some_and(|v| v.get_addr() == addr && v.get_size() == size);
             let mut off = addr.get_offset();
             let mut tryregister = true;
             if spc.get_type() == spacetype::IPTR_SPACEBASE {
@@ -1582,6 +1575,15 @@ impl Heritage {
                 }
             }
             let trans_addr = Address::new(Rc::clone(&spc), off);
+            if own_output {
+                if fc.is_input_active()
+                    && tryregister
+                    && crate::kuna_varargretreg::argument_in_own_output(fd, fc, &trans_addr, size)
+                {
+                    Self::guard_call_input(fd, fc, addr, &trans_addr, size, overlap_level);
+                }
+                continue;
+            }
 
             // effecttype = fc->hasEffect(transAddr, size).  `FuncCallSpecs : public
             // FuncProto`, so `hasEffect` is the inherited `FuncProto::hasEffect`
@@ -1775,38 +1777,8 @@ impl Heritage {
             // parameter trial and append the argument Varnode to the CALL op.  This
             // is what makes a register/stack argument appear as a call argument —
             // the `func(args)` rendering this wave targets.
-            if fc.is_input_active()
-                && tryregister
-                && crate::kuna_armfloatreturn::call_input_allowed(fd, fc, &trans_addr, size)
-            {
-                let ic = fc.proto().characterize_as_input_param(&trans_addr, size);
-                // Upstream's nesting, not a collapsed `&&`: the ContainedBy arm is an
-                // `else if` on the CHARACTERIZATION alone, so an existing trial on a
-                // ContainsJustified range must not fall through into the overlap guard.
-                if ic == Containment::ContainsJustified {
-                    if fc.get_active_input().which_trial(&trans_addr, size) < 0 {
-                        fc.get_active_input().register_trial(&trans_addr, size);
-                        let vn = fd.new_varnode(size, addr, None);
-                        fd.vbank_mut()
-                            .get_mut(vn)
-                            .expect("guardCalls: new arg vn")
-                            .set_active_heritage();
-                        let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
-                        let _ = fd.op_insert_input(op, vn, nin);
-                    }
-                } else if ic == Containment::ContainedBy
-                    && overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_IN
-                {
-                    Self::guard_call_overlapping_input(fd, fc, addr, &trans_addr, size);
-                }
-            } else if fc.is_input_active() && tryregister {
-                for piece in crate::kuna_armfloatargs::stated_singles(fd, fc, &trans_addr, size) {
-                    let diff = piece.get_offset().wrapping_sub(trans_addr.get_offset());
-                    let trunc_addr = addr + diff as i64;
-                    if fc.get_active_input().which_trial(&trunc_addr, 4) < 0 {
-                        Self::truncated_input_trial(fd, fc, addr, size, &trunc_addr, 4);
-                    }
-                }
+            if fc.is_input_active() && tryregister {
+                Self::guard_call_input(fd, fc, addr, &trans_addr, size, overlap_level);
             }
 
             // The `unknown_effect`/`return_address` INDIRECT-*op* (heritage.cc:1512-
@@ -1855,6 +1827,52 @@ impl Heritage {
             }
         }
         fd.restore_call_specs(qlst);
+    }
+
+    /// Register an input trial for the heritaged range at a call still recovering
+    /// its inputs, and append its argument Varnode to the CALL op
+    /// (`heritage.cc:1496-1510`).  (kuna) Also reached for a range the call's own
+    /// output covers exactly, which upstream skips whole, when a variadic call
+    /// passes an argument there ([`crate::kuna_varargretreg`]).  A range the call
+    /// may not take whole still yields the single-precision pieces its stated
+    /// prototype names ([`crate::kuna_armfloatargs`]).
+    fn guard_call_input(
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        trans_addr: &Address,
+        size: int4,
+        overlap_level: int4,
+    ) {
+        use crate::fspec::Containment;
+        if !crate::kuna_armfloatreturn::call_input_allowed(fd, fc, trans_addr, size) {
+            for piece in crate::kuna_armfloatargs::stated_singles(fd, fc, trans_addr, size) {
+                let diff = piece.get_offset().wrapping_sub(trans_addr.get_offset());
+                let trunc_addr = addr + diff as i64;
+                if fc.get_active_input().which_trial(&trunc_addr, 4) < 0 {
+                    Self::truncated_input_trial(fd, fc, addr, size, &trunc_addr, 4);
+                }
+            }
+            return;
+        }
+        let ic = fc.proto().characterize_as_input_param(trans_addr, size);
+        if ic == Containment::ContainsJustified {
+            if fc.get_active_input().which_trial(trans_addr, size) < 0 {
+                fc.get_active_input().register_trial(trans_addr, size);
+                let vn = fd.new_varnode(size, addr, None);
+                fd.vbank_mut()
+                    .get_mut(vn)
+                    .expect("guardCalls: new arg vn")
+                    .set_active_heritage();
+                let op = fc.get_op();
+                let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+                let _ = fd.op_insert_input(op, vn, nin);
+            }
+        } else if ic == Containment::ContainedBy
+            && overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_IN
+        {
+            Self::guard_call_overlapping_input(fd, fc, addr, trans_addr, size);
+        }
     }
 
     /// Append a truncated \e input Varnode for a call whose parameter storage is

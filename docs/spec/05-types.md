@@ -520,6 +520,24 @@ variable, which is how bash's `glob_vector` still prints one `DIR *` local that
 also holds an unrelated `sh_malloc` result. `tests/stages/kuna-libctypes.xml`
 pass 13 pins the obstack and mutex shapes and a control that keeps its name.
 
+(kuna) **A variadic argument in a floating-point register.** The variadic part
+of a declared prototype has no parameter, so `get_input_local` has no type to
+offer for its arguments, and a value with no other evidence kept an integer
+type. On AArch64 `vr(k, k + 1, 0.5)` moves the constant straight into `d0`
+(`fmov d0,#0.5`), so it printed as `vr(k,0x3fe0000000000000,...)`, which
+compiles back to an integer in `x1`. The storage the call's model chose for the
+argument already says what the value is.
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_varargfloat.rs (argument_vote)`
+gives a `double` vote to an 8-byte argument past the declared parameters of a
+variadic call whose recorded storage (`final_input_storage`, set when the
+argument list is built) is a floating-point entry of the model, and the call
+prints `vr(k,0.5,...)`. A model puts a variadic value in a floating-point
+register only where the ABI does (chapter 04), so the vote never reaches an
+integer. Like the `protoorder` vote it is a vote, not a declaration:
+`ActionSetCasts` still measures the argument against no type, so it adds no
+cast, and a constant whose bits a float literal cannot spell (a NaN payload) gets
+no vote.
+
 **What the pointer points at (`charptr`).** `ptrfromuse` decides that a value
 *is* a pointer; it cannot say what is on the other end, and the shipped `void`
 says so honestly. The element type is often on the table already — a callee

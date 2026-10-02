@@ -2083,7 +2083,8 @@ fn dc_gather_consumed_return(data: &Funcdata) -> u64 {
         if o.num_input() > 1 {
             let vn = o.get_in(1).expect("RETURN in1");
             let nz = data.vbank().get(vn).expect("RETURN in1 vn").get_nz_mask();
-            consume_val |= minimalmask(nz);
+            consume_val |= minimalmask(nz)
+                & crate::kuna_narrowext::implied_sign_extension(data, vn).unwrap_or(!0u64);
         }
     }
     let val = data.get_func_proto().get_return_bytes_consumed();
@@ -2155,6 +2156,7 @@ fn dc_mark_consumed_parameters(data: &mut Funcdata, call_index: int4, worklist: 
                 !0u64
             } else {
                 minimalmask(v.get_nz_mask())
+                    & crate::kuna_narrowext::implied_sign_extension(data, vn).unwrap_or(!0u64)
             }
         };
         // cast: `i` is an int4 >= 1 (loop starts at 1), so `i - 1` is a

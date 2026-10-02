@@ -194,6 +194,11 @@ pub mod pcodeop_addlflags {
     /// option off (the pass never runs) the bit is never set and output is
     /// byte-identical.
     pub const kuna_iteboolean: uint4 = 0x4000;
+    /// (kuna) This extension is the one `narrowext` states for a narrow
+    /// argument or return value: the bits it adds carry no information, so an
+    /// unprototyped call or a return reading it consumes only the value it
+    /// widens.  Set and read by [`crate::p4_calls::kuna_narrowext`].
+    pub const kuna_narrowext: uint4 = 0x8000;
 }
 
 // ---------------------------------------------------------------------------

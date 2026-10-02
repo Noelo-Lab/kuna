@@ -302,6 +302,11 @@ kuna_options! { self, p1;
         self.arm_float_args = on_or_off(p1)?;
         Ok(format!("ARM floating argument recovery turned {p1}"))
     },
+    "narrowext" => {
+        let (mode, msg) = crate::kuna_narrowext::OptionNarrowExt.apply(p1)?;
+        self.narrow_ext = mode;
+        Ok(msg)
+    },
     "armfloatreturn" => {
         self.arm_float_return = on_or_off(p1)?;
         Ok(format!("ARM floating return recovery turned {p1}"))

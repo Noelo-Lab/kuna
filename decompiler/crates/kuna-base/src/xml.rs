@@ -1960,7 +1960,9 @@ mod tests {
         // buffer through a walking pointer still reaches the later test and call
         // and kuna-globalvalue / a value a sign-sensitive op reads keeps its own
         // variable instead of merging into a global it is stored to
-        assert_eq!(count, 379, "corpus file count drifted");
+        // and kuna-narrowext / a narrow RISC-V argument or return value is
+        // extended by the sign of its type (GH-816)
+        assert_eq!(count, 380, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

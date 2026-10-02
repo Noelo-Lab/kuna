@@ -203,6 +203,17 @@ call has on the (callee-translated) range (`decompiler/crates/kuna-decomp/src/p4
   delayed CALL output and SUBPIECEs/PIECEs it into the range
   (`heritage.rs (Heritage::try_output_stack_guard)`).
 
+**A range the call returns in.** Upstream skips a call whose output varnode
+covers the heritaged range exactly: the call defines the range itself, so no
+INDIRECT is needed. The skip also drops the input trial, which loses an
+argument the call reads from the register it returns in. A declared
+`double vr(int n, ...)` called as `vr(k, k + 1, 0.5)` gets its `0.5` in `xmm0`
+on x86-64 (`d0` on AArch64, `f1` on 32-bit PowerPC), and the call printed as
+`vr(k,k + 1)`. kuna still registers the input trial for such a range when the
+call is variadic and its model passes a variadic argument there (chapter 04,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargretreg.rs
+(argument_in_own_output)`); the range still gets no INDIRECT.
+
 **Narrowing the killed set to the callee's own writes.** A `<killedbycall>`
 block in a compiler spec is a statement about the *convention*, not about any
 particular callee, and there are callees the convention does not describe. The
