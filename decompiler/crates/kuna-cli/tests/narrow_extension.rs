@@ -230,11 +230,17 @@ fn round_trip(image: &Image, text: &str, checked: &[&str], compilers: &[&str]) -
          int v = V[i];\n{checks}  }}\n  return bad != 0;\n}}\n",
         image.source
     );
+    compile_and_run(image.name, &program, compilers)
+}
+
+/// Builds `program` with each of `compilers` at -O0 and -O2 and runs it; it
+/// exits nonzero, printing the mismatches, when a check fails.
+fn compile_and_run(stem: &str, program: &str, compilers: &[&str]) -> Result<(), String> {
     for cc in compilers {
         for level in ["-O0", "-O2"] {
-            let src = common::scratch_file(&format!("narrowext-{}-{cc}{level}", image.name), "c");
+            let src = common::scratch_file(&format!("narrowext-{stem}-{cc}{level}"), "c");
             let exe = src.with_extension("exe");
-            std::fs::write(&src, &program).unwrap();
+            std::fs::write(&src, program).unwrap();
             let out = Command::new(cc)
                 .args(["-std=gnu11", "-w", "-fwrapv", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
                 .output()
@@ -251,13 +257,18 @@ fn round_trip(image: &Image, text: &str, checked: &[&str], compilers: &[&str]) -
     Ok(())
 }
 
-#[test]
-fn a_narrow_argument_or_return_round_trips_through_the_printed_c() {
+fn host_compilers() -> Vec<&'static str> {
     let compilers: Vec<_> = ["gcc", "clang"]
         .into_iter()
         .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
         .collect();
     assert!(!compilers.is_empty(), "the round trip requires a C compiler");
+    compilers
+}
+
+#[test]
+fn a_narrow_argument_or_return_round_trips_through_the_printed_c() {
+    let compilers = host_compilers();
     let all: Vec<&str> = RETURNS.iter().chain(ARGUMENTS).copied().collect();
     for image in IMAGES {
         let present = |set: &[&'static str]| -> Vec<&'static str> {
@@ -276,5 +287,71 @@ fn a_narrow_argument_or_return_round_trips_through_the_printed_c() {
             "{}: the compiler spec's extension already round-trips:\n{text}",
             image.name
         );
+    }
+}
+
+/// `narrowext_rv64.cpp`'s functions in C, and the names its printed C uses.
+const SIGNED_SOURCE: &str = r#"
+#include <stdbool.h>
+typedef signed char neg1;
+enum { NEGA = -100, NEGB = 100 };
+long s_c16(int k) { return (unsigned short)(k * 300 + 5) + 1L; }
+long s_ce2(int k) { return (unsigned short)(k * 1000) + 1L; }
+long s_cn(int k) { return (signed char)(k - 100) / 3L; }
+long s_widen16(unsigned short c) { return c; }
+bool s_hi_sur(unsigned short c) { return c >= 0xD800 && c <= 0xDBFF; }
+long s_pe2(unsigned short x) { return x + 1L; }
+long s_pn(signed char x) { return x / 3L; }
+"#;
+
+/// Each checked function of `narrowext_rv64.cpp` with the argument it takes,
+/// and the callees its printed C calls.
+const SIGNED_CHECKS: &[(&str, &str)] = &[
+    ("c16", "v"),
+    ("ce2", "v"),
+    ("cn", "v"),
+    ("widen16", "(unsigned short)v"),
+    ("hi_sur", "(unsigned short)v"),
+    ("pe2", "(unsigned short)v"),
+    ("pn", "(neg1)v"),
+];
+const SIGNED_CALLEES: &[&str] = &["r16", "re2", "rn"];
+
+/// The sign the rule extends a value by is the one its type states, so the
+/// type's sign must be the source's: `char16_t` is unsigned whether DWARF
+/// (`DW_ATE_UTF`) or a mangled name (`Ds`) states it, and an enum without
+/// `DW_AT_encoding`, which is how clang describes one, takes the sign of the
+/// integer its `DW_AT_type` names.
+#[test]
+fn a_char16_t_or_short_enum_extends_by_the_sign_of_its_source_type() {
+    let compilers = host_compilers();
+    for (fixture, checked) in [
+        ("narrowext_rv64.o", SIGNED_CHECKS.iter().map(|c| c.0).collect::<Vec<_>>()),
+        ("narrowext_rv64_nodebug.o", vec!["widen16", "hi_sur"]),
+    ] {
+        let path = common::fixture(fixture);
+        let (text, err, rc) = common::run_kuna(&["decompile-all", &path]);
+        assert_eq!(rc, 0, "{fixture}: {err}");
+        let mut printed = String::new();
+        let mut checks = String::new();
+        if checked.contains(&"c16") {
+            for callee in SIGNED_CALLEES {
+                printed.push_str(function(&text, callee));
+            }
+        }
+        for (n, arg) in SIGNED_CHECKS.iter().filter(|c| checked.contains(&c.0)) {
+            printed.push_str(function(&text, n));
+            checks.push_str(&format!("    CHECK({n}({arg}), s_{n}({arg}));\n"));
+        }
+        let program = format!(
+            "#include <stdio.h>\n{SIGNED_SOURCE}\n{printed}\n\
+             static const int V[] = {{0, 1, -1, 99, 100, 101, 127, 128, 0x7fff, 0x8000, 0xd7ff, 0xd800,\n\
+             0xdbff, 0xdc00, 0xffff, 0x10000, 40000, 50000, -100, 200}};\n\
+             #define CHECK(got, want) do {{ long long g = (got), w = (want); if (g != w) {{ \\\n\
+             printf(\"%s v=%#x: %llx, want %llx\\n\", #got, v, g, w); bad++; }} }} while (0)\n\
+             int main(void) {{\n  int bad = 0;\n  for (unsigned i = 0; i < sizeof V / sizeof V[0]; i++) {{\n\
+             int v = V[i];\n{checks}  }}\n  return bad != 0;\n}}\n"
+        );
+        compile_and_run(fixture, &program, &compilers).unwrap_or_else(|e| panic!("{fixture}: {e}\n{text}"));
     }
 }

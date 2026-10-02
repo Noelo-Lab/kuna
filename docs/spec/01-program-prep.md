@@ -1993,7 +1993,16 @@ moves.
   turns `quotearg_style(4, …)` into
   `quotearg_style(shell_escape_always_quoting_style, …)`; the enum is looked up
   before it is built, because the same declaration recurs in every compilation
-  unit that includes its header;
+  unit that includes its header. The sign is the enum's `DW_AT_encoding`, which
+  gcc emits, else the encoding of the integer its `DW_AT_type` names, which is
+  all clang emits (clang's signed enums used to read as unsigned). An enum that
+  is not built (anonymous or memberless) falls back to a plain integer: `int` at
+  32 bits or wider, as it always was, and below 32 bits an integer of the enum's
+  own sign, or an undefined one when DWARF states none, since that sign decides
+  how a calling convention extends the value (04 §4.4, `narrowext`). Base types
+  map by encoding; `DW_ATE_UTF` (`char8_t`, `char16_t`, `char32_t`, unsigned in
+  C++), the Fortran character encodings and `DW_ATE_unsigned_fixed` are unsigned
+  integers, where they used to fall through to a signed one;
   (3) stack locals — direct `DW_OP_fbreg` children become typelock|namelock stack
   symbols at `call_frame_cfa + fbreg`, re-seeded per decompile (§1.1); nested
   lexical-block locals and composite locations are a documented loss. (ida) The
@@ -2371,9 +2380,10 @@ moves.
   `GnuDemanglerParser` does: the last depth-0 parenthesis group is the parameter
   list, the last depth-0 token before it is the qualified name, and a trailing
   `const`/`volatile`/`&`/`&&` is the cv/ref qualifier. Each declared parameter maps
-  to a pointer of any depth, a primitive, or — as a POINTEE only — a named opaque
-  structure carrying the bare innermost class name (upstream's placeholder
-  structure). An aggregate passed **by value**, an array, a function pointer, a
+  to a pointer of any depth, a primitive (at its LP64/ILP32 width and with the
+  sign C++ gives it, so `char16_t` is `unsigned short`), or — as a POINTEE only —
+  a named opaque structure carrying the bare innermost class name (upstream's
+  placeholder structure). An aggregate passed **by value**, an array, a function pointer, a
   pointer-to-member or an overloaded operator refuses the whole signature: the
   mangling carries no layout, and a wrong width shifts every following parameter.
   The **return type is deliberately not applied**. Itanium encodes one only for a

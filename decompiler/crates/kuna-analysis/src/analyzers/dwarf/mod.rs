@@ -580,7 +580,9 @@ fn build_datatype_at(
                 }
                 Some(gimli::DW_ATE_boolean) => types.get_base(size, type_metatype::TYPE_BOOL).ok(),
                 Some(gimli::DW_ATE_float) => types.get_base(size, type_metatype::TYPE_FLOAT).ok(),
-                Some(gimli::DW_ATE_unsigned) => types.get_base(size, type_metatype::TYPE_UINT).ok(),
+                enc if encoding_signed(enc) == Some(false) => {
+                    types.get_base(size, type_metatype::TYPE_UINT).ok()
+                }
                 // DW_ATE_signed (and anything else) -> signed int.
                 _ => types.get_base(size, type_metatype::TYPE_INT).ok(),
             }
@@ -636,11 +638,11 @@ fn build_datatype_at(
         }
         gimli::DW_TAG_enumeration_type => {
             let size = die.byte_size.map(|b| b as i32).unwrap_or(4).max(1);
-            build_enum(die, dies, types, size)
+            let signed = enum_signed(die, dies);
+            build_enum(die, dies, types, size, signed)
                 // Anonymous, memberless, or the wrong width for the factory's
-                // enum size: fall back to the plain underlying integer, which is
-                // what this arm always used to produce.
-                .or_else(|| types.get_base(size, type_metatype::TYPE_INT).ok())
+                // enum size: fall back to the plain underlying integer.
+                .or_else(|| types.get_base(size, enum_fallback(size, signed)).ok())
         }
         // Any other tag (e.g. subroutine_type) -> give up on this type cleanly.
         _ => None,
@@ -759,6 +761,46 @@ fn aggregate_name<'a>(die: &'a DieSnap, alias: Option<&'a str>, fallback: &'a st
     }
 }
 
+/// The sign a DWARF integer encoding states, `None` for one that states none.
+/// The character encodings are unsigned: `char8_t`, `char16_t` and `char32_t`
+/// are, and `DW_ATE_UTF` is what both compilers emit for them.
+fn encoding_signed(encoding: Option<gimli::DwAte>) -> Option<bool> {
+    match encoding? {
+        gimli::DW_ATE_signed | gimli::DW_ATE_signed_char | gimli::DW_ATE_signed_fixed => Some(true),
+        gimli::DW_ATE_unsigned
+        | gimli::DW_ATE_unsigned_char
+        | gimli::DW_ATE_unsigned_fixed
+        | gimli::DW_ATE_boolean
+        | gimli::DW_ATE_UTF
+        | gimli::DW_ATE_UCS
+        | gimli::DW_ATE_ASCII => Some(false),
+        _ => None,
+    }
+}
+
+/// The sign of an enumeration: its `DW_AT_encoding` (gcc), else that of the
+/// integer its `DW_AT_type` names (clang states only that), else `None`.
+fn enum_signed(die: &DieSnap, dies: &BTreeMap<usize, DieSnap>) -> Option<bool> {
+    encoding_signed(die.encoding).or_else(|| {
+        let (base, _) = strip_qualifiers(dies.get(&die.type_ref?)?, dies);
+        (base.tag == gimli::DW_TAG_base_type).then_some(())?;
+        encoding_signed(base.encoding)
+    })
+}
+
+/// The plain integer an enumeration falls back to. One narrower than 32 bits
+/// takes the sign DWARF states, or none when DWARF states none, since that sign
+/// decides how a calling convention extends it (`narrowext`); a wider one stays
+/// `int`, as this arm always produced.
+fn enum_fallback(size: i32, signed: Option<bool>) -> type_metatype {
+    match signed {
+        _ if size >= 4 => type_metatype::TYPE_INT,
+        Some(true) => type_metatype::TYPE_INT,
+        Some(false) => type_metatype::TYPE_UINT,
+        None => type_metatype::TYPE_UNKNOWN,
+    }
+}
+
 /// Build a real kuna enum `Datatype` from a `DW_TAG_enumeration_type` DIE and its
 /// `DW_TAG_enumerator` children (`DWARFDataTypeImporter.makeDataTypeForEnum`).
 ///
@@ -770,7 +812,8 @@ fn aggregate_name<'a>(die: &'a DieSnap, alias: Option<&'a str>, fallback: &'a st
 /// `None` (and the caller falls back to the plain integer) when the enum is
 /// anonymous, has no usable members, or is not the width the type factory builds
 /// enums at — a size mismatch would misdescribe the storage, and a wrong size is
-/// worse than a missing name.
+/// worse than a missing name — or is narrower than 32 bits with no `signed`
+/// ([`enum_signed`]).
 ///
 /// Member values are masked to the enum's width, matching how the printer looks a
 /// constant up: a `-1` member of a 4-byte enum is keyed `0xffffffff`, the value
@@ -780,8 +823,9 @@ fn build_enum(
     dies: &BTreeMap<usize, DieSnap>,
     types: &dyn TypeFactory,
     size: i32,
+    signed: Option<bool>,
 ) -> Option<Rc<Datatype>> {
-    if die.name.is_empty() {
+    if die.name.is_empty() || (signed.is_none() && size < 4) {
         return None;
     }
     let mask: u64 = if size >= 8 { u64::MAX } else { (1u64 << (size * 8)) - 1 };
@@ -799,16 +843,14 @@ fn build_enum(
     if nmap.is_empty() {
         return None;
     }
-    // Signedness from `DW_AT_encoding` (gcc emits `DW_ATE_unsigned` for an enum
-    // whose members are all non-negative, `DW_ATE_signed` otherwise). The width
-    // is the DIE's own `DW_AT_byte_size`, not the factory's architecture default
-    // (8 on x86-64) -- a C enum is normally int-sized, and a type that misstates
-    // its storage width will not bind to the 4-byte constant it describes.
-    let meta = match die.encoding {
-        Some(gimli::DW_ATE_signed) | Some(gimli::DW_ATE_signed_char) => {
-            type_metatype::TYPE_ENUM_INT
-        }
-        _ => type_metatype::TYPE_ENUM_UINT,
+    // The width is the DIE's own `DW_AT_byte_size`, not the factory's
+    // architecture default (8 on x86-64) -- a C enum is normally int-sized, and a
+    // type that misstates its storage width will not bind to the 4-byte constant
+    // it describes.
+    let meta = if signed == Some(true) {
+        type_metatype::TYPE_ENUM_INT
+    } else {
+        type_metatype::TYPE_ENUM_UINT
     };
     // The type factory interns by name, and a real program repeats the same enum
     // definition in every compilation unit that includes its header. Constructing
@@ -1212,6 +1254,53 @@ mod tests {
         };
         assert_eq!(inner(&old), 0, "the budget truncates the element type to void");
         assert_eq!(inner(&new), 4, "the cycle guard keeps the 4-byte int");
+    }
+
+    /// A narrow integer's sign is what DWARF states: `char16_t` (`DW_ATE_UTF`)
+    /// is unsigned, an enum without `DW_AT_encoding` (clang) takes the sign of
+    /// its `DW_AT_type`, and a narrow anonymous enum falls back to an integer of
+    /// that sign, or to an unsigned-agnostic one when DWARF states none.
+    #[test]
+    fn a_narrow_integer_takes_the_sign_dwarf_states() {
+        let types = factory();
+        let mut dies: BTreeMap<usize, DieSnap> = BTreeMap::new();
+        let mut base = |off: usize, size: u64, encoding: gimli::DwAte| {
+            let mut d = DieSnap::new(gimli::DW_TAG_base_type, 1);
+            d.byte_size = Some(size);
+            d.encoding = Some(encoding);
+            dies.insert(off, d);
+        };
+        base(1, 2, gimli::DW_ATE_UTF);
+        base(2, 2, gimli::DW_ATE_unsigned);
+        base(3, 1, gimli::DW_ATE_signed_char);
+        let mut enumeration = |off: usize, name: &str, size: u64, under: Option<usize>| {
+            let mut e = DieSnap::new(gimli::DW_TAG_enumeration_type, 1);
+            e.name = name.into();
+            e.byte_size = Some(size);
+            e.type_ref = under;
+            let mut m = DieSnap::new(gimli::DW_TAG_enumerator, 2);
+            m.name = format!("{name}_m");
+            m.const_value = Some(1);
+            e.children = vec![off + 1];
+            dies.insert(off + 1, m);
+            dies.insert(off, e);
+        };
+        enumeration(10, "", 2, Some(2));
+        enumeration(20, "neg", 1, Some(3));
+        enumeration(30, "", 2, None);
+        enumeration(40, "unk", 2, None);
+        enumeration(50, "", 4, Some(2));
+        let meta = |off: usize| {
+            let mut walk = TypeWalk::with_gate(true);
+            let t = build_datatype(Some(off), &dies, &types, 1, &mut walk, false).expect("builds");
+            (t.get_metatype(), t.is_enum_type())
+        };
+        assert_eq!(meta(1), (type_metatype::TYPE_UINT, false), "char16_t is unsigned");
+        assert_eq!(meta(10), (type_metatype::TYPE_UINT, false), "an unsigned anonymous enum");
+        assert_eq!(meta(20), (type_metatype::TYPE_INT, true), "a signed clang enum");
+        assert_eq!(meta(30), (type_metatype::TYPE_UNKNOWN, false), "no stated sign");
+        assert_eq!(meta(40), (type_metatype::TYPE_UNKNOWN, false), "no stated sign, named");
+        assert_eq!(meta(50), (type_metatype::TYPE_INT, false), "a 4-byte enum stays int");
     }
 
 
