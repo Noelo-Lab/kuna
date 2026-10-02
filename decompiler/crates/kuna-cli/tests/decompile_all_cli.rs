@@ -2909,7 +2909,8 @@ fn a_float_pair_held_as_an_integer_round_trips() {
 /// with the wrappers, and the printed functions, compiled with gcc and clang,
 /// store the fixture's bits. `floatret_chain_mips_O0` (mipsel gcc -O0) hands a
 /// `float` in `$f0` through `wrapf` the same way: nothing on that chain is a
-/// float either.
+/// float either, and the printed reader, run on the fixture's array mapped at a
+/// 32-bit address, stores the bits of 2.25f, where a float chain stored 2.
 #[test]
 fn a_float_handed_on_through_wrappers_to_an_integer_round_trips() {
     let sp = specs();
@@ -2946,10 +2947,23 @@ fn a_float_handed_on_through_wrappers_to_an_integer_round_trips() {
     let (stdout, stderr, ok) = run_kuna(&["decompile-all", &mips, "--sleighpath", &sp]);
     assert!(ok, "kuna decompile-all failed: {stderr}");
     let printed = printed_functions(&stdout, &["sub_40085c ", "sub_400898 ", "sub_400b78 "]);
-    for want in ["unsigned int sub_40085c(int a0,int a1)", "unsigned int sub_400898(int a0,int a1)", "dat_4120e0 = sub_400898(a0,a1);"] {
+    for want in ["unsigned int sub_40085c(int a0,int a1)", "unsigned int sub_400898(int a0,int a1)"] {
         assert!(printed.contains(want), "missing `{want}`:\n{printed}");
     }
     assert!(!printed.contains("float"), "a function of the chain returns a float:\n{printed}");
+    let src = format!(
+        "#include <stdio.h>\n#include <string.h>\n#include <sys/mman.h>\n\
+         void __stack_chk_fail(void);\nint guard_;\nint *dat_412094 = &guard_;\n\
+         unsigned int dat_4120e0, dat_4120e4, dat_4120e8, dat_4120ec;\n{printed}\n\
+         int main(void) {{\n  float farr[4] = {{1.5f, -0.0f, 2.25f, 3.0f}};\n  \
+         void *base = mmap((void *)0x20000000, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);\n  \
+         if (base != (void *)0x20000000) return 2;\n  memcpy(base, farr, sizeof farr);\n  sub_400b78({}, 2);\n  \
+         printf(\"%x %x %x %x\\n\", dat_4120e0, dat_4120e4, dat_4120e8, dat_4120ec);\n  return 0;\n}}\n",
+        arg_of_pointer(&printed, "sub_400b78", 0, "base"),
+    );
+    for (cc, got) in compile_and_run_each("floatret-chain-mips", &src) {
+        assert_eq!(got, "40100000 0 4010 0", "{cc}: the printed MIPS reader stores something else:\n{printed}");
+    }
 }
 
 /// `floatret_pair32_{i386_O2,arm_O0}.o`: `use` reads a 64-bit result in two
