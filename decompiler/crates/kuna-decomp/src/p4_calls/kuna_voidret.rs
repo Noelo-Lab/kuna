@@ -726,6 +726,27 @@ pub fn whole_or_none(data: &Funcdata, active: &mut crate::fspec::ParamActive) {
     }
 }
 
+/// A forced function whose RETURN carries no value once return recovery is
+/// done returns `void`, as upstream's `updateOutputTypes` makes it. A restart
+/// keeps the output an earlier pass recovered (the port's `Funcdata::clear`
+/// does not clear an unlocked output, and `ActionOutputPrototype` leaves the
+/// output alone when the RETURN has no value), so a trial the pass before the
+/// restart took and the pass after it refused printed `unsigned int f(..)`
+/// around a bare `return;`.
+pub fn void_unless_returned(data: &mut Funcdata) {
+    if data.kuna_forced_return().is_empty()
+        || !data.get_func_proto().has_store()
+        || data.get_func_proto().is_output_locked()
+        || data.get_first_return_op().and_then(|r| data.obank().get(r)).is_some_and(|o| o.num_input() > 1)
+    {
+        return;
+    }
+    let glb = std::rc::Rc::clone(data.get_arch());
+    if let Some(types) = glb.types() {
+        let _ = data.get_func_proto_mut().clear_unlocked_output(types);
+    }
+}
+
 /// [`score_forced`] for trial `i`, when it is (`anchored`) or is not a trial at
 /// the least significant end of the storage the callers read: the upper half of
 /// a `double` split in two trials is returned only beside its lower half.

@@ -2995,6 +2995,33 @@ fn a_float_return_beside_a_global_read_stays_an_integer() {
     }
 }
 
+/// The entry hands `f`'s `eax` to `ExitProcess`, so `f` is decompiled again to
+/// return it, and that decompile restarts once its second indirect call
+/// resolves to `ExitProcess`. The pass before the restart returned `eax`, the
+/// pass after it refused, and the first pass's output survived: `int
+/// sub_401020(..)` around a bare `return;`. No function that declares a return
+/// type prints one.
+#[test]
+fn a_return_refused_after_a_restart_leaves_the_function_void() {
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_restart_pe_i386.exe")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let printed = printed_functions(&stdout, &["sub_401020 "]);
+    assert!(printed.contains("void sub_401020(unsigned int a0)"), "{printed}");
+    for chunk in stdout.split("// Function: ") {
+        let mut lines = chunk.lines().skip(1);
+        let Some(sig) = lines.next() else { continue };
+        if !sig.starts_with("void ") {
+            assert!(!lines.any(|l| l.trim() == "return;"), "`{sig}` returns nothing:\n{stdout}");
+        }
+    }
+}
+
 /// `dsum`, `norm` and `use` read their argument as `double *`, `struct P *` and
 /// `struct M *`, and each caller writes that memory with integer bits first. A
 /// pointer vote from the callee printed those stores as value conversions

@@ -1725,6 +1725,7 @@ impl Action for ActionReturnRecovery {
                 }
                 Self::build_return_output(&active, op, data, return_single);
             }
+            crate::p4_calls::kuna_voidret::void_unless_returned(data);
             crate::kuna_armfloatreturn::type_returns(data, &active);
             data.clear_active_output();
             self.base.count += 1;
