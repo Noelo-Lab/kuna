@@ -210,6 +210,9 @@ pub struct CalleeEntryDead {
     /// The register reads such an instruction makes after its user op, which
     /// [`Self::reads`] does not see.
     return_reads: Vec<(int4, u64, int4)>,
+    /// Was the walk taken with conditionally executed instructions scored per
+    /// path? See [`probe_callee_entry_dead_with`].
+    strict: bool,
     /// Did the walk cover every path with nothing abandoned?
     complete: bool,
 }
@@ -409,6 +412,7 @@ impl CalleeEntryDead {
             named_cuts: Vec::new(),
             returning_opaque: 0,
             return_reads: Vec::new(),
+            strict: false,
             complete,
         }
     }
@@ -677,16 +681,23 @@ fn takes(stated: &crate::kuna_protoorder::RecoveredTypes, &(ridx, off, sz): &Reg
     })
 }
 
-/// The entry-liveness probe of `entry`, from the run's cache or taken now.
-fn probe_cached(
+/// The entry-liveness probe of `entry`, from the run's cache or taken now:
+/// strict where `armfloatargs` applies, so its rules never rest on a
+/// conditionally executed write.
+pub(crate) fn probe_cached(
     arch: &mut crate::architecture::Architecture,
     entry: &Address,
     reg_idx: int4,
 ) -> Option<Rc<CalleeEntryDead>> {
     let sp = entry.get_space()?;
     let key = (sp.get_index(), entry.get_offset());
+    let strict = crate::kuna_armfloatargs::applies(arch);
+    if arch.kuna_callee_dead_cache.get(&key).is_some_and(|d| d.strict != strict) {
+        arch.kuna_callee_dead_cache.clear();
+        arch.kuna_callee_forward_cache.clear();
+    }
     if !arch.kuna_callee_dead_cache.contains_key(&key) {
-        let probed = probe_callee_entry_dead(arch.translate(), entry, reg_idx);
+        let probed = probe_callee_entry_dead_with(arch.translate(), entry, reg_idx, strict);
         arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
     }
     arch.kuna_callee_dead_cache.get(&key).cloned()
@@ -782,6 +793,19 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
     entry: &Address,
     reg_idx: int4,
 ) -> CalleeEntryDead {
+    probe_callee_entry_dead_with(tr, entry, reg_idx, false)
+}
+
+/// [`probe_callee_entry_dead`], and with `strict` a conditionally executed
+/// instruction is scored per path: the path that skips it continues from the
+/// written set at its condition, and a conditional return or call does not end
+/// the path that falls through it (ARM `vmovgt s0,s1`, `bxlt lr`).
+pub fn probe_callee_entry_dead_with<T: kuna_sleigh::translate::Translate + ?Sized>(
+    tr: &T,
+    entry: &Address,
+    reg_idx: int4,
+    strict: bool,
+) -> CalleeEntryDead {
     let mut res = CalleeEntryDead {
         reg_idx,
         reads: Vec::new(),
@@ -791,6 +815,7 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
         named_cuts: Vec::new(),
         returning_opaque: 0,
         return_reads: Vec::new(),
+        strict,
         complete: true,
     };
     let Some(entry_space) = entry.get_space() else {
@@ -931,7 +956,14 @@ fn step_instruction(
 ) -> Option<Vec<Frame>> {
     let incoming = written.clone();
     let mut cur = written;
-    let mut targets: Vec<Address> = Vec::new();
+    let strict = res.strict;
+    let mut targets: Vec<(Address, Option<ByteSet>)> = Vec::new();
+    let skipped = |targets: Vec<(Address, Option<ByteSet>)>| -> Vec<Frame> {
+        targets
+            .into_iter()
+            .filter_map(|(at, written)| Some(Frame { at, written: written? }))
+            .collect()
+    };
     let mut ends_flow = false;
     for (k, op) in emit.ops.iter().enumerate() {
         // Reads. An instruction that branches inside itself is scored against
@@ -969,7 +1001,7 @@ fn step_instruction(
                     _ => res.opaque_cuts.push(cur.clone()),
                 }
                 res.cuts.push(cur);
-                return Some(Vec::new());
+                return Some(skipped(targets));
             }
             OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCHIND => {
                 if op.opc == OpCode::CPUI_CALLOTHER && !emit.internal_flow {
@@ -977,7 +1009,7 @@ fn step_instruction(
                 }
                 res.opaque_cuts.push(cur.clone());
                 res.cuts.push(cur);
-                return Some(Vec::new());
+                return Some(skipped(targets));
             }
             // A RETURN is a path terminator like any other: the register has to
             // be written BEFORE it, or the body has shown nothing.  A callee
@@ -985,7 +1017,7 @@ fn step_instruction(
             // proof would delete the arguments of every stub and thunk.
             OpCode::CPUI_RETURN => {
                 res.cuts.push(cur);
-                return Some(Vec::new());
+                return Some(skipped(targets));
             }
             // The `<spaceid>` operand's offset IS the space-manager index. An
             // access to the register space through LOAD/STORE is an indexed
@@ -994,7 +1026,7 @@ fn step_instruction(
                 if op.ins.first().map(|v| v.offset as int4) == Some(res.reg_idx) {
                     res.opaque_cuts.push(cur.clone());
                     res.cuts.push(cur);
-                    return Some(Vec::new());
+                    return Some(skipped(targets));
                 }
             }
             OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
@@ -1003,7 +1035,8 @@ fn step_instruction(
                     // whole instruction is being read anyway.
                     Some(sp) if sp.get_type() == spacetype::IPTR_CONSTANT => {}
                     Some(sp) => {
-                        targets.push(Address::new(Rc::clone(sp), op.ins[0].offset));
+                        let at = Address::new(Rc::clone(sp), op.ins[0].offset);
+                        targets.push((at, strict.then(|| cur.clone())));
                         if op.opc == OpCode::CPUI_BRANCH {
                             ends_flow = true;
                         }
@@ -1011,7 +1044,7 @@ fn step_instruction(
                     None => {
                         res.opaque_cuts.push(cur.clone());
                         res.cuts.push(cur);
-                        return Some(Vec::new());
+                        return Some(skipped(targets));
                     }
                 }
             }
@@ -1035,8 +1068,10 @@ fn step_instruction(
             }
         }
     }
-    let mut next: Vec<Frame> =
-        targets.into_iter().map(|t| Frame { at: t, written: cur.clone() }).collect();
+    let mut next: Vec<Frame> = targets
+        .into_iter()
+        .map(|(at, written)| Frame { at, written: written.unwrap_or_else(|| cur.clone()) })
+        .collect();
     if !ends_flow {
         next.push(Frame { at: at + len as i64, written: cur });
     }

@@ -420,11 +420,12 @@ fn plan_stated_inputs(
             continue;
         }
         let filler = *unref && wanted.iter().any(|(a, _)| above(a, addr));
-        let unreached = dead.is_some_and(|d| {
-            !d.proves_read(addr, *size)
-                && (d.returns_untouched(addr, *size)
-                    || forward.is_some_and(|f| f.transfer_free(addr, *size)))
-        });
+        let unreached = outside_result(data, &entry, addr, *size)
+            && dead.is_some_and(|d| {
+                !d.proves_read(addr, *size)
+                    && (d.returns_untouched(addr, *size)
+                        || forward.is_some_and(|f| f.transfer_free(addr, *size)))
+            });
         if filler || unreached {
             drop.push(*i);
         } else {
@@ -446,10 +447,9 @@ fn plan_stated_inputs(
             let parts = passed(*i).map_or(vec![None], |vn| pieces(data, vn));
             let leftover = passed(*i).is_some_and(|vn| {
                 crate::kuna_calleedeadarg::is_leftover_call_result(data, vn, 0)
+                    && !passes_result(data, vn, *size, 0)
             });
-            let unread = ignored(addr, *size)
-                || dead.is_some_and(|d| d.returns_untouched(addr, *size));
-            if unread && (widens(&parts) || leftover) {
+            if never_reads(data, &entry, addr, *size) && (widens(&parts) || leftover) {
                 zeros.push(*i);
             }
         }
@@ -488,9 +488,55 @@ pub fn unread_slot(data: &Funcdata, call: &FuncCallSpecs, addr: &Address, size: 
         && call.proto().model().input().get_entry().iter().any(|e| {
             e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) == 0
         })
-        && data
-            .kuna_callee_entry_dead(call.get_entry_address())
-            .is_some_and(|d| d.proves_dead(addr, size) || d.returns_untouched(addr, size))
+        && never_reads(data, call.get_entry_address(), addr, size)
+}
+
+/// Does the callee at `entry` never read `[addr, addr+size)`? Every path
+/// writes it first, or the body only returns without touching it and it lies
+/// outside the callee's stated result, which such a path hands back unchanged.
+fn never_reads(data: &Funcdata, entry: &Address, addr: &Address, size: i32) -> bool {
+    data.kuna_callee_entry_dead(entry).is_some_and(|d| {
+        d.proves_dead(addr, size)
+            || (d.returns_untouched(addr, size) && outside_result(data, entry, addr, size))
+    })
+}
+
+/// Does `[addr, addr+size)` lie clear of the result the callee at `entry`
+/// states? Only a result computed on every return is stated, so a callee
+/// stating none may hand back what a caller left in any of its registers.
+fn outside_result(data: &Funcdata, entry: &Address, addr: &Address, size: i32) -> bool {
+    let Some((out, out_size, _)) = data
+        .kuna_protoorder_types(entry)
+        .filter(|s| s.arity_sound)
+        .and_then(|s| s.output.clone())
+    else {
+        return false;
+    };
+    out.get_space().map(|s| s.get_index()) == addr.get_space().map(|s| s.get_index())
+        && out.overlap(0, addr, size) < 0
+        && addr.overlap(0, &out, out_size) < 0
+}
+
+/// Is `vn`, through copies and merges, an earlier call's whole result of
+/// `size` bytes, a value the caller hands on rather than one left over?
+fn passes_result(data: &Funcdata, vn: VarnodeId, size: i32, depth: u32) -> bool {
+    if depth > 12 {
+        return false;
+    }
+    let Some(v) = data.vbank().get(vn) else {
+        return false;
+    };
+    let Some(op) = v.get_def().and_then(|d| data.obank().get(d)) else {
+        return false;
+    };
+    let through = |k: i32| op.get_in(k).is_some_and(|x| passes_result(data, x, size, depth + 1));
+    match op.code() {
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => v.get_size() == size,
+        OpCode::CPUI_INDIRECT if op.is_indirect_creation() => false,
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => through(0),
+        OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).any(through),
+        _ => false,
+    }
 }
 
 /// Pass a stated double held as two word trials as one argument: a PIECE of
