@@ -446,6 +446,9 @@ pub struct ObjectLoadImage {
     /// (kuna) The container's floating-point argument convention
     /// ([`crate::loader::kuna_floatabi::float_arg_registers`]).
     float_arg_registers: Option<bool>,
+    /// (kuna) The callee extends a narrow return value
+    /// ([`crate::loader::format::macho::callee_extends_returns`]).
+    callee_extends_returns: bool,
     /// The resolved SLEIGH language id (the `getArchType` payload).
     archtype: Vec<u8>,
     /// The per-arch *default-model* fallback language id (design §2.2): the same
@@ -983,6 +986,7 @@ impl ObjectLoadImage {
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),
+            callee_extends_returns: crate::loader::format::macho::callee_extends_returns(&file),
             archtype,
             fallback_archtype,
             bytes: Arc::new(SegmentBytes { segments }),
@@ -1122,6 +1126,7 @@ impl ObjectLoadImage {
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),
+            callee_extends_returns: crate::loader::format::macho::callee_extends_returns(&file),
             archtype,
             fallback_archtype,
             bytes: Arc::new(SegmentBytes { segments }),
@@ -1360,6 +1365,8 @@ impl LoadImage for ObjectLoadImage {
     fn arm_vfp_args(&self) -> bool { self.arm_vfp_args }
 
     fn float_arg_registers(&self) -> Option<bool> { self.float_arg_registers }
+
+    fn callee_extends_returns(&self) -> bool { self.callee_extends_returns }
 
     fn get_file_name(&self) -> &str {
         &self.filename

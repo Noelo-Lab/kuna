@@ -94,6 +94,14 @@ pub fn apple_silicon_id(
     Some("AARCH64:LE:64:AppleSilicon:default".to_string())
 }
 
+/// (kuna) An Apple arm64 image, whose callee extends a return value narrower
+/// than 32 bits to 32 bits.
+pub fn callee_extends_returns(file: &object::File<'_>) -> bool {
+    use object::Object;
+    file.format() == object::BinaryFormat::MachO
+        && matches!(file.architecture(), Architecture::Aarch64 | Architecture::Aarch64_Ilp32)
+}
+
 /// The Mach-O (Apple) object format.
 pub struct MachOFormat;
 

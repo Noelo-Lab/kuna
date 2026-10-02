@@ -946,9 +946,10 @@ pub struct ArchContext {
     pub float_arg_registers: Option<bool>,
     /// The spec's soft-float model on a soft-float image, if it has one.
     pub soft_float_model: Option<Rc<crate::fspec::ProtoModel>>,
-    /// The caller, not the callee, extends a return value narrower than its
-    /// register (x86, AArch64).  Read by [`crate::p4_calls::kuna_typedcallabi`].
-    pub caller_extends_returns: bool,
+    /// The narrowest return value, in bytes, that the caller rather than the
+    /// callee extends to its register (`i32::MAX`: none).  Read by
+    /// [`crate::p4_calls::kuna_typedcallabi`].
+    pub caller_extends_returns_from: i32,
     /// (kuna) let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (`calleedeadarg`).  Read by
     /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
@@ -1644,7 +1645,7 @@ impl ArchContext {
             arm_float_return: false, // (kuna) option armfloatreturn (default off)
             float_arg_registers: None,
             soft_float_model: None,
-            caller_extends_returns: false,
+            caller_extends_returns_from: i32::MAX,
             pass_through: true, // (kuna) option passthrough (default on)
             // calleedeadarg only ever REMOVES an argument, and only against a
             // decoded callee body; the fixture seam carries the real default.

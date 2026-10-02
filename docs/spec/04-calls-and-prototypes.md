@@ -1473,12 +1473,18 @@ fixed ones (x86-64 `xmm0`, AArch64 `d0`), and a register-pair parameter prints
 a stale value for one of its words (32-bit ARM, PowerPC, RISC-V and MIPS).
 A return value narrower than the register entry that holds it (a `char`,
 `short` or `bool`, or an `int` on a 64-bit RISC-V) is forced only where the
-caller extends it itself (x86, AArch64) or the model's output entry extends it
-by its type (`extension="inttype"`: ARM, PowerPC). Elsewhere the callee's
-extension is modelled wrongly and the recovered call is kept: a MIPS model
-states no extension, so the rest of `v0` would print as an unassigned piece of
-the result, and a RISC-V model states zero extension, which turns a negative
-`signed char`, `short` or 64-bit `int` result into a large positive one.
+caller extends it itself (x86, and AArch64 other than Apple's) or the model's
+output entry extends it by its type (`extension="inttype"`: ARM, PowerPC). An
+Apple arm64 callee extends a return value narrower than 32 bits to 32 bits and
+its caller reads `w0` as it is, so there only an `int` or wider return counts
+as caller-extended. The loader marks a Mach-O arm64 image
+(`decompiler/crates/kuna-analysis/src/loader/format/macho.rs`), and the
+`AppleSilicon` language says the same. Elsewhere the callee's extension is
+modelled wrongly and the recovered call is kept: a MIPS model states no
+extension, so the rest of `v0` would print as an unassigned piece of the
+result, and the RISC-V model and Apple's AArch64 one state zero extension,
+which turns a negative `signed char`, `short` or 64-bit RISC-V `int` result
+into a large positive one.
 
 `force_set` first saves a copy of the full `FuncProto` — model, storage, locks
 and all — into the function's Override store keyed by the call address

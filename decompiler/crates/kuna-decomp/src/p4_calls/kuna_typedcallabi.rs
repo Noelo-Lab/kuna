@@ -9,8 +9,9 @@
 //! in core registers, and a locked variadic prototype with a floating-point
 //! return or a register-pair parameter misreads the arguments past it.  A return
 //! value narrower than its register is forced only where the model extends it by
-//! its type or the caller extends it: a MIPS model states no extension and a
-//! RISC-V one zero-extends signed values.
+//! its type or the caller extends it: a MIPS model states no extension, a RISC-V
+//! one zero-extends signed values, and an Apple arm64 callee sign-extends a
+//! signed value narrower than 32 bits that the model zero-extends.
 use crate::{
     context::ArchContext,
     dtype::{type_class, type_metatype},
@@ -29,7 +30,7 @@ const SOFT_FLOAT_MODEL: &str = "__stdcall_softfp";
 /// floating-point registers: x86 and AArch64 always do; elsewhere only the
 /// convention the container states decides.
 pub fn image_evidence(arch: &Architecture) -> Option<bool> {
-    if caller_extends(arch) {
+    if x86_or_aarch64(arch) {
         return Some(true);
     }
     arch.translate()
@@ -39,9 +40,28 @@ pub fn image_evidence(arch: &Architecture) -> Option<bool> {
         .and_then(|loader| loader.float_arg_registers())
 }
 
-/// x86 and AArch64, whose callers extend a narrow return value themselves.
-pub fn caller_extends(arch: &Architecture) -> bool {
+fn x86_or_aarch64(arch: &Architecture) -> bool {
     arch.archid.starts_with("x86:") || arch.archid.starts_with("AARCH64:")
+}
+
+/// The narrowest return value, in bytes, whose caller extends it itself: any on
+/// x86 and AArch64, except that an Apple arm64 callee extends a return narrower
+/// than 32 bits; none elsewhere.
+pub fn caller_extends_from(arch: &Architecture) -> i32 {
+    if !x86_or_aarch64(arch) {
+        return i32::MAX;
+    }
+    let apple = arch.archid.starts_with("AARCH64:LE:64:AppleSilicon:")
+        || arch
+            .translate()
+            .loader_rc()
+            .try_borrow()
+            .is_ok_and(|loader| loader.callee_extends_returns());
+    if apple {
+        4
+    } else {
+        1
+    }
 }
 
 /// The spec's soft-float model, on an image that states the soft-float convention.
@@ -53,19 +73,22 @@ pub fn soft_model(arch: &Architecture, evidence: Option<bool>) -> Option<Rc<Prot
 
 /// The prototype to force at a CALLIND typed with `proto`, or `None` to leave the
 /// call to model recovery.  A prototype whose return value is narrower than its
-/// register and extended by neither the model nor the caller is declined.  A
-/// variadic prototype is forced only when no fixed parameter or return value
-/// lives in a join or in the model's floating-point registers.  Any other
-/// prototype that puts nothing in those registers, or names its own convention,
-/// is forced as declared.  Otherwise the stated convention decides: hard-float
-/// keeps it; soft-float rebuilds it under the soft-float model, or declines when
-/// the spec has none; single-float or no stated convention declines.
+/// register and extended by neither the model by type nor the caller is
+/// declined.  A variadic prototype is forced only when no fixed parameter or
+/// return value lives in a join or in the model's floating-point registers.  Any
+/// other prototype that puts nothing in those registers, or names its own
+/// convention, is forced as declared.  Otherwise the stated convention decides:
+/// hard-float keeps it; soft-float rebuilds it under the soft-float model, or
+/// declines when the spec has none; single-float or no stated convention
+/// declines.
 pub fn admit(data: &Funcdata, proto: Rc<FuncProto>) -> Option<Rc<FuncProto>> {
     if !proto.has_model() {
         return Some(proto);
     }
     let arch = data.get_arch();
-    if !arch.caller_extends_returns && unextended_return(&proto) {
+    if proto.get_output().get_size() < arch.caller_extends_returns_from
+        && unextended_return(&proto)
+    {
         return None;
     }
     let storage = storage(&proto);

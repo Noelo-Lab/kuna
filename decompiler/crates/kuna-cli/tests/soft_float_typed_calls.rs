@@ -4,7 +4,8 @@
 //! or one that states no convention, even when the function computes with
 //! floating-point registers.  A variadic prototype with a floating-point or
 //! register-pair fixed value, and a return value narrower than a register the
-//! model does not extend by type, keep the recovered call too.
+//! model does not extend by type, keep the recovered call too, unless the caller
+//! extends it, which an Apple arm64 caller does not below 32 bits.
 mod common;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{
@@ -66,6 +67,15 @@ fn image_bytes(
         };
     }
     let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    object_bytes(object, text, functions, note)
+}
+
+fn object_bytes(
+    mut object: Object,
+    text: object::write::SectionId,
+    functions: &[(&str, Vec<u8>)],
+    note: Option<(&[u8], Vec<u8>)>,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     for (name, code) in functions {
         object.add_symbol(Symbol {
@@ -559,4 +569,50 @@ fn return_narrower_than_an_unextended_register_keeps_the_recovered_call() {
     let c3 = function(&text, "c3");
     assert!(c3.contains("(*v1)(k) * 3"), "{c3}");
     assert!(!c3.contains("// v0"), "read unset bits of v0: {c3}");
+}
+
+/// `int c1(struct co *o, int k) { return o->sc(k) * 3; }`,
+/// `long c6(struct co *o, int k, long *p) { return p[o->sc(k)]; }` and
+/// `long e1(struct io *o, int k, long *p) { return p[o->si(k, 2.5)]; }`, clang
+/// -O2 for arm64-apple-macos: the callee sign-extends the `signed char` it
+/// returns to 32 bits, and the caller reads `w0` without extending it.
+fn apple_arm64() -> Vec<u8> {
+    let words = |words: &[u32]| -> Vec<u8> { words.iter().flat_map(|w| w.to_le_bytes()).collect() };
+    let c1 = words(&[
+        0xa9bf7bfd, 0x910003fd, 0xf9400008, 0xaa0103e0, 0xd63f0100, 0x0b000400, 0xa8c17bfd,
+        0xd65f03c0,
+    ]);
+    let c6 = words(&[
+        0xa9be4ff4, 0xa9017bfd, 0x910043fd, 0xaa0203f3, 0xf9400008, 0xaa0103e0, 0xd63f0100,
+        0xf860da60, 0xa9417bfd, 0xa8c24ff4, 0xd65f03c0,
+    ]);
+    let e1 = words(&[
+        0xa9be4ff4, 0xa9017bfd, 0x910043fd, 0xaa0203f3, 0xf9400008, 0x1e609000, 0xaa0103e0,
+        0xd63f0100, 0xf860da60, 0xa9417bfd, 0xa8c24ff4, 0xd65f03c0,
+    ]);
+    let mut object = Object::new(BinaryFormat::MachO, Architecture::Aarch64, Endianness::Little);
+    let text = object.section_id(object::write::StandardSection::Text);
+    object_bytes(object, text, &[("c1", c1), ("c6", c6), ("e1", e1)], None)
+}
+
+#[test]
+fn apple_arm64_return_narrower_than_32_bits_keeps_the_recovered_call() {
+    let text = decompile_with(
+        &apple_arm64(),
+        &[
+            "typedef struct co { signed char (*sc)(int k); };".to_string(),
+            "typedef struct io { int (*si)(int k, double d); };".to_string(),
+            "prototype _c1 int _c1(struct co *o, int k)".to_string(),
+            "prototype _c6 long _c6(struct co *o, int k, long *p)".to_string(),
+            "prototype _e1 long _e1(struct io *o, int k, long *p)".to_string(),
+        ],
+    );
+    let c1 = function(&text, "_c1");
+    assert!(c1.contains("(*v1)(k) * 3"), "{c1}");
+    assert!(!c1.contains("(unsigned char)"), "zero-extended the signed char: {c1}");
+    let c6 = function(&text, "_c6");
+    assert!(c6.contains("p[(int)(*v1)(k)]"), "{c6}");
+    assert!(!c6.contains("(unsigned char)"), "zero-extended the signed index: {c6}");
+    let e1 = function(&text, "_e1");
+    assert!(e1.contains("p[(*v1)(k,2.5)]"), "an int return keeps the declared call: {e1}");
 }
