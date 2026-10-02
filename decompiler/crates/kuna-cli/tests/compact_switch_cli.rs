@@ -480,45 +480,93 @@ fn byte_index_past_a_short_map_keeps_index_labels() {
     );
 }
 
+/// A fixture built from C whose `pick` the round trip compares with its
+/// source: where `pick` starts, the address the file maps at, where its
+/// `map` lies, and how many modes to compare.
+struct SourceFixture {
+    name: &'static str,
+    pick: &'static str,
+    base: u32,
+    map: (u32, usize),
+    modes: u32,
+}
+
+const MIPS_CUT_ROW: SourceFixture = SourceFixture {
+    name: "switch_cutrow_mipsel",
+    pick: "0x400110",
+    base: 0x400000,
+    map: (0x4001c4, 12),
+    modes: 12,
+};
+
 /// `pick` bounds `mode` to 0..5 and switches on `map[mode] - 9`.  Mode 3's map
 /// value falls outside the table, so the flow-time rows stop at mode 2, yet
 /// modes 4 and 5 still dispatch to mode 0's target.
 #[test]
 fn cut_row_index_is_still_dispatched() {
-    cut_row("switch_cutrow_mipsel");
+    cut_row(&MIPS_CUT_ROW);
 }
 
 /// As above, but modes 4 and 5 read a table entry that no kept row read.
 #[test]
 fn cut_row_reading_an_unread_entry_is_still_dispatched() {
-    cut_row("switch_cutrow_unread_mipsel");
+    cut_row(&SourceFixture { name: "switch_cutrow_unread_mipsel", ..MIPS_CUT_ROW });
 }
 
-fn cut_row(fixture: &str) {
-    let fixtures = root().join("decompiler/crates/kuna-analysis/tests/fixtures");
-    let mut command = kuna();
-    command
-        .arg("decompile-all")
-        .arg(fixtures.join(fixture))
-        .args(["--addr", "0x400110", "--sleighpath"])
-        .arg(specs());
-    let c = printed(command);
+/// The same bounded `map[mode] - 9` switch, where `map[mode] - 9 < 9` sends
+/// modes 3, 4 and 5 away before the table.  Modes 4 and 5 would read the
+/// next switch's table, whose first entry is mode 2's target, so counting
+/// them as dispatched would reject the correct index labels.
+#[test]
+fn cut_row_a_later_guard_sends_away_keeps_index_labels() {
+    let fixture = SourceFixture {
+        name: "switch_cutrow_guarded_x86_64",
+        pick: "0x43410a",
+        base: 0x433000,
+        map: (0x435078, 12),
+        modes: 40,
+    };
+    let c = source_decompile(&fixture);
+    assert_eq!(c.matches("switch(a0)").count(), 2, "lost the index selector: {c}");
+    assert!(!c.contains("labelled by address"), "labelled cases by address: {c}");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixture, &c);
+}
+
+fn cut_row(fixture: &SourceFixture) {
+    let c = source_decompile(fixture);
     assert!(c.contains("switch("), "lost the switch: {c}");
     assert!(
         !c.contains("switch(a0)") || (c.contains("case 4:") && c.contains("case 5:")),
         "labelled the mode switch without modes 4 and 5: {c}"
     );
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    source_round_trip(&fixtures.join(fixture), &fixtures.join(format!("{fixture}.c")), &c);
+    source_round_trip(fixture, &c);
 }
 
-/// Compile the printed MIPS `pick` for the host with every available compiler
-/// at -O0 and -O2, map the fixture's image at its link address for the data
-/// it reads, and compare it with `source`'s `pick` for modes 0..11.  The
-/// printed store to `sink` goes through `gp`, which the fixture never sets,
-/// so that line is dropped.
+fn fixtures() -> PathBuf {
+    root().join("decompiler/crates/kuna-analysis/tests/fixtures")
+}
+
+fn source_decompile(fixture: &SourceFixture) -> String {
+    let mut command = kuna();
+    command
+        .arg("decompile-all")
+        .arg(fixtures().join(fixture.name))
+        .args(["--addr", fixture.pick, "--sleighpath"])
+        .arg(specs());
+    printed(command)
+}
+
+/// Compile the printed `pick` for the host with every available compiler at
+/// -O0 and -O2, map the fixture's file at its base address for the data it
+/// reads, and compare it with the fixture source's `pick` for each mode.  A
+/// printed store to `sink` through `gp`, which a MIPS fixture never sets, is
+/// dropped.
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn source_round_trip(binary: &std::path::Path, source: &std::path::Path, printed: &str) {
+fn source_round_trip(fixture: &SourceFixture, printed: &str) {
+    let binary = fixtures().join(fixture.name);
+    let source = fixtures().join(format!("{}.c", fixture.name));
     let mut globals: Vec<&str> = printed
         .match_indices("dat_")
         .filter(|&(at, _)| {
@@ -558,15 +606,15 @@ fn source_round_trip(binary: &std::path::Path, source: &std::path::Path, printed
 #include "{source}"
 #undef pick
 #undef map
-#define map (*(unsigned char (*)[12])0x4001c4)
+#define map (*(unsigned char (*)[{map_len}]){map_at:#x})
 {globals}{function}
 int main(int argc, char **argv) {{
   int fd = open(argv[1], O_RDONLY);
   off_t size = lseek(fd, 0, SEEK_END);
-  if (mmap((void *)0x400000, size, PROT_READ, MAP_PRIVATE | MAP_FIXED_NOREPLACE, fd, 0) != (void *)0x400000)
+  if (mmap((void *){base:#x}, size, PROT_READ, MAP_PRIVATE | MAP_FIXED_NOREPLACE, fd, 0) != (void *){base:#x})
     return 2;
   int bad = 0;
-  for (unsigned mode = 0; mode < 12; mode++) {{
+  for (unsigned mode = 0; mode < {modes}; mode++) {{
     int want = native_pick(mode), got = printed_pick(mode);
     if (want != got) {{
       printf("mode=%u native=%d printed=%d\n", mode, want, got);
@@ -577,6 +625,10 @@ int main(int argc, char **argv) {{
 }}
 "#,
             source = source.display(),
+            base = fixture.base,
+            map_at = fixture.map.0,
+            map_len = fixture.map.1,
+            modes = fixture.modes,
         ),
     )
     .unwrap();
@@ -595,7 +647,7 @@ int main(int argc, char **argv) {{
                 "{cc} {level}: {}\n{printed}",
                 String::from_utf8_lossy(&compile.stderr)
             );
-            let run = Command::new(&exe).arg(binary).output().unwrap();
+            let run = Command::new(&exe).arg(&binary).output().unwrap();
             assert!(
                 run.status.success(),
                 "{cc} {level}: {} {}\n{printed}",

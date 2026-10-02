@@ -3797,6 +3797,55 @@ impl JumpBasicModel {
         }
     }
 
+    /// For each of `jr`'s values from the `skip`-th on, whether the code may
+    /// dispatch it: a value whose emulated path gives a guarded varnode a value
+    /// outside its guard's range branches away before the switch.
+    fn values_pass_guards(
+        &self,
+        fd: &Funcdata,
+        mut jr: Box<dyn JumpValues>,
+        skip: usize,
+    ) -> Vec<bool> {
+        let mut pass = Vec::new();
+        let mut more = jr.initialize_for_reading();
+        let mut index = 0;
+        while more {
+            if index >= skip {
+                pass.push(self.value_passes_guards(fd, &*jr));
+            }
+            index += 1;
+            more = jr.next().unwrap_or(false);
+        }
+        pass
+    }
+
+    /// Whether `jr`'s current value satisfies every guard whose varnode its
+    /// emulated path computes (true when the path cannot be emulated).
+    fn value_passes_guards(&self, fd: &Funcdata, jr: &dyn JumpValues) -> bool {
+        let (Some(startop), Some(startvn)) = (jr.get_start_op(), jr.get_start_varnode()) else {
+            return true;
+        };
+        let mut emul = EmulateFunction::new(fd);
+        for &(seed_vn, seed_val) in self.loop_carried_seeds.iter() {
+            emul.seed_varnode_value(seed_vn, seed_val);
+        }
+        if emul.emulate_path(jr.get_value(), &self.path_meld, startop, startvn).is_err() {
+            return true;
+        }
+        self.selectguards
+            .iter()
+            .filter(|guard| !guard.is_unrolled())
+            .all(|guard| {
+                let vn = guard.get_vn();
+                match (emul.emulated_value(vn), fd.vbank().get(vn)) {
+                    (Some(val), Some(v)) => guard
+                        .get_range()
+                        .contains_val(val & calc_mask(v.get_size())),
+                    _ => true,
+                }
+            })
+    }
+
     /// Whether this model's own values rebuild the flow-time table row for row.
     fn rebuilds_rows(&self, fd: &Funcdata, indop: OpId, rows: &LabelRows) -> bool {
         let mut addresses = Vec::new();
@@ -5274,10 +5323,11 @@ impl JumpTable {
             self.loadpoints = loadpoints;
             r?;
             let reached = self.loadpoints.clone();
-            let bounded = self.flow_range_bounded(fd);
+            let bounded = self.flow_bounded_values(fd);
             self.sanity_check(fd, Some(&loadcounts))?;
+            let cut = self.cut_rows_dispatched(fd, bounded, loadcounts.len());
             self.row_loads =
-                Self::kept_row_loads(reached, &loadcounts, self.addresstable.len(), bounded);
+                Self::kept_row_loads(reached, &loadcounts, self.addresstable.len(), &cut);
             LoadTable::collapse_table(&mut self.loadpoints);
         } else {
             let mut loadcounts: Vec<int4> = Vec::new();
@@ -5293,46 +5343,62 @@ impl JumpTable {
             );
             self.addresstable = addresstable;
             r?;
-            let bounded = self.flow_range_bounded(fd);
+            let bounded = self.flow_bounded_values(fd);
             self.sanity_check(fd, None)?;
+            let cut = self.cut_rows_dispatched(fd, bounded, loadcounts.len());
             self.row_loads =
-                Self::kept_row_loads(loads, &loadcounts, self.addresstable.len(), bounded);
+                Self::kept_row_loads(loads, &loadcounts, self.addresstable.len(), &cut);
         }
         Ok(())
     }
 
-    /// (kuna) Whether the flow-time basic model's range is narrower than its
-    /// variable's full width, so that a guard or a mask bounds every row it
-    /// emulates.
-    fn flow_range_bounded(&self, fd: &Funcdata) -> bool {
-        let Some(model) = self
+    /// (kuna) The flow-time basic model's values, before the sanity check
+    /// truncates them, when its range is narrower than its variable's full
+    /// width, so that a guard or a mask bounds every row it emulates.
+    fn flow_bounded_values(&self, fd: &Funcdata) -> Option<Box<dyn JumpValues>> {
+        let model = self
             .jmodel
             .as_ref()
-            .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
-        else {
-            return false;
-        };
-        let Some(size) = model
-            .jrange
-            .as_ref()
-            .and_then(|jr| jr.get_start_varnode())
-            .and_then(|vn| fd.vbank().get(vn))
-            .map(|vn| vn.get_size())
-        else {
-            return false;
-        };
+            .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())?;
+        let jrange = model.jrange.as_ref()?;
+        let size = fd.vbank().get(jrange.get_start_varnode()?)?.get_size();
         let rows = model.get_table_size().max(0) as uintb;
-        1u64.checked_shl(8 * size.max(0) as u32).is_none_or(|full| rows < full)
+        1u64.checked_shl(8 * size.max(0) as u32)
+            .is_none_or(|full| rows < full)
+            .then(|| jrange.clone_box())
+    }
+
+    /// (kuna) For each of the `emulated` rows the sanity check cut from a
+    /// `bounded` range, whether the code may still dispatch it: a cut row is
+    /// dispatched unless a guard on its path sends it away from the switch.
+    /// No cut row is dispatched when the range is not bounded.
+    fn cut_rows_dispatched(
+        &self,
+        fd: &Funcdata,
+        bounded: Option<Box<dyn JumpValues>>,
+        emulated: usize,
+    ) -> Vec<bool> {
+        let kept = self.addresstable.len();
+        let model = self
+            .jmodel
+            .as_ref()
+            .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>());
+        match (bounded, model) {
+            (Some(values), Some(model)) if kept < emulated => {
+                model.values_pass_guards(fd, values, kept)
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// (kuna) The loads behind the rows the code dispatches, when the model
-    /// counted its loads row by row: the first `rows` rows, or every row it
-    /// emulated when its range is `bounded`.
+    /// counted its loads row by row: the first `rows` rows, plus each cut row
+    /// after them that `cut` marks as dispatched.
     fn kept_row_loads(
-        mut loads: Vec<LoadTable>,
+        loads: Vec<LoadTable>,
         loadcounts: &[int4],
         rows: usize,
-        bounded: bool,
+        cut: &[bool],
     ) -> Option<RowLoads> {
         let counts = loadcounts.get(..rows)?;
         let kept = *counts.last()? as usize;
@@ -5342,11 +5408,17 @@ impl JumpTable {
             .max()? as usize;
         let mut reached = loads.clone();
         LoadTable::collapse_table(&mut reached);
-        if !bounded {
-            loads.truncate(kept);
+        let mut entries = loads[..kept.min(loads.len())].to_vec();
+        for (row, _) in cut.iter().enumerate().filter(|&(_, &dispatched)| dispatched) {
+            let row = rows + row;
+            let (Some(&lo), Some(&hi)) = (loadcounts.get(row - 1), loadcounts.get(row)) else {
+                break;
+            };
+            let span = lo.max(0) as usize..hi.max(0) as usize;
+            entries.extend_from_slice(loads.get(span).unwrap_or_default());
         }
-        LoadTable::collapse_table(&mut loads);
-        Some(RowLoads { entries: loads, reached, depth })
+        LoadTable::collapse_table(&mut entries);
+        Some(RowLoads { entries, reached, depth })
     }
 
     /// Recover jump-table addresses keeping track of a possible previous stage

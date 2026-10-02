@@ -1177,12 +1177,20 @@ emulation reads shows the code never dispatches it (`jumptable.rs
 read for the rows the code dispatches, the entries it read for every row it
 emulated, and the most loads it performed for one row (`jumptable.rs
 (JumpTable::recover_addresses)`). The dispatched rows are the ones the sanity
-check kept when the flow-time range spans its variable's full width, and every
-emulated row when a guard or a mask bounds that range below the full width
-(`jumptable.rs (JumpTable::flow_range_bounded)`): every value in a bounded range
-passes the guard that bounds it, so the rows past a cut are still values the
-code can dispatch, as when an earlier row's mapped value fails a second guard
-further down the path. The value's
+check kept when the flow-time range spans its variable's full width. When a
+guard or a mask bounds that range below the full width (`jumptable.rs
+(JumpTable::flow_bounded_values)`), every value in it passes the guard that
+bounds it, so a row past a cut can still be one the code dispatches, as when an
+earlier row's mapped value fails a second guard further down the path. Such a
+cut row counts unless a guard on its own path sends it away
+(`jumptable.rs (JumpTable::cut_rows_dispatched)`): its path is emulated again
+and each guard recorded while finding the switch variable, whose varnode that
+path computes, must hold the computed value in its range
+(`jumptable.rs (JumpBasicModel::value_passes_guards)`). Those guards lie on the
+single-entry chain into the switch block, so a value outside one never reaches
+the table. A cut row whose mapped value fails that second guard reads an entry
+past the table, often another switch's table, and is not counted, so a fresh
+value that reads the same entry does not reject the labels. The value's
 last load, the entry its destination comes from, must be one a dispatched row
 read: a value reading past the table end the sanity check found in a
 full-width range is not dispatched. When its emulation

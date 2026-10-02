@@ -97,6 +97,12 @@ impl<'a> EmulateFunction<'a> {
         self.loadpoints.take()
     }
 
+    /// (kuna) The value this emulation computed for `vn` (or was seeded
+    /// with), without falling back to the load image.
+    pub fn emulated_value(&self, vn: VarnodeId) -> Option<uintb> {
+        self.varnode_map.get(&vn).copied()
+    }
+
     /// The number of LOAD records collected so far (C++ `loadpoints->size()`,
     /// read after each `emulatePath` to populate `loadcounts`).  `None` when not
     /// collecting.
