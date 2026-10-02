@@ -446,6 +446,9 @@ pub struct ObjectLoadImage {
     /// (kuna) The container's floating-point argument convention
     /// ([`crate::loader::kuna_floatabi::float_arg_registers`]).
     float_arg_registers: Option<bool>,
+    /// (kuna) Whether the container states floating-point register hardware
+    /// ([`crate::loader::kuna_armfloatabi::fp_hardware`]).
+    float_hardware: Option<bool>,
     /// (kuna) Whether the callee extends a narrow return value
     /// ([`crate::loader::kuna_returnext::callee_extends_returns`]).
     callee_extends_returns: Option<bool>,
@@ -986,6 +989,7 @@ impl ObjectLoadImage {
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),
+            float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
             archtype,
             fallback_archtype,
@@ -1126,6 +1130,7 @@ impl ObjectLoadImage {
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),
+            float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
             archtype,
             fallback_archtype,
@@ -1365,6 +1370,8 @@ impl LoadImage for ObjectLoadImage {
     fn arm_vfp_args(&self) -> bool { self.arm_vfp_args }
 
     fn float_arg_registers(&self) -> Option<bool> { self.float_arg_registers }
+
+    fn float_hardware(&self) -> Option<bool> { self.float_hardware }
 
     fn callee_extends_returns(&self) -> Option<bool> { self.callee_extends_returns }
 

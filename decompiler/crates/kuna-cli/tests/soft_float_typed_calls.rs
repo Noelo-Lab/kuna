@@ -758,3 +758,57 @@ fn soft_float_arm_lays_dwarf_prototypes_out_in_core_registers() {
     assert!(s4.contains("v1 = dmix(a,k << 1);"), "{s4}");
     assert!(!text.contains("// r1"), "read a core register as unset: {text}");
 }
+
+/// `static float sq(float x) { return x * x + 1.0f; }` (noinline) and its
+/// caller `float g(float y) { return sq(y) * 2.0f; }`, clang -O2 for armv7
+/// with `-mfloat-abi=softfp`: the image states the base convention and VFPv3
+/// hardware, and clang passes the static function's float in `s0`.
+fn arm_softfp_static() -> Vec<u8> {
+    let g = vec![0xe92d4800, 0xee000a10, 0xeb000002, 0xee300a00, 0xee100a10, 0xe8bd8800];
+    let sq = vec![0xeeb71a00, 0xee001a00, 0xeeb00a41, 0xe12fff1e];
+    image(
+        Architecture::Arm,
+        Endianness::Little,
+        &[("g", g), ("sq", sq)],
+        Some((
+            b".ARM.attributes",
+            attributes(b"aeabi", &[6, 10, 10, 3], Endianness::Little),
+        )),
+    )
+}
+
+#[test]
+fn softfp_arm_keeps_the_declared_layout_where_a_static_function_may_use_vfp() {
+    let text = decompile_with(
+        &arm_softfp_static(),
+        &["prototype sq float sq(float x)".to_string()],
+    );
+    let sq = function(&text, "sq");
+    assert!(sq.contains("return x * x + 1.0;"), "{sq}");
+}
+
+/// `double pick(_Bool b, double a, double c) { return b ? a : c; }`, clang -O2
+/// for armv7 with `-mfloat-abi=soft`, which tests all of `r0`.
+#[test]
+fn soft_float_arm_extends_a_narrow_declared_argument() {
+    let pick = vec![
+        0xe59dc000, 0xe3500000, 0xe59d1004, 0x11a0c002, 0x11a01003, 0xe1a0000c, 0xe12fff1e,
+    ];
+    let bytes = image(
+        Architecture::Arm,
+        Endianness::Little,
+        &[("pick", pick)],
+        Some((
+            b".ARM.attributes",
+            attributes(b"aeabi", &[6, 10], Endianness::Little),
+        )),
+    );
+    let text = decompile_with(
+        &bytes,
+        &["prototype pick double pick(bool b, double a, double c)".to_string()],
+    );
+    let pick = function(&text, "pick");
+    assert!(pick.contains("if (b)"), "{pick}");
+    assert!(pick.contains("c = a;"), "{pick}");
+    assert!(!pick.contains("CONCAT"), "an unextended argument register: {pick}");
+}

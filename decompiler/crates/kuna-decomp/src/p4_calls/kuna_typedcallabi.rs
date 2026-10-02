@@ -14,7 +14,7 @@
 //! signed value narrower than 32 bits that the model zero-extends.
 use crate::{
     context::ArchContext,
-    dtype::{type_class, type_metatype, Datatype, TypeFactory},
+    dtype::{type_class, type_metatype, TypeFactory},
     fspec::{FuncProto, ProtoModel, PrototypePieces},
     funcdata::Funcdata,
     infra::architecture::Architecture,
@@ -71,26 +71,74 @@ pub fn caller_extends_from(arch: &Architecture) -> i32 {
     }
 }
 
-/// The spec's soft-float model, on an image that states the soft-float convention.
+/// The spec's soft-float model, on an image that states the soft-float
+/// convention, with the default model's extension of an argument narrower than
+/// its core register: the base standard extends one as the VFP variant does, and
+/// the spec's soft-float entries leave it unstated.
 pub fn soft_model(arch: &Architecture, evidence: Option<bool>) -> Option<Rc<ProtoModel>> {
-    (evidence == Some(false))
-        .then(|| arch.get_model(SOFT_FLOAT_MODEL).cloned())
-        .flatten()
+    if evidence != Some(false) {
+        return None;
+    }
+    let soft = arch.get_model(SOFT_FLOAT_MODEL)?;
+    let Some(default) = arch.default_fp() else {
+        return Some(Rc::clone(soft));
+    };
+    let mut model = (**soft).clone();
+    for entry in model.input_mut().kuna_entries_mut() {
+        let same = default.input().get_entry().iter().find(|d| {
+            d.get_type() == entry.get_type()
+                && d.get_space().get_index() == entry.get_space().get_index()
+                && d.get_base() == entry.get_base()
+                && d.get_size() == entry.get_size()
+        });
+        if let Some(same) = same {
+            entry.kuna_copy_extension(same);
+        }
+    }
+    Some(Rc::new(model))
+}
+
+/// The image states no floating-point hardware.  A declaration that names no
+/// convention is laid out under the soft-float model only there: an image with
+/// an FPU may still pass a function's floating-point values in VFP registers
+/// where the compiler sees every call (`-mfloat-abi=softfp` lets GCC and clang
+/// do so for a static function), so the default model stays.
+pub fn without_fpu(arch: &Architecture) -> bool {
+    arch.translate()
+        .loader_rc()
+        .try_borrow()
+        .is_ok_and(|loader| loader.float_hardware() == Some(false))
 }
 
 /// The model a declared prototype that names no convention is laid out under,
 /// or `None` for the default one: the soft-float model, on an image that states
-/// the soft-float convention, when the default model would put a parameter or
-/// the return value of `pieces` in its floating-point registers.
+/// the soft-float convention and no floating-point hardware ([`without_fpu`]),
+/// when the default model would put a parameter or the return value of `pieces`
+/// in its floating-point registers.
 pub fn undeclared_model(arch: &ArchContext, pieces: &PrototypePieces) -> Option<Rc<ProtoModel>> {
-    let soft = arch.soft_float_model.as_ref()?;
+    let soft = arch.soft_float_declarations.as_ref()?;
     soft_layout(soft, arch.default_fp()?, pieces, arch.types()?, arch.manage())
 }
 
 /// [`undeclared_model`] for the architecture a declaration is parked on.
 pub fn undeclared_model_for(arch: &Architecture, pieces: &PrototypePieces) -> Option<Rc<ProtoModel>> {
+    if !may_use_float_storage(pieces) || !without_fpu(arch) {
+        return None;
+    }
     let soft = soft_model(arch, image_evidence(arch))?;
     soft_layout(&soft, arch.default_fp()?, pieces, arch.types(), arch.manage())
+}
+
+fn may_use_float_storage(pieces: &PrototypePieces) -> bool {
+    pieces.outtype.iter().chain(&pieces.intypes).any(|ty| {
+        matches!(
+            ty.get_metatype(),
+            type_metatype::TYPE_FLOAT
+                | type_metatype::TYPE_STRUCT
+                | type_metatype::TYPE_UNION
+                | type_metatype::TYPE_ARRAY
+        )
+    })
 }
 
 fn soft_layout(
@@ -100,16 +148,7 @@ fn soft_layout(
     types: &dyn TypeFactory,
     manage: &AddrSpaceManager,
 ) -> Option<Rc<ProtoModel>> {
-    let candidate = |ty: &Rc<Datatype>| {
-        matches!(
-            ty.get_metatype(),
-            type_metatype::TYPE_FLOAT
-                | type_metatype::TYPE_STRUCT
-                | type_metatype::TYPE_UNION
-                | type_metatype::TYPE_ARRAY
-        )
-    };
-    if !pieces.outtype.iter().chain(&pieces.intypes).any(candidate) {
+    if !may_use_float_storage(pieces) {
         return None;
     }
     let types_only = PrototypePieces {
