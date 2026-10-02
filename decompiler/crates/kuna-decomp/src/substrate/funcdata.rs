@@ -233,6 +233,12 @@ pub struct Funcdata {
     /// guarded store's reach; later passes keep doing so
     /// (`p6_variables/kuna_storereach.rs`).
     store_reach_committed: std::cell::Cell<bool>,
+    /// (kuna `stackstoreguard`) Did the latest `restructure_varnode` pass map a
+    /// guarded store in a float reach as more than one local?
+    store_reach_split: std::cell::Cell<bool>,
+    /// (kuna `stackstoreguard`) Set when the final layout split such a reach;
+    /// the re-analysis runs without the guard. Survives `clear()`.
+    stack_store_guard_withdrawn: std::cell::Cell<bool>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -566,6 +572,8 @@ impl Funcdata {
             slot_evidence: std::cell::RefCell::new(Default::default()),
             cast_objects: std::cell::RefCell::new(Vec::new()),
             store_reach_committed: std::cell::Cell::new(false),
+            store_reach_split: std::cell::Cell::new(false),
+            stack_store_guard_withdrawn: std::cell::Cell::new(false),
             jumpvec: Vec::new(),
             vbank,
             obank: PcodeOpBank::new(),
@@ -1683,6 +1691,28 @@ impl Funcdata {
     /// (kuna `stackstoreguard`) Record that this pass lays out a guarded store's reach.
     pub fn commit_store_reach(&self) {
         self.store_reach_committed.set(true);
+    }
+
+    /// (kuna `stackstoreguard`) Is the guard on for this function?
+    pub fn stack_store_guard(&self) -> bool {
+        self.get_arch().stack_store_guard && !self.stack_store_guard_withdrawn.get()
+    }
+
+    /// (kuna `stackstoreguard`) Record whether this pass split a guarded store
+    /// in a float reach.
+    pub fn note_store_reach_split(&self, split: bool) {
+        self.store_reach_split.set(split);
+    }
+
+    /// (kuna `stackstoreguard`) If the final layout split a guarded store in a
+    /// float reach, turn the guard off for this function and report that it
+    /// must be analyzed again.
+    pub fn withdraw_split_stack_store_guard(&self) -> bool {
+        let split = self.store_reach_split.get() && self.stack_store_guard();
+        if split {
+            self.stack_store_guard_withdrawn.set(true);
+        }
+        split
     }
 
     /// (kuna `castobject`) Every stack object any pass re-declared.
@@ -2971,6 +3001,7 @@ impl Funcdata {
         self.kuna_passthrough_variadic = false;
         self.kuna_moved_back_returns.clear();
         self.store_reach_committed.set(false);
+        self.store_reach_split.set(false);
     }
 
     /// Set a delay/flag bit directly (test/seam helper; not a C++ method).

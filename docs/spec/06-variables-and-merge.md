@@ -878,13 +878,19 @@ first few bytes, so the store indexes one local and reads the next one.
 (prepare_hints)` runs in `restructure_varnode` after the three gathers and
 before `endptrbound`. It takes each STORE of a one-byte value that a guard
 INDIRECT on the stack names as its effect, and resolves its pointer as the
-stack base plus constants plus indices (`kuna_storereach.rs (pointer_reach)`,
+stack base plus constants plus indices (`kuna_storereach.rs (pointer_pieces)`,
 through copies, casts, `PTRSUB`, `PTRADD` and `INT_ADD`, and through a pointer
 walk's `MULTIEQUAL` whose other inputs agree on the base). When every index has
-a known-bits mask that bounds it, the reach is `[base, base + max + 1)`.
-Overlapping reaches are united, each one is widened over every hint that
-crosses either edge, and the hints inside are replaced by one open array hint
-at the lowest byte with index evidence through the last. The element type is
+a known-bits mask that bounds it, the reach is `[base, base + max + 1)`. A
+`MULTIEQUAL` that chooses between different stack addresses (`p = (j & 2) ?
+&u.b[0] : &u.b[4]; *p ^= 1;`) gives one such piece per address, and the store
+reaches from the lowest piece to the end of the highest
+(`kuna_storereach.rs (store_reach)`). Overlapping reaches are united, each one
+is widened over every hint that crosses either edge, counting an open hint by
+its indexed elements so the array never ends inside an upstream open array
+(`v1 = &v2[8]` into a `char v2[8]`), and the hints inside are replaced by one
+open array hint at the lowest byte with index evidence through the last. The
+element type is
 the most specific one-byte integer type a fixed hint inside the reach carries,
 so a byte read zero-extended keeps the array unsigned; without one it is the
 unknown byte. A reach that holds a type-locked hint, spans more than 256 bytes,
@@ -895,7 +901,17 @@ the bases of the stores inside it are not absorbing (below). A float read from a
 byte array would be an integer piece, and a `(double)` cast of a piece converts
 its value instead of reinterpreting its bits, so the upstream layout stays
 (`double v1[3]; v1[0] = 3.75; ((char *)v1)[i & 7] = j; return (int)(v1[0] +
-v1[0]);`).
+v1[0]);`). That layout can still map such a store's bytes as several locals
+(`char v1[4]; float v3; v1[i & 7] = j;`): the store then writes one local and a
+read of the other never sees it, which is worse than no guard. Each pass
+records whether it did (`kuna_storereach.rs (splits_pieces)`), and when the
+last pass did, `Funcdata::withdraw_split_stack_store_guard` turns the guard off
+for that function and `decompile_drive.rs (run_pipeline)` analyzes it again
+from flow, as `option stackstoreguard off` would. The decision survives the
+restart's `clear()`. As with every kuna restart, `clear()` keeps the local
+scope's symbols (upstream's `clearUnlocked` is not ported), so a register
+temporary or a return type the first analysis named can survive into the
+second.
 
 The second is where an open range ends, which matters when the index is not
 bounded (`u.b[i]`, or a walk that starts at `&u.b[i]`). `RangeHint::attempt_join`
@@ -920,8 +936,9 @@ that escapes to a call (`g(&u.b[i & 7])`), which no store guard covers and this
 option leaves alone.
 
 Neither step runs in a function where some LOAD or STORE address comes from
-the stack base through arithmetic that `pointer_reach` cannot resolve
-(`kuna_storereach.rs (has_unresolved_frame_access)`). clang's ppc32 `-O0` code
+the stack base through arithmetic that `pointer_pieces` cannot resolve
+(`kuna_storereach.rs (has_unresolved_frame_access)`); a choice between stack
+addresses resolves, so a pointer to one of two buffers does not count. clang's ppc32 `-O0` code
 forms `&u.s.b[i]` as `(&v1 | 4) + i`, relying on the frame's alignment; that
 store may write any slot near a resolved reach, and a slot the coalescing split
 off would be a separate local it never reaches. The whole frame keeps the

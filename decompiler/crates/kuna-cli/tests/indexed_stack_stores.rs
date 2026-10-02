@@ -322,6 +322,50 @@ int main(void) {{
     }
 }
 
+/// An x86-64 relocatable object defining `binary_<name>` for each function.
+fn x86_64_object<'a>(
+    stem: &str,
+    functions: impl Iterator<Item = (&'a str, &'a [u8])>,
+) -> std::path::PathBuf {
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
+    let section = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    for (name, code) in functions {
+        let value = obj.append_section_data(section, code, 32);
+        obj.add_symbol(Symbol {
+            name: format!("binary_{name}").into_bytes(),
+            value,
+            size: code.len() as u64,
+            kind: SymbolKind::Text,
+            scope: SymbolScope::Linkage,
+            weak: false,
+            section: SymbolSection::Section(section),
+            flags: SymbolFlags::None,
+        });
+    }
+    let input = common::scratch_file(stem, "o");
+    std::fs::write(&input, obj.write().unwrap()).unwrap();
+    input
+}
+
+/// The C `kuna decompile` prints for `binary_<name>` with `options`.
+fn decompile(input: &std::path::Path, name: &str, options: &[&str]) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            input.to_str().unwrap(),
+            &format!("binary_{name}"),
+        ])
+        .args(options)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{name}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap()
+}
+
 /// `name._<off>_<size>_` (also `name[k]._<off>_<size>_`) as the unsigned
 /// `size`-byte lvalue at that offset, for a little-endian host.
 fn lower_pieces(c: &str) -> String {
@@ -389,8 +433,14 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
     //       u.b[i & 7] = j; double x = u.d; return (int)(x + x);
     //   fi (-O2): union { float f[2]; u8 b[8]; } u; u.f[0] = 1.5f;
     //       u.f[1] = -3.25f; u.b[i & 7] = j; return (int)(u.f[1] + u.f[0]);
+    //   u3 (-O2): k11's stores, then u8 *p = (j & 2) ? &u.b[0] : &u.b[4];
+    //       *p ^= 1; return u.h[0] + u.h[3] * 5;
+    // and clang, with the same flags:
+    //   v8 (-O2): U8 u, v; u.q = 0x1122334455667788; v.q = 0x0102030405060708;
+    //       u.b[i & 7] = j; v.b[(i >> 3) & 1] = j; U8 *p = (j & 1) ? &u : &v;
+    //       return u.h[1] + v.h[3] * 3 + p->b[2];
     // Each entry carries the mask the caller applies to i.
-    let functions: [(&str, &[u8], u8); 10] = [
+    let functions: [(&str, &[u8], u8); 12] = [
         (
             "f_gcc",
             &[
@@ -483,6 +533,31 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
             ],
             15,
         ),
+        (
+            "u3_gcc",
+            &[
+                0x48, 0xb8, 0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x83, 0xe7, 0x07, 0x48,
+                0x89, 0x44, 0x24, 0xf8, 0x40, 0x88, 0x74, 0x3c, 0xf8, 0x83, 0xe6, 0x02, 0x74, 0x24,
+                0x0f, 0xb6, 0x44, 0x24, 0xf8, 0x48, 0x8d, 0x54, 0x24, 0xf8, 0x83, 0xf0, 0x01, 0x88,
+                0x02, 0x0f, 0xb7, 0x44, 0x24, 0xfe, 0x0f, 0xb7, 0x54, 0x24, 0xf8, 0x8d, 0x04, 0x80,
+                0x01, 0xd0, 0xc3, 0x0f, 0x1f, 0x44, 0x00, 0x00, 0x0f, 0xb6, 0x44, 0x24, 0xfc, 0x48,
+                0x8d, 0x54, 0x24, 0xfc, 0xeb, 0xda,
+            ],
+            15,
+        ),
+        (
+            "v8_clang",
+            &[
+                0x48, 0xb8, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x48, 0x89, 0x44, 0x24,
+                0xf0, 0x48, 0xb8, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x48, 0x89, 0x44,
+                0x24, 0xf8, 0x89, 0xf8, 0x83, 0xe0, 0x07, 0x40, 0x88, 0x74, 0x04, 0xf0, 0xc1, 0xef,
+                0x03, 0x83, 0xe7, 0x01, 0x40, 0xf6, 0xc6, 0x01, 0x48, 0x8d, 0x44, 0x24, 0xf8, 0x48,
+                0x8d, 0x4c, 0x24, 0xf0, 0x48, 0x0f, 0x44, 0xc8, 0x40, 0x88, 0x74, 0x3c, 0xf8, 0x0f,
+                0xb7, 0x44, 0x24, 0xf2, 0x0f, 0xb6, 0x49, 0x02, 0x01, 0xc8, 0x05, 0x06, 0x03, 0x00,
+                0x00, 0xc3,
+            ],
+            15,
+        ),
     ];
     let compilers: Vec<_> = ["gcc", "clang"]
         .into_iter()
@@ -492,43 +567,24 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
         !compilers.is_empty(),
         "a C compiler is required for semantic validation"
     );
-    let mut obj = Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
-    let section = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
-    for (name, code, _) in functions {
-        let value = obj.append_section_data(section, code, 32);
-        obj.add_symbol(Symbol {
-            name: format!("binary_{name}").into_bytes(),
-            value,
-            size: code.len() as u64,
-            kind: SymbolKind::Text,
-            scope: SymbolScope::Linkage,
-            weak: false,
-            section: SymbolSection::Section(section),
-            flags: SymbolFlags::None,
-        });
-    }
-    let input = common::scratch_file("indexed-stack-words", "o");
-    std::fs::write(&input, obj.write().unwrap()).unwrap();
+    let input = x86_64_object(
+        "indexed-stack-words",
+        functions.iter().map(|(name, code, _)| (*name, *code)),
+    );
     let mut printed = String::new();
     let mut checks = String::new();
     for (name, _, mask) in functions {
-        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
-            .args(["decompile", input.to_str().unwrap(), &format!("binary_{name}")])
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{name}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let text = String::from_utf8(output.stdout).unwrap();
+        let text = decompile(&input, name, &[]);
         printed.push_str(&text.replace(&format!("binary_{name}("), &format!("printed_{name}(")));
         checks.push_str(&format!(
             "int binary_{name}(int, int);\n\
              static int check_{name}(int i, int j) {{ i &= {mask}; return printed_{name}(i, j) == binary_{name}(i, j); }}\n"
         ));
     }
-    let names: Vec<_> = functions.iter().map(|(name, _, _)| format!("check_{name}")).collect();
+    let names: Vec<_> = functions
+        .iter()
+        .map(|(name, _, _)| format!("check_{name}"))
+        .collect();
     let src = common::scratch_file("indexed-stack-words", "c");
     let exe = common::scratch_file("indexed-stack-words", "exe");
     std::fs::write(
@@ -575,10 +631,148 @@ int main(int argc, char **argv) {{
             let failing: Vec<_> = functions
                 .iter()
                 .enumerate()
-                .filter(|(k, _)| !Command::new(&exe).arg(k.to_string()).status().unwrap().success())
+                .filter(|(k, _)| {
+                    !Command::new(&exe)
+                        .arg(k.to_string())
+                        .status()
+                        .unwrap()
+                        .success()
+                })
                 .map(|(_, (name, _, _))| *name)
                 .collect();
-            assert!(failing.is_empty(), "{cc} {level}: {failing:?} disagree\n{printed}");
+            assert!(
+                failing.is_empty(),
+                "{cc} {level}: {failing:?} disagree\n{printed}"
+            );
+        }
+    }
+    for path in [input, src, exe] {
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+fn float_reads_after_indexed_stores_are_no_worse_than_without_the_guard() {
+    // clang -O2 -fno-stack-protector -fcf-protection=none of
+    //   v3: union { unsigned w[2]; unsigned short h[4]; unsigned char b[8];
+    //       float f[2]; } u; u.w[0] = 0x01020304; u.w[1] = 0x40100000;
+    //       u.b[i & 7] = j; return u.h[0] + u.h[1] * 5 + (int)(u.f[1] * 2);
+    //   fb: union { float f[2]; unsigned char b[8]; } u; u.f[0] = (float)j;
+    //       u.f[1] = 2.25f; u.b[i & 7] = j; return (int)(u.f[1] * 8) + (int)u.f[0];
+    // A float read of a byte array prints as an integer piece, so these
+    // functions fall back to the unguarded analysis and must disagree with
+    // the binary on no more inputs than `stackstoreguard off` does.
+    let functions: [(&str, &[u8]); 2] = [
+        (
+            "v3_clang",
+            &[
+                0x48, 0xb8, 0x04, 0x03, 0x02, 0x01, 0x00, 0x00, 0x10, 0x40, 0x48, 0x89, 0x44, 0x24,
+                0xf8, 0x83, 0xe7, 0x07, 0x40, 0x88, 0x74, 0x3c, 0xf8, 0x0f, 0xb7, 0x44, 0x24, 0xf8,
+                0x0f, 0xb7, 0x4c, 0x24, 0xfa, 0x8d, 0x0c, 0x89, 0x01, 0xc1, 0xf3, 0x0f, 0x10, 0x44,
+                0x24, 0xfc, 0xf3, 0x0f, 0x58, 0xc0, 0xf3, 0x0f, 0x2c, 0xc0, 0x01, 0xc8, 0xc3,
+            ],
+        ),
+        (
+            "fb_clang",
+            &[
+                0xf3, 0x0f, 0x2a, 0xc6, 0xf3, 0x0f, 0x11, 0x44, 0x24, 0xf8, 0xc7, 0x44, 0x24, 0xfc,
+                0x00, 0x00, 0x10, 0x40, 0x83, 0xe7, 0x07, 0x40, 0x88, 0x74, 0x3c, 0xf8, 0xf3, 0x0f,
+                0x10, 0x44, 0x24, 0xfc, 0xf3, 0x0f, 0x58, 0xc0, 0xf3, 0x0f, 0x58, 0xc0, 0xf3, 0x0f,
+                0x58, 0xc0, 0xf3, 0x0f, 0x2c, 0xc8, 0xf3, 0x0f, 0x2c, 0x44, 0x24, 0xf8, 0x01, 0xc8,
+                0xc3,
+            ],
+        ),
+    ];
+    let compilers: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(
+        !compilers.is_empty(),
+        "a C compiler is required for semantic validation"
+    );
+    let input = x86_64_object("indexed-stack-floats", functions.iter().copied());
+    let mut printed = String::new();
+    let mut checks = String::new();
+    for (name, _) in functions {
+        for (arm, options) in [
+            ("guarded", &[][..]),
+            ("unguarded", &["--option", "stackstoreguard", "off"][..]),
+        ] {
+            let text = decompile(&input, name, options);
+            printed.push_str(&text.replace(&format!("binary_{name}("), &format!("{arm}_{name}(")));
+        }
+        checks.push_str(&format!(
+            "int binary_{name}(int, int);\n\
+             static int check_{name}(void) {{\n\
+                 int guarded = 0, unguarded = 0;\n\
+                 for (int i = 0; i < 16; ++i)\n\
+                     for (int j = 0; j < 256; ++j) {{\n\
+                         int want = binary_{name}(i, j);\n\
+                         guarded += guarded_{name}(i, j) != want;\n\
+                         unguarded += unguarded_{name}(i, j) != want;\n\
+                     }}\n\
+                 return guarded <= unguarded;\n\
+             }}\n"
+        ));
+    }
+    let names: Vec<_> = functions
+        .iter()
+        .map(|(name, _)| format!("check_{name}"))
+        .collect();
+    let src = common::scratch_file("indexed-stack-floats", "c");
+    let exe = common::scratch_file("indexed-stack-floats", "exe");
+    std::fs::write(
+        &src,
+        format!(
+            r#"
+{printed}
+{checks}
+int atoi(const char *);
+unsigned alarm(unsigned);
+int main(int argc, char **argv) {{
+    int (*checks[])(void) = {{{names}}};
+    alarm(20);
+    return !checks[atoi(argv[argc - 1])]();
+}}
+"#,
+            printed = lower_pieces(&printed),
+            names = names.join(", "),
+        ),
+    )
+    .unwrap();
+    for cc in &compilers {
+        for level in ["-O0", "-O2"] {
+            let compile = Command::new(cc)
+                .args(["-std=c11", "-fno-strict-aliasing", level])
+                .arg(&src)
+                .arg(&input)
+                .arg("-o")
+                .arg(&exe)
+                .output()
+                .unwrap();
+            assert!(
+                compile.status.success(),
+                "{cc}: {}\n{printed}",
+                String::from_utf8_lossy(&compile.stderr)
+            );
+            let failing: Vec<_> = functions
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| {
+                    !Command::new(&exe)
+                        .arg(k.to_string())
+                        .status()
+                        .unwrap()
+                        .success()
+                })
+                .map(|(_, (name, _))| *name)
+                .collect();
+            assert!(
+                failing.is_empty(),
+                "{cc} {level}: {failing:?} disagree more often with the guard\n{printed}"
+            );
         }
     }
     for path in [input, src, exe] {

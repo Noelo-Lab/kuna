@@ -8,7 +8,7 @@ pub(super) fn enabled(
     addr: &Address,
     writes: &[crate::context::VarnodeId],
 ) -> bool {
-    fd.get_arch().stack_store_guard
+    fd.stack_store_guard()
         && addr
             .get_space()
             .zip(fd.get_arch().manage().get_stack_space())
@@ -55,7 +55,7 @@ pub(super) fn keeps_store_indirect_whole(
     store: crate::context::OpId,
 ) -> bool {
     use kuna_num::opcodes::OpCode;
-    if !fd.get_arch().stack_store_guard
+    if !fd.stack_store_guard()
         || fd.obank().get(store).is_none_or(|op| op.code() != OpCode::CPUI_STORE)
     {
         return false;

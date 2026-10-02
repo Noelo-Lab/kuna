@@ -964,7 +964,10 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             return Ok(r); // breakpoint — propagate verbatim (no re-flow)
         }
         total += r;
-        if !(reflow_requested && fd.has_restart_pending()) {
+        // (kuna `stackstoreguard`) A function whose layout split a guarded store in
+        // a float reach is analyzed again without the guard.
+        let withdrawn = fd.withdraw_split_stack_store_guard();
+        if !withdrawn && !(reflow_requested && fd.has_restart_pending()) {
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
