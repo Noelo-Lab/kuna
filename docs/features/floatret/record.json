@@ -14,11 +14,11 @@
  "change_kind": "strict correctness fix (no option)",
  "default_on": true,
  "parity": {
-  "datatests": "675/675 PARITY OK (on main 5eb973320)",
-  "stages": "1641/1641 PARITY OK (main 5eb973320 1631 + 10 FLOATRET; #3-#5 pin logish decompiled alone as unsigned int)"
+  "datatests": "675/675 PARITY OK (on main 363123e96)",
+  "stages": "1647/1647 PARITY OK (main 363123e96 1637 + 10 FLOATRET; #3-#5 pin logish decompiled alone as unsigned int)"
  },
  "castbench": {
-  "base": "main 5eb973320 (#773, #786, #788-#791, #793, #797-#799, #803 on top of 0729b8b05), fresh arm .scratch/cb-main5eb; on 0729b8b05 the same code gave 32,010 -> 31,581 and on 30616a8e8 32,045 -> 31,616",
+  "base": "main 363123e96 (#773, #786, #788-#791, #793, #794, #797-#799, #803 on top of 0729b8b05), fresh arm .scratch/cb-main363 (x86-64 output identical to 5eb973320); on 0729b8b05 the same branch gave 32,010 -> 31,581 and on 30616a8e8 32,045 -> 31,616",
   "shared_functions": 4815,
   "casts": {
    "main": 32040,
@@ -239,15 +239,15 @@
    "vs_reviewed_4726f6b38": "on the 99: 5 returns float -> integer (crazyflie O2 and O2-noinline packed-field getters, ssh-keygen sub_2afb0 whose other path returns a tail call's unset xmm0), 27 integer -> float (strtod_l stubs and gnulib c_strtod; crazyflie/betaflight functions the reviewed revision withdrew over a (float) cast of a float callee's result), 36 functions lose a (float) cast, 4 gain one (the readers of the crazyflie getters, as main prints them)",
    "residual_check": "a debug pass listed every function still returning a float after settling while some reader keeps it as another type: every one also returns a float on main (its own float arithmetic or a declared callee), and no such reader gained a conversion"
   },
-  "rebase_5eb973320": {
-   "arms": "main 5eb973320 vs this branch rebased onto it (6502796ea), decompile-all",
+  "rebase_363123e96": {
+   "arms": "main 363123e96 vs this branch rebased onto it (13c594b64), decompile-all",
    "castbench_45": {
     "functions": 20230,
-    "changed": 2383,
-    "same_changed_set_as_round6": true,
+    "changed": 2379,
+    "same_changed_set_as_round6": false,
     "void_result_uses": [
      2123,
-     396
+     400
     ],
     "never_assigned_returns": [
      268,
@@ -271,7 +271,7 @@
     ],
     "void_result_uses_incl_casts": [
      5031,
-     1303
+     1307
     ],
     "implicit_int_float_conversions": [
      15,
@@ -281,10 +281,10 @@
    "disjoint_54": {
     "binaries": "the 54 of .scratch/fp6/list.txt outside the castbench 45",
     "functions": 46274,
-    "changed": 2668,
+    "changed": 2661,
     "void_result_uses": [
      5473,
-     2144
+     2156
     ],
     "never_assigned_returns": [
      213,
@@ -308,7 +308,7 @@
     ],
     "void_result_uses_incl_casts": [
      9263,
-     3645
+     3657
     ],
     "implicit_int_float_conversions": [
      926,
@@ -317,7 +317,8 @@
     "rises": 0
    },
    "vs_round6": "every function main did not change since 0729b8b05 prints byte-identically to the round-6 code 04ef10b41 (checked at 30616a8e8: 20,148 of the 45 and 45,971 of the 54; and again from 30616a8e8 to 5eb973320: 20,137 and 46,073). Where main did change a function, this branch either leaves it alone or makes the same change, the only differences being main's own new argument casts (#773), stores through a variable (#798) and declaration order",
-   "chain_round_trips": "fixture floatret_chain_gcc_O1 gcc/clang `4002000000000000 40020000 4008000000000000 40080000 4080000040400000 40800000` (= main); the reviewer's chain.c gcc -O1 `4002000000000000 40020000` and struct { float, float } y.c gcc -O2 `40c0000040a00000 40c00000` (= the binaries); MIPS gcc -O0 fg.c prints byte-identically to main (no float) and its printed C compiled natively gives `40100000 3dcccccd` (= the source)"
+   "whole_or_none": "a return the callers read in two registers is returned whole or not at all (13c594b64). Against the branch before it, 11 functions change, each to main's own text (void): sort, tail, sleep and timeout's dtotimespec (x86-64 struct timespec in rax:rdx, which returned rax alone), and betaflight O0/O2/O2-noinline sub_8017edc and cleanflight O0/O2 sub_800ebf8 (an ARM wrapper of a 64-bit millisecond time in r0:r1, which returned r0 alone while sub_8017f66 reads the high word). The i386 `call zsum; or $0xff,%edx` shape now returns unsigned long long; it returned eax alone once main 363123e96 (#794) made it void, since the planted eax kept heritage from giving edx a trial",
+   "chain_round_trips": "fixture floatret_chain_gcc_O1 gcc/clang `4002000000000000 40020000 4008000000000000 40080000 4080000040400000 40800000` (= main); the reviewer's chain.c gcc -O1 `4002000000000000 40020000` and struct { float, float } y.c gcc -O2 `40c0000040a00000 40c00000` (= the binaries); MIPS gcc -O0 fg.c prints byte-identically to main (no float) and its printed C compiled natively gives `40100000 3dcccccd` (= the source); floatret_pair32 i386 -O2 `hi` gcc/clang `ff00000003 ff0000800f ff01002345 ff00000000` (= the source; the branch before printed `3 800f 1002345 0`)"
   }
  },
  "benchmark": {
@@ -397,24 +398,37 @@
     "delta_median_pct": 2.09,
     "pair_ratio_median_pct": 4.33
    }
+  },
+  "recheck_13c594b64": {
+   "method": "paired as above, main 363123e96 vs 13c594b64 (with the whole-or-none rule), min-of-11 child CPU, load 25-39",
+   "fmt": {
+    "delta_min_pct": 4.29,
+    "delta_median_pct": 3.97,
+    "pair_ratio_median_pct": 4.29
+   },
+   "sort": {
+    "delta_min_pct": 0.51,
+    "delta_median_pct": 1.57,
+    "pair_ratio_median_pct": 1.28
+   }
   }
  },
  "gates": {
-  "make_test": "675/675 PARITY OK (6502796ea + baseline 02d41bca8, on main 5eb973320)",
-  "make_test_stages": "1641/1641 PARITY OK (baseline re-recorded on 5eb973320: +10 FLOATRET keys, nothing else moved)",
+  "make_test": "675/675 PARITY OK (13c594b64 + baseline bc251d44f, on main 363123e96)",
+  "make_test_stages": "1647/1647 PARITY OK (baseline re-recorded on 363123e96: +10 FLOATRET keys, nothing else moved)",
   "check_spec": "OK lenient + strict",
   "test_cli": "276/276",
   "catalog_check": "OK",
   "counters_check": "no drift",
   "options_md": "fresh",
-  "rust_test": "7,668 passed / 0 failed / 38 ignored (460 test binaries), RUST_TEST_RC=0 on 6502796ea",
-  "lint": "make lint OK",
+  "rust_test": "7,670 passed / 0 failed / 38 ignored (461 test binaries), RUST_TEST_RC=0 on 13c594b64",
+  "lint": "make lint OK (13c594b64)",
   "test_tools": "42 OK"
  },
  "known_residue": [
   "ARM hard-float and AArch64 doubles in d0/q0 are recovered at the wrong width (trial recovery never consults the join rule); the low half of a d0 is refused the float vote and stays the integer it was",
   "x86-64 gcc code that writes all of xmm0 (movd/pxor/movq) before a call gets no output trial there (calloverlap off): gcc -O0 `pick` stays void",
-  "395 void-result reads on the cast corpus remain: values also tested/indexed before being returned (coreutils base_len), refused by upstream's sole-use rule",
+  "400 void-result reads on the cast corpus remain: values also tested/indexed before being returned (coreutils base_len), refused by upstream's sole-use rule",
   "69 new pointer/integer assignments without a conversion on the cast corpus (25 functions): readers over AUDIT_MAX_OPS keep their stale text unless it computes a wrong value, and variables the merge left untyped print as unsigned long; each read a void result before",
   "timeout O2 `(double)sub_70a0(..)`: an identity cast; sub_70a0 states nothing to callrettype because its strtod_l tail path returns an unset xmm0 (pre-existing, main printed `unsigned long ... return v1;`)",
   "a float return withdrawn because one reader keeps it as an integer leaves the other readers' `(float)f()` value conversions as main printed them",
@@ -423,10 +437,10 @@
   "Code that falls into fldz padding (openssh mprintf O2, scp O0 wrappers) returns 0.0 in ST0 where main printed an integer 0: the same bits, from a flow artifact main also had",
   "gcc -O1/-O2 code that reads xmm0 after a call to a function returning a struct of two floats (`memcpy(&u, &v, 8); return u ^ i;`) gets no call output there (the whole-xmm0 ContainedBy gap above) and prints `sub_11b0(); return v1 ^ a0;` of an unset v1, as main does",
   "A struct { float, float } getter (`return *p;`, movq (%rdi),%xmm0) whose caller reads only the low float returns `double` from `double *`, and the caller converts `(float)sub_11a0(..)` by value; main printed `unsigned long` and the same conversion",
-  "A function returning a struct timespec in rax:rdx that a forced redo reaches (sleep/timeout dtotimespec) returns only rax as `unsigned long`; its callers still read 16 bytes (`char v2[16]; v2 = sub_6641();`). main printed `void`; neither compiles",
   "A getter that returns a global's float on one path and a constant on another stays an integer: every value returned in the register answers for the vote, and a global refuses it. crazyflie's packed-field getters (sub_80372d4, sub_8036c64) print unsigned int, and their readers print `(float)sub_80372d4()`, a value conversion, exactly as main does; the reviewed revision typed them float through the constant alone",
   "A withdrawn function's float that comes from a callee's own float arithmetic or a declared (libc) return is not withdrawn: it is the type the machine computes, and a reader keeping it as an integer prints what main prints",
-  "Where a forced or narrowed return hands back a callee kuna already types as a pointer (tar O2 sub_26100 returning sub_412d0's int *), the listing assigns a pointer to an integer without a cast: a compile error under -Werror=int-conversion, same value; main printed a void function whose result the caller used instead"
+  "Where a forced or narrowed return hands back a callee kuna already types as a pointer (tar O2 sub_26100 returning sub_412d0's int *), the listing assigns a pointer to an integer without a cast: a compile error under -Werror=int-conversion, same value; main printed a void function whose result the caller used instead",
+  "A function whose callers read a 64-bit value in two registers stays `void`, as main prints it, when the model maps only one of them (`call big; ret` on i386 and ARM, dtotimespec's rax:rdx): its callers still read the result of a `void` function"
  ],
  "implicit_conversions": {
   "instrument": ".scratch/r4/implconv.py: an argument whose class (int/float, inferred only from declared variables, derefs of declared pointers, printed calls, casts and literals) differs from the printed callee parameter; x = callee() of the other class; return e of the other class",
