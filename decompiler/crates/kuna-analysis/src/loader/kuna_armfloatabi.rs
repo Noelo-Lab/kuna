@@ -49,7 +49,52 @@ pub fn vfp_args(file: &object::File<'_>) -> bool {
     }
 }
 
-fn word(data: &[u8], little: bool) -> Option<u32> {
+/// The convention the container states for floating-point arguments:
+/// `Some(true)` the VFP variant, `Some(false)` the base (core-register) variant,
+/// `None` when it states neither or its evidence conflicts or is malformed.
+pub fn args_evidence(file: &object::File<'_>) -> Option<bool> {
+    if file.format() != object::BinaryFormat::Elf
+        || file.architecture() != object::Architecture::Arm
+    {
+        return None;
+    }
+    let linked = matches!(
+        file.kind(),
+        object::ObjectKind::Executable | object::ObjectKind::Dynamic
+    );
+    let object::FileFlags::Elf { e_flags: flags, .. } = file.flags() else {
+        return None;
+    };
+    let header = match flags & 0x600 {
+        0x400 if linked && flags >> 24 >= 5 => Some(true),
+        0x200 if linked && flags >> 24 >= 5 => Some(false),
+        _ => None,
+    };
+    let mut attribute = None;
+    for section in file
+        .sections()
+        .filter(|s| s.name() == Ok(".ARM.attributes"))
+    {
+        let data = section.data().ok()?;
+        if let Some(value) = attribute_value(data, file.is_little_endian())? {
+            if attribute.is_some_and(|old| old != value) {
+                return None;
+            }
+            attribute = Some(value);
+        }
+    }
+    let attribute = match attribute {
+        Some(0) => Some(false),
+        Some(1) => Some(true),
+        _ => None,
+    };
+    match (header, attribute) {
+        (Some(a), Some(b)) => (a == b).then_some(a),
+        (a, b) => a.or(b),
+    }
+}
+
+pub(super) fn word(data: &[u8], little: bool) -> Option<u32> {
     let bytes: [u8; 4] = data.get(..4)?.try_into().ok()?;
     Some(if little {
         u32::from_le_bytes(bytes)
@@ -57,7 +102,7 @@ fn word(data: &[u8], little: bool) -> Option<u32> {
         u32::from_be_bytes(bytes)
     })
 }
-fn uleb(data: &[u8], pos: &mut usize) -> Option<u32> {
+pub(super) fn uleb(data: &[u8], pos: &mut usize) -> Option<u32> {
     let mut result = 0;
     for shift in (0..35).step_by(7) {
         let b = *data.get(*pos)?;
@@ -72,13 +117,18 @@ fn uleb(data: &[u8], pos: &mut usize) -> Option<u32> {
     }
     None
 }
-fn string<'a>(data: &'a [u8], pos: &mut usize) -> Option<&'a [u8]> {
+pub(super) fn string<'a>(data: &'a [u8], pos: &mut usize) -> Option<&'a [u8]> {
     let begin = *pos;
     let end = begin + data.get(begin..)?.iter().position(|&b| b == 0)?;
     *pos = end + 1;
     Some(&data[begin..end])
 }
 fn attributes(data: &[u8], little: bool) -> Option<Option<bool>> {
+    attribute_value(data, little).map(|value| value.map(|v| v == 1))
+}
+
+/// The file-scope `Tag_ABI_VFP_args` value, 0 when an `aeabi` subsection omits it.
+fn attribute_value(data: &[u8], little: bool) -> Option<Option<u32>> {
     if data.first() != Some(&b'A') || data.len() > 1024 * 1024 {
         return None;
     }
@@ -128,7 +178,6 @@ fn attributes(data: &[u8], little: bool) -> Option<Option<bool>> {
                 } else {
                     let value = uleb(scope, &mut pos)?;
                     if tag == 28 {
-                        let value = value == 1;
                         if current.is_some_and(|old| old != value) {
                             return None;
                         }
@@ -136,7 +185,7 @@ fn attributes(data: &[u8], little: bool) -> Option<Option<bool>> {
                     }
                 }
             }
-            let current = current.unwrap_or(false);
+            let current = current.unwrap_or(0);
             if answer.is_some_and(|old| old != current) {
                 return None;
             }

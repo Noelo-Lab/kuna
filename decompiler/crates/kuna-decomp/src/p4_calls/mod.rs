@@ -47,3 +47,4 @@ pub mod kuna_callrettype; // (kuna) a call returns the type its callee's recover
 pub mod kuna_condexeret; // (kuna) a return trial failed only on a path ActionConditionalExe removes gets one more pass
 pub mod kuna_armfloatargs; // (kuna) an ARM hard-float function takes its scalar VFP inputs at their full widths
 pub mod kuna_armfloatreturn; // (kuna) an ARM hard-float function returns and takes whole VFP values
+pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention
