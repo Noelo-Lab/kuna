@@ -1,0 +1,121 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    An inline system call (`svc`) lifts to a CALLOTHER with no register inputs
+    and no output, so the r0 a function sets up for it still holds that value
+    afterwards. `pair` returns the two argument registers it set up as a register pair, and
+    `after` doubles its argument: it reads back the r0 it saved, not the result.
+
+    Stage / sub-stage: P2 flow-classification.
+    P0 assertion:      option syscallregs off|auto|on  (default auto).
+
+    Source (clang -O2 -target armv7-linux-gnueabi -c, the .text bytes verbatim below):
+
+        static __attribute__((noinline)) void use2(int a, int b)
+          { asm volatile("" :: "r"(a), "r"(b)); }
+        int pair(int a, int b) {
+          register int r0 asm("r0") = b; register int r1 asm("r1") = a;
+          register int r7 asm("r7") = 4;
+          asm volatile("svc 0" : "+r"(r0) : "r"(r1), "r"(r7) : "memory");
+          return r0;
+        }
+        int after(int x) {
+          register int r0 asm("r0"); register int r7 asm("r7") = 20;
+          asm volatile("svc 0" : "=r"(r0) : "r"(r7) : "memory");
+          if (r0 < 0) return -1;
+          return r0 + x;
+        }
+        int fence(int a) { asm volatile("dmb ish" ::: "memory"); return a; }
+        int discard(int a, int b) {
+          register int r0 asm("r0") = b + 1; register int r1 asm("r1") = a * 3;
+          register int r7 asm("r7") = 4;
+          asm volatile("svc 0" : "+r"(r0) : "r"(r1), "r"(r7) : "memory");
+          return 7;
+        }
+        void keep(int fd, int buf) {
+          register int r0 asm("r0") = fd + 1; register int r1 asm("r1") = buf * 3;
+          register int r7 asm("r7") = 4;
+          asm volatile("svc 0" : "+r"(r0) : "r"(r1), "r"(r7) : "memory");
+          use2(r0, r1);
+        }
+
+    Pass 1 (option syscallregs on) gives the svc its effects: it writes r0,
+    and it reads the number register r7 and then the argument registers in
+    order, up to the first one the function did not write on every path to
+    it.  Pass 2 (option syscallregs off) is the old model, and so is pass 3,
+    the default `auto`: it acts only on an image the loader identified as a
+    program for an operating system's user space, which a bare byte chunk is
+    not.  fence is the control: its barrier is a CALLOTHER too,
+    and nothing about it changes.
+    discard throws the result away and returns 7; the kernel leaves r1 alone, so
+    the argument in r1 still reaches the return, and a value the call reads as an
+    argument is not a returned half.  keep passes the result and the r1 it kept
+    to use2; the call reading r1 does not stop it being use2's second argument.
+    after keeps x in r1 across the svc but never writes r0, so the call reads
+    r7 alone: r1 is not printed as the first argument.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+80402de90120a0e10010a0e10200a0e10470a0e3000000ef8080bde880402de9
+0010a0e11470a0e3000000ef0020e0e3010070e3012080c00200a0e18080bde8
+5bf07ff51eff2fe180402de9802080e0010081e20470a0e30210a0e1000000ef
+0700a0e38080bde880402de9010080e2811081e00470a0e3000000ef8040bde8
+ffffffea1eff2fe1
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="pair"/>
+<symbol space="ram" offset="0x10001c" name="after"/>
+<symbol space="ram" offset="0x100040" name="fence"/>
+<symbol space="ram" offset="0x100048" name="discard"/>
+<symbol space="ram" offset="0x100068" name="keep"/>
+<symbol space="ram" offset="0x100084" name="use2"/>
+</binaryimage>
+<script>
+  <com>option syscallregs on</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fence</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu discard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs off</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fence</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu discard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs auto</com>
+  <com>lo fu pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SYSCALLREGS-ARM #1: with option syscallregs on pair is a one-register int function" min="1" max="1">unsigned int pair\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #2: pair returns the svc result and shows the registers it set up" min="1" max="1">return software_interrupt\(0,4,a1,a0,a1\);</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #3: with option syscallregs off or auto the setup comes back as a register pair" min="2" max="2">return CONCAT44\(a0,a1\);</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #4: after reads the svc result, and r1 is not shown in r0's place" min="1" max="1">v1 = software_interrupt\(0,0x14\);</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #5: after adds its argument to the svc result" min="1" max="1">v2 = v1 \+ a0;</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #6: with option syscallregs off after doubles its own argument" min="1" max="1">v1 = a0 \* 2;</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #7: the barrier in fence is not a system call in either pass" min="2" max="2">DataMemoryBarrier\(0xb\);</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #8: discard, which drops the svc result, is a one-register function" min="1" max="1">unsigned int discard\(int4 a0,int4 a1\)</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #9: with option syscallregs off discard returns its argument as the high half" min="1" max="1">return CONCAT44\(a0 \* 3,7\);</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #10: keep passes the svc result and the r1 it kept to use2" min="1" max="1">use2\(software_interrupt\(0,4,a0 \+ 1,a1 \* 3\),a1 \* 3\);</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #11: with option syscallregs off keep passes its own setup value as the result" min="1" max="1">use2\(a0 \+ 1,a1 \* 3\);</stringmatch>
+</decompilertest>

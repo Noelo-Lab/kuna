@@ -1965,7 +1965,9 @@ mod tests {
         // and kuna-floatret / a value returned in a float register is a float
         // and kuna-retcallhalf / a caller that changes only the high word of a
         // callee's 64-bit result returns all eight bytes
-        assert_eq!(count, 382, "corpus file count drifted");
+        // and kuna-syscallregs-{arm,aarch64,riscv,mips,ppc,cortexm} / an inline
+        // system call writes its result register (GH-812)
+        assert_eq!(count, 388, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

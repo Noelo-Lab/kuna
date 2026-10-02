@@ -1,0 +1,80 @@
+<decompilertest>
+<binaryimage arch="MIPS:LE:32:default:default">
+<!--
+    An inline system call (`syscall`) lifts to a CALLOTHER with no register inputs
+    and no output, so the v0 a function sets up for it still holds that value
+    afterwards. `number` returns 0xfa4, the syscall number it loaded into v0, and `after`
+    adds 0xfb4 to its argument.
+
+    Stage / sub-stage: P2 flow-classification.
+    P0 assertion:      option syscallregs off|auto|on  (default auto).
+
+    Source (clang -O2 -target mipsel-linux-gnu -c, the .text bytes verbatim below):
+
+        int number(int a, int b) {
+          register int v0 asm("$2") = 4004;
+          register int a0 asm("$4") = b; register int a1 asm("$5") = a;
+          asm volatile("syscall" : "+r"(v0) : "r"(a0), "r"(a1) : "memory", "$7");
+          return v0;
+        }
+        int after(int x) {
+          register int v0 asm("$2") = 4020;
+          asm volatile("syscall" : "+r"(v0) :: "memory", "$7");
+          if (v0 < 0) return -1;
+          return v0 + x;
+        }
+        int fence(int a) { asm volatile("sync" ::: "memory"); return a; }
+
+    Pass 1 (option syscallregs on) gives the syscall its effects: it writes v0,
+    and it reads the number register v0 and then the argument registers in
+    order, up to the first one the function did not write on every path to
+    it.  Pass 2 (option syscallregs off) is the old model, and so is pass 3,
+    the default `auto`: it acts only on an image the loader identified as a
+    program for an operating system's user space, which a bare byte chunk is
+    not.  fence is the control: its barrier is a CALLOTHER too,
+    and nothing about it changes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+250880002520a00025282000a40f02240c0000000800e00300000000a40f0224
+0c000000230802000a0847000800e00325102000b40f02240c00000021084400
+00004328ffff02240800e0030a1023000f0000000800e00325108000
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="number"/>
+<symbol space="ram" offset="0x100034" name="after"/>
+<symbol space="ram" offset="0x100050" name="fence"/>
+</binaryimage>
+<script>
+  <com>option syscallregs on</com>
+  <com>lo fu number</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fence</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs off</com>
+  <com>lo fu number</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fence</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs auto</com>
+  <com>lo fu number</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SYSCALLREGS-MIPS #1: with option syscallregs on number keeps both arguments" min="1" max="1">unsigned int number\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS #2: number returns the syscall result and shows the registers it set up" min="1" max="1">return syscall\(0,0xfa4,a1,a0\);</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS #3: with option syscallregs off or auto number returns the syscall number" min="2" max="2">return 0xfa4;</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS #4: after reads the syscall result" min="1" max="1">v1 = syscall\(0,0xfb4\);</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS #5: after adds its argument to the syscall result" min="1" max="1">return v1 \+ a0;</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS #6: with option syscallregs off after adds the syscall number to its argument" min="1" max="1">return a0 \+ 0xfb4;</stringmatch>
+<stringmatch name="SYSCALLREGS-MIPS #7: the sync in fence is not a system call in either pass" min="2" max="2">SYNC\(0\);</stringmatch>
+</decompilertest>

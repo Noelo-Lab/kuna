@@ -1181,6 +1181,17 @@ pub struct ArchContext {
     /// left out, so a spec-declared model always wins.  Read by
     /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
     pub x64_syscall_userops: Vec<kuna_base::types::uint4>,
+    /// (kuna) `option syscallregs`, resolved against the loader's user-space
+    /// fact: does the ARM/AArch64/RISC-V/MIPS/PowerPC system-call user-op read
+    /// its setup registers and write its result?  Read by
+    /// [`ActionSyscallRegs`](crate::p2_lift::kuna_syscallregs::ActionSyscallRegs).
+    pub syscall_regs: bool,
+    /// (kuna) The processor family of the loaded language, when `syscallregs`
+    /// models it.
+    pub syscall_regs_family: Option<crate::p2_lift::kuna_syscallregs::SyscallFamily>,
+    /// (kuna) The family's system-call user-op ids, minus any a compiler spec
+    /// specialized with its own `<callotherfixup>`.
+    pub syscall_regs_userops: Vec<kuna_base::types::uint4>,
     /// (kuna) `option pebnames`, resolved against the compiler spec and the
     /// loader's user-mode-PE fact: does
     /// [`ActionPebNames`](crate::p5_types::kuna_pebnames::ActionPebNames) act?
@@ -1703,6 +1714,9 @@ impl ArchContext {
             msvc_str_append: false,      // msvcstrappend (opt-in default-off)
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (opt-in default-off)
             x64_syscall_userops: Vec::new(),
+            syscall_regs: false,
+            syscall_regs_family: None,
+            syscall_regs_userops: Vec::new(),
             peb_names: false,
             switch_selector_guard: false, // switchselector (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)

@@ -718,6 +718,10 @@ pub fn universal_sched(
             // it is only legal before heritage builds SSA.  Inert on every
             // language but x86-64 and on any function with no SYSCALL.
             act!(crate::p2_lift::kuna_x64syscall::ActionX64Syscall::boxed("protorecovery")),
+            // (kuna) syscallregs (option `syscallregs`): the same rewrite for the
+            // ARM, AArch64, RISC-V, MIPS and PowerPC system-call user-op, here for
+            // the same reasons.
+            act!(crate::p2_lift::kuna_syscallregs::ActionSyscallRegs::boxed("protorecovery")),
             // (kuna) pebnames (option `pebnames`, default `auto`): map `TEB *teb`
             // over the Windows segment-base register input.  Here because the
             // Symbol must exist before heritage creates the input Varnode, which
