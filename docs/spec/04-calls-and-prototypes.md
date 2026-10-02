@@ -1116,6 +1116,44 @@ guard machinery; what matters here is that a CALL op's input list grows
 speculatively during Band B and is *rewritten to the truth* by the passes
 below.
 
+(kuna) **A variadic argument in the return register.** The guard skips a range
+the call's own output covers exactly (chapter 03), so a variadic call that
+passes an argument in the register it returns in lost that argument.
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargretreg.rs
+(argument_in_own_output)` decides when the input trial is registered anyway. It
+appends one variadic argument to the call's declared pieces, a `double` when the
+range lies in a floating-point entry of the model and an integer of the range's
+size otherwise, and asks the model where it goes. The trial is registered only
+when that storage is the range itself. The model's own `<varargs>` rules keep
+the floating-point registers out where a variadic value travels in integer
+registers or on the stack (ARM, RISC-V, MIPS, Windows, Apple arm64). Three
+conventions the models do not describe come from the language id
+(`image_vararg_floats`). 64-bit PowerPC passes a variadic floating-point value
+in general registers and only copies it to an FPR, so its FPRs are refused.
+x86-64 SysV puts the number of vector registers that carry arguments in `al`,
+and 32-bit PowerPC sets CR bit 6 when any FPR carries one (`crset 6`, cleared
+by `crclr 6`). A constant zero written in the call's block (`xor %eax,%eax`,
+`mov $0,%al`, `crclr 6`) refuses `xmm0` or `f1`. When the block does not state
+a count, the model decides, as it always does on AArch64, which has none.
+The trial then goes through the `ActionActiveParam` checks below like any
+other.
+
+A count above zero is also evidence for those checks. `ancestorOpUse` never
+accepts a value that is another call's output ("a call is never a good
+indication of a single op use"), so `vr(k, g(k))`, which leaves `g`'s result in
+`xmm0` and passes it on, printed as `g(k); vr(k);`. That is the safe reading
+when nothing says otherwise (on AArch64, `g(k); vr(k);` compiles to the same
+instructions), but on x86-64 the `mov $1,%eax` before the call says otherwise.
+`counted_float_arguments` lists the first `n` floating-point entries of the
+model for a count of `n` (one for `crset 6`, which says only that some FPR is
+used), and `check_input_trial_use` marks an 8-byte trial on one of them active
+without the ancestor checks. This holds for any variadic call, not only one
+whose own value returns in the register: `printf("%f", g())` keeps its `g()`
+the same way. Without a count (any AArch64 call, or a block that does not set
+one), the ancestor checks still decide: a discarded call result or a parameter
+the caller reads again after the call stays out, and so does a call result the
+call really takes, which the instructions cannot tell apart.
+
 ### `ActionActiveParam` — does this argument exist?
 
 Per call with active input recovery

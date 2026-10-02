@@ -3385,6 +3385,7 @@ impl Architecture {
             .clone()
             .filter(|_| crate::kuna_typedcallabi::without_fpu(self));
         ctx.caller_extends_returns_from = crate::kuna_typedcallabi::caller_extends_from(self);
+        ctx.vararg_floats = crate::kuna_varargretreg::image_vararg_floats(self);
         ctx.defaultfp = self.defaultfp.as_ref().map(|model| {
             if ctx.arm_float_return {
                 crate::kuna_armfloatreturn::model(model, ctx.manage(), ctx.arm_float_args)
