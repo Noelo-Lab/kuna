@@ -214,10 +214,12 @@ pub fn written_inputs(call: &FuncCallSpecs, data: &Funcdata) -> Vec<(Address, i3
 /// Bind a call's VFP inputs to its callee's arity-sound contract, up to the
 /// last stated input the caller wrote or the callee provably reads: stated
 /// inputs in front of it become arguments, a stated double the call holds as
-/// its two words becomes one argument, and a filler the contract skips is
-/// dropped. Another unstated input goes only where the callee neither reads
-/// nor forwards it. A stated input the scoring released and the callee reads,
-/// or one held in part, leaves the call as recovered.
+/// its two words becomes one argument where the callee reads both, a stated
+/// input the callee ignores is zero where the caller's value would widen one of
+/// its own entry registers, and a filler the contract skips is dropped. Another
+/// unstated input goes only where the callee neither reads nor forwards it. A
+/// stated input the scoring released and the callee reads, or one held in part,
+/// leaves the call as recovered.
 pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &mut Funcdata, written: &[(Address, i32)]) {
     if !data.get_arch().arm_float_args || call.is_input_locked() || !call.proto().has_model() {
         return;

@@ -465,6 +465,67 @@ fn stated_doubles_pass_whole_and_backfill_holes_stay_empty() {
     }
 }
 
+// clang 14 hard-float ARM and Thumb builds of `armfloatargs_ignored.c`, whose
+// callees ignore a leading double: the wrappers leave their own float in s0, so
+// d0 at the call is that float plus an s1 they never write (w3 as two words,
+// u1/u2/u3 as one d0 read).
+#[test]
+fn ignored_stated_doubles_keep_the_callers_float_parameters() {
+    let fixtures =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../kuna-analysis/tests/fixtures");
+    let has_cc = common::process::optional_output(Command::new("cc").arg("--version")).is_some();
+    let driver = common::scratch_file("arm-float-ignored-driver", "c");
+    std::fs::write(
+        &driver,
+        "#include <stdio.h>\nint top(int);\nint main(void) { long s = 0;\n\
+         for (int n = 1; n < 9; n++) s = s * 31 + top(n);\nprintf(\"%ld\\n\", s); return 0; }\n",
+    )
+    .unwrap();
+    let expected = has_cc.then(|| {
+        let reference = common::scratch_file("arm-float-ignored-reference", "exe");
+        compile_and_run(
+            &[fixtures.join("armfloatargs_ignored.c"), driver.clone()],
+            &reference,
+        )
+    });
+    let checks: [(&str, &str, &[usize]); 7] = [
+        ("i4", "double i4(double a0,float a1,float a2,double a3)", &[4]),
+        ("i2", "double i2(double a0,double a1)", &[2, 2]),
+        ("i3", "double i3(double a0,float a1,double a2)", &[3]),
+        ("w3", "float w3(float a0)", &[1]),
+        ("u1", "float u1(float a0)", &[1]),
+        ("u2", "float u2(float a0,float a1)", &[2]),
+        ("u3", "float u3(float a0,double a1)", &[2]),
+    ];
+    for build in ["arm-O1", "arm-O2", "thumb-O2", "thumb-Os"] {
+        let bytes =
+            std::fs::read(fixtures.join(format!("armfloatargs_ignored_{build}.o"))).unwrap();
+        let code = decompile_with(&bytes, &["armfloatreturn", "on", "armfloatargs", "on"]);
+        assert!(
+            !code.contains("SUB84") && !code.contains("CONCAT44"),
+            "{build}\n{code}"
+        );
+        for (name, signature, arities) in checks {
+            assert!(
+                code.contains(signature),
+                "{build}: missing {signature}\n{code}"
+            );
+            assert_eq!(&call_arities(&code, name), arities, "{build}: {name}\n{code}");
+        }
+        let Some(expected) = &expected else {
+            continue;
+        };
+        let emitted = common::scratch_file("arm-float-ignored-emitted", "c");
+        let executable = common::scratch_file("arm-float-ignored-emitted", "exe");
+        std::fs::write(&emitted, &code).unwrap();
+        assert_eq!(
+            &compile_and_run(&[emitted, driver.clone()], &executable),
+            expected,
+            "{build}\n{code}"
+        );
+    }
+}
+
 /// Compile `sources` with the host compiler and return what the program prints.
 fn compile_and_run(sources: &[std::path::PathBuf], executable: &std::path::Path) -> String {
     let compile = Command::new("cc")

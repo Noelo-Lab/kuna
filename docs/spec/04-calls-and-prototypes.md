@@ -42,10 +42,21 @@ callee's body, followed through its own calls, is seen to read, so caller and
 callee agree on every VFP position in front of it. A stated double that the call
 holds as its two s-register words, because heritage split the d-register where
 the caller writes only a single-precision half of it, is passed as one value
-built from those two words: a float-returning wrapper that hands its double to
+built from those two words where the callee's body, followed through its own
+calls, reads both words: a float-returning wrapper that hands its double to
 its callee in d0 and uses it again after the call passes one double, not two
-integer words. A stated input there is an
-argument even where the positional rules ended the list before it: a constant
+integer words. Where the callee provably ignores a stated double the call
+holds, whole or as words, and passing the caller's value would make the caller
+read an entry register it does not itself use whole (its own float in s0
+beside an s1 it never writes, or two floats it reads apart), the argument is
+zero and the caller keeps its float parameters: `float w(float a) { return
+f(8.25, a, a, 5.25) * 3 + a; }` calls `double f(double, float, float, double)`,
+which never reads its first parameter, as `f(0.0,a0,a0,5.25)`, not with a
+double `w` would then take. A double the caller computed, forwards untouched or
+also reads whole is passed as it is. Where the callee reads the double but the
+caller's two words are not one double it forwards or reads whole, the call's
+arguments stay as recovered. A stated input there is an argument even where
+the positional rules ended the list before it: a constant
 the caller left in d1 for its own arithmetic is the argument for an ignored
 `double` the callee states there, and the used double after it stays in place.
 A stated input there that the caller never wrote is passed as whatever value
