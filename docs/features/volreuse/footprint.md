@@ -170,7 +170,7 @@ The same 39 binaries plus tar O0, O2 and O2-noinline: 92 of 15,936 functions.
   O2 `0xa9f0` `0x27340` and O2-noinline `0x2e690` no longer change: main's
   pointer refusal already prints them that way.
 
-## On main `363123e96`: a store after which the global's earlier value is used
+## On main `94ce9314e`: a store after which the global's earlier value is used
 
 A store after which an earlier value of the global is still used is now left to
 upstream (chapter 03), because keeping it made `Merge` copy that earlier value
@@ -188,10 +188,18 @@ Against the previous revision:
   globals, and freertos `0x22d4`, which stores `dat_200004e4` at the binary's
   `230c` and, on the path that falls through, again after the `if`/`else` with
   nothing in between (equivalent).
-- The 42 binaries above: 4 of 15,936 change. tar O2-noinline `0xdfd0` and
-  `0x30600` and rsyslogd O2 `0x29fc0` print main's text again. tar O2
-  `0x308a0` now stores `dat_82c70` after `dat_82c78`, as the binary does
-  (`30af1`, `30afc`), and loads the earlier `dat_82c70` just before that store
-  as main does (the binary loads it at `30aa2`; only the `dat_82c78` store lies
-  between); the previous revision stored `dat_82c70` first. Against main,
-  89 of 15,936 change, all among the functions classified above.
+- The 42 binaries above: 3 of 15,936 change. tar O2-noinline `0xdfd0` and
+  `0x30600` print main's text again. tar O2 `0x308a0` now stores `dat_82c70`
+  after `dat_82c78`, as the binary does (`30af1`, `30afc`), and loads the
+  earlier `dat_82c70` just before that store as main does (the binary loads it
+  at `30aa2`; only the `dat_82c78` store lies between); the previous revision
+  stored `dat_82c70` first. Against main, 90 of 15,936 change; the other 89
+  print the same change as before, line for line.
+- The 45 castbench binaries: 148 of 20,230 change against main; 143 print the
+  same change as before, line for line. tar O2-noinline `0xdfd0` and `0x30600`
+  print main's text again, tar O2 `0x308a0` is the store-order change above,
+  and cmp O2 `0x2900` / O2-noinline `0x2940` and gzip O2 `0xd9d0` /
+  O2-noinline `0xda60` print main's text where an earlier value of the global
+  (`optind`, gzip's `outcnt`) is used after the store, keeping their other
+  splits. Casts on the 4,815 shared functions: 32,040 on main to 31,989, 0.846x
+  IDA.
