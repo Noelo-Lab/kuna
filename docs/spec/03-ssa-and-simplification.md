@@ -944,7 +944,7 @@ changes the global (dash's `set_curjob` unlinks the list head through such a
 pointer and then reads the head again). An earlier value also counts as read
 after the store when the global's own `MULTIEQUAL` reads it on an edge from a
 block the store dominates, or an `INDIRECT` after the store reads it
-(`(marks_after)`). Heritage never builds that; it is what remains when a
+(`(old_value_read_after)`). Heritage never builds that; it is what remains when a
 pointer `STORE` becomes the global's `COPY` after the global's heritage, and
 keeping the store there made Merge restore the earlier value with copies (a
 flex scanner's `yylex` at `-O2`).
@@ -966,7 +966,7 @@ does not reach, the answer is yes), whether or not the load is used as an
 address: `*a2 = a0; return v1 + gi[1];` at `-O0` and `-O2`, and
 `*a2 = a0; return (gd - a0) + (long)v2;` for a load that is subtracted. Only a
 store whose earlier value the global's own marker carries past it
-(`(marks_after)`, above) keeps upstream's propagation of its loads; an earlier
+(`(old_value_read_after)`, above) keeps upstream's propagation of its loads; an earlier
 value read after the store through a register does not, so
 `old = gi; gi = q; ... *pp = p; return gi[1] + x + old[0];` keeps its load.
 `RulePushMulti` leaves a global's `MULTIEQUAL` in place when one of its inputs
@@ -980,6 +980,19 @@ into a reader of the copy when a write lies between the copy and the reader, and
 chapter 06 keeps the copy as its own variable, so
 `r = gi; *pp2 = p + 1; return r[1];` keeps `r` where the binary loads it rather
 than reading `gi` after the second store.
+
+These questions are asked again every time the rule pool visits a reader, so
+each is kept linear in the global's varnodes (issue #818). The search for an
+earlier value read after the store asks the dominator tree through one memo for
+the store's block (`decompiler/crates/kuna-decomp/src/substrate/block.rs
+(BlockGraph::dominates_memo)`), which answers each block once however many of the
+global's varnodes sit in it, and reads each `MULTIEQUAL` that joins the global's
+values once rather than once for every value it joins
+(`kuna_pointeestorekeep.rs (Store::join_after)`). `RulePropagateCopy` asks it for
+a marker only after the marker's cheaper refusals, which never depended on it.
+The answers are the ones the per-value walk gave; before this a function storing
+one pointer to a global 600 times, with a pointer store between, took 42 s to
+decompile where it had taken 18 s before the store was kept.
 
 When the stored value is not used as an address it joins the global in chapter
 06, and a load that uses what it reads as an address, in the slot above or

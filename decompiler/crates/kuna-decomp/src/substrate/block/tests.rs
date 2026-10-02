@@ -256,6 +256,40 @@ fn dominator_self_loop_and_exit() {
 }
 
 #[test]
+fn dominates_memo_answers_as_dominates() {
+    // Pseudo-random graphs: a spine 0 -> 1 -> ... with extra forward, back and
+    // cross edges, so the dominator tree has chains, joins, loops and
+    // irreducible parts.  One memo per dominator answers every block, asked in
+    // two orders, the same as `dominates`.
+    let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut next = |m: usize| {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 33) as usize % m
+    };
+    for n in [2usize, 5, 9, 17, 40] {
+        let (mut g, root, b) = build_graph(n);
+        g.set_start_block(root, b[0]);
+        for i in 0..n - 1 {
+            g.add_edge(b[i], b[i + 1]);
+        }
+        for _ in 0..n {
+            let (from, to) = (next(n), next(n));
+            if to != 0 && g.arena[b[from]].get_out_index(b[to]) < 0 {
+                g.add_edge(b[from], b[to]);
+            }
+        }
+        let _ = run_dominators(&mut g, root, &b);
+        for &top in &b {
+            let mut memo = DominatesMemo::new(top);
+            for &sub in b.iter().chain(b.iter().rev()) {
+                assert_eq!(g.dominates_memo(&mut memo, Some(sub)), g.dominates(top, Some(sub)));
+            }
+            assert!(!g.dominates_memo(&mut memo, None));
+        }
+    }
+}
+
+#[test]
 fn dominator_irreducible_two_entry_loop() {
     // Classic irreducible graph: 0 -> 1, 0 -> 2, 1 -> 2, 2 -> 1.
     // The 1<->2 loop has two entries (from 0 directly to each), so it is

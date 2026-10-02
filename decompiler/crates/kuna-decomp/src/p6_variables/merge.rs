@@ -2935,6 +2935,32 @@ mod tests {
 
     // --- compareCopyByInVarnode (merge.cc:1045-1057) -----------------------
 
+    /// `redundant_in_order` marks what `markRedundantCopies`' own loop marks:
+    /// each later COPY some earlier one is a redundant pair with.
+    #[test]
+    fn redundant_in_order_matches_the_pair_loop() {
+        let m = Mock::new();
+        let copy: Vec<OpId> = (1..=7).map(oid).collect();
+        let at = |o: OpId| copy.iter().position(|&c| c == o).unwrap() as u32;
+        for pattern in 0u32..64 {
+            let pairs = |dom: OpId, sub: OpId| (pattern >> ((at(dom) * 3 + at(sub)) % 6)) & 1 == 1;
+            let mut want = Vec::new();
+            let mut i = copy.len() as int4 - 1;
+            while i > 0 {
+                let mut j = i - 1;
+                while j >= 0 {
+                    if pairs(copy[j as usize], copy[i as usize]) {
+                        want.push(copy[i as usize]);
+                        break;
+                    }
+                    j -= 1;
+                }
+                i -= 1;
+            }
+            assert_eq!(redundant_in_order(&m, &copy, pairs), want);
+        }
+    }
+
     #[test]
     fn compare_copy_by_in_varnode_order() {
         // Different inputs: lower createIndex sorts first (merge.cc:1050-1051).

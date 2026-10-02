@@ -86,6 +86,12 @@ the normal copy chain). A whole-cover test walks both block maps in order and
 reports the strongest per-block verdict (`cover.rs (Cover::intersect)`,
 `(Cover::intersect_list)` at level 2 for the candidate blocks).
 
+A Cover is keyed by block index; its walk over the CFG resolves an index to its
+block through a table built once per walk, the first block in list order with
+that index (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(FuncdataCoverCtx::block_id_of_index)`), rather than by rescanning the block list
+at every step, which made each Cover quadratic in the function's blocks.
+
 A Cover is built from *two* kinds of point and is only correct when both are
 supplied. `cover.rs (Cover::add_def_point)` resets it to the single point where
 the Varnode is written; `cover.rs (Cover::add_ref_point_for)` then extends it
@@ -418,7 +424,17 @@ its block is dominated by an earlier COPY from the same source Varnode **and**
 nothing writes the shared HighVariable between the two — the dominance range
 `funcdata.rs (Funcdata::build_copy_pair_range)` spans the dominant COPY's write
 through to the later COPY's read of that source, and any member write landing
-inside it vetoes. Getting that range wrong is directly a wrong-value bug: a
+inside it vetoes. The pairs of one group are tested together
+(`funcdata_merge.rs (MergeContext::redundant_copies)`): the high's other writes
+are listed by block once, the dominator answers for each earlier COPY's block are
+kept across the later ones, and each range is walked by
+`cover.rs (Cover::add_ref_point_until)`, which stops at the first block holding
+one of those writes (`funcdata.rs (Funcdata::copy_pair_crossed)`). A Cover block
+only grows while the walk runs, so a write met part way is inside the finished
+range, and a walk that meets none has seen every block as it ends: the verdict is
+the full range's, and debug builds check it against `check_copy_pair`. Building
+every range in full cost a function that stores one value to a global from many
+places the range's length for each of the quadratically many pairs (issue #818). Getting that range wrong is directly a wrong-value bug: a
 `-O0` epilogue reached by several `return param;` paths puts several COPYs of one
 parameter in one variable, and if the reload that follows a call clobbering the
 same storage is called redundant and silenced, the emitted C returns the call's

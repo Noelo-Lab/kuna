@@ -1284,6 +1284,43 @@ mod tests {
         assert!(!cb2.empty());
     }
 
+    /// `add_ref_point_until` stops exactly when the finished `add_ref_point_for`
+    /// Cover contains a point of the set, and builds that Cover when nothing
+    /// stops it.
+    #[test]
+    fn add_ref_point_until_agrees_with_the_full_cover() {
+        let vn = crate::context::VarnodeId::from(KeyData::from_ffi(1));
+        let reader = OpId::from(KeyData::from_ffi(100));
+        let ctxs: [&dyn CoverContext; 2] = [&DiamondCtx, &LoopCtx];
+        for ctx in ctxs {
+            let start = || {
+                let mut c = Cover::new();
+                let (def, is_input) = ctx.def_point(vn);
+                c.add_def_point(def, is_input);
+                c
+            };
+            let mut full = start();
+            full.add_ref_point_for(ctx, reader, vn);
+            let mut walked = start();
+            assert!(!walked.add_ref_point_until(ctx, reader, vn, |_, _| false));
+            for bl in 0..4 {
+                assert_eq!(walked.get_cover_block(bl), full.get_cover_block(bl));
+            }
+            let points: Vec<(int4, CoverPoint)> = (0..4)
+                .flat_map(|bl| {
+                    (0..12).map(move |k| (bl, op_point(k))).chain([(bl, meq_point(0))])
+                })
+                .collect();
+            for point in &points {
+                let want = full.contain(point.0, point.1, 1);
+                let got = start().add_ref_point_until(ctx, reader, vn, |bl, cb| {
+                    bl == point.0 && cb.contain(Some(point.1))
+                });
+                assert_eq!(got, want, "{point:?}");
+            }
+        }
+    }
+
     #[test]
     fn pcodeopset_finalize_sorts_and_blocks() {
         let populate = || {
