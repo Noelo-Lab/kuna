@@ -1332,7 +1332,8 @@ pub fn recovered_pieces(
 /// callee's `FuncProto` with `seed_locked_from_pieces`, and that is what decides
 /// where each parked type lands.
 pub fn model_storage(pieces: &PrototypePieces, arch: &Architecture) -> Option<Vec<(Address, int4)>> {
-    let dfp = arch.default_fp()?.clone();
+    let dfp = crate::kuna_typedcallabi::undeclared_model_for(arch, pieces)
+        .or_else(|| arch.default_fp().cloned())?;
     let void_ty = arch.types().get_type_void().ok()?;
     let mut fp = FuncProto::new();
     let types_only = PrototypePieces {

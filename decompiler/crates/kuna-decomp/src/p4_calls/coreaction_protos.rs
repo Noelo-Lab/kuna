@@ -513,8 +513,11 @@ impl Action for ActionDefaultParams {
                         (Some(pieces), Some(dfp), Some(types)) => {
                             let mut fp = crate::fspec::FuncProto::new();
                             // The host-declared model wins over defaultfp when
-                            // present (Phase 3); standalone always defaultfp.
-                            let seed_model = callee_model.unwrap_or(dfp);
+                            // present (Phase 3); a declaration that names none
+                            // follows the image's float convention.
+                            let seed_model = callee_model
+                                .or_else(|| crate::kuna_typedcallabi::undeclared_model(&arch, &pieces))
+                                .unwrap_or(dfp);
                             match fp.seed_locked_from_pieces(
                                 &pieces,
                                 seed_model,

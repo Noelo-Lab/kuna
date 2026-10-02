@@ -972,7 +972,11 @@ unknown. Before any of it, the drive
 signature is already known, and locks it if so
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::apply_locked_prototype)`). The model it is locked under is the one the
-declaration named when it named one (§4.1), else the architecture default. Two
+declaration named when it named one (§4.1), else the architecture default, with
+one exception: on an ARM image that states the soft-float convention and no
+floating-point hardware, a declaration whose default layout would put a
+parameter or the return value in a VFP register is laid out under the soft-float
+model instead (see "Declared prototypes on a soft-float image" in §4.3). Two
 sources, in precedence order: a
 prototype the operator declared for this run (`parse line extern …` /
 `map prototype <func> …`, 00 §0.2), then the
@@ -1651,6 +1655,47 @@ extension, so the rest of `v0` would print as an unassigned piece of the
 result, and the RISC-V model and Apple's AArch64 one state zero extension,
 which turns a negative `signed char`, `short` or 64-bit RISC-V `int` result
 into a large positive one.
+
+**Declared prototypes on a soft-float image.** A declaration that names no
+convention — a `--assert prototype` / `map prototype` / `parse line extern`
+directive, or a DWARF `DW_TAG_subprogram` — describes a function the image
+calls with its own convention, and the default model is ARM's VFP variant. On an
+image without floating-point hardware that states the base (soft-float)
+convention, every function passes floating-point values in core registers, so
+such a declaration is laid out under the soft-float model whenever its default
+layout would put a parameter or the return value in a VFP register
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_typedcallabi.rs
+(undeclared_model)`). Laid out under the default model, a `double` parameter
+would be read from a VFP register the caller never set, and the core registers
+that carry it would print as unassigned locals or as stray arguments. The same
+choice is made wherever the pieces become storage: the function's own
+decompile (`decompile_drive.rs`), a caller's copy in `ActionDefaultParams`, the
+prototype-bearing code type the console locks onto the symbol (which flow reads
+at a direct call and de-indirection reads at a resolved one), and the
+canonical-storage checks `protoorder` and `callbacktype` compare a recovered or
+declared list against, so a list is only stated to callers where they will
+read it back at the same storage. A prototype without a floating-point or
+aggregate type keeps the default model, whose storage for it is the same.
+
+Floating-point hardware comes from the same attributes: `Tag_FP_arch`,
+`Tag_Advanced_SIMD_arch` or `Tag_MVE_arch` naming an architecture
+(`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs
+(fp_hardware)`). An image that states an FPU next to the base convention
+(`-mfloat-abi=softfp`) keeps the default layout: GCC and clang pass a static
+function's floating-point values in VFP registers there when they see every
+call, so the image's convention does not decide the function's. An image whose
+attributes say nothing about hardware keeps it too. Neither case changes from
+before this rule, and an exported function on a softfp image is still laid out
+in VFP registers. MIPS, PowerPC and RISC-V specs have no soft-float model, so a
+declaration on their soft-float images keeps the default layout as well.
+
+The soft-float model is the spec's `__stdcall_softfp` with the default model's
+`extension` copied onto its core-register input entries: the base standard
+extends an argument narrower than a word as the VFP variant does, and the
+spec's entries leave it unstated, which made a `bool` tested as a whole
+register print as `CONCAT31` of an unassigned piece. Typed indirect calls above
+use the same model. A declaration that names `__stdcall_softfp` itself gets the
+spec's model unchanged.
 
 `force_set` first saves a copy of the full `FuncProto` — model, storage, locks
 and all — into the function's Override store keyed by the call address

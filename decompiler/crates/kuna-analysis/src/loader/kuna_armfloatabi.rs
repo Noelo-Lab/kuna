@@ -127,8 +127,50 @@ fn attributes(data: &[u8], little: bool) -> Option<Option<bool>> {
     attribute_value(data, little).map(|value| value.map(|v| v == 1))
 }
 
+/// Whether the container states floating-point register hardware: `Some(true)`
+/// when an `aeabi` subsection names an FP, Advanced SIMD or MVE architecture,
+/// `Some(false)` when it names none of them, `None` when the image carries no
+/// `aeabi` subsection or its attributes conflict or are malformed.
+pub fn fp_hardware(file: &object::File<'_>) -> Option<bool> {
+    if file.format() != object::BinaryFormat::Elf
+        || file.architecture() != object::Architecture::Arm
+    {
+        return None;
+    }
+    let mut answer = None;
+    for section in file
+        .sections()
+        .filter(|s| s.name() == Ok(".ARM.attributes"))
+    {
+        let data = section.data().ok()?;
+        let Some(value) = hardware_value(data, file.is_little_endian())? else {
+            continue;
+        };
+        if answer.is_some_and(|old| old != value) {
+            return None;
+        }
+        answer = Some(value);
+    }
+    answer
+}
+
+fn hardware_value(data: &[u8], little: bool) -> Option<Option<bool>> {
+    let fp = tag_value(data, little, 10)?;
+    let simd = tag_value(data, little, 12)?;
+    let mve = tag_value(data, little, 48)?;
+    Some(match (fp, simd, mve) {
+        (Some(fp), Some(simd), Some(mve)) => Some(fp != 0 || simd != 0 || mve != 0),
+        _ => None,
+    })
+}
+
 /// The file-scope `Tag_ABI_VFP_args` value, 0 when an `aeabi` subsection omits it.
 fn attribute_value(data: &[u8], little: bool) -> Option<Option<u32>> {
+    tag_value(data, little, 28)
+}
+
+/// The file-scope value of the numeric `tag`, 0 when an `aeabi` subsection omits it.
+fn tag_value(data: &[u8], little: bool, wanted: u32) -> Option<Option<u32>> {
     if data.first() != Some(&b'A') || data.len() > 1024 * 1024 {
         return None;
     }
@@ -177,7 +219,7 @@ fn attribute_value(data: &[u8], little: bool) -> Option<Option<u32>> {
                     string(scope, &mut pos)?;
                 } else {
                     let value = uleb(scope, &mut pos)?;
-                    if tag == 28 {
+                    if tag == wanted {
                         if current.is_some_and(|old| old != value) {
                             return None;
                         }
@@ -198,6 +240,34 @@ fn attribute_value(data: &[u8], little: bool) -> Option<Option<u32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn tagged(tags: &[u8], little: bool) -> Vec<u8> {
+        let put = |v: usize| {
+            if little {
+                (v as u32).to_le_bytes()
+            } else {
+                (v as u32).to_be_bytes()
+            }
+        };
+        let mut data = vec![b'A'];
+        data.extend(put(4 + 6 + 5 + tags.len()));
+        data.extend(b"aeabi\0");
+        data.push(1);
+        data.extend(put(5 + tags.len()));
+        data.extend(tags);
+        data
+    }
+    #[test]
+    fn floating_point_hardware_is_read_from_the_architecture_tags() {
+        for little in [true, false] {
+            let read = |tags: &[u8]| hardware_value(&tagged(tags, little), little);
+            assert_eq!(read(&[6, 10]), Some(Some(false)));
+            assert_eq!(read(&[6, 10, 10, 0, 12, 0]), Some(Some(false)));
+            assert_eq!(read(&[6, 10, 10, 4]), Some(Some(true)));
+            assert_eq!(read(&[12, 2]), Some(Some(true)));
+            assert_eq!(read(&[48, 1]), Some(Some(true)));
+            assert_eq!(hardware_value(b"A", little), Some(None));
+        }
+    }
     fn section(value: u8, little: bool) -> Vec<u8> {
         let mut result = vec![b'A'];
         let bytes = if little {

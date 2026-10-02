@@ -1256,10 +1256,12 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
             // else keeps the architecture default.  Standalone, the same slot
             // carries a convention the declaration itself named
             // (`void * __stdcall f(...)`), so the function decompiles under the
-            // convention it was declared with rather than the default one.
+            // convention it was declared with rather than the default one, and
+            // one that names none follows the image's float convention.
             let declared_model = staged_proto_model
                 .clone()
-                .or_else(|| fd.get_arch().callee_proto_model(&entry_addr));
+                .or_else(|| fd.get_arch().callee_proto_model(&entry_addr))
+                .or_else(|| crate::kuna_typedcallabi::undeclared_model(fd.get_arch(), pieces));
             fd.apply_locked_prototype_with_model(pieces, declared_model)?;
         }
         // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
