@@ -207,6 +207,7 @@ fn a_target_takes_only_what_it_stated() {
         inputs: vec![(rdi.clone(), 8, Rc::clone(&long)), (rsi.clone(), 8, long)],
         arity_sound: true,
         output: None,
+        result: None,
         vararg_tail: vec![rsi],
     };
     // `edi` is a read of the stated `rdi`.

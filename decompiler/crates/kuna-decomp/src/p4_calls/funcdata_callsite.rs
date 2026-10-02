@@ -366,7 +366,9 @@ pub fn build_input_from_trials(
             // Translate the parameter address relative to the caller's spacebase.
             off = spc.wrap_offset(stackoffset.wrapping_add(off));
         }
-        let vn: VarnodeId = if is_unref {
+        let vn: VarnodeId = if is_unref && crate::kuna_armfloatargs::unread_slot(data, fc, &addr, sz) {
+            data.new_constant(sz, 0)
+        } else if is_unref {
             // recovered unreferenced address as part of prototype: create the vn.
             data.new_varnode(sz, &Address::new(spc.clone(), off), None)
         } else {

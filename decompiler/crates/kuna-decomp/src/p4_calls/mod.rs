@@ -34,6 +34,7 @@ pub mod kuna_calleearitybody; // (kuna) recover a lone call's argument list from
 pub mod kuna_calleearitycut; // (kuna) accept that run when the callee decode is cut before a dead boundary
 pub mod kuna_calleearityscratch; // (kuna) let a caller-scratch register bound that cut run
 pub mod kuna_calleearitylive; // (kuna) extend a partial argument list when the callee body agrees
+pub mod kuna_formatwitness; // (kuna) equal constant formats can witness a partial call's arity
 pub mod kuna_inputparamgap; // (kuna) an unused-argument-register run must not veto a later live-in
 pub mod kuna_stackarggap; // (kuna) an unwritten argument register ends a call site's argument list
 pub mod kuna_rustabi; // (kuna) the rustc two-register return: keep the pair, connect it at the call
@@ -45,5 +46,6 @@ pub mod kuna_calleevote; // (kuna) a callee parameter takes the type every calle
 pub mod kuna_callpush; // (kuna) a call's own return-address push is part of the call
 pub mod kuna_callrettype; // (kuna) a call returns the type its callee's recovery gave it
 pub mod kuna_condexeret; // (kuna) a return trial failed only on a path ActionConditionalExe removes gets one more pass
+pub mod kuna_armfloatargs; // (kuna) an ARM hard-float function takes its scalar VFP inputs at their full widths
 pub mod kuna_armfloatreturn; // (kuna) an ARM hard-float function returns and takes whole VFP values
 pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention

@@ -1,5 +1,181 @@
 # 04 — Calls & prototypes
 
+`armfloatargs on` (default off) recovers scalar ARM32 VFP inputs only when
+the container states the hard-float ABI and `armfloatreturn` is on. Alone it
+changes nothing: the inputs it recovers rely on that option's widened
+d-register model and on its rule that keeps an unused VFP parameter in its
+slot. Floating operations and proven callee contracts supply the type evidence:
+a value passed to a call takes the type the callee states for the slot it is
+passed in, so a wrapper that moves its double from d2 to d1 for its callee still
+reads one double. Same-width copies, contiguous pieces and truncations of a
+right shift by whole bytes can carry that evidence back to an input. A double
+consumed as a whole
+stays one eight-byte input, including when an overlapping call result is only
+four bytes. Unknown calls and ambiguous ABI attributes do not establish scalar
+floating parameters; a floating aggregate or vector is seen only as the scalar
+words or doubles its reads show.
+
+A d-register input that the function reads only as its two words, each of
+which a floating operation consumes or a callee states as a float, becomes the
+two s-register inputs: heritage joined two single-precision parameters because
+another access covers the whole register. Words read only as integers, such as
+a double handed to a base-AAPCS helper in core registers, are left as
+`armfloatreturn` alone leaves them.
+
+The AAPCS-VFP back-fill slot is not a parameter. When a single-precision
+parameter fills the low half of a d-register and every later VFP parameter is a
+double, the high half is the slot the convention skips: `f(float, float, float,
+double)` passes the double in d2 and leaves s3 empty. Recovery leaves that slot
+out instead of filling it with an unused `float`, so the recovered list is the
+one the convention assigns and a caller has no reason to read s3. A slot the
+function's own body reads before writing is a parameter all the same: at -O0,
+`f(float a, float unused, double d)` spills `unused` from s1, and a bounded
+decode of the body from its entry sees that read, so s1 stays in the list and
+its callers pass it.
+
+At a call, the callee's stated single-precision parameters are taken word by
+word out of a d-register range the call may not take whole, so values written
+into s0 and s1 after an earlier double result reach the call as written. When
+the callee's recovered contract is arity-sound, the call takes the VFP inputs
+that contract states up to the last one the caller wrote for the call or the
+callee's body, followed through its own calls, is seen to read, so caller and
+callee agree on every VFP position in front of it. A contract that the callee's
+own body contradicts shapes no call, and the call keeps the arguments it
+recovered: when the body reads the high word of a d-register parameter slot but
+not its low word, and the contract states neither, the convention allocated the
+low word first, so the contract misses an input. A stated double that the call
+holds as its two s-register words, because heritage split the d-register where
+the caller writes only a single-precision half of it, is passed as one value
+built from those two words where the callee's body, followed through its own
+calls, reads both words: a float-returning wrapper that hands its double to its
+callee in d0 and uses it again after the call passes one double, not two integer
+words. Where the callee provably ignores a stated double the call holds, whole
+or as words, and passing the caller's value would make the caller read an entry
+register it does not itself use whole (its own float in s0 beside an s1 it never
+writes, or two floats it reads apart), the argument is zero and the caller keeps
+its float parameters: `float w(float a) { return f(8.25, a, a, 5.25) * 3 + a; }`
+calls `double f(double, float, float, double)`, which never reads its first
+parameter, as `f(0.0,a0,a0,5.25)`, not with a double `w` would then take. A
+stated input the callee never reads is zero as well where the caller's value for
+it is part of an earlier call's result left in the register, such as the s1
+above a float an earlier call returned in s0: passing that word would turn the
+earlier call's float result into a double. This holds for a whole earlier result
+too, since a callee that never reads the register cannot tell, and the result
+would otherwise take the slot's stated type: a float result in d0 handed to an
+ignored stated double became 64-bit integer bits. A double the caller computed,
+forwards untouched or also reads whole is passed as it is. Where the callee
+never reads one word of a stated double and the caller left an earlier call's
+leftover in that word, that word alone is zero: an -O0 callee that only spills
+its leading float can be recovered as taking a double there, and its caller then
+holds its own float beside the high word of a double an earlier call returned,
+which would turn that result into integer bits. The callee never reads a
+register when every path writes it first, or when it is a leaf that returns
+without touching the register and every part of it inside the storage of the
+callee's recovered result, whether or not every return computes that result, is
+written on every path first. A leaf that returns early with its first parameter
+untouched, `float f(float a, float b, int c) { if (c > 3) a = b * b; return a;
+}` (`cmp r0,#4; bxlt lr; ...`), hands the caller's s0 back and so reads it: a
+caller passing an earlier call's result there keeps it. Where the callee reads
+the double but the caller's two words are not one double it forwards or reads
+whole, the call's arguments stay as recovered. A stated input there is an
+argument even where the positional rules ended the list before it: a constant
+the caller left in d1 for its own arithmetic is the argument for an ignored
+`double` the callee states there, and the used double after it stays in place. A
+stated input there that the caller never wrote is passed as whatever value
+reaches the call, which is how a wrapper forwards its own inputs, unless the
+callee never reads that register: the argument is then zero, because a fresh
+read of the register would only give the caller a parameter it never uses or
+turn an earlier call's float result into a double. Stated inputs past that point
+stay as the call recovered them, so a contract that lists more registers than
+anything is seen to use adds no argument. A positional filler the contract skips
+while stating a later VFP input, such as the back-fill slot, is dropped. Any
+other unstated VFP input is dropped only where the callee's body, followed
+through its own calls, neither reads nor forwards that register: an s-register
+in which the caller happens to leave a value, such as a constant it used for its
+own arithmetic or a stale half of an earlier double, is then not an argument,
+while a callee whose body is cut short or reaches code no walk accounts for
+keeps every argument its callers recover. A leaf callee that only returns
+forwards nothing, including when its return switches the instruction set through
+a user operation as ARM's `bx lr` does, so a register it never reads is dropped
+there unless part of it lies in the callee's result storage and some return
+leaves that part untouched: a direct caller does not pass the back-fill slot it
+never wrote, and that slot does not become a parameter of the caller. A stated
+input the caller's own scoring ruled out has already lost its value, so it is
+kept, as zero, only where the callee's body provably ignores the register; where
+the callee reads it, or where the call holds a stated input only in part or
+under an unstated argument it keeps, the call's arguments stay as recovered. A
+call that recovered no argument at all, to a callee that also states
+core-register inputs, is left to the rescue that recovers both banks. A word the
+caller forwards is never passed as the callee's stated double.
+
+Every rule above reads the callee's body through the bounded decode from its
+entry, which credits a conditionally executed write (ARM's `vmovgt s0,s1`, a
+Thumb IT block) on both paths, and ends the path at a conditional return such
+as `bxlt lr` without decoding the code after it. With the option on, the
+paths that skip such a return are decoded too, separately and each from the
+registers written before the return's condition, and only the leaf rule reads
+them, so every other rule sees the decode as before. A register counts as
+written on every path only where an instruction that always runs is the first
+to write it on that path, so `vmov.f64 d0,d2` followed by `vmoveq.f64 d0,d1`
+still writes d0 first, and the leaf rule needs a decode that, past every
+conditional return as well, left no path behind, called nothing, and saw no
+read of the register and no conditional first write to it. `float f(float a, float b, float c, float d, int k) { if (k > 6) c
+= a; else if (k < 4) c = (d + a) / 2; return c; }` compiles to `cmp r0,#6;
+bxgt lr; ...` and reads `b` on no path, so a caller that holds nothing of its
+own in s1, only what an earlier call left beside its float result, passes zero
+there (`f(5.5,0.0,v1,...)`) and that earlier call still returns a float.
+`float pick(float a, float b, int c) { if
+(c > 3) a = b; return a; }` compiles to `cmp r0,#3; vmovgt.f32 s0,s1; bx lr`,
+which leaves s0 untouched when the move is skipped, so a caller's
+`pick(v,2.5f,n)` keeps `v`. `calleedeadarg` asks the same question of a VFP
+register with the option on, so it does not clear `v` before these rules see
+the call. With the option off the decode and `calleedeadarg` are unchanged.
+
+Declared prototypes keep their parameter order. For stripped functions whose
+core and VFP banks do not reveal source order, recovery uses the model's VFP
+then core order consistently. Whole-program callers use the established
+`protoorder types` and `passthrough on` contract propagation; a single-function
+run without a callee contract cannot recover an untouched forwarded argument.
+Forwarding and wrapper-return claims are established before synthetic narrowing
+inputs are inserted. If heritage splits a forwarded double around a float result,
+same-width copies and contiguous incoming pieces still establish the original
+input for call recovery. A computed value or an earlier call's result does not.
+Resolved variadic format calls use explicit base AAPCS storage, including
+their floating arguments, rather than the non-variadic VFP convention.
+`formatstring off` disables that source of type evidence.
+
+Nine call shapes stay incomplete. A double that the caller forwards untouched,
+but of which only one word is live in the caller, is omitted from the call. A
+wrapper that forwards a single-precision argument from the upper half of a
+d-register without touching it, such as the third float of `w(float, float,
+float)`, recovers none of its VFP arguments. When a call site recovers its
+core-register arguments but not a forwarded VFP argument that the callee's
+prototype lists first, the recovered arguments print from the first position, so
+a core argument can stand in a VFP parameter's place. A floating argument that goes on the stack because the VFP
+registers are full, such as the ninth parameter of `f(double, ..., double,
+float)` after eight doubles, is not recovered on either side. A double that a
+callee reads only as two integer words is outside this option. Single-precision
+FPUs such as the Cortex-M4F hand every double to base-AAPCS helpers this way, so
+such a callee and its callers keep what `armfloatreturn` alone recovers for
+them. An unused trailing single-precision parameter that an -O0 body only
+spills to its frame is left off the callee's recovered list, because the spill
+is a dead store, while each caller still passes the value the callee reads
+there, so such a call has one more argument than the callee lists:
+`f(double, float, float, float)` with its last float unused is one. A function
+whose only read of a d-register before writing it whole is the high word, such as
+`f(double, double, float, float)` at -O2 when it ignores the first float and
+then reuses `d2` as scratch, recovers neither word: the used float is read from
+an uninitialized local, as with `armfloatreturn` alone, and its callers pass
+it, since that contract shapes no call. A callee that returns a two-float aggregate in s0 and s1 is recovered as
+returning one float, so a caller that reads the second member takes the call's
+result as a 64-bit integer and converts its high word by value, as with
+`armfloatreturn` alone; with the call's arguments now complete, that caller
+compiles and computes the wrong member. A float-returning callee that computes
+in d0 as a double on some path before narrowing into s0, such as `float f(float
+a, double b, int k) { if (k > 4) { a = b * b + 1; a = a * b - 2; } return a;
+}`, is recovered as taking and returning a double, as with `armfloatreturn`
+alone, so its callers now compile and compute the wrong value.
+
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer
 value as argument evidence. This retains a passed local address despite other
@@ -436,7 +612,7 @@ argument behind it.
 (kuna) `calleearitylive` (default-on,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitylive.rs`) extends a
 partial list, and pays for the relaxation with evidence the sibling does not
-carry: the **callee's own body**. It reuses the bounded entry decode
+carry. Its usual evidence is the **callee's own body**. It reuses the bounded entry decode
 `calleedeadarg` takes for the subtractive direction
 (`kuna_calleedeadarg.rs (probe_callee_entry_dead)`), which already records which
 register bytes some path reads before writing, and asks two things of it. Every
@@ -449,6 +625,17 @@ declines outright, while a variadic register-save prologue (`str x3,[sp,#136];
 stp x4,x5,[sp,#144]; stp x6,x7,[sp,#160]`) reads argument registers a
 five-argument witness does not claim. A fixed-arity callee reads exactly the
 registers its prototype names.
+
+A stripped printf-like callee is the useful exception to that body test. Its
+variadic register-save prologue reads every argument register, but two calls
+with the same format still have a fixed arity. `kuna_formatwitness.rs` accepts
+that alternate evidence only when both calls pass the same nonzero constant as
+their first argument, the pointed-to bytes parse as a conservative printf
+format, and the sibling recovered exactly one argument plus every conversion
+and `*` operand in the format. Positional and malformed formats, unreadable
+strings, different pointers, and mismatched arities decline. This recovers the
+case where argument values are also stored to program state immediately before
+the call and `only_op_use` rejects their trials for those stores.
 
 Two limits are this rule's own, on top of `calleearity`'s. The site's own
 recovered list must be exactly the **leading run** of the witness's, because
@@ -1140,8 +1327,17 @@ classified:
   bytes as instructions. An
   instruction whose p-code branches inside itself is scored against the set it
   was entered with and credits none of its writes, so a conditionally-executed
-  write cannot hide a later read. A proven-dead register trial is scored
-  `no-use` like any other definitely-unused trial.
+  write cannot hide a later read. ARM's conditional execution branches to the
+  next instruction instead, so the walk credits such a write (`vmovgt s0,s1`, a
+  Thumb IT block) on both paths. With `armfloatargs` on, a VFP range that
+  some path writes that way before any instruction that always runs is not
+  proven dead; an integer register keeps
+  the walk's answer, so `int pick(int a, int b, int c) { if (c > 3) a = b;
+  return a; }` (`movgt r0,r1`) still loses its first argument at a caller that
+  holds an earlier call's result there. With `armfloatargs` on, the paths that
+  skip a conditional return are also walked, separately, for that option's leaf
+  rule alone; no answer described here reads them. A proven-dead register trial
+  is scored `no-use` like any other definitely-unused trial.
 
   The same walk records a second, narrower fact for `argclobber` to read: for
   each terminator that leaves the callee, what was written on the way to it, and

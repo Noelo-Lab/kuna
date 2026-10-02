@@ -3,9 +3,10 @@
 // with ?student=true (hover cards with them), load the fixture through the
 // file input, open main, hover a line, switch to Assembly, rename a variable,
 // patch a byte, reload to see the session restored, the Collaborate button,
-// the /decompile2/ redirect, the layout at 1024 and 820 px, and the Strings
-// list taking a search for "flag" to the code that uses it. Any uncaught
-// page exception fails the run.
+// the /decompile2/ redirect, opening pasted base64 text (button and Ctrl+V),
+// the layout at 1024 and 820 px, and the Strings
+// list taking a search for "flag" to the code that uses it, and the type
+// definitions shown above a function. Any uncaught page exception fails the run.
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 // Steps that need the engine's `inspect`/`--assert` surface assert the page's
@@ -340,6 +341,32 @@ try {
   assert.match(moved, /http-equiv="refresh" content="0; url=\.\.\/decompile\/"/, 'with a meta refresh for pages without scripts');
   await noExceptions('/decompile2/ redirects, keeping #join=');
 
+  await page.navigate(`${server.base}/decompile/`);
+  await ready('#pick enabled before pasting');
+  const b64 = readFileSync(fixture('sample.elf')).toString('base64');
+  await page.click('#welcomepaste');
+  await page.call((t) => {
+    const ta = document.querySelector('#d2pop textarea');
+    ta.value = t;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }, b64.match(/.{1,76}/g).join('\n'));
+  await page.click('#d2pop button[type=submit]');
+  await page.waitFor(`document.getElementById('crumbname').textContent === 'pasted.elf' && document.getElementById('vname').textContent === 'main'`, { what: 'pasted base64 opened', timeout: 60000 });
+  await page.navigate(`${server.base}/decompile/`);
+  await ready('#pick enabled before Ctrl+V');
+  const paste = (t) => page.call((text) => {
+    const dt = new DataTransfer();
+    dt.setData('text/plain', text);
+    document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    return true;
+  }, t);
+  await paste('main');
+  await page.waitFor(`[...document.querySelectorAll('.d2-toast')].some((t) => t.textContent.includes('not a program in base64'))`, { what: 'stray paste warns', timeout: 5000 });
+  assert.equal(await text('#crumbname'), '', 'a stray word opens nothing');
+  await paste(`data:application/octet-stream;base64,${b64}`);
+  await page.waitFor(`document.getElementById('crumbname').textContent === 'pasted.elf' && document.getElementById('vname').textContent === 'main'`, { what: 'Ctrl+V base64 opened', timeout: 60000 });
+  await noExceptions('base64 text opens a program from Paste base64 and from Ctrl+V; a stray word only warns');
+
   for (const path of ['/', '/dev-viz/']) {
     const html = await (await fetch(`${server.base}${path}`)).text();
     assert.ok(/href="\.\.?\/decompile\/"/.test(html), `${path} links to /decompile/`);
@@ -400,6 +427,33 @@ try {
   await page.click('#strnone [data-act=strings-load]');
   await page.waitFor(`document.querySelectorAll('#strlist .str').length > 0`, { what: 'the strings again', timeout: 60000 });
   await noExceptions('Strings: search "flag", go to each use, show an unused string\'s bytes');
+
+  await setSelect('mode', 'auto');
+  await openSample(page, 'structs.elf');
+  await page.waitFor(`[...document.querySelectorAll('#fnlist .fn')].some((row) => row.textContent === 'make_item')`, { what: 'structs inventory', timeout: 60000 });
+  await idle('structs open');
+  await page.call(() => { [...document.querySelectorAll('#fnlist .fn')].find((row) => row.textContent === 'make_item').click(); return true; });
+  await page.click('#tab-c');
+  await page.waitFor(`document.getElementById('vname').textContent === 'make_item' && document.querySelector('#ccode .d2-tyhead')`, { what: 'make_item with its types', timeout: 60000 });
+  assert.equal(await text('#ccode .d2-tyhead'), 'Types this function uses 1 type');
+  const shaded = await page.call(() => [...document.querySelectorAll('#ccode .d2-cl.d2-ty')].map((row) => row.querySelector('.ct').textContent));
+  assert.equal(shaded[0], 'typedef struct struct_0 struct_0;');
+  assert.ok(shaded.includes('struct struct_0 {') && shaded.includes('    unsigned long field_0x8;'), 'struct_0 is defined above make_item');
+  assert.match(await page.call((n) => document.getElementById(`c-L${n + 1}`).textContent, shaded.length), /make_item\(/, 'the function starts right after them');
+  assert.equal(await count('#ccode .d2-ty .t'), 0, 'nothing in the definitions is a renamable name');
+  await page.click('#c-L4 .ct');
+  assert.match(await text('#railbody .x-card'), /Part of the definition of struct_0, a type this function uses\..*field_0x8 is the field 0x8 bytes from the start/s,
+    'a definition line explains itself');
+  await page.click('.d2-tytoggle');
+  assert.deepEqual(await page.call(() => [document.querySelector('.d2-tytoggle').getAttribute('aria-expanded'), getComputedStyle(document.getElementById('c-L1')).display]),
+    ['false', 'none'], 'the heading folds the definitions');
+  await page.call(() => { document.getElementById('ccode').focus(); return true; });
+  await page.key('ArrowDown');
+  assert.equal(await page.call(() => document.getElementById('ccode').getAttribute('aria-activedescendant')), `c-L${shaded.length + 1}`,
+    'folded, the keyboard starts at the function');
+  await page.click('.d2-tytoggle');
+  assert.notEqual(await page.call(() => getComputedStyle(document.getElementById('c-L1')).display), 'none', 'and unfolds them');
+  await noExceptions('the struct the decompiler worked out is defined above the function, in a block that folds');
 
   console.log(`DECOMPILE2 BROWSER OK — ${done.join('; ')}` + (skipped.length ? `; SKIPPED: ${skipped.join('; ')}` : ''));
 } finally {

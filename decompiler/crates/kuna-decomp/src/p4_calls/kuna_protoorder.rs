@@ -156,6 +156,11 @@ pub struct RecoveredTypes {
     /// `void`.  Recorded only when `option passthrough` is on, whose tail-call
     /// arm is its one reader; `None` otherwise.
     pub output: Option<(Address, int4, Rc<Datatype>)>,
+    /// Where the recovered return value lives, when it is not `void`, whether
+    /// or not every return computes it: the registers a return can hand back to
+    /// a caller. Recorded only when `option passthrough` is on; read by
+    /// [`crate::kuna_armfloatargs`].
+    pub result: Option<(Address, int4)>,
     /// The storage of every parameter in [`Self::inputs`] the callee's body only
     /// ever feeds to a variadic tail
     /// ([`crate::p4_calls::kuna_varargtail`]): read by the callee, but only
@@ -1372,10 +1377,12 @@ fn entry_facts(
     if let Some(d) = arch.kuna_callee_dead_cache.get(&key) {
         return Some(Rc::clone(d));
     }
-    let probed = Rc::new(crate::kuna_calleedeadarg::probe_callee_entry_dead(
+    let follow = crate::kuna_armfloatargs::applies(arch);
+    let probed = Rc::new(crate::kuna_calleedeadarg::probe_entry(
         arch.translate(),
         entry,
         reg_idx,
+        follow,
     ));
     arch.kuna_callee_dead_cache.insert(key, Rc::clone(&probed));
     Some(probed)
@@ -1557,12 +1564,14 @@ pub fn park_recovered(
     if mode.states_types_only() {
         let arity_sound = arch.pass_through && arity_claim_sound(arch, entry, &pieces, &storage);
         let output = if arch.pass_through { recovered_output(proto, data) } else { None };
+        let result = if arch.pass_through { recovered_result(proto) } else { None };
         let vararg_tail = if arch.pass_through {
             crate::kuna_varargtail::vararg_tail_inputs(data, &storage)
         } else {
             Vec::new()
         };
-        return state_recovered_types(arch, entry, pieces, storage, arity_sound, output, vararg_tail);
+        let stated = Stated { arity_sound, output, result, vararg_tail };
+        return state_recovered_types(arch, entry, pieces, storage, stated);
     }
     let mut trimmed = 0usize;
     if let Some(facts) = entry_facts(arch, entry) {
@@ -1649,6 +1658,21 @@ fn arity_claim_sound(
     matches!(model_storage(pieces, arch), Some(model) if model == storage)
 }
 
+/// What [`park_recovered`] states beside the parameter types.
+struct Stated {
+    arity_sound: bool,
+    output: Option<(Address, int4, Rc<Datatype>)>,
+    result: Option<(Address, int4)>,
+    vararg_tail: Vec<Address>,
+}
+
+/// The storage of `proto`'s recovered return value, or `None` for `void`.
+fn recovered_result(proto: &FuncProto) -> Option<(Address, int4)> {
+    let out = proto.get_output();
+    let ct = out.get_type()?;
+    (ct.get_metatype() != type_metatype::TYPE_VOID).then(|| (out.get_address(), out.get_size()))
+}
+
 /// The recovered return value of `proto` -- storage, size, type -- or `None`
 /// for a `void` or storage-less one, or one the function never computed.
 ///
@@ -1700,10 +1724,9 @@ fn state_recovered_types(
     entry: &Address,
     pieces: PrototypePieces,
     storage: Vec<(Address, int4)>,
-    arity_sound: bool,
-    output: Option<(Address, int4, Rc<Datatype>)>,
-    vararg_tail: Vec<Address>,
+    stated: Stated,
 ) -> Result<Recovered, Decline> {
+    let Stated { arity_sound, output, result, vararg_tail } = stated;
     let inputs: Vec<(Address, int4, Rc<Datatype>)> = storage
         .iter()
         .zip(pieces.intypes.iter())
@@ -1716,7 +1739,7 @@ fn state_recovered_types(
         return Err(Decline::InvalidStorage);
     };
     arch.kuna_protoorder_types
-        .insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output, vararg_tail }));
+        .insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output, result, vararg_tail }));
     Ok(Recovered { pieces, trimmed: 0 })
 }
 

@@ -128,7 +128,7 @@ impl OptionCalleeArity {
 /// `None` when the call is not usable as a witness — not a live direct CALL, no
 /// recovered arguments, or carrying a stack argument, whose caller-relative
 /// address means nothing at another call site.
-fn witness_storage(data: &Funcdata, fc: &FuncCallSpecs) -> Option<Vec<(Address, int4)>> {
+pub(crate) fn witness_storage(data: &Funcdata, fc: &FuncCallSpecs) -> Option<Vec<(Address, int4)>> {
     let o = data.obank().get(fc.get_op())?;
     if o.is_dead() || o.code() != OpCode::CPUI_CALL {
         return None;

@@ -1789,6 +1789,14 @@ impl Heritage {
                 {
                     Self::guard_call_overlapping_input(fd, fc, addr, &trans_addr, size);
                 }
+            } else if fc.is_input_active() && tryregister {
+                for piece in crate::kuna_armfloatargs::stated_singles(fd, fc, &trans_addr, size) {
+                    let diff = piece.get_offset().wrapping_sub(trans_addr.get_offset());
+                    let trunc_addr = addr + diff as i64;
+                    if fc.get_active_input().which_trial(&trunc_addr, 4) < 0 {
+                        Self::truncated_input_trial(fd, fc, addr, size, &trunc_addr, 4);
+                    }
+                }
             }
 
             // The `unknown_effect`/`return_address` INDIRECT-*op* (heritage.cc:1512-
@@ -1853,7 +1861,6 @@ impl Heritage {
         trans_addr: &Address,
         size: int4,
     ) {
-        use kuna_num::opcodes::OpCode;
         use kuna_num::pcoderaw::VarnodeData;
         let mut vdata = VarnodeData::default();
         if !fc
@@ -1875,7 +1882,21 @@ impl Heritage {
         if !crate::kuna_armfloatreturn::call_input_allowed(fd, fc, &trunc_addr, trunc_size) {
             return;
         }
-        let truncate_amount = addr.justified_contain(size, &trunc_addr, trunc_size, false);
+        Self::truncated_input_trial(fd, fc, addr, size, &trunc_addr, trunc_size);
+    }
+
+    /// Append a SUBPIECE of the heritaged range `[addr, size)` to the call as the
+    /// input trial at `trunc_addr` (the tail of `guardCallOverlappingInput`).
+    fn truncated_input_trial(
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        size: int4,
+        trunc_addr: &Address,
+        trunc_size: int4,
+    ) {
+        use kuna_num::opcodes::OpCode;
+        let truncate_amount = addr.justified_contain(size, trunc_addr, trunc_size, false);
         debug_assert!(
             truncate_amount >= 0,
             "guardCallOverlappingInput: entry not contained in the range"
@@ -1898,10 +1919,10 @@ impl Heritage {
         let c = fd.new_constant(4, truncate_amount as i64 as u64);
         let _ = fd.op_set_input(subpiece_op, c, 1);
         let vn = fd
-            .new_varnode_out(trunc_size, &trunc_addr, subpiece_op)
+            .new_varnode_out(trunc_size, trunc_addr, subpiece_op)
             .expect("guardCallOverlappingInput: subpiece out");
         fd.op_insert_before(subpiece_op, op);
-        fc.get_active_input().register_trial(&trunc_addr, trunc_size);
+        fc.get_active_input().register_trial(trunc_addr, trunc_size);
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let _ = fd.op_insert_input(op, vn, nin);
     }

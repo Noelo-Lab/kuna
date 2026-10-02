@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A call that stores two arguments through its first parameter immediately
+    before passing them to a stripped printf-like helper loses both values.
+    onlyOpUse sees the STORE descendants and rejects the esi/edx input trials.
+
+    The other arm calls the same helper with the same constant format pointer
+    and recovers all three arguments.  This is stronger evidence than an
+    ordinary partial-list sibling: the first argument value identifies the
+    same format operation at both sites.
+
+    Phase: P4 call recovery, option calleearitylive off|on.  Pass 1 pins the
+    missing arguments.  Pass 2 uses the equal constant first argument as the
+    sibling witness and restores both values.  no_conversion_control repeats
+    the call shapes with a plain string and proves that pointer equality alone
+    does not lend the longer arity.
+-->
+<bytechunk space="ram" offset="0x401000">
+85c974148b57048b37488d3d1d00000031c0e815000000c38937895704488d3d0900000031c0e801000000c3c3706f736974696f6e3d2825642c2564295c6e0085c974148b57048b37488d3d1c00000031c0e8d5ffffffc38937895704488d3d0800000031c0e8c1ffffffc3706c61696e207465787400
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="caller"/>
+<symbol space="ram" offset="0x40102c" name="printer"/>
+<symbol space="ram" offset="0x40102d" name="position_format"/>
+<symbol space="ram" offset="0x401040" name="no_conversion_control"/>
+<symbol space="ram" offset="0x40106c" name="plain_format"/>
+</binaryimage>
+<script>
+  <com>option calleearitylive off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu no_conversion_control</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleearitylive on</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu no_conversion_control</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEARITY FORMAT WITNESS #1: off, the stored values disappear from one call" min="1" max="1">printer\(position_format\)</stringmatch>
+<stringmatch name="CALLEARITY FORMAT WITNESS #2: on, both stored values remain call arguments" min="1" max="1">printer\(position_format,a1,a2\)</stringmatch>
+<stringmatch name="CALLEARITY FORMAT WITNESS #3: the sibling call keeps its three arguments in both passes" min="2" max="2">printer\(position_format,\*a0,a0\[1\]\)</stringmatch>
+<stringmatch name="CALLEARITY FORMAT WITNESS #4: a non-format constant never lends its longer arity" min="2" max="2">printer\(plain_format\)</stringmatch>
+<stringmatch name="CALLEARITY FORMAT WITNESS #5: the longer non-format call stays unchanged" min="2" max="2">printer\(plain_format,\*a0,a0\[1\]\)</stringmatch>
+</decompilertest>

@@ -42,6 +42,7 @@ const GLOSSARY = [
   ['a0, a1 … / param_1', 'an input (parameter) without a name, in order'],
   ['local_28', 'a stack slot, named by its position'],
   ['dat_4010', 'a global variable at that address'],
+  ['struct_0 · field_0x8', 'a structure the decompiler worked out, defined above the function that uses it; the field 0x8 bytes from its start'],
   ['sub_401000 / FUN_00401000', 'a function without a name, at that address'],
   ['LAB_00401234', 'a place the code jumps to'],
   ['undefined4 · int4 · uint8', 'a value of that many bytes: type unknown · signed · unsigned'],

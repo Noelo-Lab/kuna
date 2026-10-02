@@ -22,7 +22,7 @@ pub fn applies(arch: &Architecture) -> bool {
 /// check: a variadic callee receives even its fixed floats in r0-r3, so a recovered
 /// VFP parameter already rules the variadic reading out.
 pub fn closed_recovery<'a>(arch: &Architecture, pieces: &'a PrototypePieces) -> Cow<'a, PrototypePieces> {
-    if applies(arch) {
+    if applies(arch) || crate::kuna_armfloatargs::applies(arch) {
         Cow::Owned(PrototypePieces { first_var_arg_slot: -1, ..pieces.clone() })
     } else {
         Cow::Borrowed(pieces)
@@ -74,12 +74,17 @@ fn add_pairs(list: &mut ParamListStandard, manager: &AddrSpaceManager, limit: us
     list.populate_resolver();
 }
 
-pub fn model(model: &Rc<ProtoModel>, manager: &AddrSpaceManager) -> Rc<ProtoModel> {
+/// The default model widened with the d-registers; `backfill` (option
+/// `armfloatargs`) also leaves the AAPCS-VFP back-fill slot out of the inputs.
+pub fn model(model: &Rc<ProtoModel>, manager: &AddrSpaceManager, backfill: bool) -> Rc<ProtoModel> {
     if model.is_merged() {
         return model.clone();
     }
     let mut result = (**model).clone();
     add_pairs(result.input_mut(), manager, 8);
+    if backfill {
+        result.input_mut().skip_backfill_holes();
+    }
     add_pairs(result.output_mut(), manager, 1);
     Rc::new(result)
 }
@@ -441,7 +446,7 @@ pub fn type_returns(data: &mut Funcdata, active: &ParamActive) {
 /// match the widened d-register entry. Kept when a later VFP input is read, so
 /// that parameter keeps its position.
 pub fn split_double_input(data: &Funcdata, vn: VarnodeId) -> bool {
-    if !data.get_arch().arm_float_return {
+    if !(data.get_arch().arm_float_return || data.get_arch().arm_float_args) {
         return false;
     }
     let Some(value) = data.vbank().get(vn).filter(|v| v.get_size() == 8) else {
@@ -473,7 +478,7 @@ pub fn split_double_input(data: &Funcdata, vn: VarnodeId) -> bool {
 
 /// Every read of `vn` ends in a 4-byte SUBPIECE, directly or through a CAST,
 /// COPY or a right shift by 32 that only such reads consume.
-fn halves_only(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+pub(crate) fn halves_only(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     let Some(value) = data.vbank().get(vn) else { return false };
     depth > 0
         && value.descend_iter().all(|id| {
@@ -508,7 +513,7 @@ pub fn unused_vfp_type(
     i: i32,
 ) -> Option<Rc<crate::dtype::Datatype>> {
     let trial = active.get_trial(i);
-    if !data.get_arch().arm_float_return || !trial.is_unref() {
+    if !(data.get_arch().arm_float_return || data.get_arch().arm_float_args) || !trial.is_unref() {
         return None;
     }
     let size = trial.get_size();
@@ -554,7 +559,7 @@ pub fn call_input_allowed(
     addr: &Address,
     size: i32,
 ) -> bool {
-    if !data.get_arch().arm_float_return
+    if !(data.get_arch().arm_float_return || data.get_arch().arm_float_args)
         || size != 8
         || !call.proto().model().input().get_entry().iter().any(|e| {
             e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) == 0

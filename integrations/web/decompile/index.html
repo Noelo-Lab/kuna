@@ -50,6 +50,8 @@
         <span class="d2-sr">More</span>
       </button>
       <div class="d2-menu d2-moremenu" id="moremenu" role="menu" hidden>
+        <button class="d2-mi" id="pastebtn" role="menuitem" disabled>Open base64 text</button>
+        <hr>
         <button class="d2-mi" id="dlbtn" role="menuitem" disabled>Download C code (.zip)</button>
         <button class="d2-mi" id="patchbtn" role="menuitem" disabled>Download patched program<small id="patchwhy">Patch some bytes first</small></button>
         <hr>
@@ -119,7 +121,7 @@
           <div class="d2-drop" id="dropzone">
             <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 26V8m0 0-7 7m7-7 7 7M8 26v4a3 3 0 0 0 3 3h18a3 3 0 0 0 3-3v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <p class="d2-droptitle">Drop a program here</p>
-            <p class="d2-dropor"><button class="d2-btn primary" id="welcomeopen" disabled>Open file</button></p>
+            <p class="d2-dropor"><button class="d2-btn primary" id="welcomeopen" disabled>Open file</button><button class="d2-btn" id="welcomepaste" disabled title="Or press Ctrl+V anywhere on the page">Paste base64</button></p>
           </div>
         </div>
       </div>

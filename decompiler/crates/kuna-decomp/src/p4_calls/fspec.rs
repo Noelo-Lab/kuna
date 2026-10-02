@@ -1319,6 +1319,13 @@ pub struct ParamActive {
     /// (kuna) `condexeret`: where the output trials stand with respect to the one
     /// retry pass; see [`crate::p4_calls::kuna_condexeret`].
     cond_exe_retry: crate::p4_calls::kuna_condexeret::CondExeRetry,
+    /// (kuna) `armfloatargs`: the callee's stated single-precision inputs, which a
+    /// hole below a later double keeps as words; see
+    /// [`crate::p4_calls::kuna_armfloatargs`].
+    single_floats: Vec<Address>,
+    /// (kuna) `armfloatargs`: s-registers the function's body reads on entry,
+    /// which are parameters even where they would be a back-fill slot.
+    read_singles: Vec<Address>,
 }
 
 impl ParamActive {
@@ -1338,6 +1345,8 @@ impl ParamActive {
             own_input_gap: false,      // (kuna) inputparamgap
             stack_arg_gap: false,      // (kuna) stackarggap
             cond_exe_retry: Default::default(), // (kuna) condexeret
+            single_floats: Vec::new(), // (kuna) armfloatargs
+            read_singles: Vec::new(),  // (kuna) armfloatargs
         }
     }
 
@@ -1468,6 +1477,16 @@ impl ParamActive {
     /// property of the call, not of one pass.
     pub fn set_stack_arg_gap(&mut self, val: bool) {
         self.stack_arg_gap = val;
+    }
+
+    /// (kuna) `armfloatargs`: record the callee's stated single-precision inputs.
+    pub fn set_single_floats(&mut self, addrs: Vec<Address>) {
+        self.single_floats = addrs;
+    }
+
+    /// (kuna) `armfloatargs`: record the s-registers the body reads on entry.
+    pub fn set_read_singles(&mut self, addrs: Vec<Address>) {
+        self.read_singles = addrs;
     }
     /// (kuna) `condexeret`: the state of the retry pass.
     pub fn cond_exe_retry(&self) -> &crate::p4_calls::kuna_condexeret::CondExeRetry {
@@ -1954,6 +1973,8 @@ pub struct ParamListStandard {
     use_fillin_fallback: bool,
     /// `armfloatreturn`: a whole VFP trial occupies every single-register group.
     whole_float_groups: bool,
+    /// `armfloatargs`: an s-register that only aligns a later double is no hole.
+    backfill_holes: bool,
 }
 
 impl std::fmt::Debug for ParamListStandard {
@@ -1993,6 +2014,7 @@ impl Clone for ParamListStandard {
             spacebase: self.spacebase.clone(),
             use_fillin_fallback: self.use_fillin_fallback,
             whole_float_groups: self.whole_float_groups,
+            backfill_holes: self.backfill_holes,
         };
         res.populate_resolver();
         res
@@ -2074,6 +2096,7 @@ impl ParamListStandard {
             spacebase: None,
             use_fillin_fallback: true,
             whole_float_groups: false,
+            backfill_holes: false,
         }
     }
 
@@ -2081,6 +2104,50 @@ impl ParamListStandard {
     /// single-register groups, so the s-register it covers is no hole.
     pub(crate) fn preserve_whole_float_groups(&mut self) {
         self.whole_float_groups = true;
+    }
+
+    /// (kuna) `armfloatargs`: leave the back-fill slot below a double unfilled.
+    pub(crate) fn skip_backfill_holes(&mut self) {
+        self.backfill_holes = true;
+    }
+
+    /// (kuna) `armfloatargs`: group `grp` is the upper half of a d-register whose
+    /// lower half holds a single and every later VFP hit is a double. AAPCS-VFP
+    /// places those doubles past the pair without this slot, so leaving it out
+    /// keeps the remaining parameters in the storage the convention assigns. A
+    /// slot the body reads on entry, such as one spilled at -O0, is a parameter.
+    fn backfill_hole(&self, active: &ParamActive, hitlist: &[Option<usize>], grp: usize) -> bool {
+        if !self.backfill_holes || grp == 0 {
+            return false;
+        }
+        let read = self.entry.iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT
+                && e.get_size() == 4
+                && e.get_group() == grp as int4
+                && active
+                    .read_singles
+                    .contains(&Address::new(e.get_space().clone(), e.get_base()))
+        });
+        if read {
+            return false;
+        }
+        let float = |e: usize, size: int4| {
+            self.entry[e].get_type() == type_class::TYPECLASS_FLOAT && self.entry[e].get_size() == size
+        };
+        let paired = self.entry.iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT
+                && e.get_size() == 8
+                && e.get_all_groups().as_slice() == [grp as int4 - 1, grp as int4]
+        });
+        if !paired || !hitlist[grp - 1].is_some_and(|e| float(e, 4)) {
+            return false;
+        }
+        let mut later = hitlist[grp + 1..]
+            .iter()
+            .flatten()
+            .filter(|&&e| self.entry[e].get_type() == type_class::TYPECLASS_FLOAT)
+            .peekable();
+        later.peek().is_some() && later.all(|&e| float(e, 8))
     }
 
     /// (kuna) `armfloatreturn`: the d-register entry that fills the hole at
@@ -2870,13 +2937,18 @@ impl ParamListStandard {
                 continue;
             }
             match hitlist[i] {
+                None if self.backfill_hole(active, &hitlist, i) => {}
                 None => {
                     let pref = if float_count > int_count {
                         type_class::TYPECLASS_FLOAT
                     } else {
                         type_class::TYPECLASS_GENERAL
                     };
-                    let whole = self.whole_double_hole(&hitlist, i);
+                    let whole = self.whole_double_hole(&hitlist, i).filter(|&w| {
+                        let e = &self.entry[w];
+                        let base = Address::new(e.get_space().clone(), e.get_base());
+                        !active.single_floats.contains(&base)
+                    });
                     if let Some(w) = whole {
                         covered = i + self.entry[w].get_all_groups().len();
                     }

@@ -1,0 +1,1354 @@
+{
+ "binary": "structs.elf",
+ "language": "c-language",
+ "target": {
+  "archid": "x86:LE:64:default:gcc",
+  "processor": "x86",
+  "endian": "little",
+  "bits": 64
+ },
+ "function": {
+  "name": "make_item",
+  "address": 4489,
+  "address_hex": "0x1189",
+  "aliases": [
+   "sub_1189"
+  ],
+  "object_location": null,
+  "kind": "func",
+  "size": 123,
+  "code": "typedef struct struct_0 struct_0;\n\nstruct struct_0 {\n    unsigned int field_0x0;\n    unsigned int field_0x4;\n    unsigned long field_0x8;\n    char field_0x10[15];\n    char field_0x1f;\n    unsigned long field_0x20;\n};\n\nstruct_0 * make_item(unsigned int a0,char *a1,unsigned long a2)\n{\n  struct_0 *v1; // rax\n  \n  v1 = malloc(0x28);\n  v1->field_0x0 = a0;\n  v1->field_0x4 = 1;\n  v1->field_0x8 = a2;\n  strncpy(v1->field_0x10,a1,0xf);\n  v1->field_0x1f = 0;\n  v1->field_0x20 = 0;\n  return v1;\n}",
+  "error": null,
+  "proto": "struct_0 * make_item(unsigned int a0,char *a1,unsigned long a2);",
+  "unstructured_gotos": 0,
+  "line_mappings": [
+   {
+    "line_number": 16,
+    "addresses": [
+     4517
+    ],
+    "addresses_hex": [
+     "0x11a5"
+    ]
+   },
+   {
+    "line_number": 17,
+    "addresses": [
+     4533
+    ],
+    "addresses_hex": [
+     "0x11b5"
+    ]
+   },
+   {
+    "line_number": 18,
+    "addresses": [
+     4539
+    ],
+    "addresses_hex": [
+     "0x11bb"
+    ]
+   },
+   {
+    "line_number": 19,
+    "addresses": [
+     4554
+    ],
+    "addresses_hex": [
+     "0x11ca"
+    ]
+   },
+   {
+    "line_number": 20,
+    "addresses": [
+     4562,
+     4581
+    ],
+    "addresses_hex": [
+     "0x11d2",
+     "0x11e5"
+    ]
+   },
+   {
+    "line_number": 21,
+    "addresses": [
+     4590
+    ],
+    "addresses_hex": [
+     "0x11ee"
+    ]
+   },
+   {
+    "line_number": 22,
+    "addresses": [
+     4598
+    ],
+    "addresses_hex": [
+     "0x11f6"
+    ]
+   },
+   {
+    "line_number": 23,
+    "addresses": [
+     4606,
+     4611
+    ],
+    "addresses_hex": [
+     "0x11fe",
+     "0x1203"
+    ]
+   }
+  ],
+  "variables": [
+   {
+    "name": "param_1",
+    "type": "unsigned int",
+    "kind": "arg",
+    "arg_index": 0,
+    "stack_offset": null,
+    "size": 4,
+    "line_numbers": [
+     17
+    ],
+    "addresses": [
+     4533
+    ],
+    "addresses_hex": [
+     "0x11b5"
+    ]
+   },
+   {
+    "name": "param_2",
+    "type": "char *",
+    "kind": "arg",
+    "arg_index": 1,
+    "stack_offset": null,
+    "size": 8,
+    "line_numbers": [
+     20
+    ],
+    "addresses": [
+     4562,
+     4581
+    ],
+    "addresses_hex": [
+     "0x11d2",
+     "0x11e5"
+    ]
+   },
+   {
+    "name": "param_3",
+    "type": "unsigned long",
+    "kind": "arg",
+    "arg_index": 2,
+    "stack_offset": null,
+    "size": 8,
+    "line_numbers": [
+     19
+    ],
+    "addresses": [
+     4554
+    ],
+    "addresses_hex": [
+     "0x11ca"
+    ]
+   },
+   {
+    "name": "local_40",
+    "type": "undefined16",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -64,
+    "size": 16,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   },
+   {
+    "name": "local_30",
+    "type": "undefined8",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -48,
+    "size": 8,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   },
+   {
+    "name": "local_28",
+    "type": "undefined12",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -40,
+    "size": 12,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   },
+   {
+    "name": "local_1c",
+    "type": "undefined12",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -28,
+    "size": 12,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   },
+   {
+    "name": "local_10",
+    "type": "struct_0 *",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -16,
+    "size": 8,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   },
+   {
+    "name": "local_8",
+    "type": "undefined8",
+    "kind": "stack",
+    "arg_index": null,
+    "stack_offset": -8,
+    "size": 8,
+    "line_numbers": [],
+    "addresses": [],
+    "addresses_hex": []
+   }
+  ],
+  "types": [
+   {
+    "name": "struct_0",
+    "definition": "struct struct_0 {\n    unsigned int field_0x0;\n    unsigned int field_0x4;\n    unsigned long field_0x8;\n    char field_0x10[15];\n    char field_0x1f;\n    unsigned long field_0x20;\n};\n",
+    "size": 40
+   }
+  ],
+  "globals": [],
+  "tokens": [
+   {
+    "line": 1,
+    "col": 0,
+    "len": 33,
+    "kind": "syntax",
+    "color": "none",
+    "text": "typedef struct struct_0 struct_0;"
+   },
+   {
+    "line": 3,
+    "col": 0,
+    "len": 17,
+    "kind": "syntax",
+    "color": "none",
+    "text": "struct struct_0 {"
+   },
+   {
+    "line": 4,
+    "col": 4,
+    "len": 23,
+    "kind": "syntax",
+    "color": "none",
+    "text": "unsigned int field_0x0;"
+   },
+   {
+    "line": 5,
+    "col": 4,
+    "len": 23,
+    "kind": "syntax",
+    "color": "none",
+    "text": "unsigned int field_0x4;"
+   },
+   {
+    "line": 6,
+    "col": 4,
+    "len": 24,
+    "kind": "syntax",
+    "color": "none",
+    "text": "unsigned long field_0x8;"
+   },
+   {
+    "line": 7,
+    "col": 4,
+    "len": 20,
+    "kind": "syntax",
+    "color": "none",
+    "text": "char field_0x10[15];"
+   },
+   {
+    "line": 8,
+    "col": 4,
+    "len": 16,
+    "kind": "syntax",
+    "color": "none",
+    "text": "char field_0x1f;"
+   },
+   {
+    "line": 9,
+    "col": 4,
+    "len": 25,
+    "kind": "syntax",
+    "color": "none",
+    "text": "unsigned long field_0x20;"
+   },
+   {
+    "line": 10,
+    "col": 0,
+    "len": 2,
+    "kind": "syntax",
+    "color": "none",
+    "text": "};"
+   },
+   {
+    "line": 12,
+    "col": 0,
+    "len": 10,
+    "kind": "type",
+    "color": "type",
+    "text": "struct_0 *",
+    "decl": "return",
+    "type": "struct_0 *"
+   },
+   {
+    "line": 12,
+    "col": 11,
+    "len": 9,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "make_item",
+    "decl": "function"
+   },
+   {
+    "line": 12,
+    "col": 20,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 12,
+    "col": 21,
+    "len": 12,
+    "kind": "type",
+    "color": "type",
+    "text": "unsigned int",
+    "decl": "param",
+    "type": "unsigned int"
+   },
+   {
+    "line": 12,
+    "col": 34,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "a0",
+    "decl": "param"
+   },
+   {
+    "line": 12,
+    "col": 36,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ","
+   },
+   {
+    "line": 12,
+    "col": 37,
+    "len": 6,
+    "kind": "type",
+    "color": "type",
+    "text": "char *",
+    "decl": "param",
+    "type": "char *"
+   },
+   {
+    "line": 12,
+    "col": 43,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "a1",
+    "decl": "param"
+   },
+   {
+    "line": 12,
+    "col": 45,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ","
+   },
+   {
+    "line": 12,
+    "col": 46,
+    "len": 13,
+    "kind": "type",
+    "color": "type",
+    "text": "unsigned long",
+    "decl": "param",
+    "type": "unsigned long"
+   },
+   {
+    "line": 12,
+    "col": 60,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "a2",
+    "decl": "param"
+   },
+   {
+    "line": 12,
+    "col": 62,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 13,
+    "col": 0,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "{"
+   },
+   {
+    "line": 14,
+    "col": 2,
+    "len": 10,
+    "kind": "type",
+    "color": "type",
+    "text": "struct_0 *",
+    "decl": "local",
+    "type": "struct_0 *"
+   },
+   {
+    "line": 14,
+    "col": 12,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "decl": "local"
+   },
+   {
+    "line": 14,
+    "col": 14,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 14,
+    "col": 16,
+    "len": 6,
+    "kind": "comment",
+    "color": "comment",
+    "text": "// rax"
+   },
+   {
+    "line": 16,
+    "col": 2,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4517,
+    "address_hex": "0x11a5"
+   },
+   {
+    "line": 16,
+    "col": 5,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "=",
+    "address": 4517,
+    "address_hex": "0x11a5"
+   },
+   {
+    "line": 16,
+    "col": 7,
+    "len": 6,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "malloc",
+    "address": 4517,
+    "address_hex": "0x11a5",
+    "callee": 4240,
+    "callee_hex": "0x1090"
+   },
+   {
+    "line": 16,
+    "col": 13,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 16,
+    "col": 14,
+    "len": 4,
+    "kind": "value",
+    "color": "const",
+    "text": "0x28"
+   },
+   {
+    "line": 16,
+    "col": 18,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 16,
+    "col": 19,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 17,
+    "col": 2,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4533,
+    "address_hex": "0x11b5"
+   },
+   {
+    "line": 17,
+    "col": 4,
+    "len": 2,
+    "kind": "op",
+    "color": "none",
+    "text": "->",
+    "address": 4533,
+    "address_hex": "0x11b5"
+   },
+   {
+    "line": 17,
+    "col": 6,
+    "len": 9,
+    "kind": "field",
+    "color": "none",
+    "text": "field_0x0",
+    "address": 4533,
+    "address_hex": "0x11b5"
+   },
+   {
+    "line": 17,
+    "col": 16,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "=",
+    "address": 4533,
+    "address_hex": "0x11b5"
+   },
+   {
+    "line": 17,
+    "col": 18,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "a0",
+    "address": 4533,
+    "address_hex": "0x11b5"
+   },
+   {
+    "line": 17,
+    "col": 20,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 18,
+    "col": 2,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4539,
+    "address_hex": "0x11bb"
+   },
+   {
+    "line": 18,
+    "col": 4,
+    "len": 2,
+    "kind": "op",
+    "color": "none",
+    "text": "->",
+    "address": 4539,
+    "address_hex": "0x11bb"
+   },
+   {
+    "line": 18,
+    "col": 6,
+    "len": 9,
+    "kind": "field",
+    "color": "none",
+    "text": "field_0x4",
+    "address": 4539,
+    "address_hex": "0x11bb"
+   },
+   {
+    "line": 18,
+    "col": 16,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "=",
+    "address": 4539,
+    "address_hex": "0x11bb"
+   },
+   {
+    "line": 18,
+    "col": 18,
+    "len": 1,
+    "kind": "value",
+    "color": "const",
+    "text": "1"
+   },
+   {
+    "line": 18,
+    "col": 19,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 19,
+    "col": 2,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4554,
+    "address_hex": "0x11ca"
+   },
+   {
+    "line": 19,
+    "col": 4,
+    "len": 2,
+    "kind": "op",
+    "color": "none",
+    "text": "->",
+    "address": 4554,
+    "address_hex": "0x11ca"
+   },
+   {
+    "line": 19,
+    "col": 6,
+    "len": 9,
+    "kind": "field",
+    "color": "none",
+    "text": "field_0x8",
+    "address": 4554,
+    "address_hex": "0x11ca"
+   },
+   {
+    "line": 19,
+    "col": 16,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "=",
+    "address": 4554,
+    "address_hex": "0x11ca"
+   },
+   {
+    "line": 19,
+    "col": 18,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "a2",
+    "address": 4554,
+    "address_hex": "0x11ca"
+   },
+   {
+    "line": 19,
+    "col": 20,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 20,
+    "col": 2,
+    "len": 7,
+    "kind": "funcname",
+    "color": "funcname",
+    "text": "strncpy",
+    "address": 4581,
+    "address_hex": "0x11e5",
+    "callee": 4208,
+    "callee_hex": "0x1070"
+   },
+   {
+    "line": 20,
+    "col": 9,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "("
+   },
+   {
+    "line": 20,
+    "col": 10,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4562,
+    "address_hex": "0x11d2"
+   },
+   {
+    "line": 20,
+    "col": 12,
+    "len": 2,
+    "kind": "op",
+    "color": "none",
+    "text": "->",
+    "address": 4562,
+    "address_hex": "0x11d2"
+   },
+   {
+    "line": 20,
+    "col": 14,
+    "len": 10,
+    "kind": "field",
+    "color": "none",
+    "text": "field_0x10",
+    "address": 4562,
+    "address_hex": "0x11d2"
+   },
+   {
+    "line": 20,
+    "col": 24,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": ",",
+    "address": 4581,
+    "address_hex": "0x11e5"
+   },
+   {
+    "line": 20,
+    "col": 25,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "a1",
+    "address": 4581,
+    "address_hex": "0x11e5"
+   },
+   {
+    "line": 20,
+    "col": 27,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": ",",
+    "address": 4581,
+    "address_hex": "0x11e5"
+   },
+   {
+    "line": 20,
+    "col": 28,
+    "len": 3,
+    "kind": "value",
+    "color": "const",
+    "text": "0xf"
+   },
+   {
+    "line": 20,
+    "col": 31,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ")"
+   },
+   {
+    "line": 20,
+    "col": 32,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 21,
+    "col": 2,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4590,
+    "address_hex": "0x11ee"
+   },
+   {
+    "line": 21,
+    "col": 4,
+    "len": 2,
+    "kind": "op",
+    "color": "none",
+    "text": "->",
+    "address": 4590,
+    "address_hex": "0x11ee"
+   },
+   {
+    "line": 21,
+    "col": 6,
+    "len": 10,
+    "kind": "field",
+    "color": "none",
+    "text": "field_0x1f",
+    "address": 4590,
+    "address_hex": "0x11ee"
+   },
+   {
+    "line": 21,
+    "col": 17,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "=",
+    "address": 4590,
+    "address_hex": "0x11ee"
+   },
+   {
+    "line": 21,
+    "col": 19,
+    "len": 1,
+    "kind": "value",
+    "color": "const",
+    "text": "0"
+   },
+   {
+    "line": 21,
+    "col": 20,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 22,
+    "col": 2,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4598,
+    "address_hex": "0x11f6"
+   },
+   {
+    "line": 22,
+    "col": 4,
+    "len": 2,
+    "kind": "op",
+    "color": "none",
+    "text": "->",
+    "address": 4598,
+    "address_hex": "0x11f6"
+   },
+   {
+    "line": 22,
+    "col": 6,
+    "len": 10,
+    "kind": "field",
+    "color": "none",
+    "text": "field_0x20",
+    "address": 4598,
+    "address_hex": "0x11f6"
+   },
+   {
+    "line": 22,
+    "col": 17,
+    "len": 1,
+    "kind": "op",
+    "color": "none",
+    "text": "=",
+    "address": 4598,
+    "address_hex": "0x11f6"
+   },
+   {
+    "line": 22,
+    "col": 19,
+    "len": 1,
+    "kind": "value",
+    "color": "const",
+    "text": "0"
+   },
+   {
+    "line": 22,
+    "col": 20,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 23,
+    "col": 2,
+    "len": 6,
+    "kind": "op",
+    "color": "keyword",
+    "text": "return",
+    "address": 4611,
+    "address_hex": "0x1203"
+   },
+   {
+    "line": 23,
+    "col": 9,
+    "len": 2,
+    "kind": "variable",
+    "color": "var",
+    "text": "v1",
+    "address": 4606,
+    "address_hex": "0x11fe"
+   },
+   {
+    "line": 23,
+    "col": 11,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": ";"
+   },
+   {
+    "line": 24,
+    "col": 0,
+    "len": 1,
+    "kind": "syntax",
+    "color": "none",
+    "text": "}"
+   }
+  ],
+  "tokens_error": null,
+  "instructions": [
+   {
+    "address": 4489,
+    "address_hex": "0x1189",
+    "offset": 0,
+    "size": 4,
+    "bytes": "f30f1efa",
+    "mnemonic": "ENDBR64",
+    "operands": "",
+    "text": "ENDBR64",
+    "file_offset": 4489,
+    "lines": []
+   },
+   {
+    "address": 4493,
+    "address_hex": "0x118d",
+    "offset": 4,
+    "size": 1,
+    "bytes": "55",
+    "mnemonic": "PUSH",
+    "operands": "RBP",
+    "text": "PUSH RBP",
+    "file_offset": 4493,
+    "lines": []
+   },
+   {
+    "address": 4494,
+    "address_hex": "0x118e",
+    "offset": 5,
+    "size": 3,
+    "bytes": "4889e5",
+    "mnemonic": "MOV",
+    "operands": "RBP,RSP",
+    "text": "MOV RBP,RSP",
+    "file_offset": 4494,
+    "lines": []
+   },
+   {
+    "address": 4497,
+    "address_hex": "0x1191",
+    "offset": 8,
+    "size": 4,
+    "bytes": "4883ec30",
+    "mnemonic": "SUB",
+    "operands": "RSP,0x30",
+    "text": "SUB RSP,0x30",
+    "file_offset": 4497,
+    "lines": []
+   },
+   {
+    "address": 4501,
+    "address_hex": "0x1195",
+    "offset": 12,
+    "size": 3,
+    "bytes": "897dec",
+    "mnemonic": "MOV",
+    "operands": "dword ptr [RBP + -0x14],EDI",
+    "text": "MOV dword ptr [RBP + -0x14],EDI",
+    "file_offset": 4501,
+    "lines": []
+   },
+   {
+    "address": 4504,
+    "address_hex": "0x1198",
+    "offset": 15,
+    "size": 4,
+    "bytes": "488975e0",
+    "mnemonic": "MOV",
+    "operands": "qword ptr [RBP + -0x20],RSI",
+    "text": "MOV qword ptr [RBP + -0x20],RSI",
+    "file_offset": 4504,
+    "lines": []
+   },
+   {
+    "address": 4508,
+    "address_hex": "0x119c",
+    "offset": 19,
+    "size": 4,
+    "bytes": "488955d8",
+    "mnemonic": "MOV",
+    "operands": "qword ptr [RBP + -0x28],RDX",
+    "text": "MOV qword ptr [RBP + -0x28],RDX",
+    "file_offset": 4508,
+    "lines": []
+   },
+   {
+    "address": 4512,
+    "address_hex": "0x11a0",
+    "offset": 23,
+    "size": 5,
+    "bytes": "bf28000000",
+    "mnemonic": "MOV",
+    "operands": "EDI,0x28",
+    "text": "MOV EDI,0x28",
+    "file_offset": 4512,
+    "lines": []
+   },
+   {
+    "address": 4517,
+    "address_hex": "0x11a5",
+    "offset": 28,
+    "size": 5,
+    "bytes": "e8e6feffff",
+    "mnemonic": "CALL",
+    "operands": "0x1090",
+    "text": "CALL 0x1090",
+    "file_offset": 4517,
+    "lines": [
+     16
+    ]
+   },
+   {
+    "address": 4522,
+    "address_hex": "0x11aa",
+    "offset": 33,
+    "size": 4,
+    "bytes": "488945f8",
+    "mnemonic": "MOV",
+    "operands": "qword ptr [RBP + -0x8],RAX",
+    "text": "MOV qword ptr [RBP + -0x8],RAX",
+    "file_offset": 4522,
+    "lines": []
+   },
+   {
+    "address": 4526,
+    "address_hex": "0x11ae",
+    "offset": 37,
+    "size": 4,
+    "bytes": "488b45f8",
+    "mnemonic": "MOV",
+    "operands": "RAX,qword ptr [RBP + -0x8]",
+    "text": "MOV RAX,qword ptr [RBP + -0x8]",
+    "file_offset": 4526,
+    "lines": []
+   },
+   {
+    "address": 4530,
+    "address_hex": "0x11b2",
+    "offset": 41,
+    "size": 3,
+    "bytes": "8b55ec",
+    "mnemonic": "MOV",
+    "operands": "EDX,dword ptr [RBP + -0x14]",
+    "text": "MOV EDX,dword ptr [RBP + -0x14]",
+    "file_offset": 4530,
+    "lines": []
+   },
+   {
+    "address": 4533,
+    "address_hex": "0x11b5",
+    "offset": 44,
+    "size": 2,
+    "bytes": "8910",
+    "mnemonic": "MOV",
+    "operands": "dword ptr [RAX],EDX",
+    "text": "MOV dword ptr [RAX],EDX",
+    "file_offset": 4533,
+    "lines": [
+     17
+    ]
+   },
+   {
+    "address": 4535,
+    "address_hex": "0x11b7",
+    "offset": 46,
+    "size": 4,
+    "bytes": "488b45f8",
+    "mnemonic": "MOV",
+    "operands": "RAX,qword ptr [RBP + -0x8]",
+    "text": "MOV RAX,qword ptr [RBP + -0x8]",
+    "file_offset": 4535,
+    "lines": []
+   },
+   {
+    "address": 4539,
+    "address_hex": "0x11bb",
+    "offset": 50,
+    "size": 7,
+    "bytes": "c7400401000000",
+    "mnemonic": "MOV",
+    "operands": "dword ptr [RAX + 0x4],0x1",
+    "text": "MOV dword ptr [RAX + 0x4],0x1",
+    "file_offset": 4539,
+    "lines": [
+     18
+    ]
+   },
+   {
+    "address": 4546,
+    "address_hex": "0x11c2",
+    "offset": 57,
+    "size": 4,
+    "bytes": "488b45f8",
+    "mnemonic": "MOV",
+    "operands": "RAX,qword ptr [RBP + -0x8]",
+    "text": "MOV RAX,qword ptr [RBP + -0x8]",
+    "file_offset": 4546,
+    "lines": []
+   },
+   {
+    "address": 4550,
+    "address_hex": "0x11c6",
+    "offset": 61,
+    "size": 4,
+    "bytes": "488b55d8",
+    "mnemonic": "MOV",
+    "operands": "RDX,qword ptr [RBP + -0x28]",
+    "text": "MOV RDX,qword ptr [RBP + -0x28]",
+    "file_offset": 4550,
+    "lines": []
+   },
+   {
+    "address": 4554,
+    "address_hex": "0x11ca",
+    "offset": 65,
+    "size": 4,
+    "bytes": "48895008",
+    "mnemonic": "MOV",
+    "operands": "qword ptr [RAX + 0x8],RDX",
+    "text": "MOV qword ptr [RAX + 0x8],RDX",
+    "file_offset": 4554,
+    "lines": [
+     19
+    ]
+   },
+   {
+    "address": 4558,
+    "address_hex": "0x11ce",
+    "offset": 69,
+    "size": 4,
+    "bytes": "488b45f8",
+    "mnemonic": "MOV",
+    "operands": "RAX,qword ptr [RBP + -0x8]",
+    "text": "MOV RAX,qword ptr [RBP + -0x8]",
+    "file_offset": 4558,
+    "lines": []
+   },
+   {
+    "address": 4562,
+    "address_hex": "0x11d2",
+    "offset": 73,
+    "size": 4,
+    "bytes": "488d4810",
+    "mnemonic": "LEA",
+    "operands": "RCX,[RAX + 0x10]",
+    "text": "LEA RCX,[RAX + 0x10]",
+    "file_offset": 4562,
+    "lines": [
+     20
+    ]
+   },
+   {
+    "address": 4566,
+    "address_hex": "0x11d6",
+    "offset": 77,
+    "size": 4,
+    "bytes": "488b45e0",
+    "mnemonic": "MOV",
+    "operands": "RAX,qword ptr [RBP + -0x20]",
+    "text": "MOV RAX,qword ptr [RBP + -0x20]",
+    "file_offset": 4566,
+    "lines": []
+   },
+   {
+    "address": 4570,
+    "address_hex": "0x11da",
+    "offset": 81,
+    "size": 5,
+    "bytes": "ba0f000000",
+    "mnemonic": "MOV",
+    "operands": "EDX,0xf",
+    "text": "MOV EDX,0xf",
+    "file_offset": 4570,
+    "lines": []
+   },
+   {
+    "address": 4575,
+    "address_hex": "0x11df",
+    "offset": 86,
+    "size": 3,
+    "bytes": "4889c6",
+    "mnemonic": "MOV",
+    "operands": "RSI,RAX",
+    "text": "MOV RSI,RAX",
+    "file_offset": 4575,
+    "lines": []
+   },
+   {
+    "address": 4578,
+    "address_hex": "0x11e2",
+    "offset": 89,
+    "size": 3,
+    "bytes": "4889cf",
+    "mnemonic": "MOV",
+    "operands": "RDI,RCX",
+    "text": "MOV RDI,RCX",
+    "file_offset": 4578,
+    "lines": []
+   },
+   {
+    "address": 4581,
+    "address_hex": "0x11e5",
+    "offset": 92,
+    "size": 5,
+    "bytes": "e886feffff",
+    "mnemonic": "CALL",
+    "operands": "0x1070",
+    "text": "CALL 0x1070",
+    "file_offset": 4581,
+    "lines": [
+     20
+    ]
+   },
+   {
+    "address": 4586,
+    "address_hex": "0x11ea",
+    "offset": 97,
+    "size": 4,
+    "bytes": "488b45f8",
+    "mnemonic": "MOV",
+    "operands": "RAX,qword ptr [RBP + -0x8]",
+    "text": "MOV RAX,qword ptr [RBP + -0x8]",
+    "file_offset": 4586,
+    "lines": []
+   },
+   {
+    "address": 4590,
+    "address_hex": "0x11ee",
+    "offset": 101,
+    "size": 4,
+    "bytes": "c6401f00",
+    "mnemonic": "MOV",
+    "operands": "byte ptr [RAX + 0x1f],0x0",
+    "text": "MOV byte ptr [RAX + 0x1f],0x0",
+    "file_offset": 4590,
+    "lines": [
+     21
+    ]
+   },
+   {
+    "address": 4594,
+    "address_hex": "0x11f2",
+    "offset": 105,
+    "size": 4,
+    "bytes": "488b45f8",
+    "mnemonic": "MOV",
+    "operands": "RAX,qword ptr [RBP + -0x8]",
+    "text": "MOV RAX,qword ptr [RBP + -0x8]",
+    "file_offset": 4594,
+    "lines": []
+   },
+   {
+    "address": 4598,
+    "address_hex": "0x11f6",
+    "offset": 109,
+    "size": 8,
+    "bytes": "48c7402000000000",
+    "mnemonic": "MOV",
+    "operands": "qword ptr [RAX + 0x20],0x0",
+    "text": "MOV qword ptr [RAX + 0x20],0x0",
+    "file_offset": 4598,
+    "lines": [
+     22
+    ]
+   },
+   {
+    "address": 4606,
+    "address_hex": "0x11fe",
+    "offset": 117,
+    "size": 4,
+    "bytes": "488b45f8",
+    "mnemonic": "MOV",
+    "operands": "RAX,qword ptr [RBP + -0x8]",
+    "text": "MOV RAX,qword ptr [RBP + -0x8]",
+    "file_offset": 4606,
+    "lines": [
+     23
+    ]
+   },
+   {
+    "address": 4610,
+    "address_hex": "0x1202",
+    "offset": 121,
+    "size": 1,
+    "bytes": "c9",
+    "mnemonic": "LEAVE",
+    "operands": "",
+    "text": "LEAVE",
+    "file_offset": 4610,
+    "lines": []
+   },
+   {
+    "address": 4611,
+    "address_hex": "0x1203",
+    "offset": 122,
+    "size": 1,
+    "bytes": "c3",
+    "mnemonic": "RET",
+    "operands": "",
+    "text": "RET",
+    "file_offset": 4611,
+    "lines": [
+     23
+    ]
+   }
+  ],
+  "instructions_truncated": false
+ },
+ "assertions": []
+}
