@@ -459,7 +459,8 @@
      "rises": 0
     }
    },
-   "repros": "k.c/k2.c (gcc -O1/-O2, stripped): key_ssh_name/w1 char * (round trip prints the string); k3.c deeper chain (gcc and clang -O1/-O2): every wrapper pointer-wide; armhf use.c: parse/pw void (= main); softfp and Android armeabi-v7a use.c byte-identical to main except the strtof stub returning its r0 integer; p2 .o (x86-64 gcc -O1; ARM soft, softfp, hard clang -O1): parse/parse2/parsef void = main"
+   "repros": "k.c/k2.c (gcc -O1/-O2, stripped): key_ssh_name/w1 char * (round trip prints the string); k3.c deeper chain (gcc and clang -O1/-O2): every wrapper pointer-wide; armhf use.c: parse/pw void (= main); softfp and Android armeabi-v7a use.c byte-identical to main except the strtof stub returning its r0 integer; p2 .o (x86-64 gcc -O1; ARM soft, softfp, hard clang -O1): parse/parse2/parsef void = main",
+   "rebase_5dd534d8d": "the 45 + 76 + 18 binaries print byte-identically on the head rebased onto 5dd534d8d (#779, default-off) and on 29c832ea9"
   }
  },
  "benchmark": {
@@ -750,17 +751,18 @@
   }
  },
  "gates": {
-  "code_head": "a1b97ede7 on main 29c832ea9",
+  "code_head": "3f45b4649 (round-10 code) rebased onto main 5dd534d8d (#779), stages baseline 13a6a92e5",
   "make_test": "675/675 PARITY OK",
-  "make_test_stages": "1671/1671 PARITY OK (baseline unchanged: no stage test added this round)",
+  "make_test_stages": "1675/1675 PARITY OK (baseline re-recorded: main 1665 + the 10 FLOATRET keys, none missing)",
   "check_spec": "OK lenient + strict",
   "test_cli": "276/276",
   "catalog_check": "OK",
   "counters_check": "no drift",
   "options_md": "fresh",
   "phases_toml": "unchanged, parses (tomllib)",
-  "rust_test": "7,704 passed / 0 failed / 38 ignored (464 test binaries), RUST_TEST_RC=0 on a1b97ede7 (lane started 08:07:26Z, after the last code change)",
-  "lint": "make lint OK (a1b97ede7)",
+  "corpus_count": "kuna-base xml.rs 377 = tests/datatests + tests/stages",
+  "rust_test": "7,722 passed / 0 failed / 38 ignored (465 test binaries), RUST_TEST_RC=0 on 13a6a92e5 (lane started 09:14:23Z, after the rebase and build); on a1b97ede7 (main 29c832ea9) 7,704 / 0 / 38",
+  "lint": "make lint OK (13a6a92e5)",
   "test_tools": "no Python changed",
   "ci": "a1b97ede7: parity gates and cargo workspace suite success"
  },
