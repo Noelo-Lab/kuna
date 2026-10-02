@@ -200,7 +200,7 @@ pub fn resolve_abi(data: &Funcdata) -> Option<SyscallAbi64> {
 }
 
 /// Do two storage locations overlap?
-fn overlaps(a: &Address, asz: int4, b: &Address, bsz: int4) -> bool {
+pub(crate) fn overlaps(a: &Address, asz: int4, b: &Address, bsz: int4) -> bool {
     match (a.get_space(), b.get_space()) {
         (Some(x), Some(y)) if std::rc::Rc::ptr_eq(x, y) => {
             let (ao, bo) = (a.get_offset(), b.get_offset());

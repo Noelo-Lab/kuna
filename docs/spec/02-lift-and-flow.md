@@ -919,6 +919,94 @@ Exercised by `tests/stages/kuna-x64syscall.xml`, whose three functions are the
 witness, a no-`SYSCALL` control and a split-block wrapper that separates `on`
 from `abi`.
 
+**(kuna) The system call of ARM, AArch64, RISC-V, MIPS and PowerPC —
+`option syscallregs`, default `auto`,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_syscallregs.rs
+(ActionSyscallRegs)`.** `svc` (ARM and AArch64), `ecall` (RISC-V), `syscall`
+(MIPS) and `sc` (PowerPC) lift to a `CALLOTHER` with no register inputs and no
+output, so the same two halves of damage follow as for x86-64. The Linux and BSD
+kernels these instructions trap into return a result in a register (`r0`, `x0`,
+`a0`, `v0`, `r3`), and kuna, told that nothing changes, hands later readers the
+value the function put there to set the call up: a wrapper that swaps its
+arguments into `r0`/`r1` returns them as a register pair, a MIPS wrapper returns
+the syscall number it loaded into `v0`, and a test of the result tests the
+argument instead.
+
+Not every handler returns a result. A bare-metal RTOS uses the same instruction
+for a context switch or a privilege change and preserves every register, and its
+compiler keeps live values in the result register across it: FreeRTOS's Cortex-M
+`xPortRaisePrivilege` sets `r0 = 0`, issues `svc 2` and returns that `r0`. So the
+value decides where the pass acts. `on` acts on any image. `auto`, the default,
+acts only when the loader identified the image as a program for an operating
+system's user space: `load file` records
+`decompiler/crates/kuna-analysis/src/loader/format/elf_userland.rs
+(is_os_userland_image)` on the Architecture, which answers yes for an ELF with an
+`EI_OSABI` of NetBSD, GNU/Linux, FreeBSD or OpenBSD, a `PT_INTERP` segment, a
+`PT_DYNAMIC` segment holding `DT_NEEDED` or `DT_SONAME`, or a type-1 ABI note of
+the `GNU`, `FreeBSD`, `NetBSD`, `OpenBSD` or `Android` owner (in a segment or, for
+a relocatable object, a section). Firmware carries none of these, and neither do
+a statically linked musl or uClibc program, a relocatable object or a raw image,
+so those keep the vendored model unless `on` is set. The XML bootstrap never
+sets the fact, which keeps `auto` inert on the datatest corpus, and the Ghidra
+front-end, which does not load the file itself, never sets it either.
+
+The pass runs right after `ActionX64Syscall` for the same reasons. The language
+id's processor field picks the family, and the family's user-op
+(`software_interrupt`, `CallSupervisor`, `ecall`, or `syscall` on MIPS and
+PowerPC) is resolved to its index at seam time, leaving out one a compiler spec
+has specialized with a `<callotherfixup>`. A matching `CALLOTHER` (the index, at
+most the instruction's immediate, no output) is rewritten in place. It writes the
+result register. After its existing inputs it reads the number register (`r7`
+on ARM, `x8` on AArch64, `a7` on RISC-V, `v0` on MIPS, `r0` on PowerPC) and then
+the argument registers in order (`r0`–`r6`, `x0`–`x7`, `a0`–`a6`, `a0`–`a3`
+plus `t0, t1` for the 64-bit MIPS ABIs, `r3`–`r8`), each only while the function
+writes it on every path to the instruction with no call between the write and
+the instruction. The first argument register that fails ends the list, and a
+number register that fails empties it. A printed argument is therefore always in
+its own position, and every read is of a value the function placed there, so no
+undefined register becomes a parameter. The must-define test is a dataflow over
+the raw blocks that reach the instruction: a block decides for itself when it
+writes the register or makes a call, otherwise it takes the conjunction of its
+predecessors, and the entry decides no. Every block starts at yes and only
+falls, so a loop is decided by the paths into it, and more than 256 blocks
+answers no. Another system call writes the result register and nothing else.
+
+The register pair goes away as a consequence. The low half is now the call's
+output, and the high half is an argument the call reads. Return recovery's
+`only_op_use` treats a rewritten system call as a call site
+([04 — Calls and prototypes](04-calls-and-prototypes.md)): a value it reads as an
+argument is not also a returned half, even when the function throws the result
+away and the kernel-preserved argument register still reaches the `RETURN`. It
+stays free to be the next call's argument.
+
+What it does not model. Arguments the function hands the kernel untouched are
+not read, since nothing says how many of them the kernel reads, and taking all
+of them would give a zero-argument call phantom parameters; the list stops at
+the first of them, so a later argument the function does write is not shown
+either, and a pass-through wrapper prints its call with the number alone. When
+that leaves a written register out, return recovery can still take it as the
+high half of a returned pair, as the vendored model does. The registers a kernel
+writes besides the result (the MIPS `a3` error flag and `v1`, the PowerPC `cr0`
+error bit) also keep their pre-call values. An `INDIRECT` creation for them was
+tried and rejected: `Heritage::collect` reads a marker op already in a range as
+evidence of an earlier heritage pass and clears the range's new-addresses
+property, which turns off the call, store and return guards for that register.
+On MIPS, every call in a function with a `syscall` then lost its `a3` argument.
+`option syscallregs off` restores the vendored zero-effect `CALLOTHER`.
+
+Exercised by `tests/stages/kuna-syscallregs-arm.xml`, `-aarch64.xml`,
+`-riscv.xml`, `-mips.xml` and `-ppc.xml`, each with the pair or number witness
+under `on`, a use of the result after the call, a barrier `CALLOTHER` as the
+control, and a pass under the default `auto` that keeps the vendored model on a
+byte chunk. The ARM test adds a call whose result is discarded, a call followed
+by a use of the kept `r1`, and a call that writes `r1` but not `r0`; the RISC-V
+test adds a loop that passes `a1`/`a2` through and keeps scratch values in
+`a3`/`a4`, none of which takes an argument position.
+`tests/stages/kuna-syscallregs-cortexm.xml` is the bare-metal control: FreeRTOS's
+`xPortRaisePrivilege` keeps its returned `r0` under `auto` and `off`.
+`decompiler/crates/kuna-cli/tests/syscall_regs_cli.rs` loads the ARM witness as
+an object with and without a GNU ABI-tag note: the note turns the default on.
+
 **(kuna) Overlapping branch target — `option overlapbranch`, default on
 (DIV-106), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_overlapbranch.rs
 (kuna_overlaps_pending_branch)`.** A conditional branch pushes both successors and

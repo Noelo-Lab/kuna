@@ -142,6 +142,11 @@ kuna_options! { self, p1;
         self.x64_syscall = mode;
         Ok(msg)
     },
+    "syscallregs" => {
+        let (mode, msg) = crate::kuna_syscallregs::OptionSyscallRegs.apply(p1)?;
+        self.syscall_regs = mode;
+        Ok(msg)
+    },
     "pebnames" => {
         let (mode, msg) = crate::kuna_pebnames::OptionPebNames.apply(p1)?;
         self.peb_names = mode;

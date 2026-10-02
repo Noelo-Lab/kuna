@@ -1218,6 +1218,19 @@ classified:
   `mark_inactive` also sets CHECKED, so no later pass re-scores it and the
   argument's producer is reaped.
 
+  (kuna) A system call that `syscallregs` rewrote
+  (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_syscallregs.rs
+  (reads_as_argument)`) is treated as a call site, not as an op the value flows
+  through. The walk does not follow it to its output, because that output is the
+  kernel's result. When the trial is a RETURN's, a value the system call reads as
+  an argument is not exclusively a return value: the kernel preserves its
+  argument registers, so after `svc; mov r0,#7` the argument still in `r1`
+  reaches the RETURN, and the pair rule would join it. When the trial is
+  another call's, the system call's read does not count against it, so an
+  argument kept in `r1` across the `svc` stays the next call's second argument.
+  The cost is a function that really returns, as the high half of a 64-bit
+  value, a register it also handed to the kernel: that half is dropped.
+
   The blanket STORE rejection exists to stop a value the caller writes to its
   own frame before a call from being mistaken for an argument. It also rejects
   the mirror-image idiom. On x86-64 SysV **no** xmm register is callee-saved, so

@@ -12,6 +12,7 @@ use kuna_base::error::{KunaError, KunaResult};
 
 pub mod coff;
 pub mod elf;
+pub mod elf_userland;
 pub mod macho;
 pub mod pe;
 
