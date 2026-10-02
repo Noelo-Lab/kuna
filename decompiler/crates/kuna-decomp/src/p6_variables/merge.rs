@@ -772,8 +772,6 @@ pub fn compare_high_by_block(
     result < 0
 }
 
-/// C++ `Merge::compareCopyByInVarnode` (`merge.cc:1045-1057`): group COPYs by
-/// input `getCreateIndex()`, then defining block index, then `SeqNum::order`.
 /// The live COPYs of `copy` that `Merge::markRedundantCopies` marks: each one
 /// `check` holds for against some earlier live COPY of `copy`.  Marking does not
 /// change what `check` reads, so the marks can be collected first and set after.
@@ -799,6 +797,8 @@ pub fn redundant_in_order<C: MergeContext + ?Sized>(
     marked
 }
 
+/// C++ `Merge::compareCopyByInVarnode` (`merge.cc:1045-1057`): group COPYs by
+/// input `getCreateIndex()`, then defining block index, then `SeqNum::order`.
 pub fn compare_copy_by_in_varnode(ctx: &dyn MergeContext, op1: OpId, op2: OpId) -> bool {
     let in_vn1 = ctx.op_in(op1, 0).expect("compareCopyByInVarnode: op1 no in0");
     let in_vn2 = ctx.op_in(op2, 0).expect("compareCopyByInVarnode: op2 no in0");
