@@ -971,6 +971,20 @@ pub struct KunaQualityCounts {
     pub ifgoto_edges: int4,
 }
 
+/// The answers [`BlockGraph::dominates_memo`] has found for one dominator.  Valid
+/// only while the dominator tree is unchanged.
+pub struct DominatesMemo {
+    top: BlockId,
+    known: std::collections::BTreeMap<BlockId, bool>,
+}
+
+impl DominatesMemo {
+    /// No answers yet for dominator `top`.
+    pub fn new(top: BlockId) -> Self {
+        DominatesMemo { top, known: std::collections::BTreeMap::new() }
+    }
+}
+
 /// All edge-manipulation and the dominator/spanning-tree algorithms are methods
 /// on this struct so they can read/write across the arena.
 #[derive(Default)]
@@ -1615,6 +1629,38 @@ impl BlockGraph {
             sub_block = self.arena[sb].immed_dom;
         }
         false
+    }
+
+    /// [`Self::dominates`] of `memo`'s block over `sub_block`, keeping the answer
+    /// for every block the walk up the dominator tree passes, so a run of queries
+    /// against one dominator visits each block once.
+    pub fn dominates_memo(&self, memo: &mut DominatesMemo, sub_block: Option<BlockId>) -> bool {
+        let index = self.arena[memo.top].index;
+        let mut path = Vec::new();
+        let mut cur = sub_block;
+        let answer = loop {
+            let Some(sb) = cur else {
+                break false;
+            };
+            if let Some(&known) = memo.known.get(&sb) {
+                break known;
+            }
+            if index > self.arena[sb].index {
+                break false;
+            }
+            if sb == memo.top {
+                break true;
+            }
+            if path.len() > self.arena.len() {
+                break false;
+            }
+            path.push(sb);
+            cur = self.arena[sb].immed_dom;
+        };
+        for sb in path {
+            memo.known.insert(sb, answer);
+        }
+        answer
     }
 
     // ----------------------------------------------------------------------

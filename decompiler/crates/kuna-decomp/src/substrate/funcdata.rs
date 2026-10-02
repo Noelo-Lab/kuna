@@ -4007,7 +4007,7 @@ impl Funcdata {
         // collapses the cover to the def point and no intersection is ever found
         // (LOSS-229: the dynamic-hash firstuse COPY was never cover-trimmed).
         let mut single = Cover::new();
-        let ctx = FuncdataCoverCtx { fd: self };
+        let ctx = FuncdataCoverCtx::new(self);
         let (def, is_input) = ctx.def_point(vn);
         single.add_def_point(def, is_input);
         single.add_ref_point_for(&ctx, op, vn);
@@ -4025,7 +4025,7 @@ impl Funcdata {
     /// LOSS-229).
     pub(crate) fn build_copy_pair_range(&self, dom_op: OpId, sub_op: OpId) -> Cover {
         let mut range = Cover::new();
-        let ctx = FuncdataCoverCtx { fd: self };
+        let ctx = FuncdataCoverCtx::new(self);
         if let Some(dom_out) = self.obank.get(dom_op).and_then(|o| o.get_out()) {
             let (def, is_input) = ctx.def_point(dom_out);
             range.add_def_point(def, is_input);
@@ -4213,7 +4213,7 @@ impl Funcdata {
             let out_vn = self.obank.get(op).and_then(|o| o.get_out()).expect("build_dominant_copy: copy out");
             let mut a_cover = Cover::new();
             {
-                let ctx = FuncdataCoverCtx { fd: self };
+                let ctx = FuncdataCoverCtx::new(self);
                 let (def, is_input) = ctx.def_point(dom_vn);
                 a_cover.add_def_point(def, is_input);
                 let descend: Vec<OpId> =
@@ -4271,7 +4271,7 @@ impl Funcdata {
     /// live graph rather than relying on the cached (possibly dirty) one.
     fn full_varnode_cover(&self, vn: VarnodeId) -> Cover {
         let mut cover = Cover::new();
-        let ctx = FuncdataCoverCtx { fd: self };
+        let ctx = FuncdataCoverCtx::new(self);
         cover.rebuild(&ctx, vn);
         cover
     }
@@ -4324,7 +4324,7 @@ impl Funcdata {
         let cover0 = if v.has_cover() { v.cover().cloned() } else { None };
         if let Some(mut cover) = cover0 {
             {
-                let ctx = FuncdataCoverCtx { fd: self };
+                let ctx = FuncdataCoverCtx::new(self);
                 cover.rebuild(&ctx, vn);
             }
             self.vbank_mut()
@@ -4342,15 +4342,35 @@ impl Funcdata {
 /// Read-only graph view for the [`Cover`] def/use walk (the cross-arena reads
 /// `Cover::rebuild` makes off the held `Varnode *`/`PcodeOp *`/`FlowBlock *`).
 pub(crate) struct FuncdataCoverCtx<'a> {
-    // (kuna) `pub(crate)` so `kuna_paramcopyhoist` can build the hypothetical
-    // hoisted Cover off the same view `buildDominantCopy` uses.
-    pub(crate) fd: &'a Funcdata,
+    fd: &'a Funcdata,
+    by_index: std::cell::OnceCell<Vec<Option<BlockId>>>,
 }
 
 impl<'a> FuncdataCoverCtx<'a> {
-    /// Resolve a block *index* to its `BlockId` (the inverse of `getIndex()`).
+    pub(crate) fn new(fd: &'a Funcdata) -> Self {
+        FuncdataCoverCtx { fd, by_index: std::cell::OnceCell::new() }
+    }
+
+    /// Resolve a block *index* to its `BlockId` (the inverse of `getIndex()`):
+    /// the first block in list order with that index.  The table of first
+    /// blocks is built on the first call, so a walk over many blocks does not
+    /// rescan the block list at each one.
     fn block_id_of_index(&self, index: int4) -> BlockId {
         let n = self.fd.bblocks_get_size();
+        let table = self.by_index.get_or_init(|| {
+            let mut table = vec![None; n.max(0) as usize];
+            for i in 0..n {
+                let bid = self.fd.bblocks_get_block(i);
+                let at = self.fd.bblocks.block(bid).get_index();
+                if let Some(slot) = usize::try_from(at).ok().and_then(|at| table.get_mut(at)) {
+                    slot.get_or_insert(bid);
+                }
+            }
+            table
+        });
+        if let Some(&Some(bid)) = usize::try_from(index).ok().and_then(|at| table.get(at)) {
+            return bid;
+        }
         for i in 0..n {
             let bid = self.fd.bblocks_get_block(i);
             if self.fd.bblocks.block(bid).get_index() == index {

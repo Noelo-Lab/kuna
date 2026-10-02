@@ -32,7 +32,8 @@ use std::collections::BTreeSet;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
-use crate::context::{OpId, VarnodeId};
+use crate::block::DominatesMemo;
+use crate::context::{BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::varnode::Varnode;
 
@@ -206,29 +207,17 @@ fn old_value_read_after(data: &Funcdata, vn: VarnodeId, by_register: bool) -> bo
     let Some(v) = data.vbank().get(vn) else {
         return false;
     };
-    let Some(store) = v.get_def() else {
+    let Some(mut store) = v.get_def().and_then(|d| Store::new(data, d)) else {
         return false;
-    };
-    let after = |a: OpId, b: OpId| {
-        let (Some(x), Some(y)) = (data.obank().get(a), data.obank().get(b)) else {
-            return false;
-        };
-        match (x.get_parent(), y.get_parent()) {
-            (Some(p), Some(q)) if p == q => {
-                x.get_seq_num().get_order() < y.get_seq_num().get_order()
-            }
-            (Some(p), Some(q)) => data.bblocks_ref().dominates(p, Some(q)),
-            _ => false,
-        }
     };
     for w in data.vbank().iter_loc_size_addr(v.get_size(), v.get_addr()) {
         let Some(wv) = data.vbank().get(w) else {
             continue;
         };
-        if w == vn || wv.get_def().is_some_and(|d| d == store || after(store, d)) {
+        if w == vn || wv.get_def().is_some_and(|d| d == store.op || store.before(data, d)) {
             continue;
         }
-        if wv.descend_iter().any(|r| marks_after(data, store, r, w)) {
+        if wv.descend_iter().any(|r| marks_after(data, &mut store, r, w)) {
             return true;
         }
         if !by_register {
@@ -246,7 +235,7 @@ fn old_value_read_after(data: &Funcdata, vn: VarnodeId, by_register: bool) -> bo
             if rop.is_dead() || rop.is_marker() {
                 continue;
             }
-            if after(store, r) {
+            if store.before(data, r) {
                 return true;
             }
             if rop.code() == OpCode::CPUI_COPY {
@@ -263,17 +252,53 @@ fn old_value_read_after(data: &Funcdata, vn: VarnodeId, by_register: bool) -> bo
     false
 }
 
+/// The store [`old_value_read_after`] asks about, with the dominator-tree
+/// answers for its block kept across the global's instances.
+struct Store {
+    op: OpId,
+    order: u32,
+    block: Option<(BlockId, DominatesMemo)>,
+}
+
+impl Store {
+    fn new(data: &Funcdata, op: OpId) -> Option<Store> {
+        let o = data.obank().get(op)?;
+        let block = o.get_parent().map(|b| (b, DominatesMemo::new(b)));
+        Some(Store { op, order: o.get_seq_num().get_order(), block })
+    }
+
+    /// Does the store come before `op`: earlier in its block, or in a block
+    /// that dominates `op`'s?
+    fn before(&mut self, data: &Funcdata, op: OpId) -> bool {
+        let Some((o, q)) = data.obank().get(op).and_then(|o| Some((o, o.get_parent()?))) else {
+            return false;
+        };
+        match &self.block {
+            Some((b, _)) if *b == q => self.order < o.get_seq_num().get_order(),
+            Some(_) => self.dominates(data, q),
+            None => false,
+        }
+    }
+
+    /// Does the store's block dominate `bl`?
+    fn dominates(&mut self, data: &Funcdata, bl: BlockId) -> bool {
+        self.block
+            .as_mut()
+            .is_some_and(|(_, memo)| data.bblocks_ref().dominates_memo(memo, Some(bl)))
+    }
+}
+
 /// Does `r`, a marker of the global, carry `w`, a value of the global from
 /// before `store`, past `store`: a `MULTIEQUAL` reading it on an edge from a
 /// block that `store` dominates, or an `INDIRECT` after `store`?  Heritage never
 /// builds that; it is left behind when a pointer `STORE` turns into the
 /// global's `COPY` after the global's heritage, and the joins still read the
 /// value from before it.
-fn marks_after(data: &Funcdata, store: OpId, r: OpId, w: VarnodeId) -> bool {
-    let (Some(rop), Some(sop)) = (data.obank().get(r), data.obank().get(store)) else {
+fn marks_after(data: &Funcdata, store: &mut Store, r: OpId, w: VarnodeId) -> bool {
+    let Some(rop) = data.obank().get(r) else {
         return false;
     };
-    let (Some(rb), Some(sb)) = (rop.get_parent(), sop.get_parent()) else {
+    let (Some(rb), Some(sb)) = (rop.get_parent(), store.block.as_ref().map(|(b, _)| *b)) else {
         return false;
     };
     if rop.is_dead() {
@@ -282,15 +307,14 @@ fn marks_after(data: &Funcdata, store: OpId, r: OpId, w: VarnodeId) -> bool {
     match rop.code() {
         OpCode::CPUI_MULTIEQUAL => {
             let b = data.bblocks_ref().block(rb);
-            (0..rop.num_input().min(b.size_in())).any(|i| {
-                rop.get_in(i) == Some(w) && data.bblocks_ref().dominates(sb, Some(b.get_in(i)))
-            })
+            (0..rop.num_input().min(b.size_in()))
+                .any(|i| rop.get_in(i) == Some(w) && store.dominates(data, b.get_in(i)))
         }
         OpCode::CPUI_INDIRECT if rop.get_in(0) == Some(w) => {
             if rb == sb {
-                sop.get_seq_num().get_order() < rop.get_seq_num().get_order()
+                store.order < rop.get_seq_num().get_order()
             } else {
-                data.bblocks_ref().dominates(sb, Some(rb))
+                store.dominates(data, rb)
             }
         }
         _ => false,
