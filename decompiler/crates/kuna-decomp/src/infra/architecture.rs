@@ -1474,6 +1474,9 @@ pub struct Architecture {
     /// flow where the walk's own `blx` writes left the other mode (`flowmode`);
     /// default **on**. Off leaves the context database as the walk left it.
     pub analysis_flowmode: bool,
+    /// (kuna) `flowmode aftercall`: the proof also continues after an
+    /// unconditional call whose callee it proves to return; default **off**.
+    pub analysis_flowmode_aftercall: bool,
     /// (kuna) Fold a 32-bit PIC binary's base register into the cross-reference
     /// index (`picbase`); default **on**. In position-independent i386 code the
     /// address of a string, a global or a function pointer is never a constant in
@@ -2635,6 +2638,7 @@ impl Architecture {
             analysis_unmappedentry: false,
             analysis_ppclocalentry: false,
             analysis_flowmode: false,
+            analysis_flowmode_aftercall: false,
             analysis_picbase: false,
             analysis_entrymainproto: false,
             analysis_machomain: false,
@@ -2963,6 +2967,7 @@ impl Architecture {
         // (kuna) ARM flow-proven decode-mode paints -- default-ON (they only paint
         // proven code whose mode the walk left wrong; GH-780).
         self.analysis_flowmode = true;
+        self.analysis_flowmode_aftercall = false;
         // (kuna) PIC base-register folding in the xref index -- default-ON. It is
         // a query surface only (no p-code, no emitted C), so no parity gate can
         // observe it; it only ever ADDS an edge, and only one it can prove.

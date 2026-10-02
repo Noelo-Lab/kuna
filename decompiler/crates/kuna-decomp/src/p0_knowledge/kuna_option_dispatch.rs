@@ -712,7 +712,28 @@ kuna_options! { self, p1;
     "ppclocalentry" => {
         on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
     },
-    "flowmode" => on_off!(analysis_flowmode, "ARM flow-proven decode-mode paints"),
+    "flowmode" => {
+        let (on, after_call) = match p1.trim().to_ascii_lowercase().as_str() {
+            "on" | "1" | "true" => (true, false),
+            "aftercall" => (true, true),
+            "off" | "0" | "false" => (false, false),
+            other => {
+                return Err(KunaError::lowlevel(format!(
+                    "flowmode: expected `on`, `aftercall` or `off`, got `{other}`"
+                )))
+            }
+        };
+        self.analysis_flowmode = on;
+        self.analysis_flowmode_aftercall = after_call;
+        Ok(format!(
+            "ARM flow-proven decode-mode paints turned {}",
+            match (on, after_call) {
+                (false, _) => "off",
+                (true, false) => "on",
+                (true, true) => "on, past calls proven to return",
+            }
+        ))
+    },
     "picbase" => {
         on_off!(analysis_picbase, "PIC base-register folding in the xref index")
     },

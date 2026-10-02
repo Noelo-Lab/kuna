@@ -3730,7 +3730,8 @@ a refusal cannot omit it from the documentation checks. A compatibility test
 pins the existing order and spellings; the scheduling and fallback policies do
 not depend on this representation.
 
-(kuna) **Flow-proven ARM decode-mode paints** (`flowmode`, default on;
+(kuna) **Flow-proven ARM decode-mode paints** (`flowmode`, values `on`,
+`aftercall` and `off`, default `on`;
 `decompiler/crates/kuna-analysis/src/listing/kuna_flowmode.rs (disagreeing_runs)`).
 ARM `TMode` chooses the instruction set an address decodes in, and the
 `ContextDatabase` stores it per address. An interworking call (`blx imm`) runs a
@@ -3744,28 +3745,47 @@ with a Thumb decode starting at `0x2000082`.
 The walk itself is not changed: its instructions, functions and references, and
 every context write it makes, stay as they are. After it, kuna decodes again the
 code whose mode the image proves, with the decode mode forced through a context
-read override (`Translate::set_context_read_override`) and `TMode` writes masked,
-so the database is not touched. Proof starts at an even `e_entry` and at every
-even function symbol, which the ELF for the ARM architecture makes A32. From
-proven code it carries the mode the way the processor does: a branch target and
-a fall-through keep it; a direct call target takes the mode the call commits
-there (read back from `Translate::last_context_commits`, so `blx imm` switches)
-or else keeps the caller's (`bl`). The instruction after an unconditional call is
-proven only once the callee is proven to return, which means a return instruction
-is reachable from its entry through proven code; a callee that is an import stub,
-a computed target, or a function that never returns leaves what follows the call
-unproven, since those bytes may be a literal pool or the next function in the
-other mode. Each function's own reachability is computed separately and the
-whole is a least fixpoint, so the result does not depend on visiting order.
+read override (`Translate::set_context_read_override`) and every context word's
+writes masked, so these decodes leave the database exactly as the walk left it:
+neither `TMode` nor the IT-block condition (`condit`) nor `LRset` is written.
+An instruction inside an IT block therefore decodes with the condition the
+walk's own decode stored at its address, if any. Proof starts at an even `e_entry` and at every even function symbol,
+which the ELF for the ARM architecture makes A32. From proven code it carries
+the mode the way the processor does: a branch target keeps it (no direct
+branch changes the instruction set), and so does the fall-through of every
+instruction other than an unconditional call; a direct call target takes the
+mode the call commits there (read back from `Translate::last_context_commits`,
+so `blx imm` switches) or else keeps the caller's (`bl`).
 
-Every proven instruction whose mode the database disagrees with after the walk is
+The instruction after an unconditional call is not proven by the call. A
+callee that can return does not show that this call returns: a compiler emits
+nothing after `report_bad(x); __builtin_unreachable();`, after a call through a
+`noreturn` alias of a function that can return, or after a `longjmp`-style
+helper, so the bytes there are the next function, possibly in the other mode,
+or a literal pool. With `aftercall`, the instruction after an unconditional
+call is proven once the callee is proven to return, which means a return
+instruction is reachable from its entry through proven code, computed as a
+least fixpoint over each function's own reachability. That proves the A32
+helper of the example above, called after a Thumb helper that returns, but it
+also proves, and paints in the caller's mode, the next function after a call
+that never returns at its site, so it is not the default.
+
+A function is complete when the proof followed every unconditional call it
+makes to the instruction after it, which by default means it makes none. Only
+the instructions of complete functions are candidates for painting: a function
+is either decoded entirely in its proven mode or exactly as the walk left it.
+Every such instruction whose mode the database disagrees with after the walk is
 handed to the analysis commit (`Listing::decode_mode_paints`, emitted by
 `passes.rs (run_listing_consumers)` as the `flowmode` output), which paints it
 with its proven mode after every other decode-mode paint. Nothing else is
 painted, and the function inventory is the walk's. When two proven paths give
 one address different modes, when proven instructions of different modes
 overlap, or when a proven instruction fails to decode where the database holds
-the other mode, the proof is not trusted and nothing is painted at all.
+the other mode, the proof is not trusted and nothing is painted at all. By
+default this fixes an A32 function that makes no unconditional call, reached
+from an even entry or function symbol before any call, such as the helper of
+`entry: bl arm_helper; blx thumb_helper`, and leaves the order of the example
+above, and any function that calls, as the walk decodes it.
 
 The pass runs only on a linked ARM ELF whose metadata paints no `TMode` at all:
 no mapping symbol, no odd (Thumb) function symbol, no Cortex-M vector table, and

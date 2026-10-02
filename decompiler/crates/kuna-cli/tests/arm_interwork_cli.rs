@@ -1,7 +1,8 @@
 //! ARM/Thumb interworking: a `blx` selects Thumb for its own target only, a `bl`
 //! keeps its caller's mode, and neither leaks into the other helper (GH-780,
-//! option `flowmode`). Images outside the option's scope keep what the walk
-//! alone gives them.
+//! option `flowmode`). By default nothing after an unconditional call is
+//! proven; `flowmode aftercall` continues past a call whose callee returns.
+//! Images outside the option's scope keep what the walk alone gives them.
 
 #[path = "common/arm_images.rs"]
 #[allow(dead_code)]
@@ -118,30 +119,22 @@ fn kuna(args: &[&str]) -> String {
     text
 }
 
-fn decompile(path: &PathBuf, addr: u64, mode: &str) -> String {
+fn decompile_with(path: &PathBuf, addr: u64, extra: &[&str]) -> String {
     let addr = format!("{addr:#x}");
-    kuna(&[
-        "decompile",
-        path.to_str().unwrap(),
-        &addr,
-        "--mode",
-        mode,
-        "--json",
-    ])
+    let mut args = vec!["decompile", path.to_str().unwrap(), &addr, "--json"];
+    args.extend_from_slice(extra);
+    kuna(&args)
+}
+
+fn decompile(path: &PathBuf, addr: u64, mode: &str) -> String {
+    decompile_with(path, addr, &["--mode", mode])
 }
 
 fn decompile_off(path: &PathBuf, addr: u64) -> String {
-    let addr = format!("{addr:#x}");
-    kuna(&[
-        "decompile",
-        path.to_str().unwrap(),
-        &addr,
-        "--json",
-        "--option",
-        "flowmode",
-        "off",
-    ])
+    decompile_with(path, addr, &["--option", "flowmode", "off"])
 }
+
+const AFTERCALL: [&str; 3] = ["--option", "flowmode", "aftercall"];
 
 /// The body `decompile-all` printed for `name`.
 fn body(all: &str, name: &str) -> String {
@@ -155,46 +148,71 @@ fn body(all: &str, name: &str) -> String {
 /// A32 `b .`, a function that never returns.
 const SPIN: u32 = 0xEAFF_FFFE;
 
-fn assert_helpers(path: &PathBuf, mode: &str) {
-    let arm = decompile(path, ARM_HELPER, mode);
+fn assert_helpers(path: &PathBuf, extra: &[&str]) {
+    let arm = decompile_with(path, ARM_HELPER, extra);
     assert!(
         arm.contains("return a0 + 1;"),
-        "{mode}: the A32 helper lost its mode: {arm}"
+        "{extra:?}: the A32 helper lost its mode: {arm}"
     );
-    assert!(!arm.contains("halt_"), "{mode}: {arm}");
-    let thumb = decompile(path, THUMB_HELPER, mode);
+    assert!(!arm.contains("halt_"), "{extra:?}: {arm}");
+    let thumb = decompile_with(path, THUMB_HELPER, extra);
     assert!(
         thumb.contains("return 7;"),
-        "{mode}: the Thumb helper lost its mode: {thumb}"
+        "{extra:?}: the Thumb helper lost its mode: {thumb}"
     );
 }
 
+/// `entry: bl arm_helper; blx thumb_helper; pop {pc}`: the `bl` is the
+/// entry's first call, so its target is proven A32 by default.
 #[test]
-fn a_blx_target_mode_does_not_reach_the_arm_callee_after_it() {
-    for (stem, code) in [("blx-bl", blx_then_bl()), ("bl-blx", bl_then_blx())] {
-        let path = stripped(stem, &code);
-        for mode in ["reliable", "auto"] {
-            assert_helpers(&path, mode);
-        }
-        let off = decompile_off(&path, ARM_HELPER);
-        assert!(off.contains("halt_missing"), "flowmode off: {off}");
-        std::fs::remove_file(path).unwrap();
+fn a_blx_target_mode_does_not_reach_the_arm_callee_of_an_earlier_bl() {
+    let path = stripped("bl-blx", &bl_then_blx());
+    for mode in ["reliable", "auto"] {
+        assert_helpers(&path, &["--mode", mode]);
     }
+    let off = decompile_off(&path, ARM_HELPER);
+    assert!(off.contains("halt_missing"), "flowmode off: {off}");
+    std::fs::remove_file(path).unwrap();
+}
+
+/// `entry: blx thumb_helper; bl arm_helper; pop {pc}` (GH-780): the `bl`
+/// follows a call, so by default nothing proves it runs and every function
+/// prints what the walk alone gives it; `aftercall` proves it once the Thumb
+/// helper is proven to return.
+#[test]
+fn a_bl_after_a_returning_blx_is_proven_only_under_aftercall() {
+    let path = stripped("blx-bl", &blx_then_bl());
+    for addr in [0x10000, THUMB_HELPER, ARM_HELPER] {
+        assert_eq!(decompile_with(&path, addr, &[]), decompile_off(&path, addr));
+    }
+    assert!(decompile_off(&path, ARM_HELPER).contains("halt_missing"));
+    assert_helpers(&path, &AFTERCALL);
+    std::fs::remove_file(path).unwrap();
 }
 
 /// `entry: bl f1; bl arm_helper; pop {pc}` where `f1: push {lr}; blx
-/// thumb_helper; pop {pc}`: the second call is proven only once `f1` is
-/// proven to return, which needs `thumb_helper` proven to return first.
+/// thumb_helper; pop {pc}`: under `aftercall` the second call is proven only
+/// once `f1` is proven to return, which needs `thumb_helper` proven to return
+/// first.
 #[test]
 fn a_call_proven_to_return_carries_the_mode_on_to_the_next_call() {
-    let mut code = text(&[PUSH_LR, bl(0x10004, 0x10020), bl(0x10008, ARM_HELPER), POP_PC]);
-    for (i, word) in [PUSH_LR, blx(0x10024, THUMB_HELPER), POP_PC].iter().enumerate() {
+    let mut code = text(&[
+        PUSH_LR,
+        bl(0x10004, 0x10020),
+        bl(0x10008, ARM_HELPER),
+        POP_PC,
+    ]);
+    for (i, word) in [PUSH_LR, blx(0x10024, THUMB_HELPER), POP_PC]
+        .iter()
+        .enumerate()
+    {
         code[0x20 + i * 4..0x24 + i * 4].copy_from_slice(&word.to_le_bytes());
     }
     let path = stripped("returns-chain", &code);
-    assert_helpers(&path, "reliable");
+    assert_helpers(&path, &AFTERCALL);
     let off = decompile_off(&path, ARM_HELPER);
     assert!(off.contains("halt_missing"), "flowmode off: {off}");
+    assert_eq!(decompile_with(&path, ARM_HELPER, &[]), off);
     std::fs::remove_file(path).unwrap();
 }
 
@@ -202,28 +220,39 @@ fn a_call_proven_to_return_carries_the_mode_on_to_the_next_call() {
 /// `arm_last` at 0x10050, inside the Thumb the `blx` writes from 0x10040,
 /// ends in a call to `spin` (`b .`) that never returns, and the Thumb
 /// `movs r0,#9; bx lr` that follows it at 0x10058 is reached by nothing the
-/// walk follows. `arm_last` is painted A32; the bytes after the call are not
-/// proven and keep the walk's Thumb.
+/// walk follows. The bytes after the call are not proven in either mode, so
+/// they keep the walk's Thumb; nor is `arm_last`, whose call is never shown
+/// to return, so it prints what the walk gives it.
 #[test]
 fn the_instruction_after_a_call_that_never_returns_is_not_proven() {
-    let mut code = text(&[PUSH_LR, blx(0x10004, THUMB_HELPER), bl(0x10008, 0x10050), POP_PC]);
+    let mut code = text(&[
+        PUSH_LR,
+        blx(0x10004, THUMB_HELPER),
+        bl(0x10008, 0x10050),
+        POP_PC,
+    ]);
     code[0x10..0x14].copy_from_slice(&SPIN.to_le_bytes());
     for (i, word) in [PUSH_LR, bl(0x10054, 0x10010)].iter().enumerate() {
         code[0x50 + i * 4..0x54 + i * 4].copy_from_slice(&word.to_le_bytes());
     }
     code[0x58..0x5c].copy_from_slice(&[0x09, 0x20, 0x70, 0x47]);
     let path = stripped("noreturn", &code);
-    let after = decompile(&path, 0x10058, "reliable");
+    let after = decompile_off(&path, 0x10058);
     assert!(after.contains("return 9;"), "{after}");
-    assert_eq!(after, decompile_off(&path, 0x10058));
-    let arm_last = decompile(&path, 0x10050, "reliable");
-    assert!(arm_last.contains("sub_10010()"), "{arm_last}");
+    for extra in [&[][..], &AFTERCALL[..]] {
+        assert_eq!(decompile_with(&path, 0x10058, extra), after, "{extra:?}");
+        assert_eq!(
+            decompile_with(&path, 0x10050, extra),
+            decompile_off(&path, 0x10050),
+            "{extra:?}"
+        );
+    }
     std::fs::remove_file(path).unwrap();
 }
 
-/// `entry: blx helper; bl helper; pop {pc}`: two proofs give one address
-/// different modes, so nothing is painted and every function prints what the
-/// walk alone gives it.
+/// `entry: blx helper; bl helper; pop {pc}`: under `aftercall` two proofs
+/// give one address different modes, so nothing is painted and every
+/// function prints what the walk alone gives it, as it does by default.
 #[test]
 fn two_proven_modes_for_one_address_paint_nothing() {
     let code = text(&[
@@ -235,42 +264,52 @@ fn two_proven_modes_for_one_address_paint_nothing() {
     ]);
     let path = stripped("conflict", &code);
     for addr in [0x10000, THUMB_HELPER, ARM_HELPER] {
-        assert_eq!(decompile(&path, addr, "auto"), {
-            let addr = format!("{addr:#x}");
-            kuna(&[
-                "decompile",
-                path.to_str().unwrap(),
-                &addr,
-                "--mode",
-                "auto",
-                "--json",
-                "--option",
-                "flowmode",
-                "off",
-            ])
-        });
+        let off = decompile_with(
+            &path,
+            addr,
+            &["--mode", "auto", "--option", "flowmode", "off"],
+        );
+        for extra in [
+            &["--mode", "auto"][..],
+            &["--mode", "auto", "--option", "flowmode", "aftercall"],
+        ] {
+            assert_eq!(decompile_with(&path, addr, extra), off, "{extra:?}");
+        }
     }
     std::fs::remove_file(path).unwrap();
 }
 
 #[test]
 fn whole_binary_decompile_keeps_each_callee_in_its_own_mode() {
-    let path = stripped("blx-bl-all", &blx_then_bl());
-    let all = kuna(&["decompile-all", path.to_str().unwrap()]);
-    assert!(body(&all, "sub_10040").contains("return 7;"), "{all}");
-    assert!(body(&all, "sub_10080").contains("return a0 + 1;"), "{all}");
-    let entry = body(&all, "sub_10000");
-    assert!(
-        entry.contains("sub_10040()") && entry.contains("sub_10080("),
-        "{all}"
-    );
-    std::fs::remove_file(path).unwrap();
+    for (stem, code, extra) in [
+        ("bl-blx-all", bl_then_blx(), &[][..]),
+        ("blx-bl-all", blx_then_bl(), &AFTERCALL[..]),
+    ] {
+        let path = stripped(stem, &code);
+        let mut args = vec!["decompile-all", path.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        let all = kuna(&args);
+        assert!(
+            body(&all, "sub_10040").contains("return 7;"),
+            "{stem}: {all}"
+        );
+        assert!(
+            body(&all, "sub_10080").contains("return a0 + 1;"),
+            "{stem}: {all}"
+        );
+        let entry = body(&all, "sub_10000");
+        assert!(
+            entry.contains("sub_10040()") && entry.contains("sub_10080("),
+            "{stem}: {all}"
+        );
+        std::fs::remove_file(path).unwrap();
+    }
 }
 
 #[test]
 fn mapping_symbols_still_select_each_mode() {
     let path = marked("blx-bl-marked", &blx_then_bl());
-    assert_helpers(&path, "reliable");
+    assert_helpers(&path, &["--mode", "reliable"]);
     let entry = decompile(&path, 0x10000, "reliable");
     assert!(entry.contains("arm_helper(thumb_helper())"), "{entry}");
     std::fs::remove_file(path).unwrap();
@@ -284,7 +323,7 @@ fn a_register_interworking_call_leaves_the_arm_callee_alone() {
     std::fs::remove_file(path).unwrap();
 
     let path = marked("blx-r3-marked", &register_blx_then_bl());
-    assert_helpers(&path, "reliable");
+    assert_helpers(&path, &["--mode", "reliable"]);
     std::fs::remove_file(path).unwrap();
 }
 
@@ -301,7 +340,7 @@ fn thumb_entry_elf(stem: &str, code: &[u8], functions: &[(u64, &str, u64)]) -> P
 #[test]
 fn a_named_thumb_entry_keeps_its_blx_target_arm() {
     let path = thumb_entry_elf("thumb-entry", &thumb_entry(), &[(1, "entry", 12)]);
-    assert_helpers(&path, "reliable");
+    assert_helpers(&path, &["--mode", "reliable"]);
     let entry = decompile(&path, 0x10000, "reliable");
     assert!(entry.contains("sub_10080("), "{entry}");
     assert!(entry.contains("sub_10040()"), "{entry}");
@@ -363,19 +402,39 @@ fn fixture(name: &str) -> PathBuf {
 
 /// Stripped armel shared objects (`arm_interwork_stubs_le32.c`) whose every
 /// export has an even address (the Thumb ones are A32 linker stubs), so no
-/// symbol paints Thumb: the A32 `arm_export` is proven by its own symbol and
-/// keeps A32 over the Thumb a `blx` below it writes, and the Thumb
-/// `t_ptr_only`, reached only through a pointer table, keeps the walk's Thumb.
+/// symbol paints Thumb: the A32 `arm_export`, which calls three functions, is
+/// proven by its own symbol only under `aftercall`, where it keeps A32 over
+/// the Thumb a `blx` below it writes, and the Thumb `t_ptr_only`, reached
+/// only through a pointer table, keeps the walk's Thumb.
 #[test]
 fn arm_exports_are_proven_and_pointer_only_thumb_keeps_its_mode() {
     let path = fixture("arm_interwork_stubs_o0_le32");
     let lib = path.to_str().unwrap();
-    let arm = kuna(&["decompile", lib, "arm_export"]);
+    let arm = kuna(&[
+        "decompile",
+        lib,
+        "arm_export",
+        "--option",
+        "flowmode",
+        "aftercall",
+    ]);
     assert!(arm.contains("return v1 + v2 + sub_294(a0);"), "{arm}");
-    let off = kuna(&["decompile", lib, "arm_export", "--option", "flowmode", "off"]);
+    let off = kuna(&[
+        "decompile",
+        lib,
+        "arm_export",
+        "--option",
+        "flowmode",
+        "off",
+    ]);
     assert!(off.contains("halt_missing"), "flowmode off: {off}");
+    assert_eq!(kuna(&["decompile", lib, "arm_export"]), off);
     for (name, pointer_only, ternary) in [
-        ("arm_interwork_stubs_o0_le32", "0x398", "(0xb <= a0) ? a0 + -10 : a0 << 1"),
+        (
+            "arm_interwork_stubs_o0_le32",
+            "0x398",
+            "(0xb <= a0) ? a0 + -10 : a0 << 1",
+        ),
         ("arm_interwork_stubs_o2_le32", "0x304", "v1 = a0 + -10;"),
     ] {
         let path = fixture(name);
@@ -391,8 +450,16 @@ fn arm_exports_are_proven_and_pointer_only_thumb_keeps_its_mode() {
 #[test]
 fn static_thumb_functions_after_an_arm_export_keep_their_mode() {
     for (name, ternary, popcount) in [
-        ("arm_static_thumb_so_o0_le32", "0x280", ("0x2a2", "v2 = (v1 & 1) + v2;")),
-        ("arm_static_thumb_so_o2_le32", "0x234", ("0x240", "v1 += v2;")),
+        (
+            "arm_static_thumb_so_o0_le32",
+            "0x280",
+            ("0x2a2", "v2 = (v1 & 1) + v2;"),
+        ),
+        (
+            "arm_static_thumb_so_o2_le32",
+            "0x234",
+            ("0x240", "v1 += v2;"),
+        ),
     ] {
         let path = fixture(name);
         let lib = path.to_str().unwrap();
@@ -444,7 +511,10 @@ fn a_call_that_never_returns_leaves_the_next_function_in_its_own_mode() {
         assert!(alone.contains("v1 += v2 ^ 5;"), "{name}: {alone}");
         let all = kuna(&["decompile-all", lib]);
         let named = format!("sub_{}", &addr[2..]);
-        assert!(body(&all, &named).contains("v1 += v2 ^ 5;"), "{name}: {all}");
+        assert!(
+            body(&all, &named).contains("v1 += v2 ^ 5;"),
+            "{name}: {all}"
+        );
     }
 }
 
@@ -459,4 +529,20 @@ fn static_thumb_functions_after_an_unsized_arm_export_keep_their_mode() {
     assert!(body(&all, "sub_410").contains("v1 += v2 ^ 5;"), "{all}");
     assert!(body(&all, "sub_430").contains("a0 >>= 1"), "{all}");
     assert!(!body(&all, "sub_430").contains("halt_"), "{all}");
+}
+
+/// A stripped armel shared object (`arm_noreturn_site_le32.c`) where the A32
+/// `a_last` calls `report_bad`, which returns, and then
+/// `__builtin_unreachable()`, so nothing follows the call, and the Thumb `u`
+/// at 0x524 comes next. `u` keeps its Thumb decode, alone and in the
+/// whole-binary run.
+#[test]
+fn a_call_that_returns_elsewhere_but_not_at_its_site_leaves_the_next_function_alone() {
+    let path = fixture("arm_noreturn_site_le32");
+    let lib = path.to_str().unwrap();
+    let expected = "return (a0 * 8 - ((int)a1 >> 1)) + (a0 & a1);";
+    let alone = kuna(&["decompile", lib, "0x524", "--addr"]);
+    assert!(alone.contains(expected), "{alone}");
+    let all = kuna(&["decompile-all", lib]);
+    assert!(body(&all, "sub_524").contains(expected), "{all}");
 }

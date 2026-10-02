@@ -11,23 +11,32 @@
 //! Thumb, whatever calls it.
 //!
 //! The plain walk runs unchanged and its result is kept as it is. Afterwards,
-//! this pass decodes again, without writing the mode into the database, the
-//! code the image proves the mode of, and reports every instruction of that
-//! code whose mode the database disagrees with. The analysis commit paints
-//! those instructions, and nothing else, after every other decode-mode paint.
+//! this pass decodes again the code the image proves the mode of, with every
+//! context write masked so the database is not touched, and reports the
+//! instructions of completely proven functions whose mode the database
+//! disagrees with. The analysis commit paints those instructions, and nothing
+//! else, after every other decode-mode paint.
 //!
 //! Proof starts at an even `e_entry` and at each even function symbol, all
 //! A32 by the ELF for the ARM architecture. From proven code it carries on
 //! where the instruction set decides the mode:
 //!
-//! * a branch target and a fall-through keep the mode;
+//! * a branch target, and the fall-through of anything but an unconditional
+//!   call, keep the mode;
 //! * a direct call target takes the mode the call commits there (`blx imm`
 //!   switches) or else keeps the caller's (`bl`);
-//! * the instruction after an unconditional call is proven only once the
-//!   callee is proven to return: some return instruction is reachable from its
-//!   entry through proven code. A call whose callee never returns, or that
-//!   reaches an import or a computed target, is not followed, because the
-//!   bytes after it may be a literal pool or another function.
+//! * the instruction after an unconditional call is not proven by that call:
+//!   a call can fail to return at its site even when its callee returns
+//!   elsewhere (`f(); __builtin_unreachable();`, a `noreturn` alias of a
+//!   function that can return), and the bytes after it are then the next
+//!   function, possibly in the other mode, or a literal pool. `flowmode
+//!   aftercall` proves them anyway once the callee is proven to return: some
+//!   return instruction is reachable from its entry through proven code.
+//!
+//! A function is complete when the proof followed every unconditional call it
+//! makes to the instruction after it, which by default means it makes none.
+//! Only complete functions are painted, so a function is either decoded as
+//! the walk left it or entirely in its proven mode.
 //!
 //! The result does not depend on visiting order. Proof is a least fixpoint,
 //! and when two proven paths give one address different modes, or two proven
@@ -63,6 +72,8 @@ pub(super) struct FlowMode {
     word: usize,
     shift: u32,
     mask: u32,
+    words: usize,
+    after_call: bool,
     seeds: Vec<u64>,
 }
 
@@ -101,11 +112,15 @@ impl FlowMode {
         if seeds.is_empty() {
             return None;
         }
-        let range = arch.with_context_db_mut(|db| db.get_variable(TMODE)).ok()?;
+        let (range, words) =
+            arch.with_context_db_mut(|db| (db.get_variable(TMODE), db.get_context_size()));
+        let range = range.ok()?;
         Some(FlowMode {
             word: usize::try_from(range.get_word()).ok()?,
             shift: u32::try_from(range.get_shift()).ok()?,
             mask: range.get_mask(),
+            words: usize::try_from(words).ok()?,
+            after_call: arch.analysis_flowmode_aftercall,
             seeds,
         })
     }
@@ -166,25 +181,27 @@ impl FlowMode {
 }
 
 /// While alive, every decode reads the mode last [`set`](DecodeMode::set)
-/// whatever the database holds, and no decode writes the mode into it.
+/// whatever the database holds, and no decode writes any context into it.
 struct DecodeMode<'a> {
     translate: &'a dyn Translate,
     mode: &'a FlowMode,
     current: Option<u32>,
     saved_read: (u32, u32),
-    saved_write: u32,
+    saved_writes: Vec<u32>,
 }
 
 impl<'a> DecodeMode<'a> {
     fn new(translate: &'a dyn Translate, mode: &'a FlowMode) -> Self {
-        let saved_write = translate.set_context_write_mask(mode.word, !mode.bits());
+        let saved_writes = (0..mode.words)
+            .map(|word| translate.set_context_write_mask(word, 0))
+            .collect();
         let saved_read = translate.set_context_read_override(mode.word, 0, 0);
         DecodeMode {
             translate,
             mode,
             current: None,
             saved_read,
-            saved_write,
+            saved_writes,
         }
     }
 
@@ -202,10 +219,14 @@ impl<'a> DecodeMode<'a> {
 
 impl Drop for DecodeMode<'_> {
     fn drop(&mut self) {
-        self.translate
-            .set_context_read_override(self.mode.word, self.saved_read.0, self.saved_read.1);
-        self.translate
-            .set_context_write_mask(self.mode.word, self.saved_write);
+        self.translate.set_context_read_override(
+            self.mode.word,
+            self.saved_read.0,
+            self.saved_read.1,
+        );
+        for (word, &mask) in self.saved_writes.iter().enumerate() {
+            self.translate.set_context_write_mask(word, mask);
+        }
     }
 }
 
@@ -286,7 +307,9 @@ impl Proof<'_, '_> {
             let held = self.mode.value_at(self.arch, self.ctx.code_space, at);
             return (held == mode).then_some(false);
         };
-        let commits = self.mode.committed(&self.ctx.translate.last_context_commits());
+        let commits = self
+            .mode
+            .committed(&self.ctx.translate.last_context_commits());
         let class = classify(&decoded.ops, at, decoded.len);
         let mode_at = |target: u64| {
             commits
@@ -350,6 +373,9 @@ impl Proof<'_, '_> {
             self.work.push((entry, next));
             return Some(());
         }
+        if !self.mode.after_call {
+            return Some(());
+        }
         if let [(callee, _)] = calls[..] {
             match self.entries.get(&callee) {
                 Some(known) if known.returns => self.work.push((entry, next)),
@@ -358,6 +384,17 @@ impl Proof<'_, '_> {
             }
         }
         Some(())
+    }
+
+    /// Whether every instruction the function at `entry` can run is proven:
+    /// the walk followed each unconditional call's fall-through.
+    fn complete(&self, entry: &Entry) -> bool {
+        entry.visited.iter().all(|at| match self.decoded.get(at) {
+            Some(insn) if insn.after_call => insn
+                .fall_through
+                .is_none_or(|next| entry.visited.contains(&next)),
+            _ => true,
+        })
     }
 
     /// Run to the fixpoint; `None` when two proofs disagree.
@@ -385,8 +422,9 @@ impl Proof<'_, '_> {
     }
 }
 
-/// The `(start, end, mode)` runs of proven code whose mode the database does
-/// not hold after the walk; empty when there is none, or when proofs disagree.
+/// The `(start, end, mode)` runs of the code of completely proven functions
+/// whose mode the database does not hold after the walk; empty when there is
+/// none, or when proofs disagree.
 pub(super) fn disagreeing_runs(
     ctx: &StepCtx<'_>,
     arch: &Architecture,
@@ -408,7 +446,14 @@ pub(super) fn disagreeing_runs(
     if proof.run().is_none() {
         return Vec::new();
     }
-    mode_runs(proof.decoded.iter().filter_map(|(&at, insn)| {
+    let complete: BTreeSet<u64> = proof
+        .entries
+        .values()
+        .filter(|entry| proof.complete(entry))
+        .flat_map(|entry| entry.visited.iter().copied())
+        .collect();
+    mode_runs(complete.into_iter().filter_map(|at| {
+        let insn = proof.decoded.get(&at)?;
         (mode.value_at(arch, space, at) != insn.mode)
             .then(|| (at, at.saturating_add(u64::from(insn.len)), insn.mode))
     }))

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Generate `arm_interwork_le32` - a stripped ARM32 ELF whose A32 entry calls a
-Thumb helper with `blx` and then an A32 helper with `bl` (GH-780).
+"""Generate `arm_interwork_le32` and `arm_interwork_bl_first_le32`: stripped
+ARM32 ELFs whose A32 entry calls a Thumb helper with `blx` and an A32 helper
+with `bl` (GH-780), in that order and in the reverse one.
 
 No symbol table and no mapping symbols, so nothing but the two call
 instructions says which mode each helper is in. The `blx` must select Thumb for
@@ -10,7 +11,7 @@ No cross toolchain is needed; the bytes are hand-encoded. Regenerate with:
 
     python3 arm_interwork_le32.py
 
-Layout (one R+X PT_LOAD, `.text` at 0x02000000):
+Layout of `arm_interwork_le32` (one R+X PT_LOAD, `.text` at 0x02000000):
 
     0x02000000  push {lr}
     0x02000004  blx  0x02000040      ; Thumb helper
@@ -20,6 +21,9 @@ Layout (one R+X PT_LOAD, `.text` at 0x02000000):
     0x02000042  bx   lr
     0x02000080  add  r0, r0, #1      ; A32
     0x02000084  bx   lr
+
+`arm_interwork_bl_first_le32` swaps the two calls: `bl 0x02000080` at
+0x02000004 and `blx 0x02000040` at 0x02000008.
 """
 from pathlib import Path
 import struct
@@ -27,9 +31,10 @@ import struct
 BASE = 0x02000000
 
 
-def image():
+def image(bl_first=False):
     text = bytearray(0x88)
-    struct.pack_into("<4I", text, 0, 0xE92D4000, 0xFA00000D, 0xEB00001C, 0xE8BD8000)
+    calls = (0xEB00001D, 0xFA00000C) if bl_first else (0xFA00000D, 0xEB00001C)
+    struct.pack_into("<4I", text, 0, 0xE92D4000, *calls, 0xE8BD8000)
     struct.pack_into("<2H", text, 0x40, 0x2007, 0x4770)
     struct.pack_into("<2I", text, 0x80, 0xE2800001, 0xE12FFF1E)
     names = b"\0.text\0.shstrtab\0"
@@ -58,3 +63,4 @@ def image():
 
 if __name__ == "__main__":
     (Path(__file__).parent / "arm_interwork_le32").write_bytes(image())
+    (Path(__file__).parent / "arm_interwork_bl_first_le32").write_bytes(image(bl_first=True))
