@@ -4036,6 +4036,31 @@ impl Funcdata {
         range
     }
 
+    /// (kuna) Does the `checkCopyPair` range of `dom_op` and `sub_op`
+    /// ([`Self::build_copy_pair_range`]) contain a point `writes` lists for its
+    /// block?  The walk stops at the first one.
+    pub(crate) fn copy_pair_crossed(
+        &self,
+        dom_op: OpId,
+        sub_op: OpId,
+        table: &BlockTable,
+        writes: &std::collections::BTreeMap<int4, Vec<CoverPoint>>,
+    ) -> bool {
+        let mut range = Cover::new();
+        let ctx = FuncdataCoverCtx::sharing(self, table);
+        if let Some(dom_out) = self.obank.get(dom_op).and_then(|o| o.get_out()) {
+            let (def, is_input) = ctx.def_point(dom_out);
+            range.add_def_point(def, is_input);
+        }
+        let hit = |bl: int4, cb: &crate::cover::CoverBlock| {
+            writes.get(&bl).is_some_and(|points| points.iter().any(|&p| cb.contain(Some(p))))
+        };
+        match self.obank.get(sub_op).and_then(|o| o.get_in(0)) {
+            Some(sub_in) => range.add_ref_point_until(&ctx, sub_op, sub_in, hit),
+            None => range.any_block(hit),
+        }
+    }
+
     /// The `getTiedVarnode`/`getInputVarnode` read on a HighVariable, across the
     /// `high_bank` <-> `vbank`/`obank` field split (the bridge cannot destructure
     /// private fields from another module).  `which` selects tied (`false`) vs
@@ -4343,21 +4368,31 @@ impl Funcdata {
 /// `Cover::rebuild` makes off the held `Varnode *`/`PcodeOp *`/`FlowBlock *`).
 pub(crate) struct FuncdataCoverCtx<'a> {
     fd: &'a Funcdata,
-    by_index: std::cell::OnceCell<Vec<Option<BlockId>>>,
+    own: BlockTable,
+    shared: Option<&'a BlockTable>,
 }
+
+/// The first basic block in list order with each block index, built on first
+/// use by [`FuncdataCoverCtx`].
+pub(crate) type BlockTable = std::cell::OnceCell<Vec<Option<BlockId>>>;
 
 impl<'a> FuncdataCoverCtx<'a> {
     pub(crate) fn new(fd: &'a Funcdata) -> Self {
-        FuncdataCoverCtx { fd, by_index: std::cell::OnceCell::new() }
+        FuncdataCoverCtx { fd, own: BlockTable::new(), shared: None }
+    }
+
+    /// A view keeping its block table in `table`, for a run of Cover walks over
+    /// blocks that do not change between them.
+    pub(crate) fn sharing(fd: &'a Funcdata, table: &'a BlockTable) -> Self {
+        FuncdataCoverCtx { fd, own: BlockTable::new(), shared: Some(table) }
     }
 
     /// Resolve a block *index* to its `BlockId` (the inverse of `getIndex()`):
-    /// the first block in list order with that index.  The table of first
-    /// blocks is built on the first call, so a walk over many blocks does not
-    /// rescan the block list at each one.
+    /// the first block in list order with that index, from the block table so
+    /// a walk over many blocks does not rescan the block list at each one.
     fn block_id_of_index(&self, index: int4) -> BlockId {
         let n = self.fd.bblocks_get_size();
-        let table = self.by_index.get_or_init(|| {
+        let table = self.shared.unwrap_or(&self.own).get_or_init(|| {
             let mut table = vec![None; n.max(0) as usize];
             for i in 0..n {
                 let bid = self.fd.bblocks_get_block(i);

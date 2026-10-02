@@ -450,19 +450,58 @@ impl Cover {
     /// distinct from the [`Cover::rebuild`] single-varnode walk.
     pub fn add_ref_point_for(&mut self, ctx: &dyn CoverContext, ref_op: OpId, vn: crate::context::VarnodeId) {
         let (bl, ref_point, is_multiequal, pred_blocks) = ctx.ref_point(ref_op, vn);
-        self.add_ref_point(ctx, bl, ref_point, is_multiequal, &pred_blocks);
+        self.add_ref_point(ctx, bl, ref_point, is_multiequal, &pred_blocks, &mut |_, _| false);
+    }
+
+    /// (kuna) Does `hit` hold for some block of \b this?
+    pub fn any_block(&self, mut hit: impl FnMut(int4, &CoverBlock) -> bool) -> bool {
+        self.cover.iter().any(|(&bl, cb)| hit(bl, cb))
+    }
+
+    /// (kuna) [`Self::add_ref_point_for`] that stops at the first block of
+    /// \b this, already present or just set or extended by the walk, for which
+    /// `hit` holds, and says whether it stopped.  A block only grows during the
+    /// walk, so for a `hit` that holds on every block containing one it holds
+    /// on, this stops exactly when `hit` holds for a block of the finished
+    /// Cover.
+    pub fn add_ref_point_until(
+        &mut self,
+        ctx: &dyn CoverContext,
+        ref_op: OpId,
+        vn: crate::context::VarnodeId,
+        mut hit: impl FnMut(int4, &CoverBlock) -> bool,
+    ) -> bool {
+        if self.any_block(&mut hit) {
+            return true;
+        }
+        let (bl, ref_point, is_multiequal, pred_blocks) = ctx.ref_point(ref_op, vn);
+        self.add_ref_point(ctx, bl, ref_point, is_multiequal, &pred_blocks, &mut hit)
     }
 
     /// Add to \b this Cover recursively, starting at the bottom of the given
     /// block and filling backward until existing cover is hit (C++
     /// `Cover::addRefRecurse`, `cover.cc:524-558`).
-    fn add_ref_recurse(&mut self, ctx: &dyn CoverContext, bl: int4) {
+    ///
+    /// (kuna) Stops, returning true, once `hit` holds for a block it has just
+    /// set or extended (see [`Self::add_ref_point_until`]).
+    fn add_ref_recurse<F: FnMut(int4, &CoverBlock) -> bool>(
+        &mut self,
+        ctx: &dyn CoverContext,
+        bl: int4,
+        hit: &mut F,
+    ) -> bool {
         let block = self.cover.entry(bl).or_default();
         if block.empty() {
             block.set_all(); // No cover encountered, fill in entire block
+            if hit(bl, block) {
+                return true;
+            }
             let n = ctx.size_in(bl);
             for j in 0..n {
-                self.add_ref_recurse(ctx, ctx.get_in(bl, j)); // Recurse to predecessors
+                // Recurse to predecessors
+                if self.add_ref_recurse(ctx, ctx.get_in(bl, j), hit) {
+                    return true;
+                }
             }
         } else {
             let op = block.get_stop();
@@ -470,6 +509,9 @@ impl Cover {
             let ustop = CoverBlock::uindex(op);
             if (ustop != uintm::MAX) && (ustop >= ustart) {
                 block.set_end(Some(CoverPoint::End)); // Fill in to the bottom
+                if hit(bl, block) {
+                    return true;
+                }
             }
 
             // re-read block since set_end mutated it; getStart() unchanged
@@ -481,12 +523,15 @@ impl Cover {
                         // through one branch of a MULTIEQUAL; still traverse.
                         let n = ctx.size_in(bl);
                         for j in 0..n {
-                            self.add_ref_recurse(ctx, ctx.get_in(bl, j));
+                            if self.add_ref_recurse(ctx, ctx.get_in(bl, j), hit) {
+                                return true;
+                            }
                         }
                     }
                 }
             }
         }
+        false
     }
 
     /// Add a variable read to \b this Cover (C++ `Cover::addRefPoint`,
@@ -495,23 +540,28 @@ impl Cover {
     /// `ref_op` is `(block_index, CoverPoint, code)` for the reading PcodeOp.
     /// `ref_inputs`, when the read is a MULTIEQUAL, lists the input slots whose
     /// Varnode equals `vn` (the C++ `ref->getIn(j)==vn` loop), as predecessor
-    /// block indices to recurse into.
-    fn add_ref_point(
+    /// block indices to recurse into.  (kuna) Stops, returning true, once `hit`
+    /// holds for a block it has just set or extended.
+    fn add_ref_point<F: FnMut(int4, &CoverBlock) -> bool>(
         &mut self,
         ctx: &dyn CoverContext,
         bl: int4,
         ref_point: CoverPoint,
         is_multiequal: bool,
         multiequal_pred_blocks: &[int4],
-    ) {
+        hit: &mut F,
+    ) -> bool {
         let mut recurse_all = false;
         {
             let block = self.cover.entry(bl).or_default();
             if block.empty() {
                 block.set_end(Some(ref_point));
+                if hit(bl, block) {
+                    return true;
+                }
             } else if block.contain(Some(ref_point)) {
                 if !is_multiequal {
-                    return;
+                    return false;
                 }
                 // Even if MULTIEQUAL ref is contained we may be adding new
                 // cover because we are looking at a different branch.
@@ -519,6 +569,9 @@ impl Cover {
                 let op = block.get_stop();
                 let startop = block.get_start();
                 block.set_end(Some(ref_point)); // Otherwise update endpoint
+                if hit(bl, block) {
+                    return true;
+                }
                 let ustop = CoverBlock::uindex(block.get_stop());
                 if ustop >= CoverBlock::uindex(startop) {
                     if let Some(opcode) = op.and_then(|p| p.code()) {
@@ -531,7 +584,7 @@ impl Cover {
                         }
                     }
                     if !recurse_all {
-                        return;
+                        return false;
                     }
                 }
             }
@@ -540,21 +593,28 @@ impl Cover {
         if recurse_all {
             let n = ctx.size_in(bl);
             for j in 0..n {
-                self.add_ref_recurse(ctx, ctx.get_in(bl, j));
+                if self.add_ref_recurse(ctx, ctx.get_in(bl, j), hit) {
+                    return true;
+                }
             }
-            return;
+            return false;
         }
 
         if is_multiequal {
             for &pred in multiequal_pred_blocks {
-                self.add_ref_recurse(ctx, pred);
+                if self.add_ref_recurse(ctx, pred, hit) {
+                    return true;
+                }
             }
         } else {
             let n = ctx.size_in(bl);
             for j in 0..n {
-                self.add_ref_recurse(ctx, ctx.get_in(bl, j));
+                if self.add_ref_recurse(ctx, ctx.get_in(bl, j), hit) {
+                    return true;
+                }
             }
         }
+        false
     }
 
     /// Reset \b this based on def-use of a single Varnode (C++ `Cover::rebuild`,
@@ -575,7 +635,7 @@ impl Cover {
             pos += 1;
             for op in ctx.descend(cur_vn) {
                 let (bl, ref_point, is_multiequal, pred_blocks) = ctx.ref_point(op, vn);
-                self.add_ref_point(ctx, bl, ref_point, is_multiequal, &pred_blocks);
+                self.add_ref_point(ctx, bl, ref_point, is_multiequal, &pred_blocks, &mut |_, _| false);
                 if let Some(out_vn) = ctx.out_implied(op) {
                     path.push(out_vn);
                 }

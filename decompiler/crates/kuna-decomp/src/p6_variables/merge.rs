@@ -407,6 +407,14 @@ pub trait MergeContext: HighContext {
     /// Build the `Cover range` of `checkCopyPair` (`addDefPoint(domOp->getOut())`
     /// then `addRefPoint(subOp,subOp->getIn(0))`).
     fn copy_pair_range(&self, dom_op: OpId, sub_op: OpId) -> Cover;
+    /// (kuna) The COPYs of `copy`, COPYs into `high` from one Varnode in
+    /// `compareCopyByInVarnode` order, that `Merge::markRedundantCopies` marks
+    /// (see [`redundant_in_order`]).
+    fn redundant_copies(&self, high: HighVariableId, copy: &[OpId]) -> Vec<OpId> {
+        redundant_in_order(self, copy, |dom_op, sub_op| {
+            Merge::check_copy_pair(self, high, dom_op, sub_op)
+        })
+    }
 
     // --- IR-surgery hooks (mutators not all yet on Funcdata) ----------------
     /// `Merge::allocateCopyTrim` body: build a COPY of `in_vn` into a fresh unique
@@ -766,6 +774,31 @@ pub fn compare_high_by_block(
 
 /// C++ `Merge::compareCopyByInVarnode` (`merge.cc:1045-1057`): group COPYs by
 /// input `getCreateIndex()`, then defining block index, then `SeqNum::order`.
+/// The live COPYs of `copy` that `Merge::markRedundantCopies` marks: each one
+/// `check` holds for against some earlier live COPY of `copy`.  Marking does not
+/// change what `check` reads, so the marks can be collected first and set after.
+pub fn redundant_in_order<C: MergeContext + ?Sized>(
+    ctx: &C,
+    copy: &[OpId],
+    mut check: impl FnMut(OpId, OpId) -> bool,
+) -> Vec<OpId> {
+    let mut marked = Vec::new();
+    for i in (1..copy.len()).rev() {
+        let sub_op = copy[i];
+        if ctx.op_is_dead(sub_op) {
+            continue;
+        }
+        if copy[..i]
+            .iter()
+            .rev()
+            .any(|&dom_op| !ctx.op_is_dead(dom_op) && check(dom_op, sub_op))
+        {
+            marked.push(sub_op);
+        }
+    }
+    marked
+}
+
 pub fn compare_copy_by_in_varnode(ctx: &dyn MergeContext, op1: OpId, op2: OpId) -> bool {
     let in_vn1 = ctx.op_in(op1, 0).expect("compareCopyByInVarnode: op1 no in0");
     let in_vn2 = ctx.op_in(op2, 0).expect("compareCopyByInVarnode: op2 no in0");
@@ -1969,8 +2002,8 @@ impl Merge {
 
     /// Check if `subOp` is a redundant COPY relative to dominant `domOp` (C++
     /// `Merge::checkCopyPair`, `merge.cc:1112-1136`).
-    fn check_copy_pair(
-        ctx: &dyn MergeContext,
+    fn check_copy_pair<C: MergeContext + ?Sized>(
+        ctx: &C,
         high: HighVariableId,
         dom_op: OpId,
         sub_op: OpId,
@@ -2030,27 +2063,8 @@ impl Merge {
         pos: int4,
         size: int4,
     ) {
-        let mut i = size - 1;
-        while i > 0 {
-            let sub_op = copy[(pos + i) as usize];
-            if ctx.op_is_dead(sub_op) {
-                i -= 1;
-                continue;
-            }
-            let mut j = i - 1;
-            while j >= 0 {
-                let dom_op = copy[(pos + j) as usize];
-                if ctx.op_is_dead(dom_op) {
-                    j -= 1;
-                    continue;
-                }
-                if Self::check_copy_pair(ctx, high, dom_op, sub_op) {
-                    ctx.op_mark_non_printing(sub_op);
-                    break;
-                }
-                j -= 1;
-            }
-            i -= 1;
+        for sub_op in ctx.redundant_copies(high, &copy[pos as usize..(pos + size) as usize]) {
+            ctx.op_mark_non_printing(sub_op);
         }
     }
 
