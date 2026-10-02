@@ -91,7 +91,7 @@ pub fn argument_in_own_output(
     };
     let mut pieces = PrototypePieces::default();
     fc.proto().get_pieces(&mut pieces);
-    if pieces.first_var_arg_slot != pieces.intypes.len() as int4 {
+    if pieces.outtype.is_none() || pieces.first_var_arg_slot != pieces.intypes.len() as int4 {
         return false;
     }
     pieces.intypes.push(vararg);
