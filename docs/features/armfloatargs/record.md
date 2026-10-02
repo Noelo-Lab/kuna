@@ -262,3 +262,18 @@ zero like any other leftover. A variant that passed such a result on instead
 was measured on the same sweeps and changed no build's outcome, so the smaller
 rule stays: the zero only lands where the callee provably never reads the
 register.
+
+A leaf callee with a conditional return lost the leaf rule entirely: `float
+C2(float p0, float p1, float p2, float p3, int k)` returning `p0` through
+`bxgt lr` never reads `p1`, but the walk stopped at the return, so `p1` could
+not be proven unread. A caller that leaves an earlier call's s1 there kept it
+as the argument, which turned that call's float result into a 64-bit integer
+whose low word reached the callee converted by value
+(`C2(5.5,(int)((unsigned long long)v1 >> 0x20),(int)v1,...)`). With the option
+on, the walk now hands every path that skips a conditional return (a `RETURN`,
+or a user operation that leads straight to one, after a branch inside the same
+instruction) to a second walk that starts from the registers written before the
+branch. Only the leaf rule reads that second walk, which must itself end every
+path at a return with no read or conditional write of the register; every other
+answer of the walk is unchanged. The call is `C2(5.5,0.0,v1,...)` again, and a
+callee that reads the register only past its early return keeps the argument.

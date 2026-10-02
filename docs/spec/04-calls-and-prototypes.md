@@ -107,10 +107,19 @@ caller forwards is never passed as the callee's stated double.
 Every rule above reads the callee's body through the bounded decode from its
 entry, which credits a conditionally executed write (ARM's `vmovgt s0,s1`, a
 Thumb IT block) on both paths, and ends the path at a conditional return such
-as `bxlt lr` without decoding the code after it. With the option on, a register
-counts as written on every path only where instructions that always run write
-it, and the leaf rule needs a decode that left no path behind and saw no
-conditional write to the register. `float pick(float a, float b, int c) { if
+as `bxlt lr` without decoding the code after it. With the option on, the
+paths that skip such a return are decoded too, separately and each from the
+registers written before the return's condition, and only the leaf rule reads
+them, so every other rule sees the decode as before. A register counts as
+written on every path only where instructions that always run write it, and the
+leaf rule needs a decode that, past every conditional return as well, left no
+path behind, called nothing, and saw no read of the register and no conditional
+write to it. `float f(float a, float b, float c, float d, int k) { if (k > 6) c
+= a; else if (k < 4) c = (d + a) / 2; return c; }` compiles to `cmp r0,#6;
+bxgt lr; ...` and reads `b` on no path, so a caller that holds nothing of its
+own in s1, only what an earlier call left beside its float result, passes zero
+there (`f(5.5,0.0,v1,...)`) and that earlier call still returns a float.
+`float pick(float a, float b, int c) { if
 (c > 3) a = b; return a; }` compiles to `cmp r0,#3; vmovgt.f32 s0,s1; bx lr`,
 which leaves s0 untouched when the move is skipped, so a caller's
 `pick(v,2.5f,n)` keeps `v`. `calleedeadarg` asks the same question of a VFP
@@ -130,7 +139,7 @@ Resolved variadic format calls use explicit base AAPCS storage, including
 their floating arguments, rather than the non-variadic VFP convention.
 `formatstring off` disables that source of type evidence.
 
-Eight call shapes stay incomplete. A double that the caller forwards untouched,
+Nine call shapes stay incomplete. A double that the caller forwards untouched,
 but of which only one word is live in the caller, is omitted from the call. A
 wrapper that forwards a single-precision argument from the upper half of a
 d-register without touching it, such as the third float of `w(float, float,
@@ -156,7 +165,11 @@ it. A callee that returns a two-float aggregate in s0 and s1 is recovered as
 returning one float, so a caller that reads the second member takes the call's
 result as a 64-bit integer and converts its high word by value, as with
 `armfloatreturn` alone; with the call's arguments now complete, that caller
-compiles and computes the wrong member.
+compiles and computes the wrong member. A float-returning callee that computes
+in d0 as a double on some path before narrowing into s0, such as `float f(float
+a, double b, int k) { if (k > 4) { a = b * b + 1; a = a * b - 2; } return a;
+}`, is recovered as taking and returning a double, as with `armfloatreturn`
+alone, so its callers now compile and compute the wrong value.
 
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer
@@ -1304,8 +1317,10 @@ classified:
   that way anywhere in the body is not proven dead; an integer register keeps
   the walk's answer, so `int pick(int a, int b, int c) { if (c > 3) a = b;
   return a; }` (`movgt r0,r1`) still loses its first argument at a caller that
-  holds an earlier call's result there. A proven-dead register trial is scored
-  `no-use` like any other definitely-unused trial.
+  holds an earlier call's result there. With `armfloatargs` on, the paths that
+  skip a conditional return are also walked, separately, for that option's leaf
+  rule alone; no answer described here reads them. A proven-dead register trial
+  is scored `no-use` like any other definitely-unused trial.
 
   The same walk records a second, narrower fact for `argclobber` to read: for
   each terminator that leaves the callee, what was written on the way to it, and

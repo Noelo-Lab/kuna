@@ -586,6 +586,48 @@ fn a_parameter_returned_on_some_path_keeps_its_argument() {
     }
 }
 
+// clang 14 hard-float ARM and Thumb builds of `armfloatargs_early.c`: `C2`
+// and `C9` return early through `bxgt lr` (`it gt; bxgt lr` in Thumb). `C2`
+// never reads its second float, which `W2` leaves holding `GF2`'s leftover, so
+// that argument is zero and `GF2` still returns a float; `C9` reads its second
+// float only past the early return, so `W9` keeps passing its own.
+#[test]
+fn a_word_unread_past_an_early_return_is_zero() {
+    let fixtures =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../kuna-analysis/tests/fixtures");
+    let has_cc = common::process::optional_output(Command::new("cc").arg("--version")).is_some();
+    let driver = common::scratch_file("arm-float-early-driver", "c");
+    std::fs::write(
+        &driver,
+        "#include <stdio.h>\nint top(int);\nint main(void) { long s = 0;\n\
+         for (int n = 1; n < 9; n++) s = s * 31 + top(n);\nprintf(\"%ld\\n\", s); return 0; }\n",
+    )
+    .unwrap();
+    let expected = has_cc.then(|| {
+        let reference = common::scratch_file("arm-float-early-reference", "exe");
+        compile_and_run(&[fixtures.join("armfloatargs_early.c"), driver.clone()], &reference)
+    });
+    for build in ["arm-O2", "thumb-O2", "thumb-O1"] {
+        let bytes = std::fs::read(fixtures.join(format!("armfloatargs_early_{build}.o"))).unwrap();
+        let code = decompile_with(&bytes, &["armfloatreturn", "on", "armfloatargs", "on"]);
+        for call in ["C2(5.5,0.0,v1,", "C9(5.5,a0,v1,a1)"] {
+            assert!(code.contains(call), "{build}: lacks {call}\n{code}");
+        }
+        assert!(!code.contains("unsigned long long"), "{build}\n{code}");
+        let Some(expected) = &expected else {
+            continue;
+        };
+        let emitted = common::scratch_file("arm-float-early-emitted", "c");
+        let executable = common::scratch_file("arm-float-early-emitted", "exe");
+        std::fs::write(&emitted, &code).unwrap();
+        assert_eq!(
+            &compile_and_run(&[emitted, driver.clone()], &executable),
+            expected,
+            "{build}\n{code}"
+        );
+    }
+}
+
 /// Compile `sources` with the host compiler and return what the program prints.
 fn compile_and_run(sources: &[std::path::PathBuf], executable: &std::path::Path) -> String {
     let compile = Command::new("cc")
