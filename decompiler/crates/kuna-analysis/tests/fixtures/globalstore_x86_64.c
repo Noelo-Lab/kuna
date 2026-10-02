@@ -19,7 +19,13 @@
  * the compiler loads the global back: that load must print as a read of the
  * global, while `w_reboth` and `w_recopy` also use the value from its register.
  * At -O0 `w_rephi` shows a separate, older defect (the load that feeds the join
- * prints as the value), so that build keeps it from the source. */
+ * prints as the value), so that build keeps it from the source.  `w_ohoist`,
+ * `w_oif` and `w_oloop` store through a pointer that may point at a global,
+ * load the global, store a new value to it and still use the value they
+ * loaded: that load must print after the pointer store, not above it.  Each
+ * is a witness in the builds whose other output is right (`w_ohoist` gcc -O2,
+ * `w_oif` gcc -O0 and clang -O2, `w_oloop` gcc -O0); the other builds keep it
+ * from the source. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +38,8 @@ volatile unsigned short hsink;
 volatile short shsink;
 int gre;
 int gre2;
+unsigned uold;
+int gold;
 unsigned long res;
 int retsel;
 struct words { char pad[0x40002]; char rb[2][0x20001]; } words;
@@ -66,6 +74,9 @@ int w_realias(unsigned a, int *p, int k);
 int w_rephi(unsigned a, int *p, int k, int c);
 int w_reboth(unsigned a, int *p, int k);
 int w_recopy(unsigned a, int *p, int k);
+int w_ohoist(unsigned inc, unsigned *p, unsigned k);
+int w_oif(int inc, int *p, int k, int c);
+int w_oloop(int inc, int *p, int k);
 
 #ifndef GLOBALSTORE_HARNESS
 #define NI __attribute__((noinline))
@@ -126,6 +137,41 @@ __attribute__((noinline)) int w_rephi(unsigned a, int *p, int k, int c) {
   *p = k;
   int v = c ? gre : 7;
   return v / 16;
+}
+#endif
+
+#if !defined(GLOBALSTORE_HARNESS) || defined(GLOBALSTORE_KEEP_OHOIST)
+__attribute__((noinline)) int w_ohoist(unsigned inc, unsigned *p, unsigned k) {
+  *p = k;
+  unsigned old = uold;
+  unsigned n = old * 3 + inc;
+  if (n >> 20) return 7;
+  uold = n;
+  return old == 5 ? 1 : (int)old;
+}
+#endif
+#if !defined(GLOBALSTORE_HARNESS) || defined(GLOBALSTORE_KEEP_OIF)
+__attribute__((noinline)) int w_oif(int inc, int *p, int k, int c) {
+  if (c) *p = k;
+  int old = gold;
+  int n = old + inc;
+  if (n / 3 > 300) return -1;
+  gold = n;
+  return old + 1;
+}
+#endif
+#if !defined(GLOBALSTORE_HARNESS) || defined(GLOBALSTORE_KEEP_OLOOP)
+__attribute__((noinline)) int w_oloop(int inc, int *p, int k) {
+  int s = 0;
+  for (int i = 0; i < 2; i++) {
+    *p = k + i;
+    int old = gold;
+    int n = old + inc;
+    if (n > 5000) return -1;
+    gold = n;
+    s += old;
+  }
+  return s;
 }
 #endif
 
@@ -204,6 +250,29 @@ int main(void) {
     int d1g = gre2;
     int d2 = w_recopy(v, &other, -77);
     printf("realias %08x %d %d %d %d %d %d %d %d %d %d %d %d\n", v, a1, a2, b1, b2, b3, c1, c2, d1, d1g, d2, gre2, gre);
+  }
+  static const int incs[] = {0, 1, 10, 100, 5000, -3, 700, 0x100000};
+  for (unsigned t = 0; t < sizeof incs / sizeof *incs; t++) {
+    int inc = incs[t], io = 0;
+    unsigned uo = 0;
+    uold = 5;
+    int h1 = w_ohoist((unsigned)inc, &uold, 300);
+    unsigned hb = uold;
+    uold = 5;
+    int h2 = w_ohoist((unsigned)inc, &uo, 300);
+    gold = 5;
+    int i1 = w_oif(inc, &gold, 300, 1);
+    int ib = gold;
+    gold = 5;
+    int i2 = w_oif(inc, &io, 300, 1);
+    int ic = gold;
+    gold = 5;
+    int l1 = w_oloop(inc, &gold, 300);
+    int lb = gold;
+    gold = 5;
+    int l2 = w_oloop(inc, &io, 300);
+    int lc = gold;
+    printf("old %d %d %u %d %u %d %d %d %d %d %d %d %d %d\n", inc, h1, hb, h2, uold, i1, ib, i2, ic, l1, lb, l2, lc, gold);
   }
   printf("%lu\n", h);
   return 0;

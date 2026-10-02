@@ -35,6 +35,13 @@
     the binary loads `retsel` and `res` back right after storing them, so
     those loads print as the globals too (#5, #6, #9, #21).
 
+    The store also stays upstream's when an earlier value of the global is
+    still used after it (`w_oif`: `if (c) *p = k; old = gold; ...; gold = n;
+    return old + 1;`).  Keeping the store at its place made Merge copy that
+    earlier value out where it is defined, above the pointer store, and the
+    copy read the global before `*p` changed it: `v1 = gold;` at the top of
+    the function or of the loop (#22-#24).
+
     The wrapper only supplies the harness architecture (`load file` needs one).
     The pass loads globalstore_gcc_O0_x86_64 (built from globalstore_x86_64.c
     beside it).
@@ -98,6 +105,12 @@
   <com>load function w_recopy</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function w_oif</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_oloop</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="globalvalue #1: the unsigned value keeps its own variable and cast" min="1" max="1">v1 = \(uint4\)\(a0 \* 3\) &gt;&gt; 4;</stringmatch>
@@ -121,4 +134,7 @@
 <stringmatch name="globalvalue #19: the load copied to another global reads the global" min="1" max="1">gre2 = gre;</stringmatch>
 <stringmatch name="globalvalue #21: the range check loads the strtoul result back from the global" min="1" max="1">\(res &lt;= 0xff\)</stringmatch>
 <stringmatch name="globalvalue #20: no load after a pointer store reads the value's variable" min="0" max="0">\(int4\)v[0-9]+ &gt;&gt; 4\)</stringmatch>
+<stringmatch name="globalvalue #22: no earlier value of the global is copied out above the pointer store" min="0" max="0">v[0-9]+ = gold;</stringmatch>
+<stringmatch name="globalvalue #23: the earlier value is read after the pointer store" min="1" max="1">v1 = gold \+ 1;</stringmatch>
+<stringmatch name="globalvalue #24: the loop reads the earlier value after the pointer store" min="1" max="1">v1 \+= gold;</stringmatch>
 </decompilertest>

@@ -32,7 +32,7 @@ use std::collections::BTreeSet;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
-use crate::context::{OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 use crate::expression::functional_equality;
 use crate::funcdata::Funcdata;
 use crate::jumptable::circlerange_pull_back;
@@ -112,7 +112,7 @@ pub fn declines(data: &mut Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -
     }
     let own = (reader.is_marker() || reader.code() == OpCode::CPUI_COPY) && writes(true);
     let marked = v.is_global_load() || iv.is_global_load();
-    if !marked && value_read_sign_sensitively(data, invn) {
+    if !marked && value_read_sign_sensitively(data, invn) && !old_value_read_after(data, vn) {
         return true;
     }
     if marked || !own {
@@ -124,6 +124,143 @@ pub fn declines(data: &mut Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -
         }
     }
     false
+}
+
+/// How many blocks and operations [`old_value_read_after`] visits before it
+/// answers yes.
+const REACH_BOUND: usize = 4096;
+
+/// Is an earlier value of the global that `vn`'s `COPY` stores to still read
+/// after that store, directly or through a copy that a later propagation can
+/// fold into its reader?  `Merge` then has to give that earlier value its own
+/// variable, and copies it right where it is defined: the function entry, a
+/// call, a loop head.  That copy can land above a pointer store or a call the
+/// binary reads the global after, so the store takes upstream's handling.
+///
+/// A read is after the store when some path from the store reaches it without
+/// passing the earlier value's definition; a `MULTIEQUAL` reads at the end of
+/// the predecessor block it reads from.  Past [`WALK_BOUND`] copies or
+/// [`REACH_BOUND`] blocks and operations the answer is yes.
+fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = data.vbank().get(vn) else {
+        return true;
+    };
+    let Some(store) = v.get_def() else {
+        return true;
+    };
+    let Some(sb) = data.obank().get(store).and_then(|s| s.get_parent()) else {
+        return true;
+    };
+    let mut budget = REACH_BOUND;
+    for w in data.vbank().iter_loc_size_addr(v.get_size(), v.get_addr()) {
+        let Some(wv) = data.vbank().get(w) else {
+            continue;
+        };
+        if w == vn || wv.get_def() == Some(store) {
+            continue;
+        }
+        let Some((ops, ends)) = reads_of(data, w) else {
+            return true;
+        };
+        if ops.is_empty() && ends.is_empty() {
+            continue;
+        }
+        let def = wv.get_def();
+        let def_block = def.and_then(|d| data.obank().get(d)).and_then(|d| d.get_parent());
+        let mut cur = data.obank().get(store).and_then(|s| s.basic_neighbours().1);
+        let mut redefined = false;
+        while let Some(o) = cur {
+            if Some(o) == def {
+                redefined = true;
+                break;
+            }
+            if ops.contains(&o) {
+                return true;
+            }
+            budget = match budget.checked_sub(1) {
+                Some(b) => b,
+                None => return true,
+            };
+            cur = data.obank().get(o).and_then(|x| x.basic_neighbours().1);
+        }
+        if redefined {
+            continue;
+        }
+        if ends.contains(&sb) {
+            return true;
+        }
+        let blocks: BTreeSet<_> =
+            ops.iter().filter_map(|&o| data.obank().get(o).and_then(|x| x.get_parent())).chain(ends).collect();
+        let succ = |b| {
+            let blk = data.bblocks_ref().block(b);
+            (0..blk.size_out()).map(|i| blk.get_out(i)).collect::<Vec<_>>()
+        };
+        let mut work = succ(sb);
+        let mut seen = BTreeSet::new();
+        while let Some(b) = work.pop() {
+            if !seen.insert(b) || Some(b) == def_block {
+                continue;
+            }
+            budget = match budget.checked_sub(1) {
+                Some(b) => b,
+                None => return true,
+            };
+            if blocks.contains(&b) {
+                return true;
+            }
+            work.extend(succ(b));
+        }
+    }
+    false
+}
+
+/// The operations that read `w`, or a copy of it a later propagation can fold
+/// into them, and the blocks at whose end a `MULTIEQUAL` reads one; `None`
+/// past [`WALK_BOUND`] copies.
+fn reads_of(data: &Funcdata, w: VarnodeId) -> Option<(BTreeSet<OpId>, BTreeSet<BlockId>)> {
+    let (mut ops, mut ends) = (BTreeSet::new(), BTreeSet::new());
+    let mut stack = vec![w];
+    let mut seen = BTreeSet::new();
+    while let Some(x) = stack.pop() {
+        if !seen.insert(x) {
+            continue;
+        }
+        if seen.len() > WALK_BOUND {
+            return None;
+        }
+        let Some(xv) = data.vbank().get(x) else {
+            continue;
+        };
+        for r in xv.descend_iter() {
+            let Some(rop) = data.obank().get(r) else {
+                continue;
+            };
+            if rop.is_dead() {
+                continue;
+            }
+            match rop.code() {
+                OpCode::CPUI_MULTIEQUAL => {
+                    let Some(rb) = rop.get_parent() else {
+                        return None;
+                    };
+                    let blk = data.bblocks_ref().block(rb);
+                    for i in 0..rop.num_input().min(blk.size_in()) {
+                        if rop.get_in(i) == Some(x) {
+                            ends.insert(blk.get_in(i));
+                        }
+                    }
+                }
+                OpCode::CPUI_COPY => {
+                    ops.insert(r);
+                    stack.extend(rop.get_out());
+                }
+                _ => {
+                    ops.insert(r);
+                }
+            }
+        }
+    }
+    Some((ops, ends))
 }
 
 /// Is the result of `code` typed after its operand in `slot`, and the same bits
