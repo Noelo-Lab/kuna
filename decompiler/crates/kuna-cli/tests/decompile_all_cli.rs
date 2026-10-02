@@ -3107,6 +3107,32 @@ fn soft_float_imports_keep_their_core_register_values() {
     }
 }
 
+/// `floatret_armrows_soft` and `floatret_armrows_hard` (soft-float and
+/// hard-float ARM): `clampd` returns `strtod`'s result or 0, and `rd` copies
+/// its bits into a `uint64_t`. With the libc table's `double` rows the soft
+/// image printed `double sub_10224(..)` beside `rd`'s `unsigned long long v1 =
+/// sub_10224()`, which converts 2.25 to 2, where the rows' absence returns the
+/// right `CONCAT44(v2,v1)`; the hard image printed `unsigned int sub_101f0(..)`
+/// returning `SUB84(v1,0)`, the low half of `d0`. ARM gets none of the rows.
+#[test]
+fn arm_images_get_no_double_libc_rows() {
+    let sp = specs();
+    for name in ["floatret_armrows_soft", "floatret_armrows_hard"] {
+        let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
+        for bad in ["double", "SUB84("] {
+            assert!(!stdout.contains(bad), "{name}: `{bad}` from a libc row ARM does not return whole:\n{stdout}");
+        }
+        if name.ends_with("soft") {
+            assert!(
+                stdout.contains("unsigned long long sub_10224(") && stdout.contains("return CONCAT44(v2,v1);"),
+                "{name}: `clampd` no longer returns its r0:r1 bits:\n{stdout}"
+            );
+        }
+    }
+}
+
 /// `dsum`, `norm` and `use` read their argument as `double *`, `struct P *` and
 /// `struct M *`, and each caller writes that memory with integer bits first. A
 /// pointer vote from the callee printed those stores as value conversions

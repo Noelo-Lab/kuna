@@ -1521,20 +1521,17 @@ moves.
   call to `strtod_l`, returned an integer beside `xstrtod`'s `strtod`, which then
   converted it by value. A float-returning name fewer than three corpus binaries import
   (`nanf`, `sqrtf`, `fabsf`) stays out, and its import stub is recovered from what
-  its callers read instead (chapter 04). These rows are seeded only on an image
-  whose stated float convention puts a declared `double` where the code passes
-  it
-  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_typedcallabi.rs (places_declared_floats)`):
-  x86, AArch64, a hard-float image, and a soft-float
-  ARM image with no FPU, whose declarations take the soft-float model (chapter
-  04). An ARM image that states the base standard and has an FPU
-  (`-mfloat-abi=softfp`, the Android `armeabi-v7a` default) keeps the default VFP
-  layout for a declaration, and its imports pass doubles in core registers:
-  `pow` printed `pow(v1,v2)` of unset `d0`/`d1` where the caller set `r0`-`r3`,
-  and `strtod`'s `r0:r1` result was dropped. Such an image, a soft-float image
-  whose spec has no soft-float model, and one that states nothing get none of
-  them, and an operator-declared name (`seed_declared_libc_prototype`) is
-  refused there the same way. The signatures
+  its callers read instead (chapter 04). These rows are seeded only on x86 and AArch64
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_typedcallabi.rs (returns_doubles_whole)`),
+  whose return recovery reads a `double` whole (`xmm0`, `ST0`, `d0`). ARM gets
+  none of them. Its default model lists only `s0`..`s7` among the outputs, so on
+  a hard-float image a function returning what it computed from `strtod` was
+  recovered as `unsigned int`, the low half of `d0`, where it had been `void`.
+  A soft-float or `-mfloat-abi=softfp` image hands a `double` around in
+  `r0:r1`, and its callers hold that as a 64-bit integer: the rows made such a
+  function `double`, which those callers then converted by value, where it had
+  returned the right `unsigned long long`. An operator-declared name
+  (`seed_declared_libc_prototype`) is refused on ARM the same way. The signatures
   themselves are reduced from the platform's own C declarations (`gcc -aux-info`
   over the standard headers, GCC's builtin types for the FORTIFY `_chk` entry
   points, the `<stdio.h>` `__REDIRECT` for the `__isoc99_*` aliases), never written

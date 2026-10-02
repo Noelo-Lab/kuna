@@ -114,24 +114,14 @@ pub fn without_fpu(arch: &Architecture) -> bool {
         .is_ok_and(|loader| loader.float_hardware() == Some(false))
 }
 
-/// Is a declaration that names no convention laid out where the image passes
-/// its floating-point values, given what the container states (`stated`, the
-/// loader's [`image_evidence`] answer) and whether it states floating-point
-/// hardware (`fpu`)?  It is where the image states a hard-float convention
-/// (x86 and AArch64 always do), and where it states the soft-float one with no
-/// hardware and the spec has the soft-float model ([`undeclared_model`]).  An
-/// ARM image with an FPU that states the base standard
-/// (`-mfloat-abi=softfp`, the Android `armeabi-v7a` default), a soft-float image
-/// whose spec has no soft-float model, and an image that states nothing are
-/// not: the default model would read the values from floating-point registers
-/// the code never sets.
-pub fn places_declared_floats(arch: &Architecture, stated: Option<bool>, fpu: Option<bool>) -> bool {
-    let evidence = if x86_or_aarch64(arch) { Some(true) } else { stated };
-    match evidence {
-        Some(true) => true,
-        Some(false) => fpu == Some(false) && arch.get_model(SOFT_FLOAT_MODEL).is_some(),
-        None => false,
-    }
+/// Does the architecture return a `double` in one register its return recovery
+/// reads whole?  x86 (`xmm0`, `ST0`) and AArch64 (`d0`) do.  ARM's default
+/// model lists only `s0`..`s7` among its outputs, so a hard-float function
+/// returning a `double` it computed from a declared `double` is recovered as the
+/// `unsigned int` low half of `d0`; a soft-float or `softfp` image passes it in
+/// `r0:r1`, and its callers hold that as a 64-bit integer.
+pub fn returns_doubles_whole(arch: &Architecture) -> bool {
+    x86_or_aarch64(arch)
 }
 
 /// Does `pieces` declare a `float` or `double` parameter or return value?

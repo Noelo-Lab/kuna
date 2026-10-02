@@ -636,9 +636,9 @@ pub(super) const LIBC_EXT: &[(&str, Sig)] = &[
     // The same corpus rule with `float` and `double` in the vocabulary: every
     // slot is a 4- or 8-byte IEEE value on every target these tables apply to.
     // `long double` (`strtold`) still has no fixed width and stays out. Seeded
-    // only where a declaration is laid out in the registers the image passes
-    // floats in (`places_declared_floats`): an `armeabi-v7a` image calls
-    // `strtod` with its arguments and result in core registers.
+    // only on x86 and AArch64 (`returns_doubles_whole`): ARM recovers a
+    // function returning a `double` from these at half its width (hard-float)
+    // or beside callers holding `r0:r1` as an integer (soft-float, softfp).
     ("ceil", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
     ("log2", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
     ("modf", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::VoidPtr], vararg: -1 }),
@@ -670,8 +670,7 @@ impl AnalysisPass for LibcSigsPass {
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size, super::L);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT, types, word_size, super::L);
-        use kuna_sleigh::loadimage::LoadImage;
-        if !kuna_typedcallabi::places_declared_floats(ctx.arch, ctx.image.float_arg_registers(), ctx.image.float_hardware()) {
+        if !kuna_typedcallabi::returns_doubles_whole(ctx.arch) {
             out.prototypes.retain(|p| !kuna_typedcallabi::declares_a_float(p));
             out.prototypes_at.retain(|(_, p)| !kuna_typedcallabi::declares_a_float(p));
         }
