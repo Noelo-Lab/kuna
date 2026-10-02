@@ -64,15 +64,16 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // (noReturnFunctionConstraints.xml), base ELF list only otherwise.
         Box::new(crate::loader::noreturn::NoReturnKnownPass::for_compiler(compiler)),
         // S1 strings (StringLiteralPass): NUL-terminated ASCII string-literal
-        // detection. Mirrors Ghidra's `StringsAnalyzer` (min length 5,
-        // require-NUL-end). Plants a typelocked `char[N]` data symbol (`s_<addr>`)
+        // detection. Uses a 4-character ASCII minimum while retaining Ghidra's
+        // length-5 minimum for the UTF-16 arm. Both require a NUL end and plant a
+        // typelocked `char[N]` data symbol (`s_<addr>`)
         // at each detected `.rodata` string. ENABLED by default since the printer
         // change (the readonly-char-array literal route in
         // `p9_emit/printc.rs::op_ptrsub_ir`): a pointer to a readonly char-printable
         // array symbol now renders as the string LITERAL (Ghidra behavior), so the
         // data symbol and the literal coexist instead of the symbol name shadowing
         // it. See docs/history/analysis-port-log.md (the strings/printer increment).
-        Box::new(crate::strings::StringLiteralPass { min_len: 5 }),
+        Box::new(crate::strings::StringLiteralPass::default()),
         // S1 library prototypes: seed common libc signatures (puts(char*), …) so
         // call arguments get typed. Mirrors Ghidra's `ApplyDataArchiveAnalyzer`.
         // THIS is what renders string literals in kuna: typing a call argument

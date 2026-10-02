@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1673,
-    1673
+    1676,
+    1676
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -266,7 +266,7 @@
     "data:FMTSTATIC #26: Win64 %td prints the whole ptrdiff_t, not its low half",
     "data:FMTSTATIC #27: Win64 %zu and %td keep the 8-byte parameter",
     "data:FMTSTATIC #28: the default types no ARM site, so f_is renders as off",
-    "data:FMTSTATIC #29: off leaves the version line's three phantom arguments",
+    "data:FMTSTATIC #29: off leaves the version line's three phantom arguments while the four-byte string stays visible",
     "data:FMTSTATIC #2: off, and the default on AArch64, leave the parameter it came from unsigned",
     "data:FMTSTATIC #30: the default and full print the version line with its three strings",
     "data:FMTSTATIC #31: the switch calls keep the arguments off gives them",
@@ -846,6 +846,9 @@
     "data:SETLOCALE RETTYPE #1: NULL locale arg is typed char *",
     "data:SETLOCALE RETTYPE #2: no untyped indirect call",
     "data:SETLOCALE RETTYPE #3: call is the named setlocale",
+    "data:SHORT ASCII STRING #1: off, the four bytes remain a raw data word",
+    "data:SHORT ASCII STRING #2: default, the four-byte literal is one string copy",
+    "data:SHORT ASCII STRING #3: both passes preserve the surrounding string transform",
     "data:SPLITSTOREKEEP #1: the seven-byte cell the store at src+8 was cut down to is a variable, at the default only",
     "data:SPLITSTOREKEEP #2: and so is its destination cell at dst+8",
     "data:SPLITSTOREKEEP #3: the one byte the two middle stores overlap on is its own cell",

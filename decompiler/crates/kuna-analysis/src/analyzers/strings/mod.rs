@@ -16,9 +16,9 @@
 //! - **Scan set**: `getLoadedAndInitializedAddressSet` ∩ accessible blocks — i.e.
 //!   allocated + initialized sections (`SHF_ALLOC`, not `.bss`). This is `.rodata`,
 //!   `.data`, `.text`, … — NOT only read-only. See [`scan_strings`].
-//! - **`minStringLength`** = **5** (`MinStringLen.LEN_5`); **`requireNullEnd`** =
-//!   **true**; **`startAlignment`** = **1**; **`allCharWidths`** = false (ASCII /
-//!   1-byte only — UTF-16/32 is a documented seam, skipped).
+//! - **`minStringLength`** = **4** for ASCII; **`requireNullEnd`** = **true**;
+//!   **`startAlignment`** = **1**. The separate UTF-16 arm retains Ghidra's
+//!   length-5 default.
 //! - **Char set** (`AsciiCharSetRecognizer.contains`): `0x20..=0x7e || \r || \n ||
 //!   \t`. See [`is_string_char`].
 //! - **Matcher** (`MinLengthCharSequenceMatcher`): a run of in-charset bytes ended
@@ -36,9 +36,9 @@
 //! (`StringModel.sng` / `NGramUtils`) to reject false positives (random
 //! printable runs that are not real text). That model file is **not in the tree**
 //! and is **not portable**, so this pass OMITS it and substitutes the weaker
-//! "printable + NUL-terminated + min-len-5" test. The effect is *over*-acceptance
+//! "printable + NUL-terminated + min-len-4" test. The effect is *over*-acceptance
 //! relative to Ghidra (a random printable run that happens to be NUL-terminated
-//! and ≥5 chars is accepted) — harmless for real string literals, which all pass.
+//! and ≥4 chars is accepted) — harmless for real string literals, which all pass.
 //! Recorded in `docs/missing-analyses.md` / `docs/history/analysis-port-log.md`.
 
 pub mod kuna_stringinv;
@@ -50,8 +50,10 @@ use object::SectionKind;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, StringFact};
 
-/// The default minimum visible string length (`MinStringLen.LEN_5`).
-pub(crate) const DEFAULT_MIN_LEN: usize = 5;
+/// The default minimum visible ASCII string length.
+pub(crate) const DEFAULT_ASCII_MIN_LEN: usize = 4;
+/// The default minimum visible UTF-16 string length (`MinStringLen.LEN_5`).
+pub(crate) const DEFAULT_WIDE_MIN_LEN: usize = 5;
 
 /// `AsciiCharSetRecognizer.contains`: a byte is "string content" iff it is a
 /// printable ASCII char (`0x20..=0x7e`) or one of CR/LF/TAB. Faithful to the
@@ -216,14 +218,18 @@ pub(crate) fn scan_strings(file: &object::File, min_len: usize) -> Vec<StringFac
 /// `allCharWidths` arm — into [`AnalysisOutput::wide_strings`], where each fact
 /// becomes a `wchar2[N]` instead. See [`kuna_widestrings`].
 pub struct StringLiteralPass {
-    /// Minimum visible string length (`StringsAnalyzer.minStringLength`,
-    /// default [`DEFAULT_MIN_LEN`]).
+    /// Minimum visible ASCII string length.
     pub min_len: usize,
+    /// Minimum visible UTF-16 string length.
+    pub wide_min_len: usize,
 }
 
 impl Default for StringLiteralPass {
     fn default() -> Self {
-        StringLiteralPass { min_len: DEFAULT_MIN_LEN }
+        StringLiteralPass {
+            min_len: DEFAULT_ASCII_MIN_LEN,
+            wide_min_len: DEFAULT_WIDE_MIN_LEN,
+        }
     }
 }
 
@@ -239,7 +245,7 @@ impl AnalysisPass for StringLiteralPass {
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         AnalysisOutput {
             strings: scan_strings(ctx.file, self.min_len),
-            wide_strings: kuna_widestrings::scan_wide_strings(ctx.file, self.min_len),
+            wide_strings: kuna_widestrings::scan_wide_strings(ctx.file, self.wide_min_len),
             ..Default::default()
         }
     }
@@ -309,13 +315,19 @@ mod tests {
     }
 
     #[test]
+    fn ascii_default_accepts_four_visible_characters() {
+        let out = scan_run(b"quit\0abc\0", 0x2000, DEFAULT_ASCII_MIN_LEN);
+        assert_eq!(out, vec![StringFact { addr: 0x2000, len: 5 }]);
+    }
+
+    #[test]
     fn scan_strings_over_fauxware() {
         // End-to-end fixture-level scan: the StringsAnalyzer port must surface the
         // three cited literals at their .rodata addresses.
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fauxware");
         let bytes = std::fs::read(path).expect("read fauxware fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
-        let out = scan_strings(&file, DEFAULT_MIN_LEN);
+        let out = scan_strings(&file, DEFAULT_ASCII_MIN_LEN);
 
         let has = |addr: u64, len: u32| out.contains(&StringFact { addr, len });
         // "SOSNEAKY"   @ 0x4008d0 (8 visible + NUL = 9)
@@ -337,7 +349,7 @@ mod tests {
         let bytes = std::fs::read(path).expect("read pe_imports.exe");
         let file = object::File::parse(bytes.as_slice()).expect("parse pe_imports.exe");
         assert_eq!(file.format(), object::BinaryFormat::Pe, "fixture is a PE");
-        let out = scan_strings(&file, DEFAULT_MIN_LEN);
+        let out = scan_strings(&file, DEFAULT_ASCII_MIN_LEN);
         assert!(
             out.contains(&StringFact { addr: 0x140009000, len: 6 }),
             "\"hello\" @ 0x140009000 len 6 not detected in PE .rdata: {out:?}"

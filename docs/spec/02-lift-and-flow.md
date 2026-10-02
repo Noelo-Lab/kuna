@@ -1148,8 +1148,8 @@ unported shells: `jumptable.rs (JumpTable::set_override)` and the
 `recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is on, the constant-destination model above (Trivial exists only as the label-time fallback). Likewise upstream's
 multistage *restart* accounting — persisting a table whose size disagrees at
 `matchModel` time and restarting the whole function — is a recorded loss: kuna
-keeps the flow-recovered addresses instead (`jumptable.rs
-(JumpTable::match_model)`).
+keeps the flow-recovered addresses instead and lets the row check below decide
+which values label them (`jumptable.rs (JumpTable::match_model)`).
 
 ### The late check: labels, normalization folding, guard folding
 
@@ -1158,7 +1158,98 @@ dataflow, so the model is re-derived late, against the finished function, by
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionSwitchNorm)`: for each unlabelled table, `match_model` saves the
 flow-time model and recovers a fresh instance (preferring a variable whose
-range size matches the known table size), then
+range size matches the known table size). The fresh model must account for the
+table's rows before its labels are used (`jumptable.rs
+(JumpTable::choose_label_values)`). Each row keeps the normalized value the
+flow-time model gave it; when every such value emulates through the fresh
+model's path to that row's recorded destination, and no other value in the
+fresh model's range reaches, through a table entry the flow-time model read, a
+row's destination that the switch prints as a labelled case (`jumptable.rs
+(JumpBasicModel::reproduces_rows)`), the labels come from the flow-time values
+as they always have. The second half matters when the table repeats a
+destination, as shared case bodies and holes sent to the default do: a mapped
+byte can then agree with every index row through the repeat (the index 0 row
+reads map byte 4, and table rows 0 and 4 hold the same target), while the map
+byte 4 that the code actually dispatches on carries no label. A fresh-range
+value outside the row values that reaches a row's destination is such an
+unlabelled selector value unless the memory its emulation reads shows the code
+never dispatches it (`jumptable.rs (LabelRows::may_be_dispatched)`). An
+unlabelled value is printed under `default:`, so one whose destination is the
+switch's default block, the block that most rows share when `switch_over`
+runs, agrees with the labels (`jumptable.rs (JumpTable::default_addresses)`):
+a plain `switch (map[mode])` whose last mode was cut from the rows still
+dispatches it to the default. Labels that rely on this keep that default for
+the rest of the run (`jumptable.rs (JumpTable::choose_label_values)`), and a
+guard whose out-of-range target is any other block is left in place rather
+than folded into the switch (`jumptable.rs
+(JumpBasicModel::fold_in_one_guard)`), because the fold would make its target
+the default and send the unlabelled value there. Flow-time recovery records the entries it
+read for the rows the code dispatches, the entries it read for every row it
+emulated, and the most loads it performed for one row (`jumptable.rs
+(JumpTable::recover_addresses)`). The dispatched rows are the ones the sanity
+check kept when the flow-time range spans its variable's full width. When a
+guard or a mask bounds that range below the full width (`jumptable.rs
+(JumpTable::flow_bounded_values)`), every value in it passes the guard that
+bounds it, so a row past a cut can still be one the code dispatches, as when an
+earlier row's mapped value fails a second guard further down the path. Such a
+cut row counts unless a guard on its own path sends it away
+(`jumptable.rs (JumpTable::cut_rows_dispatched)`): its path is emulated again
+and each guard recorded while finding the switch variable, whose varnode that
+path computes, must hold the computed value in its range
+(`jumptable.rs (JumpBasicModel::value_passes_guards)`). Those guards lie on the
+single-entry chain into the switch block, so a value outside one never reaches
+the table. A cut row whose mapped value fails that second guard reads an entry
+past the table, often another switch's table, and is not counted, so a fresh
+value that reads the same entry does not reject the labels. The value's
+last load, the entry its destination comes from, must be one a dispatched row
+read: a value reading past the table end the sanity check found in a
+full-width range is not dispatched. When its emulation
+performs no more loads than a row, the value starts at or after the flow-time
+variable on the path, and each earlier load must read an entry some flow-time
+row read, kept or cut: an index past its flow-time range reads map entries no
+row read, while an index inside that range whose row was cut, because an
+earlier row fell outside a guard further down the path, reads the same map
+entries as its row and is still dispatched. A value whose emulation performs
+more loads starts in front of the flow-time variable, where nothing was
+recorded, and is judged by its last load alone. When nothing was recorded, or
+the value loads nothing, every reached row counts. Only destinations are
+compared, never the two ranges: a byte index whose guard lies beyond the late
+guard search spans the whole byte late, while its flow-time range ended at
+that guard or was cut back to the table by the sanity check. Its values past
+the guard read entries no row read, even where such an entry leads to a row's
+target: an index past the end of the target table reads an unread table entry,
+and an index past the end of a short map reads an unread map entry whose
+garbage value may select a table entry a row did read. And a late guard can
+exclude a row the table still lists. Otherwise, when the fresh
+model's own values rebuild the whole table row for row (`jumptable.rs
+(JumpBasicModel::rebuilds_rows)`), the labels come from those values; this
+covers a fresh normalized variable that is offset from the flow-time one. When
+neither holds — typically because the fresh
+variable is a mapped selector, an index already looked up in a byte map in
+front of the target table — the basic model first tries the guard-bound
+recovery paths (`switchmodbound`, `switchguardbound`, `switchsharedcase`,
+`switchmultipred`) exactly as an over-sized table does, so that a guarded index
+in front of the map can still be found. If none applies, no other model is
+tried: JumpBasic2 and the constant-destination model are reached only when the
+basic model could not bound the table at all, as on the flow-time path. A
+JumpBasic2 model can take the constant input of a loop-carried selector as its
+default value, and the printed loop then loses that assignment on its back
+edge. The model is dropped with a header warning (`jumptable.rs
+(JumpTable::drop_model_for_rows)`) and the trivial model described below
+labels the cases by address. Each case is labelled with the flow-time table
+values that reach it, the values the printed selector computes, not with its
+block's start (`jumptable.rs (JumpTable::label_by_case_values)`): a case body
+that takes in lower-addressed code, such as a copy of the shared epilogue it
+branches back to, starts at an address no table entry holds, and a case under
+that label would never match. A recorded value labels an out-edge only when
+that out-edge's block still holds the code the value starts: the block covers
+the value itself, or the first op at or after it. A block's cover begins at its
+first op, so a case whose first instruction produces no p-code, such as a
+`nop`, starts one instruction before its block's cover and is matched through
+that op. An out-edge with no such value keeps its block start. A model found through a guard-bound path, or a
+JumpBasic2 model after an over-sized basic one, faces the same two tests once
+recovery ends and is dropped the same way when it fails both. Flow-time recovery
+(including the second stage of a multistage table) checks no rows. Then
 `jumptable.rs (JumpTable::recover_labels)` computes the *case labels* by
 reverse-emulating the normalization chain from the normalized variable back to
 the unnormalized one (`jumptable.rs (JumpBasicModel::backup2_switch)`, exact
@@ -1166,14 +1257,17 @@ inversion of at most 1 add/sub and 1 extension per the table's caps); a
 non-reversible value labels `NO_LABEL` (rendered as the default). If no model
 can be recovered at all but addresses exist from flow, a trivial model labels
 the targets by index (`jumptable.rs (JumpModelTrivial)` — each target labeled
-with its own address; table size = the block's out-edge count). `fold_in_normalization` then re-points the BRANCHIND
+with its own address, its block's start; table size = the block's out-edge
+count). `fold_in_normalization` then re-points the BRANCHIND
 input at the unnormalized variable — the whole address computation becomes dead
 code and the header renders `switch(V)` — and records how many bits of `V` the
 switch actually consumes. Finally `jumptable.rs
 (JumpBasicModel::fold_in_one_guard)` folds each surviving guard CBRANCH into
 the switch: its out-of-range edge becomes the switch's *default* edge (adding
 the target as a new label-less destination, or marking an existing destination
-as default and collapsing the CBRANCH to a constant predicate); a fold clears
+as default and collapsing the CBRANCH to a constant predicate). Once a fold
+has set the default, a later fold must target the same block, as must every
+fold on a table whose labels rely on its current default; a fold clears
 the structuring so the new edge is re-structured, and the constant-predicate
 residue is severed on the re-run by `ActionDeterminedBranch`. Before
 structuring, any table still without a default marks its most-targeted

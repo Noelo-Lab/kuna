@@ -31,7 +31,9 @@
 //!    the readonly partition),
 //! 4. apply the `ElfScalarOperandAnalyzer` `.got`/`.plt` exclusion (those targets
 //!    are already named by [`crate::loader::elf_plt`], so a scalar pointing at
-//!    them is never a data reference),
+//!    them is never a data reference), and (kuna) drop a scalar the instruction
+//!    uses as the base of an indexed load wider than a byte, which addresses a
+//!    jump table, a function-pointer table or a word map ([`IndexedBases`]),
 //! 5. emit a [`crate::pass::StringFact`] (a typed `char[N]`) when the target is a
 //!    NUL-terminated printable run, plus a `readonly` range over it — reusing the
 //!    **existing** strings/readonly commit arms, so the printer's
@@ -55,7 +57,7 @@
 //!   and the printer renders it as the literal via the SPACEBASE route (Increment
 //!   12). Library-call argument typing already types a `char *` argument
 //!   ([`crate::protos`] / S5 usage inference). So this pass only adds output for
-//!   the *residual* case: a short (< 5 char) or otherwise `strings`-missed
+//!   the *residual* case: a short (< 4 char) or otherwise `strings`-missed
 //!   read-only printable run pointed at by a bare immediate whose consuming call
 //!   has no prototype — a narrow, low-payoff slice.
 //! - **Over-acceptance risk.** A per-instruction immediate scan that types any
@@ -265,23 +267,43 @@ fn exec_ranges(file: &object::File) -> Vec<(u64, u64)> {
     out
 }
 
+/// A p-code operand of one captured instruction: a constant's value, or a
+/// storage location `(space index, offset)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Operand {
+    Const(u64),
+    Loc(i32, u64),
+}
+
+impl Operand {
+    fn of(v: &VarnodeData) -> Operand {
+        match &v.space {
+            Some(space) if space.get_type() == spacetype::IPTR_CONSTANT => Operand::Const(v.offset),
+            Some(space) => Operand::Loc(space.get_index(), v.offset),
+            None => Operand::Loc(-1, v.offset),
+        }
+    }
+}
+
 /// A capturing [`PcodeEmit`] that records every **constant-space** input varnode's
 /// value for one instruction. These are the scalar immediates the
 /// `ScalarOperandAnalyzer` reads as `Instruction.getOpObjects(i)` `Scalar`s — kuna
 /// has no separate operand model at this tier, so the constant inputs of the
 /// instruction's p-code are the faithful projection (every literal an operand
-/// contributes appears as a constant-space varnode in the emitted ops).
+/// contributes appears as a constant-space varnode in the emitted ops).  The ops
+/// also feed [`IndexedBases`].
 #[derive(Default)]
 struct ScalarCapture {
     consts: Vec<u64>,
+    arrays: IndexedBases,
 }
 
 impl PcodeEmit for ScalarCapture {
     fn dump(
         &mut self,
         _addr: &Address,
-        _opc: OpCode,
-        _outvar: Option<&VarnodeData>,
+        opc: OpCode,
+        outvar: Option<&VarnodeData>,
         vars: &[VarnodeData],
     ) {
         for v in vars {
@@ -291,13 +313,70 @@ impl PcodeEmit for ScalarCapture {
                 }
             }
         }
+        let mut ins = [Operand::Const(0); 2];
+        for (slot, v) in ins.iter_mut().zip(vars) {
+            *slot = Operand::of(v);
+        }
+        let out = outvar.map(|v| (Operand::of(v), v.size));
+        self.arrays.step(opc, out, &ins[..vars.len().min(2)]);
     }
 }
 
-/// Decode the instruction at `vma` and return `(len, constant_inputs)`. `None` on
-/// an undecodable address (the caller's policy is to skip to the next aligned
-/// address — a conservative linear sweep, unlike the listing tier's flow-following
-/// recursive descent, because this pass needs no flow, only the operand scalars).
+/// (kuna) The scalars an instruction uses as the base of an indexed load wider
+/// than a byte: added to a value the instruction does not know (`table(,%rax,8)`,
+/// `map(%rdi,%rdi)`) to form the address of a 2-byte or wider LOAD.  Such a scalar
+/// addresses an array of wider elements -- a jump table, a table of function
+/// pointers, a word map -- never a character string, so its bytes are not typed
+/// `char[N]` however printable they look.
+#[derive(Default)]
+struct IndexedBases {
+    derived: Vec<(Operand, u64)>,
+    bases: Vec<u64>,
+}
+
+impl IndexedBases {
+    /// The scalar `v` was computed from, if any.
+    fn base_of(&self, v: &Operand) -> Option<u64> {
+        self.derived.iter().find(|(loc, _)| loc == v).map(|&(_, base)| base)
+    }
+
+    /// Follow one p-code op, given its output and its first two inputs.
+    fn step(&mut self, opc: OpCode, out: Option<(Operand, u32)>, ins: &[Operand]) {
+        let from = match (opc, ins) {
+            (OpCode::CPUI_INT_ADD, &[a, b]) => match (a, b) {
+                (Operand::Const(c), other) | (other, Operand::Const(c))
+                    if !matches!(other, Operand::Const(_)) && looks_like_address(c) =>
+                {
+                    self.base_of(&other).or(Some(c))
+                }
+                _ => self.base_of(&a).or_else(|| self.base_of(&b)),
+            },
+            (OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT, &[v, ..]) => self.base_of(&v),
+            (OpCode::CPUI_LOAD, &[_, addr]) => {
+                let wide = out.is_some_and(|(_, size)| size >= 2);
+                if let Some(base) = self.base_of(&addr).filter(|_| wide) {
+                    if !self.bases.contains(&base) {
+                        self.bases.push(base);
+                    }
+                }
+                None
+            }
+            _ => None,
+        };
+        if let Some((out, _)) = out {
+            self.derived.retain(|(loc, _)| *loc != out);
+            if let Some(base) = from {
+                self.derived.push((out, base));
+            }
+        }
+    }
+}
+
+/// Decode the instruction at `vma` and return `(len, constant_inputs)`, leaving
+/// out the scalars [`IndexedBases`] finds. `None` on an undecodable address
+/// (the caller's policy is to skip to the next aligned address — a conservative
+/// linear sweep, unlike the listing tier's flow-following recursive descent,
+/// because this pass needs no flow, only the operand scalars).
 fn decode_scalars(
     translate: &dyn Translate,
     vma: u64,
@@ -309,6 +388,8 @@ fn decode_scalars(
     if len <= 0 {
         return None;
     }
+    let arrays = &cap.arrays.bases;
+    cap.consts.retain(|c| !arrays.contains(c));
     Some((len as u32, cap.consts))
 }
 
@@ -595,6 +676,59 @@ mod tests {
                 "{n} must not be excluded"
             );
         }
+    }
+
+    #[test]
+    fn indexed_wide_loads_mark_their_base() {
+        type Op = (OpCode, Option<(Operand, u32)>, Vec<Operand>);
+        let bases = |ops: Vec<Op>| {
+            let mut arrays = IndexedBases::default();
+            for (opc, out, ins) in ops {
+                arrays.step(opc, out, &ins[..ins.len().min(2)]);
+            }
+            arrays.bases
+        };
+        let unique = |off: u64| Operand::Loc(3, off);
+        let at = Operand::Const;
+        let space = at(0x1234_5678);
+        let rax = Operand::Loc(2, 0);
+        let rdi = Operand::Loc(2, 0x38);
+        // jmp qword ptr [0x4351f0 + RAX*8]
+        let table = vec![
+            (OpCode::CPUI_INT_MULT, Some((unique(0x100), 8)), vec![rax, at(8)]),
+            (OpCode::CPUI_INT_ADD, Some((unique(0x180), 8)), vec![at(0x4351f0), unique(0x100)]),
+            (OpCode::CPUI_LOAD, Some((unique(0x200), 8)), vec![space, unique(0x180)]),
+            (OpCode::CPUI_BRANCHIND, None, vec![unique(0x200)]),
+        ];
+        assert_eq!(bases(table), vec![0x4351f0]);
+        // movzx eax, word ptr [RDI + RDI*1 + 0x435248]
+        let map = vec![
+            (OpCode::CPUI_INT_MULT, Some((unique(0x100), 8)), vec![rdi, at(1)]),
+            (OpCode::CPUI_INT_ADD, Some((unique(0x180), 8)), vec![rdi, unique(0x100)]),
+            (OpCode::CPUI_INT_ADD, Some((unique(0x200), 8)), vec![unique(0x180), at(0x435248)]),
+            (OpCode::CPUI_LOAD, Some((unique(0x280), 2)), vec![space, unique(0x200)]),
+            (OpCode::CPUI_INT_ZEXT, Some((rax, 4)), vec![unique(0x280)]),
+        ];
+        assert_eq!(bases(map), vec![0x435248]);
+        // movzx eax, byte ptr [RDI + 0x405048]: a byte array may be a string.
+        let bytes = vec![
+            (OpCode::CPUI_INT_ADD, Some((unique(0x100), 8)), vec![rdi, at(0x405048)]),
+            (OpCode::CPUI_LOAD, Some((unique(0x180), 1)), vec![space, unique(0x100)]),
+        ];
+        assert!(bases(bytes).is_empty());
+        // mov rax, qword ptr [0x402000]: no index.
+        let absolute = vec![(OpCode::CPUI_LOAD, Some((rax, 8)), vec![space, at(0x402000)])];
+        assert!(bases(absolute).is_empty());
+        // lea rdi, [RAX + 0x402000]: no load.
+        let lea = vec![(OpCode::CPUI_INT_ADD, Some((rdi, 8)), vec![rax, at(0x402000)])];
+        assert!(bases(lea).is_empty());
+        // A location overwritten before the load no longer carries the base.
+        let killed = vec![
+            (OpCode::CPUI_INT_ADD, Some((unique(0x100), 8)), vec![rdi, at(0x405048)]),
+            (OpCode::CPUI_COPY, Some((unique(0x100), 8)), vec![rax]),
+            (OpCode::CPUI_LOAD, Some((unique(0x180), 8)), vec![space, unique(0x100)]),
+        ];
+        assert!(bases(killed).is_empty());
     }
 
     #[test]

@@ -14,7 +14,7 @@
 //!
 //! ## Why this fixture (the residual the pass is the value-add for)
 //!
-//! `"hi"` is **2 chars** (< 5), so the always-on `StringLiteralPass` (`min_len` 5)
+//! `"hi"` is **2 chars** (< 4), so the always-on `StringLiteralPass` (`min_len` 4)
 //! does **not** plant it — only `operand_refs` does. And `mystery` has **no known
 //! prototype** (it is a local `__attribute__((noinline))` function, absent from the
 //! libproto table), so neither the libproto nor the S5 usage path types its `char*`

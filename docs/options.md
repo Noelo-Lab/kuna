@@ -426,6 +426,7 @@ Three tiers:
 | a declared ptrace/read/write/open call loses every argument | [`declaredlibcproto`](#declaredlibcproto) |
 | string constants render as raw addresses or unnamed data instead of quoted char[N] literals | [`strings`](#strings) |
 | no data symbols at ascii runs in rodata | [`strings`](#strings) |
+| four-character commands such as quit, show, bind, or fork render as hexadecimal addresses | [`strings`](#strings) |
 | a wide Windows API argument renders as a one-character string literal | [`widestrings`](#widestrings) |
 | LoadLibraryW("n") or FindWindowW("O",0) in the emitted C | [`widestrings`](#widestrings) |
 | kuna strings --encoding utf16 reports a literal the decompiled C truncates to its first character | [`widestrings`](#widestrings) |
@@ -1864,8 +1865,8 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 
 ### `strings` -- on | off, default `on`
 
-- **Symptoms:** string constants render as raw addresses or unnamed data instead of quoted char[N] literals; no data symbols at ascii runs in rodata.
-- **What it does:** Run the string-literal analysis pass: detect NUL-terminated ASCII strings (min length 5) and plant a typelocked char[N] data symbol at each (the kuna analog of Ghidra's StringsAnalyzer).
+- **Symptoms:** string constants render as raw addresses or unnamed data instead of quoted char[N] literals; no data symbols at ascii runs in rodata; four-character commands such as quit, show, bind, or fork render as hexadecimal addresses.
+- **What it does:** Run the string-literal analysis pass: detect NUL-terminated ASCII strings (minimum length 4) and plant a typelocked char[N] data symbol at each. The four-character threshold keeps command and mode literals such as quit, show, bind, fork, and dup2 visible while the separate UTF-16 arm retains Ghidra's length-5 default.
 - **When to flip:** On (default) lays char[N] data at detected strings; off leaves those addresses undefined.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-strings
 - **Example:** `option strings off`

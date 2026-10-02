@@ -1392,12 +1392,14 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
 - **Strings** (`strings`, the `StringsAnalyzer` port,
   `decompiler/crates/kuna-analysis/src/analyzers/strings/mod.rs`): scan allocated,
   initialized sections for runs of printable ASCII (plus CR/LF/TAB) ended by a NUL,
-  minimum visible length **5**; each hit commits a *typelocked* `char[len+1]` data
+  minimum visible length **4**; each hit commits a *typelocked* `char[len+1]` data
   symbol (`s_<addr>`) — the typelock is what carries the array type through type
   propagation, and the printer renders the literal, not the name. LOSS: Ghidra
   additionally scores candidates with a trigram model (`StringModel.sng`, not
   vendored), so kuna over-accepts random printable NUL-terminated runs; real
-  literals are unaffected.
+  literals are unaffected. Kuna uses four rather than Ghidra's default five so
+  command and mode literals such as `quit`, `show`, `bind`, `fork`, and `dup2`
+  do not remain raw addresses in stripped binaries.
 - **Wide strings** (`widestrings`, the `StringsAnalyzer` `allCharWidths` arm,
   `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_widestrings.rs
   (scan_wide_strings)`): the same matcher over 2-byte little-endian code units —
@@ -4055,7 +4057,14 @@ discovery-tier measurement the GED loop cannot make.
 upstream's ELF-off default) shares the deferred slot for the same
 decoder-availability reason but does its own linear decode rather than reading the
 Listing, planting `char[N]` facts for immediate operands that point into read-only
-data.
+data. (kuna) An immediate the instruction adds to a value it does not know, to
+form the address of a load two or more bytes wide, is left out
+(`decompiler/crates/kuna-analysis/src/analyzers/operand_refs/mod.rs
+(IndexedBases)`): `jmp *table(,%rax,8)`, `call *tbl(,%rdi,8)` and
+`movzwl map(%rdi,%rdi)` index an array of wider elements, a jump table, a table
+of function pointers or a word map, and typing its first bytes `char[N]` because
+they happen to be printable made the printer index a short literal
+(`*(unsigned long *)&"7A@"[i * 8]`) instead of the table.
 
 (kuna) Three ARM-only seed scans run between the walk's first pass and those
 consumers, each re-seeding the walk and rebuilding the Listing when it finds
