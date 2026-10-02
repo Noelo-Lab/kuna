@@ -203,6 +203,13 @@ pub struct CalleeEntryDead {
     /// target whose prototype it knew — so each of these is resolved against
     /// that target by [`resolve_forward_transfer`], recursively.
     named_cuts: Vec<(Address, ByteSet)>,
+    /// How many of [`Self::opaque_cuts`] are a user op inside an instruction
+    /// that goes on to return unconditionally, such as ARM's `bx lr` switching
+    /// the instruction set on its way back. Read by [`Self::returns_untouched`].
+    returning_opaque: usize,
+    /// The register reads such an instruction makes after its user op, which
+    /// [`Self::reads`] does not see.
+    return_reads: Vec<(int4, u64, int4)>,
     /// Did the walk cover every path with nothing abandoned?
     complete: bool,
 }
@@ -348,6 +355,27 @@ impl CalleeEntryDead {
         self.complete
     }
 
+    /// Does this body call nothing and only return, leaving
+    /// `[addr, addr+size)` unread on the way? A user op that leads straight to
+    /// an unconditional return hands nothing on.
+    pub fn returns_untouched(&self, addr: &Address, size: int4) -> bool {
+        let Some(sp) = addr.get_space() else { return false };
+        let (idx, off) = (self.reg_idx, addr.get_offset());
+        let end = off.wrapping_add(size.max(0) as u64);
+        self.complete
+            && size > 0
+            && end > off
+            && !self.cuts.is_empty()
+            && sp.get_index() == idx
+            && self.named_cuts.is_empty()
+            && self.opaque_cuts.len() == self.returning_opaque
+            && !self.proves_read(addr, size)
+            && !self
+                .return_reads
+                .iter()
+                .any(|&(ridx, roff, rsz)| ridx == idx && roff < end && off < roff + rsz as u64)
+    }
+
     /// Record one unnameable-transfer terminator, so a consumer of this
     /// evidence can unit-test the forwarding case without a translator.
     #[cfg(test)]
@@ -379,6 +407,8 @@ impl CalleeEntryDead {
             cuts: cuts.into_iter().map(|c| c.into_iter().collect()).collect(),
             opaque_cuts: Vec::new(),
             named_cuts: Vec::new(),
+            returning_opaque: 0,
+            return_reads: Vec::new(),
             complete,
         }
     }
@@ -759,6 +789,8 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
         cuts: Vec::new(),
         opaque_cuts: Vec::new(),
         named_cuts: Vec::new(),
+        returning_opaque: 0,
+        return_reads: Vec::new(),
         complete: true,
     };
     let Some(entry_space) = entry.get_space() else {
@@ -813,8 +845,41 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.cuts.clear();
         res.opaque_cuts.clear();
         res.named_cuts.clear();
+        res.returning_opaque = 0;
+        res.return_reads.clear();
     }
     res
+}
+
+/// Count a user op whose instruction then only computes and returns, and keep
+/// the register reads it makes on the way.
+fn note_returning_user_op(res: &mut CalleeEntryDead, rest: &[RawOp]) {
+    let returns = rest.last().is_some_and(|o| o.opc == OpCode::CPUI_RETURN);
+    let flows = rest[..rest.len().saturating_sub(1)].iter().any(|o| {
+        matches!(
+            o.opc,
+            OpCode::CPUI_BRANCH
+                | OpCode::CPUI_CBRANCH
+                | OpCode::CPUI_BRANCHIND
+                | OpCode::CPUI_CALL
+                | OpCode::CPUI_CALLIND
+                | OpCode::CPUI_CALLOTHER
+                | OpCode::CPUI_RETURN
+                | OpCode::CPUI_LOAD
+                | OpCode::CPUI_STORE
+        )
+    });
+    if !returns || flows {
+        return;
+    }
+    res.returning_opaque += 1;
+    for o in rest {
+        for v in &o.ins {
+            if v.space.as_ref().is_some_and(|sp| sp.get_index() == res.reg_idx) {
+                res.return_reads.push((res.reg_idx, v.offset, v.size as int4));
+            }
+        }
+    }
 }
 
 /// Is this op's result a CONSTANT whatever the register held — a compiler's way
@@ -868,7 +933,7 @@ fn step_instruction(
     let mut cur = written;
     let mut targets: Vec<Address> = Vec::new();
     let mut ends_flow = false;
-    for op in &emit.ops {
+    for (k, op) in emit.ops.iter().enumerate() {
         // Reads. An instruction that branches inside itself is scored against
         // the set it was entered with, since a conditionally-executed write
         // earlier in the same instruction may not have run.
@@ -907,6 +972,9 @@ fn step_instruction(
                 return Some(Vec::new());
             }
             OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCHIND => {
+                if op.opc == OpCode::CPUI_CALLOTHER && !emit.internal_flow {
+                    note_returning_user_op(res, &emit.ops[k + 1..]);
+                }
                 res.opaque_cuts.push(cur.clone());
                 res.cuts.push(cur);
                 return Some(Vec::new());

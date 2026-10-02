@@ -213,22 +213,87 @@ pub fn written_inputs(call: &FuncCallSpecs, data: &Funcdata) -> Vec<(Address, i3
 
 /// Bind a call's VFP inputs to its callee's arity-sound contract, up to the
 /// last stated input the caller wrote or the callee provably reads: stated
-/// inputs in front of it become arguments, and a filler the contract skips is
-/// dropped. Another unstated input goes only where the callee neither reads nor
-/// forwards it. A stated input the scoring released and the callee reads, or
-/// one held in part, leaves the call as recovered.
-pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata, written: &[(Address, i32)]) {
+/// inputs in front of it become arguments, a stated double the call holds as
+/// its two words becomes one argument, and a filler the contract skips is
+/// dropped. Another unstated input goes only where the callee neither reads
+/// nor forwards it. A stated input the scoring released and the callee reads,
+/// or one held in part, leaves the call as recovered.
+pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &mut Funcdata, written: &[(Address, i32)]) {
     if !data.get_arch().arm_float_args || call.is_input_locked() || !call.proto().has_model() {
         return;
     }
-    let entry = call.get_entry_address().clone();
-    let Some(stated) = data.kuna_protoorder_types(&entry).filter(|s| s.arity_sound) else {
+    let Some(plan) = plan_stated_inputs(call, data, written) else {
         return;
     };
+    let active = call.get_active_input();
+    for &i in &plan.drop {
+        active.get_trial_mut(i).mark_no_use();
+    }
+    if plan.partial {
+        return;
+    }
+    for join in &plan.joins {
+        join_words(call, data, join);
+    }
+    let active = call.get_active_input();
+    for &i in &plan.bind {
+        let t = active.get_trial_mut(i);
+        t.mark_active();
+        t.mark_used();
+    }
+    if plan.missing.is_empty() {
+        return;
+    }
     let entries = call.proto().model().input().get_entry().to_vec();
+    let active = call.get_active_input();
+    for (addr, size, e) in &plan.missing {
+        let at = active.get_num_trials();
+        active.register_trial(addr, *size);
+        let t = active.get_trial_mut(at);
+        t.mark_unref();
+        t.set_entry(Some(*e), 0);
+        t.mark_active();
+        t.mark_used();
+    }
+    active.sort_trials(&entries);
+}
+
+/// What [`cap_stated_inputs`] does to one call's trials.
+struct StatedPlan {
+    drop: Vec<i32>,
+    bind: Vec<i32>,
+    joins: Vec<WordJoin>,
+    missing: Vec<(Address, i32, usize)>,
+    partial: bool,
+}
+
+/// A stated double the call holds as its low and high word trials.
+struct WordJoin {
+    lo: i32,
+    hi: i32,
+    addr: Address,
+    size: i32,
+    entry: usize,
+}
+
+fn plan_stated_inputs(
+    call: &FuncCallSpecs,
+    data: &Funcdata,
+    written: &[(Address, i32)],
+) -> Option<StatedPlan> {
+    let entry = call.get_entry_address().clone();
+    let stated = data.kuna_protoorder_types(&entry).filter(|s| s.arity_sound)?;
+    let entries = call.proto().model().input().get_entry();
     let vfp = |addr: &Address, size: i32| {
         entries.iter().any(|e| {
             e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) >= 0
+        })
+    };
+    let entry_of = |addr: &Address, size: i32| {
+        entries.iter().position(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT
+                && e.get_size() == size
+                && e.justified_contain(addr, size) == 0
         })
     };
     let wanted: Vec<(Address, i32)> = stated
@@ -237,12 +302,12 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata, written: &[(
         .filter(|(a, s, _)| vfp(a, *s))
         .map(|(a, s, _)| (a.clone(), *s))
         .collect();
-    let probes = data
-        .kuna_callee_entry_dead(&entry)
-        .zip(data.kuna_callee_forward(&entry));
+    let dead = data.kuna_callee_entry_dead(&entry);
+    let forward = data.kuna_callee_forward(&entry);
     let overlaps = |a: &Address, s: i32, b: &Address, t: i32| {
         a.overlap(0, b, t) >= 0 || b.overlap(0, a, s) >= 0
     };
+    let within = |a: &Address, s: i32, b: &Address, t: i32| a.justified_contain(s, b, t, false) >= 0;
     let active = call.active_input();
     let trials: Vec<_> = (0..active.get_num_trials())
         .map(|i| {
@@ -257,23 +322,7 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata, written: &[(
         })
         .collect();
     if wanted.len() < stated.inputs.len() && !trials.iter().any(|(_, _, _, used, _)| *used) {
-        return;
-    }
-    let mut drop = Vec::new();
-    let mut kept = Vec::new();
-    for (i, addr, size, used, unref) in &trials {
-        if !used || !vfp(addr, *size) || wanted.iter().any(|(a, s)| a == addr && s == size) {
-            continue;
-        }
-        let filler = *unref && wanted.iter().any(|(a, _)| above(a, addr));
-        let unreached = probes.is_some_and(|(dead, forward)| {
-            !dead.proves_read(addr, *size) && forward.transfer_free(addr, *size)
-        });
-        if filler || unreached {
-            drop.push(*i);
-        } else {
-            kept.push((addr.clone(), *size));
-        }
+        return None;
     }
     let reads = data
         .kuna_callee_entry_through(&entry)
@@ -281,10 +330,10 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata, written: &[(
     let reached = wanted
         .iter()
         .filter(|(addr, size)| {
-            written.iter().any(|(a, s)| a == addr && s == size)
+            written.iter().any(|(a, s)| within(addr, *size, a, *s))
                 || trials
                     .iter()
-                    .any(|(_, a, s, used, _)| *used && a == addr && s == size)
+                    .any(|(_, a, s, used, _)| *used && within(addr, *size, a, *s))
                 || reads.is_some_and(|r| r.proves_input(addr, *size))
         })
         .map(|(a, _)| a)
@@ -292,15 +341,63 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata, written: &[(
             Some(l) if !above(a, l) => Some(l),
             _ => Some(a),
         });
-    let ignored = |addr: &Address, size: i32| {
-        data.kuna_callee_entry_dead(&entry)
-            .is_some_and(|d| d.proves_dead(addr, size))
+    let in_reach = |addr: &Address| reached.is_some_and(|last| last == addr || above(last, addr));
+    let words = |addr: &Address, size: i32| -> Option<WordJoin> {
+        if trials.iter().any(|(_, a, s, _, _)| a == addr && *s == size) {
+            return None;
+        }
+        let parts: Vec<_> = trials
+            .iter()
+            .filter(|(_, a, s, _, _)| overlaps(addr, size, a, *s))
+            .collect();
+        let [first, second] = parts.as_slice() else {
+            return None;
+        };
+        let word = |(i, a, s, _, unref): &&(i32, Address, i32, bool, bool)| {
+            let t = active.get_trial(*i);
+            (*s * 2 == size && !*unref && !t.is_definitely_not_used() && t.get_slot() >= 1)
+                .then(|| (*i, addr.justified_contain(size, a, *s, false)))
+        };
+        let (lo, hi) = match (word(first)?, word(second)?) {
+            ((lo, 0), (hi, off)) | ((hi, off), (lo, 0)) if off * 2 == size => (lo, hi),
+            _ => return None,
+        };
+        Some(WordJoin { lo, hi, addr: addr.clone(), size, entry: entry_of(addr, size)? })
     };
+    let joins: Vec<WordJoin> = wanted
+        .iter()
+        .filter(|(a, _)| in_reach(a))
+        .filter_map(|(a, s)| words(a, *s))
+        .collect();
+    let joined = |i: &i32| joins.iter().any(|j| j.lo == *i || j.hi == *i);
+    let mut drop = Vec::new();
+    let mut kept = Vec::new();
+    for (i, addr, size, used, unref) in &trials {
+        if !used
+            || !vfp(addr, *size)
+            || joined(i)
+            || wanted.iter().any(|(a, s)| a == addr && s == size)
+        {
+            continue;
+        }
+        let filler = *unref && wanted.iter().any(|(a, _)| above(a, addr));
+        let unreached = dead.is_some_and(|d| {
+            !d.proves_read(addr, *size)
+                && (d.returns_untouched(addr, *size)
+                    || forward.is_some_and(|f| f.transfer_free(addr, *size)))
+        });
+        if filler || unreached {
+            drop.push(*i);
+        } else {
+            kept.push((addr.clone(), *size));
+        }
+    }
+    let ignored = |addr: &Address, size: i32| dead.is_some_and(|d| d.proves_dead(addr, size));
     let mut bind = Vec::new();
     let mut missing = Vec::new();
     let mut partial = false;
     for (addr, size) in &wanted {
-        if !reached.is_some_and(|last| last == addr || above(last, addr)) {
+        if !in_reach(addr) {
             continue;
         }
         let exact = trials.iter().find(|(_, a, s, _, _)| a == addr && s == size);
@@ -315,47 +412,53 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &Funcdata, written: &[(
             }
             Some((i, _, _, false, _)) => bind.push(*i),
             Some(_) => {}
+            None if joins.iter().any(|j| j.addr == *addr && j.size == *size) => {}
             None if trials
                 .iter()
                 .any(|(_, a, s, _, _)| overlaps(addr, *size, a, *s)) =>
             {
                 partial = true
             }
-            None => missing.push((addr.clone(), *size)),
+            None => match entry_of(addr, *size) {
+                Some(e) => missing.push((addr.clone(), *size, e)),
+                None => {}
+            },
         }
     }
+    Some(StatedPlan { drop, bind, joins, missing, partial })
+}
+
+/// Pass a stated double held as two word trials as one argument: a PIECE of
+/// the two words takes the low word's slot, and the high word is released.
+fn join_words(call: &mut FuncCallSpecs, data: &mut Funcdata, join: &WordJoin) {
+    let op = call.get_op();
+    let (lo_slot, hi_slot) = {
+        let active = call.active_input();
+        (active.get_trial(join.lo).get_slot(), active.get_trial(join.hi).get_slot())
+    };
+    let Some(call_op) = data.obank().get(op) else {
+        return;
+    };
+    let (Some(lo), Some(hi)) = (call_op.get_in(lo_slot), call_op.get_in(hi_slot)) else {
+        return;
+    };
+    let pc = call_op.get_addr().clone();
+    let piece = data.new_op(2, pc);
+    data.op_set_opcode_code(piece, OpCode::CPUI_PIECE);
+    let Ok(whole) = data.new_unique_out(join.size, piece) else {
+        return;
+    };
+    let _ = data.op_set_input(piece, hi, 0);
+    let _ = data.op_set_input(piece, lo, 1);
+    data.op_insert_before(piece, op);
+    let _ = data.op_set_input(op, whole, lo_slot);
     let active = call.get_active_input();
-    for i in drop {
-        active.get_trial_mut(i).mark_no_use();
-    }
-    if partial {
-        return;
-    }
-    for i in bind {
-        let t = active.get_trial_mut(i);
-        t.mark_active();
-        t.mark_used();
-    }
-    if missing.is_empty() {
-        return;
-    }
-    for (addr, size) in missing {
-        let Some(e) = entries.iter().position(|e| {
-            e.get_type() == type_class::TYPECLASS_FLOAT
-                && e.get_size() == size
-                && e.justified_contain(&addr, size) == 0
-        }) else {
-            continue;
-        };
-        let at = active.get_num_trials();
-        active.register_trial(&addr, size);
-        let t = active.get_trial_mut(at);
-        t.mark_unref();
-        t.set_entry(Some(e), 0);
-        t.mark_active();
-        t.mark_used();
-    }
-    active.sort_trials(&entries);
+    active.get_trial_mut(join.hi).mark_no_use();
+    let t = active.get_trial_mut(join.lo);
+    *t = crate::fspec::ParamTrial::new(join.addr.clone(), join.size, lo_slot);
+    t.set_entry(Some(join.entry), 0);
+    t.mark_active();
+    t.mark_used();
 }
 
 /// Is `a` a later slot than `b` in the same register file?
