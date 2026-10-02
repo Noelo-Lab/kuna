@@ -3036,6 +3036,77 @@ fn a_return_refused_after_a_restart_leaves_the_function_void() {
     }
 }
 
+/// `floatret_handon_gcc_O1`: `key_ssh_name` passes `key_type_plain`'s `int` to
+/// `type_name` and returns `type_name`'s pointer (`call; call; ret`), and `main`
+/// reads all of `rax`. The function names only `eax`, the first call's result,
+/// so its return was as narrow: `unsigned int key_ssh_name(..)`, which cuts the
+/// pointer to 32 bits. The printed functions are compiled against a key table
+/// whose string lies above 4 GiB and must return that string's address.
+#[test]
+fn a_pointer_handed_on_past_an_int_call_round_trips() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_handon_gcc_O1").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--option", "structdefs", "on", "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let printed = printed_functions(&stdout, &["type_name ", "key_type_plain ", "key_ssh_name "]);
+    let src = format!(
+        "#include <stdio.h>\n#include <string.h>\n#include <sys/mman.h>\n{BITS}unsigned long keytypes[8];\n{printed}\n\
+         int main(void) {{\n  char *ed = mmap((void *)0x7e0000000000ul, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);\n  \
+         strcpy(ed, \"ssh-ed25519\");\n  keytypes[0] = (unsigned long)\"ssh-rsa\"; keytypes[2] = (unsigned long)ed; keytypes[3] = 3;\n  \
+         keytypes[4] = (unsigned long)\"ecdsa\"; keytypes[5] = 2 | (415ul << 32); keytypes[7] = (unsigned long)-1;\n  \
+         unsigned char key[64] = {{3}};\n  unsigned long long r = BITS(key_ssh_name((void *)key));\n  \
+         printf(\"%d %d %s\\n\", (unsigned long)ed > 0xfffffffful, r == (unsigned long)ed, r == (unsigned long)ed ? ed : \"?\");\n  return 0;\n}}\n"
+    );
+    for (cc, got) in compile_and_run_each("floatret-handon", &src) {
+        assert_eq!(got, "1 1 ssh-ed25519", "{cc}: the printed C returns something else:\n{printed}");
+    }
+}
+
+/// `floatret_parse_gcc_O1.o` and `floatret_parse_armel.o` (soft-float ARM):
+/// `parse`, `parse2` and `parsef` return what `strtod` and `strtof` return, and
+/// `rp` keeps `parse`'s bits as an integer, `rp2` stores `parse2`'s `double`, and
+/// `rpf` keeps `parsef`'s bits. A relocatable object declares neither callee, so
+/// a return through them printed `unsigned long parse(..) { return strtod(..); }`,
+/// which converts the `double` by value once compiled against `<stdlib.h>`. They
+/// stay `void`, as before a caller asked for their result.
+#[test]
+fn a_return_of_an_undeclared_float_callee_stays_void() {
+    let sp = specs();
+    for name in ["floatret_parse_gcc_O1.o", "floatret_parse_armel.o"] {
+        let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
+        let printed = printed_functions(&stdout, &["parse ", "parse2 ", "parsef ", "rp ", "rp2 ", "rpf "]);
+        for want in ["void parse(", "void parse2(", "void parsef("] {
+            assert!(printed.contains(want), "{name}: missing `{want}`:\n{printed}");
+        }
+        for bad in ["return strtod(", "return strtof("] {
+            assert!(!printed.contains(bad), "{name}: `{bad}` converts the callee's float by value:\n{printed}");
+        }
+    }
+}
+
+/// `floatret_softfp_armv7` states the base procedure-call standard and has an
+/// FPU (`-mfloat-abi=softfp`, as Android `armeabi-v7a` builds do), so its
+/// imports take and return doubles in core registers: `pw` passes `r0`-`r3` to
+/// `pow`, and `rd` stores `strtod`'s `r0:r1` and passes it to `ceil`. The libc
+/// table's `double` rows laid those calls out in VFP registers and dropped the
+/// arguments and results (`pow(v1,v2)` of unset `d0`/`d1`); they are not seeded
+/// on such an image.
+#[test]
+fn soft_float_imports_keep_their_core_register_values() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_softfp_armv7").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in ["pow(a2,a3,a0,a1);", "= strtod(a0,0);", "= strtof(a0,0);", "= ceil("] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
+    }
+    for bad in ["double strtod(", "double pow(", "pow(v1,v2)"] {
+        assert!(!stdout.contains(bad), "`{bad}` reads VFP registers the code never sets:\n{stdout}");
+    }
+}
+
 /// `dsum`, `norm` and `use` read their argument as `double *`, `struct P *` and
 /// `struct M *`, and each caller writes that memory with integer bits first. A
 /// pointer vote from the callee printed those stores as value conversions

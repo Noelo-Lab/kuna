@@ -172,12 +172,13 @@ impl VoidReads {
             let Some(k) = vote_key(&targets[index]).filter(|k| keys.contains(k)) else { continue };
             let stated = kuna_decomp::kuna_callrettype::statement(prog.arch(), k);
             let returns = kuna_decomp::kuna_voidret::returns(prog.arch(), k);
+            let storage = kuna_decomp::kuna_voidret::return_storage(prog.arch(), k);
             let again = decompile_planned(prog, &targets[index], park, base);
             if slots[index].as_ref().is_none_or(|first| kuna_console::project::redo_replaces(first, &again)) {
                 slots[index] = Some(again);
             } else {
                 kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), k, stated.clone());
-                kuna_decomp::kuna_voidret::restore(prog.arch_mut(), k, returns);
+                kuna_decomp::kuna_voidret::restore(prog.arch_mut(), k, returns, storage);
             }
             self.decompiled(k);
             if kuna_decomp::kuna_voidret::returns(prog.arch(), k) != returns

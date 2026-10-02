@@ -2208,6 +2208,13 @@ impl ConsoleProgram {
             let types = self.arch().types();
             kuna_analysis::protos::declared_libc_prototype(name, types, word_size, layout)
         };
+        let places_floats = {
+            let arch = self.arch();
+            let loader = arch.translate().loader_rc();
+            let stated = loader.try_borrow().ok().map(|l| (l.float_arg_registers(), l.float_hardware()));
+            stated.is_some_and(|(args, fpu)| kuna_decomp::kuna_typedcallabi::places_declared_floats(arch, args, fpu))
+        };
+        let pieces = pieces.filter(|p| places_floats || !kuna_decomp::kuna_typedcallabi::declares_a_float(p));
         if let Some(pieces) = pieces {
             self.arch_mut().set_function_prototype_pieces_at(addr, pieces);
         }

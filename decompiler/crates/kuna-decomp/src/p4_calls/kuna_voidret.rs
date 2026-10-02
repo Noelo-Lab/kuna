@@ -87,6 +87,8 @@ pub struct Ledger {
     /// What each function without a declared prototype was last recovered to
     /// return.
     pub returns: BTreeMap<(int4, uintb), Returns>,
+    /// Per function recovered returning a value, the storage it returns it in.
+    pub storage: BTreeMap<(int4, uintb), (Address, int4)>,
     /// Per reader and callee, how the reader's last decompile holds the call's
     /// result ([`Held`]).
     pub held: BTreeMap<((int4, uintb), (int4, uintb)), Held>,
@@ -134,6 +136,18 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
         }
         None => {
             arch.kuna_voidret.returns.remove(&own);
+        }
+    }
+    let stored = matches!(returns, Some(Returns::Float | Returns::Other))
+        .then(|| proto.get_output())
+        .filter(|out| !out.get_address().is_invalid() && out.get_size() > 0)
+        .map(|out| (out.get_address(), out.get_size()));
+    match stored {
+        Some(s) => {
+            arch.kuna_voidret.storage.insert(own, s);
+        }
+        None => {
+            arch.kuna_voidret.storage.remove(&own);
         }
     }
     if declared || !proto.has_store() || proto.is_input_locked() {
@@ -539,15 +553,28 @@ pub fn returns(arch: &Architecture, k: (int4, uintb)) -> Option<Returns> {
     arch.kuna_voidret.returns.get(&k).copied()
 }
 
-/// Put back what the function keyed `k` returned before a decompile the run
-/// then discarded.
-pub fn restore(arch: &mut Architecture, k: (int4, uintb), returns: Option<Returns>) {
+/// The storage the function keyed `k` last returned a value in, for [`restore`].
+pub fn return_storage(arch: &Architecture, k: (int4, uintb)) -> Option<(Address, int4)> {
+    arch.kuna_voidret.storage.get(&k).cloned()
+}
+
+/// Put back what the function keyed `k` returned, and in what storage, before
+/// a decompile the run then discarded.
+pub fn restore(arch: &mut Architecture, k: (int4, uintb), returns: Option<Returns>, storage: Option<(Address, int4)>) {
     match returns {
         Some(r) => {
             arch.kuna_voidret.returns.insert(k, r);
         }
         None => {
             arch.kuna_voidret.returns.remove(&k);
+        }
+    }
+    match storage {
+        Some(s) => {
+            arch.kuna_voidret.storage.insert(k, s);
+        }
+        None => {
+            arch.kuna_voidret.storage.remove(&k);
         }
     }
 }
@@ -566,6 +593,11 @@ pub fn seed(arch: &Architecture, data: &mut Funcdata) {
         .filter_map(|k| Some((k, arch.kuna_voidret.params.get(&k)?.clone())))
         .collect();
     data.kuna_set_callee_params(params);
+    let storage: BTreeMap<(int4, uintb), (Address, int4)> = (0..data.num_calls())
+        .filter_map(|i| key(data.get_call_specs(i).get_entry_address()))
+        .filter_map(|k| Some((k, arch.kuna_voidret.storage.get(&k)?.clone())))
+        .collect();
+    data.kuna_set_callee_return_storage(storage);
     let own = key(data.get_address());
     let withdrawn = own.is_some_and(|k| arch.kuna_voidret.withdrawn.contains(&k));
     data.kuna_set_float_return_withdrawn(withdrawn);
@@ -604,9 +636,7 @@ pub fn plant(data: &mut Funcdata) {
 }
 
 fn plant_piece(data: &mut Funcdata, addr: Address, size: int4) {
-    if crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size)
-        || crate::p4_calls::kuna_passthrough::touched(data, &addr, size)
-    {
+    if crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size) || touched_beyond(data, &addr, size) {
         return;
     }
     let rets: Vec<crate::context::OpId> = data
@@ -631,6 +661,25 @@ fn plant_piece(data: &mut Funcdata, addr: Address, size: int4) {
         active.get_trial_mut(t).set_slot(slot);
     }
     data.kuna_note_forced_return_planted(addr, size);
+}
+
+/// Does a Varnode of the function share a byte with `[addr, addr+size)` and
+/// reach outside it?  Heritage then registers a return trial on the wider
+/// range, which covers the callers' read.  One the function names only inside
+/// it (the `eax` of an earlier call's result beside a `rax` its callers read)
+/// would make the trial as narrow as that name.
+fn touched_beyond(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    let Some(space) = addr.get_space() else { return true };
+    let off = addr.get_offset();
+    let end = off.wrapping_add(size as u64);
+    let lo = Address::new(std::rc::Rc::clone(space), off.saturating_sub(64));
+    let hi = addr + size as i64;
+    data.vbank().iter_loc_addr_range(&lo, &hi).any(|id| {
+        data.vbank().get(id).is_some_and(|v| {
+            let (voff, vend) = (v.get_offset(), v.get_offset().wrapping_add(v.get_size() as u64));
+            voff < end && off < vend && (voff < off || vend > end)
+        })
+    })
 }
 
 /// Must heritage leave `[addr, addr+size)` out of the function's RETURN trials
@@ -779,13 +828,17 @@ fn score_trial(
         width = width.min(set);
     }
     if width <= 0 {
+        let callers = callers_storage(data, &addr, size);
         for &r in live {
             if let Some(vn) = data.obank().get(r).and_then(|o| o.get_in(slot)) {
-                for claim in void_results(data, vn) {
-                    data.kuna_note_forced_claim(claim);
+                for (callee, storage) in void_results(data, vn) {
+                    data.kuna_note_forced_claim((callee, as_wide_as(storage, callers.as_ref())));
                 }
             }
         }
+        return false;
+    }
+    if hands_on_unstated(data, &addr, size, width, live, slot) {
         return false;
     }
     let every = live.iter().all(|&r| {
@@ -808,16 +861,198 @@ fn score_trial(
     true
 }
 
+/// What a call's callee is known to return, for [`hands_on_unstated`].
+enum CalleeReturn {
+    /// Its declared, stated or last recovered return storage (nothing, for
+    /// `void`).
+    Stored(Address, int4),
+    /// A float, of a width nothing states.
+    Float,
+    /// A value of another type, of a width nothing states.
+    Other,
+    /// Nothing: no declaration, no statement, and no decompile of its own.
+    Unknown,
+}
+
+fn callee_return(data: &Funcdata, fc: &crate::p4_calls::fspec::FuncCallSpecs) -> CalleeReturn {
+    let proto = fc.proto();
+    if proto.is_output_locked() {
+        let out = proto.get_output();
+        if out.get_type().is_some_and(|t| t.get_metatype() == crate::dtype::type_metatype::TYPE_VOID) {
+            return CalleeReturn::Stored(out.get_address(), 0);
+        }
+        return CalleeReturn::Stored(out.get_address(), out.get_size());
+    }
+    let Some(k) = key(fc.get_entry_address()) else { return CalleeReturn::Unknown };
+    if let Some(stated) = data.kuna_callret_stated(k) {
+        return CalleeReturn::Stored(stated.addr.clone(), stated.size);
+    }
+    match (data.kuna_callee_returns(k), data.kuna_callee_return_storage(k)) {
+        (Some(Returns::Void), _) => CalleeReturn::Stored(Address::new_invalid(), 0),
+        (Some(_), Some((addr, size))) => CalleeReturn::Stored(addr.clone(), *size),
+        (Some(Returns::Float), None) => CalleeReturn::Float,
+        (Some(Returns::Other), None) => CalleeReturn::Other,
+        (None, _) => CalleeReturn::Unknown,
+    }
+}
+
+/// Does trial `[addr, addr+size)`, about to return its least significant
+/// `width` bytes, hand on a call's result the listing cannot return as it is?
+/// Where the callers read wider than `width`, a path returning what a callee
+/// returns wider, or of a width nothing states, would be cut short:
+/// `call key_type; call type_name; ret` names only `eax`, and printed
+/// `unsigned int` around `type_name`'s pointer.  Where the storage may carry
+/// a float (a floating-point register, or any register on an image that does
+/// not state a hard-float convention), a path returning what a named callee
+/// nothing declares returns converts it by value once the listing is compiled
+/// against the callee's real declaration: a relocatable object's `strtod`
+/// printed `unsigned long parse(..) { return strtod(..); }`.  A call through a
+/// pointer is typed by the listing itself.  Either keeps the function as it
+/// was.
+fn hands_on_unstated(
+    data: &Funcdata,
+    addr: &Address,
+    size: int4,
+    width: int4,
+    live: &[crate::context::OpId],
+    slot: int4,
+) -> bool {
+    let cut = callers_width(data, addr, size) > width;
+    let float = may_carry_a_float(data, addr, size);
+    if !cut && !float {
+        return false;
+    }
+    let low = if addr.is_big_endian() { addr + (size - 1) as i64 } else { addr.clone() };
+    live.iter().any(|&r| {
+        let Some(vn) = data.obank().get(r).and_then(|o| o.get_in(slot)) else { return true };
+        let Some(calls) = result_calls(data, vn) else { return true };
+        calls.into_iter().filter_map(|c| data.get_call_specs_index(c).map(|i| data.get_call_specs(i))).any(|fc| {
+            match callee_return(data, fc) {
+                CalleeReturn::Stored(raddr, rsize) => cut && covered_from(&low, &raddr, rsize).is_none_or(|n| n > width),
+                CalleeReturn::Float | CalleeReturn::Other => cut,
+                CalleeReturn::Unknown => cut || (float && key(fc.get_entry_address()).is_some()),
+            }
+        })
+    })
+}
+
+/// How many bytes of storage `[raddr, raddr+rsize)` hold from the byte `low`
+/// up (down, big-endian), or `None` when they are in another space.
+fn covered_from(low: &Address, raddr: &Address, rsize: int4) -> Option<int4> {
+    if rsize <= 0 {
+        return Some(0);
+    }
+    if low.get_space().map(|s| s.get_index()) != raddr.get_space().map(|s| s.get_index()) {
+        return None;
+    }
+    let (off, roff, rend) = (low.get_offset(), raddr.get_offset(), raddr.get_offset().wrapping_add(rsize as u64));
+    if off < roff || off >= rend {
+        return Some(0);
+    }
+    Some(if low.is_big_endian() { off + 1 - roff } else { rend - off } as int4)
+}
+
+/// The widest storage the callers read anchored at the trial's least
+/// significant end.
+fn callers_storage(data: &Funcdata, addr: &Address, size: int4) -> Option<(Address, int4)> {
+    data.kuna_forced_return()
+        .iter()
+        .filter(|(fa, fs)| same_low_end(fa, *fs, addr, size))
+        .max_by_key(|(_, fs)| *fs)
+        .cloned()
+}
+
+fn callers_width(data: &Funcdata, addr: &Address, size: int4) -> int4 {
+    callers_storage(data, addr, size).map_or(0, |(_, fs)| fs)
+}
+
+fn same_low_end(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
+    let low_end = |x: &Address, s: int4| if x.is_big_endian() { x.get_offset().wrapping_add(s as u64) } else { x.get_offset() };
+    a.get_space().map(|s| s.get_index()) == b.get_space().map(|s| s.get_index()) && low_end(a, asize) == low_end(b, bsize)
+}
+
+/// The storage a wrapper asks a `void` callee to return in: all of what its
+/// own callers read, where the piece it hands on lies inside that.  A wrapper
+/// whose body names only `eax` asked for `eax` alone, and a callee handing on a
+/// pointer then returned `unsigned int`; one that hands on `rax` in two pieces
+/// asked for each, and the callee, asked for two registers, stayed `void`.
+fn as_wide_as(storage: (Address, int4), callers: Option<&(Address, int4)>) -> (Address, int4) {
+    match callers {
+        Some((fa, fs)) if *fs > storage.1 && within(&storage.0, storage.1, fa, *fs) => (fa.clone(), *fs),
+        _ => storage,
+    }
+}
+
+fn within(addr: &Address, size: int4, outer: &Address, osize: int4) -> bool {
+    addr.get_space().map(|s| s.get_index()) == outer.get_space().map(|s| s.get_index())
+        && outer.get_offset() <= addr.get_offset()
+        && addr.get_offset().wrapping_add(size.max(0) as u64) <= outer.get_offset().wrapping_add(osize.max(0) as u64)
+}
+
+/// Can `[addr, addr+size)` hold a float a callee returns: a floating-point
+/// register of the model's outputs, or any storage where the image does not
+/// state that floats travel in floating-point registers?
+fn may_carry_a_float(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    if data.get_arch().float_arg_registers != Some(true) {
+        return true;
+    }
+    let proto = data.get_func_proto();
+    proto.has_model()
+        && proto.model().output().get_entry().iter().any(|e| {
+            e.get_type() == crate::dtype::type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) >= 0
+        })
+}
+
+/// The calls whose result the value `vn` is on some path into it, through
+/// copies, joins and pieces, or `None` when the paths are too many to follow.
+/// A call an INDIRECT guards may replace the value it carries past the call,
+/// and a piece of a register the function returns whole keeps the rest of the
+/// call's result beside it (`s0` of a `d0` a call set).
+fn result_calls(data: &Funcdata, vn: crate::context::VarnodeId) -> Option<Vec<crate::context::OpId>> {
+    use kuna_num::opcodes::OpCode;
+    let mut out = Vec::new();
+    let mut stack = vec![vn];
+    let mut seen = BTreeSet::new();
+    let guarded = |ind: &crate::op::PcodeOp| {
+        ind.get_in(1)
+            .and_then(|i| data.vbank().get(i))
+            .filter(|i| i.get_space().get_type() == spacetype::IPTR_IOP)
+            .map(|i| crate::context::OpId::from(slotmap::KeyData::from_ffi(i.get_offset())))
+            .filter(|&c| data.obank().get(c).is_some_and(|o| matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)))
+    };
+    while let Some(v) = stack.pop() {
+        if !seen.insert(v) {
+            continue;
+        }
+        if seen.len() > 256 {
+            return None;
+        }
+        let Some((d, def)) = data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| Some((d, data.obank().get(d)?)))
+        else {
+            continue;
+        };
+        match def.code() {
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => out.push(d),
+            OpCode::CPUI_INDIRECT => {
+                out.extend(guarded(def));
+                if !def.is_indirect_creation() {
+                    stack.extend(def.get_in(0));
+                }
+            }
+            OpCode::CPUI_COPY | OpCode::CPUI_SUBPIECE => stack.extend(def.get_in(0)),
+            OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_PIECE => {
+                stack.extend((0..def.num_input()).filter_map(|k| def.get_in(k)))
+            }
+            _ => {}
+        }
+    }
+    Some(out)
+}
+
 /// How many of the trial's least significant bytes the callers read: the
 /// widest read anchored at that end, if any is.
 fn read_width(data: &Funcdata, addr: &Address, size: int4) -> Option<int4> {
-    let low_end = |a: &Address, s: int4| if a.is_big_endian() { a.get_offset().wrapping_add(s as u64) } else { a.get_offset() };
-    data.kuna_forced_return()
-        .iter()
-        .filter(|(fa, _)| fa.get_space().map(|s| s.get_index()) == addr.get_space().map(|s| s.get_index()))
-        .filter(|(fa, fs)| low_end(fa, *fs) == low_end(addr, size))
-        .map(|(_, fs)| (*fs).min(size))
-        .max()
+    callers_storage(data, addr, size).map(|(_, fs)| fs.min(size))
 }
 
 /// How many of `vn`'s least significant bytes hold a value on every path into

@@ -429,6 +429,9 @@ pub struct Funcdata {
     /// (kuna `voidret`) Per callee, whether each parameter its last decompile
     /// recovered is a float (`Some(true)`), an integer or pointer (`Some(false)`).
     kuna_callee_params: std::collections::BTreeMap<(int4, kuna_base::types::uintb), Vec<Option<bool>>>,
+    /// (kuna `voidret`) Per callee recovered returning a value, the storage its
+    /// last decompile returned it in.
+    kuna_callee_return_storage: std::collections::BTreeMap<(int4, kuna_base::types::uintb), (Address, int4)>,
     /// (kuna `floatreg`) The narrow float registers (ARM `s0`) whose other half
     /// of the pair the function's own code touches.
     kuna_float_pair_halves: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>,
@@ -619,6 +622,7 @@ impl Funcdata {
             kuna_float_return_withdrawn: false,
             kuna_callee_returns: std::collections::BTreeMap::new(),
             kuna_callee_params: std::collections::BTreeMap::new(),
+            kuna_callee_return_storage: std::collections::BTreeMap::new(),
             kuna_forced_claims: Vec::new(),
             kuna_float_pair_halves: std::collections::BTreeSet::new(),
             kuna_forced_scoring: false,
@@ -984,6 +988,19 @@ impl Funcdata {
     /// (kuna `voidret`) What the callee at `key` was last recovered to return.
     pub fn kuna_callee_returns(&self, key: (int4, kuna_base::types::uintb)) -> Option<crate::kuna_voidret::Returns> {
         self.kuna_callee_returns.get(&key).copied()
+    }
+
+    /// (kuna `voidret`) Record the storage each callee's last decompile returned a value in.
+    pub fn kuna_set_callee_return_storage(
+        &mut self,
+        storage: std::collections::BTreeMap<(int4, kuna_base::types::uintb), (Address, int4)>,
+    ) {
+        self.kuna_callee_return_storage = storage;
+    }
+
+    /// (kuna `voidret`) The storage the callee at `key` last returned a value in.
+    pub fn kuna_callee_return_storage(&self, key: (int4, kuna_base::types::uintb)) -> Option<&(Address, int4)> {
+        self.kuna_callee_return_storage.get(&key)
     }
 
     /// (kuna `voidret`) Record the parameter classes each callee's last decompile recovered.

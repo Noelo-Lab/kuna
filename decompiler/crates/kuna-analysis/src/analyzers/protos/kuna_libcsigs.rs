@@ -52,6 +52,7 @@ use super::{
     unambiguous_imported_function_names, Sig, Ty,
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
+use kuna_decomp::kuna_typedcallabi;
 
 /// Seed the measured libc signature extension onto imported functions.
 pub struct LibcSigsPass;
@@ -634,7 +635,10 @@ pub(super) const LIBC_EXT: &[(&str, Sig)] = &[
     // ---- floating point (docs/features/floatret/) ----
     // The same corpus rule with `float` and `double` in the vocabulary: every
     // slot is a 4- or 8-byte IEEE value on every target these tables apply to.
-    // `long double` (`strtold`) still has no fixed width and stays out.
+    // `long double` (`strtold`) still has no fixed width and stays out. Seeded
+    // only where a declaration is laid out in the registers the image passes
+    // floats in (`places_declared_floats`): an `armeabi-v7a` image calls
+    // `strtod` with its arguments and result in core registers.
     ("ceil", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
     ("log2", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
     ("modf", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::VoidPtr], vararg: -1 }),
@@ -666,6 +670,11 @@ impl AnalysisPass for LibcSigsPass {
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size, super::L);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT, types, word_size, super::L);
+        use kuna_sleigh::loadimage::LoadImage;
+        if !kuna_typedcallabi::places_declared_floats(ctx.arch, ctx.image.float_arg_registers(), ctx.image.float_hardware()) {
+            out.prototypes.retain(|p| !kuna_typedcallabi::declares_a_float(p));
+            out.prototypes_at.retain(|(_, p)| !kuna_typedcallabi::declares_a_float(p));
+        }
         out
     }
 }

@@ -4413,11 +4413,15 @@ register withdraws it: it returns nothing again, as before.
 In that decompile the function's return storage is seeded
 (`kuna_voidret.rs (seed)`, the register pieces of a joined return such as a
 `struct timespec` in `rax:rdx`), together with what each of its callees was last
-recovered to return. If no op of the function names the storage,
-`kuna_voidret.rs (plant)` gives every live RETURN a read of it and registers the
-return trial itself, the way `passthrough` does for a claimed tail call, and
-heritage's `guardReturns` leaves that piece alone
-(`kuna_voidret.rs (planted_overlaps)`). Only the pieces planted are left out: in
+recovered to return. Unless an op of the function names storage that reaches
+outside it, `kuna_voidret.rs (plant)` gives every live RETURN a read of it and
+registers the return trial itself, the way `passthrough` does for a claimed tail
+call, and heritage's `guardReturns` leaves that piece alone
+(`kuna_voidret.rs (planted_overlaps)`). A name inside the storage does not stop
+it: heritage sizes its own trial by the range the function names, and gcc -O1's
+`key_ssh_name`, `call key_type_plain; call type_name; ret`, names only the
+`eax` of the first call's result, so it returned `unsigned int` around
+`type_name`'s pointer while its caller read all of `rax`. Only the pieces planted are left out: in
 i386 `call zsum; or $0xff,%edx; ret`, whose callers read `edx:eax`, `eax` is
 planted and the `edx` the function writes keeps the trial heritage gives it.
 `ActionReturnRecovery` then marks a
@@ -4461,8 +4465,34 @@ the function stays `void`, since `eax` alone would hand its callers the low half
 of a 64-bit value. A path that sets nothing refuses the trial; when what it
 would return is the result of a callee still recovered `void`, the function files
 a read of that callee (`kuna_voidret.rs (void_results)`), which makes the callee
-due, and returns nothing until the callee does. The value's type is whatever it
-is: the callee's stated return through `callrettype`, a float for a float
+due, and returns nothing until the callee does. The read is of all the storage
+the function's own callers read, where the piece it hands on lies inside it
+(`kuna_voidret.rs (as_wide_as)`): asked for `eax` alone, a callee handing on a
+pointer returned `unsigned int` and its wrapper then took that width; asked for
+`rax` in two pieces, it was asked for two registers and stayed `void`.
+
+A trial narrower than what the callers read is refused, and the function stays
+`void`, where a path returns what a callee returns wider, or of a width nothing
+states (`kuna_voidret.rs (hands_on_unstated)`): the value is followed back
+through copies, phi-nodes, pieces and the calls an INDIRECT guards to the calls
+whose result it is, and the callee's declared output, its `callrettype`
+statement, or the storage its own last decompile returned a value in (`record`
+files it beside what the function returns; a `bool` is stated to no one) gives
+the width (`kuna_voidret.rs (callee_return)`). This is the
+net under the plant above, for a trial heritage sized when an op names storage
+reaching outside the callers' read. A trial that may carry a
+float is refused the same way where a path returns what a named callee nothing
+declares returns: a floating-point register of the model's outputs, or any
+return storage on an image that does not state a hard-float convention. A
+relocatable object declares no `strtod`, and `double parse(const char *s) {
+return strtod(s, 0); }` printed `unsigned long parse(..) { return
+strtod(a0,0); }`, which converts the `double` by value once compiled against
+`<stdlib.h>`, whether the reader keeps the bits as an integer or stores them as
+a `double`; soft-float ARM printed `unsigned int parsef(..)` around `strtof`. A
+call through a pointer is typed by the listing itself (an import stub's
+`(*dat_4018)()`), so it does not count.
+
+The value's type is whatever it is: the callee's stated return through `callrettype`, a float for a float
 register (chapter 05). A forced function whose RETURN carries no value once the
 returns are built is made `void` (`kuna_voidret.rs (void_unless_returned)`),
 as upstream's `updateOutputTypes` would. The port's restart keeps the output an

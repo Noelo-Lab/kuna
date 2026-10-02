@@ -114,6 +114,31 @@ pub fn without_fpu(arch: &Architecture) -> bool {
         .is_ok_and(|loader| loader.float_hardware() == Some(false))
 }
 
+/// Is a declaration that names no convention laid out where the image passes
+/// its floating-point values, given what the container states (`stated`, the
+/// loader's [`image_evidence`] answer) and whether it states floating-point
+/// hardware (`fpu`)?  It is where the image states a hard-float convention
+/// (x86 and AArch64 always do), and where it states the soft-float one with no
+/// hardware and the spec has the soft-float model ([`undeclared_model`]).  An
+/// ARM image with an FPU that states the base standard
+/// (`-mfloat-abi=softfp`, the Android `armeabi-v7a` default), a soft-float image
+/// whose spec has no soft-float model, and an image that states nothing are
+/// not: the default model would read the values from floating-point registers
+/// the code never sets.
+pub fn places_declared_floats(arch: &Architecture, stated: Option<bool>, fpu: Option<bool>) -> bool {
+    let evidence = if x86_or_aarch64(arch) { Some(true) } else { stated };
+    match evidence {
+        Some(true) => true,
+        Some(false) => fpu == Some(false) && arch.get_model(SOFT_FLOAT_MODEL).is_some(),
+        None => false,
+    }
+}
+
+/// Does `pieces` declare a `float` or `double` parameter or return value?
+pub fn declares_a_float(pieces: &PrototypePieces) -> bool {
+    pieces.outtype.iter().chain(&pieces.intypes).any(|ty| ty.get_metatype() == type_metatype::TYPE_FLOAT)
+}
+
 /// The model a declared prototype that names no convention is laid out under,
 /// or `None` for the default one: the soft-float model, on an image that states
 /// the soft-float convention and no floating-point hardware ([`without_fpu`]),
