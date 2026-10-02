@@ -720,6 +720,77 @@ global — a global already has heritage's persist `RETURN-COPY` (§3.1) keeping
 its last store printed, so the brake has nothing to add there. `option
 tiedstorekeep off` restores upstream's behavior exactly.
 
+**Keeping a pointer stored to a global out of the global's markers**
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pointeestorekeep.rs
+(declines)`, a strict fix, no option, issue #767). When a register value is
+stored to a persistent global and the value is also used as an address (the
+address of a `LOAD` or `STORE`, or the base of a `PTRADD` or `PTRSUB`, directly
+or through the `+` and `-` that offset it, following the `COPY`s, `INDIRECT`s
+and `MULTIEQUAL`s that carry it unchanged), `RulePropagateCopy` leaves the
+store's `COPY` as the input of the global's marker (a call's `INDIRECT`, a join's
+`MULTIEQUAL`) and of a `COPY` into the same global. Without that the `COPY`
+dies, chapter 06's forced marker merge joins the value with the global, and
+`gc = q; x = q[1] + q[2]; touch();` printed `gc = &a0[a1]; v1 = gc[2];`: a
+dereference in the pointee type of a global kuna never declares. The walk runs
+before types exist, when `q + 1` is still an integer add, so every add on the way
+to an address counts; after 256 varnodes it answers yes. Two stores keep
+upstream's propagation. A value that is only the global read back through
+`COPY`s, `INDIRECT`s and `MULTIEQUAL`s prints as the global because it is the
+global. And when an earlier value of the global is still read after the store,
+directly or through a copy into a register, the forced merge keeps the value
+apart by trimming anyway, while keeping the store in place would make chapter 06
+copy that earlier value at its definition, possibly above a pointer store that
+changes the global (dash's `set_curjob` unlinks the list head through such a
+pointer and then reads the head again). An earlier value also counts as read
+after the store when the global's own `MULTIEQUAL` reads it on an edge from a
+block the store dominates, or an `INDIRECT` after the store reads it
+(`(marks_after)`). Heritage never builds that; it is what remains when a
+pointer `STORE` becomes the global's `COPY` after the global's heritage, and
+keeping the store there made Merge restore the earlier value with copies (a
+flex scanner's `yylex` at `-O2`).
+
+The same function covers the loads the binary makes. Any other reader of the
+global's `COPY` output is a load of the global after the store (`-O0` reloads a
+global for every use). Under the default `indexaliasguard load` heritage puts no
+`INDIRECT` on a global at a pointer `STORE`, so that load reads the `COPY` even
+when a `STORE` between them may have changed the global, and rewritten to read
+the stored value it prints the register where the binary reads memory: once the
+value is kept apart from the global, `gi = q; x = q[2]; *pp = p; return gi[1] + x;`
+printed `return v2 + v1[1];`, which returns 72 instead of 52 when `pp` points at
+`gi`. So when the stored value is used as an address, `RulePropagateCopy` leaves
+a load reading the global when a `STORE`, or a call heritage gave no `INDIRECT`
+on the global, lies on a path from the store to the load (`(written_between)`,
+walked backward from the load; past 2048 operations, or at a block the store
+does not reach, the answer is yes), whether or not the load is used as an
+address: `*a2 = a0; return v1 + gi[1];` at `-O0` and `-O2`, and
+`*a2 = a0; return (gd - a0) + (long)v2;` for a load that is subtracted. Only a
+store whose earlier value the global's own marker carries past it
+(`(marks_after)`, above) keeps upstream's propagation of its loads; an earlier
+value read after the store through a register does not, so
+`old = gi; gi = q; ... *pp = p; return gi[1] + x + old[0];` keeps its load.
+`RulePushMulti` leaves a global's `MULTIEQUAL` in place when one of its inputs
+is a store kept for the global's markers (`(keeps_join)`), rather than replace
+it with an existing join of the stored values: at `-O0`,
+`if (c) { q = p + k; gi = q; } else { q = p + k + 1; gi = q; }` stores a frame
+variable's value in both arms, and the replacement made the load after
+`*pp = p` read the frame variable. A register copy of
+such a load is the same read: `RulePropagateCopy` does not put the global back
+into a reader of the copy when a write lies between the copy and the reader, and
+chapter 06 keeps the copy as its own variable, so
+`r = gi; *pp2 = p + 1; return r[1];` keeps `r` where the binary loads it rather
+than reading `gi` after the second store.
+
+When the stored value is not used as an address it joins the global in chapter
+06, and a load that uses what it reads as an address, in the slot above or
+through a `COPY` or an add leading to one, keeps reading the global, so the
+dereference prints through the global the binary reads rather than through the
+register it stored: `*--line_num_start = '1'` still prints as
+`line_num_start = &line_num_start[-1]; *line_num_start = '1';` at `-O0`, and
+`gi = &a0[a1]; *a2 = a0; return gi[1];` keeps its load where kuna printed
+`return (&a0[a1])[1];`. Other loads of such a value, and the stores of a
+parameter, a frame variable or a constant, keep upstream's handling: a load
+after a pointer store can still print the stored value there (issue #792).
+
 **Keeping a loop counter's write-back** (`option loopcounterstore`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_loopcounterstore.rs
 (declines)`, default-on) is the same refusal for the same op, on a different
@@ -909,6 +980,35 @@ mask, is recorded on the call's spec when the rewrite commits
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_truncarg.rs (note_trimmed_arg)`),
 so emission can print the zero-extension C's promotion would otherwise lose
 (chapter [09](09-emission.md)).
+
+(kuna) The RETURN pull refuses to trim a 64-bit integer a 32-bit convention
+returns in two registers
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs (returns_integer_pair)`):
+a value no wider than eight bytes, wider than every single integer register of
+the prototype model's output list, and laid out as one integer in the register
+file's byte order. That covers the `join` return recovery builds for ARM `r1:r0`,
+MIPS `$3:$2` or x86 `EDX:EAX`, and a register that names both halves, SPARC
+`o0_1`. When the function writes the high register as zero the RETURN reads
+`ZEXT(lo)`. Dead-code analysis counts only the possibly-nonzero bits of a RETURN
+as consumed, so `RuleSubvarZext` used to trim the RETURN to the low register:
+`u64 ins16(unsigned a, unsigned short b) { return ((a + 1) << 16) | b; }` (ARM
+`orr r0,r1,r0,lsl #16; mov r1,#0; add r0,r0,#65536`) printed as
+`int ins16(int a0,unsigned int a1)`, and a caller that widens the result
+sign-extended the word the binary zero-extends. Kept whole, the function returns
+`unsigned long long`, and the zero-extension is the conversion C performs at the
+return, with a cast where the word's own C type is signed (`(unsigned int)(a1 + a0)`).
+A pair joined against the register order keeps the trim: its high half is not
+the convention's high word (on a big-endian target, `$3` above `$2`), so a zero
+there says nothing about a 64-bit value. So does a 16-byte pair (x86-64
+`RDX:RAX`): no standard C integer spans it, and a zeroed `RDX` there is far more
+often the `-fzero-call-used-regs` scrub after an `int` function than an
+`unsigned __int128`. Some 32-bit functions have exactly the
+bytes of a zero-extended return and still mean a word, and now read as
+`unsigned long long`: an i386 `int` function scrubbed by `-fzero-call-used-regs`
+(`xor %edx,%edx; ret`), gcc -O0's `int f(u64 a) { return a >> 32; }`, which
+copies the high word down and clears `EDX`, and compiler-rt's `rep_clz`.
+`--option returnpair single` returns the first register alone for the run, which
+restores the word for them.
 
 Three sibling engines share the file. `subflow.rs (SplitFlow)` (trigger
 `RuleSplitFlow`, oppool1) splits a double-sized value into hi/lo lanes through

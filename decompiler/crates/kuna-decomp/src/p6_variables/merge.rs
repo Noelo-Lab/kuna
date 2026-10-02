@@ -383,6 +383,10 @@ pub trait MergeContext: HighContext {
 
     /// (kuna) `option tiedphitrim`: [`crate::p6_variables::kuna_tiedphitrim`].
     fn kuna_tied_phi_trim(&self) -> bool;
+    /// (kuna) [`crate::p6_variables::kuna_pointeevalue::load_crosses_write`].
+    fn vn_loads_across_write(&self, _vn: VarnodeId) -> bool {
+        false
+    }
 
     // --- Cover construction for a single read (eliminateIntersect) --------
     /// Build the [`Cover`] of the single read of `vn` by `op` (the C++
@@ -1241,6 +1245,9 @@ impl Merge {
                         continue;
                     }
                     let vn2 = vn2.unwrap();
+                    if crate::p6_variables::kuna_pointeevalue::keeps_apart(ctx, vn1, vn2) {
+                        continue;
+                    }
                     let h1 = ctx.vn_high(vn1).expect("merge_opcode: vn1 no high");
                     let h2 = ctx.vn_high(vn2).expect("merge_opcode: vn2 no high");
                     if Self::merge_test_required(ctx, h1, h2) {
@@ -1332,6 +1339,9 @@ impl Merge {
                     continue;
                 }
                 if ctx.vn_def(vn2).is_none() && !ctx.vn_is_input(vn2) {
+                    continue;
+                }
+                if crate::p6_variables::kuna_pointeevalue::keeps_apart(ctx, vn1, vn2) {
                     continue;
                 }
                 let high_in = ctx.vn_high(vn2).expect("merge_adjacent: vn2 no high");

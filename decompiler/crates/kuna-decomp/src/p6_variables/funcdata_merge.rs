@@ -863,6 +863,9 @@ impl MergeContext for Funcdata {
     fn kuna_tied_phi_trim(&self) -> bool {
         self.get_arch().tied_phi_trim
     }
+    fn vn_loads_across_write(&self, vn: VarnodeId) -> bool {
+        crate::p6_variables::kuna_pointeevalue::load_crosses_write(self, vn)
+    }
 
     // --- Cover construction for a single read -----------------------------
     fn single_read_cover(&self, vn: VarnodeId, op: OpId) -> Cover {
