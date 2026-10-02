@@ -39,7 +39,12 @@ into s0 and s1 after an earlier double result reach the call as written. When
 the callee's recovered contract is arity-sound, the call takes the VFP inputs
 that contract states up to the last one the caller wrote for the call or the
 callee's body, followed through its own calls, is seen to read, so caller and
-callee agree on every VFP position in front of it. A stated input there is an
+callee agree on every VFP position in front of it. A stated double that the call
+holds as its two s-register words, because heritage split the d-register where
+the caller writes only a single-precision half of it, is passed as one value
+built from those two words: a float-returning wrapper that hands its double to
+its callee in d0 and uses it again after the call passes one double, not two
+integer words. A stated input there is an
 argument even where the positional rules ended the list before it: a constant
 the caller left in d1 for its own arithmetic is the argument for an ignored
 `double` the callee states there, and the used double after it stays in place.
@@ -53,7 +58,11 @@ body, followed through its own calls, neither reads nor forwards that register:
 an s-register in which the caller happens to leave a value, such as a constant
 it used for its own arithmetic or a stale half of an earlier double, is then
 not an argument, while a callee whose body is cut short or reaches code no walk
-accounts for keeps every argument its callers recover. A stated input the
+accounts for keeps every argument its callers recover. A leaf callee that only
+returns forwards nothing, including when its return switches the instruction set
+through a user operation as ARM's `bx lr` does, so a register it never reads is
+dropped there: a direct caller does not pass the back-fill slot it never wrote,
+and that slot does not become a parameter of the caller. A stated input the
 caller's own scoring ruled out has already lost its value, so it is kept, as
 zero, only where the callee's body provably ignores the register; where the
 callee reads it, or where the call holds a stated input only in part or under
@@ -75,7 +84,7 @@ Resolved variadic format calls use explicit base AAPCS storage, including
 their floating arguments, rather than the non-variadic VFP convention.
 `formatstring off` disables that source of type evidence.
 
-Five call shapes stay incomplete. A double that the caller forwards untouched,
+Seven call shapes stay incomplete. A double that the caller forwards untouched,
 but of which only one word is live in the caller, is omitted from the call. A
 wrapper that forwards a single-precision argument from the upper half of a
 d-register without touching it, such as the third float of `w(float, float,
@@ -88,7 +97,16 @@ float)` after eight doubles, is not recovered on either side. A double that a
 callee reads only as two integer words is outside this option. Single-precision
 FPUs such as the Cortex-M4F hand every double to base-AAPCS helpers this way, so
 such a callee and its callers keep what `armfloatreturn` alone recovers for
-them.
+them. An unused trailing single-precision parameter that an -O0 body only
+spills to its frame is left off the callee's recovered list, because the spill
+is a dead store, while each caller still passes the value the callee reads
+there, so such a call has one more argument than the callee lists:
+`f(double, float, float, float)` with its last float unused is one. A function
+whose only read of a d-register before writing it whole is the high word, such as
+`f(double, double, float, float)` at -O2 when it ignores the first float and
+then reuses `d2` as scratch, recovers neither word: the used float is read from
+an uninitialized local, as with `armfloatreturn` alone, and its callers pass
+it.
 
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer

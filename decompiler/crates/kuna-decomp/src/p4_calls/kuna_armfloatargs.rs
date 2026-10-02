@@ -307,7 +307,6 @@ fn plan_stated_inputs(
     let overlaps = |a: &Address, s: i32, b: &Address, t: i32| {
         a.overlap(0, b, t) >= 0 || b.overlap(0, a, s) >= 0
     };
-    let within = |a: &Address, s: i32, b: &Address, t: i32| a.justified_contain(s, b, t, false) >= 0;
     let active = call.active_input();
     let trials: Vec<_> = (0..active.get_num_trials())
         .map(|i| {
@@ -324,24 +323,6 @@ fn plan_stated_inputs(
     if wanted.len() < stated.inputs.len() && !trials.iter().any(|(_, _, _, used, _)| *used) {
         return None;
     }
-    let reads = data
-        .kuna_callee_entry_through(&entry)
-        .or_else(|| data.kuna_callee_entry_dead(&entry));
-    let reached = wanted
-        .iter()
-        .filter(|(addr, size)| {
-            written.iter().any(|(a, s)| within(addr, *size, a, *s))
-                || trials
-                    .iter()
-                    .any(|(_, a, s, used, _)| *used && within(addr, *size, a, *s))
-                || reads.is_some_and(|r| r.proves_input(addr, *size))
-        })
-        .map(|(a, _)| a)
-        .fold(None::<&Address>, |last, a| match last {
-            Some(l) if !above(a, l) => Some(l),
-            _ => Some(a),
-        });
-    let in_reach = |addr: &Address| reached.is_some_and(|last| last == addr || above(last, addr));
     let words = |addr: &Address, size: i32| -> Option<WordJoin> {
         if trials.iter().any(|(_, a, s, _, _)| a == addr && *s == size) {
             return None;
@@ -364,11 +345,33 @@ fn plan_stated_inputs(
         };
         Some(WordJoin { lo, hi, addr: addr.clone(), size, entry: entry_of(addr, size)? })
     };
-    let joins: Vec<WordJoin> = wanted
+    let pairs: Vec<WordJoin> = wanted.iter().filter_map(|(a, s)| words(a, *s)).collect();
+    let taken = |i: i32| {
+        let (_, a, s, used, _) = &trials[i as usize];
+        *used || written.iter().any(|(w, z)| w == a && z == s)
+    };
+    let reads = data
+        .kuna_callee_entry_through(&entry)
+        .or_else(|| data.kuna_callee_entry_dead(&entry));
+    let reached = wanted
         .iter()
-        .filter(|(a, _)| in_reach(a))
-        .filter_map(|(a, s)| words(a, *s))
-        .collect();
+        .filter(|(addr, size)| {
+            written.iter().any(|(a, s)| a == addr && s == size)
+                || trials
+                    .iter()
+                    .any(|(_, a, s, used, _)| *used && a == addr && s == size)
+                || pairs
+                    .iter()
+                    .any(|j| j.addr == *addr && j.size == *size && (taken(j.lo) || taken(j.hi)))
+                || reads.is_some_and(|r| r.proves_input(addr, *size))
+        })
+        .map(|(a, _)| a)
+        .fold(None::<&Address>, |last, a| match last {
+            Some(l) if !above(a, l) => Some(l),
+            _ => Some(a),
+        });
+    let in_reach = |addr: &Address| reached.is_some_and(|last| last == addr || above(last, addr));
+    let joins: Vec<WordJoin> = pairs.into_iter().filter(|j| in_reach(&j.addr)).collect();
     let joined = |i: &i32| joins.iter().any(|j| j.lo == *i || j.hi == *i);
     let mut drop = Vec::new();
     let mut kept = Vec::new();

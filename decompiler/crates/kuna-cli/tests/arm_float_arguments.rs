@@ -388,6 +388,83 @@ fn calls_take_exactly_the_vfp_inputs_their_callee_states() {
     }
 }
 
+// clang 14 hard-float ARM and Thumb builds of `armfloatargs_words.c`, whose
+// wrappers forward their double to `wl` in d0 while heritage reads d0 as two
+// words, and `armfloatargs_hole.c`, whose `top` leaves `hole6`'s back-fill
+// slot s7 unwritten before the call.
+#[test]
+fn stated_doubles_pass_whole_and_backfill_holes_stay_empty() {
+    let fixtures =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../kuna-analysis/tests/fixtures");
+    let has_cc = common::process::optional_output(Command::new("cc").arg("--version")).is_some();
+    let driver = common::scratch_file("arm-float-words-driver", "c");
+    std::fs::write(
+        &driver,
+        "#include <stdio.h>\nint top(int);\nint main(void) { long s = 0;\n\
+         for (int n = 1; n < 9; n++) s = s * 31 + top(n);\nprintf(\"%ld\\n\", s); return 0; }\n",
+    )
+    .unwrap();
+    let cases: [(&str, &[(&str, &str, &[usize])]); 2] = [
+        (
+            "armfloatargs_words",
+            &[
+                ("wl", "double wl(double a0,float a1)", &[2, 2, 2]),
+                ("w8", "float w8(double a0)", &[1]),
+                ("w10", "float w10(double a0,float a1)", &[2]),
+            ],
+        ),
+        (
+            "armfloatargs_hole",
+            &[
+                (
+                    "hole6",
+                    "double hole6(double a0,double a1,double a2,float a3,double a4,double a5)",
+                    &[6],
+                ),
+                (
+                    "fill6",
+                    "double fill6(double a0,double a1,double a2,float a3,float a4,float a5)",
+                    &[6],
+                ),
+                ("top", "top(int a0)\n", &[]),
+            ],
+        ),
+    ];
+    for (source, checks) in cases {
+        let expected = has_cc.then(|| {
+            let reference = common::scratch_file(&format!("{source}-reference"), "exe");
+            compile_and_run(&[fixtures.join(format!("{source}.c")), driver.clone()], &reference)
+        });
+        for build in ["arm-O2", "thumb-O2", "thumb-Os"] {
+            let bytes = std::fs::read(fixtures.join(format!("{source}_{build}.o"))).unwrap();
+            let code = decompile_with(&bytes, &["armfloatreturn", "on", "armfloatargs", "on"]);
+            assert!(!code.contains("SUB84"), "{source} {build}\n{code}");
+            for (name, signature, arities) in checks {
+                assert!(
+                    code.contains(signature),
+                    "{source} {build}: missing {signature}\n{code}"
+                );
+                assert_eq!(
+                    &call_arities(&code, name),
+                    arities,
+                    "{source} {build}: {name}\n{code}"
+                );
+            }
+            let Some(expected) = &expected else {
+                continue;
+            };
+            let emitted = common::scratch_file(&format!("{source}-emitted"), "c");
+            let executable = common::scratch_file(&format!("{source}-emitted"), "exe");
+            std::fs::write(&emitted, &code).unwrap();
+            assert_eq!(
+                &compile_and_run(&[emitted, driver.clone()], &executable),
+                expected,
+                "{source} {build}\n{code}"
+            );
+        }
+    }
+}
+
 /// Compile `sources` with the host compiler and return what the program prints.
 fn compile_and_run(sources: &[std::path::PathBuf], executable: &std::path::Path) -> String {
     let compile = Command::new("cc")
