@@ -678,6 +678,12 @@ impl MergeContext for Funcdata {
     fn vn_offset(&self, vn: VarnodeId) -> u64 {
         self.vbank().get(vn).map(|v| v.get_offset()).unwrap_or(0)
     }
+    fn vn_constant_value(&self, vn: VarnodeId) -> Option<u64> {
+        self.vbank().get(vn).filter(|v| v.is_constant()).map(|v| v.get_offset())
+    }
+    fn vn_is_global_load(&self, vn: VarnodeId) -> bool {
+        self.vbank().get(vn).is_some_and(|v| v.is_global_load())
+    }
     fn vn_cover_ref(&self, vn: VarnodeId) -> Option<Cover> {
         self.vbank().get(vn).and_then(|v| v.cover().cloned())
     }
