@@ -1684,6 +1684,11 @@ half is uncomputed — the synthesized-return case — the low, first-in-class
 register is kept so the function's output storage still agrees across every
 RETURN.
 
+A high register the function set to zero is computed too, so the pair of a
+zero-extended 64-bit return survives this repair. The earlier trim that narrowed
+it to its low register, and printed `unsigned long long` as `int`, refuses a pair
+no wider than eight bytes (chapter [03](03-ssa-and-simplification.md) §3.3).
+
 This subsumes `returnpair` on the GH-6990 case it was written for (`tests/stages/
 gh6990-returnpair.xml` now records both passes agreeing); the flag remains as the
 blunt per-function instrument for a pair this rule judges genuine.

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1631,
-    1631
+    1637,
+    1637
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -981,6 +981,12 @@
     "data:ZEROIDIOMUSE #2: on, both loaded registers reach the call as arguments",
     "data:ZEROIDIOMUSE #3: the zeroing idiom itself is folded to the constants reader is called with in BOTH passes, so the option moved no other call",
     "data:ZEROIDIOMUSE #4: both passes keep the loop counter and its two returns, so only the argument list moved",
+    "data:ZEXTPAIR #1: ins16 returns eight bytes",
+    "data:ZEXTPAIR #2: a signed sum is zero-extended, not sign-extended",
+    "data:ZEXTPAIR #3: a signed shift is zero-extended, not sign-extended",
+    "data:ZEXTPAIR #4: every function with a zero high word returns eight bytes",
+    "data:ZEXTPAIR #5: no function is narrowed to its low word",
+    "data:ZEXTPAIR #6: the control whose high word is not always zero is unchanged",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
     "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",
