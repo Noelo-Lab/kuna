@@ -1116,6 +1116,28 @@ guard machinery; what matters here is that a CALL op's input list grows
 speculatively during Band B and is *rewritten to the truth* by the passes
 below.
 
+(kuna) **A variadic argument in the return register.** The guard skips a range
+the call's own output covers exactly (chapter 03), so a variadic call that
+passes an argument in the register it returns in lost that argument.
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargretreg.rs
+(argument_in_own_output)` decides when the input trial is registered anyway. It
+appends one variadic argument to the call's declared pieces, a `double` when the
+range lies in a floating-point entry of the model and an integer of the range's
+size otherwise, and asks the model where it goes. The trial is registered only
+when that storage is the range itself. The model's own `<varargs>` rules keep
+the floating-point registers out where a variadic value travels in integer
+registers or on the stack (ARM, RISC-V, MIPS, Windows, Apple arm64). Two
+conventions the models do not describe come from the language id
+(`image_vararg_floats`). 64-bit PowerPC passes a variadic floating-point value
+in general registers and only copies it to an FPR, so its FPRs are refused.
+x86-64 SysV puts the number of vector registers that carry arguments in `al`,
+so a constant zero written to `al` in the call's block (`xor %eax,%eax`,
+`mov $0,%al`) refuses `xmm0`. When the block does not set `al`, the model
+decides, as it does on AArch64 and 32-bit PowerPC, which have no such count.
+The trial then goes through the `ActionActiveParam` checks below like any
+other, which reject a value merely left in the register, such as a discarded
+call result or a parameter the caller reads again after the call.
+
 ### `ActionActiveParam` — does this argument exist?
 
 Per call with active input recovery
