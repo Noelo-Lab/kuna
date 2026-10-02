@@ -14,11 +14,11 @@
  "change_kind": "strict correctness fix (no option)",
  "default_on": true,
  "parity": {
-  "datatests": "675/675 PARITY OK (on main 363123e96)",
-  "stages": "1647/1647 PARITY OK (main 363123e96 1637 + 10 FLOATRET; #3-#5 pin logish decompiled alone as unsigned int)"
+  "datatests": "675/675 PARITY OK (on main 94ce9314e)",
+  "stages": "1647/1647 PARITY OK (main 94ce9314e 1637 + 10 FLOATRET; #3-#5 pin logish decompiled alone as unsigned int)"
  },
  "castbench": {
-  "base": "main 363123e96 (#773, #786, #788-#791, #793, #794, #797-#799, #803 on top of 0729b8b05), fresh arm .scratch/cb-main363 (x86-64 output identical to 5eb973320); on 0729b8b05 the same branch gave 32,010 -> 31,581 and on 30616a8e8 32,045 -> 31,616",
+  "base": "main 94ce9314e (#804 on top of 363123e96), fresh arm .scratch/cb-main94c, byte-identical to the 363123e96 arm; on 0729b8b05 the same branch gave 32,010 -> 31,581 and on 30616a8e8 32,045 -> 31,616",
   "shared_functions": 4815,
   "casts": {
    "main": 32040,
@@ -319,6 +319,16 @@
    "vs_round6": "every function main did not change since 0729b8b05 prints byte-identically to the round-6 code 04ef10b41 (checked at 30616a8e8: 20,148 of the 45 and 45,971 of the 54; and again from 30616a8e8 to 5eb973320: 20,137 and 46,073). Where main did change a function, this branch either leaves it alone or makes the same change, the only differences being main's own new argument casts (#773), stores through a variable (#798) and declaration order",
    "whole_or_none": "a return the callers read in two registers is returned whole or not at all (13c594b64). Against the branch before it, 11 functions change, each to main's own text (void): sort, tail, sleep and timeout's dtotimespec (x86-64 struct timespec in rax:rdx, which returned rax alone), and betaflight O0/O2/O2-noinline sub_8017edc and cleanflight O0/O2 sub_800ebf8 (an ARM wrapper of a 64-bit millisecond time in r0:r1, which returned r0 alone while sub_8017f66 reads the high word). The i386 `call zsum; or $0xff,%edx` shape now returns unsigned long long; it returned eax alone once main 363123e96 (#794) made it void, since the planted eax kept heritage from giving edx a trial",
    "chain_round_trips": "fixture floatret_chain_gcc_O1 gcc/clang `4002000000000000 40020000 4008000000000000 40080000 4080000040400000 40800000` (= main); the reviewer's chain.c gcc -O1 `4002000000000000 40020000` and struct { float, float } y.c gcc -O2 `40c0000040a00000 40c00000` (= the binaries); MIPS gcc -O0 fg.c prints byte-identically to main (no float) and its printed C compiled natively gives `40100000 3dcccccd` (= the source); floatret_pair32 i386 -O2 `hi` gcc/clang `ff00000003 ff0000800f ff01002345 ff00000000` (= the source; the branch before printed `3 800f 1002345 0`)"
+  },
+  "rebase_94ce9314e": {
+   "arms": "main 94ce9314e vs this branch rebased onto it (5650aa430), decompile-all",
+   "identity": "castbench 45 and the 54 disjoint binaries print byte-identically to the 363123e96 round on both arms (main 363123e96 == 94ce9314e, 13c594b64 == 5650aa430), so the totals of rebase_363123e96 stand",
+   "restart_output": {
+    "change": "a forced function whose RETURN has no value once the returns are built is void (kuna_voidret::void_unless_returned): a restart kept the output the pass before it recovered",
+    "witness": "minipig O0 sub_401937 printed `unsigned int sub_401937(unsigned int a0)` ending `ExitProcess(0); } return; }` (pass 1 took the forced eax, the restart after ExitProcess resolved refused it), and its readers sub_401e20, main and sub_4013e0 returned it as `void *`; now all four print main's text",
+    "footprint": "branch before (6cec85235) vs 5650aa430 on 76 binaries (the 54 plus 22 disjoint: chibios O0/O2, freertos x2, riot, u-boot, x0r-usb x3, minipig x3, mydoom x2, dexter x2, libedit, libselinux, sysvinit x2, zlib, rsyslog) and the castbench 45: 4 of 73,880 functions change, the four above; non-void functions printing a bare `return;` 1 -> 0 (main 0)",
+    "disjoint_22_vs_main": "464 of 7,376 functions changed (the reviewed 468 less the four), void-result uses 721 -> 225, no counter rose"
+   }
   }
  },
  "benchmark": {
@@ -360,70 +370,103 @@
   "code": "95cec2736 (.scratch/sweep-r6f vs .scratch/sweep-main072); 04ef10b41 changes no x86-64 castbench output"
  },
  "speed": {
-  "method": "whole-binary decompile-all --json on O2 stripped binaries, main 30616a8e8 vs this branch rebased onto it (a8c9dbc59, the same branch code as 6502796ea), contended box (load 12-35). Serial: interleaved min-of-15 wall. paired (fmt, bash; re-run because bash's serial min moved +9.4% on one outlying main sample while its median moved -2.3%): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU plus the median of the per-pair ratio",
+  "method": "whole-binary decompile-all --json on O2 stripped binaries, main 94ce9314e vs this branch (5650aa430): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; contended box (load 22-38)",
   "fmt": {
-   "main_min_ms": 4366.9,
-   "fix_min_ms": 4548.2,
-   "delta_min_pct": 4.15,
-   "delta_median_pct": 1.86,
-   "paired": {
-    "main_cpu_min_ms": 4954.8,
-    "fix_cpu_min_ms": 5105.8,
-    "delta_min_pct": 3.05,
-    "delta_median_pct": 5.52,
-    "pair_ratio_median_pct": 4.96
-   }
+   "main_cpu_min_ms": 4329.5,
+   "fix_cpu_min_ms": 4485.2,
+   "delta_min_pct": 3.6,
+   "delta_median_pct": 4.16,
+   "pair_ratio_median_pct": 3.71
   },
   "ls": {
-   "main_min_ms": 15150.0,
-   "fix_min_ms": 14991.0,
-   "delta_min_pct": -1.05,
-   "delta_median_pct": 1.36
+   "main_cpu_min_ms": 15948.4,
+   "fix_cpu_min_ms": 16003.9,
+   "delta_min_pct": 0.35,
+   "delta_median_pct": -0.57,
+   "pair_ratio_median_pct": 1.47
   },
   "sort": {
-   "main_min_ms": 15308.9,
-   "fix_min_ms": 15513.7,
-   "delta_min_pct": 1.34,
-   "delta_median_pct": 2.75
+   "main_cpu_min_ms": 17571.8,
+   "fix_cpu_min_ms": 17622.2,
+   "delta_min_pct": 0.29,
+   "delta_median_pct": -0.74,
+   "pair_ratio_median_pct": 0.52
   },
   "bash": {
-   "main_min_ms": 85701.7,
-   "fix_min_ms": 93755.2,
-   "delta_min_pct": 9.4,
-   "delta_median_pct": -2.28,
-   "paired": {
-    "main_cpu_min_ms": 93628.5,
-    "fix_cpu_min_ms": 96413.0,
-    "delta_min_pct": 2.97,
-    "delta_median_pct": 2.09,
-    "pair_ratio_median_pct": 4.33
-   }
+   "main_cpu_min_ms": 91621.4,
+   "fix_cpu_min_ms": 93898.0,
+   "delta_min_pct": 2.48,
+   "delta_median_pct": 2.2,
+   "pair_ratio_median_pct": 2.2
   },
-  "recheck_13c594b64": {
-   "method": "paired as above, main 363123e96 vs 13c594b64 (with the whole-or-none rule), min-of-11 child CPU, load 25-39",
-   "fmt": {
-    "delta_min_pct": 4.29,
-    "delta_median_pct": 3.97,
-    "pair_ratio_median_pct": 4.29
+  "previous_rounds": {
+   "on_30616a8e8": {
+    "method": "whole-binary decompile-all --json on O2 stripped binaries, main 30616a8e8 vs this branch rebased onto it (a8c9dbc59, the same branch code as 6502796ea), contended box (load 12-35). Serial: interleaved min-of-15 wall. paired (fmt, bash; re-run because bash's serial min moved +9.4% on one outlying main sample while its median moved -2.3%): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU plus the median of the per-pair ratio",
+    "fmt": {
+     "main_min_ms": 4366.9,
+     "fix_min_ms": 4548.2,
+     "delta_min_pct": 4.15,
+     "delta_median_pct": 1.86,
+     "paired": {
+      "main_cpu_min_ms": 4954.8,
+      "fix_cpu_min_ms": 5105.8,
+      "delta_min_pct": 3.05,
+      "delta_median_pct": 5.52,
+      "pair_ratio_median_pct": 4.96
+     }
+    },
+    "ls": {
+     "main_min_ms": 15150.0,
+     "fix_min_ms": 14991.0,
+     "delta_min_pct": -1.05,
+     "delta_median_pct": 1.36
+    },
+    "sort": {
+     "main_min_ms": 15308.9,
+     "fix_min_ms": 15513.7,
+     "delta_min_pct": 1.34,
+     "delta_median_pct": 2.75
+    },
+    "bash": {
+     "main_min_ms": 85701.7,
+     "fix_min_ms": 93755.2,
+     "delta_min_pct": 9.4,
+     "delta_median_pct": -2.28,
+     "paired": {
+      "main_cpu_min_ms": 93628.5,
+      "fix_cpu_min_ms": 96413.0,
+      "delta_min_pct": 2.97,
+      "delta_median_pct": 2.09,
+      "pair_ratio_median_pct": 4.33
+     }
+    }
    },
-   "sort": {
-    "delta_min_pct": 0.51,
-    "delta_median_pct": 1.57,
-    "pair_ratio_median_pct": 1.28
+   "recheck_13c594b64": {
+    "method": "paired as above, main 363123e96 vs 13c594b64 (with the whole-or-none rule), min-of-11 child CPU, load 25-39",
+    "fmt": {
+     "delta_min_pct": 4.29,
+     "delta_median_pct": 3.97,
+     "pair_ratio_median_pct": 4.29
+    },
+    "sort": {
+     "delta_min_pct": 0.51,
+     "delta_median_pct": 1.57,
+     "pair_ratio_median_pct": 1.28
+    }
    }
   }
  },
  "gates": {
-  "make_test": "675/675 PARITY OK (13c594b64 + baseline bc251d44f, on main 363123e96)",
-  "make_test_stages": "1647/1647 PARITY OK (baseline re-recorded on 363123e96: +10 FLOATRET keys, nothing else moved)",
+  "make_test": "675/675 PARITY OK (5650aa430, on main 94ce9314e)",
+  "make_test_stages": "1647/1647 PARITY OK (baseline = main 1637 + 10 FLOATRET keys, set-diff clean)",
   "check_spec": "OK lenient + strict",
   "test_cli": "276/276",
   "catalog_check": "OK",
   "counters_check": "no drift",
   "options_md": "fresh",
-  "rust_test": "7,670 passed / 0 failed / 38 ignored (461 test binaries), RUST_TEST_RC=0 on 13c594b64",
-  "lint": "make lint OK (13c594b64)",
-  "test_tools": "42 OK"
+  "rust_test": "7,694 passed / 0 failed / 38 ignored (464 test binaries), RUST_TEST_RC=0 on 5650aa430",
+  "lint": "make lint OK (5650aa430)",
+  "test_tools": "42 OK (no Python changed since)"
  },
  "known_residue": [
   "ARM hard-float and AArch64 doubles in d0/q0 are recovered at the wrong width (trial recovery never consults the join rule); the low half of a d0 is refused the float vote and stays the integer it was",
@@ -440,7 +483,8 @@
   "A getter that returns a global's float on one path and a constant on another stays an integer: every value returned in the register answers for the vote, and a global refuses it. crazyflie's packed-field getters (sub_80372d4, sub_8036c64) print unsigned int, and their readers print `(float)sub_80372d4()`, a value conversion, exactly as main does; the reviewed revision typed them float through the constant alone",
   "A withdrawn function's float that comes from a callee's own float arithmetic or a declared (libc) return is not withdrawn: it is the type the machine computes, and a reader keeping it as an integer prints what main prints",
   "Where a forced or narrowed return hands back a callee kuna already types as a pointer (tar O2 sub_26100 returning sub_412d0's int *), the listing assigns a pointer to an integer without a cast: a compile error under -Werror=int-conversion, same value; main printed a void function whose result the caller used instead",
-  "A function whose callers read a 64-bit value in two registers stays `void`, as main prints it, when the model maps only one of them (`call big; ret` on i386 and ARM, dtotimespec's rax:rdx): its callers still read the result of a `void` function"
+  "A function whose callers read a 64-bit value in two registers stays `void`, as main prints it, when the model maps only one of them (`call big; ret` on i386 and ARM, dtotimespec's rax:rdx): its callers still read the result of a `void` function",
+  "gcc -O0 relocatable objects: a wrapper of a double callee prints `T v1; callee(..); return v1;` of an unset v1 on main and here (the call output is never linked); this branch types v1 double, and that function's per-function round trip loses the bits where main's `unsigned long` return left the callee's xmm0 in place by accident"
  ],
  "implicit_conversions": {
   "instrument": ".scratch/r4/implconv.py: an argument whose class (int/float, inferred only from declared variables, derefs of declared pointers, printed calls, casts and literals) differs from the printed callee parameter; x = callee() of the other class; return e of the other class",
