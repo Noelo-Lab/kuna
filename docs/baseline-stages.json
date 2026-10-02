@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1665,
-    1665
+    1670,
+    1670
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -69,6 +69,11 @@
     "data:CALLBACKTYPE #1: with no recorded call site the comparator keeps its own parameters in both passes",
     "data:CALLBACKTYPE #2: the slot's void \\* is never claimed from the function's shape",
     "data:CALLBACKTYPE #3: the handler gains no parameter without the signal call site",
+    "data:CALLEARITY FORMAT WITNESS #1: off, the stored values disappear from one call",
+    "data:CALLEARITY FORMAT WITNESS #2: on, both stored values remain call arguments",
+    "data:CALLEARITY FORMAT WITNESS #3: the sibling call keeps its three arguments in both passes",
+    "data:CALLEARITY FORMAT WITNESS #4: a non-format constant never lends its longer arity",
+    "data:CALLEARITY FORMAT WITNESS #5: the longer non-format call stays unchanged",
     "data:CALLEEPRESERVES #1: off, the value that crossed the thunk is a local nothing assigns",
     "data:CALLEEPRESERVES #2: off, f loses the parameter that value was loaded from",
     "data:CALLEEPRESERVES #3: on, EDX survives the thunk and f regains its second parameter",
