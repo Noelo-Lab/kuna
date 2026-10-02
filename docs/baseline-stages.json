@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1658,
-    1658
+    1661,
+    1661
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1365,6 +1365,9 @@
     "data:globalvalue #1: the unsigned value keeps its own variable and cast",
     "data:globalvalue #20: no load after a pointer store reads the value's variable",
     "data:globalvalue #21: the range check loads the strtoul result back from the global",
+    "data:globalvalue #22: no earlier value of the global is copied out above the pointer store",
+    "data:globalvalue #23: the earlier value is read after the pointer store",
+    "data:globalvalue #24: the loop reads the earlier value after the pointer store",
     "data:globalvalue #2: the unsigned store is not read back through the global",
     "data:globalvalue #3: the signed value keeps its own variable",
     "data:globalvalue #4: the signed store is not read back through the global",

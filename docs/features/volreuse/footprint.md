@@ -169,3 +169,29 @@ The same 39 binaries plus tar O0, O2 and O2-noinline: 92 of 15,936 functions.
 - tar, 52 functions: all in the castbench set above with the same change. tar
   O2 `0xa9f0` `0x27340` and O2-noinline `0x2e690` no longer change: main's
   pointer refusal already prints them that way.
+
+## On main `363123e96`: a store after which the global's earlier value is used
+
+A store after which an earlier value of the global is still used is now left to
+upstream (chapter 03), because keeping it made `Merge` copy that earlier value
+out where it is defined, above a pointer store or call the binary loads the
+global after (riot O2 `0x8000b4c` printed `v1 = dat_20000200;` above
+`disableIRQinterrupts();`, while the binary loads at `8000b5a`, after it).
+Against the previous revision:
+
+- 12 binaries (libedit, libselinux, libbsd O0, ip, ssh-keyscan,
+  dpkg-statoverride O0, freertos, nuttx, riot, dexter PE, mirai, chpasswd):
+  1 of 5,642 functions changes, riot `0x8000b4c`, which prints main's text
+  again. Against main, 29 of 5,642 change: in-class splits with the store where
+  the binary makes it (dpkg `0x71ad`, ip `0x72570`, freertos `0x2684`, nuttx
+  `0x8001da4`), local renumbering, equivalent reorders of stores to distinct
+  globals, and freertos `0x22d4`, which stores `dat_200004e4` at the binary's
+  `230c` and, on the path that falls through, again after the `if`/`else` with
+  nothing in between (equivalent).
+- The 42 binaries above: 4 of 15,936 change. tar O2-noinline `0xdfd0` and
+  `0x30600` and rsyslogd O2 `0x29fc0` print main's text again. tar O2
+  `0x308a0` now stores `dat_82c70` after `dat_82c78`, as the binary does
+  (`30af1`, `30afc`), and loads the earlier `dat_82c70` just before that store
+  as main does (the binary loads it at `30aa2`; only the `dat_82c78` store lies
+  between); the previous revision stored `dat_82c70` first. Against main,
+  89 of 15,936 change, all among the functions classified above.
