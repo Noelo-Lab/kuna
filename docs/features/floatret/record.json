@@ -8,14 +8,14 @@
   "rejected_designs": "Accepting the forced return wherever AncestorRealistic holds merged scratch-register values into the return variable (fmt get_space, sort xstrxfrm). Redoing every stale reader after the whole first pass cost bash -O2 +45% and sort -O2 +59% (their main functions redone, 10 s each); settling after each function redoes a wrapper at its first reader instead. Filtering stale readers by held class kept 112 conversions of stale results. An ARM pair rule that refused s0 whenever s1 was touched (every call's parameter trials touch it) left clampf an unsigned int returning fminf's float, a value conversion."
  },
  "plan": "Strict correctness fix, no option (a float register is the float declaration; a void function whose result a caller reads, and a caller whose text disagrees with its callee's declaration, are wrong output). Round trips compiled with gcc and clang that fail on main; stage test; corpus footprint classified with wrong-output counters; castbench, typesweep with arity counters, speed, all gates.",
- "test_name": "kuna-cli/tests/decompile_all_cli.rs a_float_register_return_and_a_read_void_result_round_trip, a_nan_returned_in_s0_round_trips, a_wrapper_returns_its_callees_result_round_trip, a_reader_of_a_redone_wrapper_round_trips (each fails on main); a_float_crossing_an_integer_call_round_trips (signbit_, fetch, use/mk/first_of at clang -O0; gcc -O0 call_f2u never returns an unassigned local) and a_float_handed_on_to_an_integer_parameter_round_trips (Cortex-M4F and AArch64 putf2) pass on main and fail on the reviewed revision 0aec6b59f (0 40000000 0 for 1 3fc00001 3fc00000; cm4 stores 1 2 7); a_float_pair_held_as_an_integer_round_trips (gcc -O2 struct { float, float }, the first two floats of three, float _Complex, each copied into a uint64_t global) passes on main and fails on the reviewed revision 82746c20f (2 0 1 2 0 2 0 for 400000003f800000 40000000 1 400000003f800000 40000000 400000003f800000 40000000, gcc and clang). tests/stages/kuna-floatret.xml (10 assertions: #8 idf stays unsigned int, #10 putf2 keeps unsigned int parameters) and tests/cli/float-register-return-is-a-float.json; kuna-cli/tests/arm_wrapper_returns.rs (#752): its indirect-call and argument-write wrappers and its passthrough-off wrappers return their callee's result, because the fixture's consumer reads r0 after the call (main printed v1 = wrapper() of a void wrapper); a_float_handed_on_through_wrappers_to_an_integer_round_trips (gcc -O1 double through one and two wrappers and struct { float, float } through one, each copied into a uint64_t; prints 4002000000000000 40020000 4008000000000000 40080000 4080000040400000 40800000 under gcc and clang on main 0729b8b05 and on the fix, 2 0 3 0 200 0 on the reviewed revision 4726f6b38 rebased; MIPS gcc -O0 float through a wrapper: the printed chain, run on the fixture's float array mapped at a 32-bit address, stores `40100000 0 4010 0` on main and on the fix, `2 0 0 0` with the float chain of 4726f6b38) and a_float_return_beside_a_global_read_stays_an_integer (gcc -O2 getter returning a packed global's float on one path and 0.0f on the other); round 10: a_pointer_handed_on_past_an_int_call_round_trips (gcc -O1 key_ssh_name hands on type_name's pointer past key_type_plain's int: prints `1 0 ?` on the previous head 0649f0653, whose `unsigned int key_ssh_name` cut the pointer, and does not compile on main, which printed it void), a_return_of_an_undeclared_float_callee_stays_void (x86-64 gcc -O1 and soft-float ARM .o wrappers of strtod/strtof stay void; the previous head printed `unsigned long parse(..) { return strtod(a0,0); }`), soft_float_imports_keep_their_core_register_values (ARM -mfloat-abi=softfp: pow(a2,a3,a0,a1), strtod's r0:r1; the previous head printed pow(v1,v2) of unset d0/d1)",
- "binary": "decompiler/crates/kuna-analysis/tests/fixtures/floatret_x86_64 (clang -O0), floatret_cm4.o (Cortex-M4F, clang -O2), floatret_wrap_{gcc_O0,clang_O0,gcc_O2}, floatret_stale_gcc_O0, floatret_calls_{clang,gcc}_O0, floatret_put_{cm4,a64}.o, floatret_pair_gcc_O2 (gcc -O2, stripped), floatret_chain_gcc_O1 (gcc -O1, stripped), floatret_chain_mips_O0 (mipsel gcc -O0, stripped), floatret_beside_gcc_O2 (gcc -O2, stripped), floatret_handon_gcc_O1 (gcc -O1), floatret_parse_gcc_O1.o (gcc -O1 -c), floatret_parse_armel.o (clang armv7 -mfloat-abi=soft -O1 -c), floatret_softfp_armv7 (clang armv7a -mfloat-abi=softfp -O1, linked)",
+ "test_name": "kuna-cli/tests/decompile_all_cli.rs a_float_register_return_and_a_read_void_result_round_trip, a_nan_returned_in_s0_round_trips, a_wrapper_returns_its_callees_result_round_trip, a_reader_of_a_redone_wrapper_round_trips (each fails on main); a_float_crossing_an_integer_call_round_trips (signbit_, fetch, use/mk/first_of at clang -O0; gcc -O0 call_f2u never returns an unassigned local) and a_float_handed_on_to_an_integer_parameter_round_trips (Cortex-M4F and AArch64 putf2) pass on main and fail on the reviewed revision 0aec6b59f (0 40000000 0 for 1 3fc00001 3fc00000; cm4 stores 1 2 7); a_float_pair_held_as_an_integer_round_trips (gcc -O2 struct { float, float }, the first two floats of three, float _Complex, each copied into a uint64_t global) passes on main and fails on the reviewed revision 82746c20f (2 0 1 2 0 2 0 for 400000003f800000 40000000 1 400000003f800000 40000000 400000003f800000 40000000, gcc and clang). tests/stages/kuna-floatret.xml (10 assertions: #8 idf stays unsigned int, #10 putf2 keeps unsigned int parameters) and tests/cli/float-register-return-is-a-float.json; kuna-cli/tests/arm_wrapper_returns.rs (#752): its indirect-call and argument-write wrappers and its passthrough-off wrappers return their callee's result, because the fixture's consumer reads r0 after the call (main printed v1 = wrapper() of a void wrapper); a_float_handed_on_through_wrappers_to_an_integer_round_trips (gcc -O1 double through one and two wrappers and struct { float, float } through one, each copied into a uint64_t; prints 4002000000000000 40020000 4008000000000000 40080000 4080000040400000 40800000 under gcc and clang on main 0729b8b05 and on the fix, 2 0 3 0 200 0 on the reviewed revision 4726f6b38 rebased; MIPS gcc -O0 float through a wrapper: the printed chain, run on the fixture's float array mapped at a 32-bit address, stores `40100000 0 4010 0` on main and on the fix, `2 0 0 0` with the float chain of 4726f6b38) and a_float_return_beside_a_global_read_stays_an_integer (gcc -O2 getter returning a packed global's float on one path and 0.0f on the other); round 10: a_pointer_handed_on_past_an_int_call_round_trips (gcc -O1 key_ssh_name hands on type_name's pointer past key_type_plain's int: prints `1 0 ?` on the previous head 0649f0653, whose `unsigned int key_ssh_name` cut the pointer, and does not compile on main, which printed it void), a_return_of_an_undeclared_float_callee_stays_void (x86-64 gcc -O1 and soft-float ARM .o wrappers of strtod/strtof stay void; the previous head printed `unsigned long parse(..) { return strtod(a0,0); }`), soft_float_imports_keep_their_core_register_values (ARM -mfloat-abi=softfp: pow(a2,a3,a0,a1), strtod's r0:r1; the previous head printed pow(v1,v2) of unset d0/d1); round 11: arm_images_get_no_double_libc_rows (soft- and hard-float linked ARM images: the previous head printed `double sub_10224(..)` beside a reader's `unsigned long long v1 = sub_10224()`, a value conversion where main returns the right CONCAT44 bits, and `unsigned int sub_101f0(..) { ... return SUB84(v1,0); }`, the low half of d0)",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/floatret_x86_64 (clang -O0), floatret_cm4.o (Cortex-M4F, clang -O2), floatret_wrap_{gcc_O0,clang_O0,gcc_O2}, floatret_stale_gcc_O0, floatret_calls_{clang,gcc}_O0, floatret_put_{cm4,a64}.o, floatret_pair_gcc_O2 (gcc -O2, stripped), floatret_chain_gcc_O1 (gcc -O1, stripped), floatret_chain_mips_O0 (mipsel gcc -O0, stripped), floatret_beside_gcc_O2 (gcc -O2, stripped), floatret_handon_gcc_O1 (gcc -O1), floatret_parse_gcc_O1.o (gcc -O1 -c), floatret_parse_armel.o (clang armv7 -mfloat-abi=soft -O1 -c), floatret_softfp_armv7 (clang armv7a -mfloat-abi=softfp -O1, linked), floatret_armrows_soft / floatret_armrows_hard (clang armv7a -mfloat-abi=soft / -mfloat-abi=hard -O1, linked with GNU ld 2.42)",
  "option": null,
  "change_kind": "strict correctness fix (no option)",
  "default_on": true,
  "parity": {
-  "datatests": "675/675 PARITY OK (on main 29c832ea9)",
-  "stages": "1671/1671 PARITY OK (main 29c832ea9 1661 + 10 FLOATRET; #3-#5 pin logish decompiled alone as unsigned int)"
+  "datatests": "675/675 PARITY OK (main 9b19a9e81)",
+  "stages": "1680/1680 PARITY OK (main 9b19a9e81 1670 + 10 FLOATRET)"
  },
  "castbench": {
   "base": "main 3c08fcfe8 (#758 on top of 94ce9314e), fresh arm .scratch/cb-main3c0; on 94ce9314e the same branch gave 32,040 -> 31,611, on 0729b8b05 32,010 -> 31,581 and on 30616a8e8 32,045 -> 31,616",
@@ -73,7 +73,8 @@
     ]
    }
   },
-  "round10": "a1b97ede7 on main 29c832ea9: 31,989 -> 31,559 (0.846x -> 0.834x IDA), the same totals as 0649f0653; 5 functions differ from it (tar, above)"
+  "round10": "a1b97ede7 on main 29c832ea9: 31,989 -> 31,559 (0.846x -> 0.834x IDA), the same totals as 0649f0653; 5 functions differ from it (tar, above)",
+  "round11": "main 9b19a9e81 -> 2e79fb541: 31,805 -> 31,375 casts (0.846x -> 0.835x IDA); 2,378 of 20,225 functions changed. Against the previous round (main 29c832ea9 -> a1b97ede7): the 20,213 functions #837 left alone print exactly as then; of the 12 it changed, 8 carry the same delta and 4 the same delta beside main's own NULL -> 0 (tar O2-noinline sub_128e0, sub_12910, sub_12be0, sub_12c10)"
  },
  "corpus_footprint": {
   "castbench_45": {
@@ -461,6 +462,70 @@
    },
    "repros": "k.c/k2.c (gcc -O1/-O2, stripped): key_ssh_name/w1 char * (round trip prints the string); k3.c deeper chain (gcc and clang -O1/-O2): every wrapper pointer-wide; armhf use.c: parse/pw void (= main); softfp and Android armeabi-v7a use.c byte-identical to main except the strtof stub returning its r0 integer; p2 .o (x86-64 gcc -O1; ARM soft, softfp, hard clang -O1): parse/parse2/parsef void = main",
    "rebase_5dd534d8d": "the 45 + 76 + 18 binaries print byte-identically on the head rebased onto 5dd534d8d (#779, default-off) and on 29c832ea9"
+  },
+  "round11_vs_main_9b19a9e81": {
+   "castbench_45": {
+    "functions": 20225,
+    "changed": 2378,
+    "void_result_uses": [
+     2123,
+     400
+    ],
+    "float_value_conversion_of_int_call": [
+     24,
+     28,
+     "tail O2 main lseek, documented"
+    ],
+    "ptr_gets_intcast": [
+     191,
+     157
+    ],
+    "never_assigned_returns": [
+     268,
+     266
+    ],
+    "concat_of_killed_register": [
+     227,
+     227
+    ],
+    "unset_var": [
+     2460,
+     2456
+    ],
+    "rises": "grep O2 sub_e5c0 void_used 0 -> 1 (kwsinit, documented), tail O2 main fconv 0 -> 4 (documented)"
+   },
+   "disjoint_76": {
+    "functions": 53650,
+    "changed": 3123,
+    "void_result_uses": [
+     6193,
+     2383
+    ],
+    "float_value_conversion_of_int_call": [
+     370,
+     308
+    ],
+    "never_assigned_returns": [
+     233,
+     227
+    ],
+    "concat_of_killed_register": [
+     663,
+     663
+    ],
+    "ptr_gets_intcast": [
+     204,
+     204
+    ],
+    "unset_var": [
+     17633,
+     17613
+    ],
+    "rises": 0,
+    "vs_previous_round": "53,646 functions #837 left alone print exactly as on a1b97ede7; the 4 it changed carry the same delta"
+   },
+   "arm_linked_images": "soft-float, softfp and hard-float ARMv7 images (s1.c parse/root/clampd/twice and readers, clang -O0/-O1/-O2; the reviewer's use.c and dw.c images; floatret_armrows_*): byte-identical to main except import stubs whose callers read r0 returning that integer (`unsigned int strtof(void)`, `unsigned int __aeabi_dcmplt(void)`). The previous head printed soft `double clampd` beside readers converting it by value (main: the right `unsigned long long clampd`), hard `unsigned int clampd ... return SUB84(v1,0)`, and soft import stubs `v1 = (double)(*dat)(..)`",
+   "other_linked_images": "the same sources on AArch64 (ld.mold) and i386: stubs return their float, `(float8)strtod(..)` conversions go, readers print as on main"
   }
  },
  "benchmark": {
@@ -569,55 +634,76 @@
   }
  },
  "speed": {
-  "method": "whole-binary decompile-all --json on stripped binaries, main 29c832ea9 vs a1b97ede7: both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; contended box (load 17-42)",
+  "method": "whole-binary decompile-all --json on stripped binaries, main 9b19a9e81 vs the head, both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; shared box (load 12-45; measured on 8ec5fb159, the rebased round-10 code before the ARM narrowing, which changes nothing on these x86-64 binaries)",
   "O0_fmt": {
-   "main_cpu_min_ms": 1720.4,
-   "fix_cpu_min_ms": 1899.1,
-   "delta_min_pct": 10.39,
-   "delta_median_pct": 11.01,
-   "pair_ratio_median_pct": 11.07
+   "main_cpu_min_ms": 2053.4,
+   "fix_cpu_min_ms": 2311.7,
+   "delta_min_pct": 12.58,
+   "delta_median_pct": 10.26,
+   "pair_ratio_median_pct": 10.21
   },
   "O0_ls": {
-   "main_cpu_min_ms": 7567.5,
-   "fix_cpu_min_ms": 7855.3,
-   "delta_min_pct": 3.8,
-   "delta_median_pct": 5.08,
-   "pair_ratio_median_pct": 4.87
+   "main_cpu_min_ms": 8288.9,
+   "fix_cpu_min_ms": 8551.9,
+   "delta_min_pct": 3.17,
+   "delta_median_pct": 4.41,
+   "pair_ratio_median_pct": 3.29
   },
   "O0_sort": {
-   "main_cpu_min_ms": 5125.6,
-   "fix_cpu_min_ms": 5785.9,
-   "delta_min_pct": 12.88,
-   "delta_median_pct": 6.72,
-   "pair_ratio_median_pct": 2.88
+   "main_cpu_min_ms": 5222.5,
+   "fix_cpu_min_ms": 5375.1,
+   "delta_min_pct": 2.92,
+   "delta_median_pct": 4.45,
+   "pair_ratio_median_pct": 4.04
+  },
+  "O0_grep": {
+   "main_cpu_min_ms": 7996.4,
+   "fix_cpu_min_ms": 8484.9,
+   "delta_min_pct": 6.11,
+   "delta_median_pct": 7.12,
+   "pair_ratio_median_pct": 6.11
+  },
+  "O0_tar": {
+   "main_cpu_min_ms": 25947.1,
+   "fix_cpu_min_ms": 26842.9,
+   "delta_min_pct": 3.45,
+   "delta_median_pct": 3.75,
+   "pair_ratio_median_pct": 2.73
   },
   "O2_fmt": {
-   "main_cpu_min_ms": 4274.0,
-   "fix_cpu_min_ms": 4467.9,
-   "delta_min_pct": 4.54,
-   "delta_median_pct": 4.02,
-   "pair_ratio_median_pct": 4.02
+   "main_cpu_min_ms": 4361.2,
+   "fix_cpu_min_ms": 4981.4,
+   "delta_min_pct": 14.22,
+   "delta_median_pct": 3.43,
+   "pair_ratio_median_pct": 3.41
   },
   "O2_ls": {
-   "main_cpu_min_ms": 14795.3,
-   "fix_cpu_min_ms": 15088.2,
-   "delta_min_pct": 1.98,
-   "delta_median_pct": 1.22,
-   "pair_ratio_median_pct": 1.52
+   "main_cpu_min_ms": 15872.7,
+   "fix_cpu_min_ms": 15697.7,
+   "delta_min_pct": -1.1,
+   "delta_median_pct": 0.31,
+   "pair_ratio_median_pct": -0.08
   },
   "O2_sort": {
-   "main_cpu_min_ms": 15476.9,
-   "fix_cpu_min_ms": 15789.7,
-   "delta_min_pct": 2.02,
-   "delta_median_pct": 1.15,
-   "pair_ratio_median_pct": 1.15
+   "main_cpu_min_ms": 16417.9,
+   "fix_cpu_min_ms": 16501.2,
+   "delta_min_pct": 0.51,
+   "delta_median_pct": -4.11,
+   "pair_ratio_median_pct": -0.63
+  },
+  "O2_grep": {
+   "main_cpu_min_ms": 14562.0,
+   "fix_cpu_min_ms": 15120.5,
+   "delta_min_pct": 3.84,
+   "delta_median_pct": 3.04,
+   "pair_ratio_median_pct": 2.97
   },
   "O2_bash": {
-   "main_cpu_min_ms": 88795.9,
-   "fix_cpu_min_ms": 90261.3,
-   "delta_min_pct": 1.65,
-   "delta_median_pct": 4.85,
-   "pair_ratio_median_pct": 3.6
+   "main_cpu_min_ms": 88897.6,
+   "fix_cpu_min_ms": 89810.8,
+   "delta_min_pct": 1.03,
+   "delta_median_pct": 2.09,
+   "pair_ratio_median_pct": 0.11
   },
   "voidret_redo_share": {
    "instrument": "decompile counts and per-decompile CPU of the voidret redos (VoidReads::settle) against the first pass, one instrumented run each; deterministic counts, proportional times",
@@ -631,140 +717,194 @@
    "O2_sort": "34 on 343, 0.7%",
    "note": "each function redone to return what its callers read costs its own redo and usually one of its first reader; a third of the redos print the same text (a wrapper whose callee is still void, a reader that already held the result as the callee now states). fmt -O0 is the outlier: 42 redos on 191 functions. The previous head 0649f0653 makes the same redos (5 functions of 20,230 differ on the cast corpus)"
   },
-  "previous_round_6d12ed334": {
-   "method": "whole-binary decompile-all --json on O2 stripped binaries, main 3c08fcfe8 vs this branch (6d12ed334): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; contended box (load 26-39)",
-   "fmt": {
-    "main_cpu_min_ms": 4846.6,
-    "fix_cpu_min_ms": 5005.3,
-    "delta_min_pct": 3.27,
-    "delta_median_pct": 3.43,
-    "pair_ratio_median_pct": 2.82
-   },
-   "ls": {
-    "main_cpu_min_ms": 17828.0,
-    "fix_cpu_min_ms": 17427.5,
-    "delta_min_pct": -2.25,
-    "delta_median_pct": 1.69,
-    "pair_ratio_median_pct": 0.47
-   },
-   "sort": {
-    "main_cpu_min_ms": 17129.1,
-    "fix_cpu_min_ms": 17269.3,
-    "delta_min_pct": 0.82,
-    "delta_median_pct": 0.01,
-    "pair_ratio_median_pct": 0.39
-   },
-   "bash": {
-    "main_cpu_min_ms": 96987.4,
-    "fix_cpu_min_ms": 97577.6,
-    "delta_min_pct": 0.61,
-    "delta_median_pct": 1.1,
-    "pair_ratio_median_pct": -0.05
-   }
-  },
   "previous_rounds": {
-   "on_30616a8e8": {
-    "method": "whole-binary decompile-all --json on O2 stripped binaries, main 30616a8e8 vs this branch rebased onto it (a8c9dbc59, the same branch code as 6502796ea), contended box (load 12-35). Serial: interleaved min-of-15 wall. paired (fmt, bash; re-run because bash's serial min moved +9.4% on one outlying main sample while its median moved -2.3%): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU plus the median of the per-pair ratio",
+   "previous_round_6d12ed334": {
+    "method": "whole-binary decompile-all --json on O2 stripped binaries, main 3c08fcfe8 vs this branch (6d12ed334): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; contended box (load 26-39)",
     "fmt": {
-     "main_min_ms": 4366.9,
-     "fix_min_ms": 4548.2,
-     "delta_min_pct": 4.15,
-     "delta_median_pct": 1.86,
-     "paired": {
-      "main_cpu_min_ms": 4954.8,
-      "fix_cpu_min_ms": 5105.8,
-      "delta_min_pct": 3.05,
-      "delta_median_pct": 5.52,
-      "pair_ratio_median_pct": 4.96
-     }
+     "main_cpu_min_ms": 4846.6,
+     "fix_cpu_min_ms": 5005.3,
+     "delta_min_pct": 3.27,
+     "delta_median_pct": 3.43,
+     "pair_ratio_median_pct": 2.82
     },
     "ls": {
-     "main_min_ms": 15150.0,
-     "fix_min_ms": 14991.0,
-     "delta_min_pct": -1.05,
-     "delta_median_pct": 1.36
+     "main_cpu_min_ms": 17828.0,
+     "fix_cpu_min_ms": 17427.5,
+     "delta_min_pct": -2.25,
+     "delta_median_pct": 1.69,
+     "pair_ratio_median_pct": 0.47
     },
     "sort": {
-     "main_min_ms": 15308.9,
-     "fix_min_ms": 15513.7,
-     "delta_min_pct": 1.34,
-     "delta_median_pct": 2.75
+     "main_cpu_min_ms": 17129.1,
+     "fix_cpu_min_ms": 17269.3,
+     "delta_min_pct": 0.82,
+     "delta_median_pct": 0.01,
+     "pair_ratio_median_pct": 0.39
     },
     "bash": {
-     "main_min_ms": 85701.7,
-     "fix_min_ms": 93755.2,
-     "delta_min_pct": 9.4,
-     "delta_median_pct": -2.28,
-     "paired": {
-      "main_cpu_min_ms": 93628.5,
-      "fix_cpu_min_ms": 96413.0,
-      "delta_min_pct": 2.97,
-      "delta_median_pct": 2.09,
-      "pair_ratio_median_pct": 4.33
+     "main_cpu_min_ms": 96987.4,
+     "fix_cpu_min_ms": 97577.6,
+     "delta_min_pct": 0.61,
+     "delta_median_pct": 1.1,
+     "pair_ratio_median_pct": -0.05
+    }
+   },
+   "previous_rounds": {
+    "on_30616a8e8": {
+     "method": "whole-binary decompile-all --json on O2 stripped binaries, main 30616a8e8 vs this branch rebased onto it (a8c9dbc59, the same branch code as 6502796ea), contended box (load 12-35). Serial: interleaved min-of-15 wall. paired (fmt, bash; re-run because bash's serial min moved +9.4% on one outlying main sample while its median moved -2.3%): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU plus the median of the per-pair ratio",
+     "fmt": {
+      "main_min_ms": 4366.9,
+      "fix_min_ms": 4548.2,
+      "delta_min_pct": 4.15,
+      "delta_median_pct": 1.86,
+      "paired": {
+       "main_cpu_min_ms": 4954.8,
+       "fix_cpu_min_ms": 5105.8,
+       "delta_min_pct": 3.05,
+       "delta_median_pct": 5.52,
+       "pair_ratio_median_pct": 4.96
+      }
+     },
+     "ls": {
+      "main_min_ms": 15150.0,
+      "fix_min_ms": 14991.0,
+      "delta_min_pct": -1.05,
+      "delta_median_pct": 1.36
+     },
+     "sort": {
+      "main_min_ms": 15308.9,
+      "fix_min_ms": 15513.7,
+      "delta_min_pct": 1.34,
+      "delta_median_pct": 2.75
+     },
+     "bash": {
+      "main_min_ms": 85701.7,
+      "fix_min_ms": 93755.2,
+      "delta_min_pct": 9.4,
+      "delta_median_pct": -2.28,
+      "paired": {
+       "main_cpu_min_ms": 93628.5,
+       "fix_cpu_min_ms": 96413.0,
+       "delta_min_pct": 2.97,
+       "delta_median_pct": 2.09,
+       "pair_ratio_median_pct": 4.33
+      }
+     }
+    },
+    "recheck_13c594b64": {
+     "method": "paired as above, main 363123e96 vs 13c594b64 (with the whole-or-none rule), min-of-11 child CPU, load 25-39",
+     "fmt": {
+      "delta_min_pct": 4.29,
+      "delta_median_pct": 3.97,
+      "pair_ratio_median_pct": 4.29
+     },
+     "sort": {
+      "delta_min_pct": 0.51,
+      "delta_median_pct": 1.57,
+      "pair_ratio_median_pct": 1.28
+     }
+    },
+    "on_94ce9314e": {
+     "method": "whole-binary decompile-all --json on O2 stripped binaries, main 94ce9314e vs this branch (5650aa430): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; contended box (load 22-38)",
+     "fmt": {
+      "main_cpu_min_ms": 4329.5,
+      "fix_cpu_min_ms": 4485.2,
+      "delta_min_pct": 3.6,
+      "delta_median_pct": 4.16,
+      "pair_ratio_median_pct": 3.71
+     },
+     "ls": {
+      "main_cpu_min_ms": 15948.4,
+      "fix_cpu_min_ms": 16003.9,
+      "delta_min_pct": 0.35,
+      "delta_median_pct": -0.57,
+      "pair_ratio_median_pct": 1.47
+     },
+     "sort": {
+      "main_cpu_min_ms": 17571.8,
+      "fix_cpu_min_ms": 17622.2,
+      "delta_min_pct": 0.29,
+      "delta_median_pct": -0.74,
+      "pair_ratio_median_pct": 0.52
+     },
+     "bash": {
+      "main_cpu_min_ms": 91621.4,
+      "fix_cpu_min_ms": 93898.0,
+      "delta_min_pct": 2.48,
+      "delta_median_pct": 2.2,
+      "pair_ratio_median_pct": 2.2
      }
     }
    },
-   "recheck_13c594b64": {
-    "method": "paired as above, main 363123e96 vs 13c594b64 (with the whole-or-none rule), min-of-11 child CPU, load 25-39",
-    "fmt": {
-     "delta_min_pct": 4.29,
-     "delta_median_pct": 3.97,
-     "pair_ratio_median_pct": 4.29
+   "previous_round_a1b97ede7": {
+    "method": "whole-binary decompile-all --json on stripped binaries, main 29c832ea9 vs a1b97ede7: both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; contended box (load 17-42)",
+    "O0_fmt": {
+     "main_cpu_min_ms": 1720.4,
+     "fix_cpu_min_ms": 1899.1,
+     "delta_min_pct": 10.39,
+     "delta_median_pct": 11.01,
+     "pair_ratio_median_pct": 11.07
     },
-    "sort": {
-     "delta_min_pct": 0.51,
-     "delta_median_pct": 1.57,
-     "pair_ratio_median_pct": 1.28
-    }
-   },
-   "on_94ce9314e": {
-    "method": "whole-binary decompile-all --json on O2 stripped binaries, main 94ce9314e vs this branch (5650aa430): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; contended box (load 22-38)",
-    "fmt": {
-     "main_cpu_min_ms": 4329.5,
-     "fix_cpu_min_ms": 4485.2,
-     "delta_min_pct": 3.6,
-     "delta_median_pct": 4.16,
-     "pair_ratio_median_pct": 3.71
+    "O0_ls": {
+     "main_cpu_min_ms": 7567.5,
+     "fix_cpu_min_ms": 7855.3,
+     "delta_min_pct": 3.8,
+     "delta_median_pct": 5.08,
+     "pair_ratio_median_pct": 4.87
     },
-    "ls": {
-     "main_cpu_min_ms": 15948.4,
-     "fix_cpu_min_ms": 16003.9,
-     "delta_min_pct": 0.35,
-     "delta_median_pct": -0.57,
-     "pair_ratio_median_pct": 1.47
+    "O0_sort": {
+     "main_cpu_min_ms": 5125.6,
+     "fix_cpu_min_ms": 5785.9,
+     "delta_min_pct": 12.88,
+     "delta_median_pct": 6.72,
+     "pair_ratio_median_pct": 2.88
     },
-    "sort": {
-     "main_cpu_min_ms": 17571.8,
-     "fix_cpu_min_ms": 17622.2,
-     "delta_min_pct": 0.29,
-     "delta_median_pct": -0.74,
-     "pair_ratio_median_pct": 0.52
+    "O2_fmt": {
+     "main_cpu_min_ms": 4274.0,
+     "fix_cpu_min_ms": 4467.9,
+     "delta_min_pct": 4.54,
+     "delta_median_pct": 4.02,
+     "pair_ratio_median_pct": 4.02
     },
-    "bash": {
-     "main_cpu_min_ms": 91621.4,
-     "fix_cpu_min_ms": 93898.0,
-     "delta_min_pct": 2.48,
-     "delta_median_pct": 2.2,
-     "pair_ratio_median_pct": 2.2
+    "O2_ls": {
+     "main_cpu_min_ms": 14795.3,
+     "fix_cpu_min_ms": 15088.2,
+     "delta_min_pct": 1.98,
+     "delta_median_pct": 1.22,
+     "pair_ratio_median_pct": 1.52
+    },
+    "O2_sort": {
+     "main_cpu_min_ms": 15476.9,
+     "fix_cpu_min_ms": 15789.7,
+     "delta_min_pct": 2.02,
+     "delta_median_pct": 1.15,
+     "pair_ratio_median_pct": 1.15
+    },
+    "O2_bash": {
+     "main_cpu_min_ms": 88795.9,
+     "fix_cpu_min_ms": 90261.3,
+     "delta_min_pct": 1.65,
+     "delta_median_pct": 4.85,
+     "pair_ratio_median_pct": 3.6
     }
    }
   }
  },
  "gates": {
-  "code_head": "3f45b4649 (round-10 code) rebased onto main 5dd534d8d (#779), stages baseline 13a6a92e5",
+  "code_head": "2e79fb541 on main 9b19a9e81 (#837); record-only commits after it",
   "make_test": "675/675 PARITY OK",
-  "make_test_stages": "1675/1675 PARITY OK (baseline re-recorded: main 1665 + the 10 FLOATRET keys, none missing)",
+  "make_test_stages": "1680/1680 PARITY OK (baseline re-recorded with SLEIGHHOME: main 1670 + the 10 FLOATRET keys, none missing)",
   "check_spec": "OK lenient + strict",
   "test_cli": "276/276",
   "catalog_check": "OK",
   "counters_check": "no drift",
   "options_md": "fresh",
   "phases_toml": "unchanged, parses (tomllib)",
-  "corpus_count": "kuna-base xml.rs 377 = tests/datatests + tests/stages",
-  "rust_test": "7,722 passed / 0 failed / 38 ignored (465 test binaries), RUST_TEST_RC=0 on 13a6a92e5 (lane started 09:14:23Z, after the rebase and build); on a1b97ede7 (main 29c832ea9) 7,704 / 0 / 38",
-  "lint": "make lint OK (13a6a92e5)",
+  "corpus_count": "kuna-base xml.rs 378 = tests/datatests + tests/stages",
+  "rust_test": "7,726 passed / 0 failed / 38 ignored (465 test binaries), RUST_TEST_RC=0 on 2e79fb541 (lane started 17:17:43Z, after the last code change)",
+  "lint": "make lint OK (2e79fb541)",
   "test_tools": "no Python changed",
-  "ci": "a1b97ede7: parity gates and cargo workspace suite success"
+  "ci": "2e79fb541: parity gates and cargo workspace suite success"
  },
  "known_residue": [
   "ARM hard-float and AArch64 doubles in d0/q0 are recovered at the wrong width (trial recovery never consults the join rule); the low half of a d0 is refused the float vote and stays the integer it was",
@@ -784,7 +924,7 @@
   "A function whose callers read a 64-bit value in two registers stays `void`, as main prints it, when the model maps only one of them (`call big; ret` on i386 and ARM, dtotimespec's rax:rdx): its callers still read the result of a `void` function",
   "gcc -O0 relocatable objects: a wrapper of a double callee prints `T v1; callee(..); return v1;` of an unset v1 on main and here (the call output is never linked); this branch types v1 double, and that function's per-function round trip loses the bits where main's `unsigned long` return left the callee's xmm0 in place by accident",
   "Relocatable objects give a libc function no prototype, so a wrapper returning strtod's or strtof's result (and, on an image that does not state a hard-float convention, any named undeclared callee's) stays void, as main prints it, and its reader's `dat = parse();` still reads a void result. Linked binaries declare these calls",
-  "ARM -mfloat-abi=softfp images (an FPU and the base standard, the Android armeabi-v7a default) get no float/double libc rows: a declaration there keeps the default VFP layout (#821), while their imports pass doubles in r0-r3. strtod/pow/sqrt print as on main; their import stubs return the integer their readers read",
+  "ARM images get no float/double libc rows. A soft-float or -mfloat-abi=softfp image hands a double around in r0:r1 and its callers hold that as a 64-bit integer: the rows made a function returning strtod's result or 0 `double`, which its readers converted by value, where main returns the right bits. A hard-float image's d0 is not among the default model's outputs: the rows made the same function `unsigned int` returning the low half of d0. strtod/pow/sqrt and their callers print as on main; an import stub whose callers read r0 returns that integer",
   "An ARM hard-float wrapper of a double callee (`bl strtod; pop`) is planted at the d0 its caller reads, which the model's output map leaves out, so it stays void as main prints it (the previous head returned the s0 half)",
   "On a soft-float image (u-boot O2), a wrapper whose callee kuna never decompiled (no body in the listing) stays void: its result could be a float in r0. 2 functions of 53,650 go back to main's text"
  ],
