@@ -1960,7 +1960,8 @@ mod tests {
         // variable instead of merging into a global it is stored to
         // and kuna-narrowext / a narrow RISC-V argument or return value is
         // extended by the sign of its type (GH-816)
-        assert_eq!(count, 379, "corpus file count drifted");
+        // and kuna-floatret / a value returned in a float register is a float
+        assert_eq!(count, 380, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

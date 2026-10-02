@@ -46,6 +46,8 @@ def cls(t, ret=False):
         # any other named pointee is still a pointer slot -> void*
         if re.match(r'^[A-Za-z_][A-Za-z0-9_ ]*$', base): return 'VoidPtr'
         return None
+    if t=='float': return 'Float'
+    if t=='double': return 'Double'
     if t in UNSIGNED4: return 'UInt'
     if t in INT4: return 'Int'
     if t in PTRW_U: return 'Size'

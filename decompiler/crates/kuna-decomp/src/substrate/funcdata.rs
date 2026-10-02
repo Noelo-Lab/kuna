@@ -409,9 +409,35 @@ pub struct Funcdata {
     /// (kuna `callrettype`) The recovered return value of each callee this
     /// function calls, copied off the `Architecture` like `kuna_protoorder_types`.
     kuna_callret_types: crate::kuna_callrettype::StatedReturns,
+    /// (kuna `floatreg`) The statements this caller refused: what its callees
+    /// still declare their results to be.
+    kuna_callret_withdrawn: crate::kuna_callrettype::StatedReturns,
     /// (kuna `callrettype`) The loader's data ranges, for telling an address
     /// from a number ([`crate::kuna_callrettype::contradicted`]).
     kuna_callret_data: std::rc::Rc<Vec<(u64, u64)>>,
+    /// (kuna `voidret`) The return storage this function's callers read.
+    kuna_forced_return: Vec<(Address, int4)>,
+    /// (kuna `voidret`) The pieces of that storage whose RETURN read was planted.
+    kuna_forced_return_planted: Vec<(Address, int4)>,
+    /// (kuna `voidret`) A reader keeps this function's float return as another
+    /// type, so the float-register vote on the return is withdrawn.
+    kuna_float_return_withdrawn: bool,
+    /// (kuna `voidret`) The `void` callees' results this function's return would be.
+    kuna_forced_claims: Vec<((int4, kuna_base::types::uintb), (Address, int4))>,
+    /// (kuna `voidret`) What each callee's last decompile recovered it returns.
+    kuna_callee_returns: std::collections::BTreeMap<(int4, kuna_base::types::uintb), crate::kuna_voidret::Returns>,
+    /// (kuna `voidret`) Per callee, whether each parameter its last decompile
+    /// recovered is a float (`Some(true)`), an integer or pointer (`Some(false)`).
+    kuna_callee_params: std::collections::BTreeMap<(int4, kuna_base::types::uintb), Vec<Option<bool>>>,
+    /// (kuna `voidret`) Per callee recovered returning a value, the storage its
+    /// last decompile returned it in.
+    kuna_callee_return_storage: std::collections::BTreeMap<(int4, kuna_base::types::uintb), (Address, int4)>,
+    /// (kuna `floatreg`) The narrow float registers (ARM `s0`) whose other half
+    /// of the pair the function's own code touches.
+    kuna_float_pair_halves: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>,
+    /// (kuna `voidret`) Whether `ancestor_op_use` is scoring that storage, where a
+    /// call's result used only on the way to the RETURN counts as the return value.
+    kuna_forced_scoring: bool,
     /// (kuna `callrettype`) The extensions the return trimming narrowed the
     /// returned value back through ([`crate::kuna_callrettype::note_returned_extension`]).
     kuna_callret_returned: Vec<(bool, int4)>,
@@ -589,7 +615,17 @@ impl Funcdata {
             kuna_callee_forward: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_callret_types: std::collections::HashMap::new(),
+            kuna_callret_withdrawn: std::collections::HashMap::new(),
             kuna_callret_data: std::rc::Rc::new(Vec::new()),
+            kuna_forced_return: Vec::new(),
+            kuna_forced_return_planted: Vec::new(),
+            kuna_float_return_withdrawn: false,
+            kuna_callee_returns: std::collections::BTreeMap::new(),
+            kuna_callee_params: std::collections::BTreeMap::new(),
+            kuna_callee_return_storage: std::collections::BTreeMap::new(),
+            kuna_forced_claims: Vec::new(),
+            kuna_float_pair_halves: std::collections::BTreeSet::new(),
+            kuna_forced_scoring: false,
             kuna_callret_returned: Vec::new(),
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
@@ -896,9 +932,131 @@ impl Funcdata {
         self.kuna_callret_types.insert(key, stated);
     }
 
+    /// (kuna `floatreg`) Record a statement this caller refused.
+    pub fn kuna_set_callret_withdrawn(
+        &mut self,
+        key: (int4, kuna_base::types::uintb),
+        stated: std::rc::Rc<crate::kuna_callrettype::StatedReturn>,
+    ) {
+        self.kuna_callret_withdrawn.insert(key, stated);
+    }
+
+    /// (kuna `floatreg`) What the callee at `key` stated it returns, whether
+    /// or not this caller took the statement.
+    pub fn kuna_callret_stated(
+        &self,
+        key: (int4, kuna_base::types::uintb),
+    ) -> Option<&crate::kuna_callrettype::StatedReturn> {
+        self.kuna_callret_types.get(&key).or_else(|| self.kuna_callret_withdrawn.get(&key)).map(|r| r.as_ref())
+    }
+
     /// (kuna `callrettype`) Record the loader's data ranges.
     pub fn kuna_set_callret_data(&mut self, ranges: std::rc::Rc<Vec<(u64, u64)>>) {
         self.kuna_callret_data = ranges;
+    }
+
+    /// (kuna `voidret`) Record the return storage this function's callers read.
+    pub fn kuna_set_forced_return(&mut self, forced: Vec<(Address, int4)>) {
+        self.kuna_forced_return = forced;
+    }
+
+    /// (kuna `voidret`) The return storage this function's callers read, by register.
+    pub fn kuna_forced_return(&self) -> &[(Address, int4)] {
+        &self.kuna_forced_return
+    }
+
+    /// (kuna `voidret`) Record what each callee's last decompile recovered it returns.
+    pub fn kuna_set_callee_returns(
+        &mut self,
+        returns: std::collections::BTreeMap<(int4, kuna_base::types::uintb), crate::kuna_voidret::Returns>,
+    ) {
+        self.kuna_callee_returns = returns;
+    }
+
+    /// (kuna `voidret`) Note a `void` callee's result this function's return would be.
+    pub fn kuna_note_forced_claim(&mut self, claim: ((int4, kuna_base::types::uintb), (Address, int4))) {
+        if !self.kuna_forced_claims.contains(&claim) {
+            self.kuna_forced_claims.push(claim);
+        }
+    }
+
+    /// (kuna `voidret`) The `void` callees' results this function's return would be.
+    pub fn kuna_forced_claims(&self) -> &[((int4, kuna_base::types::uintb), (Address, int4))] {
+        &self.kuna_forced_claims
+    }
+
+    /// (kuna `voidret`) What the callee at `key` was last recovered to return.
+    pub fn kuna_callee_returns(&self, key: (int4, kuna_base::types::uintb)) -> Option<crate::kuna_voidret::Returns> {
+        self.kuna_callee_returns.get(&key).copied()
+    }
+
+    /// (kuna `voidret`) Record the storage each callee's last decompile returned a value in.
+    pub fn kuna_set_callee_return_storage(
+        &mut self,
+        storage: std::collections::BTreeMap<(int4, kuna_base::types::uintb), (Address, int4)>,
+    ) {
+        self.kuna_callee_return_storage = storage;
+    }
+
+    /// (kuna `voidret`) The storage the callee at `key` last returned a value in.
+    pub fn kuna_callee_return_storage(&self, key: (int4, kuna_base::types::uintb)) -> Option<&(Address, int4)> {
+        self.kuna_callee_return_storage.get(&key)
+    }
+
+    /// (kuna `voidret`) Record the parameter classes each callee's last decompile recovered.
+    pub fn kuna_set_callee_params(
+        &mut self,
+        params: std::collections::BTreeMap<(int4, kuna_base::types::uintb), Vec<Option<bool>>>,
+    ) {
+        self.kuna_callee_params = params;
+    }
+
+    /// (kuna `voidret`) Is the callee at `key`'s parameter `index`, as its last
+    /// decompile recovered it, a float (`Some(true)`) or an integer or pointer?
+    pub fn kuna_callee_param_float(&self, key: (int4, kuna_base::types::uintb), index: usize) -> Option<bool> {
+        self.kuna_callee_params.get(&key).and_then(|p| p.get(index).copied().flatten())
+    }
+
+    /// (kuna `floatreg`) Note a narrow float register whose pair the code touches.
+    pub fn kuna_note_float_pair_half(&mut self, key: (int4, kuna_base::types::uintb)) {
+        self.kuna_float_pair_halves.insert(key);
+    }
+
+    /// (kuna `floatreg`) Does the code touch the other half of this register's pair?
+    pub fn kuna_float_pair_half(&self, key: (int4, kuna_base::types::uintb)) -> bool {
+        self.kuna_float_pair_halves.contains(&key)
+    }
+
+
+    /// (kuna `voidret`) Withdraw, or restore, the float-register vote on the return.
+    pub fn kuna_set_float_return_withdrawn(&mut self, withdrawn: bool) {
+        self.kuna_float_return_withdrawn = withdrawn;
+    }
+
+    /// (kuna `voidret`) Is the float-register vote on the return withdrawn?
+    pub fn kuna_float_return_withdrawn(&self) -> bool {
+        self.kuna_float_return_withdrawn
+    }
+
+    /// (kuna `voidret`) Record that the RETURN read of one piece of that storage
+    /// was planted.
+    pub fn kuna_note_forced_return_planted(&mut self, addr: Address, size: int4) {
+        self.kuna_forced_return_planted.push((addr, size));
+    }
+
+    /// (kuna `voidret`) The pieces of that storage whose RETURN read was planted.
+    pub fn kuna_forced_return_planted(&self) -> &[(Address, int4)] {
+        &self.kuna_forced_return_planted
+    }
+
+    /// (kuna `voidret`) Score the forced return storage (see the field).
+    pub fn kuna_set_forced_scoring(&mut self, on: bool) {
+        self.kuna_forced_scoring = on;
+    }
+
+    /// (kuna `voidret`) Whether the forced return storage is being scored.
+    pub fn kuna_forced_scoring(&self) -> bool {
+        self.kuna_forced_scoring
     }
 
     /// (kuna `callrettype`) The loader's data ranges recorded by the seed.
@@ -2971,6 +3129,9 @@ impl Funcdata {
         self.kuna_passthrough_vararg_calls.clear();
         self.kuna_passthrough_variadic = false;
         self.kuna_moved_back_returns.clear();
+        self.kuna_forced_return_planted.clear();
+        self.kuna_float_pair_halves.clear();
+        self.kuna_forced_claims.clear();
     }
 
     /// Set a delay/flag bit directly (test/seam helper; not a C++ method).

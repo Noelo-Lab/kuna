@@ -1,0 +1,960 @@
+{
+ "opportunity": "A value a function returns in a float register printed as an integer or not at all, and a function that returns its callee's result (`call g; ret`) printed void while its callers read the result. clang -O0 `float qnan(void){return nanf(\"\");}` printed `void sub_1150(void) { nanf((char *)0x2016); }` beside `v1 = (float)sub_1150();`, which no compiler accepts; a Cortex-M4F `nanf` printed `unsigned int sub_80049bc(void) { return 0x7fc00000; }` and its caller `(float)sub_80049bc()`, which evaluates to 2143289344.0 where the machine returns NaN. Over the 45 cast-corpus binaries main printed 2,123 uses of a void function's result.",
+ "analysis": {
+  "type": "p5_types/kuna_floatreg.rs votes a float of the register's width for a value a RETURN reads from a float-class output entry. It never votes a parameter: a function's callers decide what it receives, and a float parameter handed on or back printed a conversion by value in any caller or callee that holds the bits as an integer (x86-64 signbit_ handing its xmm0 float to f2u(unsigned int); Cortex-M4F/AArch64 putf2 moving s0 into r0 for put3(u32); a struct{float,float} caller; crazyflie O2-noinline sub_8028ae8 -> sub_8028914). The return vote is refused where the value's family holds an input, crosses a call (argument or result) that no declaration, protoorder statement or recorded recovery makes a float, is loaded through a pointer the function also moves integers through at that width, or where protoorder refuses a callee's float vote (integer computation, a store, a piece, a global); a NaN NAN cannot spell and one half of an ARM d register used whole also refuse. voidret (p4_calls/kuna_voidret.rs + decompile_all/callee_first.rs) redoes a function recovered void whose result a caller reads; a redo that leaves it returning a register a call only clobbers (an INDIRECT creation the call's output never replaced: gcc -O0 call_f2u, whose joined argument PIECE sits between the creation and the call) is withdrawn, and a float return any reader converts (held as an integer, passed to an integer parameter by position, stored through an integer pointer, returned as an integer) is withdrawn and its readers redone.",
+  "void": "`call g; ret` is both `void f(){g();}` and `T f(){return g();}`; upstream's ancestorOpUse refuses a call's result outright and heritage registers no return trial for a register no op names. p4_calls/kuna_voidret.rs files, in decompile-all's callee-first run, every function recovered void and every call output a caller reads; the driver redoes such a function as soon as its first reader is decompiled, with the storage the callers read seeded, and accepts it only where it is the return value at every live RETURN (ancestorOpUse with a call's result counting), no wider than every path sets (set_tz returns eax, not a half-set rax). A later wider reader widens it; readers of different registers withdraw it.",
+  "readers": "Every reader decompiled before a redo changed its callee's return is decompiled again (small readers always, readers over AUDIT_MAX_OPS only for a wrong value: an in-place offset from a now-scaled pointer, a float held as another type). A caller that refused or withdrew a callrettype statement of the other class converts explicitly ((long)sub_eecc(..)); a float statement is the token of a result held as raw bytes (a store through an untyped pointer stores the float).",
+  "libc": "float/double added to the protos Ty vocabulary; the libcwiden corpus rule then admits ceil log2 modf pow sqrt strtod strtof; strtold (long double) and strtod_l (locale_t) stay rejected.",
+  "rejected_designs": "Accepting the forced return wherever AncestorRealistic holds merged scratch-register values into the return variable (fmt get_space, sort xstrxfrm). Redoing every stale reader after the whole first pass cost bash -O2 +45% and sort -O2 +59% (their main functions redone, 10 s each); settling after each function redoes a wrapper at its first reader instead. Filtering stale readers by held class kept 112 conversions of stale results. An ARM pair rule that refused s0 whenever s1 was touched (every call's parameter trials touch it) left clampf an unsigned int returning fminf's float, a value conversion."
+ },
+ "plan": "Strict correctness fix, no option (a float register is the float declaration; a void function whose result a caller reads, and a caller whose text disagrees with its callee's declaration, are wrong output). Round trips compiled with gcc and clang that fail on main; stage test; corpus footprint classified with wrong-output counters; castbench, typesweep with arity counters, speed, all gates.",
+ "test_name": "kuna-cli/tests/decompile_all_cli.rs a_float_register_return_and_a_read_void_result_round_trip, a_nan_returned_in_s0_round_trips, a_wrapper_returns_its_callees_result_round_trip, a_reader_of_a_redone_wrapper_round_trips (each fails on main); a_float_crossing_an_integer_call_round_trips (signbit_, fetch, use/mk/first_of at clang -O0; gcc -O0 call_f2u never returns an unassigned local) and a_float_handed_on_to_an_integer_parameter_round_trips (Cortex-M4F and AArch64 putf2) pass on main and fail on the reviewed revision 0aec6b59f (0 40000000 0 for 1 3fc00001 3fc00000; cm4 stores 1 2 7); a_float_pair_held_as_an_integer_round_trips (gcc -O2 struct { float, float }, the first two floats of three, float _Complex, each copied into a uint64_t global) passes on main and fails on the reviewed revision 82746c20f (2 0 1 2 0 2 0 for 400000003f800000 40000000 1 400000003f800000 40000000 400000003f800000 40000000, gcc and clang). tests/stages/kuna-floatret.xml (10 assertions: #8 idf stays unsigned int, #10 putf2 keeps unsigned int parameters) and tests/cli/float-register-return-is-a-float.json; kuna-cli/tests/arm_wrapper_returns.rs (#752): its indirect-call and argument-write wrappers and its passthrough-off wrappers return their callee's result, because the fixture's consumer reads r0 after the call (main printed v1 = wrapper() of a void wrapper); a_float_handed_on_through_wrappers_to_an_integer_round_trips (gcc -O1 double through one and two wrappers and struct { float, float } through one, each copied into a uint64_t; prints 4002000000000000 40020000 4008000000000000 40080000 4080000040400000 40800000 under gcc and clang on main 0729b8b05 and on the fix, 2 0 3 0 200 0 on the reviewed revision 4726f6b38 rebased; MIPS gcc -O0 float through a wrapper: the printed chain, run on the fixture's float array mapped at a 32-bit address, stores `40100000 0 4010 0` on main and on the fix, `2 0 0 0` with the float chain of 4726f6b38) and a_float_return_beside_a_global_read_stays_an_integer (gcc -O2 getter returning a packed global's float on one path and 0.0f on the other); round 10: a_pointer_handed_on_past_an_int_call_round_trips (gcc -O1 key_ssh_name hands on type_name's pointer past key_type_plain's int: prints `1 0 ?` on the previous head 0649f0653, whose `unsigned int key_ssh_name` cut the pointer, and does not compile on main, which printed it void), a_return_of_an_undeclared_float_callee_stays_void (x86-64 gcc -O1 and soft-float ARM .o wrappers of strtod/strtof stay void; the previous head printed `unsigned long parse(..) { return strtod(a0,0); }`), soft_float_imports_keep_their_core_register_values (ARM -mfloat-abi=softfp: pow(a2,a3,a0,a1), strtod's r0:r1; the previous head printed pow(v1,v2) of unset d0/d1); round 11: arm_images_get_no_double_libc_rows (soft- and hard-float linked ARM images: the previous head printed `double sub_10224(..)` beside a reader's `unsigned long long v1 = sub_10224()`, a value conversion where main returns the right CONCAT44 bits, and `unsigned int sub_101f0(..) { ... return SUB84(v1,0); }`, the low half of d0); a_return_merged_in_pieces_stays_void (gcc -O1 two-path wrapper of an import: the previous head printed `unsigned long wrap(void)` storing the upper half of getname's pointer into `dat_4` on each path and returning `CONCAT44(dat_4,v2)`; it stays void as on main)",
+ "binary": "decompiler/crates/kuna-analysis/tests/fixtures/floatret_x86_64 (clang -O0), floatret_cm4.o (Cortex-M4F, clang -O2), floatret_wrap_{gcc_O0,clang_O0,gcc_O2}, floatret_stale_gcc_O0, floatret_calls_{clang,gcc}_O0, floatret_put_{cm4,a64}.o, floatret_pair_gcc_O2 (gcc -O2, stripped), floatret_chain_gcc_O1 (gcc -O1, stripped), floatret_chain_mips_O0 (mipsel gcc -O0, stripped), floatret_beside_gcc_O2 (gcc -O2, stripped), floatret_handon_gcc_O1 (gcc -O1), floatret_parse_gcc_O1.o (gcc -O1 -c), floatret_parse_armel.o (clang armv7 -mfloat-abi=soft -O1 -c), floatret_softfp_armv7 (clang armv7a -mfloat-abi=softfp -O1, linked), floatret_armrows_soft / floatret_armrows_hard (clang armv7a -mfloat-abi=soft / -mfloat-abi=hard -O1, linked with GNU ld 2.42), floatret_twopath_gcc_O1 (gcc -O1 -fno-inline)",
+ "option": null,
+ "change_kind": "strict correctness fix (no option)",
+ "default_on": true,
+ "parity": {
+  "datatests": "675/675 PARITY OK (main be8c9b93e)",
+  "stages": "1683/1683 PARITY OK (main be8c9b93e 1673 + 10 FLOATRET)"
+ },
+ "castbench": {
+  "base": "main 3c08fcfe8 (#758 on top of 94ce9314e), fresh arm .scratch/cb-main3c0; on 94ce9314e the same branch gave 32,040 -> 31,611, on 0729b8b05 32,010 -> 31,581 and on 30616a8e8 32,045 -> 31,616",
+  "shared_functions": 4815,
+  "casts": {
+   "main": 31989,
+   "fix": 31559,
+   "ida": 37821,
+   "ratio_main": 0.846,
+   "ratio_fix": 0.834
+  },
+  "per_100_stmts": {
+   "main": 26.9,
+   "fix": 26.6,
+   "ida": 27.0
+  },
+  "by_opt": {
+   "O0": [
+    9933,
+    9742
+   ],
+   "O2": [
+    12135,
+    12029
+   ],
+   "O2-noinline": [
+    9921,
+    9788
+   ]
+  },
+  "functions_fewer_casts": 258,
+  "casts_removed": 605,
+  "functions_more_casts": 133,
+  "casts_added": 176,
+  "shapes": "(char*)<call> -542 (callers read the wrapper's stated char *); (i64)<call> +156 (explicit conversions where a caller keeps a now-pointer result as an integer, required by C)",
+  "vs_reviewed_82746c20f": "31,795 -> 31,646: 643 functions change. Readers whose call result ActionSetCasts converted (the call writes a temporary) are now filed: 273 more wrappers return their callee's result (import stubs mmap/bsearch/context_str, getenv/setlocale/dcgettext/quotearg wrappers, obstack's call_chunkfun), their callers drop the (T) of a void call, and the rest is struct renumbering and renames; hand-checked cp sub_4bf0, wc sub_3bf0, tar sub_28ce0, ls sub_18845 (same computation).",
+  "added_cast_kinds": "(long) 209, (unsigned long) 36, (long *) 24, (void **) 22, (void *) 16, (char *) 11, struct_N * renumbering; no (float) or (double) added",
+  "previous_base_94ce9314e": {
+   "casts": {
+    "main": 32040,
+    "fix": 31611
+   },
+   "by_opt": {
+    "O0": [
+     9939,
+     9748
+    ],
+    "O2": [
+     12158,
+     12053
+    ],
+    "O2-noinline": [
+     9943,
+     9810
+    ]
+   }
+  },
+  "round10": "a1b97ede7 on main 29c832ea9: 31,989 -> 31,559 (0.846x -> 0.834x IDA), the same totals as 0649f0653; 5 functions differ from it (tar, above)",
+  "round11": "main 9b19a9e81 -> 2e79fb541: 31,805 -> 31,375 casts (0.846x -> 0.835x IDA); 2,378 of 20,225 functions changed. Against the previous round (main 29c832ea9 -> a1b97ede7): the 20,213 functions #837 left alone print exactly as then; of the 12 it changed, 8 carry the same delta and 4 the same delta beside main's own NULL -> 0 (tar O2-noinline sub_128e0, sub_12910, sub_12be0, sub_12c10). On main e56252b2c (#838) the totals are the same, 31,805 -> 31,375: the 20,192 functions #838 left alone print exactly as on 9b19a9e81; of the 33 it changed, 30 carry the same delta and 3 the same delta beside its new string literals (tar O0 sub_359a8, O2-noinline sub_2c280, O2 sub_2d400). On main f800792b3 (#806) too: 31,805 -> 31,375, every function prints as on e56252b2c. The two-path narrowing (747e68cfb) changes no function of the 45 castbench and 76 footprint binaries. On main be8c9b93e (#824): 31,805 -> 31,375; the 20,221 functions #824 left alone print as on f800792b3, and the 4 it changed carry the same delta"
+ },
+ "corpus_footprint": {
+  "castbench_45": {
+   "functions": 20230,
+   "changed": 2091,
+   "void_to_returning": 1023,
+   "signature_other": 380,
+   "caller_of_retyped_callee": 363,
+   "body_only": 312,
+   "float_signature": 13,
+   "return_to_float": 13,
+   "param_lists_with_float_change": 4,
+   "void_result_uses": [
+    2123,
+    395
+   ],
+   "pointer_integer_assignments_without_conversion": [
+    275,
+    184
+   ],
+   "pointer_call_arithmetic": [
+    114,
+    111
+   ],
+   "explicit_int_to_pointer_casts_into_pointer_locals": [
+    191,
+    160
+   ],
+   "never_assigned_returns": [
+    268,
+    268
+   ],
+   "concat_of_killed_register": [
+    227,
+    227
+   ],
+   "float_value_conversion_of_int_call": [
+    24,
+    28,
+    "rose only in tail O2 main: the four (double)lseek(..) it printed of a void lseek are now of an unsigned long one"
+   ],
+   "void_result_uses_incl_casts": {
+    "instrument": ".scratch/r5/voiduse3.py (x = f(), x = (T)f(), return f(), g(f()), f() + n of a void f)",
+    "main": 5031,
+    "reviewed_82746c20f": 1697,
+    "fix": 1303,
+    "rose_functions": 0
+   }
+  },
+  "disjoint_40": {
+   "binaries": 40,
+   "functions": 41282,
+   "changed": 2430,
+   "return_to_float": 110,
+   "param_lists_with_float_change": 2,
+   "void_result_uses": [
+    5112,
+    1833
+   ],
+   "never_assigned_returns": [
+    173,
+    171
+   ],
+   "float_value_conversion_of_int_call": [
+    343,
+    290
+   ],
+   "concat_of_killed_register": [
+    580,
+    580
+   ],
+   "ptr_gets_intcast": [
+    85,
+    85
+   ],
+   "rises": 0,
+   "void_result_uses_incl_casts": {
+    "main": 8605,
+    "reviewed_82746c20f": 3486,
+    "fix": 3217,
+    "rose_functions": 0
+   }
+  },
+  "vs_reviewed_82746c20f": "castbench 45: 643 functions changed; disjoint 40: 453. never-assigned returns, CONCAT of a killed register, float conversions of an integer call, pointer locals assigned an integer cast and unset variables all flat (0 rises)",
+  "disjoint_40_vs_main815": {
+   "base": "main 815bd4cca (#752 passthrough returns ARM/MIPS wrapper results)",
+   "changed": 2390,
+   "never_assigned_returns": [
+    173,
+    171
+   ],
+   "float_value_conversion_of_int_call": [
+    343,
+    293
+   ],
+   "concat_of_killed_register": [
+    580,
+    580
+   ],
+   "ptr_gets_intcast": [
+    85,
+    85
+   ],
+   "unset_vars": [
+    14549,
+    14535
+   ],
+   "void_result_uses_incl_casts": [
+    8314,
+    3217
+   ],
+   "implicit_int_float_conversions": [
+    910,
+    910
+   ],
+   "rises": 0
+  },
+  "round6": {
+   "arms": "main 0729b8b05 vs code 04ef10b41, decompile-all",
+   "castbench_45": {
+    "functions": 20230,
+    "changed": 2383,
+    "void_result_uses": [
+     2123,
+     396
+    ],
+    "never_assigned_returns": [
+     268,
+     266
+    ],
+    "concat_of_killed_register": [
+     227,
+     227
+    ],
+    "float_value_conversion_of_int_call": [
+     24,
+     28,
+     "tail O2 main only: the same four (double)lseek(..) text, lseek now printed unsigned long rather than void"
+    ],
+    "ptr_gets_intcast": [
+     191,
+     157
+    ],
+    "unset_var": [
+     2460,
+     2456
+    ]
+   },
+   "disjoint_99": {
+    "binaries": 99,
+    "list": ".scratch/fp6/list.txt: the fp4 40 + factor, date x3, shuf, bzip2 x2, mirai, chage, touch, stty, getfacl, cleanflight O0 + the 45",
+    "functions": 66504,
+    "changed": 5051,
+    "void_result_uses": [
+     7595,
+     2539
+    ],
+    "never_assigned_returns": [
+     481,
+     473
+    ],
+    "concat_of_killed_register": [
+     878,
+     878
+    ],
+    "float_value_conversion_of_int_call": [
+     394,
+     336
+    ],
+    "ptr_gets_intcast": [
+     375,
+     341
+    ],
+    "unset_var": [
+     17953,
+     17931
+    ],
+    "implicit_int_float_conversions": [
+     941,
+     943,
+     "rose only in find O0 (the sub_1916a positional count)"
+    ]
+   },
+   "vs_reviewed_4726f6b38": "on the 99: 5 returns float -> integer (crazyflie O2 and O2-noinline packed-field getters, ssh-keygen sub_2afb0 whose other path returns a tail call's unset xmm0), 27 integer -> float (strtod_l stubs and gnulib c_strtod; crazyflie/betaflight functions the reviewed revision withdrew over a (float) cast of a float callee's result), 36 functions lose a (float) cast, 4 gain one (the readers of the crazyflie getters, as main prints them)",
+   "residual_check": "a debug pass listed every function still returning a float after settling while some reader keeps it as another type: every one also returns a float on main (its own float arithmetic or a declared callee), and no such reader gained a conversion"
+  },
+  "rebase_363123e96": {
+   "arms": "main 363123e96 vs this branch rebased onto it (13c594b64), decompile-all",
+   "castbench_45": {
+    "functions": 20230,
+    "changed": 2379,
+    "same_changed_set_as_round6": false,
+    "void_result_uses": [
+     2123,
+     400
+    ],
+    "never_assigned_returns": [
+     268,
+     266
+    ],
+    "concat_of_killed_register": [
+     227,
+     227
+    ],
+    "float_value_conversion_of_int_call": [
+     24,
+     28
+    ],
+    "ptr_gets_intcast": [
+     191,
+     157
+    ],
+    "unset_var": [
+     2460,
+     2456
+    ],
+    "void_result_uses_incl_casts": [
+     5031,
+     1307
+    ],
+    "implicit_int_float_conversions": [
+     15,
+     18
+    ]
+   },
+   "disjoint_54": {
+    "binaries": "the 54 of .scratch/fp6/list.txt outside the castbench 45",
+    "functions": 46274,
+    "changed": 2661,
+    "void_result_uses": [
+     5473,
+     2156
+    ],
+    "never_assigned_returns": [
+     213,
+     207
+    ],
+    "concat_of_killed_register": [
+     650,
+     650
+    ],
+    "float_value_conversion_of_int_call": [
+     370,
+     308
+    ],
+    "ptr_gets_intcast": [
+     184,
+     184
+    ],
+    "unset_var": [
+     15493,
+     15475
+    ],
+    "void_result_uses_incl_casts": [
+     9263,
+     3657
+    ],
+    "implicit_int_float_conversions": [
+     926,
+     925
+    ],
+    "rises": 0
+   },
+   "vs_round6": "every function main did not change since 0729b8b05 prints byte-identically to the round-6 code 04ef10b41 (checked at 30616a8e8: 20,148 of the 45 and 45,971 of the 54; and again from 30616a8e8 to 5eb973320: 20,137 and 46,073). Where main did change a function, this branch either leaves it alone or makes the same change, the only differences being main's own new argument casts (#773), stores through a variable (#798) and declaration order",
+   "whole_or_none": "a return the callers read in two registers is returned whole or not at all (13c594b64). Against the branch before it, 11 functions change, each to main's own text (void): sort, tail, sleep and timeout's dtotimespec (x86-64 struct timespec in rax:rdx, which returned rax alone), and betaflight O0/O2/O2-noinline sub_8017edc and cleanflight O0/O2 sub_800ebf8 (an ARM wrapper of a 64-bit millisecond time in r0:r1, which returned r0 alone while sub_8017f66 reads the high word). The i386 `call zsum; or $0xff,%edx` shape now returns unsigned long long; it returned eax alone once main 363123e96 (#794) made it void, since the planted eax kept heritage from giving edx a trial",
+   "chain_round_trips": "fixture floatret_chain_gcc_O1 gcc/clang `4002000000000000 40020000 4008000000000000 40080000 4080000040400000 40800000` (= main); the reviewer's chain.c gcc -O1 `4002000000000000 40020000` and struct { float, float } y.c gcc -O2 `40c0000040a00000 40c00000` (= the binaries); MIPS gcc -O0 fg.c prints byte-identically to main (no float) and its printed C compiled natively gives `40100000 3dcccccd` (= the source); floatret_pair32 i386 -O2 `hi` gcc/clang `ff00000003 ff0000800f ff01002345 ff00000000` (= the source; the branch before printed `3 800f 1002345 0`)"
+  },
+  "rebase_94ce9314e": {
+   "arms": "main 94ce9314e vs this branch rebased onto it (5650aa430), decompile-all",
+   "identity": "castbench 45 and the 54 disjoint binaries print byte-identically to the 363123e96 round on both arms (main 363123e96 == 94ce9314e, 13c594b64 == 5650aa430), so the totals of rebase_363123e96 stand",
+   "restart_output": {
+    "change": "a forced function whose RETURN has no value once the returns are built is void (kuna_voidret::void_unless_returned): a restart kept the output the pass before it recovered",
+    "witness": "minipig O0 sub_401937 printed `unsigned int sub_401937(unsigned int a0)` ending `ExitProcess(0); } return; }` (pass 1 took the forced eax, the restart after ExitProcess resolved refused it), and its readers sub_401e20, main and sub_4013e0 returned it as `void *`; now all four print main's text",
+    "footprint": "branch before (6cec85235) vs 5650aa430 on 76 binaries (the 54 plus 22 disjoint: chibios O0/O2, freertos x2, riot, u-boot, x0r-usb x3, minipig x3, mydoom x2, dexter x2, libedit, libselinux, sysvinit x2, zlib, rsyslog) and the castbench 45: 4 of 73,880 functions change, the four above; non-void functions printing a bare `return;` 1 -> 0 (main 0)",
+    "disjoint_22_vs_main": "464 of 7,376 functions changed (the reviewed 468 less the four), void-result uses 721 -> 225, no counter rose"
+   }
+  },
+  "rebase_3c08fcfe8": {
+   "arms": "main 3c08fcfe8 vs this branch rebased onto it (6d12ed334; code = 5650aa430), decompile-all",
+   "identity": "castbench 45: of 20,230 functions, the 20,082 #758 leaves alone print byte-identically to the 94ce9314e round on both arms; of the 148 it changes, 124 are untouched by this branch, 14 carry the same delta byte for byte, and 10 the same delta on #758's new locals (ls 0xa550, fmt 0x26a0 and diff 0x4f20 compared body by body). The 76 disjoint binaries: of 53,650 functions, the 53,024 #758 leaves alone are byte-identical to the 94ce9314e round; of the 626 it changes, 581 are untouched, 9 carry the same delta and 36 the same delta modulo local numbering",
+   "counters": "castbench 45: void-result uses 2,123 -> 400, float conversions of an integer call 24 -> 28 (tail O2 main lseek, as before), pointer locals assigned an integer cast 191 -> 157, void-result uses incl. casts 5,031 -> 1,307; 99 binaries (castbench 45 + the 54): float conversions of an integer call 394 -> 336, void-result uses 7,595 -> 2,555, CONCAT of a killed register 873 = 873, never-assigned returns 481 -> 473, unset variables 17,953 -> 17,931; 76 binaries: 0 functions where a counter rose",
+   "mips_reader": "#758 keeps the MIPS chain reader's call result in its own variable (`v2 = sub_400898(a0,a1); dat_4120e0 = v2; dat_4120e8 = v2 >> 0x10;`); the test that pinned `dat_4120e0 = sub_400898(a0,a1);` now runs the printed chain instead",
+   "rebase_29c832ea9": "rebased onto 29c832ea9 (#821, soft-float ARM declared float prototypes) without conflicts: the castbench 45 and the 76 disjoint binaries print byte-identically on both arms (main 3c08fcfe8 == 29c832ea9, 6d12ed334 == 2f02b3f53), so every number above stands; #821's fixture softfloat_dwarf_armel.o prints the same on main and here"
+  },
+  "round10_vs_0649f0653": {
+   "arms": "previous head 0649f0653 (bin-r9b) vs a1b97ede7, decompile-all, main 29c832ea9",
+   "castbench_45": {
+    "functions": 20230,
+    "changed": 5,
+    "classes": "tar O2 sub_250f0, sub_4cf60 and O2-noinline sub_23bb0, sub_4aa90: unsigned int -> char * (callers read rax; main void); tar O2-noinline sub_c980 prints main's text"
+   },
+   "disjoint_76": {
+    "functions": 53650,
+    "changed": 2,
+    "classes": "u-boot O2 sub_60824f88, sub_6084dce4: unsigned int -> void (= main; soft-float image, callee never decompiled)"
+   },
+   "reviewer_18": {
+    "functions": 15658,
+    "changed": 2,
+    "classes": "certtool O2-noinline sub_15080 unsigned int -> unsigned long (gnutls_sec_param_get_name's pointer), ssh-keygen O2-noinline sub_21680 unsigned int -> char * (main void)"
+   },
+   "counters_vs_previous_head": "castbench and the 18 flat; the 76: void_result_uses 2380 -> 2383 (the 2 u-boot functions back to main's void), all others flat",
+   "counters_vs_main": {
+    "castbench_45": {
+     "void_result_uses": [
+      2123,
+      400
+     ],
+     "float_value_conversion_of_int_call": [
+      24,
+      28,
+      "tail O2 main lseek, documented"
+     ],
+     "ptr_gets_intcast": [
+      191,
+      157
+     ],
+     "never_assigned_returns": [
+      268,
+      266
+     ],
+     "concat_of_killed_register": [
+      227,
+      227
+     ],
+     "unset_var": [
+      2460,
+      2456
+     ]
+    },
+    "disjoint_76": {
+     "void_result_uses": [
+      6193,
+      2383
+     ],
+     "float_value_conversion_of_int_call": [
+      370,
+      308
+     ],
+     "never_assigned_returns": [
+      233,
+      227
+     ],
+     "concat_of_killed_register": [
+      663,
+      663
+     ],
+     "ptr_gets_intcast": [
+      204,
+      204
+     ],
+     "unset_var": [
+      17633,
+      17613
+     ],
+     "rises": 0
+    },
+    "reviewer_18": {
+     "void_result_uses": [
+      2405,
+      555
+     ],
+     "float_value_conversion_of_int_call": [
+      153,
+      120
+     ],
+     "never_assigned_returns": [
+      68,
+      68
+     ],
+     "concat_of_killed_register": [
+      139,
+      139
+     ],
+     "ptr_gets_intcast": [
+      13,
+      13
+     ],
+     "unset_var": [
+      3541,
+      3534
+     ],
+     "rises": 0
+    }
+   },
+   "repros": "k.c/k2.c (gcc -O1/-O2, stripped): key_ssh_name/w1 char * (round trip prints the string); k3.c deeper chain (gcc and clang -O1/-O2): every wrapper pointer-wide; armhf use.c: parse/pw void (= main); softfp and Android armeabi-v7a use.c byte-identical to main except the strtof stub returning its r0 integer; p2 .o (x86-64 gcc -O1; ARM soft, softfp, hard clang -O1): parse/parse2/parsef void = main",
+   "rebase_5dd534d8d": "the 45 + 76 + 18 binaries print byte-identically on the head rebased onto 5dd534d8d (#779, default-off) and on 29c832ea9"
+  },
+  "round11_vs_main_9b19a9e81": {
+   "castbench_45": {
+    "functions": 20225,
+    "changed": 2378,
+    "void_result_uses": [
+     2123,
+     400
+    ],
+    "float_value_conversion_of_int_call": [
+     24,
+     28,
+     "tail O2 main lseek, documented"
+    ],
+    "ptr_gets_intcast": [
+     191,
+     157
+    ],
+    "never_assigned_returns": [
+     268,
+     266
+    ],
+    "concat_of_killed_register": [
+     227,
+     227
+    ],
+    "unset_var": [
+     2460,
+     2456
+    ],
+    "rises": "grep O2 sub_e5c0 void_used 0 -> 1 (kwsinit, documented), tail O2 main fconv 0 -> 4 (documented)"
+   },
+   "disjoint_76": {
+    "functions": 53650,
+    "changed": 3123,
+    "void_result_uses": [
+     6193,
+     2383
+    ],
+    "float_value_conversion_of_int_call": [
+     370,
+     308
+    ],
+    "never_assigned_returns": [
+     233,
+     227
+    ],
+    "concat_of_killed_register": [
+     663,
+     663
+    ],
+    "ptr_gets_intcast": [
+     204,
+     204
+    ],
+    "unset_var": [
+     17633,
+     17613
+    ],
+    "rises": 0,
+    "vs_previous_round": "53,646 functions #837 left alone print exactly as on a1b97ede7; the 4 it changed carry the same delta"
+   },
+   "arm_linked_images": "soft-float, softfp and hard-float ARMv7 images (s1.c parse/root/clampd/twice and readers, clang -O0/-O1/-O2; the reviewer's use.c and dw.c images; floatret_armrows_*): byte-identical to main except import stubs whose callers read r0 returning that integer (`unsigned int strtof(void)`, `unsigned int __aeabi_dcmplt(void)`). The previous head printed soft `double clampd` beside readers converting it by value (main: the right `unsigned long long clampd`), hard `unsigned int clampd ... return SUB84(v1,0)`, and soft import stubs `v1 = (double)(*dat)(..)`",
+   "other_linked_images": "the same sources on AArch64 (ld.mold) and i386: stubs return their float, `(float8)strtod(..)` conversions go, readers print as on main"
+  }
+ },
+ "benchmark": {
+  "instrument": "444-slice typesweep, finalsweepopt, DECBENCH_PIN /home/mahaloz/kwt/_final-d/db625, base arm = main 3c08fcfe8 built fresh (.scratch/sweep-main3c0), fix arm 6d12ed334 (.scratch/sweep-r9)",
+  "n": 10748,
+  "perfect_main": 1674,
+  "perfect_fix": 1674,
+  "mean_main": 0.3753,
+  "mean_fix": 0.3753,
+  "improved": 4,
+  "worse": 2,
+  "per_project": {
+   "coreutils": {
+    "n": 6422,
+    "perfect": [
+     1019,
+     1020
+    ],
+    "improved": 4,
+    "worse": 0
+   },
+   "grep": {
+    "n": 247,
+    "perfect": [
+     55,
+     54
+    ],
+    "improved": 0,
+    "worse": 2
+   }
+  },
+  "worse_rows": "grep::O0::grep kwsinit 1.000 -> 0.667; grep::O2::grep kwsinit 0.500 -> 0.250",
+  "improved_rows": "coreutils::O0::stat print_stat 0.429 -> 0.643; coreutils::O0::tac tac_seekable 0.952 -> 1.000; coreutils::O2-noinline::chgrp change_file_owner 0.190 -> 0.238; coreutils::O2-noinline::chown change_file_owner 0.190 -> 0.238",
+  "previous_round_0729b8b05": {
+   "instrument": "444-slice typesweep, finalsweepopt, DECBENCH_PIN /home/mahaloz/kwt/_final-d/db625, base arm = main 0729b8b05 built fresh (.scratch/sweep-main072)",
+   "n": 10748,
+   "perfect_main": 1674,
+   "perfect_fix": 1674,
+   "mean_main": 0.3753,
+   "mean_fix": 0.3753,
+   "improved": 4,
+   "worse": 2,
+   "per_project": {
+    "coreutils": {
+     "n": 6422,
+     "perfect": [
+      1019,
+      1020
+     ],
+     "improved": 4,
+     "worse": 0
+    },
+    "grep": {
+     "n": 247,
+     "perfect": [
+      55,
+      54
+     ],
+     "improved": 0,
+     "worse": 2
+    }
+   },
+   "arity": {
+    "functions": 11156,
+    "more_variables": 1,
+    "fewer_variables": 0,
+    "note": "find get_relative_timestamp gains its GT double sec_per_unit in xmm0"
+   },
+   "worse_rows": "grep kwsinit at O0 (1.0 -> 0.667) and O2 (0.5 -> 0.25): kwsinit returns kwsalloc (trans), which the reviewed revision left void while its caller printed `v15 = (void *)sub_e5c0(0)` (not C). Returning it puts kwsalloc's result in the rax that xmalloc's result arrives in, and elemptr leaves a pointer vote alone in a register the function returns another value in (returns_another_value_in_place, the guard for tar's sub_135e3), so `trans` prints `long` with `*(char *)(v3 + v4) = ..` (the same address) where main printed `char *`. Kept: correctness over type_match; the perfect count equals main's",
+   "code": "95cec2736 (.scratch/sweep-r6f vs .scratch/sweep-main072); 04ef10b41 changes no x86-64 castbench output"
+  },
+  "round10": {
+   "n": 10748,
+   "perfect_main": 1674,
+   "perfect_fix": 1674,
+   "mean_main": 0.3753,
+   "mean_fix": 0.3753,
+   "improved": 4,
+   "worse": 2,
+   "per_project": {
+    "coreutils": {
+     "n": 6422,
+     "perfect": [
+      1019,
+      1020
+     ],
+     "improved": 4,
+     "worse": 0
+    },
+    "grep": {
+     "n": 247,
+     "perfect": [
+      55,
+      54
+     ],
+     "improved": 0,
+     "worse": 2
+    }
+   },
+   "worse_rows": "grep::O0::grep kwsinit 1.000 -> 0.667; grep::O2::grep kwsinit 0.500 -> 0.250",
+   "improved_rows": "coreutils::O0::stat print_stat 0.429 -> 0.643; coreutils::O0::tac tac_seekable 0.952 -> 1.000; coreutils::O2-noinline::chgrp change_file_owner 0.190 -> 0.238; coreutils::O2-noinline::chown change_file_owner 0.190 -> 0.238",
+   "only_main": 0,
+   "only_fix": 0,
+   "instrument": "444-slice typesweep, finalsweepopt, DECBENCH_PIN /home/mahaloz/kwt/_final-d/db625, base arm = main 3c08fcfe8 (.scratch/sweep-main3c0; castbench and 76 other binaries print byte-identically on 29c832ea9), fix arm a1b97ede7 (.scratch/sweep-r10)",
+   "vs_previous_head": "identical to 6d12ed334 (= 0649f0653 code) on all 10,748 rows"
+  }
+ },
+ "speed": {
+  "method": "whole-binary decompile-all --json on stripped binaries, main 9b19a9e81 vs the head, both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; shared box (load 12-45; measured on 8ec5fb159, the rebased round-10 code before the ARM narrowing, which changes nothing on these x86-64 binaries)",
+  "O0_fmt": {
+   "main_cpu_min_ms": 2053.4,
+   "fix_cpu_min_ms": 2311.7,
+   "delta_min_pct": 12.58,
+   "delta_median_pct": 10.26,
+   "pair_ratio_median_pct": 10.21
+  },
+  "O0_ls": {
+   "main_cpu_min_ms": 8288.9,
+   "fix_cpu_min_ms": 8551.9,
+   "delta_min_pct": 3.17,
+   "delta_median_pct": 4.41,
+   "pair_ratio_median_pct": 3.29
+  },
+  "O0_sort": {
+   "main_cpu_min_ms": 5222.5,
+   "fix_cpu_min_ms": 5375.1,
+   "delta_min_pct": 2.92,
+   "delta_median_pct": 4.45,
+   "pair_ratio_median_pct": 4.04
+  },
+  "O0_grep": {
+   "main_cpu_min_ms": 7996.4,
+   "fix_cpu_min_ms": 8484.9,
+   "delta_min_pct": 6.11,
+   "delta_median_pct": 7.12,
+   "pair_ratio_median_pct": 6.11
+  },
+  "O0_tar": {
+   "main_cpu_min_ms": 25947.1,
+   "fix_cpu_min_ms": 26842.9,
+   "delta_min_pct": 3.45,
+   "delta_median_pct": 3.75,
+   "pair_ratio_median_pct": 2.73
+  },
+  "O2_fmt": {
+   "main_cpu_min_ms": 4361.2,
+   "fix_cpu_min_ms": 4981.4,
+   "delta_min_pct": 14.22,
+   "delta_median_pct": 3.43,
+   "pair_ratio_median_pct": 3.41
+  },
+  "O2_ls": {
+   "main_cpu_min_ms": 15872.7,
+   "fix_cpu_min_ms": 15697.7,
+   "delta_min_pct": -1.1,
+   "delta_median_pct": 0.31,
+   "pair_ratio_median_pct": -0.08
+  },
+  "O2_sort": {
+   "main_cpu_min_ms": 16417.9,
+   "fix_cpu_min_ms": 16501.2,
+   "delta_min_pct": 0.51,
+   "delta_median_pct": -4.11,
+   "pair_ratio_median_pct": -0.63
+  },
+  "O2_grep": {
+   "main_cpu_min_ms": 14562.0,
+   "fix_cpu_min_ms": 15120.5,
+   "delta_min_pct": 3.84,
+   "delta_median_pct": 3.04,
+   "pair_ratio_median_pct": 2.97
+  },
+  "O2_bash": {
+   "main_cpu_min_ms": 88897.6,
+   "fix_cpu_min_ms": 89810.8,
+   "delta_min_pct": 1.03,
+   "delta_median_pct": 2.09,
+   "pair_ratio_median_pct": 0.11
+  },
+  "voidret_redo_share": {
+   "instrument": "decompile counts and per-decompile CPU of the voidret redos (VoidReads::settle) against the first pass, one instrumented run each; deterministic counts, proportional times",
+   "O0_fmt": "42 redos on 191 functions, 10.9% of the first pass",
+   "O0_ls": "82 on 589, 4.0%",
+   "O0_sort": "62 on 479, 3.8%",
+   "O0_grep": "83 on 642, 6.9%",
+   "O0_tar": "127 on 1,570, 3.0%",
+   "O2_fmt": "19 on 151, 4.4%",
+   "O2_ls": "46 on 404, 1.3%",
+   "O2_sort": "34 on 343, 0.7%",
+   "note": "each function redone to return what its callers read costs its own redo and usually one of its first reader; a third of the redos print the same text (a wrapper whose callee is still void, a reader that already held the result as the callee now states). fmt -O0 is the outlier: 42 redos on 191 functions. The previous head 0649f0653 makes the same redos (5 functions of 20,230 differ on the cast corpus)"
+  },
+  "previous_rounds": {
+   "previous_round_6d12ed334": {
+    "method": "whole-binary decompile-all --json on O2 stripped binaries, main 3c08fcfe8 vs this branch (6d12ed334): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; contended box (load 26-39)",
+    "fmt": {
+     "main_cpu_min_ms": 4846.6,
+     "fix_cpu_min_ms": 5005.3,
+     "delta_min_pct": 3.27,
+     "delta_median_pct": 3.43,
+     "pair_ratio_median_pct": 2.82
+    },
+    "ls": {
+     "main_cpu_min_ms": 17828.0,
+     "fix_cpu_min_ms": 17427.5,
+     "delta_min_pct": -2.25,
+     "delta_median_pct": 1.69,
+     "pair_ratio_median_pct": 0.47
+    },
+    "sort": {
+     "main_cpu_min_ms": 17129.1,
+     "fix_cpu_min_ms": 17269.3,
+     "delta_min_pct": 0.82,
+     "delta_median_pct": 0.01,
+     "pair_ratio_median_pct": 0.39
+    },
+    "bash": {
+     "main_cpu_min_ms": 96987.4,
+     "fix_cpu_min_ms": 97577.6,
+     "delta_min_pct": 0.61,
+     "delta_median_pct": 1.1,
+     "pair_ratio_median_pct": -0.05
+    }
+   },
+   "previous_rounds": {
+    "on_30616a8e8": {
+     "method": "whole-binary decompile-all --json on O2 stripped binaries, main 30616a8e8 vs this branch rebased onto it (a8c9dbc59, the same branch code as 6502796ea), contended box (load 12-35). Serial: interleaved min-of-15 wall. paired (fmt, bash; re-run because bash's serial min moved +9.4% on one outlying main sample while its median moved -2.3%): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU plus the median of the per-pair ratio",
+     "fmt": {
+      "main_min_ms": 4366.9,
+      "fix_min_ms": 4548.2,
+      "delta_min_pct": 4.15,
+      "delta_median_pct": 1.86,
+      "paired": {
+       "main_cpu_min_ms": 4954.8,
+       "fix_cpu_min_ms": 5105.8,
+       "delta_min_pct": 3.05,
+       "delta_median_pct": 5.52,
+       "pair_ratio_median_pct": 4.96
+      }
+     },
+     "ls": {
+      "main_min_ms": 15150.0,
+      "fix_min_ms": 14991.0,
+      "delta_min_pct": -1.05,
+      "delta_median_pct": 1.36
+     },
+     "sort": {
+      "main_min_ms": 15308.9,
+      "fix_min_ms": 15513.7,
+      "delta_min_pct": 1.34,
+      "delta_median_pct": 2.75
+     },
+     "bash": {
+      "main_min_ms": 85701.7,
+      "fix_min_ms": 93755.2,
+      "delta_min_pct": 9.4,
+      "delta_median_pct": -2.28,
+      "paired": {
+       "main_cpu_min_ms": 93628.5,
+       "fix_cpu_min_ms": 96413.0,
+       "delta_min_pct": 2.97,
+       "delta_median_pct": 2.09,
+       "pair_ratio_median_pct": 4.33
+      }
+     }
+    },
+    "recheck_13c594b64": {
+     "method": "paired as above, main 363123e96 vs 13c594b64 (with the whole-or-none rule), min-of-11 child CPU, load 25-39",
+     "fmt": {
+      "delta_min_pct": 4.29,
+      "delta_median_pct": 3.97,
+      "pair_ratio_median_pct": 4.29
+     },
+     "sort": {
+      "delta_min_pct": 0.51,
+      "delta_median_pct": 1.57,
+      "pair_ratio_median_pct": 1.28
+     }
+    },
+    "on_94ce9314e": {
+     "method": "whole-binary decompile-all --json on O2 stripped binaries, main 94ce9314e vs this branch (5650aa430): both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; contended box (load 22-38)",
+     "fmt": {
+      "main_cpu_min_ms": 4329.5,
+      "fix_cpu_min_ms": 4485.2,
+      "delta_min_pct": 3.6,
+      "delta_median_pct": 4.16,
+      "pair_ratio_median_pct": 3.71
+     },
+     "ls": {
+      "main_cpu_min_ms": 15948.4,
+      "fix_cpu_min_ms": 16003.9,
+      "delta_min_pct": 0.35,
+      "delta_median_pct": -0.57,
+      "pair_ratio_median_pct": 1.47
+     },
+     "sort": {
+      "main_cpu_min_ms": 17571.8,
+      "fix_cpu_min_ms": 17622.2,
+      "delta_min_pct": 0.29,
+      "delta_median_pct": -0.74,
+      "pair_ratio_median_pct": 0.52
+     },
+     "bash": {
+      "main_cpu_min_ms": 91621.4,
+      "fix_cpu_min_ms": 93898.0,
+      "delta_min_pct": 2.48,
+      "delta_median_pct": 2.2,
+      "pair_ratio_median_pct": 2.2
+     }
+    }
+   },
+   "previous_round_a1b97ede7": {
+    "method": "whole-binary decompile-all --json on stripped binaries, main 29c832ea9 vs a1b97ede7: both arms at the same moment, each pinned to its own core of one NUMA node and swapped every round, min-of-11 child CPU, the median, and the median of the per-pair ratio; contended box (load 17-42)",
+    "O0_fmt": {
+     "main_cpu_min_ms": 1720.4,
+     "fix_cpu_min_ms": 1899.1,
+     "delta_min_pct": 10.39,
+     "delta_median_pct": 11.01,
+     "pair_ratio_median_pct": 11.07
+    },
+    "O0_ls": {
+     "main_cpu_min_ms": 7567.5,
+     "fix_cpu_min_ms": 7855.3,
+     "delta_min_pct": 3.8,
+     "delta_median_pct": 5.08,
+     "pair_ratio_median_pct": 4.87
+    },
+    "O0_sort": {
+     "main_cpu_min_ms": 5125.6,
+     "fix_cpu_min_ms": 5785.9,
+     "delta_min_pct": 12.88,
+     "delta_median_pct": 6.72,
+     "pair_ratio_median_pct": 2.88
+    },
+    "O2_fmt": {
+     "main_cpu_min_ms": 4274.0,
+     "fix_cpu_min_ms": 4467.9,
+     "delta_min_pct": 4.54,
+     "delta_median_pct": 4.02,
+     "pair_ratio_median_pct": 4.02
+    },
+    "O2_ls": {
+     "main_cpu_min_ms": 14795.3,
+     "fix_cpu_min_ms": 15088.2,
+     "delta_min_pct": 1.98,
+     "delta_median_pct": 1.22,
+     "pair_ratio_median_pct": 1.52
+    },
+    "O2_sort": {
+     "main_cpu_min_ms": 15476.9,
+     "fix_cpu_min_ms": 15789.7,
+     "delta_min_pct": 2.02,
+     "delta_median_pct": 1.15,
+     "pair_ratio_median_pct": 1.15
+    },
+    "O2_bash": {
+     "main_cpu_min_ms": 88795.9,
+     "fix_cpu_min_ms": 90261.3,
+     "delta_min_pct": 1.65,
+     "delta_median_pct": 4.85,
+     "pair_ratio_median_pct": 3.6
+    }
+   }
+  }
+ },
+ "gates": {
+  "code_head": "b66c372cf on main be8c9b93e (#824); record-only commit after it. The ARM narrowing was 2e79fb541 on 9b19a9e81, the two-path narrowing 747e68cfb on f800792b3",
+  "make_test": "675/675 PARITY OK",
+  "make_test_stages": "1683/1683 PARITY OK (baseline: main 1673 + the 10 FLOATRET keys, none missing; #806 and #824 added no stage test)",
+  "check_spec": "OK lenient + strict",
+  "test_cli": "276/276",
+  "catalog_check": "OK",
+  "counters_check": "no drift",
+  "options_md": "fresh",
+  "phases_toml": "unchanged, parses (tomllib)",
+  "corpus_count": "kuna-base xml.rs 379 = tests/datatests + tests/stages",
+  "rust_test": "7,753 passed / 0 failed / 38 ignored (467 test binaries), RUST_TEST_RC=0 on b66c372cf (lane started 18:58:02Z, after the rebase and build); on 747e68cfb 7,751 / 0 / 38, on 2e79fb541 7,726 / 0 / 38",
+  "lint": "make lint OK (b66c372cf)",
+  "test_tools": "no Python changed",
+  "ci": "2e79fb541, 2256e4802 and f4ad69067: parity gates and cargo workspace suite success"
+ },
+ "known_residue": [
+  "ARM hard-float and AArch64 doubles in d0/q0 are recovered at the wrong width (trial recovery never consults the join rule); the low half of a d0 is refused the float vote and stays the integer it was",
+  "x86-64 gcc code that writes all of xmm0 (movd/pxor/movq) before a call gets no output trial there (calloverlap off): gcc -O0 `pick` stays void",
+  "400 void-result reads on the cast corpus remain: values also tested/indexed before being returned (coreutils base_len), refused by upstream's sole-use rule",
+  "69 new pointer/integer assignments without a conversion on the cast corpus (25 functions): readers over AUDIT_MAX_OPS keep their stale text unless it computes a wrong value, and variables the merge left untyped print as unsigned long; each read a void result before",
+  "timeout O2 `(double)sub_70a0(..)`: an identity cast; sub_70a0 states nothing to callrettype because its strtod_l tail path returns an unset xmm0 (pre-existing, main printed `unsigned long ... return v1;`)",
+  "a float return withdrawn because one reader keeps it as an integer leaves the other readers' `(float)f()` value conversions as main printed them",
+  "No parameter is typed float from its register: a function that only hands a float parameter on or back (idf, pass) keeps the integer its body gives it, and callers that pass it a computed float print the conversion main printed (clang -O0 call_f2u: v1 = f2u(dat_2004 + a0) beside f2u(unsigned int)); the parameter vote converted in whichever caller or callee held the bits as an integer instead",
+  "gcc -O0 call_f2u stays void: the PIECE that builds f2u's joined argument sits between the call and its INDIRECT creations, so the call never gains an output (collect_output_trial_varnodes looks only at the INDIRECTs right before the call); the redo that returned the clobbered register is withdrawn",
+  "Code that falls into fldz padding (openssh mprintf O2, scp O0 wrappers) returns 0.0 in ST0 where main printed an integer 0: the same bits, from a flow artifact main also had",
+  "gcc -O1/-O2 code that reads xmm0 after a call to a function returning a struct of two floats (`memcpy(&u, &v, 8); return u ^ i;`) gets no call output there (the whole-xmm0 ContainedBy gap above) and prints `sub_11b0(); return v1 ^ a0;` of an unset v1, as main does",
+  "A struct { float, float } getter (`return *p;`, movq (%rdi),%xmm0) whose caller reads only the low float returns `double` from `double *`, and the caller converts `(float)sub_11a0(..)` by value; main printed `unsigned long` and the same conversion",
+  "A getter that returns a global's float on one path and a constant on another stays an integer: every value returned in the register answers for the vote, and a global refuses it. crazyflie's packed-field getters (sub_80372d4, sub_8036c64) print unsigned int, and their readers print `(float)sub_80372d4()`, a value conversion, exactly as main does; the reviewed revision typed them float through the constant alone",
+  "A withdrawn function's float that comes from a callee's own float arithmetic or a declared (libc) return is not withdrawn: it is the type the machine computes, and a reader keeping it as an integer prints what main prints",
+  "Where every caller reads only the low 32 bits of a forced return and the callee kuna types as a pointer (tar O2 sub_26100 returning sub_412d0's int4 *, which returns futimens's int through a variable merged with __errno_location's pointer), the listing returns the pointer as unsigned int without a cast: a compile error under -Werror=int-conversion; the callers read only eax, so they get the bits the binary hands them. A return the callers read wider than the trial the function names is planted at their width (key_ssh_name returns char *), and refused where a path hands on a callee result wider or of unstated width that cannot be returned whole",
+  "A function whose callers read a 64-bit value in two registers stays `void`, as main prints it, when the model maps only one of them (`call big; ret` on i386 and ARM, dtotimespec's rax:rdx): its callers still read the result of a `void` function",
+  "gcc -O0 relocatable objects: a wrapper of a double callee prints `T v1; callee(..); return v1;` of an unset v1 on main and here (the call output is never linked); this branch types v1 double, and that function's per-function round trip loses the bits where main's `unsigned long` return left the callee's xmm0 in place by accident",
+  "Relocatable objects give a libc function no prototype, so a wrapper returning strtod's or strtof's result (and, on an image that does not state a hard-float convention, any named undeclared callee's) stays void, as main prints it, and its reader's `dat = parse();` still reads a void result. Linked binaries declare these calls",
+  "ARM images get no float/double libc rows. A soft-float or -mfloat-abi=softfp image hands a double around in r0:r1 and its callers hold that as a 64-bit integer: the rows made a function returning strtod's result or 0 `double`, which its readers converted by value, where main returns the right bits. A hard-float image's d0 is not among the default model's outputs: the rows made the same function `unsigned int` returning the low half of d0. strtod/pow/sqrt and their callers print as on main; an import stub whose callers read r0 returns that integer",
+  "An ARM hard-float wrapper of a double callee (`bl strtod; pop`) is planted at the d0 its caller reads, which the model's output map leaves out, so it stays void as main prints it (the previous head returned the s0 half)",
+  "On a soft-float image (u-boot O2), a wrapper whose callee kuna never decompiled (no body in the listing) stays void: its result could be a float in r0. 2 functions of 53,650 go back to main's text",
+  "A wrapper whose paths join before one ret, after naming the eax of the rax its callers read (`call pick; test %eax,%eax`, then one of two getname calls), stays void as main prints it, and its reader still reads a void result: heritage refines the planted rax at that eax and merges each half on its own, which printed `return CONCAT44(dat_4,v2)` with the upper half stored into `dat_4`. The same wrapper ending each path in its own tail call returns the pointer whole"
+ ],
+ "implicit_conversions": {
+  "instrument": ".scratch/r4/implconv.py: an argument whose class (int/float, inferred only from declared variables, derefs of declared pointers, printed calls, casts and literals) differs from the printed callee parameter; x = callee() of the other class; return e of the other class",
+  "castbench_45": {
+   "main": 15,
+   "reviewed_0aec6b59f": 503,
+   "fix": 18,
+   "rose_functions": 3,
+   "rose_note": "find O0 callers of get_relative_timestamp (sub_1916a): the callee now takes its real double sec_per_unit in xmm0 (modf's declaration shows the body multiply it) and the callers, which never set xmm0, pass one argument too few; the counter reads them positionally. A compile error, not a conversion.",
+   "reviewed_82746c20f": 18
+  },
+  "disjoint_40": {
+   "main": 910,
+   "reviewed_0aec6b59f": 4256,
+   "fix": 910,
+   "rose_functions": 0,
+   "reviewed_82746c20f": 910
+  },
+  "crazyflie_O2_noinline": {
+   "main": 262,
+   "reviewed_0aec6b59f": 298,
+   "fix": 262
+  },
+  "betaflight_O2_noinline": {
+   "main": 101,
+   "reviewed_0aec6b59f": 120,
+   "fix": 101
+  }
+ }
+}

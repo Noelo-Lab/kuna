@@ -557,7 +557,15 @@ address; when that pointee is a synthesized structure's pointer to its own
 incomplete shell (`structsynth nest`, chapter 05), both take the pointer to the
 completed structure instead (`coreaction_casts.rs (resolve_self_pointer)`), the
 same type the lattice gave the value, so no cast is printed between a node and
-the link it was loaded from.
+the link it was loaded from. A CALL or CALLIND whose own output type says
+nothing (an unlocked callee this caller took no statement from) takes as its
+token the return its callee stated to `callrettype` when the caller refused or
+withdrew that statement and keeps the result as the other class, an integer
+beside a pointer, or holds a float statement's result as a float or raw bytes
+(`kuna_callrettype.rs (refused_token)`, chapter 04): the listing declares that
+return, so the caller prints the conversion (`v1 = (long)sub_eecc(a0,v3)`)
+instead of an assignment C rejects or pointer arithmetic it would scale, and
+stores a float through a `float *`.
 
 **Union edges.** A value whose data-type still `needs_resolution()` (a union,
 or a pointer to one) is resolved per read/write edge: `coreaction_casts.rs

@@ -32,7 +32,7 @@
     "stdout_matches": [
       "int compare_z\\(struct_\\d+ \\*a0,struct_\\d+ \\*a1\\)",
       "v1 = compare_z\\(a0,\\(struct_\\d+ \\*\\)&a1\\[v2 \\* 2\\],\\(v4 \\+ v3\\) % 2\\);",
-      "void by_name_c2\\(unsigned long \\*a0,unsigned long \\*a1\\)",
+      "int by_name_c2\\(unsigned long \\*a0,unsigned long \\*a1\\)",
       "unsigned int ent_before_c2\\(void\\)\\n\\{\\n  return \\(unsigned int\\)by_name_c2\\(\\) >> 0x1f;",
       "long worker_c7\\(long a0\\)",
       "long run_share_c7\\(void\\)\\n\\{\\n  return worker_c7\\(\\) \\* 3;"
@@ -42,6 +42,6 @@
       "(ent_before_c2|run_share_c7)\\((void|unsigned long) \\*a0"
     ]
   },
-  "notes": "A callback whose direct call contradicts the declaration is not parked. search_z (clang -O0) passes idiv's rdx remainder too, three arguments against two; ent_before_c2 and run_share_c7 (clang -O2) forward their registers untouched and print a call with none. compare_z, by_name_c2 and worker_c7 keep their own signatures and each call stays as printed.",
-  "probe_id": "p-045532195c56"
+  "notes": "A callback whose direct call contradicts the declaration is not parked: search_z passes three arguments against two, ent_before_c2 and run_share_c7 print calls with none. compare_z, by_name_c2 and worker_c7 keep their own signatures; by_name_c2 returns strcmp's result, which ent_before_c2 reads, so it is int.",
+  "probe_id": "p-0051c54bd962"
 }

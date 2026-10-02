@@ -1455,6 +1455,21 @@ exactly the results that spell one. The default callee-first order
 its end, in its own plan order
 (`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs (converge_callee_first)`).
 
+(kuna) **A result read from a `void` function.** After each function of the
+callee-first plan, the driver decompiles again every function recovered `void`
+whose result a caller reads
+(`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs (VoidReads::settle)`), each
+told the storage its callers read, in plan order, together with each reader of
+a function whose recovered return a redo changed, each function whose float
+return a reader keeps as another type, and each redone function left returning
+a register a call only clobbers, for up to ten rounds, since a redone
+wrapper reads its own callee's result. The recording hook is the one
+that states `callrettype`'s return
+(`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)`), and the
+recovery is chapter [04](04-calls-and-prototypes.md)'s. A redo that fails keeps
+the first body. The worker pool, which has no callee-first order, does not run
+it.
+
 (kuna) Which `struct_N` a layout becomes is decided by the order the program is
 visited in, so the whole-program surfaces that keep a ledger take the SAME
 order. `decompile-project` asks

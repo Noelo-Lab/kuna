@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-79a154fe439e",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/floatret_cm4.o",
+    "binary_sha256": "79336407e43b016799478c45d8ead97245d3cca106fb0d9b28c01ef80a833f07",
+    "binary_size": 1728,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/floatret_cm4.o",
+    "selector": "qnanf_",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "float qnanf_\\(void\\)",
+      "return NAN;",
+      "v1 = qnanf_\\(\\);",
+      "return 0x7fc00123;"
+    ],
+    "stdout_absent": [
+      "0x7fc00000",
+      "\\(float\\)qnanf_",
+      "float qp\\(",
+      "float third\\("
+    ]
+  },
+  "notes": "Cortex-M4F: qnanf_ returns the quiet NaN in s0 and logish tail-calls it. A value returned in a float register is a float, so qnanf_ prints NAN and logish hands it back, not (float)qnanf_() of an unsigned int, which evaluated to 2143289344.0. qp's payload NaN keeps its bits; the low half of third's d0 is not a float."
+}

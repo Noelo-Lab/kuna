@@ -1060,6 +1060,8 @@ impl Action for ActionFuncLink {
         for i in 0..size {
             crate::kuna_armfloatargs::link_call_inputs(data, i);
         }
+        crate::p4_calls::kuna_voidret::plant(data);
+        crate::kuna_floatreg::note_float_pairs(data);
         0
     }
 }
@@ -1698,6 +1700,7 @@ impl Action for ActionReturnRecovery {
             }
         }
 
+        crate::p4_calls::kuna_voidret::score_forced(data, &mut active, &return_ops, maxancestor);
         crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_exe_ret, cond_failed);
         active.finish_pass();
         if active.get_num_passes() > active.get_max_pass() {
@@ -1709,6 +1712,7 @@ impl Action for ActionReturnRecovery {
             crate::kuna_armfloatreturn::narrow_returns(data, &mut active);
             let manager_rc = data.get_arch().manage.clone();
             let _ = data.get_func_proto().derive_output_map(&mut active, &manager_rc);
+            crate::p4_calls::kuna_voidret::whole_or_none(data, &mut active);
             crate::kuna_retinputhalf::note_moved_back_returns(data, &active, &return_ops);
             let return_single = data.get_arch().return_single;
             for &op in &return_ops {
@@ -1721,6 +1725,7 @@ impl Action for ActionReturnRecovery {
                 }
                 Self::build_return_output(&active, op, data, return_single);
             }
+            crate::p4_calls::kuna_voidret::void_unless_returned(data);
             crate::kuna_armfloatreturn::type_returns(data, &active);
             data.clear_active_output();
             self.base.count += 1;

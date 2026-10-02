@@ -2208,6 +2208,8 @@ impl ConsoleProgram {
             let types = self.arch().types();
             kuna_analysis::protos::declared_libc_prototype(name, types, word_size, layout)
         };
+        let whole = kuna_decomp::kuna_typedcallabi::returns_doubles_whole(self.arch());
+        let pieces = pieces.filter(|p| whole || !kuna_decomp::kuna_typedcallabi::declares_a_float(p));
         if let Some(pieces) = pieces {
             self.arch_mut().set_function_prototype_pieces_at(addr, pieces);
         }

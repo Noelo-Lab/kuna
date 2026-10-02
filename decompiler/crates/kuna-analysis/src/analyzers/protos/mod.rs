@@ -76,6 +76,10 @@ enum Ty {
     WCharPtr,
     /// `void *` (also used for `FILE *`, opaque handles).
     VoidPtr,
+    /// `float` (4-byte IEEE 754 on every target these tables apply to).
+    Float,
+    /// `double` (8-byte IEEE 754). `long double` has no fixed width and no Ty.
+    Double,
     /// (kuna `libctypes`) A pointer to the NAMED libc/POSIX aggregate spelled by
     /// the payload (`FILE`, `stat`, `DIR`, ...), sized from
     /// [`kuna_libctypes::NAMED_AGGREGATES`].
@@ -200,6 +204,8 @@ fn build_ty(
             let v = types.get_type_void()?;
             types.get_type_pointer(ptr, v, word_size)
         }
+        Ty::Float => types.get_base(4, type_metatype::TYPE_FLOAT),
+        Ty::Double => types.get_base(8, type_metatype::TYPE_FLOAT),
         Ty::NamedPtr(n) => {
             let s = kuna_libctypes::named_aggregate(n, types, word_size, layout)?;
             types.get_type_pointer(ptr, s, word_size)

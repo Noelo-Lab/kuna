@@ -1,0 +1,1291 @@
+//! (kuna) A function whose result a caller reads returns it (P4).
+//!
+//! `call g; ret` is what both `void f(void) { g(); }` and `T f(void) { return
+//! g(); }` compile to, and the function alone cannot tell them apart: upstream's
+//! `ancestorOpUse` refuses a value that comes straight from a call ("a call is
+//! never a good indication of a single parameter"), so every such wrapper was
+//! recovered `void`. Its callers settle it. A caller that reads the return
+//! register after the call was compiled against a declaration that returns a
+//! value, and it printed that read -- `v6 = sub_18a0f(4,v22)` beside `void
+//! sub_18a0f(unsigned int a0,char *a1)`, which is not C, and for a float
+//! `v1 = (float)qnan()`.
+//!
+//! In `decompile-all`'s callee-first order the callee is recovered first, so
+//! [`record`] files it as `void` and files every later call that reads its
+//! return storage. [`due`] then names the functions to decompile again, with
+//! the storage their callers read, and `ActionReturnRecovery` accepts the return
+//! trial there ([`score_forced`]) when, at every live RETURN, the value is
+//! realistic and used only on its way there, a call's result included. It
+//! returns no wider than its callers read and than every path sets: a wrapper
+//! of two `int` calls returns `eax`, not the `rax` its calls leave half unset.
+//! A redone wrapper reads its own callee's result in turn, so the driver repeats
+//! until no new function is due, then decompiles again each reader of a
+//! function redone after it.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use kuna_base::address::Address;
+use kuna_base::space::spacetype;
+use kuna_base::types::{int4, uintb};
+
+use crate::funcdata::Funcdata;
+use crate::infra::architecture::Architecture;
+
+/// What a function's last decompile recovered it returns, when it has no
+/// declared prototype.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Returns {
+    /// Nothing.
+    Void,
+    /// A float.
+    Float,
+    /// A value of another type.
+    Other,
+}
+
+/// How a reader holds a call's result: as a pointer or a float, and whether it
+/// adds to it or indexes it in place (`f(a0) + 0x24`, which C scales once `f`
+/// returns a pointer; a result first assigned to an integer variable is added
+/// to as an integer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Held {
+    /// A pointer.
+    pub pointer: bool,
+    /// A float.
+    pub float: bool,
+    /// Added to, subtracted from or indexed.
+    pub arithmetic: bool,
+}
+
+/// How `data` holds the call result `outvn`.
+fn held(data: &Funcdata, outvn: crate::context::VarnodeId) -> Option<Held> {
+    use kuna_num::opcodes::OpCode;
+    let out = data.vbank().get(outvn)?;
+    let meta = out.get_type().get_metatype();
+    let arithmetic = out.is_implied()
+        && out.descend_iter().any(|r| {
+            data.obank().get(r).is_some_and(|o| {
+                matches!(o.code(), OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB)
+            })
+        });
+    Some(Held {
+        pointer: meta == crate::dtype::type_metatype::TYPE_PTR,
+        float: meta == crate::dtype::type_metatype::TYPE_FLOAT,
+        arithmetic,
+    })
+}
+
+/// The run's record.
+#[derive(Debug, Default, Clone)]
+pub struct Ledger {
+    /// Per called function, the return storage each call to it reads.
+    pub read: BTreeMap<(int4, uintb), Vec<(Address, int4)>>,
+    /// Per called function, the functions that read it.
+    pub readers: BTreeMap<(int4, uintb), BTreeSet<(int4, uintb)>>,
+    /// Per function decompiled again, the storage its callers read.
+    pub forced: BTreeMap<(int4, uintb), (Address, int4)>,
+    /// What each function without a declared prototype was last recovered to
+    /// return.
+    pub returns: BTreeMap<(int4, uintb), Returns>,
+    /// Per function recovered returning a value, the storage it returns it in.
+    pub storage: BTreeMap<(int4, uintb), (Address, int4)>,
+    /// Per reader and callee, how the reader's last decompile holds the call's
+    /// result ([`Held`]).
+    pub held: BTreeMap<((int4, uintb), (int4, uintb)), Held>,
+    /// Per function, its live p-code ops in its last decompile.
+    pub ops: BTreeMap<(int4, uintb), usize>,
+    /// Per function returning a float, the readers that keep its result as
+    /// another type.
+    pub float_refused: BTreeMap<(int4, uintb), BTreeSet<(int4, uintb)>>,
+    /// The functions whose float return is withdrawn: redone without the
+    /// float-register vote on the return, and without a forced return.
+    pub withdrawn: BTreeSet<(int4, uintb)>,
+    /// Per function returning a float, the callees whose float return it hands
+    /// on as its own ([`float_sources`]).
+    pub float_sources: BTreeMap<(int4, uintb), BTreeSet<(int4, uintb)>>,
+    /// The functions a forced return left returning a register a call only
+    /// clobbers: withdrawn like a refused float return.
+    pub unset: BTreeSet<(int4, uintb)>,
+    /// Per function without a declared prototype, whether each parameter its
+    /// last decompile recovered is a float (`Some(true)`) or an integer or
+    /// pointer (`Some(false)`): the type a listing prints for it.
+    pub params: BTreeMap<(int4, uintb), Vec<Option<bool>>>,
+}
+
+fn key(entry: &Address) -> Option<(int4, uintb)> {
+    Some((entry.get_space()?.get_index(), entry.get_offset()))
+}
+
+/// File what the function entered at `entry` returns, and the return storage
+/// each of its calls reads. Callers are not always recorded after their callees
+/// (a call the call graph missed, a cycle), so every read is filed and [`due`]
+/// asks which callee is `void`.
+pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
+    let Some(own) = key(entry) else { return };
+    let proto = data.get_func_proto();
+    let declared = arch.symboltab.function_proto_pieces_across_scopes(entry).is_some();
+    let returns = match proto.get_output_type().map(|t| t.get_metatype()) {
+        _ if declared || !proto.has_store() || proto.is_output_locked() => None,
+        None | Some(crate::dtype::type_metatype::TYPE_VOID) => proto.has_model().then_some(Returns::Void),
+        Some(crate::dtype::type_metatype::TYPE_FLOAT) => Some(Returns::Float),
+        Some(_) => Some(Returns::Other),
+    };
+    match returns {
+        Some(r) => {
+            arch.kuna_voidret.returns.insert(own, r);
+        }
+        None => {
+            arch.kuna_voidret.returns.remove(&own);
+        }
+    }
+    let stored = matches!(returns, Some(Returns::Float | Returns::Other))
+        .then(|| proto.get_output())
+        .filter(|out| !out.get_address().is_invalid() && out.get_size() > 0)
+        .map(|out| (out.get_address(), out.get_size()));
+    match stored {
+        Some(s) => {
+            arch.kuna_voidret.storage.insert(own, s);
+        }
+        None => {
+            arch.kuna_voidret.storage.remove(&own);
+        }
+    }
+    if declared || !proto.has_store() || proto.is_input_locked() {
+        arch.kuna_voidret.params.remove(&own);
+    } else {
+        let params = (0..proto.num_params())
+            .map(|i| {
+                use crate::dtype::type_metatype::*;
+                proto.get_param(i).and_then(|p| p.get_type()).and_then(|t| match t.get_metatype() {
+                    TYPE_FLOAT => Some(true),
+                    TYPE_INT | TYPE_UINT | TYPE_BOOL | TYPE_UNKNOWN | TYPE_PTR | TYPE_ENUM_INT | TYPE_ENUM_UINT => Some(false),
+                    _ => None,
+                })
+            })
+            .collect();
+        arch.kuna_voidret.params.insert(own, params);
+    }
+    for refused in arch.kuna_voidret.float_refused.values_mut() {
+        refused.remove(&own);
+    }
+    arch.kuna_voidret.ops.insert(own, data.obank().iter_alive().count());
+    if returns == Some(Returns::Float) && converts_its_return(data) {
+        arch.kuna_voidret.float_refused.entry(own).or_default().insert(own);
+    }
+    let sources = if returns == Some(Returns::Float) { float_sources(data) } else { BTreeSet::new() };
+    if sources.is_empty() {
+        arch.kuna_voidret.float_sources.remove(&own);
+    } else {
+        arch.kuna_voidret.float_sources.insert(own, sources);
+    }
+    if !data.kuna_forced_return().is_empty() && returns_a_call_clobber(data) {
+        arch.kuna_voidret.unset.insert(own);
+    }
+    for i in 0..data.num_calls() {
+        let fc = data.get_call_specs(i);
+        let Some(callee) = key(fc.get_entry_address()) else { continue };
+        if callee == own || fc.proto().is_output_locked() {
+            continue;
+        }
+        let Some(outvn) = data.obank().get(fc.get_op()).filter(|o| !o.is_dead()).and_then(|o| o.get_out()) else {
+            continue;
+        };
+        let result = holder(data, outvn);
+        if arch.kuna_voidret.returns.get(&callee) == Some(&Returns::Float) && !held_as_float(data, outvn, result) {
+            arch.kuna_voidret.float_refused.entry(callee).or_default().insert(own);
+        }
+        if let Some(h) = held(data, result) {
+            arch.kuna_voidret.held.insert((own, callee), h);
+        }
+        arch.kuna_voidret.readers.entry(callee).or_default().insert(own);
+        let Some(storage) = data.vbank().get(result).and_then(read_storage) else { continue };
+        file_claim(arch, own, callee, storage);
+    }
+    for (callee, storage) in data.kuna_forced_claims().to_vec() {
+        file_claim(arch, own, callee, storage);
+    }
+}
+
+/// The Varnode holding the call result `outvn` in the caller's storage: the
+/// call's output, or, where `ActionSetCasts` converted the output and left the
+/// call writing a temporary only the conversion reads, the conversion's output,
+/// which took the register over.
+fn holder(data: &Funcdata, outvn: crate::context::VarnodeId) -> crate::context::VarnodeId {
+    let temporary = data
+        .vbank()
+        .get(outvn)
+        .and_then(|n| n.get_addr().get_space())
+        .is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL);
+    if temporary {
+        crate::kuna_callrettype::converted_result(data, outvn)
+    } else {
+        outvn
+    }
+}
+
+/// Does the caller keep the call result `outvn` as a float: typed one, and
+/// never converted to anything else?  A reader that holds a float callee's
+/// result as an integer (`unsigned int v3 = clampf(..)`), converts it
+/// (`(unsigned int)clampf(..)`), or hands it where C converts it -- to a
+/// parameter declared or recovered as an integer (`f2u(getf(p))`), stored
+/// through an `unsigned int *`, or returned as an integer -- converts it by
+/// value, where the binary moved its bits. Where `ActionSetCasts` converted the
+/// output ([`holder`]), the reader holds the result as the conversion's output,
+/// and the temporary the call writes carries only the call's own type.
+fn held_as_float(data: &Funcdata, outvn: crate::context::VarnodeId, result: crate::context::VarnodeId) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let float_ty = |t: &crate::dtype::Datatype| t.get_metatype() == crate::dtype::type_metatype::TYPE_FLOAT;
+    let float = |v: crate::context::VarnodeId| data.vbank().get(v).is_some_and(|n| float_ty(&n.get_type()));
+    let family = crate::kuna_protoorder::value_family(data, result);
+    family.iter().filter(|&&v| result == outvn || v != outvn).all(|&v| {
+        let Some(node) = data.vbank().get(v) else { return true };
+        (node.is_constant() || float(v))
+            && node.descend_iter().all(|r| {
+                let Some(o) = data.obank().get(r).filter(|o| !o.is_dead()) else { return true };
+                match o.code() {
+                    OpCode::CPUI_CAST => o.get_out().is_some_and(float),
+                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => (1..o.num_input())
+                        .filter(|&s| o.get_in(s) == Some(v))
+                        .all(|s| !crate::kuna_protoorder::reads_other_than_a_float(data, r, s)),
+                    OpCode::CPUI_STORE if o.get_in(2) == Some(v) => {
+                        let pointee = o.get_in(1).and_then(|p| data.vbank().get(p)).and_then(|p| p.get_type().get_ptr_to());
+                        !pointee.is_some_and(|t| {
+                            use crate::dtype::type_metatype::*;
+                            matches!(t.get_metatype(), TYPE_INT | TYPE_UINT | TYPE_BOOL | TYPE_PTR | TYPE_ENUM_INT | TYPE_ENUM_UINT)
+                        })
+                    }
+                    OpCode::CPUI_RETURN => {
+                        let proto = data.get_func_proto();
+                        proto.get_output_type().is_some_and(|t| float_ty(t))
+                    }
+                    _ => true,
+                }
+            })
+    })
+}
+
+/// Does a live RETURN of `data` hand back, on some path, what a call left in a
+/// register without returning it there: an INDIRECT creation the call's output
+/// never replaced?  The function then returns a variable nothing assigns --
+/// `f2u(..); return v1;` where the call's argument, joined from two registers,
+/// kept its output from being recovered.
+fn returns_a_call_clobber(data: &Funcdata) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let mut work: Vec<crate::context::VarnodeId> = data
+        .obank()
+        .iter_code(OpCode::CPUI_RETURN)
+        .filter_map(|r| data.obank().get(r).filter(|o| !o.is_dead() && o.get_halt_type() == 0))
+        .flat_map(|o| (1..o.num_input()).filter_map(|s| o.get_in(s)).collect::<Vec<_>>())
+        .collect();
+    let mut seen = BTreeSet::new();
+    while let Some(v) = work.pop() {
+        if !seen.insert(v) || seen.len() > 256 {
+            continue;
+        }
+        let Some(def) = data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d)) else { continue };
+        match def.code() {
+            OpCode::CPUI_INDIRECT if def.is_indirect_creation() => return true,
+            OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT | OpCode::CPUI_SUBPIECE | OpCode::CPUI_CAST | OpCode::CPUI_INT_ZEXT
+            | OpCode::CPUI_INT_SEXT => work.extend(def.get_in(0)),
+            OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_PIECE => work.extend((0..def.num_input()).filter_map(|k| def.get_in(k))),
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Does a live RETURN of `data` hand back a value converted from another type:
+/// `return (float)a0[3];` of an `int *`, the float the return register made the
+/// function return arguing with the type its body reads the value as?  A cast
+/// of the result of a callee recovered returning a float converts nothing.
+fn converts_its_return(data: &Funcdata) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let mut work: Vec<crate::context::VarnodeId> = data
+        .obank()
+        .iter_code(OpCode::CPUI_RETURN)
+        .filter_map(|r| data.obank().get(r).filter(|o| !o.is_dead() && o.get_halt_type() == 0).and_then(|o| o.get_in(1)))
+        .collect();
+    let mut seen = BTreeSet::new();
+    while let Some(v) = work.pop() {
+        if !seen.insert(v) || seen.len() > 64 {
+            continue;
+        }
+        let Some(def) = data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d)) else { continue };
+        match def.code() {
+            OpCode::CPUI_CAST => {
+                let from = def.get_in(0).and_then(|i| data.vbank().get(i));
+                if from.is_some_and(|i| {
+                    i.get_type().get_metatype() != crate::dtype::type_metatype::TYPE_FLOAT && !float_call_result(data, i)
+                }) {
+                    return true;
+                }
+            }
+            OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT => work.extend(def.get_in(0)),
+            OpCode::CPUI_MULTIEQUAL => work.extend((0..def.num_input()).filter_map(|k| def.get_in(k))),
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Is `node` the result of a call whose callee returns a float: a locked float
+/// output, or a float return the callee was last recovered with?
+fn float_call_result(data: &Funcdata, node: &crate::varnode::Varnode) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let Some(d) = node.get_def() else { return false };
+    if !data.obank().get(d).is_some_and(|o| matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)) {
+        return false;
+    }
+    let Some(fc) = data.get_call_specs_index(d).map(|i| data.get_call_specs(i)) else { return false };
+    let proto = fc.proto();
+    if proto.is_output_locked() {
+        return proto.get_output_type().is_some_and(|t| t.get_metatype() == crate::dtype::type_metatype::TYPE_FLOAT);
+    }
+    key(fc.get_entry_address()).is_some_and(|k| data.kuna_callee_returns(k) == Some(Returns::Float))
+}
+
+/// The functions returning a float that a reader keeps as another type, not yet
+/// withdrawn: each is decompiled again without the float-register vote on its
+/// return and without a forced return, so the listing declares what every
+/// reader takes (`unsigned int`, or `void` as before a redo made it return),
+/// and the readers are decompiled again against that.
+///
+/// A function that hands on a callee's float return keeps returning a float
+/// once withdrawn, `double wrapd(..) { return getd(..); }` beside a `getd` the
+/// vote made return `double`, and its reader's `dat_4060 = wrapd(..)` then
+/// converts by value. So the callees whose float it hands on are withdrawn
+/// with it, and theirs in turn, down the chain ([`float_sources`]).
+pub fn withdrawals(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
+    let ledger = &mut arch.kuna_voidret;
+    let float = |k: &(int4, uintb)| ledger.returns.get(k) == Some(&Returns::Float);
+    let refused: Vec<(int4, uintb)> =
+        ledger.float_refused.iter().filter(|(k, readers)| !readers.is_empty() && float(k)).map(|(k, _)| *k).collect();
+    let mut out: BTreeSet<(int4, uintb)> =
+        refused.iter().chain(ledger.unset.iter()).copied().filter(|k| !ledger.withdrawn.contains(k)).collect();
+    let mut work = refused;
+    let mut seen = BTreeSet::new();
+    while let Some(k) = work.pop() {
+        if !seen.insert(k) {
+            continue;
+        }
+        for s in ledger.float_sources.get(&k).into_iter().flatten().filter(|s| float(s)) {
+            if !ledger.withdrawn.contains(s) {
+                out.insert(*s);
+            }
+            work.push(*s);
+        }
+    }
+    ledger.withdrawn.extend(out.iter().copied());
+    out
+}
+
+/// The callees, last recovered returning a float, whose result reaches a live
+/// RETURN of `data` through copies and joins: the float the function returns
+/// is theirs.
+fn float_sources(data: &Funcdata) -> BTreeSet<(int4, uintb)> {
+    use kuna_num::opcodes::OpCode;
+    let mut work: Vec<crate::context::VarnodeId> = data
+        .obank()
+        .iter_code(OpCode::CPUI_RETURN)
+        .filter_map(|r| data.obank().get(r).filter(|o| !o.is_dead() && o.get_halt_type() == 0))
+        .flat_map(|o| (1..o.num_input()).filter_map(|s| o.get_in(s)).collect::<Vec<_>>())
+        .collect();
+    let mut out = BTreeSet::new();
+    let mut seen = BTreeSet::new();
+    while let Some(v) = work.pop() {
+        if !seen.insert(v) || seen.len() > 256 {
+            continue;
+        }
+        let Some((d, def)) = data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| Some((d, data.obank().get(d)?)))
+        else {
+            continue;
+        };
+        let fc = match def.code() {
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => data.get_call_specs_index(d).map(|i| data.get_call_specs(i)),
+            OpCode::CPUI_INDIRECT if def.is_indirect_creation() => call_of(data, def),
+            OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT | OpCode::CPUI_CAST | OpCode::CPUI_SUBPIECE => {
+                work.extend(def.get_in(0));
+                continue;
+            }
+            OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_PIECE => {
+                work.extend((0..def.num_input()).filter_map(|k| def.get_in(k)));
+                continue;
+            }
+            _ => continue,
+        };
+        let Some(fc) = fc.filter(|fc| !fc.proto().is_output_locked()) else { continue };
+        let Some(k) = key(fc.get_entry_address()) else { continue };
+        if data.kuna_callee_returns(k) == Some(Returns::Float) {
+            out.insert(k);
+        }
+    }
+    out
+}
+
+/// File that `reader` reads `storage` of what `callee` returns.
+fn file_claim(arch: &mut Architecture, reader: (int4, uintb), callee: (int4, uintb), storage: (Address, int4)) {
+    let claims = arch.kuna_voidret.read.entry(callee).or_default();
+    if !claims.contains(&storage) {
+        claims.push(storage);
+    }
+    arch.kuna_voidret.readers.entry(callee).or_default().insert(reader);
+}
+
+/// The storage a caller reads of the call result `out`: the bytes its uses
+/// consume (a `movss` of an `xmm0` result reads four), at the least
+/// significant end of the register.
+fn read_storage(out: &crate::varnode::Varnode) -> Option<(Address, int4)> {
+    let addr = out.get_addr();
+    let size = out.get_size();
+    match addr.get_space()?.get_type() {
+        spacetype::IPTR_JOIN => return Some((addr.clone(), size)),
+        spacetype::IPTR_PROCESSOR => {}
+        _ => return None,
+    }
+    let consume = out.get_consume();
+    let bits = 64 - consume.leading_zeros() as int4;
+    let width = if consume == 0 || (size > 8 && consume == u64::MAX) {
+        size
+    } else {
+        (((bits + 7) / 8).max(1) as u32).next_power_of_two().min(size as u32) as int4
+    };
+    let low = if addr.is_big_endian() { addr + ((size - width) as i64) } else { addr.clone() };
+    Some((low, width))
+}
+
+/// The functions to decompile again: `void` ones some caller reads a result
+/// from, each forced to return in the widest storage its callers read, and
+/// forced ones a caller decompiled since reads wider (the first reader decided
+/// the width, and the driver settles after every function). Callers that
+/// disagree on the register refuse the function, and one already forced is
+/// withdrawn: it returns nothing again, as before the redo.
+pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
+    let ledger = &mut arch.kuna_voidret;
+    let mut force: Vec<((int4, uintb), (Address, int4))> = Vec::new();
+    let mut withdraw: Vec<(int4, uintb)> = Vec::new();
+    for (callee, claims) in &ledger.read {
+        let Some(first) = claims.first() else { continue };
+        let space = |a: &Address| a.get_space().map(|s| s.get_index());
+        let agree = claims.iter().all(|(a, _)| space(a) == space(&first.0) && a.get_offset() == first.0.get_offset());
+        let widest = claims.iter().max_by_key(|(_, s)| *s).cloned().unwrap_or_else(|| first.clone());
+        match ledger.forced.get(callee) {
+            None if agree && ledger.returns.get(callee) == Some(&Returns::Void) => force.push((*callee, widest)),
+            Some(_) if ledger.withdrawn.contains(callee) => {}
+            Some(_) if !agree => withdraw.push(*callee),
+            Some((_, size)) if widest.1 > *size => force.push((*callee, widest)),
+            _ => {}
+        }
+    }
+    let mut out = BTreeSet::new();
+    for (callee, storage) in force {
+        ledger.forced.insert(callee, storage);
+        out.insert(callee);
+    }
+    for callee in withdraw {
+        ledger.withdrawn.insert(callee);
+        out.insert(callee);
+    }
+    out
+}
+
+/// The functions that read a function whose return a redo changed after they
+/// were decompiled, given when each function was last decompiled (`stamp_of`)
+/// and when each changed function's return last changed (`changed`): the type
+/// that callee now states reaches them only in another decompile.  Such a
+/// reader typed the result itself, against a callee it saw return nothing, and
+/// its text no longer agrees with the callee's declaration: `unsigned long v10
+/// = sub_18a0f(4,a1)` beside `void *sub_18a0f(..)`, or `sub_ef32(a0) + 0x24`,
+/// which C scales by the pointee once `sub_ef32` returns a `struct_56 *`.  A
+/// callee that states nothing to `callrettype` (and returns no float, and had
+/// no float return withdrawn) has nothing to hand its readers, and only a
+/// reader still waiting on it (a wrapper forced to return what it returns,
+/// recovered `void` until it did) is decompiled again.
+///
+/// A reader over [`crate::kuna_callrettype::AUDIT_MAX_OPS`] live ops is decompiled
+/// again only where its text computes a wrong value: an offset from a result the
+/// callee now declares a pointer to something wider than a byte (which C
+/// scales) and the reader held as something else, a float result held as
+/// something else, or a float it held from a callee whose float return was
+/// withdrawn. Its other stale text is a conversion the listing leaves out; a
+/// second decompile of sort -O2's `main` alone cost ten seconds, two thirds of
+/// the first.
+pub fn stale_readers(
+    arch: &Architecture,
+    stamp_of: &BTreeMap<(int4, uintb), usize>,
+    changed: &BTreeMap<(int4, uintb), usize>,
+) -> BTreeSet<(int4, uintb)> {
+    let mut out = BTreeSet::new();
+    for (callee, &at) in changed {
+        let float = arch.kuna_voidret.returns.get(callee) == Some(&Returns::Float);
+        let withdrawn = arch.kuna_voidret.withdrawn.contains(callee);
+        let states = float || withdrawn || arch.kuna_callret_types.contains_key(callee);
+        let scaled = arch.kuna_callret_types.get(callee).is_some_and(|s| {
+            s.ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
+                && s.ct.get_ptr_to().is_some_and(|p| {
+                    p.get_size() > 1 && p.get_metatype() != crate::dtype::type_metatype::TYPE_VOID
+                })
+        });
+        for reader in arch.kuna_voidret.readers.get(callee).into_iter().flatten() {
+            if reader == callee || stamp_of.get(reader).is_none_or(|&s| s >= at) {
+                continue;
+            }
+            let waiting = arch.kuna_voidret.forced.contains_key(reader)
+                && arch.kuna_voidret.returns.get(reader) == Some(&Returns::Void);
+            if !states && !waiting {
+                continue;
+            }
+            let large = arch.kuna_voidret.ops.get(reader).is_some_and(|&n| n > crate::kuna_callrettype::AUDIT_MAX_OPS);
+            let wrong = arch
+                .kuna_voidret
+                .held
+                .get(&(*reader, *callee))
+                .is_some_and(|h| (scaled && !h.pointer && h.arithmetic) || (float && !h.float) || (withdrawn && h.float));
+            if !large || wrong {
+                out.insert(*reader);
+            }
+        }
+    }
+    out
+}
+
+/// What the function keyed `k` was last recovered to return, for [`restore`].
+pub fn returns(arch: &Architecture, k: (int4, uintb)) -> Option<Returns> {
+    arch.kuna_voidret.returns.get(&k).copied()
+}
+
+/// The storage the function keyed `k` last returned a value in, for [`restore`].
+pub fn return_storage(arch: &Architecture, k: (int4, uintb)) -> Option<(Address, int4)> {
+    arch.kuna_voidret.storage.get(&k).cloned()
+}
+
+/// Put back what the function keyed `k` returned, and in what storage, before
+/// a decompile the run then discarded.
+pub fn restore(arch: &mut Architecture, k: (int4, uintb), returns: Option<Returns>, storage: Option<(Address, int4)>) {
+    match returns {
+        Some(r) => {
+            arch.kuna_voidret.returns.insert(k, r);
+        }
+        None => {
+            arch.kuna_voidret.returns.remove(&k);
+        }
+    }
+    match storage {
+        Some(s) => {
+            arch.kuna_voidret.storage.insert(k, s);
+        }
+        None => {
+            arch.kuna_voidret.storage.remove(&k);
+        }
+    }
+}
+
+/// Copy onto `data` what each of its callees was last recovered to return, and
+/// the return storage its callers read when it is due: the register pieces of a
+/// joined return (a `struct timespec` in `rax:rdx`), or the one register.
+pub fn seed(arch: &Architecture, data: &mut Funcdata) {
+    let returns: BTreeMap<(int4, uintb), Returns> = (0..data.num_calls())
+        .filter_map(|i| key(data.get_call_specs(i).get_entry_address()))
+        .filter_map(|k| Some((k, *arch.kuna_voidret.returns.get(&k)?)))
+        .collect();
+    data.kuna_set_callee_returns(returns);
+    let params: BTreeMap<(int4, uintb), Vec<Option<bool>>> = (0..data.num_calls())
+        .filter_map(|i| key(data.get_call_specs(i).get_entry_address()))
+        .filter_map(|k| Some((k, arch.kuna_voidret.params.get(&k)?.clone())))
+        .collect();
+    data.kuna_set_callee_params(params);
+    let storage: BTreeMap<(int4, uintb), (Address, int4)> = (0..data.num_calls())
+        .filter_map(|i| key(data.get_call_specs(i).get_entry_address()))
+        .filter_map(|k| Some((k, arch.kuna_voidret.storage.get(&k)?.clone())))
+        .collect();
+    data.kuna_set_callee_return_storage(storage);
+    let own = key(data.get_address());
+    let withdrawn = own.is_some_and(|k| arch.kuna_voidret.withdrawn.contains(&k));
+    data.kuna_set_float_return_withdrawn(withdrawn);
+    let Some((addr, size)) = own.filter(|_| !withdrawn).and_then(|k| arch.kuna_voidret.forced.get(&k).cloned()) else {
+        data.kuna_set_forced_return(Vec::new());
+        return;
+    };
+    let joined = addr.get_space().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_JOIN);
+    let pieces = if !joined {
+        vec![(addr, size)]
+    } else {
+        match arch.manage().find_join(addr.get_offset()) {
+            Ok(join) => (0..join.num_pieces())
+                .filter_map(|i| {
+                    let p = join.get_piece(i);
+                    Some((Address::new(std::rc::Rc::clone(p.space.as_ref()?), p.offset), p.size as int4))
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    };
+    data.kuna_set_forced_return(pieces);
+}
+
+/// Give every live RETURN a read of the storage the function's callers read,
+/// and the function a return trial there, when no op of the function names it:
+/// heritage registers a return trial only for a range some op reads or writes,
+/// and `call g; ret` names no return register at all.
+pub fn plant(data: &mut Funcdata) {
+    if data.get_func_proto().is_output_locked() || data.get_active_output().is_none() {
+        return;
+    }
+    for (addr, size) in data.kuna_forced_return().to_vec() {
+        plant_piece(data, addr, size);
+    }
+}
+
+fn plant_piece(data: &mut Funcdata, addr: Address, size: int4) {
+    if crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size) || touched_beyond(data, &addr, size) {
+        return;
+    }
+    let rets: Vec<crate::context::OpId> = data
+        .obank()
+        .iter_code(kuna_num::opcodes::OpCode::CPUI_RETURN)
+        .filter(|&r| data.obank().get(r).is_some_and(|o| !o.is_dead() && o.get_halt_type() == 0))
+        .collect();
+    let nins: Vec<int4> = rets.iter().filter_map(|&r| data.obank().get(r).map(|o| o.num_input())).collect();
+    if rets.is_empty() || nins.len() != rets.len() || nins.iter().any(|&n| n != nins[0]) {
+        return;
+    }
+    let slot = nins[0];
+    for &r in &rets {
+        let vn = data.new_varnode(size, &addr, None);
+        if data.op_insert_input(r, vn, slot).is_err() {
+            return;
+        }
+    }
+    if let Some(active) = data.get_active_output_mut() {
+        active.register_trial(&addr, size);
+        let t = active.get_num_trials() - 1;
+        active.get_trial_mut(t).set_slot(slot);
+    }
+    data.kuna_note_forced_return_planted(addr, size);
+}
+
+/// Does a Varnode of the function share a byte with `[addr, addr+size)` and
+/// reach outside it?  Heritage then registers a return trial on the wider
+/// range, which covers the callers' read.  One the function names only inside
+/// it (the `eax` of an earlier call's result beside a `rax` its callers read)
+/// would make the trial as narrow as that name.
+fn touched_beyond(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    let Some(space) = addr.get_space() else { return true };
+    let off = addr.get_offset();
+    let end = off.wrapping_add(size as u64);
+    let lo = Address::new(std::rc::Rc::clone(space), off.saturating_sub(64));
+    let hi = addr + size as i64;
+    data.vbank().iter_loc_addr_range(&lo, &hi).any(|id| {
+        data.vbank().get(id).is_some_and(|v| {
+            let (voff, vend) = (v.get_offset(), v.get_offset().wrapping_add(v.get_size() as u64));
+            voff < end && off < vend && (voff < off || vend > end)
+        })
+    })
+}
+
+/// Must heritage leave `[addr, addr+size)` out of the function's RETURN trials
+/// because [`plant`] made the trial itself?  Only the pieces it planted: the
+/// `edx` of `call zsum; or $0xff,%edx` beside a planted `eax` keeps its trial.
+pub fn planted_overlaps(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    data.kuna_forced_return_planted().iter().any(|(paddr, psize)| overlaps(addr, size, paddr, *psize))
+}
+
+fn overlaps(addr: &Address, size: int4, other: &Address, osize: int4) -> bool {
+    let (Some(a), Some(b)) = (addr.get_space(), other.get_space()) else { return false };
+    let (off, ooff) = (addr.get_offset(), other.get_offset());
+    a.get_index() == b.get_index()
+        && off < ooff.wrapping_add(osize.max(0) as u64)
+        && ooff < off.wrapping_add(size.max(0) as u64)
+}
+
+/// Mark active each return trial on the storage the function's callers read
+/// whose value is the return value at every live RETURN: realistic, and used
+/// only on its way there (`ancestor_op_use`), where a call's result counts too
+/// (upstream refuses one outright, which is what left `call g; ret` void). A
+/// register the function also uses as scratch (a stream pointer in a `getc`
+/// loop, an `error` message on a path that never returns) is not the return
+/// value everywhere, and the function stays as it was.
+///
+/// The value is returned no wider than the callers read it and than every path
+/// sets it ([`defined_width`]): `if (tz) return setenv(..); return unsetenv(..);`
+/// sets `eax` and leaves the rest of `rax` to the calls, so it returns an `int`
+/// ([`narrow`]); a path that sets none of it refuses the trial.
+pub fn score_forced(
+    data: &mut Funcdata,
+    active: &mut crate::fspec::ParamActive,
+    return_ops: &[crate::context::OpId],
+    maxancestor: int4,
+) {
+    if data.kuna_forced_return().is_empty() {
+        return;
+    }
+    let live: Vec<crate::context::OpId> = return_ops
+        .iter()
+        .copied()
+        .filter(|&r| data.obank().get(r).is_some_and(|o| !o.is_dead() && o.get_halt_type() == 0))
+        .collect();
+    for anchored in [true, false] {
+        let beside = (0..active.get_num_trials()).any(|i| {
+            let t = active.get_trial(i);
+            t.is_active() && read_width(data, t.get_address(), t.get_size()).is_some()
+        });
+        if !anchored && !beside {
+            break;
+        }
+        for i in 0..active.get_num_trials() {
+            score_trial(data, active, i, anchored, &live, maxancestor);
+        }
+    }
+}
+
+/// After the model has mapped the return trials, keep a forced return whole or
+/// return nothing: a trial on the callers' storage that every path sets but
+/// the model left out (the `edx` of `call big; ret`, which upstream takes for a
+/// clobbered register) would leave its callers reading a value the function
+/// no longer returns.
+pub fn whole_or_none(data: &Funcdata, active: &mut crate::fspec::ParamActive) {
+    if data.kuna_forced_return().is_empty() {
+        return;
+    }
+    let live: Vec<crate::context::OpId> = data
+        .obank()
+        .iter_code(kuna_num::opcodes::OpCode::CPUI_RETURN)
+        .filter(|&r| data.obank().get(r).is_some_and(|o| !o.is_dead() && o.get_halt_type() == 0))
+        .collect();
+    let trials: Vec<int4> = (0..active.get_num_trials())
+        .filter(|&i| {
+            let t = active.get_trial(i);
+            forced(data, t.get_address(), t.get_size())
+        })
+        .collect();
+    let set = |slot: int4| {
+        slot >= 0
+            && !live.is_empty()
+            && live.iter().all(|&r| {
+                data.obank()
+                    .get(r)
+                    .and_then(|o| o.get_in(slot))
+                    .is_some_and(|vn| defined_width(data, vn, &mut BTreeSet::new()) > 0)
+            })
+    };
+    let left = trials.iter().any(|&i| !active.get_trial(i).is_used() && set(active.get_trial(i).get_slot()));
+    if left && trials.iter().any(|&i| active.get_trial(i).is_used()) {
+        for &i in &trials {
+            active.get_trial_mut(i).mark_no_use();
+        }
+    }
+}
+
+/// A forced function whose RETURN carries no value once return recovery is
+/// done returns `void`, as upstream's `updateOutputTypes` makes it. A restart
+/// keeps the output an earlier pass recovered (the port's `Funcdata::clear`
+/// does not clear an unlocked output, and `ActionOutputPrototype` leaves the
+/// output alone when the RETURN has no value), so a trial the pass before the
+/// restart took and the pass after it refused printed `unsigned int f(..)`
+/// around a bare `return;`.
+pub fn void_unless_returned(data: &mut Funcdata) {
+    if data.kuna_forced_return().is_empty()
+        || !data.get_func_proto().has_store()
+        || data.get_func_proto().is_output_locked()
+        || data.get_first_return_op().and_then(|r| data.obank().get(r)).is_some_and(|o| o.num_input() > 1)
+    {
+        return;
+    }
+    let glb = std::rc::Rc::clone(data.get_arch());
+    if let Some(types) = glb.types() {
+        let _ = data.get_func_proto_mut().clear_unlocked_output(types);
+    }
+}
+
+/// [`score_forced`] for trial `i`, when it is (`anchored`) or is not a trial at
+/// the least significant end of the storage the callers read: the upper half of
+/// a `double` split in two trials is returned only beside its lower half.
+fn score_trial(
+    data: &mut Funcdata,
+    active: &mut crate::fspec::ParamActive,
+    i: int4,
+    anchored: bool,
+    live: &[crate::context::OpId],
+    maxancestor: int4,
+) -> bool {
+    let (addr, size, slot) = {
+        let t = active.get_trial(i);
+        (t.get_address().clone(), t.get_size(), t.get_slot())
+    };
+    if active.get_trial(i).is_active()
+        || !forced(data, &addr, size)
+        || live.is_empty()
+        || read_width(data, &addr, size).is_some() != anchored
+    {
+        return false;
+    }
+    let mut width = read_width(data, &addr, size).unwrap_or(size);
+    for &r in live {
+        let set = data
+            .obank()
+            .get(r)
+            .and_then(|o| o.get_in(slot))
+            .map_or(0, |vn| defined_width(data, vn, &mut BTreeSet::new()));
+        width = width.min(set);
+    }
+    if width <= 0 {
+        let callers = callers_storage(data, &addr, size);
+        for &r in live {
+            if let Some(vn) = data.obank().get(r).and_then(|o| o.get_in(slot)) {
+                for (callee, storage) in void_results(data, vn) {
+                    data.kuna_note_forced_claim((callee, as_wide_as(storage, callers.as_ref())));
+                }
+            }
+        }
+        return false;
+    }
+    if hands_on_unstated(data, &addr, size, width, live, slot) || merges_in_pieces(data, live, slot) {
+        return false;
+    }
+    let every = live.iter().all(|&r| {
+        let Some(vn) = data.obank().get(r).and_then(|o| o.get_in(slot)) else { return false };
+        let (killed, cond) = (active.get_trial(i).is_killed_by_call(), active.get_trial(i).has_cond_exe_effect());
+        let mut ancestor = crate::funcdata_varnode::AncestorRealistic::new();
+        let (realistic, solid) = ancestor.execute(data, r, slot, size, cond, killed, false);
+        if !(realistic || solid) {
+            return false;
+        }
+        data.kuna_set_forced_scoring(true);
+        let only = data.ancestor_op_use(maxancestor, vn, r, active.get_trial_mut(i), 0, 0);
+        data.kuna_set_forced_scoring(false);
+        only
+    });
+    if !every || (width < size && !narrow(data, active, i, live, slot, width)) {
+        return false;
+    }
+    active.get_trial_mut(i).mark_active();
+    true
+}
+
+/// Does a live RETURN read the trial as pieces that each merge on their own?
+/// Heritage refines a planted range wider than every write at the narrower
+/// name the function uses, and where paths meet before the RETURN each piece
+/// gets its own MULTIEQUAL, which no rule joins again: gcc -O1's `wrap`, `call
+/// pick; test %eax,%eax` and then one of two `getname` calls before a shared
+/// `ret`, returned `CONCAT44(dat_4,v2)` and stored the upper half of
+/// `getname`'s pointer into `dat_4`, a register piece printed as a global, on
+/// each path.  The function stays as it was.
+fn merges_in_pieces(data: &Funcdata, live: &[crate::context::OpId], slot: int4) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let def = |vn: crate::context::VarnodeId| data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d));
+    live.iter().any(|&r| {
+        data.obank().get(r).and_then(|o| o.get_in(slot)).and_then(def).is_some_and(|p| {
+            p.code() == OpCode::CPUI_PIECE
+                && (0..p.num_input()).filter_map(|k| p.get_in(k)).any(|i| def(i).is_some_and(|d| d.code() == OpCode::CPUI_MULTIEQUAL))
+        })
+    })
+}
+
+/// What a call's callee is known to return, for [`hands_on_unstated`].
+enum CalleeReturn {
+    /// Its declared, stated or last recovered return storage (nothing, for
+    /// `void`).
+    Stored(Address, int4),
+    /// A float, of a width nothing states.
+    Float,
+    /// A value of another type, of a width nothing states.
+    Other,
+    /// Nothing: no declaration, no statement, and no decompile of its own.
+    Unknown,
+}
+
+fn callee_return(data: &Funcdata, fc: &crate::p4_calls::fspec::FuncCallSpecs) -> CalleeReturn {
+    let proto = fc.proto();
+    if proto.is_output_locked() {
+        let out = proto.get_output();
+        if out.get_type().is_some_and(|t| t.get_metatype() == crate::dtype::type_metatype::TYPE_VOID) {
+            return CalleeReturn::Stored(out.get_address(), 0);
+        }
+        return CalleeReturn::Stored(out.get_address(), out.get_size());
+    }
+    let Some(k) = key(fc.get_entry_address()) else { return CalleeReturn::Unknown };
+    if let Some(stated) = data.kuna_callret_stated(k) {
+        return CalleeReturn::Stored(stated.addr.clone(), stated.size);
+    }
+    match (data.kuna_callee_returns(k), data.kuna_callee_return_storage(k)) {
+        (Some(Returns::Void), _) => CalleeReturn::Stored(Address::new_invalid(), 0),
+        (Some(_), Some((addr, size))) => CalleeReturn::Stored(addr.clone(), *size),
+        (Some(Returns::Float), None) => CalleeReturn::Float,
+        (Some(Returns::Other), None) => CalleeReturn::Other,
+        (None, _) => CalleeReturn::Unknown,
+    }
+}
+
+/// Does trial `[addr, addr+size)`, about to return its least significant
+/// `width` bytes, hand on a call's result the listing cannot return as it is?
+/// Where the callers read wider than `width`, a path returning what a callee
+/// returns wider, or of a width nothing states, would be cut short:
+/// `call key_type; call type_name; ret` names only `eax`, and printed
+/// `unsigned int` around `type_name`'s pointer.  Where the storage may carry
+/// a float (a floating-point register, or any register on an image that does
+/// not state a hard-float convention), a path returning what a named callee
+/// nothing declares returns converts it by value once the listing is compiled
+/// against the callee's real declaration: a relocatable object's `strtod`
+/// printed `unsigned long parse(..) { return strtod(..); }`.  A call through a
+/// pointer is typed by the listing itself.  Either keeps the function as it
+/// was.
+fn hands_on_unstated(
+    data: &Funcdata,
+    addr: &Address,
+    size: int4,
+    width: int4,
+    live: &[crate::context::OpId],
+    slot: int4,
+) -> bool {
+    let cut = callers_width(data, addr, size) > width;
+    let float = may_carry_a_float(data, addr, size);
+    if !cut && !float {
+        return false;
+    }
+    let low = if addr.is_big_endian() { addr + (size - 1) as i64 } else { addr.clone() };
+    live.iter().any(|&r| {
+        let Some(vn) = data.obank().get(r).and_then(|o| o.get_in(slot)) else { return true };
+        let Some(calls) = result_calls(data, vn) else { return true };
+        calls.into_iter().filter_map(|c| data.get_call_specs_index(c).map(|i| data.get_call_specs(i))).any(|fc| {
+            match callee_return(data, fc) {
+                CalleeReturn::Stored(raddr, rsize) => cut && covered_from(&low, &raddr, rsize).is_none_or(|n| n > width),
+                CalleeReturn::Float | CalleeReturn::Other => cut,
+                CalleeReturn::Unknown => cut || (float && key(fc.get_entry_address()).is_some()),
+            }
+        })
+    })
+}
+
+/// How many bytes of storage `[raddr, raddr+rsize)` hold from the byte `low`
+/// up (down, big-endian), or `None` when they are in another space.
+fn covered_from(low: &Address, raddr: &Address, rsize: int4) -> Option<int4> {
+    if rsize <= 0 {
+        return Some(0);
+    }
+    if low.get_space().map(|s| s.get_index()) != raddr.get_space().map(|s| s.get_index()) {
+        return None;
+    }
+    let (off, roff, rend) = (low.get_offset(), raddr.get_offset(), raddr.get_offset().wrapping_add(rsize as u64));
+    if off < roff || off >= rend {
+        return Some(0);
+    }
+    Some(if low.is_big_endian() { off + 1 - roff } else { rend - off } as int4)
+}
+
+/// The widest storage the callers read anchored at the trial's least
+/// significant end.
+fn callers_storage(data: &Funcdata, addr: &Address, size: int4) -> Option<(Address, int4)> {
+    data.kuna_forced_return()
+        .iter()
+        .filter(|(fa, fs)| same_low_end(fa, *fs, addr, size))
+        .max_by_key(|(_, fs)| *fs)
+        .cloned()
+}
+
+fn callers_width(data: &Funcdata, addr: &Address, size: int4) -> int4 {
+    callers_storage(data, addr, size).map_or(0, |(_, fs)| fs)
+}
+
+fn same_low_end(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
+    let low_end = |x: &Address, s: int4| if x.is_big_endian() { x.get_offset().wrapping_add(s as u64) } else { x.get_offset() };
+    a.get_space().map(|s| s.get_index()) == b.get_space().map(|s| s.get_index()) && low_end(a, asize) == low_end(b, bsize)
+}
+
+/// The storage a wrapper asks a `void` callee to return in: all of what its
+/// own callers read, where the piece it hands on lies inside that.  A wrapper
+/// whose body names only `eax` asked for `eax` alone, and a callee handing on a
+/// pointer then returned `unsigned int`; one that hands on `rax` in two pieces
+/// asked for each, and the callee, asked for two registers, stayed `void`.
+fn as_wide_as(storage: (Address, int4), callers: Option<&(Address, int4)>) -> (Address, int4) {
+    match callers {
+        Some((fa, fs)) if *fs > storage.1 && within(&storage.0, storage.1, fa, *fs) => (fa.clone(), *fs),
+        _ => storage,
+    }
+}
+
+fn within(addr: &Address, size: int4, outer: &Address, osize: int4) -> bool {
+    addr.get_space().map(|s| s.get_index()) == outer.get_space().map(|s| s.get_index())
+        && outer.get_offset() <= addr.get_offset()
+        && addr.get_offset().wrapping_add(size.max(0) as u64) <= outer.get_offset().wrapping_add(osize.max(0) as u64)
+}
+
+/// Can `[addr, addr+size)` hold a float a callee returns: a floating-point
+/// register of the model's outputs, or any storage where the image does not
+/// state that floats travel in floating-point registers?
+fn may_carry_a_float(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    if data.get_arch().float_arg_registers != Some(true) {
+        return true;
+    }
+    let proto = data.get_func_proto();
+    proto.has_model()
+        && proto.model().output().get_entry().iter().any(|e| {
+            e.get_type() == crate::dtype::type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) >= 0
+        })
+}
+
+/// The calls whose result the value `vn` is on some path into it, through
+/// copies, joins and pieces, or `None` when the paths are too many to follow.
+/// A call an INDIRECT guards may replace the value it carries past the call,
+/// and a piece of a register the function returns whole keeps the rest of the
+/// call's result beside it (`s0` of a `d0` a call set).
+fn result_calls(data: &Funcdata, vn: crate::context::VarnodeId) -> Option<Vec<crate::context::OpId>> {
+    use kuna_num::opcodes::OpCode;
+    let mut out = Vec::new();
+    let mut stack = vec![vn];
+    let mut seen = BTreeSet::new();
+    let guarded = |ind: &crate::op::PcodeOp| {
+        ind.get_in(1)
+            .and_then(|i| data.vbank().get(i))
+            .filter(|i| i.get_space().get_type() == spacetype::IPTR_IOP)
+            .map(|i| crate::context::OpId::from(slotmap::KeyData::from_ffi(i.get_offset())))
+            .filter(|&c| data.obank().get(c).is_some_and(|o| matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)))
+    };
+    while let Some(v) = stack.pop() {
+        if !seen.insert(v) {
+            continue;
+        }
+        if seen.len() > 256 {
+            return None;
+        }
+        let Some((d, def)) = data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| Some((d, data.obank().get(d)?)))
+        else {
+            continue;
+        };
+        match def.code() {
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => out.push(d),
+            OpCode::CPUI_INDIRECT => {
+                out.extend(guarded(def));
+                if !def.is_indirect_creation() {
+                    stack.extend(def.get_in(0));
+                }
+            }
+            OpCode::CPUI_COPY | OpCode::CPUI_SUBPIECE => stack.extend(def.get_in(0)),
+            OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_PIECE => {
+                stack.extend((0..def.num_input()).filter_map(|k| def.get_in(k)))
+            }
+            _ => {}
+        }
+    }
+    Some(out)
+}
+
+/// How many of the trial's least significant bytes the callers read: the
+/// widest read anchored at that end, if any is.
+fn read_width(data: &Funcdata, addr: &Address, size: int4) -> Option<int4> {
+    callers_storage(data, addr, size).map(|(_, fs)| fs.min(size))
+}
+
+/// How many of `vn`'s least significant bytes hold a value on every path into
+/// it.  None of a register a call kills (an INDIRECT creation on an
+/// indirect-zero) and none of the function's entry value of a register no
+/// parameter arrives in; a `PIECE` holds its low piece, and its high one too
+/// when the low piece is whole.  A value met again around a loop is taken as
+/// set, the answer the first path decides.
+fn defined_width(data: &Funcdata, vn: crate::context::VarnodeId, seen: &mut BTreeSet<crate::context::VarnodeId>) -> int4 {
+    use kuna_num::opcodes::OpCode;
+    let Some(node) = data.vbank().get(vn) else { return 0 };
+    let size = node.get_size();
+    if node.is_constant() || !seen.insert(vn) || seen.len() > 256 {
+        return size;
+    }
+    let Some(def) = node.get_def().and_then(|d| data.obank().get(d)) else {
+        return if node.is_input() && !parameter_register(data, node) { 0 } else { size };
+    };
+    let from = |k: int4, seen: &mut BTreeSet<_>| def.get_in(k).map_or(0, |v| defined_width(data, v, seen));
+    let piece_size = |k: int4| def.get_in(k).and_then(|v| data.vbank().get(v)).map_or(0, |v| v.get_size());
+    let set = match def.code() {
+        OpCode::CPUI_INDIRECT if def.is_indirect_creation() => {
+            if def.get_in(0).and_then(|v| data.vbank().get(v)).is_some_and(|v| v.is_indirect_zero())
+                || !node.get_def().is_some_and(|d| becomes_the_calls_output(data, d))
+            {
+                0
+            } else {
+                returned_by_the_call(data, def, node)
+            }
+        }
+        OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT => from(0, seen),
+        OpCode::CPUI_MULTIEQUAL => (0..def.num_input()).map(|k| from(k, seen)).min().unwrap_or(0),
+        OpCode::CPUI_PIECE => {
+            let low = from(1, seen);
+            if low < piece_size(1) { low } else { low + from(0, seen) }
+        }
+        OpCode::CPUI_SUBPIECE => {
+            let skip = def.get_in(1).and_then(|v| data.vbank().get(v)).map_or(0, |v| v.get_offset() as int4);
+            from(0, seen) - skip
+        }
+        OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => {
+            let whole = piece_size(0);
+            let set = from(0, seen);
+            if set >= whole { size } else { set }
+        }
+        _ => size,
+    };
+    set.clamp(0, size)
+}
+
+/// Can the INDIRECT creation `ind` become its call's output?  The call's output
+/// recovery looks only at the INDIRECT ops right before the call, so a creation
+/// with another op between it and the call (the `PIECE` of an argument joined
+/// from two registers) is never the call's result, and a function returning it
+/// returns a variable nothing assigns.
+fn becomes_the_calls_output(data: &Funcdata, ind: crate::context::OpId) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let Some(call) = data
+        .obank()
+        .get(ind)
+        .and_then(|o| o.get_in(1))
+        .and_then(|i| data.vbank().get(i))
+        .map(|i| crate::context::OpId::from(slotmap::KeyData::from_ffi(i.get_offset())))
+        .filter(|&c| data.obank().get(c).is_some())
+    else {
+        return false;
+    };
+    let mut at = data.op_previous_op(call);
+    while let Some(o) = at {
+        if o == ind {
+            return true;
+        }
+        if data.obank().get(o).is_none_or(|op| op.code() != OpCode::CPUI_INDIRECT) {
+            return false;
+        }
+        at = data.op_previous_op(o);
+    }
+    false
+}
+
+/// How much of `node`, a possible result of the call its INDIRECT creation
+/// `ind` guards, the callee returns: the least significant bytes of `node` its
+/// declared or stated return storage covers, none when that storage misses
+/// `node`'s least significant byte (the rest of `xmm0` beside a `float`) or the
+/// callee was recovered `void`, and all of it when the callee's return is
+/// unknown.
+fn returned_by_the_call(data: &Funcdata, ind: &crate::op::PcodeOp, node: &crate::varnode::Varnode) -> int4 {
+    let size = node.get_size();
+    let Some(fc) = call_of(data, ind) else { return size };
+    let proto = fc.proto();
+    let (raddr, rsize) = if proto.is_output_locked() {
+        let out = proto.get_output();
+        if out.get_type().is_some_and(|t| t.get_metatype() == crate::dtype::type_metatype::TYPE_VOID) {
+            return 0;
+        }
+        (out.get_address(), out.get_size())
+    } else {
+        let entry = fc.get_entry_address();
+        let Some(k) = entry.get_space().map(|s| (s.get_index(), entry.get_offset())) else { return size };
+        match data.kuna_callret_stated(k) {
+            Some(stated) => (stated.addr.clone(), stated.size),
+            None if data.kuna_callee_returns(k) == Some(Returns::Void) => return 0,
+            None => return size,
+        }
+    };
+    let (a, r) = (node.get_addr(), &raddr);
+    if a.get_space().map(|s| s.get_index()) != r.get_space().map(|s| s.get_index()) {
+        return size;
+    }
+    let (off, roff, rend) = (a.get_offset(), r.get_offset(), r.get_offset().wrapping_add(rsize as u64));
+    let low = if a.is_big_endian() { off + size as u64 - 1 } else { off };
+    if low < roff || low >= rend {
+        return 0;
+    }
+    let covered = if a.is_big_endian() { low + 1 - roff } else { rend - low };
+    (covered as int4).min(size)
+}
+
+/// The results of `void` callees the value `vn` would be, by callee: a wrapper
+/// of such a callee returns nothing until the callee does, and asks for it
+/// ([`record`] files these as the wrapper's reads).
+fn void_results(data: &Funcdata, vn: crate::context::VarnodeId) -> Vec<((int4, uintb), (Address, int4))> {
+    use kuna_num::opcodes::OpCode;
+    let mut out = Vec::new();
+    let mut stack = vec![vn];
+    let mut seen = BTreeSet::new();
+    while let Some(v) = stack.pop() {
+        if !seen.insert(v) || seen.len() > 256 {
+            continue;
+        }
+        let Some(node) = data.vbank().get(v) else { continue };
+        let Some(def) = node.get_def().and_then(|d| data.obank().get(d)) else { continue };
+        match def.code() {
+            OpCode::CPUI_INDIRECT if def.is_indirect_creation() => {
+                let Some(fc) = call_of(data, def) else { continue };
+                let entry = fc.get_entry_address();
+                let Some(k) = entry.get_space().map(|s| (s.get_index(), entry.get_offset())) else { continue };
+                if !fc.proto().is_output_locked() && data.kuna_callee_returns(k) == Some(Returns::Void) {
+                    out.push((k, (node.get_addr().clone(), node.get_size())));
+                }
+            }
+            OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT | OpCode::CPUI_SUBPIECE => stack.extend(def.get_in(0)),
+            OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_PIECE => stack.extend((0..def.num_input()).filter_map(|k| def.get_in(k))),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The call an INDIRECT creation guards.
+fn call_of<'a>(data: &'a Funcdata, ind: &crate::op::PcodeOp) -> Option<&'a crate::p4_calls::fspec::FuncCallSpecs> {
+    let call = ind
+        .get_in(1)
+        .and_then(|i| data.vbank().get(i))
+        .map(|i| crate::context::OpId::from(slotmap::KeyData::from_ffi(i.get_offset())))
+        .filter(|&c| data.obank().get(c).is_some())?;
+    data.get_call_specs_index(call).map(|i| data.get_call_specs(i))
+}
+
+/// Could a parameter arrive in `node`'s storage?  Its entry value is then an
+/// argument (`mov rax, rdi` returns one); otherwise it is whatever the caller
+/// left there.
+fn parameter_register(data: &Funcdata, node: &crate::varnode::Varnode) -> bool {
+    let proto = data.get_func_proto();
+    proto.has_model()
+        && proto
+            .model()
+            .input_opt()
+            .is_some_and(|l| l.find_entry(node.get_addr(), node.get_size(), true).is_some())
+}
+
+/// Return the least significant `width` bytes of trial `i` at every live
+/// RETURN (a `SUBPIECE` into the narrower register) and shrink the trial to
+/// them, when the model returns a value there.
+fn narrow(
+    data: &mut Funcdata,
+    active: &mut crate::fspec::ParamActive,
+    i: int4,
+    live: &[crate::context::OpId],
+    slot: int4,
+    width: int4,
+) -> bool {
+    let (addr, size) = {
+        let t = active.get_trial(i);
+        (t.get_address().clone(), t.get_size())
+    };
+    let low = if addr.is_big_endian() { &addr + ((size - width) as i64) } else { addr.clone() };
+    if !active.test_shrink(i, &low, width)
+        || data.get_func_proto().characterize_as_output(&low, width) != crate::fspec::Containment::ContainsJustified
+    {
+        return false;
+    }
+    for &r in live {
+        let Some((vn, at)) = data.obank().get(r).and_then(|o| Some((o.get_in(slot)?, o.get_addr().clone()))) else {
+            return false;
+        };
+        let op = data.new_op(2, at);
+        data.op_set_opcode_code(op, kuna_num::opcodes::OpCode::CPUI_SUBPIECE);
+        let Ok(out) = data.new_varnode_out(width, &low, op) else { return false };
+        if let Some(v) = data.vbank_mut().get_mut(out) {
+            v.set_write_mask();
+        }
+        data.op_insert_before(op, r);
+        let zero = data.new_constant(4, 0);
+        let _ = data.op_set_input(op, vn, 0);
+        let _ = data.op_set_input(op, zero, 1);
+        let _ = data.op_set_input(r, out, slot);
+    }
+    active.shrink(i, low, width);
+    true
+}
+
+/// Is the return trial `[addr, addr+size)` on the storage the function's
+/// callers read?
+pub fn forced(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    data.kuna_forced_return().iter().any(|(faddr, fsize)| overlaps(addr, size, faddr, *fsize))
+}

@@ -3440,10 +3440,14 @@ it and stays `void`. The witness is
 object in the test: a wrapper ending in `pop {r4,pc}`, one ending in `bx lr`,
 one whose caller ignores the result and a three-deep chain of them return their
 callee's result, and `return provider(provider(a0))` keeps its inner call's
-argument. Its controls keep `void`: a void callee, a two-function cycle, an
-indirect call, the argument write above, and a declared `void` prototype on the
-wrapper or on its callee; a write after the call returns what was written, and
-`store(provider(a0))` keeps its argument. Thumb (`pop {r4,pc}`, `pop.w
+argument. Its controls keep `void`: a void callee, a two-function cycle, and a
+declared `void` prototype on the wrapper or on its callee; a write after the call
+returns what was written, and `store(provider(a0))` keeps its argument. An
+indirect call and the argument write above are not this rule's evidence, but the
+fixture's `consumer` reads `r0` after calling the wrapper, so `decompile-all`'s
+`voidret` redo (below) returns `(*a3)()` and `provider((unsigned int *)0x5)`
+there, and returns `provider(a0)` with the option off as well; a wrapper whose
+result no caller reads stays `void` without the option. Thumb (`pop {r4,pc}`, `pop.w
 {r4,lr}; bx lr`) and little- and big-endian MIPS (`jal provider; ...; jr ra`)
 wrappers have their own cases there, the MIPS ones in a linked image because
 kuna does not apply a MIPS object's relocations. The measured rates are under
@@ -4237,6 +4241,30 @@ another pointer prints `(long)sub_10369(a0) - (long)a0`. Both compute what the
 integer did. A function that returns a callee's result takes the callee's type
 as its own return type.
 
+A caller that refused the statement, or had it withdrawn, and keeps the result
+as the other class converts it the same way
+(`kuna_callrettype.rs (refused_token)`, which `ActionSetCasts` asks for a call's
+output token, `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_casts.rs
+(get_output_token)`, where the call's own output type says nothing). The listing
+declares the callee's return whether or not this caller took it, so find -O0's
+`long v1 = sub_eecc(a0,v3)` beside `struct_56 * sub_eecc(..)` was not C, and
+`*(unsigned int *)(sub_ef32(a0) + 0x24) = v` was pointer arithmetic C scales by
+the `struct_56`. They print `v1 = (long)sub_eecc(a0,v3)` and
+`((unsigned int *)sub_ef32(a0))[9] = v`. Only an integer beside a pointer of the
+same width converts (a value-preserving conversion). A float statement beside an
+integer or a pointer makes no token: no C conversion keeps a float's bits, and
+gcc -O2's reader of a `struct { float, float }` returned in `xmm0` printed
+`dat_4040 = (unsigned long)sub_11d0()` beside `double sub_11d0(void)`, which
+stores 2 for the pair's 2.0000004. Such a reader withdraws the float return
+instead (`voidret`, below). A float statement is the
+token of a result the caller holds as a float or as raw bytes: nothing then
+converts it, and a store of it through an untyped pointer takes the float's
+type. Without it crazyflie printed `*(unsigned int *)((unsigned int)v2 * 4 +
+a1) = sub_805bb84(..)` beside `float sub_805bb84(..)`, which C converts by value
+(`floatret_cm4.o`'s `put2` stored 1.5 as 1); 29 of the 31 such stores on 27 binaries outside the cast
+corpus (27,954 functions, most of them ARM firmware) print
+`*(float *)`.
+
 Measured on the 45-binary cast corpus (coreutils fmt/ls/sort/du/cp/tail/wc,
 grep, gzip, diffutils cmp/diff/diff3/sdiff, tar, find at -O0, -O2 and
 -O2-noinline), casts on the 4,815 functions kuna and IDA both emit go from
@@ -4340,3 +4368,241 @@ widening, metadata controls and explicit contracts. ABI references:
 [AAPCS32](https://github.com/ARM-software/abi-aa/blob/main/aapcs32/aapcs32.rst),
 [AAELF32](https://github.com/ARM-software/abi-aa/blob/main/aaelf32/aaelf32.rst), and
 [Addenda32](https://github.com/ARM-software/abi-aa/blob/main/addenda32/addenda32.rst).
+
+### A function whose result a caller reads returns it (`kuna_voidret.rs`)
+
+`call g; ret` is what both `void f(void) { g(); }` and `T f(void) { return
+g(); }` compile to, and the function alone cannot tell them apart: the value in
+the return register at its RETURN comes straight from a call, which
+`ancestor_op_use` refuses ("a call is never a good indication of a single
+parameter"), and a wrapper that never names the register gets no return trial
+at all, because heritage registers one only for a range some op reads or writes.
+So every such wrapper was recovered `void`, while its callers, compiled against
+a declaration that returns a value, read the register after the call and
+printed the read: `v6 = sub_18a0f(4,v22)` beside `void sub_18a0f(unsigned int
+a0,char *a1)`, and for a float `v1 = (float)qnan()` of a `void qnan(void)`.
+Neither is C. Over the 45-binary cast corpus main printed 2,126 such uses.
+
+This is a correction, not an option, and it lives on the callee-first surface
+(`decompile-all`, `decompile-project`). After each function's final decompile,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_voidret.rs (record)` files what
+the function returns (`void`, a float, or another value; nothing for a declared
+prototype) and, for every call it makes, the storage it reads of the call's
+result: the bytes the result's uses consume, at the register's least significant
+end (`kuna_voidret.rs (read_storage)`), so a `movss` of an `xmm0` result reads
+four bytes whatever width the call's output was recovered at. Where
+`ActionSetCasts` converted the result and left the call writing a temporary only
+the conversion reads, the conversion's output holds the register, so the storage
+and the type the reader holds the result as are read there
+(`kuna_voidret.rs (holder)`); the temporary carries only the call's own type.
+A wrapper every caller converts (`v7 = (char *)sub_a7d7(..)`) is redone like any
+other. A joined pair
+(`rustabi`'s `rax:rdx`) is filed whole. Every read is filed whatever the order,
+because a caller is not always decompiled after its callee (a call the call
+graph missed, a cycle). `kuna_voidret.rs (due)` then names the `void` functions
+a caller reads a result from, each with the widest storage its callers read
+(callers that read different registers refuse the function), and the driver
+(`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs (VoidReads::settle)`)
+decompiles them again in plan order. It settles after every function of the
+callee-first plan, not once the plan is done: a wrapper is redone as soon as its
+first reader is decompiled, so every later reader reads the wrapper's return
+the first time it is decompiled. A reader decompiled later that reads the
+wrapper wider forces it again at that width, and one that reads another
+register withdraws it: it returns nothing again, as before.
+
+In that decompile the function's return storage is seeded
+(`kuna_voidret.rs (seed)`, the register pieces of a joined return such as a
+`struct timespec` in `rax:rdx`), together with what each of its callees was last
+recovered to return. Unless an op of the function names storage that reaches
+outside it, `kuna_voidret.rs (plant)` gives every live RETURN a read of it and
+registers the return trial itself, the way `passthrough` does for a claimed tail
+call, and heritage's `guardReturns` leaves that piece alone
+(`kuna_voidret.rs (planted_overlaps)`). A name inside the storage does not stop
+it: heritage sizes its own trial by the range the function names, and gcc -O1's
+`key_ssh_name`, `call key_type_plain; call type_name; ret`, names only the
+`eax` of the first call's result, so it returned `unsigned int` around
+`type_name`'s pointer while its caller read all of `rax`. Only the pieces planted are left out: in
+i386 `call zsum; or $0xff,%edx; ret`, whose callers read `edx:eax`, `eax` is
+planted and the `edx` the function writes keeps the trial heritage gives it.
+Where paths meet before the RETURN, heritage refines a planted range wider
+than every write at the narrower name the function uses and merges each piece
+on its own, which no rule joins again; such a trial is refused
+(`kuna_voidret.rs (merges_in_pieces)`). gcc -O1's `wrap`, `call pick; test
+%eax,%eax` and then one of two `getname` calls before a shared `ret`, returned
+`CONCAT44(dat_4,v2)` and stored the upper half of `getname`'s pointer into
+`dat_4`, a register piece printed as a global, on each path; it stays `void`.
+`ActionReturnRecovery` then marks a
+trial on that storage active (`kuna_voidret.rs (score_forced)`) only when the
+value is the return value at EVERY live RETURN: `AncestorRealistic` accepts it,
+and `ancestor_op_use` finds it used only on its way to the RETURN, with one
+change -- a call's result (or its INDIRECT creation) that nothing else uses
+counts, where upstream refuses it outright
+(`Funcdata::kuna_forced_scoring`). So a function that leaves its caller's
+register in place stays `void`, and so does one that uses the register as
+scratch: a stream pointer in a `getc` loop, or a message handed to an
+`error(nonzero, ...)` whose fall-through is pruned into a RETURN.
+
+The trial is returned no wider than the callers read and than every path sets
+(`kuna_voidret.rs (defined_width)`). Heritage sizes the trial by the range the
+function touches, so gcc -O0's `if (tz) return setenv(..); return unsetenv(..);`,
+which loads a string address into `rax` before each call, gets an 8-byte `rax`
+trial whose value at the RETURN is `PIECE(<killed by the call>, eax)`: taken
+whole, the function returned `unsigned long` and printed `return v2;` of a
+variable nothing assigns. Following the value back through copies, joins and
+pieces, a register a call kills (an INDIRECT creation on an indirect-zero), the
+function's entry value of a register no parameter arrives in, and the part of a
+call's possible result outside the callee's declared or stated return storage
+(`kuna_voidret.rs (returned_by_the_call)`: the rest of `xmm0` beside a `float`)
+set nothing, and the least significant bytes every path sets bound the width.
+A narrower width returns a `SUBPIECE` of the value in the narrower register
+(`kuna_voidret.rs (narrow)`), which the subvariable rules pull back through the
+joins to the calls, so the wrapper returns `int` and the value its calls
+compute. That also keeps the register's other values out of the return
+variable: taken at `rax`'s width, cp's `overwrite_ok` merged the `fprintf`
+arguments it computes in `rax` with the `bool` it returns into one `char *`, and
+tar's `argp_parse` branched on the `int` error through a variable the merge left
+unassigned. A trial above the least significant end of the storage the callers
+read (the upper half of a `double` split in two) is returned only beside an
+accepted lower one. A return the callers read in several trials is returned
+whole or not at all (`kuna_voidret.rs (whole_or_none)`, after the model maps the
+trials): when the model leaves out a trial that every path sets -- the `edx` of
+a 32-bit `call ins16; ret`, which upstream's multi-precision check takes for a
+register the call clobbered -- every trial on the callers' storage is dropped and
+the function stays `void`, since `eax` alone would hand its callers the low half
+of a 64-bit value. A path that sets nothing refuses the trial; when what it
+would return is the result of a callee still recovered `void`, the function files
+a read of that callee (`kuna_voidret.rs (void_results)`), which makes the callee
+due, and returns nothing until the callee does. The read is of all the storage
+the function's own callers read, where the piece it hands on lies inside it
+(`kuna_voidret.rs (as_wide_as)`): asked for `eax` alone, a callee handing on a
+pointer returned `unsigned int` and its wrapper then took that width; asked for
+`rax` in two pieces, it was asked for two registers and stayed `void`.
+
+A trial narrower than what the callers read is refused, and the function stays
+`void`, where a path returns what a callee returns wider, or of a width nothing
+states (`kuna_voidret.rs (hands_on_unstated)`): the value is followed back
+through copies, phi-nodes, pieces and the calls an INDIRECT guards to the calls
+whose result it is, and the callee's declared output, its `callrettype`
+statement, or the storage its own last decompile returned a value in (`record`
+files it beside what the function returns; a `bool` is stated to no one) gives
+the width (`kuna_voidret.rs (callee_return)`). This is the
+net under the plant above, for a trial heritage sized when an op names storage
+reaching outside the callers' read. A trial that may carry a
+float is refused the same way where a path returns what a named callee nothing
+declares returns: a floating-point register of the model's outputs, or any
+return storage on an image that does not state a hard-float convention. A
+relocatable object declares no `strtod`, and `double parse(const char *s) {
+return strtod(s, 0); }` printed `unsigned long parse(..) { return
+strtod(a0,0); }`, which converts the `double` by value once compiled against
+`<stdlib.h>`, whether the reader keeps the bits as an integer or stores them as
+a `double`; soft-float ARM printed `unsigned int parsef(..)` around `strtof`. A
+call through a pointer is typed by the listing itself (an import stub's
+`(*dat_4018)()`), so it does not count.
+
+The value's type is whatever it is: the callee's stated return through `callrettype`, a float for a float
+register (chapter 05). A forced function whose RETURN carries no value once the
+returns are built is made `void` (`kuna_voidret.rs (void_unless_returned)`),
+as upstream's `updateOutputTypes` would. The port's restart keeps the output an
+earlier pass recovered, and `ActionOutputPrototype` leaves the output alone
+when the RETURN has no value: a MinGW `-O0` function whose `mov eax,[iat];
+call eax` resolves to `ExitProcess` restarts, the pass before the restart
+returns `eax` joined with what the unresolved call left, the pass after it
+refuses the bare handle the comparison also reads, and the function printed
+`int f(..)` around a bare `return;`.
+
+A redone wrapper reads its own callee's result in turn, so each settling
+repeats, up to ten rounds, reaching one function further down a chain of
+wrappers (to the import stub at its end) and, once a wrapper returns, one caller
+further up it. The redo keeps what the function's statement and recorded return
+were before it (`callee_first.rs (VoidReads::redo_in_plan_order)`), and a
+function whose redo changed either has every reader decompiled before that redo
+decompiled again (`kuna_voidret.rs (stale_readers)`) when it now states a return
+to `callrettype`, returns a float, or had its float return withdrawn; a callee
+that states nothing has nothing to hand a reader, and only a wrapper still
+waiting on it is redone. Such a reader typed the
+call's result itself, against a callee it saw return nothing, and kept that
+text: cp's callers printed `unsigned long v10 = sub_18a0f(4,a1)` beside `void
+*sub_18a0f(..)`, which is not C, and find's printed `*(unsigned int
+*)(sub_ef32(a0) + 0x24) = v`, which C scales by the `struct_56` the callee now
+returns and so writes far past the field. Redone, the reader takes the
+statement through `callrettype`, or, where it refuses it, converts it
+explicitly (`callrettype`'s refused statements, below). A reader over
+`AUDIT_MAX_OPS` (1,000 live ops) is redone only where its stale text computes a
+wrong value: an offset taken in place from a result the callee now declares a
+pointer to something wider than a byte, a float result held as something
+else, or a float held from a callee whose float return was withdrawn. Its other stale text is an assignment between a pointer and an integer of
+the same width, which the listing leaves unconverted: redoing every such reader
+cost bash -O2 30 seconds, one `execute_command_internal` alone ten.
+
+A float return a reader keeps as another type is withdrawn
+(`kuna_voidret.rs (withdrawals)`). No C declaration serves a reader that holds
+the result in an integer, `unsigned int v3 = clampf(..)` stored through an
+`unsigned int *`, and one that uses it as a float: `v3 = clampf(..)` converts
+the float by value where the machine moved its bits. `record` files the reader
+(`kuna_voidret.rs (held_as_float)`), whatever storage the call's output sits in,
+when the result, or any copy of it, is not
+a float, is cast to something else, or reaches a place C converts it by value:
+an argument whose parameter the call's declaration, or the callee's own
+decompile, types as an integer or a pointer (`f2u(getf(p))` beside `unsigned int
+f2u(unsigned int)`), a store through a pointer to an integer or a pointer, or a
+RETURN of a function that does not return a float. The callee's parameter types
+come from `protoorder`'s statement or, where it states nothing, from the
+parameter classes `record` files for every function without a declared
+prototype, handed to each caller by `seed` (`Funcdata::kuna_callee_param_float`).
+A function whose own return converts the value it hands back from another type
+(`return (float)a0[3];` of an `int *`) files itself. The function is then
+decompiled once more without the float-register vote on its return
+(`Funcdata::kuna_float_return_withdrawn`, chapter 05) and without a forced
+return, so it declares what it did before this redo and the float vote (an
+integer, or `void`), and its readers are decompiled again against that.
+
+A function that hands on a callee's float return keeps returning a float once
+withdrawn: gcc -O1's `double wrapd(p, i) { return getd(p, i); }` returns the
+`double` `getd`'s own vote gave it, and the reader's `dat_40a0 = wrapd(..)`,
+which copies the eight bytes into a `uint64_t`, converted 2.25 to 2. So `record`
+files, for every function returning a float, the callees last recovered
+returning one whose result reaches a live RETURN through copies, casts, pieces
+and phi-nodes (`kuna_voidret.rs (float_sources)`), and `withdrawals` withdraws
+those with the function, and theirs in turn, down the chain of wrappers. The
+chain is redone in plan order, callee first, so each wrapper is decompiled
+against the integer its callee now returns; a reader of the chain that used the
+getter's result as a float directly goes back to what it printed before the
+float vote. A callee whose float return is declared (a libc row) or computed by
+its own float arithmetic is not withdrawn: its float is the type the machine
+computes, and a reader holding it as an integer prints what it did without the
+vote.
+
+A forced function whose final decompile still returns, on some path, a register
+a call only clobbers -- an INDIRECT creation the call's output never replaced --
+is withdrawn the same way (`kuna_voidret.rs (returns_a_call_clobber)`, filed by
+`record`). Scoring accepts a call's INDIRECT creation because the call normally
+gains that Varnode as its output later, when `ActionActiveReturn` finds it among
+the INDIRECT ops right before the call; gcc -O0's `call_f2u(float f) { return
+f2u(f + 1.0f); }` builds `f2u`'s argument from two registers, the `PIECE` lands
+between the creation and the call, the call never gains the output, and the
+function printed `f2u(..); return v1;` of a `v1` nothing assigns. Withdrawn, it
+is `void` again.
+
+Two shapes stay outside it. A 16-byte return whose callee states only its low
+half (sort's `dtotimespec` hands back `make_timespec`'s `rax:rdx`, and
+`make_timespec` itself is recovered as `rax`) becomes an 8-byte return, not a
+pair. And a call whose return register the caller heritages whole (gcc writes
+all of `xmm0` with `movd`, `pxor` or `movq` before a call) has no output trial
+and no read to file (`calloverlap`, chapter 03).
+
+On the 45-binary cast corpus, uses of a `void` function's result, converted ones
+included (`v7 = (char *)sub_a7d7(..)`), fall from 5,031 to 1,303, a pointer and
+an integer assigned to each other without a conversion from 275 to 162, and no
+function prints a new never-assigned return value, a new `CONCAT44` of a killed
+register, a new explicit integer-to-pointer conversion, a new value conversion
+of a float (tail's `main` keeps the four `(double)lseek(..)` it printed of a
+`void lseek`, now of an `unsigned long` one), or new pointer arithmetic C would
+scale. The 47 pointer and integer assignments that are new sit in 13 functions,
+readers over the size cap or variables the merge left untyped (`xunknown8`,
+printed `unsigned long`), and each reads a result of a function that was `void`
+before, which was no more C. Most uses left are of functions whose return value
+is also compared, indexed or passed on before it is returned (coreutils
+`base_len` returns the length its loop tests, grep's `xmalloc` the pointer it
+tests against `NULL`): upstream's sole-use rule, which this redo keeps, refuses
+them, and relaxing it to accept a tested value brought the scratch-register
+merges back.
