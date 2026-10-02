@@ -14,8 +14,8 @@
  "change_kind": "strict correctness fix (no option)",
  "default_on": true,
  "parity": {
-  "datatests": "675/675 PARITY OK (main f800792b3)",
-  "stages": "1683/1683 PARITY OK (main f800792b3 1673 + 10 FLOATRET)"
+  "datatests": "675/675 PARITY OK (main be8c9b93e)",
+  "stages": "1683/1683 PARITY OK (main be8c9b93e 1673 + 10 FLOATRET)"
  },
  "castbench": {
   "base": "main 3c08fcfe8 (#758 on top of 94ce9314e), fresh arm .scratch/cb-main3c0; on 94ce9314e the same branch gave 32,040 -> 31,611, on 0729b8b05 32,010 -> 31,581 and on 30616a8e8 32,045 -> 31,616",
@@ -74,7 +74,7 @@
    }
   },
   "round10": "a1b97ede7 on main 29c832ea9: 31,989 -> 31,559 (0.846x -> 0.834x IDA), the same totals as 0649f0653; 5 functions differ from it (tar, above)",
-  "round11": "main 9b19a9e81 -> 2e79fb541: 31,805 -> 31,375 casts (0.846x -> 0.835x IDA); 2,378 of 20,225 functions changed. Against the previous round (main 29c832ea9 -> a1b97ede7): the 20,213 functions #837 left alone print exactly as then; of the 12 it changed, 8 carry the same delta and 4 the same delta beside main's own NULL -> 0 (tar O2-noinline sub_128e0, sub_12910, sub_12be0, sub_12c10). On main e56252b2c (#838) the totals are the same, 31,805 -> 31,375: the 20,192 functions #838 left alone print exactly as on 9b19a9e81; of the 33 it changed, 30 carry the same delta and 3 the same delta beside its new string literals (tar O0 sub_359a8, O2-noinline sub_2c280, O2 sub_2d400). On main f800792b3 (#806) too: 31,805 -> 31,375, every function prints as on e56252b2c. The two-path narrowing (747e68cfb) changes no function of the 45 castbench and 76 footprint binaries"
+  "round11": "main 9b19a9e81 -> 2e79fb541: 31,805 -> 31,375 casts (0.846x -> 0.835x IDA); 2,378 of 20,225 functions changed. Against the previous round (main 29c832ea9 -> a1b97ede7): the 20,213 functions #837 left alone print exactly as then; of the 12 it changed, 8 carry the same delta and 4 the same delta beside main's own NULL -> 0 (tar O2-noinline sub_128e0, sub_12910, sub_12be0, sub_12c10). On main e56252b2c (#838) the totals are the same, 31,805 -> 31,375: the 20,192 functions #838 left alone print exactly as on 9b19a9e81; of the 33 it changed, 30 carry the same delta and 3 the same delta beside its new string literals (tar O0 sub_359a8, O2-noinline sub_2c280, O2 sub_2d400). On main f800792b3 (#806) too: 31,805 -> 31,375, every function prints as on e56252b2c. The two-path narrowing (747e68cfb) changes no function of the 45 castbench and 76 footprint binaries. On main be8c9b93e (#824): 31,805 -> 31,375; the 20,221 functions #824 left alone print as on f800792b3, and the 4 it changed carry the same delta"
  },
  "corpus_footprint": {
   "castbench_45": {
@@ -891,9 +891,9 @@
   }
  },
  "gates": {
-  "code_head": "747e68cfb on main f800792b3 (#806); record-only commit after it. The ARM narrowing was 2e79fb541 on 9b19a9e81 and a78f529ab on e56252b2c",
+  "code_head": "b66c372cf on main be8c9b93e (#824); record-only commit after it. The ARM narrowing was 2e79fb541 on 9b19a9e81, the two-path narrowing 747e68cfb on f800792b3",
   "make_test": "675/675 PARITY OK",
-  "make_test_stages": "1683/1683 PARITY OK (baseline: main 1673 + the 10 FLOATRET keys, none missing; #806 added no stage test)",
+  "make_test_stages": "1683/1683 PARITY OK (baseline: main 1673 + the 10 FLOATRET keys, none missing; #806 and #824 added no stage test)",
   "check_spec": "OK lenient + strict",
   "test_cli": "276/276",
   "catalog_check": "OK",
@@ -901,10 +901,10 @@
   "options_md": "fresh",
   "phases_toml": "unchanged, parses (tomllib)",
   "corpus_count": "kuna-base xml.rs 379 = tests/datatests + tests/stages",
-  "rust_test": "7,751 passed / 0 failed / 38 ignored (466 test binaries), RUST_TEST_RC=0 on 747e68cfb (lane started 18:24:26Z, after the rebase and build); on e641eae0d 7,727 / 0 / 38, on 2e79fb541 7,726 / 0 / 38",
-  "lint": "make lint OK (747e68cfb)",
+  "rust_test": "7,753 passed / 0 failed / 38 ignored (467 test binaries), RUST_TEST_RC=0 on b66c372cf (lane started 18:58:02Z, after the rebase and build); on 747e68cfb 7,751 / 0 / 38, on 2e79fb541 7,726 / 0 / 38",
+  "lint": "make lint OK (b66c372cf)",
   "test_tools": "no Python changed",
-  "ci": "2e79fb541 and 2256e4802: parity gates and cargo workspace suite success"
+  "ci": "2e79fb541, 2256e4802 and f4ad69067: parity gates and cargo workspace suite success"
  },
  "known_residue": [
   "ARM hard-float and AArch64 doubles in d0/q0 are recovered at the wrong width (trial recovery never consults the join rule); the low half of a d0 is refused the float vote and stays the integer it was",
