@@ -10,20 +10,18 @@
 //! When the store's pointer is the stack base plus constants plus indices whose
 //! known-bits masks bound them, the reach is `[base, base + max + 1)`; a pointer
 //! that chooses between stack addresses (`(j & 2) ? &u.b[0] : &u.b[4]`) reaches
-//! from the lowest to the end of the highest. The hints inside a reach, widened
-//! over any hint that crosses either edge (an open hint by its indexed
-//! elements), are replaced by one open byte array hint whose index evidence
-//! runs to the end of the reach. Its element is the most specific one-byte
-//! integer type a byte access inside the reach carries (an unsigned one when a
-//! byte is read zero-extended), or the unknown byte. A reach holding a
-//! type-locked hint keeps its hints.
+//! from the lowest to the end of the highest, and a walk from such a choice has
+//! one unbounded piece per address. A choice input that does not come from the
+//! stack base (a global) is not a stack address, and copies and INDIRECTs pass
+//! the pointer through. The hints inside a reach, widened over any hint that
+//! crosses either edge (an open hint by its indexed elements), are replaced by
+//! one open byte array hint whose index evidence runs to the end of the reach.
+//! Its element is the most specific one-byte integer type a byte access inside
+//! the reach carries (an unsigned one when a byte is read zero-extended), or the
+//! unknown byte. A reach holding a type-locked hint keeps its hints.
 //!
 //! A reach holding a float hint keeps its hints too, and its stores' bases stop
-//! absorbing: a float read of a byte array would print as an integer piece. If
-//! the final layout then maps such a store's bytes as more than one local, the
-//! function is analyzed again without the guard
-//! (`Funcdata::withdraw_split_stack_store_guard`), since a store into one local
-//! that a read of another never sees is worse than no guard.
+//! absorbing: a float read of a byte array would print as an integer piece.
 //!
 //! A function with a LOAD or STORE whose pointer comes from the stack base but
 //! does not resolve (`(&v1 | 4) + i`) keeps upstream's layout: that access may
@@ -37,6 +35,12 @@
 //! base then absorbs every hint that starts inside a slot it absorbed
 //! (`MapState::set_absorbing_bases`), so a word read inside a constant slot the
 //! range swallowed stays a piece of the same local.
+//!
+//! The guard is worse than none when the final layout still maps a slot it
+//! keeps (a guard INDIRECT's bytes), a guarded store's piece on the unresolved
+//! path, or a piece in a float reach as more than one local, or reads a float
+//! local such a piece lies in as an integer: the function is then analyzed
+//! again without the guard (`withdraw_spoiled_guard`).
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -59,94 +63,228 @@ const MAX_PIECES: usize = 8;
 
 /// Coalesce each guarded byte store's bounded reach into one open array hint,
 /// and let the open range at every guarded store's base absorb what starts
-/// inside a slot it absorbed. Returns the bounded pieces of the guarded stores
-/// in a reach left to the upstream layout because it holds a float.
+/// inside a slot it absorbed. Returns, as `(lo, hi, float)`, the stack ranges
+/// the final layout must keep in one local: every slot the guard keeps a
+/// store's effect on, and on the unresolved path every bounded piece of a
+/// guarded store; `float` when a float hint lies in the range or its reach.
 pub(crate) fn prepare_hints(
     fd: &Funcdata,
     state: &mut MapState,
     space: &Rc<AddrSpace>,
     types: &dyn TypeFactory,
-) -> Vec<(intb, intb)> {
+) -> Vec<(intb, intb, bool)> {
     if !fd.stack_store_guard() {
         return Vec::new();
     }
     let Some(sb) = fd.find_spacebase_input(space) else {
         return Vec::new();
     };
-    let mut stores: Vec<(OpId, Vec<(intb, Option<intb>)>)> = fd
-        .obank()
-        .iter_code(OpCode::CPUI_STORE)
-        .filter_map(|store| store_pieces(fd, store, sb, space).map(|pieces| (store, pieces)))
+    let byte_store = |id: OpId| {
+        fd.obank()
+            .get(id)
+            .and_then(|op| op.get_in(2))
+            .and_then(|v| fd.vbank().get(v))
+            .is_some_and(|v| v.get_size() == 1)
+    };
+    if !fd.obank().iter_code(OpCode::CPUI_STORE).any(byte_store) {
+        return Vec::new();
+    }
+    let (guarded, kept) = guard_effects(fd, space);
+    if guarded.is_empty() {
+        return Vec::new();
+    }
+    let stores: Vec<(OpId, Vec<(intb, Option<intb>)>)> = guarded
+        .iter()
+        .filter_map(|&store| store_pieces(fd, store, sb, space).map(|pieces| (store, pieces)))
         .filter(|(_, pieces)| store_reach(pieces).is_some())
         .collect();
-    if stores.is_empty() {
-        return Vec::new();
-    }
-    let guarded = guarded_stores(fd, space);
-    stores.retain(|(store, _)| guarded.contains(store));
-    if stores.is_empty() {
-        return Vec::new();
-    }
-    let reaches: Vec<(intb, Option<intb>)> =
-        stores.iter().filter_map(|(_, pieces)| store_reach(pieces)).collect();
-    let mut bounded: Vec<(intb, intb)> = reaches
-        .iter()
-        .filter_map(|&(lo, hi)| hi.map(|hi| (lo, hi)))
-        .collect();
-    bounded.sort_unstable();
-    let mut merged: Vec<(intb, intb)> = Vec::new();
-    for (lo, hi) in bounded {
-        match merged.last_mut() {
-            Some(last) if lo <= last.1 => last.1 = last.1.max(hi),
-            _ => merged.push((lo, hi)),
-        }
-    }
-    if !fd.store_reach_committed() {
-        if has_unresolved_frame_access(fd, sb) {
-            return Vec::new();
-        }
-        fd.commit_store_reach();
-    }
-    let mut bases: Vec<intb> = reaches.iter().map(|&(lo, _)| lo).collect();
-    let mut floats = Vec::new();
-    for (lo, hi) in merged {
-        match coalesce_range(state, space, types, lo, hi) {
-            Coalesce::Array(start) => bases.push(start),
-            Coalesce::Float(flo, fhi) => {
-                bases.retain(|&b| b < flo || b >= fhi);
-                floats.push((flo, fhi));
-            }
-            Coalesce::Kept => {}
-        }
-    }
-    bases.sort_unstable();
-    bases.dedup();
-    state.set_absorbing_bases(bases);
-    stores
+    let bounded_pieces: Vec<(intb, intb)> = stores
         .iter()
         .flat_map(|(_, pieces)| pieces.iter().filter_map(|&(lo, hi)| Some((lo, hi?))))
-        .filter(|&(lo, hi)| floats.iter().any(|&(flo, fhi)| lo < fhi && flo < hi))
-        .collect()
+        .collect();
+    let mut checks = kept;
+    let mut floats: Vec<(intb, intb)> = Vec::new();
+    if !stores.is_empty() {
+        if !fd.store_reach_committed() && has_unresolved_frame_access(fd, sb) {
+            checks.extend(bounded_pieces);
+        } else {
+            fd.commit_store_reach();
+            let reaches: Vec<(Vec<intb>, Option<(intb, intb)>)> = stores
+                .iter()
+                .filter_map(|(_, pieces)| store_reach(pieces))
+                .collect();
+            let mut bounded: Vec<(intb, intb)> =
+                reaches.iter().filter_map(|&(_, span)| span).collect();
+            bounded.sort_unstable();
+            let mut merged: Vec<(intb, intb)> = Vec::new();
+            for (lo, hi) in bounded {
+                match merged.last_mut() {
+                    Some(last) if lo <= last.1 => last.1 = last.1.max(hi),
+                    _ => merged.push((lo, hi)),
+                }
+            }
+            let mut bases: Vec<intb> = reaches
+                .iter()
+                .flat_map(|(b, _)| b.iter().copied())
+                .collect();
+            for (lo, hi) in merged {
+                match coalesce_range(state, space, types, lo, hi) {
+                    Coalesce::Array(start) => bases.push(start),
+                    Coalesce::Float(flo, fhi) => {
+                        bases.retain(|&b| b < flo || b >= fhi);
+                        floats.push((flo, fhi));
+                    }
+                    Coalesce::Kept => {}
+                }
+            }
+            bases.sort_unstable();
+            bases.dedup();
+            state.set_absorbing_bases(bases);
+            checks.extend(
+                bounded_pieces
+                    .into_iter()
+                    .filter(|&(lo, hi)| floats.iter().any(|&(flo, fhi)| lo < fhi && flo < hi)),
+            );
+        }
+    }
+    let hints = state.hints_mut();
+    let mut checks: Vec<(intb, intb, bool)> = checks
+        .into_iter()
+        .map(|(lo, hi)| {
+            let float = floats.iter().any(|&(flo, fhi)| lo < fhi && flo < hi)
+                || hints.iter().any(|h| {
+                    h.range_type != RangeType::Endpoint
+                        && h.sstart < hi
+                        && lo < hint_end(h)
+                        && h.type_.get_metatype() == type_metatype::TYPE_FLOAT
+                });
+            (lo, hi, float)
+        })
+        .collect();
+    checks.sort_unstable();
+    checks.dedup();
+    checks
 }
 
-/// Does the layout map one of `pieces` as more than one local? The store then
-/// prints into one of them while a read of another sees only the initializer.
-pub(crate) fn splits_pieces(fd: &Funcdata, space: &Rc<AddrSpace>, pieces: &[(intb, intb)]) -> bool {
+/// If the final layout spoils a range the latest layout pass recorded, turn the
+/// guard off for this function and report that it must be analyzed again. A
+/// range mapped as more than one local is spoiled: the store or initializer
+/// prints into one of them while a read of another never sees it. A range in a
+/// float reach is also spoiled when no local covers it, or when its local is
+/// read as an integer while declared float, since that cast converts the value
+/// instead of reading its bytes.
+pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
+    if !fd.stack_store_guard() {
+        return false;
+    }
+    let pieces = fd.store_reach_checks();
+    if pieces.is_empty() {
+        return false;
+    }
     let Some(sl) = fd.get_scope_local() else {
         return false;
     };
+    let space = Rc::clone(sl.get_space_id());
+    let bits = space.get_addr_size() as int4 * 8 - 1;
     let symbols: Vec<(intb, intb)> = sl
         .database()
         .scope_space_local_var_specs(sl.scope_id(), space.get_index() as usize)
         .into_iter()
         .map(|(_, ct, addr, _)| {
-            let off = sign_extend(addr.get_offset() as intb, space.get_addr_size() as int4 * 8 - 1);
+            let off = sign_extend(addr.get_offset() as intb, bits);
             (off, off + ct.get_size() as intb)
         })
         .collect();
-    pieces.iter().any(|&(lo, hi)| {
-        symbols.iter().filter(|&&(s, e)| s < hi && lo < e).count() > 1
+    let spoiled = pieces.iter().any(|&(lo, hi, float)| {
+        let local: Vec<&(intb, intb)> =
+            symbols.iter().filter(|&&(s, e)| s < hi && lo < e).collect();
+        match local.as_slice() {
+            [_, _, ..] => true,
+            [&(s, e)] if float => !read_only_as_float(fd, &space, s, e),
+            [] => float,
+            [_] => false,
+        }
+    });
+    if spoiled {
+        fd.withdraw_stack_store_guard();
+    }
+    spoiled
+}
+
+/// Does every op that reads stack bytes in `[lo, hi)` print them as their
+/// bits? A float op reads a float; a COPY, INDIRECT, MULTIEQUAL or PIECE into
+/// `[lo, hi)` moves or assembles them; a SUBPIECE above the low end prints as a
+/// piece (`v1._6_2_`). Any other read of a variable declared float prints as a
+/// cast, which converts its value (`(unsigned short)v1` of a `double v1`).
+fn read_only_as_float(fd: &Funcdata, space: &Rc<AddrSpace>, lo: intb, hi: intb) -> bool {
+    let bits = space.get_addr_size() as int4 * 8 - 1;
+    let inside = |vn: VarnodeId| {
+        fd.vbank().get(vn).is_some_and(|v| {
+            if v.get_space().get_index() != space.get_index() {
+                return false;
+            }
+            let off = sign_extend(v.get_addr().get_offset() as intb, bits);
+            off < hi && lo < off + v.get_size() as intb
+        })
+    };
+    fd.obank().iter_alive().all(|id| {
+        let Some(op) = fd.obank().get(id) else {
+            return true;
+        };
+        let read: Vec<VarnodeId> = (0..op.num_input())
+            .filter_map(|k| op.get_in(k))
+            .filter(|&v| inside(v))
+            .collect();
+        if read.is_empty() {
+            return true;
+        }
+        match op.code() {
+            OpCode::CPUI_INDIRECT
+            | OpCode::CPUI_MULTIEQUAL
+            | OpCode::CPUI_COPY
+            | OpCode::CPUI_PIECE
+                if op.get_out().is_some_and(inside) =>
+            {
+                true
+            }
+            OpCode::CPUI_SUBPIECE
+                if op
+                    .get_in(1)
+                    .and_then(|c| fd.vbank().get(c))
+                    .is_some_and(|c| c.get_offset() != 0) =>
+            {
+                true
+            }
+            code if code != OpCode::CPUI_FLOAT_INT2FLOAT
+                && (OpCode::CPUI_FLOAT_EQUAL as u32..=OpCode::CPUI_FLOAT_ROUND as u32)
+                    .contains(&(code as u32)) =>
+            {
+                true
+            }
+            _ => !read.iter().any(|&v| declared_float(fd, v)),
+        }
     })
+}
+
+/// Is `vn`, or another member of its variable, typed as a float?
+fn declared_float(fd: &Funcdata, vn: VarnodeId) -> bool {
+    let float = |v: VarnodeId| {
+        fd.vbank()
+            .get(v)
+            .is_some_and(|v| v.get_type().get_metatype() == type_metatype::TYPE_FLOAT)
+    };
+    if float(vn) {
+        return true;
+    }
+    let Some(high) = fd
+        .vbank()
+        .get(vn)
+        .and_then(|v| v.get_high())
+        .and_then(|h| fd.high_bank().get(h))
+    else {
+        return false;
+    };
+    (0..high.num_instances()).any(|i| float(high.get_instance(i)))
 }
 
 /// What `coalesce_range` did with one reach.
@@ -256,9 +394,13 @@ fn byte_type(hints: &[RangeHint], lo: intb, hi: intb) -> Option<Rc<Datatype>> {
     elem
 }
 
-/// The STOREs a guard INDIRECT on `space` names as its effect.
-fn guarded_stores(fd: &Funcdata, space: &Rc<AddrSpace>) -> BTreeSet<OpId> {
+/// The byte STOREs a guard INDIRECT on `space` names as its effect, and the
+/// signed stack ranges `[lo, hi)` of those INDIRECTs: the slots the guard keeps
+/// a store's effect on.
+fn guard_effects(fd: &Funcdata, space: &Rc<AddrSpace>) -> (BTreeSet<OpId>, Vec<(intb, intb)>) {
+    let bits = space.get_addr_size() as int4 * 8 - 1;
     let mut stores = BTreeSet::new();
+    let mut kept = Vec::new();
     for id in fd.obank().iter_alive() {
         let Some(op) = fd
             .obank()
@@ -267,20 +409,35 @@ fn guarded_stores(fd: &Funcdata, space: &Rc<AddrSpace>) -> BTreeSet<OpId> {
         else {
             continue;
         };
-        let on_stack = op
+        let Some(out) = op
             .get_out()
             .and_then(|o| fd.vbank().get(o))
-            .is_some_and(|o| o.get_space().get_index() == space.get_index());
-        let Some(iop) = op.get_in(1).and_then(|v| fd.vbank().get(v)) else {
+            .filter(|o| o.get_space().get_index() == space.get_index())
+        else {
             continue;
         };
-        if on_stack && iop.get_space().get_type() == spacetype::IPTR_IOP {
-            stores.insert(crate::funcdata_varnode::op_iop_decode(
-                iop.get_addr().get_offset(),
-            ));
+        let Some(iop) = op
+            .get_in(1)
+            .and_then(|v| fd.vbank().get(v))
+            .filter(|v| v.get_space().get_type() == spacetype::IPTR_IOP)
+        else {
+            continue;
+        };
+        let store = crate::funcdata_varnode::op_iop_decode(iop.get_addr().get_offset());
+        let byte_store = fd
+            .obank()
+            .get(store)
+            .filter(|s| s.code() == OpCode::CPUI_STORE && !s.is_dead())
+            .and_then(|s| s.get_in(2))
+            .and_then(|v| fd.vbank().get(v))
+            .is_some_and(|v| v.get_size() == 1);
+        if byte_store {
+            stores.insert(store);
+            let lo = sign_extend(out.get_addr().get_offset() as intb, bits);
+            kept.push((lo, lo + out.get_size() as intb));
         }
     }
-    stores
+    (stores, kept)
 }
 
 /// The signed stack bytes `[lo, hi)` a byte store may write, `hi` unknown when
@@ -309,21 +466,21 @@ fn store_pieces(
     )
 }
 
-/// The base of an indexed store and, when its indices are bounded, the end of
-/// the bytes it may write: the span of its pieces. A store to one fixed byte
-/// has none.
-fn store_reach(pieces: &[(intb, Option<intb>)]) -> Option<(intb, Option<intb>)> {
+/// The bases of an indexed store's open ranges and, when its indices are
+/// bounded, the span of the bytes it may write. A store to one fixed byte has
+/// none.
+fn store_reach(pieces: &[(intb, Option<intb>)]) -> Option<(Vec<intb>, Option<(intb, intb)>)> {
     if let [(lo, hi)] = pieces {
-        return (*hi != Some(lo + 1)).then_some((*lo, *hi));
+        return (*hi != Some(lo + 1)).then(|| (vec![*lo], hi.map(|hi| (*lo, hi))));
     }
     let lo = pieces.iter().map(|&(lo, _)| lo).min()?;
-    let hi = pieces
-        .iter()
-        .map(|&(_, hi)| hi)
-        .collect::<Option<Vec<_>>>()?
-        .into_iter()
-        .max()?;
-    (hi - lo <= MAX_REACH).then_some((lo, Some(hi)))
+    match pieces.iter().map(|&(_, hi)| hi).collect::<Option<Vec<_>>>() {
+        Some(his) => {
+            let hi = his.into_iter().max()?;
+            (hi - lo <= MAX_REACH).then(|| (vec![lo], Some((lo, hi))))
+        }
+        None => Some((pieces.iter().map(|&(lo, _)| lo).collect(), None)),
+    }
 }
 
 /// `vn` as the stack base plus a constant plus a non-negative extra, which is
@@ -344,7 +501,9 @@ fn pointer_pieces(
     }
     let op = fd.obank().get(fd.vbank().get(vn)?.get_def()?)?;
     match op.code() {
-        OpCode::CPUI_COPY | OpCode::CPUI_CAST => pointer_pieces(fd, op.get_in(0)?, sb, depth + 1),
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => {
+            pointer_pieces(fd, op.get_in(0)?, sb, depth + 1)
+        }
         OpCode::CPUI_MULTIEQUAL => {
             let mut walk = false;
             let mut pieces: Vec<(uintb, Option<intb>)> = Vec::new();
@@ -354,7 +513,13 @@ fn pointer_pieces(
                     walk = true;
                     continue;
                 }
-                for piece in pointer_pieces(fd, input, sb, depth + 1)? {
+                let Some(found) = pointer_pieces(fd, input, sb, depth + 1) else {
+                    if comes_from(fd, input, sb) {
+                        return None;
+                    }
+                    continue;
+                };
+                for piece in found {
                     if !pieces.contains(&piece) {
                         pieces.push(piece);
                     }
@@ -364,12 +529,31 @@ fn pointer_pieces(
             if pieces.iter().all(|&(off, _)| off == first) {
                 return Some(vec![(first, None)]);
             }
-            (!walk && pieces.len() <= MAX_PIECES).then_some(pieces)
+            if pieces.len() > MAX_PIECES {
+                return None;
+            }
+            if walk {
+                for piece in &mut pieces {
+                    piece.1 = None;
+                }
+                pieces.sort_unstable();
+                pieces.dedup();
+            }
+            Some(pieces)
         }
         OpCode::CPUI_PTRSUB => {
-            let c = fd.vbank().get(op.get_in(1)?).filter(|c| c.is_constant())?.get_offset();
+            let c = fd
+                .vbank()
+                .get(op.get_in(1)?)
+                .filter(|c| c.is_constant())?
+                .get_offset();
             let pieces = pointer_pieces(fd, op.get_in(0)?, sb, depth + 1)?;
-            Some(pieces.into_iter().map(|(off, extra)| (off.wrapping_add(c), extra)).collect())
+            Some(
+                pieces
+                    .into_iter()
+                    .map(|(off, extra)| (off.wrapping_add(c), extra))
+                    .collect(),
+            )
         }
         OpCode::CPUI_PTRADD | OpCode::CPUI_INT_ADD => {
             let scale = match op.code() {
@@ -387,7 +571,12 @@ fn pointer_pieces(
             let t = fd.vbank().get(term)?;
             if t.is_constant() {
                 let c = t.get_offset().wrapping_mul(scale);
-                return Some(pieces.into_iter().map(|(off, extra)| (off.wrapping_add(c), extra)).collect());
+                return Some(
+                    pieces
+                        .into_iter()
+                        .map(|(off, extra)| (off.wrapping_add(c), extra))
+                        .collect(),
+                );
             }
             let (index, bias) = offset_index(fd, term).unwrap_or((term, 0));
             let span = fd
@@ -418,7 +607,9 @@ fn offset_index(fd: &Funcdata, vn: VarnodeId) -> Option<(VarnodeId, uintb)> {
     }
     let c = fd.vbank().get(op.get_in(1)?).filter(|c| c.is_constant())?;
     let c = sign_extend(c.get_offset() as intb, c.get_size() * 8 - 1);
-    (0..MAX_REACH).contains(&c).then_some((op.get_in(0)?, c as uintb))
+    (0..MAX_REACH)
+        .contains(&c)
+        .then_some((op.get_in(0)?, c as uintb))
 }
 
 /// Does some LOAD or STORE address come from the stack base `sb` along a path
@@ -496,7 +687,7 @@ fn comes_from(fd: &Funcdata, vn: VarnodeId, sb: VarnodeId) -> bool {
 fn steps_from(fd: &Funcdata, vn: VarnodeId, phi: VarnodeId) -> bool {
     let Some(op) = fd
         .vbank()
-        .get(vn)
+        .get(moved_from(fd, vn))
         .and_then(|v| v.get_def())
         .and_then(|d| fd.obank().get(d))
     else {
@@ -508,6 +699,26 @@ fn steps_from(fd: &Funcdata, vn: VarnodeId, phi: VarnodeId) -> bool {
             .is_some_and(|v| v.is_constant())
     };
     matches!(op.code(), OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD)
-        && op.get_in(0) == Some(phi)
+        && op.get_in(0).is_some_and(|base| moved_from(fd, base) == phi)
         && constant(1)
+}
+
+/// The value `vn` copies, through COPYs and the INDIRECTs a guard or a call
+/// puts on a pointer kept in memory.
+fn moved_from(fd: &Funcdata, vn: VarnodeId) -> VarnodeId {
+    let mut cur = vn;
+    for _ in 0..12 {
+        let next = fd
+            .vbank()
+            .get(cur)
+            .and_then(|v| v.get_def())
+            .and_then(|d| fd.obank().get(d))
+            .filter(|op| matches!(op.code(), OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT))
+            .and_then(|op| op.get_in(0));
+        match next {
+            Some(n) => cur = n,
+            None => break,
+        }
+    }
+    cur
 }

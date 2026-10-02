@@ -964,9 +964,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             return Ok(r); // breakpoint — propagate verbatim (no re-flow)
         }
         total += r;
-        // (kuna `stackstoreguard`) A function whose layout split a guarded store in
-        // a float reach is analyzed again without the guard.
-        let withdrawn = fd.withdraw_split_stack_store_guard();
+        // (kuna `stackstoreguard`) A function whose final layout splits a slot the
+        // guard keeps is analyzed again without the guard.
+        let withdrawn = crate::p6_variables::kuna_storereach::withdraw_spoiled_guard(fd);
         if !withdrawn && !(reflow_requested && fd.has_restart_pending()) {
             drain_pipeline_comments(arch, fd);
             return Ok(total);

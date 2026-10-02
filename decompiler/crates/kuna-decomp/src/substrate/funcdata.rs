@@ -233,10 +233,11 @@ pub struct Funcdata {
     /// guarded store's reach; later passes keep doing so
     /// (`p6_variables/kuna_storereach.rs`).
     store_reach_committed: std::cell::Cell<bool>,
-    /// (kuna `stackstoreguard`) Did the latest `restructure_varnode` pass map a
-    /// guarded store in a float reach as more than one local?
-    store_reach_split: std::cell::Cell<bool>,
-    /// (kuna `stackstoreguard`) Set when the final layout split such a reach;
+    /// (kuna `stackstoreguard`) The signed stack ranges `(lo, hi, float)` the
+    /// latest `restructure_varnode` pass says the final layout must keep in one
+    /// local (`p6_variables/kuna_storereach.rs`).
+    store_reach_checks: std::cell::RefCell<Vec<(kuna_base::types::intb, kuna_base::types::intb, bool)>>,
+    /// (kuna `stackstoreguard`) Set when the final layout spoiled such a range;
     /// the re-analysis runs without the guard. Survives `clear()`.
     stack_store_guard_withdrawn: std::cell::Cell<bool>,
     /// List of jump-tables for this function (C++ `jumpvec`).
@@ -572,7 +573,7 @@ impl Funcdata {
             slot_evidence: std::cell::RefCell::new(Default::default()),
             cast_objects: std::cell::RefCell::new(Vec::new()),
             store_reach_committed: std::cell::Cell::new(false),
-            store_reach_split: std::cell::Cell::new(false),
+            store_reach_checks: std::cell::RefCell::new(Vec::new()),
             stack_store_guard_withdrawn: std::cell::Cell::new(false),
             jumpvec: Vec::new(),
             vbank,
@@ -1698,21 +1699,24 @@ impl Funcdata {
         self.get_arch().stack_store_guard && !self.stack_store_guard_withdrawn.get()
     }
 
-    /// (kuna `stackstoreguard`) Record whether this pass split a guarded store
-    /// in a float reach.
-    pub fn note_store_reach_split(&self, split: bool) {
-        self.store_reach_split.set(split);
+    /// (kuna `stackstoreguard`) Record the ranges this pass says the final
+    /// layout must keep in one local.
+    pub fn note_store_reach_checks(
+        &self,
+        pieces: Vec<(kuna_base::types::intb, kuna_base::types::intb, bool)>,
+    ) {
+        *self.store_reach_checks.borrow_mut() = pieces;
     }
 
-    /// (kuna `stackstoreguard`) If the final layout split a guarded store in a
-    /// float reach, turn the guard off for this function and report that it
-    /// must be analyzed again.
-    pub fn withdraw_split_stack_store_guard(&self) -> bool {
-        let split = self.store_reach_split.get() && self.stack_store_guard();
-        if split {
-            self.stack_store_guard_withdrawn.set(true);
-        }
-        split
+    /// (kuna `stackstoreguard`) The ranges the latest pass recorded.
+    pub fn store_reach_checks(&self) -> Vec<(kuna_base::types::intb, kuna_base::types::intb, bool)> {
+        self.store_reach_checks.borrow().clone()
+    }
+
+    /// (kuna `stackstoreguard`) Turn the guard off for the rest of this
+    /// function's analysis.
+    pub fn withdraw_stack_store_guard(&self) {
+        self.stack_store_guard_withdrawn.set(true);
     }
 
     /// (kuna `castobject`) Every stack object any pass re-declared.
@@ -3001,7 +3005,7 @@ impl Funcdata {
         self.kuna_passthrough_variadic = false;
         self.kuna_moved_back_returns.clear();
         self.store_reach_committed.set(false);
-        self.store_reach_split.set(false);
+        self.store_reach_checks.borrow_mut().clear();
     }
 
     /// Set a delay/flag bit directly (test/seam helper; not a C++ method).

@@ -879,13 +879,17 @@ first few bytes, so the store indexes one local and reads the next one.
 before `endptrbound`. It takes each STORE of a one-byte value that a guard
 INDIRECT on the stack names as its effect, and resolves its pointer as the
 stack base plus constants plus indices (`kuna_storereach.rs (pointer_pieces)`,
-through copies, casts, `PTRSUB`, `PTRADD` and `INT_ADD`, and through a pointer
-walk's `MULTIEQUAL` whose other inputs agree on the base). When every index has
-a known-bits mask that bounds it, the reach is `[base, base + max + 1)`. A
-`MULTIEQUAL` that chooses between different stack addresses (`p = (j & 2) ?
-&u.b[0] : &u.b[4]; *p ^= 1;`) gives one such piece per address, and the store
-reaches from the lowest piece to the end of the highest
-(`kuna_storereach.rs (store_reach)`). Overlapping reaches are united, each one
+through copies, casts, INDIRECTs, `PTRSUB`, `PTRADD` and `INT_ADD`, and through
+a pointer walk's `MULTIEQUAL` whose other inputs agree on the base). When every
+index has a known-bits mask that bounds it, the reach is `[base, base + max +
+1)`. A `MULTIEQUAL` that chooses between different stack addresses (`p = (j &
+2) ? &u.b[0] : &u.b[4]; *p ^= 1;`) gives one such piece per address, and the
+store reaches from the lowest piece to the end of the highest
+(`kuna_storereach.rs (store_reach)`). A walk that starts from such a choice
+(`*p++ ^= 1`) gives one piece per address with no bound, and each address is a
+base whose open range absorbs (below). A choice input that does not come from
+the stack base (`(j & 2) ? &u.b[2] : gbuf`) is not a stack address and is
+skipped. Overlapping reaches are united, each one
 is widened over every hint that crosses either edge, counting an open hint by
 its indexed elements so the array never ends inside an upstream open array
 (`v1 = &v2[8]` into a `char v2[8]`), and the hints inside are replaced by one
@@ -901,17 +905,8 @@ the bases of the stores inside it are not absorbing (below). A float read from a
 byte array would be an integer piece, and a `(double)` cast of a piece converts
 its value instead of reinterpreting its bits, so the upstream layout stays
 (`double v1[3]; v1[0] = 3.75; ((char *)v1)[i & 7] = j; return (int)(v1[0] +
-v1[0]);`). That layout can still map such a store's bytes as several locals
-(`char v1[4]; float v3; v1[i & 7] = j;`): the store then writes one local and a
-read of the other never sees it, which is worse than no guard. Each pass
-records whether it did (`kuna_storereach.rs (splits_pieces)`), and when the
-last pass did, `Funcdata::withdraw_split_stack_store_guard` turns the guard off
-for that function and `decompile_drive.rs (run_pipeline)` analyzes it again
-from flow, as `option stackstoreguard off` would. The decision survives the
-restart's `clear()`. As with every kuna restart, `clear()` keeps the local
-scope's symbols (upstream's `clearUnlocked` is not ported), so a register
-temporary or a return type the first analysis named can survive into the
-second.
+v1[0]);`). When that layout is still wrong, the function falls back to no
+guard (below).
 
 The second is where an open range ends, which matters when the index is not
 bounded (`u.b[i]`, or a walk that starts at `&u.b[i]`). `RangeHint::attempt_join`
@@ -943,7 +938,9 @@ forms `&u.s.b[i]` as `(&v1 | 4) + i`, relying on the frame's alignment; that
 store may write any slot near a resolved reach, and a slot the coalescing split
 off would be a separate local it never reaches. The whole frame keeps the
 upstream layout instead (`unsigned int v1[5]; ... *(char *)(((unsigned int)v1 |
-4) + (a0 >> 2 & 3)) = a1 + 1;`). Once a pass has laid out a reach, later passes
+4) + (a0 >> 2 & 3)) = a1 + 1;`), and falls back to no guard when that layout
+splits a guarded store's bounded piece (below). A choice between more than
+eight stack addresses does not resolve either. Once a pass has laid out a reach, later passes
 of the same function skip this check (`Funcdata::store_reach_committed`, reset
 when the function restarts). Dataflow can expose such an address only in a
 later pass, and a later pass that laid out a smaller local would leave the
@@ -951,7 +948,34 @@ pointers an earlier pass resolved against the larger one past its end
 (`&v19[0x20]` into a `char v19[32]`). A pass that skipped does not bind the next
 one, since a larger layout strands no pointer.
 
-`option stackstoreguard off` turns both off along with the guard.
+The guard is worse than none wherever the final layout still maps a range it
+keeps as more than one local: the initializer or the store prints into one
+local while a read of another never sees it. The P3 guard keeps every
+constant-initialized slot, not only the slots inside a store's reach, so
+`prepare_hints` returns the ranges the final layout must keep whole: the bytes
+of every guard INDIRECT on the stack, the bounded pieces of the guarded stores
+when the frame keeps the upstream layout, and the pieces in a float reach, each
+marked when a float hint lies in it. Each pass records its list
+(`Funcdata::note_store_reach_checks`), and after the last pass
+`decompile_drive.rs (run_pipeline)` calls `kuna_storereach.rs
+(withdraw_spoiled_guard)`. A range that overlaps more than one local spoils
+the layout. So does a float range that no local covers, or whose local some op
+reads as an integer while a member of that variable is typed float
+(`kuna_storereach.rs (read_only_as_float)`): such a read prints as a cast,
+which converts the value (`(unsigned short)v1` of a `double v1`). Float ops,
+copies and PIECEs into the range, and SUBPIECEs above the low end, which print
+as the bytes (`v1._6_2_`), do not. A spoiled function is analyzed again from
+flow with the guard off for it (`Funcdata::withdraw_stack_store_guard`, which
+survives the restart's `clear()`), as `option stackstoreguard off` would.
+Examples are a buffer written only by a walk through a pointer kept in memory,
+which no guard covers, while the guard keeps its initializer (clang `-O0`
+`p = (j & 1) ? u.b : v.b; *p++ = j;`), a frame with an OR-formed address whose
+upstream layout splits a guarded store's bytes, and a `double` read through
+`u.h[0]`. As with every kuna restart, `clear()` keeps the local scope's symbols
+(upstream's `clearUnlocked` is not ported), so a register temporary or a return
+type the first analysis named can survive into the second.
+
+`option stackstoreguard off` turns all of this off along with the guard.
 
 **An out-parameter takes the callee's declaration (kuna `castobject`, default
 on).** When two hints for the same bytes differ only in signedness, the ordering

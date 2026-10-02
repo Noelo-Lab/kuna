@@ -585,7 +585,7 @@ impl Funcdata {
         };
         state.gather_symbols(&hints);
 
-        let float_pieces = match self.get_arch().types_rc() {
+        let checked_pieces = match self.get_arch().types_rc() {
             Some(t) => crate::p6_variables::kuna_storereach::prepare_hints(self, &mut state, &space, t.as_ref()),
             None => Vec::new(),
         };
@@ -608,10 +608,7 @@ impl Funcdata {
             let _ = lm.restructure(&mut state, t.as_ref());
         }
         let rebased = crate::kuna_endptrbound::rebase_bounds(self, &space, &endptr_walks);
-        self.note_store_reach_split(
-            !float_pieces.is_empty()
-                && crate::p6_variables::kuna_storereach::splits_pieces(self, &space, &float_pieces),
-        );
+        self.note_store_reach_checks(checked_pieces);
 
         // C++ `restructureVarnode` tail (varmap.cc:1272-1285).  The unlocked-category
         // cleanup / fake-input-symbol synthesis / `markUnaliased` are W4 ScopeLocal
