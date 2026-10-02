@@ -11,7 +11,10 @@
 //! value narrower than its register is forced only where the model extends it by
 //! its type or the caller extends it: a MIPS model states no extension, a RISC-V
 //! one zero-extends signed values, and an Apple arm64 callee sign-extends a
-//! signed value narrower than 32 bits that the model zero-extends.
+//! signed value narrower than 32 bits that the model zero-extends.  A declared
+//! function or direct-callee prototype that names no convention is laid out
+//! under the soft-float model on an ARM image that states the soft-float
+//! convention and no floating-point hardware.
 use crate::{
     context::ArchContext,
     dtype::{type_class, type_metatype, TypeFactory},
