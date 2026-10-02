@@ -153,3 +153,19 @@ own variables instead of being read back from `dat_82d78`/`dat_82a34`).
 Typesweep (444 slices, 10,748 functions, main `0729b8b05` against this
 revision): 10,748 same, 0 improved, 0 worse, 1,674 perfect on both arms, mean
 0.3753; the exported variable count is unchanged in every function.
+
+## On main `5eb973320` (after #798, which keeps a pointer value apart)
+
+The same 39 binaries plus tar O0, O2 and O2-noinline: 92 of 15,936 functions.
+
+- 39 binaries, 40 functions: 34 print the change listed above line for line,
+  five differ only in local numbering or in main's own new casts (crontab
+  `0x3bc0`, chage `0x4cc0` `0x7210`, and the two copies of `getopt_internal`,
+  sftp-server `0x24dd0` and scp `0x30430`, where main now keeps the
+  `nextchar` pointer apart itself), and one is new: dash O2 `0xf440` stores
+  `dat_21a50` before `dat_21a58`, as the binary does at `f4f8`/`f4ff` (store
+  order). The equivalent reorders gpasswd `0xcb90` and rsyslogd `0x28f20` no
+  longer change.
+- tar, 52 functions: all in the castbench set above with the same change. tar
+  O2 `0xa9f0` `0x27340` and O2-noinline `0x2e690` no longer change: main's
+  pointer refusal already prints them that way.
