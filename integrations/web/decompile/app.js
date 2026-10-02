@@ -91,6 +91,7 @@ const state = {
   remoteTimer: 0,
   remoteLabel: '',
   side: 'fns',
+  typesOpen: null,
   strings: null,
   stringsOpen: {},
   strSel: null,
@@ -1071,6 +1072,7 @@ const RENDER = {
       globalsByName: new Map((data.globals || []).map((g) => [g.name, g.address_hex])),
     });
     els.ccode.classList.toggle('no-addrs', index.lineToInsns.size === 0);
+    applyTypesOpen();
     applyPaneClasses();
     sync.refresh('c');
   },
@@ -1305,6 +1307,29 @@ function lineInsns(n) {
 }
 
 const MAX_CARD_ROWS = 10;
+
+const TYPES_OPEN_LINES = 30;
+
+/** Whether the type definitions above the function show: the student's choice, else when they are short. */
+function typesShown() {
+  return state.typesOpen ?? state.current.preamble <= TYPES_OPEN_LINES;
+}
+
+function applyTypesOpen() {
+  const shown = !state.current?.preamble || typesShown();
+  els.ccode.classList.toggle('ty-closed', !shown);
+  els.ccode.querySelector('.d2-tytoggle')?.setAttribute('aria-expanded', String(shown));
+}
+
+/** The first line the keyboard can reach: the signature while the definitions are folded. */
+const firstLine = () => (typesShown() ? 1 : state.current.preamble + 1);
+
+els.ccode.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-act=types-toggle]') || !state.current) return;
+  state.typesOpen = !typesShown();
+  if (!state.typesOpen && state.sel?.line <= state.current.preamble) selectTarget(null, null);
+  applyTypesOpen();
+});
 
 /** What a line of the type definitions above the function is, in words; null for any other line. */
 function typeLineNote(n) {
@@ -1687,8 +1712,8 @@ function paneKey(e) {
     if (inC) {
       const cursorLine = state.cursor?.isConnected ? Number(state.cursor.closest('.d2-cl')?.dataset.line) : null;
       const symLines = state.sel?.sym ? [...(index.symToLines.get(state.sel.sym) || [])] : [];
-      const cur = state.sel?.line ?? cursorLine ?? (symLines.length ? Math.min(...symLines) : 0);
-      const next = Math.min(Math.max(cur + step, 1), index.lineCount);
+      const cur = state.sel?.line ?? cursorLine ?? (symLines.length ? Math.min(...symLines) : state.current.preamble);
+      const next = Math.min(Math.max(cur + step, firstLine()), index.lineCount);
       selectTarget({ line: next }, null);
       $('c-L' + next)?.scrollIntoView({ block: 'nearest' });
       hover.showFor($('c-L' + next)?.querySelector('.ct'));
@@ -2391,8 +2416,10 @@ async function applyEdit(mutate, { label = 'edit', reselect = null, done = '' } 
 async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit', reselect = null, done = '', remote = false } = {}) {
   const fn = state.current.fn;
   const oldCode = state.current.data.code;
+  const oldPreamble = state.current.preamble;
+  const oldSig = $('c-L' + (oldPreamble + 1))?.offsetTop ?? null;
   const scroll = captureScroll();
-  const keepSel = reselect || state.sel;
+  let keepSel = reselect || state.sel;
   const op = beginOperation(remote ? 'remote' : 'edit');
   op.onCancel = () => {
     if (collab?.shared) {
@@ -2420,6 +2447,10 @@ async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit
       showFunction(fn, data, { keep: true, key });
       if (collab?.shared && key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
       restoreScroll(scroll);
+      const shift = state.current.preamble - oldPreamble;
+      if (shift && Number.isInteger(keepSel?.line) && keepSel.line > oldPreamble) keepSel = { ...keepSel, line: keepSel.line + shift };
+      const newSig = $('c-L' + (state.current.preamble + 1))?.offsetTop ?? null;
+      if (oldSig !== null && newSig !== null) els.ccode.scrollTop += newSig - oldSig;
       if (keepSel) selectTarget(keepSel, null, null, { reveal: !remote });
       flash(changedLines(oldCode, data.code));
     }

@@ -89,6 +89,9 @@ assert.equal(mf.reserve, 32);
 assert.equal(mf.redZone, false);
 assert.ok(mf.slots.find((s) => s.name === 'x').dim, 'DWARF-only locals are dimmed');
 assert.ok(!mf.slots.find((s) => s.name === 'argc').dim);
+const typed = { ...main, tokens: [], types: [{ name: 'pt', definition: '', size: 4 }],
+  code: `typedef struct pt pt;\n\nstruct pt {\n    int x;\n};\n\n${main.code}` };
+assert.ok(frameModel(typed, X86).slots.find((s) => s.name === 'x').dim, 'a field named x in the type definitions is not a use of x');
 assert.match(renderFrame(mf), /<span class="sn">x<\/span><span class="st">int<\/span><span class="sa" title="only in the debug info">/,
   'a debug-info note is a fact, so "Show hints" does not hide it');
 const arr = frameModel({

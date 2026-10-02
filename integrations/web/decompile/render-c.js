@@ -190,11 +190,11 @@ export function preambleTypes(code, length) {
     if (block) open = block[1];
     if (open) {
       out.push({ name: open, opaque: false });
-      if (/^\s*\}/.test(text)) open = null;
+      if (/^\s*\}/.test(text) || (block && /\}/.test(text))) open = null;
       continue;
     }
-    const typedef = /\b([A-Za-z_]\w*)\s*;\s*(\/\*.*\*\/)?\s*$/.exec(text);
-    out.push(typedef ? { name: typedef[1], opaque: /\/\*\s*opaque\s*\*\//.test(text) } : null);
+    const named = /\(\s*\*+\s*([A-Za-z_]\w*)\s*\)\s*\(/.exec(text) || /\b([A-Za-z_]\w*)\s*(?:\[[^\]]*\]\s*)*;\s*(\/\*.*\*\/)?\s*$/.exec(text);
+    out.push(named && /;/.test(text) ? { name: named[1], opaque: /\/\*\s*opaque\s*\*\//.test(text) } : null);
   }
   return out;
 }
@@ -407,7 +407,7 @@ function tokenHtml(t, ctx) {
  * The C pane's HTML: one `.d2-cl#c-L<n>` row per line with a line-number and
  * address gutter, tokens as `.t` spans carrying their kind, symbol, address,
  * callee, global address and type. The preamble's rows are `.d2-ty`, under a
- * heading. `ctx`: `{index, segs, preamble, fnByName, globalsByName}`.
+ * heading that folds them. `ctx`: `{index, segs, preamble, fnByName, globalsByName}`.
  */
 export function renderC(fnData, ctx = {}) {
   const segs = ctx.segs || lineSegments(fnData).segs;
@@ -417,7 +417,11 @@ export function renderC(fnData, ctx = {}) {
     return `<div class="d2-cl d2-err"><span class="ct">${escapeHtml(`/* ${fnData.name} — decompile error:\n   ${fnData.error} */`)}</span></div>`;
   }
   let out = '<div class="d2-chunk">';
-  if (preamble) out += '<div class="d2-tyhead" role="presentation"><span class="ln"></span><span class="la"></span><span class="ct">Types this function uses</span></div>';
+  if (preamble) {
+    const n = fnData.types.length;
+    out += '<div class="d2-tyhead" role="presentation"><span class="ln"></span><span class="la"></span><span class="ct">' +
+      `<button class="d2-tytoggle" data-act="types-toggle" aria-expanded="true">Types this function uses</button> <span class="d2-tyn">${n} type${n === 1 ? '' : 's'}</span></span></div>`;
+  }
   segs.forEach((line, i) => {
     if (i && i % CHUNK === 0) out += '</div><div class="d2-chunk">';
     const n = i + 1;
