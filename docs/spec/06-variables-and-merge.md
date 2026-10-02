@@ -960,21 +960,31 @@ store pieces in a float reach. An index whose known-bits span is 256 bytes or
 more counts as unbounded (`u.b[i & 511]`). After the last pass
 `decompile_drive.rs (run_pipeline)` calls `kuna_storereach.rs
 (withdraw_spoiled_guard)`, which takes the bytes of every guard INDIRECT still
-on the stack whose value some op other than an INDIRECT or MULTIEQUAL reads,
-since the P3 guard keeps every constant-initialized slot, not only the slots
-inside a store's reach; the INDIRECTs that `RuleIndirectCollapse` removed or
-that nothing reads cannot hide a write. The layout is spoiled when such a
-slot overlaps more than one local, or when such a
-slot inside a reach does not lie in the local holding the reach's base: the C
-writes through that local only, so a read of another local never sees the
-store, and an index past the base local's end writes outside it (a constant
-`struct { u32 a; u8 b[6]; u16 c; u32 d; }` written by `((u8 *)&s)[i]` and
-mapped as `int v1; unsigned char v2; ...` with `((char *)&v1)[a0] = a1`). The
-same holds for a slot past a smaller array (`char v1[8]; unsigned int v2;
-v1[a0] = a1` for a 16-byte union), and for a separate constant local anywhere
-above a walked buffer, which the guard therefore gives up on (`char v1[400];
-unsigned int v2; v1[a0 & 0x1ff] = a1;` for a 512-byte union with a constant
-word at byte 400). A float
+on the stack. The layout is spoiled when such a slot whose value some op other
+than an INDIRECT or MULTIEQUAL reads overlaps more than one local (the P3 guard
+keeps every constant-initialized slot, not only the slots inside a store's
+reach), or when any such slot inside a reach, read or not, does not lie in the
+local holding the reach's base: the C writes through that local only, so a read
+of another local never sees the store, and an index past the base local's end
+writes outside it (a constant `struct { u32 a; u8 b[6]; u16 c; u32 d; }`
+written by `((u8 *)&s)[i]` and mapped as `int v1; unsigned char v2; ...` with
+`((char *)&v1)[a0] = a1`). An unread slot counts too: a call after the store
+keeps the zeroed tail of `u8 b[12]` alive as `unsigned int v3` beside an
+`unsigned long v1` at the base, and `((char *)&v1)[a0 % 0xc] = a1` then writes
+past `v1`, which natively clobbers whatever follows it. The same holds for a
+slot past a smaller array (`char v1[8]; unsigned int v2; v1[a0] = a1` for a
+16-byte union), and for a separate constant local anywhere above a walked
+buffer, which the guard therefore gives up on (`char v1[400]; unsigned int v2;
+v1[a0 & 0x1ff] = a1;` for a 512-byte union with a constant word at byte 400).
+The local holding a reach's base must also be able to hold it
+(`kuna_storereach.rs (holds_reach)`): an array of bytes or of 2-, 4- or 8-byte
+integers, which ends at the next local and which the store writes by byte
+(`v1[i]`, `((char *)v5)[i]` for the `int4 v5[4]` an ARM word read gives), or,
+for a bounded reach, a float local; in both cases holding all of a bounded
+reach. Any other local is spoiled: a scalar has a fixed size an unbounded index
+can run past, and an array of other elements may not be indexable by byte at
+all (a 16-byte SSE zero-initializer at the base types the buffer `undefined16
+v1[2]`, printed as `v1[0][a0 % 0x18] = a1`, which does not compile). A float
 piece is spoiled when no single local covers it, or when its local is read as
 an integer while a member of that variable is typed float
 (`kuna_storereach.rs (read_only_as_float)`): such a read prints as a cast,

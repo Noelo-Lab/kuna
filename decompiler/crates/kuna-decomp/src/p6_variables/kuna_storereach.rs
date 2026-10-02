@@ -43,12 +43,14 @@
 //!
 //! The guard is worse than none when the final layout maps a slot it keeps
 //! (the bytes of a guard INDIRECT whose value is read) as more than one local,
-//! maps such a slot inside a guarded store's reach (its bounded reach, or
-//! everything at or above an unbounded piece's base) outside the local holding
-//! the store's base, or splits or reads as an integer a float local a guarded
-//! piece lies in: the drive then analyzes a freshly built copy of the function without
-//! the guard (`withdraw_spoiled_guard`), which prints what `stackstoreguard
-//! off` prints.
+//! maps any slot a guard INDIRECT names inside a guarded store's reach (its
+//! bounded reach, or everything at or above an unbounded piece's base),
+//! whether read or not, outside the local holding the store's base, holds the
+//! base in a local that is not an array of bytes or integers (a bounded reach
+//! may also lie wholly in a float local), or splits or reads as an integer a
+//! float local a guarded piece lies in: the drive then analyzes a freshly built copy of the
+//! function without the guard (`withdraw_spoiled_guard`), which prints what
+//! `stackstoreguard off` prints.
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -99,11 +101,10 @@ pub(crate) fn prepare_hints(
     if !has_byte_store(fd) {
         return checks;
     }
-    let (guarded, _) = guard_effects(fd, space);
+    let guarded: Vec<OpId> = guard_effects(fd, space).stores.into_iter().collect();
     if guarded.is_empty() {
         return checks;
     }
-    let guarded: Vec<OpId> = guarded.into_iter().collect();
     if frame_unresolved(fd, space, &guarded) {
         if !fd.is_jumptable_recovery_on() {
             fd.spoil_stack_store_guard();
@@ -117,8 +118,10 @@ pub(crate) fn prepare_hints(
         .iter()
         .filter_map(|&store| store_pieces(fd, store, sb, space))
         .collect();
-    let reaches: Vec<(Vec<intb>, Option<(intb, intb)>)> =
-        resolved.iter().filter_map(|pieces| store_reach(pieces)).collect();
+    let reaches: Vec<(Vec<intb>, Option<(intb, intb)>)> = resolved
+        .iter()
+        .filter_map(|pieces| store_reach(pieces))
+        .collect();
     if reaches.is_empty() {
         return checks;
     }
@@ -132,7 +135,10 @@ pub(crate) fn prepare_hints(
             _ => merged.push((lo, hi)),
         }
     }
-    let mut bases: Vec<intb> = reaches.iter().flat_map(|(b, _)| b.iter().copied()).collect();
+    let mut bases: Vec<intb> = reaches
+        .iter()
+        .flat_map(|(b, _)| b.iter().copied())
+        .collect();
     let mut floats: Vec<(intb, intb)> = Vec::new();
     for (lo, hi) in merged {
         match coalesce_range(state, space, types, lo, hi) {
@@ -170,9 +176,10 @@ pub(crate) fn prepare_hints(
 /// If the final layout spoils what the guard needs, mark the function to be
 /// analyzed again from scratch without the guard. The guard stands
 /// only when every stack access in the frame resolved, every slot a guard
-/// INDIRECT still keeps (and whose value is read) is one local, every such
-/// slot inside a guarded store's reach lies in the local holding the store's
-/// base (the C writes through that local and no other), and every guarded
+/// INDIRECT still keeps (and whose value is read) is one local, every slot a
+/// guard INDIRECT names inside a guarded store's reach, read or not, lies in
+/// the local holding the store's base (the C writes through that local and no
+/// other), that local can hold the reach (`holds_reach`), and every guarded
 /// store piece in a float reach is one local that is read only as a float: an
 /// integer read of a float local prints as a cast, which converts its value.
 pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
@@ -187,38 +194,77 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
     };
     let space = Rc::clone(sl.get_space_id());
     let checks = fd.store_reach_checks();
-    let kept = guard_effects(fd, &space).1;
-    if checks.floats.is_empty() && kept.is_empty() {
+    let effects = guard_effects(fd, &space);
+    if checks.floats.is_empty() && checks.reaches.is_empty() && effects.read.is_empty() {
         return false;
     }
     let bits = space.get_addr_size() as int4 * 8 - 1;
-    let symbols: Vec<(intb, intb)> = sl
+    let symbols: Vec<(intb, intb, Rc<Datatype>)> = sl
         .database()
         .scope_space_local_var_specs(sl.scope_id(), space.get_index() as usize)
         .into_iter()
         .map(|(_, ct, addr, _)| {
             let off = sign_extend(addr.get_offset() as intb, bits);
-            (off, off + ct.get_size() as intb)
+            (off, off + ct.get_size() as intb, ct)
         })
         .collect();
     let locals = |lo: intb, hi: intb| -> Vec<(intb, intb)> {
-        symbols.iter().copied().filter(|&(s, e)| s < hi && lo < e).collect()
+        symbols
+            .iter()
+            .filter(|&&(s, e, _)| s < hi && lo < e)
+            .map(|&(s, e, _)| (s, e))
+            .collect()
     };
-    let spoiled = kept.iter().any(|&(lo, hi)| locals(lo, hi).len() > 1)
+    let spoiled = effects
+        .read
+        .iter()
+        .any(|&(lo, hi)| locals(lo, hi).len() > 1)
         || checks.reaches.iter().any(|&(base, end)| {
-            let local = symbols.iter().find(|&&(s, e)| s <= base && base < e);
-            kept.iter().any(|&(lo, hi)| {
-                lo < end && base < hi && !local.is_some_and(|&(s, e)| s <= lo && hi <= e)
-            })
+            let local = symbols.iter().find(|&&(s, e, _)| s <= base && base < e);
+            local.is_some_and(|(s, e, ct)| !holds_reach(ct, *s, *e, base, end))
+                || effects.all.iter().any(|&(lo, hi)| {
+                    lo < end && base < hi && !local.is_some_and(|&(s, e, _)| s <= lo && hi <= e)
+                })
         })
-        || checks.floats.iter().any(|&(lo, hi)| match locals(lo, hi).as_slice() {
-            [(s, e)] => !read_only_as_float(fd, &space, *s, *e),
-            _ => true,
-        });
+        || checks
+            .floats
+            .iter()
+            .any(|&(lo, hi)| match locals(lo, hi).as_slice() {
+                [(s, e)] => !read_only_as_float(fd, &space, *s, *e),
+                _ => true,
+            });
     if spoiled {
         fd.spoil_stack_store_guard();
     }
     spoiled
+}
+
+/// Can the local of type `ct` at `[s, e)` print the writes of a store reaching
+/// `[base, end)` (`end` the top of the frame for an unbounded one)? An array of
+/// bytes or of integers is laid out to the next local and written through a
+/// byte pointer (`v1[i]`, `((char *)v1)[i]`); a float local holding all of a
+/// bounded reach is written the same way and read by the float checks. Any
+/// other local (a scalar, an `undefined16` array) may end before the bytes the
+/// store writes, or print an index the C cannot express (`v1[0][i]`).
+fn holds_reach(ct: &Datatype, s: intb, e: intb, base: intb, end: intb) -> bool {
+    let bounded = end != intb::MAX;
+    if bounded && !(s <= base && end <= e) {
+        return false;
+    }
+    let elem = ct.get_array_base();
+    match elem.as_deref() {
+        Some(el) if el.get_size() == 1 => true,
+        Some(el)
+            if matches!(el.get_size(), 2 | 4 | 8)
+                && matches!(
+                    el.get_metatype(),
+                    type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+                ) =>
+        {
+            true
+        }
+        el => bounded && el.unwrap_or(ct).get_metatype() == type_metatype::TYPE_FLOAT,
+    }
 }
 
 /// Does every op that reads stack bytes in `[lo, hi)` print them as their
@@ -428,13 +474,21 @@ pub(crate) fn frame_unresolved(fd: &Funcdata, space: &Rc<AddrSpace>, stores: &[O
     }) || has_unresolved_frame_access(fd, sb)
 }
 
-/// The byte STOREs a guard INDIRECT on `space` names as its effect, and the
-/// signed stack ranges `[lo, hi)` of those INDIRECTs: the slots the guard keeps
-/// a store's effect on.
-fn guard_effects(fd: &Funcdata, space: &Rc<AddrSpace>) -> (BTreeSet<OpId>, Vec<(intb, intb)>) {
+/// The slots a guard keeps byte stores' effects on.
+#[derive(Default)]
+struct GuardEffects {
+    /// The byte STOREs a guard INDIRECT names as its effect.
+    stores: BTreeSet<OpId>,
+    /// The signed stack ranges `[lo, hi)` of those INDIRECTs whose value is read.
+    read: Vec<(intb, intb)>,
+    /// The signed stack ranges of all of them.
+    all: Vec<(intb, intb)>,
+}
+
+/// The guard INDIRECTs on `space` whose effect is a byte STORE.
+fn guard_effects(fd: &Funcdata, space: &Rc<AddrSpace>) -> GuardEffects {
     let bits = space.get_addr_size() as int4 * 8 - 1;
-    let mut stores = BTreeSet::new();
-    let mut kept = Vec::new();
+    let mut effects = GuardEffects::default();
     for id in fd.obank().iter_alive() {
         let Some(op) = fd
             .obank()
@@ -469,14 +523,16 @@ fn guard_effects(fd: &Funcdata, space: &Rc<AddrSpace>) -> (BTreeSet<OpId>, Vec<(
             .and_then(|v| fd.vbank().get(v))
             .is_some_and(|v| v.get_size() == 1);
         if byte_store {
-            stores.insert(store);
+            effects.stores.insert(store);
+            let lo = sign_extend(out.get_addr().get_offset() as intb, bits);
+            let range = (lo, lo + out.get_size() as intb);
             if is_read(fd, out_id) {
-                let lo = sign_extend(out.get_addr().get_offset() as intb, bits);
-                kept.push((lo, lo + out.get_size() as intb));
+                effects.read.push(range);
             }
+            effects.all.push(range);
         }
     }
-    (stores, kept)
+    effects
 }
 
 /// Does an op other than an INDIRECT or MULTIEQUAL read `vn`, or the value of

@@ -367,7 +367,8 @@ fn decompile(input: &std::path::Path, name: &str, options: &[&str]) -> String {
 }
 
 /// `name._<off>_<size>_` (also `name[k]._<off>_<size>_`) as the unsigned
-/// `size`-byte lvalue at that offset, for a little-endian host.
+/// `size`-byte lvalue at that offset, for a little-endian host (a 16-byte one
+/// through a packed struct, which needs no alignment).
 fn lower_pieces(c: &str) -> String {
     let mut out = String::new();
     let mut rest = c;
@@ -389,13 +390,15 @@ fn lower_pieces(c: &str) -> String {
             "2" => Some("unsigned short"),
             "4" => Some("unsigned int"),
             "8" => Some("unsigned long long"),
+            "16" => Some("struct __attribute__((packed)) { unsigned __int128 v; }"),
             _ => None,
         };
         match (fields.as_slice(), start < head.len()) {
             ([off, size, _], true) if off.parse::<u8>().is_ok() && width(size).is_some() => {
                 out.push_str(&head[..start]);
+                let field = if *size == "16" { ".v" } else { "" };
                 out.push_str(&format!(
-                    "(*({} *)((char *)&({}) + {off}))",
+                    "(*({} *)((char *)&({}) + {off})){field}",
                     width(size).unwrap(),
                     &head[start..]
                 ));
@@ -777,10 +780,18 @@ fn unresolved_and_unbounded_stores_are_no_worse_than_without_the_guard() {
     //   b4: the same union with u.w[1] = 0x0a0b0c0d; u.w[100] = 0x01020304;
     //       u8 *p = u.b; for (k = 0; k < (i & 511); k++) *p++ = j;
     //       return u.w[100] + u.w[1] * 3;
+    //   o1: u8 b[12]; for (k = 0; k < 12; k++) b[k] = 0; b[i % 12] = j;
+    //       if (b[0]) ext(b[0]); return b[0];   (its call bound to o1_ext)
+    //   z5: u8 b[24] = {0}; b[i % 24] = j; return b[0] + b[8] * 3;
+    //   v1: u8 b[16] = {0}; for (k = 0; k < (i & 15); k++) b[k] = j;
+    //       return b[1] * 3 + 1;
     // y3u's OR-formed store does not resolve to stack offsets, and y8's
     // unmasked index, b1's 512-byte index and b4's walk may write the fields
     // the layout maps as other locals, so all fall back to the unguarded
-    // analysis.
+    // analysis. So do o1, whose call keeps the zeroed tail of b as a local
+    // apart from the eight bytes at the store's base, and z5, whose base is
+    // an `undefined16` array that cannot be indexed by byte. v1's fill keeps
+    // one byte array.
     no_worse_than_without_the_guard(
         "indexed-stack-unbounded",
         &[
@@ -838,13 +849,57 @@ fn unresolved_and_unbounded_stores_are_no_worse_than_without_the_guard() {
                     0x27, 0x23, 0x1f, 0x48, 0x81, 0xc4, 0x90, 0x01, 0x00, 0x00, 0xc3,
                 ],
             ),
+            (
+                "o1_gcc",
+                24,
+                &[
+                    0x48, 0x63, 0xc7, 0x89, 0xfa, 0x41, 0x54, 0x45, 0x31, 0xe4, 0x48, 0x69, 0xc0,
+                    0xab, 0xaa, 0xaa, 0x2a, 0xc1, 0xfa, 0x1f, 0x48, 0x83, 0xec, 0x10, 0x48, 0xc1,
+                    0xf8, 0x21, 0xc7, 0x44, 0x24, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x48, 0xc7, 0x44,
+                    0x24, 0x04, 0x00, 0x00, 0x00, 0x00, 0x29, 0xd0, 0x8d, 0x04, 0x40, 0xc1, 0xe0,
+                    0x02, 0x29, 0xc7, 0x48, 0x63, 0xff, 0x40, 0x88, 0x74, 0x3c, 0x04, 0x0f, 0xb6,
+                    0x44, 0x24, 0x04, 0x84, 0xc0, 0x75, 0x10, 0x48, 0x83, 0xc4, 0x10, 0x44, 0x89,
+                    0xe0, 0x41, 0x5c, 0xc3, 0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00, 0x44, 0x0f, 0xb6,
+                    0xe0, 0x44, 0x89, 0xe7, 0xe8, 0x1c, 0x00, 0x00, 0x00, 0x48, 0x83, 0xc4, 0x10,
+                    0x44, 0x89, 0xe0, 0x41, 0x5c, 0xc3,
+                ],
+            ),
+            ("o1_ext", 0, &[0x8d, 0x44, 0x7f, 0x01, 0xc3]),
+            (
+                "z5_gcc",
+                48,
+                &[
+                    0x48, 0x63, 0xc7, 0x89, 0xfa, 0x66, 0x0f, 0xef, 0xc0, 0x48, 0x69, 0xc0, 0xab,
+                    0xaa, 0xaa, 0x2a, 0xc1, 0xfa, 0x1f, 0x0f, 0x29, 0x44, 0x24, 0xd8, 0x48, 0xc1,
+                    0xf8, 0x22, 0x29, 0xd0, 0x8d, 0x04, 0x40, 0xc1, 0xe0, 0x03, 0x29, 0xc7, 0x48,
+                    0x63, 0xff, 0x40, 0x88, 0x74, 0x3c, 0xd8, 0x0f, 0xb6, 0x44, 0x24, 0xe0, 0x0f,
+                    0xb6, 0x54, 0x24, 0xd8, 0x8d, 0x04, 0x40, 0x01, 0xd0, 0xc3,
+                ],
+            ),
+            (
+                "v1_gcc",
+                16,
+                &[
+                    0x66, 0x0f, 0xef, 0xc0, 0x89, 0xf9, 0x0f, 0x29, 0x44, 0x24, 0xe8, 0x83, 0xe1,
+                    0x0f, 0x74, 0x60, 0x4c, 0x8d, 0x44, 0x24, 0xe8, 0x40, 0x0f, 0xb6, 0xf6, 0x4c,
+                    0x89, 0xc2, 0x83, 0xf9, 0x08, 0x73, 0x1f, 0x83, 0xe1, 0x07, 0x74, 0x0f, 0x31,
+                    0xc0, 0x89, 0xc7, 0x83, 0xc0, 0x01, 0x40, 0x88, 0x34, 0x3a, 0x39, 0xc8, 0x72,
+                    0xf3, 0x0f, 0xb6, 0x44, 0x24, 0xe9, 0x8d, 0x44, 0x40, 0x01, 0xc3, 0x90, 0x48,
+                    0xb8, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x40, 0x0f, 0xb6, 0xd6,
+                    0x83, 0xe7, 0x08, 0x48, 0x0f, 0xaf, 0xd0, 0x31, 0xc0, 0x41, 0x89, 0xc1, 0x83,
+                    0xc0, 0x08, 0x4b, 0x89, 0x14, 0x08, 0x39, 0xf8, 0x72, 0xf2, 0x49, 0x8d, 0x14,
+                    0x00, 0xeb, 0xb6, 0x0f, 0x1f, 0x44, 0x00, 0x00, 0xb8, 0x01, 0x00, 0x00, 0x00,
+                    0xc3,
+                ],
+            ),
         ],
     );
 }
 
 /// Each function's guarded print must disagree with the binary on no more
 /// inputs `i < rows`, `j < 256` than its print with `stackstoreguard off`; a
-/// crash counts as worse.
+/// crash or a print that does not compile counts as worse. A function with no
+/// rows is a callee, `int binary_<name>(int)`, placed right after its caller.
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 fn no_worse_than_without_the_guard(stem: &str, functions: &[(&str, u32, &[u8])]) {
     let compilers: Vec<_> = ["gcc", "clang"]
@@ -859,6 +914,10 @@ fn no_worse_than_without_the_guard(stem: &str, functions: &[(&str, u32, &[u8])])
     let mut printed = String::new();
     let mut checks = String::new();
     for &(name, rows, _) in functions {
+        if rows == 0 {
+            printed.insert_str(0, &format!("int binary_{name}(int);\n"));
+            continue;
+        }
         for (arm, options) in [
             ("guarded", &[][..]),
             ("unguarded", &["--option", "stackstoreguard", "off"][..]),
@@ -880,7 +939,8 @@ fn no_worse_than_without_the_guard(stem: &str, functions: &[(&str, u32, &[u8])])
              }}\n"
         ));
     }
-    let names: Vec<_> = functions
+    let checked: Vec<_> = functions.iter().filter(|&&(_, rows, _)| rows > 0).collect();
+    let names: Vec<_> = checked
         .iter()
         .map(|(name, _, _)| format!("check_{name}"))
         .collect();
@@ -920,7 +980,7 @@ int main(int argc, char **argv) {{
                 "{cc}: {}\n{printed}",
                 String::from_utf8_lossy(&compile.stderr)
             );
-            let failing: Vec<_> = functions
+            let failing: Vec<_> = checked
                 .iter()
                 .enumerate()
                 .filter(|(k, _)| {
