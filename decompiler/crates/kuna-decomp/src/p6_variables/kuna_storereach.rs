@@ -46,11 +46,12 @@
 //! maps any slot a guard INDIRECT names inside a guarded store's reach (its
 //! bounded reach, or everything at or above an unbounded piece's base),
 //! whether read or not, outside the local holding the store's base, holds the
-//! base in a local that is not an array of bytes or integers (a bounded reach
-//! may also lie wholly in a float local), or splits or reads as an integer a
-//! float local a guarded piece lies in: the drive then analyzes a freshly built copy of the
-//! function without the guard (`withdraw_spoiled_guard`), which prints what
-//! `stackstoreguard off` prints.
+//! base in a local that is not an array of bytes or of 2-, 4- or 8-byte
+//! integers or unknowns (a bounded reach may also lie wholly in a float
+//! local), or splits or reads as an integer a float local a guarded piece lies
+//! in: the drive then analyzes a freshly built copy of the function without
+//! the guard (`withdraw_spoiled_guard`), which prints what `stackstoreguard
+//! off` prints.
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -241,11 +242,12 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
 
 /// Can the local of type `ct` at `[s, e)` print the writes of a store reaching
 /// `[base, end)` (`end` the top of the frame for an unbounded one)? An array of
-/// bytes or of integers is laid out to the next local and written through a
-/// byte pointer (`v1[i]`, `((char *)v1)[i]`); a float local holding all of a
-/// bounded reach is written the same way and read by the float checks. Any
-/// other local (a scalar, an `undefined16` array) may end before the bytes the
-/// store writes, or print an index the C cannot express (`v1[0][i]`).
+/// bytes or of 2-, 4- or 8-byte integers or unknowns is laid out to the next
+/// local and written through a byte pointer (`v1[i]`, `((char *)v1)[i]`); a
+/// float local holding all of a bounded reach is written the same way and read
+/// by the float checks. Any other local (a scalar, an `undefined16` array) may
+/// end before the bytes the store writes, or print an index the C cannot
+/// express (`v1[0][i]`).
 fn holds_reach(ct: &Datatype, s: intb, e: intb, base: intb, end: intb) -> bool {
     let bounded = end != intb::MAX;
     if bounded && !(s <= base && end <= e) {
@@ -258,7 +260,9 @@ fn holds_reach(ct: &Datatype, s: intb, e: intb, base: intb, end: intb) -> bool {
             if matches!(el.get_size(), 2 | 4 | 8)
                 && matches!(
                     el.get_metatype(),
-                    type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+                    type_metatype::TYPE_INT
+                        | type_metatype::TYPE_UINT
+                        | type_metatype::TYPE_UNKNOWN
                 ) =>
         {
             true

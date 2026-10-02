@@ -978,8 +978,8 @@ buffer, which the guard therefore gives up on (`char v1[400]; unsigned int v2;
 v1[a0 & 0x1ff] = a1;` for a 512-byte union with a constant word at byte 400).
 The local holding a reach's base must also be able to hold it
 (`kuna_storereach.rs (holds_reach)`): an array of bytes or of 2-, 4- or 8-byte
-integers, which ends at the next local and which the store writes by byte
-(`v1[i]`, `((char *)v5)[i]` for the `int4 v5[4]` an ARM word read gives), or,
+integers or unknowns, which ends at the next local and which the store writes by
+byte (`v1[i]`, `((char *)v5)[i]` for the `int4 v5[4]` an ARM word read gives), or,
 for a bounded reach, a float local; in both cases holding all of a bounded
 reach. Any other local is spoiled: a scalar has a fixed size an unbounded index
 can run past, and an array of other elements may not be indexable by byte at
