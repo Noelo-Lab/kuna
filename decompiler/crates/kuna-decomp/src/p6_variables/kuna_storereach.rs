@@ -62,8 +62,10 @@ pub(crate) fn prepare_hints(
     let guarded = guarded_stores(fd, space);
     reaches.retain(|(store, _, _)| guarded.contains(store));
     let mut bases: Vec<intb> = reaches.iter().map(|&(_, lo, _)| lo).collect();
-    let mut bounded: Vec<(intb, intb)> =
-        reaches.iter().filter_map(|&(_, lo, hi)| hi.map(|hi| (lo, hi))).collect();
+    let mut bounded: Vec<(intb, intb)> = reaches
+        .iter()
+        .filter_map(|&(_, lo, hi)| hi.map(|hi| (lo, hi)))
+        .collect();
     bounded.sort_unstable();
     let mut merged: Vec<(intb, intb)> = Vec::new();
     for (lo, hi) in bounded {
@@ -92,7 +94,9 @@ fn coalesce_range(
     hi: intb,
 ) -> Option<intb> {
     let overlaps = |h: &RangeHint, lo: intb, hi: intb| {
-        h.range_type != RangeType::Endpoint && h.sstart < hi && lo < h.sstart.wrapping_add(h.size as intb)
+        h.range_type != RangeType::Endpoint
+            && h.sstart < hi
+            && lo < h.sstart.wrapping_add(h.size as intb)
     };
     let (mut lo, mut hi) = (lo, hi);
     loop {
@@ -100,7 +104,12 @@ fn coalesce_range(
             .hints_mut()
             .iter()
             .filter(|h| overlaps(h, lo, hi))
-            .fold((lo, hi), |(l, r), h| (l.min(h.sstart), r.max(h.sstart.wrapping_add(h.size as intb))));
+            .fold((lo, hi), |(l, r), h| {
+                (
+                    l.min(h.sstart),
+                    r.max(h.sstart.wrapping_add(h.size as intb)),
+                )
+            });
         if (nlo, nhi) == (lo, hi) {
             break;
         }
@@ -111,12 +120,24 @@ fn coalesce_range(
         return None;
     }
     let hints = state.hints_mut();
-    if hints.iter().any(|h| overlaps(h, lo, hi) && h.is_type_lock()) {
+    if hints
+        .iter()
+        .any(|h| overlaps(h, lo, hi) && h.is_type_lock())
+    {
         return None;
     }
-    let elem = byte_type(hints, lo, hi).or_else(|| types.get_base(1, type_metatype::TYPE_UNKNOWN).ok())?;
+    let elem =
+        byte_type(hints, lo, hi).or_else(|| types.get_base(1, type_metatype::TYPE_UNKNOWN).ok())?;
     hints.retain(|h| !overlaps(h, lo, hi));
-    hints.push(RangeHint::new(start, 1, lo, elem, 0, RangeType::Open, (hi - lo - 1) as int4));
+    hints.push(RangeHint::new(
+        start,
+        1,
+        lo,
+        elem,
+        0,
+        RangeType::Open,
+        (hi - lo - 1) as int4,
+    ));
     Some(lo)
 }
 
@@ -124,13 +145,23 @@ fn coalesce_range(
 fn byte_type(hints: &[RangeHint], lo: intb, hi: intb) -> Option<Rc<Datatype>> {
     let mut elem: Option<Rc<Datatype>> = None;
     for h in hints {
-        if h.sstart < lo || h.sstart >= hi || h.type_.get_size() != 1 || h.range_type != RangeType::Fixed {
+        if h.sstart < lo
+            || h.sstart >= hi
+            || h.type_.get_size() != 1
+            || h.range_type != RangeType::Fixed
+        {
             continue;
         }
-        if !matches!(h.type_.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT) {
+        if !matches!(
+            h.type_.get_metatype(),
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+        ) {
             continue;
         }
-        if elem.as_ref().is_none_or(|e| h.type_.type_order(e).is_ok_and(|o| o < 0)) {
+        if elem
+            .as_ref()
+            .is_none_or(|e| h.type_.type_order(e).is_ok_and(|o| o < 0))
+        {
             elem = Some(Rc::clone(&h.type_));
         }
     }
@@ -141,7 +172,11 @@ fn byte_type(hints: &[RangeHint], lo: intb, hi: intb) -> Option<Rc<Datatype>> {
 fn guarded_stores(fd: &Funcdata, space: &Rc<AddrSpace>) -> BTreeSet<OpId> {
     let mut stores = BTreeSet::new();
     for id in fd.obank().iter_alive() {
-        let Some(op) = fd.obank().get(id).filter(|o| o.code() == OpCode::CPUI_INDIRECT) else {
+        let Some(op) = fd
+            .obank()
+            .get(id)
+            .filter(|o| o.code() == OpCode::CPUI_INDIRECT)
+        else {
             continue;
         };
         let on_stack = op
@@ -152,7 +187,9 @@ fn guarded_stores(fd: &Funcdata, space: &Rc<AddrSpace>) -> BTreeSet<OpId> {
             continue;
         };
         if on_stack && iop.get_space().get_type() == spacetype::IPTR_IOP {
-            stores.insert(crate::funcdata_varnode::op_iop_decode(iop.get_addr().get_offset()));
+            stores.insert(crate::funcdata_varnode::op_iop_decode(
+                iop.get_addr().get_offset(),
+            ));
         }
     }
     stores
@@ -174,13 +211,21 @@ fn store_reach(
     if extra == Some(0) {
         return None;
     }
-    let lo = sign_extend(space.wrap_offset(off) as intb, space.get_addr_size() as int4 * 8 - 1);
+    let lo = sign_extend(
+        space.wrap_offset(off) as intb,
+        space.get_addr_size() as int4 * 8 - 1,
+    );
     Some((lo, extra.map(|e| lo + e + 1)))
 }
 
 /// `vn` as the stack base plus a constant plus a non-negative extra, which is
 /// `None` when an index's known-bits mask does not bound it.
-fn pointer_reach(fd: &Funcdata, vn: VarnodeId, sb: VarnodeId, depth: u32) -> Option<(uintb, Option<intb>)> {
+fn pointer_reach(
+    fd: &Funcdata,
+    vn: VarnodeId,
+    sb: VarnodeId,
+    depth: u32,
+) -> Option<(uintb, Option<intb>)> {
     if vn == sb {
         return Some((0, Some(0)));
     }
@@ -217,16 +262,20 @@ fn pointer_reach(fd: &Funcdata, vn: VarnodeId, sb: VarnodeId, depth: u32) -> Opt
             };
             let ((off, extra), term) = match pointer_reach(fd, op.get_in(0)?, sb, depth + 1) {
                 Some(base) => (base, op.get_in(1)?),
-                None if op.code() == OpCode::CPUI_INT_ADD => {
-                    (pointer_reach(fd, op.get_in(1)?, sb, depth + 1)?, op.get_in(0)?)
-                }
+                None if op.code() == OpCode::CPUI_INT_ADD => (
+                    pointer_reach(fd, op.get_in(1)?, sb, depth + 1)?,
+                    op.get_in(0)?,
+                ),
                 None => return None,
             };
             let t = fd.vbank().get(term)?;
             if t.is_constant() {
                 return Some((off.wrapping_add(t.get_offset().wrapping_mul(scale)), extra));
             }
-            let span = t.get_nz_mask().checked_mul(scale).filter(|&s| s < MAX_REACH as uintb);
+            let span = t
+                .get_nz_mask()
+                .checked_mul(scale)
+                .filter(|&s| s < MAX_REACH as uintb);
             Some((off, extra.zip(span).map(|(e, s)| e + s as intb)))
         }
         _ => None,
@@ -235,9 +284,20 @@ fn pointer_reach(fd: &Funcdata, vn: VarnodeId, sb: VarnodeId, depth: u32) -> Opt
 
 /// Is `vn` the phi output `phi` plus a constant (a pointer walk's back edge)?
 fn steps_from(fd: &Funcdata, vn: VarnodeId, phi: VarnodeId) -> bool {
-    let Some(op) = fd.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
+    let Some(op) = fd
+        .vbank()
+        .get(vn)
+        .and_then(|v| v.get_def())
+        .and_then(|d| fd.obank().get(d))
+    else {
         return false;
     };
-    let constant = |k: int4| op.get_in(k).and_then(|v| fd.vbank().get(v)).is_some_and(|v| v.is_constant());
-    matches!(op.code(), OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD) && op.get_in(0) == Some(phi) && constant(1)
+    let constant = |k: int4| {
+        op.get_in(k)
+            .and_then(|v| fd.vbank().get(v))
+            .is_some_and(|v| v.is_constant())
+    };
+    matches!(op.code(), OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD)
+        && op.get_in(0) == Some(phi)
+        && constant(1)
 }
