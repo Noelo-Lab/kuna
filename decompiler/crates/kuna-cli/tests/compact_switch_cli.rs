@@ -553,6 +553,28 @@ fn cut_row_reaching_the_default_keeps_index_labels() {
     source_round_trip(&fixture, &c);
 }
 
+/// `pick` bounds `mode` to 0..4 and switches on `map[mode]` through a 5-entry
+/// table.  Mode 2's map value falls outside the table, so the flow-time rows
+/// stop at mode 1, while mode 3 still dispatches to mode 1's labelled case.
+/// The index labels would leave mode 3 out, so the cases are labelled by
+/// address, and the table, whose first entry's bytes spell `7A@`, must print
+/// as the table rather than as a string literal.
+#[test]
+fn cut_row_reaching_a_labelled_case_falls_back_to_the_table() {
+    let fixture = SourceFixture {
+        name: "switch_cutrow_labelled_x86_64",
+        pick: "0x40410e",
+        base: 0x403000,
+        map: (0x405030, 20),
+        modes: 40,
+    };
+    let c = source_decompile(&fixture);
+    assert!(c.contains("labelled by address"), "kept index labels that miss mode 3: {c}");
+    assert!(!c.contains('"'), "printed the table as a string literal: {c}");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixture, &c);
+}
+
 fn cut_row(fixture: &SourceFixture) {
     let c = source_decompile(fixture);
     assert!(c.contains("switch("), "lost the switch: {c}");
