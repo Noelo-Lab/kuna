@@ -43,10 +43,10 @@
 //!
 //! The guard is worse than none when the final layout maps a slot it keeps
 //! (the bytes of a guard INDIRECT whose value is read) as more than one local,
-//! maps such a slot inside a guarded store's reach (its bounded reach, or 256
-//! bytes from an unbounded piece's base) outside the local holding the store's
-//! base, or splits or reads as an integer a float local a guarded piece lies
-//! in: the drive then analyzes a freshly built copy of the function without
+//! maps such a slot inside a guarded store's reach (its bounded reach, or
+//! everything at or above an unbounded piece's base) outside the local holding
+//! the store's base, or splits or reads as an integer a float local a guarded
+//! piece lies in: the drive then analyzes a freshly built copy of the function without
 //! the guard (`withdraw_spoiled_guard`), which prints what `stackstoreguard
 //! off` prints.
 
@@ -63,7 +63,7 @@ use crate::dtype::{type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::varmap::{MapState, RangeHint, RangeType};
 
-/// Widest reach, in bytes, that is folded into one local.
+/// Widest bounded reach, in bytes; a wider index is unbounded.
 const MAX_REACH: intb = 0x100;
 
 /// Most stack addresses one pointer may choose between.
@@ -73,7 +73,7 @@ const MAX_PIECES: usize = 8;
 #[derive(Clone, Default)]
 pub(crate) struct ReachChecks {
     /// `(base, end)`: the bytes a guarded store may write from `base`, to the
-    /// end of its bounded reach or `MAX_REACH` past an unbounded piece's base.
+    /// end of its bounded reach or, for an unbounded piece, the top of the frame.
     reaches: Vec<(intb, intb)>,
     /// The guarded store pieces in a float reach.
     floats: Vec<(intb, intb)>,
@@ -150,7 +150,7 @@ pub(crate) fn prepare_hints(
     for (bases, span) in &reaches {
         match span {
             Some(span) => checks.reaches.push(*span),
-            None => checks.reaches.extend(bases.iter().map(|&b| (b, b + MAX_REACH))),
+            None => checks.reaches.extend(bases.iter().map(|&b| (b, intb::MAX))),
         }
     }
     checks.reaches.sort_unstable();

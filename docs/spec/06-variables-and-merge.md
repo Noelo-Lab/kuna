@@ -954,9 +954,10 @@ its end (`&v19[0x20]` into a `char v19[32]`).
 The guard is worse than none wherever the final layout separates what the
 store writes from what is read. Each layout pass records what the final layout
 must satisfy (`Funcdata::note_store_reach_checks`): each guarded store's reach
-(its bounded reach, or 256 bytes from each unbounded piece's base, since
-nothing bounds how far `((u8 *)&s)[i]` or a walk writes), and the guarded store
-pieces in a float reach. After the last pass
+(its bounded reach, or everything at or above each unbounded piece's base,
+since nothing bounds how far `((u8 *)&s)[i]` or a walk writes), and the guarded
+store pieces in a float reach. An index whose known-bits span is 256 bytes or
+more counts as unbounded (`u.b[i & 511]`). After the last pass
 `decompile_drive.rs (run_pipeline)` calls `kuna_storereach.rs
 (withdraw_spoiled_guard)`, which takes the bytes of every guard INDIRECT still
 on the stack whose value some op other than an INDIRECT or MULTIEQUAL reads,
@@ -970,8 +971,10 @@ store, and an index past the base local's end writes outside it (a constant
 `struct { u32 a; u8 b[6]; u16 c; u32 d; }` written by `((u8 *)&s)[i]` and
 mapped as `int v1; unsigned char v2; ...` with `((char *)&v1)[a0] = a1`). The
 same holds for a slot past a smaller array (`char v1[8]; unsigned int v2;
-v1[a0] = a1` for a 16-byte union), and for a separate constant local within 256
-bytes above a walked buffer, which the guard therefore gives up on. A float
+v1[a0] = a1` for a 16-byte union), and for a separate constant local anywhere
+above a walked buffer, which the guard therefore gives up on (`char v1[400];
+unsigned int v2; v1[a0 & 0x1ff] = a1;` for a 512-byte union with a constant
+word at byte 400). A float
 piece is spoiled when no single local covers it, or when its local is read as
 an integer while a member of that variable is typed float
 (`kuna_storereach.rs (read_only_as_float)`): such a read prints as a cast,
