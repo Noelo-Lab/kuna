@@ -1355,6 +1355,9 @@ pub struct Architecture {
     /// (kuna `callrettype`) The (caller, callee) pairs whose statement the
     /// caller's finished variables contradicted ([`crate::kuna_callrettype::refuse`]).
     pub kuna_callret_refused: std::collections::HashSet<crate::kuna_callrettype::Refusal>,
+    /// (kuna `voidret`) The void functions a caller reads a result from, and the
+    /// storage each is decompiled again to return in.
+    pub kuna_voidret: crate::kuna_voidret::Ledger,
     /// (kuna `elemptr`) What each function of a batch said about each global,
     /// and the globals each must not type because another disagrees.
     pub kuna_elemptr: crate::kuna_elemptr::Ledger,
@@ -2593,6 +2596,7 @@ impl Architecture {
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),
             kuna_callret_types: std::collections::HashMap::new(),
             kuna_callret_refused: std::collections::HashSet::new(),
+            kuna_voidret: Default::default(),
             kuna_elemptr: crate::kuna_elemptr::Ledger::default(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive

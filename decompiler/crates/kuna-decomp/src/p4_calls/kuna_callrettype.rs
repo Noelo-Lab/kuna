@@ -83,6 +83,12 @@ fn value_class(t: &Datatype) -> u8 {
 /// Is `t` a value of the other class than `ct` at the same width: an integer
 /// beside a pointer or a pointer beside an integer?
 fn other_class(t: &Datatype, ct: &Datatype) -> bool {
+    t.get_size() == ct.get_size() && value_class(t) != 0 && value_class(ct) != 0 && value_class(t) != value_class(ct)
+}
+
+/// Is `t` an integer or a pointer and `ct`, at the same width, anything but a
+/// value of `t`'s class: [`other_class`], or a float or other type beside it?
+fn differs_in_class(t: &Datatype, ct: &Datatype) -> bool {
     t.get_size() == ct.get_size() && value_class(t) != 0 && value_class(t) != value_class(ct)
 }
 
@@ -165,6 +171,17 @@ pub fn statement(arch: &Architecture, k: (int4, uintb)) -> Option<Rc<StatedRetur
     arch.kuna_callret_types.get(&k).cloned()
 }
 
+/// Do two statements say the same: one storage, one width, one type?
+pub fn same_statement(a: Option<&StatedReturn>, b: Option<&StatedReturn>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.addr == b.addr && a.size == b.size && (Rc::ptr_eq(&a.ct, &b.ct) || a.ct.compare(&b.ct, 10).is_ok_and(|c| c == 0))
+        }
+        _ => false,
+    }
+}
+
 /// Put back `stated`, what the function filed under `k` stated before a
 /// decompile the run then discarded (a `calleevote` or convergence redo that
 /// moved the arity or failed), so the statement keeps describing the body the
@@ -203,10 +220,13 @@ pub fn seed(arch: &Architecture, data: &mut Funcdata) {
         .collect();
     for e in entries {
         let Some(k) = key(&e) else { continue };
-        if Some(k) == own || own.is_some_and(|o| arch.kuna_callret_refused.contains(&(o, k))) {
+        if Some(k) == own {
             continue;
         }
-        if let Some(s) = arch.kuna_callret_types.get(&k) {
+        let Some(s) = arch.kuna_callret_types.get(&k) else { continue };
+        if own.is_some_and(|o| arch.kuna_callret_refused.contains(&(o, k))) {
+            data.kuna_set_callret_withdrawn(k, Rc::clone(s));
+        } else {
             data.kuna_set_callret_type(k, Rc::clone(s));
         }
     }
@@ -357,8 +377,14 @@ fn address_in(data: &Funcdata, a: VarnodeId, high: crate::context::HighVariableI
 /// Where the result of the call `op` lives: its output, or the output of the
 /// conversion `ActionSetCasts` put after it.
 fn result_of(data: &Funcdata, op: OpId) -> Option<VarnodeId> {
-    let out = data.obank().get(op)?.get_out()?;
-    let node = data.vbank().get(out)?;
+    Some(converted_result(data, data.obank().get(op)?.get_out()?))
+}
+
+/// The call output `out`, or the output of the conversion `ActionSetCasts`
+/// put after it: the conversion takes over the output's storage and leaves the
+/// call writing a temporary only it reads.
+pub fn converted_result(data: &Funcdata, out: VarnodeId) -> VarnodeId {
+    let Some(node) = data.vbank().get(out) else { return out };
     let mut reads = node.descend_iter();
     let via_cast = match (reads.next(), reads.next()) {
         (Some(r), None) if node.is_implied() => data
@@ -368,7 +394,7 @@ fn result_of(data: &Funcdata, op: OpId) -> Option<VarnodeId> {
             .and_then(|o| o.get_out()),
         _ => None,
     };
-    Some(via_cast.unwrap_or(out))
+    via_cast.unwrap_or(out)
 }
 
 /// Does a member of `high`, other than the result of `op`, hold a value the
@@ -396,7 +422,7 @@ fn high_contradicts(data: &Funcdata, op: OpId, high: crate::context::HighVariabl
             continue;
         }
         let contradicts = match o.code() {
-            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => result_type(data, def).is_some_and(|t| other_class(&t, ct)),
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => result_type(data, def).is_some_and(|t| differs_in_class(&t, ct)),
             OpCode::CPUI_COPY => pointer && is_number(data, o.get_in(0)),
             OpCode::CPUI_LOAD => pointer && primitive_pointee && o.get_in(1).is_some_and(|a| address_in(data, a, high)),
             OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_INT_MULT => {
@@ -436,6 +462,41 @@ pub fn stated_return_type(data: &Funcdata, op: OpId, fc: &FuncCallSpecs) -> Opti
         return None;
     }
     Some(Rc::clone(&stated.ct))
+}
+
+/// The type the call `op` hands `ActionSetCasts` when the caller keeps the
+/// result as the other class than its callee's statement, which the caller
+/// refused ([`stated_return_type`]) or withdrew ([`contradicted`]).  The
+/// listing still declares the callee's return, so the caller converts it
+/// explicitly: beside `struct_56 *sub_eecc(..)`, `sub_eecc(a0,0) + 0x24` is
+/// pointer arithmetic C scales by the pointee and `long v1 = sub_eecc(a0,v3)`
+/// is not C, where `v1 = (long)sub_eecc(a0,v3)` is.  A float statement is the
+/// token of a result held as a float or as raw bytes, so the call reads as the
+/// `double` it is declared to return (`v5 = sub_70a0(a0,&v4)`, not the identity
+/// `(double)sub_70a0(..)`).
+pub fn refused_token(data: &mut Funcdata, op: OpId) -> Option<Rc<Datatype>> {
+    let (outvn, ct) = {
+        let o = data.obank().get(op)?;
+        if !matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            return None;
+        }
+        let fc = data.get_call_specs(data.get_call_specs_index(op)?);
+        if fc.proto().is_output_locked() {
+            return None;
+        }
+        let stated = data.kuna_callret_stated(key(fc.get_entry_address())?)?;
+        let outvn = o.get_out()?;
+        let out = data.vbank().get(outvn)?;
+        if out.get_size() != stated.size || out.get_addr() != &stated.addr {
+            return None;
+        }
+        (outvn, Rc::clone(&stated.ct))
+    };
+    let held = data.high_get_type(outvn)?;
+    let float = ct.get_metatype() == type_metatype::TYPE_FLOAT
+        && held.get_size() == ct.get_size()
+        && matches!(held.get_metatype(), type_metatype::TYPE_FLOAT | type_metatype::TYPE_UNKNOWN);
+    (other_class(&held, &ct) || float).then_some(ct)
 }
 
 /// Does something the caller declares about the result outrank the statement
@@ -488,7 +549,7 @@ fn declared_contradicts(data: &Funcdata, op: OpId, outvn: VarnodeId, ct: &Dataty
         let Some(node) = data.vbank().get(v) else { continue };
         if let Some(def) = node.get_def().filter(|&d| d != op) {
             if data.obank().get(def).is_some_and(|o| matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
-                && result_type(data, def).is_some_and(|t| other(&t) || other_class(&t, ct))
+                && result_type(data, def).is_some_and(|t| other(&t) || differs_in_class(&t, ct))
             {
                 return true;
             }

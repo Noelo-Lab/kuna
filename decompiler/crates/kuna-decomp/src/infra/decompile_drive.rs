@@ -989,6 +989,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // (kuna `protoorder types`) And for the parameter types earlier callees stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, fd);
         crate::p4_calls::kuna_callrettype::seed(arch, fd);
+        crate::p4_calls::kuna_voidret::seed(arch, fd);
         crate::p4_calls::kuna_calleevote::seed(arch, fd);
         crate::kuna_elemptr::seed(arch, fd);
         // (kuna `calleepreserves`) And for the call-guard seam's view of the
@@ -1299,6 +1300,8 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, &mut fd);
         // (kuna `callrettype`) And the return types they stated.
         crate::p4_calls::kuna_callrettype::seed(arch, &mut fd);
+        // (kuna `voidret`) The return storage its callers read, when it is due.
+        crate::p4_calls::kuna_voidret::seed(arch, &mut fd);
         // (kuna `calleevote`) What every caller of this function passes.
         crate::p4_calls::kuna_calleevote::seed(arch, &mut fd);
         // (kuna `elemptr`) The globals another function of the batch disagrees about.

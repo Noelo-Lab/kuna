@@ -331,7 +331,7 @@ fn is_register(addr: &Address) -> bool {
 }
 
 /// Does any Varnode of the function share a byte with `[addr, addr+size)`?
-fn touched(data: &Funcdata, addr: &Address, size: int4) -> bool {
+pub(crate) fn touched(data: &Funcdata, addr: &Address, size: int4) -> bool {
     touched_by(data, addr, size, false)
 }
 

@@ -38,6 +38,9 @@ fn check(probe: Probe) {
     for test in [
         "a_float_pointee_keeps_the_callers_integer_stores_round_trip",
         "an_implied_cast_round_trips_through_the_printed_c",
+        "a_float_register_return_and_a_read_void_result_round_trip",
+        "a_nan_returned_in_s0_round_trips",
+        "a_wrapper_returns_its_callees_result_round_trip",
     ] {
         let output = process::output_with_timeout(
             Command::new(std::env::current_exe().unwrap())

@@ -82,8 +82,14 @@ pub(crate) fn decompile_callee_first(
     let mut slots: Vec<Option<FuncResult>> = (0..targets.len()).map(|_| None).collect();
     prog.arch().kuna_pointerargs.borrow_mut().start();
     kuna_decomp::kuna_elemptr::start(prog.arch_mut(), true);
+    prog.arch_mut().kuna_voidret = Default::default();
+    let mut reads = VoidReads::default();
     for &(index, park) in &plan {
         slots[index] = Some(decompile_planned(prog, &targets[index], park, &base));
+        if let Some(k) = vote_key(&targets[index]) {
+            reads.decompiled(k);
+        }
+        reads.settle(prog, &targets, &plan, &base, &mut slots);
     }
     if let Some(expected) = expected {
         callee_vote_rounds(prog, &targets, &plan, &base, &mut slots, &expected);
@@ -99,6 +105,91 @@ pub(crate) fn decompile_callee_first(
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
     prog.arch().kuna_pointerargs.borrow_mut().stop();
     slots.into_iter().flatten().collect()
+}
+
+/// (kuna `voidret`) How many rounds of redos one settling takes at most. A
+/// redone wrapper reads its own callee's result, so each round reaches one
+/// function further down a chain of wrappers, and one caller further up it
+/// once the wrapper returns.
+const VOID_READ_ROUNDS: usize = 10;
+
+/// (kuna `voidret`) When each function was last decompiled, and when a redo
+/// last changed each function's recovered return, in decompiles counted from
+/// the start of the run.
+#[derive(Default)]
+struct VoidReads {
+    stamp: usize,
+    stamp_of: BTreeMap<(i32, u64), usize>,
+    changed: BTreeMap<(i32, u64), usize>,
+}
+
+impl VoidReads {
+    fn decompiled(&mut self, k: (i32, u64)) {
+        self.stamp += 1;
+        self.stamp_of.insert(k, self.stamp);
+    }
+
+    /// Decompile again, in plan order, every function recovered `void` whose
+    /// result a caller reads, returning in the storage the callers read
+    /// (`kuna_decomp::kuna_voidret`), every function whose float return a
+    /// reader keeps as another type, and every reader of a function whose
+    /// return a redo changed after the reader was decompiled, until none is
+    /// left. It runs after each function of the callee-first plan, so a
+    /// wrapper is redone as soon as its first reader is decompiled: only that
+    /// reader is decompiled again, and every later one reads the wrapper's
+    /// return the first time. A redo that fails keeps the first body.
+    fn settle(
+        &mut self,
+        prog: &mut ConsoleProgram,
+        targets: &[FunctionEntry],
+        plan: &[(usize, bool)],
+        base: &kuna_console::project::DecompileOptions,
+        slots: &mut [Option<FuncResult>],
+    ) {
+        for _ in 0..VOID_READ_ROUNDS {
+            let mut redo = kuna_decomp::kuna_voidret::due(prog.arch_mut());
+            redo.extend(kuna_decomp::kuna_voidret::withdrawals(prog.arch_mut()));
+            redo.extend(kuna_decomp::kuna_voidret::stale_readers(prog.arch(), &self.stamp_of, &self.changed));
+            if redo.is_empty() {
+                break;
+            }
+            self.redo_in_plan_order(prog, targets, plan, base, slots, &redo);
+        }
+    }
+
+    /// Decompile again, in plan order, every target keyed in `keys`, noting
+    /// those whose recovered return the redo changed.
+    fn redo_in_plan_order(
+        &mut self,
+        prog: &mut ConsoleProgram,
+        targets: &[FunctionEntry],
+        plan: &[(usize, bool)],
+        base: &kuna_console::project::DecompileOptions,
+        slots: &mut [Option<FuncResult>],
+        keys: &BTreeSet<(i32, u64)>,
+    ) {
+        for &(index, park) in plan {
+            let Some(k) = vote_key(&targets[index]).filter(|k| keys.contains(k)) else { continue };
+            let stated = kuna_decomp::kuna_callrettype::statement(prog.arch(), k);
+            let returns = kuna_decomp::kuna_voidret::returns(prog.arch(), k);
+            let again = decompile_planned(prog, &targets[index], park, base);
+            if slots[index].as_ref().is_none_or(|first| kuna_console::project::redo_replaces(first, &again)) {
+                slots[index] = Some(again);
+            } else {
+                kuna_decomp::kuna_callrettype::restore(prog.arch_mut(), k, stated.clone());
+                kuna_decomp::kuna_voidret::restore(prog.arch_mut(), k, returns);
+            }
+            self.decompiled(k);
+            if kuna_decomp::kuna_voidret::returns(prog.arch(), k) != returns
+                || !kuna_decomp::kuna_callrettype::same_statement(
+                    stated.as_deref(),
+                    kuna_decomp::kuna_callrettype::statement(prog.arch(), k).as_deref(),
+                )
+            {
+                self.changed.insert(k, self.stamp);
+            }
+        }
+    }
 }
 
 /// (kuna `elemptr`) [`kuna_console::project::converge_element_globals`] in plan

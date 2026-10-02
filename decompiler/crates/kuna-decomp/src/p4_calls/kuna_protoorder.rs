@@ -1077,6 +1077,88 @@ fn in_a_float_register(list: Option<&crate::p4_calls::fspec::ParamListStandard>,
         .is_some_and(|(l, i)| l.get_entry()[i].get_type() == crate::dtype::type_class::TYPECLASS_FLOAT)
 }
 
+/// Does the call `call` read its argument `slot` as a float: a declared
+/// parameter of one, or the type the callee's own decompile stated for it?
+pub(crate) fn reads_a_float(data: &Funcdata, call: OpId, slot: int4) -> bool {
+    printed_reader_class(data, call, slot) == Some(Class::Float)
+}
+
+/// The class of the parameter a listing prints at argument `slot` of the call
+/// `call`: the declared parameter's when it is type-locked, else the type the
+/// callee's own decompile stated or recovered for its parameter at that
+/// position, wherever the caller's recovery put the argument.  Raw bytes print
+/// as an unsigned integer.  Asked where a mismatch would print a conversion,
+/// not to vote.
+fn printed_reader_class(data: &Funcdata, call: OpId, slot: int4) -> Option<Class> {
+    let printed = |t: &Datatype| {
+        class_of(t).or((t.get_metatype() == type_metatype::TYPE_UNKNOWN).then_some(Class::Integer))
+    };
+    let fc = data.get_call_specs(data.get_call_specs_index(call)?);
+    if let Some(param) = fc.proto().get_param(slot - 1).filter(|p| p.is_type_locked()) {
+        return param.get_type().and_then(|t| printed(t));
+    }
+    let index = (slot - 1) as usize;
+    let entry = fc.get_entry_address();
+    if let Some(class) = data.kuna_protoorder_types(entry).and_then(|s| s.inputs.get(index).and_then(|(_, _, t)| printed(t))) {
+        return Some(class);
+    }
+    let key = (entry.get_space()?.get_index(), entry.get_offset());
+    data.kuna_callee_param_float(key, index).map(|f| if f { Class::Float } else { Class::Integer })
+}
+
+/// Does the call `call` read its argument `slot` as an integer or a pointer, by
+/// its declaration or the type the callee's own decompile stated?
+pub(crate) fn reads_other_than_a_float(data: &Funcdata, call: OpId, slot: int4) -> bool {
+    matches!(printed_reader_class(data, call, slot), Some(Class::Integer | Class::Pointer))
+}
+
+/// Does the function move an integer through the pointer the LOAD `load` reads
+/// through, at the load's width, anywhere but that load?  A float vote on the
+/// loaded value types the pointer, and every such access with it: `fld(p)`
+/// that writes `p[1] = p[0] + 1` and returns `*(float *)p` in `s0` printed
+/// `a0[1] = (float)((int)*a0 + 1)`.  `true` when the accesses are too many to
+/// follow.
+pub(crate) fn moves_integers_beside(data: &Funcdata, load: OpId, size: int4) -> bool {
+    let Some(mut base) = data.obank().get(load).and_then(|o| o.get_in(1)) else { return false };
+    for _ in 0..8 {
+        let Some(o) = data.vbank().get(base).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d)) else { break };
+        match o.code() {
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_PTRADD | OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
+                let Some(b) = o.get_in(0) else { break };
+                base = b;
+            }
+            _ => break,
+        }
+    }
+    let Some((accesses, _)) = accesses_through(data, &value_family(data, base)) else { return true };
+    accesses.iter().filter(|a| a.op != load && a.size == size).any(|a| carries_an_integer(data, a.value))
+}
+
+/// Is the value `vn` an integer to the function: computed by or read by an
+/// integer op, handed to or produced by a call as one, or a constant other than
+/// zero?
+fn carries_an_integer(data: &Funcdata, vn: VarnodeId) -> bool {
+    value_family(data, vn).into_iter().any(|v| {
+        let Some(node) = data.vbank().get(v) else { return false };
+        if node.is_constant() {
+            return node.get_offset() != 0;
+        }
+        let defined = node.get_def().and_then(|d| data.obank().get(d).map(|o| (d, o))).is_some_and(|(d, o)| match o.code() {
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => writer_class(data, d) == Some(Class::Integer),
+            code => produced_class(code) == Some(Class::Integer) || integer_but_pointer_neutral(code),
+        });
+        defined
+            || node.descend_iter().any(|r| {
+                data.obank().get(r).is_some_and(|o| match o.code() {
+                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                        (1..o.num_input()).any(|s| o.get_in(s) == Some(v) && reader_class(data, r, s) == Some(Class::Integer))
+                    }
+                    code => read_class(code) == Some(Class::Integer) || integer_but_pointer_neutral(code),
+                })
+            })
+    })
+}
+
 /// The class a call reads its argument `slot` as: the declared parameter's when
 /// the parameter is type-locked, else the type a callee stated for it.
 fn reader_class(data: &Funcdata, call: OpId, slot: int4) -> Option<Class> {

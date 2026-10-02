@@ -828,6 +828,13 @@ pub(crate) fn get_output_token(
             Some(in2) => data.vn_high_type_read_facing(in2, op),
             None => output_type_local(data, op),
         },
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+            let local = output_type_local(data, op);
+            if local.get_metatype() != type_metatype::TYPE_UNKNOWN {
+                return local;
+            }
+            crate::p4_calls::kuna_callrettype::refused_token(data, op).unwrap_or(local)
+        }
         // TypeOp::getOutputToken default.
         _ => output_type_local(data, op),
     }

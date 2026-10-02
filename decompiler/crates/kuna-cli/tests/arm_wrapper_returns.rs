@@ -328,11 +328,11 @@ fn a_call_then_return_wrapper_hands_back_its_callee_result() {
             function(&text, "consumer").contains("wrapper(a0)"),
             "{kind}: {text}"
         );
+        // `consumer` reads r0 after the call, so decompile-all's `voidret` redo
+        // returns it without passthrough; only an unread result stays void.
         let off = run(kind, false, None);
-        assert!(
-            function(&off, "wrapper").contains("void wrapper("),
-            "{kind}: {off}"
-        );
+        let want = if kind == "unused" { "void wrapper(" } else { "return provider(a0);" };
+        assert!(function(&off, "wrapper").contains(want), "{kind}: {off}");
     }
     let text = run("direct", true, None);
     assert!(
@@ -373,13 +373,16 @@ fn a_call_then_return_wrapper_hands_back_its_callee_result() {
 
 #[test]
 fn clobbers_cycles_indirect_calls_and_void_callees_are_not_evidence() {
-    for kind in ["sink", "cycle", "indirect"] {
+    for kind in ["sink", "cycle"] {
         let text = run(kind, true, None);
         assert!(
             function(&text, "wrapper").contains("void wrapper("),
             "{kind}: {text}"
         );
     }
+    // Neither is passthrough's evidence, but `consumer` reads r0 after the call.
+    let text = run("indirect", true, None);
+    assert!(function(&text, "wrapper").contains("return (*a3)();"), "{text}");
     let text = run("overwrite", true, None);
     assert!(function(&text, "wrapper").contains("return 7;"), "{text}");
     assert!(
@@ -388,7 +391,7 @@ fn clobbers_cycles_indirect_calls_and_void_callees_are_not_evidence() {
     );
     let text = run("setarg", true, None);
     assert!(
-        function(&text, "wrapper").contains("void wrapper("),
+        function(&text, "wrapper").contains("return provider((unsigned int *)0x5);"),
         "{text}"
     );
     assert!(function(&text, "wrapper").contains("provider("), "{text}");
@@ -469,6 +472,6 @@ fn mips_wrappers_hand_back_their_callee_result() {
             "{text}"
         );
         let off = decompile(&mips_image(big), "elf", false, None);
-        assert!(function(&off, "wrapper").contains("void wrapper("), "{off}");
+        assert!(function(&off, "wrapper").contains("return provider("), "{off}");
     }
 }

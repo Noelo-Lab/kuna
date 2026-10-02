@@ -2386,6 +2386,117 @@ member access from pointer types, and `ruleaction_6.rs (RulePtraddUndo,
 RulePtrsubUndo)` in the main pool reverts them when the types they were built
 from degrade — the visible ping that the 7-pass ceiling exists to bound.
 
+### A value returned in a float register is a float (`kuna_floatreg.rs`)
+
+A calling convention that reserves registers for floating point makes the
+register the declaration of what a function returns there: a value returned in
+`xmm0`, `s0` or `ST0` is a float of that register's width. The fold above hears
+nothing of it when the value is only moved -- a constant, a float callee's
+result handed back -- so the value was typed an integer, and every caller that
+used it as a float printed `(float)f()`, which C evaluates as a conversion of the
+bits' integer value. On a Cortex-M4F the `nanf` crazyflie's libm calls loads
+0x7fc00000 into `s0`; it printed `unsigned int sub_80049bc(void) { return
+0x7fc00000; }`, and the error path that returned it printed `(float)sub_80049bc()`,
+which is 2143289344.0 where the machine returns a NaN.
+
+This is a correction, not an option.
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_floatreg.rs (float_register_vote)`
+supplies the candidate in `build_localtypes`, after every other vote, for a 4-,
+8- or 10-byte Varnode that is not type-locked, whose fold says no more than an
+integer or raw bytes, and that a RETURN reads from a float-class entry of the
+model's output list (the output not locked: a declared prototype says what it
+says). Float-class is the entry's `metatype="float"` in the compiler spec, so a
+soft-float convention, which has no such entry, is untouched, and a 16-byte
+`xmm0` value (a vector, two packed floats) is never a float. An x87 register
+(`ST0`, a 10-byte entry) holds a float only whole: an 8-byte piece of it is not a
+`double`, and x86-64 code that falls into padding decoded as `fldz` once printed
+`double sub_20fea(..) { ... return 0.0; }` for openssh's `sshbuf_put_cstring`.
+An entry narrower than a `double` -- ARM hard-float's `s0` to `s15`, where a
+`double` is a join of two of them -- holds a whole float only when the function
+never uses the pair whole (`kuna_floatreg.rs (pair_used_whole)`): no op other
+than a call's, a return's, an INDIRECT or a MULTIEQUAL reads or writes one value
+spanning both halves. The pair is checked when the function's calls are linked
+(`kuna_floatreg.rs (note_float_pairs)`, from `ActionFuncLink`), before any fold
+can remove the write: `vldr d0, [pc]` loads a `double` whose `s1` half dead-code
+removal drops once the constant is folded, and what is left in `s0` is not a
+float.
+
+What a function receives is not voted. Its callers decide what they pass, and a
+function that only hands its parameter on or back cannot see them:
+`float pass(float x) { return x; }` typed so, `pass(p[1])` of an `int *` converts
+the integer by value where the machine hands its bits to `xmm0`, and a Cortex-M4F
+`putf2(float x, ...)` that moves `s0` into `r0` for `put3(u32, ...)` printed
+`put3(a0,..)` of a `float a0`, storing 1 where the machine stores 0x3fc00000.
+So the candidate is refused when the value's family (every Varnode joined to it
+by copies, casts, phi-nodes and INDIRECTs) holds one of the function's inputs.
+It is refused where `protoorder` refuses a callee's float vote (chapter 04;
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_protoorder.rs (input_refuses)`):
+an integer op computes with the family, it is stored, pieced together or taken
+apart, handed on anywhere a float would print as a conversion, or read from or
+written to a global. A global has one declaration for every function, and
+another function may read it as an integer: `float gi_as_f(void) { return gi; }`
+beside `int use_gi(void) { return gi + 1; }` has no declaration of `gi` under
+which both print what the machine computes, so `gi_as_f` stays `unsigned int`, as
+does a float constant x86-64 loads from `.rodata` (`return dat_20f8;`).
+
+It is refused where the family crosses a call as anything no declaration or
+recovery makes a float (`kuna_floatreg.rs (crosses_a_call_as_other_than_a_float)`):
+handed to a parameter that is not a float -- by the call's declared prototype,
+or by the type the callee's own decompile stated or recovered for the parameter
+at that position (`kuna_protoorder.rs (reads_a_float)`) -- or produced by a call
+whose return is not one: a locked output, the return the callee's decompile
+stated to `callrettype` (even where this caller withdrew the statement), or the
+float return `voidret` recorded for it (`kuna_floatreg.rs (call_returns_a_float)`).
+A call the function cannot see the other side of refuses as well. `absf`
+computes on the bits with `andps` and returns `unsigned long`, and a wrapper
+voting float printed `return (float)absf(a0);`, a value conversion. It is
+refused for a value loaded through a pointer the function also moves integers
+through at the load's width (`kuna_protoorder.rs (moves_integers_beside)`): the
+float would type the pointer, and `p[1] = p[0] + 1` beside `return *(float *)p;`
+printed `a0[1] = (float)((int)*a0 + 1)`. And every constant the family's copies
+and joins take in must spell exactly (`kuna_floatreg.rs (spells_exactly)`): the
+printer spells every NaN `NAN` or `-NAN`, which compile back to the canonical
+quiet NaN, so a NaN with any other payload, a signalling NaN included, refuses,
+which is what keeps a literal-pool `vldr s0` of 0x7fc00123 its bits.
+
+The function returns one type in the register, so the candidate for one
+RETURN's value answers for every value a live RETURN hands back in that slot
+(`kuna_floatreg.rs (returned_beside)`): each is checked as above, and a constant
+returned as it is must spell exactly. `if (k) return packed.f; return 0.0f;`
+compiles to a `ret` on each path; the constant alone voted a float, and the
+global on the other path became one with it (crazyflie's packed-field getters,
+`ldr.w r3, [r3, #7]; vmov s0, r3`).
+
+An import stub's jump through its slot (`jmp *nanf@GOT`, recovered as a
+`CALLIND` whose result the stub returns) is typed the stub's own return when that
+is a float (`kuna_floatreg.rs (jump_result_type)`, the call's output local type):
+the stub's declared `double strtod(..)`, or the float its register makes it, the
+jump's own result standing for what the stub returns. Untyped, the stub printed
+`v1 = (float)(*dat_4018)();`, converting what the target handed back.
+
+The type then becomes the function's return type (`ActionOutputPrototype`) and
+reaches callers through `callrettype`. One declaration serves every caller, so
+where a caller keeps the float result as anything else -- holds it in an
+integer, converts it, hands it to an integer parameter, stores it through an
+integer pointer, or returns it as an integer -- `decompile-all` withdraws the
+vote on that function's return and decompiles it and its readers again
+(`voidret`'s withdrawals, chapter 04; `Funcdata::kuna_float_return_withdrawn`,
+read by `kuna_floatreg.rs (returned_in_a_float_register)`), and the function
+returns the integer it did before. A function whose own return then converts the
+voted value from the type its body reads it as does the same. Over the 45-binary
+cast corpus (20,230 functions) it changes 13 return types to a float: the
+`strtod`, `modf` and `atof` import stubs and tail's `strtod` wrappers. On 40 other
+binaries (41,282 functions, most of them ARM hard-float firmware: crazyflie,
+betaflight, cleanflight, nuttx, libopencm3's `mandel`) it changes 110. Implicit
+conversions between an integer and a float -- an argument of the other class
+than the parameter the listing prints for it, an assignment of a call result of
+the other class, a return of the other class -- stay 910 on those 40 binaries,
+none new, and go from 15 to 18 on the cast corpus: find's
+`get_relative_timestamp` now receives its `double` in `xmm0` (`modf`'s
+declaration shows the body multiplying it), and the three callers that never
+set that register pass one argument too few, which the counter reads
+positionally.
+
 ## 5.3 Ranges & consume bits
 
 The rest of the S5 fact fabric (the framing derives from the study in

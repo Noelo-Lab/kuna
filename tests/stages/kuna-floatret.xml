@@ -1,0 +1,99 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A value a function returns in a register its calling convention reserves
+    for floating point is a float of that register's width (kuna_floatreg.rs).
+    A strict correction: there is no option, and the one pass is the fix.
+
+    The XML wrapper only provides the harness architecture. The script loads
+    two in-tree fixtures (sources beside them).
+
+    floatret_cm4.o is a Cortex-M4F object: qnanf_ loads the quiet NaN
+    0x7fc00000 into s0 and returns it. Nothing computes with the value as a
+    float, so the fold typed it an integer: qnanf_ returned 0x7fc00000 as an
+    unsigned int, and a caller that used the result as a float converted the
+    bits as a number (the NaN became 2143289344.0). s0 is a float register, so
+    it is float4 and the constant prints as NAN. logish returns -INFINITY in
+    s0 on one path and the results of core and qnanf_ on the others; decompiled
+    alone it knows neither callee's return, a float would convert both by
+    value, so the function returns the same register as the bits it is
+    (0xff800000). decompile-all, which knows both callees return floats, types
+    it float (decompile_all_cli.rs a_nan_returned_in_s0_round_trips).
+
+    floatret_x86_64 is a stripped clang -O0 PIE: sub_11c0 and sub_11d0 return
+    a global float and double in xmm0 and stay integers: one declaration of a
+    global serves every function, and another may read it as an integer.
+    sub_11f0 returns its float parameter untouched and stays an unsigned int:
+    what a function receives is its callers' to type, and a caller passing it
+    an integer would print a conversion by value.
+
+    floatret_put_cm4.o is a Cortex-M4F object: putf2 moves its three float
+    parameters from s0-s2 into r0-r2 and tail-calls put3, which takes them as
+    u32. They stay integers: typed float4, putf2 would hand put3 each value
+    converted to an integer instead of its bits.
+
+    The refusals: qp, sn and nn return NaNs NAN cannot spell (a payload, a
+    signalling NaN, a negative payload) and keep their bits, and third loads a
+    double into d0, whose low half s0 is not a float. An ARM hard-float double
+    argument is pinned elsewhere: it arrives as the two halves s0 and s1, so
+    fmtlf_armhf's show keeps unsigned int halves (kuna-formatstring-static.xml,
+    FMTSTATIC #21).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatret_cm4.o</com>
+  <com>read symbols</com>
+  <com>load function qnanf_</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function logish</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function qp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function nn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function third</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatret_x86_64</com>
+  <com>read symbols</com>
+  <com>load function sub_11c0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sub_11d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function sub_11f0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatret_put_cm4.o</com>
+  <com>read symbols</com>
+  <com>load function putf2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FLOATRET #1: a NaN returned in s0 is a float" min="1" max="1">float4 qnanf_\(void\)</stringmatch>
+<stringmatch name="FLOATRET #2: and prints as NAN, not its bits" min="1" max="1">return NAN;</stringmatch>
+<stringmatch name="FLOATRET #3: a function also returning calls it cannot see the type of is not a float" min="1" max="1">unsigned int logish\(float4 a0\)</stringmatch>
+<stringmatch name="FLOATRET #4: and returns -INFINITY as its bits" min="1" max="1">return 0xff800000;</stringmatch>
+<stringmatch name="FLOATRET #5: the quiet NaN is not returned as an integer" min="0" max="0">0x7fc00000</stringmatch>
+<stringmatch name="FLOATRET #6: a global returned in xmm0 is not typed a float" min="0" max="0">float[48] sub_11[cd]0\(void\)</stringmatch>
+<stringmatch name="FLOATRET #7: NaNs NAN cannot spell keep their bits" min="3" max="3">return (0x7fc00123|0x7fa00000|0xffc00005);</stringmatch>
+<stringmatch name="FLOATRET #8: a parameter handed back untouched is its callers' to type" min="1" max="1">unsigned int sub_11f0\(unsigned int a0\)</stringmatch>
+<stringmatch name="FLOATRET #9: neither those NaNs nor the low half of a double in d0 is a float" min="0" max="0">float[48] (qp|sn|nn|third)\(</stringmatch>
+<stringmatch name="FLOATRET #10: a float handed on to an integer parameter keeps its bits" min="1" max="1">void putf2\(unsigned int a0,unsigned int a1,unsigned int a2,</stringmatch>
+</decompilertest>
