@@ -113,7 +113,7 @@ pub fn scan_wide_strings(file: &object::File, min_len: usize) -> Vec<StringFact>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::{scan_run, DEFAULT_MIN_LEN};
+    use super::super::{scan_run, DEFAULT_WIDE_MIN_LEN};
 
     #[test]
     fn utf16_run_is_the_ascii_matcher_widened() {
@@ -185,14 +185,14 @@ mod tests {
             concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/widestrings_x86_64.exe");
         let bytes = std::fs::read(path).expect("read widestrings_x86_64.exe");
         let file = object::File::parse(bytes.as_slice()).expect("parse widestrings_x86_64.exe");
-        let wide = scan_wide_strings(&file, DEFAULT_MIN_LEN);
+        let wide = scan_wide_strings(&file, DEFAULT_WIDE_MIN_LEN);
         assert!(
             wide.contains(&StringFact { addr: 0x140002100, len: 20 }),
             "wide ntdll.dll @ 0x140002100 len 20 not detected: {wide:?}"
         );
         // And the 1-byte pass still sees nothing there — the gap this closes.
         assert!(
-            !super::super::scan_strings(&file, DEFAULT_MIN_LEN)
+            !super::super::scan_strings(&file, DEFAULT_WIDE_MIN_LEN)
                 .iter()
                 .any(|f| f.addr == 0x140002100),
             "the ASCII width must not claim the wide literal"

@@ -1392,12 +1392,14 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
 - **Strings** (`strings`, the `StringsAnalyzer` port,
   `decompiler/crates/kuna-analysis/src/analyzers/strings/mod.rs`): scan allocated,
   initialized sections for runs of printable ASCII (plus CR/LF/TAB) ended by a NUL,
-  minimum visible length **5**; each hit commits a *typelocked* `char[len+1]` data
+  minimum visible length **4**; each hit commits a *typelocked* `char[len+1]` data
   symbol (`s_<addr>`) — the typelock is what carries the array type through type
   propagation, and the printer renders the literal, not the name. LOSS: Ghidra
   additionally scores candidates with a trigram model (`StringModel.sng`, not
   vendored), so kuna over-accepts random printable NUL-terminated runs; real
-  literals are unaffected.
+  literals are unaffected. Kuna uses four rather than Ghidra's default five so
+  command and mode literals such as `quit`, `show`, `bind`, `fork`, and `dup2`
+  do not remain raw addresses in stripped binaries.
 - **Wide strings** (`widestrings`, the `StringsAnalyzer` `allCharWidths` arm,
   `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_widestrings.rs
   (scan_wide_strings)`): the same matcher over 2-byte little-endian code units —
