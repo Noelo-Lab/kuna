@@ -1812,6 +1812,11 @@ impl Rule for RulePropagateCopy {
             if !vn_is_heritage_known(data, invn) {
                 continue; // Don't propagate free's away from their first use
             }
+            // (kuna) a store of a value used as an address into a global keeps
+            // its COPY; see [`crate::p3_dataflow::kuna_pointeestorekeep`].
+            if crate::p3_dataflow::kuna_pointeestorekeep::declines(data, op, vn, invn) {
+                continue;
+            }
             if invn == vn {
                 // throw LowlevelError("Self-defined varnode") -- internal invariant.
                 panic!("RulePropagateCopy: Self-defined varnode");

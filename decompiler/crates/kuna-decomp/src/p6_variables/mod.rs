@@ -30,3 +30,4 @@ pub mod kuna_impliedrefs;
 pub mod kuna_bytehonest;
 pub mod kuna_slotptr;
 pub mod kuna_hideshadow;
+pub mod kuna_pointeevalue;
