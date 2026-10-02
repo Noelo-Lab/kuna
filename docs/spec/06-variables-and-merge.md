@@ -889,9 +889,12 @@ is never assigned (`unsigned int v2; unsigned short v3; ... return v3 * 5;`).
 (ScopeLocal::restructure)` tracks the furthest byte any hint merged or joined
 into the current range covers. An open range that starts at one of those bases
 absorbs every unlocked hint that starts before that byte instead of ending
-there, so it still ends at the next hint after it, as every open range does. A
-type-locked hint is never absorbed this way, and an open range that starts
-anywhere else ends as upstream's does: the same split also follows a buffer
+there, so it still ends at the next hint after it, as every open range does.
+Such a range also stays open when merging an overlapping hint concedes it to a
+fixed unknown of the union's size: a walk from `&u.b[i % 4]` writes past the
+first word, and a fixed word would end the local there. A type-locked hint is
+never absorbed this way, an aggregate type does not reopen, and an open range
+that starts anywhere else ends as upstream's does: the same split also follows a buffer
 that escapes to a call (`g(&u.b[i & 7])`), which no store guard covers and this
 option leaves alone.
 

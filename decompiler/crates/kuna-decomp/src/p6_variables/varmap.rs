@@ -1566,14 +1566,23 @@ impl ScopeLocal {
         while state.get_next() {
             let next: RangeHint = state.next().clone();
             let next_end = next.sstart.wrapping_add(next.size as int8);
+            let absorbing = state.absorbing_bases.binary_search(&cur.sstart).is_ok();
             if next.sstart < cur.sstart.wrapping_add(cur.size as int8) {
                 // Do the ranges intersect — union them.
+                let was_open = cur.range_type == RangeType::Open;
                 if cur.merge(&next, &self.space, types)? {
                     overlap_problems = true;
                 }
                 cur_end = cur_end.max(next_end);
+                let aggregate = matches!(
+                    cur.type_.get_metatype(),
+                    type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION | type_metatype::TYPE_ARRAY
+                );
+                if absorbing && was_open && !cur.is_type_lock() && !aggregate {
+                    cur.range_type = RangeType::Open;
+                }
             } else if cur.range_type == RangeType::Open
-                && state.absorbing_bases.binary_search(&cur.sstart).is_ok()
+                && absorbing
                 && next.range_type != RangeType::Endpoint
                 && !next.is_type_lock()
                 && next.sstart < cur_end
