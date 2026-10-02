@@ -236,6 +236,9 @@ pub struct SubvariableFlow {
     /// (kuna `truncarg`) Call slots `try_call_pull` trims whose dropped bits are
     /// known zero.
     zext_pulls: Vec<(OpId, int4)>,
+    /// (kuna `zextreturn`) RETURNs `try_return_pull` trims whose dropped bits
+    /// are known zero, where the convention extends the narrow value by its sign.
+    zext_returns: Vec<OpId>,
 }
 
 impl SubvariableFlow {
@@ -616,6 +619,11 @@ impl SubvariableFlow {
                     && retop != op
                 {
                     // Trace won't revisit this RETURN, so generate the patch now.
+                    if let Some(storage) = self.rv(rvn).vn {
+                        if crate::kuna_zextreturn::unsigned_trim(data, retvn, storage, rmask, self.flowsize) {
+                            self.zext_returns.push(retop);
+                        }
+                    }
                     self.patchlist.push(PatchRecord {
                         typ: PatchType::ParameterPatch,
                         patch_op: retop,
@@ -627,6 +635,10 @@ impl SubvariableFlow {
                 }
             }
             self.returns_traversed = true;
+        }
+        let r = self.rv(rvn);
+        if r.vn.is_some_and(|vn| crate::kuna_zextreturn::unsigned_trim(data, vn, vn, r.mask, self.flowsize)) {
+            self.zext_returns.push(op);
         }
         self.patchlist.push(PatchRecord {
             typ: PatchType::ParameterPatch,
@@ -2083,6 +2095,7 @@ impl SubvariableFlow {
             worklist: Vec::new(),
             pullcount: 0,
             zext_pulls: Vec::new(),
+            zext_returns: Vec::new(),
         };
         if mask == 0u64 {
             // fd = 0; return;  -- invalid engine
@@ -2269,6 +2282,8 @@ impl SubvariableFlow {
                     data.op_set_input(pullop, v, slot)?;
                     let zext = self.zext_pulls.contains(&(pullop, slot));
                     crate::kuna_truncarg::note_trimmed_arg(data, pullop, slot, zext);
+                    let unsigned = self.zext_returns.contains(&pullop);
+                    crate::kuna_zextreturn::note_trimmed_return(data, pullop, unsigned);
                 }
                 PatchType::ExtensionPatch => {
                     // operations that flow the small variable into a bigger variable

@@ -480,6 +480,11 @@ fn build_localtypes(data: &mut Funcdata) {
         } else {
             crate::kuna_floatreg::float_register_vote(data, vn, &ct).unwrap_or(ct)
         };
+        let ct = if from_seed {
+            ct
+        } else {
+            crate::kuna_zextreturn::unsigned_return_vote(data, vn, &ct).unwrap_or(ct)
+        };
         let v = data.vbank_mut().get_mut(vn).expect("build_localtypes: stale vn");
         if needs_block {
             v.set_stop_up_propagation();

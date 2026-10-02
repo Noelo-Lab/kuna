@@ -199,6 +199,10 @@ pub mod pcodeop_addlflags {
     /// unprototyped call or a return reading it consumes only the value it
     /// widens.  Set and read by [`crate::p4_calls::kuna_narrowext`].
     pub const kuna_narrowext: uint4 = 0x8000;
+    /// (kuna) This RETURN's value was trimmed from a zero-extension that the
+    /// calling convention would only perform for an unsigned type.  Set and read
+    /// by [`crate::p5_types::kuna_zextreturn`].
+    pub const kuna_zextreturn: uint4 = 0x10000;
 }
 
 // ---------------------------------------------------------------------------
