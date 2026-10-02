@@ -63,6 +63,7 @@
 use object::read::{Object, ObjectSymbol};
 use object::SymbolKind;
 
+use crate::loader::kuna_armfloatabi;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, ContextPaint, Phase, SymFact, SymKind};
 
 /// The SLEIGH processor-context variable steering ARM/Thumb instruction decode.
@@ -101,6 +102,19 @@ fn is_arm_marker(name: &str) -> bool {
 ///    documented no-op (no `createUndefinedData` at this tier).
 /// 2. **STT_FUNC with `st_value & 1`** (the Thumb odd-address convention): emit
 ///    `TMode=1` at the normalized even address `value & !1`.
+///
+/// Without mapping symbols, on an image that has a Thumb STT_FUNC and whose
+/// build attributes allow A32 code ([`kuna_armfloatabi::thumb_only`] is false),
+/// the address bit is read both ways: an even STT_FUNC paints `TMode=0` over
+/// exactly `[st_value, st_value + st_size)`, so a Thumb function's paint skips
+/// the A32 function instead of running across it, and resumes after it over code
+/// no symbol names. One without a size (crt `_init`/`_fini`, assembly without
+/// `.size`) paints up to the next function symbol, or to the next change point
+/// when it is the last. An image with no Thumb STT_FUNC has no such paint to
+/// bound, and keeps the plain scan. Mapping symbols, where present, already delimit every
+/// mode run and take precedence. An image whose odd `e_entry` is its only Thumb
+/// evidence ([`unmarked_thumb_entry`]) keeps the plain scan, as it keeps the
+/// plain Listing walk.
 pub(crate) fn scan_arm_markers(file: &object::File) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // canAnalyze gate: ARM only. Mirrors ArmSymbolAnalyzer.canAnalyze:172-177
@@ -113,6 +127,9 @@ pub(crate) fn scan_arm_markers(file: &object::File) -> AnalysisOutput {
     if !matches!(file.format(), object::BinaryFormat::Elf) {
         return out;
     }
+    let mut arm_functions = Vec::new();
+    let mut thumb_functions = false;
+    let mut mapped = false;
 
     for sym in file.symbols().chain(file.dynamic_symbols()) {
         let Ok(name) = sym.name() else { continue };
@@ -123,11 +140,13 @@ pub(crate) fn scan_arm_markers(file: &object::File) -> AnalysisOutput {
         if is_thumb_marker(name) {
             // ARM_ElfExtension.java:166-175 — setValue(TMode, addr, addr, 1).
             out.context_paints.push(ContextPaint { addr, end: None, var: TMODE, value: 1 });
+            mapped = true;
             continue;
         }
         if is_arm_marker(name) {
             // ARM_ElfExtension.java:176-185 — setValue(TMode, addr, addr, 0).
             out.context_paints.push(ContextPaint { addr, end: None, var: TMODE, value: 0 });
+            mapped = true;
             continue;
         }
         // `$d`/`$d.` (data, :189) and `$b` (:186): LOSS — no createUndefinedData
@@ -141,6 +160,7 @@ pub(crate) fn scan_arm_markers(file: &object::File) -> AnalysisOutput {
         if sym.kind() == SymbolKind::Text && (addr & 1) != 0 {
             let even = addr & !1;
             out.context_paints.push(ContextPaint { addr: even, end: None, var: TMODE, value: 1 });
+            thumb_functions |= sym.is_definition();
             // Thumb-FUNC re-home: emit the FunctionSymbol at the EVEN entry so
             // `load function <name>` / a CALL resolves at the address the `TMode`
             // paint uses (the engine decodes at the even address). Ghidra moves the
@@ -158,10 +178,57 @@ pub(crate) fn scan_arm_markers(file: &object::File) -> AnalysisOutput {
                     kind: SymKind::Function,
                 });
             }
+        } else if sym.kind() == SymbolKind::Text && sym.is_definition() {
+            arm_functions.push((addr, sym.size()));
         }
     }
 
+    if mapped || !thumb_functions || kuna_armfloatabi::thumb_only(file) || unmarked_thumb_entry(file)
+    {
+        return out;
+    }
+    let mut starts: Vec<u64> = file
+        .symbols()
+        .chain(file.dynamic_symbols())
+        .filter(|sym| sym.kind() == SymbolKind::Text && sym.is_definition())
+        .map(|sym| sym.address() & !1)
+        .collect();
+    starts.sort_unstable();
+    starts.dedup();
+    for (addr, size) in arm_functions {
+        let end = match size {
+            0 => starts.get(starts.partition_point(|&at| at <= addr)).copied(),
+            size => Some(addr.saturating_add(size)),
+        };
+        out.context_paints.push(ContextPaint { addr, end, var: TMODE, value: 0 });
+    }
+
     out
+}
+
+/// Whether `file` carries an ARM mapping symbol (`$a` or `$t`).
+pub(crate) fn has_mapping_symbols(file: &object::File) -> bool {
+    file.symbols().chain(file.dynamic_symbols()).any(|sym| {
+        let name = sym.name().unwrap_or_default();
+        is_thumb_marker(name) || is_arm_marker(name)
+    })
+}
+
+/// Whether `file` is an ARM ELF whose odd `e_entry` is its only Thumb evidence:
+/// no mapping symbol anywhere and no function symbol at the entry. Nothing in
+/// such an image says where its Thumb code ends, so it keeps the plain marker
+/// scan and the plain Listing walk.
+pub(crate) fn unmarked_thumb_entry(file: &object::File) -> bool {
+    let entry = file.entry();
+    file.architecture() == object::Architecture::Arm
+        && matches!(file.format(), object::BinaryFormat::Elf)
+        && entry & 1 != 0
+        && !file.symbols().chain(file.dynamic_symbols()).any(|sym| {
+            let name = sym.name().unwrap_or_default();
+            is_thumb_marker(name)
+                || is_arm_marker(name)
+                || (sym.kind() == SymbolKind::Text && sym.address() == entry)
+        })
 }
 
 impl AnalysisPass for ArmMarkerPass {
@@ -282,5 +349,157 @@ mod tests {
             out.context_paints.is_empty(),
             "a non-ARM object must emit no TMode paints (canAnalyze gate)"
         );
+    }
+
+    /// An ARM ELF with a Thumb FUNC at 0x41, an A32 FUNC at 0x80, the given
+    /// `e_entry` and, optionally, a `Tag_CPU_arch_profile` attribute.
+    fn interwork_elf(entry: u32, profile: Option<u8>) -> Vec<u8> {
+        functions_elf(&[("thumb_helper", 0x41), ("arm_helper", 0x80)], entry, profile)
+    }
+
+    /// An ARM ELF with the given FUNC symbols, `e_entry` and, optionally, a
+    /// `Tag_CPU_arch_profile` attribute.
+    fn functions_elf(functions: &[(&str, u64)], entry: u32, profile: Option<u8>) -> Vec<u8> {
+        use object::write::{Object, Symbol, SymbolSection};
+        use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolScope};
+        let mut obj = Object::new(BinaryFormat::Elf, Architecture::Arm, Endianness::Little);
+        let text = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+        obj.append_section_data(text, &[0; 0x110], 4);
+        for &(name, value) in functions {
+            obj.add_symbol(Symbol {
+                name: name.as_bytes().to_vec(),
+                value,
+                size: 4,
+                kind: SymbolKind::Text,
+                scope: SymbolScope::Linkage,
+                weak: false,
+                section: SymbolSection::Section(text),
+                flags: SymbolFlags::None,
+            });
+        }
+        if let Some(profile) = profile {
+            let attrs = obj.add_section(Vec::new(), b".ARM.attributes".to_vec(), SectionKind::Other);
+            let mut data = vec![b'A', 17, 0, 0, 0];
+            data.extend(b"aeabi\0");
+            data.extend([1, 7, 0, 0, 0, 7, profile]);
+            obj.append_section_data(attrs, &data, 1);
+        }
+        let mut bytes = obj.write().unwrap();
+        bytes[24..28].copy_from_slice(&entry.to_le_bytes());
+        bytes
+    }
+
+    /// Where A32 code may exist, an even FUNC paints A32 over its own extent
+    /// only, whether the entry is A32 or a named Thumb function.
+    #[test]
+    fn an_even_function_is_arm_evidence_over_its_size() {
+        for entry in [0x80, 0x41] {
+            let bytes = interwork_elf(entry, Some(b'A'));
+            let file = object::File::parse(bytes.as_slice()).unwrap();
+            assert!(!unmarked_thumb_entry(&file));
+            let out = scan_arm_markers(&file);
+            assert_eq!(paints_at(&out, 0x40), vec![1]);
+            assert_eq!(paints_at(&out, 0x80), vec![0]);
+            let ends: Vec<_> = out.context_paints.iter().map(|p| (p.addr, p.end)).collect();
+            assert!(ends.contains(&(0x40, None)));
+            assert!(ends.contains(&(0x80, Some(0x84))));
+        }
+    }
+
+    /// An even FUNC without a size paints up to the next function symbol, or
+    /// to the next change point when no function symbol follows it.
+    #[test]
+    fn an_even_function_without_a_size_paints_up_to_the_next_function() {
+        use object::write::{Object, Symbol, SymbolSection};
+        use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolScope};
+        let mut obj = Object::new(BinaryFormat::Elf, Architecture::Arm, Endianness::Little);
+        let text = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+        obj.append_section_data(text, &[0; 0x110], 4);
+        for (name, value, size) in [
+            ("thumb_helper", 0x41, 4),
+            ("arm_helper", 0x80, 0),
+            ("thumb_after", 0xc1, 4),
+            ("arm_last", 0x100, 0),
+        ] {
+            obj.add_symbol(Symbol {
+                name: name.as_bytes().to_vec(),
+                value,
+                size,
+                kind: SymbolKind::Text,
+                scope: SymbolScope::Linkage,
+                weak: false,
+                section: SymbolSection::Section(text),
+                flags: SymbolFlags::None,
+            });
+        }
+        let mut bytes = obj.write().unwrap();
+        bytes[24..28].copy_from_slice(&0x41u32.to_le_bytes());
+        let out = scan_arm_markers(&object::File::parse(bytes.as_slice()).unwrap());
+        assert_eq!(paints_at(&out, 0x40), vec![1]);
+        let ends: Vec<_> = out.context_paints.iter().map(|p| (p.addr, p.end, p.value)).collect();
+        assert!(ends.contains(&(0x80, Some(0xc0), 0)));
+        assert!(ends.contains(&(0x100, None, 0)));
+    }
+
+    /// With no Thumb FUNC there is no Thumb paint for an even FUNC to stop, so
+    /// an image of A32 functions keeps the plain scan.
+    #[test]
+    fn an_image_without_a_thumb_function_paints_nothing() {
+        let bytes = functions_elf(&[("first", 0x40), ("second", 0x80)], 0x40, Some(b'A'));
+        let out = scan_arm_markers(&object::File::parse(bytes.as_slice()).unwrap());
+        assert!(out.context_paints.is_empty());
+    }
+
+    /// An odd entry that no symbol names gives no extent for its Thumb code, so
+    /// the scan paints only what the symbols say and nothing at the entry.
+    #[test]
+    fn an_unmarked_thumb_entry_keeps_the_plain_scan() {
+        let bytes = interwork_elf(0x101, Some(b'A'));
+        let file = object::File::parse(bytes.as_slice()).unwrap();
+        assert!(unmarked_thumb_entry(&file));
+        let out = scan_arm_markers(&file);
+        assert_eq!(paints_at(&out, 0x40), vec![1]);
+        assert!(paints_at(&out, 0x80).is_empty());
+        assert!(paints_at(&out, 0x100).is_empty());
+    }
+
+    /// Mapping symbols delimit every run themselves, so they suppress the
+    /// address-bit inference: a `$t` at an even FUNC keeps that function Thumb.
+    #[test]
+    fn mapping_symbols_take_precedence_over_the_address_bit() {
+        use object::write::{Object, Symbol, SymbolSection};
+        use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolScope};
+        let mut obj = Object::new(BinaryFormat::Elf, Architecture::Arm, Endianness::Little);
+        let text = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+        obj.append_section_data(text, &[0; 0x10], 4);
+        for (name, kind, scope) in [
+            ("$t", SymbolKind::Label, SymbolScope::Compilation),
+            ("thumb_entry", SymbolKind::Text, SymbolScope::Linkage),
+        ] {
+            obj.add_symbol(Symbol {
+                name: name.as_bytes().to_vec(),
+                value: 8,
+                size: 0,
+                kind,
+                scope,
+                weak: false,
+                section: SymbolSection::Section(text),
+                flags: SymbolFlags::None,
+            });
+        }
+        let mut bytes = obj.write().unwrap();
+        bytes[24..28].copy_from_slice(&0x1u32.to_le_bytes());
+        let out = scan_arm_markers(&object::File::parse(bytes.as_slice()).unwrap());
+        assert_eq!(paints_at(&out, 8), vec![1]);
+        assert!(paints_at(&out, 0).is_empty());
+    }
+
+    /// An M-profile image has no A32 state, so only the Thumb FUNC paints.
+    #[test]
+    fn a_thumb_only_image_paints_only_its_thumb_functions() {
+        let bytes = interwork_elf(0x41, Some(b'M'));
+        let out = scan_arm_markers(&object::File::parse(bytes.as_slice()).unwrap());
+        assert_eq!(paints_at(&out, 0x40), vec![1]);
+        assert!(paints_at(&out, 0x80).is_empty());
     }
 }

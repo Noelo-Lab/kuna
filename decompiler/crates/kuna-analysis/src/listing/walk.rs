@@ -42,6 +42,9 @@ pub(super) struct WalkState {
     /// Plausible x86 `PUSH imm` callback evidence, keyed by target and bounded
     /// during the walk. The value is the lowest source address for that target.
     pub stack_callback_refs: BTreeMap<u64, u64>,
+    /// The `(start, end, mode)` ARM decode-mode runs the commit paints over the
+    /// context database (see [`super::kuna_flowmode`]); empty for the plain walk.
+    pub mode_runs: Vec<(u64, u64, u32)>,
 }
 
 /// Where [`step`] files a decoded instruction, and the visit dedup it asks.
@@ -386,6 +389,9 @@ impl Successors for Worklists<'_> {
 /// it a Thumb/MIPS16 function misdecodes as A32/MIPS32. On x86-64 (no decode-mode
 /// context) the painter is empty and this is a no-op.
 ///
+/// `flow_mode`, when present, hands the walk to [`super::kuna_flowmode::walk`],
+/// which carries the ARM decode mode along control flow.
+///
 /// `local_entries` is the PPC64 ELFv2 local-entry fold (`ppclocalentry`), keyed
 /// by the local entry VMA: a CALL landing on one of those is a call into the
 /// INTERIOR of the function at its value, so no function is claimed there. Empty
@@ -408,6 +414,7 @@ pub(super) fn walk(
     seeds: &[u64],
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
     painter: &ContextPainter,
+    flow_mode: Option<&super::kuna_flowmode::FlowMode<'_>>,
     local_entries: &BTreeMap<u64, u64>,
     detail: ListingDetail,
     want_stack_callbacks: bool,
@@ -427,6 +434,11 @@ pub(super) fn walk(
 
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
     let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail };
+
+    if let Some(mode) = flow_mode {
+        plan.announce_decode_mode();
+        return super::kuna_flowmode::walk(&ctx, arch, mode, seeds, seed_funcs);
+    }
 
     if plan.lanes() > 1 {
         let inputs = super::kuna_pdecode::ParallelInputs {
@@ -500,6 +512,7 @@ fn walk_serial(
         refs_from: refs.from,
         funcs,
         stack_callback_refs: callbacks.refs,
+        mode_runs: Vec::new(),
     }
 }
 

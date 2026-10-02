@@ -38,7 +38,8 @@ use crate::slghsymbol::{
     SymbolWalkerChange,
 };
 use crate::translate::{
-    storage_from_varnode_data, AssemblyEmit, PcodeEmit, Translate, TranslateBase, UniqueLayout,
+    storage_from_varnode_data, AssemblyEmit, ContextCommitRecord, PcodeEmit, Translate,
+    TranslateBase, UniqueLayout,
 };
 
 #[cfg(test)]
@@ -1522,6 +1523,8 @@ pub struct Sleigh {
     ctx_vec: RefCell<Vec<ResolvedCtx>>,
     assembly_buffers: RefCell<(String, String)>,
     constructor_matches: RefCell<Vec<ConstructorMatch>>,
+    /// The context commits of the most recent `one_instruction`.
+    last_commits: RefCell<Vec<ContextCommitRecord>>,
 }
 
 /// A constructor decision reads only instruction bits (relative to the operand
@@ -1596,6 +1599,7 @@ impl Sleigh {
             ctx_vec: RefCell::new(Vec::new()),
             assembly_buffers: RefCell::new((String::new(), String::new())),
             constructor_matches: RefCell::new(Vec::new()),
+            last_commits: RefCell::new(Vec::new()),
         }
     }
 
@@ -2065,6 +2069,12 @@ impl Sleigh {
             } else {
                 commitaddr
             };
+            self.last_commits.borrow_mut().push(ContextCommitRecord {
+                addr: commitaddr.clone(),
+                word: set.num,
+                mask: set.mask,
+                value: set.value,
+            });
             let db = &mut **self.context_db.borrow_mut();
             let mut cache = self.cache.borrow_mut();
             if set.flow {
@@ -2474,6 +2484,7 @@ impl Sleigh {
         if let Some(image) = image {
             Self::check_mapped_instruction(image, baseaddr, 1)?;
         }
+        self.last_commits.borrow_mut().clear();
         let mut pos = self.obtain_context_with_match_cache(baseaddr, ParseState::Pcode, assembly.is_some())?;
         if let Some(image) = image {
             Self::check_mapped_instruction(image, baseaddr, pos.get_length())?;
@@ -2632,6 +2643,12 @@ impl Translate for Sleigh {
     }
     fn set_context_write_mask(&self, word: usize, mask: u32) -> u32 {
         self.cache.borrow_mut().set_write_mask(word, mask)
+    }
+    fn set_context_read_override(&self, word: usize, mask: u32, value: u32) -> (u32, u32) {
+        self.cache.borrow_mut().set_read_override(word, mask, value)
+    }
+    fn last_context_commits(&self) -> Vec<ContextCommitRecord> {
+        self.last_commits.borrow().clone()
     }
     #[allow(clippy::mutable_key_type)]
     fn get_all_registers(&self, reglist: &mut std::collections::BTreeMap<VarnodeData, String>) {

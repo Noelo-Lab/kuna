@@ -81,6 +81,16 @@ pub fn storage_from_varnode_data(vd: &VarnodeData) -> VarnodeStorage {
     VarnodeStorage { space: vd.space.clone(), offset: vd.offset, size: vd.size }
 }
 
+/// One context write a translated instruction committed: `mask` and `value`
+/// are the already-shifted bits of context word `word`, taking effect at `addr`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextCommitRecord {
+    pub addr: Address,
+    pub word: i32,
+    pub mask: u32,
+    pub value: u32,
+}
+
 /// \brief Object for describing how a space should be truncated
 ///
 /// This can turn up in various XML configuration files and essentially acts
@@ -416,6 +426,21 @@ pub trait Translate: RegisterLookup {
     /// returning the previous mask so a temporary restriction can be restored.
     fn set_context_write_mask(&self, _word: usize, _mask: u32) -> u32 {
         u32::MAX
+    }
+
+    /// Make every decode read `value` for the bits `mask` of context word
+    /// `word`, whatever the context database holds there, returning the
+    /// previous `(mask, value)`. A zero mask restores plain reads. The
+    /// default implementation has no context to override.
+    fn set_context_read_override(&self, _word: usize, _mask: u32, _value: u32) -> (u32, u32) {
+        (0, 0)
+    }
+
+    /// The context writes (`globalset`) the most recent
+    /// [`one_instruction`](Translate::one_instruction) committed, delay slots
+    /// included, recorded before any write mask filtered them.
+    fn last_context_commits(&self) -> Vec<ContextCommitRecord> {
+        Vec::new()
     }
 
     /// \brief Get a list of all register names and the corresponding location

@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The Listing walk carries the ARM decode mode along control flow (GH-780).
+    Strict fix, no option.
+
+    The XML wrapper only provides the harness architecture. The script loads
+    the stripped fixture `arm_interwork_le32` (generator beside it) with the
+    Listing walk on, as every CLI surface runs it on ARM: an A32
+    entry at 0x2000000 runs `blx 0x2000040` (a Thumb `movs r0,#7; bx lr`) and
+    then `bl 0x2000080` (an A32 `add r0,r0,#1; bx lr`). No symbol or mapping
+    symbol names either mode.
+
+    Before the fix, decoding the `blx` wrote Thumb into the context database
+    from 0x2000040 to the end of the address space, so the A32 helper decoded
+    as Thumb and the decompiler printed `halt_missing()` for it (a Thumb decode
+    starting at 0x2000082). Now the `blx` selects Thumb for its own target only
+    and the `bl` target keeps the entry's A32 mode: the A32 helper returns
+    `a0 + 1`, the Thumb helper returns 7, and the entry passes one into the
+    other.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_le32</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2000080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2000040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2000000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FLOWMODE #1: the bl target keeps the A32 mode and returns a0 + 1" min="1" max="1">return a0 \+ 1;</stringmatch>
+<stringmatch name="FLOWMODE #2: the blx target decodes as Thumb and returns 7" min="1" max="1">return 7;</stringmatch>
+<stringmatch name="FLOWMODE #3: the entry passes the Thumb result to the A32 helper" min="1" max="1">sub_2000080\(sub_2000040\(\)\)</stringmatch>
+<stringmatch name="FLOWMODE #4: no helper decodes into unmapped memory" min="0" max="0">halt_missing</stringmatch>
+</decompilertest>
