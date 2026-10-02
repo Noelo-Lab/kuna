@@ -941,6 +941,9 @@ pub struct ArchContext {
     /// (kuna) `armfloatreturn` is on and the image states the ARM VFP calling
     /// convention.  Read by [`crate::p4_calls::kuna_armfloatreturn`].
     pub arm_float_return: bool,
+    /// (kuna) `armfloatargs` is on and the image states the ARM VFP calling
+    /// convention.  Read by [`crate::p4_calls::kuna_armfloatargs`].
+    pub arm_float_args: bool,
     /// What the image says about floating-point arguments (`Some(false)`: they
     /// travel in integer registers).  Read by [`crate::p4_calls::kuna_typedcallabi`].
     pub float_arg_registers: Option<bool>,
@@ -1646,6 +1649,7 @@ impl ArchContext {
             // when there is no callee to ask, so the fixture seam carries the
             // shipped default.
             arg_clobber: true, // (kuna) option argclobber (default on)
+            arm_float_args: false, // (kuna) option armfloatargs (default off)
             arm_float_return: false, // (kuna) option armfloatreturn (default off)
             float_arg_registers: None,
             soft_float_model: None,

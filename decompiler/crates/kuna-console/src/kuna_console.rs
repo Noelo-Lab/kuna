@@ -177,6 +177,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // exposed via `Architecture::print()` (the owned `PrintC`).
         "arraynotation" => on_off(conf.print().options.array_notation()),
         "thumbfuncptr" => on_off(conf.preserve_thumb_funcptr),
+        "armfloatargs" => on_off(conf.arm_float_args),
         "inferfuncentry" => on_off(conf.infer_funcentry),
         "booleanmask" => on_off(conf.fold_boolean_mask),
         "ovlesssimplify" => on_off(conf.ov_less_simplify),

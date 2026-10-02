@@ -777,6 +777,10 @@ pub struct Architecture {
     /// image that states the VFP calling convention (option `armfloatreturn`).
     /// See [`crate::p4_calls::kuna_armfloatreturn`].
     pub arm_float_return: bool,
+    /// (kuna) Recover scalar VFP inputs at their full widths when the ARM image
+    /// states the VFP calling convention (option `armfloatargs`).
+    /// See [`crate::p4_calls::kuna_armfloatargs`].
+    pub arm_float_args: bool,
     /// (kuna) Let a bounded decode of the callee's own body veto a register
     /// argument the callee provably never reads (option `calleedeadarg`).
     pub callee_dead_arg: bool,
@@ -2497,6 +2501,7 @@ impl Architecture {
             callee_pop: true,
             callee_proto_stack: true,
             arg_clobber: true, // (kuna) option argclobber; reset_defaults sets the shipped default
+            arm_float_args: false, // (kuna) option armfloatargs
             arm_float_return: false, // (kuna) option armfloatreturn
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default
             callee_dead_arg: true,
@@ -2866,6 +2871,7 @@ impl Architecture {
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
+        self.arm_float_args = false; // (kuna) option armfloatargs default-off: scalar VFP input recovery is measured only on the feature's own corpus and one firmware image
         self.arm_float_return = false; // (kuna) option armfloatreturn default-off: the float/double width guess on a partial d0 write and the widened model are unmeasured beyond the feature's own corpus
         self.pass_through = true; // (kuna) option passthrough default-on: over 574 slices in 25 projects (the 444-slice decbench corpus plus 130 slices of 17 disjoint projects) 4,107 of 4,346 gained parameters are DWARF-confirmed, NONE contradicted, 239 thunks DWARF does not describe, 0 parameters and 0 call arguments lost; the return arm is 5,458 of 5,615 confirmed, its 157 misses all the undecidable `void` tail-call wrapper; docs/features/passthrough/dwarf-confirmation.md
         self.arg_clobber = true; // (kuna) option argclobber default-on: the drop now needs the callee's own RECOVERED prototype to say the register is free (`protoorder` parks it), so it is inert wherever no callee was decompiled first; 0/675 datatest assertions, PARITY OK on stages, no scored type_match change, measured in docs/features/argclobber/record.json
@@ -3371,6 +3377,7 @@ impl Architecture {
         // model and run output recovery against the real param lists.
         // (kuna) `armfloatreturn` widens the default model with the d-registers.
         ctx.arm_float_return = crate::kuna_armfloatreturn::applies(self);
+        ctx.arm_float_args = crate::kuna_armfloatargs::applies(self);
         ctx.float_arg_registers = crate::kuna_typedcallabi::image_evidence(self);
         ctx.soft_float_model = crate::kuna_typedcallabi::soft_model(self, ctx.float_arg_registers);
         ctx.soft_float_declarations = ctx
@@ -3380,7 +3387,7 @@ impl Architecture {
         ctx.caller_extends_returns_from = crate::kuna_typedcallabi::caller_extends_from(self);
         ctx.defaultfp = self.defaultfp.as_ref().map(|model| {
             if ctx.arm_float_return {
-                crate::kuna_armfloatreturn::model(model, ctx.manage())
+                crate::kuna_armfloatreturn::model(model, ctx.manage(), ctx.arm_float_args)
             } else {
                 model.clone()
             }
