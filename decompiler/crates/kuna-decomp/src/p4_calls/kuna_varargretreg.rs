@@ -10,10 +10,13 @@
 //! entry, an integer otherwise) exactly there.  The model's own `<varargs>` rules
 //! keep the floating-point registers out on ARM, RISC-V, MIPS, Windows and Apple
 //! arm64, where a variadic value travels in integer registers or on the stack.
-//! Two ABIs the model does not describe are handled here: 64-bit PowerPC passes
-//! a variadic floating-point value in general registers and the FPR copy is only
-//! a shadow, so its FPRs are refused; x86-64 SysV counts the vector registers in
-//! `al`, so a count of zero set in the call's block refuses `xmm0`.
+//! Three ABIs the model does not describe are handled here. 64-bit PowerPC
+//! passes a variadic floating-point value in general registers and the FPR copy
+//! is only a shadow, so its FPRs are refused. x86-64 SysV counts the vector
+//! registers that carry arguments in `al`, and 32-bit PowerPC sets CR bit 6 when
+//! any FPR does: a count of zero set in the call's block refuses the register,
+//! and a count of `n` makes the first `n` floating-point argument registers
+//! arguments whatever their value, a result of another call included.
 use crate::{
     context::OpId,
     dtype::{type_class, type_metatype},
@@ -24,6 +27,7 @@ use crate::{
 use kuna_base::address::Address;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
+use std::rc::Rc;
 
 /// How an image passes a floating-point value in the variadic part of a call.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -34,6 +38,9 @@ pub enum VarargFloats {
     /// Where the model puts it, with the number of vector registers used in `al`
     /// (x86-64 SysV).
     VectorCount,
+    /// Where the model puts it, with CR bit 6 set when any FPR is used (32-bit
+    /// PowerPC SysV).
+    ConditionBit,
     /// In general registers or on the stack; a floating-point register holds at
     /// most a copy (64-bit PowerPC).
     Shadowed,
@@ -46,6 +53,8 @@ pub fn image_vararg_floats(arch: &Architecture) -> VarargFloats {
         VarargFloats::VectorCount
     } else if id.starts_with("PowerPC:") && id.split(':').nth(2) == Some("64") {
         VarargFloats::Shadowed
+    } else if id.starts_with("PowerPC:") && id.split(':').nth(2) == Some("32") {
+        VarargFloats::ConditionBit
     } else {
         VarargFloats::InModel
     }
@@ -75,9 +84,7 @@ pub fn argument_in_own_output(
         if size < 8 || arch.vararg_floats == VarargFloats::Shadowed {
             return false;
         }
-        if arch.vararg_floats == VarargFloats::VectorCount
-            && vector_count(fd, fc.get_op()) == Some(0)
-        {
+        if float_register_count(fd, fc.get_op()) == Some(0) {
             return false;
         }
     }
@@ -104,6 +111,83 @@ pub fn argument_in_own_output(
         return false;
     }
     res.last().is_some_and(|p| p.addr == *addr)
+}
+
+/// The floating-point argument registers of the variadic call `fc` its caller
+/// says it filled: the first `n` floating-point entries of the model, for `n`
+/// from [`float_register_count`].
+pub fn counted_float_arguments(fd: &Funcdata, fc: &FuncCallSpecs) -> Vec<Address> {
+    if !fc.is_dotdotdot() || !fc.proto().has_model() {
+        return Vec::new();
+    }
+    let Some(count) = float_register_count(fd, fc.get_op()) else {
+        return Vec::new();
+    };
+    fc.proto()
+        .model()
+        .input()
+        .get_entry()
+        .iter()
+        .filter(|e| e.get_type() == type_class::TYPECLASS_FLOAT && e.get_size() == 8)
+        .take(count.min(8) as usize)
+        .map(|e| Address::new(Rc::clone(e.get_space()), e.get_base()))
+        .collect()
+}
+
+/// How many floating-point argument registers the caller says it filled for
+/// `call`, when its block states it: `al` on x86-64 SysV, and 1 or 0 for
+/// `crset 6` or `crclr 6` on 32-bit PowerPC, where the bit says only whether
+/// any is filled.
+fn float_register_count(fd: &Funcdata, call: OpId) -> Option<u64> {
+    match fd.get_arch().vararg_floats {
+        VarargFloats::VectorCount => vector_count(fd, call),
+        VarargFloats::ConditionBit => condition_bit(fd, call),
+        _ => None,
+    }
+}
+
+/// CR bit 6 as the last instruction of the call's block that writes `cr1`
+/// before `call` sets it: `creqv 6,6,6` (`crset 6`) or `crxor 6,6,6`
+/// (`crclr 6`).
+fn condition_bit(fd: &Funcdata, call: OpId) -> Option<u64> {
+    let cr1 = fd
+        .get_arch()
+        .manage()
+        .register_lookup()?
+        .probe_register("cr1")?;
+    let space = cr1.space?;
+    let mut cur = fd.op_previous_op(call);
+    while let Some(op) = cur {
+        let o = fd.obank().get(op)?;
+        if o.is_call() || o.code() == OpCode::CPUI_MULTIEQUAL {
+            return None;
+        }
+        let writes = o.code() != OpCode::CPUI_INDIRECT
+            && o.get_out()
+                .and_then(|v| fd.vbank().get(v))
+                .is_some_and(|v| {
+                    v.get_space().get_index() == space.get_index()
+                        && v.get_offset() <= cr1.offset
+                        && cr1.offset < v.get_offset() + v.get_size() as u64
+                });
+        if writes {
+            let at = o.get_addr();
+            let mut word = [0u8; 4];
+            fd.get_arch().loader_fill(&mut word, at).ok()?;
+            let word = if at.is_big_endian() {
+                u32::from_be_bytes(word)
+            } else {
+                u32::from_le_bytes(word)
+            };
+            return match word {
+                0x4cc6_3242 => Some(1),
+                0x4cc6_3182 => Some(0),
+                _ => None,
+            };
+        }
+        cur = fd.op_previous_op(op);
+    }
+    None
 }
 
 /// The value of `al` the call's block sets before `call`, when it is a constant:

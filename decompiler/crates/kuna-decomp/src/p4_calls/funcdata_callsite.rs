@@ -93,6 +93,9 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
         }
     }
 
+    // (kuna) The registers a variadic call's caller counts as filled (`al`, CR6).
+    let counted =
+        crate::p4_calls::kuna_varargretreg::counted_float_arguments(data, data.get_call_specs(idx));
     let num_trials = data.get_call_specs_mut(idx).get_active_input().get_num_trials();
     for i in 0..num_trials {
         if data.get_call_specs_mut(idx).get_active_input().get_trial(i).is_checked() {
@@ -210,6 +213,14 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
             )
         } {
             data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
+        } else if {
+            let t = data.get_call_specs(idx).active_input().get_trial(i);
+            t.get_size() == 8 && counted.contains(t.get_address())
+        } {
+            let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
+            trial.set_ancestor_realistic();
+            trial.set_ancestor_solid();
+            trial.mark_active();
         } else if crate::p4_calls::kuna_stackaddrargtrial::carries_stack_address(data, vn) {
             let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
             trial.set_ancestor_realistic();
