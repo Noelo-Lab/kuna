@@ -208,8 +208,9 @@ pub fn written_between(data: &Funcdata, vn: VarnodeId, reader: OpId) -> bool {
 /// reading it on an edge from a block the store dominates, or an `INDIRECT`
 /// after the store.  Heritage never builds that; it is left behind when a
 /// pointer `STORE` turns into the global's `COPY` after the global's heritage,
-/// and the joins still read the value from before it.  Each `MULTIEQUAL` is
-/// read once, however many of the global's values it joins.
+/// and the joins still read the value from before it.  Only the earlier values'
+/// readers are visited, and each `MULTIEQUAL` among them is read once, however
+/// many of those values it joins.
 fn old_value_read_after(data: &Funcdata, vn: VarnodeId, by_register: bool) -> bool {
     let Some(v) = data.vbank().get(vn) else {
         return false;
@@ -217,38 +218,32 @@ fn old_value_read_after(data: &Funcdata, vn: VarnodeId, by_register: bool) -> bo
     let Some(mut store) = v.get_def().and_then(|d| Store::new(data, d, vn)) else {
         return false;
     };
-    let mut instances = Vec::new();
     let mut joins = Vec::new();
     let mut walk = (Vec::new(), BTreeSet::new());
     for w in data.vbank().iter_loc_size_addr(v.get_size(), v.get_addr()) {
-        instances.push(w);
+        if !store.old(data, w) {
+            continue;
+        }
         let Some(wv) = data.vbank().get(w) else {
             continue;
         };
         let mut carried = false;
         for r in wv.descend_iter() {
             match data.obank().get(r).filter(|o| !o.is_dead()).map(|o| o.code()) {
-                Some(OpCode::CPUI_MULTIEQUAL) => joins.push(r),
+                Some(OpCode::CPUI_MULTIEQUAL) => joins.push((r, w)),
                 Some(OpCode::CPUI_INDIRECT) => {
                     carried = carried || store.indirect_after(data, r, w);
                 }
                 _ => {}
             }
         }
-        if (carried || by_register)
-            && store.old(data, w)
-            && (carried || store.read_after(data, w, &mut walk))
-        {
+        if carried || (by_register && store.read_after(data, w, &mut walk)) {
             return true;
         }
     }
-    if joins.is_empty() {
-        return false;
-    }
-    instances.sort_unstable();
     joins.sort_unstable();
     joins.dedup();
-    joins.into_iter().any(|r| store.join_after(data, r, &instances))
+    joins.chunk_by(|a, b| a.0 == b.0).any(|reads| store.join_after(data, reads))
 }
 
 /// The store [`old_value_read_after`] asks about, with the dominator-tree
@@ -314,11 +309,11 @@ impl Store {
         }
     }
 
-    /// Does `r`, a live `MULTIEQUAL`, read a value among `instances` (sorted)
-    /// that is from before the store on an edge from a block the store
-    /// dominates?
-    fn join_after(&mut self, data: &Funcdata, r: OpId, instances: &[VarnodeId]) -> bool {
-        let Some(rop) = data.obank().get(r) else {
+    /// Does a live `MULTIEQUAL` read one of the values from before the store
+    /// that list it as a reader on an edge from a block the store dominates?
+    /// `reads` holds its pairs (the `MULTIEQUAL`, such a value), sorted.
+    fn join_after(&mut self, data: &Funcdata, reads: &[(OpId, VarnodeId)]) -> bool {
+        let Some(rop) = reads.first().and_then(|&(r, _)| data.obank().get(r)) else {
             return false;
         };
         if rop.is_dead() || self.block.is_none() {
@@ -330,10 +325,8 @@ impl Store {
         let b = data.bblocks_ref().block(rb);
         (0..rop.num_input().min(b.size_in())).any(|i| {
             rop.get_in(i).is_some_and(|x| {
-                self.dominates(data, b.get_in(i))
-                    && instances.binary_search(&x).is_ok()
-                    && data.vbank().get(x).is_some_and(|xv| xv.descend_iter().any(|d| d == r))
-                    && self.old(data, x)
+                reads.binary_search_by_key(&x, |&(_, w)| w).is_ok()
+                    && self.dominates(data, b.get_in(i))
             })
         })
     }

@@ -259,20 +259,22 @@ fn dominator_self_loop_and_exit() {
 fn dominates_memo_answers_as_dominates() {
     // Pseudo-random graphs: a spine 0 -> 1 -> ... with extra forward, back and
     // cross edges, so the dominator tree has chains, joins, loops and
-    // irreducible parts.  One memo per dominator answers every block, asked in
-    // two orders, the same as `dominates`.
+    // irreducible parts, and a few extra edges on the longest spines so their
+    // chains outrun the walk the memo does not keep.  One memo per dominator
+    // answers every block, asked in two orders, the same as `dominates`.
     let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
     let mut next = |m: usize| {
         seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         (seed >> 33) as usize % m
     };
-    for n in [2usize, 5, 9, 17, 40] {
+    let mut kept = false;
+    for (n, extra) in [(2usize, 2usize), (5, 5), (9, 9), (17, 17), (40, 40), (64, 0), (90, 6)] {
         let (mut g, root, b) = build_graph(n);
         g.set_start_block(root, b[0]);
         for i in 0..n - 1 {
             g.add_edge(b[i], b[i + 1]);
         }
-        for _ in 0..n {
+        for _ in 0..extra {
             let (from, to) = (next(n), next(n));
             if to != 0 && g.arena[b[from]].get_out_index(b[to]) < 0 {
                 g.add_edge(b[from], b[to]);
@@ -285,8 +287,10 @@ fn dominates_memo_answers_as_dominates() {
                 assert_eq!(g.dominates_memo(&mut memo, Some(sub)), g.dominates(top, Some(sub)));
             }
             assert!(!g.dominates_memo(&mut memo, None));
+            kept |= !memo.known.is_empty();
         }
     }
+    assert!(kept);
 }
 
 #[test]

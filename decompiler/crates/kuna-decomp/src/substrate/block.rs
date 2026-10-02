@@ -976,14 +976,19 @@ pub struct KunaQualityCounts {
 pub struct DominatesMemo {
     top: BlockId,
     known: slotmap::SecondaryMap<BlockId, bool>,
+    path: Vec<BlockId>,
 }
 
 impl DominatesMemo {
     /// No answers yet for dominator `top`.
     pub fn new(top: BlockId) -> Self {
-        DominatesMemo { top, known: slotmap::SecondaryMap::new() }
+        DominatesMemo { top, known: slotmap::SecondaryMap::new(), path: Vec::new() }
     }
 }
+
+/// How many steps up the dominator tree [`BlockGraph::dominates_memo`] takes
+/// before it starts keeping answers.
+const DOMINATES_MEMO_SHORT: usize = 8;
 
 /// All edge-manipulation and the dominator/spanning-tree algorithms are methods
 /// on this struct so they can read/write across the arena.
@@ -1631,13 +1636,27 @@ impl BlockGraph {
         false
     }
 
-    /// [`Self::dominates`] of `memo`'s block over `sub_block`, keeping the answer
-    /// for every block the walk up the dominator tree passes, so a run of queries
-    /// against one dominator visits each block once.
+    /// [`Self::dominates`] of `memo`'s block over `sub_block`.  A walk up the
+    /// dominator tree longer than [`DOMINATES_MEMO_SHORT`] steps keeps the answer
+    /// for every block it passes beyond them, so a run of queries against one
+    /// dominator visits each block of a long chain once, and a short walk costs
+    /// what [`Self::dominates`] does.
     pub fn dominates_memo(&self, memo: &mut DominatesMemo, sub_block: Option<BlockId>) -> bool {
         let index = self.arena[memo.top].index;
-        let mut path = Vec::new();
         let mut cur = sub_block;
+        for _ in 0..DOMINATES_MEMO_SHORT {
+            let Some(sb) = cur else {
+                return false;
+            };
+            if index > self.arena[sb].index {
+                return false;
+            }
+            if sb == memo.top {
+                return true;
+            }
+            cur = self.arena[sb].immed_dom;
+        }
+        memo.path.clear();
         let answer = loop {
             let Some(sb) = cur else {
                 break false;
@@ -1651,13 +1670,13 @@ impl BlockGraph {
             if sb == memo.top {
                 break true;
             }
-            if path.len() > self.arena.len() {
+            if memo.path.len() > self.arena.len() {
                 break false;
             }
-            path.push(sb);
+            memo.path.push(sb);
             cur = self.arena[sb].immed_dom;
         };
-        for sb in path {
+        for &sb in &memo.path {
             memo.known.insert(sb, answer);
         }
         debug_assert_eq!(answer, self.dominates(memo.top, sub_block));
