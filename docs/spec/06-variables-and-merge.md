@@ -1617,8 +1617,15 @@ later — a pointer store that may alias the global, or a call. Chapter 03 keeps
 the store's `COPY` out of the marker whenever the value has a reader that is
 sign-sensitive then or that a later rule makes so, so a value this forced merge
 joins with a global has no such reader, unless a load of the global already
-reads the value; that value prints as the global, as on upstream. A parameter
-never merges with a global, so its stores keep upstream's handling too.
+reads the value; that value prints as the global, as on upstream. The other
+exception is a store after which an earlier value of the global is still used:
+chapter 03 leaves its `COPY` to upstream, because keeping it would make the
+global's forced merge copy that earlier value out where it is defined, possibly
+above a pointer store the binary loads the global after. The forced merge then
+finds the stored value and the earlier value live together and trims the stored
+value to its own variable, as upstream does, so its sign-sensitive readers read
+that variable rather than the global. A parameter never merges with a global, so
+its stores keep upstream's handling too.
 
 The same join also decides the *pointee* type an access through the value
 takes. That is the pointer case above (`kuna_pointeevalue.rs`, issue #767): it

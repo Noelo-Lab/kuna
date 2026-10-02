@@ -17,7 +17,10 @@
 //! allows is forced, so it cannot wait for the rules to finish.  The `COPY` stays
 //! alive at the binary's own store, and chapter 06's `kuna_globalvalue`
 //! refuses the copy-shadow join, so the value keeps its own variable and the
-//! store prints where the binary makes it.
+//! store prints where the binary makes it.  A store after which an earlier
+//! value of the global is still used is left alone ([`old_value_read_after`]):
+//! kept, it would make `Merge` copy that earlier value out above a pointer store
+//! the binary loads the global after.
 //!
 //! A load is the other reader of that `COPY`: kuna's SSA gives a pointer store
 //! no effect on a global, so after `gi = u; *p = k;` the binary's load of `gi`
@@ -74,8 +77,9 @@ pub fn reads_signedness(code: OpCode, slot: int4, size: int4, other_const: Optio
 /// Must `RulePropagateCopy` leave `vn`, the output of `COPY invn`, as the input
 /// of `op`?  Only when `vn` is a global, `invn` a value the function computes
 /// (a parameter never merges with a global, so its store keeps upstream's
-/// handling), and some operation reads that value, a copy of it or an
-/// expression computed from it, sign-sensitively.
+/// handling), some operation reads that value, a copy of it or an expression
+/// computed from it, sign-sensitively, and no earlier value of the global is
+/// still used after the store ([`old_value_read_after`]).
 ///
 /// `op` is then either the global's own marker, or a `COPY` into the same
 /// global (what a duplicated join block leaves of its marker), or a load: an
@@ -128,7 +132,7 @@ pub fn declines(data: &mut Funcdata, op: OpId, vn: VarnodeId, invn: VarnodeId) -
 
 /// How many blocks and operations [`old_value_read_after`] visits before it
 /// answers yes.
-const REACH_BOUND: usize = 4096;
+const REACH_BOUND: usize = 1 << 16;
 
 /// Is an earlier value of the global that `vn`'s `COPY` stores to still read
 /// after that store, directly or through a copy that a later propagation can
@@ -152,6 +156,33 @@ fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
         return true;
     };
     let mut budget = REACH_BOUND;
+    let mut tick = || {
+        budget = budget.saturating_sub(1);
+        budget == 0
+    };
+    let succ = |b| {
+        let blk = data.bblocks_ref().block(b);
+        (0..blk.size_out()).map(|i| blk.get_out(i)).collect::<Vec<_>>()
+    };
+    let mut later = Vec::new();
+    let mut cur = data.obank().get(store).and_then(|s| s.basic_neighbours().1);
+    while let Some(o) = cur {
+        if tick() {
+            return true;
+        }
+        later.push(o);
+        cur = data.obank().get(o).and_then(|x| x.basic_neighbours().1);
+    }
+    let mut reach = BTreeSet::new();
+    let mut work = succ(sb);
+    while let Some(b) = work.pop() {
+        if reach.insert(b) {
+            if tick() {
+                return true;
+            }
+            work.extend(succ(b));
+        }
+    }
     for w in data.vbank().iter_loc_size_addr(v.get_size(), v.get_addr()) {
         let Some(wv) = data.vbank().get(w) else {
             continue;
@@ -162,49 +193,34 @@ fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
         let Some((ops, ends)) = reads_of(data, w) else {
             return true;
         };
-        if ops.is_empty() && ends.is_empty() {
+        let blocks: BTreeSet<_> = ops
+            .iter()
+            .filter_map(|&o| data.obank().get(o).and_then(|x| x.get_parent()))
+            .chain(ends.iter().copied())
+            .collect();
+        if !blocks.iter().any(|b| reach.contains(b)) && !ends.contains(&sb) && !later.iter().any(|o| ops.contains(o)) {
             continue;
         }
         let def = wv.get_def();
-        let def_block = def.and_then(|d| data.obank().get(d)).and_then(|d| d.get_parent());
-        let mut cur = data.obank().get(store).and_then(|s| s.basic_neighbours().1);
-        let mut redefined = false;
-        while let Some(o) = cur {
-            if Some(o) == def {
-                redefined = true;
-                break;
+        if let Some(i) = later.iter().position(|&o| Some(o) == def || ops.contains(&o)) {
+            if Some(later[i]) == def {
+                continue;
             }
-            if ops.contains(&o) {
-                return true;
-            }
-            budget = match budget.checked_sub(1) {
-                Some(b) => b,
-                None => return true,
-            };
-            cur = data.obank().get(o).and_then(|x| x.basic_neighbours().1);
-        }
-        if redefined {
-            continue;
+            return true;
         }
         if ends.contains(&sb) {
             return true;
         }
-        let blocks: BTreeSet<_> =
-            ops.iter().filter_map(|&o| data.obank().get(o).and_then(|x| x.get_parent())).chain(ends).collect();
-        let succ = |b| {
-            let blk = data.bblocks_ref().block(b);
-            (0..blk.size_out()).map(|i| blk.get_out(i)).collect::<Vec<_>>()
-        };
+        let def_block = def.and_then(|d| data.obank().get(d)).and_then(|d| d.get_parent());
         let mut work = succ(sb);
         let mut seen = BTreeSet::new();
         while let Some(b) = work.pop() {
             if !seen.insert(b) || Some(b) == def_block {
                 continue;
             }
-            budget = match budget.checked_sub(1) {
-                Some(b) => b,
-                None => return true,
-            };
+            if tick() {
+                return true;
+            }
             if blocks.contains(&b) {
                 return true;
             }

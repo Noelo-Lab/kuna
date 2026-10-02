@@ -880,13 +880,34 @@ of the global in the global's signedness; with it, chapter 06 keeps the value
 apart and the `COPY` prints at the binary's own store, ahead of any later
 pointer store or call.
 
+The refusal holds only while no earlier value of the global is still used after
+the store (`old_value_read_after`). kuna's heritage gives a pointer `STORE` no
+effect on a global, so in `*p = k; old = g; n = old * 3 + inc; if (n >> 20)
+return 7; g = n; return old == 5 ? 1 : old;` the binary's load of `old` after
+`*p = k` reads the version of `g` the function entered with, and that version is
+still used after `g = n`. With the store's `COPY` kept, both versions are live
+after the store, and chapter 06 has to give the earlier one its own variable: it
+copies it right where that version is defined, here the function entry (a call's
+`INDIRECT` or a loop head's `MULTIEQUAL` elsewhere), above `*p = k`, so the
+printed C reads the global before the pointer store may change it. Without the
+refusal the `COPY` dies, the forced merge of the global's marker finds the stored
+value and the earlier one live together and trims the stored value to its own
+variable, and every read of the global prints after the pointer store, as
+upstream prints it. A use counts when some path from the store reaches it
+without passing the earlier version's definition; a `MULTIEQUAL` uses its input
+at the end of the predecessor block it comes from, and a use of a register
+`COPY` of the earlier version counts too, since a later propagation folds the
+copy into it. A walk past 256 copies or 65,536 blocks and operations answers yes.
+Placing the copy of the earlier value at the binary's own load, which would let
+the store stay, is not done.
+
 A load is any other reader of the store's `COPY`: an operation that writes
 something other than the global itself (a `PIECE` that joins the stored part
 into the whole of a wider global is left to upstream). kuna's heritage puts no
 `INDIRECT` on a global at a pointer `STORE`, so after `gi = u; *p = k;` the
 binary's load of `gi` is still the store's `COPY`, and propagating `u` into it
-would stand the value in for memory that `*p` may have changed. While the value
-is read sign-sensitively the load keeps the `COPY` too, so it prints as the
+would stand the value in for memory that `*p` may have changed. While the
+refusal above holds, the load keeps the `COPY` too, so it prints as the
 global (`gi = a0 * 3; *a1 = a2; ... if (gi <= -1)`) while the value's own uses
 keep the value. A load the refusal lets through marks the value and the store
 (the `global_load` bit of the varnode's additional flags); the mark follows the
