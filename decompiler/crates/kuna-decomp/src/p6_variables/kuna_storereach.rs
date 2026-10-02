@@ -37,10 +37,10 @@
 //! range swallowed stays a piece of the same local.
 //!
 //! The guard is worse than none when the final layout still maps a slot it
-//! keeps (a guard INDIRECT's bytes), a guarded store's piece on the unresolved
-//! path, or a piece in a float reach as more than one local, or reads a float
-//! local such a piece lies in as an integer: the function is then analyzed
-//! again without the guard (`withdraw_spoiled_guard`).
+//! keeps (the bytes of a guard INDIRECT whose value is read), a guarded store's
+//! piece on the unresolved path, or a piece in a float reach as more than one
+//! local, or reads a float local such a piece lies in as an integer: the
+//! function is then analyzed again without the guard (`withdraw_spoiled_guard`).
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -63,10 +63,10 @@ const MAX_PIECES: usize = 8;
 
 /// Coalesce each guarded byte store's bounded reach into one open array hint,
 /// and let the open range at every guarded store's base absorb what starts
-/// inside a slot it absorbed. Returns, as `(lo, hi, float)`, the stack ranges
-/// the final layout must keep in one local: every slot the guard keeps a
-/// store's effect on, and on the unresolved path every bounded piece of a
-/// guarded store; `float` when a float hint lies in the range or its reach.
+/// inside a slot it absorbed. Returns, as `(lo, hi, float)`, the pieces of the
+/// guarded stores the final layout must keep in one local: on the unresolved
+/// path every bounded piece, else the pieces in a float reach; `float` when a
+/// float hint lies in the piece or its reach.
 pub(crate) fn prepare_hints(
     fd: &Funcdata,
     state: &mut MapState,
@@ -79,17 +79,10 @@ pub(crate) fn prepare_hints(
     let Some(sb) = fd.find_spacebase_input(space) else {
         return Vec::new();
     };
-    let byte_store = |id: OpId| {
-        fd.obank()
-            .get(id)
-            .and_then(|op| op.get_in(2))
-            .and_then(|v| fd.vbank().get(v))
-            .is_some_and(|v| v.get_size() == 1)
-    };
-    if !fd.obank().iter_code(OpCode::CPUI_STORE).any(byte_store) {
+    if !has_byte_store(fd) {
         return Vec::new();
     }
-    let (guarded, kept) = guard_effects(fd, space);
+    let (guarded, _) = guard_effects(fd, space);
     if guarded.is_empty() {
         return Vec::new();
     }
@@ -102,7 +95,7 @@ pub(crate) fn prepare_hints(
         .iter()
         .flat_map(|(_, pieces)| pieces.iter().filter_map(|&(lo, hi)| Some((lo, hi?))))
         .collect();
-    let mut checks = kept;
+    let mut checks = Vec::new();
     let mut floats: Vec<(intb, intb)> = Vec::new();
     if !stores.is_empty() {
         if !fd.store_reach_committed() && has_unresolved_frame_access(fd, sb) {
@@ -166,25 +159,34 @@ pub(crate) fn prepare_hints(
     checks
 }
 
-/// If the final layout spoils a range the latest layout pass recorded, turn the
-/// guard off for this function and report that it must be analyzed again. A
-/// range mapped as more than one local is spoiled: the store or initializer
-/// prints into one of them while a read of another never sees it. A range in a
-/// float reach is also spoiled when no local covers it, or when its local is
-/// read as an integer while declared float, since that cast converts the value
-/// instead of reading its bytes.
+/// If the final layout spoils a slot a guard INDIRECT still keeps, or a piece
+/// the latest layout pass recorded, turn the guard off for this function and
+/// report that it must be analyzed again. A range mapped as more than one local
+/// is spoiled: the store or initializer prints into one of them while a read of
+/// another never sees it. A piece in a float reach is also spoiled when no
+/// local covers it, or when its local is read as an integer while declared
+/// float, since that cast converts the value instead of reading its bytes.
 pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
     if !fd.stack_store_guard() {
         return false;
     }
-    let pieces = fd.store_reach_checks();
-    if pieces.is_empty() {
+    if !has_byte_store(fd) {
         return false;
     }
     let Some(sl) = fd.get_scope_local() else {
         return false;
     };
     let space = Rc::clone(sl.get_space_id());
+    let mut pieces = fd.store_reach_checks();
+    pieces.extend(
+        guard_effects(fd, &space)
+            .1
+            .into_iter()
+            .map(|(lo, hi)| (lo, hi, false)),
+    );
+    if pieces.is_empty() {
+        return false;
+    }
     let bits = space.get_addr_size() as int4 * 8 - 1;
     let symbols: Vec<(intb, intb)> = sl
         .database()
@@ -394,6 +396,17 @@ fn byte_type(hints: &[RangeHint], lo: intb, hi: intb) -> Option<Rc<Datatype>> {
     elem
 }
 
+/// Does the function store a single byte anywhere?
+fn has_byte_store(fd: &Funcdata) -> bool {
+    fd.obank().iter_code(OpCode::CPUI_STORE).any(|id| {
+        fd.obank()
+            .get(id)
+            .and_then(|op| op.get_in(2))
+            .and_then(|v| fd.vbank().get(v))
+            .is_some_and(|v| v.get_size() == 1)
+    })
+}
+
 /// The byte STOREs a guard INDIRECT on `space` names as its effect, and the
 /// signed stack ranges `[lo, hi)` of those INDIRECTs: the slots the guard keeps
 /// a store's effect on.
@@ -409,9 +422,12 @@ fn guard_effects(fd: &Funcdata, space: &Rc<AddrSpace>) -> (BTreeSet<OpId>, Vec<(
         else {
             continue;
         };
-        let Some(out) = op
-            .get_out()
-            .and_then(|o| fd.vbank().get(o))
+        let Some(out_id) = op.get_out() else {
+            continue;
+        };
+        let Some(out) = fd
+            .vbank()
+            .get(out_id)
             .filter(|o| o.get_space().get_index() == space.get_index())
         else {
             continue;
@@ -433,11 +449,41 @@ fn guard_effects(fd: &Funcdata, space: &Rc<AddrSpace>) -> (BTreeSet<OpId>, Vec<(
             .is_some_and(|v| v.get_size() == 1);
         if byte_store {
             stores.insert(store);
-            let lo = sign_extend(out.get_addr().get_offset() as intb, bits);
-            kept.push((lo, lo + out.get_size() as intb));
+            if is_read(fd, out_id) {
+                let lo = sign_extend(out.get_addr().get_offset() as intb, bits);
+                kept.push((lo, lo + out.get_size() as intb));
+            }
         }
     }
     (stores, kept)
+}
+
+/// Does an op other than an INDIRECT or MULTIEQUAL read `vn`, or the value of
+/// one that carries it on? Undecided past 256 values, which counts as yes.
+fn is_read(fd: &Funcdata, vn: VarnodeId) -> bool {
+    let mut seen = BTreeSet::new();
+    let mut work = vec![vn];
+    while let Some(v) = work.pop() {
+        if !seen.insert(v) {
+            continue;
+        }
+        if seen.len() > 256 {
+            return true;
+        }
+        let Some(value) = fd.vbank().get(v) else {
+            continue;
+        };
+        for use_op in value.descend_iter() {
+            let Some(op) = fd.obank().get(use_op) else {
+                continue;
+            };
+            if !matches!(op.code(), OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL) {
+                return true;
+            }
+            work.extend(op.get_out());
+        }
+    }
+    false
 }
 
 /// The signed stack bytes `[lo, hi)` a byte store may write, `hi` unknown when

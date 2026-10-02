@@ -950,21 +950,23 @@ one, since a larger layout strands no pointer.
 
 The guard is worse than none wherever the final layout still maps a range it
 keeps as more than one local: the initializer or the store prints into one
-local while a read of another never sees it. The P3 guard keeps every
-constant-initialized slot, not only the slots inside a store's reach, so
-`prepare_hints` returns the ranges the final layout must keep whole: the bytes
-of every guard INDIRECT on the stack, the bounded pieces of the guarded stores
-when the frame keeps the upstream layout, and the pieces in a float reach, each
-marked when a float hint lies in it. Each pass records its list
+local while a read of another never sees it. `prepare_hints` returns the
+pieces it left to the upstream layout: the bounded pieces of the guarded
+stores when the frame keeps the upstream layout, and the pieces in a float
+reach, each marked when a float hint lies in it. Each pass records its list
 (`Funcdata::note_store_reach_checks`), and after the last pass
 `decompile_drive.rs (run_pipeline)` calls `kuna_storereach.rs
-(withdraw_spoiled_guard)`. A range that overlaps more than one local spoils
-the layout. So does a float range that no local covers, or whose local some op
-reads as an integer while a member of that variable is typed float
-(`kuna_storereach.rs (read_only_as_float)`): such a read prints as a cast,
-which converts the value (`(unsigned short)v1` of a `double v1`). Float ops,
-copies and PIECEs into the range, and SUBPIECEs above the low end, which print
-as the bytes (`v1._6_2_`), do not. A spoiled function is analyzed again from
+(withdraw_spoiled_guard)`. That adds the bytes of every guard INDIRECT still on
+the stack whose value some op other than an INDIRECT or MULTIEQUAL reads,
+since the P3 guard keeps every constant-initialized slot, not only the slots
+inside a store's reach; the INDIRECTs that `RuleIndirectCollapse` removed or
+that nothing reads cannot hide a write. A range that overlaps more than one
+local spoils the layout. So does a float piece that no local covers, or whose
+local some op reads as an integer while a member of that variable is typed
+float (`kuna_storereach.rs (read_only_as_float)`): such a read prints as a
+cast, which converts the value (`(unsigned short)v1` of a `double v1`). Float
+ops, copies and PIECEs into the range, and SUBPIECEs above the low end, which
+print as the bytes (`v1._6_2_`), do not. A spoiled function is analyzed again from
 flow with the guard off for it (`Funcdata::withdraw_stack_store_guard`, which
 survives the restart's `clear()`), as `option stackstoreguard off` would.
 Examples are a buffer written only by a walk through a pointer kept in memory,
