@@ -8033,7 +8033,7 @@ impl FuncCallSpecs {
                 let overlap =
                     oldaddr.justified_contain(oldsize, &paddr, psize, false);
                 let mut vardata = VarnodeData::default();
-                let mut opc = crate::kuna_narrowext::or_model(
+                let (mut opc, stated) = crate::kuna_narrowext::or_model(
                     data.get_arch().narrow_ext.output,
                     self.proto.model().output(),
                     &paddr,
@@ -8066,6 +8066,9 @@ impl FuncCallSpecs {
                         extop
                     };
                     data.op_insert_after(ext, self.op);
+                    if stated {
+                        crate::kuna_narrowext::mark(data, ext);
+                    }
                 } else {
                     // Concatenate extra bytes from something indirectly created.
                     if let Some(io) = ind_op {

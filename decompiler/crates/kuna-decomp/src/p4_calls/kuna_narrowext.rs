@@ -11,11 +11,14 @@
 //! their ABI documents state it for arguments alone, so their return values
 //! take the rule only under `compiler`, as their compilers implement it.
 use crate::{
+    context::{OpId, VarnodeId},
     dtype::{type_class, type_metatype, Datatype},
     fspec::ParamListStandard,
+    funcdata::Funcdata,
     infra::architecture::Architecture,
+    op::pcodeop_addlflags,
 };
-use kuna_base::address::Address;
+use kuna_base::address::{calc_mask, Address};
 use kuna_num::{opcodes::OpCode, pcoderaw::VarnodeData};
 
 /// The value of `narrowext`.
@@ -173,8 +176,8 @@ pub fn extension(
     Some(op)
 }
 
-/// [`extension`] under `rule`, falling back to `fallback` (the model's own
-/// answer) where the rule says nothing.
+/// [`extension`] under `rule`, falling back to the model's own answer where the
+/// rule says nothing; the flag says whether the rule supplied it.
 pub fn or_model(
     rule: Option<Widen>,
     list: &ParamListStandard,
@@ -182,9 +185,50 @@ pub fn or_model(
     size: i32,
     ty: Option<&Datatype>,
     res: &mut VarnodeData,
-) -> OpCode {
-    rule.zip(ty)
-        .and_then(|(w, ty)| extension(w, list, addr, size, ty, res))
-        .unwrap_or_else(|| list.assumed_extension(addr, size, res))
+) -> (OpCode, bool) {
+    match rule.zip(ty).and_then(|(w, ty)| extension(w, list, addr, size, ty, res)) {
+        Some(op) => (op, true),
+        None => (list.assumed_extension(addr, size, res), false),
+    }
 }
 
+/// Mark `op` as the extension the rule states.
+pub fn mark(data: &mut Funcdata, op: OpId) {
+    if let Some(o) = data.obank_mut().get_mut(op) {
+        o.set_additional_flag(pcodeop_addlflags::kuna_narrowext);
+    }
+}
+
+/// The bits of `vn` an unprototyped call or the function's own return reads
+/// when `vn` is a sign extension the rule states, or a copy or merge of such
+/// extensions: only the value it widens, as only the known-nonzero bits of a
+/// zero extension are.
+pub fn implied_sign_extension(data: &Funcdata, vn: VarnodeId) -> Option<u64> {
+    let mut seen = Vec::new();
+    implied_mask(data, vn, &mut seen).filter(|&mask| mask != 0)
+}
+
+fn implied_mask(data: &Funcdata, vn: VarnodeId, seen: &mut Vec<VarnodeId>) -> Option<u64> {
+    if seen.contains(&vn) {
+        return Some(0);
+    }
+    if seen.len() >= 16 {
+        return None;
+    }
+    seen.push(vn);
+    let op = data.obank().get(data.vbank().get(vn)?.get_def()?)?;
+    match op.code() {
+        OpCode::CPUI_INT_SEXT if op.get_addlflags() & pcodeop_addlflags::kuna_narrowext != 0 => {
+            Some(calc_mask(data.vbank().get(op.get_in(0)?)?.get_size()))
+        }
+        OpCode::CPUI_COPY => implied_mask(data, op.get_in(0)?, seen),
+        OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).try_fold(0, |acc, i| {
+            Some(acc | implied_mask(data, op.get_in(i)?, seen)?)
+        }),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+#[path = "kuna_narrowext/tests.rs"]
+mod tests;

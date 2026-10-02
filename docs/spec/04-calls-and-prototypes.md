@@ -1873,11 +1873,20 @@ to 32 bits. A MIPS caller that reads such a result as a whole register printed
 `CONCAT31(v1,fc(k)) * 3` with `v1` unassigned, and an Apple arm64 one
 `(unsigned int)(unsigned char)esc(k) * 3`. `off` keeps every spec's extension.
 
-A sign extension is not trimmed the way the spec's zero extension was. An
-unprototyped call whose argument is a declared `int` parameter of the caller
-reads the whole register, so on a 64-bit RISC-V or LoongArch image it prints
-the widening the register holds, `rsc((long)k)`, where the zero extension's
-known-zero upper bits let sub-variable flow narrow the argument to `rsc(k)`.
+An extension the rule supplies is marked on its op. The spec's zero extension
+was trimmed where an unprototyped call or the function's own return read it,
+because dead-code analysis counts only the possibly-nonzero bits of such a
+read as consumed (`ActionDeadCode::markConsumedParameters`,
+`gatherConsumedReturn`) and sub-variable flow then narrows it. A sign extension
+has no known-zero bits, so a marked one, or a copy or merge of marked ones of
+the same value, counts only the value it widens as consumed
+(`kuna_narrowext::implied_sign_extension`). An unprototyped call forwarding a
+declared `int` parameter therefore still prints `rsc(k)` and a function
+returning an `int` call's result still returns `int`. A compiler's own
+sign-extending instruction is not marked and keeps upstream's treatment. A
+narrow value the function compares or computes with as a whole register prints
+the extension it performs, `(long)k` or `(int8)token`, where a zero extension
+used to fold away.
 
 
 ### (kuna) `calleeprotostack` — the declared callee's stack contract

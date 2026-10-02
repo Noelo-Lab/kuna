@@ -360,7 +360,7 @@ fn extend_input(
 ) {
     use kuna_num::pcoderaw::VarnodeData;
     let mut vdata = VarnodeData::default();
-    let mut res = crate::kuna_narrowext::or_model(
+    let (mut res, stated) = crate::kuna_narrowext::or_model(
         data.get_arch().narrow_ext.input,
         data.get_func_proto().model().input(),
         in_addr,
@@ -387,6 +387,9 @@ fn extend_input(
     data.op_set_opcode_code(op, res);
     let _ = data.op_set_input(op, invn, 0);
     data.op_insert_begin(op, topbl);
+    if stated {
+        crate::kuna_narrowext::mark(data, op);
+    }
 }
 
 // =============================================================================
@@ -987,7 +990,7 @@ impl ActionFuncLink {
                 }
                 let _ = data.new_varnode_out(sz, &addr, callop);
                 let mut vdata = VarnodeData::default();
-                let mut res = crate::kuna_narrowext::or_model(
+                let (mut res, stated) = crate::kuna_narrowext::or_model(
                     data.get_arch().narrow_ext.output,
                     data.get_call_specs(idx).proto().model().output(),
                     &addr,
@@ -1015,6 +1018,9 @@ impl ActionFuncLink {
                     let _ = data.op_set_input(op, invn, 0);
                     data.op_set_opcode_code(op, res);
                     data.op_insert_after(op, callop);
+                    if stated {
+                        crate::kuna_narrowext::mark(data, op);
+                    }
                 }
             }
         } else {
