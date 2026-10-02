@@ -1371,7 +1371,18 @@ fn entry_facts(
     if reg_idx < 0 {
         return None;
     }
-    crate::kuna_calleedeadarg::probe_cached(arch, entry, reg_idx)
+    let sp = entry.get_space()?;
+    let key = (sp.get_index(), entry.get_offset());
+    if let Some(d) = arch.kuna_callee_dead_cache.get(&key) {
+        return Some(Rc::clone(d));
+    }
+    let probed = Rc::new(crate::kuna_calleedeadarg::probe_callee_entry_dead(
+        arch.translate(),
+        entry,
+        reg_idx,
+    ));
+    arch.kuna_callee_dead_cache.insert(key, Rc::clone(&probed));
+    Some(probed)
 }
 
 /// Where the model would put ONE more parameter past the ones in `pieces` --

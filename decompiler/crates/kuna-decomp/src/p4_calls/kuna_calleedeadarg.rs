@@ -210,9 +210,13 @@ pub struct CalleeEntryDead {
     /// The register reads such an instruction makes after its user op, which
     /// [`Self::reads`] does not see.
     return_reads: Vec<(int4, u64, int4)>,
-    /// Was the walk taken with conditionally executed instructions scored per
-    /// path? See [`probe_callee_entry_dead_with`].
-    strict: bool,
+    /// Register bytes some instruction writes only after a branch inside it,
+    /// a conditionally executed write (ARM `vmovgt`, a Thumb IT block) that
+    /// the walk credits on both paths. Read by [`Self::proves_dead_firmly`].
+    cond_written: ByteSet,
+    /// Did a path end inside an instruction that had already branched, such as
+    /// ARM's conditional `bxlt lr`, so the path skipping it was never walked?
+    lost: bool,
     /// Did the walk cover every path with nothing abandoned?
     complete: bool,
 }
@@ -358,6 +362,20 @@ impl CalleeEntryDead {
         self.complete
     }
 
+    /// [`Self::proves_dead`] without leaning on a conditionally executed write:
+    /// every path writes the range by instructions that always run.
+    pub fn proves_dead_firmly(&self, addr: &Address, size: int4) -> bool {
+        let (idx, off) = (self.reg_idx, addr.get_offset());
+        self.proves_dead(addr, size)
+            && !(off..off.wrapping_add(size as u64)).any(|b| self.cond_written.contains(&(idx, b)))
+    }
+
+    /// Did the walk follow every path, including the one past a conditional
+    /// return or call?
+    pub fn walked_every_path(&self) -> bool {
+        self.complete && !self.lost
+    }
+
     /// Does this body call nothing and only return, leaving
     /// `[addr, addr+size)` unread on the way? A user op that leads straight to
     /// an unconditional return hands nothing on.
@@ -370,9 +388,11 @@ impl CalleeEntryDead {
             && end > off
             && !self.cuts.is_empty()
             && sp.get_index() == idx
+            && !self.lost
             && self.named_cuts.is_empty()
             && self.opaque_cuts.len() == self.returning_opaque
             && !self.proves_read(addr, size)
+            && !(off..end).any(|b| self.cond_written.contains(&(idx, b)))
             && !self
                 .return_reads
                 .iter()
@@ -412,7 +432,8 @@ impl CalleeEntryDead {
             named_cuts: Vec::new(),
             returning_opaque: 0,
             return_reads: Vec::new(),
-            strict: false,
+            cond_written: ByteSet::new(),
+            lost: false,
             complete,
         }
     }
@@ -681,23 +702,16 @@ fn takes(stated: &crate::kuna_protoorder::RecoveredTypes, &(ridx, off, sz): &Reg
     })
 }
 
-/// The entry-liveness probe of `entry`, from the run's cache or taken now:
-/// strict where `armfloatargs` applies, so its rules never rest on a
-/// conditionally executed write.
-pub(crate) fn probe_cached(
+/// The entry-liveness probe of `entry`, from the run's cache or taken now.
+fn probe_cached(
     arch: &mut crate::architecture::Architecture,
     entry: &Address,
     reg_idx: int4,
 ) -> Option<Rc<CalleeEntryDead>> {
     let sp = entry.get_space()?;
     let key = (sp.get_index(), entry.get_offset());
-    let strict = crate::kuna_armfloatargs::applies(arch);
-    if arch.kuna_callee_dead_cache.get(&key).is_some_and(|d| d.strict != strict) {
-        arch.kuna_callee_dead_cache.clear();
-        arch.kuna_callee_forward_cache.clear();
-    }
     if !arch.kuna_callee_dead_cache.contains_key(&key) {
-        let probed = probe_callee_entry_dead_with(arch.translate(), entry, reg_idx, strict);
+        let probed = probe_callee_entry_dead(arch.translate(), entry, reg_idx);
         arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
     }
     arch.kuna_callee_dead_cache.get(&key).cloned()
@@ -793,19 +807,6 @@ pub fn probe_callee_entry_dead<T: kuna_sleigh::translate::Translate + ?Sized>(
     entry: &Address,
     reg_idx: int4,
 ) -> CalleeEntryDead {
-    probe_callee_entry_dead_with(tr, entry, reg_idx, false)
-}
-
-/// [`probe_callee_entry_dead`], and with `strict` a conditionally executed
-/// instruction is scored per path: the path that skips it continues from the
-/// written set at its condition, and a conditional return or call does not end
-/// the path that falls through it (ARM `vmovgt s0,s1`, `bxlt lr`).
-pub fn probe_callee_entry_dead_with<T: kuna_sleigh::translate::Translate + ?Sized>(
-    tr: &T,
-    entry: &Address,
-    reg_idx: int4,
-    strict: bool,
-) -> CalleeEntryDead {
     let mut res = CalleeEntryDead {
         reg_idx,
         reads: Vec::new(),
@@ -815,7 +816,8 @@ pub fn probe_callee_entry_dead_with<T: kuna_sleigh::translate::Translate + ?Size
         named_cuts: Vec::new(),
         returning_opaque: 0,
         return_reads: Vec::new(),
-        strict,
+        cond_written: ByteSet::new(),
+        lost: false,
         complete: true,
     };
     let Some(entry_space) = entry.get_space() else {
@@ -872,6 +874,7 @@ pub fn probe_callee_entry_dead_with<T: kuna_sleigh::translate::Translate + ?Size
         res.named_cuts.clear();
         res.returning_opaque = 0;
         res.return_reads.clear();
+        res.cond_written.clear();
     }
     res
 }
@@ -956,14 +959,7 @@ fn step_instruction(
 ) -> Option<Vec<Frame>> {
     let incoming = written.clone();
     let mut cur = written;
-    let strict = res.strict;
-    let mut targets: Vec<(Address, Option<ByteSet>)> = Vec::new();
-    let skipped = |targets: Vec<(Address, Option<ByteSet>)>| -> Vec<Frame> {
-        targets
-            .into_iter()
-            .filter_map(|(at, written)| Some(Frame { at, written: written? }))
-            .collect()
-    };
+    let mut targets: Vec<Address> = Vec::new();
     let mut ends_flow = false;
     for (k, op) in emit.ops.iter().enumerate() {
         // Reads. An instruction that branches inside itself is scored against
@@ -1001,7 +997,8 @@ fn step_instruction(
                     _ => res.opaque_cuts.push(cur.clone()),
                 }
                 res.cuts.push(cur);
-                return Some(skipped(targets));
+                res.lost |= !targets.is_empty();
+                return Some(Vec::new());
             }
             OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCHIND => {
                 if op.opc == OpCode::CPUI_CALLOTHER && !emit.internal_flow {
@@ -1009,7 +1006,8 @@ fn step_instruction(
                 }
                 res.opaque_cuts.push(cur.clone());
                 res.cuts.push(cur);
-                return Some(skipped(targets));
+                res.lost |= !targets.is_empty();
+                return Some(Vec::new());
             }
             // A RETURN is a path terminator like any other: the register has to
             // be written BEFORE it, or the body has shown nothing.  A callee
@@ -1017,7 +1015,8 @@ fn step_instruction(
             // proof would delete the arguments of every stub and thunk.
             OpCode::CPUI_RETURN => {
                 res.cuts.push(cur);
-                return Some(skipped(targets));
+                res.lost |= !targets.is_empty();
+                return Some(Vec::new());
             }
             // The `<spaceid>` operand's offset IS the space-manager index. An
             // access to the register space through LOAD/STORE is an indexed
@@ -1026,7 +1025,8 @@ fn step_instruction(
                 if op.ins.first().map(|v| v.offset as int4) == Some(res.reg_idx) {
                     res.opaque_cuts.push(cur.clone());
                     res.cuts.push(cur);
-                    return Some(skipped(targets));
+                    res.lost |= !targets.is_empty();
+                    return Some(Vec::new());
                 }
             }
             OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
@@ -1035,8 +1035,7 @@ fn step_instruction(
                     // whole instruction is being read anyway.
                     Some(sp) if sp.get_type() == spacetype::IPTR_CONSTANT => {}
                     Some(sp) => {
-                        let at = Address::new(Rc::clone(sp), op.ins[0].offset);
-                        targets.push((at, strict.then(|| cur.clone())));
+                        targets.push(Address::new(Rc::clone(sp), op.ins[0].offset));
                         if op.opc == OpCode::CPUI_BRANCH {
                             ends_flow = true;
                         }
@@ -1044,7 +1043,8 @@ fn step_instruction(
                     None => {
                         res.opaque_cuts.push(cur.clone());
                         res.cuts.push(cur);
-                        return Some(skipped(targets));
+                        res.lost |= !targets.is_empty();
+                        return Some(Vec::new());
                     }
                 }
             }
@@ -1058,6 +1058,9 @@ fn step_instruction(
                         let idx = res.reg_idx;
                         for b in o.offset..o.offset + o.size as u64 {
                             cur.insert((idx, b));
+                            if !targets.is_empty() {
+                                res.cond_written.insert((idx, b));
+                            }
                         }
                         if cur.len() > MAX_WRITTEN_BYTES {
                             res.complete = false;
@@ -1068,10 +1071,8 @@ fn step_instruction(
             }
         }
     }
-    let mut next: Vec<Frame> = targets
-        .into_iter()
-        .map(|(at, written)| Frame { at, written: written.unwrap_or_else(|| cur.clone()) })
-        .collect();
+    let mut next: Vec<Frame> =
+        targets.into_iter().map(|t| Frame { at: t, written: cur.clone() }).collect();
     if !ends_flow {
         next.push(Frame { at: at + len as i64, written: cur });
     }
@@ -1240,7 +1241,8 @@ pub(crate) fn is_leftover_call_result(data: &Funcdata, vn: VarnodeId, depth: u32
 /// 1. the value in the register is an earlier call's leftover result, not
 ///    something the caller placed there ([`is_leftover_call_result`]); and
 /// 2. the callee overwrites that register on every path from its entry, before
-///    ever reading it ([`CalleeEntryDead::proves_dead`]).
+///    ever reading it ([`CalleeEntryDead::proves_dead`]; with `armfloatargs`
+///    on, by instructions that always run).
 ///
 /// Answers `false` with the option off, for a non-register trial, for an
 /// indirect call, and for every callee the probe could not fully cover.
@@ -1259,6 +1261,7 @@ pub fn trial_is_dead_in_callee(
         return false;
     }
     let dead = match data.kuna_callee_entry_dead(entry) {
+        Some(d) if data.get_arch().arm_float_args => d.proves_dead_firmly(trial_addr, trial_size),
         Some(d) => d.proves_dead(trial_addr, trial_size),
         None => false,
     };

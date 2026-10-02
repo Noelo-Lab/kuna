@@ -379,7 +379,7 @@ fn plan_stated_inputs(
             r.proves_input(addr, half) && r.proves_input(&(addr + i64::from(half)), half)
         });
         let widened = widens(&[passed(lo), passed(hi)]);
-        let zero = if dead.is_some_and(|d| d.proves_dead(addr, size)) {
+        let zero = if dead.is_some_and(|d| d.proves_dead_firmly(addr, size)) {
             widened
         } else if read_whole && !widened {
             false
@@ -427,7 +427,8 @@ fn plan_stated_inputs(
         let unreached = dead.is_some_and(|d| {
             !d.proves_read(addr, *size)
                 && (d.returns_untouched(addr, *size)
-                    || forward.is_some_and(|f| f.transfer_free(addr, *size)))
+                    || (d.walked_every_path()
+                        && forward.is_some_and(|f| f.transfer_free(addr, *size))))
                 && result_written(data, &entry, d, addr, *size)
         });
         if filler || unreached {
@@ -436,7 +437,8 @@ fn plan_stated_inputs(
             kept.push((addr.clone(), *size));
         }
     }
-    let ignored = |addr: &Address, size: i32| dead.is_some_and(|d| d.proves_dead(addr, size));
+    let ignored =
+        |addr: &Address, size: i32| dead.is_some_and(|d| d.proves_dead_firmly(addr, size));
     let mut bind = Vec::new();
     let mut zeros = Vec::new();
     let mut halves = Vec::new();
@@ -508,7 +510,7 @@ pub fn unread_slot(data: &Funcdata, call: &FuncCallSpecs, addr: &Address, size: 
 /// outside the callee's result, which such a path would hand back unchanged.
 fn never_reads(data: &Funcdata, entry: &Address, addr: &Address, size: i32) -> bool {
     data.kuna_callee_entry_dead(entry).is_some_and(|d| {
-        d.proves_dead(addr, size)
+        d.proves_dead_firmly(addr, size)
             || (d.returns_untouched(addr, size) && result_written(data, entry, d, addr, size))
     })
 }
@@ -535,7 +537,8 @@ fn result_written(
     }
     let start = addr.get_offset().max(out.get_offset());
     let end = (addr.get_offset() + size as u64).min(out.get_offset() + *out_size as u64);
-    start >= end || dead.proves_dead(&(addr + (start - addr.get_offset()) as i64), (end - start) as i32)
+    start >= end
+        || dead.proves_dead_firmly(&(addr + (start - addr.get_offset()) as i64), (end - start) as i32)
 }
 
 
