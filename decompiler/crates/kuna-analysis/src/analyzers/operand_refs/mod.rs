@@ -35,7 +35,9 @@
 //!    uses as the base of an indexed load wider than a byte, which addresses a
 //!    jump table, a function-pointer table or a word map ([`IndexedBases`]),
 //! 5. emit a [`crate::pass::StringFact`] (a typed `char[N]`) when the target is a
-//!    NUL-terminated printable run, plus a `readonly` range over it — reusing the
+//!    NUL-terminated printable run that is not a pointer-aligned slot holding an
+//!    address of the image ([`crate::strings::kuna_ptrslot`]), plus a `readonly`
+//!    range over it — reusing the
 //!    **existing** strings/readonly commit arms, so the printer's
 //!    pointer-to-readonly-char-array literal route (Increment 12) renders the
 //!    reference as the string literal.
@@ -503,14 +505,17 @@ pub fn scan_scalar_refs(
 /// referenced read-only address that begins a NUL-terminated printable run, emit a
 /// [`StringFact`] (a typed `char[N]`, via the **existing** strings commit arm) + a
 /// `readonly` range over it — so the printer renders the reference as the string
-/// literal. Targets that are not printable runs are skipped (no type to plant).
+/// literal. Targets that are not printable runs are skipped (no type to plant),
+/// and so is a target whose pointer-sized slot holds an address of the image
+/// ([`crate::strings::kuna_ptrslot`]): an entry of a vtable or of a pointer table.
 /// Pure — the unit tests assert it directly.
 fn emit_facts(file: &object::File, refs: &[ScalarRef]) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     let mut planted: Vec<u64> = Vec::new();
+    let slots = crate::strings::kuna_ptrslot::PointerSlots::new(file);
     for r in refs {
-        if planted.contains(&r.to) {
-            continue; // one fact per target address
+        if planted.contains(&r.to) || slots.holds_address(r.to) {
+            continue;
         }
         if let Some(len) = readonly_string_at(file, r.to) {
             out.strings.push(StringFact { addr: r.to, len });
