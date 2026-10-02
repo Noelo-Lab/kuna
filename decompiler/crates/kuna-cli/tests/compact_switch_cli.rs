@@ -596,6 +596,46 @@ fn address_labels_are_the_table_values_not_the_block_starts() {
     source_round_trip(&fixture, &c);
 }
 
+/// The `switch_cutrow_labelled_x86_64` switch, assembled with a `nop` at the
+/// start of the two dispatched cases.  A `nop` has no p-code, so each case's
+/// block starts one byte past its table value, and the address labels must
+/// still be the table values 0x404153 and 0x404162.
+#[test]
+fn address_labels_hold_at_a_case_starting_with_a_nop() {
+    let fixture = SourceFixture {
+        name: "switch_nop_case_x86_64",
+        pick: "0x40410e",
+        base: 0x403000,
+        map: (0x405030, 20),
+        modes: 40,
+    };
+    let c = source_decompile(&fixture);
+    assert!(c.contains("labelled by address"), "kept index labels that miss mode 3: {c}");
+    for label in ["case 0x404153:", "case 0x404162:"] {
+        assert!(c.contains(label), "lost the table value {label}: {c}");
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixture, &c);
+}
+
+/// The `switch_shared_epilogue_mipsel` switch, assembled with a `nop` at the
+/// start of the case at the table value 0x4001a8, which modes 0 and 5 reach.
+#[test]
+fn address_labels_hold_at_a_mips_case_starting_with_a_nop() {
+    let fixture = SourceFixture {
+        name: "switch_nop_case_mipsel",
+        pick: "0x400124",
+        base: 0x400000,
+        map: (0x400214, 7),
+        modes: 40,
+    };
+    let c = source_decompile(&fixture);
+    assert!(c.contains("case 0x4001a8:"), "lost the table value 0x4001a8: {c}");
+    assert!(!c.contains("case 0x40017c:"), "labelled a case by its block start: {c}");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixture, &c);
+}
+
 fn cut_row(fixture: &SourceFixture) {
     let c = source_decompile(fixture);
     assert!(c.contains("switch("), "lost the switch: {c}");

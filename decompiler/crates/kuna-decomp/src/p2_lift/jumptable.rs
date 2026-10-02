@@ -5663,10 +5663,16 @@ impl JumpTable {
                 let Some(parent) = parent.filter(|&bl| pos < blocks.block(bl).size_out()) else {
                     return false;
                 };
-                match blocks.block(blocks.block(parent).get_out(pos)).kind() {
-                    BlockKind::Basic(bd) => bd.cover.in_range(address, 1),
-                    _ => false,
-                }
+                let BlockKind::Basic(bd) = blocks.block(blocks.block(parent).get_out(pos)).kind()
+                else {
+                    return false;
+                };
+                bd.cover.in_range(address, 1)
+                    || fd
+                        .obank()
+                        .target_lower_bound(address)
+                        .and_then(|op| fd.obank().get(op))
+                        .is_some_and(|op| bd.cover.in_range(op.get_addr(), 1))
             });
         }
         self.clear_saved_model();
