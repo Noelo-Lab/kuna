@@ -1041,7 +1041,9 @@ that machinery.
   output, plants the declared output Varnode on every live RETURN. Locked
   inputs are forced into existence as typed input Varnodes, with the model's
   assumed extension op materialized at the entry block (`extend_input`), so a
-  partially-used wide parameter still exists to take a SUBPIECE.
+  partially-used wide parameter still exists to take a SUBPIECE. (kuna) Where
+  the calling convention states the extension, `narrowext` (§4.4) supplies it
+  in place of the model's.
 - **`ActionDefaultParams`** (`coreaction_protos.rs (ActionDefaultParams)`)
   gives every call spec a model: a callee with a source-declared prototype
   gets a locked copy re-built from the pieces parked on its global symbol
@@ -1091,7 +1093,8 @@ that machinery.
   parameter materialized as a stack LOAD, and a stack+register `join`
   parameter reassembled with a PIECE. Output side: locked non-void output
   builds the output Varnode (plus the model's assumed extension after the
-  call); a locked *stack* output is deferred to heritage
+  call, or (kuna) the one `narrowext` states); a locked *stack* output is
+  deferred to heritage
   (`set_stack_output_lock`); unlocked → `init_active_output`. When stack
   parameters may exist but the call-time stack offset is unknown, a
   **spacebase placeholder** input is appended
@@ -1711,8 +1714,10 @@ fixed ones (x86-64 `xmm0`, AArch64 `d0`), and a register-pair parameter prints
 a stale value for one of its words (32-bit ARM, PowerPC, RISC-V and MIPS).
 A return value narrower than the register entry that holds it (a `char`,
 `short` or `bool`, or an `int` on a 64-bit RISC-V) is forced only where the
-caller extends it itself (x86, and AArch64 other than Apple's) or the model's
-output entry extends it by its type (`extension="inttype"`: ARM, PowerPC). An
+caller extends it itself (x86, and AArch64 other than Apple's), the model's
+output entry extends it by its type (`extension="inttype"`: ARM, PowerPC), or
+`narrowext` states its extension (§4.4): RISC-V and LoongArch by default, MIPS
+and Apple arm64 under `narrowext compiler`. An
 Apple arm64 callee extends a return value narrower than 32 bits to 32 bits and
 its caller reads `w0` as it is, so there only an `int` or wider return counts
 as caller-extended. The loader reads the platform from the container
@@ -1720,13 +1725,13 @@ as caller-extended. The loader reads the platform from the container
 arm64 image is Apple's, and an ELF or PE one follows AAPCS64, whose caller
 extends. The `AppleSilicon` language, and an arm64 image whose container says
 neither (a raw image, the Ghidra front-end), are treated as Apple's, since the
-same bytes are correct there only if the callee extended. Elsewhere the
-callee's extension is
-modelled wrongly and the recovered call is kept: a MIPS model states no
-extension, so the rest of `v0` would print as an unassigned piece of the
-result, and the RISC-V model and Apple's AArch64 one state zero extension,
-which turns a negative `signed char`, `short` or 64-bit RISC-V `int` result
-into a large positive one.
+same bytes are correct there only if the callee extended. Elsewhere (a plain
+`char` or an undefined type, which `narrowext` leaves alone, or with it off)
+the callee's extension is modelled wrongly and the recovered call is kept: a
+MIPS model states no extension, so the rest of `v0` would print as an
+unassigned piece of the result, and the RISC-V model and Apple's AArch64 one
+state zero extension, which turns a negative `signed char`, `short` or 64-bit
+RISC-V `int` result into a large positive one.
 
 **Declared prototypes on a soft-float image.** A declaration that names no
 convention — a `--assert prototype` / `map prototype` / `parse line extern`
@@ -1818,6 +1823,62 @@ symbols (chapter [06](06-variables-and-merge.md) §6.2), matching upstream's
 symbol-backed `ProtoStoreSymbol::encode`, which writes nothing.
 
 ## 4.4 kuna extensions
+
+### (kuna) `narrowext` — a narrow argument or return value extended as the ABI states
+
+A compiler spec states one extension per register entry: `zero`, `sign`,
+`inttype` (by the value's type) or none. The extension is applied in three
+places: after a call whose return value is locked narrower than its register
+(`ActionFuncLink`), when a return value committed from trials is narrower than
+the register the caller reads (`FuncCallSpecs::commit_new_outputs`), and at the
+entry of a function whose locked parameter is narrower than its register
+(`extend_input`). One attribute per entry cannot say what the RISC-V and
+LoongArch procedure-call standards say. RISC-V widens an integer narrower than
+XLEN by the sign of its type up to 32 bits, then sign-extends it to XLEN, and
+returns a value as it would pass the first argument of that type. LoongArch
+zero-extends an unsigned integral value and sign-extends a signed one, except
+that LP64 keeps an unsigned 32-bit value sign-extended, and returns a value the
+same way. The RISC-V specs state `zero` and the LoongArch ones nothing, so on a
+64-bit image a call to `int fi(int)` read as a 64-bit value printed
+`(unsigned long)(unsigned int)fi(k)`, a callee that used its `int` parameter as
+an index printed `(unsigned long)(unsigned int)x`, and a narrow LoongArch value
+printed as `CONCAT44(v1,fi(k))` with an unassigned `v1`.
+
+`narrowext` replaces the spec's answer with the convention's
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_narrowext.rs`). The value must
+sit in the least significant bytes of a register entry (not a join, not a
+floating-point entry, not the stack) and its type must state its sign: a signed
+integer or enum is sign-extended, an unsigned one, an unsigned enum or a `bool`
+is zero-extended. Under the rule for RISC-V, LoongArch and MIPS a value
+narrower than 32 bits takes that extension to the whole register, and a 32-bit
+value in a 64-bit register is sign-extended whatever its sign. Under Apple's
+rule a value narrower than 32 bits takes it to the low 32 bits only, and the
+rest of the register is left as the call or the entry leaves it. Plain `char`
+keeps the spec's extension, since its sign is the platform's and the DWARF
+reader gives every character type that one type; so do an undefined type, a
+pointer, a float, a structure, and every value on any other processor. A typed
+indirect call whose return value the rule extends is forced as declared (§4.3).
+
+The value says which rules apply. `abi`, the default, applies a rule wherever
+an ABI document states it: RISC-V and LoongArch arguments and return values,
+the arguments of MIPS o32 (the System V MIPS supplement promotes every integer
+argument to a 32-bit word) and n32/n64 (SGI's handbook promotes them to 64 bits
+and sign-extends a 32-bit one whatever its sign), and the arguments of Apple
+arm64, whose caller extends a value narrower than 32 bits to 32 bits. None of
+those documents says how a return value is extended, nor how an EABI or o64
+argument is. `compiler` adds those, as GCC and LLVM implement them: their MIPS
+callees widen a return value like an argument and their callers read it as
+it is, and Apple's clang callee extends a return value narrower than 32 bits
+to 32 bits. A MIPS caller that reads such a result as a whole register printed
+`CONCAT31(v1,fc(k)) * 3` with `v1` unassigned, and an Apple arm64 one
+`(unsigned int)(unsigned char)esc(k) * 3`. `off` keeps every spec's extension.
+
+A sign extension is not trimmed the way the spec's zero extension was. An
+unprototyped call whose argument is a declared `int` parameter of the caller
+reads the whole register, so on a 64-bit RISC-V or LoongArch image it prints
+the widening the register holds, `rsc((long)k)`, where the zero extension's
+known-zero upper bits let sub-variable flow narrow the argument to `rsc(k)`.
+
 
 ### (kuna) `calleeprotostack` — the declared callee's stack contract
 
