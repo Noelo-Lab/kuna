@@ -247,6 +247,9 @@ pub fn cap_stated_inputs(call: &mut FuncCallSpecs, data: &mut Funcdata, written:
             let _ = data.op_set_input(call.get_op(), zero, slot);
         }
     }
+    for &(i, mask) in &plan.halves {
+        zero_halves(call, data, i, mask);
+    }
     let active = call.get_active_input();
     for &i in &plan.bind {
         let t = active.get_trial_mut(i);
@@ -275,6 +278,7 @@ struct StatedPlan {
     drop: Vec<i32>,
     bind: Vec<i32>,
     zeros: Vec<i32>,
+    halves: Vec<(i32, [bool; 2])>,
     joins: Vec<WordJoin>,
     missing: Vec<(Address, i32, usize)>,
     partial: bool,
@@ -420,12 +424,12 @@ fn plan_stated_inputs(
             continue;
         }
         let filler = *unref && wanted.iter().any(|(a, _)| above(a, addr));
-        let unreached = outside_result(data, &entry, addr, *size)
-            && dead.is_some_and(|d| {
-                !d.proves_read(addr, *size)
-                    && (d.returns_untouched(addr, *size)
-                        || forward.is_some_and(|f| f.transfer_free(addr, *size)))
-            });
+        let unreached = dead.is_some_and(|d| {
+            !d.proves_read(addr, *size)
+                && (d.returns_untouched(addr, *size)
+                    || forward.is_some_and(|f| f.transfer_free(addr, *size)))
+                && (d.proves_dead(addr, *size) || outside_result(data, &entry, addr, *size))
+        });
         if filler || unreached {
             drop.push(*i);
         } else {
@@ -435,6 +439,7 @@ fn plan_stated_inputs(
     let ignored = |addr: &Address, size: i32| dead.is_some_and(|d| d.proves_dead(addr, size));
     let mut bind = Vec::new();
     let mut zeros = Vec::new();
+    let mut halves = Vec::new();
     let mut missing = Vec::new();
     let mut partial = false;
     for (addr, size) in &wanted {
@@ -445,12 +450,22 @@ fn plan_stated_inputs(
         partial |= kept.iter().any(|(a, s)| overlaps(addr, *size, a, *s));
         if let Some((i, ..)) = exact {
             let parts = passed(*i).map_or(vec![None], |vn| pieces(data, vn));
-            let leftover = passed(*i).is_some_and(|vn| {
+            let leftover = |vn: VarnodeId, size: i32| {
                 crate::kuna_calleedeadarg::is_leftover_call_result(data, vn, 0)
-                    && !passes_result(data, vn, *size, 0)
-            });
-            if never_reads(data, &entry, addr, *size) && (widens(&parts) || leftover) {
+                    && !passes_result(data, vn, size, 0)
+            };
+            let whole = passed(*i).is_some_and(|vn| leftover(vn, *size));
+            if never_reads(data, &entry, addr, *size) && (widens(&parts) || whole) {
                 zeros.push(*i);
+            } else if let [Some(lo), Some(hi)] = parts.as_slice() {
+                let half = size / 2;
+                let unread = |vn: VarnodeId, at: &Address| {
+                    leftover(vn, half) && never_reads(data, &entry, at, half)
+                };
+                let mask = [unread(*lo, addr), unread(*hi, &(addr + i64::from(half)))];
+                if mask[0] != mask[1] {
+                    halves.push((*i, mask));
+                }
             }
         }
         match exact {
@@ -476,7 +491,7 @@ fn plan_stated_inputs(
             },
         }
     }
-    Some(StatedPlan { drop, bind, zeros, joins, missing, partial })
+    Some(StatedPlan { drop, bind, zeros, halves, joins, missing, partial })
 }
 
 /// Is `[addr, addr+size)` a VFP input slot of `call` that its callee never
@@ -501,20 +516,19 @@ fn never_reads(data: &Funcdata, entry: &Address, addr: &Address, size: i32) -> b
     })
 }
 
-/// Does `[addr, addr+size)` lie clear of the result the callee at `entry`
-/// states? Only a result computed on every return is stated, so a callee
-/// stating none may hand back what a caller left in any of its registers.
+/// Does `[addr, addr+size)` lie clear of the storage the callee at `entry`
+/// returns its value in, whether or not every return computes it? A return
+/// that leaves that storage untouched hands back what the caller left there.
 fn outside_result(data: &Funcdata, entry: &Address, addr: &Address, size: i32) -> bool {
-    let Some((out, out_size, _)) = data
-        .kuna_protoorder_types(entry)
-        .filter(|s| s.arity_sound)
-        .and_then(|s| s.output.clone())
-    else {
+    let Some(stated) = data.kuna_protoorder_types(entry).filter(|s| s.arity_sound) else {
         return false;
+    };
+    let Some((out, out_size)) = &stated.result else {
+        return true;
     };
     out.get_space().map(|s| s.get_index()) == addr.get_space().map(|s| s.get_index())
         && out.overlap(0, addr, size) < 0
-        && addr.overlap(0, &out, out_size) < 0
+        && addr.overlap(0, out, *out_size) < 0
 }
 
 /// Is `vn`, through copies and merges, an earlier call's whole result of
@@ -557,15 +571,9 @@ fn join_words(call: &mut FuncCallSpecs, data: &mut Funcdata, join: &WordJoin) {
     let whole = if join.zero {
         data.new_constant(join.size, 0)
     } else {
-        let pc = call_op.get_addr().clone();
-        let piece = data.new_op(2, pc);
-        data.op_set_opcode_code(piece, OpCode::CPUI_PIECE);
-        let Ok(whole) = data.new_unique_out(join.size, piece) else {
+        let Some(whole) = piece_before(data, op, hi, lo, join.size) else {
             return;
         };
-        let _ = data.op_set_input(piece, hi, 0);
-        let _ = data.op_set_input(piece, lo, 1);
-        data.op_insert_before(piece, op);
         whole
     };
     let _ = data.op_set_input(op, whole, lo_slot);
@@ -576,6 +584,49 @@ fn join_words(call: &mut FuncCallSpecs, data: &mut Funcdata, join: &WordJoin) {
     t.set_entry(Some(join.entry), 0);
     t.mark_active();
     t.mark_used();
+}
+
+/// Pass the stated input in trial `i` with each word `mask` marks, low word
+/// first, replaced by zero: the callee never reads that word, and the caller
+/// left an earlier call's result there.
+fn zero_halves(call: &FuncCallSpecs, data: &mut Funcdata, i: i32, mask: [bool; 2]) {
+    let op = call.get_op();
+    let slot = call.active_input().get_trial(i).get_slot();
+    let Some(vn) = data.obank().get(op).and_then(|o| o.get_in(slot)) else {
+        return;
+    };
+    let Some((size, big)) =
+        data.vbank().get(vn).map(|v| (v.get_size(), v.get_addr().is_big_endian()))
+    else {
+        return;
+    };
+    let [Some(lo), Some(hi)] = pieces(data, vn)[..] else {
+        return;
+    };
+    let lo = if mask[0] { data.new_constant(size / 2, 0) } else { lo };
+    let hi = if mask[1] { data.new_constant(size / 2, 0) } else { hi };
+    let (most, least) = if big { (lo, hi) } else { (hi, lo) };
+    if let Some(whole) = piece_before(data, op, most, least, size) {
+        let _ = data.op_set_input(op, whole, slot);
+    }
+}
+
+/// A new `PIECE(most, least)` of `size` bytes in front of `op`.
+fn piece_before(
+    data: &mut Funcdata,
+    op: crate::context::OpId,
+    most: VarnodeId,
+    least: VarnodeId,
+    size: i32,
+) -> Option<VarnodeId> {
+    let pc = data.obank().get(op)?.get_addr().clone();
+    let piece = data.new_op(2, pc);
+    data.op_set_opcode_code(piece, OpCode::CPUI_PIECE);
+    let whole = data.new_unique_out(size, piece).ok()?;
+    let _ = data.op_set_input(piece, most, 0);
+    let _ = data.op_set_input(piece, least, 1);
+    data.op_insert_before(piece, op);
+    Some(whole)
 }
 
 /// The value `vn` as its low and high parts when it is a PIECE, else itself.
