@@ -215,8 +215,8 @@ pub fn written_inputs(call: &FuncCallSpecs, data: &Funcdata) -> Vec<(Address, i3
 /// last stated input the caller wrote or the callee provably reads: stated
 /// inputs in front of it become arguments, a stated double the call holds as
 /// its two words becomes one argument where the callee reads both, a stated
-/// input the callee ignores is zero where the caller's value would widen one of
-/// its own entry registers or is an earlier call's leftover, and a filler the
+/// input or word the callee ignores is zero where the caller's value would widen
+/// one of its own entry registers or is an earlier call's leftover, and a filler the
 /// contract skips is dropped. Another unstated input goes only where the callee
 /// neither reads nor forwards it. A stated input the scoring released and the
 /// callee reads, or one held in part, leaves the call as recovered.
@@ -428,7 +428,7 @@ fn plan_stated_inputs(
             !d.proves_read(addr, *size)
                 && (d.returns_untouched(addr, *size)
                     || forward.is_some_and(|f| f.transfer_free(addr, *size)))
-                && (d.proves_dead(addr, *size) || outside_result(data, &entry, addr, *size))
+                && result_written(data, &entry, d, addr, *size)
         });
         if filler || unreached {
             drop.push(*i);
@@ -450,18 +450,15 @@ fn plan_stated_inputs(
         partial |= kept.iter().any(|(a, s)| overlaps(addr, *size, a, *s));
         if let Some((i, ..)) = exact {
             let parts = passed(*i).map_or(vec![None], |vn| pieces(data, vn));
-            let leftover = |vn: VarnodeId, size: i32| {
-                crate::kuna_calleedeadarg::is_leftover_call_result(data, vn, 0)
-                    && !passes_result(data, vn, size, 0)
-            };
-            let whole = passed(*i).is_some_and(|vn| leftover(vn, *size));
+            let leftover =
+                |vn: VarnodeId| crate::kuna_calleedeadarg::is_leftover_call_result(data, vn, 0);
+            let whole = passed(*i).is_some_and(leftover);
             if never_reads(data, &entry, addr, *size) && (widens(&parts) || whole) {
                 zeros.push(*i);
             } else if let [Some(lo), Some(hi)] = parts.as_slice() {
                 let half = size / 2;
-                let unread = |vn: VarnodeId, at: &Address| {
-                    leftover(vn, half) && never_reads(data, &entry, at, half)
-                };
+                let unread =
+                    |vn: VarnodeId, at: &Address| leftover(vn) && never_reads(data, &entry, at, half);
                 let mask = [unread(*lo, addr), unread(*hi, &(addr + i64::from(half)))];
                 if mask[0] != mask[1] {
                     halves.push((*i, mask));
@@ -507,51 +504,40 @@ pub fn unread_slot(data: &Funcdata, call: &FuncCallSpecs, addr: &Address, size: 
 }
 
 /// Does the callee at `entry` never read `[addr, addr+size)`? Every path
-/// writes it first, or the body only returns without touching it and it lies
-/// outside the callee's stated result, which such a path hands back unchanged.
+/// writes it first, or the body only returns without touching it where it lies
+/// outside the callee's result, which such a path would hand back unchanged.
 fn never_reads(data: &Funcdata, entry: &Address, addr: &Address, size: i32) -> bool {
     data.kuna_callee_entry_dead(entry).is_some_and(|d| {
         d.proves_dead(addr, size)
-            || (d.returns_untouched(addr, size) && outside_result(data, entry, addr, size))
+            || (d.returns_untouched(addr, size) && result_written(data, entry, d, addr, size))
     })
 }
 
-/// Does `[addr, addr+size)` lie clear of the storage the callee at `entry`
-/// returns its value in, whether or not every return computes it? A return
-/// that leaves that storage untouched hands back what the caller left there.
-fn outside_result(data: &Funcdata, entry: &Address, addr: &Address, size: i32) -> bool {
+/// Is the part of `[addr, addr+size)` inside the storage the callee at `entry`
+/// returns its value in, whether or not every return computes it, written on
+/// every path before any read? A return that leaves that storage untouched
+/// hands back what the caller left there.
+fn result_written(
+    data: &Funcdata,
+    entry: &Address,
+    dead: &crate::kuna_calleedeadarg::CalleeEntryDead,
+    addr: &Address,
+    size: i32,
+) -> bool {
     let Some(stated) = data.kuna_protoorder_types(entry).filter(|s| s.arity_sound) else {
         return false;
     };
     let Some((out, out_size)) = &stated.result else {
         return true;
     };
-    out.get_space().map(|s| s.get_index()) == addr.get_space().map(|s| s.get_index())
-        && out.overlap(0, addr, size) < 0
-        && addr.overlap(0, out, *out_size) < 0
+    if out.get_space().map(|s| s.get_index()) != addr.get_space().map(|s| s.get_index()) {
+        return false;
+    }
+    let start = addr.get_offset().max(out.get_offset());
+    let end = (addr.get_offset() + size as u64).min(out.get_offset() + *out_size as u64);
+    start >= end || dead.proves_dead(&(addr + (start - addr.get_offset()) as i64), (end - start) as i32)
 }
 
-/// Is `vn`, through copies and merges, an earlier call's whole result of
-/// `size` bytes, a value the caller hands on rather than one left over?
-fn passes_result(data: &Funcdata, vn: VarnodeId, size: i32, depth: u32) -> bool {
-    if depth > 12 {
-        return false;
-    }
-    let Some(v) = data.vbank().get(vn) else {
-        return false;
-    };
-    let Some(op) = v.get_def().and_then(|d| data.obank().get(d)) else {
-        return false;
-    };
-    let through = |k: i32| op.get_in(k).is_some_and(|x| passes_result(data, x, size, depth + 1));
-    match op.code() {
-        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => v.get_size() == size,
-        OpCode::CPUI_INDIRECT if op.is_indirect_creation() => false,
-        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => through(0),
-        OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).any(through),
-        _ => false,
-    }
-}
 
 /// Pass a stated double held as two word trials as one argument: a PIECE of
 /// the two words, or zero for a double the callee ignores, takes the low word's
