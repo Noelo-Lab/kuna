@@ -191,8 +191,11 @@ retype and rename through `prototype 0xENTRY <C declaration>`; a global is `data
 <type> <name>`; a byte patch is `bytes 0xADDR <hex>` (every later decode and `read` sees it).
 
 `inspect` is one load and one function — the same batch `decompile <selector>` runs (with
-its structure-naming convergence), so its `code` is `decompile`'s byte for byte; like
+its structure-naming convergence) with `structdefs on`, so its `code` is `decompile`'s byte
+for byte below the definitions of the types the function names (the `kuna decompile
+--option structdefs on` preamble, then a blank line; `types` lists the same set). Like
 `decompile`, a name keeps the discovery walk on and an address skips `fast_funcdisc`.
+`decompile` itself keeps the CLI's default and prints no preamble.
 Compact JSON, every address a number plus an `_hex` twin:
 
 ```
@@ -489,9 +492,14 @@ program is open it is off, saying "Open a program first"), a ⋯ menu (*Download
 pressed; the choice is kept, and a stored "system" from an earlier build reads as
 dark). Before a file is open the body is a welcome screen: **Decompile a binary program**,
 "Open a program to generate source-like code for it running 100% in the web browser
-using WASM", and a drop zone with *Open file*. A
+using WASM", and a drop zone with *Open file* and *Paste base64*. A
 file dropped anywhere on the page opens too; the page reads the bytes before it clears
-the input, so picking the same file again works. With a file open the body is three
+the input, so picking the same file again works. A program can also arrive as base64
+text: *Paste base64* (or *Open base64 text* in the ⋯ menu) asks for it, and Ctrl+V
+outside a text field opens a pasted file or base64 text directly. `decompile/base64.js`
+accepts `base64` output with its line breaks, a `data:…;base64,` URL and the URL-safe
+alphabet, and names the program `pasted.elf`/`.exe`/`.macho`/`.bin` by its magic; a
+Ctrl+V paste under 16 bytes (a stray word such as `main` is valid base64) only warns. With a file open the body is three
 columns: the function list, the function (its name alone, with its address as the
 tooltip; *Rename* and *Signature*, the view switch, *View options*), and the Explain
 panel, which can be
@@ -713,6 +721,19 @@ comes from the engine's `xrefs` on request (*Find who calls it*, or `x`), each c
 linked to the calling instruction and saying how it refers ("Called by _start (uses its
 address)"), plus "Uses data at …". If the request fails, the panel keeps the callees and
 says why.
+
+**Type definitions.** When a function names a struct, union, enum or typedef (a
+`struct_0` the decompiler worked out, a DWARF struct, a library type such as `FILE`), the
+Code view opens with their definitions under the heading *Types this function uses*, on a
+shaded block, and the function starts below them. The heading folds the block; a block of
+more than 30 lines (a debug-info or C++ program can name dozens of types) starts folded,
+and a student's own choice holds for the rest of the visit. Folded, the keyboard starts at
+the signature; the Stack view's "only in the debug info" test ignores the block. It is the engine's own text, so
+line numbers match `kuna decompile --option structdefs on`; it is highlighted but not
+clickable (a field name is not a variable to rename), and selecting one of its lines says
+which type it defines, that a `/* opaque */` one is a library type whose fields are not
+known, and for a `struct_N` what `field_0x8` means (`render-c.js` `preambleLength`, the
+lines before the signature).
 
 **Strings.** The sidebar switches between *Functions* and *Strings*. The first time the
 Strings list is shown the page asks the engine for `strings` (once per program and mode,
@@ -986,7 +1007,8 @@ skips it as too costly):
    `kuna_wasm`** across `list` + `decompile {…}` + a whole-binary `project` export for each
    fixture (20 cases across ELF x86-64, ELF AArch64, and Mach-O x86-64, one of them
    `--language rust` so the second output language is proven to cross the boundary too),
-   plus `strings` on `crackme.elf`. This proves the port is faithful, not degraded.
+   plus `strings` on `crackme.elf` and `inspect make_item` (its type definitions) on
+   `structs.elf`. This proves the port is faithful, not degraded.
 2. **`test/glue.mjs`** — imports the shipped `kuna-web.js` (which drives the vendored
    `@bjorn3` shim) and decompiles over HTTP against `dist/`, exercising the exact browser
    code path minus the DOM — and specifically the **robust lazy-spec mechanism**: it
@@ -1018,7 +1040,7 @@ skips it as too costly):
    output pinned byte for byte — token-stream rendering and the per-line fallback,
    escaping, the index, the diff, assembly rows as comments and as headings, the easy
    spelling and the exact one, branch arrows, hover placement, the settings and their
-   version-1 migration), **`test/decompile2-groups.mjs`** (which group a function lands
+   version-1 migration, the type definitions above a function), **`test/decompile2-groups.mjs`** (which group a function lands
    in, `main` first, the function opened first),
    **`test/decompile2-session.mjs`** (directive merging and pinning, unqualified vs
    qualified output after a function rename, parameters via `prototype`, byte runs, the
@@ -1031,7 +1053,8 @@ skips it as too costly):
    by `test/make-inspect-fixtures.mjs` (`test/fixtures/inspect-{main,sum_to,add}.json`,
    `list-sample.json`). **`test/decompile2-strings.mjs`** (build-free) covers the
    Strings list: groups, one-line text, users with their pointers, escaping, search and
-   the row cap. **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
+   the row cap. **`test/decompile2-base64.mjs`** (build-free) pins which pasted texts
+   decode, to which bytes, and the name a pasted program gets. **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
    `xrefs`, `strings` and `--assert` through the real Worker (`strings` on
    `fixtures/crackme.elf`), and pins the refusal error the page
    relies on (exit code plus the quoted directive); it skips with a message on a wasm
@@ -1174,7 +1197,8 @@ skips it as too costly):
 Fixtures (all benign, small, reproducible from the committed source via the comment
 header): `sample.elf` (x86-64 ELF, rich body — call chain + `for`-loop), `sample_aarch64.o`
 (AArch64), `sample_macho.o` (Mach-O x86-64 — a second *format*), `crackme.elf` (x86-64
-ELF, a flag check whose strings are used directly and through a pointer). **PE** executables were
+ELF, a flag check whose strings are used directly and through a pointer), `structs.elf`
+(x86-64 ELF without debug info, whose `struct item` the decompiler works out as `struct_0`). **PE** executables were
 verified separately against a real PE (152 functions) through the browser lazy path; no
 benign PE is committed because this environment has no PE linker.
 

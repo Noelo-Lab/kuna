@@ -158,6 +158,14 @@ try {
   assert.ok(flag.uses.every((u) => check.function.instructions.some((i) => i.address_hex === u.at_hex)), 'each use is one of its instructions');
   checks.push('strings with their users');
 
+  // inspect: the definitions of the types a function uses, above it.
+  await client.load(new Uint8Array(await readFile(fixture('structs.elf'))), { fileName: 'structs.elf' });
+  const item = await client.inspect('make_item');
+  assert.deepEqual(item.function.types.map((t) => t.name), ['struct_0']);
+  assert.match(item.function.code, /^typedef struct struct_0 struct_0;\n\nstruct struct_0 \{\n/, 'struct_0 is defined above make_item');
+  assert.match(item.function.code, /\};\n\nstruct_0 \* make_item\(/);
+  checks.push('type definitions above the function');
+
   // The page names a refused directive from this error: exit code, and the directive quoted.
   await assert.rejects(
     client.list({ assertions: ['bytes 0x10 zz'] }),

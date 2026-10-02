@@ -1,13 +1,13 @@
 // decompile2-render.mjs — the study view's pure renderers, from the source
 // tree with no build: the shared highlighter's scan, the C pane (token stream
-// and regex fallback), the line/instruction/symbol index, and the diff that
-// flashes edited lines.
+// and regex fallback, the type definitions above a function), the
+// line/instruction/symbol index, and the diff that flashes edited lines.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { highlight, highlightC, highlightRust, scan, escapeHtml } from '../assets/js/highlight-c.js';
 import {
   normalizeInspect, tokenLines, fallbackLines, lineSegments, buildIndex, renderC,
-  changedLines, localDecls, storageLabel, bandOf,
+  changedLines, localDecls, storageLabel, bandOf, preambleLength, preambleTypes,
 } from '../decompile/render-c.js';
 import { addrHex, signedHex } from '../decompile/addr.js';
 import { normalizePrefs, cycle, hintsOn, DEFAULT_PREFS, loadPrefs, savePrefs } from '../decompile/prefs.js';
@@ -367,5 +367,38 @@ assert.deepEqual([...expand({ addr: '0x11e1' }, mainIndex).lines], [6]);
 assert.ok(expand({ sym: 'v1' }, mainIndex).lines.has(7));
 assert.equal(expand(null, mainIndex).lines.size, 0);
 checks.push('placeOverlay/expand');
+
+// ── the type definitions above a function (structs.elf: make_item) ────────
+const item = normalizeInspect(fixture('inspect-make_item.json'));
+const itemLines = item.code.split('\n');
+const sigAt = itemLines.findIndex((l) => l.startsWith('struct_0 * make_item('));
+assert.ok(sigAt > 0 && item.types.some((t) => t.name === 'struct_0'), 'the engine printed struct_0 above make_item');
+assert.equal(preambleLength(item), sigAt, 'the preamble is every line before the signature');
+assert.equal(preambleLength({ ...item, tokens: [] }), sigAt, 'and without tokens, found by the prototype');
+assert.equal(preambleLength({ ...item, types: [] }), 0, 'no types, no preamble');
+assert.equal(preambleLength(sumTo), 0);
+const tys = preambleTypes(item.code, sigAt);
+assert.deepEqual(tys[0], { name: 'struct_0', opaque: false }, 'the forward typedef');
+assert.equal(tys[sigAt - 1], null, 'the blank line before the function');
+assert.ok(tys.filter((t) => t?.name === 'struct_0').length >= 7, 'every line of the struct block belongs to struct_0');
+assert.deepEqual(preambleTypes('typedef struct FILE FILE; /* opaque */\n', 1), [{ name: 'FILE', opaque: true }]);
+assert.deepEqual(preambleTypes('typedef char name_t[16];\ntypedef int (*cmp_fn)(void *,void *);\n/* renamed */', 3),
+  [{ name: 'name_t', opaque: false }, { name: 'cmp_fn', opaque: false }, null], 'array and function-pointer typedefs are named');
+assert.deepEqual(preambleTypes('typedef enum color { RED, GREEN } color;\ntypedef struct y y;\nunion u {\n    int i;\n};', 5).map((t) => t?.name),
+  ['color', 'y', 'u', 'u', 'u'], 'a one-line definition closes itself');
+const itemSegs = lineSegments(item);
+assert.equal(itemSegs.preamble, sigAt);
+assert.ok(itemSegs.segs.slice(0, sigAt).flat().every((s) => !s.tok), 'the definitions are not clickable names');
+assert.ok(itemSegs.segs.slice(sigAt).flat().some((s) => s.tok?.kind === 'funcname'), 'the function keeps its tokens');
+const itemHtml = renderC(item, { segs: itemSegs.segs, preamble: itemSegs.preamble });
+assert.match(itemHtml, /^<div class="d2-chunk"><div class="d2-tyhead" role="presentation">.*<button class="d2-tytoggle" data-act="types-toggle" aria-expanded="true">Types this function uses<\/button> <span class="d2-tyn">1 type<\/span><\/span><\/div><div class="d2-cl d2-ty" id="c-L1"/);
+assert.equal((itemHtml.match(/class="d2-cl d2-ty"/g) || []).length, sigAt, 'one shaded row per preamble line');
+assert.match(itemHtml, new RegExp(`<div class="d2-cl" id="c-L${sigAt + 1}"`), 'the signature is an ordinary row');
+assert.match(itemHtml, /<span class="tok-kw">struct<\/span> <span class="tok-type">struct_0<\/span> \{/, 'highlighted, the type named as a type');
+assert.equal(visibleText(itemHtml.replace(/<div class="d2-tyhead".*?<\/div>/, '')).replace(/\d+/g, ''),
+  visibleText(renderC(item, { preamble: 0, segs: lineSegments({ ...item, types: [] }).segs })).replace(/\d+/g, ''), 'the same text either way');
+const itemIndex = buildIndex(item, itemSegs.segs);
+assert.ok([...itemIndex.lineToInsns.keys()].every((l) => l > sigAt + 1), 'instructions link to the body, below the definitions');
+checks.push('type definitions above the function');
 
 console.log(`DECOMPILE2 RENDER OK — ${checks.join('; ')}`);

@@ -89,6 +89,9 @@ assert.equal(mf.reserve, 32);
 assert.equal(mf.redZone, false);
 assert.ok(mf.slots.find((s) => s.name === 'x').dim, 'DWARF-only locals are dimmed');
 assert.ok(!mf.slots.find((s) => s.name === 'argc').dim);
+const typed = { ...main, tokens: [], types: [{ name: 'pt', definition: '', size: 4 }],
+  code: `typedef struct pt pt;\n\nstruct pt {\n    int x;\n};\n\n${main.code}` };
+assert.ok(frameModel(typed, X86).slots.find((s) => s.name === 'x').dim, 'a field named x in the type definitions is not a use of x');
 assert.match(renderFrame(mf), /<span class="sn">x<\/span><span class="st">int<\/span><span class="sa" title="only in the debug info">/,
   'a debug-info note is a fact, so "Show hints" does not hide it');
 const arr = frameModel({
@@ -146,7 +149,7 @@ checks.push('xrefs render + local callees');
 
 // ── help ───────────────────────────────────────────────────────────────────
 const help = helpHtml();
-for (const term of ['v1, v2', 'dat_4010', 'sub_401000', 'LAB_', 'undefined4', '// rax', '// stack - 0x14', 'CONCAT44', 'SEXT48', '._4_8_']) {
+for (const term of ['v1, v2', 'dat_4010', 'struct_0', 'field_0x8', 'sub_401000', 'LAB_', 'undefined4', '// rax', '// stack - 0x14', 'CONCAT44', 'SEXT48', '._4_8_']) {
   assert.ok(help.includes(term), `glossary covers ${term}`);
 }
 for (const k of ['/', 'Space', 'n', 'y', ';', 'g', 'x', '?', 'Esc']) assert.ok(HELP_KEYS.some(([key]) => key.split(/ · | /).includes(k)), `key ${k} documented`);

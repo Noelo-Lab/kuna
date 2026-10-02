@@ -18,6 +18,7 @@ import {
   renderC,
   localDecls,
   changedLines,
+  preambleTypes,
 } from './render-c.js';
 import { loadPrefs, savePrefs, cycle, hintsOn, DEFAULT_PREFS } from './prefs.js';
 import { groupFunctions, groupOf, firstFunction } from './groups.js';
@@ -41,6 +42,7 @@ import { frameModel, renderFrame, slotIndex } from './stack-frame.js';
 import { renderXrefs, renderLocalCalls, localCallees } from './xrefs-view.js';
 import { renderStringList } from './strings-view.js';
 import { helpHtml } from './help.js';
+import { decodeBase64, pastedName } from './base64.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -54,7 +56,7 @@ const els = {
   sideTabs: $('sidetabs'), fnPanel: $('fnpanel'), strPanel: $('strpanel'),
   strFilter: $('strfilter'), strList: $('strlist'), strNone: $('strnone'),
   empty: $('empty'), drop: $('dropzone'), dropVeil: $('dropveil'),
-  welcomeOpen: $('welcomeopen'),
+  welcomeOpen: $('welcomeopen'), welcomePaste: $('welcomepaste'), pasteBtn: $('pastebtn'),
   vhead: $('vhead'), vname: $('vname'), explain: $('explainbtn'),
   back: $('backbtn'), fwd: $('fwdbtn'), fnRename: $('fnrenamebtn'), proto: $('protobtn'),
   tabbar: $('tabbar'), tabs: $('tabs'), split: $('splitbtn'), viewBtn: $('viewbtn'), viewMenu: $('viewmenu'),
@@ -90,6 +92,7 @@ const state = {
   remoteTimer: 0,
   remoteLabel: '',
   side: 'fns',
+  typesOpen: null,
   strings: null,
   stringsOpen: {},
   strSel: null,
@@ -305,6 +308,8 @@ try {
   setStatus('Ready. Open a program', 'ok');
   els.pick.removeAttribute('aria-disabled');
   els.welcomeOpen.disabled = false;
+  els.welcomePaste.disabled = false;
+  els.pasteBtn.disabled = false;
 } catch (e) {
   setStatus('The decompiler could not start', 'err', e.message);
   toast('The decompiler could not start.', { kind: 'err', detail: e.message });
@@ -858,6 +863,41 @@ window.addEventListener('drop', (e) => {
   if (f && !els.pick.hasAttribute('aria-disabled')) openFile(f);
 });
 
+/** Open `bytes` decoded from pasted base64 text. */
+async function openPasted(bytes) {
+  if (!state.kuna) return;
+  const name = pastedName(bytes);
+  if (collab && !(await collab.confirmLeave(name))) return;
+  indexBinary({ name, bytes });
+}
+
+/** Ask for base64 text and open the program it encodes. */
+async function askBase64(anchorEl) {
+  const res = await dialogs.openPopover({
+    anchorEl, title: 'Open base64 text', submitLabel: 'Open',
+    note: 'Paste a program encoded as base64 text, for example the output of: base64 a.out',
+    fields: [{ name: 'text', label: 'Base64', textarea: true, placeholder: 'f0VMRgIBAQAAAAAAAAAAAAMAPgAB…',
+      validate: (v) => (decodeBase64(v) ? '' : v.trim() ? 'This is not base64 text' : 'Paste the base64 text') }],
+  });
+  if (res) openPasted(decodeBase64(res.text));
+}
+els.welcomePaste.addEventListener('click', () => askBase64(els.welcomePaste));
+els.pasteBtn.addEventListener('click', () => askBase64(null));
+
+// A shorter paste is a stray word that happens to be base64 ("main", "0x401000"), not a program.
+const MIN_PASTED_BYTES = 16;
+document.addEventListener('paste', (e) => {
+  if (e.target.closest?.('input, textarea, select, [contenteditable]') || els.pick.hasAttribute('aria-disabled')) return;
+  const f = e.clipboardData?.files?.[0];
+  const text = f ? '' : e.clipboardData?.getData('text') || '';
+  if (!f && !text.trim()) return;
+  e.preventDefault();
+  if (f) return void openFile(f);
+  const bytes = decodeBase64(text);
+  if (bytes?.length >= MIN_PASTED_BYTES) openPasted(bytes);
+  else toast('The pasted text is not a program in base64.', { kind: 'warn', detail: 'Paste a program as base64 text, or open the file itself.' });
+});
+
 const reindex = () => {
   if (state.binary) indexBinary(state.binary, { keep: state.current?.fn.address_hex });
 };
@@ -987,7 +1027,7 @@ async function openFunction(fn, { push = true, replace = false, keepView = false
 
 /** The header's one muted line: the signature, then sizes in words; the address in its tooltip. */
 function showFunction(fn, data, { focusAddr = null, keep = false, key = null } = {}) {
-  const { segs } = lineSegments(data);
+  const { segs, preamble } = lineSegments(data);
   const arch = archFrom(data.target || state.inventory?.target, data.instructions);
   const inferred = state.prefs.asmInfer && data.hasInstructions ? inferLines(data.instructions, arch.family || 'x86') : null;
   const index = buildIndex(data, segs, { inferred });
@@ -996,6 +1036,8 @@ function showFunction(fn, data, { focusAddr = null, keep = false, key = null } =
   state.current = {
     fn, data, segs, index, arch, frame, inferred, key: key ?? (state.current?.data === data ? state.current.key : cacheKey(fn.address_hex)),
     decls: localDecls(data.code),
+    preamble,
+    preambleTypes: preambleTypes(data.code, preamble),
     codeLines: data.code.split('\n'),
     rust: /rust/i.test(data.language || ''),
     hints: idioms(data.instructions, arch.family || 'x86', { nameAt: (hex) => state.byAddr.get(hex)?.name || null }),
@@ -1059,14 +1101,16 @@ function needsInspect(what) {
 
 const RENDER = {
   c() {
-    const { data, segs, index } = state.current;
+    const { data, segs, index, preamble } = state.current;
     els.ccode.innerHTML = renderC(data, {
       index,
       segs,
+      preamble,
       fnByName: state.byName,
       globalsByName: new Map((data.globals || []).map((g) => [g.name, g.address_hex])),
     });
     els.ccode.classList.toggle('no-addrs', index.lineToInsns.size === 0);
+    applyTypesOpen();
     applyPaneClasses();
     sync.refresh('c');
   },
@@ -1302,6 +1346,42 @@ function lineInsns(n) {
 
 const MAX_CARD_ROWS = 10;
 
+const TYPES_OPEN_LINES = 30;
+
+/** Whether the type definitions above the function show: the student's choice, else when they are short. */
+function typesShown() {
+  return state.typesOpen ?? state.current.preamble <= TYPES_OPEN_LINES;
+}
+
+function applyTypesOpen() {
+  const shown = !state.current?.preamble || typesShown();
+  els.ccode.classList.toggle('ty-closed', !shown);
+  els.ccode.querySelector('.d2-tytoggle')?.setAttribute('aria-expanded', String(shown));
+}
+
+/** The first line the keyboard can reach: the signature while the definitions are folded. */
+const firstLine = () => (typesShown() ? 1 : state.current.preamble + 1);
+
+els.ccode.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-act=types-toggle]') || !state.current) return;
+  state.typesOpen = !typesShown();
+  if (!state.typesOpen && state.sel?.line <= state.current.preamble) selectTarget(null, null);
+  applyTypesOpen();
+});
+
+/** What a line of the type definitions above the function is, in words; null for any other line. */
+function typeLineNote(n) {
+  const { preamble, preambleTypes: types } = state.current;
+  if (n > preamble) return null;
+  const t = types[n - 1];
+  if (!t) return 'The definitions of the types this function uses come first; the function starts below them.';
+  if (t.opaque) return `${t.name} is a type from a library: the decompiler knows its name but not what is inside it.`;
+  const recovered = /^struct_\d+$/.test(t.name)
+    ? ' The decompiler worked out this layout from how the program reads and writes it: field_0x8 is the field 0x8 bytes from the start.'
+    : '';
+  return `Part of the definition of ${t.name}, a type this function uses. Definitions do not become instructions.${recovered}`;
+}
+
 function lineCard(n, varTok) {
   const { data, index, decls, codeLines } = state.current;
   const { exact, inferred, all, setup, after } = lineInsns(n);
@@ -1321,8 +1401,10 @@ function lineCard(n, varTok) {
     }
   } else {
     const decl = decls.find((d) => d.line === n);
+    const typeNote = typeLineNote(n);
     let why;
-    if (decl) why = `This line declares ${decl.name}. Declarations do not become instructions; the name is one the decompiler chose.`;
+    if (typeNote) why = typeNote;
+    else if (decl) why = `This line declares ${decl.name}. Declarations do not become instructions; the name is one the decompiler chose.`;
     else if (data.proto && text.trim().replace(/;$/, '') === data.proto) why = `This is the signature: what ${displayName(state.current.fn)} takes and returns.`;
     else if (/^\s*#\[/.test(text)) why = 'This is a Rust attribute the decompiler adds; no instruction belongs to it.';
     else if (/^\s*[{}]?\s*$/.test(text)) why = 'This line is only punctuation; no instruction belongs to it.';
@@ -1450,6 +1532,8 @@ function lineSelectedCard(n) {
   const { exact, inferred, all } = lineInsns(n);
   const text = (codeLines[n - 1] || '').trim();
   let html = `<div class="x-card"><div class="x-code">${escapeHtml(text || '(empty line)')}</div>`;
+  const typeNote = typeLineNote(n);
+  if (typeNote) return html + `<p class="x-note">${escapeHtml(typeNote)}</p></div>`;
   if (!all.length) return html + `<p class="x-note">Line ${n} has no instructions of its own.</p></div>`;
   html += `<p class="x-note" style="color:var(--text)">Line ${n} turns into ${all.length} instruction${all.length === 1 ? '' : 's'}` +
     `${inferred.size ? ` (${exact.length} linked by the decompiler, ${inferred.size} that set it up)` : ''}.</p><ul class="x-insns">`;
@@ -1666,8 +1750,8 @@ function paneKey(e) {
     if (inC) {
       const cursorLine = state.cursor?.isConnected ? Number(state.cursor.closest('.d2-cl')?.dataset.line) : null;
       const symLines = state.sel?.sym ? [...(index.symToLines.get(state.sel.sym) || [])] : [];
-      const cur = state.sel?.line ?? cursorLine ?? (symLines.length ? Math.min(...symLines) : 0);
-      const next = Math.min(Math.max(cur + step, 1), index.lineCount);
+      const cur = state.sel?.line ?? cursorLine ?? (symLines.length ? Math.min(...symLines) : state.current.preamble);
+      const next = Math.min(Math.max(cur + step, firstLine()), index.lineCount);
       selectTarget({ line: next }, null);
       $('c-L' + next)?.scrollIntoView({ block: 'nearest' });
       hover.showFor($('c-L' + next)?.querySelector('.ct'));
@@ -2370,8 +2454,10 @@ async function applyEdit(mutate, { label = 'edit', reselect = null, done = '' } 
 async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit', reselect = null, done = '', remote = false } = {}) {
   const fn = state.current.fn;
   const oldCode = state.current.data.code;
+  const oldPreamble = state.current.preamble;
+  const oldSig = $('c-L' + (oldPreamble + 1))?.offsetTop ?? null;
   const scroll = captureScroll();
-  const keepSel = reselect || state.sel;
+  let keepSel = reselect || state.sel;
   const op = beginOperation(remote ? 'remote' : 'edit');
   op.onCancel = () => {
     if (collab?.shared) {
@@ -2399,6 +2485,10 @@ async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit
       showFunction(fn, data, { keep: true, key });
       if (collab?.shared && key !== cacheKey(fn.address_hex)) scheduleRemoteInspect();
       restoreScroll(scroll);
+      const shift = state.current.preamble - oldPreamble;
+      if (shift && Number.isInteger(keepSel?.line) && keepSel.line > oldPreamble) keepSel = { ...keepSel, line: keepSel.line + shift };
+      const newSig = $('c-L' + (state.current.preamble + 1))?.offsetTop ?? null;
+      if (oldSig !== null && newSig !== null) els.ccode.scrollTop += newSig - oldSig;
       if (keepSel) selectTarget(keepSel, null, null, { reveal: !remote });
       flash(changedLines(oldCode, data.code));
     }
@@ -2584,7 +2674,7 @@ function renderRail() {
   const { vars, debugVars } = railVars();
   rail.render({
     ...base,
-    fn: { summary: fnSummary(), vars, debugVars, types: data.types, refsHtml: refsHtmlFor(data.address_hex) },
+    fn: { summary: fnSummary(), vars, debugVars, refsHtml: refsHtmlFor(data.address_hex) },
   });
   if (state.sel?.sym) rail.markVars(new Set([state.sel.sym]));
 }

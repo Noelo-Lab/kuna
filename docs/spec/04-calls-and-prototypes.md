@@ -612,7 +612,7 @@ argument behind it.
 (kuna) `calleearitylive` (default-on,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitylive.rs`) extends a
 partial list, and pays for the relaxation with evidence the sibling does not
-carry: the **callee's own body**. It reuses the bounded entry decode
+carry. Its usual evidence is the **callee's own body**. It reuses the bounded entry decode
 `calleedeadarg` takes for the subtractive direction
 (`kuna_calleedeadarg.rs (probe_callee_entry_dead)`), which already records which
 register bytes some path reads before writing, and asks two things of it. Every
@@ -625,6 +625,17 @@ declines outright, while a variadic register-save prologue (`str x3,[sp,#136];
 stp x4,x5,[sp,#144]; stp x6,x7,[sp,#160]`) reads argument registers a
 five-argument witness does not claim. A fixed-arity callee reads exactly the
 registers its prototype names.
+
+A stripped printf-like callee is the useful exception to that body test. Its
+variadic register-save prologue reads every argument register, but two calls
+with the same format still have a fixed arity. `kuna_formatwitness.rs` accepts
+that alternate evidence only when both calls pass the same nonzero constant as
+their first argument, the pointed-to bytes parse as a conservative printf
+format, and the sibling recovered exactly one argument plus every conversion
+and `*` operand in the format. Positional and malformed formats, unreadable
+strings, different pointers, and mismatched arities decline. This recovers the
+case where argument values are also stored to program state immediately before
+the call and `only_op_use` rejects their trials for those stores.
 
 Two limits are this rule's own, on top of `calleearity`'s. The site's own
 recovered list must be exactly the **leading run** of the witness's, because
