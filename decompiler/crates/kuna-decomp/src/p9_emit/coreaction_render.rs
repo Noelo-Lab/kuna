@@ -1160,7 +1160,11 @@ impl Action for ActionDeindirect {
         // C++ coreaction.cc:1235 — ActionDeindirect::apply.  For each CALLIND whose
         // target Varnode resolves (through COPYs) to a known function — an external
         // reference or a constant code address — convert it to a direct CALL via
-        // FuncCallSpecs::deindirect.
+        // FuncCallSpecs::deindirect.  Otherwise, once type recovery has started, a
+        // target typed as a pointer to a prototyped code type forces that
+        // prototype onto a call site whose inputs are not yet locked
+        // (FuncCallSpecs::force_set); that arm reports its change, as the C++
+        // `count += 1` does, so the enclosing loop re-runs over the new inputs.
         let mut count: int4 = 0;
         let ncalls = data.num_calls();
         for i in 0..ncalls {
@@ -1241,13 +1245,28 @@ impl Action for ActionDeindirect {
                 continue;
             }
 
-            // C++ data.hasTypeRecoveryStarted() function-pointer prototype arm
-            // (coreaction.cc:1274-1293, fc->forceSet from an attached TypeCode
-            // prototype) is not exercised by the deindirect datatests and its
-            // commit path (`FuncCallSpecs::forceSet` -> commitNewInputs/Outputs) is
-            // still a W4 stub; left for a follow-up.  No change applied here.
+            if data.has_type_recovery_started() && !data.get_call_specs(i).is_input_locked() {
+                let proto = data
+                    .obank()
+                    .get(op)
+                    .and_then(|o| o.get_in(0))
+                    .and_then(|target| data.vbank().get(target))
+                    .map(|target| target.get_type_read_facing(op))
+                    .filter(|ty| ty.get_metatype() == type_metatype::TYPE_PTR)
+                    .and_then(|ty| ty.get_ptr_to())
+                    .and_then(|ty| ty.get_code_prototype().cloned())
+                    .and_then(|proto| crate::kuna_typedcallabi::admit(data, proto));
+                if let Some(proto) = proto {
+                    let mut fc = data.replace_call_specs(i);
+                    let mut restartlog = crate::kuna_restartlog::RestartLog::new();
+                    let result = fc.force_set(data, &proto, &mut restartlog);
+                    data.restore_call_specs_at(i, fc);
+                    result.expect("ActionDeindirect: forceSet failed");
+                    self.base.count += 1;
+                }
+            }
         }
-        let _ = count; // change is observed through the rewritten ops / restart flag
+        let _ = count;
         0
     }
 }

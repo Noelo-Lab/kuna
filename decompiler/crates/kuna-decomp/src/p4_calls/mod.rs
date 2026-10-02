@@ -46,3 +46,4 @@ pub mod kuna_callpush; // (kuna) a call's own return-address push is part of the
 pub mod kuna_callrettype; // (kuna) a call returns the type its callee's recovery gave it
 pub mod kuna_condexeret; // (kuna) a return trial failed only on a path ActionConditionalExe removes gets one more pass
 pub mod kuna_armfloatreturn; // (kuna) an ARM hard-float function returns and takes whole VFP values
+pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention

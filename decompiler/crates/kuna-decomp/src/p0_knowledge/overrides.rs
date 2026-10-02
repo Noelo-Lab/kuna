@@ -148,6 +148,26 @@ pub trait FuncProtoOverride {
     fn pieces(&self) -> Option<&crate::fspec::PrototypePieces> {
         None
     }
+
+    /// A recovered full prototype; retain its ABI model and locked storage on restart.
+    fn prototype(&self) -> Option<&crate::fspec::FuncProto> {
+        None
+    }
+}
+
+impl FuncProtoOverride for crate::fspec::FuncProto {
+    fn set_override(&mut self, val: bool) {
+        crate::fspec::FuncProto::set_override(self, val);
+    }
+    fn encode(&self, encoder: &mut dyn Encoder) -> KunaResult<()> {
+        crate::fspec::FuncProto::encode(self, encoder)
+    }
+    fn print_raw(&self, s: &mut String) {
+        s.push_str("recovered function prototype");
+    }
+    fn prototype(&self) -> Option<&crate::fspec::FuncProto> {
+        Some(self)
+    }
 }
 
 /// A [`FuncProtoOverride`] backed by parsed [`PrototypePieces`](crate::fspec::PrototypePieces),

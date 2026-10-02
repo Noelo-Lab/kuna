@@ -95,6 +95,17 @@ pub trait LoadImage {
     /// The container explicitly selects the ARM VFP procedure-call standard.
     fn arm_vfp_args(&self) -> bool { false }
 
+    /// What the container says about floating-point arguments: `Some(true)` they
+    /// travel in floating-point registers, `Some(false)` in integer registers
+    /// (a soft-float procedure-call standard), `None` it says nothing.
+    fn float_arg_registers(&self) -> Option<bool> { None }
+
+    /// Whether the platform's callee extends a return value narrower than 32
+    /// bits to 32 bits, so its caller reads that register unextended:
+    /// `Some(true)` on Apple arm64, `Some(false)` on another stated arm64
+    /// platform, `None` when the container says nothing.
+    fn callee_extends_returns(&self) -> Option<bool> { None }
+
     /// Get the name of the LoadImage.
     ///
     /// The loadimage is usually associated with a file. This routine

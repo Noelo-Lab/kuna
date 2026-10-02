@@ -1329,19 +1329,24 @@ impl ScopeLocal {
         // (the LOSS-247 Gp-#2 `&v1`->`a0`): a register's storage is owned by no
         // Scope, so `discoverScope` returns null and the register parameter is NOT
         // addrtied — which is what stops `mergeAddrTied` from grouping the input
-        // register version with later same-register values.  Restricting the
-        // restricted-usepoint to register storage keeps the join/stack struct
-        // parameter path (`d` in Stack-spill) byte-identical to its prior behavior:
-        // those go through `Scope::addMap`'s join arm (the per-piece stack entries),
-        // whose kuna rendering already inlines `d.field_b`, and which the
-        // single-point `restricted_usepoint` uselimit would otherwise de-tie and
-        // split.  `discover_scope` already returns null for a register, so this is a
-        // faithful subset of the C++ condition (it never *adds* a usepoint the C++
-        // would not).
-        let is_register = addr
-            .get_space()
-            .map(|s| s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
-            .unwrap_or(false);
+        // register version with later same-register values.  A join whose pieces
+        // are all registers (a 32-bit register pair) is restricted the same way, or
+        // its whole-function piece entries link a later write of one register to a
+        // piece of the parameter.  A join with a stack piece (`d` in Stack-spill)
+        // keeps the unrestricted entry its rendering relies on.  `discover_scope`
+        // returns null for both, so this is a subset of the C++ condition.
+        let in_processor = |space: Option<&Rc<kuna_base::space::AddrSpace>>| {
+            space.is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
+        };
+        let is_register = if addr.is_join() {
+            addr.get_space()
+                .and_then(|s| s.find_join(addr.get_offset()).ok())
+                .is_some_and(|rec| {
+                    (0..rec.num_pieces()).all(|i| in_processor(rec.get_piece(i).space.as_ref()))
+                })
+        } else {
+            in_processor(addr.get_space())
+        };
         let usepoint = if is_register
             && self.db.discover_scope(self.scope, addr, ct.get_size(), &Address::new_invalid()).is_none()
         {

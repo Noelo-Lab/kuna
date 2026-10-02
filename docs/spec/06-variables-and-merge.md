@@ -55,6 +55,22 @@ phalanx; overlapping storage pieces of one symbol are tied together by the
 `variable.rs (VariableGroup)`/`(VariablePiece)` model so a 4-byte read of an
 8-byte slot stays a *piece* of the same group rather than a rival variable.
 
+**Register parameters bind only at the function input.** A parameter Symbol is
+created by `varmap.rs (ScopeLocal::add_param_symbol)`. When no Scope owns the
+parameter's storage, its map entry is limited to the function's use point (the
+entry address minus one), so only the input Varnodes take the parameter's name
+and the Symbol is not address-tied. A register is owned by no Scope, and neither
+is a join whose pieces are all registers: a 64-bit integer or `double` in a
+32-bit register pair, a PowerPC `float` held in a 64-bit FPR, or a small struct
+split across two registers. The per-piece entries `Scope::addMap` adds for a join
+inherit the same limit. The join case matters. Without the limit, the whole-function
+piece entry links any later write of one of the pair's registers to a piece of the
+parameter. An ARM call that reuses `r3` for the call target, or a big-endian
+PowerPC call that loads the next argument into `r5`, then prints as `v._4_4_ =
+o->wide; ... (v,5)`. That statement overwrites half of `v`, but the call still
+reads the original `v`. A join that includes a stack piece keeps the unlimited
+entry, which the stack-passed struct rendering in §6.2 relies on.
+
 **Cover.** A variable can only absorb another if their live ranges do not
 collide, and the live range is the
 `decompiler/crates/kuna-decomp/src/p6_variables/cover.rs (Cover)`: per basic
