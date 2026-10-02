@@ -46,9 +46,30 @@
 //!     the user wants this instruction followed intraprocedurally.  It therefore
 //!     vetoes the lower-priority tail-call inference even when the destination is
 //!     also a known function entry.
+//!
+//! ## Computed jumps with one destination
+//!
+//! A veneer or long-branch stub loads its target from a literal and jumps
+//! through a register (`ldr r1,[pc]; bx r1`, `ldr pc,[pc,#-4]`).  Jump-table
+//! recovery reads the read-only literal and yields a one-entry table.  When that
+//! sole destination is another known function's entry, the jump is the same tail
+//! call a direct `jmp` to it would be: [`kuna_sole_table_destination`] names the
+//! destination and [`kuna_is_tail_call_table`] decides for the `CPUI_BRANCHIND`
+//! under `tailcalljump on`.  The tail call is taken where following the table
+//! can only reach a `halt_missing()` (the destination is outside a declared
+//! extent), or where it loses nothing the copied-in body states: the callee's
+//! prototype is stated (declared, DWARF, a library signature), so it fixes the
+//! call's arguments, and the callee returns nothing or the caller's own output
+//! is stated, so the return value reaches it.  Otherwise the flow follows the
+//! table as before and the callee's body stays in the veneer.
 
 use crate::funcdata::Funcdata;
 use crate::context::OpId;
+use crate::dtype::type_metatype;
+use crate::fspec::{FuncProto, PrototypePieces};
+use crate::jumptable::JumpTable;
+use kuna_base::address::Address;
+use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::ElementId;
 use kuna_num::opcodes::OpCode;
 
@@ -140,6 +161,112 @@ pub fn kuna_is_tail_call_branch(
         return false;
     }
     true
+}
+
+/// (kuna) The one address every entry of a recovered, non-override jump table
+/// names, or `None` when the table is empty, an override, or has two targets.
+pub fn kuna_sole_table_destination(jt: &JumpTable) -> Option<Address> {
+    kuna_sole_destination(
+        jt.is_override(),
+        (0..jt.num_entries()).map(|i| jt.get_address_by_index(i)),
+    )
+}
+
+/// (kuna) [`kuna_sole_table_destination`] over the table's `targets`.
+pub fn kuna_sole_destination(
+    is_override: bool,
+    targets: impl IntoIterator<Item = Address>,
+) -> Option<Address> {
+    if is_override {
+        return None;
+    }
+    let mut targets = targets.into_iter();
+    let dest = targets.next()?;
+    targets.all(|t| t == dest).then_some(dest)
+}
+
+/// (kuna) Parse `option tailcalljump on|direct|off` into the
+/// `(tail_call_jumps, tail_call_tables)` gates: `on` recovers direct jumps and
+/// one-destination computed jumps, `direct` only direct jumps.
+pub fn tail_call_mode(p1: &str) -> KunaResult<(bool, bool, &'static str)> {
+    match p1 {
+        "" | "on" => Ok((true, true, "Tail-call jump recovery turned on")),
+        "direct" => Ok((true, false, "Tail-call jump recovery limited to direct jumps")),
+        "off" => Ok((false, false, "Tail-call jump recovery turned off")),
+        other => Err(KunaError::parse(format!(
+            "Unknown tailcalljump value: {other} (expected on|direct|off)"
+        ))),
+    }
+}
+
+/// (kuna) Is the computed jump `op`, whose recovered jump table has the single
+/// destination `dest`, a tail call?  The gate is on, `dest` is another known
+/// function's entry, and either `dest` lies outside the function's declared
+/// extent or `call_states_the_body` holds (see [`tail_call_states_the_body`]).
+pub fn kuna_is_tail_call_table(
+    data: &Funcdata,
+    op: OpId,
+    gate: bool,
+    dest_is_known_function: bool,
+    dest_is_self: bool,
+    dest_outside_extent: bool,
+    call_states_the_body: impl FnOnce() -> bool,
+) -> bool {
+    gate
+        && dest_is_known_function
+        && !dest_is_self
+        && data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_BRANCHIND)
+        && (dest_outside_extent || call_states_the_body())
+}
+
+/// (kuna) What a callee's stated prototype fixes about a call to it: the
+/// call's arguments, and whether the callee returns nothing.  A prototype that
+/// states no return type (a `cppsig` signature: the mangling encodes none)
+/// leaves the return to recovery, so it does not say the callee returns nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StatedCallee {
+    pub returns_nothing: bool,
+}
+
+/// (kuna) The prototype pieces parked on a callee (declared, DWARF, a library
+/// signature, a demangled C++ name), as a call to it gets them from
+/// `ActionDefaultParams`.  A `map return` park states only the output and
+/// leaves the inputs to recovery, so it states no call.  Only a stated `void`
+/// return says the callee returns nothing.
+pub fn stated_by_pieces(pieces: Option<&PrototypePieces>) -> Option<StatedCallee> {
+    let p = pieces?;
+    if p.outtype.is_none() && p.intypes.is_empty() && p.output_storage.is_some() {
+        return None;
+    }
+    let returns_nothing =
+        p.outtype.as_ref().is_some_and(|t| t.get_metatype() == type_metatype::TYPE_VOID);
+    Some(StatedCallee { returns_nothing })
+}
+
+/// (kuna) The code prototype on a callee's symbol, which flow copies into the
+/// call spec, when it locks the inputs.  Only a locked `void` output says the
+/// callee returns nothing.
+pub fn stated_by_proto(proto: Option<&FuncProto>) -> Option<StatedCallee> {
+    let p = proto.filter(|p| p.is_input_locked())?;
+    let returns_nothing = p.is_output_locked()
+        && p.get_output_type().is_some_and(|t| t.get_metatype() == type_metatype::TYPE_VOID);
+    Some(StatedCallee { returns_nothing })
+}
+
+/// (kuna) Do the pieces parked on a function lock its output when its own
+/// decompile applies them?  Pieces with neither a return type nor return
+/// storage (a `cppsig` signature) leave the output to recovery.
+pub fn output_stated_by_pieces(pieces: Option<&PrototypePieces>) -> bool {
+    pieces.is_some_and(|p| p.outtype.is_some() || p.output_storage.is_some())
+}
+
+/// (kuna) Does a tail call to `callee` state everything the callee's body,
+/// copied in, would?  Its prototype fixes the call's arguments, and its return
+/// value reaches the caller's: it is stated to return nothing, or the caller's
+/// own output is stated.  A caller whose output is left to recovery never takes
+/// a tail call's return value, so it would print `void`.
+pub fn tail_call_states_the_body(callee: Option<StatedCallee>, own_output_stated: bool) -> bool {
+    callee.is_some_and(|c| c.returns_nothing || own_output_stated)
 }
 
 #[cfg(test)]

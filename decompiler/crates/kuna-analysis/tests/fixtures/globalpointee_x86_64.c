@@ -1,0 +1,181 @@
+/* A pointer the binary stores to a global whose declared pointee type differs
+ * from its own, and then keeps using from its register: the printed C must
+ * dereference the value, not read the global back.  `gc` is `char *` while
+ * `p_int` stores an `int *` to it and reads two ints through the register; with
+ * the global declared as here, `gc[1]` would read a byte.  The globals are
+ * `char *`, `short *`, `int *`, `long *`, `struct rec *` and `void *`, and the
+ * values stored to them point at ints, shorts, chars, longs and records.  The
+ * `r_` functions read through the value, the `w_` ones write through it, `m_`
+ * store before a call (`m_call`), inside a branch (`m_join`) or a loop
+ * (`m_loop`), and `g_` read through the global itself: `g_reread` as the source
+ * says, `g_alias` after a pointer store that may point at the global, so its
+ * load of `gi` must stay a load.  `g_reload`, `g_write`, `g_before`, `g_diff`,
+ * `g_twice`, `g_old` and `g_branch` also read the value from its register, and
+ * are called with the pointer they store through pointing at the global
+ * itself: each load of the global after that store must still read the global,
+ * `g_diff` without dereferencing it, `g_twice` keeps what it loaded between
+ * two stores, `g_old` reads the global's earlier value after the store, and
+ * `g_branch` stores in both arms of a branch. */
+#include <stdio.h>
+
+struct rec { int a; short b; long c; };
+
+char *gc;
+short *gs;
+int *gi;
+long *gl;
+struct rec *gr;
+void *gv;
+long gd;
+int touched;
+
+#if defined(__clang__)
+#define NOIPA __attribute__((noinline))
+#else
+#define NOIPA __attribute__((noinline, noipa))
+#endif
+
+NOIPA void touch(void) { touched++; }
+
+int p_int(int *p, int k);
+long r_short(short *p, int k);
+int r_char(char *p, int k);
+long r_rec(struct rec *p, int k);
+long r_long(long *p, int k);
+int r_void(int *p, int k);
+void w_long(long *p, int k, long v);
+void w_short(short *p, int k, short v);
+int m_call(int *p, int k);
+int m_join(int *p, int k, int c);
+void m_write(int *p, int k, int v);
+int m_loop(int *p, int n);
+int g_reread(int *p, int k);
+int g_alias(int *p, int k, int **pp);
+int g_reload(int *p, int k, int **pp);
+int g_write(int *p, int k, int **pp, int *r);
+int g_before(int *p, int k, int **pp);
+long g_diff(int *p, int k, long *pp);
+int g_twice(int *p, int k, int **pp, int **pp2);
+int g_old(int *p, int k, int **pp);
+int g_branch(int *p, int k, int **pp, int c);
+
+#ifndef GLOBALPOINTEE_HARNESS
+#define NI __attribute__((noinline))
+NI int p_int(int *p, int k) { int *q = p + k; gc = (char *)q; return q[1] + q[2]; }
+NI long r_short(short *p, int k) { short *q = p + k; gl = (long *)q; return q[1] + q[3]; }
+NI int r_char(char *p, int k) { char *q = p + k; gi = (int *)q; return q[1] + q[5]; }
+NI long r_rec(struct rec *p, int k) { struct rec *q = p + k; gi = (int *)q; return q->a + q->b + q[1].c; }
+NI long r_long(long *p, int k) { long *q = p + k; gr = (struct rec *)q; return q[0] + q[3]; }
+NI int r_void(int *p, int k) { int *q = p + k; gv = q; return q[1] * 3 + q[2]; }
+NI void w_long(long *p, int k, long v) { long *q = p + k; gs = (short *)q; q[1] = v; q[2] = v + 1; }
+NI void w_short(short *p, int k, short v) { short *q = p + k; gl = (long *)q; q[1] = v; q[3] = v * 2; }
+NI int m_call(int *p, int k) { int *q = p + k; gc = (char *)q; int x = q[1] + q[2]; touch(); return x; }
+NI int m_join(int *p, int k, int c) { int r = 0; if (c) { int *q = p + k; gc = (char *)q; r = q[1] + q[3]; } touch(); return r; }
+NI void m_write(int *p, int k, int v) { int *q = p + k; gs = (short *)q; q[1] = v; q[2] = v + 1; touch(); }
+NI int m_loop(int *p, int n) { int s = 0; for (int i = 0; i < n; i++) { int *q = p + i * 2; gc = (char *)q; s += q[1]; } return s; }
+NI int g_reread(int *p, int k) { gi = p + k; return gi[1] + gi[2]; }
+NI int g_alias(int *p, int k, int **pp) { gi = p + k; *pp = p; return gi[1]; }
+NI int g_reload(int *p, int k, int **pp) { int *q = p + k; gi = q; int x = q[2]; *pp = p; return gi[1] + x; }
+NI int g_write(int *p, int k, int **pp, int *r) { int *q = p + k; gi = q; q[0] = 5; *pp = r; return *gi + q[1]; }
+NI int g_before(int *p, int k, int **pp) { int *q = p + k; int x = q[3]; gi = q; *pp = p; return gi[1] + x; }
+NI long g_diff(int *p, int k, long *pp) { int *q = p + k; gd = (long)q; int x = q[1]; *pp = (long)p; return gd - (long)p + x; }
+NI int g_twice(int *p, int k, int **pp, int **pp2) { int *q = p + k; gi = q; int x = q[3]; *pp = p; int *r = gi; *pp2 = p + 1; return r[1] + x; }
+NI int g_old(int *p, int k, int **pp) { int *old = gi; int *q = p + k; gi = q; int x = q[2]; *pp = p; return gi[1] + x + old[0]; }
+NI int g_branch(int *p, int k, int **pp, int c) { int *q; if (c) { q = p + k; gi = q; } else { q = p + k + 1; gi = q; } int x = q[1]; *pp = p; return *gi + x; }
+#endif
+
+#define OFF(g, base) ((long)((char *)(g) - (char *)(base)))
+
+int main(void) {
+  int ia[16];
+  short sa[16];
+  char ca[32];
+  long la[16];
+  struct rec ra[4];
+  for (int i = 0; i < 16; i++) {
+    ia[i] = i * 7 + 1;
+    sa[i] = (short)(i * 3 - 5);
+    la[i] = i * 1000003L;
+  }
+  for (int i = 0; i < 32; i++)
+    ca[i] = (char)(i * 5 + 1);
+  for (int i = 0; i < 4; i++) {
+    ra[i].a = i * 11;
+    ra[i].b = (short)(i * 13 - 40);
+    ra[i].c = i * 100001L;
+  }
+  long r;
+  r = p_int(ia, 2);
+  printf("p_int %ld %ld\n", r, OFF(gc, ia));
+  r = r_short(sa, 3);
+  printf("r_short %ld %ld\n", r, OFF(gl, sa));
+  r = r_char(ca, 4);
+  printf("r_char %ld %ld\n", r, OFF(gi, ca));
+  r = r_rec(ra, 1);
+  printf("r_rec %ld %ld\n", r, OFF(gi, ra));
+  r = r_long(la, 2);
+  printf("r_long %ld %ld\n", r, OFF(gr, la));
+  r = r_void(ia, 5);
+  printf("r_void %ld %ld\n", r, OFF(gv, ia));
+  w_long(la, 3, -9);
+  printf("w_long %ld %ld %ld %ld\n", la[3], la[4], la[5], OFF(gs, la));
+  w_short(sa, 2, 21);
+  printf("w_short %d %d %d %ld\n", sa[2], sa[3], sa[5], OFF(gl, sa));
+  r = m_call(ia, 3);
+  printf("m_call %ld %ld %d\n", r, OFF(gc, ia), touched);
+  r = m_join(ia, 1, 1);
+  printf("m_join %ld %ld", r, OFF(gc, ia));
+  r = m_join(ia, 6, 0);
+  printf(" %ld %ld %d\n", r, OFF(gc, ia), touched);
+  m_write(ia, 4, 77);
+  printf("m_write %d %d %d %ld %d\n", ia[4], ia[5], ia[6], OFF(gs, ia), touched);
+  r = m_loop(ia, 5);
+  printf("m_loop %ld %ld\n", r, OFF(gc, ia));
+  r = g_reread(ia, 1);
+  printf("g_reread %ld %ld\n", r, OFF(gi, ia));
+  int *other = 0;
+  r = g_alias(ia, 2, &other);
+  printf("g_alias %ld %ld %ld", r, OFF(gi, ia), OFF(other, ia));
+  r = g_alias(ia, 2, &gi);
+  printf(" %ld %ld\n", r, OFF(gi, ia));
+  int jb[16];
+  for (int i = 0; i < 16; i++)
+    jb[i] = i * 100 + 3;
+  r = g_reload(ia, 2, &other);
+  printf("g_reload %ld", r);
+  r = g_reload(ia, 2, &gi);
+  printf(" %ld %ld\n", r, OFF(gi, ia));
+  r = g_write(ia, 4, &other, jb);
+  printf("g_write %ld", r);
+  r = g_write(ia, 4, &gi, jb);
+  printf(" %ld %ld\n", r, OFF(gi, jb));
+  r = g_before(ia, 2, &other);
+  printf("g_before %ld", r);
+  r = g_before(ia, 2, &gi);
+  printf(" %ld %ld\n", r, OFF(gi, ia));
+  long lo = 0;
+  r = g_diff(ia, 3, &lo);
+  printf("g_diff %ld", r);
+  r = g_diff(ia, 3, &gd);
+  printf(" %ld %ld\n", r, OFF(gd, ia));
+  int *o2 = 0;
+  r = g_twice(ia, 2, &other, &o2);
+  printf("g_twice %ld", r);
+  r = g_twice(ia, 2, &other, &gi);
+  printf(" %ld", r);
+  r = g_twice(ia, 2, &gi, &o2);
+  printf(" %ld", r);
+  r = g_twice(ia, 2, &gi, &gi);
+  printf(" %ld %ld\n", r, OFF(gi, ia));
+  gi = ia + 9;
+  r = g_old(ia, 2, &other);
+  printf("g_old %ld", r);
+  gi = ia + 9;
+  r = g_old(ia, 2, &gi);
+  printf(" %ld %ld\n", r, OFF(gi, ia));
+  r = g_branch(ia, 2, &other, 1);
+  printf("g_branch %ld", r);
+  r = g_branch(ia, 2, &gi, 0);
+  printf(" %ld %ld\n", r, OFF(gi, ia));
+  return 0;
+}

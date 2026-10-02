@@ -1945,7 +1945,14 @@ mod tests {
         // global stays a float literal and a register move reinterprets once
         // and kuna-labelstmt-arm + kuna-labelstmt-x64 / a label never ends a
         // compound statement (GH-783)
-        assert_eq!(count, 370, "corpus file count drifted");
+        // and kuna-ownreturn / an argument moved back into its own register
+        // across a call stays a returned half and a parameter
+        // and kuna-veneer-tailcall / a veneer to another function's entry is a
+        // tail call when its prototype is stated or it lies outside the extent
+        // (GH-781)
+        // and kuna-globalpointee / a pointer stored to a global is dereferenced
+        // through its own variable, not through the global
+        assert_eq!(count, 373, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

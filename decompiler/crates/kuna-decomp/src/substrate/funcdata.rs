@@ -425,6 +425,11 @@ pub struct Funcdata {
     /// block read the return register, which carries no argument, before it
     /// writes it (`test %al,%al` in a SysV register-save prologue)?
     kuna_passthrough_variadic: bool,
+    /// (kuna `retinputhalf`) The return registers whose value the function moved
+    /// out of its own register and back at some RETURN, noted while return
+    /// recovery can still see the moves
+    /// ([`crate::kuna_retinputhalf::note_moved_back_returns`]).
+    kuna_moved_back_returns: Vec<(Address, int4)>,
     /// (kuna `calleevote`) The types every caller of this function passes for its
     /// inputs, copied off the `Architecture` after the flow build.
     kuna_calleevote_inputs: Option<std::rc::Rc<crate::kuna_calleevote::CallerTypes>>,
@@ -585,6 +590,7 @@ impl Funcdata {
             kuna_passthrough_claims: Vec::new(),
             kuna_passthrough_vararg_calls: Vec::new(),
             kuna_passthrough_variadic: false,
+            kuna_moved_back_returns: Vec::new(),
             kuna_calleevote_inputs: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
@@ -1120,6 +1126,17 @@ impl Funcdata {
     /// (kuna `passthrough`) Is this function itself variadic?
     pub fn kuna_passthrough_variadic(&self) -> bool {
         self.kuna_passthrough_variadic
+    }
+
+    /// (kuna `retinputhalf`) Replace the record of return registers moved back
+    /// into themselves.
+    pub fn kuna_set_moved_back_returns(&mut self, found: Vec<(Address, int4)>) {
+        self.kuna_moved_back_returns = found;
+    }
+
+    /// (kuna `retinputhalf`) The return registers moved back into themselves.
+    pub fn kuna_moved_back_returns(&self) -> &[(Address, int4)] {
+        &self.kuna_moved_back_returns
     }
 
     /// (kuna `retpushedhalf`) The flow build's record of registers this function
@@ -2937,6 +2954,7 @@ impl Funcdata {
         self.kuna_passthrough_claims.clear();
         self.kuna_passthrough_vararg_calls.clear();
         self.kuna_passthrough_variadic = false;
+        self.kuna_moved_back_returns.clear();
     }
 
     /// Set a delay/flag bit directly (test/seam helper; not a C++ method).

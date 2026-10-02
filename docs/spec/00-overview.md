@@ -2194,6 +2194,25 @@ decided by the construction action, not by the token — `oldStruct` rejects a t
 that names something other than a struct with the kind error it always had, so
 `struct int4` is refused for saying `struct`, not for being unparseable.
 
+(kuna) **A tag may be named before its body.** Upstream's `oldStruct` and
+`oldUnion` reject a tag that names no type yet, so a record could not mention
+itself (`typedef struct Node { struct Node *next; };`, or a callback member
+`void (*cb)(struct Node *)`), two records could not point at each other, and the
+forward declaration `typedef struct Node Node;` was refused. C declares such a
+tag as an incomplete record, and the grammar now does the same
+(`decompiler/crates/kuna-console/src/grammar.rs (CParse::old_struct)` through
+`TypeFactory::kuna_declare_record`). A tagged body declares its tag before its
+members are read, so the members can name it; a body for a tag that is already
+complete is refused (`Cannot redefine a completed record`), and a member that
+holds an incomplete record by value, or an array of one, is refused as C refuses
+it. A failed body leaves its tag declared but incomplete, so a pointer an
+earlier declaration built still names the stub a later, correct body completes;
+an anonymous record is built fresh each time and destroyed on failure, as
+upstream does. `typedef struct Node Node;` keeps the tag under its own name, and
+a typedef made of a record while it is incomplete is completed with the record.
+A pointer built to the declared stub reads the completed record (chapter 05,
+§5.1), so `node->next->next->value` prints as fields.
+
 (kuna) **A name that is also a type name is still a name.** The same
 `findByName` classification reaches the declarator, where C says the identifier
 being declared hides any type of that spelling. Upstream's `direct_declarator`
