@@ -82,6 +82,49 @@ fn absolute_fixture(map: &[u8], targets: &[u32], retry_bound: usize) -> Vec<u8> 
     elf(&code)
 }
 
+/// GCC's shape for a byte index in front of a short two-byte map:
+/// `(unsigned char)(mode - 9)` is bounded to 0..9, the map value is checked
+/// against the 21-entry absolute table, reloaded and dispatched, and the retry
+/// backedge re-enters at the zero extension.  `past` fills the memory after
+/// the map, which no bounded index reads.
+fn short_map_fixture(past: &[u16]) -> Vec<u8> {
+    let mut code = vec![
+        0x83, 0xea, 0x09, 0xb8, 0x0e, 0x01, 0, 0, 0x80, 0xfa, 0x09, 0x77, 0x32, 0x0f, 0xb6, 0xd2,
+        0x66, 0x83, 0xbc, 0x12, 0, 0, 0, 0, 0x14, 0x77, 0x43, 0x0f, 0xb7, 0x84, 0x12, 0, 0, 0, 0,
+        0x3e, 0xff, 0x24, 0xc5, 0, 0, 0, 0, 0x8b, 0x11, 0x83, 0xfa, 0x08, 0x74, 0x08, 0x83, 0xea,
+        0x09, 0x80, 0xfa, 0x09, 0x76, 0xd3, 0xb8, 0x0e, 0x01, 0, 0, 0xc3,
+    ];
+    for value in [1600u32, 1601, 1602, 1603, 1604, 77] {
+        code.push(0xb8);
+        code.extend(value.to_le_bytes());
+        code.push(0xc3);
+    }
+    assert_eq!(code.len(), 100);
+    let map_at = 0x401000 + code.len() as u32;
+    for entry in [4u16, 15, 6, 11, 20, 20, 9, 11, 6, 1].iter().chain(past) {
+        code.extend(entry.to_le_bytes());
+    }
+    let table_at = (0x401000 + code.len() as u32 + 7) & !7;
+    code.resize((table_at - 0x401000) as usize, 0);
+    for value in 0..21u64 {
+        let target = match value {
+            1 => 0x401040,
+            4 | 11 => 0x401046,
+            14 => 0x40104c,
+            9 => 0x401052,
+            6 | 20 => 0x401058,
+            15 => 0x40102b,
+            _ => 0x40105e,
+        };
+        code.extend(u64::to_le_bytes(target));
+    }
+    for at in [20, 31] {
+        code[at..at + 4].copy_from_slice(&map_at.to_le_bytes());
+    }
+    code[39..43].copy_from_slice(&table_at.to_le_bytes());
+    elf(&code)
+}
+
 /// SysV `pick(p, a, b)`: `k = *p - 'A'` is bounded to 0..3 three branches
 /// before a relative table dispatch on `k`, out of reach of the guard search,
 /// so the selector range is the full byte and the table ends at its first
@@ -193,6 +236,7 @@ fn round_trip(image: &[u8], printed: &str, stores: &[u32]) {
 typedef int int4;
 typedef unsigned int uint4;
 typedef unsigned char uint1;
+typedef unsigned short uint2;
 typedef unsigned long uint8;
 typedef struct ModeStore {{ unsigned int mode; }} ModeStore;
 {printed}
@@ -390,6 +434,35 @@ fn assert_index_selector(c: &str) {
     assert!(
         !c.contains("switch(*(char *)"),
         "kept mapped byte with raw-index labels: {c}"
+    );
+}
+
+/// The index reads past the map only where its guard was lost late; those
+/// map entries send it to table rows that hold row targets, but no bounded
+/// index reads them.
+#[test]
+fn byte_index_past_a_short_map_keeps_index_labels() {
+    let image = short_map_fixture(&[6, 6, 6, 6, 4, 4, 4, 4, 6, 6, 6, 6, 4, 4, 4, 4]);
+    let c = run(&image, 0x401064, true);
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        let stores: Vec<u32> = (0..48u32)
+            .chain([0x7f, 0x80, 0xff, 0x100, 0xffff_fffb, 0xffff_ffff])
+            .filter(|&stored| stored != 10)
+            .collect();
+        round_trip(&image, &c, &stores);
+    }
+    assert!(
+        c.contains("switch(mode & 0xff)"),
+        "selector is in a different domain: {c}"
+    );
+    assert!(
+        c.contains("case 9:\n      return 0x640;"),
+        "lost index9/1600: {c}"
+    );
+    assert!(
+        !c.contains("labelled by address") && !c.contains("case 0x40"),
+        "labelled cases by address: {c}"
     );
 }
 

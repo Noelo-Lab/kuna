@@ -1883,6 +1883,29 @@ struct LoopCarriedWalk {
     seeds: Vec<(VarnodeId, uintb)>,
 }
 
+/// The memory a flow-time model read to reach the rows the sanity check kept,
+/// collapsed, and the most loads it performed for one row.
+#[derive(Debug, Clone, PartialEq)]
+struct RowLoads {
+    entries: Vec<LoadTable>,
+    depth: usize,
+}
+
+impl RowLoads {
+    /// Whether `load` reads one of the entries.
+    fn read(&self, load: &LoadTable) -> bool {
+        self.entries.iter().any(|row| {
+            let span = (row.size as uintb).wrapping_mul(row.num as uintb);
+            let delta = load.addr.get_offset().wrapping_sub(row.addr.get_offset());
+            row.addr.get_space().map(|spc| spc.get_index())
+                == load.addr.get_space().map(|spc| spc.get_index())
+                && row.size == load.size
+                && delta < span
+                && delta % (row.size.max(1) as uintb) == 0
+        })
+    }
+}
+
 /// The rows of a flow-time table: each row's normalized value (`None` when
 /// the row has no reversible value), its recovered destination, and the
 /// memory the flow-time model read to reach them (`None` when not recorded).
@@ -1891,7 +1914,7 @@ struct LoopCarriedWalk {
 struct LabelRows {
     values: Vec<Option<uintb>>,
     addresses: Vec<Address>,
-    loads: Option<Vec<LoadTable>>,
+    loads: Option<RowLoads>,
 }
 
 impl LabelRows {
@@ -1900,7 +1923,7 @@ impl LabelRows {
     fn new(
         orig: &JumpBasicModel,
         addresses: &[Address],
-        loads: Option<&[LoadTable]>,
+        loads: Option<&RowLoads>,
     ) -> Option<LabelRows> {
         let mut jr = orig.jrange.as_ref()?.clone_box();
         let mut values = Vec::with_capacity(addresses.len());
@@ -1913,28 +1936,27 @@ impl LabelRows {
         Some(LabelRows {
             values,
             addresses: addresses.to_vec(),
-            loads: loads.map(<[LoadTable]>::to_vec),
+            loads: loads.cloned(),
         })
     }
 
-    /// Whether the last of `loads`, the entry a destination is read from, may
-    /// be one a dispatched value reads: an entry the flow-time model read, or
-    /// any entry when that cannot be told (no flow-time loads were recorded,
-    /// or there is no load).
-    fn may_read_row_entry(&self, loads: &[LoadTable]) -> bool {
-        let (Some(rows), Some(last)) = (self.loads.as_ref(), loads.last()) else {
+    /// Whether a value whose emulation performed `loads` may be one the code
+    /// dispatches.  A dispatched value runs some kept flow-time row, so every
+    /// load its path shares with the flow-time path reads an entry that row
+    /// read.  A path with no more loads than a row shares all of them; a
+    /// longer one starts upstream of the flow-time variable and shares only
+    /// its last load, the entry its destination comes from.  Any value may be
+    /// dispatched when that cannot be told (no flow-time loads were recorded,
+    /// or the value loads nothing).
+    fn may_be_dispatched(&self, loads: &[LoadTable]) -> bool {
+        let Some(rows) = self.loads.as_ref().filter(|rows| !rows.entries.is_empty()) else {
             return true;
         };
-        rows.is_empty()
-            || rows.iter().any(|row| {
-                let span = (row.size as uintb).wrapping_mul(row.num as uintb);
-                let delta = last.addr.get_offset().wrapping_sub(row.addr.get_offset());
-                row.addr.get_space().map(|spc| spc.get_index())
-                    == last.addr.get_space().map(|spc| spc.get_index())
-                    && row.size == last.size
-                    && delta < span
-                    && delta % (row.size.max(1) as uintb) == 0
-            })
+        match loads.last() {
+            None => true,
+            Some(last) if loads.len() > rows.depth => rows.read(last),
+            Some(_) => loads.iter().all(|load| rows.read(load)),
+        }
     }
 }
 
@@ -3718,9 +3740,10 @@ impl JumpBasicModel {
 
     /// Whether the flow-time row values label this model's variable: every
     /// reversible row's value reaches that row's destination through this
-    /// model's path, and no other value in this model's range reaches a row's
-    /// destination through a table entry the flow-time model read (a mapped
-    /// byte can match every row only through a repeated table entry).
+    /// model's path, and no other value in this model's range that the code
+    /// may dispatch ([`LabelRows::may_be_dispatched`]) reaches a row's
+    /// destination (a mapped byte can match every row only through a repeated
+    /// table entry).
     fn reproduces_rows(&self, fd: &Funcdata, indop: OpId, rows: &LabelRows) -> bool {
         let mut jr = self.jrange().clone_box();
         if !jr.initialize_for_reading() || !jr.is_reversible() {
@@ -3748,11 +3771,14 @@ impl JumpBasicModel {
         loop {
             let v = jr.get_value();
             if !values.contains(&v) {
+                let (Some(op), Some(vn)) = (jr.get_start_op(), jr.get_start_varnode()) else {
+                    return false;
+                };
                 emul.set_load_collect(true);
-                let dest = emul.emulate_path(v, &self.path_meld, startop, startvn);
+                let dest = emul.emulate_path(v, &self.path_meld, op, vn);
                 let loads = emul.take_loadpoints().unwrap_or_default();
                 if dest.is_ok_and(|raw| targets.contains(&Self::destination(&spc, mask, raw)))
-                    && rows.may_read_row_entry(&loads)
+                    && rows.may_be_dispatched(&loads)
                 {
                     return false;
                 }
@@ -4544,8 +4570,8 @@ pub struct JumpTable {
     /// Any recovered in-memory data for the jump-table (C++ `loadpoints`).
     loadpoints: Vec<LoadTable>,
     /// (kuna) The memory the flow-time model read to reach the rows of
-    /// `addresstable`, collapsed; checked by [`Self::match_model`].
-    row_loads: Option<Vec<LoadTable>>,
+    /// `addresstable`; checked by [`Self::match_model`].
+    row_loads: Option<RowLoads>,
     /// Absolute address of the BRANCHIND jump (C++ `opaddress`).
     opaddress: Address,
     /// CPUI_BRANCHIND linked to \b this jump-table (C++ `indirect`).
@@ -5242,8 +5268,9 @@ impl JumpTable {
             self.loadpoints = loadpoints;
             r?;
             self.sanity_check(fd, Some(&loadcounts))?;
+            self.row_loads =
+                Self::kept_row_loads(self.loadpoints.clone(), &loadcounts, self.addresstable.len());
             LoadTable::collapse_table(&mut self.loadpoints);
-            self.row_loads = Some(self.loadpoints.clone());
         } else {
             let mut loadcounts: Vec<int4> = Vec::new();
             let mut loads: Vec<LoadTable> = Vec::new();
@@ -5264,17 +5291,22 @@ impl JumpTable {
         Ok(())
     }
 
-    /// (kuna) The collapsed loads behind the first `rows` rows, when the model
-    /// counted its loads row by row.
+    /// (kuna) The loads behind the first `rows` rows, when the model counted
+    /// its loads row by row.
     fn kept_row_loads(
         mut loads: Vec<LoadTable>,
         loadcounts: &[int4],
         rows: usize,
-    ) -> Option<Vec<LoadTable>> {
-        let kept = *loadcounts.get(rows.checked_sub(1)?)? as usize;
+    ) -> Option<RowLoads> {
+        let counts = loadcounts.get(..rows)?;
+        let kept = *counts.last()? as usize;
+        let depth = counts
+            .iter()
+            .scan(0, |prev, &count| Some(count - std::mem::replace(prev, count)))
+            .max()? as usize;
         loads.truncate(kept);
         LoadTable::collapse_table(&mut loads);
-        Some(loads)
+        Some(RowLoads { entries: loads, depth })
     }
 
     /// Recover jump-table addresses keeping track of a possible previous stage
@@ -5347,7 +5379,7 @@ impl JumpTable {
             .origmodel
             .as_ref()
             .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>())
-            .and_then(|m| LabelRows::new(m, &self.addresstable, self.row_loads.as_deref()))
+            .and_then(|m| LabelRows::new(m, &self.addresstable, self.row_loads.as_ref()))
             .map(Rc::new);
         self.recover_model(fd, rows.clone())?; // Create a current instance of the model
         if let Some(rows) = rows {

@@ -1170,19 +1170,28 @@ matters when the table repeats a destination, as shared case bodies and holes
 sent to the default do: a mapped byte can then agree with every index row
 through the repeat (the index 0 row reads map byte 4, and table rows 0 and 4
 hold the same target), while the map byte 4 that the code actually dispatches
-on carries no label. A value the fresh variable really takes reads its
-destination from an entry the flow-time model read for some row, and reaches
-that row's destination, so a fresh-range value outside the row values that
-does both is such an unlabelled selector value. Flow-time recovery records
-the entries it read for the rows the sanity check kept (`jumptable.rs
-(JumpTable::recover_addresses)`), and the last load of a value's emulation is
-the entry its destination comes from (`jumptable.rs
-(LabelRows::may_read_row_entry)`); when nothing was recorded, or the value
-loads nothing, every reached row counts. Only destinations are compared, never
-the two ranges: a byte index whose guard lies beyond the guard search spans
-the whole byte late, while its flow-time range was cut back to the table by
-the sanity check, and its values past the table read entries no row read,
-even where such an entry happens to hold a row's target; and a late guard can
+on carries no label. A value the code really dispatches runs the flow-time
+path of one of the kept rows, so every load the fresh path shares with that
+path reads an entry the row read, and it reaches that row's destination; a
+fresh-range value outside the row values that reaches a row's destination and
+could be dispatched that way is such an unlabelled selector value. Flow-time
+recovery records the entries it read for the rows the sanity check kept, and
+the most loads it performed for one row (`jumptable.rs
+(JumpTable::recover_addresses)`). A value whose emulation performs no more
+loads than a row starts at or after the flow-time variable on the path and
+shares all of its loads, so it could be dispatched only when every load reads
+a recorded entry; a value whose emulation performs more loads starts in front
+of the flow-time variable, and only its last load, the entry its destination
+comes from, is shared (`jumptable.rs (LabelRows::may_be_dispatched)`). When
+nothing was recorded, or the value loads nothing, every reached row counts.
+Only destinations are compared, never the two ranges: a byte index whose guard
+lies beyond the late guard search spans the whole byte late, while its
+flow-time range ended at that guard or was cut back to the table by the sanity
+check. Its values past the guard
+read entries no row read, even where such an entry leads to a row's target: an
+index past the end of the target table reads an unread table entry, and an
+index past the end of a short map reads an unread map entry whose garbage value
+may select a table entry a row did read. And a late guard can
 exclude a row the table still lists. Otherwise, when the fresh
 model's own values rebuild the whole table row for row (`jumptable.rs
 (JumpBasicModel::rebuilds_rows)`), the labels come from those values; this
