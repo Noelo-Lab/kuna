@@ -3062,6 +3062,26 @@ fn a_pointer_handed_on_past_an_int_call_round_trips() {
     }
 }
 
+/// `floatret_twopath_gcc_O1`: `wrap` tests `pick`'s `int` and returns one of
+/// two `getname` calls' pointers, both paths ending at one `ret`, and `main`
+/// reads all of `rax`. Heritage refines the planted `rax` at the `eax` the body
+/// names and merges each half on its own, which no rule joins again: `wrap`
+/// returned `CONCAT44(dat_4,v2)` and stored the upper half of `getname`'s
+/// pointer into `dat_4`, a register piece printed as a global the binary never
+/// writes. It stays `void`, as before a caller asked for its result.
+#[test]
+fn a_return_merged_in_pieces_stays_void() {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_twopath_gcc_O1").to_str().unwrap().to_string();
+    let sp = specs();
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    let printed = printed_functions(&stdout, &["wrap "]);
+    assert!(printed.contains("void wrap("), "`wrap` returns a value assembled from separately merged pieces:\n{printed}");
+    for bad in ["dat_4 =", "CONCAT44(dat_4,"] {
+        assert!(!printed.contains(bad), "`wrap` writes a register piece as a global (`{bad}`):\n{printed}");
+    }
+}
+
 /// `floatret_parse_gcc_O1.o` and `floatret_parse_armel.o` (soft-float ARM):
 /// `parse`, `parse2` and `parsef` return what `strtod` and `strtof` return, and
 /// `rp` keeps `parse`'s bits as an integer, `rp2` stores `parse2`'s `double`, and

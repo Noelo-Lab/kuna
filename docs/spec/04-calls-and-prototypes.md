@@ -4424,6 +4424,13 @@ it: heritage sizes its own trial by the range the function names, and gcc -O1's
 `type_name`'s pointer while its caller read all of `rax`. Only the pieces planted are left out: in
 i386 `call zsum; or $0xff,%edx; ret`, whose callers read `edx:eax`, `eax` is
 planted and the `edx` the function writes keeps the trial heritage gives it.
+Where paths meet before the RETURN, heritage refines a planted range wider
+than every write at the narrower name the function uses and merges each piece
+on its own, which no rule joins again; such a trial is refused
+(`kuna_voidret.rs (merges_in_pieces)`). gcc -O1's `wrap`, `call pick; test
+%eax,%eax` and then one of two `getname` calls before a shared `ret`, returned
+`CONCAT44(dat_4,v2)` and stored the upper half of `getname`'s pointer into
+`dat_4`, a register piece printed as a global, on each path; it stays `void`.
 `ActionReturnRecovery` then marks a
 trial on that storage active (`kuna_voidret.rs (score_forced)`) only when the
 value is the return value at EVERY live RETURN: `AncestorRealistic` accepts it,

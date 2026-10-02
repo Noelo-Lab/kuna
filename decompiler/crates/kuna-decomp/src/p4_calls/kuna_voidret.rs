@@ -838,7 +838,7 @@ fn score_trial(
         }
         return false;
     }
-    if hands_on_unstated(data, &addr, size, width, live, slot) {
+    if hands_on_unstated(data, &addr, size, width, live, slot) || merges_in_pieces(data, live, slot) {
         return false;
     }
     let every = live.iter().all(|&r| {
@@ -859,6 +859,25 @@ fn score_trial(
     }
     active.get_trial_mut(i).mark_active();
     true
+}
+
+/// Does a live RETURN read the trial as pieces that each merge on their own?
+/// Heritage refines a planted range wider than every write at the narrower
+/// name the function uses, and where paths meet before the RETURN each piece
+/// gets its own MULTIEQUAL, which no rule joins again: gcc -O1's `wrap`, `call
+/// pick; test %eax,%eax` and then one of two `getname` calls before a shared
+/// `ret`, returned `CONCAT44(dat_4,v2)` and stored the upper half of
+/// `getname`'s pointer into `dat_4`, a register piece printed as a global, on
+/// each path.  The function stays as it was.
+fn merges_in_pieces(data: &Funcdata, live: &[crate::context::OpId], slot: int4) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let def = |vn: crate::context::VarnodeId| data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d));
+    live.iter().any(|&r| {
+        data.obank().get(r).and_then(|o| o.get_in(slot)).and_then(def).is_some_and(|p| {
+            p.code() == OpCode::CPUI_PIECE
+                && (0..p.num_input()).filter_map(|k| p.get_in(k)).any(|i| def(i).is_some_and(|d| d.code() == OpCode::CPUI_MULTIEQUAL))
+        })
+    })
 }
 
 /// What a call's callee is known to return, for [`hands_on_unstated`].
