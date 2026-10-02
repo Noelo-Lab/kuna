@@ -1628,6 +1628,84 @@ The trim never removes an operation and refusing a merge never removes one eithe
 so a live store into the location keeps its statement. `off` is upstream's merge
 exactly.
 
+**(kuna) A value a sign-sensitive operation reads keeps its own variable rather
+than merging into a global it is stored to** (`kuna_globalvalue.rs`, a strict
+fix, no option). `Merge` joins a register value with the persistent global it is
+copied to whenever their Covers allow it. The joined value prints as a read of
+the global, and any operation on it takes the global's signedness. For
+`else { u = init * 3; sink = u; r = (int)(u >> 4); }` kuna printed
+`sink = init * 3; r = sink >> 4;`. The shift is right only while `sink` is
+unsigned, which is how kuna types it, but kuna never declares the global, so a
+reader who gives `sink` its real type — `volatile int` — turns the logical shift
+arithmetic: for `init = 0x80000000` the rebuilt program returns `-134217728`
+where the binary returns `134217728`. The mirror case is a signed value stored
+to a global kuna types unsigned, which then shifts logically; a widening, a
+conversion to `double` and a byte compare go wrong the same way, and so does an
+operation that reaches the value through `+` or `^`: `usink = a0 * 3;
+v1 = usink + 1 >> 4;` shifts the way `usink` is declared.
+
+Two pieces keep the value apart. Chapter 03's `kuna_globalstorekeep` stops
+`RulePropagateCopy` from replacing the store's `COPY` in the global's markers,
+so the `COPY` survives at the binary's own store. `Merge` then refuses the join
+in the two optional merges that would make it — the `COPY`'s required merge in
+`merge_opcode` and the same-type merge in `merge_adjacent` — when one side is
+persistent and the other is a value an operation reads sign-sensitively
+(`kuna_globalvalue.rs (keeps_apart)`): the shifted operand of `>>`, a divide,
+remainder or ordered compare in either signedness, either extension, an
+integer-to-float conversion, and, below `int` width where C promotes the operand
+first, `==`/`!=` unless the other side is a constant with the operand's top bit
+clear. `+`, `-`, `*`, the bitwise operators, `~`, unary `-` and the shifted
+operand of `<<` compute the same bits whatever the signedness, but C gives their
+result the operand's type, so they are harmless only when that result reaches no
+sign-sensitive reader. The test therefore follows an **implied** output of one of
+them — an expression printed inline around the value, like `sink + 1` — and
+counts its readers as the value's; an explicit output is a variable declared with
+its own type and ends the walk, as a cast, a truncation or an extension does
+(the extension being itself a sign-sensitive reader). The walk visits at most
+256 varnodes and answers yes when it runs out. The value then keeps its own type,
+so an operation that reads it directly or through such an expression is right
+however the global is declared, and the `COPY` prints as the store where the
+binary makes it.
+
+Keeping the value apart is right only for the uses the binary makes of the
+register. A load of the global that a rule has already fed the value into must
+still print as the global: kuna's SSA gives a pointer store no effect on a
+global, so in `gi = u; *p = k; return gi / 16;` the load after `*p = k` reads
+the store's `COPY`, and printing the value there returns `u / 16` where the
+binary returns `k / 16` whenever `p` points at `gi`. Chapter 03 leaves such a
+load on the global while the value is read sign-sensitively; when it lets one
+through, it marks the value and the global's store of it, and `keeps_apart`
+refuses the split for a marked value (a marked instance of the value, or a
+marked instance of the global whose defining op reads the value), so the join
+happens and the load prints as the global as it did before. By the time
+`Merge` runs the rules have finished, so a concatenation and the carry
+intrinsics (whose names state their signedness) never trigger the split here;
+chapter 03 counts them because a later rule can still turn them into an
+extension or a compare. A value that is only ever copied back into the global
+itself (a phi of the global's own reads) is still joined.
+
+The forced merge of a marker (`merge_op`, `merge_indirect`) is upstream's: it
+never refuses, so it never trims. Trimming there would print the store as a new
+`COPY` at the end of each predecessor block, after statements the binary runs
+later — a pointer store that may alias the global, or a call. Chapter 03 keeps
+the store's `COPY` out of the marker whenever the value has a reader that is
+sign-sensitive then or that a later rule makes so, so a value this forced merge
+joins with a global has no such reader, unless a load of the global already
+reads the value; that value prints as the global, as on upstream. The other
+exception is a store after which an earlier value of the global is still used:
+chapter 03 leaves its `COPY` to upstream, because keeping it would make the
+global's forced merge copy that earlier value out where it is defined, possibly
+above a pointer store the binary loads the global after. The forced merge then
+finds the stored value and the earlier value live together and trims the stored
+value to its own variable, as upstream does, so its sign-sensitive readers read
+that variable rather than the global. A parameter never merges with a global, so
+its stores keep upstream's handling too.
+
+The same join also decides the *pointee* type an access through the value
+takes. That is the pointer case above (`kuna_pointeevalue.rs`, issue #767): it
+refuses the join for a value used as an address, independently of this test, so
+either refusal keeps the value apart.
+
 **(kuna) `option dynamichashmax`** — §6.3.
 
 ## 6.5 Cleanup

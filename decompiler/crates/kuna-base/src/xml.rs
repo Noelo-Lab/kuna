@@ -1956,7 +1956,9 @@ mod tests {
         // its zero-extension
         // and kuna-stackstoreguard / a byte copied into an initialized stack
         // buffer through a walking pointer still reaches the later test and call
-        assert_eq!(count, 375, "corpus file count drifted");
+        // and kuna-globalvalue / a value a sign-sensitive op reads keeps its own
+        // variable instead of merging into a global it is stored to
+        assert_eq!(count, 376, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
