@@ -6,6 +6,7 @@
 import { escapeHtml } from '../assets/js/highlight-c.js';
 import { stackOperand } from './asm-view.js';
 import { entryOffset } from './addr.js';
+import { preambleLength } from './render-c.js';
 
 /**
  * The prologue's effect: pushes (in order), where RBP points (entry offset),
@@ -55,7 +56,8 @@ export function frameModel(fnData, arch = { family: 'x86', bits: 64 }) {
     const isFp = /^[RE]BP$/.test(p.reg);
     slots.push({ offset: p.offset, size: word, kind: isFp ? 'fp' : 'saved', name: isFp ? `saved ${p.reg}` : `saved ${p.reg}`, type: 'the caller\'s value, restored before returning' });
   }
-  const inCode = (name) => new RegExp(`\\b${name.replace(/[^\w]/g, '')}\\b`).test(fnData.code || '');
+  const body = (fnData.code || '').split('\n').slice(preambleLength(fnData)).join('\n');
+  const inCode = (name) => new RegExp(`\\b${name.replace(/[^\w]/g, '')}\\b`).test(body);
   const seen = new Set();
   for (const v of fnData.variables || []) {
     if (!Number.isInteger(v.stack_offset) || !v.size) continue;

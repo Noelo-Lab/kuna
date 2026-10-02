@@ -191,8 +191,11 @@ retype and rename through `prototype 0xENTRY <C declaration>`; a global is `data
 <type> <name>`; a byte patch is `bytes 0xADDR <hex>` (every later decode and `read` sees it).
 
 `inspect` is one load and one function — the same batch `decompile <selector>` runs (with
-its structure-naming convergence), so its `code` is `decompile`'s byte for byte; like
+its structure-naming convergence) with `structdefs on`, so its `code` is `decompile`'s byte
+for byte below the definitions of the types the function names (the `kuna decompile
+--option structdefs on` preamble, then a blank line; `types` lists the same set). Like
 `decompile`, a name keeps the discovery walk on and an address skips `fast_funcdisc`.
+`decompile` itself keeps the CLI's default and prints no preamble.
 Compact JSON, every address a number plus an `_hex` twin:
 
 ```
@@ -714,6 +717,19 @@ linked to the calling instruction and saying how it refers ("Called by _start (u
 address)"), plus "Uses data at …". If the request fails, the panel keeps the callees and
 says why.
 
+**Type definitions.** When a function names a struct, union, enum or typedef (a
+`struct_0` the decompiler worked out, a DWARF struct, a library type such as `FILE`), the
+Code view opens with their definitions under the heading *Types this function uses*, on a
+shaded block, and the function starts below them. The heading folds the block; a block of
+more than 30 lines (a debug-info or C++ program can name dozens of types) starts folded,
+and a student's own choice holds for the rest of the visit. Folded, the keyboard starts at
+the signature; the Stack view's "only in the debug info" test ignores the block. It is the engine's own text, so
+line numbers match `kuna decompile --option structdefs on`; it is highlighted but not
+clickable (a field name is not a variable to rename), and selecting one of its lines says
+which type it defines, that a `/* opaque */` one is a library type whose fields are not
+known, and for a `struct_N` what `field_0x8` means (`render-c.js` `preambleLength`, the
+lines before the signature).
+
 **Strings.** The sidebar switches between *Functions* and *Strings*. The first time the
 Strings list is shown the page asks the engine for `strings` (once per program and mode,
 when nothing else is running) and lists the text in three groups: *Used by the code*
@@ -986,7 +1002,8 @@ skips it as too costly):
    `kuna_wasm`** across `list` + `decompile {…}` + a whole-binary `project` export for each
    fixture (20 cases across ELF x86-64, ELF AArch64, and Mach-O x86-64, one of them
    `--language rust` so the second output language is proven to cross the boundary too),
-   plus `strings` on `crackme.elf`. This proves the port is faithful, not degraded.
+   plus `strings` on `crackme.elf` and `inspect make_item` (its type definitions) on
+   `structs.elf`. This proves the port is faithful, not degraded.
 2. **`test/glue.mjs`** — imports the shipped `kuna-web.js` (which drives the vendored
    `@bjorn3` shim) and decompiles over HTTP against `dist/`, exercising the exact browser
    code path minus the DOM — and specifically the **robust lazy-spec mechanism**: it
@@ -1018,7 +1035,7 @@ skips it as too costly):
    output pinned byte for byte — token-stream rendering and the per-line fallback,
    escaping, the index, the diff, assembly rows as comments and as headings, the easy
    spelling and the exact one, branch arrows, hover placement, the settings and their
-   version-1 migration), **`test/decompile2-groups.mjs`** (which group a function lands
+   version-1 migration, the type definitions above a function), **`test/decompile2-groups.mjs`** (which group a function lands
    in, `main` first, the function opened first),
    **`test/decompile2-session.mjs`** (directive merging and pinning, unqualified vs
    qualified output after a function rename, parameters via `prototype`, byte runs, the
@@ -1174,7 +1191,8 @@ skips it as too costly):
 Fixtures (all benign, small, reproducible from the committed source via the comment
 header): `sample.elf` (x86-64 ELF, rich body — call chain + `for`-loop), `sample_aarch64.o`
 (AArch64), `sample_macho.o` (Mach-O x86-64 — a second *format*), `crackme.elf` (x86-64
-ELF, a flag check whose strings are used directly and through a pointer). **PE** executables were
+ELF, a flag check whose strings are used directly and through a pointer), `structs.elf`
+(x86-64 ELF without debug info, whose `struct item` the decompiler works out as `struct_0`). **PE** executables were
 verified separately against a real PE (152 functions) through the browser lazy path; no
 benign PE is committed because this environment has no PE linker.
 

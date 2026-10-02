@@ -68,6 +68,11 @@ const FIXTURES = [
     cases: [['strings'], ['strings', '--mode', 'fast']],
   },
   {
+    fixture: join(here, 'fixtures/structs.elf'),
+    arch: 'x86-64 structs',
+    cases: [['inspect', 'make_item'], ['decompile', 'make_item']],
+  },
+  {
     fixture: join(here, 'fixtures/sample_macho.o'),
     arch: 'macho-x86-64',
     cases: [['list'], ['decompile'], ['decompile', '_add'], ['project', 'sample_macho.o'],
