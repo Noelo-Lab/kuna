@@ -926,7 +926,13 @@ forms `&u.s.b[i]` as `(&v1 | 4) + i`, relying on the frame's alignment; that
 store may write any slot near a resolved reach, and a slot the coalescing split
 off would be a separate local it never reaches. The whole frame keeps the
 upstream layout instead (`unsigned int v1[5]; ... *(char *)(((unsigned int)v1 |
-4) + (a0 >> 2 & 3)) = a1 + 1;`).
+4) + (a0 >> 2 & 3)) = a1 + 1;`). Once a pass has laid out a reach, later passes
+of the same function skip this check (`Funcdata::store_reach_committed`, reset
+when the function restarts). Dataflow can expose such an address only in a
+later pass, and a later pass that laid out a smaller local would leave the
+pointers an earlier pass resolved against the larger one past its end
+(`&v19[0x20]` into a `char v19[32]`). A pass that skipped does not bind the next
+one, since a larger layout strands no pointer.
 
 `option stackstoreguard off` turns both off along with the guard.
 

@@ -20,7 +20,10 @@
 //! A function with a LOAD or STORE whose pointer comes from the stack base but
 //! does not resolve (`(&v1 | 4) + i`) keeps upstream's layout: that access may
 //! write or read any slot near the reach, and a split there is a separate local
-//! it no longer reaches.
+//! it no longer reaches. Once a pass has laid out a reach, later passes skip
+//! this check (`Funcdata::store_reach_committed`): a pass that lays out a smaller
+//! local than an earlier one strands the pointers the earlier pass resolved
+//! against the larger local (`&v19[0x20]` into a `char v19[32]`).
 //!
 //! Whether or not the indices are bounded, the open range at a guarded store's
 //! base then absorbs every hint that starts inside a slot it absorbed
@@ -68,8 +71,14 @@ pub(crate) fn prepare_hints(
     }
     let guarded = guarded_stores(fd, space);
     reaches.retain(|(store, _, _)| guarded.contains(store));
-    if reaches.is_empty() || has_unresolved_frame_access(fd, sb) {
+    if reaches.is_empty() {
         return;
+    }
+    if !fd.store_reach_committed() {
+        if has_unresolved_frame_access(fd, sb) {
+            return;
+        }
+        fd.commit_store_reach();
     }
     let mut bases: Vec<intb> = reaches.iter().map(|&(_, lo, _)| lo).collect();
     let mut bounded: Vec<(intb, intb)> = reaches

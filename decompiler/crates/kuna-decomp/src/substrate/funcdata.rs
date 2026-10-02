@@ -229,6 +229,10 @@ pub struct Funcdata {
     /// re-declared, as `(offset, size, type)`; read by
     /// [`crate::kuna_castobject::reconcile`] once the variables are merged.
     cast_objects: std::cell::RefCell<Vec<(kuna_base::types::uintb, int4, std::rc::Rc<crate::dtype::Datatype>)>>,
+    /// (kuna `stackstoreguard`) Set once a `restructure_varnode` pass lays out a
+    /// guarded store's reach; later passes keep doing so
+    /// (`p6_variables/kuna_storereach.rs`).
+    store_reach_committed: std::cell::Cell<bool>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -561,6 +565,7 @@ impl Funcdata {
             frame_slots: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             slot_evidence: std::cell::RefCell::new(Default::default()),
             cast_objects: std::cell::RefCell::new(Vec::new()),
+            store_reach_committed: std::cell::Cell::new(false),
             jumpvec: Vec::new(),
             vbank,
             obank: PcodeOpBank::new(),
@@ -1668,6 +1673,16 @@ impl Funcdata {
                 all.push(o);
             }
         }
+    }
+
+    /// (kuna `stackstoreguard`) Has a pass laid out a guarded store's reach?
+    pub fn store_reach_committed(&self) -> bool {
+        self.store_reach_committed.get()
+    }
+
+    /// (kuna `stackstoreguard`) Record that this pass lays out a guarded store's reach.
+    pub fn commit_store_reach(&self) {
+        self.store_reach_committed.set(true);
     }
 
     /// (kuna `castobject`) Every stack object any pass re-declared.
@@ -2955,6 +2970,7 @@ impl Funcdata {
         self.kuna_passthrough_vararg_calls.clear();
         self.kuna_passthrough_variadic = false;
         self.kuna_moved_back_returns.clear();
+        self.store_reach_committed.set(false);
     }
 
     /// Set a delay/flag bit directly (test/seam helper; not a C++ method).
