@@ -470,7 +470,9 @@ fn stated_doubles_pass_whole_and_backfill_holes_stay_empty() {
 // d0 at the call is that float plus an s1 they never write (w3 as two words,
 // u1/u2/u3 as one d0 read). `top` also leaves q2's float result in s0 and the
 // s1 above it for k3, which never reads its second parameter, and wk calls kd,
-// which ignores its leading double, holding no value of its own for s1.
+// which ignores its leading double, holding no value of its own for s1. An
+// ignored double in d0 and two ignored floats in s0 and s1 are the same
+// registers, so kd prints three floats.
 #[test]
 fn ignored_stated_doubles_keep_the_callers_float_parameters() {
     let fixtures =
@@ -490,7 +492,7 @@ fn ignored_stated_doubles_keep_the_callers_float_parameters() {
             &reference,
         )
     });
-    let checks: [(&str, &str, &[usize]); 11] = [
+    let checks: [(&str, &str, &[usize]); 12] = [
         ("i4", "double i4(double a0,float a1,float a2,double a3)", &[4]),
         ("i2", "double i2(double a0,double a1)", &[2, 2]),
         ("i3", "double i3(double a0,float a1,double a2)", &[3]),
@@ -502,6 +504,7 @@ fn ignored_stated_doubles_keep_the_callers_float_parameters() {
         ("k3", "float k3(float a0,float a1,float a2)", &[3]),
         ("gk", "float gk(float a0)", &[1]),
         ("wk", "float wk(float a0)", &[1]),
+        ("kd", "float kd(float a0,float a1,float a2)", &[3]),
     ];
     for build in ["arm-O1", "arm-O2", "thumb-O2", "thumb-Os"] {
         let bytes =
@@ -523,6 +526,58 @@ fn ignored_stated_doubles_keep_the_callers_float_parameters() {
         };
         let emitted = common::scratch_file("arm-float-ignored-emitted", "c");
         let executable = common::scratch_file("arm-float-ignored-emitted", "exe");
+        std::fs::write(&emitted, &code).unwrap();
+        assert_eq!(
+            &compile_and_run(&[emitted, driver.clone()], &executable),
+            expected,
+            "{build}\n{code}"
+        );
+    }
+}
+
+// clang 14 hard-float ARM and Thumb builds of `armfloatargs_passthrough.c`:
+// clampf/clampd return early (`bxlt lr`) and pickf/picki write their first
+// parameter only under a condition (`vmovgt.f32 s0,s1`, `movgt r0,r1`), so each
+// hands the caller's first argument back on some path. Every wrapper passes an
+// earlier call's result there, which must reach the call.
+#[test]
+fn a_parameter_returned_on_some_path_keeps_its_argument() {
+    let fixtures =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../kuna-analysis/tests/fixtures");
+    let has_cc = common::process::optional_output(Command::new("cc").arg("--version")).is_some();
+    let driver = common::scratch_file("arm-float-passthrough-driver", "c");
+    std::fs::write(
+        &driver,
+        "#include <stdio.h>\nint top(int);\nint main(void) { long s = 0;\n\
+         for (int n = 1; n < 9; n++) s = s * 31 + top(n);\nprintf(\"%ld\\n\", s); return 0; }\n",
+    )
+    .unwrap();
+    let expected = has_cc.then(|| {
+        let reference = common::scratch_file("arm-float-passthrough-reference", "exe");
+        compile_and_run(
+            &[fixtures.join("armfloatargs_passthrough.c"), driver.clone()],
+            &reference,
+        )
+    });
+    let calls: [(&str, &str); 5] = [
+        ("wf", "clampf(v1,2.5,a0)"),
+        ("wd", "clampd(v1,2.5,a0)"),
+        ("wp", "pickf(v1,2.5,a0)"),
+        ("wq", "pickf(v1,1.5,a0)"),
+        ("wi", "picki(v1,0x19,a0)"),
+    ];
+    for build in ["arm-O2", "thumb-O2", "thumb-Os"] {
+        let bytes =
+            std::fs::read(fixtures.join(format!("armfloatargs_passthrough_{build}.o"))).unwrap();
+        let code = decompile_with(&bytes, &["armfloatreturn", "on", "armfloatargs", "on"]);
+        for (caller, call) in calls {
+            assert!(code.contains(call), "{build}: {caller} lacks {call}\n{code}");
+        }
+        let Some(expected) = &expected else {
+            continue;
+        };
+        let emitted = common::scratch_file("arm-float-passthrough-emitted", "c");
+        let executable = common::scratch_file("arm-float-passthrough-emitted", "exe");
         std::fs::write(&emitted, &code).unwrap();
         assert_eq!(
             &compile_and_run(&[emitted, driver.clone()], &executable),
