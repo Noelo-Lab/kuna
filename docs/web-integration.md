@@ -499,7 +499,10 @@ text: *Paste base64* (or *Open base64 text* in the ⋯ menu) asks for it, and Ct
 outside a text field opens a pasted file or base64 text directly. `decompile/base64.js`
 accepts `base64` output with its line breaks, a `data:…;base64,` URL and the URL-safe
 alphabet, and names the program `pasted.elf`/`.exe`/`.macho`/`.bin` by its magic; a
-Ctrl+V paste under 16 bytes (a stray word such as `main` is valid base64) only warns. With a file open the body is three
+Ctrl+V paste under 16 bytes (a stray word such as `main` is valid base64) only warns.
+Gzip data — pasted (`gzip -9c prog | base64 -w0`) or an opened `.gz` file — is inflated
+with the browser's `DecompressionStream` and takes the name gzip stored in its header
+(`gzip` keeps it for a named file, not for a pipe), else the file name without `.gz`. With a file open the body is three
 columns: the function list, the function (its name alone, with its address as the
 tooltip; *Rename* and *Signature*, the view switch, *View options*), and the Explain
 panel, which can be
@@ -1054,7 +1057,7 @@ skips it as too costly):
    `list-sample.json`). **`test/decompile2-strings.mjs`** (build-free) covers the
    Strings list: groups, one-line text, users with their pointers, escaping, search and
    the row cap. **`test/decompile2-base64.mjs`** (build-free) pins which pasted texts
-   decode, to which bytes, and the name a pasted program gets. **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
+   decode, to which bytes, and the name a pasted program gets, gzipped or not. **`test/decompile2-worker.mjs`** drives `inspect`, `read`,
    `xrefs`, `strings` and `--assert` through the real Worker (`strings` on
    `fixtures/crackme.elf`), and pins the refusal error the page
    relies on (exit code plus the quoted directive); it skips with a message on a wasm

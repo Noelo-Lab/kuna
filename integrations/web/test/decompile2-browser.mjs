@@ -3,7 +3,7 @@
 // with ?student=true (hover cards with them), load the fixture through the
 // file input, open main, hover a line, switch to Assembly, rename a variable,
 // patch a byte, reload to see the session restored, the Collaborate button,
-// the /decompile2/ redirect, opening pasted base64 text (button and Ctrl+V),
+// the /decompile2/ redirect, opening pasted base64 text (button, Ctrl+V, gzipped),
 // the layout at 1024 and 820 px, and the Strings
 // list taking a search for "flag" to the code that uses it, and the type
 // definitions shown above a function. Any uncaught page exception fails the run.
@@ -15,6 +15,7 @@
 // Usage:  integrations/web/build.sh && node integrations/web/test/decompile2-browser.mjs
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { findChrome, launchChrome, openPage } from './cdp-client.mjs';
 import { requireDist, serveStatic, fixture, openSample } from './worker-harness.mjs';
@@ -365,7 +366,11 @@ try {
   assert.equal(await text('#crumbname'), '', 'a stray word opens nothing');
   await paste(`data:application/octet-stream;base64,${b64}`);
   await page.waitFor(`document.getElementById('crumbname').textContent === 'pasted.elf' && document.getElementById('vname').textContent === 'main'`, { what: 'Ctrl+V base64 opened', timeout: 60000 });
-  await noExceptions('base64 text opens a program from Paste base64 and from Ctrl+V; a stray word only warns');
+  await page.navigate(`${server.base}/decompile/`);
+  await ready('#pick enabled before a gzipped paste');
+  await paste(execFileSync('gzip', ['-9c', fixture('sample.elf')]).toString('base64'));
+  await page.waitFor(`document.getElementById('crumbname').textContent === 'sample.elf' && document.getElementById('vname').textContent === 'main'`, { what: 'gzip | base64 opened under its stored name', timeout: 60000 });
+  await noExceptions('base64 text opens a program from Paste base64 and from Ctrl+V, gzipped or not; a stray word only warns');
 
   for (const path of ['/', '/dev-viz/']) {
     const html = await (await fetch(`${server.base}${path}`)).text();

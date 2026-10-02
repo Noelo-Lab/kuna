@@ -42,7 +42,7 @@ import { frameModel, renderFrame, slotIndex } from './stack-frame.js';
 import { renderXrefs, renderLocalCalls, localCallees } from './xrefs-view.js';
 import { renderStringList } from './strings-view.js';
 import { helpHtml } from './help.js';
-import { decodeBase64, pastedName } from './base64.js';
+import { decodeBase64, unpackProgram } from './base64.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -811,8 +811,7 @@ async function openFile(f) {
   if (!f || !state.kuna) return;
   if (collab && !(await collab.confirmLeave(f.name))) return;
   try {
-    const bytes = new Uint8Array(await f.arrayBuffer());
-    indexBinary({ name: f.name, bytes });
+    indexBinary(await unpackProgram(new Uint8Array(await f.arrayBuffer()), f.name));
   } catch (e) {
     setStatus(`Could not read ${f.name}`, 'err', e.message);
   }
@@ -863,19 +862,24 @@ window.addEventListener('drop', (e) => {
   if (f && !els.pick.hasAttribute('aria-disabled')) openFile(f);
 });
 
-/** Open `bytes` decoded from pasted base64 text. */
+/** Open `bytes` decoded from pasted base64 text, inflating them if they are gzip data. */
 async function openPasted(bytes) {
   if (!state.kuna) return;
-  const name = pastedName(bytes);
-  if (collab && !(await collab.confirmLeave(name))) return;
-  indexBinary({ name, bytes });
+  let program;
+  try {
+    program = await unpackProgram(bytes);
+  } catch (e) {
+    return void toast('The pasted gzip data is damaged.', { kind: 'err', detail: e.message });
+  }
+  if (collab && !(await collab.confirmLeave(program.name))) return;
+  indexBinary(program);
 }
 
 /** Ask for base64 text and open the program it encodes. */
 async function askBase64(anchorEl) {
   const res = await dialogs.openPopover({
     anchorEl, title: 'Open base64 text', submitLabel: 'Open',
-    note: 'Paste a program encoded as base64 text, for example the output of: base64 a.out',
+    note: 'Paste a program as base64 text, gzipped or not, for example the output of: gzip -9c a.out | base64 -w0',
     fields: [{ name: 'text', label: 'Base64', textarea: true, placeholder: 'f0VMRgIBAQAAAAAAAAAAAAMAPgAB…',
       validate: (v) => (decodeBase64(v) ? '' : v.trim() ? 'This is not base64 text' : 'Paste the base64 text') }],
   });
