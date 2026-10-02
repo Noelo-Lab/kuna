@@ -20,6 +20,7 @@ long s_csc(int k) { return s_rsc(k) * 3L; }
 long s_cus(int k) { return s_rus(k) + 1L; }
 long s_ci(int k) { return s_ri(k); }
 long s_cu(int k) { return (int)s_ru(k); }
+unsigned long s_cuz(int k) { return s_ru(k); }
 long s_pi(int x) { return x * 2L; }
 long s_pus(unsigned short x) { return x + 1L; }
 long s_pu(unsigned x) { return (int)x; }
@@ -35,6 +36,7 @@ const WIDE_PROTOS: &[&str] = &[
     "long cus(int k)",
     "long ci(int k)",
     "long cu(int k)",
+    "unsigned long cuz(int k)",
     "long pi(int x)",
     "long pus(unsigned short x)",
     "long pu(unsigned int x)",
@@ -68,7 +70,7 @@ const NARROW_PROTOS: &[&str] = &[
 
 /// The functions that return a callee's narrow result, and those that take a
 /// narrow argument.
-const RETURNS: &[&str] = &["csc", "cus", "ci", "cu", "cb"];
+const RETURNS: &[&str] = &["csc", "cus", "ci", "cu", "cuz", "cb"];
 const ARGUMENTS: &[&str] = &["pi", "pus", "pu", "psc", "pb"];
 
 struct Image {
@@ -89,8 +91,9 @@ const IMAGES: &[Image] = &[
         code: "1b05c5f96215619582809305c0123305b502c165f1356d8d82809b1505012d9d653582809b1505\
                012d9d65358280411106e497000000e780e0fc931515002e95a26041018280411106e497000000\
                e78000fc0505a26041018280411106e497000000e780c0fba26041018280411106e497000000e7\
-               8040fba2604101828006058280050582808280931515002e958280",
-        starts: &[0x0, 0xa, 0x1a, 0x24, 0x2e, 0x46, 0x5a, 0x6c, 0x7e, 0x82, 0x86, 0x88],
+               8040fba26041018280411106e497000000e78020fa02150191a260410182800605828005058280\
+               8280931515002e958280",
+        starts: &[0x0, 0xa, 0x1a, 0x24, 0x2e, 0x46, 0x5a, 0x6c, 0x7e, 0x94, 0x98, 0x9c, 0x9e],
         source: WIDE,
         protos: WIDE_PROTOS,
     },
@@ -101,9 +104,9 @@ const IMAGES: &[Image] = &[
                022000004c8cc040008430100084e4bf022000004c63c0ff026120c029ffbfff578c04410084b0\
                10006120c0286340c0022000004c63c0ff026120c029ffabff578404c0026120c0286340c00220\
                00004c63c0ff026120c029ff9fff576120c0286340c0022000004c63c0ff026120c029ff97ff57\
-               6120c0286340c0022000004c840441002000004c8404c0022000004c2000004c8c04410084b010\
-               002000004c",
-        starts: &[0x0, 0xc, 0x1c, 0x2c, 0x3c, 0x5c, 0x78, 0x90, 0xa8, 0xb0, 0xb8, 0xbc],
+               6120c0286340c0022000004c63c0ff026120c029ff7fff578400df006120c0286340c002200000\
+               4c840441002000004c8404c0022000004c2000004c8c04410084b010002000004c",
+        starts: &[0x0, 0xc, 0x1c, 0x2c, 0x3c, 0x5c, 0x78, 0x90, 0xa8, 0xc4, 0xcc, 0xd4, 0xd8],
         source: WIDE,
         protos: WIDE_PROTOS,
     },
@@ -115,9 +118,10 @@ const IMAGES: &[Image] = &[
                24000800e003f9ff2224f0ffbd670800bfff0040000c0000000000080200781001002d10410008\
                00bfdf0800e0031000bd67f0ffbd670800bfff0440000c0000000003f8417c010022640800bfdf\
                0800e0031000bd6700000000f0ffbd670800bfff0e40000c00000000001002000800bfdf0800e0\
-               031000bd67f0ffbd670800bfff1240000c00000000001002000800bfdf0800e0031000bd670800\
-               e003781004000800e003010082640800e00325108000780804000800e0032d102400",
-        starts: &[0x0, 0x10, 0x38, 0x48, 0x58, 0x80, 0xa8, 0xc8, 0xe8, 0xf0, 0xf8, 0x100],
+               031000bd67f0ffbd670800bfff1240000c00000000001002000800bfdf0800e0031000bd67f0ff\
+               bd670800bfff1240000c0000000003f8427c0800bfdf0800e0031000bd670800e0037810040008\
+               00e003010082640800e00325108000780804000800e0032d102400",
+        starts: &[0x0, 0x10, 0x38, 0x48, 0x58, 0x80, 0xa8, 0xc8, 0xe8, 0x108, 0x110, 0x118, 0x120],
         source: WIDE,
         protos: WIDE_PROTOS,
     },

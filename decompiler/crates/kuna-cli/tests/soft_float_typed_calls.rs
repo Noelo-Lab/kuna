@@ -550,7 +550,7 @@ fn mips_char_return() -> Vec<u8> {
 }
 
 #[test]
-fn return_narrower_than_an_unextended_register_keeps_the_recovered_call() {
+fn return_the_riscv_convention_extends_is_forced_as_declared() {
     let text = decompile_with(
         &riscv_int_return(),
         &[
@@ -560,10 +560,15 @@ fn return_narrower_than_an_unextended_register_keeps_the_recovered_call() {
         ],
     );
     let r1 = function(&text, "r1");
+    assert!(r1.contains("return (*v1)(k);"), "{r1}");
     assert!(!r1.contains("(unsigned int)"), "zero-extended the signed int: {r1}");
     let r6 = function(&text, "r6");
-    assert!(r6.contains("p[(*v1)(k"), "{r6}");
+    assert!(r6.contains("p[(*v1)(k)]"), "{r6}");
     assert!(!r6.contains("(unsigned int)"), "zero-extended the signed index: {r6}");
+}
+
+#[test]
+fn return_narrower_than_an_unextended_register_keeps_the_recovered_call() {
     let text = decompile_with(
         &mips_char_return(),
         &[
