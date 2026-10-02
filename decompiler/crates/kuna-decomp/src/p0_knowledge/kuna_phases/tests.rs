@@ -38,9 +38,9 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_251() {
-    assert_eq!(kuna_num_settables(), 251);
-    assert_eq!(SETTABLE_TABLE.len(), 251);
+fn settable_count_is_252() {
+    assert_eq!(kuna_num_settables(), 252);
+    assert_eq!(SETTABLE_TABLE.len(), 252);
 }
 
 #[test]
