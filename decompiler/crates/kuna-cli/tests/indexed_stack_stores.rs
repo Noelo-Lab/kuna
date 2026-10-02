@@ -690,6 +690,7 @@ fn float_reads_after_indexed_stores_are_no_worse_than_without_the_guard() {
         &[
             (
                 "v3_clang",
+                16,
                 &[
                     0x48, 0xb8, 0x04, 0x03, 0x02, 0x01, 0x00, 0x00, 0x10, 0x40, 0x48, 0x89, 0x44,
                     0x24, 0xf8, 0x83, 0xe7, 0x07, 0x40, 0x88, 0x74, 0x3c, 0xf8, 0x0f, 0xb7, 0x44,
@@ -700,6 +701,7 @@ fn float_reads_after_indexed_stores_are_no_worse_than_without_the_guard() {
             ),
             (
                 "fb_clang",
+                16,
                 &[
                     0xf3, 0x0f, 0x2a, 0xc6, 0xf3, 0x0f, 0x11, 0x44, 0x24, 0xf8, 0xc7, 0x44, 0x24,
                     0xfc, 0x00, 0x00, 0x10, 0x40, 0x83, 0xe7, 0x07, 0x40, 0x88, 0x74, 0x3c, 0xf8,
@@ -710,6 +712,7 @@ fn float_reads_after_indexed_stores_are_no_worse_than_without_the_guard() {
             ),
             (
                 "w10_gcc",
+                16,
                 &[
                     0x48, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x40, 0x83, 0xe7, 0x07,
                     0x48, 0x89, 0x44, 0x24, 0xf8, 0x40, 0x88, 0x74, 0x3c, 0xf8, 0xf2, 0x0f, 0x2c,
@@ -736,6 +739,7 @@ fn split_buffers_after_indexed_stores_are_no_worse_than_without_the_guard() {
         "indexed-stack-splits",
         &[(
             "x6_clang",
+            16,
             &[
                 0x55, 0x48, 0x89, 0xe5, 0x89, 0x7d, 0xfc, 0x89, 0x75, 0xf8, 0x48, 0xb8, 0x88, 0x77,
                 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x48, 0x89, 0x45, 0xf0, 0x48, 0xb8, 0x08, 0x07,
@@ -755,10 +759,60 @@ fn split_buffers_after_indexed_stores_are_no_worse_than_without_the_guard() {
     );
 }
 
-/// Each function's guarded print must disagree with the binary on no more
-/// inputs than its print with `stackstoreguard off`.
+#[test]
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
-fn no_worse_than_without_the_guard(stem: &str, functions: &[(&str, &[u8])]) {
+fn unresolved_and_unbounded_stores_are_no_worse_than_without_the_guard() {
+    // gcc -fno-stack-protector -fcf-protection=none, -O0 of
+    //   y3u: union { u32 w[2]; u16 h[4]; u8 b[8]; u64 q; } u, v;
+    //       u.w[0] = 0x01020304; u.w[1] = 0x05060708; v.q = 0x1111111111111111;
+    //       *(u8 *)((uintptr_t)&v.b[0] | (j & 7)) = 0x55; u.b[i] = j;
+    //       return u.h[0] + u.h[3] * 5 + v.h[1] * 3;   (i < 8)
+    // and -O2 of
+    //   y8: struct { u32 a; u8 b[6]; u16 c; u32 d; } s; s.a = 0x01020304;
+    //       s.b[k] = k + 1 (k < 6); s.c = 0x0707; s.d = 0x08080808;
+    //       ((u8 *)&s)[i] = j; return s.a + s.b[2] + s.c * 3 + (s.d >> 8);
+    // y3u's OR-formed store does not resolve to stack offsets, and y8's
+    // unmasked index may write the fields the layout maps as other locals, so
+    // both fall back to the unguarded analysis.
+    no_worse_than_without_the_guard(
+        "indexed-stack-unbounded",
+        &[
+            (
+                "y3u_gcc",
+                8,
+                &[
+                    0x55, 0x48, 0x89, 0xe5, 0x89, 0x7d, 0xec, 0x89, 0x75, 0xe8, 0xc7, 0x45, 0xf8,
+                    0x04, 0x03, 0x02, 0x01, 0xc7, 0x45, 0xfc, 0x08, 0x07, 0x06, 0x05, 0x48, 0xb8,
+                    0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x48, 0x89, 0x45, 0xf0, 0x48,
+                    0x8d, 0x55, 0xf0, 0x8b, 0x45, 0xe8, 0x48, 0x98, 0x83, 0xe0, 0x07, 0x48, 0x09,
+                    0xd0, 0xc6, 0x00, 0x55, 0x8b, 0x45, 0xe8, 0x89, 0xc2, 0x8b, 0x45, 0xec, 0x48,
+                    0x98, 0x88, 0x54, 0x05, 0xf8, 0x0f, 0xb7, 0x45, 0xf8, 0x0f, 0xb7, 0xc8, 0x0f,
+                    0xb7, 0x45, 0xfe, 0x0f, 0xb7, 0xd0, 0x89, 0xd0, 0xc1, 0xe0, 0x02, 0x01, 0xd0,
+                    0x01, 0xc1, 0x0f, 0xb7, 0x45, 0xf2, 0x0f, 0xb7, 0xd0, 0x89, 0xd0, 0x01, 0xc0,
+                    0x01, 0xd0, 0x01, 0xc8, 0x5d, 0xc3,
+                ],
+            ),
+            (
+                "y8_gcc",
+                16,
+                &[
+                    0xb8, 0x07, 0x07, 0x00, 0x00, 0x48, 0x63, 0xff, 0xc7, 0x44, 0x24, 0xe8, 0x04,
+                    0x03, 0x02, 0x01, 0x66, 0x89, 0x44, 0x24, 0xf2, 0xc6, 0x44, 0x24, 0xee, 0x03,
+                    0xc7, 0x44, 0x24, 0xf4, 0x08, 0x08, 0x08, 0x08, 0x40, 0x88, 0x74, 0x3c, 0xe8,
+                    0x8b, 0x44, 0x24, 0xf4, 0x0f, 0xb6, 0x54, 0x24, 0xee, 0xc1, 0xe8, 0x08, 0x01,
+                    0xd0, 0x0f, 0xb7, 0x54, 0x24, 0xf2, 0x03, 0x44, 0x24, 0xe8, 0x8d, 0x14, 0x52,
+                    0x01, 0xd0, 0xc3,
+                ],
+            ),
+        ],
+    );
+}
+
+/// Each function's guarded print must disagree with the binary on no more
+/// inputs `i < rows`, `j < 256` than its print with `stackstoreguard off`; a
+/// crash counts as worse.
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+fn no_worse_than_without_the_guard(stem: &str, functions: &[(&str, u32, &[u8])]) {
     let compilers: Vec<_> = ["gcc", "clang"]
         .into_iter()
         .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
@@ -767,10 +821,10 @@ fn no_worse_than_without_the_guard(stem: &str, functions: &[(&str, &[u8])]) {
         !compilers.is_empty(),
         "a C compiler is required for semantic validation"
     );
-    let input = x86_64_object(stem, functions.iter().copied());
+    let input = x86_64_object(stem, functions.iter().map(|&(name, _, code)| (name, code)));
     let mut printed = String::new();
     let mut checks = String::new();
-    for &(name, _) in functions {
+    for &(name, rows, _) in functions {
         for (arm, options) in [
             ("guarded", &[][..]),
             ("unguarded", &["--option", "stackstoreguard", "off"][..]),
@@ -782,7 +836,7 @@ fn no_worse_than_without_the_guard(stem: &str, functions: &[(&str, &[u8])]) {
             "int binary_{name}(int, int);\n\
              static int check_{name}(void) {{\n\
                  int guarded = 0, unguarded = 0;\n\
-                 for (int i = 0; i < 16; ++i)\n\
+                 for (int i = 0; i < {rows}; ++i)\n\
                      for (int j = 0; j < 256; ++j) {{\n\
                          int want = binary_{name}(i, j);\n\
                          guarded += guarded_{name}(i, j) != want;\n\
@@ -794,7 +848,7 @@ fn no_worse_than_without_the_guard(stem: &str, functions: &[(&str, &[u8])]) {
     }
     let names: Vec<_> = functions
         .iter()
-        .map(|(name, _)| format!("check_{name}"))
+        .map(|(name, _, _)| format!("check_{name}"))
         .collect();
     let src = common::scratch_file(stem, "c");
     let exe = common::scratch_file(stem, "exe");
@@ -842,7 +896,7 @@ int main(int argc, char **argv) {{
                         .unwrap()
                         .success()
                 })
-                .map(|(_, (name, _))| *name)
+                .map(|(_, (name, _, _))| *name)
                 .collect();
             assert!(
                 failing.is_empty(),

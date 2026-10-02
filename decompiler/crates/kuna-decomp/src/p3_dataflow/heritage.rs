@@ -846,6 +846,11 @@ pub struct Heritage {
     /// "can a pointer reach this stack slot?" with, gathered at most once per
     /// pass.  See [`crate::p4_calls::kuna_calleeprotostack`].
     protostack_alias: Option<Option<crate::varmap::AliasChecker>>,
+    /// (kuna `stackstoreguard`) Whether this pass's frame has a stack access
+    /// whose pointer does not resolve, decided at most once per pass.
+    store_frame_unresolved: Option<bool>,
+    /// (kuna `stackstoreguard`) Has a pass of this function guarded its frame?
+    store_frame_guarded: bool,
 }
 
 impl Heritage {
@@ -868,6 +873,8 @@ impl Heritage {
             store_guard: Vec::new(),
             load_copy_ops: Vec::new(),
             protostack_alias: None,
+            store_frame_unresolved: None,
+            store_frame_guarded: false,
         }
     }
 
@@ -1015,6 +1022,8 @@ impl Heritage {
         self.clear_info_list();
         self.load_guard.clear();
         self.store_guard.clear();
+        self.store_frame_unresolved = None;
+        self.store_frame_guarded = false;
         self.maxdepth = -1;
         self.pass = 0;
     }
@@ -1359,7 +1368,8 @@ impl Heritage {
         write: &mut Vec<crate::context::VarnodeId>,
     ) {
         let guard_stack_bytes = add_indirects
-            && super::kuna_stackstoreguard::enabled(fd, addr, write);
+            && super::kuna_stackstoreguard::enabled(fd, addr, write)
+            && self.store_frame_resolves(fd, addr);
         for slot in 0..read.len() {
             let vn = read[slot];
             let descend = fd.vbank().get(vn).expect("guard: stale read vn").num_descend();
@@ -2496,6 +2506,29 @@ impl Heritage {
                 .set_active_heritage();
             let _ = fd.op_insert_input(op, ret_val, n);
         }
+    }
+
+    /// (kuna `stackstoreguard`) May this pass guard the frame of `addr`'s
+    /// space? Not when a stack access's pointer does not resolve (decided once
+    /// per pass); if no earlier pass guarded the frame either, the guard is
+    /// withdrawn for the whole function, as there is nothing to undo.
+    fn store_frame_resolves(&mut self, fd: &crate::funcdata::Funcdata, addr: &Address) -> bool {
+        let unresolved = match self.store_frame_unresolved {
+            Some(unresolved) => unresolved,
+            None => {
+                let unresolved = addr.get_space().is_some_and(|spc| {
+                    super::kuna_stackstoreguard::frame_unresolved(fd, spc, &self.store_guard)
+                });
+                self.store_frame_unresolved = Some(unresolved);
+                unresolved
+            }
+        };
+        if !unresolved {
+            self.store_frame_guarded = true;
+        } else if !self.store_frame_guarded {
+            fd.withdraw_stack_store_guard();
+        }
+        !unresolved
     }
 
     /// Guard possible STORE aliases; the narrow policy admits only indexed byte stores.
@@ -4815,6 +4848,7 @@ impl Heritage {
         // (kuna `calleeprotostack`) The alias gather is only valid for the
         // data-flow as it stands, so it is dropped at every pass boundary.
         self.protostack_alias = None;
+        self.store_frame_unresolved = None;
         if self.maxdepth == -1 {
             // Has a restructure been forced
             self.build_adt(fd);

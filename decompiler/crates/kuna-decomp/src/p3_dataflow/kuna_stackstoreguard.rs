@@ -16,6 +16,30 @@ pub(super) fn enabled(
         && writes.iter().any(|&vn| constant_write(fd, vn))
 }
 
+/// Does a recorded byte store into `spc`, or another stack access, have a
+/// pointer that does not resolve to stack offsets? The layout cannot keep such
+/// a frame's guarded slots in one local, so the frame is not guarded.
+pub(super) fn frame_unresolved(
+    fd: &crate::funcdata::Funcdata,
+    spc: &Rc<kuna_base::space::AddrSpace>,
+    store_guard: &[super::heritage::LoadGuard],
+) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let stores: Vec<crate::context::OpId> = store_guard
+        .iter()
+        .filter(|guard| Rc::ptr_eq(&guard.spc, spc))
+        .map(|guard| guard.op)
+        .filter(|&op| {
+            fd.obank().get(op).is_some_and(|o| {
+                o.code() == OpCode::CPUI_STORE
+                    && !o.is_dead()
+                    && o.get_in(2).and_then(|v| fd.vbank().get(v)).is_some_and(|v| v.get_size() == 1)
+            })
+        })
+        .collect();
+    !stores.is_empty() && crate::p6_variables::kuna_storereach::frame_unresolved(fd, spc, &stores)
+}
+
 fn constant_write(fd: &crate::funcdata::Funcdata, mut vn: crate::context::VarnodeId) -> bool {
     use kuna_num::opcodes::OpCode;
     for _ in 0..16 {

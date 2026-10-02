@@ -233,13 +233,15 @@ pub struct Funcdata {
     /// guarded store's reach; later passes keep doing so
     /// (`p6_variables/kuna_storereach.rs`).
     store_reach_committed: std::cell::Cell<bool>,
-    /// (kuna `stackstoreguard`) The signed stack ranges `(lo, hi, float)` the
-    /// latest `restructure_varnode` pass says the final layout must keep in one
-    /// local (`p6_variables/kuna_storereach.rs`).
-    store_reach_checks: std::cell::RefCell<Vec<(kuna_base::types::intb, kuna_base::types::intb, bool)>>,
-    /// (kuna `stackstoreguard`) Set when the final layout spoiled such a range;
-    /// the re-analysis runs without the guard. Survives `clear()`.
+    /// (kuna `stackstoreguard`) What the latest `restructure_varnode` pass says
+    /// the final layout must satisfy (`p6_variables/kuna_storereach.rs`).
+    store_reach_checks: std::cell::RefCell<crate::p6_variables::kuna_storereach::ReachChecks>,
+    /// (kuna `stackstoreguard`) Set when the guard is off for this function.
+    /// Survives `clear()`.
     stack_store_guard_withdrawn: std::cell::Cell<bool>,
+    /// (kuna `stackstoreguard`) Set when the final layout spoiled what the
+    /// guard needs; the drive then analyzes the function again without it.
+    stack_store_guard_spoiled: std::cell::Cell<bool>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -576,8 +578,9 @@ impl Funcdata {
             slot_evidence: std::cell::RefCell::new(Default::default()),
             cast_objects: std::cell::RefCell::new(Vec::new()),
             store_reach_committed: std::cell::Cell::new(false),
-            store_reach_checks: std::cell::RefCell::new(Vec::new()),
+            store_reach_checks: std::cell::RefCell::new(Default::default()),
             stack_store_guard_withdrawn: std::cell::Cell::new(false),
+            stack_store_guard_spoiled: std::cell::Cell::new(false),
             jumpvec: Vec::new(),
             vbank,
             obank: PcodeOpBank::new(),
@@ -1715,17 +1718,17 @@ impl Funcdata {
         self.get_arch().stack_store_guard && !self.stack_store_guard_withdrawn.get()
     }
 
-    /// (kuna `stackstoreguard`) Record the ranges this pass says the final
-    /// layout must keep in one local.
-    pub fn note_store_reach_checks(
+    /// (kuna `stackstoreguard`) Record what this pass says the final layout
+    /// must satisfy.
+    pub(crate) fn note_store_reach_checks(
         &self,
-        pieces: Vec<(kuna_base::types::intb, kuna_base::types::intb, bool)>,
+        checks: crate::p6_variables::kuna_storereach::ReachChecks,
     ) {
-        *self.store_reach_checks.borrow_mut() = pieces;
+        *self.store_reach_checks.borrow_mut() = checks;
     }
 
-    /// (kuna `stackstoreguard`) The ranges the latest pass recorded.
-    pub fn store_reach_checks(&self) -> Vec<(kuna_base::types::intb, kuna_base::types::intb, bool)> {
+    /// (kuna `stackstoreguard`) What the latest pass recorded.
+    pub(crate) fn store_reach_checks(&self) -> crate::p6_variables::kuna_storereach::ReachChecks {
         self.store_reach_checks.borrow().clone()
     }
 
@@ -1733,6 +1736,18 @@ impl Funcdata {
     /// function's analysis.
     pub fn withdraw_stack_store_guard(&self) {
         self.stack_store_guard_withdrawn.set(true);
+    }
+
+    /// (kuna `stackstoreguard`) Record that the final layout spoiled what the
+    /// guard needs, so the function must be analyzed again without it.
+    pub fn spoil_stack_store_guard(&self) {
+        self.stack_store_guard_spoiled.set(true);
+        self.stack_store_guard_withdrawn.set(true);
+    }
+
+    /// (kuna `stackstoreguard`) Did the final layout spoil what the guard needs?
+    pub fn stack_store_guard_spoiled(&self) -> bool {
+        self.stack_store_guard_spoiled.get()
     }
 
     /// (kuna `castobject`) Every stack object any pass re-declared.
@@ -3021,7 +3036,7 @@ impl Funcdata {
         self.kuna_passthrough_variadic = false;
         self.kuna_moved_back_returns.clear();
         self.store_reach_committed.set(false);
-        self.store_reach_checks.borrow_mut().clear();
+        *self.store_reach_checks.borrow_mut() = Default::default();
     }
 
     /// Set a delay/flag bit directly (test/seam helper; not a C++ method).

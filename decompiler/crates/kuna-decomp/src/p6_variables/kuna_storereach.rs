@@ -23,24 +23,31 @@
 //! A reach holding a float hint keeps its hints too, and its stores' bases stop
 //! absorbing: a float read of a byte array would print as an integer piece.
 //!
-//! A function with a LOAD or STORE whose pointer comes from the stack base but
-//! does not resolve (`(&v1 | 4) + i`) keeps upstream's layout: that access may
-//! write or read any slot near the reach, and a split there is a separate local
-//! it no longer reaches. Once a pass has laid out a reach, later passes skip
-//! this check (`Funcdata::store_reach_committed`): a pass that lays out a smaller
-//! local than an earlier one strands the pointers the earlier pass resolved
-//! against the larger local (`&v19[0x20]` into a `char v19[32]`).
+//! A frame with a LOAD or STORE whose pointer comes from the stack base but
+//! does not resolve (`(&v1 | 4) + i`, a walk with a variable step, a choice
+//! between more than eight addresses) is not guarded at all: that access may
+//! write or read any slot near a reach, so no layout of the frame is known to
+//! be right (`p3_dataflow/kuna_stackstoreguard.rs (frame_unresolved)`). A
+//! frame heritage already guarded whose latest layout pass finds one is laid
+//! out as upstream does and then analyzed again without the guard. Once a pass has
+//! laid out a reach, later passes keep doing so
+//! (`Funcdata::store_reach_committed`): a pass that lays out a smaller local
+//! than an earlier one strands the pointers the earlier pass resolved against
+//! the larger local (`&v19[0x20]` into a `char v19[32]`).
 //!
 //! Whether or not the indices are bounded, the open range at a guarded store's
 //! base then absorbs every hint that starts inside a slot it absorbed
 //! (`MapState::set_absorbing_bases`), so a word read inside a constant slot the
 //! range swallowed stays a piece of the same local.
 //!
-//! The guard is worse than none when the final layout still maps a slot it
-//! keeps (the bytes of a guard INDIRECT whose value is read), a guarded store's
-//! piece on the unresolved path, or a piece in a float reach as more than one
-//! local, or reads a float local such a piece lies in as an integer: the
-//! function is then analyzed again without the guard (`withdraw_spoiled_guard`).
+//! The guard is worse than none when the final layout maps a slot it keeps
+//! (the bytes of a guard INDIRECT whose value is read) as more than one local,
+//! maps such a slot inside a guarded store's reach (its bounded reach, or 256
+//! bytes from an unbounded piece's base) outside the local holding the store's
+//! base, or splits or reads as an integer a float local a guarded piece lies
+//! in: the drive then analyzes a freshly built copy of the function without
+//! the guard (`withdraw_spoiled_guard`), which prints what `stackstoreguard
+//! off` prints.
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -61,111 +68,109 @@ const MAX_REACH: intb = 0x100;
 /// Most stack addresses one pointer may choose between.
 const MAX_PIECES: usize = 8;
 
+/// What the latest layout pass asks of the final layout.
+#[derive(Clone, Default)]
+pub(crate) struct ReachChecks {
+    /// `(base, end)`: the bytes a guarded store may write from `base`, to the
+    /// end of its bounded reach or `MAX_REACH` past an unbounded piece's base.
+    reaches: Vec<(intb, intb)>,
+    /// The guarded store pieces in a float reach.
+    floats: Vec<(intb, intb)>,
+    /// A guarded store's pointer, or another stack access's, does not resolve.
+    unresolved: bool,
+}
+
 /// Coalesce each guarded byte store's bounded reach into one open array hint,
 /// and let the open range at every guarded store's base absorb what starts
-/// inside a slot it absorbed. Returns, as `(lo, hi, float)`, the pieces of the
-/// guarded stores the final layout must keep in one local: on the unresolved
-/// path every bounded piece, else the pieces in a float reach; `float` when a
-/// float hint lies in the piece or its reach.
+/// inside a slot it absorbed. Returns what the final layout must satisfy for
+/// the guard to stand (`withdraw_spoiled_guard`).
 pub(crate) fn prepare_hints(
     fd: &Funcdata,
     state: &mut MapState,
     space: &Rc<AddrSpace>,
     types: &dyn TypeFactory,
-) -> Vec<(intb, intb, bool)> {
+) -> ReachChecks {
+    let mut checks = ReachChecks::default();
     if !fd.stack_store_guard() {
-        return Vec::new();
+        return checks;
     }
     let Some(sb) = fd.find_spacebase_input(space) else {
-        return Vec::new();
+        return checks;
     };
     if !has_byte_store(fd) {
-        return Vec::new();
+        return checks;
     }
     let (guarded, _) = guard_effects(fd, space);
     if guarded.is_empty() {
-        return Vec::new();
+        return checks;
     }
-    let stores: Vec<(OpId, Vec<(intb, Option<intb>)>)> = guarded
+    let guarded: Vec<OpId> = guarded.into_iter().collect();
+    checks.unresolved = frame_unresolved(fd, space, &guarded);
+    let resolved: Vec<Vec<(intb, Option<intb>)>> = guarded
         .iter()
-        .filter_map(|&store| store_pieces(fd, store, sb, space).map(|pieces| (store, pieces)))
-        .filter(|(_, pieces)| store_reach(pieces).is_some())
+        .filter_map(|&store| store_pieces(fd, store, sb, space))
         .collect();
-    let bounded_pieces: Vec<(intb, intb)> = stores
-        .iter()
-        .flat_map(|(_, pieces)| pieces.iter().filter_map(|&(lo, hi)| Some((lo, hi?))))
-        .collect();
-    let mut checks = Vec::new();
-    let mut floats: Vec<(intb, intb)> = Vec::new();
-    if !stores.is_empty() {
-        if !fd.store_reach_committed() && has_unresolved_frame_access(fd, sb) {
-            checks.extend(bounded_pieces);
-        } else {
-            fd.commit_store_reach();
-            let reaches: Vec<(Vec<intb>, Option<(intb, intb)>)> = stores
-                .iter()
-                .filter_map(|(_, pieces)| store_reach(pieces))
-                .collect();
-            let mut bounded: Vec<(intb, intb)> =
-                reaches.iter().filter_map(|&(_, span)| span).collect();
-            bounded.sort_unstable();
-            let mut merged: Vec<(intb, intb)> = Vec::new();
-            for (lo, hi) in bounded {
-                match merged.last_mut() {
-                    Some(last) if lo <= last.1 => last.1 = last.1.max(hi),
-                    _ => merged.push((lo, hi)),
-                }
-            }
-            let mut bases: Vec<intb> = reaches
-                .iter()
-                .flat_map(|(b, _)| b.iter().copied())
-                .collect();
-            for (lo, hi) in merged {
-                match coalesce_range(state, space, types, lo, hi) {
-                    Coalesce::Array(start) => bases.push(start),
-                    Coalesce::Float(flo, fhi) => {
-                        bases.retain(|&b| b < flo || b >= fhi);
-                        floats.push((flo, fhi));
-                    }
-                    Coalesce::Kept => {}
-                }
-            }
-            bases.sort_unstable();
-            bases.dedup();
-            state.set_absorbing_bases(bases);
-            checks.extend(
-                bounded_pieces
-                    .into_iter()
-                    .filter(|&(lo, hi)| floats.iter().any(|&(flo, fhi)| lo < fhi && flo < hi)),
-            );
+    if checks.unresolved && !fd.store_reach_committed() {
+        return checks;
+    }
+    let reaches: Vec<(Vec<intb>, Option<(intb, intb)>)> =
+        resolved.iter().filter_map(|pieces| store_reach(pieces)).collect();
+    if reaches.is_empty() {
+        return checks;
+    }
+    fd.commit_store_reach();
+    let mut bounded: Vec<(intb, intb)> = reaches.iter().filter_map(|&(_, span)| span).collect();
+    bounded.sort_unstable();
+    let mut merged: Vec<(intb, intb)> = Vec::new();
+    for (lo, hi) in bounded {
+        match merged.last_mut() {
+            Some(last) if lo <= last.1 => last.1 = last.1.max(hi),
+            _ => merged.push((lo, hi)),
         }
     }
-    let hints = state.hints_mut();
-    let mut checks: Vec<(intb, intb, bool)> = checks
-        .into_iter()
-        .map(|(lo, hi)| {
-            let float = floats.iter().any(|&(flo, fhi)| lo < fhi && flo < hi)
-                || hints.iter().any(|h| {
-                    h.range_type != RangeType::Endpoint
-                        && h.sstart < hi
-                        && lo < hint_end(h)
-                        && h.type_.get_metatype() == type_metatype::TYPE_FLOAT
-                });
-            (lo, hi, float)
-        })
+    let mut bases: Vec<intb> = reaches.iter().flat_map(|(b, _)| b.iter().copied()).collect();
+    let mut floats: Vec<(intb, intb)> = Vec::new();
+    for (lo, hi) in merged {
+        match coalesce_range(state, space, types, lo, hi) {
+            Coalesce::Array(start) => bases.push(start),
+            Coalesce::Float(flo, fhi) => {
+                bases.retain(|&b| b < flo || b >= fhi);
+                floats.push((flo, fhi));
+            }
+            Coalesce::Kept => {}
+        }
+    }
+    bases.sort_unstable();
+    bases.dedup();
+    state.set_absorbing_bases(bases);
+    for (bases, span) in &reaches {
+        match span {
+            Some(span) => checks.reaches.push(*span),
+            None => checks.reaches.extend(bases.iter().map(|&b| (b, b + MAX_REACH))),
+        }
+    }
+    checks.reaches.sort_unstable();
+    checks.reaches.dedup();
+    checks.floats = resolved
+        .iter()
+        .filter(|pieces| store_reach(pieces).is_some())
+        .flatten()
+        .filter_map(|&(lo, hi)| Some((lo, hi?)))
+        .filter(|&(lo, hi)| floats.iter().any(|&(flo, fhi)| lo < fhi && flo < hi))
         .collect();
-    checks.sort_unstable();
-    checks.dedup();
+    checks.floats.sort_unstable();
+    checks.floats.dedup();
     checks
 }
 
-/// If the final layout spoils a slot a guard INDIRECT still keeps, or a piece
-/// the latest layout pass recorded, turn the guard off for this function and
-/// report that it must be analyzed again. A range mapped as more than one local
-/// is spoiled: the store or initializer prints into one of them while a read of
-/// another never sees it. A piece in a float reach is also spoiled when no
-/// local covers it, or when its local is read as an integer while declared
-/// float, since that cast converts the value instead of reading its bytes.
+/// If the final layout spoils what the guard needs, mark the function to be
+/// analyzed again from scratch without the guard. The guard stands
+/// only when every stack access in the frame resolved, every slot a guard
+/// INDIRECT still keeps (and whose value is read) is one local, every such
+/// slot inside a guarded store's reach lies in the local holding the store's
+/// base (the C writes through that local and no other), and every guarded
+/// store piece in a float reach is one local that is read only as a float: an
+/// integer read of a float local prints as a cast, which converts its value.
 pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
     if !fd.stack_store_guard() {
         return false;
@@ -177,14 +182,9 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
         return false;
     };
     let space = Rc::clone(sl.get_space_id());
-    let mut pieces = fd.store_reach_checks();
-    pieces.extend(
-        guard_effects(fd, &space)
-            .1
-            .into_iter()
-            .map(|(lo, hi)| (lo, hi, false)),
-    );
-    if pieces.is_empty() {
+    let checks = fd.store_reach_checks();
+    let kept = guard_effects(fd, &space).1;
+    if !checks.unresolved && checks.floats.is_empty() && kept.is_empty() {
         return false;
     }
     let bits = space.get_addr_size() as int4 * 8 - 1;
@@ -197,18 +197,23 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
             (off, off + ct.get_size() as intb)
         })
         .collect();
-    let spoiled = pieces.iter().any(|&(lo, hi, float)| {
-        let local: Vec<&(intb, intb)> =
-            symbols.iter().filter(|&&(s, e)| s < hi && lo < e).collect();
-        match local.as_slice() {
-            [_, _, ..] => true,
-            [&(s, e)] if float => !read_only_as_float(fd, &space, s, e),
-            [] => float,
-            [_] => false,
-        }
-    });
+    let locals = |lo: intb, hi: intb| -> Vec<(intb, intb)> {
+        symbols.iter().copied().filter(|&(s, e)| s < hi && lo < e).collect()
+    };
+    let spoiled = checks.unresolved
+        || kept.iter().any(|&(lo, hi)| locals(lo, hi).len() > 1)
+        || checks.reaches.iter().any(|&(base, end)| {
+            let local = symbols.iter().find(|&&(s, e)| s <= base && base < e);
+            kept.iter().any(|&(lo, hi)| {
+                lo < end && base < hi && !local.is_some_and(|&(s, e)| s <= lo && hi <= e)
+            })
+        })
+        || checks.floats.iter().any(|&(lo, hi)| match locals(lo, hi).as_slice() {
+            [(s, e)] => !read_only_as_float(fd, &space, *s, *e),
+            _ => true,
+        });
     if spoiled {
-        fd.withdraw_stack_store_guard();
+        fd.spoil_stack_store_guard();
     }
     spoiled
 }
@@ -405,6 +410,19 @@ fn has_byte_store(fd: &Funcdata) -> bool {
             .and_then(|v| fd.vbank().get(v))
             .is_some_and(|v| v.get_size() == 1)
     })
+}
+
+/// Does the pointer of one of the byte `stores`, or of another LOAD or STORE
+/// in the frame, come from the stack base along a path `pointer_pieces` cannot
+/// resolve, or choose between stack addresses too far apart to fold?
+pub(crate) fn frame_unresolved(fd: &Funcdata, space: &Rc<AddrSpace>, stores: &[OpId]) -> bool {
+    let Some(sb) = fd.find_spacebase_input(space) else {
+        return false;
+    };
+    stores.iter().any(|&store| {
+        store_pieces(fd, store, sb, space)
+            .is_none_or(|pieces| pieces.len() > 1 && store_reach(&pieces).is_none())
+    }) || has_unresolved_frame_access(fd, sb)
 }
 
 /// The byte STOREs a guard INDIRECT on `space` names as its effect, and the

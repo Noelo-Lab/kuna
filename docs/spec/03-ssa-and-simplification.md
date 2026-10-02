@@ -483,6 +483,17 @@ integer extension) and the processor's stack space. Only byte STOREs already
 recorded by indexed stack-pointer discovery qualify; globals, unknown pointers
 and wider stores retain the explicit `full` policy. The gate lives in
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
+A heritage pass also leaves the whole frame unguarded when one of those byte
+STOREs, or any other LOAD or STORE whose address comes from the stack pointer,
+has an address that does not resolve to the stack base plus constants plus
+indices, or chooses between more than eight stack addresses or ones more than
+256 bytes apart (`kuna_stackstoreguard.rs (frame_unresolved)`, decided once per
+pass): the stack layout of chapter 06 cannot keep such a frame's guarded slots
+in the one local the store writes through. Typical cases are an OR-formed
+address (`(&v1 | 4) + i`) and a pointer walk with a variable step. When no
+earlier pass guarded the frame, the option is turned off for the whole function
+(`heritage.rs (store_frame_resolves)`), which then decompiles exactly as with
+`stackstoreguard off`.
 
 This bounded policy prevents an initializer from flowing unchanged across a
 byte-fill loop into a later direct byte or word read. Otherwise constant

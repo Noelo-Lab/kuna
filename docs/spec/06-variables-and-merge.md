@@ -930,52 +930,60 @@ that starts anywhere else ends as upstream's does: the same split also follows a
 that escapes to a call (`g(&u.b[i & 7])`), which no store guard covers and this
 option leaves alone.
 
-Neither step runs in a function where some LOAD or STORE address comes from
-the stack base through arithmetic that `pointer_pieces` cannot resolve
-(`kuna_storereach.rs (has_unresolved_frame_access)`); a choice between stack
-addresses resolves, so a pointer to one of two buffers does not count. clang's ppc32 `-O0` code
-forms `&u.s.b[i]` as `(&v1 | 4) + i`, relying on the frame's alignment; that
-store may write any slot near a resolved reach, and a slot the coalescing split
-off would be a separate local it never reaches. The whole frame keeps the
-upstream layout instead (`unsigned int v1[5]; ... *(char *)(((unsigned int)v1 |
-4) + (a0 >> 2 & 3)) = a1 + 1;`), and falls back to no guard when that layout
-splits a guarded store's bounded piece (below). A choice between more than
-eight stack addresses does not resolve either. Once a pass has laid out a reach, later passes
-of the same function skip this check (`Funcdata::store_reach_committed`, reset
-when the function restarts). Dataflow can expose such an address only in a
-later pass, and a later pass that laid out a smaller local would leave the
+Neither step runs in a frame where some LOAD or STORE address comes from the
+stack base through arithmetic that `pointer_pieces` cannot resolve
+(`kuna_storereach.rs (frame_unresolved)`), where a guarded store's own address
+does not resolve, or where a choice spans more than eight stack addresses or
+more than 256 bytes; a choice between stack addresses resolves, so a pointer to
+one of two buffers does not count. clang's ppc32 `-O0` code forms `&u.s.b[i]`
+as `(&v1 | 4) + i`, relying on the frame's alignment; that store may write any
+slot near a resolved reach, and no layout of the frame is known to keep what it
+writes and what is read in one local. Chapter 03's heritage gate leaves such a
+frame unguarded, and turns the option off for the function when no earlier pass
+guarded it; when dataflow exposes the address only after heritage guarded the
+frame, the pass keeps the upstream layout and the function falls back to no
+guard (below). Once a pass has laid out a reach, later passes of the same
+function keep doing so (`Funcdata::store_reach_committed`, reset when the
+function restarts): a later pass that laid out a smaller local would leave the
 pointers an earlier pass resolved against the larger one past its end
-(`&v19[0x20]` into a `char v19[32]`). A pass that skipped does not bind the next
-one, since a larger layout strands no pointer.
+(`&v19[0x20]` into a `char v19[32]`).
 
-The guard is worse than none wherever the final layout still maps a range it
-keeps as more than one local: the initializer or the store prints into one
-local while a read of another never sees it. `prepare_hints` returns the
-pieces it left to the upstream layout: the bounded pieces of the guarded
-stores when the frame keeps the upstream layout, and the pieces in a float
-reach, each marked when a float hint lies in it. Each pass records its list
-(`Funcdata::note_store_reach_checks`), and after the last pass
+The guard is worse than none wherever the final layout separates what the
+store writes from what is read. Each layout pass records what the final layout
+must satisfy (`Funcdata::note_store_reach_checks`): whether the frame resolved,
+each guarded store's reach (its bounded reach, or 256 bytes from each
+unbounded piece's base, since nothing bounds how far `((u8 *)&s)[i]` or a walk
+writes), and the guarded store pieces in a float reach. After the last pass
 `decompile_drive.rs (run_pipeline)` calls `kuna_storereach.rs
-(withdraw_spoiled_guard)`. That adds the bytes of every guard INDIRECT still on
-the stack whose value some op other than an INDIRECT or MULTIEQUAL reads,
+(withdraw_spoiled_guard)`, which takes the bytes of every guard INDIRECT still
+on the stack whose value some op other than an INDIRECT or MULTIEQUAL reads,
 since the P3 guard keeps every constant-initialized slot, not only the slots
 inside a store's reach; the INDIRECTs that `RuleIndirectCollapse` removed or
-that nothing reads cannot hide a write. A range that overlaps more than one
-local spoils the layout. So does a float piece that no local covers, or whose
-local some op reads as an integer while a member of that variable is typed
-float (`kuna_storereach.rs (read_only_as_float)`): such a read prints as a
-cast, which converts the value (`(unsigned short)v1` of a `double v1`). Float
-ops, copies and PIECEs into the range, and SUBPIECEs above the low end, which
-print as the bytes (`v1._6_2_`), do not. A spoiled function is analyzed again from
-flow with the guard off for it (`Funcdata::withdraw_stack_store_guard`, which
-survives the restart's `clear()`), as `option stackstoreguard off` would.
-Examples are a buffer written only by a walk through a pointer kept in memory,
-which no guard covers, while the guard keeps its initializer (clang `-O0`
-`p = (j & 1) ? u.b : v.b; *p++ = j;`), a frame with an OR-formed address whose
-upstream layout splits a guarded store's bytes, and a `double` read through
-`u.h[0]`. As with every kuna restart, `clear()` keeps the local scope's symbols
-(upstream's `clearUnlocked` is not ported), so a register temporary or a return
-type the first analysis named can survive into the second.
+that nothing reads cannot hide a write. The layout is spoiled when the frame
+did not resolve, when such a slot overlaps more than one local, or when such a
+slot inside a reach does not lie in the local holding the reach's base: the C
+writes through that local only, so a read of another local never sees the
+store, and an index past the base local's end writes outside it (a constant
+`struct { u32 a; u8 b[6]; u16 c; u32 d; }` written by `((u8 *)&s)[i]` and
+mapped as `int v1; unsigned char v2; ...` with `((char *)&v1)[a0] = a1`). The
+same holds for a slot past a smaller array (`char v1[8]; unsigned int v2;
+v1[a0] = a1` for a 16-byte union), and for a separate constant local within 256
+bytes above a walked buffer, which the guard therefore gives up on. A float
+piece is spoiled when no single local covers it, or when its local is read as
+an integer while a member of that variable is typed float
+(`kuna_storereach.rs (read_only_as_float)`): such a read prints as a cast,
+which converts the value (`(unsigned short)v1` of a `double v1`). Float ops,
+copies and PIECEs into the range, and SUBPIECEs above the low end, which print
+as the bytes (`v1._6_2_`), do not. A spoiled function is analyzed again from
+from a freshly built function with the guard off for it
+(`Funcdata::spoil_stack_store_guard`; `decompile_drive.rs
+(decompile_func_full_with_override_dyn_prefollowed)` runs the second
+analysis). A restart in place would keep the first analysis's local symbols,
+which kuna's `clear()` does not drop (upstream's `clearUnlocked` is not
+ported), so the second analysis prints exactly what `option stackstoreguard
+off` prints. Another example is a buffer written only by a walk through a
+pointer kept in memory, which no guard covers, while the guard keeps its
+initializer (clang `-O0` `p = (j & 1) ? u.b : v.b; *p++ = j;`).
 
 `option stackstoreguard off` turns all of this off along with the guard.
 
