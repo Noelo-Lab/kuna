@@ -69,7 +69,7 @@ use kuna_base::types::{int4, uint4, uint8, uintb, Wrap};
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
-use crate::block::block_get_start;
+use crate::block::{block_get_start, BlockKind};
 use crate::funcdata::Funcdata;
 use crate::kuna_emulatefunction::EmulateFunction;
 use crate::context::{BlockId, OpId, VarnodeId};
@@ -5657,7 +5657,17 @@ impl JumpTable {
             self.label = label;
             self.jmodel = Some(Box::new(tm));
             r?;
-            self.label_by_case_values();
+            let parent = fd.obank().get(indirect).and_then(|op| op.get_parent());
+            let blocks = fd.bblocks_ref();
+            self.label_by_case_values(|pos, address| {
+                let Some(parent) = parent.filter(|&bl| pos < blocks.block(bl).size_out()) else {
+                    return false;
+                };
+                match blocks.block(blocks.block(parent).get_out(pos)).kind() {
+                    BlockKind::Basic(bd) => bd.cover.in_range(address, 1),
+                    _ => false,
+                }
+            });
         }
         self.clear_saved_model();
         Ok(())
@@ -5666,9 +5676,10 @@ impl JumpTable {
     /// (kuna) Relabel the trivial table of a dropped model: each out-edge by
     /// the flow-time table values that reach it, the values its selector
     /// computes, rather than by its block's start, which a block that took in
-    /// lower-addressed code no longer shares with the table.  An out-edge no
-    /// recorded value reaches keeps its block start.
-    fn label_by_case_values(&mut self) {
+    /// lower-addressed code no longer shares with the table.  A value counts
+    /// only where `covers` says the out-edge's block holds it; an out-edge
+    /// with no such value keeps its block start.
+    fn label_by_case_values(&mut self, covers: impl Fn(int4, &Address) -> bool) {
         if self.case_values.is_empty() {
             return;
         }
@@ -5679,7 +5690,7 @@ impl JumpTable {
             let mut values: Vec<Address> = self
                 .case_values
                 .iter()
-                .filter(|(at, _)| *at == pos)
+                .filter(|(at, address)| *at == pos && covers(pos, address))
                 .map(|(_, address)| address.clone())
                 .collect();
             if values.is_empty() {

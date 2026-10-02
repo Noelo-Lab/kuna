@@ -1241,7 +1241,9 @@ values that reach it, the values the printed selector computes, not with its
 block's start (`jumptable.rs (JumpTable::label_by_case_values)`): a case body
 that takes in lower-addressed code, such as a copy of the shared epilogue it
 branches back to, starts at an address no table entry holds, and a case under
-that label would never match. A model found through a guard-bound path, or a
+that label would never match. A recorded value labels an out-edge only when
+that out-edge's block still covers its address; an out-edge with no such value
+keeps its block start. A model found through a guard-bound path, or a
 JumpBasic2 model after an over-sized basic one, faces the same two tests once
 recovery ends and is dropped the same way when it fails both. Flow-time recovery
 (including the second stage of a multistage table) checks no rows. Then

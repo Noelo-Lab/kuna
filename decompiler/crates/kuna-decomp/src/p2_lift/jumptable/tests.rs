@@ -694,11 +694,11 @@ fn dropped_model_labels_each_out_edge_by_its_table_values() {
     let ram = ram_of(&m);
     let at = |off: u64| Address::new(Rc::clone(&ram), off);
     let mut jt = JumpTable::new(at(0x1000));
-    jt.case_values = vec![(0, at(0x1a8)), (0, at(0x1b0)), (1, at(0x170))];
-    jt.addresstable = vec![at(0x17c), at(0x170), at(0x200)];
-    jt.label = vec![0x17c, 0x170, 0x200];
+    jt.case_values = vec![(0, at(0x1a8)), (0, at(0x1b0)), (1, at(0x170)), (2, at(0x300))];
+    jt.addresstable = vec![at(0x17c), at(0x16c), at(0x200)];
+    jt.label = vec![0x17c, 0x16c, 0x200];
     jt.block2addr = (0..3).map(|i| IndexPair::new(i, i)).collect();
-    jt.label_by_case_values();
+    jt.label_by_case_values(|_, address| address.get_offset() != 0x300);
     assert_eq!(jt.label, vec![0x1a8, 0x1b0, 0x170, 0x200]);
     assert_eq!(jt.addresstable, vec![at(0x1a8), at(0x1b0), at(0x170), at(0x200)]);
     let pairs: Vec<(int4, int4)> =
