@@ -712,6 +712,7 @@ kuna_options! { self, p1;
     "ppclocalentry" => {
         on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
     },
+    "flowmode" => on_off!(analysis_flowmode, "ARM flow-proven decode-mode paints"),
     "picbase" => {
         on_off!(analysis_picbase, "PIC base-register folding in the xref index")
     },

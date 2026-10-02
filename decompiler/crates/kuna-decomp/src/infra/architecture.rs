@@ -1470,6 +1470,10 @@ pub struct Architecture {
     /// never claimed as a function; the call REFERENCE is filed either way. Off
     /// restores the previous (husk-producing) discovery set exactly.
     pub analysis_ppclocalentry: bool,
+    /// (kuna) Paint the ARM mode of code a stripped image proves through control
+    /// flow where the walk's own `blx` writes left the other mode (`flowmode`);
+    /// default **on**. Off leaves the context database as the walk left it.
+    pub analysis_flowmode: bool,
     /// (kuna) Fold a 32-bit PIC binary's base register into the cross-reference
     /// index (`picbase`); default **on**. In position-independent i386 code the
     /// address of a string, a global or a function pointer is never a constant in
@@ -2630,6 +2634,7 @@ impl Architecture {
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
             analysis_ppclocalentry: false,
+            analysis_flowmode: false,
             analysis_picbase: false,
             analysis_entrymainproto: false,
             analysis_machomain: false,
@@ -2955,6 +2960,9 @@ impl Architecture {
         // ever withholds the duplicate second entry over a function whose global
         // entry is already a seed, so no body can be lost).
         self.analysis_ppclocalentry = true;
+        // (kuna) ARM flow-proven decode-mode paints -- default-ON (they only paint
+        // proven code whose mode the walk left wrong; GH-780).
+        self.analysis_flowmode = true;
         // (kuna) PIC base-register folding in the xref index -- default-ON. It is
         // a query surface only (no p-code, no emitted C), so no parity gate can
         // observe it; it only ever ADDS an edge, and only one it can prove.

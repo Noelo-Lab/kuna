@@ -112,8 +112,8 @@ pub struct Listing {
     has_refs: bool,
     /// Bounded, deduplicated x86 `PUSH imm` candidates collected for fast discovery.
     stack_callback_refs: Vec<(u64, u64)>,
-    /// The ARM decode-mode runs the walk decided from evidence, as
-    /// `(start, end, mode)`; empty unless [`kuna_flowmode`] asks for a paint.
+    /// The `(start, end, mode)` ARM decode-mode runs [`kuna_flowmode`] proved
+    /// and the context database disagrees with; empty when it has none.
     mode_runs: Vec<(u64, u64, u32)>,
 }
 
@@ -289,7 +289,7 @@ impl Listing {
         // as before; on ARM/MIPS it paints Thumb/MIPS16 mode so alt-ISA functions
         // decode correctly instead of as A32/MIPS32 garbage.
         let painter = context::ContextPainter::new(file, arch);
-        let flow_mode = kuna_flowmode::FlowMode::for_object(file, arch);
+        let flow_mode = kuna_flowmode::FlowMode::for_object(file, arch, &painter);
 
         // The PPC64 ELFv2 local-entry fold (`ppclocalentry`): an intra-module `bl`
         // targets `st_value + <localentry>`, which is a point inside the callee,
@@ -551,10 +551,9 @@ impl Listing {
         &self.stack_callback_refs
     }
 
-    /// The ARM `TMode` paints the walk decided from mode evidence, for the
-    /// analysis commit to apply after every other decode-mode paint (see
-    /// [`kuna_flowmode`]). Empty unless the walk decoded both modes, or a mode
-    /// the context database did not hold, from evidence.
+    /// The ARM `TMode` paints over proven code whose mode the context database
+    /// disagrees with, for the analysis commit to apply after every other
+    /// decode-mode paint (see [`kuna_flowmode`]).
     pub fn decode_mode_paints(&self) -> Vec<crate::pass::ContextPaint> {
         self.mode_runs
             .iter()

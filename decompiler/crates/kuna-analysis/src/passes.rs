@@ -1032,11 +1032,9 @@ pub fn run_listing_consumers(
         fast_out.entries.dedup();
         out.push(("fast_funcdisc", fast_out));
     }
-    // (kuna `flowmode`) The ARM decode-mode runs the last walk decided from mode
-    // evidence. The commit paints them after every load-time decode-mode paint,
-    // so a metadata paint still reaches the code no evidence covers, as it does
-    // without the flow walk, and the decompiler reads the modes the Listing
-    // decoded wherever it had evidence. Empty unless the walk asks for a paint.
+    // (kuna `flowmode`) The proven ARM code whose mode the context database
+    // disagrees with after the walk. The commit paints it after every other
+    // decode-mode paint, so those still reach all other code as before.
     let mode_paints = listing.decode_mode_paints();
     if !mode_paints.is_empty() {
         let mut mode_out = AnalysisOutput::default();

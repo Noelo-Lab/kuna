@@ -315,15 +315,6 @@ impl WalkPlan {
             && Arc::ptr_eq(&kit.recipe.truncations, &live.truncations)
     }
 
-    /// Say, once, that a walk carrying a per-address decode mode runs serially,
-    /// naming the plan's own refusal when it has one.
-    pub(super) fn announce_decode_mode(&self) {
-        if self.lanes > 1 {
-            let why = self.declined.unwrap_or(Refusal::ContextPaint);
-            self.announce(format!("[kuna --jobs] decode: serial ({})", why.reason()));
-        }
-    }
-
     /// Print `line` unless it is the one this plan printed last.
     fn announce(&self, line: String) {
         let mut last = self.announced.lock().unwrap_or_else(|e| e.into_inner());

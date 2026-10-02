@@ -1,59 +1,44 @@
-//! (kuna `flowmode`) The ARM decode mode of every walked instruction follows
-//! control flow, the way Ghidra's disassembler carries its flowing context.
+//! (kuna `flowmode`) Decode-mode paints that follow control flow from code
+//! whose ARM mode the image itself states, over a stripped image whose only
+//! mode changes come from the walk's own `blx` writes.
 //!
 //! `TMode` selects the instruction set an address decodes in. An interworking
-//! call (`blx imm`) runs a SLEIGH `globalset` that writes the callee's mode into
-//! the per-address `ContextDatabase` from the target up to the next point where
-//! the mode was set explicitly. An image with no mapping symbols has no such
-//! point, so the write reaches every address above the target: once a caller of
-//! a Thumb helper is decoded, an A32 function placed after the helper decodes as
-//! Thumb too, whatever calls it.
+//! call (`blx imm`) runs a SLEIGH `globalset` that writes the callee's mode
+//! into the per-address `ContextDatabase` from the target up to the next point
+//! where the mode was set explicitly. An image with no mapping symbols and no
+//! Thumb function symbol has no such point, so the write reaches every address
+//! above the target: an A32 function placed after a Thumb helper decodes as
+//! Thumb, whatever calls it.
 //!
-//! The walk decodes every instruction it has mode evidence for in that mode,
-//! through a context read override, so the database is not what decides it:
+//! The plain walk runs unchanged and its result is kept as it is. Afterwards,
+//! this pass decodes again, without writing the mode into the database, the
+//! code the image proves the mode of, and reports every instruction of that
+//! code whose mode the database disagrees with. The analysis commit paints
+//! those instructions, and nothing else, after every other decode-mode paint.
 //!
-//! * a function symbol's address decodes in the mode its address bit gives,
-//!   and so does an `e_entry` no symbol names: a call to it decodes in that
-//!   mode, and a fall-through or branch that reaches it in the other mode (say,
-//!   past a call that never returns) stops there instead of decoding the
-//!   function in that mode;
-//! * a branch target, fall-through or direct call target of evidenced code
-//!   decodes in the mode its instruction committed for that address, or else in
-//!   that instruction's own mode, so `bl` keeps the caller's mode and `blx`
-//!   switches only its target;
-//! * a Thumb `bx pc` in evidenced code continues in A32 at the next word, which
-//!   is how the linker's Thumb-to-A32 veneers (`bx pc; nop; b target`) reach
-//!   their A32 half;
-//! * an evidenced A32 function that is one of the linker's interworking stubs,
-//!   `ldr pc, [pc, #k]`, `ldr rX, [pc, #k]; bx rX` or `ldr rX, [pc, #k]; add
-//!   rX, rX, pc; bx rX` through a read-only literal to a Thumb address (low bit
-//!   set), makes that address a Thumb function, as the branch itself selects
-//!   Thumb there at run time.
+//! Proof starts at an even `e_entry` and at each even function symbol, all
+//! A32 by the ELF for the ARM architecture. From proven code it carries on
+//! where the instruction set decides the mode:
 //!
-//! Every evidenced entry is walked before any entry without evidence, so a
-//! call with evidence reaches its target before a guess does. An entry without
-//! evidence, and everything reached from it, decodes in the mode the database
-//! holds for each address when the walk reaches it, exactly as the plain walk
-//! decodes. SLEIGH's own context writes land in the database as before, and
-//! the walk itself paints nothing.
+//! * a branch target and a fall-through keep the mode;
+//! * a direct call target takes the mode the call commits there (`blx imm`
+//!   switches) or else keeps the caller's (`bl`);
+//! * the instruction after an unconditional call is proven only once the
+//!   callee is proven to return: some return instruction is reachable from its
+//!   entry through proven code. A call whose callee never returns, or that
+//!   reaches an import or a computed target, is not followed, because the
+//!   bytes after it may be a literal pool or another function.
 //!
-//! When the evidenced instructions span both modes, or one of them decoded in
-//! a mode the database does not hold there, the walk hands every evidenced
-//! instruction run to the analysis commit ([`super::Listing::decode_mode_paints`]),
-//! which paints each with its mode after every other decode-mode paint. The
-//! decompiler then reads the modes the Listing used for that code, and its own
-//! `globalset` at a call target stops at the next painted run instead of
-//! flowing across it. Code decoded without evidence is never painted: it keeps
-//! whatever the metadata paints and the walk's own writes leave there, as it
-//! would without this walk.
+//! The result does not depend on visiting order. Proof is a least fixpoint,
+//! and when two proven paths give one address different modes, or two proven
+//! instructions of different modes overlap, or a proven instruction fails to
+//! decode where the database holds the other mode, nothing is painted at all.
 //!
-//! Only an ARM image without mapping symbols takes this walk; mapping symbols
-//! already delimit every mode run. An ARM image whose odd `e_entry` is its only
-//! Thumb evidence keeps the plain walk, as does one whose build attributes rule
-//! out A32 code, and one decoded with an explicit `--isa`. MIPS `ISA_MODE` keeps
-//! the plain walk too: its MIPS16 function-symbol paints run to the next change
-//! point, and the `jalx` writes that walk makes are what end them at the MIPS32
-//! code after them.
+//! The pass runs only on an ARM ELF that is not relocatable, has an even
+//! `e_entry` or an even function symbol, no load-time `TMode` paint at all (no
+//! mapping symbol, no Thumb function symbol, no Cortex-M vector table), and
+//! build attributes that allow A32 code, and only when the input selects no
+//! instruction set and the database holds Thumb somewhere after the walk.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -62,130 +47,67 @@ use kuna_base::address::Address;
 use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::translate::{ContextCommitRecord, Translate};
-use object::{Object, ObjectKind, ObjectSymbol};
+use object::{Object, ObjectKind, ObjectSymbol, SymbolKind};
 
-use super::kuna_poolref::PoolImage;
-use super::model::{DiscoveredFunction, Insn};
-use super::walk::{
-    discovered, in_exec, step, CallbackEvidence, RefBuckets, StepCtx, Successors, WalkState,
-};
+use super::classify::classify;
+use super::context::ContextPainter;
+use super::decode::decode_one;
+use super::model::FlowKind;
+use super::walk::{in_exec, StepCtx};
 
 const TMODE: &[u8] = b"TMode";
 
-/// The context variable that selects the instruction set.
-pub(super) struct FlowMode<'a> {
+/// The context variable that selects the instruction set, and the addresses
+/// the image states are A32 code.
+pub(super) struct FlowMode {
     word: usize,
     shift: u32,
     mask: u32,
-    /// The even address and address-bit mode of every function symbol, and of
-    /// an `e_entry` no function symbol names.
-    functions: Vec<(u64, u32)>,
-    /// The read-only image of a little-endian linked ARM ELF, where an
-    /// interworking stub's instructions and literal are read.
-    image: Option<PoolImage<'a>>,
+    seeds: Vec<u64>,
 }
 
-impl<'a> FlowMode<'a> {
-    /// [`FlowMode::resolve`] for an ARM image without mapping symbols, with
-    /// the mode evidence of a linked ARM ELF: none for an ARM image whose
-    /// build attributes rule out A32 code, whose odd `e_entry` is its only
-    /// Thumb evidence, or whose instruction set the input selected.
+impl FlowMode {
+    /// The proof seeds of `file` when the pass applies to it (see the module
+    /// docs), else `None`.
     pub(super) fn for_object(
-        file: &'a object::File<'a>,
+        file: &object::File<'_>,
         arch: &Architecture,
-    ) -> Option<FlowMode<'a>> {
-        if arch.input_arm_isa_override
+        painter: &ContextPainter,
+    ) -> Option<FlowMode> {
+        if !arch.analysis_flowmode
+            || arch.input_arm_isa_override
+            || file.format() != object::BinaryFormat::Elf
+            || file.architecture() != object::Architecture::Arm
+            || file.kind() == ObjectKind::Relocatable
+            || painter.paints("TMode")
             || crate::loader::kuna_armfloatabi::thumb_only(file)
-            || crate::loader::arm_markers::unmarked_thumb_entry(file)
-            || crate::loader::arm_markers::has_mapping_symbols(file)
         {
             return None;
         }
-        let mut mode = FlowMode::resolve(arch)?;
-        if file.format() == object::BinaryFormat::Elf
-            && file.architecture() == object::Architecture::Arm
-            && file.kind() != ObjectKind::Relocatable
-        {
-            let symbols: Vec<u64> = file
-                .symbols()
-                .chain(file.dynamic_symbols())
-                .filter(|sym| sym.kind() == object::SymbolKind::Text && sym.is_definition())
-                .map(|sym| sym.address())
-                .collect();
-            let entry = file.entry();
-            let unnamed_entry =
-                (entry != 0 && !symbols.iter().any(|&at| at & !1 == entry & !1)).then_some(entry);
-            mode.functions = function_modes(symbols.into_iter().chain(unnamed_entry));
-            if file.is_little_endian() {
-                mode.image = PoolImage::new(file);
-            }
+        let entry = file.entry();
+        if entry & 1 != 0 {
+            return None;
         }
-        Some(mode)
-    }
-
-    /// The language's ARM `TMode` variable, if it registers one.
-    fn resolve(arch: &Architecture) -> Option<FlowMode<'a>> {
+        let mut seeds: Vec<u64> = file
+            .symbols()
+            .chain(file.dynamic_symbols())
+            .filter(|sym| sym.kind() == SymbolKind::Text && sym.is_definition())
+            .map(|sym| sym.address())
+            .chain(std::iter::once(entry))
+            .filter(|&at| at != 0 && at & 1 == 0)
+            .collect();
+        seeds.sort_unstable();
+        seeds.dedup();
+        if seeds.is_empty() {
+            return None;
+        }
         let range = arch.with_context_db_mut(|db| db.get_variable(TMODE)).ok()?;
         Some(FlowMode {
             word: usize::try_from(range.get_word()).ok()?,
             shift: u32::try_from(range.get_shift()).ok()?,
             mask: range.get_mask(),
-            functions: Vec::new(),
-            image: None,
+            seeds,
         })
-    }
-
-    /// The address an A32 interworking stub at `entry` branches to, low bit
-    /// included: `ldr pc, [pc, #k]`, `ldr rX, [pc, #k]; bx rX`, or the
-    /// position-independent `ldr rX, [pc, #k]; add rX, rX, pc; bx rX`, with
-    /// the literal in read-only memory.
-    fn stub_target(&self, entry: u64) -> Option<u64> {
-        let image = self.image.as_ref()?;
-        let word = |at: u64| image.word32_at(at).map(|w| w as u32);
-        let load = word(entry)?;
-        if load & 0xff7f_0000 != 0xe51f_0000 {
-            return None;
-        }
-        let base = entry.checked_add(8)?;
-        let offset = u64::from(load & 0xfff);
-        let literal = if load & 0x0080_0000 != 0 {
-            base.checked_add(offset)?
-        } else {
-            base.checked_sub(offset)?
-        };
-        let value = word(literal)?;
-        let register = (load >> 12) & 0xf;
-        if register == 15 {
-            return Some(u64::from(value));
-        }
-        let bx = 0xe12f_ff10 | register;
-        let next = word(entry.checked_add(4)?)?;
-        if next == bx {
-            return Some(u64::from(value));
-        }
-        let add_pc = [
-            0xe080_000f | register << 16 | register << 12,
-            0xe08f_0000 | register << 12 | register,
-        ];
-        if add_pc.contains(&next) && word(entry.checked_add(8)?)? == bx {
-            return Some(u64::from(
-                value.wrapping_add((entry as u32).wrapping_add(12)),
-            ));
-        }
-        None
-    }
-
-    /// The A32 address a Thumb `bx pc` at `at` branches to: the instruction
-    /// word after it, `(at + 4) & !3`. The linker's Thumb-to-A32 veneers
-    /// (`bx pc; nop; b target`) have this form.
-    fn bx_pc_target(&self, at: u64) -> Option<u64> {
-        let word = self.image.as_ref()?.word32_at(at & !3)? as u32;
-        let half = if at & 2 != 0 {
-            word >> 16
-        } else {
-            word & 0xffff
-        };
-        (half == 0x4778).then(|| at.wrapping_add(4) & !3)
     }
 
     fn bits(&self) -> u32 {
@@ -201,6 +123,37 @@ impl<'a> FlowMode<'a> {
         })
     }
 
+    /// Whether the database holds `value` anywhere inside `ranges`.
+    fn holds_anywhere(
+        &self,
+        arch: &Architecture,
+        space: &Rc<AddrSpace>,
+        ranges: &[(u64, u64)],
+        value: u32,
+    ) -> bool {
+        ranges.iter().any(|&(lo, hi)| {
+            let mut at = lo;
+            while at < hi {
+                let addr = Address::new(Rc::clone(space), at);
+                let (held, last) = arch.with_context_db_mut(|db| {
+                    let (blob, _, last) = db.get_context_bounds(&addr);
+                    let held = blob
+                        .get(self.word)
+                        .map_or(0, |w| (w >> self.shift) & self.mask);
+                    (held, last)
+                });
+                if held == value {
+                    return true;
+                }
+                match last.checked_add(1) {
+                    Some(next) if next > at => at = next,
+                    _ => break,
+                }
+            }
+            false
+        })
+    }
+
     /// The `(address, mode)` pairs among `commits` that write this variable.
     fn committed(&self, commits: &[ContextCommitRecord]) -> Vec<(u64, u32)> {
         commits
@@ -212,124 +165,257 @@ impl<'a> FlowMode<'a> {
     }
 }
 
-/// The even address and mode of each function symbol `address`, read off its
-/// low bit; an address two symbols give different modes is left out.
-fn function_modes(addresses: impl Iterator<Item = u64>) -> Vec<(u64, u32)> {
-    let mut modes: BTreeMap<u64, Option<u32>> = BTreeMap::new();
-    for address in addresses {
-        let mode = u32::from(address & 1 != 0);
-        modes
-            .entry(address & !1)
-            .and_modify(|known| {
-                if *known != Some(mode) {
-                    *known = None;
-                }
-            })
-            .or_insert(Some(mode));
-    }
-    modes
-        .into_iter()
-        .filter_map(|(entry, mode)| Some((entry, mode?)))
-        .collect()
-}
-
-/// The decode mode the translator reads, set through its context read override
-/// and restored when the walk ends.
-struct ModeOverride<'a> {
+/// While alive, every decode reads the mode last [`set`](DecodeMode::set)
+/// whatever the database holds, and no decode writes the mode into it.
+struct DecodeMode<'a> {
     translate: &'a dyn Translate,
-    mode: &'a FlowMode<'a>,
+    mode: &'a FlowMode,
     current: Option<u32>,
-    saved: (u32, u32),
+    saved_read: (u32, u32),
+    saved_write: u32,
 }
 
-impl<'a> ModeOverride<'a> {
-    fn new(translate: &'a dyn Translate, mode: &'a FlowMode<'a>) -> Self {
-        let saved = translate.set_context_read_override(mode.word, 0, 0);
-        ModeOverride {
+impl<'a> DecodeMode<'a> {
+    fn new(translate: &'a dyn Translate, mode: &'a FlowMode) -> Self {
+        let saved_write = translate.set_context_write_mask(mode.word, !mode.bits());
+        let saved_read = translate.set_context_read_override(mode.word, 0, 0);
+        DecodeMode {
             translate,
             mode,
             current: None,
-            saved,
+            saved_read,
+            saved_write,
         }
     }
 
-    /// Decode in `value`, or read the database when it is `None`.
-    fn set(&mut self, value: Option<u32>) {
-        if self.current != value {
-            let (bits, value_bits) = match value {
-                Some(value) => (self.mode.bits(), value << self.mode.shift),
-                None => (0, 0),
-            };
-            self.translate
-                .set_context_read_override(self.mode.word, bits, value_bits);
-            self.current = value;
+    fn set(&mut self, value: u32) {
+        if self.current != Some(value) {
+            self.translate.set_context_read_override(
+                self.mode.word,
+                self.mode.bits(),
+                value << self.mode.shift,
+            );
+            self.current = Some(value);
         }
     }
 }
 
-impl Drop for ModeOverride<'_> {
+impl Drop for DecodeMode<'_> {
     fn drop(&mut self) {
         self.translate
-            .set_context_read_override(self.mode.word, self.saved.0, self.saved.1);
+            .set_context_read_override(self.mode.word, self.saved_read.0, self.saved_read.1);
+        self.translate
+            .set_context_write_mask(self.mode.word, self.saved_write);
     }
 }
 
-/// The walk's worklists. An evidenced entry or instruction carries the mode it
-/// decodes in; one without evidence carries `None` and reads the database.
-struct ModedWorklists<'a> {
-    translate: &'a dyn Translate,
-    mode: &'a FlowMode<'a>,
-    symbol_modes: &'a BTreeMap<u64, u32>,
-    insns: Vec<(u64, Option<u32>)>,
-    evidenced: &'a mut Vec<(u64, u32)>,
-    unevidenced: &'a mut Vec<u64>,
-    current: Option<u32>,
-    committed: Option<Vec<(u64, u32)>>,
+/// One proven instruction.
+struct Proven {
+    len: u32,
+    mode: u32,
+    returns: bool,
+    calls: Vec<(u64, u32)>,
+    branches: Vec<u64>,
+    fall_through: Option<u64>,
+    after_call: bool,
 }
 
-impl ModedWorklists<'_> {
-    fn mode_for(&mut self, target: u64, current: u32) -> u32 {
-        let (mode, translate) = (self.mode, self.translate);
-        self.committed
-            .get_or_insert_with(|| mode.committed(&translate.last_context_commits()))
+/// A function entry the proof reached, and what its own walk has visited.
+struct Entry {
+    mode: u32,
+    visited: BTreeSet<u64>,
+    returns: bool,
+}
+
+/// The proof walk's state; `None` from any step means two proofs disagree.
+struct Proof<'c, 'a> {
+    ctx: &'c StepCtx<'a>,
+    arch: &'c Architecture,
+    mode: &'c FlowMode,
+    decoded: BTreeMap<u64, Proven>,
+    entries: BTreeMap<u64, Entry>,
+    /// Instructions after a call, waiting for the callee to return.
+    waiting: BTreeMap<u64, Vec<(u64, u64)>>,
+    work: Vec<(u64, u64)>,
+}
+
+impl Proof<'_, '_> {
+    fn enter(&mut self, entry: u64, mode: u32) -> Option<()> {
+        if let Some(known) = self.entries.get(&entry) {
+            return (known.mode == mode).then_some(());
+        }
+        self.entries.insert(
+            entry,
+            Entry {
+                mode,
+                visited: BTreeSet::new(),
+                returns: false,
+            },
+        );
+        self.work.push((entry, entry));
+        Some(())
+    }
+
+    fn mark_returns(&mut self, entry: u64) {
+        let Some(known) = self.entries.get_mut(&entry) else {
+            return;
+        };
+        if known.returns {
+            return;
+        }
+        known.returns = true;
+        if let Some(after) = self.waiting.remove(&entry) {
+            self.work.extend(after);
+        }
+    }
+
+    /// Decode `at` in `mode` unless it already is; `Ok(false)` when it does
+    /// not decode.
+    fn decode(&mut self, at: u64, mode: u32, decode_mode: &mut DecodeMode<'_>) -> Option<bool> {
+        if let Some(known) = self.decoded.get(&at) {
+            return (known.mode == mode).then_some(true);
+        }
+        if !in_exec(self.ctx.exec_ranges, at) {
+            return Some(false);
+        }
+        decode_mode.set(mode);
+        let decoded = decode_one(self.ctx.translate, at, self.ctx.code_space, false, false)
+            .ok()
+            .filter(|decoded| decoded.len != 0);
+        let Some(decoded) = decoded else {
+            let held = self.mode.value_at(self.arch, self.ctx.code_space, at);
+            return (held == mode).then_some(false);
+        };
+        let commits = self.mode.committed(&self.ctx.translate.last_context_commits());
+        let class = classify(&decoded.ops, at, decoded.len);
+        let mode_at = |target: u64| {
+            commits
+                .iter()
+                .rev()
+                .find(|&&(addr, _)| addr == target)
+                .map_or(mode, |&(_, value)| value)
+        };
+        let targets = class
+            .flows
             .iter()
-            .rev()
-            .find(|&&(addr, _)| addr == target)
-            .map_or(current, |&(_, value)| value)
+            .copied()
+            .filter(|&target| Some(target) != class.fall_through);
+        let (calls, branches) = if class.flow.is_call {
+            (targets.map(|t| (t, mode_at(t))).collect(), Vec::new())
+        } else {
+            (Vec::new(), targets.collect())
+        };
+        self.decoded.insert(
+            at,
+            Proven {
+                len: decoded.len,
+                mode,
+                returns: class.flow.kind == FlowKind::Return || class.flow.is_terminal,
+                calls,
+                branches,
+                fall_through: class.fall_through,
+                after_call: class.flow.is_call && !class.flow.is_conditional,
+            },
+        );
+        Some(true)
+    }
+
+    /// Walk `at` as part of the function at `entry`.
+    fn visit(&mut self, entry: u64, at: u64, decode_mode: &mut DecodeMode<'_>) -> Option<()> {
+        let mode = self.entries.get(&entry)?.mode;
+        if !self.entries.get_mut(&entry)?.visited.insert(at) {
+            return Some(());
+        }
+        if !self.decode(at, mode, decode_mode)? {
+            return Some(());
+        }
+        let insn = &self.decoded[&at];
+        let (returns, calls, branches) = (insn.returns, insn.calls.clone(), insn.branches.clone());
+        let (fall_through, after_call) = (insn.fall_through, insn.after_call);
+        if returns {
+            self.mark_returns(entry);
+        }
+        for &(target, target_mode) in &calls {
+            if in_exec(self.ctx.exec_ranges, target) {
+                self.enter(target, target_mode)?;
+            }
+        }
+        for &target in &branches {
+            self.work.push((entry, target));
+        }
+        let Some(next) = fall_through else {
+            return Some(());
+        };
+        if !after_call {
+            self.work.push((entry, next));
+            return Some(());
+        }
+        if let [(callee, _)] = calls[..] {
+            match self.entries.get(&callee) {
+                Some(known) if known.returns => self.work.push((entry, next)),
+                Some(_) => self.waiting.entry(callee).or_default().push((entry, next)),
+                None => {}
+            }
+        }
+        Some(())
+    }
+
+    /// Run to the fixpoint; `None` when two proofs disagree.
+    fn run(&mut self) -> Option<()> {
+        let mut decode_mode = DecodeMode::new(self.ctx.translate, self.mode);
+        for seed in self.mode.seeds.clone() {
+            if in_exec(self.ctx.exec_ranges, seed) {
+                self.enter(seed, 0)?;
+            }
+        }
+        while let Some((entry, at)) = self.work.pop() {
+            self.visit(entry, at, &mut decode_mode)?;
+        }
+        let mut reach: Option<(u64, u32)> = None;
+        for (&at, insn) in &self.decoded {
+            let end = at.saturating_add(u64::from(insn.len));
+            if reach.is_some_and(|(far, far_mode)| at < far && far_mode != insn.mode) {
+                return None;
+            }
+            if reach.is_none_or(|(far, _)| end > far) {
+                reach = Some((end, insn.mode));
+            }
+        }
+        Some(())
     }
 }
 
-impl Successors for ModedWorklists<'_> {
-    fn insn(&mut self, vma: u64) {
-        let Some(current) = self.current else {
-            self.insns.push((vma, None));
-            return;
-        };
-        let mode = self.mode_for(vma, current);
-        if self
-            .symbol_modes
-            .get(&vma)
-            .is_some_and(|&symbol| symbol != mode)
-        {
-            return;
-        }
-        self.insns.push((vma, Some(mode)));
+/// The `(start, end, mode)` runs of proven code whose mode the database does
+/// not hold after the walk; empty when there is none, or when proofs disagree.
+pub(super) fn disagreeing_runs(
+    ctx: &StepCtx<'_>,
+    arch: &Architecture,
+    mode: &FlowMode,
+) -> Vec<(u64, u64, u32)> {
+    let space = ctx.code_space;
+    if !mode.holds_anywhere(arch, space, ctx.exec_ranges, 1) {
+        return Vec::new();
     }
-    fn func(&mut self, entry: u64) {
-        let current = self.current;
-        let mode = match self.symbol_modes.get(&entry) {
-            Some(&symbol) => Some(symbol),
-            None => current.map(|current| self.mode_for(entry, current)),
-        };
-        match mode {
-            Some(mode) => self.evidenced.push((entry, mode)),
-            None => self.unevidenced.push(entry),
-        }
+    let mut proof = Proof {
+        ctx,
+        arch,
+        mode,
+        decoded: BTreeMap::new(),
+        entries: BTreeMap::new(),
+        waiting: BTreeMap::new(),
+        work: Vec::new(),
+    };
+    if proof.run().is_none() {
+        return Vec::new();
     }
+    mode_runs(proof.decoded.iter().filter_map(|(&at, insn)| {
+        (mode.value_at(arch, space, at) != insn.mode)
+            .then(|| (at, at.saturating_add(u64::from(insn.len)), insn.mode))
+    }))
 }
 
-/// The decoded instructions as maximal same-mode runs. `decoded` is the
-/// address-ordered `(start, end, mode)` of every evidenced instruction.
+/// Address-ordered `(start, end, mode)` instructions as maximal same-mode
+/// runs of adjacent instructions.
 fn mode_runs(decoded: impl Iterator<Item = (u64, u64, u32)>) -> Vec<(u64, u64, u32)> {
     let mut runs: Vec<(u64, u64, u32)> = Vec::new();
     for (start, end, mode) in decoded {
@@ -341,132 +427,9 @@ fn mode_runs(decoded: impl Iterator<Item = (u64, u64, u32)>) -> Vec<(u64, u64, u
     runs
 }
 
-/// The serial walk with the decode mode carried along flow (see the module
-/// docs). The same [`step`] as the plain walk decodes every instruction.
-pub(super) fn walk(
-    ctx: &StepCtx<'_>,
-    arch: &Architecture,
-    mode: &FlowMode<'_>,
-    seeds: &[u64],
-    seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
-) -> WalkState {
-    let space = ctx.code_space;
-    let mut insns: BTreeMap<u64, Insn> = BTreeMap::new();
-    let mut funcs: BTreeMap<u64, DiscoveredFunction> = BTreeMap::new();
-    let mut refs = RefBuckets::new(ctx.detail.refs);
-    let mut callbacks = CallbackEvidence::default();
-    let symbol_modes: BTreeMap<u64, u32> = mode.functions.iter().copied().collect();
-    let mut evidenced: Vec<(u64, u32)> = Vec::new();
-    let mut unevidenced: Vec<u64> = Vec::new();
-    for &entry in seeds {
-        match symbol_modes.get(&entry).copied() {
-            Some(entry_mode) => evidenced.push((entry, entry_mode)),
-            None => unevidenced.push(entry),
-        }
-    }
-    let mut visited_funcs: BTreeSet<u64> = BTreeSet::new();
-    for &entry in seeds {
-        let df = seed_funcs
-            .get(&entry)
-            .cloned()
-            .unwrap_or_else(|| discovered(entry));
-        funcs.entry(entry).or_insert(df);
-    }
-
-    let mut decode_mode = ModeOverride::new(ctx.translate, mode);
-    let mut decided: Vec<(u64, u32)> = Vec::new();
-    loop {
-        let (entry, entry_mode) = match evidenced.pop() {
-            Some((entry, entry_mode)) => (entry, Some(entry_mode)),
-            None => match unevidenced.pop() {
-                Some(entry) => (entry, None),
-                None => break,
-            },
-        };
-        if !visited_funcs.insert(entry) {
-            continue;
-        }
-        if let Some(thumb) = (entry_mode == Some(0))
-            .then(|| mode.stub_target(entry))
-            .flatten()
-        {
-            let target = thumb & !1;
-            if thumb & 1 != 0
-                && in_exec(ctx.exec_ranges, target)
-                && symbol_modes.get(&target).is_none_or(|&symbol| symbol == 1)
-            {
-                funcs.entry(target).or_insert_with(|| discovered(target));
-                evidenced.push((target, 1));
-            }
-        }
-        let mut work = ModedWorklists {
-            translate: ctx.translate,
-            mode,
-            symbol_modes: &symbol_modes,
-            insns: vec![(entry, entry_mode)],
-            evidenced: &mut evidenced,
-            unevidenced: &mut unevidenced,
-            current: entry_mode,
-            committed: None,
-        };
-        while let Some((vma, vma_mode)) = work.insns.pop() {
-            if insns.contains_key(&vma) || !in_exec(ctx.exec_ranges, vma) {
-                continue;
-            }
-            decode_mode.set(vma_mode);
-            work.current = vma_mode;
-            work.committed = None;
-            if step(
-                ctx,
-                vma,
-                &mut insns,
-                &mut funcs,
-                &mut refs,
-                &mut callbacks,
-                &mut work,
-            ) {
-                if let Some(vma_mode) = vma_mode {
-                    decided.push((vma, vma_mode));
-                    if let Some(target) = (vma_mode == 1).then(|| mode.bx_pc_target(vma)).flatten()
-                    {
-                        if symbol_modes.get(&target).is_none_or(|&symbol| symbol == 0) {
-                            work.insns.push((target, Some(0)));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    drop(decode_mode);
-    decided.sort_unstable();
-    let both = decided.iter().any(|&(_, m)| m == 0) && decided.iter().any(|&(_, m)| m == 1);
-    let mode_runs = if both
-        || decided
-            .iter()
-            .any(|&(at, m)| mode.value_at(arch, space, at) != m)
-    {
-        mode_runs(decided.iter().map(|&(at, run_mode)| {
-            let len = insns.get(&at).map_or(0, |insn| u64::from(insn.len));
-            (at, at.saturating_add(len), run_mode)
-        }))
-    } else {
-        Vec::new()
-    };
-
-    let (refs_to, refs_from) = refs.into_parts();
-    WalkState {
-        insns,
-        refs_to,
-        refs_from,
-        funcs,
-        stack_callback_refs: callbacks.into_refs(),
-        mode_runs,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{function_modes, mode_runs};
+    use super::mode_runs;
 
     #[test]
     fn same_mode_neighbours_merge_and_a_mode_change_splits() {
@@ -491,11 +454,5 @@ mod tests {
             mode_runs(decoded.into_iter()),
             vec![(0x00, 0x04, 0), (0x08, 0x0c, 0), (0x0c, 0x0e, 1)]
         );
-    }
-
-    #[test]
-    fn a_function_symbols_low_bit_is_its_mode_unless_two_symbols_disagree() {
-        let modes = function_modes([0x41, 0x80, 0x41, 0x100, 0x101].into_iter());
-        assert_eq!(modes, vec![(0x40, 1), (0x80, 0)]);
     }
 }
