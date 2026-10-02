@@ -660,9 +660,13 @@ fn apply_prototype_to_symbol(
     // getPrototype() will return.  A build failure (no proto context) is a
     // no-op — fall back to the stashed-pieces path.
     // A declaration that named a calling convention is built under it, so the
-    // storage a CALLER sees for each argument is the declared convention's.
+    // storage a CALLER sees for each argument is the declared convention's; one
+    // that names none follows the image's float convention.
+    let model = model
+        .cloned()
+        .or_else(|| kuna_decomp::kuna_typedcallabi::undeclared_model_for(arch, pieces));
     let built = match model {
-        Some(m) => arch.types_impl().get_type_code_proto_model(pieces, std::rc::Rc::clone(m)),
+        Some(m) => arch.types_impl().get_type_code_proto_model(pieces, m),
         None => arch.types().get_type_code_proto(pieces),
     };
     let type_code = match built {

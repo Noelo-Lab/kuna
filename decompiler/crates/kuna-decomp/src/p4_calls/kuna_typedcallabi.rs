@@ -14,12 +14,15 @@
 //! signed value narrower than 32 bits that the model zero-extends.
 use crate::{
     context::ArchContext,
-    dtype::{type_class, type_metatype},
+    dtype::{type_class, type_metatype, Datatype, TypeFactory},
     fspec::{FuncProto, ProtoModel, PrototypePieces},
     funcdata::Funcdata,
     infra::architecture::Architecture,
 };
-use kuna_base::{address::Address, space::AddrSpace};
+use kuna_base::{
+    address::Address,
+    space::{AddrSpace, AddrSpaceManager},
+};
 use kuna_num::{opcodes::OpCode, pcoderaw::VarnodeData};
 use std::rc::Rc;
 
@@ -73,6 +76,53 @@ pub fn soft_model(arch: &Architecture, evidence: Option<bool>) -> Option<Rc<Prot
     (evidence == Some(false))
         .then(|| arch.get_model(SOFT_FLOAT_MODEL).cloned())
         .flatten()
+}
+
+/// The model a declared prototype that names no convention is laid out under,
+/// or `None` for the default one: the soft-float model, on an image that states
+/// the soft-float convention, when the default model would put a parameter or
+/// the return value of `pieces` in its floating-point registers.
+pub fn undeclared_model(arch: &ArchContext, pieces: &PrototypePieces) -> Option<Rc<ProtoModel>> {
+    let soft = arch.soft_float_model.as_ref()?;
+    soft_layout(soft, arch.default_fp()?, pieces, arch.types()?, arch.manage())
+}
+
+/// [`undeclared_model`] for the architecture a declaration is parked on.
+pub fn undeclared_model_for(arch: &Architecture, pieces: &PrototypePieces) -> Option<Rc<ProtoModel>> {
+    let soft = soft_model(arch, image_evidence(arch))?;
+    soft_layout(&soft, arch.default_fp()?, pieces, arch.types(), arch.manage())
+}
+
+fn soft_layout(
+    soft: &Rc<ProtoModel>,
+    default: &Rc<ProtoModel>,
+    pieces: &PrototypePieces,
+    types: &dyn TypeFactory,
+    manage: &AddrSpaceManager,
+) -> Option<Rc<ProtoModel>> {
+    let candidate = |ty: &Rc<Datatype>| {
+        matches!(
+            ty.get_metatype(),
+            type_metatype::TYPE_FLOAT
+                | type_metatype::TYPE_STRUCT
+                | type_metatype::TYPE_UNION
+                | type_metatype::TYPE_ARRAY
+        )
+    };
+    if !pieces.outtype.iter().chain(&pieces.intypes).any(candidate) {
+        return None;
+    }
+    let types_only = PrototypePieces {
+        input_storage: Vec::new(),
+        output_storage: None,
+        ..pieces.clone()
+    };
+    let mut proto = FuncProto::new();
+    let void = types.get_type_void().ok()?;
+    proto
+        .seed_locked_from_pieces(&types_only, Rc::clone(default), void, types, manage)
+        .ok()?;
+    uses_float_storage(&storage(&proto), &float_entries(default)).then(|| Rc::clone(soft))
 }
 
 /// The prototype to force at a CALLIND typed with `proto`, or `None` to leave the

@@ -766,9 +766,13 @@ pub(crate) fn lock_prototype_on_symbol(
     // The prototype-bearing `TypeCode` is what a CALLER reads a declared callee's
     // signature back from (`ArchContext::query_callee_proto`), so the declared
     // convention has to be baked in here: the storage the caller sees for each
-    // argument is assigned when this `FuncProto` is built.
+    // argument is assigned when this `FuncProto` is built.  One that names none
+    // follows the image's float convention.
+    let model = model
+        .cloned()
+        .or_else(|| kuna_decomp::kuna_typedcallabi::undeclared_model_for(arch, pieces));
     let tc = match model {
-        Some(m) => arch.types_impl().get_type_code_proto_model(pieces, Rc::clone(m)),
+        Some(m) => arch.types_impl().get_type_code_proto_model(pieces, m),
         None => arch.types().get_type_code_proto(pieces),
     };
     if let Ok(tc) = tc {
