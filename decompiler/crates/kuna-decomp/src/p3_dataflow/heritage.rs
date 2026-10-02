@@ -3352,8 +3352,11 @@ impl Heritage {
                 }
             }
 
-            // Too soon to heritage this space.
-            let delay = self.get_info(&piecespace).delay;
+            let delay = (0..joinrec.num_pieces())
+                .filter_map(|i| joinrec.get_piece(i).space.as_ref())
+                .map(|s| self.get_info(s).delay)
+                .min()
+                .unwrap_or_else(|| self.get_info(&piecespace).delay);
             if self.pass != delay {
                 continue;
             }

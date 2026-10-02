@@ -1339,11 +1339,7 @@ impl ScopeLocal {
             space.is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
         };
         let is_register = if addr.is_join() {
-            addr.get_space()
-                .and_then(|s| s.find_join(addr.get_offset()).ok())
-                .is_some_and(|rec| {
-                    (0..rec.num_pieces()).all(|i| in_processor(rec.get_piece(i).space.as_ref()))
-                })
+            true
         } else {
             in_processor(addr.get_space())
         };
