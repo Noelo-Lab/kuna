@@ -156,6 +156,7 @@ node integrations/web/test/decompile2-bytes.mjs
 node integrations/web/test/decompile2-learn.mjs
 node integrations/web/test/decompile2-groups.mjs
 node integrations/web/test/decompile2-strings.mjs
+node integrations/web/test/decompile2-base64.mjs
 node integrations/web/test/decompile2-collab.mjs
 node integrations/web/test/decompile2-collab-cases.mjs
 node integrations/web/test/decompile2-collab-sync.mjs

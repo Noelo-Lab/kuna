@@ -3,7 +3,8 @@
 // with ?student=true (hover cards with them), load the fixture through the
 // file input, open main, hover a line, switch to Assembly, rename a variable,
 // patch a byte, reload to see the session restored, the Collaborate button,
-// the /decompile2/ redirect, the layout at 1024 and 820 px, and the Strings
+// the /decompile2/ redirect, opening pasted base64 text (button and Ctrl+V),
+// the layout at 1024 and 820 px, and the Strings
 // list taking a search for "flag" to the code that uses it, and the type
 // definitions shown above a function. Any uncaught page exception fails the run.
 //
@@ -339,6 +340,32 @@ try {
   const moved = await (await fetch(`${server.base}/decompile2/`)).text();
   assert.match(moved, /http-equiv="refresh" content="0; url=\.\.\/decompile\/"/, 'with a meta refresh for pages without scripts');
   await noExceptions('/decompile2/ redirects, keeping #join=');
+
+  await page.navigate(`${server.base}/decompile/`);
+  await ready('#pick enabled before pasting');
+  const b64 = readFileSync(fixture('sample.elf')).toString('base64');
+  await page.click('#welcomepaste');
+  await page.call((t) => {
+    const ta = document.querySelector('#d2pop textarea');
+    ta.value = t;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }, b64.match(/.{1,76}/g).join('\n'));
+  await page.click('#d2pop button[type=submit]');
+  await page.waitFor(`document.getElementById('crumbname').textContent === 'pasted.elf' && document.getElementById('vname').textContent === 'main'`, { what: 'pasted base64 opened', timeout: 60000 });
+  await page.navigate(`${server.base}/decompile/`);
+  await ready('#pick enabled before Ctrl+V');
+  const paste = (t) => page.call((text) => {
+    const dt = new DataTransfer();
+    dt.setData('text/plain', text);
+    document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    return true;
+  }, t);
+  await paste('main');
+  await page.waitFor(`[...document.querySelectorAll('.d2-toast')].some((t) => t.textContent.includes('not a program in base64'))`, { what: 'stray paste warns', timeout: 5000 });
+  assert.equal(await text('#crumbname'), '', 'a stray word opens nothing');
+  await paste(`data:application/octet-stream;base64,${b64}`);
+  await page.waitFor(`document.getElementById('crumbname').textContent === 'pasted.elf' && document.getElementById('vname').textContent === 'main'`, { what: 'Ctrl+V base64 opened', timeout: 60000 });
+  await noExceptions('base64 text opens a program from Paste base64 and from Ctrl+V; a stray word only warns');
 
   for (const path of ['/', '/dev-viz/']) {
     const html = await (await fetch(`${server.base}${path}`)).text();
