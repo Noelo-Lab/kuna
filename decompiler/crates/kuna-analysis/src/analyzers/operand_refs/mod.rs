@@ -57,7 +57,7 @@
 //!   and the printer renders it as the literal via the SPACEBASE route (Increment
 //!   12). Library-call argument typing already types a `char *` argument
 //!   ([`crate::protos`] / S5 usage inference). So this pass only adds output for
-//!   the *residual* case: a short (< 5 char) or otherwise `strings`-missed
+//!   the *residual* case: a short (< 4 char) or otherwise `strings`-missed
 //!   read-only printable run pointed at by a bare immediate whose consuming call
 //!   has no prototype — a narrow, low-payoff slice.
 //! - **Over-acceptance risk.** A per-instruction immediate scan that types any
