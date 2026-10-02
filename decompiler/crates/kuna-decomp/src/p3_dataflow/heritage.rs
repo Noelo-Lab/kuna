@@ -3315,6 +3315,11 @@ impl Heritage {
     /// it into the specified real components, so join-space addresses play no role
     /// in the heritage process (there should be no free Varnodes in the join space
     /// afterward).
+    ///
+    /// (kuna) A written join is split in the first pass that heritages any of its
+    /// pieces, not the pass of its first piece's space: a struct parameter held in
+    /// registers and the stack is otherwise split after the registers were
+    /// heritaged, and every read of its register pieces stays a bare input.
     fn process_joins(&mut self, fd: &mut crate::funcdata::Funcdata) {
         let joinspace = match fd.get_arch().manage().get_join_space().cloned() {
             Some(s) => s,
