@@ -366,7 +366,7 @@ fn touched_by(data: &Funcdata, addr: &Address, size: int4, past_noops: bool) -> 
 /// The ARM compiler specs inject the `setISAMode` of every `bx lr` and
 /// `pop {...,pc}` as `r0 = r0` (MIPS: `v0 = v0` at `jr ra`), marked incidental
 /// so parameter recovery walks through it; it moves nothing.
-fn is_injected_noop(data: &Funcdata, op: OpId) -> bool {
+pub(crate) fn is_injected_noop(data: &Funcdata, op: OpId) -> bool {
     let Some(o) = data.obank().get(op) else { return false };
     if o.code() != OpCode::CPUI_COPY || !o.is_incidental_copy() {
         return false;

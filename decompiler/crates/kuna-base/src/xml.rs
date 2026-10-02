@@ -1961,7 +1961,9 @@ mod tests {
         // and kuna-narrowext / a narrow RISC-V argument or return value is
         // extended by the sign of its type (GH-816)
         // and kuna-floatret / a value returned in a float register is a float
-        assert_eq!(count, 380, "corpus file count drifted");
+        // and kuna-retcallhalf / a caller that changes only the high word of a
+        // callee's 64-bit result returns all eight bytes
+        assert_eq!(count, 381, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
