@@ -52,12 +52,26 @@ beside an s1 it never writes, or two floats it reads apart), the argument is
 zero and the caller keeps its float parameters: `float w(float a) { return
 f(8.25, a, a, 5.25) * 3 + a; }` calls `double f(double, float, float, double)`,
 which never reads its first parameter, as `f(0.0,a0,a0,5.25)`, not with a
-double `w` would then take. A stated input the callee never reads, because it
-writes the register first or is a leaf that returns without touching it, is
-zero as well where the caller's value for it is an earlier call's leftover,
-such as the s1 above a float an earlier call returned in s0: passing that word
-would turn the earlier call's float result into a double. A double the caller
-computed, forwards untouched or also reads whole is passed as it is. Where the
+double `w` would then take. A stated input the callee never reads is zero as
+well where the caller's value for it is part of an earlier call's result left
+in the register, such as the s1 above a float an earlier call returned in s0:
+passing that word would turn the earlier call's float result into a double.
+This holds for a whole earlier result too, since a callee that never reads the
+register cannot tell, and the result would otherwise take the slot's stated
+type: a float result in d0 handed to an ignored stated double became 64-bit
+integer bits. A double the caller computed, forwards untouched or also reads
+whole is passed as it is. Where the callee never reads one word of a stated double
+and the caller left an earlier call's leftover in that word, that word alone is
+zero: an -O0 callee that only spills its leading float can be recovered as
+taking a double there, and its caller then holds its own float beside the high
+word of a double an earlier call returned, which would turn that result into
+integer bits. The callee never reads a register when every path writes it
+first, or when it is a leaf that returns without touching the register and every
+part of it inside the storage of the callee's recovered result, whether or not
+every return computes that result, is written on every path first. A leaf that returns early with its first
+parameter untouched, `float f(float a, float b, int c) { if (c > 3) a = b * b;
+return a; }` (`cmp r0,#4; bxlt lr; ...`), hands the caller's s0 back and so
+reads it: a caller passing an earlier call's result there keeps it. Where the
 callee reads the double but the caller's two words are not one double it
 forwards or reads whole, the call's arguments stay as recovered. A stated input
 there is an argument even where the positional rules ended the list before it:
@@ -79,8 +93,22 @@ not an argument, while a callee whose body is cut short or reaches code no walk
 accounts for keeps every argument its callers recover. A leaf callee that only
 returns forwards nothing, including when its return switches the instruction set
 through a user operation as ARM's `bx lr` does, so a register it never reads is
-dropped there: a direct caller does not pass the back-fill slot it never wrote,
-and that slot does not become a parameter of the caller. A stated input the
+dropped there unless part of it lies in the callee's result storage and some
+return leaves that part untouched: a direct caller does not pass the back-fill slot it never
+wrote, and that slot does not become a parameter of the caller.
+
+Every rule above reads the callee's body through the bounded decode from its
+entry, and with the option on that decode follows a conditionally executed
+instruction on both paths. The path that skips the instruction keeps the
+registers written before its condition, and a conditional return or call ends
+only the path that takes it. `float pick(float a, float b, int c) { if (c > 3)
+a = b; return a; }` compiles to `cmp r0,#3; vmovgt.f32 s0,s1; bx lr`, which
+leaves s0 untouched when the move is skipped, so s0 is not written on every
+path and a caller's `pick(v,2.5f,n)` keeps `v`; and the code after `bxlt lr` is
+decoded rather than lost, so its reads and calls count. The same decode serves
+`calleedeadarg` and the arity rules in a run with the option on, so the integer
+`int pick(int a, int b, int c)` built the same way (`movgt r0,r1`) keeps its first
+argument there as well. With the option off the decode is unchanged. A stated input the
 caller's own scoring ruled out has already lost its value, so it is kept, as
 zero, only where the callee's body provably ignores the register; where the
 callee reads it, or where the call holds a stated input only in part or under
@@ -102,7 +130,7 @@ Resolved variadic format calls use explicit base AAPCS storage, including
 their floating arguments, rather than the non-variadic VFP convention.
 `formatstring off` disables that source of type evidence.
 
-Seven call shapes stay incomplete. A double that the caller forwards untouched,
+Eight call shapes stay incomplete. A double that the caller forwards untouched,
 but of which only one word is live in the caller, is omitted from the call. A
 wrapper that forwards a single-precision argument from the upper half of a
 d-register without touching it, such as the third float of `w(float, float,
@@ -124,7 +152,11 @@ whose only read of a d-register before writing it whole is the high word, such a
 `f(double, double, float, float)` at -O2 when it ignores the first float and
 then reuses `d2` as scratch, recovers neither word: the used float is read from
 an uninitialized local, as with `armfloatreturn` alone, and its callers pass
-it.
+it. A callee that returns a two-float aggregate in s0 and s1 is recovered as
+returning one float, so a caller that reads the second member takes the call's
+result as a 64-bit integer and converts its high word by value, as with
+`armfloatreturn` alone; with the call's arguments now complete, that caller
+compiles and computes the wrong member.
 
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer

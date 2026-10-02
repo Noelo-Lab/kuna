@@ -209,3 +209,41 @@ hand-written set at arm -O3, Thumb -Oz and ARMv8 moved the same way (19 builds,
 none back), as did one Cortex-M4F build, and 60 more generated sources with
 mostly unused parameters gained 4 builds. The 23 firmware images print the
 same as the previous head with the option on, and the same as main with it off.
+
+## Parameters handed back on some path
+
+Zero is only safe where the callee never reads the register, and two kinds of
+callee were taken for ones that never do. `float clampf(float a, float b, int
+c) { if (c > 3) { a = ...; } return a; }` compiles to `cmp r0,#4; bxlt lr;
+...`: the early return hands the caller's s0 back. The leaf rule took a body
+that only returns without touching s0 as one that never reads it, so a caller
+holding an earlier call's result there passed `clampf(0.0,2.5,a0)`, which
+compiled and computed the wrong value (the same for the double `clampd`). And
+`float pick(float a, float b, int c) { if (c > 3) a = b; return a; }` compiles
+to `cmp r0,#3; vmovgt.f32 s0,s1; bx lr`: the callee-body walk credited the
+conditional move as writing s0 on both paths, so the register looked dead and
+the call bound zero. The walk also stopped at the user operation inside
+`bxlt lr`, so the code after a conditional return was never decoded.
+
+With the option on the walk now follows conditional execution per path: the
+path that skips a conditional instruction keeps the registers written before
+its condition, and a conditional return or call ends only the path that takes
+it. A register counts as never read when every path writes it first, or when
+the callee is a leaf that returns without touching it and every part of it
+inside the storage of the callee's recovered result is written on every path
+first (statements now record that storage even where some return does not
+compute the result). `calleedeadarg` reads the
+same walk in such a run, so `int pick(int a, int b, int c)` (`movgt r0,r1`)
+keeps its first argument as well; with the option off the walk is unchanged.
+Two follow-on cases came out of the sweep. A back-fill slot inside a double
+result (`L3(float, double, double)` returning in d0, with s1 never read) is
+still dropped where every path writes it first. And a stated double the callee
+reads only in its low word, where the caller holds an earlier double result's
+high word above its own float, passes zero in that word instead of turning the
+earlier result into integer bits.
+
+An earlier call's whole result passed into a slot the callee never reads is
+zero like any other leftover. Passing it on instead was tried: a float result
+held in d0 and handed to an ignored stated double was retyped as 64-bit
+integer bits, and one random program at ARMv8 -O2 went from the source's value
+to a wrong one.
