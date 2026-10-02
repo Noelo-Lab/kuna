@@ -16,8 +16,8 @@
   "repeat": 3,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/globalptrstores_x86_64.o",
-    "binary_sha256": "a2b90c9ed353466e180009175cd222950888834167a07d84bd28449137761bf5",
-    "binary_size": 33432,
+    "binary_sha256": "fe45ce13e3bf7486d1b892b446dfb0b553be4dce6b25ab3e49d8f56c95f82eb4",
+    "binary_size": 18392,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/globalptrstores_x86_64.o",
     "selector": "big",
@@ -28,14 +28,14 @@
       "eq": 0
     },
     "stdout_matches": [
-      "int big\\(int \\*a0,int \\*a1,long \\*a2\\)",
-      "dat_403270 = a0;",
-      "dat_403270 = a1;"
+      "int big\\(int \\*a0,int a1,long \\*a2\\)",
+      "dat_401cf8 = v3;",
+      "\\*a2 = \\(long\\)v1;\\n  v45 = v45 \\+ v10 \\+ v11 \\+ dat_401cf8\\[1\\];"
     ],
     "wall_ms": {
       "stat": "min",
-      "lt": 4500
+      "lt": 3500
     }
   },
-  "notes": "Issue #818: `big` stores one of two pointers to a global 400 times, each followed by a pointer store, a load of the global and an early return (globalptrstores_x86_64.py). Min of 3 on a quiet box: 6.5 s before (full cover range per redundant-COPY pair, block lookups rescanning the block list), 2.5 s after; the output is byte-identical."
+  "notes": "Issue #818: `big` stores a pointer to a global 200 times, each store followed by a pointer store, a load through the global and an early return (globalptrstores_x86_64.py). The last match is #798's load through the global after the pointer store. CPU min of 11, interleaved: 1.0 s before #798, 4.8 s after it, 2.0 s with the shared walks; the output is byte-identical to main's."
 }
