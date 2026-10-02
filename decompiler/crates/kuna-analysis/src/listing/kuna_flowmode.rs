@@ -269,8 +269,8 @@ impl Proof<'_, '_> {
         }
     }
 
-    /// Decode `at` in `mode` unless it already is; `Ok(false)` when it does
-    /// not decode.
+    /// Decode `at` in `mode` unless it already is: `Some(false)` when it does
+    /// not decode, `None` when that discredits the proof.
     fn decode(&mut self, at: u64, mode: u32, decode_mode: &mut DecodeMode<'_>) -> Option<bool> {
         if let Some(known) = self.decoded.get(&at) {
             return (known.mode == mode).then_some(true);
