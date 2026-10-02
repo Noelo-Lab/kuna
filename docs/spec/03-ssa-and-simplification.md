@@ -981,6 +981,35 @@ mask, is recorded on the call's spec when the rewrite commits
 so emission can print the zero-extension C's promotion would otherwise lose
 (chapter [09](09-emission.md)).
 
+(kuna) The RETURN pull refuses to trim a 64-bit integer a 32-bit convention
+returns in two registers
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs (returns_integer_pair)`):
+a value no wider than eight bytes, wider than every single integer register of
+the prototype model's output list, and laid out as one integer in the register
+file's byte order. That covers the `join` return recovery builds for ARM `r1:r0`,
+MIPS `$3:$2` or x86 `EDX:EAX`, and a register that names both halves, SPARC
+`o0_1`. When the function writes the high register as zero the RETURN reads
+`ZEXT(lo)`. Dead-code analysis counts only the possibly-nonzero bits of a RETURN
+as consumed, so `RuleSubvarZext` used to trim the RETURN to the low register:
+`u64 ins16(unsigned a, unsigned short b) { return ((a + 1) << 16) | b; }` (ARM
+`orr r0,r1,r0,lsl #16; mov r1,#0; add r0,r0,#65536`) printed as
+`int ins16(int a0,unsigned int a1)`, and a caller that widens the result
+sign-extended the word the binary zero-extends. Kept whole, the function returns
+`unsigned long long`, and the zero-extension is the conversion C performs at the
+return, with a cast where the word's own C type is signed (`(unsigned int)(a1 + a0)`).
+A pair joined against the register order keeps the trim: its high half is not
+the convention's high word (on a big-endian target, `$3` above `$2`), so a zero
+there says nothing about a 64-bit value. So does a 16-byte pair (x86-64
+`RDX:RAX`): no standard C integer spans it, and a zeroed `RDX` there is far more
+often the `-fzero-call-used-regs` scrub after an `int` function than an
+`unsigned __int128`. Some 32-bit functions have exactly the
+bytes of a zero-extended return and still mean a word, and now read as
+`unsigned long long`: an i386 `int` function scrubbed by `-fzero-call-used-regs`
+(`xor %edx,%edx; ret`), gcc -O0's `int f(u64 a) { return a >> 32; }`, which
+copies the high word down and clears `EDX`, and compiler-rt's `rep_clz`.
+`--option returnpair single` returns the first register alone for the run, which
+restores the word for them.
+
 Three sibling engines share the file. `subflow.rs (SplitFlow)` (trigger
 `RuleSplitFlow`, oppool1) splits a double-sized value into hi/lo lanes through
 the `decompiler/crates/kuna-decomp/src/substrate/transform.rs

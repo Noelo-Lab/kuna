@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    kuna: a 64-bit return whose high register the function sets to zero keeps
+    all eight bytes, so the zero-extension stays in the printed C.
+
+    Stage / sub-stage: P3 sub-variable flow, the RETURN pull
+    (SubvariableFlow::try_return_pull in p3_dataflow/subflow.rs).  A strict
+    fix: no option.
+
+    Source (clang -target arm-linux-gnueabi -O2, bytes verbatim below):
+
+        typedef unsigned long long u64;
+        u64 ins16(unsigned a, unsigned short b) { return ((a + 1) << 16) | b; }
+        u64 zadd(int a, int b) { return (unsigned)(a + b); }
+        u64 zsh(int a) { return (unsigned)(a >> 3); }
+        u64 zsel(int a, unsigned b) { return a > 0 ? b : 7u; }
+        u64 zmix(unsigned a) { return a > 5 ? a : 1ULL << 40; }
+
+    ins16 is orr r0,r1,r0,lsl #16 ; mov r1,#0 ; add r0,r0,#65536 ; bx lr.
+
+    The bug: return recovery joins r1:r0 into one 8-byte value, and because
+    r1 is the constant 0 the RETURN reads ZEXT(r0).  Dead-code analysis
+    counts only the possibly-nonzero bits of a RETURN as consumed, so the
+    sub-variable flow on that ZEXT trimmed the RETURN to r0 alone and the
+    functions printed as `int ins16(...)`, `int zadd(...)` and `int zsh(...)`.
+    A caller that widens the result sign-extends it: ins16(0x7fff, 0) is
+    0x80000000 in the source and 0xffffffff80000000 through the printed
+    prototype.
+
+    The fix: a RETURN that reads a register pair no wider than eight bytes is
+    not trimmed.  zmix, whose high word is not zero on every path, is the
+    control and was already eight bytes wide.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+000881e10010a0e3010880e21eff2fe1000081e00010a0e31eff2fe1c001a0e1
+0010a0e31eff2fe1000050e30710a0d30100a0e10010a0e31eff2fe1050050e3
+0020a0e30010a0e30020a081060050e30110a0330200a0e10114a0e11eff2fe1
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="ins16"/>
+<symbol space="ram" offset="0x1010" name="zadd"/>
+<symbol space="ram" offset="0x101c" name="zsh"/>
+<symbol space="ram" offset="0x1028" name="zsel"/>
+<symbol space="ram" offset="0x103c" name="zmix"/>
+</binaryimage>
+<script>
+  <com>lo fu ins16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zadd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zsh</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zsel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zmix</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ZEXTPAIR #1: ins16 returns eight bytes" min="1" max="1">uint8 ins16\(int4 a0,uint4 a1\)</stringmatch>
+<stringmatch name="ZEXTPAIR #2: a signed sum is zero-extended, not sign-extended" min="1" max="1">return \(uint4\)\(a1 \+ a0\);</stringmatch>
+<stringmatch name="ZEXTPAIR #3: a signed shift is zero-extended, not sign-extended" min="1" max="1">return \(uint4\)\(a0 >> 3\);</stringmatch>
+<stringmatch name="ZEXTPAIR #4: every function with a zero high word returns eight bytes" min="4" max="4">uint8 (ins16|zadd|zsh|zsel)\(</stringmatch>
+<stringmatch name="ZEXTPAIR #5: no function is narrowed to its low word" min="0" max="0">(int4|uint4|int|unsigned int) (ins16|zadd|zsh|zsel)\(</stringmatch>
+<stringmatch name="ZEXTPAIR #6: the control whose high word is not always zero is unchanged" min="1" max="1">return CONCAT44\(\(uint4\)\(a0 &lt;= 5\) &lt;&lt; 8,v1\);</stringmatch>
+</decompilertest>

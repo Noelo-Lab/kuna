@@ -91,7 +91,7 @@ use kuna_base::types::{int4, int8, uint4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{ActionGroupList, Rule, RuleSpec};
-use crate::dtype::{type_metatype, Datatype, TypeFactory};
+use crate::dtype::{type_class, type_metatype, Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use crate::context::{ArchHandle, OpId, TypeOp, VarnodeId};
@@ -567,6 +567,9 @@ impl SubvariableFlow {
         // `Result`/`Option` keeps its payload.
         if let Some(vn) = self.rv(rvn).vn {
             if crate::kuna_rustabi::holds_scalar_pair(data, vn) {
+                return Ok(false);
+            }
+            if returns_integer_pair(data, vn) {
                 return Ok(false);
             }
         }
@@ -2711,6 +2714,58 @@ impl Rule for RuleSubvarSext {
         // (Funcdata::getArch returns the context::ArchContext skeleton).  The C++
         // default is `false`; we keep that until the W4 arch surface lands.
         self.isaggressive = 0;
+    }
+}
+
+/// (kuna) Is `vn`, read by a RETURN, an integer of at most eight bytes held in
+/// two of the prototype model's integer output registers, high word where the
+/// register file's byte order puts it?
+///
+/// That is how a 32-bit target returns a 64-bit integer, whether the pair lands
+/// in join space (ARM `r1:r0`) or in a register that names both halves (SPARC
+/// `o0_1`). A high register the function wrote as zero is the zero-extension of
+/// that integer, and trimming the RETURN to the low register would print it as a
+/// narrower, possibly signed, value. A pair joined against the register order
+/// (the big-endian `$3:$2` kept for a leftover zero in `$3`) is not such an
+/// integer and keeps the trim. So does a wider pair: no standard C integer spans
+/// it, and a zeroed `RDX` is usually `-fzero-call-used-regs` scrubbing it after
+/// an `int` function.
+fn returns_integer_pair(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = data.vbank().get(vn) else { return false };
+    let size = v.get_size();
+    if size > 8 {
+        return false;
+    }
+    let proto = data.get_func_proto();
+    let Some(out) = proto.has_model().then(|| proto.model().output_list()).flatten() else { return false };
+    let widest = out
+        .get_entry()
+        .iter()
+        .filter(|e| {
+            matches!(e.get_type(), type_class::TYPECLASS_GENERAL | type_class::TYPECLASS_PTR)
+                && e.get_join_record().is_none()
+        })
+        .map(|e| e.get_size())
+        .max()
+        .unwrap_or(0);
+    if widest == 0 || size <= widest {
+        return false;
+    }
+    let addr = v.get_addr();
+    if !addr.is_join() {
+        return true;
+    }
+    let Ok(rec) = data.get_arch().manage().find_join(addr.get_offset()) else { return false };
+    let (hi, lo) = (rec.get_piece(0), rec.get_piece(rec.num_pieces() - 1));
+    match (hi.space.as_ref(), lo.space.as_ref()) {
+        (Some(hs), Some(ls)) if hs.get_index() == ls.get_index() => {
+            if hs.is_big_endian() {
+                hi.offset < lo.offset
+            } else {
+                hi.offset > lo.offset
+            }
+        }
+        _ => false,
     }
 }
 
