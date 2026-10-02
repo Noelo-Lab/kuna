@@ -743,7 +743,12 @@ pub fn build_and_follow_flow_with_override_and_protos(
     for (callpoint, pieces) in proto_overrides {
         let mut pieces = pieces.clone();
         if arch.format_override_callpoints.contains(&callpoint.get_offset()) {
-            pieces.first_var_arg_slot = pieces.intypes.len() as int4;
+            pieces.first_var_arg_slot =
+                if crate::kuna_armfloatargs::applies(arch) && !pieces.input_storage.is_empty() {
+                    -1
+                } else {
+                    pieces.intypes.len() as int4
+                };
             fd.get_override_mut().insert_format_call(callpoint.clone());
         }
         let ov: Box<dyn crate::overrides::FuncProtoOverride> =

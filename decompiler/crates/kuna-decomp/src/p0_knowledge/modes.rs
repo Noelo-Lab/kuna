@@ -472,6 +472,7 @@ mod tests {
         const UNEVALUATED: &[&str] = &[
             // Scalar VFP inference needs a broader ABI and aggregate corpus before preset promotion.
             "armfloatreturn",
+            "armfloatargs",
             // Stack-address liveness can be incidental; synthetic regressions and
             // a local speed measurement do not justify a broad preset flip.
             "stackaddrargtrial",

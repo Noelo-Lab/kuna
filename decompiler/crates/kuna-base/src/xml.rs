@@ -1945,6 +1945,8 @@ mod tests {
         // global stays a float literal and a register move reinterprets once
         // and kuna-labelstmt-arm + kuna-labelstmt-x64 / a label never ends a
         // compound statement (GH-783)
+        // and kuna-arm-float-arguments / ARM hard-float inputs keep their VFP
+        // widths and caller/callee storage
         // and kuna-ownreturn / an argument moved back into its own register
         // across a call stays a returned half and a parameter
         // and kuna-veneer-tailcall / a veneer to another function's entry is a
@@ -1956,7 +1958,7 @@ mod tests {
         // its zero-extension
         // and kuna-globalvalue / a value a sign-sensitive op reads keeps its own
         // variable instead of merging into a global it is stored to
-        assert_eq!(count, 375, "corpus file count drifted");
+        assert_eq!(count, 376, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

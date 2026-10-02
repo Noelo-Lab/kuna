@@ -655,9 +655,19 @@ pub(crate) fn extract_format_string_overrides(
             &specs,
             types,
             word_size,
-            kuna_decomp::kuna_formatstring::target_vararg_abi(arch),
+            if kuna_decomp::kuna_armfloatargs::applies(arch) {
+                kuna_decomp::kuna_formatstring::VarargAbi::Named
+            } else {
+                kuna_decomp::kuna_formatstring::target_vararg_abi(arch)
+            },
         ) {
-            Ok(Some(pieces)) => overrides.push((callpoint, pieces)),
+            Ok(Some(mut pieces)) => {
+                if !kuna_decomp::kuna_armfloatargs::applies(arch)
+                    || kuna_decomp::kuna_armfloatargs::base_inputs(arch, &mut pieces)
+                {
+                    overrides.push((callpoint, pieces));
+                }
+            }
             Ok(None) => {}
             Err(_) => {} // a spec→datatype build failure: skip this call site.
         }

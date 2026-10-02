@@ -974,6 +974,9 @@ Three tiers:
 | a double return becomes SUB84 or zero | [`armfloatreturn`](#armfloatreturn) |
 | an ARM hard-float function loses its d0 parameter | [`armfloatreturn`](#armfloatreturn) |
 | a caller reads an undefined floating result | [`armfloatreturn`](#armfloatreturn) |
+| missing floating argument | [`armfloatargs`](#armfloatargs) |
+| double input split into two words | [`armfloatargs`](#armfloatargs) |
+| caller and callee disagree on mixed argument contract | [`armfloatargs`](#armfloatargs) |
 
 ## Toggleable transforms
 
@@ -2970,6 +2973,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Turn on when ARM hard-float code truncates a double return to its low word or loses a double input. Requires consistent ELF ABI evidence; soft-float, missing metadata, and explicit prototypes keep their existing contracts. A double argument at a call needs the callee's declared or protoorder-recovered prototype, so it appears in a callee-first decompile-all, not in a single-function decompile.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · arm-hard-float-return
 - **Example:** `option armfloatreturn on`
+
+### `armfloatargs` -- on | off, default `off`
+
+- **Symptoms:** missing floating argument; double input split into two words; caller and callee disagree on mixed argument contract.
+- **What it does:** Recover scalar ARM hard-float inputs with their full floating widths and consistent caller/callee storage, on top of armfloatreturn. Uses positive VFP ABI evidence, preserves declared prototypes, keeps input widths independent of overlapping return storage, leaves the AAPCS-VFP back-fill slot out of recovered parameter lists, and gives a call the VFP inputs its callee's arity-sound contract states, a stated double held as two words passed whole; an unused trailing float an -O0 callee only spills is still passed though the callee's list omits it. Unknown cross-bank source order uses the model order; floating aggregates and vectors are recovered only as the scalar words or doubles their reads show, never as the source grouping.
+- **When to flip:** Turn on together with armfloatreturn (alone it changes nothing) when scalar ARM VFP inputs disappear, split into word parameters, or disagree with their callers. Unknown calls need a proven callee contract. Declared prototypes outrank recovery. Variadic format calls use base AAPCS storage. A double a callee reads only as integer words, as on single-precision FPUs, keeps what armfloatreturn recovers.
+- **Where / provenance:** P4/input-prototype · kuna · correctness-fix · arm-mixed-vfp-arguments
+- **Example:** `option armfloatargs on`
 
 ## Programmatic use
 

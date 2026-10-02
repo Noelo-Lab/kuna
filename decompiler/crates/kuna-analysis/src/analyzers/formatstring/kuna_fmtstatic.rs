@@ -115,9 +115,14 @@ impl AnalysisPass for FormatStringStaticPass {
         if !listing.has_refs() {
             return out;
         }
-        let abi = ctx.arch.format_vararg_abi.unwrap_or_else(|| {
-            kuna_formatstring::vararg_abi(&ctx.arch.archid, Some(image_family(ctx.bytes)))
-        });
+        let arm_args = kuna_decomp::kuna_armfloatargs::applies(ctx.arch);
+        let abi = if arm_args {
+            VarargAbi::Named
+        } else {
+            ctx.arch.format_vararg_abi.unwrap_or_else(|| {
+                kuna_formatstring::vararg_abi(&ctx.arch.archid, Some(image_family(ctx.bytes)))
+            })
+        };
         if abi == VarargAbi::Nothing {
             return out;
         }
@@ -230,13 +235,20 @@ impl AnalysisPass for FormatStringStaticPass {
                     word_size,
                     abi,
                 ) {
-                    Ok(Some(pieces)) => out.format_sites.push(FormatSiteFact {
-                        func: entry,
-                        callpoint: edge.from,
-                        pieces,
-                        format_slot: slot,
-                        format_vma: vma,
-                    }),
+                    Ok(Some(mut pieces)) => {
+                        if arm_args
+                            && !kuna_decomp::kuna_armfloatargs::base_inputs(ctx.arch, &mut pieces)
+                        {
+                            continue;
+                        }
+                        out.format_sites.push(FormatSiteFact {
+                            func: entry,
+                            callpoint: edge.from,
+                            pieces,
+                            format_slot: slot,
+                            format_vma: vma,
+                        });
+                    }
                     _ => continue,
                 }
             }
