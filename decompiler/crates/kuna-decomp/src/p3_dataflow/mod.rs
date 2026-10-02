@@ -33,6 +33,7 @@ pub(crate) mod kuna_stackstoreguard;
 pub mod kuna_tiedstorekeep;
 pub mod kuna_loopcounterstore;
 pub mod kuna_splitstorekeep;
+pub mod kuna_pointeestorekeep;
 pub mod kuna_constspaceload;
 pub mod kuna_simdlane;
 pub mod kuna_cancelbytearithmetic;

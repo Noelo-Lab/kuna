@@ -1490,6 +1490,49 @@ entirely — the Cover test compares each move against where the *other*
 definitions sit today, so two definitions of one variable can both be admitted
 even though, once both have moved, the second kills the first on every path.
 
+**(kuna, issue #767) A pointer stored to a global keeps its own variable**
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_pointeevalue.rs
+(keeps_apart)`, a strict fix, no option). `Merge` joins a register value with the
+persistent global it is copied to whenever their Covers allow it, and the joined
+value prints as a read of the global. When the value is a pointer the binary
+dereferences, the dereference then takes the global's pointee type:
+`int *q = p + k; gc = (char *)q; return q[1] + q[2];` printed
+`gc = &a0[a1]; return gc[2] + gc[1];`, which reads two bytes and returns 0
+instead of 9 once `gc` is given its real type `char *`, and a `struct rec *` or
+`void *` global made the body add two records or not compile. kuna prints no
+declaration for a global, and the type it infers for one comes from these very
+uses, so no test on the global's type can tell when the join is harmless. The
+join is refused instead, whatever the global's type, in the two optional merges
+that make it, the `COPY`'s merge in `merge_opcode` and `merge_adjacent`, when one
+side is persistent and the other is a computed value (not persistent, address-tied
+or an input) used as an address: its instances, or anything a `COPY`, `INDIRECT`
+or `MULTIEQUAL` carries them to or from, reach the address of a `LOAD` or `STORE`
+or the base of a `PTRADD` or `PTRSUB`, directly or through the adds that offset
+them (chapter 03's `kuna_pointeestorekeep.rs (reads_pointee)` and
+`(offsets_address)`; a walk of more than 256 varnodes answers yes). The value
+keeps its own variable and the type its own uses give it, and the `COPY` prints as
+the store where the binary makes it: `a0 = &a0[a1]; gc = a0; return a0[2] +
+a0[1];`. A value that is only the global read back through `COPY`s, `CAST`s and
+`MULTIEQUAL`s is still joined. The forced marker merges are upstream's; chapter
+03's `kuna_pointeestorekeep` keeps the store's `COPY` out of the global's markers
+so they never take such a value, and keeps a load of the global the binary makes
+reading the global, so a `-O0` reload, or any load after a pointer store that
+may change the global, still prints as the global.
+
+A register copy of such a load (`r = gi` where `gi` holds a stored value, the
+input of a `COPY` that `kuna_pointeestorekeep.rs (loads_stored_global)`
+recognizes) is a read of memory at the point of the load. When a `STORE`, or a
+call with no `INDIRECT` on the global, lies between the copy and one of its
+readers (`kuna_pointeestorekeep.rs (written_between)`), the copy's own
+copy-shadow join with the global is refused too, and `ActionMarkImplied`'s
+`checkImpliedCover` keeps the copy explicit (`kuna_pointeevalue.rs
+(load_crosses_write)`): joined, or printed inline at its reader, the read would
+move past a write that may change the global, which the Cover tests cannot see
+because kuna's SSA puts no `INDIRECT` on a global at a `STORE`. So
+`gi = q; *pp = p; r = gi; *pp2 = p + 1; return r[1] + x;` prints
+`*a2 = a0; v2 = gi; *a3 = &a0[1]; return v1 + v2[1];` rather than
+`return v1 + gi[1];` after the second store.
+
 **(kuna, GH-468) `option tiedphitrim` — a loop that reads memory does not
 store what it reads** (default **on**, DIV-182). A HighVariable that holds an
 address-tied instance *is* that location, so every other instance's definition

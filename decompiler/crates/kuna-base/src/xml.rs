@@ -1950,9 +1950,13 @@ mod tests {
         // and kuna-veneer-tailcall / a veneer to another function's entry is a
         // tail call when its prototype is stated or it lies outside the extent
         // (GH-781)
+        // and kuna-globalpointee / a pointer stored to a global is dereferenced
+        // through its own variable, not through the global
+        // and kuna-zextpair / a 64-bit return whose high register is zero keeps
+        // its zero-extension
         // and kuna-stackstoreguard / a byte copied into an initialized stack
         // buffer through a walking pointer still reaches the later test and call
-        assert_eq!(count, 373, "corpus file count drifted");
+        assert_eq!(count, 375, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
