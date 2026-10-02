@@ -469,7 +469,8 @@ fn stated_doubles_pass_whole_and_backfill_holes_stay_empty() {
 // callees ignore a leading double: the wrappers leave their own float in s0, so
 // d0 at the call is that float plus an s1 they never write (w3 as two words,
 // u1/u2/u3 as one d0 read). `top` also leaves q2's float result in s0 and the
-// s1 above it for k3, which never reads its second parameter.
+// s1 above it for k3, which never reads its second parameter, and wk calls kd,
+// which ignores its leading double, holding no value of its own for s1.
 #[test]
 fn ignored_stated_doubles_keep_the_callers_float_parameters() {
     let fixtures =
@@ -489,7 +490,7 @@ fn ignored_stated_doubles_keep_the_callers_float_parameters() {
             &reference,
         )
     });
-    let checks: [(&str, &str, &[usize]); 9] = [
+    let checks: [(&str, &str, &[usize]); 11] = [
         ("i4", "double i4(double a0,float a1,float a2,double a3)", &[4]),
         ("i2", "double i2(double a0,double a1)", &[2, 2]),
         ("i3", "double i3(double a0,float a1,double a2)", &[3]),
@@ -499,6 +500,8 @@ fn ignored_stated_doubles_keep_the_callers_float_parameters() {
         ("u3", "float u3(float a0,double a1)", &[2]),
         ("q2", "float q2(float a0,float a1)", &[2]),
         ("k3", "float k3(float a0,float a1,float a2)", &[3]),
+        ("gk", "float gk(float a0)", &[1]),
+        ("wk", "float wk(float a0)", &[1]),
     ];
     for build in ["arm-O1", "arm-O2", "thumb-O2", "thumb-Os"] {
         let bytes =

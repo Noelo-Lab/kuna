@@ -9,9 +9,12 @@ __attribute__((noinline)) float u3(float x, double z) { return i3(0.5, x, z) * 2
 __attribute__((noinline)) float h2(float a, float b) { return a * 2 - b; }
 __attribute__((noinline)) float q2(float a, float b) { return h2(b, b) * a; }
 __attribute__((noinline)) float k3(float a, float unused, float c) { return a * c; }
+__attribute__((noinline)) float gk(float x) { return x * 1.5f + 2; }
+__attribute__((noinline)) float kd(double unused, float a) { return a * 3 + 1; }
+__attribute__((noinline)) float wk(float x) { float t = gk(x); return kd(1.0, x) + t; }
 int top(int n) {
   float f = n * 0.5f; double d = n * 0.25;
   float r = q2(f, f + 1);
   r += k3(f, f * 9, f + 7);
-  return (int)((w3(f) + d + u1(f) + u2(f, f + 1) + u3(f, d + 1) + r) * 4);
+  return (int)((w3(f) + d + u1(f) + u2(f, f + 1) + u3(f, d + 1) + r + wk(f - 1)) * 4);
 }

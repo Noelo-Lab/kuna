@@ -479,6 +479,20 @@ fn plan_stated_inputs(
     Some(StatedPlan { drop, bind, zeros, joins, missing, partial })
 }
 
+/// Is `[addr, addr+size)` a VFP input slot of `call` that its callee never
+/// reads, so that an argument the call holds no value for is zero rather than
+/// a fresh read of the register?
+pub fn unread_slot(data: &Funcdata, call: &FuncCallSpecs, addr: &Address, size: i32) -> bool {
+    data.get_arch().arm_float_args
+        && call.proto().has_model()
+        && call.proto().model().input().get_entry().iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) == 0
+        })
+        && data
+            .kuna_callee_entry_dead(call.get_entry_address())
+            .is_some_and(|d| d.proves_dead(addr, size) || d.returns_untouched(addr, size))
+}
+
 /// Pass a stated double held as two word trials as one argument: a PIECE of
 /// the two words, or zero for a double the callee ignores, takes the low word's
 /// slot, and the high word is released.

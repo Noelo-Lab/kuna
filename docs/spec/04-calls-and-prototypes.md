@@ -64,7 +64,10 @@ there is an argument even where the positional rules ended the list before it:
 a constant the caller left in d1 for its own arithmetic is the argument for an ignored
 `double` the callee states there, and the used double after it stays in place.
 A stated input there that the caller never wrote is passed as whatever value
-reaches the call, which is how a wrapper forwards its own inputs. Stated inputs
+reaches the call, which is how a wrapper forwards its own inputs, unless the
+callee never reads that register: the argument is then zero, because a fresh
+read of the register would only give the caller a parameter it never uses or
+turn an earlier call's float result into a double. Stated inputs
 past that point stay as the call recovered them, so a contract that lists more
 registers than anything is seen to use adds no argument. A positional filler
 the contract skips while stating a later VFP input, such as the back-fill slot,
