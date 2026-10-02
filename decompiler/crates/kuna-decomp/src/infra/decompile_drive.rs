@@ -971,7 +971,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         total += r;
         // (kuna `stackstoreguard`) A function whose final layout spoils what the
         // guard needs is analyzed again from scratch without it by the drive.
-        if crate::p6_variables::kuna_storereach::withdraw_spoiled_guard(fd) {
+        if fd.stack_store_guard_spoiled()
+            || crate::p6_variables::kuna_storereach::withdraw_spoiled_guard(fd)
+        {
             return Ok(total);
         }
         if !(reflow_requested && fd.has_restart_pending()) {

@@ -27,13 +27,14 @@
 //! does not resolve (`(&v1 | 4) + i`, a walk with a variable step, a choice
 //! between more than eight addresses) is not guarded at all: that access may
 //! write or read any slot near a reach, so no layout of the frame is known to
-//! be right (`p3_dataflow/kuna_stackstoreguard.rs (frame_unresolved)`). A
-//! frame heritage already guarded whose latest layout pass finds one is laid
-//! out as upstream does and then analyzed again without the guard. Once a pass has
-//! laid out a reach, later passes keep doing so
-//! (`Funcdata::store_reach_committed`): a pass that lays out a smaller local
-//! than an earlier one strands the pointers the earlier pass resolved against
-//! the larger local (`&v19[0x20]` into a `char v19[32]`).
+//! be right (`p3_dataflow/kuna_stackstoreguard.rs (frame_unresolved)`). When a
+//! layout pass finds one in a frame heritage already guarded, the analysis
+//! stops and the drive analyzes a freshly built copy of the function without
+//! the guard. The partial copy jump-table recovery analyzes is never analyzed
+//! again, so there such a pass keeps the upstream layout unless an earlier pass
+//! laid out a reach (`Funcdata::store_reach_committed`): a smaller local would
+//! strand the pointers the earlier pass resolved against the larger one
+//! (`&v19[0x20]` into a `char v19[32]`).
 //!
 //! Whether or not the indices are bounded, the open range at a guarded store's
 //! base then absorbs every hint that starts inside a slot it absorbed
@@ -76,8 +77,6 @@ pub(crate) struct ReachChecks {
     reaches: Vec<(intb, intb)>,
     /// The guarded store pieces in a float reach.
     floats: Vec<(intb, intb)>,
-    /// A guarded store's pointer, or another stack access's, does not resolve.
-    unresolved: bool,
 }
 
 /// Coalesce each guarded byte store's bounded reach into one open array hint,
@@ -105,14 +104,19 @@ pub(crate) fn prepare_hints(
         return checks;
     }
     let guarded: Vec<OpId> = guarded.into_iter().collect();
-    checks.unresolved = frame_unresolved(fd, space, &guarded);
+    if frame_unresolved(fd, space, &guarded) {
+        if !fd.is_jumptable_recovery_on() {
+            fd.spoil_stack_store_guard();
+            return checks;
+        }
+        if !fd.store_reach_committed() {
+            return checks;
+        }
+    }
     let resolved: Vec<Vec<(intb, Option<intb>)>> = guarded
         .iter()
         .filter_map(|&store| store_pieces(fd, store, sb, space))
         .collect();
-    if checks.unresolved && !fd.store_reach_committed() {
-        return checks;
-    }
     let reaches: Vec<(Vec<intb>, Option<(intb, intb)>)> =
         resolved.iter().filter_map(|pieces| store_reach(pieces)).collect();
     if reaches.is_empty() {
@@ -184,7 +188,7 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
     let space = Rc::clone(sl.get_space_id());
     let checks = fd.store_reach_checks();
     let kept = guard_effects(fd, &space).1;
-    if !checks.unresolved && checks.floats.is_empty() && kept.is_empty() {
+    if checks.floats.is_empty() && kept.is_empty() {
         return false;
     }
     let bits = space.get_addr_size() as int4 * 8 - 1;
@@ -200,8 +204,7 @@ pub(crate) fn withdraw_spoiled_guard(fd: &Funcdata) -> bool {
     let locals = |lo: intb, hi: intb| -> Vec<(intb, intb)> {
         symbols.iter().copied().filter(|&(s, e)| s < hi && lo < e).collect()
     };
-    let spoiled = checks.unresolved
-        || kept.iter().any(|&(lo, hi)| locals(lo, hi).len() > 1)
+    let spoiled = kept.iter().any(|&(lo, hi)| locals(lo, hi).len() > 1)
         || checks.reaches.iter().any(|&(base, end)| {
             let local = symbols.iter().find(|&&(s, e)| s <= base && base < e);
             kept.iter().any(|&(lo, hi)| {

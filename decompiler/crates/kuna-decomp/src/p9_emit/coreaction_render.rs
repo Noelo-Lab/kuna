@@ -1563,7 +1563,7 @@ impl Action for ActionRestructureVarnode {
     fn reset(&mut self, _data: &mut Funcdata) {
         self.numpass = 0;
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:2332 — ActionRestructureVarnode::apply
         let mut count = 0;
         // aliases are unreliable on the first pass.
@@ -1571,6 +1571,11 @@ impl Action for ActionRestructureVarnode {
         // l1->restructureVarnode(aliasyes): re-derive the stack-frame layout from
         // the live (stack, off) Varnodes that RuleLoad/StoreVarnode produced.
         count += data.restructure_varnode(aliasyes);
+        // (kuna `stackstoreguard`) The drive analyzes a function whose layout
+        // spoiled the guard again without it, so this analysis stops here.
+        if data.stack_store_guard_spoiled() && !data.is_jumptable_recovery_on() {
+            ctx.abandon = true;
+        }
         // syncVarnodesWithSymbols(l1, /*updateDatatypes*/false, aliasyes): paint
         // mapped/addrtied flags onto the promoted Varnodes from the symbol map.
         if data.sync_varnodes_with_symbols(false, aliasyes) {

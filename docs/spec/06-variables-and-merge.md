@@ -940,27 +940,30 @@ as `(&v1 | 4) + i`, relying on the frame's alignment; that store may write any
 slot near a resolved reach, and no layout of the frame is known to keep what it
 writes and what is read in one local. Chapter 03's heritage gate leaves such a
 frame unguarded, and turns the option off for the function when no earlier pass
-guarded it; when dataflow exposes the address only after heritage guarded the
-frame, the pass keeps the upstream layout and the function falls back to no
-guard (below). Once a pass has laid out a reach, later passes of the same
-function keep doing so (`Funcdata::store_reach_committed`, reset when the
-function restarts): a later pass that laid out a smaller local would leave the
-pointers an earlier pass resolved against the larger one past its end
-(`&v19[0x20]` into a `char v19[32]`).
+guarded it. When dataflow exposes the address only after heritage guarded the
+frame, the layout pass marks the function spoiled
+(`Funcdata::spoil_stack_store_guard`), `ActionRestructureVarnode` stops the
+analysis (`ActionContext::abandon`, which the action containers honour like an
+expired deadline), and the function falls back to no guard (below). The partial
+copy that jump-table recovery analyzes is never analyzed again, so there such a
+pass keeps the upstream layout, unless an earlier pass laid out a reach
+(`Funcdata::store_reach_committed`): a later pass that laid out a smaller local
+would leave the pointers an earlier pass resolved against the larger one past
+its end (`&v19[0x20]` into a `char v19[32]`).
 
 The guard is worse than none wherever the final layout separates what the
 store writes from what is read. Each layout pass records what the final layout
-must satisfy (`Funcdata::note_store_reach_checks`): whether the frame resolved,
-each guarded store's reach (its bounded reach, or 256 bytes from each
-unbounded piece's base, since nothing bounds how far `((u8 *)&s)[i]` or a walk
-writes), and the guarded store pieces in a float reach. After the last pass
+must satisfy (`Funcdata::note_store_reach_checks`): each guarded store's reach
+(its bounded reach, or 256 bytes from each unbounded piece's base, since
+nothing bounds how far `((u8 *)&s)[i]` or a walk writes), and the guarded store
+pieces in a float reach. After the last pass
 `decompile_drive.rs (run_pipeline)` calls `kuna_storereach.rs
 (withdraw_spoiled_guard)`, which takes the bytes of every guard INDIRECT still
 on the stack whose value some op other than an INDIRECT or MULTIEQUAL reads,
 since the P3 guard keeps every constant-initialized slot, not only the slots
 inside a store's reach; the INDIRECTs that `RuleIndirectCollapse` removed or
-that nothing reads cannot hide a write. The layout is spoiled when the frame
-did not resolve, when such a slot overlaps more than one local, or when such a
+that nothing reads cannot hide a write. The layout is spoiled when such a
+slot overlaps more than one local, or when such a
 slot inside a reach does not lie in the local holding the reach's base: the C
 writes through that local only, so a read of another local never sees the
 store, and an index past the base local's end writes outside it (a constant
@@ -974,14 +977,13 @@ an integer while a member of that variable is typed float
 (`kuna_storereach.rs (read_only_as_float)`): such a read prints as a cast,
 which converts the value (`(unsigned short)v1` of a `double v1`). Float ops,
 copies and PIECEs into the range, and SUBPIECEs above the low end, which print
-as the bytes (`v1._6_2_`), do not. A spoiled function is analyzed again from
-from a freshly built function with the guard off for it
-(`Funcdata::spoil_stack_store_guard`; `decompile_drive.rs
-(decompile_func_full_with_override_dyn_prefollowed)` runs the second
-analysis). A restart in place would keep the first analysis's local symbols,
-which kuna's `clear()` does not drop (upstream's `clearUnlocked` is not
-ported), so the second analysis prints exactly what `option stackstoreguard
-off` prints. Another example is a buffer written only by a walk through a
+as the bytes (`v1._6_2_`), do not. `decompile_drive.rs
+(decompile_func_full_with_override_dyn_prefollowed)` analyzes a spoiled
+function (`Funcdata::spoil_stack_store_guard`) again from a freshly built copy
+with the guard off for it, not by a restart in place: kuna's `clear()` keeps
+the first analysis's local symbols (upstream's `clearUnlocked` is not ported),
+which could survive into the second. The second analysis therefore prints
+exactly what `option stackstoreguard off` prints. Another example is a buffer written only by a walk through a
 pointer kept in memory, which no guard covers, while the guard keeps its
 initializer (clang `-O0` `p = (j & 1) ? u.b : v.b; *p++ = j;`).
 
