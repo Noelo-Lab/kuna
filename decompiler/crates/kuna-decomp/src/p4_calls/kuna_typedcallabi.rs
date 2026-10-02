@@ -45,22 +45,26 @@ fn x86_or_aarch64(arch: &Architecture) -> bool {
 }
 
 /// The narrowest return value, in bytes, whose caller extends it itself: any on
-/// x86 and AArch64, except that an Apple arm64 callee extends a return narrower
-/// than 32 bits; none elsewhere.
+/// x86, and on AArch64 where the container states a platform other than Apple's;
+/// otherwise 32 bits on AArch64, since an Apple arm64 callee extends a narrower
+/// one and its caller reads it as it is; none elsewhere.
 pub fn caller_extends_from(arch: &Architecture) -> i32 {
-    if !x86_or_aarch64(arch) {
+    if arch.archid.starts_with("x86:") {
+        return 1;
+    }
+    if !arch.archid.starts_with("AARCH64:") {
         return i32::MAX;
     }
-    let apple = arch.archid.starts_with("AARCH64:LE:64:AppleSilicon:")
-        || arch
+    let stated_other = !arch.archid.starts_with("AARCH64:LE:64:AppleSilicon:")
+        && arch
             .translate()
             .loader_rc()
             .try_borrow()
-            .is_ok_and(|loader| loader.callee_extends_returns());
-    if apple {
-        4
-    } else {
+            .is_ok_and(|loader| loader.callee_extends_returns() == Some(false));
+    if stated_other {
         1
+    } else {
+        4
     }
 }
 

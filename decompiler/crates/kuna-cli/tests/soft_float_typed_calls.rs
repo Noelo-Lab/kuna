@@ -299,6 +299,10 @@ fn decompile(bytes: &[u8], functions: &[&str]) -> String {
 }
 
 fn decompile_with(bytes: &[u8], asserts: &[String]) -> String {
+    decompile_args(bytes, &[], asserts)
+}
+
+fn decompile_args(bytes: &[u8], args: &[&str], asserts: &[String]) -> String {
     let path = common::scratch_file("soft-float-typed-calls", "o");
     std::fs::write(&path, bytes).unwrap();
     let specs = std::env::var_os("SLEIGHHOME")
@@ -310,6 +314,7 @@ fn decompile_with(bytes: &[u8], asserts: &[String]) -> String {
     command
         .arg("decompile-all")
         .arg(&path)
+        .args(args)
         .args(["--assert-strict", "--sleighpath"])
         .arg(specs);
     for assert in asserts {
@@ -571,6 +576,13 @@ fn return_narrower_than_an_unextended_register_keeps_the_recovered_call() {
     assert!(!c3.contains("// v0"), "read unset bits of v0: {c3}");
 }
 
+fn apple_arm64_c1() -> [u32; 8] {
+    [
+        0xa9bf7bfd, 0x910003fd, 0xf9400008, 0xaa0103e0, 0xd63f0100, 0x0b000400, 0xa8c17bfd,
+        0xd65f03c0,
+    ]
+}
+
 /// `int c1(struct co *o, int k) { return o->sc(k) * 3; }`,
 /// `long c6(struct co *o, int k, long *p) { return p[o->sc(k)]; }` and
 /// `long e1(struct io *o, int k, long *p) { return p[o->si(k, 2.5)]; }`, clang
@@ -578,10 +590,7 @@ fn return_narrower_than_an_unextended_register_keeps_the_recovered_call() {
 /// returns to 32 bits, and the caller reads `w0` without extending it.
 fn apple_arm64() -> Vec<u8> {
     let words = |words: &[u32]| -> Vec<u8> { words.iter().flat_map(|w| w.to_le_bytes()).collect() };
-    let c1 = words(&[
-        0xa9bf7bfd, 0x910003fd, 0xf9400008, 0xaa0103e0, 0xd63f0100, 0x0b000400, 0xa8c17bfd,
-        0xd65f03c0,
-    ]);
+    let c1 = words(&apple_arm64_c1());
     let c6 = words(&[
         0xa9be4ff4, 0xa9017bfd, 0x910043fd, 0xaa0203f3, 0xf9400008, 0xaa0103e0, 0xd63f0100,
         0xf860da60, 0xa9417bfd, 0xa8c24ff4, 0xd65f03c0,
@@ -615,4 +624,26 @@ fn apple_arm64_return_narrower_than_32_bits_keeps_the_recovered_call() {
     assert!(!c6.contains("(unsigned char)"), "zero-extended the signed index: {c6}");
     let e1 = function(&text, "_e1");
     assert!(e1.contains("p[(*v1)(k,2.5)]"), "an int return keeps the declared call: {e1}");
+    let c1: Vec<u8> = apple_arm64_c1().iter().flat_map(|w| w.to_le_bytes()).collect();
+    let text = decompile_args(
+        &c1,
+        &[
+            "--raw-image",
+            "--target",
+            "AARCH64:LE:64:v8A:default",
+            "--base",
+            "0",
+            "--entry",
+            "0",
+            "--define-function",
+            "0=c1",
+        ],
+        &[
+            "typedef struct co { signed char (*sc)(int k); };".to_string(),
+            "prototype c1 int c1(struct co *o, int k)".to_string(),
+        ],
+    );
+    let c1 = function(&text, "c1");
+    assert!(c1.contains("(*v1)(k) * 3"), "a raw image states no platform: {c1}");
+    assert!(!c1.contains("(unsigned char)"), "zero-extended the signed char: {c1}");
 }

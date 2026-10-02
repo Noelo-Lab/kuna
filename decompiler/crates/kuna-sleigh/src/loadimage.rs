@@ -100,9 +100,11 @@ pub trait LoadImage {
     /// (a soft-float procedure-call standard), `None` it says nothing.
     fn float_arg_registers(&self) -> Option<bool> { None }
 
-    /// The platform's callee extends a return value narrower than 32 bits to 32
-    /// bits, and its caller reads that register unextended (Apple arm64).
-    fn callee_extends_returns(&self) -> bool { false }
+    /// Whether the platform's callee extends a return value narrower than 32
+    /// bits to 32 bits, so its caller reads that register unextended:
+    /// `Some(true)` on Apple arm64, `Some(false)` on another stated arm64
+    /// platform, `None` when the container says nothing.
+    fn callee_extends_returns(&self) -> Option<bool> { None }
 
     /// Get the name of the LoadImage.
     ///

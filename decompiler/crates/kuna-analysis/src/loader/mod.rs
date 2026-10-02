@@ -86,3 +86,5 @@ pub mod pe_iat;
 pub mod kuna_armfloatabi;
 // (kuna) does an ELF say whether float arguments travel in FP registers?
 pub mod kuna_floatabi;
+// (kuna) does an arm64 image's platform have the callee extend a narrow return?
+pub mod kuna_returnext;

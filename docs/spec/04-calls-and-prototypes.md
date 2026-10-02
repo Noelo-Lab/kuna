@@ -1477,9 +1477,13 @@ caller extends it itself (x86, and AArch64 other than Apple's) or the model's
 output entry extends it by its type (`extension="inttype"`: ARM, PowerPC). An
 Apple arm64 callee extends a return value narrower than 32 bits to 32 bits and
 its caller reads `w0` as it is, so there only an `int` or wider return counts
-as caller-extended. The loader marks a Mach-O arm64 image
-(`decompiler/crates/kuna-analysis/src/loader/format/macho.rs`), and the
-`AppleSilicon` language says the same. Elsewhere the callee's extension is
+as caller-extended. The loader reads the platform from the container
+(`decompiler/crates/kuna-analysis/src/loader/kuna_returnext.rs`): a Mach-O
+arm64 image is Apple's, and an ELF or PE one follows AAPCS64, whose caller
+extends. The `AppleSilicon` language, and an arm64 image whose container says
+neither (a raw image, the Ghidra front-end), are treated as Apple's, since the
+same bytes are correct there only if the callee extended. Elsewhere the
+callee's extension is
 modelled wrongly and the recovered call is kept: a MIPS model states no
 extension, so the rest of `v0` would print as an unassigned piece of the
 result, and the RISC-V model and Apple's AArch64 one state zero extension,
