@@ -1222,3 +1222,20 @@ zero padding bytes to the same code, so the `mov ebx,5` path decodes one mapped
 the tail shape of a real i386 image whose last instruction is `mov cs,eax`.
 
 `storecopyeffects.c` and `storecopyeffects_{clang_O0_aarch64,clang_O2_aarch64,gcc_O0_x86_64,gcc_O2_x86_64}.o` reproduce direct stores whose pointers resolve after memory SSA guards were created. Build with `clang --target=aarch64-linux-gnu -O0|-O2 -fno-strict-aliasing -c storecopyeffects.c` and `gcc -O0|-O2 -fno-strict-aliasing -fno-pie -c storecopyeffects.c` (clang 14.0.0, gcc 11.4.0). `kuna-cli/tests/store_copy_effects.rs` recompiles the printed functions with a callback recording and changing `gi`, checking stores between calls, aliasing and distinct pointers, loads before a later store, branches, and a dead-store control. Define `STORECOPY_DRIVER` to run the original source; add `STORECOPY_HARNESS` to replace its functions with the printed C.
+
+### Spilled pointers to local arrays
+
+`spillstoreguard.c` exercises writes through a pointer spilled to the stack,
+including constant-initialized destinations and neighbors, snapshots before
+the write, disjoint elements, pointer reassignment,
+repeated writes, and exported memory effects. A callback changes the pointer
+through its address, and a conditional pointer writes outside the returned
+element. `spilled_stack_stores.rs` recompiles the printed C with gcc and clang
+at O0/O2 and checks it against the source, including output-buffer canaries.
+
+The object fixtures were compiled at `-O0` and `-O2` with
+`-fno-stack-protector -c spillstoreguard.c`: native gcc and clang for x86-64,
+and clang with `--target=aarch64-linux-gnu`, `thumbv7em-none-eabi`,
+`mipsel-linux-gnu`, `powerpc-linux-gnu`, and `i386-linux-gnu`. The test omits
+the callback function on MIPS and PowerPC, whose external-call relocations
+are not recovered from these objects; the local alias checks still run there.

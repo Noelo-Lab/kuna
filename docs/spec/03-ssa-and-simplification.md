@@ -647,6 +647,33 @@ Turning `stackstoreguard off` restores the previous load-only behavior without
 changing the explicit `full` policy. `indexaliasguard off` suppresses both
 families, including the narrow stack-store guard.
 
+Spilled pointers to fixed stack offsets also need a temporary STORE guard: the
+stack read can acquire its initializer during renaming, while the pointer
+reload resolves only in the following rule pool.
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_spillstoreguard.rs` guards
+STOREs rooted in a free stack-slot read identified by `protect_free_stores`.
+After renaming, it follows only COPYs and constant additions to the input stack
+base with the stack pointer's full width on byte-addressed stacks, and retains
+only guards overlapping that proven destination. Wrapping pointer arithmetic
+uses the stack mask, but a memory access crossing the address-space boundary
+is left to the existing policy. It removes
+guards on other slots, and all guards for pointers whose destination remains
+unresolved, including MULTIEQUALs and call effects. Removal repeats until no
+more destinations resolve, so an unrelated provisional guard cannot prevent
+a later spilled pointer from resolving. Closed frames with at least sixteen
+spills can prefilter ranges using a whole-function proof: every located write
+to each pointer slot supplies the same exact affine address, all remaining
+STORE destinations are exact and disjoint from these slots, and no call,
+partial slot write, INDIRECT, or unresolved pointer can change the proof. The
+postrename proof still decides every retained guard. Other frames admit the
+entire new guard set only when the conservative product of distinct stack
+ranges and spilled STOREs is at most 4096; larger frames retain the previous
+default policy, with broad guarding available through `indexaliasguard full`.
+The retained guards keep later reads
+linked to the write through its conversion to a located COPY; they do not
+change the general indexed-store policy. Like the other pointer guards, this
+repair is disabled by `indexaliasguard off`.
+
 **The dead-code delay machinery and the dead-definition gate.** Dead-code
 removal is only *allowed* in a space once heritage there is past the space's
 dead-code delay: `heritage.rs (Heritage::dead_removal_allowed)` is the gate
