@@ -158,6 +158,11 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-rodatastring.xml` | a string block-copied out of read-only memory into the frame renders as invalid C: `v1[0] = (char[8])msg._0_8_;` (there is no array cast) and the literal never appears (DIV-113) | `option rodatastring on\|off` (new kuna settable, P5 `constsequence`) |
 | `kuna-calleenamedlocals.xml` | kuna [#762](https://github.com/Noelo-Lab/kuna/issues/762): two distinct pointer locals passed to one `consume(Node *object)` both took the name `object`, `dedupvardecls` kept one declaration, and the store after the inner loop cleared the last member's flag instead of the representative's; the same defect through a struct-by-value argument (its fields stored into another struct, or into a same-named global), a user rename (`&v2` printed as the other slot's address), and a slot named like a global (its narrow views read the global), plus a global array a suffixed local must not capture | P6 local naming (a callee-parameter name is made unique against names already bound to other highs; struct roots share only among themselves) + P9 declaration emission (the identical-line collapse only merges lines of one Symbol, and every high printed through another declaration follows its final name); correctness fix, no option. Passes 2 and 3 pin `option dedupvardecls off` and `option namestyle ghidra` |
 
+`kuna-storecopyeffects.xml` pins the AArch64 address-spill store across calls,
+repeated stores, a load between calls, and a truly dead-store control. The
+compiled round trips in `kuna-cli/tests/store_copy_effects.rs` also exercise
+aliasing and distinct pointers on AArch64 and x86-64 at `-O0` and `-O2`.
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

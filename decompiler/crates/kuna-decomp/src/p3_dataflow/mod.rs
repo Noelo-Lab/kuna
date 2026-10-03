@@ -13,6 +13,7 @@ pub mod ruleaction_1;
 pub mod ruleaction_2;
 pub mod ruleaction_3;
 pub mod ruleaction_4;
+pub(crate) mod kuna_storecopyeffects;
 pub mod ruleaction_5;
 pub mod ruleaction_6;
 pub mod ruleaction_7;
