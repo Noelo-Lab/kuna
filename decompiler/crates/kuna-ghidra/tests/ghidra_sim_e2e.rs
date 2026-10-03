@@ -46,7 +46,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::marshal::PackedEncode;
+use kuna_base::marshal::{Encoder, PackedEncode};
 
 use kuna_ghidra::ids::{ELEM_COMMAND_GETMAPPEDSYMBOLS, ELEM_COMMAND_GETPCODE};
 use kuna_ghidra::process::GhidraProcess;
@@ -56,7 +56,7 @@ use ghidra_sim::oracle::{
 };
 use ghidra_sim::{
     cmd_decompile_at, cmd_deregister_program, cmd_flush_native, cmd_register_program,
-    cmd_set_action, line_diff_ratio, normalized_lines, parse_decompile_doc, placeholder_addrs,
+    cmd_set_action, cmd_set_options, line_diff_ratio, normalized_lines, parse_decompile_doc, placeholder_addrs,
     query_doc_id, register_leaks, trace_session, unique_leaks, MockReader, MockState, MockWriter,
     ParsedDoc, SessionTrace, QUERY_COMMAND_IDS,
 };
@@ -140,13 +140,17 @@ fn run_session_config(
     for (action, printstring) in actions {
         cmd_set_action(&mut commands, "0", action, printstring);
     }
+    let n_options = usize::from(oracle.wire_options.is_some());
+    if let Some(options) = &oracle.wire_options {
+        cmd_set_options(&mut commands, "0", options);
+    }
     for a in &addrs {
         cmd_decompile_at(&mut commands, "0", &packed_addr(a));
     }
     cmd_flush_native(&mut commands, "0");
     cmd_decompile_at(&mut commands, "0", &packed_addr(&addrs[0]));
     cmd_deregister_program(&mut commands, "0");
-    let n_commands = 1 + actions.len() + addrs.len() + 2 + 1;
+    let n_commands = 1 + actions.len() + n_options + addrs.len() + 2 + 1;
 
     let shared = Rc::new(RefCell::new(MockState::new(commands, oracle)));
     let reader = MockReader { shared: Rc::clone(&shared) };
@@ -191,7 +195,14 @@ fn run_session_config(
             "setAction #{i} not accepted"
         );
     }
-    let first_decompile = 1 + actions.len();
+    if n_options == 1 {
+        assert_eq!(
+            trace.responses[1 + actions.len()].payload.as_deref(),
+            Some(b"t".as_slice()),
+            "setOptions not accepted"
+        );
+    }
+    let first_decompile = 1 + actions.len() + n_options;
     let flush_idx = first_decompile + addrs.len();
     assert_eq!(
         trace.responses[flush_idx].payload.as_deref(),
@@ -1311,6 +1322,50 @@ fn ghidra_sim_pe_string_data_prints_as_literals() {
     for label in ["u_ntdll_dll_", "s_NtQueryInformationProcess_"] {
         assert!(!c.contains(label), "{label} is printed instead of the literal:\n{c}");
     }
+}
+
+/// Ghidra's Call-Fixup Installer tags `__chkstk` and `_guard_dispatch_icall_nop`
+/// with the cspec fixups, and Java sends the tag as the `<inject>` of the
+/// callee's prototype.  Each call is then replaced by the fixup fetched with
+/// getCallFixup: the stack probe disappears and the Control Flow Guard call is
+/// the virtual call it dispatches, as the stock decompiler prints it.
+#[test]
+fn ghidra_sim_pe_call_fixups_replace_the_helper_calls() {
+    let binary = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/callfixup_pe_x86_64.exe");
+    let run = run_session_with(&binary, &["sub_140001000"], |oracle| {
+        oracle.cspec = "x86-64-win.cspec".to_string();
+        oracle.call_fixup_overrides.insert(0x140001080, "alloca_probe".to_string());
+        oracle
+            .call_fixup_overrides
+            .insert(0x1400010a0, "guard_dispatch_icall".to_string());
+        // DecompileOptions always sends `<readonly>on</readonly>` (Respect
+        // read-only flags), which is what folds the guard's dispatch pointer.
+        let mut options = Vec::new();
+        {
+            let mut e = PackedEncode::new(&mut options);
+            e.open_element(&kuna_decomp::options::ELEM_OPTIONSLIST);
+            e.open_element(&kuna_decomp::options::ELEM_READONLY);
+            e.write_string(&kuna_base::marshal::ATTRIB_CONTENT, b"on");
+            e.close_element(&kuna_decomp::options::ELEM_READONLY);
+            e.close_element(&kuna_decomp::options::ELEM_OPTIONSLIST);
+        }
+        oracle.wire_options = Some(options);
+    });
+    assert_structure(&run);
+    let c = &run.docs[0].c_text;
+    for helper in ["__chkstk(", "_guard_dispatch_icall_nop("] {
+        assert!(!c.contains(helper), "{helper} is still called:\n{c}");
+    }
+    assert!(c.contains("(**"), "the guarded virtual call is missing:\n{c}");
+    let fixups = run
+        .oracle
+        .log
+        .counts
+        .get(&kuna_ghidra::ids::ELEM_COMMAND_GETCALLFIXUP.get_id())
+        .copied()
+        .unwrap_or(0);
+    assert!(fixups >= 2, "getCallFixup fired {fixups} times");
 }
 
 // ===========================================================================

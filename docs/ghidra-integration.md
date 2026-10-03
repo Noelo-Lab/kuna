@@ -266,6 +266,11 @@ relocated the lazy model to the seams the kuna pipeline actually reads
 - **C++ namespaces** print as the native decompiler prints them: calls carry the
   scopes the Display Namespaces option needs (Minimal by default), declarations
   their full path, one token per scope.
+- **Call-fixups** arrive as the `<inject>` of a function's `<prototype>` (the
+  Call-Fixup Installer's tag on `__chkstk`, `_guard_dispatch_icall_nop`,
+  `__security_check_cookie`, the x86 EH/SEH prolog helpers). kuna resolves the
+  name against the cspec call-fixups and injects the getCallFixup payload at
+  each call, so those helpers vanish from the C as they do in stock Ghidra.
 - **Tracked registers**: the pspec `<tracked_set>` decodes as the static default,
   and `ContextGhidra` is wired for real — decompileAt issues getTrackedRegisters
   at the entry (cached until flushNative) and merges the host's values OVER the

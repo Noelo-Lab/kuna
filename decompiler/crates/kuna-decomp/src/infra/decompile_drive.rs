@@ -211,8 +211,17 @@ impl FlowEnvironment for ArchFlowEnv {
         self.arch().symboltab.function_is_inline_across_scopes(entry)
     }
     fn query_call_inject_id(&self, entry: &Address) -> int4 {
-        // The callee's parked inject id (IfcFixupApply); -1 for none.
-        self.arch().symboltab.function_inject_id_across_scopes(entry)
+        // The callee's parked inject id (IfcFixupApply); -1 for none.  In
+        // ghidra mode it is the host's `<inject>` on the callee's prototype.
+        let arch = self.arch();
+        if let Some(remote) = &arch.remote_scope {
+            if let Some(facts) = remote.function_at(entry) {
+                if facts.inject_id >= 0 {
+                    return facts.inject_id;
+                }
+            }
+        }
+        arch.symboltab.function_inject_id_across_scopes(entry)
     }
     fn build_inline_funcdata(&self, entry: &Address) -> KunaResult<Option<Funcdata>> {
         // C++ `Funcdata::inlineFlow` builds a fresh FlowInfo over the queried
