@@ -279,6 +279,10 @@ fn space_ptr_eq(a: &Option<Rc<AddrSpace>>, b: &Option<Rc<AddrSpace>>) -> bool {
 /// Tracked variables are also queried as a group via get_tracked_set() and
 /// create_set().  These return a list of TrackedContext objects.
 pub trait ContextDatabase {
+    /// Copy mutable context, including explicit-set masks and tracked registers.
+    /// Unlike split-point copies, this preserves the behavior of future writes.
+    fn clone_for_speculation(&self) -> Box<dyn ContextDatabase>;
+
     /// \brief Retrieve the context variable description object by name
     ///
     /// If the variable doesn't exist an error is returned.  (C++ protected
@@ -766,6 +770,23 @@ impl ContextInternal {
 }
 
 impl ContextDatabase for ContextInternal {
+    fn clone_for_speculation(&self) -> Box<dyn ContextDatabase> {
+        let copy = |value: &FreeArray| FreeArray {
+            array: value.array.clone(),
+            mask: value.mask.clone(),
+        };
+        let mut database = PartMap::new(copy(self.database.default_value()));
+        for (addr, value) in self.database.iter() {
+            *database.split(addr) = copy(value);
+        }
+        Box::new(Self {
+            size: self.size,
+            variables: self.variables.clone(),
+            database,
+            trackbase: self.trackbase.clone(),
+        })
+    }
+
     fn get_variable(&self, nm: &[u8]) -> KunaResult<ContextBitRange> {
         match self.variables.get(nm) {
             Some(bitrange) => Ok(*bitrange),
@@ -1007,7 +1028,7 @@ fn space_eq(a: &Address, b: &Address) -> bool {
 /// of caching the raw blob pointer the cache re-fetches the blob through the
 /// single-lookup [`ContextDatabase::get_context`] on a hit (the expensive
 /// bounds query is what the cache skips).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ContextCache {
     /// If set to \b false, any set_context() call is dropped
     allowset: bool,
@@ -1272,6 +1293,155 @@ mod tests {
         assert_eq!(r.get_value(&blob), 0xcd);
         assert_eq!(bit.get_value(&blob), 1);
         assert_eq!(r3.get_value(&blob), 0x1234);
+    }
+
+    #[test]
+    fn speculative_context_preserves_write_boundaries_and_restores_nested_changes() {
+        use crate::kuna_contextscope::ContextScope;
+        use std::cell::RefCell;
+        let manager = test_manager();
+        let mut original = test_db();
+        original.set_variable_default(b"fldA", 1).unwrap();
+        original
+            .set_variable(b"fldA", &addr(&manager, "ram", 0x100), 2)
+            .unwrap();
+        original
+            .set_variable(b"fldA", &addr(&manager, "ram", 0x200), 3)
+            .unwrap();
+        let database: RefCell<Box<dyn ContextDatabase>> = RefCell::new(Box::new(original));
+        let cache = RefCell::new(ContextCache::new());
+        let point = addr(&manager, "ram", 0x180);
+        let boundary = addr(&manager, "ram", 0x200);
+        let var = database.borrow().get_variable(b"fldA").unwrap();
+        let mask = var.get_mask() << var.get_shift();
+        cache.borrow_mut().set_write_mask(1, 0x1234);
+        {
+            let scope = ContextScope::new(&database, &cache);
+            database
+                .borrow_mut()
+                .set_variable(b"fldA", &point, 4)
+                .unwrap();
+            assert_eq!(
+                database
+                    .borrow()
+                    .get_variable_value(b"fldA", &boundary)
+                    .unwrap(),
+                3
+            );
+            scope.protect_variable(b"fldA").unwrap();
+            cache
+                .borrow_mut()
+                .set_context(&mut **database.borrow_mut(), &point, 0, mask, 0);
+            assert_eq!(
+                database
+                    .borrow()
+                    .get_variable_value(b"fldA", &point)
+                    .unwrap(),
+                4
+            );
+            {
+                let nested = ContextScope::new(&database, &cache);
+                database
+                    .borrow_mut()
+                    .set_variable(b"fldB", &point, 7)
+                    .unwrap();
+                nested.commit();
+            }
+            assert_eq!(
+                database
+                    .borrow()
+                    .get_variable_value(b"fldB", &point)
+                    .unwrap(),
+                7
+            );
+            {
+                let probe = scope.probe_original();
+                assert_eq!(
+                    database
+                        .borrow()
+                        .get_variable_value(b"fldA", &point)
+                        .unwrap(),
+                    2
+                );
+                assert_eq!(
+                    database
+                        .borrow()
+                        .get_variable_value(b"fldB", &point)
+                        .unwrap(),
+                    0
+                );
+                database
+                    .borrow_mut()
+                    .set_variable(b"fldB", &point, 9)
+                    .unwrap();
+                cache.borrow_mut().set_write_mask(1, 0);
+                drop(probe);
+            }
+            assert_eq!(
+                database
+                    .borrow()
+                    .get_variable_value(b"fldA", &point)
+                    .unwrap(),
+                4
+            );
+            assert_eq!(
+                database
+                    .borrow()
+                    .get_variable_value(b"fldB", &point)
+                    .unwrap(),
+                7
+            );
+            assert_eq!(cache.borrow_mut().set_write_mask(1, 0), 0x1234);
+        }
+        assert_eq!(
+            database
+                .borrow()
+                .get_variable_value(b"fldA", &point)
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            database
+                .borrow()
+                .get_variable_value(b"fldB", &point)
+                .unwrap(),
+            0
+        );
+        assert_eq!(cache.borrow_mut().set_write_mask(1, u32::MAX), 0x1234);
+        cache.borrow_mut().set_context(
+            &mut **database.borrow_mut(),
+            &point,
+            0,
+            mask,
+            5 << var.get_shift(),
+        );
+        assert_eq!(
+            database
+                .borrow()
+                .get_variable_value(b"fldA", &point)
+                .unwrap(),
+            5
+        );
+        assert_eq!(
+            database
+                .borrow()
+                .get_variable_value(b"fldA", &boundary)
+                .unwrap(),
+            3
+        );
+        let scope = ContextScope::new(&database, &cache);
+        database
+            .borrow_mut()
+            .set_variable(b"fldA", &point, 6)
+            .unwrap();
+        scope.commit();
+        assert_eq!(
+            database
+                .borrow()
+                .get_variable_value(b"fldA", &point)
+                .unwrap(),
+            6
+        );
     }
 
     #[test]

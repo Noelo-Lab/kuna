@@ -287,3 +287,63 @@ fn repeated_bytes_respect_changed_context_and_replaced_images() {
         .unwrap();
     assert!(got.0.unwrap().0.starts_with("mov"));
 }
+
+#[test]
+fn reusable_lifts_require_local_reads_and_no_context_commits() {
+    for (spec, bytes, context, reusable) in [
+        (
+            "ARM/data/languages/ARM7_le.sla",
+            vec![1, 0, 0xa0, 0xe3],
+            vec![("TMode", 0), ("LRset", 0)],
+            true,
+        ),
+        (
+            "ARM/data/languages/ARM7_le.sla",
+            vec![0, 0, 0, 0xfa],
+            vec![("TMode", 0), ("LRset", 0)],
+            false,
+        ),
+        (
+            "ARM/data/languages/ARM7_le.sla",
+            vec![8, 0xbf, 1, 0x20],
+            vec![("TMode", 1), ("LRset", 0)],
+            false,
+        ),
+        (
+            "Sparc/data/languages/SparcV9_32.sla",
+            vec![0x81, 0xc7, 0xe0, 8, 0x81, 0xe8, 0, 0],
+            vec![],
+            false,
+        ),
+        (
+            "Toy/data/languages/toy_le.sla",
+            vec![0, 0x80, 1, 0],
+            vec![],
+            false,
+        ),
+    ] {
+        let (old, _) = engine(spec, &bytes, &context);
+        let (new, _) = engine(spec, &bytes, &context);
+        let mut expected_ops = Ops::default();
+        let mut expected_text = Text::default();
+        let len = old
+            .one_instruction_with_assembly(&mut expected_ops, &mut expected_text, &addr(&old, 0))
+            .unwrap();
+        let mut ops = Ops::default();
+        let mut text = Text::default();
+        let mut key = Some(vec![u32::MAX]);
+        let actual = (&new as &dyn Translate)
+            .one_instruction_reusable(&mut ops, &mut text, &addr(&new, 0), &mut key)
+            .unwrap();
+        assert_eq!(actual, len);
+        assert_eq!(ops, expected_ops);
+        assert_eq!(text, expected_text);
+        assert_eq!(key.is_some(), reusable, "{spec}: {bytes:x?}");
+        if let Some(key) = key {
+            assert_eq!(
+                key,
+                new.with_context_db_mut(|db| db.get_context(&addr(&new, 0)).to_vec())
+            );
+        }
+    }
+}

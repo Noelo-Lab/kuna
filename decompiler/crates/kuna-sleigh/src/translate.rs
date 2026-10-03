@@ -422,6 +422,12 @@ pub trait Translate: RegisterLookup {
     /// \param val is \b true to allow context changes, \b false prevents changes
     fn allow_context_set(&self, _val: bool) {}
 
+    /// Isolate speculative context writes until the returned scope is committed.
+    /// Stateless translators need no scope.
+    fn context_scope(&self) -> Option<crate::kuna_contextscope::ContextScope<'_>> {
+        None
+    }
+
     /// Replace the writable bits in one context word for translation commits,
     /// returning the previous mask so a temporary restriction can be restored.
     fn set_context_write_mask(&self, _word: usize, _mask: u32) -> u32 {
@@ -520,6 +526,24 @@ pub trait Translate: RegisterLookup {
         let _ = self.print_assembly(assembly, baseaddr);
         Ok(length)
     }
+
+    /// Optionally certify that this lift reads only this instruction's bytes and
+    /// context words and commits no context. Reuse requires an unchanged image,
+    /// translator, address and the returned context words. Unknown effects decline.
+    /// Emitters must not change the image or translation context.
+    fn one_instruction_reusable(
+        &self,
+        pcode: &mut dyn PcodeEmit,
+        assembly: &mut dyn AssemblyEmit,
+        baseaddr: &Address,
+        context: &mut Option<Vec<u32>>,
+    ) -> KunaResult<i32> {
+        *context = None;
+        self.one_instruction_with_assembly(pcode, assembly, baseaddr)
+    }
+
+    /// Check a context key returned by `one_instruction_reusable`.
+    fn matches_decode_context(&self, _addr: &Address, _context: &[u32]) -> bool { false }
 
     /// Disassemble into reusable caller-owned strings.
     ///

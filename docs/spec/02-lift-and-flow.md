@@ -231,8 +231,27 @@ root node; each child node is reset before it is allocated. The state arena and
 its allocation capacities are retained across instructions. Simultaneously
 live main-instruction, `inst_next2`, and delay-slot resolutions hold distinct
 contexts, and a guard returns each context after successful translation or an
-error. This is scratch reuse only: instruction results and addresses are not
-cached, and the bytes and painted context are resolved on every translation.
+error. The engine stores no instruction-result cache; ordinary translations
+resolve the bytes and painted context on every call.
+
+Speculative consumers can open a `Translate::context_scope` to decode against a
+private context database and cache. Dropping the scope restores both; committing
+it retains the changes. Copies preserve explicit write boundaries and tracked
+registers, so later context writes behave as they would in the original database.
+Nested scopes restore their parent, and `probe_original` temporarily restores
+the context saved before the outer walk. A scope can protect one variable while
+allowing other instruction-local state changes
+(`decompiler/crates/kuna-sleigh/src/kuna_contextscope.rs`). Stateless translators
+return no scope.
+
+The optional `Translate::one_instruction_reusable` contract also returns a context
+key when the result can be retained by an analysis consumer. SLEIGH certifies only
+lifts without context commits or delay slots and with exactly one parser-context
+query across lifting and assembly rendering. Nested reads, including
+`inst_next2`, decline reuse. The consumer must retain the same image, translator
+and instruction address and compare every context word before replaying p-code;
+other translators decline by default. This certificate does not suppress any
+translation or context effects inside SLEIGH itself.
 
 **Instruction-byte window.** A parser context buffers a fixed 16 bytes of the
 instruction stream, the longest encoding any supported processor admits. Reads
