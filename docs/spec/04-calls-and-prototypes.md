@@ -1967,8 +1967,14 @@ one no pointer in the caller can reach. That last test is
 `AliasChecker::has_local_alias` — the same one `FuncCallSpecs::checkInputTrialUse`
 applies before it will call a stack slot a parameter. It is what keeps
 `ReadFile(h,&buf,…)` correct: `buf`'s address is taken, the callee writes it
-through the pointer, the guard is what models that write, and it stays. The
-gather is deferred and cached for the length of one heritage pass, so a function
+through the pointer, the guard is what models that write, and it stays.
+`has_local_alias` answers only for locals below the return address, so the
+same question is asked of the caller's own parameter area
+(`AliasChecker::has_parameter_alias`): a slot there is reachable once any
+address at or below it in that area is taken. MSVC x64 spills a value into the
+home slot its caller allocated and passes the slot by reference (every Qt
+`connect(sender, &Class::signal, …)` does), and without that test the store
+before the call was dead. The gather is deferred and cached for the length of one heritage pass, so a function
 that never reaches the locked branch never pays for it.
 
 ### (kuna) `callpush` — a call's own return-address push

@@ -1574,6 +1574,7 @@ impl Heritage {
         };
         let mut access = fd.alias_gather_access();
         checker.has_local_alias(Some((Rc::clone(spc), offset)), &mut access)
+            || checker.has_parameter_alias(offset, &mut access)
     }
 
     /// Guard CALL ops (C++ `Heritage::guardCalls`, `heritage.cc:1444`).

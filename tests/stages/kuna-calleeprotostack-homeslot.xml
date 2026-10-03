@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    kuna calleeprotostack: a store into the caller's home slot is dropped when its
+    address is passed to a declared callee.
+
+    MSVC x64 spills a value into the home slot its caller allocated above the
+    return address and passes that slot by reference.  Qt emits it for every
+    connect(sender, &Class::signal, ...): the member function pointer goes to
+    entry rsp+0x18 and its address to QObject::connectImpl.
+
+        140001000  48 83 ec 28            SUB   RSP,0x28
+        140001004  48 8d 05 75 00 00 00   LEA   RAX,[worker_proc]
+        14000100b  48 89 44 24 40         MOV   [RSP + 0x40],RAX   ; entry rsp+0x18
+        140001010  48 8d 4c 24 40         LEA   RCX,[RSP + 0x40]
+        140001015  e8 46 00 00 00         CALL  consume
+        14000101a  48 83 c4 28            ADD   RSP,0x28
+        14000101e  c3                     RET
+        140001060  48 8b 01 c3            consume: MOV RAX,[RCX]; RET
+        140001080  31 c0 c3               worker_proc: XOR EAX,EAX; RET
+
+    calleeprotostack leaves a caller slot above a declared callee's frame
+    unguarded unless the alias checker says a pointer can reach it, and the
+    upstream checker only answers for locals below the return address.  The
+    home slot's address escaped, so the call must keep its guard over it.
+
+    Stage: P3 heritage call guarding, option calleeprotostack off|on.  Pass 1
+    (off) guards every caller slot; pass 2 (on, the default) must keep the
+    store as well.
+-->
+<bytechunk space="ram" offset="0x140001000">
+4883ec28488d0575000000488944244048
+8d4c2440e8460000004883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001060">
+488b01c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001080">
+31c0c3
+</bytechunk>
+<symbol space="ram" offset="0x140001000" name="f"/>
+<symbol space="ram" offset="0x140001060" name="consume"/>
+<symbol space="ram" offset="0x140001080" name="worker_proc"/>
+</binaryimage>
+<script>
+  <com>parse line extern void *consume(void **slot);</com>
+  <com>option calleeprotostack off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleeprotostack on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CALLEEPROTOSTACK HOMESLOT #1: both passes store worker_proc into the home slot" min="2" max="2">= worker_proc;</stringmatch>
+<stringmatch name="CALLEEPROTOSTACK HOMESLOT #2: both passes pass the slot's address to consume" min="2" max="2">consume\(</stringmatch>
+</decompilertest>
