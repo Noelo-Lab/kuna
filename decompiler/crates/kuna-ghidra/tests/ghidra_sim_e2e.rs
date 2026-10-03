@@ -532,7 +532,11 @@ const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // merges where it used to split. Every other measurement on this fixture is
 // unchanged -- placeholders, the diff ratios, and the getPcode/getMappedSymbols
 // traffic all hold.
-const PIN_FAILLOG_C_LINES: [usize; 3] = [285, 34, 92];
+// sub_2620 285 -> 286: retain the uid load before the flag stores at
+// 0x272a/0x2731, then write 0x6288 before 0x6278 as the binary does at
+// 0x2738/0x273f. The former early 0x6278 assignment and global reread become
+// one local capture; the extra line preserves the actual memory-write order.
+const PIN_FAILLOG_C_LINES: [usize; 3] = [286, 34, 92];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`).
 // Phase 3 measured 57/10/24 (whole rendered declarators like
 // `"unsigned long *"` as single `<type>` tokens, received by scripts/exports
@@ -719,6 +723,14 @@ fn ghidra_sim_faillog_pins() {
             "{t}: flattened-C line count moved — the rendered structure changed \
              (a <break>/token regression collapses this while ratios stay in band)"
         );
+    }
+
+    let rendered = &docs[0].c_text;
+    for (arm, globals) in [("case 0x75:", &["DAT_00006280", "DAT_00006277", "DAT_00006288", "DAT_00006278"][..]),
+                            ("case 0x74:", &["DAT_00006273", "DAT_00006290"][..])] {
+        let code = &rendered[rendered.find(arm).expect("faillog switch arm")..];
+        let positions: Vec<_> = globals.iter().map(|name| code.find(&format!("{name} =")).expect("faillog global store")).collect();
+        assert!(positions.windows(2).all(|p| p[0] < p[1]), "faillog store order: {arm}\n{code}");
     }
 
     // ---- query-traffic fingerprints ----

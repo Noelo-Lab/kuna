@@ -911,6 +911,9 @@ impl MergeContext for Funcdata {
         }
         crate::p6_variables::kuna_loadorder::crosses_global_write(self, vn, Some(except))
     }
+    fn global_copy_moves_write(&self, global: HighVariableId, value: HighVariableId) -> bool {
+        crate::p6_variables::kuna_globalorder::copy_moves_write(self, global, value)
+    }
 
     // --- Cover construction for a single read -----------------------------
     fn single_read_cover(&self, vn: VarnodeId, op: OpId) -> Cover {

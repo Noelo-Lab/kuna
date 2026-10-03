@@ -147,7 +147,7 @@ const REACH_BOUND: usize = 1 << 16;
 /// dominates the store can be read so, since its definition dominates every
 /// read.  Past [`WALK_BOUND`] copies or [`REACH_BOUND`] blocks and operations
 /// the answer is yes.
-fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
+pub(crate) fn old_value_read_after(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(v) = data.vbank().get(vn) else {
         return true;
     };
