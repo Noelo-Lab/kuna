@@ -151,7 +151,18 @@ pub fn extension(
     ty: &Datatype,
     res: &mut VarnodeData,
 ) -> Option<OpCode> {
-    let signed = signed(ty)?;
+    extension_by(widen, list, addr, size, signed(ty)?, res)
+}
+
+/// [`extension`] for an integer whose sign is `signed`.
+fn extension_by(
+    widen: Widen,
+    list: &ParamListStandard,
+    addr: &Address,
+    size: i32,
+    signed: bool,
+    res: &mut VarnodeData,
+) -> Option<OpCode> {
     let entry = list.get_entry().iter().find(|e| {
         e.get_min_size() <= size
             && e.get_align() == 0
@@ -174,6 +185,21 @@ pub fn extension(
     res.offset = entry.get_base() + skip as u64;
     res.size = width as u32;
     Some(op)
+}
+
+/// Whether a `size`-byte integer at `addr` in a register entry of `list` is
+/// extended by the sign of its type: under `rule` where it speaks, else where the
+/// spec states `inttype`.
+pub fn extends_by_sign(rule: Option<Widen>, list: &ParamListStandard, addr: &Address, size: i32) -> bool {
+    let mut res = VarnodeData::default();
+    if let Some(w) = rule {
+        let by = |signed| extension_by(w, list, addr, size, signed, &mut VarnodeData::default());
+        match (by(true), by(false)) {
+            (None, None) => {}
+            pair => return pair == (Some(OpCode::CPUI_INT_SEXT), Some(OpCode::CPUI_INT_ZEXT)),
+        }
+    }
+    list.assumed_extension(addr, size, &mut res) == OpCode::CPUI_PIECE
 }
 
 /// [`extension`] under `rule`, falling back to the model's own answer where the

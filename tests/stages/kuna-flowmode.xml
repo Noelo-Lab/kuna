@@ -1,0 +1,84 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Option flowmode (GH-780): ARM code that control flow proves the mode of is
+    painted with that mode where the Listing walk's own blx writes left the
+    other one.
+
+    The XML wrapper only provides the harness architecture. The script loads
+    two stripped fixtures (one generator beside them) with the Listing walk on,
+    as every CLI surface runs it on ARM. In each, an A32 entry at 0x2000000
+    calls a Thumb helper at 0x2000040 (`movs r0,#7; bx lr`) with `blx` and an
+    A32 helper at 0x2000080 (`add r0,r0,#1; bx lr`) with `bl`. No symbol or
+    mapping symbol names either mode. Decoding the `blx` writes Thumb into the
+    context database from 0x2000040 to the end of the address space, so the
+    walk leaves the A32 helper in Thumb, and the decompiler prints
+    `halt_missing()` for it (a Thumb decode starting at 0x2000082).
+
+    Pass 1, `arm_interwork_bl_first_le32` (the `bl` comes first), the default
+    (off): the A32 helper prints `halt_missing()`.
+
+    Pass 2, the same image, option on: the entry's even address proves A32
+    and its first call, the `bl`, proves the A32 helper, which makes no call
+    and is painted A32. It returns `a0 + 1`.
+
+    Pass 3, `arm_interwork_le32` (the `blx` comes first, the issue's layout),
+    option on: the `bl` comes after a call, and nothing proves that call
+    returns at its site, so nothing is painted and the helper still prints
+    `halt_missing()`.
+
+    Pass 4, the same image, option aftercall: the Thumb helper is proven to
+    return, so the `bl` after the `blx` is proven too. The A32 helper returns
+    `a0 + 1`, the Thumb helper returns 7, and the entry passes the Thumb
+    result to the A32 helper.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_bl_first_le32</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2000080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_bl_first_le32</com>
+  <com>option listing on</com>
+  <com>option flowmode on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2000080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_le32</com>
+  <com>option listing on</com>
+  <com>option flowmode on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2000080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/arm_interwork_le32</com>
+  <com>option listing on</com>
+  <com>option flowmode aftercall</com>
+  <com>read symbols</com>
+  <com>load addr 0x2000080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2000040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2000000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FLOWMODE #1: off (the default), and on after an unproven call, the A32 helper decodes as Thumb" min="2" max="2">halt_missing</stringmatch>
+<stringmatch name="FLOWMODE #2: on, the first bl target keeps A32; aftercall, the bl after the blx does" min="2" max="2">return a0 \+ 1;</stringmatch>
+<stringmatch name="FLOWMODE #3: aftercall, the blx target decodes as Thumb and returns 7" min="1" max="1">return 7;</stringmatch>
+<stringmatch name="FLOWMODE #4: aftercall, the entry passes the Thumb result to the A32 helper" min="1" max="1">sub_2000080\(sub_2000040\(\)\)</stringmatch>
+</decompilertest>

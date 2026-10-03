@@ -2497,6 +2497,45 @@ declaration shows the body multiplying it), and the three callers that never
 set that register pass one argument too few, which the counter reads
 positionally.
 
+### A narrow value returned zero-extended is unsigned (`kuna_zextreturn.rs`)
+
+Dead-code analysis counts only the possibly-nonzero bits of a RETURN as consumed,
+so sub-variable flow trims a return the function zero-extends to the narrow
+value it extends (chapter [03](03-ssa-and-simplification.md)): ARM
+`ldrh r0,[r1]; bx lr` returns the 2-byte load, and `add r1,r1,#1;
+and r0,r1,#0xffff` the 2-byte sum. The fold above then types that value by its
+own ops, and an addition, a multiplication or a byte of unknown type (which the
+printer spells `char`) reads as signed. C promotes a signed return value by
+sign-extension, so `unsigned short Next(void)`, which increments a halfword and
+reloads it with `ldrh`, printed as `short Next(void)`, and its caller's
+`bound * Next() >> 16` computed -50 where the machine computes 50 (GH-833).
+
+This is a correction, not an option. Where the calling convention extends a
+return value of the trimmed width by the sign of its type, the binary's
+zero-extension says the value is unsigned, or never has its sign bit set: the
+compiler spec's `inttype` on the output register (ARM, PowerPC, SPARC), or the
+rule `narrowext` states (chapter 04: RISC-V and LoongArch below 32 bits, and
+MIPS and Apple arm64 under `narrowext compiler`). The RETURN pull records that
+on each RETURN it trims (`decompiler/crates/kuna-decomp/src/p5_types/kuna_zextreturn.rs
+(unsigned_trim)`), and
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_zextreturn.rs (unsigned_return_vote)`
+supplies the unsigned integer of the value's width as a candidate in
+`build_localtypes`, after the float-register vote. It is offered only for a value
+that is not type-locked, whose fold is a signed integer or unknown bytes (which
+the printer may spell `char`, or propagation may later make signed), whose
+non-zero mask allows the sign bit,
+and only when the output is not locked and every live RETURN carries the record
+at that width, since the function returns one type. `unsigned short` then
+becomes the function's return type (`ActionOutputPrototype`), the declaration a
+caller's printed call promotes by, so `bound * Next()` zero-extends the result as
+the machine does. A RETURN that block duplication copies into another exit
+(`CloneBlockOps`, the `// return-dupe` split) carries the record with it, since
+the copy returns the same value.
+A convention that leaves the bits above a narrow return unspecified (x86,
+AArch64) or always zero-extends it (the RISC-V spec's own `zero`, which
+`narrowext off` restores) says nothing about the value's sign, and the fold's
+type stands.
+
 ## 5.3 Ranges & consume bits
 
 The rest of the S5 fact fabric (the framing derives from the study in

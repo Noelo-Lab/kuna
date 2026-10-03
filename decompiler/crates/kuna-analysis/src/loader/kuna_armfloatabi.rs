@@ -1,5 +1,32 @@
-//! ARM ELF VFP procedure-call evidence (AAELF32 and Addenda32 Tag_ABI_VFP_args).
+//! ARM ELF build-attribute evidence (AAELF32 and Addenda32): the VFP procedure
+//! call standard (`Tag_ABI_VFP_args`) and whether the image can hold A32 code.
 use object::{Object, ObjectSection};
+
+/// `Tag_CPU_arch_profile`; the value is a character, `'M'` for a microcontroller.
+const TAG_CPU_ARCH_PROFILE: u32 = 7;
+/// `Tag_ARM_ISA_use`; 0 says the image may not use A32 instructions.
+const TAG_ARM_ISA_USE: u32 = 8;
+
+/// Whether the build attributes rule out A32 code: an M-profile CPU executes
+/// only Thumb, and `Tag_ARM_ISA_use` 0 forbids A32 outright. Only an explicit
+/// tag counts; an image without attributes may hold either.
+pub fn thumb_only(file: &object::File<'_>) -> bool {
+    if file.format() != object::BinaryFormat::Elf
+        || file.architecture() != object::Architecture::Arm
+    {
+        return false;
+    }
+    file.sections()
+        .filter(|s| s.name() == Ok(".ARM.attributes"))
+        .any(|section| {
+            let Ok(data) = section.data() else {
+                return false;
+            };
+            let little = file.is_little_endian();
+            let tag = |wanted| file_attribute(data, little, wanted, |v| v, None).flatten();
+            tag(TAG_CPU_ARCH_PROFILE) == Some(u32::from(b'M')) || tag(TAG_ARM_ISA_USE) == Some(0)
+        })
+}
 
 pub fn vfp_args(file: &object::File<'_>) -> bool {
     if file.format() != object::BinaryFormat::Elf
@@ -171,6 +198,19 @@ fn attribute_value(data: &[u8], little: bool) -> Option<Option<u32>> {
 
 /// The file-scope value of the numeric `tag`, 0 when an `aeabi` subsection omits it.
 fn tag_value(data: &[u8], little: bool, wanted: u32) -> Option<Option<u32>> {
+    file_attribute(data, little, wanted, |v| v, Some(0))
+}
+
+/// The file-scope value of the integer attribute `wanted`, through `map`.
+/// A subsection without the tag answers `absent`; subsections that answer
+/// differently, or a malformed section, answer `None`.
+fn file_attribute<T: Copy + PartialEq>(
+    data: &[u8],
+    little: bool,
+    wanted: u32,
+    map: impl Fn(u32) -> T,
+    absent: Option<T>,
+) -> Option<Option<T>> {
     if data.first() != Some(&b'A') || data.len() > 1024 * 1024 {
         return None;
     }
@@ -220,6 +260,7 @@ fn tag_value(data: &[u8], little: bool, wanted: u32) -> Option<Option<u32>> {
                 } else {
                     let value = uleb(scope, &mut pos)?;
                     if tag == wanted {
+                        let value = map(value);
                         if current.is_some_and(|old| old != value) {
                             return None;
                         }
@@ -227,11 +268,12 @@ fn tag_value(data: &[u8], little: bool, wanted: u32) -> Option<Option<u32>> {
                     }
                 }
             }
-            let current = current.unwrap_or(0);
-            if answer.is_some_and(|old| old != current) {
-                return None;
+            if let Some(current) = current.or(absent) {
+                if answer.is_some_and(|old| old != current) {
+                    return None;
+                }
+                answer = Some(current);
             }
-            answer = Some(current);
         }
     }
     Some(answer)
@@ -384,5 +426,43 @@ mod tests {
             unknown[5..10].copy_from_slice(b"other");
             assert_eq!(attributes(&unknown, little), Some(None));
         }
+    }
+
+    fn arm_object(attributes: Option<Vec<u8>>) -> Vec<u8> {
+        use object::write::Object as Writer;
+        use object::{Architecture, BinaryFormat, Endianness, SectionKind};
+        let mut object = Writer::new(BinaryFormat::Elf, Architecture::Arm, Endianness::Little);
+        if let Some(data) = attributes {
+            let id =
+                object.add_section(Vec::new(), b".ARM.attributes".to_vec(), SectionKind::Other);
+            object.append_section_data(id, &data, 1);
+        }
+        object.write().unwrap()
+    }
+
+    #[test]
+    fn only_an_explicit_m_profile_or_a32_ban_is_thumb_only() {
+        let cases = [
+            (None, false),
+            (Some(tagged(&[6, 13, 7, b'M', 9, 2], true)), true),
+            (Some(tagged(&[6, 10, 7, b'A', 8, 1, 9, 2], true)), false),
+            (Some(tagged(&[7, b'R'], true)), false),
+            (Some(tagged(&[8, 0], true)), true),
+            (Some(tagged(&[28, 1], true)), false),
+        ];
+        for (attributes, expected) in cases {
+            let bytes = arm_object(attributes.clone());
+            let file = object::File::parse(&*bytes).unwrap();
+            assert_eq!(thumb_only(&file), expected, "{attributes:?}");
+        }
+    }
+
+    #[test]
+    fn the_vfp_answer_ignores_the_other_tags() {
+        assert_eq!(
+            attributes(&tagged(&[7, b'M', 28, 1], true), true),
+            Some(Some(true))
+        );
+        assert_eq!(attributes(&tagged(&[7, b'M'], true), true), Some(Some(false)));
     }
 }

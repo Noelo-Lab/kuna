@@ -3730,6 +3730,95 @@ a refusal cannot omit it from the documentation checks. A compatibility test
 pins the existing order and spellings; the scheduling and fallback policies do
 not depend on this representation.
 
+(kuna) **Flow-proven ARM decode-mode paints** (`flowmode`, values `on`,
+`aftercall` and `off`, default `off`;
+`decompiler/crates/kuna-analysis/src/listing/kuna_flowmode.rs (disagreeing_runs)`).
+ARM `TMode` chooses the instruction set an address decodes in, and the
+`ContextDatabase` stores it per address. An interworking call (`blx imm`) runs a
+SLEIGH `globalset` that writes the callee's mode from the target up to the next
+address where the mode was set explicitly. A stripped image has no such address,
+so once the walk decodes a caller of a Thumb helper, every address above the
+helper holds Thumb: a `bl` to the A32 helper at `0x2000080`, two instructions
+after a `blx` to a Thumb helper at `0x2000040`, decompiled to `halt_missing()`
+with a Thumb decode starting at `0x2000082`.
+
+The walk itself is not changed: its instructions, functions and references, and
+every context write it makes, stay as they are. After it, kuna decodes again the
+code whose mode the image proves, with the decode mode forced through a context
+read override (`Translate::set_context_read_override`) and every context word's
+writes masked, so these decodes leave the database exactly as the walk left it:
+neither `TMode` nor the IT-block condition (`condit`) nor `LRset` is written.
+An instruction inside an IT block therefore decodes with the condition the
+walk's own decode stored at its address, if any. Proof starts at an even `e_entry` and at every even function symbol,
+which the ELF for the ARM architecture makes A32. From proven code it carries
+the mode on: a branch target keeps it (no direct branch changes the
+instruction set), and so does the fall-through of an instruction that neither
+calls nor runs a user-defined p-code operation (`CALLOTHER`); a direct call
+target takes the mode the call commits there (read back from
+`Translate::last_context_commits`, so `blx imm` switches) or else keeps the
+caller's (`bl`).
+
+The instruction after an unconditional call is not proven by the call. A
+callee that can return does not show that this call returns: a compiler emits
+nothing after `report_bad(x); __builtin_unreachable();`, after a call through a
+`noreturn` alias of a function that can return, or after a `longjmp`-style
+helper, so the bytes there are the next function, possibly in the other mode,
+or a literal pool. With `aftercall`, the instruction after an unconditional
+call is proven once the callee is proven to return, which means a return
+instruction is reachable from its entry through proven code, computed as a
+least fixpoint over each function's own reachability. That proves the A32
+helper of the example above, called after a Thumb helper that returns, but it
+also proves, and paints in the caller's mode, the next function after a call
+that never returns at its site.
+
+The instruction after one that runs a user-defined operation is never proven
+by it, under either value. On ARM those are `svc`, `bkpt`, `hvc`, `smc` and
+`hlt`, which raise exceptions, and also barriers and coprocessor accesses.
+p-code does not say which of them come back: an exported `my_exit` that ends
+in `svc #0` and then `__builtin_unreachable()`, or a function that ends in
+`bkpt` the same way, is followed directly by the next function, which may be
+in the other mode.
+
+A function is complete when the proof followed every fall-through it left
+unproven, so under `on` it makes no unconditional call and runs no
+user-defined operation. Only the instructions of complete functions are
+candidates for painting: a function is either decoded entirely in its proven
+mode or exactly as the walk left it.
+Every such instruction whose mode the database disagrees with after the walk is
+handed to the analysis commit (`Listing::decode_mode_paints`, emitted by
+`passes.rs (run_listing_consumers)` as the `flowmode` output), which paints it
+with its proven mode after every other decode-mode paint. Nothing else is
+painted, and the function inventory is the walk's. When two proven paths give
+one address different modes, when proven instructions of different modes
+overlap, or when a proven instruction fails to decode where the database holds
+the other mode, the proof is not trusted and nothing is painted at all. `on`
+fixes an A32 function that makes no unconditional call, reached from an even
+entry or function symbol before any call, such as the helper of
+`entry: bl arm_helper; blx thumb_helper`, and leaves the order of the example
+above, and any function that calls, as the walk decodes it.
+
+The default is `off`, under which the database is exactly as the walk leaves
+it. Both other values still trust the fall-through of an ordinary instruction
+and the target of a branch, and a compiler leaves either unreachable after
+`__builtin_unreachable()`: clang at `-O0` ends a `noreturn` function that
+stores to memory and then reaches `__builtin_unreachable()` with the store, or
+with a conditional branch to the empty block at its end. The proof then
+carries that function's mode into whatever the linker placed next, and paints
+a static Thumb function there in A32.
+
+The pass runs only on a linked ARM ELF whose metadata paints no `TMode` at all:
+no mapping symbol, no odd (Thumb) function symbol, no Cortex-M vector table, and
+an even `e_entry` or an even function symbol to start from. It skips an image
+whose build attributes rule out A32 code (`Tag_CPU_arch_profile` `M` or
+`Tag_ARM_ISA_use` 0, read by
+`decompiler/crates/kuna-analysis/src/loader/kuna_armfloatabi.rs (thumb_only)`),
+an image decoded with an explicit `--isa`, and an image whose database holds no
+Thumb anywhere after the walk, where there is nothing to correct. Where a symbol
+paints Thumb, those paints already run to the next change point and are what
+gives many stripped libraries' static Thumb code its mode; the same leak still
+reaches an A32 function placed after a Thumb function symbol there, and
+`flowmode` does not change it.
+
 (kuna) The seed set carries one more source, under the same `funcstart_patterns`
 gate as the prologue starts: **the entries the load-time passes have already
 committed**, handed down from `engine.rs (commit_pending_analysis)` rather than

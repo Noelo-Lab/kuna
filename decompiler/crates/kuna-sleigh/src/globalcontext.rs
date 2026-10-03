@@ -1013,6 +1013,9 @@ pub struct ContextCache {
     allowset: bool,
     /// Bits that translation may write in each context word (all by default).
     write_masks: Vec<u32>,
+    /// Per context word, the `(mask, value)` that every read reports in place
+    /// of the database's bits (none by default).
+    read_overrides: Vec<(u32, u32)>,
     /// Address space of the current valid range (`None` = cache invalid,
     /// the C++ null `curspace`)
     curspace: Option<Rc<AddrSpace>>,
@@ -1036,6 +1039,7 @@ impl ContextCache {
             curspace: None, // Mark cache as invalid
             allowset: true,
             write_masks: Vec::new(),
+            read_overrides: Vec::new(),
             // C++ leaves first/last uninitialized (they are only read once
             // curspace is set); zeroed here
             first: 0,
@@ -1056,6 +1060,16 @@ impl ContextCache {
             self.write_masks.resize(word + 1, u32::MAX);
         }
         std::mem::replace(&mut self.write_masks[word], mask)
+    }
+
+    /// Replace the `(mask, value)` that reads of one context word report in
+    /// place of the database's bits, returning the old pair. A zero mask
+    /// reads the database unchanged.
+    pub fn set_read_override(&mut self, word: usize, mask: u32, value: u32) -> (u32, u32) {
+        if self.read_overrides.len() <= word {
+            self.read_overrides.resize(word + 1, (0, 0));
+        }
+        std::mem::replace(&mut self.read_overrides[word], (mask, value & mask))
     }
 
     /// Return \b true if the cached range covers the given address (the
@@ -1090,6 +1104,9 @@ impl ContextCache {
             database.get_context(addr)
         };
         buf[..n].copy_from_slice(&context[..n]);
+        for (word, &(mask, value)) in buf[..n].iter_mut().zip(&self.read_overrides) {
+            *word = (*word & !mask) | value;
+        }
     }
 
     /// \brief Change the value of a context variable at the given address

@@ -42,6 +42,9 @@ pub(super) struct WalkState {
     /// Plausible x86 `PUSH imm` callback evidence, keyed by target and bounded
     /// during the walk. The value is the lowest source address for that target.
     pub stack_callback_refs: BTreeMap<u64, u64>,
+    /// The `(start, end, mode)` ARM decode-mode runs the commit paints over the
+    /// context database (see [`super::kuna_flowmode`]).
+    pub mode_runs: Vec<(u64, u64, u32)>,
 }
 
 /// Where [`step`] files a decoded instruction, and the visit dedup it asks.
@@ -386,6 +389,9 @@ impl Successors for Worklists<'_> {
 /// it a Thumb/MIPS16 function misdecodes as A32/MIPS32. On x86-64 (no decode-mode
 /// context) the painter is empty and this is a no-op.
 ///
+/// `flow_mode`, when present, runs [`super::kuna_flowmode::disagreeing_runs`]
+/// after the walk, which leaves the walk's own result as it is.
+///
 /// `local_entries` is the PPC64 ELFv2 local-entry fold (`ppclocalentry`), keyed
 /// by the local entry VMA: a CALL landing on one of those is a call into the
 /// INTERIOR of the function at its value, so no function is claimed there. Empty
@@ -408,6 +414,7 @@ pub(super) fn walk(
     seeds: &[u64],
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
     painter: &ContextPainter,
+    flow_mode: Option<&super::kuna_flowmode::FlowMode>,
     local_entries: &BTreeMap<u64, u64>,
     detail: ListingDetail,
     want_stack_callbacks: bool,
@@ -428,6 +435,23 @@ pub(super) fn walk(
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
     let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail };
 
+    let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan);
+    if let Some(mode) = flow_mode {
+        st.mode_runs = super::kuna_flowmode::disagreeing_runs(&ctx, arch, mode);
+    }
+    st
+}
+
+/// The serial or parallel walk, as [`walk`] runs it.
+fn walk_plain(
+    ctx: &StepCtx<'_>,
+    arch: &Architecture,
+    seeds: &[u64],
+    seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
+    painter: &ContextPainter,
+    plan: &super::kuna_pdecode::WalkPlan,
+) -> WalkState {
+    let StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail } = *ctx;
     if plan.lanes() > 1 {
         let inputs = super::kuna_pdecode::ParallelInputs {
             arch,
@@ -445,7 +469,7 @@ pub(super) fn walk(
             let Some(abort) = super::kuna_pdecode::selfcheck() else {
                 return parallel;
             };
-            let serial = walk_serial(&ctx, seeds, seed_funcs, detail);
+            let serial = walk_serial(ctx, seeds, seed_funcs, detail);
             let differences = super::kuna_pdecode::compare(&parallel, &serial);
             assert!(
                 differences == 0 || !abort,
@@ -455,7 +479,7 @@ pub(super) fn walk(
         }
     }
 
-    walk_serial(&ctx, seeds, seed_funcs, detail)
+    walk_serial(ctx, seeds, seed_funcs, detail)
 }
 
 /// The serial walk: the two-level worklist over [`step`], and the only walk that
@@ -500,6 +524,7 @@ fn walk_serial(
         refs_from: refs.from,
         funcs,
         stack_callback_refs: callbacks.refs,
+        mode_runs: Vec::new(),
     }
 }
 

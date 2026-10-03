@@ -36,6 +36,7 @@ pub mod kuna_entrythumbflow;
 pub mod kuna_pdecode;
 pub mod kuna_rawdiscover;
 pub mod kuna_tailcallentry;
+mod kuna_flowmode;
 mod kuna_picbase;
 mod kuna_picpool;
 mod kuna_poolref;
@@ -111,6 +112,9 @@ pub struct Listing {
     has_refs: bool,
     /// Bounded, deduplicated x86 `PUSH imm` candidates collected for fast discovery.
     stack_callback_refs: Vec<(u64, u64)>,
+    /// The `(start, end, mode)` ARM decode-mode runs [`kuna_flowmode`] proved
+    /// and the context database disagrees with; empty when it has none.
+    mode_runs: Vec<(u64, u64, u32)>,
 }
 
 impl Listing {
@@ -158,6 +162,7 @@ impl Listing {
             has_assembly: true,
             has_refs: false,
             stack_callback_refs: Vec::new(),
+            mode_runs: Vec::new(),
         }
     }
 
@@ -252,6 +257,7 @@ impl Listing {
                     has_assembly: detail.assembly,
                     has_refs: false,
                     stack_callback_refs: Vec::new(),
+                    mode_runs: Vec::new(),
                 };
             }
         };
@@ -283,6 +289,7 @@ impl Listing {
         // as before; on ARM/MIPS it paints Thumb/MIPS16 mode so alt-ISA functions
         // decode correctly instead of as A32/MIPS32 garbage.
         let painter = context::ContextPainter::new(file, arch);
+        let flow_mode = kuna_flowmode::FlowMode::for_object(file, arch, &painter);
 
         // The PPC64 ELFv2 local-entry fold (`ppclocalentry`): an intra-module `bl`
         // targets `st_value + <localentry>`, which is a point inside the callee,
@@ -300,6 +307,7 @@ impl Listing {
             seeds,
             &seed_funcs,
             &painter,
+            flow_mode.as_ref(),
             &local_entries,
             detail,
             want_stack_callbacks,
@@ -330,6 +338,7 @@ impl Listing {
                 .into_iter()
                 .map(|(target, source)| (source, target))
                 .collect(),
+            mode_runs: st.mode_runs,
         }
     }
 
@@ -379,6 +388,7 @@ impl Listing {
             seeds,
             &seed_funcs,
             &context::ContextPainter::empty(),
+            None,
             &BTreeMap::new(),
             detail,
             /* want_stack_callbacks = */ false,
@@ -397,6 +407,7 @@ impl Listing {
             has_assembly: detail.assembly,
             has_refs: detail.refs,
             stack_callback_refs: Vec::new(),
+            mode_runs: Vec::new(),
         }
     }
 
@@ -415,6 +426,7 @@ impl Listing {
             has_assembly,
             has_refs: false,
             stack_callback_refs: Vec::new(),
+            mode_runs: Vec::new(),
         }
     }
 
@@ -434,6 +446,7 @@ impl Listing {
             has_assembly: true,
             has_refs: false,
             stack_callback_refs,
+            mode_runs: Vec::new(),
         }
     }
 
@@ -536,6 +549,21 @@ impl Listing {
 
     pub(crate) fn stack_callback_refs(&self) -> &[(u64, u64)] {
         &self.stack_callback_refs
+    }
+
+    /// The ARM `TMode` paints over proven code whose mode the context database
+    /// disagrees with, for the analysis commit to apply after every other
+    /// decode-mode paint (see [`kuna_flowmode`]).
+    pub fn decode_mode_paints(&self) -> Vec<crate::pass::ContextPaint> {
+        self.mode_runs
+            .iter()
+            .map(|&(addr, end, value)| crate::pass::ContextPaint {
+                addr,
+                end: Some(end),
+                var: "TMode",
+                value,
+            })
+            .collect()
     }
 
     /// The decoded instruction whose `[addr, addr+len)` byte span contains `vma`
@@ -754,6 +782,7 @@ mod tests {
             has_assembly: true,
             has_refs: true,
             stack_callback_refs: Vec::new(),
+            mode_runs: Vec::new(),
         };
         let addrs = |start, end| {
             listing
