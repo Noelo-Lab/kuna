@@ -1153,7 +1153,10 @@ model for a count of `n` (one for `crset 6`, which says only that some FPR is
 used), and `check_input_trial_use` marks an 8-byte trial on one of them active
 without the ancestor checks. This holds for any variadic call, not only one
 whose own value returns in the register: `printf("%f", g())` keeps its `g()`
-the same way. Without a count (any AArch64 call, or a block that does not set
+the same way. Such a trial exists only where the guard registered one, so a
+counted register written whole (`pxor`, `movq`) or in 4-byte lanes (`movaps`)
+gets its 8-byte trial from the guard in chapter 03
+(`counted_float_entry`). Without a count (any AArch64 call, or a block that does not set
 one), the ancestor checks still decide: a discarded call result or a parameter
 the caller reads again after the call stays out, and so does a call result the
 call really takes, which the instructions cannot tell apart. Only a declared

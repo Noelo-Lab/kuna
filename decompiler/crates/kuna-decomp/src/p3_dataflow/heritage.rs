@@ -1830,7 +1830,10 @@ impl Heritage {
             // parameter trial and append the argument Varnode to the CALL op.  This
             // is what makes a register/stack argument appear as a call argument —
             // the `func(args)` rendering this wave targets.
-            if fc.is_input_active() && tryregister {
+            if fc.is_input_active()
+                && tryregister
+                && !self.guard_counted_float_input(fd, fc, addr, size)
+            {
                 Self::guard_call_input(fd, fc, addr, &trans_addr, size, overlap_level);
             }
 
@@ -1926,6 +1929,102 @@ impl Heritage {
         {
             Self::guard_call_overlapping_input(fd, fc, addr, trans_addr, size);
         }
+    }
+
+    /// (kuna) Register the 8-byte input trial of a floating-point register the
+    /// variadic call's caller counts as filled
+    /// ([`crate::kuna_varargretreg::counted_float_entry`]) when the heritaged
+    /// register range is not that register.  A range that contains it passes
+    /// its low part, as `guard_call_overlapping_input` does.  A range that is
+    /// its first piece passes the PIECE of that range and the ranges of this
+    /// pass that cover the rest of it.  Returns false when neither holds, and
+    /// the range gets the ordinary input guard.
+    fn guard_counted_float_input(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        size: int4,
+    ) -> bool {
+        use kuna_num::opcodes::OpCode;
+        let Some(entry) = crate::kuna_varargretreg::counted_float_entry(fd, fc, addr, size) else {
+            return false;
+        };
+        if fc.get_active_input().which_trial(&entry, 8) >= 0 {
+            return false;
+        }
+        let start = addr.get_offset();
+        let (estart, eend) = (entry.get_offset(), entry.get_offset() + 8);
+        if start <= estart && eend <= start + size as u64 {
+            Self::truncated_input_trial(fd, fc, addr, size, &entry, 8);
+            return true;
+        }
+        if start != estart {
+            return false;
+        }
+        let Some(pos) = (0..self.disjoint.len())
+            .find(|&i| self.disjoint.get(i).addr == *addr && self.disjoint.get(i).size == size)
+        else {
+            return false;
+        };
+        let mut tiles = vec![(addr.clone(), size)];
+        let mut cur = start + size as u64;
+        for i in pos + 1..self.disjoint.len() {
+            if cur >= eend {
+                break;
+            }
+            let r = self.disjoint.get(i);
+            if r.addr.get_space().map(|s| s.get_index()) != addr.get_space().map(|s| s.get_index())
+                || r.addr.get_offset() != cur
+                || !r.new_addresses()
+            {
+                return false;
+            }
+            tiles.push((r.addr.clone(), r.size));
+            cur += r.size as u64;
+        }
+        if cur < eend {
+            return false;
+        }
+        let op = fc.get_op();
+        let call_addr = fd.obank().get(op).expect("guardCountedFloatInput: stale call").get_addr().clone();
+        let big = addr.is_big_endian();
+        let mut parts = Vec::with_capacity(tiles.len());
+        for (taddr, tsize) in tiles {
+            let read = fd.new_varnode(tsize, &taddr, None);
+            fd.vbank_mut().get_mut(read).expect("guardCountedFloatInput: read").set_active_heritage();
+            let keep = tsize.min((eend - taddr.get_offset()) as int4);
+            if keep == tsize {
+                parts.push(read);
+                continue;
+            }
+            let sub = fd.new_op(2, call_addr.clone());
+            fd.op_set_opcode(sub, typeop_skeleton(OpCode::CPUI_SUBPIECE));
+            let _ = fd.op_set_input(sub, read, 0);
+            let c = fd.new_constant(4, if big { (tsize - keep) as u64 } else { 0 });
+            let _ = fd.op_set_input(sub, c, 1);
+            let out = fd.new_unique_out(keep, sub).expect("guardCountedFloatInput: subpiece out");
+            fd.op_insert_before(sub, op);
+            parts.push(out);
+        }
+        if !big {
+            parts.reverse();
+        }
+        let mut acc = parts[0];
+        for &low in &parts[1..] {
+            let width = fd.vbank().get(acc).map(|v| v.get_size()).unwrap_or(0)
+                + fd.vbank().get(low).map(|v| v.get_size()).unwrap_or(0);
+            let piece = fd.new_op(2, call_addr.clone());
+            fd.op_set_opcode(piece, typeop_skeleton(OpCode::CPUI_PIECE));
+            let _ = fd.op_set_input(piece, acc, 0);
+            let _ = fd.op_set_input(piece, low, 1);
+            acc = fd.new_unique_out(width, piece).expect("guardCountedFloatInput: piece out");
+            fd.op_insert_before(piece, op);
+        }
+        fc.get_active_input().register_trial(&entry, 8);
+        let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+        let _ = fd.op_insert_input(op, acc, nin);
+        true
     }
 
     /// Append a truncated \e input Varnode for a call whose parameter storage is
