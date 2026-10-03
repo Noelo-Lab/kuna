@@ -79,8 +79,7 @@ pub fn forwards_declared_value(
     }
     let op = fc.get_op();
     let Some(vn) = data.obank().get(op).and_then(|o| o.get_in(slot)) else { return false };
-    let Some(v) = data.vbank().get(vn) else { return false };
-    if !read_only_at(data, vn, op, slot, 0) {
+    if !read_only_at(data, vn, op, slot, 0) || !declared_value(data, vn) {
         return false;
     }
     let float = fc.proto().model().input().get_entry().iter().any(|e| {
@@ -91,9 +90,13 @@ pub fn forwards_declared_value(
     {
         return false;
     }
-    if format_stops_before(data, fc, addr, size, float) {
-        return false;
-    }
+    !format_stops_before(data, fc, addr, size, float)
+}
+
+/// Is `vn` the calling function's own input where it declares a parameter, or
+/// the output of a call whose declared return it is?
+fn declared_value(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = data.vbank().get(vn) else { return false };
     let (at, width) = (v.get_addr(), v.get_size());
     if v.is_input() {
         let proto = data.get_func_proto();
