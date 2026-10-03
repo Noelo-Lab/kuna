@@ -1976,7 +1976,7 @@ mod tests {
         // slot survives a declared callee that is passed its address
         // and kuna-protoranges-homeslot / a prototype's <localrange> makes the
         // Win64 home area a local, so its address prints by name
-        assert_eq!(count, 397, "corpus file count drifted");
+        assert_eq!(count, 399, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

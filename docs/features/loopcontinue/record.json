@@ -1,0 +1,24 @@
+{
+  "option": "loopcontinue",
+  "default": "on",
+  "binary": "./private/server",
+  "selector": "main",
+  "func_addr": "0x401a47",
+  "ablation_changed": 0,
+  "datatest_assertions": 675,
+  "stage_assertions": 1839,
+  "parity": "OK",
+  "decisions": [
+    "Virtualize secondary dominated back-edges before CollapseStructure greedily folds retry cycles.",
+    "Reject head exits, conditional retained latches, switch bodies, nested loop heads, irreducible edges, and mid-body entries.",
+    "Recover continue only for the exact first leaf of the innermost infinite loop; conditional loops reset the scope."
+  ],
+  "behavior_paths": 6,
+  "speed_off_ms": 68.25,
+  "speed_on_ms": 68.4,
+  "speed_delta_pct": 0.22,
+  "speed_samples": 31,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false
+}

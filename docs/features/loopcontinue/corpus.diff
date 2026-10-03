@@ -1,0 +1,134 @@
+diff tests/stages/ghangr-loweredswitch-mv.xml
+--- off
++++ on
+@@ -238 +238 @@
+-      goto label_2c88;
++      continue;
+@@ -529 +529 @@
+-      goto label_2c88;
++      continue;
+
+diff tests/stages/ghdec-unsigned-byte-vm-selector.xml
+--- off
++++ on
+@@ -705 +705 @@
+-        goto label_1345;
++        continue;
+@@ -726 +726 @@
+-          goto label_1345;
++          continue;
+@@ -740 +740 @@
+-          goto label_1345;
++          continue;
+@@ -758 +758 @@
+-          goto label_1345;
++          continue;
+@@ -772 +772 @@
+-          goto label_1345;
++          continue;
+@@ -787 +787 @@
+-          goto label_1345;
++          continue;
+@@ -1532 +1532 @@
+-        goto label_1345;
++        continue;
+@@ -1553 +1553 @@
+-          goto label_1345;
++          continue;
+@@ -1567 +1567 @@
+-          goto label_1345;
++          continue;
+@@ -1585 +1585 @@
+-          goto label_1345;
++          continue;
+@@ -1599 +1599 @@
+-          goto label_1345;
++          continue;
+@@ -1614 +1614 @@
+-          goto label_1345;
++          continue;
+
+diff tests/stages/kuna-loopcontinue.xml
+--- off
++++ on
+@@ -7,10 +7,8 @@
+-  while( true ) {
+-    while( true ) {
+-      while( true ) {
+-        v1 = accept(a0,0,0);
+-        if (0 <= v1) break;
+-        if (*(int4 *)__errno_location() != 4)
+-          abort(); // no-return
+-      }
+-      v2 = fork();
+-      if (0 <= v2) break;
++  do {
++    v1 = accept(a0,0,0);
++    if (v1 < 0) {
++      if (*(int4 *)__errno_location() == 4) continue;
++      abort(); // no-return
++    }
++    v2 = fork();
++    if (v2 < 0) {
+@@ -18,0 +17 @@
++      continue;
+@@ -20 +19,5 @@
+-    if (!v2) break;
++    if (!v2) {
++      close(a0);
++      session(v1);
++      return 0;
++    }
+@@ -22,4 +25 @@
+-  }
+-  close(a0);
+-  session(v1);
+-  return 0;
++  } while( true );
+@@ -34,10 +34,8 @@
+-  while( true ) {
+-    while( true ) {
+-      while( true ) {
+-        v1 = accept(a0,0,0);
+-        if (0 <= v1) break;
+-        if (*(int4 *)__errno_location() != 4)
+-          abort(); // no-return
+-      }
+-      v2 = fork();
+-      if (0 <= v2) break;
++  do {
++    v1 = accept(a0,0,0);
++    if (v1 < 0) {
++      if (*(int4 *)__errno_location() == 4) continue;
++      abort(); // no-return
++    }
++    v2 = fork();
++    if (v2 < 0) {
+@@ -45,0 +44 @@
++      continue;
+@@ -47 +46,5 @@
+-    if (!v2) break;
++    if (!v2) {
++      close(a0);
++      session(v1);
++      return 0;
++    }
+@@ -49,4 +52 @@
+-  }
+-  close(a0);
+-  session(v1);
+-  return 0;
++  } while( true );
+
+diff tests/stages/switchsharedcase-b2sum.xml
+--- off
++++ on
+@@ -351 +351 @@
+-      goto label_4010c0;
++      continue;
+@@ -360 +360 @@
+-        goto label_4010c0;
++        continue;
+@@ -367 +367 @@
+-        if (!(dat_406020 & 7)) goto label_4010c0;
++        if (!(dat_406020 & 7)) continue;

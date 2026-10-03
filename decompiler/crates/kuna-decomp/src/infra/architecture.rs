@@ -938,6 +938,8 @@ pub struct Architecture {
     /// `loopcondhoist`, default-off opt-in), so `ruleBlockWhileDo` keeps the
     /// loop's head test instead of emitting `while(true) { if (!C) ...; }`.
     pub loop_cond_hoist: bool,
+    /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
+    pub loop_continue: bool,
     /// (kuna) Region structurer cyclic loop-successor refinement: when
     /// `region_structure` is on, refine a multi-exit / multi-latch (or
     /// irreducible mid-entry) loop by virtualizing its *secondary* exits and
@@ -2572,6 +2574,7 @@ impl Architecture {
             stack_store_guard: false,
             region_structure: true,
             guard_arm: false,
+            loop_continue: true,
             loop_cond_hoist: false,
             region_loop_refine: false,
             region_edge_order: false,
@@ -2879,6 +2882,7 @@ impl Architecture {
         self.split_store_keep = true; // (kuna) DIV-153 default-on: Heritage::refineWrite carries the stack_store mark onto its refinement pieces, so an overlapping-range frame store stays a direct write and is not swept by ActionDeadCode (0/675 ablation); `option splitstorekeep off` restores upstream's unmarked pieces
         self.stack_store_guard = true;
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
+        self.loop_continue = true;
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
         self.outline_spec = String::new(); // (kuna) default-OFF opt-in (excise a supplied single-entry region into a synthesized pseudofunction call; destructive, and inert with no region supplied)
@@ -3613,6 +3617,7 @@ impl Architecture {
         ctx.stack_store_guard = self.stack_store_guard;
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
+        ctx.loop_continue = self.loop_continue;
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist
         ctx.region_loop_refine = self.region_loop_refine; // regionlooprefine
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder

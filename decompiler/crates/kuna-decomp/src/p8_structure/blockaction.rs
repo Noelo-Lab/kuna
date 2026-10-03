@@ -3890,6 +3890,9 @@ impl Action for ActionBlockStructure {
             );
         }
         let sroot = data.sblocks_root();
+        if data.get_arch().loop_continue {
+            crate::p8_structure::kuna_loopcontinue::refine_latches(data.sblocks_mut(), sroot);
+        }
         let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
             .with_exitleaf_facts(exitleaf_facts, apply_index)
             .with_ifnoexit_options(guard_arm, loop_cond_hoist)
@@ -3981,6 +3984,9 @@ impl Action for ActionFinalStructure {
         // collapse).  The graph-side recursion is faithful; the op-flag print-prep
         // it enables is the BlockCopy label statement.
         let sroot = data.sblocks_root();
+        if data.get_arch().loop_continue {
+            crate::p8_structure::kuna_loopcontinue::recover_continues(data.sblocks_mut(), sroot);
+        }
         data.sblocks_mut().mark_unstructured(sroot);
         // graph.markLabelBumpUp(false): let loop blocks steal the label of their
         // (first) component so a loop-head label is hoisted to its own line above

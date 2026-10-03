@@ -1133,6 +1133,8 @@ pub struct ArchContext {
     /// `ruleBlockWhileDo` keeps the loop's head test.  Read by
     /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
     pub loop_cond_hoist: bool,
+    /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
+    pub loop_continue: bool,
     /// (kuna) region structurer cyclic loop-successor refinement
     /// (`region_loop_refine`, opt-in default-off).  When set (and
     /// `region_structure` is on), multi-exit / multi-latch / mid-entry loops are
@@ -1717,6 +1719,7 @@ impl ArchContext {
             stack_store_guard: false,
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
+            loop_continue: true,
             loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)

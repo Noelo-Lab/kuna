@@ -451,6 +451,8 @@ pub struct PrintCOptions {
     /// statement they describe instead of full `/* WARNING: ... */` banner
     /// lines (DIV-39, `option warnstyle inline|banner`).
     pub warn_inline: bool,
+    /// Render unconditional C loops with the condition at the top.
+    pub inf_loop_top: bool,
     /// (kuna) An access spanning more than one element of a mapped array Symbol
     /// renders as the width-carrying `name._<off>_<size>_` field instead of a
     /// subscript / bare name (`option arraycoverwidth`).
@@ -506,6 +508,7 @@ impl PrintCOptions {
             array_notation: true, // (kuna) DIV-2 default-on (GH-558)
             truthy_cond: true, // (kuna) DIV-37; no upstream equivalent
             brace_elide: true, // (kuna) DIV-38; no upstream equivalent
+            inf_loop_top: true,
             warn_inline: true, // (kuna) DIV-39; no upstream equivalent
             array_cover_width: true, // (kuna) no upstream equivalent
             empty_str_const: true,   // (kuna) no upstream equivalent
@@ -5091,7 +5094,7 @@ impl PrintC {
     }
 
     /// C++ `PrintC::emitBlockInfLoop` (printc.cc:3246): the infinite loop.
-    /// `do { block0-body } while( true );`.
+    /// Render the unconditional body using the configured C loop spelling.
     fn emit_block_inf_loop(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         match self.lang().forms.inf_loop {
             crate::kuna_lang::InfLoopForm::CDoWhileTrue => {
@@ -5104,29 +5107,36 @@ impl PrintC {
     fn emit_block_inf_loop_c(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         self.context.push_mod();
         self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH);
-        // emitAnyLabelStatement(bl) (printc.cc:3236): hoist the loop-head label
-        // above the `do` (suppressed inline via f_label_bumpup).
+        // Hoist the loop-head label above the loop header.
         self.emit_any_label_statement(fd, blk);
         self.emit.tag_line();
-        self.emit.print(self.lang().kw_do, SyntaxHighlight::KeywordColor);
+        if self.options.inf_loop_top {
+            self.emit_inf_loop_condition();
+        } else {
+            self.emit.print(self.lang().kw_do, SyntaxHighlight::KeywordColor);
+        }
         let id = self.emit.open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_loop));
         let body = fd.sblocks_ref().block(blk).get_block(0);
         let id1 = self.emit.begin_block(0);
         self.emit_block(fd, arch, body);
         self.emit.end_block(id1);
         self.emit.close_brace_indent(self.lang().kw_close_curly, id);
-        self.emit.spaces(1, 0);
+        if !self.options.inf_loop_top {
+            self.emit.spaces(1, 0);
+            self.emit_inf_loop_condition();
+            self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
+        }
+        self.flush_eol_warnings();
+        self.context.pop_mod();
+    }
+
+    fn emit_inf_loop_condition(&mut self) {
         self.emit.tag_op(self.lang().kw_while, SyntaxHighlight::KeywordColor, &MarkupRef::none());
-        let id2 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+        let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
         self.emit.spaces(1, 0);
         self.emit.print(self.lang().kw_true, SyntaxHighlight::ConstColor);
         self.emit.spaces(1, 0);
-        self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id2);
-        self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
-        // (kuna warnstyle, DIV-39) pending body warnings land at the end of
-        // the `} while ( true );` line.
-        self.flush_eol_warnings();
-        self.context.pop_mod();
+        self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id);
     }
 
     /// C++ `PrintC::emitGotoStatement` (printc.cc:2379): a `goto`/`break`/

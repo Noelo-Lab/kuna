@@ -3785,6 +3785,25 @@ tier = "transform"
 symptoms = "loop emitted as while( true ) with the head test as a guarded exit on the first statement|a for/while header condition is left inside the loop body|kuna writes while(true) where ida writes while (cond)|a loop's early-exit return is the loop's first statement instead of its condition"
 
 [[settable]]
+option = "loopcontinue"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "server-main-nested-retry-loops"
+summary = "Preserve secondary back-edges in single-entry natural loops as continues before CollapseStructure folds retry paths into nested loops. Keep the deepest latch structural; virtualize the others. After collapse, a goto to the first leaf of its innermost infinite loop becomes continue. Conditional loops reset this recovery scope. Head-tested loops, switch bodies, nested loop heads, and conditional retained latches are excluded."
+use_when = "A single source loop with early continues decompiles as nested infinite retry loops, as in a server accept/fork loop. Flip off to restore CollapseStructure's original loop-schema precedence."
+example = "option loopcontinue on"
+source_decompiler = "kuna"
+inspiration = "Natural-loop secondary-latch refinement, applied before the CollapseStructure fallback's greedy loop folds"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "one source loop emitted as multiple nested infinite loops|early continues emitted as retry loops|accept and fork retries obscure a server's main loop"
+
+[[settable]]
 option = "regionlooprefine"
 values = "on|off"
 default = "on"
@@ -6616,3 +6635,32 @@ inspiration = "pwn.college module 5 game servers: mov eax,edi; rol ax,8; ret emi
 change_kind = "presentation-default"
 tier = "core"
 symptoms = "CONCAT22 in a short byte-swap helper|CONCAT after a partial register write|an unchanged upper word joined to a replaced lower word"
+
+[[subphase]]
+name = "infinite-loop-style"
+phase = "P9"
+decision = "spell unconditional C loops with a top or bottom constant-true condition"
+assertion = "infloopstyle while|do"
+strength = "HARD"
+rewind = "P9"
+latent = false
+exposure = "option infloopstyle -> PrintC::emit_block_inf_loop_c"
+
+[[settable]]
+option = "infloopstyle"
+values = "while|do"
+default = "while"
+destructive = false
+phase = "P9"
+subphase = "infinite-loop-style"
+strength = "HARD"
+rewind = "P9"
+issue = "server-infinite-loop-style"
+summary = "Spell unconditional C loops as while (true) at the top or do-while (true) at the bottom."
+use_when = "While by default: unconditional loops print while (true) at the top. Set do to recover the previous spelling. Conditional do-while loops and Rust loop syntax keep their existing form."
+example = "option infloopstyle do"
+source_decompiler = "kuna"
+inspiration = "User preference for the recovered private/server main loop"
+change_kind = "presentation-default"
+tier = "core"
+symptoms = "unconditional loop prints do-while (true) at the bottom|prefer while (true) at the top|need the previous infinite-loop spelling for comparison"

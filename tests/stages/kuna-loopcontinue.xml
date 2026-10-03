@@ -1,0 +1,38 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- Reduced accept/fork server loop: EINTR and failed fork continue to the
+     same head; the child closes the listener and returns. One source loop. -->
+<bytechunk space="ram" offset="0x1000">
+5341544883ec084189fceb0ae859000000833804752631d231f64489e7e84900000089c385c078e4e83f00000085c07810741e89dfe833000000ebdae82d00000031ffe82700000089dfe81e000000ebc54489e7e81400000089dfe81000000031c04883c408415c5bc3c3c3c3c3c3c3c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="retry_server"/>
+<symbol space="ram" offset="0x106a" name="__errno_location"/>
+<symbol space="ram" offset="0x106b" name="accept"/>
+<symbol space="ram" offset="0x106c" name="fork"/>
+<symbol space="ram" offset="0x106d" name="close"/>
+<symbol space="ram" offset="0x106e" name="abort"/>
+<symbol space="ram" offset="0x106f" name="warn"/>
+<symbol space="ram" offset="0x1070" name="session"/>
+</binaryimage>
+<script>
+<com>option loopcontinue off</com>
+<com>lo fu retry_server</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option loopcontinue on</com>
+<com>lo fu retry_server</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="LOOPCONTINUE #1: OFF three loops plus ON one loop" min="4" max="4">while\( true \) \{</stringmatch>
+<stringmatch name="LOOPCONTINUE #2: one outer infinite loop per pass" min="2" max="2">^  while\( true \) \{</stringmatch>
+<stringmatch name="LOOPCONTINUE #3: ON preserves both early continues" min="2" max="2">continue;</stringmatch>
+<stringmatch name="LOOPCONTINUE #4: accept runs once per iteration in both passes" min="2" max="2">= accept\(</stringmatch>
+<stringmatch name="LOOPCONTINUE #5: fork runs once in both passes" min="2" max="2">= fork\(\);</stringmatch>
+<stringmatch name="LOOPCONTINUE #6: fatal accept and fork-warning paths survive" min="2" max="2">abort\(\);</stringmatch>
+<stringmatch name="LOOPCONTINUE #7: fork warning survives" min="2" max="2">warn\(0\);</stringmatch>
+<stringmatch name="LOOPCONTINUE #8: all close calls survive (three sites per pass)" min="6" max="6">close\(</stringmatch>
+<stringmatch name="LOOPCONTINUE #9: child session survives" min="2" max="2">session\(v1\);</stringmatch>
+<stringmatch name="LOOPCONTINUE #10: no goto or synthetic label remains" min="0" max="0">goto |label_[0-9a-f]+:</stringmatch>
+</decompilertest>

@@ -258,7 +258,7 @@ pub enum SwitchForm {
 /// How an unconditional loop is laid out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InfLoopForm {
-    /// `do { ... } while( true );` -- C.
+    /// C loops; `infloopstyle` selects a top or bottom true condition.
     CDoWhileTrue,
     /// `loop { ... }` -- Rust.
     RustLoop,
