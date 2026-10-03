@@ -1206,7 +1206,21 @@ the case targets.
    Where the lost destination was the default block, the old table could
    still print correctly, but only when the guard's join followed the switch;
    GCC's x86-64 shape returns from the guard and lets the switch fall off the
-   end of the function instead.
+   end of the function instead. The move stops, keeping the first choice and
+   its stranded rows, where a narrow value reaches its sign bit. A 1- or
+   2-byte variable can be printed as a signed `char` or `short`: a label
+   like `0xf0` then never matches it, and arithmetic on it, such as
+   `map[mode] + '\x88'`, is done after sign extension instead of in 8 bits.
+   So no candidate is taken when a 1- or 2-byte common varnode between it and
+   the first choice holds, for some value the code dispatches, a value with
+   its sign bit set, or one the path did not compute (`jumptable.rs
+   (JumpBasicModel::narrow_sign_values)`, from the first choice's emulated
+   rows); nor when one of the candidate's labels does, on the candidate or a
+   variable it extends or offsets by a constant, as the unnormalized switch
+   variable below may be chosen (`jumptable.rs
+   (JumpBasicModel::labels_reach_sign_bit)`, labels from `jumptable.rs
+   (JumpBasicModel::backup_value)`). A byte map holding 0xf0 that the switch
+   dispatches therefore keeps its table over `mode`.
 4. **Accept or rescue.** If the chosen range exceeds `max_jumptable_size`
    (1024, `architecture.rs (reset_defaults_internal)`; settable per run as the
    catalogued `option jumptablemax <n>`: upstream's `OptionJumpTableMax`, parsed

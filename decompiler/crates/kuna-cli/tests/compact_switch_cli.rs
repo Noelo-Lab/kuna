@@ -618,9 +618,12 @@ fn address_labels_hold_at_a_case_starting_with_a_nop() {
     source_round_trip(&fixture, &c);
 }
 
-/// The `switch_shared_epilogue_mipsel` switch, assembled with a `nop` at the
-/// start of the case at the table value 0x4001a8, which modes 0 and 5 reach.
-/// A case labelled by address must be labelled by that table value.
+/// The `switch_shared_epilogue_mipsel` code with map `{7, 0, 5, 19, 10, 1,
+/// 0}`, assembled with a `nop` at the start of the case at the table value
+/// 0x4001a8, which modes 0 and 5 reach.  Mode 3's map value cuts the table,
+/// and modes 5 and 6 reach only cases earlier modes reach, so the switch stays
+/// over `mode` and its cases are labelled by address: the label must be
+/// 0x4001a8, not the shared epilogue's 0x40017c.
 #[test]
 fn address_labels_hold_at_a_mips_case_starting_with_a_nop() {
     let fixture = SourceFixture {
@@ -631,10 +634,8 @@ fn address_labels_hold_at_a_mips_case_starting_with_a_nop() {
         modes: 40,
     };
     let c = source_decompile(&fixture);
-    assert!(
-        !c.contains("labelled by address") || c.contains("case 0x4001a8:"),
-        "lost the table value 0x4001a8: {c}"
-    );
+    assert!(c.contains("labelled by address"), "kept index labels that miss modes 5 and 6: {c}");
+    assert!(c.contains("case 0x4001a8:"), "lost the table value 0x4001a8: {c}");
     assert!(!c.contains("case 0x40017c:"), "labelled a case by its block start: {c}");
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     source_round_trip(&fixture, &c);
@@ -696,6 +697,44 @@ fn map_value_reading_outside_the_image_keeps_the_switch() {
     let c = source_decompile(&fixture);
     assert!(c.contains("switch("), "lost the switch: {c}");
     assert!(!c.contains("jump-as-call"), "printed the dispatch as a call: {c}");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixture, &c);
+}
+
+/// `pick` reads `map[mode]` from `{240, 1, 241, 241, 241}`, and a second
+/// guard sends mode 1's value away from the table.  A switch over the byte
+/// map value would print labels such as 0xf0, which a signed `char` never
+/// matches, so the switch stays over `mode`.
+#[test]
+fn map_value_at_the_sign_bit_keeps_the_index_switch() {
+    let fixture = SourceFixture {
+        name: "switch_maprow_signbit_x86_64",
+        pick: "0x401000",
+        base: 0x400000,
+        map: (0x402038, 5),
+        modes: 40,
+    };
+    let c = source_decompile(&fixture);
+    assert!(c.contains("switch(a0)"), "moved the switch off the index: {c}");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixture, &c);
+}
+
+/// GCC's shape for a byte map `{208, 204, 203, 213, 217, 206}`: mode 4's
+/// value is sent away and cuts the table, which still loses mode 5's row.
+/// The switch stays over `mode`, so modes 0 to 4 keep their cases rather than
+/// going through labels a signed `char` never matches.
+#[test]
+fn reloaded_map_value_at_the_sign_bit_keeps_the_index_switch() {
+    let fixture = SourceFixture {
+        name: "switch_maprow_signbit_gcc_x86_64",
+        pick: "0x401000",
+        base: 0x400000,
+        map: (0x402070, 6),
+        modes: 5,
+    };
+    let c = source_decompile(&fixture);
+    assert!(c.contains("switch(a0)"), "moved the switch off the index: {c}");
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     source_round_trip(&fixture, &c);
 }

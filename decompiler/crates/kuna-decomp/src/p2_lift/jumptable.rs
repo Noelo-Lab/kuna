@@ -3971,14 +3971,7 @@ impl JumpBasicModel {
         let mut more = jr.initialize_for_reading();
         while more {
             let (raw, mut emul) = self.emulate_value(fd, &*jr)?;
-            let dispatched = guards.iter().all(|&index| {
-                let guard = &self.selectguards[index];
-                let vn = guard.get_vn();
-                emul.evaluate_held(vn, GUARD_EVALUATION_OPS).is_none_or(|val| {
-                    let size = fd.vbank().get(vn).map_or(8, |v| v.get_size());
-                    guard.get_range().contains_val(val & calc_mask(size))
-                })
-            });
+            let dispatched = self.passes_guards(fd, &mut emul, guards);
             match raw {
                 Ok(raw) => rows.push((Some(Self::destination(&spc, mask, raw)), dispatched)),
                 Err(_) if !dispatched => rows.push((None, false)),
@@ -3987,6 +3980,55 @@ impl JumpBasicModel {
             more = jr.next().ok()?;
         }
         Some(rows)
+    }
+
+    /// Whether the values `emul` computed pass every one of `guards` (true for
+    /// a guard whose varnode it cannot evaluate).
+    fn passes_guards(&self, fd: &Funcdata, emul: &mut EmulateFunction, guards: &[usize]) -> bool {
+        guards.iter().all(|&index| {
+            let guard = &self.selectguards[index];
+            let vn = guard.get_vn();
+            emul.evaluate_held(vn, GUARD_EVALUATION_OPS).is_none_or(|val| {
+                let size = fd.vbank().get(vn).map_or(8, |v| v.get_size());
+                guard.get_range().contains_val(val & calc_mask(size))
+            })
+        })
+    }
+
+    /// For each common varnode in front of the normalized variable, whether it
+    /// is 1 or 2 bytes wide and holds, for some value the code dispatches past
+    /// `guards`, a value with its sign bit set or one the path did not compute.
+    /// A switch moved onto such a varnode, or onto one computed from it, may
+    /// be printed through a signed `char` or `short` whose value differs.
+    fn narrow_sign_values(&self, fd: &Funcdata, guards: &[usize]) -> Vec<bool> {
+        let sizes: Vec<int4> = (0..self.varnode_index)
+            .map(|i| fd.vbank().get(self.path_meld.get_varnode(i)).map_or(0, |v| v.get_size()))
+            .collect();
+        let mut signed = vec![false; sizes.len()];
+        if !sizes.iter().any(|&size| size == 1 || size == 2) {
+            return signed;
+        }
+        let mut jr = self.jrange().clone_box();
+        let mut more = jr.initialize_for_reading();
+        while more {
+            let emul = self.emulate_value(fd, &*jr).map(|(_, emul)| emul);
+            let dispatched = emul.map(|mut emul| (self.passes_guards(fd, &mut emul, guards), emul));
+            for (i, &size) in sizes.iter().enumerate() {
+                if size != 1 && size != 2 {
+                    continue;
+                }
+                let vn = self.path_meld.get_varnode(i as int4);
+                signed[i] |= match &dispatched {
+                    Some((false, _)) => false,
+                    Some((true, emul)) => emul
+                        .emulated_value(vn)
+                        .is_none_or(|value| (value >> (8 * size - 1)) & 1 == 1),
+                    None => true,
+                };
+            }
+            more = jr.next().unwrap_or(false);
+        }
+        signed
     }
 
     /// Whether the table built from `rows` ([`Self::row_dispatch`]) misses a
@@ -4051,7 +4093,9 @@ impl JumpBasicModel {
     /// enumerates map entries that a later guard sends away from the switch.
     /// Keeps the first choice unless a bounded variable closer to the
     /// BRANCHIND emulates every row, strands none, and can label the
-    /// flow-time rows it is asked to match.
+    /// flow-time rows it is asked to match.  It stops at a variable that is,
+    /// or is computed from, a narrow value at its sign bit
+    /// ([`Self::narrow_sign_values`], [`Self::labels_reach_sign_bit`]).
     fn skip_stranding_variable(
         &mut self,
         fd: &Funcdata,
@@ -4072,6 +4116,7 @@ impl JumpBasicModel {
         }
         let index = self.varnode_index;
         let jrange = self.jrange().clone_box();
+        let signed = self.narrow_sign_values(fd, &guards);
         let bounded = |model: &Self| (1..=maxtablesize as uintb).contains(&model.jrange().get_size());
         while self.varnode_index > 0 {
             let limit = self.varnode_index;
@@ -4079,7 +4124,10 @@ impl JumpBasicModel {
             if !bounded(self) {
                 self.bound_by_guard(fd, limit, &guards);
             }
-            if !bounded(self) {
+            if !bounded(self)
+                || signed[self.varnode_index as usize..].contains(&true)
+                || self.labels_reach_sign_bit(fd)
+            {
                 break;
             }
             let guards = self.unbounded_guards(fd);
@@ -4095,6 +4143,63 @@ impl JumpBasicModel {
         }
         self.varnode_index = index;
         self.jrange = Some(jrange);
+    }
+
+    /// Whether a switch over the normalized variable may label a case with a
+    /// value at the sign bit of a 1- or 2-byte variable: the normalized
+    /// variable, or one it extends or offsets by a constant on the path, as
+    /// [`Self::find_unnormalized_basic`] may pick it.  Such a variable may be
+    /// printed signed, and its unsigned label would then never match.
+    fn labels_reach_sign_bit(&self, fd: &Funcdata) -> bool {
+        let normal = self.path_meld.get_varnode(self.varnode_index);
+        let mut walk = vec![normal];
+        for i in self.varnode_index + 1..self.path_meld.num_common_varnode() {
+            let next = self.path_meld.get_varnode(i);
+            let Some(op) = walk
+                .last()
+                .and_then(|&vn| fd.vbank().get(vn))
+                .and_then(|v| v.get_def())
+                .and_then(|op| fd.obank().get(op))
+            else {
+                break;
+            };
+            let Some(slot) = (0..op.num_input()).find(|&slot| op.get_in(slot) == Some(next)) else {
+                break;
+            };
+            let extends_or_offsets = match op.code() {
+                OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => true,
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => op
+                    .get_in(1 - slot)
+                    .and_then(|other| fd.vbank().get(other))
+                    .is_some_and(|other| other.is_constant()),
+                _ => false,
+            };
+            if !extends_or_offsets {
+                break;
+            }
+            walk.push(next);
+        }
+        let narrow: Vec<(VarnodeId, int4)> = walk
+            .into_iter()
+            .filter_map(|vn| fd.vbank().get(vn).map(|v| (vn, v.get_size())))
+            .filter(|&(_, size)| size == 1 || size == 2)
+            .collect();
+        if narrow.is_empty() {
+            return false;
+        }
+        let mut jr = self.jrange().clone_box();
+        let mut more = jr.initialize_for_reading();
+        while more {
+            let value = jr.get_value();
+            if narrow.iter().any(|&(vn, size)| {
+                Self::backup_value(fd, normal, vn, value)
+                    .is_ok_and(|label| (label >> (8 * size - 1)) & 1 == 1)
+            }) {
+                return true;
+            }
+            more = jr.next().unwrap_or(false);
+        }
+        false
     }
 
     /// Whether this model's own values rebuild the flow-time table row for row.
@@ -4297,9 +4402,21 @@ impl JumpBasicModel {
         let invn = self
             .switchvn
             .ok_or_else(|| KunaError::lowlevel("backup2Switch: no switchvn"))?;
-        let mut curvn = self
+        let normalvn = self
             .normalvn
             .ok_or_else(|| KunaError::lowlevel("backup2Switch: no normalvn"))?;
+        Self::backup_value(fd, normalvn, invn, output_in)
+    }
+
+    /// The value `invn` holds when `normalvn`, which a chain of normalization
+    /// ops computes from it, holds `output_in` ([`Self::backup2_switch`]).
+    fn backup_value(
+        fd: &Funcdata,
+        normalvn: VarnodeId,
+        invn: VarnodeId,
+        output_in: uintb,
+    ) -> KunaResult<uintb> {
+        let mut curvn = normalvn;
         let mut output = output_in;
         while curvn != invn {
             let op = fd
