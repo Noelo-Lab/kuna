@@ -1,0 +1,4 @@
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x401487" readonly="true">89f866c1c008c3</bytechunk>
+<symbol space="ram" offset="0x401487" name="swap_port"/>
+</binaryimage>

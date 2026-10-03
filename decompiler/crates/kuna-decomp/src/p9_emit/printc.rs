@@ -5631,6 +5631,7 @@ impl PrintC {
             // SUBPIECE (printc.cc:863 opSubpiece): a field-extraction special-print
             // (`symbol.field`) or the cast/functional dispatch.
             OpCode::CPUI_SUBPIECE => self.op_subpiece_ir(fd, arch, op),
+            OpCode::CPUI_PIECE if self.op_partial_concat_ir(fd, arch, op) => {},
             // PTRADD (printc.cc:900 opPtradd) / PTRSUB (printc.cc:953 opPtrsub).
             OpCode::CPUI_PTRADD => self.op_ptradd_ir(fd, arch, op),
             OpCode::CPUI_PTRSUB => self.op_ptrsub_ir(fd, arch, op),
@@ -5900,6 +5901,31 @@ impl PrintC {
             }
             self.context.pop_mod();
         }
+    }
+
+    fn op_partial_concat_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
+        use crate::dtype::TypeFactory;
+        if !arch.partial_concat || self.out_lang != crate::kuna_lang::OutLang::C {
+            return false;
+        }
+        let Some(plan) = crate::p9_emit::kuna_partialconcat::preserved_prefix(fd, op) else {
+            return false;
+        };
+        let types = arch.types_rc();
+        let Ok(ty) = types.get_base(plan.size, crate::dtype::type_metatype::TYPE_UINT) else {
+            return false;
+        };
+        self.push_op(&tokens::BITWISE_OR, Some(op_key(op)));
+        for (vn, mask) in [(plan.source, plan.high_mask), (plan.low, plan.low_mask)] {
+            self.push_op(&tokens::BITWISE_AND, Some(op_key(op)));
+            self.push_cast_open(&ty, op);
+            self.push_vn_ir(fd, arch, vn, op);
+            self.push_cast_close(&ty);
+            self.push_atom(&Atom::syntax(
+                format!("0x{mask:x}"), TagType::Syntax, crate::printlanguage::SyntaxHighlight::const_color,
+            ));
+        }
+        true
     }
 
     /// C++ `PrintC::opFunc` (printc.cc:444) — a functional `name(arg0,arg1,...)`
