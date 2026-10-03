@@ -666,7 +666,13 @@ Four front-ends drive one engine assembly:
   PE import slot prints as the import.  A function answer without a declared
   prototype is still typed as code (`FunctionSymbol::buildType`), which is what
   lets `ActionConstantPtr` bind a constant pointer to it and print the
-  function's name.  A function answer's RAW name and its `label` stay
+  function's name.  The printer's read-only test for a string literal
+  (`PrintC::pushPtrCharConstant`'s `isReadOnly` on the global scope) goes
+  through the remote scope as well
+  (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
+  (Architecture::is_global_read_only)`): the local symbol table is empty in
+  ghidra mode, so asking it answered "not read-only" for every string Ghidra
+  defines, and each printed as its `s_…`/`u_…` label.  A function answer's RAW name and its `label` stay
   SPLIT (the upstream `Funcdata` name/displayName pair): the raw name is the
   Funcdata identity `HighFunction.decode`'s name echo compares against, the
   label only ever prints (`Funcdata::set_display_name`).  The host's

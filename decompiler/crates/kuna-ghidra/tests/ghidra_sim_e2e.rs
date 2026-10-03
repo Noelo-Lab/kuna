@@ -1287,6 +1287,32 @@ fn ghidra_sim_pe_import_calls_and_function_pointers_print_names() {
     }
 }
 
+/// Ghidra defines a string it finds as a read-only `char[N]` or `wchar[N]`
+/// under a label (`s_NtQueryInformationProcess_140002120`); the call prints
+/// the literal, as the stock decompiler prints it, not the label.
+#[test]
+fn ghidra_sim_pe_string_data_prints_as_literals() {
+    let binary = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/widestrings_x86_64.exe");
+    let run = run_session_with(&binary, &["sub_140001000"], |oracle| {
+        oracle.cspec = "x86-64-win.cspec".to_string();
+        oracle
+            .string_symbols
+            .insert(0x140002100, ("u_ntdll_dll_140002100".to_string(), 2, 20));
+        oracle.string_symbols.insert(
+            0x140002120,
+            ("s_NtQueryInformationProcess_140002120".to_string(), 1, 26),
+        );
+    });
+    let c = &run.docs[0].c_text;
+    for literal in ["LoadLibraryW(L\"ntdll.dll\")", "\"NtQueryInformationProcess\")"] {
+        assert!(c.contains(literal), "{literal} is not printed:\n{c}");
+    }
+    for label in ["u_ntdll_dll_", "s_NtQueryInformationProcess_"] {
+        assert!(!c.contains(label), "{label} is printed instead of the literal:\n{c}");
+    }
+}
+
 // ===========================================================================
 // sort + grep — the heavier breadth fixtures
 // ===========================================================================

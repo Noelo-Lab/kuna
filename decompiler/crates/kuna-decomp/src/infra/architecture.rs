@@ -3241,6 +3241,22 @@ impl Architecture {
         self.types.set_remote_type_fetch(type_fetch);
     }
 
+    /// C++ `glb->symboltab->getGlobalScope()->isReadOnly(addr,size,Address())`.
+    /// In Ghidra mode the global scope is the host's (`ScopeGhidra`), so the
+    /// question goes through the lazy remote scope; the local symbol table
+    /// holds nothing there.
+    pub fn is_global_read_only(&self, addr: &Address, size: int4) -> bool {
+        let usepoint = Address::new_invalid();
+        if let Some(remote) = &self.remote_scope {
+            let props = remote.query_snapshot(addr).query_properties(addr, size, &usepoint);
+            return (props & crate::varnode::varnode_flags::readonly) != 0;
+        }
+        match self.symboltab.get_global_scope() {
+            Some(global) => self.symboltab.is_read_only(global, addr, size, &usepoint),
+            None => false,
+        }
+    }
+
     /// (kuna, Phase 3) The printer's active comment filter — the union of the
     /// header and per-instruction comment-type masks (C++
     /// `CommentDatabaseGhidra::fillCache`'s `ghidra->print->getHeaderComment()
