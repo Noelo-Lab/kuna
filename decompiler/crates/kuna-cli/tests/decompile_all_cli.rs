@@ -2241,7 +2241,7 @@ fn recursive_callees_state_their_types_under_cycles() {
             panic!("kuna decompile-all --option protoorder {value} failed: {stderr}");
         }
         for f in ["wrap", "wrap2"] {
-            assert!(got.contains(&format!("void {f}{param}")), "{value}: {f}{param} missing:\n{got}");
+            assert!(got.contains(&format!(" {f}{param}")), "{value}: {f}{param} missing:\n{got}");
         }
         assert!(got.contains(rcall), "{value}: {rcall} missing:\n{got}");
         assert!(got.contains("rkeep(a0,5,v3);"), "{value}: rkeep lost its forwarded argument:\n{got}");

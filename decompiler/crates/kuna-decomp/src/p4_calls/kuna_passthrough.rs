@@ -622,11 +622,11 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
 fn touched_after(data: &Funcdata, call: OpId, ret: OpId, pieces: &[(Address, int4)]) -> bool {
     let hits = |v: Option<VarnodeId>| {
         v.and_then(|v| data.vbank().get(v)).is_some_and(|v| {
-            let (vsp, voff, vend) = (v.get_space().get_index(), v.get_offset(), v.get_offset() + v.get_size() as u64);
+            let (voff, vend) = (v.get_offset(), v.get_offset().wrapping_add(v.get_size().max(0) as u64));
             pieces.iter().any(|(a, s)| {
-                a.get_space().is_some_and(|sp| sp.get_index() == vsp)
+                a.get_space().is_some_and(|sp| sp.get_index() == v.get_space().get_index())
                     && a.get_offset() < vend
-                    && voff < a.get_offset() + *s as u64
+                    && voff < a.get_offset().wrapping_add((*s).max(0) as u64)
             })
         })
     };
