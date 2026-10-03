@@ -2666,6 +2666,9 @@ impl PrintC {
 
         self.cast_implied.record_return(format!("{ret_type}{ret_back}"));
         let idp = self.emit.begin_func_proto();
+        if self.caller_stack_function(fd, arch) {
+            self.emit.print("__attribute__((noinline)) ", SyntaxHighlight::KeywordColor);
+        }
         let idret = self.emit.begin_return_type(markup);
         self.emit.tag_type(&ret_type, SyntaxHighlight::TypeColor, markup);
         self.emit.end_return_type(idret);
@@ -8432,8 +8435,21 @@ impl PrintC {
         ptr_size: int4,
         valueon: bool,
     ) {
-        let name = spacebase_unnamed_address(arch, fd, op, sb_type, in1const, ptr_size)
-            .and_then(|loc| kuna_unnamed_location_name(arch, &loc, ptr_size));
+        let loc = spacebase_unnamed_address(arch, fd, op, sb_type, in1const, ptr_size);
+        let constant_offset = fd.obank().get(op).and_then(|o| o.get_in(1))
+            .and_then(|v| fd.vbank().get(v)).is_some_and(|v| v.is_constant());
+        if !valueon && constant_offset && self.out_lang() == crate::kuna_lang::OutLang::C {
+            if let Some(address) = loc.as_ref().and_then(|loc| crate::kuna_callerstack::address(arch, fd, loc, ptr_size)) {
+                self.push_atom(&Atom::with_op(
+                    address,
+                    TagType::VarToken,
+                    crate::printlanguage::SyntaxHighlight::special_color,
+                    op_key(op),
+                ));
+                return;
+            }
+        }
+        let name = loc.and_then(|loc| kuna_unnamed_location_name(arch, &loc, ptr_size));
         let name = match name {
             Some(n) => n,
             None => {
@@ -8452,6 +8468,56 @@ impl PrintC {
             crate::printlanguage::SyntaxHighlight::special_color,
             op_key(op),
         ));
+    }
+
+    /// CFA references must retain their own call frame when the C is rebuilt.
+    fn caller_stack_function(&self, fd: &Funcdata, arch: &Architecture) -> bool {
+        if arch.archid != "x86:LE:64:default:gcc" {
+            return false;
+        }
+        fd.obank().iter_alive().any(|op| {
+            let Some(o) = fd.obank().get(op).filter(|o| o.code() == OpCode::CPUI_PTRSUB) else {
+                return false;
+            };
+            let Some(in0) = o.get_in(0) else {
+                return false;
+            };
+            let Some(base) = fd.vbank().get(in0) else {
+                return false;
+            };
+            let Some(offset) = o.get_in(1).and_then(|v| fd.vbank().get(v)).filter(|v| v.is_constant()) else {
+                return false;
+            };
+            if offset.get_high().and_then(|h| self.emitted_high_symbol(fd, h)).is_some() {
+                return false;
+            }
+            let Some(output) = o.get_out().and_then(|v| fd.vbank().get(v)) else {
+                return false;
+            };
+            if output.is_implied() && output.descend_iter().all(|useop| {
+                fd.obank().get(useop).is_some_and(|u| {
+                    matches!(u.code(), OpCode::CPUI_LOAD | OpCode::CPUI_STORE)
+                        && u.get_in(1) == o.get_out()
+                })
+            }) {
+                return false;
+            }
+            let Some(ptype) = ptrsub_pointer_type(fd, in0) else {
+                return false;
+            };
+            let ct = if ptype.is_formal_pointer_rel()
+                && ptype.evaluate_thru_parent(offset.get_offset()) == Some(true)
+            {
+                ptype.get_rel_parent()
+            } else {
+                ptype.get_ptr_to()
+            };
+            ct
+                .as_ref()
+                .and_then(|ct| spacebase_unnamed_address(arch, fd, op, ct, offset.get_offset(), base.get_size()))
+                .and_then(|loc| crate::kuna_callerstack::address(arch, fd, &loc, base.get_size()))
+                .is_some()
+        })
     }
 
     /// (kuna `globalref`) `&dat_<addr>`: the address of the global a constant
@@ -8491,14 +8557,9 @@ impl PrintC {
             .map(|v| v.get_offset())
             .unwrap_or(0);
         // ptype = in0->getHighTypeReadFacing(op)  (== get_type for the non-union corpus).
-        let ptype = match fd.vbank().get(in0).map(|v| v.get_type().clone()) {
+        let ptype = match ptrsub_pointer_type(fd, in0) {
             Some(t) => t,
             None => return,
-        };
-        let ptype = if ptrsub_resolves(&ptype) {
-            ptype
-        } else {
-            high_pointer_type(fd, in0).filter(|t| ptrsub_resolves(t)).unwrap_or(ptype)
         };
         if ptype.get_metatype() != crate::dtype::type_metatype::TYPE_PTR {
             // C++ throws; fall to the functional render so output stays parseable.
@@ -9604,6 +9665,16 @@ fn sblocks_basic_block_index(fd: &Funcdata, bb: BlockId) -> int4 {
     } else {
         fd.sblocks_ref().block(bb).get_index()
     }
+}
+
+/// Resolve the pointer type shared by address emission and frame discovery.
+fn ptrsub_pointer_type(fd: &Funcdata, vn: VarnodeId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+    let ptype = fd.vbank().get(vn)?.get_type().clone();
+    Some(if ptrsub_resolves(&ptype) {
+        ptype
+    } else {
+        high_pointer_type(fd, vn).filter(|t| ptrsub_resolves(t)).unwrap_or(ptype)
+    })
 }
 
 /// Can `opPtrsub` name a member through a pointer of this type?
