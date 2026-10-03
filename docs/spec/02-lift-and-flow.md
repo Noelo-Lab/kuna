@@ -898,6 +898,28 @@ alone, and a user-op a compiler spec has specialized with its own
 `<callotherfixup>` carries an injection id and is dropped at seam-resolution
 time, so a spec-declared model always wins.
 
+A successful rewrite also marks the op with `kuna_x64syscall` in
+`substrate/op.rs (pcodeop_addlflags)`. The mark survives dead-code removal of
+an unused RAX output; a late memory fence must still recognize a system call
+whose result the function ignores. `kuna_x64syscall.rs (guard_memory)` adds
+unknown effects on writable default-data and stack ranges during chapter 03's
+heritage, preserving a global store that the kernel reads before the function
+overwrites it. Read-only ranges, register storage and unique temporaries are
+excluded. Only marked, recognized, uninjected calls under `on` or `abi` act;
+the memory model additionally requires the exact GCC AMD64 target, the live
+ordinary `__stdcall` SysV model with eight-byte extra-pop, and its real negative,
+byte-addressed eight-byte stack based on `RSP`. `architecture.rs (build_arch_handle)`
+passes the exact-target fact through `ArchContext`, and
+`kuna_x64syscall.rs (memory_abi_supported)` checks the selected function and
+evaluation models after prototype setup. Windows targets and MSABI evaluation
+or function models retain the existing register-only syscall rendering: the
+emitter cannot yet express their unnamed incoming-stack addresses. The mark
+alone therefore never admits a memory effect or an ordering fence. `off`
+retains its model, and image/preset decisions and ABI argument recovery remain
+as described below. Chapter 06 uses the same admitted set to keep saved loads
+before the instruction. For a pipe read replacing 3 with 100,
+`v = *p; syscall; return v * 5 + *p` returns 115 rather than 600.
+
 Which argument registers are read is the one judgement in the pass, and with a
 runtime number nothing can settle it, so the option carries both answers. Under
 `on` an argument register is taken only where a bounded backward walk of the
@@ -915,9 +937,16 @@ read and written under both: the number is in it by definition, and the output i
 the half that retires the false return. Inert on every language but x86-64 —
 `RAX` and all six argument registers must resolve at eight bytes and the default
 code space must be eight bytes wide — and on any function with no `SYSCALL`.
-Exercised by `tests/stages/kuna-x64syscall.xml`, whose three functions are the
-witness, a no-`SYSCALL` control and a split-block wrapper that separates `on`
-from `abi`.
+Exercised by `tests/stages/kuna-x64syscall.xml`, whose functions include the
+register witness, a no-`SYSCALL` control, a split-block wrapper that separates
+`on` from `abi`, and a saved pointer value across a buffer-writing system call.
+`decompiler/crates/kuna-cli/tests/x64_syscall_memory.rs` compares native code
+with emitted C using actual Linux pipes, including kernel-observed stores and
+returned byte counts followed by a buffer read. Chapter 06 owns the shared
+call-result ordering checks for recognized system calls. Its Windows/MSABI
+controls compare prior output across default, aggressive, `on`, `abi` and `off`
+and compile the enabled output with GCC and Clang; an ordinary SysV metadata
+store remains preserved.
 
 **(kuna) The system call of ARM, AArch64, RISC-V, MIPS and PowerPC —
 `option syscallregs`, default `auto`,

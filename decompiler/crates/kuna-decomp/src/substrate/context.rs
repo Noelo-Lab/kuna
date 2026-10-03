@@ -1190,6 +1190,8 @@ pub struct ArchContext {
     /// user-op carries.  Read by
     /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
     pub x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode,
+    /// Exact GCC AMD64 target supporting the ordinary SysV stack model.
+    pub x64_syscall_memory_target: bool,
     /// (kuna) The user-op indices the `SYSCALL` constructor emits, resolved once
     /// per program because the boundary `ArchContext` carries no userop table.
     /// A user-op a compiler spec specialized with its own `<callotherfixup>` is
@@ -1735,6 +1737,7 @@ impl ArchContext {
             linux_syscall: false,        // linuxsyscall (opt-in default-off)
             msvc_str_append: false,      // msvcstrappend (opt-in default-off)
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (opt-in default-off)
+            x64_syscall_memory_target: false,
             x64_syscall_userops: Vec::new(),
             syscall_regs: false,
             syscall_regs_family: None,

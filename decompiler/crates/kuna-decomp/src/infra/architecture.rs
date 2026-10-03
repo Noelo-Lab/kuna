@@ -3636,6 +3636,7 @@ impl Architecture {
         ctx.linux_syscall = self.linux_syscall; // linuxsyscall
         ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
         ctx.x64_syscall = self.x64_syscall; // (kuna) x64syscall
+        ctx.x64_syscall_memory_target = self.archid == "x86:LE:64:default:gcc";
         ctx.syscall_regs = self.syscall_regs.fires(self.image_os_userland); // (kuna) syscallregs
         ctx.syscall_regs_family = crate::kuna_syscallregs::SyscallFamily::from_archid(&self.archid);
         ctx.syscall_regs_userops =

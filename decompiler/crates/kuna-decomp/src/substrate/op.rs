@@ -203,6 +203,8 @@ pub mod pcodeop_addlflags {
     /// calling convention would only perform for an unsigned type.  Set and read
     /// by [`crate::p5_types::kuna_zextreturn`].
     pub const kuna_zextreturn: uint4 = 0x10000;
+    /// The x86-64 syscall ABI rewrite ran; survives removal of unused RAX output.
+    pub const kuna_x64syscall: uint4 = 0x20000;
 }
 
 // ---------------------------------------------------------------------------

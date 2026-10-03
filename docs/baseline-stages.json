@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1900,
-    1900
+    1905,
+    1905
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1039,6 +1039,8 @@
     "data:SYSCALLREGS-ARM #11: with option syscallregs off keep passes its own setup value as the result",
     "data:SYSCALLREGS-ARM #12: a system call may replace a global buffer",
     "data:SYSCALLREGS-ARM #13: off keeps the stale global value",
+    "data:SYSCALLREGS-ARM #14: both returned lengths precede the final buffer read",
+    "data:SYSCALLREGS-ARM #15: both memory-writing system calls keep their statements",
     "data:SYSCALLREGS-ARM #1: with option syscallregs on pair is a one-register int function",
     "data:SYSCALLREGS-ARM #2: pair returns the svc result and shows the registers it set up",
     "data:SYSCALLREGS-ARM #3: with option syscallregs off or auto the setup comes back as a register pair",
@@ -1903,7 +1905,10 @@
     "data:x64syscall #3: on, kernel_call recovers the number and all three arguments, and returns the syscall's own result",
     "data:x64syscall #4: on, split_setup keeps RAX alone -- its RDI is set two blocks back, which the in-block walk does not claim",
     "data:x64syscall #5: abi takes all six argument registers, recovering split_setup's RDI at the price of the ones nothing writes",
-    "data:x64syscall #6: the no-SYSCALL control is byte-identical in all three passes"
+    "data:x64syscall #6: the no-SYSCALL control is byte-identical in all three passes",
+    "data:x64syscall #7: on and abi save the pointer value before the system call",
+    "data:x64syscall #8: on and abi combine the saved value with the reloaded buffer",
+    "data:x64syscall #9: off keeps the old pointer value motion"
   ],
   "returncode": 0,
   "unit_footer": null

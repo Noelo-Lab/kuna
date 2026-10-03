@@ -75,6 +75,14 @@ ffffffea1eff2fe1
 <symbol space="ram" offset="0x100084" name="use2"/>
 <symbol space="ram" offset="0x100088" name="rd_into_global"/>
 <bytechunk space="ram" offset="0x100100" readonly="false">00000000</bytechunk>
+<!-- return_snapshot narrows the second byte count with SXTH, then loads the buffer.
+     Folding that syscall into the final expression evaluates the buffer too early. -->
+<bytechunk space="ram" offset="0x100200" readonly="true">
+b0402de90050a0e10370a0e31100a0e30510a0e10420a0e3000000ef0040a0e1
+0370a0e31200a0e30510a0e10220a0e3000000ef7000bfe6001095e5044284e0
+041081e0000081e0b080bde8
+</bytechunk>
+<symbol space="ram" offset="0x100200" name="return_snapshot"/>
 </binaryimage>
 <script>
   <com>map addr r0x100100 int sink</com>
@@ -96,6 +104,10 @@ ffffffea1eff2fe1
   <com>print C</com>
   <com>option readonly on</com>
   <com>lo fu rd_into_global</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option syscallregs on</com>
+  <com>lo fu return_snapshot</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option syscallregs off</com>
@@ -136,4 +148,6 @@ ffffffea1eff2fe1
 <stringmatch name="SYSCALLREGS-ARM #11: with option syscallregs off keep passes its own setup value as the result" min="1" max="1">use2\(a0 \+ 1,a1 \* 3\);</stringmatch>
 <stringmatch name="SYSCALLREGS-ARM #12: a system call may replace a global buffer" min="1" max="1">return sink \+ \(a1 \+ 7\) \* 5;</stringmatch>
 <stringmatch name="SYSCALLREGS-ARM #13: off keeps the stale global value" min="1" max="1">return \(a1 \+ 7\) \* 6;</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #14: both returned lengths precede the final buffer read" min="1" max="1">return \*a[0-9]+ \+ v[0-9]+ \* 0x11 \+ \(int4\)\(int2\)v[0-9]+;</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #15: both memory-writing system calls keep their statements" min="2" max="2">v[0-9]+ = software_interrupt\(0,3,0x1[12],a[0-9]+,[24]\);</stringmatch>
 </decompilertest>

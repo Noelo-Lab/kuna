@@ -451,13 +451,20 @@ impl Action for ActionSyscallRegs {
 }
 
 /// The enabled system calls whose opaque handlers may read or write memory.
+pub fn is_memory_call(data: &Funcdata, op: OpId) -> bool {
+    data.get_arch().syscall_regs
+        && data.obank().get(op).is_some_and(|o| !o.is_dead())
+        && is_syscall(data, op)
+}
+
+/// The enabled system calls whose opaque handlers may read or write memory.
 pub fn memory_calls(data: &Funcdata) -> Vec<OpId> {
     if !data.get_arch().syscall_regs || data.get_arch().syscall_regs_userops.is_empty() {
         return Vec::new();
     }
     data.obank()
         .iter_code(OpCode::CPUI_CALLOTHER)
-        .filter(|&op| data.obank().get(op).is_some_and(|o| !o.is_dead()) && is_syscall(data, op))
+        .filter(|&op| is_memory_call(data, op))
         .collect()
 }
 

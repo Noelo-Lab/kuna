@@ -348,6 +348,31 @@ pointer LOAD or call result whose cover crosses one stays explicit. Thus
 and two system calls cannot collapse their intervening read into the second
 one. Unrelated CALLOTHER operations retain their existing behavior.
 
+Recognized x86-64 system calls use the same fence through
+`kuna_x64syscall.rs (memory_calls)`. The successful ABI rewrite marks each op,
+so it remains recognizable after an unused RAX result is removed. Under the
+existing `x64syscall on` or `abi` mode and chapter 02's proven ordinary SysV
+target, model and stack domain, a pointer LOAD or call result whose cover
+crosses an admitted marked syscall stays explicit. Saved pointer expressions and
+a read between two system calls therefore keep their original evaluation
+point. Windows/MSABI targets or models, `off`, unrewritten calls, and unrelated
+CALLOTHER operations keep their previous behavior; chapter 02 owns the
+recognition and writable-memory model. Both the saved-load fence and call-result
+span check use this admission, rather than the rewrite mark alone.
+
+These recognized system calls enter the ordinary call-output classification
+through their CALLOTHER call flags, but have no ordinary call-spec memory records.
+`print_point_is_order_safe` checks the full implied-expression span for these
+system calls, including intervening LOADs and reads of memory versions their
+INDIRECT guards define. The final consumer is included for an indirect memory
+read, even when it also consumes the call result. For example, after reads of
+four and two bytes into the same buffer, `a * 17 + b + *p` must save both
+returned lengths before reading the final buffer. Folding the second read into
+that return allows C to read the buffer too early. Direct wrappers with no
+intervening memory access may still return the system-call expression. Ordinary
+calls retain their existing folding rules; the system-call mode and image
+policies determine which CALLOTHER operations receive these checks.
+
 A store to a global is neither a STORE nor a call: it is a `COPY` (or an
 arithmetic op) whose output is the global's own varnode, so the STORE arm never
 sees it, and `x = *p; gi = b; return x;` printed `gi = a1; return *a0;`, which
