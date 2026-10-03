@@ -1220,3 +1220,5 @@ for this repository; no third-party binary input). Each has a conditional
 zero padding bytes to the same code, so the `mov ebx,5` path decodes one mapped
 `add [eax],al` and then reaches a `00` whose ModRM byte is past the mapped end,
 the tail shape of a real i386 image whose last instruction is `mov cs,eax`.
+
+`storecopyeffects.c` and `storecopyeffects_{clang_O0_aarch64,clang_O2_aarch64,gcc_O0_x86_64,gcc_O2_x86_64}.o` reproduce direct stores whose pointers resolve after memory SSA guards were created. Build with `clang --target=aarch64-linux-gnu -O0|-O2 -fno-strict-aliasing -c storecopyeffects.c` and `gcc -O0|-O2 -fno-strict-aliasing -fno-pie -c storecopyeffects.c` (clang 14.0.0, gcc 11.4.0). `kuna-cli/tests/store_copy_effects.rs` recompiles the printed functions with a callback recording and changing `gi`, checking stores between calls, aliasing and distinct pointers, loads before a later store, branches, and a dead-store control. Define `STORECOPY_DRIVER` to run the original source; add `STORECOPY_HARNESS` to replace its functions with the printed C.

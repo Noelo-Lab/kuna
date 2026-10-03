@@ -1147,6 +1147,26 @@ apart, so the load prints as the global exactly as before. A parameter's store
 is left to upstream, since a parameter never merges with a global, and so is a
 constant's. Every other propagation is upstream's.
 
+**Resolving a direct store's effects**
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_storecopyeffects.rs`,
+a strict fix, no option). A STORE can become a direct COPY only after a
+spilled address is recovered. Its existing INDIRECT guards must then read the
+new write immediately: waiting for `RuleIndirectCollapse` lets the next
+`ActionDeadCode` delete the otherwise unread COPY before that rule runs. For
+example, AArch64 clang `-O0` spills the address in `gi = b; touch(); gi = 9;
+touch();`; without this repair the second store disappears.
+
+`RuleStoreVarnode` resolves the contiguous guards that explicitly reference
+that STORE as soon as it converts it. An equal range becomes a COPY of the
+write; a contained range reads its own bytes; a partially overlapping range
+joins the new bytes with the unaffected bytes of its previous value. Byte
+selection and concatenation follow the address space's endianness. The
+replacement computations are placed after the direct write and preserve the
+guard's output, so existing call, load, return, and join uses receive the new
+value. A disjoint guard is replaced by its previous input. Guards for another
+operation are untouched, and a write with no surviving uses can still be
+removed as dead.
+
 **Retyping an op mid-rule.** A rule that rewrites an op in place usually changes
 its op-code, and the op-code is not just a tag: `set_opcode` caches the
 op-code's *property word* (`unary`/`binary`/`booloutput`/`commutative`/`marker`/

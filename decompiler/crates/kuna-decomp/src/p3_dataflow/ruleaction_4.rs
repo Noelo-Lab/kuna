@@ -347,6 +347,7 @@ impl Rule for RuleStoreVarnode {
         if store_unmapped {
             data.scope_local_mark_not_mapped(&baseoff, offoff, size, false);
         }
+        super::kuna_storecopyeffects::collapse(data, op);
         1
     }
 }

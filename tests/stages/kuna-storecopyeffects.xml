@@ -1,0 +1,25 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc"/>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/storecopyeffects_clang_O0_aarch64.o</com>
+  <com>read symbols</com>
+  <com>load function s7</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function s_repeat</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function s_read</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function s_dead</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="STORECOPYEFFECTS #1: the three live writes of nine survive" min="3" max="3">dat_400254 = 9;</stringmatch>
+<stringmatch name="STORECOPYEFFECTS #2: every subsequent spill reload keeps its store" min="3" max="3">dat_400254 = (3|7|0xb);</stringmatch>
+<stringmatch name="STORECOPYEFFECTS #3: a load between calls saves its pre-store value" min="1" max="1">v[0-9]+ = dat_400254;</stringmatch>
+<stringmatch name="STORECOPYEFFECTS #4: a truly dead parameter store still disappears" min="1" max="1">s_dead\(void\)</stringmatch>
+</decompilertest>
