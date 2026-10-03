@@ -432,15 +432,16 @@ result on a path where the binary returns the parameter.
 
 The pairs of one group are tested together (`funcdata_merge.rs
 (MergeContext::redundant_copies)`): the high's other writes are listed by block
-once, the dominator answers for each earlier COPY's block are kept across the
-later ones, and each range is walked by `cover.rs (Cover::add_ref_point_until)`,
-which stops at the first block holding one of those writes (`funcdata.rs
-(Funcdata::copy_pair_crossed)`). A Cover block only grows while the walk runs,
-so a write met part way is inside the finished range, and a walk that meets none
-has seen every block as it ends: the verdict is the full range's, and debug
-builds check it against `check_copy_pair`. Building each range in full made a
-function that stores one value to a global from many places pay the range's
-length for each of the quadratically many pairs (issue #818).
+once, the answers of each earlier COPY's dominator walks longer than eight
+blocks are kept across the later ones, and each range is walked by `cover.rs
+(Cover::add_ref_point_until)`, which stops at the first block holding one of
+those writes (`funcdata.rs (Funcdata::copy_pair_crossed)`). A Cover block only
+grows while the walk runs, so a write met part way is inside the finished
+range, and a walk that meets none has seen every block as it ends: the verdict
+is the full range's, and debug builds check it against `check_copy_pair`.
+Building each range in full made a function that stores one value to a global
+from many places pay the range's length for each of the quadratically many pairs
+(issue #818).
 
 Naming (`coreaction_cleanup.rs (ActionNameVars)`) and casts (`ActionSetCasts`) close the phalanx but are
 policy of chapter [09](09-emission.md). One scheduled body is still inert in
