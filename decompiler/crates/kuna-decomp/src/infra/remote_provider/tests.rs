@@ -264,6 +264,10 @@ fn namespace_path_decodes_innermost_first() {
     dec.ingest_stream(&doc).unwrap();
     let path = decode_namespace_path(&mut dec).unwrap();
     assert_eq!(path, vec!["inner".to_string(), "outer".to_string()]);
+    let mut dec = PackedDecode::new(&m);
+    dec.ingest_stream(&doc).unwrap();
+    let levels = decode_namespace_levels(&mut dec).unwrap();
+    assert_eq!(levels, vec![("inner".to_string(), 11), ("outer".to_string(), 10)]);
 }
 
 /// The wire `<coretypes>` XML mirror of the default core-type list decodes to

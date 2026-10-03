@@ -2221,83 +2221,16 @@ fn kuna_qualify_global_name(
     func_ns_path: &[String],
     name_used: &dyn Fn(&str) -> bool,
 ) -> String {
-    // Full global-rooted name paths; index 0 is the global scope (sentinel "").
-    // symPath = [GLOBAL] ++ reverse(sym_scope_path)
-    // usePath = [GLOBAL] ++ func_ns_path ++ [<local>]  (the local scope marker
-    //           below never equals any namespace name, so it only affects lengths).
-    let mut sym_path: Vec<&str> = Vec::with_capacity(sym_scope_path.len() + 1);
-    sym_path.push("");
-    for s in sym_scope_path.iter().rev() {
-        sym_path.push(s.as_str());
-    }
-    let local_marker = "\0local";
-    let mut use_path: Vec<&str> = Vec::with_capacity(func_ns_path.len() + 2);
-    use_path.push("");
-    for s in func_ns_path.iter() {
-        use_path.push(s.as_str());
-    }
-    use_path.push(local_marker);
-
-    // findDistinguishingScope(sym, use) on the name-paths (database.cc:1486).
-    // Returns the index in sym_path of the first ancestor not shared by use_path,
-    // or None when sym's scope is an ancestor of use's scope.
-    let min = sym_path.len().min(use_path.len());
-    let mut distinguish_idx: Option<usize> = None;
-    for i in 0..min {
-        if sym_path[i] != use_path[i] {
-            distinguish_idx = Some(i);
-            break;
-        }
-    }
-    if distinguish_idx.is_none() {
-        if min < sym_path.len() {
-            // sym_path matches use_path but is longer -> first differing index.
-            distinguish_idx = Some(min);
-        } else if min < use_path.len() {
-            // use_path is longer: sym scope is an ancestor of use scope -> null.
-            distinguish_idx = None;
-        } else {
-            // Identical ancestor paths (only base scopes differ) -> sym itself.
-            distinguish_idx = Some(sym_path.len() - 1);
-        }
-    }
-
-    // getResolutionDepth (database.cc:340): derive the print depth + the name whose
-    // collision is checked against the local scope.
-    let mut depth: i32;
-    let distinguish_name: &str;
-    if distinguish_idx.is_none() {
-        // Symbol's scope is an ancestor of the use scope.
-        distinguish_name = base;
-        depth = 0;
-    } else {
-        let didx = distinguish_idx.unwrap();
-        // depthResolution = (#scopes from sym's own scope up to the distinguishing
-        // scope) + 1.  sym's own scope is sym_path.last(); the distinguishing scope
-        // is sym_path[didx].  The count of steps is (len-1 - didx) + 1.
-        depth = ((sym_path.len() - 1 - didx) as i32) + 1;
-        distinguish_name = sym_path[didx];
-    }
-    if name_used(distinguish_name) {
-        depth += 1;
-    }
-    if depth <= 0 {
-        return base.to_string();
-    }
-
-    // pushSymbolScope (printc.cc:217-228): walk the symbol's scope chain `depth`
-    // levels from innermost out, then emit them outermost-first as `name::`.
-    // chain_innermost = sym_scope_path ++ [GLOBAL("")] (the symbol's full ancestry,
-    // innermost first, including global so a global-scope symbol can print `::`).
-    let mut chain_innermost: Vec<&str> = Vec::with_capacity(sym_scope_path.len() + 1);
-    for s in sym_scope_path.iter() {
-        chain_innermost.push(s.as_str());
-    }
-    chain_innermost.push(""); // global scope, display name ""
-    let take = (depth as usize).min(chain_innermost.len());
+    let prefix = crate::kuna_namespaces::scope_prefix(
+        crate::printlanguage::NamespaceStrategy::MinimalNamespaces,
+        base,
+        sym_scope_path,
+        func_ns_path,
+        &|name: &str, _: usize| name_used(name),
+    );
     let mut out = String::new();
-    for name in chain_innermost[..take].iter().rev() {
-        out.push_str(name);
+    for name in prefix {
+        out.push_str(&name);
         out.push_str("::");
     }
     out.push_str(base);

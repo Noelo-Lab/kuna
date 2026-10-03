@@ -672,7 +672,17 @@ Four front-ends drive one engine assembly:
   (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
   (Architecture::is_global_read_only)`): the local symbol table is empty in
   ghidra mode, so asking it answered "not read-only" for every string Ghidra
-  defines, and each printed as its `s_…`/`u_…` label.  A function answer's RAW name and its `label` stay
+  defines, and each printed as its `s_…`/`u_…` label.  A C++ symbol arrives
+  as its bare name plus the host id of its namespace, and the namespace chain
+  is printed the way upstream's
+  `PrintC::pushSymbolScope` prints it
+  (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_namespaces.rs`): a call
+  carries the scopes Ghidra's namespace strategy (Minimal by default) needs
+  from the calling function's namespace, its own declaration carries its whole
+  path, and each scope is a separate token so Java renders the `::`.  The
+  name-collision test that can add one more scope asks the host
+  (`isNameUsed`) once the function's own locals are ruled out.  A function
+  answer's RAW name and its `label` stay
   SPLIT (the upstream `Funcdata` name/displayName pair): the raw name is the
   Funcdata identity `HighFunction.decode`'s name echo compares against, the
   label only ever prints (`Funcdata::set_display_name`).  The host's

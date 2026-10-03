@@ -184,6 +184,11 @@ pub trait RemoteProviderFetch {
         flags: u32,
         decoder: &mut dyn Decoder,
     ) -> KunaResult<bool>;
+    /// isNameUsed(name, start, stop): is `name` a symbol in the host namespace
+    /// `start` or one of its parents below `stop` (0 = up to global)?
+    fn fetch_is_name_used(&self, _name: &str, _start: u64, _stop: u64) -> KunaResult<bool> {
+        Ok(false)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -923,12 +928,19 @@ fn decode_prototype(
 /// first.  Returns the display names, INNERMOST FIRST (the
 /// `GlobalEntry::scope_path` convention), global excluded.
 pub fn decode_namespace_path(decoder: &mut dyn Decoder) -> KunaResult<Vec<String>> {
+    Ok(decode_namespace_levels(decoder)?.into_iter().map(|(name, _)| name).collect())
+}
+
+/// [`decode_namespace_path`] keeping each level's host namespace id, the
+/// handle isNameUsed takes.
+pub fn decode_namespace_levels(decoder: &mut dyn Decoder) -> KunaResult<Vec<(String, u64)>> {
     let elem_id = decoder.open_element_id(&ELEM_PARENT)?;
-    let mut names: Vec<String> = Vec::new();
+    let mut levels: Vec<(String, u64)> = Vec::new();
     let mut first = true;
     while decoder.peek_element()? != 0 {
         let vid = decoder.open_element()?;
         let mut label: Option<String> = None;
+        let mut id = 0;
         loop {
             let aid = decoder.get_next_attribute_id()?;
             if aid == 0 {
@@ -936,6 +948,8 @@ pub fn decode_namespace_path(decoder: &mut dyn Decoder) -> KunaResult<Vec<String
             }
             if aid == crate::jumptable::ATTRIB_LABEL.get_id() {
                 label = Some(String::from_utf8_lossy(&decoder.read_string()?).into_owned());
+            } else if aid == ATTRIB_ID.get_id() {
+                id = decoder.read_unsigned_integer()?;
             }
         }
         let content = decoder
@@ -943,14 +957,23 @@ pub fn decode_namespace_path(decoder: &mut dyn Decoder) -> KunaResult<Vec<String
             .map(|b| String::from_utf8_lossy(&b).into_owned())
             .unwrap_or_default();
         if !first {
-            names.push(label.unwrap_or(content));
+            levels.push((label.unwrap_or(content), id));
         }
         first = false;
         decoder.close_element_skipping(vid)?;
     }
     decoder.close_element(elem_id)?;
-    names.reverse(); // outermost-first on the wire -> innermost-first
-    Ok(names)
+    levels.reverse(); // outermost-first on the wire -> innermost-first
+    Ok(levels)
+}
+
+/// C++ `ArchitectureGhidra::isDynamicSymbolName`: a Ghidra default name,
+/// `FUN_`/`DAT_` followed by at least four hex digits.
+fn is_dynamic_symbol_name(name: &str) -> bool {
+    let b = name.as_bytes();
+    b.len() >= 8
+        && (b.starts_with(b"FUN_") || b.starts_with(b"DAT_"))
+        && b[b.len() - 4..].iter().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 // ---------------------------------------------------------------------------
@@ -987,7 +1010,7 @@ struct RemoteScopeState {
     /// Live property map: the locked default plus hole/symbol paints.
     flagbase: PartMap<Address, uint4>,
     /// Namespace-path cache by scope id.
-    namespaces: std::collections::BTreeMap<u64, Vec<String>>,
+    namespaces: std::collections::BTreeMap<u64, Vec<(String, u64)>>,
     /// The merged snapshot handed to readers; rebuilt when `dirty`.
     snapshot: Rc<GlobalQuery>,
     dirty: bool,
@@ -1020,6 +1043,11 @@ pub struct RemoteFunctionFacts {
     /// Empty when the signature is unlocked (kuna then recovers parameters
     /// itself) or when the host sent no storage.
     pub param_storage: Vec<(int4, String, crate::fspec::ParameterPieces)>,
+    /// The namespaces enclosing the function, innermost first, global
+    /// excluded (`["Gui", "Utils"]` for `Utils::Gui::smallIconSize`).
+    pub scope_path: Vec<String>,
+    /// The host namespace id of each `scope_path` level, same order.
+    pub scope_ids: Vec<u64>,
 }
 
 /// The ghidra-mode lazy symbol provider (see the module docs).  Installed on
@@ -1374,11 +1402,13 @@ impl RemoteScope {
     /// `dump2Cache`'s post-processing, database_ghidra.cc:143-171).
     fn materialize(&self, rec: RemoteSymbolRecord) {
         // Resolve the namespace path once per scope id.
-        let scope_path = if rec.scope_id != 0 {
-            self.namespace_path(rec.scope_id)
+        let scope_levels = if rec.scope_id != 0 {
+            self.namespace_levels(rec.scope_id)
         } else {
             Vec::new()
         };
+        let scope_path: Vec<String> = scope_levels.iter().map(|(name, _)| name.clone()).collect();
+        let scope_ids: Vec<u64> = scope_levels.iter().map(|&(_, id)| id).collect();
         let mut st = self.state.borrow_mut();
         let display = if rec.display_name.is_empty() {
             rec.name.clone()
@@ -1491,6 +1521,8 @@ impl RemoteScope {
                             locals: func.locals.clone(),
                             model: model_name,
                             param_storage,
+                            scope_path: scope_path.clone(),
+                            scope_ids: scope_ids.clone(),
                         },
                     );
                 }
@@ -1555,15 +1587,16 @@ impl RemoteScope {
         st.dirty = true;
     }
 
-    /// The namespace display path for a host scope id (cached;
-    /// C++ `ScopeGhidra::reresolveScope` + `decodeScopePath`).
-    fn namespace_path(&self, id: u64) -> Vec<String> {
+    /// The namespace levels `(display name, host id)` for a host scope id,
+    /// innermost first (cached; C++ `ScopeGhidra::reresolveScope` +
+    /// `decodeScopePath`).
+    fn namespace_levels(&self, id: u64) -> Vec<(String, u64)> {
         if let Some(p) = self.state.borrow().namespaces.get(&id) {
             return p.clone();
         }
         let mut dec = PackedDecode::new(&self.manager);
         let path = match self.fetch.fetch_namespace_path(id, &mut dec) {
-            Ok(true) => decode_namespace_path(&mut dec).unwrap_or_default(),
+            Ok(true) => decode_namespace_levels(&mut dec).unwrap_or_default(),
             _ => Vec::new(),
         };
         self.state
@@ -1571,6 +1604,17 @@ impl RemoteScope {
             .namespaces
             .insert(id, path.clone());
         path
+    }
+
+    /// C++ `ScopeGhidraNamespace::isNameUsed`: ask the host whether `name` is a
+    /// symbol in namespace `start` or a parent below `stop`.  A default
+    /// `FUN_`/`DAT_` name is assumed not to collide, as upstream does, and a
+    /// failed query answers no.
+    pub fn is_name_used(&self, name: &str, start: u64, stop: u64) -> bool {
+        if is_dynamic_symbol_name(name) {
+            return false;
+        }
+        self.fetch.fetch_is_name_used(name, start, stop).unwrap_or(false)
     }
 
     /// The merged read snapshot: the base Database snapshot's owned ranges,
