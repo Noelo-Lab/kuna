@@ -1992,6 +1992,46 @@ impl LabelRows {
 // JumpBasicModel (the instance JumpBasic, jumptable.cc:1062-1786)
 // ---------------------------------------------------------------------------
 
+/// (kuna) The most ops evaluated to decide whether a table row passes a
+/// guard ([`JumpBasicModel::row_dispatch`]).
+const GUARD_EVALUATION_OPS: usize = 32;
+
+/// (kuna) The deepest op chain [`same_value`] compares.
+const SAME_VALUE_DEPTH: u32 = 6;
+
+/// (kuna) Whether `a` and `b` hold the same value: the same varnode, equal
+/// constants, or outputs of the same pure op over inputs holding the same
+/// values, at most `depth` ops deep.  Two LOADs through equal addresses are
+/// taken to read the same value, as [`GuardRecord::value_match`] takes them.
+fn same_value(fd: &Funcdata, a: VarnodeId, b: VarnodeId, depth: u32) -> bool {
+    if a == b {
+        return true;
+    }
+    let (Some(va), Some(vb)) = (fd.vbank().get(a), fd.vbank().get(b)) else {
+        return false;
+    };
+    if va.get_size() != vb.get_size() {
+        return false;
+    }
+    if va.is_constant() || vb.is_constant() {
+        return va.is_constant() && vb.is_constant() && va.get_offset() == vb.get_offset();
+    }
+    let (Some(da), Some(db)) = (va.get_def(), vb.get_def()) else {
+        return false;
+    };
+    let (Some(oa), Some(ob)) = (fd.obank().get(da), fd.obank().get(db)) else {
+        return false;
+    };
+    depth > 0
+        && oa.code() == ob.code()
+        && EmulateFunction::is_pure(oa.code())
+        && oa.num_input() == ob.num_input()
+        && (0..oa.num_input()).all(|slot| match (oa.get_in(slot), ob.get_in(slot)) {
+            (Some(x), Some(y)) => same_value(fd, x, y, depth - 1),
+            _ => false,
+        })
+}
+
 /// The basic jump-table model (C++ `JumpBasic`, the instance methods).
 ///
 /// Recovers a straight-line index-range model for the switch: the normalized
@@ -2117,8 +2157,9 @@ impl JumpBasicModel {
     }
 
     /// Find the putative switch variable with the smallest reaching range (C++
-    /// `JumpBasic::findSmallestNormal`, `jumptable.cc:1181`).
-    fn find_smallest_normal(&mut self, fd: &Funcdata, matchsize: uint4) {
+    /// `JumpBasic::findSmallestNormal`, `jumptable.cc:1181`), among the common
+    /// varnodes before `limit`.
+    fn find_smallest_normal(&mut self, fd: &Funcdata, matchsize: uint4, limit: int4) {
         let mut rng = CircleRange::new_empty();
         self.varnode_index = 0;
         let vn0 = self.path_meld.get_varnode(0);
@@ -2134,7 +2175,7 @@ impl JumpBasicModel {
             }
         }
         let mut i: uint4 = 1;
-        while (i as int4) < self.path_meld.num_common_varnode() {
+        while (i as int4) < limit.min(self.path_meld.num_common_varnode()) {
             if maxsize == matchsize as uintb {
                 return;
             }
@@ -2281,7 +2322,7 @@ impl JumpBasicModel {
         indirect: OpId,
     ) -> KunaResult<()> {
         self.analyze_guards(fd, rootbl, pathout, indirect);
-        self.find_smallest_normal(fd, matchsize);
+        self.find_smallest_normal(fd, matchsize, self.path_meld.num_common_varnode());
         let sz = self.jrange().get_size();
         if sz > maxtablesize as uintb && self.path_meld.num_common_varnode() == 1 {
             // Check for jump through readonly variable.
@@ -2674,6 +2715,7 @@ impl JumpBasicModel {
             .and_then(|o| o.get_parent())
             .ok_or_else(|| KunaError::lowlevel("recoverModel: switch op has no parent block"))?;
         self.find_normalized(fd, parent, -1, matchsize, maxtablesize, indop)?;
+        self.skip_stranding_variable(fd, indop, matchsize, maxtablesize);
         let unbounded = self.jrange().get_size() > maxtablesize as uintb;
         self.rows_rejected = !unbounded && !self.can_label_rows(fd, indop);
         if unbounded || self.rows_rejected {
@@ -3856,16 +3898,9 @@ impl JumpBasicModel {
     /// Whether `jr`'s current value satisfies every guard whose varnode its
     /// emulated path computes (true when the path cannot be emulated).
     fn value_passes_guards(&self, fd: &Funcdata, jr: &dyn JumpValues) -> bool {
-        let (Some(startop), Some(startvn)) = (jr.get_start_op(), jr.get_start_varnode()) else {
+        let Some((Ok(_), emul)) = self.emulate_value(fd, jr) else {
             return true;
         };
-        let mut emul = EmulateFunction::new(fd);
-        for &(seed_vn, seed_val) in self.loop_carried_seeds.iter() {
-            emul.seed_varnode_value(seed_vn, seed_val);
-        }
-        if emul.emulate_path(jr.get_value(), &self.path_meld, startop, startvn).is_err() {
-            return true;
-        }
         self.selectguards
             .iter()
             .filter(|guard| !guard.is_unrolled())
@@ -3878,6 +3913,188 @@ impl JumpBasicModel {
                     _ => true,
                 }
             })
+    }
+
+    /// Emulate `jr`'s current value along the path: its raw destination, or
+    /// the error that stopped the emulation, and the emulation itself.
+    fn emulate_value<'a>(
+        &self,
+        fd: &'a Funcdata,
+        jr: &dyn JumpValues,
+    ) -> Option<(KunaResult<uintb>, EmulateFunction<'a>)> {
+        let (startop, startvn) = (jr.get_start_op()?, jr.get_start_varnode()?);
+        let mut emul = EmulateFunction::new(fd);
+        for &(seed_vn, seed_val) in self.loop_carried_seeds.iter() {
+            emul.seed_varnode_value(seed_vn, seed_val);
+        }
+        let raw = emul.emulate_path(jr.get_value(), &self.path_meld, startop, startvn);
+        Some((raw, emul))
+    }
+
+    /// The guards whose CBRANCH the normalized variable's range does not
+    /// account for: every record of a CBRANCH none of whose records restricts
+    /// that variable.  Values in the range may still branch away at them.
+    fn unbounded_guards(&self, fd: &Funcdata) -> Vec<usize> {
+        let Some(startvn) = self.jrange().get_start_varnode() else {
+            return Vec::new();
+        };
+        let mut bits = 0;
+        let base = GuardRecord::quasi_copy(fd, startvn, &mut bits);
+        let bounding: Vec<OpId> = self
+            .selectguards
+            .iter()
+            .filter(|guard| guard.value_match(fd, startvn, base, bits) != 0)
+            .filter_map(|guard| guard.get_branch())
+            .collect();
+        (0..self.selectguards.len())
+            .filter(|&index| {
+                let guard = &self.selectguards[index];
+                !guard.is_unrolled() && guard.get_branch().is_some_and(|b| !bounding.contains(&b))
+            })
+            .collect()
+    }
+
+    /// Each value's destination and whether the code dispatches it: a value
+    /// whose path gives the varnode of one of `guards` a value outside that
+    /// guard's range branches away before the switch, and may then have no
+    /// destination, its path failing to emulate past that point.  `None`
+    /// when the path of a value no guard sends away cannot be emulated.
+    fn row_dispatch(
+        &self,
+        fd: &Funcdata,
+        indop: OpId,
+        guards: &[usize],
+    ) -> Option<Vec<(Option<Address>, bool)>> {
+        let (spc, mask) = Self::destination_space(fd, indop);
+        let mut jr = self.jrange().clone_box();
+        let mut rows = Vec::new();
+        let mut more = jr.initialize_for_reading();
+        while more {
+            let (raw, mut emul) = self.emulate_value(fd, &*jr)?;
+            let dispatched = guards.iter().all(|&index| {
+                let guard = &self.selectguards[index];
+                let vn = guard.get_vn();
+                emul.evaluate_held(vn, GUARD_EVALUATION_OPS).is_none_or(|val| {
+                    let size = fd.vbank().get(vn).map_or(8, |v| v.get_size());
+                    guard.get_range().contains_val(val & calc_mask(size))
+                })
+            });
+            match raw {
+                Ok(raw) => rows.push((Some(Self::destination(&spc, mask, raw)), dispatched)),
+                Err(_) if !dispatched => rows.push((None, false)),
+                Err(_) => return None,
+            }
+            more = jr.next().ok()?;
+        }
+        Some(rows)
+    }
+
+    /// Whether the table built from `rows` ([`Self::row_dispatch`]) misses a
+    /// destination the code dispatches to, or adds one it does not.  A table
+    /// with a row that has no destination is not built at all.  Otherwise,
+    /// when the sanity check cuts the table at a row the code does not
+    /// dispatch, a dispatched row after it may reach a destination no kept
+    /// row reaches, and a kept row the code does not dispatch may reach a
+    /// destination no dispatched row reaches.
+    fn rows_strand(fd: &Funcdata, rows: &[(Option<Address>, bool)]) -> bool {
+        if rows.iter().all(|&(_, dispatched)| dispatched) {
+            return false;
+        }
+        let Some(dests) = rows.iter().map(|(dest, _)| dest.clone()).collect::<Option<Vec<_>>>()
+        else {
+            return rows.iter().any(|&(_, dispatched)| dispatched);
+        };
+        let pass: Vec<bool> = rows.iter().map(|&(_, dispatched)| dispatched).collect();
+        let kept = Self::reasonable_rows(fd, &dests);
+        let kept_dests: BTreeSet<&Address> = dests[..kept].iter().collect();
+        let kept_dispatched: BTreeSet<&Address> =
+            (0..kept).filter(|&row| pass[row]).map(|row| &dests[row]).collect();
+        let missed = pass.get(kept) == Some(&false)
+            && (kept + 1..dests.len()).any(|row| pass[row] && !kept_dests.contains(&dests[row]));
+        missed || (0..kept).any(|row| !pass[row] && !kept_dispatched.contains(&dests[row]))
+    }
+
+    /// Bound the normalized variable by one of `guards` whose varnode holds
+    /// the same value as a common varnode before `limit` ([`same_value`]),
+    /// as a reload of a map entry a guard checked does: the varnode closest
+    /// to the previous choice.  Whether one was found.
+    fn bound_by_guard(&mut self, fd: &Funcdata, limit: int4, guards: &[usize]) -> bool {
+        for i in (0..limit).rev() {
+            let vn = self.path_meld.get_varnode(i);
+            for &index in guards {
+                let guard = &self.selectguards[index];
+                if !same_value(fd, vn, guard.get_vn(), SAME_VALUE_DEPTH) {
+                    continue;
+                }
+                let mut rng = CircleRange::new_empty();
+                self.calc_range(fd, vn, &mut rng);
+                if rng.intersect(guard.get_range()) != 0 {
+                    continue;
+                }
+                let earliest = self.path_meld.get_earliest_op(i);
+                self.varnode_index = i;
+                let jr = self.jrange_range_mut();
+                jr.set_range(rng);
+                jr.set_start_vn(vn);
+                if let Some(op) = earliest {
+                    jr.set_start_op(op);
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Move the normalized variable toward the BRANCHIND, to the smallest
+    /// range in front of it, while its table strands rows
+    /// ([`Self::rows_strand`]): a variable read through a map before the table
+    /// enumerates map entries that a later guard sends away from the switch.
+    /// Keeps the first choice unless a bounded variable closer to the
+    /// BRANCHIND emulates every row, strands none, and can label the
+    /// flow-time rows it is asked to match.
+    fn skip_stranding_variable(
+        &mut self,
+        fd: &Funcdata,
+        indop: OpId,
+        matchsize: uint4,
+        maxtablesize: uint4,
+    ) {
+        if self.jrange().get_size() > maxtablesize as uintb {
+            return;
+        }
+        let guards = self.unbounded_guards(fd);
+        if guards.is_empty()
+            || !self
+                .row_dispatch(fd, indop, &guards)
+                .is_some_and(|rows| Self::rows_strand(fd, &rows))
+        {
+            return;
+        }
+        let index = self.varnode_index;
+        let jrange = self.jrange().clone_box();
+        let bounded = |model: &Self| (1..=maxtablesize as uintb).contains(&model.jrange().get_size());
+        while self.varnode_index > 0 {
+            let limit = self.varnode_index;
+            self.find_smallest_normal(fd, matchsize, limit);
+            if !bounded(self) {
+                self.bound_by_guard(fd, limit, &guards);
+            }
+            if !bounded(self) {
+                break;
+            }
+            let guards = self.unbounded_guards(fd);
+            let Some(rows) = self.row_dispatch(fd, indop, &guards) else {
+                break;
+            };
+            if rows.iter().all(|(dest, _)| dest.is_some())
+                && !Self::rows_strand(fd, &rows)
+                && self.can_label_rows(fd, indop)
+            {
+                return;
+            }
+        }
+        self.varnode_index = index;
+        self.jrange = Some(jrange);
     }
 
     /// Whether this model's own values rebuild the flow-time table row for row.
@@ -4282,30 +4499,7 @@ impl JumpModel for JumpBasicModel {
         if addresstable.is_empty() {
             return Ok(true);
         }
-        let addr0 = addresstable[0].clone();
-        let mut i = 0usize;
-        if addr0.get_offset() != 0 {
-            i = 1;
-            while i < addresstable.len() {
-                if addresstable[i].get_offset() == 0 {
-                    break;
-                }
-                let oi = addresstable[i].get_offset();
-                let diff = if addr0.get_offset() < oi {
-                    oi.wsub(addr0.get_offset())
-                } else {
-                    addr0.get_offset().wsub(oi)
-                };
-                if diff > 0xffff {
-                    // Far address: require the load image to have data there.
-                    let dataavail = fd.get_arch().get_load_image_value(&addresstable[i], 4).is_ok();
-                    if !dataavail {
-                        break;
-                    }
-                }
-                i += 1;
-            }
-        }
+        let i = Self::reasonable_rows(fd, addresstable);
         if i == 0 {
             return Ok(false);
         }
@@ -4350,6 +4544,29 @@ impl JumpModel for JumpBasicModel {
 }
 
 impl JumpBasicModel {
+    /// The number of leading rows of a non-empty `addresstable` the sanity
+    /// check keeps: none when the first is zero, else up to the first row that
+    /// is zero, or far from the first with no load-image data behind it.
+    fn reasonable_rows(fd: &Funcdata, addresstable: &[Address]) -> usize {
+        let addr0 = addresstable[0].get_offset();
+        if addr0 == 0 {
+            return 0;
+        }
+        let mut i = 1;
+        while i < addresstable.len() {
+            let oi = addresstable[i].get_offset();
+            if oi == 0 {
+                break;
+            }
+            let diff = if addr0 < oi { oi.wsub(addr0) } else { addr0.wsub(oi) };
+            if diff > 0xffff && fd.get_arch().get_load_image_value(&addresstable[i], 4).is_err() {
+                break;
+            }
+            i += 1;
+        }
+        i
+    }
+
     /// Fold a single guard CBRANCH into the switch's default destination (C++
     /// `JumpBasic::foldInOneGuard`, `jumptable.cc`).
     ///

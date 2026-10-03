@@ -1172,6 +1172,41 @@ the case targets.
    switch). One special case: if the meld is a single read-only Varnode, the
    "switch" is a jump through a read-only pointer; its value is read from the
    load image and the table has one entry.
+   **Stranded rows.** The smallest range can belong to a variable in front of
+   a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
+   `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of
+   that variable whose map entry the second guard rejects never reaches the
+   table, yet the model still gives it a row, read from wherever its
+   out-of-range index points. `jumptable.rs
+   (JumpBasicModel::skip_stranding_variable)` looks for such values whenever a
+   guard's CBRANCH has no record that restricts the chosen variable
+   (`jumptable.rs (JumpBasicModel::unbounded_guards)`). It emulates each
+   value's path and evaluates those guards' varnodes from what the path
+   computed (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_emulatefunction.rs
+   (EmulateFunction::evaluate_held)`: pure ops back to computed values and
+   constants, a LOAD only through an address computed from them). A value
+   outside a guard's range is not dispatched (`jumptable.rs
+   (JumpBasicModel::row_dispatch)`). The table over the variable is wrong
+   (`jumptable.rs (JumpBasicModel::rows_strand)`) when such a row has no
+   destination at all, so the table cannot be built and the dispatch would
+   print as a call. It is also wrong when the sanity check below cuts it at
+   such a row while a later dispatched row reaches a destination no kept row
+   reaches, so the bodies only the later values reach are lost, and when a
+   kept row the code does not dispatch reaches a destination no dispatched
+   row reaches. In those cases the normalized variable moves toward the
+   branch, to the smallest range among the candidates in front of it. When
+   none of them is bounded, a guard whose varnode holds the same value bounds
+   one (`jumptable.rs (JumpBasicModel::bound_by_guard)`): GCC compares
+   `map[mode]` in memory and reloads it to index the table, and the two loads
+   read through equal addresses (`jumptable.rs (same_value)`). The new
+   variable is kept only when every one of its values emulates and none
+   strands, and, at the late check below, when it can label the flow-time
+   rows. Otherwise the first choice stands. The table is then built over the
+   map value and the switch is printed with the map values as its labels.
+   Where the lost destination was the default block, the old table could
+   still print correctly, but only when the guard's join followed the switch;
+   GCC's x86-64 shape returns from the guard and lets the switch fall off the
+   end of the function instead.
 4. **Accept or rescue.** If the chosen range exceeds `max_jumptable_size`
    (1024, `architecture.rs (reset_defaults_internal)`; settable per run as the
    catalogued `option jumptablemax <n>`: upstream's `OptionJumpTableMax`, parsed

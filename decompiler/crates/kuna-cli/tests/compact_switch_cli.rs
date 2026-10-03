@@ -577,9 +577,9 @@ fn cut_row_reaching_a_labelled_case_falls_back_to_the_table() {
 
 /// `pick` switches on `map[mode]`, whose modes 0 and 5 both reach the table
 /// entry 0x4001a8, and every case body ends in the shared epilogue at
-/// 0x40017c.  Mode 5's map value is cut from the flow-time rows, so the cases
-/// are labelled by address, and the case body, once it takes in a copy of the
-/// epilogue, starts at 0x40017c: the label must be the table's 0x4001a8.
+/// 0x40017c.  Mode 1's map value is sent away by the table guard, so the
+/// table is built over the map value.  The case body, once it takes in a copy
+/// of the epilogue, starts at 0x40017c, which must never label a case.
 #[test]
 fn address_labels_are_the_table_values_not_the_block_starts() {
     let fixture = SourceFixture {
@@ -620,6 +620,7 @@ fn address_labels_hold_at_a_case_starting_with_a_nop() {
 
 /// The `switch_shared_epilogue_mipsel` switch, assembled with a `nop` at the
 /// start of the case at the table value 0x4001a8, which modes 0 and 5 reach.
+/// A case labelled by address must be labelled by that table value.
 #[test]
 fn address_labels_hold_at_a_mips_case_starting_with_a_nop() {
     let fixture = SourceFixture {
@@ -630,8 +631,71 @@ fn address_labels_hold_at_a_mips_case_starting_with_a_nop() {
         modes: 40,
     };
     let c = source_decompile(&fixture);
-    assert!(c.contains("case 0x4001a8:"), "lost the table value 0x4001a8: {c}");
+    assert!(
+        !c.contains("labelled by address") || c.contains("case 0x4001a8:"),
+        "lost the table value 0x4001a8: {c}"
+    );
     assert!(!c.contains("case 0x40017c:"), "labelled a case by its block start: {c}");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixture, &c);
+}
+
+/// `pick` bounds `mode` to 0..4, and a second guard bounds `map[mode] - 8`
+/// to the 7-entry table.  Mode 1's map value is sent away by that guard, so
+/// a table over `mode` stops at mode 1 and loses the cases modes 2 and 3
+/// reach: the table is built over the map value instead.
+#[test]
+fn map_value_a_guard_sends_away_keeps_later_rows() {
+    let fixture = SourceFixture {
+        name: "switch_maprow_mipsel",
+        pick: "0x400110",
+        base: 0x400000,
+        map: (0x400200, 10),
+        modes: 40,
+    };
+    let c = source_decompile(&fixture);
+    assert!(!c.contains("labelled by address"), "labelled cases by address: {c}");
+    for body in ["return a0 * 5 + 0x3ef;", "return a0 * 3 + 1000;"] {
+        assert!(c.contains(body), "lost the case body {body}: {c}");
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixture, &c);
+}
+
+/// GCC checks `map[mode]` in memory and reloads it to index the table, so
+/// the check bounds the reloaded value only through an equal address.  Modes
+/// 3 and 5 are sent away by it, and mode 6 reaches a case no earlier mode
+/// does.
+#[test]
+fn reloaded_map_value_bounds_the_table() {
+    let fixture = SourceFixture {
+        name: "switch_maprow_reload_x86_64",
+        pick: "0x401000",
+        base: 0x400000,
+        map: (0x402058, 14),
+        modes: 40,
+    };
+    let c = source_decompile(&fixture);
+    assert!(!c.contains("labelled by address"), "labelled cases by address: {c}");
+    assert!(c.contains("case 10:"), "lost the case mode 6 reaches: {c}");
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    source_round_trip(&fixture, &c);
+}
+
+/// Mode 1's map value is sent away by the table guard, and its row would read
+/// far outside the image, so a table over `mode` cannot be built at all.
+#[test]
+fn map_value_reading_outside_the_image_keeps_the_switch() {
+    let fixture = SourceFixture {
+        name: "switch_maprow_far_x86_64",
+        pick: "0x401000",
+        base: 0x400000,
+        map: (0x402048, 12),
+        modes: 40,
+    };
+    let c = source_decompile(&fixture);
+    assert!(c.contains("switch("), "lost the switch: {c}");
+    assert!(!c.contains("jump-as-call"), "printed the dispatch as a call: {c}");
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     source_round_trip(&fixture, &c);
 }
