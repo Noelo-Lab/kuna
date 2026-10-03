@@ -2119,3 +2119,18 @@ appending a register-carried byte through a specialized grow helper, a two-byte
 literal append whose returned reference is used, an unprovable register-count
 append, a collapse whose continuation zeroes the changed registers, and 29 near
 misses, one defect each, that must stay unrolled in both passes.
+
+### ARM CPSR control fields (GH-848)
+
+ARM-state `MRS CPSR` combines modeled NZCVQ flags with
+`readCPSRControl()` state. Before ARMv6, the helper supplies bits 0 through 26,
+including the architecturally reserved status bits 19:16. On ARMv6 and later,
+`GE1` through `GE4` supply bits 19:16 directly and those bits are excluded from
+the helper value. `MSR CPSR` sends selected non-flag control bits to
+`writeCPSRControl(value, mask)`; on ARMv6 and later, selected GE bits update the
+modeled `GE1` through `GE4` fields instead. The helper accesses explicit
+architectural state, including the IRQ/FIQ and processor-mode control byte; it
+does not change the host process interrupt state. An execution adapter must
+provide processor-version and privilege-appropriate reads and masked writes.
+Register and immediate MSR update NZCVQ only when the flag byte is selected,
+preserving arithmetic flags across control-only writes.
