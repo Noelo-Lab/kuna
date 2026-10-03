@@ -590,10 +590,30 @@ like the stack ones: `handle_new_load_copies` marks the stores that reach them
 `addrforce` within the guarded range and propagates the COPYs away, so each
 store that a LOAD may read is kept where the binary makes it. A range is
 guarded only when it has at least two writes other than `INDIRECT`s, since a
-single write already reaches the return guard; a range written in a smaller
-piece is skipped, because its kept piece would print as a store of the whole
-range beside the piece; and one heritage pass stops guarding further ranges at
-`GLOBAL_LOAD_BUDGET` (4096) COPYs. Two rules respect the marks so that a kept
+single write already reaches the return guard. A range written in smaller
+pieces instead marks its original real writes `addrforce`
+(`kuna_partialglobalload.rs (apply)`), preserving each write's
+address and width. The synthetic full-width PIECEs created by width
+normalization are not forced: doing so would add a write of the whole range
+beside the original partial write. This keeps both halves in
+`gs.a = b; gs.b = c; x = *p; gs = 0`, so a pointer aimed at `gs` reads the
+new halves. This partial-range correction covers LOADs whose pointer derives
+from a nonpersistent function input through SSA operations. Memory-fetched
+and call-created pointers retain their existing behavior pending separate
+alias provenance recovery. Input provenance requires a reachable input in a
+bounded SSA graph walk; a cycle alone supplies no input provenance, and a
+walk exceeding 1024 varnodes leaves the existing behavior. Partial guards
+resolve pointer bounds after SSA
+renaming and skip a LOAD proven disjoint from the global: unsigned intervals through
+copies, extensions, byte concatenations, bounded carry bits and arithmetic
+without wrap expose constant pointer prefixes. Unknown operations, cycles,
+wrap and the bounded walk conservatively keep the stores. A word-addressed
+space or a pointer width different from its space's address width also keeps
+the stores, without attempting a byte-interval disjointness proof. This avoids
+retaining zero-page pointer construction when that pointer can only read a
+disjoint table. The same load selection and budget apply to partial ranges; one
+heritage pass stops guarding further ranges at `GLOBAL_LOAD_BUDGET` (4096)
+reads. Two rules respect the marks so that a kept
 store prints once. `RulePropagateCopy` does not move a forced store's value
 into a COPY of the global into its own storage, which is what a `MULTIEQUAL`
 becomes when a shared return block is split
