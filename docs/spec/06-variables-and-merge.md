@@ -333,6 +333,15 @@ high would collide after inflating its cover to the candidate's
 mode of a wrong "implied" is a value printed at a program point where it no
 longer holds — which is why every unsafe case resolves to explicit.
 
+Enabled system-call user ops follow the same memory fence as ordinary calls.
+`kuna_syscallregs.rs (memory_calls)` lists only the recognized, uninjected
+family user ops under chapter 02's `syscallregs` image policy; these have no
+call-spec record, so the ordinary call-site iteration cannot see them. A
+pointer LOAD or call result whose cover crosses one stays explicit. Thus
+`v = *p; svc; return v * 5 + *p` saves the first read before the system call,
+and two system calls cannot collapse their intervening read into the second
+one. Unrelated CALLOTHER operations retain their existing behavior.
+
 A store to a global is neither a STORE nor a call: it is a `COPY` (or an
 arithmetic op) whose output is the global's own varnode, so the STORE arm never
 sees it, and `x = *p; gi = b; return x;` printed `gi = a1; return *a0;`, which

@@ -979,6 +979,19 @@ argument is not also a returned half, even when the function throws the result
 away and the kernel-preserved argument register still reaches the `RETURN`. It
 stays free to be the next call's argument.
 
+The same policy gives the recognized system call unknown effects on writable
+memory. `kuna_syscallregs.rs (guard_memory)`, called by chapter 03's
+`Heritage::guard`, places an `INDIRECT` on every new writable range in the
+default data space or stack space, with address-tied outputs forced as for an
+ordinary call. It runs during heritage rather than inserting markers before
+heritage, which would falsely make the range look previously processed. A
+store before `read(fd, &sink, 4)` remains observable to the kernel, and a load
+after it reads the global buffer instead of the earlier stored value: `sink =
+v; svc; return v * 5 + sink` no longer folds to `return v * 6` (GH-856).
+Registers, unique temporaries, read-only ranges, unrelated user ops, and
+compiler-spec injected system calls keep their existing effects. `off`, and
+`auto` on an unclassified image, retain the original memory model too.
+
 What it does not model. Arguments the function hands the kernel untouched are
 not read, since nothing says how many of them the kernel reads, and taking all
 of them would give a zero-argument call phantom parameters; the list stops at

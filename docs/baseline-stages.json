@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1876,
-    1876
+    1878,
+    1878
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1037,6 +1037,8 @@
     "data:SYSCALLREGS-AARCH64 #7: the barrier in fence is not a system call in either pass",
     "data:SYSCALLREGS-ARM #10: keep passes the svc result and the r1 it kept to use2",
     "data:SYSCALLREGS-ARM #11: with option syscallregs off keep passes its own setup value as the result",
+    "data:SYSCALLREGS-ARM #12: a system call may replace a global buffer",
+    "data:SYSCALLREGS-ARM #13: off keeps the stale global value",
     "data:SYSCALLREGS-ARM #1: with option syscallregs on pair is a one-register int function",
     "data:SYSCALLREGS-ARM #2: pair returns the svc result and shows the registers it set up",
     "data:SYSCALLREGS-ARM #3: with option syscallregs off or auto the setup comes back as a register pair",
