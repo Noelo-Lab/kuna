@@ -183,6 +183,10 @@ pub struct SimOracle {
     /// The compiler spec registerProgram sends (Ghidra picks it per image:
     /// `x86-64-win.cspec` for a PE).
     pub cspec: String,
+    /// String data the "Java side" has defined, keyed by start VMA:
+    /// `(label, character size, byte length)`, answered as Ghidra's string
+    /// analyzer leaves it (a read-only, type-locked character array).
+    pub string_symbols: BTreeMap<u64, (String, i32, i64)>,
 }
 
 /// The two ways `DecompileCallback.getPcodeInject` declines to answer, which
@@ -303,6 +307,7 @@ impl SimOracle {
             local_var_overrides: BTreeMap::new(),
             inject_fault: None,
             cspec: "x86-64-gcc.cspec".to_string(),
+            string_symbols: BTreeMap::new(),
         }
     }
 
@@ -484,6 +489,20 @@ impl SimOracle {
         if self.prog.is_import_slot(offset) {
             if let Some(name) = self.code_label(offset) {
                 return resp_string(&self.extern_ref_doc(&addr, &name));
+            }
+        }
+        if let Some((start, (name, char_size, len))) = self
+            .string_symbols
+            .range(..=offset)
+            .next_back()
+            .map(|(s, v)| (*s, v.clone()))
+        {
+            if offset < start.wrapping_add(len as u64) {
+                let sym_addr = Address::new(
+                    Rc::clone(addr.get_space().expect("ram address has a space")),
+                    start,
+                );
+                return resp_string(&self.string_doc(&sym_addr, &name, char_size, len));
             }
         }
         if let Some(name) = self.code_label(offset) {
@@ -815,6 +834,38 @@ impl SimOracle {
             start
                 .encode_sized(&mut e, size.max(1))
                 .expect("data addr encodes");
+            e.open_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_MAPSYM);
+            e.close_element(&kuna_ghidra::ids::ELEM_DOC);
+        }
+        doc
+    }
+
+    /// A defined string as Java maps it (`DecompileCallback.encodeData` over
+    /// Ghidra's string data): a read-only, type-locked `<symbol>` whose type is
+    /// an array of the character type, mapped over the whole string.
+    fn string_doc(&self, start: &Address, name: &str, char_size: i32, len: i64) -> Vec<u8> {
+        let types = self.prog.arch().types();
+        let elem = types.get_type_char(char_size).expect("character core type");
+        let array = types
+            .get_type_array((len / char_size as i64) as i32, elem)
+            .expect("character array type");
+        let mut doc = Vec::new();
+        {
+            let mut e = PackedEncode::new(&mut doc);
+            e.open_element(&kuna_ghidra::ids::ELEM_DOC);
+            e.write_unsigned_integer(&ATTRIB_ID, 0);
+            e.open_element(&ELEM_MAPSYM);
+            e.open_element(&ELEM_SYMBOL);
+            e.write_string(&ATTRIB_NAME, name.as_bytes());
+            e.write_bool(&ATTRIB_TYPELOCK, true);
+            e.write_bool(&ATTRIB_NAMELOCK, true);
+            e.write_bool(&ATTRIB_READONLY, true);
+            e.write_signed_integer(&ATTRIB_CAT, -1);
+            self.encode_wire_type(&mut e, &array);
+            e.close_element(&ELEM_SYMBOL);
+            start.encode_sized(&mut e, len as i32).expect("string addr encodes");
             e.open_element(&ELEM_RANGELIST);
             e.close_element(&ELEM_RANGELIST);
             e.close_element(&ELEM_MAPSYM);

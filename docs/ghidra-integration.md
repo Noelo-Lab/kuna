@@ -259,6 +259,10 @@ relocated the lazy model to the seams the kuna pipeline actually reads
   itself types as pointer-to-code. Java maps the slot with one byte of storage;
   kuna maps the whole pointer and flags it `externref`, as upstream does, so a
   call through a PE import slot prints as the import.
+- **String literals**: Ghidra defines a string as a read-only `char[N]` or
+  `wchar_t[N]` under a label (`s_…`, `u_…`). The printer's read-only check asks
+  the remote scope (`Architecture::is_global_read_only`), as upstream's
+  `ScopeGhidra::isReadOnly` does, so the reference prints as the literal.
 - **Tracked registers**: the pspec `<tracked_set>` decodes as the static default,
   and `ContextGhidra` is wired for real — decompileAt issues getTrackedRegisters
   at the entry (cached until flushNative) and merges the host's values OVER the

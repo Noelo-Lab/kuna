@@ -9205,12 +9205,7 @@ impl PrintC {
             return false;
         }
         // Check that the string location is readonly (the global-scope query).
-        let gscope = match arch.symboltab.get_global_scope() {
-            Some(g) => g,
-            None => return false,
-        };
-        let nulladdr = Address::new_invalid();
-        if !arch.symboltab.is_read_only(gscope, &stringaddr, 1, &nulladdr) {
+        if !arch.is_global_read_only(&stringaddr, 1) {
             return false;
         }
         let mut s = String::new();
