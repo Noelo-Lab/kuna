@@ -37,5 +37,5 @@
       "lt": 3500
     }
   },
-  "notes": "Issue #818: `big` stores a pointer to a global 200 times, each followed by a pointer store, a load through the global and an early return (globalptrstores_x86_64.py). The last match is #798's load through the global after the pointer store. CPU s, min of 11: 1.05 before #798, 5.82 on main bb97514e1, 2.15 with the shared walks."
+  "notes": "Issue #818: `big` stores a pointer to a global 200 times, each followed by a pointer store, a load through the global and an early return (globalptrstores_x86_64.py). The last match is #798's load through the global after the pointer store. CPU s, min of 11: 0.93 before #798, 5.12 on main 03fddeb29, 1.77 with the shared walks."
 }
