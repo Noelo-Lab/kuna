@@ -60,10 +60,11 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="indirectonly-escape #1: by default the count lives in a register local" min="1" max="1">int4 v2; // r14d</stringmatch>
+<stringmatch name="indirectonly-escape #1: by default the count lives in a register local" min="1" max="1">int4 v2; // ([^\n]+ \| )?r14d( \| [^\n]+)?$
+^  int4 v3; // ([^\n]+ \| )?stack - 0x30( \| [^\n]+)?$</stringmatch>
 <stringmatch name="indirectonly-escape #2: and the escaped slot is read, not written" min="1" max="1">v2 = v3 \+ -1;</stringmatch>
-<stringmatch name="indirectonly-escape #3: that slot is its own variable by default" min="1" max="1">int4 v3; // stack - 0x30</stringmatch>
-<stringmatch name="indirectonly-escape #4: with the option on the register is merged into the slot" min="1" max="1">int4 v2; // stack - 0x30</stringmatch>
+<stringmatch name="indirectonly-escape #3: that slot is its own variable by default" min="1" max="1">int4 v3; // ([^\n]+ \| )?stack - 0x30( \| [^\n]+)?$</stringmatch>
+<stringmatch name="indirectonly-escape #4: with the option on the register is merged into the slot" min="1" max="1">int4 v2; // ([^\n]+ \| )?stack - 0x30( \| [^\n]+)?$</stringmatch>
 <stringmatch name="indirectonly-escape #5: so the decrement is written to memory twice instead of once" min="3" max="3">v2 -= 1;</stringmatch>
 <stringmatch name="indirectonly-escape #6: and both arms still hand the object to the call that reads it" min="2" max="2">a_done\(&amp;v1\);</stringmatch>
 </decompilertest>

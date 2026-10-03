@@ -761,7 +761,11 @@ fn soft_float_arm_lays_dwarf_prototypes_out_in_core_registers() {
     assert!(dmix.contains(" = a;"), "{dmix}");
     let s4 = function(&text, "s4");
     assert!(s4.contains("v1 = dmix(a,k << 1);"), "{s4}");
-    assert!(!text.contains("// r1"), "read a core register as unset: {text}");
+    assert!(
+        !text.lines().filter_map(|line| line.split_once("; // "))
+            .any(|(_, sources)| sources.split(" | ").any(|source| source == "r1")),
+        "read a core register as unset: {text}"
+    );
 }
 
 /// `static float sq(float x) { return x * x + 1.0f; }` (noinline) and its

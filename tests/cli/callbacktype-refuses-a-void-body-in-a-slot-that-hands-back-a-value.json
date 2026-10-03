@@ -30,9 +30,9 @@
       "eq": 0
     },
     "stdout_matches": [
-      "void start_puts\\(char \\*a0\\)\\n\\{\\n  puts\\(a0\\); // tail-call\\n\\}",
+      "void start_puts\\(char \\*a0\\)\\n\\{\\n(?:  // a\\d+: [^\\r\\n]+\\n)*  puts\\(a0\\); // tail-call\\n\\}",
       "pthread_create\\(&v\\d+,0,start_puts,",
-      "void warn_count\\([^)]*\\)\\n\\{\\n  HITS \\+= a1;\\n\\}",
+      "void warn_count\\([^)]*\\)\\n\\{\\n(?:  // a\\d+: [^\\r\\n]+\\n)*  HITS \\+= a1;\\n\\}",
       "glob\\(\\\"/tmp/\\*\\\",0,warn_count,v\\d+\\)"
     ],
     "stdout_absent": [
@@ -42,5 +42,5 @@
     ]
   },
   "notes": "`start_puts` is a `void` routine cast into pthread_create's `void *(*)(void *)` slot ending in a tail-called `puts`, which sets only the low four of the eight bytes returned; `warn_count`, cast into glob's `int` errfunc slot, never writes the return register. Parking either invents the return from the register's leftover (`CONCAT44(dat_4,puts(a0))`, an unset `v1`).",
-  "probe_id": "p-8ee15a584aa7"
+  "probe_id": "p-30bba2570891"
 }

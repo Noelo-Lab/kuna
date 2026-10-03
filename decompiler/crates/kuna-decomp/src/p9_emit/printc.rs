@@ -2541,6 +2541,7 @@ impl PrintC {
         // HighVariables directly (the `kuna_name` stand-in), which is the same set
         // of locals the scope would declare.
         let _emitted_decls = self.emit_local_var_decls(fd, arch);
+        self.emit_parameter_sources(fd, arch);
         if fd.sblocks_get_size() != 0 {
             self.emit_function_body(fd, arch);
         } else {
@@ -3273,6 +3274,21 @@ impl PrintC {
                 }
             }
         }
+        let mut source_comments = std::collections::HashMap::new();
+        if arch.name_style_angr {
+            for (high, _) in &decls {
+                if let Some(comment) = crate::kuna_varsources::high_comment(fd, arch, *high) {
+                    source_comments.insert(*high, comment);
+                }
+            }
+            for (&high, &owner) in &self.local_name_aliases {
+                let comments = source_comments.remove(&owner).into_iter()
+                    .chain(crate::kuna_varsources::high_comment(fd, arch, high));
+                if let Some(comment) = crate::kuna_varsources::combine_comments(comments) {
+                    source_comments.insert(owner, comment);
+                }
+            }
+        }
         for (high, name) in &decls {
             // C++ `emitVarDecl(sym)` always writes the declared symbol's id
             // (prettyprint.cc:154 `writeUnsignedInteger(ATTRIB_SYMREF, sym->getId())`),
@@ -3322,6 +3338,7 @@ impl PrintC {
                 .or(decl_rep_index);
             let (mut decl_type, mut decl_back, mut array_count, comment) =
                 self.rendered_local_decl(fd, arch, *high);
+            let comment = source_comments.remove(high).or(comment);
             // (kuna) The Symbol-keyed collapse arbitrated a type disagreement between
             // the several highs of one Symbol.
             if let Some((t, b, a)) = symbol_decl_type.get(high) {
@@ -3375,11 +3392,6 @@ impl PrintC {
             }
             self.emit.end_var_decl(id);
             self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
-            // (kuna) the storage comment (`// eax` / `// stack - 0xNN`) is the
-            // angr-style local annotation; the ghidra naming scheme (`option
-            // namestyle ghidra`, `name_style_angr = false`) emits no storage
-            // comment.  Gate the emit on the flag (default angr → unchanged, so
-            // the 675 corpus is unaffected).
             if arch.name_style_angr {
                 if let Some((ctext, spc, off)) = comment {
                     self.emit.spaces(1, 0);
@@ -3670,23 +3682,16 @@ impl PrintC {
         overrides
     }
 
-    /// The declaration type name + storage comment for a named local high.  The
-    /// comment is the angr `kunaStorageComment` (register name lowercased) for the
-    /// high's name representative.
+    /// The declaration type and original storage key used by declaration collapse.
     fn local_decl_type_and_comment(
         &self,
         fd: &Funcdata,
         arch: &Architecture,
         high: crate::context::HighVariableId,
     ) -> ((String, String), Option<(String, std::rc::Rc<kuna_base::space::AddrSpace>, u64)>) {
-        let h = match fd.high_bank().get(high) {
-            Some(h) => h,
-            None => return (("undefined1".to_string(), String::new()), None),
-        };
-        // Type name + storage comment: from the high's storage representative -
-        // the addr-tied (mapped, in-scope) member, which is the C++ symbol's
-        // `getFirstWholeMap()` storage (e.g. the ACC register), NOT a trim-COPY
-        // unique.  Fall back to instance 0 if none is addr-tied.
+        if fd.high_bank().get(high).is_none() {
+            return (("undefined1".to_string(), String::new()), None);
+        }
         let rep = decl_rep_varnode(fd, high);
         // (kuna `declhightype`) The declared type is the merged high's own -- the
         // one `ActionSetCasts` checked every use in the body against -- not
@@ -3710,41 +3715,44 @@ impl PrintC {
                 // set decided one for this high.
                 let decl_ty = self.sign_plan.decl_type(high).unwrap_or(decl_ty);
                 let tn = type_name_for_decl(decl_ty, self.rt_ctx);
-                let loc = v.get_addr().clone();
-                let size = v.get_size();
-                let comment = loc.get_space().and_then(|spc| {
-                    let regname = arch.translate().get_register_name(spc, loc.get_offset(), size);
-                    if !regname.is_empty() {
-                        // kunaStorageComment: register name lowercased.
-                        return Some((regname.to_ascii_lowercase(), spc.clone(), loc.get_offset()));
-                    }
-                    // Stack local: `// stack - 0xNN` / `// stack + 0xNN`
-                    // (C++ `kunaStorageComment` for a spacebase local).
-                    if spc.get_index() == fd.get_arch().manage().get_stack_space().map(|s| s.get_index()).unwrap_or(-99) {
-                        // For an array/struct member the declaration is anchored at
-                        // the Symbol base, so subtract the in-symbol byte offset.
-                        let sym_off = h.kuna_symbol_offset();
-                        let base_off = if sym_off > 0 {
-                            loc.get_offset().wrapping_sub(sym_off as u64)
-                        } else {
-                            loc.get_offset()
-                        };
-                        // Signed offset within the stack space.
-                        let signed = kuna_base::address::sign_extend(base_off as i64, (spc.get_addr_size() as i32) * 8 - 1);
-                        let text = if signed < 0 {
-                            format!("stack - {:#x}", (-signed) as u64)
-                        } else {
-                            format!("stack + {:#x}", signed as u64)
-                        };
-                        return Some((text, spc.clone(), loc.get_offset()));
-                    }
-                    None
-                });
+                let comment = crate::kuna_varsources::representative_comment(fd, arch, high, v);
                 (tn, comment)
             }
             None => (("undefined1".to_string(), String::new()), None),
         };
         (type_name, comment)
+    }
+
+    fn emit_parameter_sources(&mut self, fd: &Funcdata, arch: &Architecture) {
+        if !arch.name_style_angr {
+            return;
+        }
+        let proto = fd.get_func_proto();
+        let mut inputs = std::collections::BTreeMap::<_, std::collections::BTreeSet<_>>::new();
+        for id in fd.vbank().iter_def_flag(crate::varnode::varnode_flags::input) {
+            let Some(high_id) = fd.vbank().get(id).and_then(|v| v.get_high()) else { continue };
+            let Some(name) = fd.high_bank().get(high_id).and_then(|h| h.kuna_name()) else { continue };
+            inputs.entry(name).or_default().insert(high_id);
+        }
+        for i in 0..proto.num_params() {
+            let Some(param) = proto.get_param(i) else { continue };
+            let name = crate::database::kuna_materialized_param_name(
+                arch.name_style_angr, i, param.get_name(),
+            );
+            let address = param.get_address();
+            let high_comments = inputs.get(name.as_str()).into_iter().flatten().filter_map(|&high| {
+                crate::kuna_varsources::high_comment(fd, arch, high)
+            });
+            let proto_comment = crate::kuna_varsources::storage_comment(fd, arch, &address, param.get_size());
+            let comment = crate::kuna_varsources::combine_comments(high_comments.chain(proto_comment));
+            let (text, space, offset) = comment.unwrap_or_else(|| {
+                ("tmp".to_string(), fd.get_address().get_space().unwrap().clone(), 0)
+            });
+            self.emit.tag_line();
+            self.emit.tag_comment(
+                &format!("// {name}: {text}"), SyntaxHighlight::CommentColor, &space, offset,
+            );
+        }
     }
 
     /// Emit the structured function body into the open brace (C++

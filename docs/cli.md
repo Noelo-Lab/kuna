@@ -469,8 +469,9 @@ Two consequences worth knowing before you use it. A bare `type <local> <T>`
 states no name, so the retyped local may come back under a different `vN` — the
 storage comment identifies it across the two passes, and
 `type v6 unsigned long *vmtop` pins a name outright. And a local the decompiler
-holds in a temporary rather than in a register or on the stack (kuna prints those
-without a storage comment) has no location a symbol can be mapped to; the
+holds in a temporary rather than in a register or on the stack has no location
+a symbol can be mapped to. Its source comment can still report a register copy
+removed during simplification; `// tmp` means no machine home was recovered. The
 directive is `rejected` with `Not addressable storage` rather than accepted and
 dropped.
 

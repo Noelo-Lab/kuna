@@ -394,6 +394,21 @@ fn strip_banner(c: &str) -> String {
         .join("\n")
 }
 
+fn is_parameter_source_line(line: &str, parameters: &BTreeSet<&str>) -> bool {
+    let Some((name, sources)) = line.strip_prefix("// ").and_then(|s| s.split_once(": ")) else {
+        return false;
+    };
+    let identifier = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    let hexadecimal = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_hexdigit());
+    parameters.contains(name) && sources.split(" | ").all(|home| {
+        home == "tmp"
+            || home.split(':').all(identifier)
+            || home.strip_prefix("stack - 0x").or_else(|| home.strip_prefix("stack + 0x"))
+                .is_some_and(hexadecimal)
+            || home.split_once(" 0x").is_some_and(|(space, offset)| identifier(space) && hexadecimal(offset))
+    })
+}
+
 /// Rewrite the ghidra-mode naming conventions onto the CLI's so the diff
 /// ratio measures the SEMANTIC gap, not the deliberate Phase-3 style
 /// divergence (DIV: ghidra-mode defaults): `DAT_%08x`→`dat_%x`,
@@ -498,7 +513,8 @@ const PIN_FAILLOG_RESOLVABLE: [usize; 3] = [0, 0, 0];
 const PIN_FAILLOG_DIFF_FLOOR: [f64; 3] = [0.02, 0.04, 0.06];
 const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
 // Normalized non-empty line count of the flattened markup C, per target: the
-// structural size of what the GUI renders.  A `<break>`-token regression would
+// structural size of what the GUI renders, excluding standalone parameter-source
+// diagnostics. A `<break>`-token regression would
 // collapse this to ~1 while leaving every ratio-floor assertion green — this
 // pin is what catches it.  (sub_3320 shrank because the noreturn facts now
 // truncate the flow overrun that used to decode neighbouring functions into
@@ -626,7 +642,13 @@ fn ghidra_sim_faillog_pins() {
         ph_resolvables.push(resolvable_placeholders(&run.oracle, c));
         mangled_counts.push(parsed.mangled_tokens);
         vardecl_unresolved_counts.push(ghidra_sim::vardecl_unresolved(parsed));
-        c_line_counts.push(normalized_lines(c).len());
+        let parameters: BTreeSet<&str> = parsed.localdb.as_deref().unwrap_or(&[]).iter()
+            .filter(|symbol| symbol.cat == 0)
+            .map(|symbol| symbol.name.as_str())
+            .collect();
+        c_line_counts.push(normalized_lines(c).iter()
+            .filter(|line| !is_parameter_source_line(line, &parameters))
+            .count());
     }
 
     // The differential-C gap vs the in-process CLI path.

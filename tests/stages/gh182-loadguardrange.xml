@@ -75,10 +75,10 @@ f2e72846fef70efcdae72846fef712fcd6e7bdf91c30062e2ed1002b2cdb072b
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="LOADGUARDRANGE #1: by default the guard bound sizes the array over all six real elements (filled to the next mapped local, like Ghidra)" min="1" max="1">int2 v7 \[8\]; // stack - 0x24</stringmatch>
+<stringmatch name="LOADGUARDRANGE #1: by default the guard bound sizes the array over all six real elements (filled to the next mapped local, like Ghidra)" min="1" max="1">int2 v7 \[8\]; // ([^\n]+ \| )?stack - 0x24( \| [^\n]+)?$</stringmatch>
 <stringmatch name="LOADGUARDRANGE #2: only the off pass caps the array at the min_items fallback, two short of the real extent" min="1" max="1">int2 v7 \[4\]; // stack - 0x24</stringmatch>
-<stringmatch name="LOADGUARDRANGE #3: only the off pass splits element 4 off as a separate never-assigned scalar" min="1" max="1">int2 v8; // stack - 0x1c</stringmatch>
-<stringmatch name="LOADGUARDRANGE #4: only the off pass splits element 5 off as a separate never-assigned scalar" min="1" max="1">int2 v9; // stack - 0x1a</stringmatch>
+<stringmatch name="LOADGUARDRANGE #3: only the off pass splits element 4 off as a separate never-assigned scalar" min="1" max="1">int2 v8; // ([^\n]+ \| )?stack - 0x1c( \| [^\n]+)?$</stringmatch>
+<stringmatch name="LOADGUARDRANGE #4: only the off pass splits element 5 off as a separate never-assigned scalar" min="1" max="1">int2 v9; // ([^\n]+ \| )?stack - 0x1a( \| [^\n]+)?$</stringmatch>
 <stringmatch name="LOADGUARDRANGE #5: the single indexed store writes the array in both passes (in bounds only under the default declaration)" min="2" max="2">v7\[v3\] = cli_atoi\(a1\);</stringmatch>
 <stringmatch name="LOADGUARDRANGE #6: by default element 4 is read through the array, in bounds" min="1" max="1">-100 &lt;= v7\[4\]</stringmatch>
 <stringmatch name="LOADGUARDRANGE #7: by default element 5 is read through the array, in bounds" min="1" max="1">v7\[5\] &lt;= 0x11</stringmatch>

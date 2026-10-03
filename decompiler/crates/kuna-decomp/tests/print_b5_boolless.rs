@@ -15,6 +15,11 @@
 //! RuleLessEqual collapsing the two-compare boolean pattern into one
 //! `INT_LESSEQUAL`, and Merge/naming binding the `v1` local) — reported in the
 //! item's seams_remaining, not asserted here.
+#[path = "common/source_diagnostics.rs"]
+mod source_diagnostics;
+
+use source_diagnostics::{has_decl_source, has_source, normalize_sources};
+
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -480,7 +485,7 @@ fn w10_boolless_positive_datatest_assertion_now_real() {
 ///
 /// boolless is the FIRST function to reach full byte-parity with the C++ oracle
 /// through the un-seam chain.  The former `undefined1` -> `uint1` normalization is
-/// gone; this asserts exact equality to the oracle.
+/// gone; only source diagnostics are normalized for the byte comparison.
 #[test]
 fn w10_boolless_full_byte_parity_modulo_type_inference() {
     let (mut xarch, fd) = match run_full("boolless", 0) {
@@ -500,7 +505,7 @@ fn w10_boolless_full_byte_parity_modulo_type_inference() {
     // The merge/naming/output-storage layer is real: a named `v1` local, the
     // `v1 = dat_52;` trim COPY, the `uint1 v1; // acc` decl, and `return v1`.
     assert!(rust.contains("v1 = dat_52;"), "trim-COPY initial assignment missing:\n{rust}");
-    assert!(rust.contains("v1; // acc"), "decl + storage comment missing:\n{rust}");
+    assert!(has_decl_source(&rust, "v1", "acc"), "decl + storage comment missing:\n{rust}");
     assert!(rust.contains("    v1 = 1;"), "if-body assignment must use the merged name:\n{rust}");
     assert!(rust.contains("return v1;"), "return must use the merged name:\n{rust}");
     // i0x52 (the global) must STILL render as `dat_52` (NOT absorbed into v1).
@@ -517,12 +522,11 @@ fn w10_boolless_full_byte_parity_modulo_type_inference() {
         "no un-inferred `undefined1` may survive type recovery:\n{rust}"
     );
 
-    // FULL byte-parity with the C++ B5 oracle — NO substitution.  boolless is the
-    // first fully-byte-parity function from the un-seam chain.
+    // Preserve exact body and type parity after removing source diagnostics.
     assert_eq!(
-        rust, CPP_B5_ORACLE,
-        "boolless print C must EXACTLY byte-match the C++ B5 oracle (no type-name \
-         substitution).\n--- rust ---\n{rust}\n--- oracle ---\n{CPP_B5_ORACLE}"
+        normalize_sources(&rust), normalize_sources(CPP_B5_ORACLE),
+        "boolless print C must byte-match the C++ B5 oracle after source diagnostics \
+         are normalized (no type-name substitution).\n--- rust ---\n{rust}\n--- oracle ---\n{CPP_B5_ORACLE}"
     );
 }
 
@@ -700,7 +704,7 @@ fn w10_merged_high_has_multiple_instances_and_acc_storage() {
     // single-statement if-body form; reset braceelide for the comparison.
     arch.print_mut().options.set_brace_elide(false);
     let rust = print_c(arch, &fd);
-    assert!(rust.contains("v1; // acc"), "storage comment must be the ACC reg name lowercased, got:\n{rust}");
+    assert!(has_decl_source(&rust, "v1", "acc"), "storage comment must include the ACC reg name lowercased, got:\n{rust}");
 }
 
 /// (3) NAMING IS DATA-DRIVEN PER FUNCTION (anti-hardcode): a different function
@@ -735,7 +739,7 @@ fn w10_naming_conditional_other_function_gets_no_vn_name() {
     // are the assertions a "smuggled the oracle string" implementation would
     // fail; they remain the ground truth of this test.
     assert!(!rust.contains("dat_52"), "boolless's `dat_52` must not appear in condconst:\n{rust}");
-    assert!(!rust.contains("// acc"), "boolless's `// acc` must not appear in condconst:\n{rust}");
+    assert!(!has_source(&rust, "acc"), "boolless's `// acc` must not appear in condconst:\n{rust}");
 
     // Whatever name condconst recovers must be tied to ITS OWN storage, not a
     // constant smuggled from boolless.  If naming fired, the storage comment is
@@ -758,7 +762,7 @@ fn w10_naming_conditional_other_function_gets_no_vn_name() {
         // `AX` (`// ax`), never boolless's `ACC` (`// acc`, already asserted
         // absent above).  This is the same output-recovery path, per function.
         assert!(
-            rust.contains("// ax") || rust.contains("// AX"),
+            has_source(&rust, "ax") || has_source(&rust, "AX"),
             "condconst's recovered local must carry ITS OWN storage comment (the `ax` \
              register), not a boolless artifact; got {named} named local(s):\n{rust}"
         );
@@ -937,7 +941,7 @@ fn verify_w10_infertypes_no_uint1_acc_leak_into_condconst() {
     let rust = print_c(arch, &fd);
     // The boolless ACC artifact (a `uint1 vN; // acc` decl) must not appear.
     assert!(
-        !rust.contains("uint1 v") || !rust.contains("// acc"),
+        !rust.contains("uint1 v") || !has_source(&rust, "acc"),
         "condconst leaked a `uint1 ... // acc` decl -> the engine is replaying \
          boolless's inferred type, not running condconst's own lattice:\n{rust}"
     );

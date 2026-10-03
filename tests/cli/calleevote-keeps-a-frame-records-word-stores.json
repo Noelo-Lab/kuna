@@ -32,7 +32,7 @@
       "v2\\[2\\] = 0x1122334455667788;",
       "long drop\\(struct_\\d+ \\*a0\\)",
       "int advance\\(char \\*\\*a0\\)",
-      "int mkpipe\\(int \\*a0\\)\\n\\{\\n  int v1; // eax\\n  \\n  v1 = pipe\\(a0\\);\\n  return v1 \\+ a0\\[1\\];"
+      "int mkpipe\\(int \\*a0\\)\\n\\{\\n  int v1; // (?:[^|\\r\\n]+ \\| )*eax(?: \\| [^|\\r\\n]+)*\\n  \\n(?:  // a\\d+: [^\\r\\n]+\\n)*  v1 = pipe\\(a0\\);\\n  return v1 \\+ a0\\[1\\];"
     ],
     "stdout_absent": [
       "\\] = '\\\\x",
@@ -42,5 +42,5 @@
     ]
   },
   "notes": "DEFAULT: main passes &cfg, a frame record whose first member is a char *, as a char **. add writes a node through it whose word stores a char * would split into characters, and drop reads past the first member, so neither takes char **; advance(&cursor) does. mkpipe keeps the int * pipe declares.",
-  "probe_id": "a-3a8ba0c13a38"
+  "probe_id": "a-33294eba59de"
 }

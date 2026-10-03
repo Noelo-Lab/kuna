@@ -2042,7 +2042,14 @@ impl SubvariableFlow {
             let new_repl = data.set_input_varnode(repl)?;
             self.rv_mut(rvn).replacement = Some(new_repl);
         }
-        Ok(self.rv(rvn).replacement.expect("get_replace_varnode: replacement set"))
+        let replacement = self.rv(rvn).replacement.expect("get_replace_varnode: replacement set");
+        let source = self.rv(rvn).vn.expect("get_replace_varnode: original set");
+        let mask = self.rv(rvn).mask;
+        let shift = leastsigbit_set(mask);
+        if shift >= 0 && shift % 8 == 0 && (mask >> shift) == calc_mask(self.flowsize) {
+            data.kuna_inherit_storage_slice(replacement, source, shift / 8, self.flowsize);
+        }
+        Ok(replacement)
     }
 
     // -------------------------------------------------------------------------
@@ -6300,6 +6307,32 @@ mod tests {
     }
 
     // ---- constructor / flowsize (subflow.cc:1372-1404) ---------------------
+
+    #[test]
+    fn subvariable_replacements_preserve_byte_sources_without_inventing_bit_homes() {
+        for big_endian in [false, true] {
+            for mask in [0xffff_0000, 0xfe] {
+                let mut fd = build_fd_endian(big_endian);
+                let home = mk_input(&mut fd, 0x80, 8);
+                let root = fd.new_unique(8, Some(unk(8)));
+                let copy = mk_op(&mut fd, 0x1000, 1, OpCode::CPUI_COPY);
+                wire_in(&mut fd, copy, home, 0);
+                let root = wire_out(&mut fd, copy, root);
+                fd.kuna_inherit_storage(root, home);
+                let mut subflow = SubvariableFlow::new(&mut fd, root, mask, true, false, false).unwrap();
+                let rvn = subflow.varmap[&root];
+                let replacement = subflow.get_replace_varnode(&mut fd, rvn).unwrap();
+                let sources = fd.kuna_storage_sources(replacement);
+                if mask == 0xfe {
+                    assert!(sources.is_empty());
+                } else {
+                    assert_eq!(sources.len(), 1);
+                    assert_eq!(sources[0].size, 2);
+                    assert_eq!(sources[0].address.get_offset(), if big_endian { 0x84 } else { 0x82 });
+                }
+            }
+        }
+    }
 
     #[test]
     fn ctor_flowsize_from_mask_width() {

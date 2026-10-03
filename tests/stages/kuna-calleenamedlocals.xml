@@ -267,8 +267,8 @@ c3c3c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="calleenamedlocals #1: the representative is declared in every pass" min="3" max="3">^  Node \*object;$</stringmatch>
-<stringmatch name="calleenamedlocals #2: the member is declared under its own name in every pass" min="3" max="3">^  Node \*object_00;$</stringmatch>
+<stringmatch name="calleenamedlocals #1: the representative is declared in every pass" min="3" max="3">^  Node \*object;( // [^\n]+)?$</stringmatch>
+<stringmatch name="calleenamedlocals #2: the member is declared under its own name in every pass" min="3" max="3">^  Node \*object_00;( // [^\n]+)?$</stringmatch>
 <stringmatch name="calleenamedlocals #3: the representative is loaded, consumed and flagged" min="3" max="3">object = \*representatives;
 consume\(object\);
 object-&gt;skip = 1;</stringmatch>
@@ -292,7 +292,7 @@ put\(obj_1,(1|2)\);</stringmatch>
 <stringmatch name="calleenamedlocals #13: the second slot's address follows its new name" min="3" max="3">w_1 = n \* 5;
 touchl\(&amp;w_1\);
 return w \+ w_1 \* 100;</stringmatch>
-<stringmatch name="calleenamedlocals #14: gc declares the local under a suffix and passes it" min="3" max="3">^  Item \*node_1;$</stringmatch>
+<stringmatch name="calleenamedlocals #14: gc declares the local under a suffix and passes it" min="3" max="3">^  Item \*node_1;( // [^\n]+)?$</stringmatch>
 <stringmatch name="calleenamedlocals #15: gc's array accesses keep the global's name" min="3" max="3">\*\(int4 \*\)&amp;node\[\(\(uint4\)(v1|uVar1) &amp; 7\) \* 8UL \+ 4\] = \*\(int4 \*\)&amp;node\[</stringmatch>
 <stringmatch name="calleenamedlocals #16: the global is never indexed through the local" min="0" max="0">node_1\[</stringmatch>
 <stringmatch name="calleenamedlocals #17: the slot's narrow views follow its renamed declaration" min="3" max="3">perf_ret_1 = small\(1,0x14\);

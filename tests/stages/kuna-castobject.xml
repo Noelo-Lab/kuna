@@ -97,15 +97,19 @@ f88b45fc83e01085c074088b45fcc1e81ceb1c488d4df88b45ecba0000000048
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="castobject #1: under option castobject off exit_code's out-parameter is declared uint4 (bug reproduces; with kept's, two_widths' and mixed's in both passes, seven times)" min="7" max="7">^  uint4 v1; // stack - 0xc$</stringmatch>
+<stringmatch name="castobject #1: under option castobject off exit_code's out-parameter is declared uint4 (bug reproduces; with kept's, two_widths' and mixed's in both passes, seven times)" min="7" max="7">^(uint4 (exit_code|kept|mixed)|uint8 two_widths)\([^\n]+$
+^\{$
+^  uint4 v1; // ([^\n]+ \| )?stack - 0xc( \| [^\n]+)?$</stringmatch>
 <stringmatch name="castobject #2: and the call casts its address (bug reproduces; with kept's and mixed's in both passes, five times)" min="5" max="5">^  if \(waitpid\(a0,\(int4 \*\)&amp;v1,0\) &lt;= -1\)$</stringmatch>
 <stringmatch name="castobject #3: and the arithmetic shift casts the value back (bug reproduces; with kept's in both passes, three times)" min="3" max="3">^    return \(int4\)v1 &gt;&gt; 8 &amp; 0xff;$</stringmatch>
-<stringmatch name="castobject #4: option castobject on declares it int4, as waitpid does (fix, once)" min="1" max="1">^  int4 v1; // stack - 0xc$</stringmatch>
+<stringmatch name="castobject #4: option castobject on declares it int4, as waitpid does (fix, once)" min="1" max="1">^  int4 v1; // ([^\n]+ \| )?stack - 0xc( \| [^\n]+)?$</stringmatch>
 <stringmatch name="castobject #5: the call passes its address uncast (fix; with two_widths' in both passes, three times)" min="3" max="3">^  if \(waitpid\(a0,&amp;v1,0\) &lt;= -1\)$</stringmatch>
 <stringmatch name="castobject #6: and the shift reads it uncast (fix, once)" min="1" max="1">^    return v1 &gt;&gt; 8 &amp; 0xff;$</stringmatch>
 <stringmatch name="castobject #7: an address that is also stored keeps its declaration and casts in both passes (twice)" min="2" max="2">^  keep = \(uint4 \*\)&amp;v1;$</stringmatch>
 <stringmatch name="castobject #8: a status also read one byte at a time keeps its declaration in both passes (twice)" min="2" max="2">v1\._1_1_</stringmatch>
 <stringmatch name="castobject #9: an object that starts with a parameter's value and is also shifted right logically keeps the logical shift on its uint4 declaration in both passes (twice)" min="2" max="2">^    v1 &gt;&gt;= 0x14;$</stringmatch>
-<stringmatch name="castobject #10: a value stored into the object and also shifted right logically on its own keeps the object declared uint4 in both passes (twice)" min="2" max="2">^  uint4 v1; // stack - 0x10$</stringmatch>
+<stringmatch name="castobject #10: a value stored into the object and also shifted right logically on its own keeps the object declared uint4 in both passes (twice)" min="2" max="2">^uint4 stored\([^\n]+$
+^\{$
+^  uint4 v1; // ([^\n]+ \| )?stack - 0x10( \| [^\n]+)?$</stringmatch>
 <stringmatch name="castobject #11: and its call keeps the cast in both passes (twice)" min="2" max="2">^    waitpid\(a0,\(int4 \*\)&amp;v1,0\);$</stringmatch>
 </decompilertest>

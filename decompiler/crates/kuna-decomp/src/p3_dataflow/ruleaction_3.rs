@@ -1896,6 +1896,7 @@ impl Rule for RulePropagateCopy {
                     }
                 }
             }
+            data.kuna_inherit_storage(invn, vn);
             data.op_set_input(op, invn, i).expect("RulePropagateCopy: opSetInput"); // propagate just a single copy
             return 1;
         }
@@ -2386,6 +2387,7 @@ mod tests {
         use pcodeop_flags::*;
         match opc {
             OpCode::CPUI_COPY => unary | nocollapse,
+            OpCode::CPUI_LOAD => special | nocollapse,
             OpCode::CPUI_BOOL_NEGATE => unary | booloutput,
             OpCode::CPUI_BOOL_AND | OpCode::CPUI_BOOL_OR | OpCode::CPUI_BOOL_XOR => {
                 binary | commutative | booloutput
@@ -3105,6 +3107,31 @@ mod tests {
     }
 
     #[test]
+    fn propagate_copy_records_machine_destinations_without_load_address_sources() {
+        let mut fd = build_fd();
+        let pointer = make_input(&mut fd, 0x100, 8);
+        let memory = ram(&fd);
+        let space = fd.new_varnode_space(&memory);
+        let (_, loaded) = def_op(&mut fd, OpCode::CPUI_LOAD, &[space, pointer], 4);
+        for offset in [0x80, 0x84] {
+            let copyop = mk_op(&mut fd, 1, OpCode::CPUI_COPY);
+            let copied = fd.new_varnode_out(4, &Address::new(memory.clone(), offset), copyop).unwrap();
+            wire(&mut fd, copyop, loaded, 0);
+            let other = make_input(&mut fd, 0x200 + offset, 4);
+            let consumer = mk_op(&mut fd, 2, OpCode::CPUI_INT_ADD);
+            wire(&mut fd, consumer, copied, 0);
+            wire(&mut fd, consumer, other, 1);
+            assert_eq!(RulePropagateCopy.apply_op(consumer, &mut fd), 1);
+            assert_eq!(op_in(&fd, consumer, 0), Some(loaded));
+        }
+        let sources = fd.kuna_storage_sources(loaded);
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0].address.get_offset(), 0x80);
+        assert_eq!(sources[1].address.get_offset(), 0x84);
+        assert!(fd.kuna_storage_sources(pointer).is_empty());
+    }
+
+    #[test]
     fn propagate_copy_skips_non_written_and_non_copy() {
         let mut fd = build_fd();
         // input not written -> skip; defined-but-not-copy -> skip.
@@ -3116,6 +3143,9 @@ mod tests {
         wire(&mut fd, op, addout, 0); // written by INT_ADD, not COPY
         wire(&mut fd, op, c, 1); // not written
         assert_eq!(RulePropagateCopy.apply_op(op, &mut fd), 0);
+        assert!(fd.kuna_storage_sources(addout).is_empty());
+        assert!(fd.kuna_storage_sources(a).is_empty());
+        assert!(fd.kuna_storage_sources(b).is_empty());
     }
 
     // --- registration ordering -------------------------------------------

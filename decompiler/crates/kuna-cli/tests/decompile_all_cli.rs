@@ -4626,9 +4626,10 @@ int main(void) {
             for want in kept {
                 assert!(stdout.contains(want), "{fixture} option {opt} lost `{want}`:\n{stdout}");
             }
+            let semantic = without_variable_sources(&stdout);
             for (off, on) in changed {
                 let want = if opt == "on" { on } else { off };
-                assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
+                assert!(semantic.contains(&without_variable_sources(want)), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
             }
             for cc in &compilers {
                 let dir = std::env::temp_dir()
@@ -5272,6 +5273,54 @@ fn castsign_function<'a>(listing: &'a str, name: &str) -> &'a str {
     &listing[start..start + head.len() + rest.find("// Function: ").unwrap_or(rest.len())]
 }
 
+/// Ignore variable-storage diagnostics when checking types and executable C.
+fn without_variable_sources(output: &str) -> String {
+    use regex::Regex;
+    static PATTERNS: std::sync::OnceLock<(Regex, Regex, Regex, Regex)> = std::sync::OnceLock::new();
+    let (home, declaration, prototype, parameter) = PATTERNS.get_or_init(|| {
+        let register = r"(?i:acc|(?:r|e)?(?:ax|bx|cx|dx|sp|bp|di|si)|[abcd][lh]|(?:[sb]p|[sd]i)l|r[0-9]+[bwd]?|(?:[xyz]mm|st)[0-9]+(?:_[a-z]+)?|[cdefgs]s|[fg]s_offset|[csozapd]f)";
+        (
+            Regex::new(&format!(r"^(?:tmp|{register}(?::{register})*|stack [+-] 0x[0-9a-fA-F]+|[A-Za-z_][A-Za-z0-9_]* 0x[0-9a-fA-F]+)$")).unwrap(),
+            Regex::new(r"^(?P<decl>  (?:[A-Za-z_][A-Za-z0-9_]*[ \t]+|\*[ \t]*)+[A-Za-z_][A-Za-z0-9_]*(?: \[[0-9]+\])?;) // (?P<source>.+)$").unwrap(),
+            Regex::new(r"^(?:[A-Za-z_][A-Za-z0-9_]*[ \t]+|\*[ \t]*)+[A-Za-z_][A-Za-z0-9_]*\((?P<params>[^()]*)\)$").unwrap(),
+            Regex::new(r"^(?:[A-Za-z_][A-Za-z0-9_]*[ \t]+|\*[ \t]*)+(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?: \[[0-9]+\])?$").unwrap(),
+        )
+    });
+    let storage = |source: &str| source.split(" | ").all(|part| home.is_match(part));
+    let mut parameters = std::collections::BTreeSet::new();
+    output.split_inclusive('\n').filter_map(|line| {
+        let content = line.strip_suffix('\n').unwrap_or(line);
+        let signature = content.split(" // ").next().unwrap();
+        if let Some(captures) = prototype.captures(signature) {
+            parameters = captures["params"].split(',').filter_map(|part| {
+                parameter.captures(part.trim()).map(|p| p["name"].to_string())
+            }).collect();
+        } else if content == "}" {
+            parameters.clear();
+        }
+        if let Some((name, source)) = content.strip_prefix("  // ").and_then(|s| s.split_once(": ")) {
+            if parameters.contains(name) && storage(source) {
+                return None;
+            }
+        }
+        if let Some(captures) = declaration.captures(content) {
+            let decl = &captures["decl"];
+            let statement = matches!(decl.trim_start().split_whitespace().next(), Some("return" | "goto" | "throw"));
+            if !statement && storage(&captures["source"]) {
+                return Some(format!("{decl}{}", if line.ends_with('\n') { "\n" } else { "" }));
+            }
+        }
+        Some(line.to_string())
+    }).collect()
+}
+
+#[test]
+fn variable_source_normalization_preserves_statement_and_note_boundaries() {
+    let text = "uint1 f(int4 x) // warn: bad data\n{\n  uint1 v1; // ram 0x52 | acc\n  // x: edi | stack - 0xc\n  // note: rax\n  int4 v2; // warning\n  v1 = 1; // acc\n  return v1; // acc\n}\nuint1 g(int4 y)\n{\n  // x: edi\n  // y: esi\n  return y;\n}\n";
+    let expected = "uint1 f(int4 x) // warn: bad data\n{\n  uint1 v1;\n  // note: rax\n  int4 v2; // warning\n  v1 = 1; // acc\n  return v1; // acc\n}\nuint1 g(int4 y)\n{\n  // x: edi\n  return y;\n}\n";
+    assert_eq!(without_variable_sources(text), expected);
+}
+
 /// (kuna `castsign`) A variable the program only compares signed is declared
 /// signed, and the `(long)v` it cost at each comparison goes.  A variable that
 /// `+ - *` reads keeps its unsigned declaration: that arithmetic wraps, and the
@@ -5484,9 +5533,10 @@ int main(void) {
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
             assert!(ok, "kuna decompile-all failed: {stderr}");
+            let semantic = without_variable_sources(&stdout);
             for (off, on) in lines {
                 let want = if opt == "on" { on } else { off };
-                assert!(stdout.contains(want), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
+                assert!(semantic.contains(&without_variable_sources(want)), "{fixture} option {opt} does not print `{want}`:\n{stdout}");
             }
             for cc in &compilers {
                 for level in ["-O0", "-O2"] {
@@ -5521,7 +5571,7 @@ int main(void) {
                     );
                 }
             }
-            printed.push(stdout);
+            printed.push(semantic);
         }
         for name in same {
             assert_eq!(
@@ -5693,9 +5743,10 @@ int main(void) {
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
             assert!(ok, "kuna decompile-all failed: {stderr}");
+            let semantic = without_variable_sources(&stdout);
             for (off, on) in lines {
                 let line = if opt == "on" { on } else { off };
-                assert!(stdout.contains(line), "{fixture} option {opt} does not print `{line}`:\n{stdout}");
+                assert!(semantic.contains(&without_variable_sources(line)), "{fixture} option {opt} does not print `{line}`:\n{stdout}");
             }
             for cc in &compilers {
                 for level in ["-O0", "-O2"] {
@@ -5731,7 +5782,7 @@ int main(void) {
                     );
                 }
             }
-            printed.push(stdout);
+            printed.push(semantic);
         }
         for name in same {
             assert_eq!(
@@ -5773,8 +5824,9 @@ fn castsign_leaves_a_locked_declaration_alone() {
         let (stdout, stderr, ok) =
             run_kuna(&["decompile", &bin, func, "--sleighpath", &sp, "--option", "castsign", "on"]);
         assert!(ok, "kuna decompile failed: {stderr}");
+        let semantic = without_variable_sources(&stdout);
         for want in unlocked {
-            assert!(stdout.contains(want), "{name} {func} unlocked does not print `{want}`:\n{stdout}");
+            assert!(semantic.contains(&without_variable_sources(want)), "{name} {func} unlocked does not print `{want}`:\n{stdout}");
         }
         for opt in ["on", "off"] {
             let args = [
@@ -5783,9 +5835,10 @@ fn castsign_leaves_a_locked_declaration_alone() {
             ];
             let (stdout, stderr, ok) = run_kuna(&args);
             assert!(ok, "kuna decompile --assert failed: {stderr}");
+            let semantic = without_variable_sources(&stdout);
             for want in locked {
                 assert!(
-                    stdout.contains(want),
+                    semantic.contains(&without_variable_sources(want)),
                     "{name} {func} under `{assertion}`, option {opt}, does not print `{want}`:\n{stdout}"
                 );
             }
@@ -5800,8 +5853,9 @@ fn castsign_leaves_a_locked_declaration_alone() {
         ];
         let (stdout, stderr, ok) = run_kuna(&args);
         assert!(ok, "kuna decompile-all failed: {stderr}");
+        let semantic = without_variable_sources(&stdout);
         for want in locked {
-            assert!(stdout.contains(want), "the DWARF local, option {opt}, does not print `{want}`:\n{stdout}");
+            assert!(semantic.contains(&without_variable_sources(want)), "the DWARF local, option {opt}, does not print `{want}`:\n{stdout}");
         }
     }
     let dir = std::env::temp_dir().join(format!("kuna-castsign-lock-{}", std::process::id()));
@@ -5817,8 +5871,9 @@ fn castsign_leaves_a_locked_declaration_alone() {
         ];
         let (stdout, stderr, ok) = run_kuna(&args);
         assert!(ok, "kuna decompile-all (debug info stripped) failed: {stderr}");
+        let semantic = without_variable_sources(&stdout);
         for want in signed_stack {
-            assert!(stdout.contains(want), "stripped, the slot does not print `{want}`:\n{stdout}");
+            assert!(semantic.contains(&without_variable_sources(want)), "stripped, the slot does not print `{want}`:\n{stdout}");
         }
     } else {
         eprintln!("castsign stripped-DWARF check: no `objcopy`");

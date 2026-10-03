@@ -23,7 +23,7 @@
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="Address-only local #1: both passes declare the four-byte object" min="2" max="2">^  int4 v1;$</stringmatch>
+<stringmatch name="Address-only local #1: both passes declare the four-byte object" min="2" max="2">^  int4 v1; // [^\n]+$</stringmatch>
 <stringmatch name="Address-only local #2: the saved pointer reaches that object" min="2" max="2">v2 = &amp;v1;</stringmatch>
 <stringmatch name="Address-only local #3: the address width is never the object width" min="0" max="0">int8 v1;</stringmatch>
 </decompilertest>

@@ -16,6 +16,11 @@
 //!    identical to the C++ oracle (Test B),
 //!  * distinct sources into the merged local both survive the per-source grouping
 //!    (Test C).
+#[path = "common/source_diagnostics.rs"]
+mod source_diagnostics;
+
+use source_diagnostics::normalize_sources;
+
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -138,9 +143,9 @@ fn w10_dc_boolless_not_over_merged_byte_identical() {
     // (Header gap adjusted for the kuna DIV-34 brace-placement default.)
     const CPP: &str = "\nuint1 boolless(void)\n{\n  uint1 v1; // acc\n  \n  v1 = dat_52;\n  if (dat_52 <= 10) {\n    v1 = 1;\n  }\n  return v1;\n}\n";
     assert_eq!(
-        block.trim_end(),
-        CPP.trim_end(),
-        "the dominant-copy hoist must not perturb boolless (no over-merge):\n--- rust ---\n{block}\n--- cpp ---\n{CPP}"
+        normalize_sources(&block).trim_end(),
+        normalize_sources(CPP).trim_end(),
+        "the dominant-copy hoist must not perturb boolless (source diagnostics normalized):\n--- rust ---\n{block}\n--- cpp ---\n{CPP}"
     );
     assert!(block.contains("dat_52"), "the global must stay dat_52:\n{block}");
     assert!(!block.contains("dat_52 = "), "dat_52 must remain read-only (not a hoist target):\n{block}");

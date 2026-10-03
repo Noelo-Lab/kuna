@@ -92,10 +92,16 @@ f64450012075ebe9aefcffff660f1f440000
 <stringmatch name="finalorder #1: no statement is emitted after an unconditional goto" min="0" max="0">^ *goto \w+;$
 ^ +[^ }].*[;{]$</stringmatch>
 <stringmatch name="finalorder #2: the body does not open with a label" min="0" max="0">^ *$
+^  // a0: [^\n]+$
+^  // a1: [^\n]+$
 ^label_</stringmatch>
 <stringmatch name="finalorder #3: the body opens with an indented statement" min="1" max="1">^ *$
+^  // a0: [^\n]+$
+^  // a1: [^\n]+$
 ^  [a-z].*;$</stringmatch>
 <stringmatch name="finalorder #4: the entry component prints first" min="1" max="1">^ *$
+^  // a0: [^\n]+$
+^  // a1: [^\n]+$
 ^  v4 = dat_26558;$</stringmatch>
 <stringmatch name="finalorder #5: the mid-function label the buggy order hoisted is still emitted" min="1" max="1">^label_ee6c:$</stringmatch>
 <stringmatch name="finalorder #6: the entry falls through into the loop head label" min="1" max="1">^label_ec50:$</stringmatch>

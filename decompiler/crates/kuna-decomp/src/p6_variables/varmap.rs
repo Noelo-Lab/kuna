@@ -1976,6 +1976,14 @@ impl ScopeLocal {
         (s.get_id(), s.get_category())
     }
 
+    pub fn symbol_storage(&self, sym: crate::database::SymbolId) -> Vec<(Address, int4)> {
+        self.db.symbol(sym).mapentry.iter().filter_map(|&entry| {
+            let entry = self.db.entry(self.scope, entry);
+            (entry.get_offset() == 0 && !entry.get_addr().is_invalid())
+                .then(|| (entry.get_addr().clone(), entry.get_size()))
+        }).collect()
+    }
+
     /// Whether [`Self::encode`] will actually emit this symbol — the O(1)
     /// single-symbol form of [`Self::encodable_symbol_ids`], for the markup's
     /// `<vardecl symref>` (which is computed per declaration on every

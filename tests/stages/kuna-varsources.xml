@@ -1,0 +1,149 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna user report: local declarations lost their machine-storage comments
+    after COPY elimination, phi merging, or paired-register return recovery.
+    P6 variables / P9 declaration emission. This is a correctness fix under
+    the existing P0 presentation policy: namestyle angr includes sources;
+    namestyle ghidra omits them. No new option is introduced.
+
+    All instructions are independently assembled synthetic x86-64 examples
+    (GNU as, Intel syntax), with functions aligned to 16 bytes:
+
+      copy_home: mov eax,[rdi+24]; test eax,eax; je zero;
+        lea ecx,[rax+1]; mov [rsi],eax; mov eax,ecx; ret;
+        zero: xor eax,eax; ret
+      loop_home: mov eax,[rdi+24]; mov ecx,[rdi+28]; test eax,eax;
+        je ret; lea r9d,[rax+rcx]; xor r8d,r8d;
+        loop: shl r8d,2; movzx edx,byte ptr [rdi+rcx]; or r8d,edx;
+        inc ecx; cmp ecx,r9d; jne loop; mov eax,r8d; ret
+      merged_homes: push rbx; test edi,edi; je other;
+        mov eax,[rsi]; jmp sink; other: mov ebx,[rsi+4]; mov eax,ebx;
+        sink: mov [rdx],eax; add eax,1; pop rbx; ret
+      arithmetic_home: mov eax,[rdi]; imul ecx,eax,3; mov [rsi],ecx;
+        lea edx,[rcx+1]; mov [rsi+4],ecx; add eax,edx; ret
+      constant_home: test edi,edi; je other; mov eax,7; jmp sink;
+        other: mov ebx,[rsi]; mov eax,ebx;
+        sink: mov [rdx],eax; add eax,7; ret
+      joined_home: push rbx; call joined_helper; mov [rdi],rax;
+        mov [rdi+8],rdx; add rax,rdx; pop rbx; ret
+      joined_helper: mov rax,1; mov rdx,2; ret
+      stack_home: sub rsp,24; lea rax,[rdi+rdi*2]; mov [rsp+8],rax;
+        lea rdi,[rsp+8]; call stack_helper; mov rax,[rsp+8]; add rsp,24; ret
+      stack_helper: add qword ptr [rdi],1; ret
+      byte_source: push r15; movzx r15d,byte ptr [rdi+3]; mov r8d,r15d;
+        shl r15d,24; movzx ecx,byte ptr [rdi+2]; shl ecx,16; or r15d,ecx;
+        movzx ecx,byte ptr [rdi+1]; shl ecx,8; or r15d,ecx;
+        movzx ecx,byte ptr [rdi]; or r15d,ecx; mov [rsi],r8d;
+        mov eax,r15d; pop r15; ret
+      cmov_source: push r13; mov r13d,edi; lea eax,[r13-1]; add r13d,1;
+        cmp esi,5; cmovne r13d,eax; mov [rdx],r13d; mov eax,r13d; pop r13; ret
+      parameter_source: push rbx; mov rbx,rdi; mov eax,[rbx];
+        add eax,[rbx+4]; pop rbx; ret
+
+    Before the fix copy_home v1 had no comment, merged_homes reported no
+    registers, and joined_home / joined_helper had no source for the pair.
+    The load's source is eax alone: the derived ecx value is a different
+    value. The multiply's result is ecx alone, not its eax input. A repeated
+    literal 7 must not give unrelated values one another's storage.
+
+    The byte loads are narrowed when their zero extensions become implied
+    casts; their homes must remain visible at the byte width. CMOV merges
+    arithmetic results already held in eax / r13d, without borrowing edi from
+    the arithmetic input. Parameters retain the ABI home plus register copies,
+    including when an explicit prototype supplies the parameter name.
+-->
+<bytechunk space="ram" offset="0x1000">
+8b471885c074088d4801890689c8c331c0c366662e0f1f8400000000000f1f00
+8b47188b4f1c85c0741c448d0c084531c041c1e0020fb6140f4109d0ffc14439
+c975ee4489c0c3660f1f8400000000005385ff74048b06eb058b5e0489d88902
+83c0015bc366662e0f1f8400000000008b076bc803890e8d5101894e0401d0c3
+85ff7407b807000000eb048b1e89d8890283c007c366662e0f1f840000000000
+53e81a000000488907488957084801d05bc366662e0f1f8400000000000f1f00
+48c7c00100000048c7c202000000c3904883ec18488d047f4889442408488d7c
+2408e819000000488b4424084883c418c366662e0f1f8400000000000f1f4000
+48830701c366662e0f1f8400000000004157440fb67f034589f841c1e7180fb6
+4f02c1e1104109cf0fb64f01c1e1084109cf0fb60f4109cf4489064489f8415f
+c366662e0f1f8400000000000f1f400041554189fd418d45ff4183c50183fe05
+440f45e844892a4489e8415dc30f1f00534889fb8b030343045bc3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="copy_home"/>
+<symbol space="ram" offset="0x1020" name="loop_home"/>
+<symbol space="ram" offset="0x1050" name="merged_homes"/>
+<symbol space="ram" offset="0x1070" name="arithmetic_home"/>
+<symbol space="ram" offset="0x1080" name="constant_home"/>
+<symbol space="ram" offset="0x10a0" name="joined_home"/>
+<symbol space="ram" offset="0x10c0" name="joined_helper"/>
+<symbol space="ram" offset="0x10d0" name="stack_home"/>
+<symbol space="ram" offset="0x1100" name="stack_helper"/>
+<symbol space="ram" offset="0x1110" name="byte_source"/>
+<symbol space="ram" offset="0x1150" name="cmov_source"/>
+<symbol space="ram" offset="0x1170" name="parameter_source"/>
+</binaryimage>
+<script>
+  <com>option namestyle angr</com>
+  <com>lo fu copy_home</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu loop_home</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu merged_homes</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu arithmetic_home</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu constant_home</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu joined_home</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu joined_helper</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_home</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_home</com>
+  <com>map addr s0xfffffffffffffff0 int8 named_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu byte_source</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cmov_source</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu parameter_source</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern int4 parameter_source(int4 *cursor);</com>
+  <com>lo fu parameter_source</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option namestyle ghidra</com>
+  <com>lo fu arithmetic_home</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="varsources #1: eliminated load COPY keeps eax, without borrowing derived ecx" min="2" max="2">^  (int4|int) v1; // eax$</stringmatch>
+<stringmatch name="varsources #2: the loop-carried counter keeps ecx" min="1" max="1">^  (uint4|unsigned int) v1; // ecx$</stringmatch>
+<stringmatch name="varsources #3: the accumulator records its r8d and eax homes" min="1" max="1">^  (uint4|unsigned int) v2; // eax \| r8d$</stringmatch>
+<stringmatch name="varsources #4: arithmetic results keep their own register" min="1" max="1">^  (int4|int) v2; // ecx$</stringmatch>
+<stringmatch name="varsources #5: both branch-merged values retain both registers" min="2" max="2">^  (int4|int) v1; // eax \| ebx$</stringmatch>
+<stringmatch name="varsources #6: both paired-return declarations describe the actual join" min="2" max="2">^  char v1 \[16\]; // rdx:rax$</stringmatch>
+<stringmatch name="varsources #7: address-tied stack storage stays visible" min="1" max="1">^  int8 v1 \[2\]; // .*stack - 0x10</stringmatch>
+<stringmatch name="varsources #8: every angr local declaration has a source" min="0" max="0">^  (char|int4|uint1|uint4|int8|int|unsigned char|unsigned int) (v[0-9]+|named_value)( \[[0-9]+\])?;$</stringmatch>
+<stringmatch name="varsources #9: Ghidra naming still omits sources" min="1" max="1">^  (int4|int) iVar1;$</stringmatch>
+<stringmatch name="varsources #10: the independently computed loop bound does not borrow inputs" min="1" max="1">^  (uint4|unsigned int) v3; // r9d$</stringmatch>
+<stringmatch name="varsources #11: an explicit variable name retains its source" min="1" max="1">^  int8 named_value; // .*stack - 0x10</stringmatch>
+<stringmatch name="varsources #12: a narrowed byte retains both copied register homes" min="1" max="1">^  (uint1|unsigned char) v1; // r15b \| r8b$</stringmatch>
+<stringmatch name="varsources #13: all peer byte loads retain their low register home" min="3" max="3">^  (uint1|unsigned char) v[234]; // cl$</stringmatch>
+<stringmatch name="varsources #14: CMOV merges the computed eax and r13d values" min="1" max="1">^  (int4|int) v1; // eax \| r13d$</stringmatch>
+<stringmatch name="varsources #15: the CMOV input parameter keeps its own edi and r13d homes" min="1" max="1">^  // a0: edi \| r13d$</stringmatch>
+<stringmatch name="varsources #16: a copied parameter includes the ABI and callee-saved register" min="1" max="1">^  // a0: rbx \| rdi$</stringmatch>
+<stringmatch name="varsources #17: explicit parameter names retain their register union" min="1" max="1">^  // cursor: rbx \| rdi$</stringmatch>
+</decompilertest>

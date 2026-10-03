@@ -55,13 +55,13 @@
       },
       {
         "path": "functions[0].code",
-        "op": "contains",
-        "value": "int4 iteration; // ebx"
+        "op": "matches",
+        "value": "(?m)^  int4 iteration; // (?:[^|\\r\\n]+ \\| )*ebx(?: \\| [^|\\r\\n]+)*$"
       },
       {
         "path": "functions[0].code",
-        "op": "contains",
-        "value": "int4 accumulator; // r12d"
+        "op": "matches",
+        "value": "(?m)^  int4 accumulator; // (?:[^|\\r\\n]+ \\| )*r12d(?: \\| [^|\\r\\n]+)*$"
       }
     ]
   },

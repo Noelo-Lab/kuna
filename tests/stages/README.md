@@ -170,6 +170,12 @@ repeated stores, a load between calls, and a truly dead-store control. The
 compiled round trips in `kuna-cli/tests/store_copy_effects.rs` also exercise
 aliasing and distinct pointers on AArch64 and x86-64 at `-O0` and `-O2`.
 
+`kuna-varsources.xml` pins register and stack source comments after copy
+elimination, PHI and CMOV merging, byte narrowing, and paired-register returns.
+It also checks explicit local and parameter names, copied parameter homes, and
+the `namestyle ghidra` control. Its x86-64 instructions are independently
+assembled synthetic examples; it contains no bytes from the reported binary.
+
 Infrastructure testcases (no GH issue; they regression-test the kuna stage machinery
 itself): `kuna-console.xml` (registry + `stage list/map/status`), `kuna-assert.xml`
 (`kassert` routing + reported rewind scopes), `kuna-restarts.xml` (restart-reason

@@ -707,14 +707,17 @@ impl Funcdata {
         // First check if it overlaps any other varnode (the pure vbank read).
         if let Some(invn) = self.find_input_overlap(vn)? {
             // Identical pre-existing input: discard the candidate, return invn.
+            self.kuna_inherit_storage(invn, vn);
             return Ok(invn);
         }
         // Split-borrow both banks for the xref callback.
+        let original_vn = vn;
         let vn = {
             let (vbank, obank) = self.banks_mut();
             let mut replace = Funcdata::replace_reads_thunk(obank);
             vbank.set_input(vn, &mut replace)?
         };
+        self.kuna_rekey_storage_sources(original_vn, vn);
         self.set_varnode_properties(vn);
         self.apply_input_effect_marking(vn);
         Ok(vn)
@@ -750,7 +753,9 @@ impl Funcdata {
     /// The bank refuses to destroy an integrated varnode (one with a def or
     /// descendants); that condition is the C++ `LowlevelError`.
     pub fn delete_varnode(&mut self, vn: VarnodeId) -> KunaResult<()> {
-        self.vbank_mut().destroy(vn)
+        self.vbank_mut().destroy(vn)?;
+        self.kuna_forget_storage_sources(vn);
+        Ok(())
     }
 
     /// Create a new Varnode which is a \e clone of the given Varnode
@@ -766,7 +771,9 @@ impl Funcdata {
             let v = self.vbank().get(vn).expect("clone_varnode: stale vn");
             (v.get_size(), v.get_addr().clone(), Rc::clone(v.get_type()), v.get_flags())
         };
-        self.clone_varnode_fields(size, addr, ct, flags)
+        let cloned = self.clone_varnode_fields(size, addr, ct, flags);
+        self.kuna_inherit_storage(cloned, vn);
+        cloned
     }
 
     /// Clone a Varnode from a \e different function's bank into \b this one (the
@@ -776,7 +783,9 @@ impl Funcdata {
             let v = src.vbank().get(vn).expect("clone_varnode_from: stale src vn");
             (v.get_size(), v.get_addr().clone(), Rc::clone(v.get_type()), v.get_flags())
         };
-        self.clone_varnode_fields(size, addr, ct, flags)
+        let cloned = self.clone_varnode_fields(size, addr, ct, flags);
+        self.kuna_extend_storage_sources(cloned, src.kuna_storage_sources(vn).iter().cloned());
+        cloned
     }
 
     /// Shared body of [`clone_varnode`]/[`clone_varnode_from`]: create the new
@@ -850,7 +859,7 @@ impl Funcdata {
             }
         }
         self.vbank_mut().destroy_descend(vn);
-        self.vbank_mut().destroy(vn)
+        self.delete_varnode(vn)
     }
 
     /// Destroy the given Varnode and recursively any op (and its inputs) that
@@ -874,7 +883,7 @@ impl Funcdata {
             return Ok(());
         }
         if !written {
-            return self.vbank_mut().destroy(vn);
+            return self.delete_varnode(vn);
         }
         if let Some(defop) = def {
             let mut scratch: Vec<OpId> = Vec::new();
@@ -909,7 +918,7 @@ impl Funcdata {
                 }
             }
             if self.vbank().get(vn).map(|v| v.is_free()).unwrap_or(false) {
-                self.vbank_mut().destroy(vn)?;
+                self.delete_varnode(vn)?;
             }
         }
         Ok(())
@@ -1450,6 +1459,7 @@ impl Funcdata {
     /// distinct single-arena borrow, so the whole rewiring sequences cleanly
     /// without the `(vbank,obank)` split.
     pub fn total_replace(&mut self, vn: VarnodeId, newvn: VarnodeId) -> KunaResult<()> {
+        self.kuna_inherit_storage(newvn, vn);
         // Snapshot the descend list (we mutate it as we go, mirroring `*iter++`).
         let readers = self.descend_snapshot(vn);
         for op in readers {
@@ -1566,8 +1576,8 @@ impl Funcdata {
         }
 
         let out_size = hi_size + lo_size;
-        self.vbank_mut().destroy(vn_hi)?;
-        self.vbank_mut().destroy(vn_lo)?;
+        self.delete_varnode(vn_hi)?;
+        self.delete_varnode(vn_lo)?;
         let in_vn = self.new_varnode(out_size, &addr, None);
         let in_vn = self.set_input_varnode(in_vn)?;
         for &piece in &piece_list {
@@ -3482,6 +3492,112 @@ mod tests {
         }
         assert_eq!(fd.vbank().get(vn).unwrap().num_descend(), 0);
         assert_eq!(fd.vbank().get(newvn).unwrap().num_descend(), 2);
+    }
+
+    #[test]
+    fn storage_sources_survive_replacements_clones_and_source_deletion() {
+        let mut fd = build_fd();
+        let original = fd.new_varnode(4, &Address::new(ram(&fd), 0x80), None);
+        let first = fd.new_unique(4, None);
+        fd.total_replace(original, first).unwrap();
+        fd.delete_varnode(original).unwrap();
+        let second = fd.new_unique(4, None);
+        fd.total_replace(first, second).unwrap();
+        let cloned = fd.clone_varnode(second);
+        for vn in [first, second, cloned] {
+            let sources = fd.kuna_storage_sources(vn);
+            assert_eq!(sources.len(), 1);
+            assert_eq!(sources[0].address.get_offset(), 0x80);
+            assert_eq!(sources[0].size, 4);
+        }
+        fd.delete_varnode(first).unwrap();
+        assert!(fd.kuna_storage_sources(first).is_empty());
+        let reused = fd.new_unique(4, None);
+        assert!(fd.kuna_storage_sources(reused).is_empty());
+        fd.clear();
+        assert!(fd.kuna_storage_sources(second).is_empty());
+    }
+
+    #[test]
+    fn storage_sources_skip_constants_and_unspecified_width_changes() {
+        let mut fd = build_fd();
+        let original = fd.new_varnode(4, &Address::new(ram(&fd), 0x80), None);
+        let constant = fd.new_constant(4, 7);
+        let temp = fd.new_unique(4, None);
+        fd.total_replace(original, constant).unwrap();
+        fd.kuna_inherit_storage(temp, constant);
+        assert!(fd.kuna_storage_sources(constant).is_empty());
+        assert!(fd.kuna_storage_sources(temp).is_empty());
+        let narrow = fd.new_unique(1, None);
+        fd.kuna_inherit_storage(narrow, original);
+        assert!(fd.kuna_storage_sources(narrow).is_empty());
+        fd.kuna_inherit_storage_slice(narrow, original, 4, 1);
+        assert!(fd.kuna_storage_sources(narrow).is_empty());
+    }
+
+    #[test]
+    fn ghidra_naming_does_not_track_storage_sources() {
+        let mut context = ArchContext::new(build_manager());
+        context.name_style_angr = false;
+        let space = context.manage().get_space_by_name("ram").unwrap().clone();
+        let mut fd = Funcdata::new(
+            "func", "func", Rc::new(context), Address::new(space.clone(), 0x1000),
+            0x10000000, 0x40,
+        ).unwrap();
+        let original = fd.new_varnode(4, &Address::new(space, 0x80), None);
+        let replacement = fd.new_unique(4, None);
+        fd.total_replace(original, replacement).unwrap();
+        assert!(fd.kuna_storage_sources(replacement).is_empty());
+    }
+
+    #[test]
+    fn storage_sources_slice_each_home_from_its_significance_offset() {
+        let mut fd = build_fd();
+        let little = fd.new_varnode(8, &Address::new(ram(&fd), 0x80), None);
+        let big_space = Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR, "bigreg", true, 8, 1, 5,
+            addrspace_flags::hasphysical, 1, 1,
+        ));
+        let big = fd.new_varnode(8, &Address::new(big_space, 0x100), None);
+        let temp = fd.new_unique(8, None);
+        fd.kuna_inherit_storage(temp, little);
+        fd.kuna_inherit_storage(temp, big);
+        fd.kuna_inherit_storage(temp, little);
+        assert_eq!(fd.kuna_storage_sources(temp).len(), 2);
+        let slice = fd.new_unique(2, None);
+        fd.kuna_inherit_storage_slice(slice, temp, 1, 2);
+        let sources = fd.kuna_storage_sources(slice);
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0].address.get_offset(), 0x81);
+        assert_eq!(sources[1].address.get_offset(), 0x105);
+        assert!(sources.iter().all(|source| source.size == 2));
+    }
+
+    #[test]
+    fn removed_extensions_preserve_low_byte_homes_without_arithmetic_origins() {
+        for opcode in [OpCode::CPUI_INT_ZEXT, OpCode::CPUI_INT_SEXT, OpCode::CPUI_INT_ADD] {
+            let mut fd = build_fd();
+            let memory = ram(&fd);
+            let size = if opcode == OpCode::CPUI_INT_ADD { 4 } else { 1 };
+            let input = fd.new_unique(size, None);
+            let op = fd.new_op(if opcode == OpCode::CPUI_INT_ADD { 2 } else { 1 }, Address::new(memory.clone(), 0x1000));
+            fd.op_set_opcode_code(op, opcode);
+            fd.new_varnode_out(4, &Address::new(memory, 0x80), op).unwrap();
+            fd.op_set_input(op, input, 0).unwrap();
+            if opcode == OpCode::CPUI_INT_ADD {
+                let constant = fd.new_constant(size, 1);
+                fd.op_set_input(op, constant, 1).unwrap();
+            }
+            fd.op_destroy(op);
+            let sources = fd.kuna_storage_sources(input);
+            if opcode == OpCode::CPUI_INT_ADD {
+                assert!(sources.is_empty());
+            } else {
+                assert_eq!(sources.len(), 1);
+                assert_eq!(sources[0].address.get_offset(), 0x80);
+                assert_eq!(sources[0].size, 1);
+            }
+        }
     }
 
     #[test]

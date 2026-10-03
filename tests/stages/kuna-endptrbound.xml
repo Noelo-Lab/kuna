@@ -145,15 +145,15 @@
   <com>quit</com>
 </script>
 <stringmatch name="ENDPTRBOUND #1: off, the loop bound is the object that follows the buffer" min="2" max="2">^  \} while \(v3 != v[12]\);$</stringmatch>
-<stringmatch name="ENDPTRBOUND #2: off, the walking pointer is typed after that neighbour" min="2" max="2">^  unsigned long long \*v3;$</stringmatch>
-<stringmatch name="ENDPTRBOUND #3: on, the walked bytes are one 8-byte buffer" min="2" max="2">^  char v1 \[8\]; // stack - 0x58$</stringmatch>
+<stringmatch name="ENDPTRBOUND #2: off, the walking pointer is typed after that neighbour" min="2" max="2">^  unsigned long long \*v3; // [^\n]+$</stringmatch>
+<stringmatch name="ENDPTRBOUND #3: on, the walked bytes are one 8-byte buffer" min="2" max="2">^  char v1 \[8\]; // ([^\n]+ \| )?stack - 0x58( \| [^\n]+)?$</stringmatch>
 <stringmatch name="ENDPTRBOUND #4: on, the bound is one past that buffer" min="2" max="2">^  \} while \(v3 != &amp;v1\[8\]\);$</stringmatch>
 <stringmatch name="ENDPTRBOUND #5: on, the call argument that means the neighbour still names it" min="2" max="2">^    push_back\(v2,\(uint1\)\*v3\);$</stringmatch>
-<stringmatch name="ENDPTRBOUND #6: both passes, a store straddling the walk's end vetoes the buffer" min="2" max="2">^  unsigned long long v3; // stack - 0x54$</stringmatch>
+<stringmatch name="ENDPTRBOUND #6: both passes, a store straddling the walk's end vetoes the buffer" min="2" max="2">^  unsigned long long v3; // ([^\n]+ \| )?stack - 0x54( \| [^\n]+)?$</stringmatch>
 <stringmatch name="ENDPTRBOUND #7: both passes, a comparison that controls no loop exit keeps naming the neighbour" min="2" max="2">^    if \(v4 != v3\)$</stringmatch>
-<stringmatch name="ENDPTRBOUND #8: both passes, that comparison invents no buffer" min="2" max="2">^  unsigned int v2; // stack - 0x60$</stringmatch>
+<stringmatch name="ENDPTRBOUND #8: both passes, that comparison invents no buffer" min="2" max="2">^  unsigned int v2; // ([^\n]+ \| )?stack - 0x60( \| [^\n]+)?$</stringmatch>
 <stringmatch name="ENDPTRBOUND #9: both passes, a walk that reads past its end is not bounded on a buffer" min="2" max="2">^  \} while \(v3 != \(uint1 \*\)v2\);$</stringmatch>
-<stringmatch name="ENDPTRBOUND #10: both passes, a byte walk over an int array keeps the int array" min="2" max="2">^  int4 v1 \[4\];$</stringmatch>
+<stringmatch name="ENDPTRBOUND #10: both passes, a byte walk over an int array keeps the int array" min="2" max="2">^  int4 v1 \[4\]; // [^\n]+$</stringmatch>
 <stringmatch name="ENDPTRBOUND #11: both passes, that array keeps its int indexing" min="2" max="2">^    v1\[v[56]\] = v[56] \* 3 \+ v[23];$</stringmatch>
 <stringmatch name="ENDPTRBOUND #12: on, the byte walk's bound is rebuilt on the int array" min="1" max="1">^  for \(v6 = v1; v6 != &amp;v1\[4\]; </stringmatch>
 </decompilertest>

@@ -485,7 +485,7 @@ c3
 <stringmatch name="FMTSTATIC #16: x86-64 %lf passes the double and the int, no phantom parameter" min="2" max="2">void show\(float8 a0,int4 a1\)</stringmatch>
 <stringmatch name="FMTSTATIC #17: x86-64 %lf prints the double" min="2" max="2">__printf_chk\(1,"value=%lf n=%d\\n",a0,a1\);</stringmatch>
 <stringmatch name="FMTSTATIC #18: x86-64 %lf after an int keeps both arguments" min="2" max="2">__printf_chk\(1,"n=%d v=%lf\\n",a1,a0\);</stringmatch>
-<stringmatch name="FMTSTATIC #19: scanf %lf stores a double, under static on x86-64 and full on both targets" min="3" max="3">float8 v1; // stack - 0x18</stringmatch>
+<stringmatch name="FMTSTATIC #19: scanf %lf stores a double, under static on x86-64 and full on both targets" min="3" max="3">float8 v1; // ([^\n]+ \| )?stack - 0x18( \| [^\n]+)?$</stringmatch>
 <stringmatch name="FMTSTATIC #20: x86-64 scanf %lf returns the double it read" min="2" max="2">float8 rd\(char \*a0\)</stringmatch>
 <stringmatch name="FMTSTATIC #21: ARM hard-float declines a %lf printf, as off" min="3" max="3">void show\(unsigned int a0,unsigned int a1,unsigned int a2\)</stringmatch>
 <stringmatch name="FMTSTATIC #22: ARM hard-float declines %lf after an int, as off" min="3" max="3">void show2\(unsigned int a0\)</stringmatch>

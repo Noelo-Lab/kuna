@@ -1126,10 +1126,9 @@ fn verify_w10_hvnaming_register_local_gets_vn_not_dat() {
     let path = repo_root().join("tests/datatests/floatconv.xml");
     let dt = parse_datatest(&path).expect("parse floatconv.xml");
     let rendered = render_corpus(&dt).expect("floatconv must decompile");
-    // A register-backed coalesced local renders `<type> vN; // r<reg>`.  At least
-    // one such named register local must exist (the persist-proxy did not deny it).
+    // A register-backed local keeps its vN name and a register in its source union.
     let reg_named_local = count_matches(
-        r"(?m)\bv[0-9]+ ?(\[[0-9]+\])?;\s*// (r(ax|sp|bp|di|si|bx|cx|dx)|xmm[0-9]+)\b",
+        r"(?m)\bv[0-9]+ ?(\[[0-9]+\])?;[ \t]*// ([^\n]+ \| )?(r(ax|sp|bp|di|si|bx|cx|dx)|xmm[0-9]+)( \| [^\n]+)?$",
         &rendered,
     )
     .unwrap_or(0);
@@ -1139,11 +1138,10 @@ fn verify_w10_hvnaming_register_local_gets_vn_not_dat() {
          `// r..` storage comment (the persist-proxy must EXCLUDE registers from the \
          `dat_` route):\n{rendered}"
     );
-    // No register storage comment may sit on a `dat_<addr>` token — registers are
-    // never global data.  (`dat_` lines never carry a `// r..` register comment.)
+    // No register source may sit on a dat_<addr> declaration.
     assert_eq!(
         count_matches(
-            r"(?m)\bdat_[0-9a-fx]+\b[^\n]*// (r(ax|sp|bp|di|si|bx|cx|dx)|xmm[0-9]+)\b",
+            r"(?m)\bdat_[0-9a-fx]+\b[^\n]*// ([^\n]+ \| )?(r(ax|sp|bp|di|si|bx|cx|dx)|xmm[0-9]+)( \| [^\n]+)?$",
             &rendered,
         )
             .unwrap_or(0),

@@ -34,8 +34,8 @@
       "void on_int\\(int a0\\)",
       "int by_key_desc\\(int \\*a0,int \\*a1\\)",
       "int by_name\\(void \\*a0,void \\*a1\\)\\n\\{[\\s\\S]*?  return strcmp\\(v\\d+,v\\d+\\); // tail-call\\n\\}",
-      "int warn_path\\(char \\*a0,int a1\\)\\n\\{\\n  int v1; // eax\\n  \\n  v1 = __fprintf_chk\\(stderr,1,\\\"%s %d\\\\n\\\",a0,a1\\); // tail-call\\n  return v1;\\n\\}",
-      "int by_count\\(void \\*a0,void \\*a1\\)\\n\\{\\n  int v1; // eax\\n  \\n  v1 = strcmp\\(\\*\\(char \\*\\*\\)a0,\\*\\(char \\*\\*\\)a1\\);\\n  CMPS \\+= 1;\\n  return v1;\\n\\}"
+      "int warn_path\\(char \\*a0,int a1\\)\\n\\{\\n  int v1; // (?:[^|\\r\\n]+ \\| )*eax(?: \\| [^|\\r\\n]+)*\\n  \\n(?:  // a\\d+: [^\\r\\n]+\\n)*  v1 = __fprintf_chk\\(stderr,1,\\\"%s %d\\\\n\\\",a0,a1\\); // tail-call\\n  return v1;\\n\\}",
+      "int by_count\\(void \\*a0,void \\*a1\\)\\n\\{\\n  int v1; // (?:[^|\\r\\n]+ \\| )*eax(?: \\| [^|\\r\\n]+)*\\n  \\n(?:  // a\\d+: [^\\r\\n]+\\n)*  v1 = strcmp\\(\\*\\(char \\*\\*\\)a0,\\*\\(char \\*\\*\\)a1\\);\\n  CMPS \\+= 1;\\n  return v1;\\n\\}"
     ],
     "stdout_absent": [
       "int by_key\\(int \\*a0,int \\*a1\\)",
@@ -46,5 +46,5 @@
     ]
   },
   "notes": "`by_key`, `on_int` take their slots' prototypes; `by_key_desc`, also stored in a table, keeps its own. `by_name` (a `jmp` to strcmp) and `by_count` (strcmp's value past a counter bump) recover `void`, but nothing after the call writes eax, so the `int` is returned. `warn_path`, a `void` cast into glob's `int` errfunc slot, has by_name's shape and is returned as IDA prints it.",
-  "probe_id": "p-ee7a3d3ddb95"
+  "probe_id": "p-df953ea91884"
 }

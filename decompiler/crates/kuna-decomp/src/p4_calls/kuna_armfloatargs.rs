@@ -748,7 +748,7 @@ fn split_input(data: &mut Funcdata, vn: VarnodeId) -> Option<()> {
     let whole = data.new_varnode_out(8, &addr, piece).ok()?;
     data.op_insert_begin(piece, block);
     data.total_replace(vn, whole).ok()?;
-    data.vbank_mut().destroy(vn).ok()?;
+        data.delete_varnode(vn).ok()?;
     let lo = data.new_varnode(4, &lo_addr, None);
     let lo = data.set_input_varnode(lo).ok()?;
     let hi = data.new_varnode(4, &hi_addr, None);

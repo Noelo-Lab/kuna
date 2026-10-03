@@ -97,12 +97,14 @@ c7e8bafeffff488945f8488b45f84883f8ff7d07b802000000eb22488b45f848
   <com>quit</com>
 </script>
 <stringmatch name="castsign #1: under option castsign off a stack value the body only compares signed casts each comparison back (bug reproduces, once)" min="1" max="1">^  if \(\(int8\)v1 &lt;= -2\)$</stringmatch>
-<stringmatch name="castsign #2: and is declared uint8, beside trim_right's and through_ptr's in both passes (bug reproduces, five times)" min="5" max="5">^  uint8 v1; // stack - 0x10$</stringmatch>
-<stringmatch name="castsign #3: option castsign on declares it int8 (fix, once)" min="1" max="1">^  int8 v1; // stack - 0x10$</stringmatch>
+<stringmatch name="castsign #2: and is declared uint8, beside trim_right's and through_ptr's in both passes (bug reproduces, five times)" min="5" max="5">^(int8 (sign_of|trim_right)|uint8 through_ptr)\([^\n]+$
+^\{$
+^  uint8 v1; // ([^\n]+ \| )?stack - 0x10( \| [^\n]+)?$</stringmatch>
+<stringmatch name="castsign #3: option castsign on declares it int8 (fix, once)" min="1" max="1">^  int8 v1; // ([^\n]+ \| )?stack - 0x10( \| [^\n]+)?$</stringmatch>
 <stringmatch name="castsign #4: and the casts the declaration makes no-ops are dropped (fix, once)" min="1" max="1">^  if \(0 &lt;= v1\)$</stringmatch>
 <stringmatch name="castsign #5: an index the body decrements keeps its cast in both passes, since v1 - 1 would overflow as int8 (twice)" min="2" max="2">0 &lt;= \(int8\)v1 &amp;&amp; \(a0\[v1\] == ' '\)</stringmatch>
 <stringmatch name="castsign #6: a value shifted right logically stays unsigned in both passes (twice)" min="2" max="2">^  return v1 &gt;&gt; 1;$</stringmatch>
 <stringmatch name="castsign #7: halved's and through_ptr's values keep their cast in both passes, as does sign_of's under option castsign off (five times)" min="5" max="5">\(int8\)v1 &lt;= -1\)</stringmatch>
-<stringmatch name="castsign #8: a stack slot whose type is locked keeps uint8 under option castsign on (lock, once)" min="1" max="1">^  uint8 idx; // stack - 0x10$</stringmatch>
+<stringmatch name="castsign #8: a stack slot whose type is locked keeps uint8 under option castsign on (lock, once)" min="1" max="1">^  uint8 idx; // ([^\n]+ \| )?stack - 0x10( \| [^\n]+)?$</stringmatch>
 <stringmatch name="castsign #9: and keeps the casts its signed comparisons need (lock, once)" min="1" max="1">^  if \(0 &lt;= \(int8\)idx\)$</stringmatch>
 </decompilertest>

@@ -98,6 +98,6 @@
 <stringmatch name="signedness #2: and every signed comparison on it carries a cast back to int4 (bug reproduces, once)" min="1" max="1">a2 &lt; \(int4\)v1</stringmatch>
 <stringmatch name="signedness #3: the shipped default, option signedness auto, declares it at the signedness its operations demand (fix, once)" min="1" max="1">^  int4 v1; // eax$</stringmatch>
 <stringmatch name="signedness #4: and the cast the declaration makes a no-op is dropped (fix, once)" min="1" max="1">a2 &lt; v1;</stringmatch>
-<stringmatch name="signedness #5: a local narrower than int keeps its declaration in BOTH passes, because C promotes it before every operator (once per pass)" min="2" max="2">^  int2 v2;$</stringmatch>
-<stringmatch name="signedness #6: while the int-wide locals in that same function do flip, so #5 is the width rule declining and not an inactive option (fix, once)" min="1" max="1">^  uint4 v3; // ecx$</stringmatch>
+<stringmatch name="signedness #5: a local narrower than int keeps its declaration in BOTH passes, because C promotes it before every operator (once per pass)" min="2" max="2">^  int2 v2; // [^\n]+$</stringmatch>
+<stringmatch name="signedness #6: while the int-wide locals in that same function do flip, so #5 is the width rule declining and not an inactive option (fix, once)" min="1" max="1">^  uint4 v3; // ([^\n]+ \| )?ecx( \| [^\n]+)?$</stringmatch>
 </decompilertest>

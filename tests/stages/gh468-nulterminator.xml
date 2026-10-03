@@ -263,7 +263,7 @@ c3
   <com>quit</com>
 </script>
 <stringmatch name="NULTERMINATOR #1: canary_check off declares the 64-byte buffer one element short" min="1" max="1">uint1 v[0-9]+ \[63\];</stringmatch>
-<stringmatch name="NULTERMINATOR #2: canary_check on declares the whole 64-byte buffer" min="1" max="1">uint1 v[0-9]+ \[64\]; // stack - 0x58</stringmatch>
+<stringmatch name="NULTERMINATOR #2: canary_check on declares the whole 64-byte buffer" min="1" max="1">uint1 v[0-9]+ \[64\]; // ([^\n]+ \| )?stack - 0x58( \| [^\n]+)?$</stringmatch>
 <stringmatch name="NULTERMINATOR #3: canary_check on renders the terminator as the indexed store" min="1" max="1">v[0-9]+\[0x3f\] = 0;</stringmatch>
 <stringmatch name="NULTERMINATOR #4: canary_check off splits the terminator into its own char" min="1" max="1">char v[0-9]+; // stack - 0x19</stringmatch>
 <stringmatch name="NULTERMINATOR #5: both canary_check passes keep the bounded copy" min="2" max="2">strncpy\(\(char \*\)v[0-9]+,a0,0x3f\);</stringmatch>
@@ -296,10 +296,10 @@ c3
 <stringmatch name="NULTERMINATOR #32: wide_str on declares [15]" min="1" max="1">uint2 v[0-9]+ \[15\]; // stack - 0x38</stringmatch>
 <stringmatch name="NULTERMINATOR #33: wide_str splits its terminator only with the option off" min="1" max="1">unsigned short v[0-9]+; // stack - 0x1c</stringmatch>
 <stringmatch name="NULTERMINATOR #34: exactly two uint2 arrays, so wide_str never grows past [15]" min="2" max="2">uint2 v[0-9]+ \[</stringmatch>
-<stringmatch name="NULTERMINATOR #35: two_literals keeps the merged range at [3] in both passes" min="2" max="2">char v[0-9]+ \[3\]; // stack - 0x38</stringmatch>
+<stringmatch name="NULTERMINATOR #35: two_literals keeps the merged range at [3] in both passes" min="2" max="2">char v[0-9]+ \[3\]; // ([^\n]+ \| )?stack - 0x38( \| [^\n]+)?$</stringmatch>
 <stringmatch name="NULTERMINATOR #36: two_literals keeps the second literal's zero separate in both passes" min="2" max="2">char v[0-9]+; // stack - 0x35</stringmatch>
 <stringmatch name="NULTERMINATOR #37: struct_field OFF keeps the 48-byte member correctly sized (the sibling active field stays its own variable)" min="1" max="1">char v[0-9]+ \[48\];</stringmatch>
 <stringmatch name="NULTERMINATOR #38: opt-in ON over-extends the member by one, absorbing the sibling active field -- the documented false positive that keeps the option off by default" min="1" max="1">char v[0-9]+ \[49\]; // stack - 0x38</stringmatch>
 <stringmatch name="NULTERMINATOR #39: ON renders the absorbed active field as the array's 49th element" min="1" max="1">v[0-9]+\[0x30\] = 0;</stringmatch>
-<stringmatch name="NULTERMINATOR #40: the uid field beyond active survives in both passes" min="2" max="2">int4 v[0-9]+; // stack - 0x4</stringmatch>
+<stringmatch name="NULTERMINATOR #40: the uid field beyond active survives in both passes" min="2" max="2">int4 v[0-9]+; // ([^\n]+ \| )?stack - 0x4( \| [^\n]+)?$</stringmatch>
 </decompilertest>

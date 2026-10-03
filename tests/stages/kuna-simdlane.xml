@@ -83,7 +83,7 @@ ffe92afeffff662e0f1f840000000000
 </script>
 <stringmatch name="simdlane #1: the option-off pass keeps all 32 opaque lane extractions (and the option-on pass has none)" min="32" max="32">SUB161\(</stringmatch>
 <stringmatch name="simdlane #2: the option-off pass declares the 16-byte shuffle result as an array temporary" min="1" max="1">char v7 \[16\]; // xmm0</stringmatch>
-<stringmatch name="simdlane #3: the option-off pass declares the last byte-lane temporary of the second register" min="1" max="1">char v55; // xmm5_bp</stringmatch>
+<stringmatch name="simdlane #3: the option-off pass declares the last byte-lane temporary of the second register" min="1" max="1">char v55; // ([^\n]+ \| )?xmm5_bp( \| [^\n]+)?$</stringmatch>
 <stringmatch name="simdlane #4: the option-on pass re-anchors every lane on the broadcast source byte (49 of the 50 occurrences)" min="50" max="50">dat_100008040 \+ </stringmatch>
 <stringmatch name="simdlane #5: neither pass invents a lane the shuffle does not select" min="0" max="0">SUB161\(v7,0x1[0-9a-f]\)</stringmatch>
 </decompilertest>

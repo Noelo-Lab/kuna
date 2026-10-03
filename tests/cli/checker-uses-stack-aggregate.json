@@ -28,7 +28,7 @@
       "eq": 0
     },
     "stdout_matches": [
-      "unsigned int v12; // stack - 0x10",
+      "unsigned int v12; // (?:[^|\\r\\n]+ \\| )*stack - 0x10(?: \\| [^|\\r\\n]+)*",
       "v12\\._0_4_ = a;",
       "v12\\._4_4_ = b;",
       "sink\\(&v12\\);"

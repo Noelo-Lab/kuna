@@ -17,6 +17,11 @@
 //!    the body byte-matches the C++ oracle `if ((x == 0) && (y != 10))` (Test B),
 //!  * the splice + orform must NOT perturb boolless — byte identical to the C++
 //!    oracle (Test C: anti-over-splice guard).
+#[path = "common/source_diagnostics.rs"]
+mod source_diagnostics;
+
+use source_diagnostics::normalize_sources;
+
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -151,8 +156,8 @@ fn w10_eob_condconst_conn_forms_andand_byte_identical() {
 {\n  int4 v1; // stack - 0xc\n  \n  v1 = x;\n  \
 if ((x == 0) && (y != 10)) {\n    v1 = 0x14;\n  }\n  return v1;\n}";
     assert_eq!(
-        body, CPP,
-        "condconst_conn must byte-match the C++ && oracle:\n--- rust ---\n{body}\n--- cpp ---\n{CPP}"
+        normalize_sources(&body), normalize_sources(CPP),
+        "condconst_conn must byte-match the C++ && oracle (source diagnostics normalized):\n--- rust ---\n{body}\n--- cpp ---\n{CPP}"
     );
     // Belt-and-suspenders on the load-bearing `&&` token (the BlockCondition).
     assert!(
@@ -176,9 +181,9 @@ fn w10_eob_boolless_not_perturbed_byte_identical() {
     // (Header gap adjusted for the kuna DIV-34 brace-placement default.)
     const CPP: &str = "\nuint1 boolless(void)\n{\n  uint1 v1; // acc\n  \n  v1 = dat_52;\n  if (dat_52 <= 10) {\n    v1 = 1;\n  }\n  return v1;\n}\n";
     assert_eq!(
-        block.trim_end(),
-        CPP.trim_end(),
-        "the empty-block splice / ruleBlockOr must not perturb boolless:\n--- rust ---\n{block}\n--- cpp ---\n{CPP}"
+        normalize_sources(&block).trim_end(),
+        normalize_sources(CPP).trim_end(),
+        "the empty-block splice / ruleBlockOr must not perturb boolless (source diagnostics normalized):\n--- rust ---\n{block}\n--- cpp ---\n{CPP}"
     );
     // boolless's single `if` must NOT become a spurious `&&` condition.
     assert!(!block.contains("&&"), "boolless must not grow a spurious && condition:\n{block}");

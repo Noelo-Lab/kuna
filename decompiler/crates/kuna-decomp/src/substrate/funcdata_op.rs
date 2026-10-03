@@ -225,6 +225,23 @@ impl Funcdata {
     // output linkage
     // -----------------------------------------------------------------------
 
+    /// Extension preserves its input exactly in the low bytes of its output.
+    fn kuna_preserve_extension_storage(&mut self, op: OpId) {
+        if !self.get_arch().name_style_angr {
+            return;
+        }
+        let Some(operation) = self.obank().get(op) else { return };
+        if !matches!(operation.code(), OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT) {
+            return;
+        }
+        let Some(input) = operation.get_in(0) else { return };
+        let Some(output) = operation.get_out() else { return };
+        let Some(size) = self.vbank().get(input).map(|v| v.get_size()) else { return };
+        if self.vbank().get(output).is_some_and(|v| v.get_size() > size) {
+            self.kuna_inherit_storage_slice(input, output, 0, size);
+        }
+    }
+
     /// Unset the output Varnode of the given op (C++ `Funcdata::opUnsetOutput`,
     /// `funcdata_op.cc:52`).  The output Varnode becomes \e free but is not
     /// deleted.
@@ -232,6 +249,7 @@ impl Funcdata {
     /// Statement order is load-bearing: `op->setOutput(0)` MUST come before
     /// `vbank.makeFree(vn)`.
     pub fn op_unset_output(&mut self, op: OpId) {
+        self.kuna_preserve_extension_storage(op);
         let vn = match self.obank().get(op).expect("op_unset_output: stale op").get_out() {
             Some(v) => v,
             None => return, // Nothing to do
@@ -283,11 +301,13 @@ impl Funcdata {
         //   read-repointing callback can reach obank mid-vbank-mutation.  Scoped so
         //   the thunk (holding &mut obank) drops before the later &mut self calls.
         let def = self.def_op_info(op);
+        let original_vn = vn;
         let vn = {
             let (vbank, obank) = self.banks_mut();
             let mut replace = Funcdata::replace_reads_thunk(obank);
             vbank.set_def(vn, def, &mut replace)?
         };
+        self.kuna_rekey_storage_sources(original_vn, vn);
         if refresh {
             self.set_varnode_properties(vn);
         } else {
@@ -1839,6 +1859,7 @@ impl Funcdata {
     /// later naming pass never derefs a freed member.  Then the input links are
     /// unset, the op is marked dead and removed from its block.
     pub fn op_destroy(&mut self, op: OpId) {
+        self.kuna_preserve_extension_storage(op);
         if let Some(out) = self.obank().get(op).expect("op_destroy: stale op").get_out() {
             // destroyVarnode clears each reader's input, nulls out->def (and the
             // op's output back-link), then frees the varnode — purging it from

@@ -175,7 +175,14 @@ fn a_function_that_writes_through_the_base_stays_untyped_at_the_shipped_default(
     let auto = decompile(&path, &[], "load addr 0x401000");
     let off = decompile(&path, &["off"], "load addr 0x401000");
     assert!(!auto.contains("teb"), "a function linking an SEH record must stay untyped:\n{auto}");
-    assert!(auto.contains("[3]; // stack - 0xc"), "the registration record keeps its extent:\n{auto}");
+    assert!(
+        auto.lines().any(|line| {
+            line.trim().strip_prefix("int4 v2 [3]; // ").is_some_and(|sources| {
+                sources.split(" | ").any(|source| source == "stack - 0xc")
+            })
+        }),
+        "the registration record keeps its extent and stack home:\n{auto}"
+    );
     let without_option = |t: &str| t.lines().filter(|l| !l.contains("segment-base typing set to")).collect::<Vec<_>>().join("\n");
     assert_eq!(without_option(&off), without_option(&auto), "the default must render exactly as off");
 }

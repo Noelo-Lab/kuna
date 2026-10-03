@@ -116,7 +116,7 @@ efcdab8967452301000000000000f83f0000000000000040
 ^  return v[0-9]+;$
 </stringmatch>
 <stringmatch name="DECLARING-DOUBLE-SCORE #7: a wide XMM0 range retains the exact low double" min="1" max="1">^  return v1 \+ v3;$</stringmatch>
-<stringmatch name="DECLARING-DOUBLE-SCORE #8: the overlapping upper XMM0 scratch lane remains killed" min="1" max="1">^  float8 v3; // xmm0_qb$</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #8: the overlapping upper XMM0 scratch lane remains killed" min="1" max="1">^  float8 v3; // ([^\n]+ \| )?xmm0_qb( \| [^\n]+)?$</stringmatch>
 <stringmatch name="EXPLICIT-DOUBLE-SCORE #1: option off exposes the unassigned refined high return cell" min="1" max="1">^  unsigned int v[0-9]+; // xmm0_db$</stringmatch>
 <stringmatch name="EXPLICIT-DOUBLE-SCORE #2: option on returns the complete double division" min="1" max="1">
 ^  v1 = dat_20d0 / dat_20d8;$
