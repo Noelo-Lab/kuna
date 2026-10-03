@@ -2333,7 +2333,13 @@ moves.
   (demangle_name)`, the `GnuDemanglerAnalyzer` analog) is not a registered pass but
   a loader hook: applied to every funcsym name after `@VERSION` stripping, before
   install. Upstream shells out to libiberty; kuna substitutes the `cpp_demangle`
-  (Itanium), `rustc_demangle`, and `msvc_demangler` (`?…` names) crates.
+  (Itanium), `rustc_demangle`, and `msvc_demangler` (`?…` names) crates. A `?…`
+  name `msvc_demangler` rejects goes to `undname`, a port of LLVM's
+  MicrosoftDemangle, which reads the newer encodings MSVC emits (a deduced `auto`
+  return, `operator<=>`, `noexcept` function types, address and member-pointer
+  template arguments, vtordisp thunks); its spelling of a compiler-generated
+  member is brought to `msvc_demangler`'s (`dtor` is `destructor`) so a member
+  reads the same whichever crate demangled it.
 
   **(kuna, DIV-83) Which crate is asked first is decided by a marker, not by
   which one answers.** Rust's *legacy* scheme reuses the Itanium `_ZN…E`
