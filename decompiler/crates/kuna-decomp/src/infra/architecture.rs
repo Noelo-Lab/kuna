@@ -884,7 +884,8 @@ pub struct Architecture {
     /// `Heritage::guard` (heritage.cc:1194, the `highPtrPossible` gate) runs:
     /// `0` = neither, `1` = the `addrforce` `COPY` read of the range before
     /// every indexed-stack LOAD it intersects (`Heritage::guardLoads`), `2` =
-    /// that plus the `INDIRECT` across every STORE that can reach the range
+    /// that plus the `INDIRECT` on a global range across every STORE into its
+    /// space, `3` = the `INDIRECT` across every STORE that can reach any range
     /// (`Heritage::guardStores`), i.e. upstream.  See
     /// [`crate::p3_dataflow::kuna_indexaliasguard`] (option `indexaliasguard`).
     pub index_alias_guard: int4,
@@ -2853,7 +2854,7 @@ impl Architecture {
         self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
         self.cond_exe_ret = true; // (kuna) option condexeret default-on: a return trial that failed only at the function's input through a merge block ActionConditionalExe can thread is re-checked once that block is gone; 0/675 datatest and 0 stage assertions moved, decompile-all unchanged on 5,422 fixture and 36,464 decbench functions, speed within noise
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
-        self.index_alias_guard = crate::p3_dataflow::kuna_indexaliasguard::LEVEL_LOAD; // (kuna) DIV-147 default `load`: restores upstream Heritage::guardLoads (heritage.cc:1570), which kuna shipped behind a hard-coded highPtrPossible == false (0/675 datatest, 0/714 stages ablation); `off` drops it again, `full` adds guardStores
+        self.index_alias_guard = crate::p3_dataflow::kuna_indexaliasguard::LEVEL_GLOBAL; // (kuna) DIV-147 restored upstream Heritage::guardLoads (heritage.cc:1570), which kuna shipped behind a hard-coded highPtrPossible == false; default `global` adds guardStores' INDIRECT on a global at each STORE into its space (0/675 datatest); `load` drops that, `off` drops both, `full` is upstream
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation

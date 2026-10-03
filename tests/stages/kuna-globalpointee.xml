@@ -33,6 +33,10 @@
     the harness architecture (`load file` needs one).  The pass loads
     globalpointee_gcc_O2_x86_64 and globalpointee_gcc_O0_x86_64 (built from
     globalpointee_x86_64.c beside them).
+    At -O2 the binary loads q[1] and q[2] before it stores q to the global,
+    and those loads keep variables of their own ahead of the store
+    (`option indexaliasguard global`, issue #792): #3 and #4 check the -O0
+    build, #16 and #17 the -O2 one.
 -->
 </binaryimage>
 <script>
@@ -127,8 +131,8 @@
 </script>
 <stringmatch name="globalpointee #1: no stored pointer is indexed or dereferenced through a global" min="0" max="0">(\bg[clrsv]\[|\*g[clrsv]\b)</stringmatch>
 <stringmatch name="globalpointee #2: the int pointer is stored to gc from its own variable" min="5" max="5">^  +gc = a0;</stringmatch>
-<stringmatch name="globalpointee #3: the ints are read through the value" min="2" max="2">return a0\[2\] \+ a0\[1\];</stringmatch>
-<stringmatch name="globalpointee #4: the longs are read through the value, not the record global" min="2" max="2">return a0\[3\] \+ \*a0;</stringmatch>
+<stringmatch name="globalpointee #3: the ints are read through the value" min="1" max="1">return a0\[2\] \+ a0\[1\];</stringmatch>
+<stringmatch name="globalpointee #4: the longs are read through the value, not the record global" min="1" max="1">return a0\[3\] \+ \*a0;</stringmatch>
 <stringmatch name="globalpointee #5: the shorts are written through the value, not the long global" min="2" max="2">a0\[3\] = a2 \* 2;</stringmatch>
 <stringmatch name="globalpointee #6: the store before a call stays where the binary makes it" min="1" max="1">gc = a0;
   touch\(\);</stringmatch>
@@ -153,4 +157,12 @@
 <stringmatch name="globalpointee #15: a pointer stored in both arms keeps its variable, the load after the pointer store reads the global" min="2" max="2">v1 = v2\[1\];
   \*a2 = a0;
   return v1 \+ \*gi;</stringmatch>
+<stringmatch name="globalpointee #16: at -O2 the ints are read through the value before it is stored to gc" min="1" max="1">v1 = a0\[2\];
+  v2 = a0\[1\];
+  gc = a0;
+  return v1 \+ v2;</stringmatch>
+<stringmatch name="globalpointee #17: at -O2 the longs are read through the value before it is stored to gr" min="1" max="1">v1 = a0\[3\];
+  v2 = \*a0;
+  gr = a0;
+  return v1 \+ v2;</stringmatch>
 </decompilertest>

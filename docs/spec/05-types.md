@@ -704,7 +704,11 @@ vote that already names a pointee — a declared, DWARF, libc, asserted or
 
 The walk is the bounded breadth-first worklist of `ptrfromuse` — `COPY`, `CAST`,
 `MULTIEQUAL` and `INDIRECT` identity, literal offsets carried as a displacement
-from the base, a ten-hop cap — and it asks of every use whether it is an
+from the base, a ten-hop cap; the walk from a sum of the base and an index
+(`kuna_elemptr.rs (indexed)`) follows `COPY`, `CAST` and an `INDIRECT`'s first
+input, so an element address stored to a global still reaches the load through
+the global after a pointer store, which `option indexaliasguard global` gives
+its own `INDIRECT` — and it asks of every use whether it is an
 *element access*: a `LOAD` or `STORE` of width W (1, 2, 4 or 8 bytes) through the
 base plus an index scaled by W. It commits when every access through the value,
 at any literal offset, is one width landing on a whole element, and at least one

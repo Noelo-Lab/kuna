@@ -85,7 +85,7 @@ use kuna_base::types::{int4, uint4, uintb};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use crate::kuna_indexaliasguard::{LEVEL_FULL, LEVEL_OFF};
+use crate::kuna_indexaliasguard::{LEVEL_FULL, LEVEL_GLOBAL, LEVEL_OFF};
 use crate::kuna_restartlog::{KunaRestartReason, RestartLog};
 use crate::overrides::Override;
 use crate::context::BlockId;
@@ -846,6 +846,15 @@ pub struct Heritage {
     /// "can a pointer reach this stack slot?" with, gathered at most once per
     /// pass.  See [`crate::p4_calls::kuna_calleeprotostack`].
     protostack_alias: Option<Option<crate::varmap::AliasChecker>>,
+    /// (kuna `indexaliasguard global`) The global STORE guards built for this
+    /// function so far.
+    global_store_guards: usize,
+    /// (kuna `indexaliasguard global`) This pass's live STOREs into one space,
+    /// keyed by the space's index.
+    global_stores: Option<(int4, Vec<crate::context::OpId>)>,
+    /// (kuna `indexaliasguard global`) Each range `guard_global_stores` saw (space
+    /// index, first and one past the last byte) and whether it was guarded.
+    global_store_ranges: Vec<(int4, u64, u64, bool)>,
 }
 
 impl Heritage {
@@ -868,12 +877,31 @@ impl Heritage {
             store_guard: Vec::new(),
             load_copy_ops: Vec::new(),
             protostack_alias: None,
+            global_store_guards: 0,
+            global_stores: None,
+            global_store_ranges: Vec::new(),
         }
     }
 
     /// Get the overall count of heritage passes (C++ `getPass`).
     pub fn get_pass(&self) -> int4 {
         self.pass
+    }
+
+    /// (kuna `indexaliasguard global`) Did `guard_global_stores` guard every
+    /// range overlapping the bytes `lo..hi` of the space with index `index`, and
+    /// at least one?  A range past the budget leaves its bytes unguarded.
+    pub fn global_store_guarded(&self, index: int4, lo: u64, hi: u64) -> bool {
+        let mut any = false;
+        for &(i, a, b, guarded) in &self.global_store_ranges {
+            if i == index && a < hi && lo < b {
+                if !guarded {
+                    return false;
+                }
+                any = true;
+            }
+        }
+        any
     }
 
     /// Get the pass number when the given address was heritaged, or -1
@@ -1013,6 +1041,8 @@ impl Heritage {
         self.depth.clear();
         self.merge.clear();
         self.clear_info_list();
+        self.global_store_guards = 0;
+        self.global_store_ranges.clear();
         self.load_guard.clear();
         self.store_guard.clear();
         self.maxdepth = -1;
@@ -1480,6 +1510,8 @@ impl Heritage {
             if high_ptr_possible {
                 if level >= LEVEL_FULL {
                     self.guard_stores(fd, addr, size, write);
+                } else if level == LEVEL_GLOBAL && (fl & varnode_flags::readonly) == 0 {
+                    self.guard_global_stores(fd, fl, addr, size, write);
                 }
                 self.guard_loads(fd, fl, addr, size, write);
             }
@@ -2564,6 +2596,59 @@ impl Heritage {
             if let Some(out) = outvn {
                 if let Some(v) = fd.vbank_mut().get_mut(out) {
                     v.set_active_heritage();
+                }
+                write.push(out);
+            }
+        }
+    }
+
+    /// (kuna `indexaliasguard global`) The global arm of `guardStores`: an
+    /// `indirect_store` INDIRECT on the range at each `STORE` into the range's
+    /// own space, while the function stays within
+    /// [`GLOBAL_STORE_BUDGET`](crate::kuna_indexaliasguard::GLOBAL_STORE_BUDGET).
+    fn guard_global_stores(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        fl: uint4,
+        addr: &Address,
+        size: int4,
+        write: &mut Vec<crate::context::VarnodeId>,
+    ) {
+        use crate::kuna_indexaliasguard::{stores_into, GLOBAL_STORE_BUDGET};
+        use crate::op::pcodeop_flags;
+
+        let spc = addr.get_space().expect("guard_global_stores: addr space").clone();
+        let index = spc.get_index();
+        let lo = addr.get_offset();
+        let persist = (fl & varnode_flags::persist) != 0;
+        if self.global_store_guards >= GLOBAL_STORE_BUDGET {
+            if persist {
+                self.global_store_ranges.push((index, lo, lo.wrapping_add(size as u64), false));
+            }
+            return;
+        }
+        if self.global_stores.as_ref().map(|c| c.0) != Some(index) {
+            self.global_stores = Some((index, stores_into(fd, &spc, store_space_from_const)));
+        }
+        let stores = self.global_stores.as_ref().map(|c| c.1.clone()).unwrap_or_default();
+        let guarded = self.global_store_guards + stores.len() <= GLOBAL_STORE_BUDGET;
+        if persist {
+            self.global_store_ranges.push((index, lo, lo.wrapping_add(size as u64), guarded));
+        }
+        if stores.is_empty() || !guarded {
+            return;
+        }
+        self.global_store_guards += stores.len();
+        for op in stores {
+            let indop = fd.new_indirect_op(op, addr, size, pcodeop_flags::indirect_store);
+            let invn = fd.obank().get(indop).and_then(|o| o.get_in(0));
+            if let Some(v) = invn.and_then(|v| fd.vbank_mut().get_mut(v)) {
+                v.set_active_heritage();
+            }
+            if let Some(out) = fd.obank().get(indop).and_then(|o| o.get_out()) {
+                if let Some(v) = fd.vbank_mut().get_mut(out) {
+                    v.set_active_heritage();
+                    v.set_addr_force();
                 }
                 write.push(out);
             }
@@ -4837,6 +4922,7 @@ impl Heritage {
         // (kuna `calleeprotostack`) The alias gather is only valid for the
         // data-flow as it stands, so it is dropped at every pass boundary.
         self.protostack_alias = None;
+        self.global_stores = None;
         if self.maxdepth == -1 {
             // Has a restructure been forced
             self.build_adt(fd);

@@ -1507,6 +1507,14 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
             }
         }
     }
+    // (kuna `indexaliasguard global`) a load stays ahead of a store to a
+    // global it may read; see [`crate::p6_variables::kuna_loadorder`].
+    if opc == OpCode::CPUI_LOAD
+        && has_cover
+        && crate::p6_variables::kuna_loadorder::crosses_global_write(data, vn, None)
+    {
+        return false;
+    }
     // (kuna) a load of a global holding a stored pointer stays ahead of a write;
     // see [`crate::p6_variables::kuna_pointeevalue::load_crosses_write`].
     if crate::p6_variables::kuna_pointeevalue::load_crosses_write(data, vn) {

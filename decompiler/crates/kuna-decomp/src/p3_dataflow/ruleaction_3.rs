@@ -1827,12 +1827,18 @@ impl Rule for RulePropagateCopy {
                 continue;
             }
             let is_marker = data.obank().get(op).expect("RulePropagateCopy: stale op").is_marker();
+            if !is_marker && crate::p3_dataflow::kuna_indexaliasguard::keeps_store_before_load(data, op, vn) {
+                continue;
+            }
             if is_marker {
                 if vn_is_constant(data, invn) {
                     continue; // Don't propagate constants into markers
                 }
                 if data.vbank().get(vn).expect("RulePropagateCopy: stale vn").is_addr_force() {
                     continue; // Don't propagate if we are keeping the COPY anyway
+                }
+                if crate::p3_dataflow::kuna_indexaliasguard::keeps_store_guard_input(data, op, vn) {
+                    continue;
                 }
                 // STUB(W3-varnode): the addrtied merge-safety guard reads
                 // invn->isAddrTied(), op->getOut()->isAddrTied(), and the two
@@ -1865,6 +1871,9 @@ impl Rule for RulePropagateCopy {
                 // a frame-slot loop counter's write-back is deleted.  See
                 // [`crate::p3_dataflow::kuna_loopcounterstore`].
                 if crate::p3_dataflow::kuna_loopcounterstore::declines(data, op, vn, invn) {
+                    continue;
+                }
+                if crate::p3_dataflow::kuna_indexaliasguard::keeps_store_before_load(data, op, vn) {
                     continue;
                 }
                 if op_code(data, op) == OpCode::CPUI_MULTIEQUAL {

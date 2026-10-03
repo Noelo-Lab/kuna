@@ -476,7 +476,7 @@ one save for the ranges a compiler spec names in `<nohighptr>` (only the PIC
 families do, and kuna does not read that element). `option indexaliasguard`
 selects how much of that arm runs.
 
-At `load`, the default, `heritage.rs (Heritage::guard_loads)` walks the guard
+At `load`, `heritage.rs (Heritage::guard_loads)` walks the guard
 list built above and, for every still-live LOAD guard whose `[min,max]` window
 covers the range's address, inserts an `addrforce` `CPUI_COPY` of the range
 immediately before that LOAD and records the COPY as a load-copy sink. The
@@ -491,14 +491,70 @@ address-forcing boundary ops, marks those outputs `addrforce` when they fall
 inside a guarded window, and propagates every load-guard COPY away again —
 so what reaches the output is the mark the COPY earned, not the COPY.
 
-At `full`, `heritage.rs (Heritage::guard_stores)` also runs: every STORE whose
-space is the range's space, or is the range's container while the STORE is
-marked `spacebase_ptr`, gets an `indirect_store` `CPUI_INDIRECT` of the range
-in front of it, so a value written through a pointer is not assumed to leave
-the directly-addressed slot alone. That is what upstream always does; it is not
-kuna's default because the INDIRECT chain survives into the emitted C as
-write-backs of values a slot already holds and as globals hoisted into
-temporaries, and it recovers nothing the LOAD guard does not.
+At `global`, the default, the LOAD guard runs and so does the global half of
+upstream's STORE guard (`heritage.rs (Heritage::guard_global_stores)`): every
+live STORE into the range's own space (`kuna_indexaliasguard.rs (stores_into)`)
+gets an `indirect_store` `CPUI_INDIRECT` of the range in front of it, unless the
+range is read-only or the STORE's address is the stack pointer plus a constant
+(a push, a call's return address, a spill: frame memory, not a global). The
+STOREs are gathered once per heritage pass and space. The `INDIRECT`'s output is `addrforce`, as `guard_calls`
+makes an address-tied range's, so it is not dead code when the global is stored
+again right after the pointer store: `x = gi + 1; *p = k; gi = x;` keeps the
+version it defines, and the read of `gi` from before the store conflicts with
+it, which is what makes that read print as its own variable
+(`v1 = gi; *a0 = a1; gi = v1 + 1;`, where `gi += 1;` after the store read `gi`
+again). Without the guard a pointer STORE has no effect on a global in the
+SSA, so three things go wrong whenever the pointer may point at the global. A
+load of the global after the store reads the version from before it, and copy
+propagation prints whatever was stored there: `gi = a; *p = k; return gi / 16;`
+printed `a0` for the load, `gi = 5;` folded the load to `return 0;`, and a value
+the function computed printed again. A value read before the store and used
+after it prints as a read of the global after the store
+(`int a = gi; *p = k; return a;` printed `*a0 = a1; return gi;`), and three
+reads around two stores collapsed into one (`return gi * 0x6f;`). And a store to
+the global whose value a later call's `INDIRECT` took drifted to that call,
+behind the pointer store (`*a1 = a2; gi = a0; touch();`). With the `INDIRECT`,
+the load reads a new version, the earlier value conflicts with it in chapter
+06's Cover tests and keeps a variable of its own, and the store stays where the
+binary makes it because `RulePropagateCopy` does not move a stored value into
+one of these `INDIRECT`s
+(`kuna_indexaliasguard.rs (keeps_store_guard_input)`): taking it would kill
+the global's `COPY`, and `Merge` would rebuild the store in front of the effect
+op or join the value with the global, whose type it would then take. Nor does
+it move a stored value into a `MULTIEQUAL` or `INDIRECT` when a LOAD that may
+read the global (one from its space; at a constant address, one that overlaps
+it) follows the store before the next write of the global, a `MULTIEQUAL` on
+the global not counting as a write
+(`kuna_indexaliasguard.rs (keeps_store_before_load)`). With the `COPY` dead the
+store would print where chapter 06's merge puts the value: where it is
+computed, at the end of the loop body, or at the next call, so
+`for (...) { gi += b; s += *p; }` would print the store after the load, and
+`gi = a; x = *p; touch();` printed `v1 = *a1; gi = a0; touch();`. The same
+holds for a `COPY` of the global into its own storage, which is what splitting
+a return block that two paths share makes of the global's `MULTIEQUAL`: in
+`if (c) { gi = v; return *p; } return 0;` at `-O0` the store's value moved to
+that `COPY`, after the load, and printed `v1 = *a1; gi = a2; return v1;`. Each guard
+is a varnode of the global's HighVariable that every later pass visits, and a
+run of data decoded as code, with hundreds of stores and of addresses it reads,
+reached a hundred thousand of them and tripled the time of a whole firmware
+decompile, so a function stops guarding further ranges once it holds
+`GLOBAL_STORE_BUDGET` (1024) of them. Heritage records each global range it
+saw and whether it guarded it (`heritage.rs (Heritage::global_store_guarded)`),
+and the refusals above and chapter 06's load ordering act only on a global
+whose range it guarded, so a range past the budget prints as at `load`.
+At 2048 the guards still cost crazyflie's `cf2.elf` 6% of its whole-binary
+time, at 1024 about 1%, and 23 of 15,942 functions over 20 binaries print
+differently at the lower budget, 12 of them in that firmware. Chapter 06 adds the mirror image at this level: a value loaded through a
+pointer stays ahead of a store to a global (`kuna_loadorder.rs`).
+
+At `full`, `heritage.rs (Heritage::guard_stores)` runs instead: every STORE
+whose space is the range's space, or is the range's container while the STORE
+is marked `spacebase_ptr`, gets an `indirect_store` `CPUI_INDIRECT` of the
+range in front of it, frame slots included, with no budget and with
+`RulePropagateCopy` free to move a stored value into the `INDIRECT`. That is
+what upstream always does; it is not kuna's default because on a frame slot the
+INDIRECT chain survives into the emitted C as write-backs of values a slot
+already holds.
 
 At `off` neither runs, which is what kuna shipped before the option.
 
@@ -775,8 +831,9 @@ flex scanner's `yylex` at `-O2`).
 
 The same function covers the loads the binary makes. Any other reader of the
 global's `COPY` output is a load of the global after the store (`-O0` reloads a
-global for every use). Under the default `indexaliasguard load` heritage puts no
-`INDIRECT` on a global at a pointer `STORE`, so that load reads the `COPY` even
+global for every use). When heritage puts no `INDIRECT` on a global at a
+pointer `STORE` (`indexaliasguard load`, or a function past the STORE guard's
+budget) that load reads the `COPY` even
 when a `STORE` between them may have changed the global, and rewritten to read
 the stored value it prints the register where the binary reads memory: once the
 value is kept apart from the global, `gi = q; x = q[2]; *pp = p; return gi[1] + x;`
@@ -812,8 +869,9 @@ register it stored: `*--line_num_start = '1'` still prints as
 `line_num_start = &line_num_start[-1]; *line_num_start = '1';` at `-O0`, and
 `gi = &a0[a1]; *a2 = a0; return gi[1];` keeps its load where kuna printed
 `return (&a0[a1])[1];`. Other loads of such a value, and the stores of a
-parameter, a frame variable or a constant, keep upstream's handling: a load
-after a pointer store can still print the stored value there (issue #792).
+parameter, a frame variable or a constant, are left to the STORE guard above:
+at `indexaliasguard load` a load after a pointer store still prints the stored
+value there (issue #792).
 
 **Keeping a loop counter's write-back** (`option loopcounterstore`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_loopcounterstore.rs
@@ -905,8 +963,10 @@ apart and the `COPY` prints at the binary's own store, ahead of any later
 pointer store or call.
 
 The refusal holds only while no earlier value of the global is still used after
-the store (`old_value_read_after`). kuna's heritage gives a pointer `STORE` no
-effect on a global, so in `*p = k; old = g; n = old * 3 + inc; if (n >> 20)
+the store (`old_value_read_after`). Where heritage gives a pointer `STORE` no
+effect on a global (`indexaliasguard load`, or a function past the STORE
+guard's budget; at the default `global` level the load reads the `STORE`'s
+`INDIRECT`, and the copy lands after the store), in `*p = k; old = g; n = old * 3 + inc; if (n >> 20)
 return 7; g = n; return old == 5 ? 1 : old;` the binary's load of `old` after
 `*p = k` reads the version of `g` the function entered with, and that version is
 still used after `g = n`. With the store's `COPY` kept, both versions are live
