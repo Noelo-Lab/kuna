@@ -4,15 +4,14 @@
 after renaming the `vN` variables and the synthesized `struct_N` numbers to a
 common numbering.
 
-Against origin/main 72d2e9b6d, on 20 binaries (O2 bash, crazyflie `cf2.elf`,
+Against origin/main ec8d0d1cc, on 22 binaries (O2 bash, crazyflie `cf2.elf`,
 chibios `ch.elf`, dash, dpkg, e2fsck, find, certtool, grep, gzip, kmod,
-libedit, libselinux, nuttx, bootlogd, sort, tar; O0 ls, crontab, grep):
+libedit, libselinux, nuttx, bootlogd, sort, tar; O0 dash, gzip, ls, crontab,
+grep):
 
 | Comparison | Functions | Changed | `goto` |
 |---|---|---|---|
-| origin/main 72d2e9b6d to this branch | 14,851 | 789 | 14,126 to 14,135 |
-| the branch before values computed ahead of a load were handled, to the branch after it | 14,851 | 259 | 14,124 to 14,135 |
-| the branch before a call after the store was handled, to this branch | 14,851 | 35 | 14,135 to 14,135 |
+| origin/main ec8d0d1cc to this branch | 15,541 | 794 | 14,274 to 14,282 |
 
 The first sweep, against origin/main 29c832ea9 on 23 binaries, is the one the
 classes below come from:
@@ -170,124 +169,53 @@ dat_1000d1fc = 0x3f800000; dat_1000d228 = v6 * v12;`.
 - `O2_libselinux_libselinux.so.1`: sub_129a0
 - `O2_tar_tar`: main, sub_e570, sub_10cf0, sub_27eb0, sub_27f40, argp_parse
 
-## Values computed before a pointer load
+## Stores kept ahead of a load, and the guard budget
 
-A value merged into a global's variable printed as a write of the global where
-the value is computed, so a pointer load between that point and the binary's
-store read the new value (`t = gi * 2 + b; x = *p; gi = t;` printed
-`gi = a1 + gi * 2; v1 = *a0;`). Merge now refuses that join, `mergeOp` copies
-such a value out of a `MULTIEQUAL`, and `RulePropagateCopy` keeps a store's
-`COPY` in a marker when a pointer load follows the store. Against the branch
-before that change, 259 of 14,851 functions change on the 20 binaries above
-(`goto` 14,124 to 14,135). The changes seen, each checked against the disassembly
-in the functions named:
+A value computed before a pointer load and stored to the global after it is
+not kept out of the global's variable (#871): that needs a store the binary
+makes before the load to survive when the global is stored again, which #825
+drops, and joining the value is what prints that store today. With such checks
+in place, 148 of the 15,541 functions printed differently; 48 of them print as
+main does without them, and the rest keep the other changes listed here. Two
+smaller pieces account for the remaining changes.
 
-- **store after the load** -- a store to a global that the binary makes after
-  a pointer load no longer prints ahead of it. gzip `sub_5690` loads the byte
-  at `56d1` and stores `inptr` (`dat_1a008`) at `56d6`; it printed
-  `V0 = dat_1a008; dat_1a008 += 1; V1 = *(V0 + 0x9c000);` and now prints
-  `V0 = *(dat_1a008 + 0x9c000); dat_1a008 += 1;` (also `sub_8460`, `sub_92b0`,
-  `sub_9a50`, `sub_b320`). crazyflie `sub_800d5b0` stores `dat_2000281c` at
-  `800d5c0` before `dat_20002026`; it printed the second store first.
-- **register-carried global** -- a global the binary keeps in a register
-  around a loop and stores after it prints that way, instead of as a write of
-  the global in every iteration. gzip `sub_d0d0` (`updcrc`) keeps the CRC in
-  `rdx` and stores it once at `d121`; it printed
-  `dat_183f0 = dat_183f0 >> 8 ^ ...` in the loop and now prints
-  `V0 = dat_183f0; do { V0 = V0 >> 8 ^ ...; } while (...); dat_183f0 = V0;`
-  (also `sub_d640`, `sub_4960`).
-- **store kept in place** -- the store's `COPY` stays where the binary makes
-  it, which also drops write-backs of a value the global already held. tar
-  `sub_f710` stores `dat_81f38` at `f7c2` before `dat_82160` at `f7cd`; bash
-  `find_global_variable_last_nameref` printed `global_variables = v4;` on six
-  exits that the binary does not store, and `sub_4ef30` printed
-  `breaking = 0;` and `breaking = v3;` where the binary only decrements
-  `breaking` (`4f073`).
-- **shape** -- the same statements under different control flow. bash
-  `sub_49eb0`'s list walk prints its two exits in the other order; both forms
-  follow the jumps at `49f1a`/`49f23`. The `goto` count moves in 12 functions
-  (bash 8, find 1, tar 3).
-- **store sunk to the exits** -- dash `sub_9890` keeps `dat_1f3e0` in `eax`
-  around its free loop and stores it before and after `free` (`98d3`,
-  `98f2`); the decrement's store now prints at the loop's exits and in the
-  next iteration's increment instead of in the loop body. Nothing reads the
-  global in between: the loads there are of `dat_1f570` at a constant
-  address and of `dat_1f3dc`.
+- **shared return block** -- 25 functions on 14 of the binaries change when
+  `RulePropagateCopy` keeps a store's `COPY` that the global's `MULTIEQUAL`
+  in a split return block would take past a load. dash O0 `sub_535a` stores
+  `dat_243d0` at `53e9` and loads `(%rax)` at `53f3`; it prints
+  `dat_243d0 = v3; return *a1;`, where the load kept ahead of the moved store
+  printed `v2 = *a1; dat_243d0 = v3; return v2;`. bash `restore_token_state`
+  stores each of three globals right after loading its field
+  (`36078`..`3608d`) and prints that way, not as three loads followed by the
+  stores in reverse order; bash `find_function` stores `dat_1452f8` at
+  `544ab` before it loads `0x10(%rax)` at `544b2`, and no longer prints the
+  load first; `history_delimiting_chars` prints fewer copies of
+  `dat_143ae8 = 0;` on its return paths (the binary stores it once, at
+  `36732`).
+- **past the guard budget** -- 26 functions have more than 1024 guards; the
+  load ordering now leaves their unguarded globals alone, as at `load`. 24 of
+  them move closer to main's output, 6 of those print exactly as main does,
+  and two are crazyflie data decoded as code that stay as far from it or move
+  further (`sub_803fbc0`, `sub_8044d68`). Most are such data (`sub_803fbc0`
+  to `sub_8045a10`); sort `main` differed from main in 1,548 lines and now
+  differs in 5.
 
-The changed functions:
+The functions the shared return block changes:
 
-- `O0_coreutils_ls`: main
-- `O0_cronie_crontab`: sub_ab10
-- `O0_grep_grep`: main
-- `O2_bash_bash`: main, sub_33a30, sub_33ce0, sub_35a10, sub_35b20, restore_parser_state, sub_38ba0, sub_38f20, sub_3a4e0, parse_string_to_word_list, sub_3dc90, yyparse, bash_tilde_expand, sub_485e0, sub_48d40, sub_49eb0, execute_command_internal, sub_4ef30, sub_4fa90, sub_51b80, sub_52630, sub_52ec0, sub_532f0, find_global_variable_last_nameref, find_global_variable_noref, find_global_variable, find_shell_variable, make_local_variable, sub_55580, bind_variable, kill_all_local_variables, reset_local_contexts, pop_dollar_vars, assign_in_env, unbind_variable, unbind_nameref, unbind_variable_noref, unbind_global_variable, unbind_global_variable_noref, initialize_shell_variables, sub_5c650, sub_5daa0, sub_5f350, sub_60900, restore_pipeline, sub_628b0, wait_for, wait_for_background_pids, stop_pipeline, sub_67d70, sub_69bd0, sub_69d50, skip_to_histexp, reap_procsubs, sub_79210, sub_7b800, expand_subscript_string, sub_7dfc0, sub_82310, run_pending_traps, restore_traps, getc_with_restart, sub_85290, sub_88080, sub_88450, test_command, unbind_array_element, brace_expand, sub_93bf0, sub_93df0, sub_95460, sub_96150, sub_96770, sub_97720, command_word_completion_function, sub_99c40, set_lang, set_locale_var, gen_compspec_completions, builtin_builtin, fc_builtin, help_builtin, jobs_builtin, popd_builtin, pushd_builtin, read_builtin, set_or_show_attributes, printf_builtin, sh_getopt, internal_getopt, compgen_builtin, readline_internal_char, rl_restore_state, rl_vi_unix_word_rubout, sub_d24e0, rl_vi_fWord, rl_vi_eWord, rl_vi_eword, _rl_vi_domove_motion_cleanup, rl_prep_terminal, _rl_find_completion_word, rl_old_menu_complete, rl_menu_complete, sub_e1660, _rl_isearch_cleanup, rl_on_new_line_with_prompt, sub_e4ca0, rl_redisplay, rl_tilde_expand, rl_unix_filename_rubout, _rl_pop_executing_macro, _rl_rubout_char, rl_delete_horizontal_space, rl_maybe_unsave_line, rl_replace_from_history, history_truncate_file, _rl_print_prefix_color, sub_fb130
-- `O2_chibios_ch.elf`: sub_8001188, sub_8004b74
-- `O2_coreutils_sort`: main, sub_74e0, sub_a3c0
-- `O2_crazyflie_cf2.elf`: sub_800aba4, sub_800afcc, sub_800d3fc, sub_800d460, sub_800d55c, sub_800d5b0, sub_800dee8, sub_8010c70, sub_8011744, sub_80171c4, sub_801777c, sub_8018090, sub_8018f68, sub_8023398, sub_80237b4, sub_8023820, sub_8023e00, sub_8023ffc, sub_8024278, sub_80273a8, sub_80288ba, sub_8029494, sub_802961c, sub_802ae70, sub_802cca0, sub_8030b38, sub_8031268, sub_803228c, sub_80326d0, sub_80335b8, sub_8033f14, sub_80340bc, sub_8035854, sub_8036aa8, sub_8039238, sub_803bc64, sub_803c398, sub_803fbc0, sub_80404b0, sub_8040c2c, sub_80423ec, sub_8042acc, sub_8042e48, sub_8043804, sub_80440cc, sub_8044d68, sub_80450b4, sub_8045658, sub_8045a10
-- `O2_dash_dash`: sub_5140, sub_5520, sub_5cc0, sub_69b0, sub_6bd0, sub_6e90, sub_7210, sub_7400, sub_9890, sub_9f60, sub_bb50, sub_d0f0, sub_d5f0, sub_f8c0, sub_fcb0, sub_105e0, sub_12f80, sub_14510, sub_145c0, sub_16570, sub_16c40
-- `O2_dpkg_dpkg`: main, sub_c6a0, sub_118e0, sub_13ed0, sub_148f0, sub_192b0, sub_1ec20, sub_20000, sub_23270, sub_25190, sub_2a610
-- `O2_e2fsprogs_e2fsck`: main, ext2fs_group_desc, ext2fs_dblist_sort
-- `O2_findutils_find`: sub_7670, sub_c110, sub_1bb50
-- `O2_gnutls_certtool`: sub_2ce80
-- `O2_grep_grep`: main, sub_9130
-- `O2_gzip_gzip`: sub_4960, sub_4a60, sub_4bc0, sub_5690, sub_6e90, sub_8460, sub_92b0, sub_9a50, sub_aa20, sub_b320, sub_be90, sub_c590, sub_d0d0, sub_d640
-- `O2_libedit_libedit.so.0.0.70`: sub_15380, fn_filename_completion_function
-- `O2_libselinux_libselinux.so.1`: sub_98b0, avc_destroy, sub_129a0, sub_1dc30, selinux_status_updated
-- `O2_nuttx_nuttx`: sub_8001da4, sub_800233c, sub_800c62c, sub_80108a8
-- `O2_tar_tar`: main, sub_e570, sub_ec80, sub_f710, sub_10cf0, sub_149e0, sub_1b9b0, sub_203b0, sub_222e0, sub_270f0, sub_27340, sub_28c00, sub_308a0, sub_31150, sub_31920, argp_parse, sub_44440, sub_5aa30
+- `O0_dash_dash`: sub_535a
+- `O2_bash_bash`: restore_token_state, history_delimiting_chars, find_function, find_function_def, make_local_variable, sub_61690, sub_69bd0, expand_string_assignment, cond_expand_word, sub_82310, command_word_completion_function, sh_getopt, internal_getopt, sub_e1660, rl_expand_prompt, rl_on_new_line, history_set_history_state, get_history_event
+- `O2_crazyflie_cf2.elf`: sub_8018f68, sub_8039238
+- `O2_dash_dash`: sub_9890, sub_14510
+- `O2_dpkg_dpkg`: sub_c6a0
+- `O2_tar_tar`: sub_2e4c0
 
-## A call after the store
+The functions past the guard budget:
 
-A value computed before a pointer load and stored to a global before a call
-reached the global through the call's `INDIRECT`, which `Merge::mergeIndirect`
-merged with the global directly, so the store still printed ahead of the load
-(`t = gi + b; x = *p; gi = t; if (c) touch();` printed
-`gi = a1 + gi; v1 = *a0;`). `mergeIndirect` now snips that `INDIRECT` instead,
-and the store prints just ahead of the call, when `RulePropagateCopy` gave the
-`INDIRECT` the stored value from a `COPY` that no load follows. Against the
-branch before that change, 35 of 14,851 functions change on the 20 binaries above and the `goto`
-count stays at 14,135. The changes seen, each checked against the disassembly in
-the functions named:
-
-- **store after the load** -- the store prints after the loads the binary
-  makes before it. dash `sub_68c0` loads `0x8(%rdi)` at `68eb` and stores
-  `dat_1f3d8` at `68f4`; it printed `dat_1f3d8 = a0[1];` ahead of that load
-  (also `sub_6620`, `sub_6fe0`, `sub_b090`, `sub_b2d0`, `sub_e420`). bash
-  `yyparse` loads `-0x20(%r8)` and `(%r8)` before storing `dat_143b48` and
-  `dat_143b40` (`3ec74`, `3ec7b`); it printed `dat_143b48 = V[-4];` ahead of
-  the second load. The same holds in bash `sub_33a30` (`33b73` before
-  `33b7b`), `pop_stream` (`35f1d` before `35f2b`), `printf_builtin` (`bbabe`
-  before `bbac1`), `readline_internal_char` (`d0fcf` before `d0fd3`),
-  `rl_filename_completion_function` (`d8b6d` before `d8b71`) and
-  `history_truncate_file` (`f8308` before `f830a`), sort `main` (`620b`
-  before `6210`), tar `sub_19da0` (`19ebf` before `19ec6`), dpkg `sub_c4c0`
-  (`c4d4` before `c4d8`) and chibios `sub_8004b74`, where each call's result
-  is stored after the next call's argument is loaded (`8004bd4`, `8004bd8`).
-- **stored once** -- a value set on several branches is stored once after
-  them, as the binary does. bash `sub_97720` keeps 0, 1 or 2 in `ebx` and
-  stores `dat_14b7f0` once at `97779`; it printed a store on each branch,
-  the first ahead of the load of `a0[1]` (also `sub_37bb0`'s
-  `history_quoting_state`). crazyflie `sub_8036aa8` sums a message's bytes in
-  `r3` and stores the sum once after the loop (`8036b18`); it printed the
-  store in every iteration.
-- **shape** -- two loads print in the other order with no store between them
-  (dash `sub_16570`); crazyflie `sub_8042e48` is data decoded as code.
-
-Two guards keep the snip to that case. A `COPY` of the global itself is not
-kept apart: an earlier trim can leave one as the `INDIRECT`'s input, and kept
-apart it printed a save of sixteen globals after a call and their restore
-before the next (bash `sub_38f20`). And an `INDIRECT` input that reached the
-call another way says nothing about where the binary stored it: crazyflie
-`sub_80335b8` stores `dat_2000c528` at `8033604` and loads `a1[0xf]` at
-`803361e`, then stores again on a branch; the `INDIRECT` at the call reads the
-register that carries both values, and snipping it printed one store after
-both loads. That function prints as before.
-
-The changed functions:
-
-- `O2_bash_bash`: sub_33a30, pop_stream, sub_37bb0, yyparse, sub_97720, printf_builtin, readline_internal_char, rl_filename_completion_function, _rl_init_terminal_io, history_truncate_file
-- `O2_chibios_ch.elf`: sub_8004b74, sub_8005118, sub_8007064
+- `O2_bash_bash`: sub_3a4e0, execute_command_internal, sub_4fa90, initialize_shell_variables, sub_79210, rl_redisplay
 - `O2_coreutils_sort`: main
-- `O2_crazyflie_cf2.elf`: sub_800c938, sub_800d460, sub_800d55c, sub_800d5b0, sub_80237b4, sub_8023820, sub_80340bc, sub_8036aa8, sub_8042e48
-- `O2_dash_dash`: sub_6620, sub_68c0, sub_6fe0, sub_b090, sub_b2d0, sub_e420, sub_16570
-- `O2_dpkg_dpkg`: sub_c4c0, sub_c560, sub_20440
-- `O2_tar_tar`: sub_19da0, sub_27fd0
+- `O2_crazyflie_cf2.elf`: sub_803fbc0, sub_8040158, sub_80404b0, sub_8040c2c, sub_80423ec, sub_8042acc, sub_8042e48, sub_8043804, sub_80440cc, sub_8044bec, sub_8044d68, sub_80450b4, sub_8045658, sub_8045a10
+- `O2_dash_dash`: sub_105e0
+- `O2_dpkg_dpkg`: sub_192b0
+- `O2_e2fsprogs_e2fsck`: main
+- `O2_findutils_find`: sub_1bb50
+- `O2_tar_tar`: sub_44440
