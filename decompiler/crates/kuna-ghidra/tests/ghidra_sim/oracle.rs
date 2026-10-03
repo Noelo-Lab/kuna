@@ -14,6 +14,7 @@
 //! | getTrackedRegisters | empty `<tracked_pointset>` (always written, like Java) |
 //! | getStringData | program bytes NUL-scanned + the biased size header |
 //! | isNameUsed | constant `f` |
+//! | getNamespacePath | the `<parent>` chain of a function's `::`-qualified name |
 //! | getMappedSymbols | `<function>` / `<symbol>` / `<hole>` from the committed facts; Java's `<externrefsymbol>` at a PE import slot |
 //! | getExternalRef | the `<function>` an import slot resolves to, mapped at the slot |
 //!
@@ -187,6 +188,8 @@ pub struct SimOracle {
     /// `(label, character size, byte length)`, answered as Ghidra's string
     /// analyzer leaves it (a read-only, type-locked character array).
     pub string_symbols: BTreeMap<u64, (String, i32, i64)>,
+    /// Host namespace ids handed out so far: id -> path, outermost first.
+    pub namespaces: BTreeMap<u64, Vec<String>>,
 }
 
 /// The two ways `DecompileCallback.getPcodeInject` declines to answer, which
@@ -308,6 +311,7 @@ impl SimOracle {
             inject_fault: None,
             cspec: "x86-64-gcc.cspec".to_string(),
             string_symbols: BTreeMap::new(),
+            namespaces: BTreeMap::new(),
         }
     }
 
@@ -512,7 +516,8 @@ impl SimOracle {
                 .symboltab
                 .function_is_no_return_across_scopes(&addr);
             let pieces = self.callee_pieces.get(&offset).cloned();
-            return resp_string(&self.function_doc(&addr, &name, noreturn, pieces.as_ref(), 1));
+            let scope = self.namespace_id(&addr);
+            return resp_string(&self.function_doc(&addr, &name, noreturn, pieces.as_ref(), 1, scope));
         }
         if let Some((start, (name, size))) = self
             .data_symbols
@@ -546,7 +551,64 @@ impl SimOracle {
             .symboltab
             .function_is_no_return_across_scopes(&addr);
         let pieces = self.callee_pieces.get(&offset).cloned();
-        resp_string(&self.function_doc(&addr, &name, noreturn, pieces.as_ref(), 2))
+        let scope = self.namespace_id(&addr);
+        resp_string(&self.function_doc(&addr, &name, noreturn, pieces.as_ref(), 2, scope))
+    }
+
+    /// The host namespace id of the function at `addr` (0 = global), read off
+    /// its `::`-qualified name; every enclosing namespace gets an id too, so
+    /// getNamespacePath can answer for any of them.
+    fn namespace_id(&mut self, addr: &Address) -> u64 {
+        let Some(qualified) =
+            self.prog.arch().symboltab.function_display_name_across_scopes(addr)
+        else {
+            return 0;
+        };
+        let mut path: Vec<String> = qualified.split("::").map(str::to_string).collect();
+        path.pop();
+        let mut id = 0;
+        for depth in 1..=path.len() {
+            let prefix = path[..depth].to_vec();
+            id = match self.namespaces.iter().find(|(_, p)| **p == prefix) {
+                Some((&known, _)) => known,
+                None => {
+                    let fresh = 0x3_0000_0000 + self.namespaces.len() as u64 + 1;
+                    self.namespaces.insert(fresh, prefix);
+                    fresh
+                }
+            };
+        }
+        id
+    }
+
+    /// getNamespacePath (Java `HighFunction.encodeNamespace`): an empty `<val>`
+    /// for the global scope, then one `<val id content>` per level.
+    fn answer_namespace_path(&mut self, dec: &mut PackedDecode) -> Vec<u8> {
+        let id = dec.read_unsigned_integer_id(&ATTRIB_ID).unwrap_or(0);
+        let Some(path) = self.namespaces.get(&id).cloned() else {
+            return resp_empty();
+        };
+        let mut doc = Vec::new();
+        {
+            let mut e = PackedEncode::new(&mut doc);
+            e.open_element(&ELEM_PARENT);
+            e.open_element(&kuna_base::marshal::ELEM_VAL);
+            e.close_element(&kuna_base::marshal::ELEM_VAL);
+            for depth in 1..=path.len() {
+                let level = self
+                    .namespaces
+                    .iter()
+                    .find(|(_, p)| p[..] == path[..depth])
+                    .map(|(&k, _)| k)
+                    .unwrap_or(0);
+                e.open_element(&kuna_base::marshal::ELEM_VAL);
+                e.write_unsigned_integer(&ATTRIB_ID, level);
+                e.write_string(&kuna_base::marshal::ATTRIB_CONTENT, path[depth - 1].as_bytes());
+                e.close_element(&kuna_base::marshal::ELEM_VAL);
+            }
+            e.close_element(&ELEM_PARENT);
+        }
+        resp_string(&doc)
     }
 
     /// An import slot as Java maps it (`encodeExternalRef` →
@@ -582,12 +644,13 @@ impl SimOracle {
         noreturn: bool,
         pieces: Option<&PrototypePieces>,
         map_size: i32,
+        scope: u64,
     ) -> Vec<u8> {
         let mut doc = Vec::new();
         {
             let mut e = PackedEncode::new(&mut doc);
             e.open_element(&kuna_ghidra::ids::ELEM_DOC);
-            e.write_unsigned_integer(&ATTRIB_ID, 0); // global namespace
+            e.write_unsigned_integer(&ATTRIB_ID, scope);
             e.open_element(&ELEM_MAPSYM);
             e.open_element(&ELEM_FUNCTION);
             // A stable fake host-database id (never in the internal 0x40… range).
@@ -1214,12 +1277,11 @@ impl AnswerSource for SimOracle {
             // Phase 3: the TypeFactoryGhidra findById miss path — answer the
             // full definition from the oracle's own factory.
             self.answer_data_type(&mut dec)
-        } else if el == ELEM_COMMAND_GETNAMESPACEPATH.get_id()
-            || el == ELEM_COMMAND_GETCPOOLREF.get_id()
-        {
-            // Namespace scopes / cpool records: not modeled by the sim (the
-            // oracle commits everything into the global scope) — empty is the
-            // lenient "not found" answer.
+        } else if el == ELEM_COMMAND_GETNAMESPACEPATH.get_id() {
+            self.answer_namespace_path(&mut dec)
+        } else if el == ELEM_COMMAND_GETCPOOLREF.get_id() {
+            // Constant-pool records are not modeled — empty is the lenient
+            // "not found" answer.
             resp_empty()
         } else if el == ELEM_COMMAND_GETCALLOTHERFIXUP.get_id()
             || el == ELEM_COMMAND_GETCALLFIXUP.get_id()

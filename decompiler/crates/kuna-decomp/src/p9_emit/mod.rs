@@ -34,6 +34,7 @@ pub mod kuna_castwiden; // (kuna) a 64-bit widening C performs by itself keeps n
 pub mod kuna_castarith; // (kuna) pointer arithmetic stays in pointer terms
 pub mod kuna_structdefs;
 pub mod kuna_globalref; // (kuna) a constant address used as a pointer prints as its global
+pub mod kuna_namespaces; // (kuna) which namespaces print in front of a name
 pub mod kuna_lang; // (kuna) the output-language plane: profile + capabilities
 pub mod kuna_langtypes; // (kuna) the type-spelling seam (TypeSpeller + SpellCtx)
 pub mod kuna_langc; // (kuna) the c-language policy objects (CSpeller)

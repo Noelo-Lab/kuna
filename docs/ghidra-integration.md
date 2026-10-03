@@ -263,6 +263,9 @@ relocated the lazy model to the seams the kuna pipeline actually reads
   `wchar_t[N]` under a label (`s_…`, `u_…`). The printer's read-only check asks
   the remote scope (`Architecture::is_global_read_only`), as upstream's
   `ScopeGhidra::isReadOnly` does, so the reference prints as the literal.
+- **C++ namespaces** print as the native decompiler prints them: calls carry the
+  scopes the Display Namespaces option needs (Minimal by default), declarations
+  their full path, one token per scope.
 - **Tracked registers**: the pspec `<tracked_set>` decodes as the static default,
   and `ContextGhidra` is wired for real — decompileAt issues getTrackedRegisters
   at the entry (cached until flushNative) and merges the host's values OVER the

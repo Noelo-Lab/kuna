@@ -1314,6 +1314,28 @@ fn ghidra_sim_pe_string_data_prints_as_literals() {
 }
 
 // ===========================================================================
+// C++ namespaces — what stock Ghidra prints in front of a name
+// ===========================================================================
+
+/// Java hands kuna a C++ symbol's bare name plus its namespace id, and stock
+/// Ghidra prints the namespaces its Minimal strategy needs: every scope of a
+/// callee the caller cannot see, and the function's own path in its
+/// declaration.  Each scope is its own token, so Java renders `::` intact.
+#[test]
+fn ghidra_sim_cpp_names_carry_their_namespaces() {
+    let binary =
+        repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/cppproto_x86_64");
+    let run = run_session(&binary, &["main", "Account::Account"]);
+    assert_structure(&run);
+    let main = &run.docs[0].c_text;
+    for call in ["db::inner::scaled_add(", "Account::deposit(", "Account::make_id("] {
+        assert!(main.contains(call), "{call} is not qualified:\n{main}");
+    }
+    let ctor = &run.docs[1].c_text;
+    assert!(ctor.contains("Account::Account("), "the declaration is not qualified:\n{ctor}");
+}
+
+// ===========================================================================
 // sort + grep — the heavier breadth fixtures
 // ===========================================================================
 

@@ -2667,6 +2667,22 @@ impl PrintC {
         self.emit.end_return_type(idret);
         self.emit.spaces(1, 0);
         let id1g = self.emit.open_group();
+        // emitSymbolScope(fd->getSymbol()): Ghidra mode's display name is bare.
+        if let Some(remote) = arch.remote_scope.as_ref() {
+            let scopes = remote
+                .function_at(fd.get_address())
+                .map(|f| {
+                    crate::kuna_namespaces::declaration_prefix(
+                        self.context.namespace_strategy(),
+                        &f.scope_path,
+                    )
+                })
+                .unwrap_or_default();
+            for scope in scopes {
+                self.emit.print(&scope, SyntaxHighlight::GlobalColor);
+                self.emit.print("::", SyntaxHighlight::NoColor);
+            }
+        }
         self.emit.tag_func_name(&display, SyntaxHighlight::FuncnameColor, markup);
         let id2 = self.emit.open_paren("(", 0);
         // emitPrototypeInputs (printc.cc:2298): the recovered proto's parameter
@@ -6863,6 +6879,14 @@ impl PrintC {
 
         // Direct CALL: the callee name from the fspec annotation.
         let name = self.call_callee_name(fd, op);
+        for scope in self.call_scope_prefix(fd, arch, op, &name) {
+            self.push_op(&tokens::SCOPE, None);
+            self.push_atom(&Atom::syntax(
+                scope,
+                TagType::Syntax,
+                crate::printlanguage::SyntaxHighlight::global_color,
+            ));
+        }
         self.push_atom(&Atom::with_op(
             name,
             TagType::FuncToken,
@@ -6911,6 +6935,41 @@ impl PrintC {
     /// it (looked up by op).  Falls back to the in0 varnode's printed address if no
     /// call spec is registered (an internal-only op — should not occur on the live
     /// CALL path).
+    /// The namespaces Ghidra mode prints in front of a direct call's callee
+    /// (C++ `opCall`'s `pushSymbolScope(fd->getSymbol())`), outermost first.
+    /// The standalone path already carries the qualified name, so it gets none.
+    fn call_scope_prefix(&self, fd: &Funcdata, arch: &Architecture, op: OpId, name: &str) -> Vec<String> {
+        let Some(remote) = arch.remote_scope.as_ref() else { return Vec::new() };
+        let Some(idx) = fd.get_call_specs_index(op) else { return Vec::new() };
+        let fc = fd.get_call_specs(idx);
+        if fc.get_name().is_empty() {
+            return Vec::new();
+        }
+        let Some(callee) = remote.function_at(fc.get_entry_address()) else { return Vec::new() };
+        let (use_ns, use_ids) = remote
+            .function_at(fd.get_address())
+            .map(|f| (f.scope_path.into_iter().rev().collect::<Vec<_>>(), f.scope_ids))
+            .unwrap_or_default();
+        let callee_ids: Vec<u64> = callee.scope_ids.iter().rev().copied().collect();
+        // ScopeLocal::isNameUsed: the function's own names, then its namespace
+        // (never the global scope, never the terminating scope) on the host.
+        let name_used = |nm: &str, levels: usize| {
+            if fd.get_scope_local().is_some_and(|lm| lm.local_name_used(nm)) {
+                return true;
+            }
+            let Some(&parent) = use_ids.first() else { return false };
+            let stop = levels.checked_sub(1).and_then(|i| callee_ids.get(i)).copied().unwrap_or(0);
+            parent != stop && remote.is_name_used(nm, parent, stop)
+        };
+        crate::kuna_namespaces::scope_prefix(
+            self.context.namespace_strategy(),
+            name,
+            &callee.scope_path,
+            &use_ns,
+            &name_used,
+        )
+    }
+
     fn call_callee_name(&self, fd: &Funcdata, op: OpId) -> String {
         if let Some(idx) = fd.get_call_specs_index(op) {
             let fc = fd.get_call_specs(idx);
