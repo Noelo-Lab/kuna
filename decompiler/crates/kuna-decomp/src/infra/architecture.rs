@@ -3234,13 +3234,21 @@ impl Architecture {
             models.insert(name.clone(), Rc::clone(model));
         }
         let base = self.symboltab.build_global_query();
-        let scope = crate::remote_provider::RemoteScope::new(
+        let mut scope = crate::remote_provider::RemoteScope::new(
             fetch,
             self.translate.manager_rc(),
             self.types_rc(),
             models,
             self.defaultfp.clone(),
             base,
+        );
+        scope.set_call_fixups(
+            self.pcodeinjectlib
+                .base
+                .call_fixup_map
+                .iter()
+                .map(|(name, id)| (String::from_utf8_lossy(name).into_owned(), *id))
+                .collect(),
         );
         self.remote_scope = Some(Rc::new(scope));
         self.types.set_remote_type_fetch(type_fetch);

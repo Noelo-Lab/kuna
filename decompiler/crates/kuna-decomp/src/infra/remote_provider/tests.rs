@@ -753,6 +753,59 @@ fn extern_ref_slot_covers_a_pointer_read() {
     assert_eq!(ty.get_metatype(), type_metatype::TYPE_CODE);
 }
 
+/// A function the host tagged with a call-fixup carries `<inject>` in its
+/// `<prototype>`; the name resolves to the registered payload id, and an
+/// unknown name leaves the function uninjected.
+#[test]
+fn prototype_inject_resolves_to_the_call_fixup_payload() {
+    let m = manager();
+    let types = types_with_core();
+    let fn_doc = |entry: u64, name: &[u8], fixup: &[u8]| {
+        let mut doc = Vec::new();
+        {
+            let mut e = PackedEncode::new(&mut doc);
+            e.open_element(&crate::prettyprint::ids::ELEM_TYPE);
+            e.write_unsigned_integer(&ATTRIB_ID, 0);
+            e.open_element(&ELEM_MAPSYM);
+            e.open_element(&crate::funcdata_encode::ELEM_FUNCTION);
+            e.write_string(&ATTRIB_NAME, name);
+            e.write_signed_integer(&ATTRIB_SIZE, 1);
+            Address::new(ram(&m), entry).encode(&mut e).unwrap();
+            e.open_element(&ELEM_PROTOTYPE);
+            e.write_string(&ATTRIB_MODEL, b"default");
+            e.write_bool(&ATTRIB_VOIDLOCK, true);
+            e.open_element(&ELEM_RETURNSYM);
+            e.write_bool(&ATTRIB_TYPELOCK, true);
+            e.open_element(&kuna_base::address::ELEM_ADDR);
+            e.close_element(&kuna_base::address::ELEM_ADDR);
+            e.open_element(&ELEM_VOID);
+            e.close_element(&ELEM_VOID);
+            e.close_element(&ELEM_RETURNSYM);
+            e.open_element(&crate::pcodeinject::ELEM_INJECT);
+            e.write_string(&ATTRIB_CONTENT, fixup);
+            e.close_element(&crate::pcodeinject::ELEM_INJECT);
+            e.close_element(&ELEM_PROTOTYPE);
+            e.close_element(&crate::funcdata_encode::ELEM_FUNCTION);
+            Address::new(ram(&m), entry).encode_sized(&mut e, 1).unwrap();
+            e.open_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_MAPSYM);
+            e.close_element(&crate::prettyprint::ids::ELEM_TYPE);
+        }
+        doc
+    };
+    let mut fetch = MockFetch::default();
+    fetch.mapped.insert(0x4000, fn_doc(0x4000, b"__chkstk", b"alloca_probe"));
+    fetch.mapped.insert(0x4100, fn_doc(0x4100, b"helper", b"no_such_fixup"));
+    let mut scope = scope_over(&m, types, fetch);
+    scope.set_call_fixups([("alloca_probe".to_string(), 3)].into_iter().collect());
+
+    let probe = scope.function_at(&Address::new(ram(&m), 0x4000)).expect("function");
+    assert_eq!(probe.inject_id, 3);
+    let other = scope.function_at(&Address::new(ram(&m), 0x4100)).expect("function");
+    assert_eq!(other.inject_id, -1);
+}
+
 /// getTrackedRegisters answers cache per address until `clear()` (one wire
 /// ask per flush epoch), and decode failures negative-cache with ONE warning.
 #[test]

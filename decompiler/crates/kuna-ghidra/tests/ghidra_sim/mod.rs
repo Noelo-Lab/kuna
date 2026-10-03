@@ -467,6 +467,15 @@ pub fn cmd_set_action(v: &mut Vec<u8>, archid: &str, action: &str, print: &str) 
     burst(v, 3);
 }
 
+/// setOptions: archid + the packed `<optionslist>`.
+pub fn cmd_set_options(v: &mut Vec<u8>, archid: &str, options_packed: &[u8]) {
+    burst(v, 2);
+    wire_string(v, b"setOptions");
+    wire_string(v, archid.as_bytes());
+    wire_string(v, options_packed);
+    burst(v, 3);
+}
+
 /// decompileAt: archid + the packed `<addr>` of the entry.
 pub fn cmd_decompile_at(v: &mut Vec<u8>, archid: &str, addr_packed: &[u8]) {
     burst(v, 2);

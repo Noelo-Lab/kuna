@@ -190,6 +190,13 @@ pub struct SimOracle {
     pub string_symbols: BTreeMap<u64, (String, i32, i64)>,
     /// Host namespace ids handed out so far: id -> path, outermost first.
     pub namespaces: BTreeMap<u64, Vec<String>>,
+    /// Call-fixups the host tagged onto functions by entry offset (Ghidra's
+    /// Call-Fixup Installer, `Function.setCallFixup`): served as the
+    /// `<inject>` of the function's `<prototype>`.
+    pub call_fixup_overrides: BTreeMap<u64, String>,
+    /// A packed `<optionslist>` the session sends with setOptions after
+    /// setAction, as `DecompInterface` replays its options (`None` = none).
+    pub wire_options: Option<Vec<u8>>,
 }
 
 /// The two ways `DecompileCallback.getPcodeInject` declines to answer, which
@@ -312,6 +319,8 @@ impl SimOracle {
             cspec: "x86-64-gcc.cspec".to_string(),
             string_symbols: BTreeMap::new(),
             namespaces: BTreeMap::new(),
+            call_fixup_overrides: BTreeMap::new(),
+            wire_options: None,
         }
     }
 
@@ -669,8 +678,11 @@ impl SimOracle {
             if pieces.is_some() || !locals.is_empty() {
                 self.encode_localdb(&mut e, entry.get_offset(), name, pieces, locals);
             }
+            let inject = self.call_fixup_overrides.get(&entry.get_offset()).map(String::as_str);
             if let Some(p) = pieces {
-                self.encode_prototype(&mut e, entry.get_offset(), p);
+                self.encode_prototype(&mut e, entry.get_offset(), p, inject);
+            } else if let Some(fixup) = inject {
+                self.encode_fixup_prototype(&mut e, fixup);
             }
             e.close_element(&ELEM_FUNCTION);
             // The mapping SymbolEntry: <addr size/> + empty <rangelist/>.
@@ -828,7 +840,38 @@ impl SimOracle {
 
     /// `<prototype extrapop="unknown" model="default" …><returnsym>` (Java
     /// `FunctionPrototype.encodePrototype`, params via `<localdb>`).
-    fn encode_prototype(&self, e: &mut PackedEncode, entry: u64, pieces: &PrototypePieces) {
+    /// The prototype Java sends for an untyped function the Call-Fixup Installer
+    /// tagged (`__chkstk`, `_guard_dispatch_icall_nop`): a locked `void`
+    /// signature carrying the `<inject>`.
+    fn encode_fixup_prototype(&self, e: &mut PackedEncode, fixup: &str) {
+        e.open_element(&ELEM_PROTOTYPE);
+        e.write_signed_integer(&ATTRIB_EXTRAPOP, 8);
+        e.write_string(&ATTRIB_MODEL, b"__cdecl");
+        e.write_bool(&ATTRIB_VOIDLOCK, true);
+        e.open_element(&ELEM_RETURNSYM);
+        e.write_bool(&ATTRIB_TYPELOCK, true);
+        e.open_element(&kuna_base::address::ELEM_ADDR);
+        e.close_element(&kuna_base::address::ELEM_ADDR);
+        e.open_element(&ELEM_VOID);
+        e.close_element(&ELEM_VOID);
+        e.close_element(&ELEM_RETURNSYM);
+        Self::encode_inject(e, fixup);
+        e.close_element(&ELEM_PROTOTYPE);
+    }
+
+    fn encode_inject(e: &mut PackedEncode, fixup: &str) {
+        e.open_element(&kuna_decomp::pcodeinject::ELEM_INJECT);
+        e.write_string(&kuna_base::marshal::ATTRIB_CONTENT, fixup.as_bytes());
+        e.close_element(&kuna_decomp::pcodeinject::ELEM_INJECT);
+    }
+
+    fn encode_prototype(
+        &self,
+        e: &mut PackedEncode,
+        entry: u64,
+        pieces: &PrototypePieces,
+        inject: Option<&str>,
+    ) {
         e.open_element(&ELEM_PROTOTYPE);
         e.write_string(&ATTRIB_EXTRAPOP, b"unknown");
         e.write_string(&ATTRIB_MODEL, b"default");
@@ -864,6 +907,9 @@ impl SimOracle {
             }
         }
         e.close_element(&ELEM_RETURNSYM);
+        if let Some(fixup) = inject {
+            Self::encode_inject(e, fixup);
+        }
         e.close_element(&ELEM_PROTOTYPE);
     }
 

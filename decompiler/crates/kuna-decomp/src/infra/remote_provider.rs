@@ -302,6 +302,9 @@ pub struct RemoteProto {
     pub params: Vec<RemoteParam>,
     /// Whether every parameter carried `typelock` (a locked signature).
     pub params_locked: bool,
+    /// The call-fixup the host attached to the function (`<inject>`), which
+    /// replaces every call to it.
+    pub inject: Option<String>,
 }
 
 /// One category-0 (parameter) symbol.
@@ -872,6 +875,7 @@ fn decode_prototype(
         custom: false,
         params: Vec::new(),
         params_locked: false,
+        inject: None,
     };
     loop {
         let aid = decoder.get_next_attribute_id()?;
@@ -912,8 +916,14 @@ fn decode_prototype(
             proto.out_storage = Address::decode(decoder)?;
             proto.out_type = Some(types.decode_type(decoder)?);
             decoder.close_element_skipping(rid)?;
+        } else if sub == crate::pcodeinject::ELEM_INJECT.get_id() {
+            let iid = decoder.open_element()?;
+            proto.inject = Some(
+                String::from_utf8_lossy(&decoder.read_string_id(&ATTRIB_CONTENT)?).into_owned(),
+            );
+            decoder.close_element(iid)?;
         } else {
-            // <inject>/<internallist>/effect lists: consumed whole.
+            // <internallist>/effect lists: consumed whole.
             let sid = decoder.open_element()?;
             decoder.close_element_skipping(sid)?;
         }
@@ -1048,6 +1058,9 @@ pub struct RemoteFunctionFacts {
     pub scope_path: Vec<String>,
     /// The host namespace id of each `scope_path` level, same order.
     pub scope_ids: Vec<u64>,
+    /// The call-fixup payload id that replaces every call to the function, or
+    /// -1 (the host's `<inject>` resolved against the cspec call-fixups).
+    pub inject_id: int4,
 }
 
 /// The ghidra-mode lazy symbol provider (see the module docs).  Installed on
@@ -1066,6 +1079,9 @@ pub struct RemoteScope {
     models: std::collections::BTreeMap<String, Rc<ProtoModel>>,
     /// The default prototype model.
     defaultfp: Option<Rc<ProtoModel>>,
+    /// The cspec call-fixup payload ids by name (C++ `getPayloadId(
+    /// CALLFIXUP_TYPE, name)`), resolving a host `<inject>`.
+    call_fixups: std::collections::BTreeMap<String, int4>,
     /// Per-space "has a cspec `<global>` range" gate (C++ `spacerange`):
     /// spaces outside it are never queried.
     spacerange: Vec<bool>,
@@ -1118,6 +1134,7 @@ impl RemoteScope {
             types,
             models,
             defaultfp,
+            call_fixups: std::collections::BTreeMap::new(),
             spacerange,
             flagbase_default: flagbase_default.clone(),
             pristine_tracked: RefCell::new(std::collections::BTreeMap::new()),
@@ -1137,6 +1154,11 @@ impl RemoteScope {
             }),
             base,
         }
+    }
+
+    /// Register the cspec call-fixups a host `<inject>` may name.
+    pub fn set_call_fixups(&mut self, call_fixups: std::collections::BTreeMap<String, int4>) {
+        self.call_fixups = call_fixups;
     }
 
     /// The prototype model registry lookup (C++ `Architecture::getModel`).
@@ -1419,6 +1441,15 @@ impl RemoteScope {
         let mut symbol_type: Option<Rc<Datatype>> = rec.dtype.clone();
         let mut func_no_return = false;
         let is_function = rec.func.is_some();
+        // FuncProto::decode: `<inject>` names the call-fixup that replaces
+        // every call to the function.
+        let func_inject_id = rec
+            .func
+            .as_ref()
+            .and_then(|f| f.proto.as_ref())
+            .and_then(|p| p.inject.as_ref())
+            .and_then(|name| self.call_fixups.get(name).copied())
+            .unwrap_or(-1);
         if let Some(func) = &rec.func {
             func_no_return =
                 func.no_return || func.proto.as_ref().map(|p| p.no_return).unwrap_or(false);
@@ -1523,6 +1554,7 @@ impl RemoteScope {
                             param_storage,
                             scope_path: scope_path.clone(),
                             scope_ids: scope_ids.clone(),
+                            inject_id: func_inject_id,
                         },
                     );
                 }
@@ -1562,7 +1594,7 @@ impl RemoteScope {
                 symbol_id: rec.symbol_id,
                 scope_path: scope_path.clone(),
                 is_function,
-                func_inject_id: -1,
+                func_inject_id,
                 func_no_return,
             });
             // Mark the range answered so no interior address re-queries.

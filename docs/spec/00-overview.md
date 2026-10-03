@@ -681,7 +681,17 @@ Four front-ends drive one engine assembly:
   from the calling function's namespace, its own declaration carries its whole
   path, and each scope is a separate token so Java renders the `::`.  The
   name-collision test that can add one more scope asks the host
-  (`isNameUsed`) once the function's own locals are ruled out.  A function
+  (`isNameUsed`) once the function's own locals are ruled out.  Ghidra's Call-Fixup Installer tags a function with a cspec
+  call-fixup (`__chkstk` with `alloca_probe`, `_guard_dispatch_icall_nop` with
+  `guard_dispatch_icall`, the x86 `__EH_prolog3`/`__SEH_prolog4` helpers,
+  `__security_check_cookie`), and Java sends the tag as the `<inject>` of the
+  function's `<prototype>` (`FuncProto::decode`).  The decoder resolves it
+  against the cspec call-fixups registered at registerProgram and carries the
+  payload id on the function's facts and its global entry, so the flow's
+  `queryCall` and `ActionDeindirect` (a Control Flow Guard call goes through a
+  read-only dispatch pointer) both see an injected callee; the payload itself
+  comes from getCallFixup at each call site.  The helper call disappears, and a
+  guarded call prints as the indirect call it dispatches.  A function
   answer's RAW name and its `label` stay
   SPLIT (the upstream `Funcdata` name/displayName pair): the raw name is the
   Funcdata identity `HighFunction.decode`'s name echo compares against, the
