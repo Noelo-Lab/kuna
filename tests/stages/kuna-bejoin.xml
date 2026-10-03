@@ -44,7 +44,8 @@
         int carry(u32 a, u32 b) { return (u64)a + b > 0xffffffffULL; }
           li r3,0 / addc r4,r4,r5 / addze r3,r3
 
-    Asserts #1-#3: on joins each value high word (r3) first.
+    Asserts #1-#3: on joins each value high word (r3) first (wide_mul's
+    product prints as the partialconcat masks of its two words).
     Asserts #4-#5: the default (off) keeps the swapped joins, and only it.
     Asserts #6-#7: sum64 and sum_hi read the same either way.
     Assert #8: carry keeps the old join in both passes.
@@ -108,7 +109,7 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="bejoin #1: on, wide_mul returns the mulhw word (r3) as the high half" min="1" max="1">return CONCAT44\(\(int4\)\(\(uint8\)\(\(int8\)a1 \* a0\) >> 0x20\),a1 \* a0\);</stringmatch>
+<stringmatch name="bejoin #1: on, wide_mul returns the mulhw word (r3) as the high half" min="1" max="1">return \(uint8\)\(\(int8\)a1 \* a0\) &amp; 0xffffffff00000000 \| \(uint8\)\(a1 \* a0\) &amp; 0xffffffff;</stringmatch>
 <stringmatch name="bejoin #2: on, add_one carries into the r3 word, the high half" min="1" max="1">return CONCAT44\(a0 \+ \(uint4\)\(0xffffffff &lt;= a1\),a1 \+ 1\);</stringmatch>
 <stringmatch name="bejoin #3: on, the call output pair reads r3 as the high half" min="1" max="1">return CONCAT44\(\(int4\)\(\(uint8\)v1 >> 0x20\) \+ \(uint4\)\(0xfffffff9 &lt;= \(uint4\)v1\),\(uint4\)v1 \+ 7\);</stringmatch>
 <stringmatch name="bejoin #4: only the default pass (off) puts the low product first" min="1" max="1">CONCAT44\(a1 \* a0,</stringmatch>
