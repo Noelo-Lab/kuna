@@ -129,3 +129,73 @@ fn partial_global_writes_reach_aliasing_loads_before_whole_writes() {
         std::fs::remove_file(path).unwrap();
     }
 }
+
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn memory_and_call_roots_keep_the_existing_partial_store_behavior() {
+    let source = common::fixture("partial_global_excluded_x86_64.c");
+    let callback = common::scratch_file("partial-global-excluded-callback", "c");
+    let binary = common::scratch_file("partial-global-excluded", "exe");
+    std::fs::write(
+        &callback,
+        "unsigned long *excluded_give(void) { return 0; }\n",
+    )
+    .unwrap();
+    let stores = regex::Regex::new(r"(?m)^\s*excluded_g(?:\._\d+_\d+_)? = [^\n]+;").unwrap();
+    let compilers: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "the exclusions require a C compiler");
+    for cc in compilers {
+        for opt in ["-O0", "-O2"] {
+            let build = Command::new(cc)
+                .args([opt, "-fno-pie", "-no-pie", "-fno-strict-aliasing"])
+                .arg(&source)
+                .arg(&callback)
+                .arg("-o")
+                .arg(&binary)
+                .output()
+                .unwrap();
+            assert!(
+                build.status.success(),
+                "{cc} {opt}: {}",
+                String::from_utf8_lossy(&build.stderr)
+            );
+            for function in ["memory_root", "call_root", "memory_cycle"] {
+                let args = ["decompile", binary.to_str().unwrap(), function];
+                let (printed, stderr, status) = common::run_kuna(&args);
+                assert_eq!(status, 0, "{cc} {opt} {function}: {stderr}");
+                let (existing, stderr, status) = common::run_kuna(&[
+                    "decompile",
+                    binary.to_str().unwrap(),
+                    function,
+                    "--option",
+                    "indexaliasguard",
+                    "off",
+                ]);
+                assert_eq!(status, 0, "{cc} {opt} {function}: {stderr}");
+                let writes: Vec<_> = stores
+                    .find_iter(&printed)
+                    .map(|m| m.as_str().trim())
+                    .collect();
+                let before: Vec<_> = stores
+                    .find_iter(&existing)
+                    .map(|m| m.as_str().trim())
+                    .collect();
+                assert_eq!(
+                    writes, before,
+                    "{cc} {opt} {function}: excluded stores changed:\n{printed}"
+                );
+                assert_eq!(
+                    writes,
+                    ["excluded_g = 0;"],
+                    "{cc} {opt} {function}: provenance broadened beyond inputs:\n{printed}"
+                );
+            }
+        }
+    }
+    for path in [callback, binary] {
+        std::fs::remove_file(path).unwrap();
+    }
+}
