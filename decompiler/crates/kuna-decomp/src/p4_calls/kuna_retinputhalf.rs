@@ -312,12 +312,19 @@ pub fn moved_back(data: &Funcdata, vn: VarnodeId, addr: &Address, size: int4, re
 /// The record is per register, not per RETURN: a function returns in one
 /// storage, so once one path moves the argument back to return it, the same
 /// register left untouched on another path is that argument passing through, and
-/// every RETURN keeps the half.
-pub fn note_moved_back_returns(data: &mut Funcdata, active: &ParamActive, returns: &[OpId]) {
+/// every RETURN keeps the half. `placed` is the first register of a pair
+/// [`crate::kuna_retcallhalf::accept`] kept for the argument it holds in place,
+/// which the record holds as well.
+pub fn note_moved_back_returns(
+    data: &mut Funcdata,
+    active: &ParamActive,
+    returns: &[OpId],
+    placed: Option<(Address, int4)>,
+) {
     if !data.get_arch().ret_input_half {
         return;
     }
-    let mut found: Vec<(Address, int4)> = Vec::new();
+    let mut found: Vec<(Address, int4)> = placed.into_iter().collect();
     for i in 0..active.get_num_trials() {
         let t = active.get_trial(i);
         if !t.is_used() {
@@ -330,7 +337,7 @@ pub fn note_moved_back_returns(data: &mut Funcdata, active: &ParamActive, return
                 .and_then(|o| o.get_in(t.get_slot()))
                 .is_some_and(|vn| moved_back(data, vn, t.get_address(), t.get_size(), ret))
         });
-        if moved {
+        if moved && !found.iter().any(|(a, s)| a == t.get_address() && *s == t.get_size()) {
             found.push((t.get_address().clone(), t.get_size()));
         }
     }

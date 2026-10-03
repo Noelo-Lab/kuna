@@ -2279,6 +2279,22 @@ source. The same functions on a big-endian target keep both halves, in the
 order the pair is joined in, which is swapped on big-endian until that join is
 fixed.
 
+The same keep-the-high-half arm met the low register holding the function's own
+argument after a spill. clang `-O0` builds `u64 kc(unsigned a) { return a |
+(5ULL << 32); }` as `str r0,[sp]; ldr r0,[sp]; mov r1,#5`: at recovery time `r0`
+is a load and both trials are active, but by the repair heritage has resolved the
+load to the caller's own `r0`, the placement test reads it as untouched, and the
+function printed `unsigned int kc(void) { return 5; }`. A high register of a
+little-endian pair is the second of its class and never a return value alone, so
+when the low half is the function's own argument (real once the placement test is
+dropped) the pair stays and `kc` returns `CONCAT44(5,a0)`. The function returns in
+one storage, so this holds only while no other RETURN of the function is narrowed
+to a single register; when one is, the argument is the return value at this
+RETURN too. u-boot's ARM `memcpy` is that case: one exit leaves the advanced
+source pointer in `r1` and `dest` untouched in `r0`, the others return `r0` alone,
+and the exit that printed `return v2;` (the source pointer) now returns `a0`. On a
+big-endian pair the high half is the first register, and the arm is unchanged.
+
 The predicate runs inside `ActionOutputPrototype`, which is scheduled *before*
 `ActionInputPrototype`, so the proto's own parameter list is not fixated yet and
 the question goes to the model — the same fall-through
@@ -2397,6 +2413,96 @@ an uninitialized local (GH-851).
 single-function mode, and `kuna-cli/tests/call_result_pair_returns.rs` compiles
 the ARM, MIPS and i386 output of `decompile-all` back with gcc and clang and runs
 it against the source.
+
+#### (kuna) The argument left in place, or a low word that also makes the high word
+
+Two more first halves are refused by upstream's scoring while the function
+computes the second register for the RETURN alone. `long long sx(int a) { return
+a + 3; }` is ARM `add r0,r0,#3; asr r1,r0,#31`, i386 `add $3,%eax; mov %eax,%edx;
+sar $31,%edx` (gcc: `cltd`) and MIPS `addiu $2,$4,3; jr $ra; sra $3,$2,31`: the
+low word is read by the RETURN and by the shift that makes the high word, and
+`onlyOpUse` takes the second read for a competing use. `unsigned long long
+zx(unsigned a) { return a; }` is ARM `mov r1,#0; bx lr`: the low word is the
+caller's own `r0` passing through, which ancestor realism refuses. Both printed
+`void f(void)`, losing the return value and the parameter, as did a constant or
+copied high word beside the argument (`mov r1,#5`, `mov r1,r0`) and a sign
+extension after a conditional move or a merge (`cmp r0,r1; movle r0,r1; asr
+r1,r0,#31`, i386 `cmovl` then `cltd`, MIPS `movz` then `sra`).
+
+`kuna_retcallhalf::accept` takes these too. At every live RETURN the first
+register's value must be one the function produced or was handed: walked back
+through phis, value-preserving INDIRECTs and the injected no-op of an ARM or MIPS
+return, every value it merges is the function's own argument in that register,
+a constant, a call's result, or the output of an operation other than a CALLOTHER
+or a clobber. And at one RETURN at least there must be a sign the pair belongs
+together: the first register is a call's untouched result (the rule above), the
+function's own argument in place (`kuna_retcallhalf.rs (is_own_input)`, gated with
+`retinputhalf`), or a value that, followed forward, is read only by the RETURN in
+its own slot and by operations that turn it into the second register's value
+there (`kuna_retcallhalf.rs (feeds_second)`): no branch, call, load, store or other
+RETURN, nothing written to global memory. That walk starts at the merged value
+itself and, when the merge comes after the high word is made (two `lea`/`cltd`
+exits joining at one `ret`), at each computed value it merges.
+
+Beside the argument in place the second register is the only evidence, so it
+must also have been set by the function on every path
+(`kuna_retcallhalf.rs (set_by_function)`): a constant, a computation, or a move
+from another register. A load does not count. crazyflie's USB code reads a
+peripheral register into `r1` for its side effect and returns nothing; with a
+loaded high word allowed it became `unsigned long long f(int a0,unsigned int a1)`
+returning the dropped read. A zero counts only when the function names the second
+register nowhere else (`kuna_retcallhalf.rs (only_read_as_zero)`) and the pair is
+no wider than eight bytes: `-fzero-call-used-regs` zeroes a call-used register
+the body used, or every call-used register, and the latter would also scrub the
+first register of a function that returns nothing. A function returning only
+`int` that is scrubbed with `all-gpr` keeps its argument in `r0` and now reads
+`unsigned long long`, the zero extension of the same word, where it printed
+`void`.
+
+Wherever the pair rests on anything but a call's untouched result, the second
+register's value must also be read by nothing but the RETURN
+(`kuna_retcallhalf.rs (read_only_by_returns)`): every value it merges, followed
+forward through phis, INDIRECTs, the injected no-op and temporaries, may reach
+only a RETURN or a flag. A register the function hands to anything else was set
+for that use. Hand-written `mov r1,#0x3000000; vmsr fpscr,r1; bx lr` or `mov
+r1,#0x13; msr cpsr_c,r1; bx lr` leaves the caller's `r0` in place and a constant
+in `r1`, and without this test printed `CONCAT44(0x3000000,a0)` for a function
+that returns nothing.
+
+For both rules, "computed on purpose" judges the instruction that makes the
+second register by the other registers it writes, and some ops sharing its
+address are not its writes: the MULTIEQUALs and INDIRECTs heritage places at a
+block's start, a write nothing reads (the program counter a MIPS `jr` sets beside
+its delay slot), the injected no-op of the return's mode switch, and the
+tracked-register values `ActionConstbase` copies in at the function's entry (ARM's
+`spsr`, at the address of a leaf function's first instruction). These no longer
+make the second register another instruction's by-product.
+
+Not fixed here. A first register no instruction names gets no return trial, so
+RISC-V's `li a1,0; ret` still prints `void`; ARM's `bx lr` and `pop {...,pc}`
+name `r0` through their injected no-op. A loaded high word beside the argument
+(`ldr r1,[r1]; bx lr` for `((u64)*p << 32) | a`) stays `void`. A high register
+that feeds the low one (`lea 1(%eax),%edx; mov %edx,%eax` for a duplicated word)
+is also an `int` division by a constant (`asr r1,r0,#2; add r0,r1,r0,lsr #31`)
+and keeps upstream's answer. gcc `-O0` leaves the sign of a 64-bit intermediate in
+`%edx` after an `int` function's `>> 32`, which now reads `long long` with the
+same low word where it printed `void`. On 64-bit targets the same shapes make a
+16-byte pair, printed `undefined16` (`SEXT816(a0 + 3)`) where it printed `void`.
+
+`tests/stages/kuna-retpairhalf.xml` pins seven ARM functions (`sx`, `zx`, `sxa`,
+`kc`, `dupc`, `sxsel` and the spilled `kc0`) and seven controls (`int div7`, a
+stored sign word, a scrubbed `r1` the body used, an `svc` argument, and an `r1`
+written to `fpscr` or `cpsr`), and
+`kuna-cli/tests/pair_return_halves.rs` compiles the ARM, MIPS and i386 output of
+`decompile-all` back with gcc and clang at `-O0` and `-O2` and runs it against
+the source. Over 28 stripped decbench binaries (ARM firmware at O0 and O2, i386 PE,
+x86-64; 26,103 functions) `decompile-all` changes 18 functions: libgcc's
+`__aeabi_dadd` and `__aeabi_ddiv` in seven firmware images, where an exit that
+hands back the argument's low word with a new high word printed the high word
+alone; u-boot's `memcpy` and `__of_translate_address`, both right now; and two
+copies of a `tbb` jump table decoded as code in betaflight. Lua 5.4 built for ARM,
+Thumb, i386, MIPS and RISC-V 32 by clang and gcc at O0 and O2 (12,503 functions)
+changes none.
 
 #### (kuna) The register that was only ever pushed (`retpushedhalf`)
 

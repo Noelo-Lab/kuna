@@ -1,0 +1,127 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    kuna: a 64-bit return whose high word is computed from the low word, or
+    whose low word is the function's argument left in its register, returns
+    all eight bytes, not void.
+
+    Stage / sub-stage: P4 return recovery, the output trials of the
+    function's own RETURN (ActionReturnRecovery, p4_calls/kuna_retcallhalf.rs),
+    and the late pair repair (p4_calls/kuna_returnuncomputed.rs).
+    A strict fix: no option.
+
+    Source (clang -target arm-linux-gnueabi -O2, bytes verbatim below; kc0
+    is clang -O0 of kc, and the last seven functions are hand-written
+    controls):
+
+        typedef unsigned long long u64;
+        typedef long long s64;
+        s64 sx(int a) { return a + 3; }
+        u64 zx(unsigned a) { return a; }
+        s64 sxa(int a) { return a; }
+        u64 kc(unsigned a) { return a | (5ULL << 32); }
+        u64 dupc(unsigned a) { unsigned x = a + 1; return ((u64)x << 32) | x; }
+        s64 sxsel(int a, int b) { return a > b ? a : b; }
+
+        div7:   asr r1,r0,#2; add r0,r1,r0,lsr #31; bx lr
+        sgnst:  asr r1,r0,#31; str r1,[r2]; bx lr
+        scrub:  mov r2,#1; str r2,[r1]; mov r1,#0; mov r2,#0; bx lr
+        sysarg: push {r7,lr}; asr r1,r0,#31; mov r7,#4; svc #0;
+                pop {r7,lr}; bx lr
+        vmsrc:  mov r1,#0x3000000; vmsr fpscr,r1; bx lr
+        msrc:   mov r1,#0x13; msr cpsr_c,r1; bx lr
+        feedc:  add r0,r0,#3; asr r1,r0,#31; vmsr fpscr,r1; bx lr
+
+    sx is add r0,r0,#3 ; asr r1,r0,#31 ; bx lr.  zx is mov r1,#0 ; bx lr.
+
+    The bug: return recovery refused r0, because its value also feeds r1
+    (sx, dupc, sxsel) or because it is the caller's own r0 passing through
+    (zx, sxa, kc), and the output model never returns r1 without r0, so all
+    six printed as void.  kc0 reloads its argument from its spill, which the
+    late pair repair took for leftover, and printed as returning 5 alone.
+
+    The fix: when r1 is computed and read only by the RETURN, an r0 that is
+    the argument in place or a value read only on its way into r1 completes
+    the pair.  div7 (r1 feeds r0, an int), sgnst (r1 is stored), scrub (the
+    zero -fzero-call-used-regs leaves in an r1 the body used), sysarg (r1
+    set up for an svc) and vmsrc, msrc and feedc (r1 written to a system
+    register) keep their answers.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+030080e2c01fa0e11eff2fe10010a0e31eff2fe1c01fa0e11eff2fe10510a0e3
+1eff2fe1010080e20010a0e11eff2fe1010050e10100a0d1c01fa0e11eff2fe1
+04d04de200008de500009de50510a0e304d08de21eff2fe14011a0e1a00f81e0
+1eff2fe1c01fa0e1001082e51eff2fe10120a0e3002081e50010a0e30020a0e3
+1eff2fe180402de9c01fa0e10470a0e3000000ef8040bde81eff2fe10314a0e3
+101ae1ee1eff2fe11310a0e301f021e11eff2fe1030080e2c01fa0e1101ae1ee
+1eff2fe1
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="sx"/>
+<symbol space="ram" offset="0x100c" name="zx"/>
+<symbol space="ram" offset="0x1014" name="sxa"/>
+<symbol space="ram" offset="0x101c" name="kc"/>
+<symbol space="ram" offset="0x1024" name="dupc"/>
+<symbol space="ram" offset="0x1030" name="sxsel"/>
+<symbol space="ram" offset="0x1040" name="kc0"/>
+<symbol space="ram" offset="0x1058" name="div7"/>
+<symbol space="ram" offset="0x1064" name="sgnst"/>
+<symbol space="ram" offset="0x1070" name="scrub"/>
+<symbol space="ram" offset="0x1084" name="sysarg"/>
+<symbol space="ram" offset="0x109c" name="vmsrc"/>
+<symbol space="ram" offset="0x10a8" name="msrc"/>
+<symbol space="ram" offset="0x10b4" name="feedc"/>
+</binaryimage>
+<script>
+  <com>lo fu sx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sxa</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu kc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu dupc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sxsel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu kc0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu div7</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sgnst</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scrub</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sysarg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vmsrc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu msrc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu feedc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RETPAIRHALF #1: a sign-extended low word returns eight bytes" min="3" max="3">(int8|long long) (sx|sxa|sxsel)\(</stringmatch>
+<stringmatch name="RETPAIRHALF #2: a zero, constant or copied high word beside the low word returns eight bytes" min="4" max="4">(uint8|unsigned long long) (zx|kc|dupc|kc0)\(</stringmatch>
+<stringmatch name="RETPAIRHALF #3: the sign extension is the conversion at the return" min="1" max="1">return a0 \+ 3;</stringmatch>
+<stringmatch name="RETPAIRHALF #4: the argument in place is the low word, also after its spill" min="2" max="2">return CONCAT44\(5,a0\);</stringmatch>
+<stringmatch name="RETPAIRHALF #5: none of them prints as void" min="0" max="0">void (sx|zx|sxa|kc|dupc|sxsel)\(</stringmatch>
+<stringmatch name="RETPAIRHALF #6: a high register that feeds the low one is not returned" min="1" max="1">(int4|int) div7\(</stringmatch>
+<stringmatch name="RETPAIRHALF #7: a stored word, a scrubbed register and an svc argument stay void" min="3" max="3">void (sgnst|scrub|sysarg)\(</stringmatch>
+<stringmatch name="RETPAIRHALF #8: a high register written to fpscr or cpsr stays void" min="3" max="3">void (vmsrc|msrc|feedc)\(</stringmatch>
+</decompilertest>

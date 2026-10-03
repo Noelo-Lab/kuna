@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1806,
-    1806
+    1814,
+    1814
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -860,6 +860,14 @@
     "data:RETINPUTHALF #3: with the option off the bug returns: the half is dropped AND the argument vanishes (a one-argument wide)",
     "data:RETINPUTHALF #4: w2, whose high half is arithmetic on the same argument, is identical in both passes (the rule only ever spoke about unwritten terminals)",
     "data:RETINPUTHALF #5: nothing ever recovers a one-argument w2",
+    "data:RETPAIRHALF #1: a sign-extended low word returns eight bytes",
+    "data:RETPAIRHALF #2: a zero, constant or copied high word beside the low word returns eight bytes",
+    "data:RETPAIRHALF #3: the sign extension is the conversion at the return",
+    "data:RETPAIRHALF #4: the argument in place is the low word, also after its spill",
+    "data:RETPAIRHALF #5: none of them prints as void",
+    "data:RETPAIRHALF #6: a high register that feeds the low one is not returned",
+    "data:RETPAIRHALF #7: a stored word, a scrubbed register and an svc argument stay void",
+    "data:RETPAIRHALF #8: a high register written to fpscr or cpsr stays void",
     "data:RETPUSHEDHALF #1: by default the alignment push/pop leaves a one-argument function returning one register",
     "data:RETPUSHEDHALF #2: with the option off the bug returns: the pushed register becomes a fifth argument",
     "data:RETPUSHEDHALF #3: and the invented argument is used only as the high half of the return",
