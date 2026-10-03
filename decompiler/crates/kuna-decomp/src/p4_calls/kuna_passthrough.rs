@@ -332,12 +332,6 @@ fn is_register(addr: &Address) -> bool {
 
 /// Does any Varnode of the function share a byte with `[addr, addr+size)`?
 fn touched(data: &Funcdata, addr: &Address, size: int4) -> bool {
-    touched_by(data, addr, size, false)
-}
-
-/// [`touched`], with the two sides of an injected no-op ([`is_injected_noop`])
-/// not counted.
-fn touched_by(data: &Funcdata, addr: &Address, size: int4, past_noops: bool) -> bool {
     let off = addr.get_offset();
     let end = off.wrapping_add(size as u64);
     let lo = Address::new(
@@ -350,12 +344,7 @@ fn touched_by(data: &Funcdata, addr: &Address, size: int4, past_noops: bool) -> 
             .get(id)
             .map(|v| {
                 let voff = v.get_offset();
-                let noop = past_noops
-                    && match v.get_def() {
-                        Some(def) => is_injected_noop(data, def),
-                        None => v.descend_iter().next().is_some() && v.descend_iter().all(|op| is_injected_noop(data, op)),
-                    };
-                !noop && voff < end && off < voff.wrapping_add(v.get_size() as u64)
+                voff < end && off < voff.wrapping_add(v.get_size() as u64)
             })
             .unwrap_or(false)
     })
@@ -551,16 +540,18 @@ pub(crate) fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
     None
 }
 
-/// The stated return value of the call every live RETURN of the function hands
-/// back, when there is one: the registers the callee's own recovery put it in,
-/// the same for every such call, and those calls.
+/// The return value of the call every live RETURN of the function hands back,
+/// when there is one: the registers it is returned in, the same for every such
+/// call, and those calls.
 ///
-/// Asked before any argument is claimed, so "untouched" means untouched by the
-/// function's own code. `None` unless the function's own output is recovered
-/// (not locked), every live RETURN is reached from a direct call with nothing
-/// between, every one of those callees states a non-`void` return in the same
-/// storage, and that storage is a register or a register pair
-/// ([`register_pieces`]) no op of the function touches.
+/// Asked before any argument is claimed. `None` unless the function's own
+/// output is recovered (not locked), every live RETURN is reached from a direct
+/// call ([`producing_call`]) whose callee is known to return a value
+/// ([`known_return`]) in the same storage, that storage is a register or a
+/// register pair ([`register_pieces`]) the function's model can return in, and
+/// no op between any of those calls and its RETURN reads or writes it
+/// ([`touched_after`]). What the function does before the call does not matter:
+/// the call overwrites the register, so `mov r0,#5; b g` returns what `g` does.
 fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId>)> {
     if data.get_func_proto().is_output_locked() || data.get_active_output().is_none() {
         return None;
@@ -575,14 +566,11 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     }
     let mut storage: Option<(Address, int4)> = None;
     let mut producers: Vec<OpId> = Vec::new();
+    let mut paths: Vec<(OpId, OpId)> = Vec::new();
     for &r in &rets {
         let call = producing_call(data, r)?;
         let idx = (0..data.num_calls()).find(|&i| data.get_call_specs(i).get_op() == call)?;
-        let fc = data.get_call_specs(idx);
-        if fc.proto().is_output_locked() || !fc.is_output_active() {
-            return None;
-        }
-        let (addr, size, _) = data.kuna_protoorder_types(fc.get_entry_address())?.output.clone()?;
+        let (addr, size) = known_return(data, data.get_call_specs(idx))?;
         match &storage {
             Some((a, s)) if *a != addr || *s != size => return None,
             _ => storage = Some((addr, size)),
@@ -590,14 +578,78 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
         if !producers.contains(&call) {
             producers.push(call);
         }
+        paths.push((call, r));
     }
     let (addr, size) = storage?;
     let pieces = register_pieces(data, &addr, size)?;
     let proto = data.get_func_proto();
-    let free = |(a, s): &(Address, int4)| {
-        !touched_by(data, a, *s, true) && proto.characterize_as_output(a, *s) != crate::fspec::Containment::NoContainment
+    if pieces.iter().any(|(a, s)| proto.characterize_as_output(a, *s) == crate::fspec::Containment::NoContainment) {
+        return None;
+    }
+    if paths.iter().any(|&(call, ret)| touched_after(data, call, ret, &pieces)) {
+        return None;
+    }
+    Some((pieces, producers))
+}
+
+/// Where the callee of `fc` returns its value: the declared output of a locked
+/// prototype (a libc or DWARF signature, an asserted prototype), or what
+/// `protoorder` stated the callee's own recovery returns. `None` for a `void`
+/// or hidden-pointer return, and for a declared one that is not a single
+/// register (a pair's call output reaches the RETURN through the pieces heritage
+/// splits it into, which [`returns_tail_result`] does not follow).
+fn known_return(data: &Funcdata, fc: &FuncCallSpecs) -> Option<(Address, int4)> {
+    if fc.proto().is_output_locked() {
+        let out = fc.proto().get_output();
+        let void = out.get_type()?.get_metatype() == crate::dtype::type_metatype::TYPE_VOID;
+        if void || out.is_indirect_storage() || out.is_hidden_return() || out.get_size() <= 0 {
+            return None;
+        }
+        let addr = out.get_address();
+        return is_register(&addr).then(|| (addr, out.get_size()));
+    }
+    if !fc.is_output_active() {
+        return None;
+    }
+    let (addr, size, _) = data.kuna_protoorder_types(fc.get_entry_address())?.output.clone()?;
+    Some((addr, size))
+}
+
+/// Does an op between `call` and `ret`, on the path [`producing_call`] walks,
+/// read or write a byte of `pieces`? An injected no-op ([`is_injected_noop`])
+/// moves nothing. A path the walk cannot follow back to `call` answers `true`.
+fn touched_after(data: &Funcdata, call: OpId, ret: OpId, pieces: &[(Address, int4)]) -> bool {
+    let hits = |v: Option<VarnodeId>| {
+        v.and_then(|v| data.vbank().get(v)).is_some_and(|v| {
+            let (vsp, voff, vend) = (v.get_space().get_index(), v.get_offset(), v.get_offset() + v.get_size() as u64);
+            pieces.iter().any(|(a, s)| {
+                a.get_space().is_some_and(|sp| sp.get_index() == vsp)
+                    && a.get_offset() < vend
+                    && voff < a.get_offset() + *s as u64
+            })
+        })
     };
-    pieces.iter().all(free).then_some((pieces, producers))
+    let Some(mut bl) = data.obank().get(ret).and_then(|o| o.get_parent()) else { return true };
+    let mut cur = data.op_previous_op(ret);
+    for _ in 0..RETURN_WALK_BLOCKS {
+        while let Some(op) = cur {
+            if op == call {
+                return false;
+            }
+            let Some(o) = data.obank().get(op) else { return true };
+            if !is_injected_noop(data, op) && (hits(o.get_out()) || (0..o.num_input()).any(|i| hits(o.get_in(i)))) {
+                return true;
+            }
+            cur = data.op_previous_op(op);
+        }
+        let b = data.bblocks_ref().block(bl);
+        if b.size_in() != 1 {
+            return true;
+        }
+        bl = b.get_in(0);
+        cur = data.bb_op_tail(bl);
+    }
+    true
 }
 
 /// The registers a stated return value occupies: its own storage, or each piece
@@ -685,18 +737,31 @@ pub fn returns_tail_result(data: &Funcdata, vn: VarnodeId, addr: &Address, size:
         return false;
     }
     let mut def = v.get_def();
-    while let Some(d) = def.filter(|&d| is_injected_noop(data, d)) {
+    while let Some(d) = def.filter(|&d| is_injected_noop(data, d) || is_low_piece(data, d)) {
         def = data.obank().get(d).and_then(|o| o.get_in(0)).and_then(|i| data.vbank().get(i)).and_then(|i| i.get_def());
     }
-    let Some(def) = def.and_then(|d| data.obank().get(d)) else { return false };
-    if !def.is_indirect_creation() {
+    let Some(def_id) = def else { return false };
+    let Some(def) = data.obank().get(def_id) else { return false };
+    let call = if def.code() == OpCode::CPUI_CALL {
+        def_id
+    } else if def.is_indirect_creation() {
+        let Some(iop) = def.get_in(1).and_then(|i| data.vbank().get(i)) else { return false };
+        OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()))
+    } else {
         return false;
-    }
-    let Some(iop) = def.get_in(1).and_then(|i| data.vbank().get(i)) else { return false };
-    let call = OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()));
+    };
     data.kuna_passthrough_claims()
         .iter()
         .any(|c| c.addr == *addr && c.size == size && c.ret_owners.contains(&call))
+}
+
+/// Is `op` a SUBPIECE taking the least significant bytes of its input: the
+/// `w0` heritage reads out of the whole `x0` a call writes once the function
+/// also writes `x0` itself (`mov w0,#5; b g`)?
+fn is_low_piece(data: &Funcdata, op: OpId) -> bool {
+    let Some(o) = data.obank().get(op) else { return false };
+    o.code() == OpCode::CPUI_SUBPIECE
+        && o.get_in(1).and_then(|c| data.vbank().get(c)).is_some_and(|c| c.is_constant() && c.get_offset() == 0)
 }
 
 /// Is `[addr, addr+size)` a register of a tail call's result this pass claimed
