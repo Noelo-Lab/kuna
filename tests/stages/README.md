@@ -91,6 +91,8 @@ writeup, not here.
 
 | `re-constselectjump.xml` | RE-friction need `conditional-indirect-branches-hide` | S2 switch model (destination selected between constant addresses by a conditional move) | `option constselectjump on\|off` |
 | `kuna-entryretdispatch.xml` | RE-friction need `entry-point-ret-dispatch` | S2 flow classification (proven entry `push continuation; push target; ret` links become calls) | `option entryretdispatch on\|off` |
+| `kuna-extent-fallthrough.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (caller-declared extent vs discovered interior entry) | `option funcboundflow on\|off` |
+| `kuna-extent-direct-branch.xml` | [Kuna #850](https://github.com/Noelo-Lab/kuna/issues/850) | S2 flow classification (in-extent direct and recovered indirect branches vs tail-call inference; out-of-extent veneer control) | `option tailcalljump on\|off` |
 | `kuna-pushimmediateret.xml` | RE-friction duplicate needs `entry-point-push-return` + `push-immediate-ret-transfer` | S2 flow classification (a proven one-store `push immediate; ret` becomes a terminal branch; no target function is synthesized) | `option pushimmediateret on\|off` |
 | `kuna-subcommuteshift.xml` | RE-friction need `cancelling-byte-arithmetic-splits` | S3 simplification quiescence (exact modulo-256 multiply/shift cancellation) | `option cancelbytearithmetic on\|off` |
 | `re-checker-stack-aggregate.xml` | RE-friction need `checker-uses-stack-aggregate` | P9 declaration emission (constant address-reference highs are not whole storage representatives) | default correctness fix (no option) |

@@ -1,0 +1,62 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t">
+<!--
+    Kuna #850: the branch at 0x10008 targets a separately discovered entry inside the
+    asserted outer function.  It is an ordinary local edge, so tailcalljump
+    must keep both return paths.  A second, exact four-byte veneer branches to
+    a known helper outside its declared extent; that transfer remains a tail
+    call when the option is on.
+
+      0x10000 outer:       cmp r0,#0; bne 0x1000c; b 0x10014
+      0x1000c               mov r0,#3; bx lr
+      0x10014 interior:    mov r0,#7; bx lr
+      0x10020 veneer:      b helper
+      0x10028 helper:      mov r0,#9; bx lr
+
+    Stage: P2 flow classification. P0 assertion: `option tailcalljump on|off`.
+    The enabled outer pass reproduces the pre-fix misclassification; the off
+    pass is the control. Assertion #1 fails before the fix; #2 keeps the other case. Assertion #3
+    ensures that the out-of-extent veneer remains recognized as a tail transfer.
+    The read-only literal jump at 0x10200 targets a stated interior entry at
+    0x10210 inside the outer extent. Assertions #4/#5 require that recovered
+    indirect destination to remain local as well.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">000050e30000001a010000ea0300a0e31eff2fe10700a0e31eff2fe100000000000000ea000000000900a0e31eff2fe1</bytechunk>
+<!-- ldr pc,[pc,#-4]; .word 0x10210; padding; mov r0,#9; bx lr -->
+<bytechunk space="ram" offset="0x10200" readonly="true">04f01fe51002010000000000000000000900a0e31eff2fe1</bytechunk>
+</binaryimage>
+<script>
+  <com>function bounds 0x10000 0x1001c as outer</com>
+  <com>function bounds 0x10014 0x1001c as interior</com>
+  <com>function bounds 0x10020 0x10024 as veneer</com>
+  <com>function bounds 0x10028 0x10030 as helper</com>
+  <com>function bounds 0x10200 0x10218 as outer_indirect</com>
+  <com>function bounds 0x10210 0x10218 as interior_indirect</com>
+  <com>parse line extern int outer(int input);</com>
+  <com>parse line extern int helper(int value);</com>
+  <com>parse line extern int veneer(int value);</com>
+  <com>parse line extern int outer_indirect(void);</com>
+  <com>parse line extern int interior_indirect(void);</com>
+  <com>option readonly on</com>
+  <com>option tailcalljump on</com>
+  <com>lo fu outer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option tailcalljump off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option tailcalljump on</com>
+  <com>lo fu veneer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu outer_indirect</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="EXTENT-DIRECT #1: the in-range case body and return survive with tailcalljump enabled and disabled" min="2" max="2">return 7;</stringmatch>
+<stringmatch name="EXTENT-DIRECT #2: the other in-range return survives both passes" min="2" max="2">return 3;</stringmatch>
+<stringmatch name="EXTENT-DIRECT #3: a direct transfer beyond the asserted extent remains a tail call" min="1" max="1">return helper\(value\); // tail-call</stringmatch>
+<stringmatch name="EXTENT-DIRECT #4: an in-range recovered indirect target remains local" min="1" max="1">return 9;</stringmatch>
+<stringmatch name="EXTENT-DIRECT #5: the stated interior indirect entry is not inferred as a callee" min="0" max="0">return interior_indirect\(</stringmatch>
+</decompilertest>

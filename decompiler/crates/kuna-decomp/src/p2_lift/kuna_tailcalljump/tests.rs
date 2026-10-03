@@ -95,6 +95,7 @@ fn without_a_branch_override_tailcalljump_claims_first() {
     assert_eq!(
         crate::flow::select_inferred_tail_call(
             false,
+            false,
             || kuna_is_tail_call_branch(&fd, op, true, true, false),
             || {
                 frame_consulted.set(true);
