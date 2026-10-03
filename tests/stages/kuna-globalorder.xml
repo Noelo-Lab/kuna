@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    #871: a computed value copied to a global after an aliasing pointer load
+    must keep that store after the load (P6 kuna_globalorder). A switch's
+    case-local copies must likewise stay on their original paths; P3
+    kuna_globalorderkeep preserves them before a forced return-phi merge.
+    This is a strict fix at the existing indexaliasguard global default.
+
+    ew is GCC -O0 for `t = gi * 2 + b; x = *p; gi = t; return x + t * 100`.
+    For gi=4, p=&gi, b=1 the binary returns 904; the old early store returns
+    909. pick is Clang -O0 for globalorder_x86_64.c's volatile switch, whose
+    stores exist only in the selected case (or default). The old output
+    printed `sink = a0 & 0xffff` before the switch and read sink back in cases.
+    Each assertion fails on the unfixed default tree. Native CLI tests compare
+    compiler roundtrips and hardware read/write watchpoint traces as well.
+-->
+<bytechunk space="ram" offset="0x1149" readonly="true">
+f30f1efa554889e548897de88975e48b05b62e00008d14008b45e401d08945f8488b45e88b008945fc8b45f88905992e00008b45f86bd0648b45fc01d05dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x401000" readonly="true">
+554889e5897df80fb745f88945f48b45f483c0e289c148894de883e8070f8760000000488b45e8488d0dd20f0000486304814801c8ffe08b45f48905e01f00008b45f4c1e0010345f88945fce9430000008b45f48905c61f00006b45f4030345f88945fce92b0000008b45f48905ae1f00008b45f4c1e0020345f88945fce911000000c705931f00004d000000c745fc4d0000008b45fc5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+37f0ffff69f0ffff83f0ffff37f0ffff69f0ffff83f0ffff83f0ffff51f0ffff
+</bytechunk>
+<symbol space="ram" offset="0x1149" name="ew"/>
+<symbol space="ram" offset="0x401000" name="pick"/>
+</binaryimage>
+<script>
+  <com>map address r0x4014 int4 gi</com>
+  <com>map address r0x403020 int4 sink</com>
+  <com>parse line extern int4 ew(int4 *p, int4 b);</com>
+  <com>parse line extern int4 pick(uint4 mode);</com>
+  <com>load function ew</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="globalorder #1: the aliasing load precedes the computed global store" min="1" max="1">v[0-9]+ = \*p;
+  gi = </stringmatch>
+<stringmatch name="globalorder #2: the computed value keeps its variable" min="1" max="1">b \+= gi \* 2;</stringmatch>
+<stringmatch name="globalorder #3: the switch reads the computed value without an early global store" min="1" max="1">switch\(v[0-9]+\)</stringmatch>
+<stringmatch name="globalorder #4: no case reads the stored global back" min="0" max="0">(switch\(sink\)|return[^;]*sink)</stringmatch>
+<stringmatch name="globalorder #5: the three case groups store only on their paths" min="3" max="3">^      sink = v[0-9]+;</stringmatch>
+</decompilertest>

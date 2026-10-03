@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1878,
-    1878
+    1883,
+    1883
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1522,6 +1522,11 @@
     "data:globalloadguard #7: the store computed from the first store's value is unchanged",
     "data:globalloadguard #8: every pass prints a store to gi in d_pre after the loop",
     "data:globalloadguard #9: load drops the store before the load and loads after the second store",
+    "data:globalorder #1: the aliasing load precedes the computed global store",
+    "data:globalorder #2: the computed value keeps its variable",
+    "data:globalorder #3: the switch reads the computed value without an early global store",
+    "data:globalorder #4: no case reads the stored global back",
+    "data:globalorder #5: the three case groups store only on their paths",
     "data:globalpointee #10: a value read before its store keeps its register, the load after the pointer store reads the global",
     "data:globalpointee #11: the load after a store through another pointer reads the global",
     "data:globalpointee #12: a load not used as an address after a pointer store reads the global",

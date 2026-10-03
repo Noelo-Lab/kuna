@@ -1084,6 +1084,26 @@ renderer therefore looks through a `COPY` of an **implied** two-input value and
 decides on the inner op; a `COPY` of an *explicit* value is left alone, because
 there the statement really is `out = <that name>`.
 
+**Keeping a computed global store on its path**
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalorderkeep.rs
+(declines)`, a strict fix under `indexaliasguard global`) prevents a forced
+marker merge from bypassing chapter 06's global-write ordering check.
+`RulePropagateCopy` leaves a guarded persistent COPY as the input of a marker
+whose output has the same address and size when that COPY's value is computed
+in another basic block, or across an observation in the same block. The shared
+`kuna_globalorder.rs (write_moves)` predicate defines those barriers. The
+value must be an ordinary computed temporary, with LOADs, calls, markers and
+plain COPY roots left to the existing guards. Inputs, constants, address-tied
+or persistent values and marked global loads are excluded, as are return
+copies and stores with an earlier global value still read afterward, using
+`(old_value_read_after)` below. A Clang `-O0` switch
+computes a masked selector before dispatch and writes it to a volatile global
+only in its case blocks. Propagating those writes into the return phi deleted
+their COPYs and forced the selector to merge with the global, printing an
+extra store before dispatch and reading the volatile global back in the cases.
+Keeping the copies lets chapter 06 leave the selector separate and each store
+on the path where the binary makes it.
+
 **Keeping a global store whose value is read sign-sensitively**
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalstorekeep.rs
 (declines)`, a strict fix, no option) is the same refusal once more, for a

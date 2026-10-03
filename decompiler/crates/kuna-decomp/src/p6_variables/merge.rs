@@ -399,6 +399,9 @@ pub trait MergeContext: HighContext {
     fn vn_load_crosses_global_write(&mut self, _vn: VarnodeId, _except: HighVariableId) -> bool {
         false
     }
+    fn global_copy_moves_write(&self, _global: HighVariableId, _value: HighVariableId) -> bool {
+        false
+    }
 
     // --- Cover construction for a single read (eliminateIntersect) --------
     /// Build the [`Cover`] of the single read of `vn` by `op` (the C++
@@ -1292,6 +1295,7 @@ impl Merge {
                     let vn2 = vn2.unwrap();
                     if crate::p6_variables::kuna_pointeevalue::keeps_apart(ctx, vn1, vn2)
                         || crate::p6_variables::kuna_loadorder::keeps_apart(ctx, vn1, vn2)
+                        || crate::p6_variables::kuna_globalorder::keeps_apart(ctx, vn1, vn2)
                     {
                         continue;
                     }
@@ -1392,6 +1396,7 @@ impl Merge {
                 }
                 if crate::p6_variables::kuna_pointeevalue::keeps_apart(ctx, vn1, vn2)
                     || crate::p6_variables::kuna_loadorder::keeps_apart(ctx, vn1, vn2)
+                    || crate::p6_variables::kuna_globalorder::keeps_apart(ctx, vn1, vn2)
                 {
                     continue;
                 }

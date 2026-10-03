@@ -382,15 +382,39 @@ the binary loads `a0[3]` into a register and stores `dat_e10` once, after
 `dat_e1c`; kept apart it prints `v1 = a0[3]; dat_e1c = a0[0xf];
 dat_e10 = v1 * 0.017453292;`.
 
-A value computed before such a LOAD and stored to the global after it is not
-kept apart: joined with the global's HighVariable it still prints as a write of
-the global where it is computed, ahead of the LOAD (`t = gi * 2 + b; x = *p;
-gi = t;` prints `gi = a1 + gi * 2; v1 = *a0;`, issue #871). Keeping it apart is
-right only when the binary has not stored that value to the global before the
-LOAD. When it has and stores the global again later, chapter 03's global LOAD
-guard keeps that first store, and the join prints it where the binary makes it:
-`t = a[3]; gi = t; if (c) t = *p * 3; gi = t - 7;` prints
-`gi = a1[3]; if (a2) gi = *a0 * 3; gi -= 7;`.
+A computed value stored to a guarded global keeps a separate HighVariable
+when joining them would move its write ahead of an observation or onto another
+path (`kuna_globalorder.rs (keeps_apart)`, `(copy_moves_write)`). At the existing
+`indexaliasguard global` default, the copy and adjacent merges inspect the
+value's copies into that global. Following at most 64 same-size temporary
+COPYs locates an ordinary computation. LOAD, call, user-operation, marker and
+plain COPY roots keep their existing handling; a marker is the global state
+carried through control flow, not an independently computed value whose
+definition can stand in for a write. A store in a different basic block is kept at
+its own point, so a value computed before a switch is not written to the global
+before the switch when the binary writes it only in selected cases.
+Within one block, a call or user operation, another persistent write, or a
+LOAD or STORE in the global's space is a barrier. A constant pointer proves a
+memory access disjoint only in a byte-addressed space and with non-overlapping,
+non-overflowing byte ranges (`kuna_globalorder.rs (write_moves)`). Unknown
+pointers remain possible aliases. Chapter 03 preserves the copies that would
+otherwise disappear into a forced marker merge before this phase.
+
+For `t = gi * 2 + b; x = *p; gi = t; return x + t * 100;`, joining the
+computation into the global used to print `gi = a1 + gi * 2; v1 = *a0;`
+(issue #871). With `gi = 4`, `p = &gi` and `b = 1`, that returns 909 where the
+binary returns 904; kept apart, the load precedes `gi = t`. A first store the
+binary makes before the LOAD stays before it, and its later store stays later.
+When an earlier value of the global is still read after the store, the existing
+`kuna_globalstorekeep.rs (old_value_read_after)` handling is retained, so a
+newly explicit old value is not copied out above a pointer store the binary
+reads after. Values that are global loads remain under `kuna_loadorder` and the global LOAD
+guard's existing rules: `t = a[3]; gi = t; if (c) t = *p * 3; gi = t - 7;`
+still prints `gi = a1[3]; if (a2) gi = *a0 * 3; gi -= 7;`. At `off`, `load`
+and `full`, the earlier option-specific merge behavior is retained; `full`
+uses upstream STORE guards rather than the bounded guarded-global machinery.
+The native roundtrip and hardware-watchpoint tests in `globalorder_cli.rs`
+check values, final memory, and the actual sequence of volatile accesses.
 
 The alias test compares the two accesses, not only the two pointers. It proves
 a STORE harmless only when both pointers derive from one base through matching

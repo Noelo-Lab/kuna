@@ -1239,3 +1239,15 @@ and clang with `--target=aarch64-linux-gnu`, `thumbv7em-none-eabi`,
 `mipsel-linux-gnu`, `powerpc-linux-gnu`, and `i386-linux-gnu`. The test omits
 the callback function on MIPS and PowerPC, whose external-call relocations
 are not recovered from these objects; the local alias checks still run there.
+
+`globalorder_x86_64.c` and `globalorder_trace_x86_64.c` are source-only fixtures
+for the Linux x86-64 CLI roundtrip tests in `globalorder_cli.rs`. The tests build
+GCC and Clang O0/O2 originals and printed-C rebuilds, checking returns and final
+globals for aliasing and disjoint pointers, calls, repeated stores, and conditional
+stores. A child-process hardware watchpoint separately compares the volatile
+switch's actual write sequence and its read/write access sequence, including
+extra writes whose final value is overwritten. Four watchpoints also check a
+UID load followed by two flag stores and two UID stores, plus a scaled value
+stored after its flag. The watchpoint is enabled after
+the child initializes the global and disabled by process exit; no external binary
+or root privileges are required. Installed compilers must build the fixtures.
