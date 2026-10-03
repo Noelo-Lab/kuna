@@ -1155,7 +1155,8 @@ whose own value returns in the register: `printf("%f", g())` keeps its `g()`
 the same way. Without a count (any AArch64 call, or a block that does not set
 one), the ancestor checks still decide: a discarded call result or a parameter
 the caller reads again after the call stays out, and so does a call result the
-call really takes, which the instructions cannot tell apart.
+call really takes, which the instructions cannot tell apart. Only a declared
+prototype settles that case: see `varargforward` in §4.4.
 
 ### `ActionActiveParam` — does this argument exist?
 
@@ -3657,6 +3658,63 @@ the matching `puts`, libgcc's `_Unwind_SetGR` in `_Unwind_VRS_Set`. A wrapper
 also repeats its callee's recovered type, so the nuttx callers of `getopt`
 compare against `0xffffffff` because `getopt_common` is recovered as returning
 `unsigned int`. No MIPS corpus with DWARF was measured.
+
+### (kuna) `varargforward` — a declared value forwarded in its own register to a variadic call
+
+(kuna) `varargforward` (default on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargforward.rs
+(forwards_declared_value)`) keeps a variadic argument that the caller does not
+move at all. `int d2(const char *f, int a) { return pr(f, a); }` with
+`pr(const char *, ...)` compiles to `xor %eax,%eax; jmp pr` on x86-64: `a`
+arrives in `esi`, the first variadic integer register, and stays there. On
+AArch64 `double c2(int k, double x) { return vr(k, x); }` is a bare `b vr` with
+`x` in `d0`, and `vr(k, g(k))` leaves `g`'s result in `d0`. Upstream refuses
+all three. `AncestorRealistic::execute` fails a trial whose value at the call
+is the function's own input, because it expects to see a value moved into the
+argument register, and `ancestorOpUse` fails one whose value is another
+call's output. The trial is inactive, and with nothing active after it,
+`fillinMap` drops it: the calls printed `pr(f)`, `vr(k)` and `g(k); vr(k)`.
+
+The instructions are the same when the source did not pass the value: when
+`a` is a parameter nothing uses, `pr(f)` compiles to the same `jmp`, and so does
+`g(k); vr(k)` when `g`'s result is discarded. The rule therefore asks for a
+declared prototype and a value nothing else reads. In `check_input_trial_use`,
+next to the `al`/CR6 count, a trial in the variable part of a call whose
+prototype ends in `...` is marked active when:
+
+* the value at the call slot is the calling function's own input, that
+  function's input is locked, and one of its declared parameters starts at the
+  same storage (justified either way, so an `int` in `esi` matches an `rsi`
+  trial); or the value is the output of a call whose return type is locked and
+  not `void`, at exactly the storage of that output;
+* the call slot is the value's only reader. An INDIRECT for some call's
+  possible effect on the register does not count as a reader as long as
+  nothing reads its own output;
+* a floating-point trial is on an image without a count: where the caller
+  states how many floating-point registers it filled (x86-64 SysV `al`, 32-bit
+  PowerPC CR bit 6), the counted registers are the arguments and the others
+  are not, and on 64-bit PowerPC the FPR only shadows a general register;
+* the call's last fixed argument is not a printf format that consumes fewer
+  arguments than the trial's place among the variadic slots of its class.
+  The place is found by appending variadic arguments of the trial's class and
+  size to the call's declared pieces until the model assigns the trial's
+  storage. The format is read when the argument is a constant, a COPY or
+  INT_ADD of constants, or a LOAD from read-only memory (an ARM literal pool),
+  and a string with no `%` consumes nothing. This keeps
+  `sqlite3_mprintf("... %s ...", zName)` from taking the `NotUsed2` that an
+  sqlite callback declares but never uses in the next register.
+
+A value with another reader is left as it was, for the same reason: `if (a > 5)
+return 0; return pr(f, a);` compiles the same with or without the `a`, and so
+does `double a = g(k); return vr(k, a) + a;` on AArch64. So is anything in a
+function whose own prototype was recovered rather than declared, so a stripped
+binary is untouched. With the option off, upstream's scoring applies.
+
+What remains ambiguous is a declared parameter nothing uses that sits in a
+variadic register, with no constant format to bound the call: `int d6(const
+char *f, int a) { return pr(f); }` prints `pr(f,a)`, and an unused `double` in
+`d0` joins an AArch64 variadic call. The register holds that value when the
+callee starts, so the printed call compiles back to the same instructions.
 
 ### (kuna) `callbacktype` — the prototype of the slot a callback is passed to
 

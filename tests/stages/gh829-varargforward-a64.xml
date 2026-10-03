@@ -1,0 +1,71 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    GH-829 (kuna): "A variadic call drops an argument the caller forwards
+    unchanged in its own register", AArch64 half.
+    https://github.com/Noelo-Lab/kuna/issues/829
+
+    Source, clang -O2 for aarch64-linux-gnu:
+      double vr(int n, ...);
+      double g(int k);
+      double c2(int k, double x) { return vr(k, x); }
+      double e3(int k) { return vr(k, g(k)); }
+
+    c2 is a bare `b vr` with x still in d0, the first variadic floating-point
+    register (and the one vr returns in).  e3 calls g and leaves its result in
+    d0 for vr.  AArch64 has no count of the floating-point registers a variadic
+    call fills, so nothing but the declared prototypes says d0 is an argument.
+    The bytes are clang's, with each b/bl aimed at a `ret` standing in for vr
+    (0x100100) and g (0x100110).
+
+    Stage model: P4 call recovery, active-input-trial scoring.  Upstream fails
+    a trial whose value is the function's own input (AncestorRealistic) or
+    another call's output (ancestorOpUse).  `option varargforward` keeps it at
+    a call whose prototype ends in `...` when the value is a declared parameter
+    of the caller, or the result of a call whose return type is declared, and
+    nothing else reads it.
+
+    Pass 1 (`option varargforward off`) reproduces the bug: `vr(k)` in both.
+    Pass 2 (default, on) prints `vr(k,x)` and passes the result of g.
+-->
+<bytechunk space="ram" offset="0x100000">
+40000014
+</bytechunk>
+<bytechunk space="ram" offset="0x100010">
+fd7bbea9f30b00f9fd030091f303002a3c000094e003132af30b40f9fd7bc2a8
+34000014
+</bytechunk>
+<bytechunk space="ram" offset="0x100100">
+c0035fd6000000000000000000000000c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="c2"/>
+<symbol space="ram" offset="0x100010" name="e3"/>
+<symbol space="ram" offset="0x100100" name="vr"/>
+<symbol space="ram" offset="0x100110" name="g"/>
+</binaryimage>
+<script>
+  <com>parse line extern float8 vr(int4 n, ...);</com>
+  <com>parse line extern float8 g(int4 k);</com>
+  <com>parse line extern float8 c2(int4 k, float8 x);</com>
+  <com>parse line extern float8 e3(int4 k);</com>
+  <com>option varargforward off</com>
+  <com>lo fu c2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu e3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option varargforward on</com>
+  <com>lo fu c2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu e3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH829 a64 #1: varargforward off drops the double in d0 from both calls (bug reproduced)" min="2" max="2">return vr\(k\);</stringmatch>
+<stringmatch name="GH829 a64 #2: varargforward on keeps the parameter forwarded in d0" min="1" max="1">return vr\(k,x\);</stringmatch>
+<stringmatch name="GH829 a64 #3: varargforward on passes the result of g left in d0" min="1" max="1">return vr\(k,v1\);</stringmatch>
+<stringmatch name="GH829 a64 #4: with it on, the result of g is the variable passed to vr" min="1" max="1">v1 = g\(k\);</stringmatch>
+</decompilertest>

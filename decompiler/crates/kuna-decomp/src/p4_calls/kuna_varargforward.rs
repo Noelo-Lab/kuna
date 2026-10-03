@@ -38,6 +38,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::context::{OpId, VarnodeId};
 use crate::dtype::{type_class, type_metatype};
+use crate::fspec::{FuncCallSpecs, ParameterPieces, PrototypePieces};
 use crate::funcdata::Funcdata;
 use crate::p0_knowledge::options::on_or_off;
 use crate::p4_calls::kuna_varargretreg::{float_register_count, VarargFloats};
@@ -90,6 +91,9 @@ pub fn forwards_declared_value(
     {
         return false;
     }
+    if format_stops_before(data, fc, addr, size, float) {
+        return false;
+    }
     let (at, width) = (v.get_addr(), v.get_size());
     if v.is_input() {
         let proto = data.get_func_proto();
@@ -127,4 +131,117 @@ fn read_only_at(data: &Funcdata, vn: VarnodeId, call: OpId, slot: int4, depth: u
             && depth < 4
             && o.get_out().is_some_and(|out| read_only_at(data, out, call, slot, depth + 1))
     })
+}
+
+/// Does the call pass a printf format as its last fixed argument that consumes
+/// fewer arguments than the variadic slot `[addr, addr + size)` would be?
+/// `sqlite3_mprintf("... %s ...", zName)` from a callback that declares an
+/// unused `NotUsed2` in the next register is not handed `NotUsed2`.
+fn format_stops_before(
+    data: &Funcdata,
+    fc: &FuncCallSpecs,
+    addr: &Address,
+    size: int4,
+    float: bool,
+) -> bool {
+    let fixed = fc.proto().num_params();
+    let Some(format) = fixed.checked_sub(1).and_then(|i| fc.proto().get_param(i)) else {
+        return false;
+    };
+    let active = fc.active_input();
+    let index = active.which_trial(&format.get_address(), format.get_size());
+    if index < 0 {
+        return false;
+    }
+    let op = fc.get_op();
+    let Some(call) = data.obank().get(op) else { return false };
+    let Some(vn) = call.get_in(active.get_trial(index).get_slot()) else { return false };
+    let Some((value, width)) = constant_value(data, vn, 0) else { return false };
+    let Some(count) =
+        crate::p4_calls::kuna_formatwitness::pointed_format_count(data, value, width, call.get_addr())
+    else {
+        return false;
+    };
+    vararg_position(data, fc, addr, size, float).is_some_and(|position| position > count)
+}
+
+/// The constant `vn` holds, with its size: through COPYs, an INT_ADD (an
+/// `adrp`/`add` pair, ARM's `add r0,pc,r0`) and a LOAD from read-only memory (a
+/// literal pool), before the simplification rules have folded them.
+fn constant_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<(u64, int4)> {
+    let v = data.vbank().get(vn)?;
+    let size = v.get_size();
+    if v.is_constant() {
+        return Some((v.get_offset(), size));
+    }
+    if depth >= 6 {
+        return None;
+    }
+    let def = data.obank().get(v.get_def()?)?;
+    let operand = |slot| constant_value(data, def.get_in(slot)?, depth + 1);
+    match def.code() {
+        OpCode::CPUI_COPY => operand(0).map(|(value, _)| (value, size)),
+        OpCode::CPUI_INT_ADD => {
+            let (a, b) = (operand(0)?.0, operand(1)?.0);
+            let mask = if size >= 8 { u64::MAX } else { (1u64 << (8 * size)) - 1 };
+            Some((a.wrapping_add(b) & mask, size))
+        }
+        OpCode::CPUI_LOAD => {
+            let manage = data.get_arch().manage();
+            let index = data.vbank().get(def.get_in(0)?)?.get_offset();
+            if index >= manage.num_spaces() as u64 || !(1..=8).contains(&size) {
+                return None;
+            }
+            let space = manage.get_space(index as i32)?.clone();
+            let at = Address::new(space.clone(), operand(1)?.0);
+            let flags = data.get_arch().query_global_properties(&at, size, def.get_addr());
+            if flags & crate::varnode::varnode_flags::readonly == 0 {
+                return None;
+            }
+            let mut bytes = [0u8; 8];
+            data.get_arch().loader_fill(&mut bytes[..size as usize], &at).ok()?;
+            let bytes = &bytes[..size as usize];
+            let fold = |acc: u64, b: &u8| (acc << 8) | *b as u64;
+            let value = if space.is_big_endian() {
+                bytes.iter().fold(0, fold)
+            } else {
+                bytes.iter().rev().fold(0, fold)
+            };
+            Some((value, size))
+        }
+        _ => None,
+    }
+}
+
+/// Which variadic argument of its class, counting from 1, the call's model puts
+/// in `[addr, addr + size)`.
+fn vararg_position(
+    data: &Funcdata,
+    fc: &FuncCallSpecs,
+    addr: &Address,
+    size: int4,
+    float: bool,
+) -> Option<usize> {
+    let arch = data.get_arch();
+    let types = arch.types()?;
+    let metatype = if float { type_metatype::TYPE_FLOAT } else { type_metatype::TYPE_INT };
+    let vararg = types.get_base(size, metatype).ok()?;
+    let mut pieces = PrototypePieces::default();
+    fc.proto().get_pieces(&mut pieces);
+    if pieces.outtype.is_none() || pieces.first_var_arg_slot != pieces.intypes.len() as int4 {
+        return None;
+    }
+    for position in 1..=16 {
+        pieces.intypes.push(vararg.clone());
+        pieces.innames.push(String::new());
+        let mut res: Vec<ParameterPieces> = Vec::new();
+        fc.proto()
+            .model()
+            .assign_parameter_storage(&pieces, &mut res, true, types, arch.manage())
+            .ok()?;
+        if res.last()?.addr == *addr {
+            return Some(position);
+        }
+    }
+    None
 }
