@@ -25,6 +25,7 @@ use crate::{
     infra::architecture::Architecture,
 };
 use kuna_base::address::Address;
+use kuna_base::space::spacetype;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 use std::rc::Rc;
@@ -132,6 +133,41 @@ pub fn counted_float_arguments(fd: &Funcdata, fc: &FuncCallSpecs) -> Vec<Address
         .take(count.min(8) as usize)
         .map(|e| Address::new(Rc::clone(e.get_space()), e.get_base()))
         .collect()
+}
+
+/// The register of [`counted_float_arguments`] that the heritaged register
+/// range `[addr, addr + size)` overlaps without being it: the whole 16-byte
+/// `xmm` register `pxor`, `movq` or `cvtsi2sd` after `pxor` writes, or the
+/// 4-byte lane of it a `movaps` copies.
+pub fn counted_float_entry(
+    fd: &Funcdata,
+    fc: &FuncCallSpecs,
+    addr: &Address,
+    size: int4,
+) -> Option<Address> {
+    let space = addr.get_space()?;
+    if space.get_type() != spacetype::IPTR_PROCESSOR
+        || !fc.is_dotdotdot()
+        || !fc.proto().has_model()
+    {
+        return None;
+    }
+    let (start, end) = (addr.get_offset(), addr.get_offset() + size as u64);
+    let overlaps = |e: &Address| {
+        e.get_space().is_some_and(|s| s.get_index() == space.get_index())
+            && e.get_offset() < end
+            && start < e.get_offset() + 8
+            && !(e.get_offset() == start && size == 8)
+    };
+    let model_float = fc.proto().model().input().get_entry().iter().any(|e| {
+        e.get_type() == type_class::TYPECLASS_FLOAT
+            && e.get_size() == 8
+            && overlaps(&Address::new(Rc::clone(e.get_space()), e.get_base()))
+    });
+    if !model_float {
+        return None;
+    }
+    counted_float_arguments(fd, fc).into_iter().find(overlaps)
 }
 
 /// How many floating-point argument registers the caller says it filled for
