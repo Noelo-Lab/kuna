@@ -60,16 +60,19 @@ created by `varmap.rs (ScopeLocal::add_param_symbol)`. When no Scope owns the
 parameter's storage, its map entry is limited to the function's use point (the
 entry address minus one), so only the input Varnodes take the parameter's name
 and the Symbol is not address-tied. A register is owned by no Scope, and neither
-is a join whose pieces are all registers: a 64-bit integer or `double` in a
-32-bit register pair, a PowerPC `float` held in a 64-bit FPR, or a small struct
-split across two registers. The per-piece entries `Scope::addMap` adds for a join
-inherit the same limit. The join case matters. Without the limit, the whole-function
-piece entry links any later write of one of the pair's registers to a piece of the
-parameter. An ARM call that reuses `r3` for the call target, or a big-endian
-PowerPC call that loads the next argument into `r5`, then prints as `v._4_4_ =
-o->wide; ... (v,5)`. That statement overwrites half of `v`, but the call still
-reads the original `v`. A join that includes a stack piece keeps the unlimited
-entry, which the stack-passed struct rendering in §6.2 relies on.
+is any join: a 64-bit integer or `double` in a 32-bit register pair, a PowerPC
+`float` held in a 64-bit FPR, a small struct split across two registers, or a
+struct split between registers and the stack (ARM, MIPS o32, RISC-V). The
+per-piece entries `Scope::addMap` adds for a join inherit the same limit. The
+join case matters. Without the limit, the whole-function piece entry links any
+later write of one of the parameter's registers to a piece of the parameter. An
+ARM call that reuses `r3` for the call target, or a big-endian PowerPC call that
+loads the next argument into `r5`, then prints as `v._4_4_ = o->wide; ... (v,5)`.
+That statement overwrites half of `v`, but the call still reads the original `v`.
+A struct in `r2`, `r3` and the stack whose function loads the next call argument
+into `r3` printed as `s.y = *k; ... take3(...,s.y)` the same way. The stack piece
+of such a parameter is still read through its input, so `d.field_b` keeps the
+parameter's name.
 
 **Cover.** A variable can only absorb another if their live ranges do not
 collide, and the live range is the
