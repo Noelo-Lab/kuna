@@ -143,6 +143,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
+use kuna_base::space::VarnodeStorage;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
@@ -232,15 +233,15 @@ pub enum ReturnRepr {
 
 /// Classify a recovered two-register return concatenation from its halves.
 ///
-/// `lo` is the least-significant register (the first return register, where
-/// rustc puts the tag) and `hi` the second. Three conditions, in the order they
-/// can be decided: the low half is not the sret pointer, the low half is a tag,
-/// and the high half is a value this function put there rather than leftover.
-pub fn classify_return_pair(data: &Funcdata, hi: VarnodeId, lo: VarnodeId) -> ReturnRepr {
-    if traces_to_incoming_pointer(data, lo, 0) {
+/// `first` is the first return register, where rustc puts the tag, and
+/// `second` the one the pair adds. Three conditions, in the order they can be
+/// decided: the first half is not the sret pointer, the first half is a tag,
+/// and the second half is a value this function put there rather than leftover.
+pub fn classify_return_pair(data: &Funcdata, second: VarnodeId, first: VarnodeId) -> ReturnRepr {
+    if traces_to_incoming_pointer(data, first, 0) {
         return ReturnRepr::Memory;
     }
-    if is_discriminant_shaped(data, lo) && carries_a_payload(data, hi) {
+    if is_discriminant_shaped(data, first) && carries_a_payload(data, second) {
         return ReturnRepr::ScalarPair;
     }
     ReturnRepr::Scalar
@@ -335,7 +336,9 @@ pub fn holds_scalar_pair(data: &Funcdata, vn: VarnodeId) -> bool {
         return false;
     }
     let Some((hi, lo)) = pair_pieces(data, vn, 0) else { return false };
-    classify_return_pair(data, hi, lo) == ReturnRepr::ScalarPair
+    let high_first = crate::kuna_bejoin::first_register_holds_high(data, vn);
+    let (second, first) = if high_first { (lo, hi) } else { (hi, lo) };
+    classify_return_pair(data, second, first) == ReturnRepr::ScalarPair
 }
 
 /// The two halves of the concatenation behind `vn`, looking through the
@@ -719,7 +722,8 @@ pub enum CallPairRepr {
 
 /// Classify the CALL output the model's `join_dual_class` rule asked for.
 ///
-/// `finalvn` are the used output trials in trial order, least-significant first.
+/// `finalvn` are the used output trials in trial (storage) order: the first is
+/// the model's primary return register, the second the one a pair adds.
 /// `callee_entry` is the direct-call target when the flow build resolved one.
 ///
 /// **What this can prove, and what it cannot.** The vetoes below are the whole
@@ -735,32 +739,33 @@ pub fn classify_call_output_pair(
     if finalvn.len() != 2 {
         return CallPairRepr::Scalar;
     }
-    let (Some((lo_addr, lo_size)), Some((hi_addr, hi_size))) =
+    let (Some((first_addr, first_size)), Some((second_addr, second_size))) =
         (register_piece(data, finalvn[0]), register_piece(data, finalvn[1]))
     else {
         return CallPairRepr::Scalar;
     };
     // Two halves of one value are two DIFFERENT, non-overlapping registers.
-    let same_space = match (lo_addr.get_space(), hi_addr.get_space()) {
+    let same_space = match (first_addr.get_space(), second_addr.get_space()) {
         (Some(a), Some(b)) => Rc::ptr_eq(a, b),
         _ => false,
     };
     if same_space
-        && lo_addr.get_offset() < hi_addr.get_offset() + hi_size as u64
-        && hi_addr.get_offset() < lo_addr.get_offset() + lo_size as u64
+        && first_addr.get_offset() < second_addr.get_offset() + second_size as u64
+        && second_addr.get_offset() < first_addr.get_offset() + first_size as u64
     {
         return CallPairRepr::Scalar;
     }
-    // The payload half has to be read; a pair nothing consumes is not worth
-    // forming and its INDIRECT creation would simply be replaced by a dead one.
+    // The second register's half has to be read; a pair nothing consumes is not
+    // worth forming and its INDIRECT creation would simply be replaced by a dead
+    // one.
     if data.vbank().get(finalvn[1]).map(|v| v.num_descend()).unwrap_or(0) == 0 {
         return CallPairRepr::Scalar;
     }
     // The one piece of callee evidence this seam can obtain: a bounded decode of
-    // the callee body that proves the payload register is never written.
+    // the callee body that proves the second register is never written.
     if let Some(entry) = callee_entry {
         if let Some(w) = data.kuna_callee_ret_writes(entry) {
-            if w.proves_untouched(&hi_addr, hi_size) {
+            if w.proves_untouched(&second_addr, second_size) {
                 return CallPairRepr::CalleeScalar;
             }
         }
@@ -850,14 +855,17 @@ fn fastfail_swi_userop(arch: &crate::architecture::Architecture) -> Option<u32> 
 /// `FuncCallSpecs::buildOutputFromTrials`, the `numTrials > 1` arm kuna shipped
 /// as a stub).
 ///
-/// `finalvn` are the trial Varnodes in trial order -- least-significant first --
-/// each currently the output of an INDIRECT creation sitting just before the
-/// CALL; `callee_entry` is the direct-call target the flow build resolved, when
-/// there is one. The verdict comes from [`classify_call_output_pair`]. On
+/// `finalvn` are the trial Varnodes in trial (storage) order, each currently
+/// the output of an INDIRECT creation sitting just before the CALL;
+/// `callee_entry` is the direct-call target the flow build resolved, when there
+/// is one; `order` is [`ParamActive::join_pair_order`], which of the two holds
+/// the low half. The verdict comes from [`classify_call_output_pair`]. On
 /// `ScalarPair` the CALL gains a `join`-space output covering both registers,
 /// each half becomes a SUBPIECE of it inserted after the CALL, and the INDIRECT
 /// creations are destroyed. Returns `false` (changing nothing) when the gate is
 /// off, the classification declines, or the join address cannot be constructed.
+///
+/// [`ParamActive::join_pair_order`]: crate::fspec::ParamActive::join_pair_order
 ///
 /// Two options reach this arm: `option rustabi auto|always`, which also governs
 /// the producer-side pair, and the language-agnostic
@@ -867,6 +875,7 @@ pub fn build_call_output_pair(
     data: &mut Funcdata,
     finalvn: &[VarnodeId],
     callee_entry: Option<&Address>,
+    order: (int4, int4),
 ) -> bool {
     if !live(data) && !crate::p4_calls::kuna_callretpair::live(data) {
         return false;
@@ -874,18 +883,13 @@ pub fn build_call_output_pair(
     if classify_call_output_pair(data, finalvn, callee_entry) != CallPairRepr::ScalarPair {
         return false;
     }
-    let (lo, hi) = (finalvn[0], finalvn[1]);
+    let (lo, hi) = (finalvn[order.0 as usize], finalvn[order.1 as usize]);
     let Some((lo_addr, lo_size)) = register_piece(data, lo) else { return false };
     let Some((hi_addr, hi_size)) = register_piece(data, hi) else { return false };
     let Some(call_addr) = data.obank().get(callop).map(|o| o.get_addr().clone()) else {
         return false;
     };
-    let manage = data.get_arch().manage.clone();
-    let Some(joinaddr) = manage.register_lookup().and_then(|rl| {
-        manage
-            .construct_join_address(rl.as_ref(), &hi_addr, hi_size, &lo_addr, lo_size)
-            .ok()
-    }) else {
+    let Some(joinaddr) = pair_join_address(data, &hi_addr, hi_size, &lo_addr, lo_size, &call_addr) else {
         return false;
     };
     let Ok(whole) = data.new_varnode_out(hi_size + lo_size, &joinaddr, callop) else {
@@ -912,6 +916,38 @@ pub fn build_call_output_pair(
         }
     }
     true
+}
+
+/// Where a value held in the register pair `hi`:`lo` is built: the address
+/// `constructJoinAddress` picks (the parent register when the two are
+/// contiguous, a `join` record otherwise), except when that parent register is
+/// global memory. AVR maps its register file into data memory, so `R25R24` is
+/// a global variable whose bytes are the pieces themselves; a value built
+/// there merges with them and prints as a read of a register nothing assigns.
+/// A `join` record over the same two registers keeps it a value.
+pub fn pair_join_address(
+    data: &Funcdata,
+    hi: &Address,
+    hi_size: int4,
+    lo: &Address,
+    lo_size: int4,
+    usepoint: &Address,
+) -> Option<Address> {
+    let manage = data.get_arch().manage.clone();
+    let rl = manage.register_lookup()?;
+    let addr = manage.construct_join_address(rl.as_ref(), hi, hi_size, lo, lo_size).ok()?;
+    if addr.is_join() || !crate::kuna_bejoin::live(data) {
+        return Some(addr);
+    }
+    let persist = crate::varnode::varnode_flags::persist;
+    if data.get_arch().query_global_properties(&addr, hi_size + lo_size, usepoint) & persist == 0 {
+        return Some(addr);
+    }
+    let pieces = [
+        VarnodeStorage { space: hi.get_space().cloned(), offset: hi.get_offset(), size: hi_size as u32 },
+        VarnodeStorage { space: lo.get_space().cloned(), offset: lo.get_offset(), size: lo_size as u32 },
+    ];
+    manage.find_add_join(&pieces, 0).ok().map(|j| j.get_unified().get_addr())
 }
 
 /// The pointer width of this architecture (the default code space's address

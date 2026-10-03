@@ -750,7 +750,8 @@ fn option_values_live_value_present_for_110() {
     // 106 -> 107: +1 for `armfloatreturn` (live_field = arm_float_return).
     // 107 -> 108: +1 for `armfloatargs` (live_field = arm_float_args).
     // 108 -> 109: +1 for `stackstoreguard` (live_field = stack_store_guard, default-on).
-    assert_eq!(with_live, 110);
+    // 110 -> 111: +1 for `bejoin` (live_field = be_join).
+    assert_eq!(with_live, 111);
 }
 
 #[test]
@@ -940,7 +941,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 251 -> 252: +1 for `varargforward`.
     // 252 -> 253: +1 for `stackstoreguard`.
     // 253 -> 254: +1 for `protoranges`; its P6 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 257);
+    // 257 -> 258: +1 for `bejoin`.
+    assert_eq!(json.matches("},\n").count(), 258);
 }
 
 #[test]

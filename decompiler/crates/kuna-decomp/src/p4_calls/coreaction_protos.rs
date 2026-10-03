@@ -1446,6 +1446,7 @@ impl ActionReturnRecovery {
         retop: crate::context::OpId,
         data: &mut Funcdata,
         return_single: bool,
+        order: (int4, int4),
     ) {
         use kuna_num::pcoderaw::VarnodeData;
         let _ = VarnodeData::default;
@@ -1484,17 +1485,16 @@ impl ActionReturnRecovery {
             // whose low/high 4-byte lanes split during heritage refinement).
             // Build PIECE(hi,lo) at the JOIN/parent-register address so the
             // RETURN reads one whole varnode.
-            let lovn = newparam[1];
-            let hivn = newparam[2];
+            let (lo, hi) = order;
+            let lovn = newparam[1 + lo as usize];
+            let hivn = newparam[1 + hi as usize];
             let (lo_addr, lo_size) =
-                (active.get_trial(0).get_address().clone(), active.get_trial(0).get_size());
+                (active.get_trial(lo).get_address().clone(), active.get_trial(lo).get_size());
             let (hi_addr, hi_size) =
-                (active.get_trial(1).get_address().clone(), active.get_trial(1).get_size());
-            let manage = data.get_arch().manage.clone();
-            let join = manage.register_lookup().and_then(|rl| {
-                manage
-                    .construct_join_address(rl.as_ref(), &hi_addr, hi_size, &lo_addr, lo_size)
-                    .ok()
+                (active.get_trial(hi).get_address().clone(), active.get_trial(hi).get_size());
+            let retaddr = data.obank().get(retop).map(|o| o.get_addr().clone());
+            let join = retaddr.as_ref().and_then(|at| {
+                crate::kuna_rustabi::pair_join_address(data, &hi_addr, hi_size, &lo_addr, lo_size, at)
             });
             match join {
                 Some(joinaddr) => {
@@ -1715,6 +1715,8 @@ impl Action for ActionReturnRecovery {
             let _ = data.get_func_proto().derive_output_map(&mut active, &manager_rc);
             crate::p4_calls::kuna_voidret::whole_or_none(data, &mut active);
             crate::kuna_retinputhalf::note_moved_back_returns(data, &active, &return_ops, own_input);
+            let order = crate::kuna_bejoin::join_order(&active, data, &return_ops);
+            data.kuna_set_pairs_first_low(crate::kuna_bejoin::joins_first_low(&active, order));
             let return_single = data.get_arch().return_single;
             for &op in &return_ops {
                 let o = match data.obank().get(op) {
@@ -1724,7 +1726,7 @@ impl Action for ActionReturnRecovery {
                 if o.is_dead() || o.get_halt_type() != 0 {
                     continue;
                 }
-                Self::build_return_output(&active, op, data, return_single);
+                Self::build_return_output(&active, op, data, return_single, order);
             }
             crate::p4_calls::kuna_voidret::void_unless_returned(data);
             crate::kuna_armfloatreturn::type_returns(data, &active);

@@ -6530,6 +6530,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "bejoin"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "output-prototype"
+strength = "HARD"
+rewind = "P4"
+issue = "bejoin"
+summary = "Join a value returned in two registers in the order the ABI returns it. PowerPC (r3:r4), MIPS o32 big-endian (v0:v1), SPARC (o0:o1), ARM big-endian (r0:r1) and AVR's gcc ABI (R25:R24) put the HIGH word of a value twice a register's width in the first return register, and their output rule says so (`join_reverse`), but return recovery and the two-register CALL output arm joined every pair first register low, so a `long long` came back with its halves swapped: `(long long)a * b` on PowerPC printed `CONCAT44(mullw, mulhw)`. With this on, `ActionReturnRecovery` joins high word first when the second register's value is returned on purpose at every live RETURN (kuna_bejoin::join_order): the halves of one wider value, or a value or nonzero literal nothing but the RETURNs read. It keeps the first-register-low join -- which C's truncation reads as the first register, the right `int` -- when the second register is the register's own entry value, scratch the function also used, a literal zero, or what a comparison left behind: the first register holds a comparison's result, or the low word is a sum or difference no carry ties the first register to (`return x >= 0x80000000ULL` on ARM big-endian leaves `0x7fffffff - lo` in r1). A function whose return pair keeps the old join reads its calls' pairs the old way too, and AVR's register pair is built in the `join` space so it stays a value rather than a read of the memory-mapped R25R24."
+use_when = "On by default: over 4,269 functions of e2fsprogs, coreutils gnulib and libexpat built for PowerPC, SPARC, ARM big-endian and MIPS big-endian at -O0 and -O2, no return DWARF types as `int` or a pointer changes value, and every 64-bit return it changes that returns both words comes out in the right order; 0/675 byte-identical on the datatest corpus, and little-endian targets never take the new order. It is a prior, not a proof. An `int` that leaves the stale low half of a 64-bit temporary in the second register compiles to the same registers as the `long long` version and now reads as that `long long`: `int sum_hi(u64 a,u64 b){return (a+b)>>32;}` on PowerPC -O2 (`addc 4,4,6; addze 3,3; add 3,3,5`, the same code as returning `a+b`), `-O0` `((u64)a*b)>>32` on MIPS gcc and ARM big-endian (`umull r1,r0`), and `-O0` 64-bit shifts and absolute values truncated to `int`. Set off when such a function prints a `long long` return whose low word the disassembly shows is a leftover, or when a big-endian decompile should match an older run; off restores the first-register-low join everywhere, which swaps every genuine `long long` return."
+example = "option bejoin off"
+source_decompiler = "kuna"
+inspiration = "big-endian decompiles of SQLite, Lua, zlib and e2fsprogs: every 64-bit return on PowerPC, MIPS, SPARC and ARM big-endian printed with its halves swapped"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a long long return on a big-endian 32-bit target prints CONCAT44 with the low word first|a 64-bit product, sum or shift returned on PowerPC, MIPS, SPARC or ARM big-endian comes back with its halves swapped|an AVR function returning a 16-bit int prints a read of R25R24 nothing assigns|an int function on a big-endian target prints a long long return whose low word the disassembly shows is a leftover"
+live_field = "be_join"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "stackaddrargtrial"
 values = "on|off"
 default = "off"

@@ -54,3 +54,4 @@ pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only 
 pub mod kuna_varargretreg; // (kuna) a variadic call's argument in the register its value returns in
 pub mod kuna_varargforward; // (kuna) a declared parameter forwarded unchanged to a variadic call
 pub mod kuna_voidret; // (kuna) a function whose result a caller reads returns it
+pub mod kuna_bejoin; // (kuna) a big-endian pair joins its halves in the ABI's order when its low word is returned on purpose

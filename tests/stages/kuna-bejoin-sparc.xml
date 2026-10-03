@@ -1,0 +1,147 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!--
+    kuna option bejoin (default on): SPARC returns a long long in %o0:%o1 with the
+    HIGH word in %o0, and returns an int in %o0 alone.
+    The same join-order bug as kuna-bejoin.xml (the PowerPC case): return
+    recovery joined %o0 as the LOW word, so wide_mul printed
+    CONCAT44(low,high).
+        wide_mul:  return CONCAT44((int4)((int8)a1 * a0),... >> 0x20);   (halves swapped)
+    SPARC's restore copies every in-register back to its out-register, so %o1
+    reaches the RETURN holding whatever the function left in %i1 on every
+    function that opened a window, and a function returning one int seems to
+    return a pair.  Joined first register low, such a pair narrows back to %o0
+    (the uncomputed-half repair, a byte return, C's truncation to bound's
+    int4).  Joined in the ABI's order it kept %o1 instead: bound's pairs came
+    back with their halves swapped, the byte readers returned char, and a
+    function returning 0 returned the argument (return a1;).  So a pair is
+    joined in the ABI's order only when %i1 holds a value the function put
+    there to return; the entry value, scratch the function also used, and a
+    literal zero keep the old join.  same, keep_zero, zero_after and
+    one_after still print the argument shifted into the high word, as before:
+    their int result folds into the pair before the repair can drop the
+    leftover.
+    Stage: P4 calls and prototypes (output-prototype), option bejoin at its
+    shipped default (on).  Little-endian targets are byte-identical; the
+    off pass and the trade-off the option makes are in kuna-bejoin.xml.
+    Source (clang 14 -fintegrated-as, sparc-linux-gnu):
+        bejoin_sparc32_be.o (-O2) at 0x10000:
+        long long wide_mul(int a, int b) { return (long long)a * b; }
+          save / smul %i1,%i0,%i1 / rd %y,%i0 / ret / restore
+        unsigned int same(unsigned int a, unsigned int b) { return a == b; }
+        int keep_zero(int *p, int b) { *p = b; return 0; }
+        bejoin_window_sparc32_O2.o at 0x20000: back4, zero_after, one_after
+        bejoin_window_sparc32_O0.o at 0x30000: mark
+        bejoin_narrow_sparc32_O2.o at 0x40000 (the unrelocated call to ext
+        prints as sub_*):
+        unsigned bound(int *s, unsigned n) {
+          unsigned a = n + (n >> 3) + 4, b = n + (n >> 5) + 7;
+          ext();
+          if (s[3]) return (a > b ? a : b) + 6;
+          if (s[0] != 15) return (s[1] ? a : b) + s[2];
+          return n + (n >> 12) + 13 + s[2];
+        }
+        int ibyte(unsigned char *p) { ext(); return *p; }
+        unsigned ubyte(unsigned char *p) { ext(); return *p; }
+        int ihalf(unsigned short *p) { ext(); return *p; }
+        int ibyte_leaf(unsigned char *p) { return *p; }
+    Assert #1: wide_mul is the signed 64-bit product, rd %y (the high word) in %o0.
+    Asserts #2-#3: bound returns int4 and each of its pairs keeps the value in
+    the low half, which the int4 return keeps.
+    Asserts #4-#5: the byte and halfword readers return uint4, and back4 and
+    mark one int in %o0.
+    Assert #6: no function returns the second argument.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+9de3bfa0b25e4018b140000081c7e00881e800009de3bfa0b2866001b0c62000
+81c7e00881e800009de3bfa04000000090100018b2826007b0c2200081c7e008
+81e800009de3bfa0b25e2003b140000081c7e00881e800009de3bfa080a60019
+028000040100000081c7e00891e8000081c7e00891e820019de3bfa0b4100000
+f226000081c7e00891e8001a
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="wide_mul"/>
+<symbol space="ram" offset="0x10058" name="same"/>
+<symbol space="ram" offset="0x10078" name="keep_zero"/>
+<bytechunk space="ram" offset="0x20000" readonly="true">
+9de3bfa0b4100000f42e0019b2066001f42e000081c7e00891e800199de3bfa0
+10800003b0063ffeb0063ffff20e200180a6600012bffffd01000000f20e0000
+80a6600012bffff901000000f20e3fff80a6600012bffff501000000f20e3ffe
+80a6600012bffff101000000f04e3ffd81c7e00891ee20649de3bfa090100019
+400000009210001881c7e00891e800009de3bfa0901000194000000092100018
+80a62000148000040100000081c7e00891e8000081c7e00891e82001
+</bytechunk>
+<symbol space="ram" offset="0x2001c" name="back4"/>
+<symbol space="ram" offset="0x20078" name="zero_after"/>
+<symbol space="ram" offset="0x20090" name="one_after"/>
+<bytechunk space="ram" offset="0x30000" readonly="true">
+9de3bf98f027bffcf227bff8f007bffcf407bff8b2100000f22e001af007bffc
+f22e0000f007bff881c7e00891ee2001
+</bytechunk>
+<symbol space="ram" offset="0x30000" name="mark"/>
+<bytechunk space="ram" offset="0x40000" readonly="true">
+9de3bfa0b5366003b406401ab406a004b7366005b606401b40000000b606e007
+f806200c80a72000028000080100000080a6801b1880000301000000b410001b
+81c7e00891eea006f806000080a7200f1280000801000000f0062008b536600c
+b206401ab006401881c7e00891ee200df206200480a660000280000301000000
+b610001af006200881c7e00891eec0189de3bfa04000000001000000f2060000
+80a660000280000601000000b4067ffff426000010800008b2066001f2062004
+b4067fff80a6600106800007f4262004b2066004b32e6002f006001981c7e008
+81e8000081c7e00891e83fff9de3bfa040000000b410001880a660000680000f
+b01020020280000cb6100000f806800080a720000680000901000000b8072001
+f8268000b2067fff80a6600012bffff8b406a004b010001b81c7e00881e80000
+9de3bfa04000000001000000f00e000081c7e00881e800009de3bfa040000000
+01000000f00e000081c7e00881e800009de3bfa04000000001000000f0160000
+81c7e00881e800009de3bfa0f00e000081c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x40000" name="bound"/>
+<symbol space="ram" offset="0x40140" name="ibyte"/>
+<symbol space="ram" offset="0x40158" name="ubyte"/>
+<symbol space="ram" offset="0x40170" name="ihalf"/>
+<symbol space="ram" offset="0x40188" name="ibyte_leaf"/>
+</binaryimage>
+<script>
+  <com>lo fu wide_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu same</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu back4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero_after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu one_after</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mark</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bound</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ibyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ubyte</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ihalf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ibyte_leaf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin-sparc #1: wide_mul returns the 64-bit product, high word in o0" min="1" max="1">return \(int8\)a1 \* a0;</stringmatch>
+<stringmatch name="bejoin-sparc #2: bound keeps its value in the low half, which its int4 return keeps" min="2" max="2">CONCAT44\((a0\[1\]|v1),(v3 \+ a0\[2\]|v1 \+ a0\[2\] \+ 0xd)\)</stringmatch>
+<stringmatch name="bejoin-sparc #3: bound returns int4" min="1" max="1">int4 bound\(</stringmatch>
+<stringmatch name="bejoin-sparc #4: the byte and halfword readers return uint4" min="4" max="4">uint4 (ibyte|ubyte|ihalf|ibyte_leaf)\(</stringmatch>
+<stringmatch name="bejoin-sparc #5: back4 and mark return one int in o0" min="2" max="2">int4 (back4|mark)\(</stringmatch>
+<stringmatch name="bejoin-sparc #6: no function returns the second argument" min="0" max="0">return a1;</stringmatch>
+</decompilertest>

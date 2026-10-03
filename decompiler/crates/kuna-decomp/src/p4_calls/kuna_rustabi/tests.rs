@@ -405,7 +405,7 @@ fn the_call_seam_builds_the_pair_the_model_asked_for() {
         CallPairRepr::ScalarPair,
         "an unprobed callee leaves the model rule and the caller's reads standing",
     );
-    assert!(build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));
+    assert!(build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry), (0, 1)));
 
     let out = fd.obank().get(call).and_then(|o| o.get_out()).expect("the CALL gained an output");
     let outvn = fd.vbank().get(out).expect("output varnode");
@@ -419,6 +419,32 @@ fn the_call_seam_builds_the_pair_the_model_asked_for() {
             "each half is now a SUBPIECE of the whole, not an INDIRECT creation",
         );
     }
+}
+
+/// A big-endian ABI (r3:r4, v0:v1, o0:o1) returns the high word in the FIRST
+/// register, and the output rule says so by consuming the most significant
+/// piece first. The pair must then join the first register as the high half:
+/// its SUBPIECE reads the whole at the second register's width, and the join
+/// record lists it as the most significant piece.
+#[test]
+fn a_most_significant_first_pair_joins_the_first_register_high() {
+    let mut fd = build_call_fd(RustAbiMode::Always);
+    let (call, first, second) = build_call_with_pair(&mut fd, true);
+    let entry = callee_entry(&fd);
+    assert!(build_call_output_pair(call, &mut fd, &[first, second], Some(&entry), (1, 0)));
+
+    let out = fd.obank().get(call).and_then(|o| o.get_out()).expect("the CALL gained an output");
+    let join = fd.vbank().get(out).expect("output varnode").get_addr().clone();
+    let rec = fd.get_arch().manage.find_join(join.get_offset()).expect("a join record");
+    let first_addr = fd.vbank().get(first).expect("first").get_addr().clone();
+    assert_eq!(rec.get_piece(0).offset, first_addr.get_offset(), "the first register is the high piece");
+    let subpiece_offset = |half: VarnodeId| -> u64 {
+        let def = fd.vbank().get(half).and_then(|v| v.get_def()).expect("half defined");
+        let c = fd.obank().get(def).and_then(|o| o.get_in(1)).expect("offset input");
+        fd.vbank().get(c).expect("constant").get_offset()
+    };
+    assert_eq!(subpiece_offset(first), 8, "the first register holds the high eight bytes");
+    assert_eq!(subpiece_offset(second), 0, "the second register holds the low eight bytes");
 }
 
 /// The refutation this seam exists to answer. `one_scalar_callee` is
@@ -437,7 +463,7 @@ fn a_callee_proven_not_to_write_the_payload_is_not_paired() {
         CallPairRepr::CalleeScalar,
     );
     assert!(
-        !build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)),
+        !build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry), (0, 1)),
         "the callee refutes the pair",
     );
     assert!(fd.obank().get(call).and_then(|o| o.get_out()).is_none(), "the CALL is untouched");
@@ -462,7 +488,7 @@ fn an_incomplete_probe_vetoes_nothing() {
         classify_call_output_pair(&fd, &[lo, hi], Some(&entry)),
         CallPairRepr::ScalarPair,
     );
-    assert!(build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));
+    assert!(build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry), (0, 1)));
 }
 
 /// A summary that records the payload register as written is a real `ScalarPair`
@@ -480,7 +506,7 @@ fn a_callee_that_writes_the_payload_still_pairs() {
         classify_call_output_pair(&fd, &[lo, hi], Some(&entry)),
         CallPairRepr::ScalarPair,
     );
-    assert!(build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));
+    assert!(build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry), (0, 1)));
 }
 
 /// A write that only *overlaps* the payload half still refutes "untouched".
@@ -505,7 +531,7 @@ fn the_call_seam_fails_closed_when_the_option_is_off() {
     let mut fd = build_call_fd(RustAbiMode::Off);
     let (call, lo, hi) = build_call_with_pair(&mut fd, true);
     let entry = callee_entry(&fd);
-    assert!(!build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));
+    assert!(!build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry), (0, 1)));
     assert!(fd.obank().get(call).and_then(|o| o.get_out()).is_none());
 }
 
@@ -517,7 +543,7 @@ fn the_call_seam_builds_the_pair_on_callretpair_alone() {
     let mut fd = build_call_fd_gates(RustAbiMode::Off, true, false);
     let (call, lo, hi) = build_call_with_pair(&mut fd, true);
     let entry = callee_entry(&fd);
-    assert!(build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));
+    assert!(build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry), (0, 1)));
     let out = fd.obank().get(call).and_then(|o| o.get_out()).expect("the CALL gained an output");
     assert!(fd.vbank().get(out).expect("output varnode").get_addr().is_join());
 }
@@ -530,7 +556,7 @@ fn callretpair_honours_the_callee_veto() {
     let (call, lo, hi) = build_call_with_pair(&mut fd, true);
     let entry = callee_entry(&fd);
     fd.kuna_set_callee_ret_writes(&entry, Rc::new(proves_nothing_written()));
-    assert!(!build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));
+    assert!(!build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry), (0, 1)));
     assert!(fd.obank().get(call).and_then(|o| o.get_out()).is_none());
 }
 
@@ -539,7 +565,7 @@ fn the_call_seam_fails_closed_when_both_gates_are_off() {
     let mut fd = build_call_fd_gates(RustAbiMode::Off, false, false);
     let (call, lo, hi) = build_call_with_pair(&mut fd, true);
     let entry = callee_entry(&fd);
-    assert!(!build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));
+    assert!(!build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry), (0, 1)));
     assert!(fd.obank().get(call).and_then(|o| o.get_out()).is_none());
 }
 
@@ -549,7 +575,7 @@ fn a_payload_half_nothing_reads_is_not_paired() {
     let (call, lo, hi) = build_call_with_pair(&mut fd, false);
     let entry = callee_entry(&fd);
     assert_eq!(classify_call_output_pair(&fd, &[lo, hi], Some(&entry)), CallPairRepr::Scalar);
-    assert!(!build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry)));
+    assert!(!build_call_output_pair(call, &mut fd, &[lo, hi], Some(&entry), (0, 1)));
 }
 
 #[test]
@@ -558,7 +584,7 @@ fn overlapping_halves_are_not_two_halves_of_one_value() {
     let (call, lo, _hi) = build_call_with_pair(&mut fd, true);
     let entry = callee_entry(&fd);
     assert_eq!(classify_call_output_pair(&fd, &[lo, lo], Some(&entry)), CallPairRepr::Scalar);
-    assert!(!build_call_output_pair(call, &mut fd, &[lo, lo], Some(&entry)));
+    assert!(!build_call_output_pair(call, &mut fd, &[lo, lo], Some(&entry), (0, 1)));
 }
 
 #[test]
@@ -567,7 +593,7 @@ fn a_single_trial_is_not_a_pair() {
     let (call, lo, _hi) = build_call_with_pair(&mut fd, true);
     let entry = callee_entry(&fd);
     assert_eq!(classify_call_output_pair(&fd, &[lo], Some(&entry)), CallPairRepr::Scalar);
-    assert!(!build_call_output_pair(call, &mut fd, &[lo], Some(&entry)));
+    assert!(!build_call_output_pair(call, &mut fd, &[lo], Some(&entry), (0, 1)));
 }
 
 /// A half that is not a register INDIRECT creation is somebody else's Varnode.
@@ -578,7 +604,7 @@ fn a_half_that_is_not_an_indirect_creation_is_not_a_pair() {
     let plain = unwritten(&mut fd, 0x4000, 8);
     let entry = callee_entry(&fd);
     assert_eq!(classify_call_output_pair(&fd, &[lo, plain], Some(&entry)), CallPairRepr::Scalar);
-    assert!(!build_call_output_pair(call, &mut fd, &[lo, plain], Some(&entry)));
+    assert!(!build_call_output_pair(call, &mut fd, &[lo, plain], Some(&entry), (0, 1)));
 }
 
 /// With no resolved callee there is nothing to probe, so the seam falls back on

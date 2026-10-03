@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="avr8:LE:16:default">
+<!--
+    kuna option bejoin (default on): a two-register value is joined in the order
+    the output rule consumed its registers, and a pair on memory-mapped
+    registers is built as a value.
+
+    AVR's gcc ABI returns an int in R25:R24 with the HIGH byte in R25.
+    avr8gcc.cspec lists R25 first and joins with reversesignif="true", so the
+    rule consumes the most significant byte first although the target is
+    little-endian.  Return recovery joined the first register as the low byte:
+
+        negate:  return CONCAT11(a1,a0);     (bug: a1 is R24, the low byte)
+        addk:    return CONCAT11(v1,a0);     (bug)
+
+    With the order right the two registers are contiguous and name R25R24,
+    which AVR maps into data memory: a global.  A value built there merged
+    with the argument bytes it is made of and printed as a read of a register
+    nothing assigns:
+
+        negate:  return R25R24;              (bug)
+
+    Stage: P4 calls and prototypes (output-prototype), option bejoin at its
+    shipped default (on); the off pass is in kuna-bejoin.xml.
+
+    Source (clang 14 -O2, target avr, -mmcu=atmega328p, bytes from
+    bejoin_avr.bin; a0 is R25, a1 is R24):
+        int negate(int a) { return -a; }
+          neg r25 / neg r24 / sbc r25,r1 / ret
+        int addk(int a) { return a + 0x1234; }
+          subi r24,0xcc / sbci r25,0xed / ret
+
+    Asserts #1-#2: each value is joined R25 (a0) high.
+    Asserts #3-#5: no swapped join, and no read or write of the global pair.
+-->
+<bytechunk space="code" offset="0x0" readonly="true">
+91958195910908958c5c9d4e0895
+</bytechunk>
+<symbol space="code" offset="0x0" name="negate"/>
+<symbol space="code" offset="0x8" name="addk"/>
+</binaryimage>
+<script>
+  <com>lo fu negate</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu addk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin avr #1: negate joins the R25 byte (a0) high" min="1" max="1">return CONCAT11\(a0,a1\);</stringmatch>
+<stringmatch name="bejoin avr #2: addk joins the R25 byte (a0) high" min="1" max="1">return CONCAT11\(a0,v1\);</stringmatch>
+<stringmatch name="bejoin avr #3: no join puts the R24 byte high" min="0" max="0">CONCAT11\(a1,a0\)|CONCAT11\(v1,a0\)</stringmatch>
+<stringmatch name="bejoin avr #4: no return reads the global pair" min="0" max="0">return R25R24;</stringmatch>
+<stringmatch name="bejoin avr #5: no statement writes the global pair" min="0" max="0">R25R24 = </stringmatch>
+</decompilertest>

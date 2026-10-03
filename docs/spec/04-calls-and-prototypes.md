@@ -1500,6 +1500,316 @@ output sits at the constructed join address (falling back to the first piece
 if no join can be built); more pieces chain PIECEs over contiguous trials.
 The (kuna) `returnpair` gate intercepts this join — §4.4.
 
+Which of the two pieces is the high half is the ABI's answer, not the trial
+order's. The trials sort in storage order, first register first, and the output
+rule that matched them records whether it consumes the most significant piece
+first. A `<join>` rule does by default on every big-endian target, because a
+register pair holds a wide value the way a load from memory would put it there,
+lower address (the high word) in the first register. PowerPC returns a `long
+long` in `r3:r4` with the high word in `r3`, MIPS o32 in `$2:$3`, SPARC in
+`%o0:%o1`, ARM big-endian in `r0:r1`, and AArch64 big-endian an `__int128` in
+`x0:x1`, each with the high half first. The flag is the rule's, not the target's
+endianness: `reversesignif` flips it, and AVR's gcc spec, little-endian, lists
+`R25` first and joins with `reversesignif="true"`, so its `int` comes back with
+the high byte in `R25`, the first register, too
+(`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs (ParamActive::join_pair_order)`).
+Upstream joins the first register low everywhere, so on those ABIs a genuine
+`long long` printed its halves swapped (`wide_mul` as `CONCAT44(low,high)`). A
+little-endian rule without `reversesignif` never sets the flag, so its joins are
+exactly upstream's. A cspec whose single join entry names the pieces itself (the
+68000's `D0:D1`) never reaches the flag: its trials sort by their justified
+offset, which already puts the low half first. Two-register *parameters* are
+never joined at all (`ActionParamDouble` below is a no-op), so a `long long`
+argument prints as its two registers in the ABI's order and no order assumption
+applies there.
+
+On those ABIs, with the (kuna) `bejoin` option on (the default), the pair joins
+in the ABI's order only when its second register holds a low word the function
+returns on purpose
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (join_order)`).
+`option bejoin off` joins every pair first register low, as upstream does.
+Ancestor realism makes a pair of any function whose second register reaches the
+RETURN holding something, and a function returning one register often leaves
+something there: SPARC's `restore` copies `%i1` back into `%o1` on every function
+that opened a window, so `%o1` arrives holding the second argument, a scratch
+value, or a byte the function stored; MIPS clang -O0 materializes a zero in `$3`
+that nothing reads. Joined first register low, such a pair narrows back to the
+first register wherever a later pass drops the phantom half (the
+uncomputed-half repair below, a boolean or byte return, C's own truncation in a
+narrow prototype), which is the right value. Joined in the ABI's order, every one
+of those keeps the wrong register. So once the output map is derived, return
+recovery walks the second register back at every live RETURN, through copies,
+phis, indirects and the pieces heritage splits a register pair into (following
+the byte offset of the low word), to where its value was made
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (classify)`):
+
+* both registers the halves of one wider value (an 8-byte load, a product split
+  by `mflo`/`mfhi`), which heritage did not merge from two: a wide value,
+  whatever else the function does with it at that RETURN;
+* the register's own entry value reached without an instruction that moves it,
+  untouched or carried only by a register window's copies (a copy at an
+  instruction that copies every general-purpose argument register, `save` and
+  `restore`; `moves_register_window`): a leftover;
+* a value also used for anything but the pair's RETURN slots (a store, a call's
+  settled argument, a branch, an address, the stack pointer), one that reaches
+  the first register
+  other than through its sign (`sra 31`, the high half of its extension), a
+  comparison (a carry or borrow) or as the other half of a wider value, or the
+  first register's own value: scratch;
+* what a comparison left behind: the first register holds a computed 0 or 1 (a
+  comparison, a carry or borrow, a sign bit, a leading-zero count shifted down
+  to its top bit, or 0s and 1s chosen between, by its possibly-nonzero bits), or
+  a literal 0 or 1 at a function whose live RETURNs hold both (a boolean a
+  branch chose), or the low word is a sum or difference (not a move spelled as
+  adding zero, like SPARC's `restore %i0,%g0,%o1`) and the first register is
+  more than one literal while no comparison, carry or borrow and none of the low
+  word's own values reaches it. A 64-bit comparison computes the low words'
+  difference or sum for its flags: ARM big-endian `return x >= 0x80000000ULL`
+  leaves `0x7fffffff - lo` in `r1` beside the flag in `r0`, and a saturating
+  `int` its clamped value in `r0` beside the same difference. SQLite's `v ==
+  (int)v` on SPARC -O2 is `addcc %i1,%i2,%i1; addxcc %i0,0,%i0; cmp %i0,0; be`
+  and then `restore %g0,1,%o0` on one path and `restore %g0,%g0,%o0` on the
+  other, so `%o1` keeps `lo + 0x80000000`; PowerPC computes the same flag with
+  `li 3,1` and `li 3,0` on two paths, or as `cntlzw 3,3; srwi 3,3,5`. The
+  same check returns any literal, or a flag negated, shifted or offset, just as
+  well: `if (v < INT_MIN || v > INT_MAX) return ERANGE; return 0;` on SPARC -O2
+  is `addcc %i1,%i2,%i1; addxcc %i0,-1,%i0; cmp %i0,-1; bne` and then `restore
+  %g0,34,%o0` or `restore %g0,%g0,%o0`, and PowerPC -O1 turns `v == (int)v ?
+  -1 : 0` into `addc 4,4,5; addze 3,3; cntlzw 3,3; srwi 3,3,5; neg 3,3`. So a
+  low word that is a sum or difference (`0 - x` counts; `x + 0` and `x - 0` are
+  moves) is also a comparison's leftover when its carry or borrow -- a
+  comparison of nothing but its operands and itself, through copies and
+  truncations (`addcc`'s carry of `op1:4` and `op2:4`, MIPS's `sltu` of the sum
+  against an operand) -- reaches a conditional branch or the first register,
+  and the first register is worked out from comparisons and literals alone: a
+  literal, a value with at most one bit that can be set, or such values
+  negated, inverted, offset, shifted, masked, added or chosen between. A
+  choice's input that the branch on its edge has just tested equal to a
+  literal counts as that literal (ARM big-endian `adds r1,r1,#0x80000000; adcs
+  r0,r0,#0; movne r0,#22` returns the `adcs` result only when it is zero). The
+  sum's own carry is never one of those flags: a real 64-bit sum adds it into
+  its high word (`(u64)n + ((n + 7) >> 3) + 5` is the sum of two carries
+  there), while the range check only tests it. The halves of a real 64-bit sum
+  or difference are tied by its carry, and a `long long` whose high word is
+  only a carry (`(u64)a + b`, the same code as the `int` carry test) reads as
+  the comparison
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (computed_flag,
+  carry_free, carries_of, tests_carry, of_flags)`);
+* an `int` truncation of a stack temporary: both registers loaded from
+  adjacent words of one stack object (the entry stack pointer plus literals,
+  through a frame pointer), the first from its less significant word. clang
+  -O0 spills a 64-bit value to two stack words and reloads both for `(int)(c ?
+  a : b)`, `(int)MIN(len, INT_MAX)` or an absolute value truncated to `int`,
+  the low word into the first register (`lwz 4,12(31); lwz 3,16(31)` on
+  PowerPC); the `long long` reloads the same words the other way (`lwz
+  3,12(31); lwz 4,16(31)`). Two words that are each the home a register's own
+  argument was stored to and is reloaded from are two values, not one object:
+  -O0 `((u64)a << 32) | b` reloads `a` and `b` from their homes, `b` below `a`
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
+  (loads_low_word_first)`). This and the comparison tests apply only where one
+  register holds a whole `int`, so AVR's byte pairs never take them;
+* a division by a constant: the low word is the low half of a product at least
+  two words wide, and the product's high half reaches the first register
+  through a right shift by a literal on some path. A compiler divides by most
+  constants by multiplying by a magic number and shifting the product's high
+  half down, and ARM's `umull` and `smull` write the low half too: big-endian
+  `a / 10` at -O0 is `umull r1,r0,r2,r3; lsr r0,r0,#3`, `a / 7` on ARMv6 and
+  v7 is `umull r1,r2,r0,r1; sub r0,r0,r2; add r0,r2,r0,lsr #1; lsr r0,r0,#2`,
+  and the signed `a / 3` is `smull r1,r0,r2,r3; add r0,r0,r0,lsr #31`. A
+  remainder or any other value built from such a quotient counts the same. A
+  `long long` product returns its high half as it is or with more terms added
+  (`(i64)a * 3` adds the high word's own product), never shifted down
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (divided_down)`).
+  A divisor whose magic number needs no shift (`a / 641` and `a / 6700417` are
+  a bare `umull r1,r0,r0,r1`) leaves exactly a product's registers and is not
+  told apart; it is one of the shapes listed below that read as the `long long`;
+* the high half of a 64-bit temporary held the reverse way round: the low word
+  is a right shift by a literal of a value whose dropped bits reach the first
+  register. ARM big-endian computes an `int` that is a 64-bit sum, difference
+  or product shifted right by one in the reverse register pair, low half in
+  `r0`: `(u32)(((u64)a + b) >> 1)` is `adds r0,r1,r0; adc r1,r2,#0; lsrs
+  r1,r1,#1; rrx r0,r0`, `((u64)a * b) >> 1` is `umull r0,r1,r1,r0; lsrs
+  r1,r1,#1; rrx r0,r0`, and clang -O0 shifts a 64-bit argument the same way
+  (`movs r1,r1,lsr #1; mov r0,r0,rrx`). Bit 0 of `r1` moves into `r0` and the
+  stale `r1 >> 1` stays behind. A `long long` shifted right moves the bit the
+  other way, from the first register into the second, so its low word is never
+  the bare shift. The first register reads a dropped bit when it reads the
+  shifted value (or a copy or the same truncation of it) other than shifted
+  right by at least as much; the walk back from it follows a stack reload to
+  every value the function stores at that offset (-O0 keeps the result in a
+  local). A shift that leaves only the top bit or the sign (`x >> 31`) is a
+  value of its own: a saturated `long long` fills its low word with it beside
+  the high word it came from
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (shifts_into_first)`);
+* an `int` worked out from the high half of a 64-bit temporary, its low half
+  left in the second register. When the low word is a sum or difference
+  (through moves; MIPS's `move` is `or $3,$5,$zero`) whose carry or borrow
+  reaches the first register, the first register must be that sum's high word
+  itself: additions and subtractions of values no flag reaches and of no
+  literal but zero (where the low word adds a literal too, the 64-bit
+  literal's high half, as long as it is not added on top of a word that
+  already holds the carry: `li 5,7; addic 4,4,5; adde 3,3,5` is `x +
+  0x700000005`, `addic 4,4,5; addze 3,3; addi 3,3,7` is `(u32)((x + 5) >>
+  32) + 7`, and a loop's accumulator, which holds an earlier turn's carry,
+  may add one: coreutils dd's `records--`), each flag entering with the sign
+  the low word's
+  operation gives it, a carry added and a borrow subtracted (MIPS tests a
+  difference's borrow as `a < a - b`, and a negation's may be spelled `b !=
+  0`), read through copies, zero extensions, truncations (SPARC's `smul`
+  truncates a 64-bit product), negated flags and the choices of a loop's
+  accumulator. A shift, mask, product, literal or flag of the wrong sign on
+  the way is a rework; a flag that reaches the first register only through
+  a piece of a wider value counts for nothing. A flag is a comparison of nothing but the sum's operands and
+  itself, read through copies and the pieces of a register pair heritage splits
+  and joins (SPARC -O0 reloads a `long long` with `ldd` and adds its halves out
+  of `%i2:%i3`). `(u32)((x + y) >> 48)` on PowerPC is `addc 4,6,4; adde 3,5,3;
+  srwi 3,3,16` and leaves the low sum in `r4`; `-(int)((x + y) >> 32)` negates
+  `adde`'s result, while a 64-bit `-x` (`subfic 4,4,0; subfze 3,3`, ARM's
+  `rsbs; rsc`) negates a sum whose flag is a borrow and so keeps the sign
+  right. With no carry between the two registers, the first register may not
+  be a literal operation (a shift short of a sign fill, a mask, an offset, a
+  negation, a product, an `or` or `xor` with a literal) on a value the low word
+  never reads, nor on anything that value is worked out from by literal
+  operations, rotates and stack reloads (PowerPC's `srwi` is `rlwinm`, a rotate
+  then a mask; the first register's own value is followed into a stack slot
+  only when the slot is stored once, not into an accumulator's earlier
+  values): gcc -O0 on MIPS computes `(u32)((x ^ y) >> 32) & 0xffff` in
+  `$2:$3` and masks `$2` alone, and ARM's `umull r1,r0` leaves the low half of
+  `(u32)((x * k) >> 32) & 0xff` in `r1`, while `((u64)(v & 0xff) << 32) |
+  (u32)(v * 7)` reads `v` in both words, and a complement or a mask, `or`
+  or `xor` with a literal the low word gets too is one 64-bit operation
+  (`~v`). Moves include PowerPC's `mr 3,5` (`or 3,5,5`). A first register that is the clean
+  high word of a sum or difference the low word holds through moves, choices
+  or stack reloads is not judged this way either (-O0 `i64 tabs64(i64 a)`
+  returns from two locals, storing `a` and `-a`), nor is a literal low word
+  (`((u64)(a ^ K) << 32) | K`). The two registers are followed through
+  moves and through choices made in one block together, input by input, so a
+  loop's 64-bit accumulator pairs its sum with the sum's own high word. When
+  the low word is a choice the first register's value does not follow
+  (choices in different blocks, an expression evaluator's operator cases),
+  each sum the choice can return is judged against the first register, and a
+  sum whose own high word it is counts as a 64-bit value
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (reworked,
+  carried_into, works_over)`);
+* the high half of a product beside a first register that reads the product's
+  low half, the reverse of a `long long`'s layout: clang -O0 on MIPS spills the
+  `mfhi` of a 64-bit hash, reloads it into `$3`, and builds `$2`, `(u32)x`, from
+  the `mflo`. The walk back follows stack reloads, and a stack address may come
+  through a frame pointer set by `mr 31,1` or MIPS's `move $fp,$sp`, or
+  SPARC's `%fp`, which a `save` that spills the window reaches through a
+  chain of indirect effects and choices of the same address
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (product_high_half,
+  reads_low_half)`);
+* a literal zero, which clang -O0 leaves behind and `(u64)x << 32` returns alike:
+  proof of nothing;
+* a callee's clobber or a location never written: nothing;
+* anything else, a value or a nonzero literal nothing but the RETURNs read:
+  returned on purpose.
+
+A RETURN reached only along branch edges literals decide the other way is
+skipped: SPARC's `call` pcode keeps one for a `restore` in its delay slot
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (never_reached)`).
+A function with an indirect jump flow could not follow (`Treating indirect jump
+as call`: a CALLIND and the artificial RETURN after it) has code return recovery
+does not see, and a user-defined operation given no register inputs (an inline
+system call kuna does not model: PowerPC's `sc` lifts to `syscall()`) may read
+any register. A low word nothing visible reads is not returned on purpose there
+when such a reader can read it: when one of the values the walk back reaches is
+an input, a literal, or made in a block that dominates the reader. It then
+vetoes the join like scratch; a value made after the reader, on the path that
+returns it, still counts
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (hidden_readers,
+reaches_jump)`). With `syscallregs` off, PowerPC `pair`'s argument registers
+set up for `sc` come back as a pair joined first register low, as on main. gcc copies an argument into `$3` before a switch for the case
+that passes it on (`move v1,a1`), and when the jump table is left to
+relocations, as in an object file, that case is not part of the function:
+iproute2's `rt_addr_n2a_r` on MIPS -O2 returns `"???"` in `$2` on the default
+path with the copy beside it, the registers a `u64` function returning its
+argument zero-extended leaves on purpose, and it printed `return a3;`.
+The pair joins in the ABI's order when some RETURN holds a wide value or returns
+its low word on purpose, and none holds a leftover, scratch, a comparison's
+leftover, a truncation, a quotient's, a shift's, a reworked temporary's or a
+product's leftover there. Otherwise it joins first register low, exactly as
+upstream, and the
+function's calls then join their own output pairs that way too
+(`Funcdata::kuna_pairs_first_low`), so a pair a call hands back and the function
+returns stays one value. An argument the function moves into the low word
+itself is a value, not a leftover (ARM big-endian's `mov r4,r1; bl ext; mov
+r1,r4` carries the second argument across a call into it), and so is the
+function's own input read by a call whose inputs are still undecided trials: a
+callee without a known prototype may not take it at all.
+
+The rule is a prior, not a proof, which is why it is an option. The same
+registers can hold a `long long` or an `int`, and each shape is read one way:
+
+* read as the `int`, as upstream does, and still wrong for the `long long`:
+  `(u64)x << 32` beside an `int` with a dead zero in the second register;
+  `((u64)(x ^ K) << 32) | K`, whose `K` also builds the first register, beside
+  `x ^ K`; a `long long` whose low word also feeds a call beside an `int` keeping
+  scratch there; `(u64)a + b`, whose high word is only the carry, beside the
+  `int` carry test; a `long long` whose high word is a literal 0 or 1 a branch
+  chose, beside the boolean; a `long long` whose high word is a literal or a
+  flag beside a low-word sum whose carry a branch tests (`u32 s = a + b; return
+  s < a ? 0 : s;` returning `u64`), beside the `int` range check that leaves
+  the same registers; -O0 `(v << 32) | (v >> 32)` of a 64-bit local,
+  which reloads the local's two words in the same order as an `int` truncation
+  of it; a `long long` whose low word is a right shift of a value whose
+  dropped bits also build its high word, beside the reverse-pair `int`; a
+  `long long` whose high word is a literal operation on a value its low word
+  does not read (`*p | 0xffULL << 32`), or a reworked high word of the sum in
+  its low word (`((s >> 33) << 32) | (u32)s`), beside the `int` worked out from
+  the high half of a temporary; and a
+  `long long` returned in a function with an indirect jump flow could not
+  follow, whose low word nothing visible reads;
+* read as the `long long`, and wrong for the `int`: an `int` holding the high
+  word of a 64-bit temporary itself, whose stale low half stays in the second
+  register, in the same registers the `long long` uses (one that goes on to
+  shift, mask, offset, negate or multiply that word reads as the `int`,
+  above, and so does gcc -O0 on MIPS, which moves the high word down with
+  `srl $17,$2,0` for `>> 32`). `(int)((a + b) >> 32)` on PowerPC -O2 is
+  `addc 4,4,6; addze 3,3; add 3,3,5`, the code for `a + b`, and
+  `((u64)a * b) >> 32` leaves both halves of the product, on ARM big-endian at
+  every optimization level (`umull r1,r0` writes both registers) and on MIPS
+  gcc at -O0 (`multu` with `mflo`/`mfhi`), as does an unsigned division by a
+  constant whose magic number needs no shift (`a / 641` is `umull r1,r0,r0,r1;
+  bx lr` and prints as `a * 0x663d81`), `(u32)((x + K) >> 32) + M` on ARM
+  big-endian, which folds the literal into the carry add (`adds r1,r1,#K; adc
+  r0,r0,#M` is the code for `x + (M << 32 | K)`), and MIPS gcc -O0
+  `(u32)(*p >> 32)` loads both words of `*p` into `$2:$3`, as `return *p`
+  does. These printed
+  right before the option and print the whole 64-bit value with it on;
+  `option bejoin off` reads them as the `int` again, and every genuine
+  `long long` return swapped with them.
+
+The default is on because the second kind is rare in real code and the first
+is common. Over 24,257 functions of nine corpora (e2fsprogs, coreutils and
+gnulib, libexpat, libbsd, dpkg, diffutils, findutils, sysvinit, Lua,
+libselinux, iproute2, rsyslog, openssh, bash, cronie, libedit, grep, kmod,
+shadow, zlib, dash, gnutls, base-passwd and gzip) built with clang for
+PowerPC, SPARC and ARM big-endian (its default architecture, ARMv6 and ARMv7)
+and with gcc for MIPS big-endian at -O0 to -O2 and -Os, 1,707 change, and
+every 64-bit return among them that returns both words comes out in the right
+order (`docs/features/bejoin/record.json`). No function there whose DWARF
+return type is `int` or a pointer changes value, but that is a measurement on
+these corpora, not something the rule proves: an earlier form of it changed
+one, iproute2's `rt_addr_n2a_r` (the unrecovered switch above), which now
+prints as on main. A SPARC `int` function whose result folds
+into the pair before the uncomputed-half repair can drop the leftover (`return
+0` with the second argument still in `%i1`) prints the argument shifted into the
+high word, as it did before.
+
+When the two registers are contiguous in the joined order, the whole is built at
+their parent register rather than in the join space (`constructJoinAddress`).
+AVR maps its register file into data memory, so that parent, `R25R24`, is a
+global: a value built there merged with the argument bytes it is made of, the
+PIECE became internal to one variable, and `negate` printed `return R25R24;`, a
+read of a register the printed C never assigns. With `bejoin` on, a pair whose parent
+register is global storage therefore still gets a join record over its two
+registers, which keeps it a value (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_rustabi.rs
+(pair_join_address)`); the call-output pair builds its whole the same way.
+Register-space parents (`r3:r4` is not a named register, `EDX:EAX` is not
+contiguous) are unaffected.
+
 The sole-use check has one narrow terminating-path exception, the (kuna)
 `noreturnretuse` gate (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_noreturnretuse.rs
 (call_cannot_reach_return)`). When the use being matched is a RETURN, a candidate
@@ -2179,7 +2489,10 @@ is not a move, so the walk stops there), and the rule only ever edits a value
 concatenated from two halves, never a lone recovered return register. Where every
 half is uncomputed — the synthesized-return case — the low, first-in-class
 register is kept so the function's output storage still agrees across every
-RETURN.
+RETURN. A pair joined first register high is left alone: return recovery joins
+one that way only when its low word is part of the value (see the join order
+above; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
+(first_register_holds_high)`).
 
 A high register the function set to zero is computed too, so the pair of a
 zero-extended 64-bit return survives this repair. The earlier trim that narrowed
@@ -2708,6 +3021,16 @@ arm with the language test dropped, and nothing else: the classification is
 `build_call_output_pair` is the same code — the two options simply both reach it.
 `rustabi` keeps the producer-side pair (`holds_scalar_pair`, which `callretpair`
 does not touch), so a rustc image behaves identically whichever is set.
+
+Both classifiers reason about registers, not significance: the callee veto asks
+about the *second* register, and the producer's tag test about the *first*,
+where rustc puts the discriminant. `build_call_output_pair` alone decides which
+register is the high half, from `ParamActive::join_pair_order` as return
+recovery does, so a big-endian call output reads `r3`/`$2`/`%o0`/`r0` as the
+high word, except in a function whose own return pair was joined first register
+low (see the join order in §4.2), where its calls' pairs are joined that way too;
+`holds_scalar_pair` maps the PIECE's halves back to register order with
+`first_register_holds_high` before asking for the tag.
 
 The reach is whatever the cspec's output model asks for, not an architecture
 list: two used output trials arise wherever a convention describes its return
