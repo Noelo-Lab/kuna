@@ -611,6 +611,7 @@ fn option_values_live_value_present_for_108() {
                             | "globalref"
                             | "callsitestackargs"
                             | "varargstackargs"
+                            | "varargforward"
                             | "calleearity"
                             | "calleearityfwd"
                             | "calleearitylive"
