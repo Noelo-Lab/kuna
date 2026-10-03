@@ -1972,7 +1972,9 @@ mod tests {
         // pointer prints as the global (GH-792)
         // and kuna-globalloadguard / a store to a global before a pointer load
         // is kept when the global is stored again (GH-825)
-        assert_eq!(count, 394, "corpus file count drifted");
+        // and kuna-calleeprotostack-homeslot / a store into the caller's home
+        // slot survives a declared callee that is passed its address
+        assert_eq!(count, 395, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

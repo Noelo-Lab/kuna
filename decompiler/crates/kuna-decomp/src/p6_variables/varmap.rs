@@ -735,6 +735,22 @@ impl AliasChecker {
         vn_offset >= self.alias_boundary
     }
 
+    /// (kuna) Whether a pointer formed into the parameter area could reach the
+    /// slot at `offset`: an address taken there at or below it.  `hasLocalAlias`
+    /// answers only for locals, so a caller slot above the return address whose
+    /// address is passed on (an MSVC home slot) needs this test.
+    pub fn has_parameter_alias(&mut self, offset: uintb, access: &mut dyn AliasGatherAccess) -> bool {
+        if !self.calculated {
+            self.gather_internal(access);
+        }
+        if self.direction != 1 || offset >= self.local_boundary {
+            return false;
+        }
+        self.alias
+            .iter()
+            .any(|&alias| alias < self.local_boundary && alias <= offset)
+    }
+
     /// Sort the alias starting offsets (C++ `sortAlias`, `varmap.cc:726-730`).
     pub fn sort_alias(&mut self) {
         self.alias.sort();

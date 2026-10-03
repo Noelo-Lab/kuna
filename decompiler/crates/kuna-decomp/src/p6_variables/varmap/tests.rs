@@ -554,6 +554,29 @@ fn has_local_alias_uses_alias_boundary_for_negative_stack() {
 }
 
 #[test]
+fn has_parameter_alias_covers_the_slots_above_a_taken_home_slot() {
+    // An address taken at 0x18, in the parameter area below localBoundary,
+    // reaches 0x18 and above; `hasLocalAlias` never answers for it.
+    let space = stack_space();
+    let ids = mint_varnodes(2);
+    let mut offsets = std::collections::BTreeMap::new();
+    offsets.insert(vn_key(ids[1]), 0x18u64);
+    let mut mock = MockGather {
+        spacebase: Some(ids[0]),
+        bases: vec![AddBase::new(ids[1], None)],
+        offsets,
+    };
+    let mut checker = AliasChecker::new();
+    checker.gather(Rc::clone(&space), None, false, &mut mock);
+
+    assert!(!checker.has_local_alias(Some((Rc::clone(&space), 0x18)), &mut mock));
+    assert!(checker.has_parameter_alias(0x18, &mut mock));
+    assert!(checker.has_parameter_alias(0x20, &mut mock));
+    assert!(!checker.has_parameter_alias(0x10, &mut mock));
+    assert!(!checker.has_parameter_alias(0x2000000, &mut mock));
+}
+
+#[test]
 fn derive_boundaries_uses_proto_param_last_for_negative_stack() {
     // With a proto giving local-first and param-last, the local/param boundary
     // moves to param_last for a negative-growth stack (direction == 1).

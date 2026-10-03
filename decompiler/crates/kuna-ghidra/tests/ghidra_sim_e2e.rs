@@ -1417,3 +1417,48 @@ fn ghidra_sim_custom_large_return_with_no_formals_clears_hidden_input() {
         .expect("signature line");
     assert_eq!(signature, "Big24 ret_big(void)", "{c}");
 }
+
+
+/// A value MSVC spills into the home slot its caller allocated, then passes by
+/// reference, survives a declared callee: the shape of every Qt
+/// `connect(sender, &Class::signal, ...)`, where Ghidra hands kuna a locked
+/// prototype for the PDB-typed callee and its own `local_res18` for the slot.
+#[test]
+fn ghidra_sim_home_slot_store_survives_a_declared_callee() {
+    let binary = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/homeslot_pe_x86_64.exe");
+    let run = run_session_with(&binary, &["sub_140001000"], |oracle| {
+        oracle.cspec = "x86-64-win.cspec".to_string();
+        let types = oracle.prog.arch().types();
+        let void = types.get_type_void().unwrap();
+        let void_ptr = types.get_type_pointer(8, Rc::clone(&void), 1).unwrap();
+        let slot_ptr = types.get_type_pointer(8, Rc::clone(&void_ptr), 1).unwrap();
+        oracle.callee_pieces.insert(
+            0x140001060,
+            kuna_decomp::fspec::PrototypePieces {
+                name: "consume".into(),
+                outtype: Some(void_ptr),
+                intypes: vec![slot_ptr],
+                innames: vec!["slot".into()],
+                first_var_arg_slot: -1,
+                ..Default::default()
+            },
+        );
+        oracle.local_var_overrides.insert(
+            0x140001000,
+            vec![ghidra_sim::oracle::HostLocalVar {
+                name: "local_res18".to_string(),
+                space: "stack".to_string(),
+                offset: 0x18,
+                size: 8,
+                first_use: None,
+                typelock: false,
+                hash: 0,
+            }],
+        );
+    });
+    assert_structure(&run);
+    let c = &run.docs[0].c_text;
+    assert!(c.contains("local_res18 = worker_proc;"), "the store into the home slot is gone:\n{c}");
+    assert!(c.contains("consume("), "{c}");
+}

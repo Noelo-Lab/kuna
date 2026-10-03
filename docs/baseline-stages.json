@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1814,
-    1814
+    1816,
+    1816
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -80,6 +80,8 @@
     "data:CALLEEPRESERVES #4: on, the third argument is the caller's own parameter, not an undefined local",
     "data:CALLEEPRESERVES #5: both passes, the second call is rendered identically (its callee writes no unaffected register)",
     "data:CALLEEPRESERVES #6: both passes, the thunk is still called and still returns nothing",
+    "data:CALLEEPROTOSTACK HOMESLOT #1: both passes store worker_proc into the home slot",
+    "data:CALLEEPROTOSTACK HOMESLOT #2: both passes pass the slot's address to consume",
     "data:CALLEERETPRESERVES #1: off, the zero set before the cookie check is gone and f returns nothing",
     "data:CALLEERETPRESERVES #2: on, f returns the constant the caller placed in EAX",
     "data:CALLEERETPRESERVES #3: on, and that value gives f its own return type back",
