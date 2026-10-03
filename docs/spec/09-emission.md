@@ -824,6 +824,32 @@ same switch-width, signedness, and integer-format rules as op-backed labels,
 but are emitted as plain syntax with no fabricated `opref`; `default:` remains
 an unvalued label.
 
+**(kuna) Dynamic ARM LSL in C.** ARM register-controlled `LSL` uses the low
+eight bits of its count, so counts 32 through 255 must produce zero for a
+32-bit value. C makes a shift by 32 or more undefined. The selector and
+repeatability proof live in
+`p9_emit/kuna_armregistershift.rs (plan_arm_register_lsl)`; the C printer emits
+the plan as a guarded conditional. It preserves the lifted count expression,
+compares its unsigned same-width cast with the shifted value's bit width, and
+casts the shiftee to unsigned so a valid 31-bit shift is defined. When the
+original result type is signed, the true arm is cast back to the signed width
+and the false arm is signed zero, preserving consumers such as signed compare
+and arithmetic right shift. The expression is not changed to `count & 31`: with
+the existing ARM low-byte mask, count 256 still shifts by zero and count 288
+still produces zero. When this guard applies, the C in-place compound-assignment
+shortcut is declined so the guarded expression stays on the right-hand side of
+an ordinary assignment. The rewrite applies only to the C back-end, ARM targets,
+and non-constant 32-bit LSLs whose input expressions can be emitted twice
+without repeating effects. Volatile values are rejected even when unwritten
+because they can print as direct reads. Implied values are accepted only when
+their definitions recursively use the listed pure operations; an explicit
+written value can be reused by name after its defining statement has materialized
+it, including a call or load result. Other architectures, constant shifts, and
+non-repeatable ARM inputs keep their existing output. The 12-byte reproduction
+and emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml`; signed
+comparison and ASR consumers are in
+`tests/stages/kuna-arm-register-shift-signed.xml`.
+
 **Every label labels a statement.** Label placement in the printed C is valid
 C99/C11/C17 and does not rely on C23. In those dialects a label is part of a
 labeled statement, so `case 2:`, `default:` or `label_10ad:` directly before a

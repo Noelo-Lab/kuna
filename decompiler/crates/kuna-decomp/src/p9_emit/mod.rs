@@ -25,6 +25,7 @@ pub mod kuna_braceelide;
 pub mod kuna_labelstmt; // (kuna) every printed C label labels a statement
 pub mod kuna_warnstyle;
 pub mod kuna_arraycoverwidth;
+pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
 pub mod kuna_emptystrconst;
 pub mod kuna_truncarg;
 pub mod kuna_pointerargs; // (kuna) a scalar's address passed to a character-pointer parameter
