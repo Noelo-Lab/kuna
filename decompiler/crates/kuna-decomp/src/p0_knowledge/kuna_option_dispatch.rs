@@ -210,6 +210,7 @@ kuna_options! { self, p1;
     "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
     "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
+    "bejoin" => on_off!(be_join, "High-word-first register pair join"),
     "rustabi" => {
         let (mode, msg) = crate::kuna_rustabi::parse_rust_abi_mode(p1)?;
         self.rust_abi = mode.as_u8();

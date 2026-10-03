@@ -1,0 +1,120 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+<!--
+    kuna option bejoin: a two-register value on a big-endian ABI is joined
+    high word first.
+
+    The SVR4 PowerPC ABI returns a long long in r3:r4 with the HIGH word in
+    r3, the first register of the pair.  MIPS o32 ($2:$3), SPARC (%o0:%o1) and
+    ARM big-endian (r0:r1) do the same: a register pair holds the value as if
+    it were loaded from memory, so the lower-addressed, most significant word
+    lands in the first register.  The cspec output rule says so (a join rule
+    consumes the most significant piece first on a big-endian target), but
+    return recovery (ActionReturnRecovery::buildReturnOutput) and the
+    call-output pair (FuncCallSpecs::buildOutputFromTrials) joined the first
+    register as the LOW word, so every such return printed its halves
+    swapped:
+
+        wide_mul:    return CONCAT44(a1 * a0,(int4)(... >> 0x20));   (bug)
+        add_one:     return CONCAT44(a1 + 1,a0 + carry);              (bug)
+        triple_plus: v1 = (uint4)(v2 >> 0x20) reads r4 as the high word
+
+    Stage: P4 calls and prototypes (output-prototype), option bejoin off|on.
+    Pass 1 (the default, off; GH-904) pins the old first-register-low join,
+    pass 2 (option bejoin on) the ABI's order.
+
+    Source (clang 14 -O2, powerpc-linux-gnu, bytes from bejoin_ppc32_be.o):
+        long long wide_mul(int a, int b) { return (long long)a * b; }
+          mulhw r5,r4,r3 / mullw r4,r4,r3 / mr r3,r5 / blr
+        long long add_one(long long v) { return v + 1; }
+          addic r4,r4,1 / addze r3,r3 / blr          (v arrives as r3:r4)
+        static long long triple(int x) { return (long long)x * 3; }
+        long long triple_plus(int x) { return triple(x) + 7; }
+          bl triple / addic r4,r4,7 / addze r3,r3    (a call output pair)
+
+    The trade-off the option makes (clang 14 -O2): a 64-bit sum and the int
+    holding its high word are the same instructions, so on reads both as the
+    long long and off reads both as the int.
+        unsigned long long sum64(u64 a, u64 b) { return a + b; }
+        int sum_hi(u64 a, u64 b) { return (a + b) >> 32; }
+          addc r4,r6,r4 / adde r3,r5,r3 / blr        (both functions)
+
+    What a comparison leaves behind keeps the old join in both passes (clang
+    14 -O0): r3 holds only the carry, r4 the sum it was computed from.
+        int carry(u32 a, u32 b) { return (u64)a + b > 0xffffffffULL; }
+          li r3,0 / addc r4,r4,r5 / addze r3,r3
+
+    Asserts #1-#3: on joins each value high word (r3) first (wide_mul's
+    product prints as the partialconcat masks of its two words).
+    Asserts #4-#5: the default (off) keeps the swapped joins, and only it.
+    Asserts #6-#7: sum64 and sum_hi read the same either way.
+    Assert #8: carry keeps the old join in both passes.
+-->
+<bytechunk space="ram" offset="0x10000000" readonly="true">
+7ca418967c8419d67ca32b784e800020308400017c6301944e8000207c0802a6
+900100049421fff04800001d308400077c63019480010014382100107c0803a6
+4e800020388000037ca320961c8300037ca32b784e800020
+</bytechunk>
+<bytechunk space="ram" offset="0x10000100" readonly="true">
+7c8620147c6519144e8000207c8620147c6519144e800020
+</bytechunk>
+<bytechunk space="ram" offset="0x10000200" readonly="true">
+9421ffe093e1001c7c3f0b78907f0018909f0014809f001880bf0014386000007c8428147c63019483e1001c382100204e800020
+</bytechunk>
+<symbol space="ram" offset="0x10000000" name="wide_mul"/>
+<symbol space="ram" offset="0x10000100" name="sum64"/>
+<symbol space="ram" offset="0x1000010c" name="sum_hi"/>
+<symbol space="ram" offset="0x10000200" name="carry"/>
+<symbol space="ram" offset="0x10000010" name="add_one"/>
+<symbol space="ram" offset="0x1000001c" name="triple_plus"/>
+<symbol space="ram" offset="0x10000044" name="triple"/>
+</binaryimage>
+<script>
+  <com>lo fu wide_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu triple_plus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu carry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bejoin on</com>
+  <com>lo fu wide_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu triple_plus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu carry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin #1: on, wide_mul returns the mulhw word (r3) as the high half" min="1" max="1">return \(uint8\)\(\(int8\)a1 \* a0\) &amp; 0xffffffff00000000 \| \(uint8\)\(a1 \* a0\) &amp; 0xffffffff;</stringmatch>
+<stringmatch name="bejoin #2: on, add_one carries into the r3 word, the high half" min="1" max="1">return CONCAT44\(a0 \+ \(uint4\)\(0xffffffff &lt;= a1\),a1 \+ 1\);</stringmatch>
+<stringmatch name="bejoin #3: on, the call output pair reads r3 as the high half" min="1" max="1">return CONCAT44\(\(int4\)\(\(uint8\)v1 >> 0x20\) \+ \(uint4\)\(0xfffffff9 &lt;= \(uint4\)v1\),\(uint4\)v1 \+ 7\);</stringmatch>
+<stringmatch name="bejoin #4: only the default pass (off) puts the low product first" min="1" max="1">CONCAT44\(a1 \* a0,</stringmatch>
+<stringmatch name="bejoin #5: only the default pass (off) puts the incremented low word first" min="1" max="1">CONCAT44\(a1 \+ 1,</stringmatch>
+<stringmatch name="bejoin #6: on, sum64 and sum_hi (the same instructions) both read r3 as the high half" min="2" max="2">return CONCAT44\(a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\),a3 \+ a1\);</stringmatch>
+<stringmatch name="bejoin #7: default (off), sum64 and sum_hi both keep r3 low, which truncates to sum_hi's int" min="2" max="2">return CONCAT44\(a3 \+ a1,a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\)\);</stringmatch>
+<stringmatch name="bejoin #8: a carry alone in r3 keeps the old join in both passes, so the int truncation reads the carry" min="2" max="2">return CONCAT44\(a0 \+ a1,\(uint4\)CARRY4\(a0,a1\)\);</stringmatch>
+</decompilertest>

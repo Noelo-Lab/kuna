@@ -281,7 +281,7 @@ pub fn every_return_computes_with(data: &Funcdata, globals: bool) -> bool {
 
 /// The storage locations `vn` occupies, most significant first: the pieces of
 /// a join, or `vn`'s own storage.
-fn storage_pieces(data: &Funcdata, vn: VarnodeId) -> Option<Vec<(Rc<AddrSpace>, u64, i32)>> {
+pub(crate) fn storage_pieces(data: &Funcdata, vn: VarnodeId) -> Option<Vec<(Rc<AddrSpace>, u64, i32)>> {
     let v = data.vbank().get(vn)?;
     let addr = v.get_addr();
     let space = addr.get_space()?;
@@ -305,7 +305,7 @@ fn spans_two_locations(data: &Funcdata, vn: VarnodeId) -> bool {
 /// Where the `width` bytes of `whole` starting `lsb` bytes above its least
 /// significant byte are stored: the return register (or register of a pair) a
 /// half of the returned value sits in. `None` when they straddle two pieces.
-fn slot_storage(data: &Funcdata, whole: VarnodeId, lsb: i32, width: i32) -> Option<Address> {
+pub(crate) fn slot_storage(data: &Funcdata, whole: VarnodeId, lsb: i32, width: i32) -> Option<Address> {
     let mut lsb = lsb;
     for (space, off, size) in storage_pieces(data, whole)?.into_iter().rev() {
         if lsb < size {
@@ -332,6 +332,10 @@ fn slot_storage(data: &Funcdata, whole: VarnodeId, lsb: i32, width: i32) -> Opti
 /// resolved that load into a bare unwritten Varnode for a frame slot the function
 /// never stores to, and the difference is plain.
 ///
+/// A pair joined with its first register as the high half is left alone:
+/// return recovery joins that way only a pair whose low word the function
+/// returns on purpose ([`crate::kuna_bejoin`]).
+///
 /// Returns `true` when a RETURN was rewritten.
 pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
     // Collect first: the rewrite mutates the op bank.
@@ -354,6 +358,9 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
         else {
             continue;
         };
+        if crate::kuna_bejoin::first_register_holds_high(data, whole) {
+            continue;
+        }
         let (hi_addr, hi_size, lo_addr, lo_size) = match (data.vbank().get(hi), data.vbank().get(lo)) {
             (Some(h), Some(l)) => (h.get_addr().clone(), h.get_size(), l.get_addr().clone(), l.get_size()),
             _ => continue,

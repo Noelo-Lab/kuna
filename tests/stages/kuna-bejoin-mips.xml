@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default:default">
+<!--
+    kuna option bejoin (off by default, GH-904; on here): MIPS o32 big-endian returns a long long in
+    $2:$3 with the HIGH word in $2, the first return register.  Return
+    recovery joined $2 as the LOW word, so wide_mul printed its halves swapped:
+        wide_mul:  return CONCAT44((int4)((int8)a0 * a1),(int4)(... >> 0x20));   (bug)
+    A function returning one int can leave something else in $3.  clang -O0
+    materializes a zero in both $2 and $3 and then overwrites $2, so realeof
+    and both leave a literal zero in $3 that nothing reads.  Joined in the
+    ABI's order that zero became the low word and the result the high word
+    (both printed return (uint8)v1 << 0x20).  A literal zero in the second
+    register proves nothing either way, so such a pair keeps the old join,
+    which narrows to the bool in $2.  (u64)x << 32 compiles to the same shape
+    and still prints as its high word x, as it did before.
+    Stage: P4 calls and prototypes (output-prototype), option bejoin on.
+    Little-endian targets are byte-identical; the default (off) pass and the
+    trade-off the option makes are in kuna-bejoin.xml.
+    Source: bejoin_mips32_be.o (mipsel-linux-gnu-gcc 10.3 -EB -O2) at 0x10000,
+    bejoin_zero_mips32_O0.o (clang 14 -O0, mips-linux-gnu) at 0x20000:
+        long long wide_mul(int a, int b) { return (long long)a * b; }
+          mult $4,$5 / mflo $3 / jr $31 / mfhi $2 (in the delay slot)
+        int realeof(unsigned a) { return a != 0 && a != 1; }
+        int both(int a, int b) { return a && b; }
+          addiu $2,$zero,0 / addiu $3,$zero,0 / ... / andi $2,$1,1 / jr $31
+    Assert #1: wide_mul is the signed 64-bit product, mfhi (the high word) in $2.
+    Assert #2: no join puts the low product first.
+    Assert #3: realeof and both return the bool in $2.
+    Assert #4: nothing is shifted into the high word.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+00042fc3000437c200041840000510400064202100c21025004510210083182b
+0062102103e0000800801825008500180000181203e000080000101024a30001
+0065282b03e0000800a4102127bdffe8afbf00140c0000000000000024640007
+8fbf001427bd00180083182b0062102103e00008008018250085102603e00008
+2c4200010000102503e00008ac850000
+</bytechunk>
+<symbol space="ram" offset="0x1002c" name="wide_mul"/>
+<bytechunk space="ram" offset="0x20000" readonly="true">
+27bdfff0afbf000cafbe000803a0f025afc400048fc100042402000024030000
+002008260001082bafc200001c2000030000000010000006000000008fc10004
+24020001002208260001082bafc100008fc100003022000103c0e8258fbe0008
+8fbf000c27bd001003e000080000000027bdffe8afbf0014afbe001003a0f025
+afc4000cafc500088fc1000c2402000024030000002008260001082bafc20004
+1c2000030000000010000006000000008fc1000824020000002008260001082b
+afc100048fc100043022000103c0e8258fbe00108fbf001427bd001803e00008
+0000000027bdfff0afbf000cafbe000803a0f025afc400048fc2000424030000
+03c0e8258fbe00088fbf000c27bd001003e0000800000000
+</bytechunk>
+<symbol space="ram" offset="0x20000" name="realeof"/>
+<symbol space="ram" offset="0x20070" name="both"/>
+</binaryimage>
+<script>
+  <com>option bejoin on</com>
+  <com>lo fu wide_mul</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu realeof</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu both</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin mips #1: wide_mul returns the signed 64-bit product" min="1" max="1">return \(int8\)a0 \* a1;</stringmatch>
+<stringmatch name="bejoin mips #2: no join puts the low product first" min="0" max="0">CONCAT44\(\(int4\)\(\(int8\)a0 \* a1\)</stringmatch>
+<stringmatch name="bejoin mips #3: realeof and both return the bool in $2" min="2" max="2">bool (realeof|both)\(</stringmatch>
+<stringmatch name="bejoin mips #4: nothing is shifted into the high word" min="0" max="0">&lt;&lt; 0x20</stringmatch>
+</decompilertest>

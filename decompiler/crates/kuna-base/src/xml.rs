@@ -1976,7 +1976,10 @@ mod tests {
         // slot survives a declared callee that is passed its address
         // and kuna-protoranges-homeslot / a prototype's <localrange> makes the
         // Win64 home area a local, so its address prints by name
-        assert_eq!(count, 399, "corpus file count drifted");
+        // and kuna-bejoin + kuna-bejoin-sparc + kuna-bejoin-sparc64 +
+        // kuna-bejoin-mips + kuna-bejoin-avr / a two-register value is joined
+        // in the ABI's order when its low word is returned on purpose
+        assert_eq!(count, 404, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

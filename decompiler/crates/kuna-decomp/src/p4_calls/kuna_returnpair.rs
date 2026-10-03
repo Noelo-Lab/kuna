@@ -12,7 +12,7 @@
 //! The decision is a P0 assertion: `option returnpair pair|single` (default
 //! `pair` = upstream join behavior, byte-identical output).  When `single`,
 //! `buildReturnOutput` refuses to join a multi-register return, keeping only the
-//! first (least-significant) register.
+//! first return register.
 //!
 //! # What this port covers (and the two boundaries it cannot)
 //!
@@ -59,7 +59,7 @@ pub enum ReturnPairForm {
     /// return (`glb->return_single = false`).
     Pair,
     /// `single`: refuse to join a multi-register return, keeping only the first
-    /// (least-significant) register (`glb->return_single = true`).
+    /// return register (`glb->return_single = true`).
     Single,
 }
 
@@ -101,7 +101,7 @@ pub fn parse_return_pair_form(p1: &str) -> KunaResult<(ReturnPairForm, String)> 
 ///
 /// Returns `true` when the gathered return varnodes should be truncated to the
 /// first register pair slot (`newparam[0]` is the return-indirect reference and
-/// `newparam[1]` the first/least-significant register, so `size > 2` means at
+/// `newparam[1]` the first return register, so `size > 2` means at
 /// least one extra register was gathered).  The consumer (`coreaction.cc`, a
 /// later wave) does `newparam.resize(2)` when this is `true`.
 ///

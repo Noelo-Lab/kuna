@@ -1,0 +1,154 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!--
+    kuna option bejoin (off by default, GH-904; on here): SPARC returns a long long in %o0:%o1 with the
+    HIGH word in %o0.  restore copies every in-register back to its
+    out-register, so %o1 also comes back from functions that return one int,
+    holding whatever the function left in %i1 (kuna-bejoin-sparc.xml).  These
+    functions put their low word in %o1 on purpose, and it is part of the
+    value:
+
+      * through restore's own destination register: restore %g0,1,%o1 is
+        tmp = 0 + 1; <window copies>; %o1 = tmp.  The last copy is the
+        compiler's choice of register, not the window's.
+      * in %i1 for restore to hand back, read by nothing but the returned
+        registers: mov 10,%i1 / mov 20,%i1 before ret; restore %g0,%g0,%o0,
+        and mix2's product (umul %i0,3,%i1; rd %y,%i0; ret; restore).
+
+    Joined first register low, as before the fix:
+
+        k_one:     return 0x100000000;         (status64 and bool64 at -O2 too)
+        sel_const: return (uint8)v1 << 0x20;   (10 or 20 in the high word)
+        mix2:      return a0;                  (for (u64)x << 32)
+        mix3:      return 5;                   (for 0x500000000)
+
+    neg_one, all ones, prints the same either way; an earlier version of the
+    fix returned it as a 32-bit -1, which #1 and #1b guard against.
+
+    Stage: P4 calls and prototypes (output-prototype), option bejoin on.
+    Little-endian targets are byte-identical; the default (off) pass and the
+    trade-off the option makes are in kuna-bejoin.xml.
+
+    Source (clang 14 -fintegrated-as, sparc-linux-gnu; bytes from
+    bejoin_window64_sparc32_O2.o at 0x40000 and bejoin_window64_sparc32_O0.o
+    at 0x50000, whose names end in _O0; the unrelocated calls to ext and
+    ext_i print as sub_*):
+        i64 neg_one(void) { ext(); return -1; }
+        i64 k_one(void) { ext(); return 1; }
+        i64 status64(int x) { ext(); if (x) return 1; return 0; }
+        u64 bool64(int a, int b) { ext_i(a); return a == b; }
+        i64 sel_const(int c) { ext(); return c ? 10 : 20; }
+        u64 mix2(unsigned x, int c) { ext(); if (c) return (u64)x << 32; return (u64)x * 3; }
+        u64 mix3(unsigned x, int c) { ext(); if (c) return 0x500000000ULL; return (u64)x * 3; }
+
+    Assert #1: neg_one returns the 64-bit -1 at both levels, never 0xffffffff.
+    Assert #2: k_one, status64 and bool64 return 64 bits at -O2.
+    Assert #3: k_one (both levels), status64 and bool64 (-O2) return 1, not 0.
+    Assert #4: sel_const keeps its argument and returns 10 or 20, never
+    shifted into the high word, at both levels.
+    Assert #5: mix2 returns x << 32 whole, and nothing returns a0 or 5.
+    Assert #6: mix3 returns 0x500000000 whole.
+    Assert #7: mix2 and mix3 join the product with its high word first.
+-->
+<bytechunk space="ram" offset="0x40000" readonly="true">
+9de3bfa04000000001000000b0103fff81c7e00893e800189de3bfa040000000
+01000000b010000081c7e00893e820019de3bfa0400000000100000080a62000
+12800004b010000081c7e00893e8001881c7e00893e820019de3bfa040000000
+9010001880a6001902800004b010000081c7e00893e8001881c7e00893e82001
+9de3bfa0400000000100000080a62000028000040100000010800003b210200a
+b210201481c7e00891e800009de3bfa0b410001940000000b6100018b2562003
+b140000080a6a000128000070100000080a6a000128000070100000081c7e008
+81e8000080a6a00002bffffdb010001b81c7e00893e800009de3bfa040000000
+b4100019b2562003b140000080a6a000128000070100000080a6a00012800007
+0100000081c7e00881e8000080a6a00002bffffdb010200581c7e00893e80000
+</bytechunk>
+<symbol space="ram" offset="0x40000" name="neg_one"/>
+<symbol space="ram" offset="0x40018" name="k_one"/>
+<symbol space="ram" offset="0x40030" name="status64"/>
+<symbol space="ram" offset="0x40058" name="bool64"/>
+<symbol space="ram" offset="0x40080" name="sel_const"/>
+<symbol space="ram" offset="0x400ac" name="mix2"/>
+<symbol space="ram" offset="0x400f8" name="mix3"/>
+<bytechunk space="ram" offset="0x50000" readonly="true">
+9de3bfa04000000001000000b2103fff81c7e00891e800199de3bfa040000000
+01000000b010000081c7e00893e820019de3bf9840000000f027bff4f007bff4
+80a620000280000a010000001080000201000000b4100000b010001ab4102001
+b210001a10800007f03fbff8b4100000b010001ab210001a10800002f03fbff8
+f41fbff8b010001a81c7e00893e8001b9de3bf90f027bffcf227bff840000000
+d007bffcf207bffcf407bff8b0100000f027bff0b010200180a6401a02800004
+f027bff4f007bff0f027bff4f007bff0f207bff481c7e00881e800009de3bf98
+40000000f027bffcf207bffcb0102014f027bff4b010200a80a6600012800004
+f027bff8f007bff4f027bff8f207bff881c7e00891e800009de3bf90f027bff4
+40000000f227bff0f007bff080a620000280000a010000001080000201000000
+f407bff4b010001ab4100000b210001a10800009f03fbff8f007bff4b4562003
+b7400000b010001bb210001a10800002f03fbff8f41fbff8b010001a81c7e008
+93e8001b9de3bf90f027bff440000000f227bff0f007bff080a620000280000a
+010000001080000201000000b4102005b010001ab4100000b210001a10800009
+f03fbff8f007bff4b4562003b7400000b010001bb210001a10800002f03fbff8
+f41fbff8b010001a81c7e00893e8001b
+</bytechunk>
+<symbol space="ram" offset="0x50000" name="neg_one_O0"/>
+<symbol space="ram" offset="0x50018" name="k_one_O0"/>
+<symbol space="ram" offset="0x50030" name="status64_O0"/>
+<symbol space="ram" offset="0x50090" name="bool64_O0"/>
+<symbol space="ram" offset="0x500dc" name="sel_const_O0"/>
+<symbol space="ram" offset="0x50118" name="mix2_O0"/>
+<symbol space="ram" offset="0x50184" name="mix3_O0"/>
+</binaryimage>
+<script>
+  <com>option bejoin on</com>
+  <com>lo fu neg_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu status64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bool64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sel_const</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mix2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mix3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu neg_one_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k_one_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu status64_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bool64_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sel_const_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mix2_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mix3_O0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin-sparc64 #1: neg_one returns the 64-bit -1 at both levels" min="2" max="2">return 0xffffffffffffffff;</stringmatch>
+<stringmatch name="bejoin-sparc64 #1b: nothing returns a 32-bit -1" min="0" max="0">return 0xffffffff;</stringmatch>
+<stringmatch name="bejoin-sparc64 #2: k_one, status64 and bool64 return 64 bits at -O2" min="3" max="3">unsigned long long (k_one|status64|bool64)\(</stringmatch>
+<stringmatch name="bejoin-sparc64 #3: k_one, status64 and bool64 return 1" min="4" max="4">return 1;</stringmatch>
+<stringmatch name="bejoin-sparc64 #4: sel_const keeps its argument at both levels" min="2" max="2">sel_const(_O0)?\(int4 a0\)</stringmatch>
+<stringmatch name="bejoin-sparc64 #4b: sel_const never shifts 10 or 20 into the high word" min="0" max="0">v[0-9]+ &lt;&lt; 0x20;</stringmatch>
+<stringmatch name="bejoin-sparc64 #5: mix2 returns x shifted into the high word" min="1" max="1">return \(uint8\)a0 &lt;&lt; 0x20;</stringmatch>
+<stringmatch name="bejoin-sparc64 #5b: nothing returns a0 or 5 for a wider value" min="0" max="0">return (a0|5);</stringmatch>
+<stringmatch name="bejoin-sparc64 #6: mix3 returns 0x500000000" min="1" max="1">return 0x500000000;</stringmatch>
+<stringmatch name="bejoin-sparc64 #7: mix2 and mix3 join the product high word first" min="2" max="2">return CONCAT44\(v1,\(int4\)\(a0 \* 3ULL\)\);</stringmatch>
+</decompilertest>

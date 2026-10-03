@@ -1437,6 +1437,17 @@ impl ParamActive {
     pub fn set_join_reverse(&mut self) {
         self.join_reverse = true;
     }
+    /// The trial indexes `(least significant, most significant)` of a value
+    /// the first two used trials hold together.  Trials sort in storage order,
+    /// so when the matched rule consumed the most significant piece first (a
+    /// big-endian ABI's r3:r4, v0:v1, o0:o1) trial 0 is the high half.
+    pub fn join_pair_order(&self) -> (int4, int4) {
+        if self.join_reverse {
+            (1, 0)
+        } else {
+            (0, 1)
+        }
+    }
     /// (kuna) `varargstackargs`: are these the trials of a variadic call whose
     /// stack tail must be scored as its own `fillinMap` section?
     pub fn is_vararg_stack_split(&self) -> bool {
@@ -2181,6 +2192,19 @@ impl ParamListStandard {
     /// another.
     pub(crate) fn kuna_entries_mut(&mut self) -> &mut [ParamEntry] {
         &mut self.entry
+    }
+
+    /// (kuna) Are `hi` and `lo` two of these entries, with the value's most
+    /// significant piece in the earlier one?  Read back from where a joined
+    /// value's pieces sit, this is the order the matched `<join>` rule consumed
+    /// them in (C++ `MultiSlotAssign::consumeMostSig`: big-endian storage,
+    /// flipped by `reversesignif`), the same order [`ParamActive::join_pair_order`]
+    /// reports while the trials are still live.
+    pub fn holds_high_first(&self, hi: &Address, hi_size: int4, lo: &Address, lo_size: int4) -> bool {
+        match (self.find_entry(hi, hi_size, false), self.find_entry(lo, lo_size, false)) {
+            (Some(h), Some(l)) => h < l,
+            _ => false,
+        }
     }
 
     /// Get the concrete model kind (C++ `getType`, projected to [`ParamListType`]).
@@ -5317,6 +5341,12 @@ impl FuncProto {
     /// Borrow the model (panics if none — C++ would dereference null).
     pub fn model(&self) -> &Rc<ProtoModel> {
         self.model.as_ref().expect("FuncProto::model: null")
+    }
+    /// (kuna) Does a value this prototype returns in the two output registers
+    /// `hi` and `lo` keep its most significant piece in the first of them?  See
+    /// [`ParamListStandard::holds_high_first`]; `false` without a model.
+    pub fn output_holds_high_first(&self, hi: &Address, hi_size: int4, lo: &Address, lo_size: int4) -> bool {
+        self.model.as_ref().is_some_and(|m| m.output().holds_high_first(hi, hi_size, lo, lo_size))
     }
     /// Does this use the given model (C++ `hasMatchingModel`).
     pub fn has_matching_model(&self, op2: &Rc<ProtoModel>) -> bool {

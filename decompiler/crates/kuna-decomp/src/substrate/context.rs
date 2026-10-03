@@ -716,6 +716,10 @@ pub struct ArchContext {
     /// a detected rustc one.  Read by
     /// [`crate::p4_calls::kuna_callretpair::live`].
     pub call_ret_pair: bool,
+    /// (kuna) `option bejoin`: may a two-register value join with its high word
+    /// in the first register where the ABI puts it?  Read by
+    /// [`crate::p4_calls::kuna_bejoin::live`].
+    pub be_join: bool,
     /// (kuna) `option rustabi` (0 off / 1 auto / 2 always): keep a rustc
     /// two-register `ScalarPair` return intact; read by [`crate::kuna_rustabi`].
     pub rust_abi: u8,
@@ -1597,6 +1601,9 @@ impl ArchContext {
             // (kuna) `option callretpair` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             call_ret_pair: true,
+            // (kuna) `option bejoin` default-off; the real value is copied from
+            // the engine Architecture in `build_arch_handle`.
+            be_join: false,
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
