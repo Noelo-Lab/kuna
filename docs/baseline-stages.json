@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1816,
-    1816
+    1830,
+    1830
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -163,6 +163,20 @@
     "data:Call push #3: both passes keep the call in the loop",
     "data:Call push #4: both passes keep a stack-passed argument",
     "data:Call push #5: both passes keep the push call 1f reads back",
+    "data:DECLARED-CALLBACK-C #10: callback parameters are recursive abstract declarators",
+    "data:DECLARED-CALLBACK-C #11: a callback returning a callback preserves both signatures",
+    "data:DECLARED-CALLBACK-C #12: ctypes spells the callback return as a target C scalar",
+    "data:DECLARED-CALLBACK-C #13: ctypes keeps the publication parameter callable",
+    "data:DECLARED-CALLBACK-C #14: ctypes keeps the saved callback local callable",
+    "data:DECLARED-CALLBACK-C #1: a parameter retains its return and void input list",
+    "data:DECLARED-CALLBACK-C #2: publishing a callback keeps its callable parameter type",
+    "data:DECLARED-CALLBACK-C #3: parameter dispatch still truncates the callback result",
+    "data:DECLARED-CALLBACK-C #4: dispatch loads the published callback slot",
+    "data:DECLARED-CALLBACK-C #5: a function type is never printed as a byte pointer",
+    "data:DECLARED-CALLBACK-C #6: a callback surviving a call has a callable local type",
+    "data:DECLARED-CALLBACK-C #7: a returned callback has its own parameter suffix",
+    "data:DECLARED-CALLBACK-C #8: callback arrays preserve parameter types",
+    "data:DECLARED-CALLBACK-C #9: variadic callback fields retain ellipsis",
     "data:DECLARING-DOUBLE-SCORE #1: option off discards the log result",
     "data:DECLARING-DOUBLE-SCORE #2: default assigns the log result",
     "data:DECLARING-DOUBLE-SCORE #3: default returns both additive doubles",

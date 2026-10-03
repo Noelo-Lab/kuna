@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t:default">
+<!-- ROM-free ARMv5TE: invoke a declared callback, publish it, and load/call a
+     declared slot. BLX r4 returns a word; AND keeps its low byte. -->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+10402de90040a0e134ff2fe1ff0000e21080bde81c109fe5000081e51eff2fe110402de90c109fe5004091e534ff2fe1ff0000e21080bde80000020070402de920109fe5004091e534ff2fe10050a0e134ff2fe1000085e07080bde804109fe5000091e51eff2fe100000200
+</bytechunk>
+<bytechunk space="ram" offset="0x20000">00000000</bytechunk>
+<symbol space="ram" offset="0x10000" name="invoke"/>
+<symbol space="ram" offset="0x10014" name="publish"/>
+<symbol space="ram" offset="0x10020" name="invoke_slot"/>
+<bytechunk space="ram" offset="0x10080" readonly="true">10402de9004090e534ff2fe1ff0000e21080bde8</bytechunk>
+<symbol space="ram" offset="0x1003c" name="invoke_twice"/>
+<symbol space="ram" offset="0x1005c" name="get_slot"/>
+<symbol space="ram" offset="0x10080" name="invoke_record"/>
+</binaryimage>
+<script>
+<com>parse line extern uint1 invoke(uint4 (*callback)(void));</com>
+<com>parse line extern void publish(uint4 (*callback)(void));</com>
+<com>parse line extern uint1 invoke_slot(void);</com>
+<com>map address r0x20000 uint4 (*slot)(void)</com>
+<com>map address r0x10038 uint4 (**slot_address)(void)</com>
+<com>map address r0x10068 uint4 (**slot_address2)(void)</com>
+<com>lo fu invoke</com><com>decompile</com><com>print C</com>
+<com>lo fu publish</com><com>decompile</com><com>print C</com>
+<com>lo fu invoke_slot</com><com>decompile</com><com>print C</com>
+<com>parse line extern uint4 invoke_twice(void);</com>
+<com>parse line extern uint4 (*get_slot(void))(void);</com>
+<com>parse line struct Callbacks { uint4 (*run)(void); int4 (*table[2])(int2,uint4 *); void (*notify)(int4,...); int4 (*nested)(void (*)(int4)); int4 (*(*factory)(int4))(int2); };</com>
+<com>parse line extern uint1 invoke_record(Callbacks *state);</com>
+<com>lo fu invoke_twice</com><com>decompile</com><com>print C</com>
+<com>lo fu get_slot</com><com>decompile</com><com>print C</com>
+<com>option structdefs on</com>
+<com>lo fu invoke_record</com><com>decompile</com><com>print C</com>
+<com>option ctypes on</com>
+<com>lo fu invoke</com><com>decompile</com><com>print C</com>
+<com>lo fu publish</com><com>decompile</com><com>print C</com>
+<com>lo fu invoke_twice</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="DECLARED-CALLBACK-C #1: a parameter retains its return and void input list" min="1" max="1">uint1 invoke\(uint4 \(\*callback\)\(void\)\)</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #2: publishing a callback keeps its callable parameter type" min="1" max="1">void publish\(uint4 \(\*callback\)\(void\)\)</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #3: parameter dispatch still truncates the callback result" min="1" max="1">return \(uint1\)\(\*callback\)\(\);</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #4: dispatch loads the published callback slot" min="1" max="1">v1 = \*slot_address;</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #5: a function type is never printed as a byte pointer" min="0" max="0">undefined1 \*callback</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #6: a callback surviving a call has a callable local type" min="1" max="1">uint4 \(\*v2\)\(void\);</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #7: a returned callback has its own parameter suffix" min="1" max="1">uint4 \(\* get_slot\(void\)\)\(void\)</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #8: callback arrays preserve parameter types" min="1" max="1">int4 \(\*table\[2\]\)\(int2,uint4 \*\);</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #9: variadic callback fields retain ellipsis" min="1" max="1">void \(\*notify\)\(int4,\.\.\.\);</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #10: callback parameters are recursive abstract declarators" min="1" max="1">int4 \(\*nested\)\(void \(\*\)\(int4\)\);</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #11: a callback returning a callback preserves both signatures" min="1" max="1">int4 \(\*\(\*factory\)\(int4\)\)\(int2\);</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #12: ctypes spells the callback return as a target C scalar" min="1" max="1">unsigned char invoke\(unsigned int \(\*callback\)\(void\)\)</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #13: ctypes keeps the publication parameter callable" min="1" max="1">void publish\(unsigned int \(\*callback\)\(void\)\)</stringmatch>
+<stringmatch name="DECLARED-CALLBACK-C #14: ctypes keeps the saved callback local callable" min="1" max="1">unsigned int \(\*v2\)\(void\);</stringmatch>
+</decompilertest>

@@ -104,9 +104,8 @@ impl TypeSpeller for CSpeller {
     /// The stack is built base-up exactly as `buildTypeStack`; pointer modifiers
     /// go on the front (`*`), array modifiers on the tail (`[N]`), and a `*`
     /// front nested inside an array tail is parenthesised -- the precedence the
-    /// RPN `ptr_expr`/`array_expr` tokens encode. `CDeclarator::postfix` is generic
-    /// enough for function suffixes, but Datatype traversal currently supplies
-    /// pointer and array modifiers only.
+    /// RPN `ptr_expr`/`array_expr` tokens encode. Stored code prototypes supply
+    /// function suffixes through the same `CDeclarator::postfix` grouping rule.
     fn declarator(&self, cx: &SpellCtx, ct: &Rc<Datatype>) -> (String, String) {
         // buildTypeStack: walk to the base (named) type, recording the modifiers.
         let mut stack: Vec<Rc<Datatype>> = Vec::new();
@@ -119,6 +118,10 @@ impl TypeSpeller for CSpeller {
             let next = match cur.get_metatype() {
                 type_metatype::TYPE_PTR => cur.get_ptr_to(),
                 type_metatype::TYPE_ARRAY => cur.get_array_base(),
+                type_metatype::TYPE_CODE => cur
+                    .get_code_prototype()
+                    .filter(|proto| proto.has_store())
+                    .and_then(|proto| proto.get_output_type().cloned()),
                 _ => None, // other anonymous type: stop
             };
             match next {
@@ -163,6 +166,28 @@ impl TypeSpeller for CSpeller {
                     });
                     decl.postfix(&format!("[{n}]"));
                 }
+                type_metatype::TYPE_CODE => {
+                    let proto = ct_mod
+                        .get_code_prototype()
+                        .expect("code modifier prototype");
+                    let mut params = Vec::new();
+                    for i in 0..proto.num_params() {
+                        let ty = proto.get_param(i).and_then(|p| p.get_type());
+                        let text = ty
+                            .map(|ty| {
+                                let (front, back) = self.declarator(cx, ty);
+                                format!("{front}{back}")
+                            })
+                            .unwrap_or_else(|| "undefined1".to_string());
+                        params.push(text);
+                    }
+                    if proto.is_dotdotdot() {
+                        params.push("...".to_string());
+                    } else if params.is_empty() {
+                        params.push("void".to_string());
+                    }
+                    decl.postfix(&format!("({})", params.join(",")));
+                }
                 _ => {}
             }
         }
@@ -192,7 +217,7 @@ impl TypeSpeller for CSpeller {
             // as `push_cast_type` does for a `(char *)` cast. `declarator` walks
             // the modifier chain to the named base and lays out both halves; a
             // pointer to an array keeps its `)[N]` suffix for after the name.
-            type_metatype::TYPE_PTR => self.declarator(cx, t),
+            type_metatype::TYPE_PTR | type_metatype::TYPE_CODE => self.declarator(cx, t),
             _ => (self.anonymous(t), String::new()),
         }
     }
@@ -256,8 +281,8 @@ mod tests {
     }
 
     /// The generic helper must distinguish every adjacent pointer/postfix
-    /// ordering. Datatype traversal currently supplies only array postfixes;
-    /// synthetic function suffixes here fence the helper's grouping rule. The
+    /// ordering. Synthetic function suffixes here fence the helper's grouping rule
+    /// independently of prototype storage. The
     /// right-hand strings are declarations accepted by a C compiler.
     #[test]
     fn pointer_array_and_function_precedence_table() {
