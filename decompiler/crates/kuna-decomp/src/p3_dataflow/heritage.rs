@@ -860,6 +860,15 @@ pub struct Heritage {
     /// (kuna `indexaliasguard global`) Each range `guard_global_stores` saw (space
     /// index, first and one past the last byte) and whether it was guarded.
     global_store_ranges: Vec<(int4, u64, u64, bool)>,
+    /// (kuna `indexaliasguard global`) The global LOAD guard `COPY`s built in
+    /// this pass.
+    global_load_guards: usize,
+    /// (kuna `indexaliasguard global`) This pass's `LOAD`s from one space, keyed
+    /// by the space's index.
+    global_loads: Option<(int4, Vec<(crate::context::OpId, Option<(u64, u64)>)>)>,
+    /// (kuna `indexaliasguard global`) The global ranges guarded in this pass,
+    /// as `(space, first byte, last byte)`.
+    global_load_ranges: Vec<(Rc<AddrSpace>, u64, u64)>,
 }
 
 impl Heritage {
@@ -887,6 +896,9 @@ impl Heritage {
             global_store_guards: 0,
             global_stores: None,
             global_store_ranges: Vec::new(),
+            global_load_guards: 0,
+            global_loads: None,
+            global_load_ranges: Vec::new(),
         }
     }
 
@@ -1441,9 +1453,11 @@ impl Heritage {
             }
         }
 
+        let mut partial_write = false;
         for slot in 0..write.len() {
             let vn = write[slot];
             if fd.vbank().get(vn).expect("guard: stale write vn").get_size() < size {
+                partial_write = true;
                 let newvn = self.normalize_write_size(fd, vn, addr, size);
                 write[slot] = newvn;
                 fd.vbank_mut().get_mut(newvn).expect("guard: new write vn").set_active_heritage();
@@ -1524,6 +1538,13 @@ impl Heritage {
                     self.guard_stores(fd, addr, size, write, level < LEVEL_FULL);
                 } else if level == LEVEL_GLOBAL && (fl & varnode_flags::readonly) == 0 {
                     self.guard_global_stores(fd, fl, addr, size, write);
+                }
+                if level >= LEVEL_GLOBAL
+                    && !partial_write
+                    && (fl & varnode_flags::persist) != 0
+                    && (fl & varnode_flags::readonly) == 0
+                {
+                    self.guard_global_loads(fd, addr, size, write);
                 }
                 self.guard_loads(fd, fl, addr, size, write);
             }
@@ -2746,6 +2767,76 @@ impl Heritage {
             kept.push(guard);
         }
         self.load_guard = kept;
+    }
+
+    /// (kuna `indexaliasguard global`) The global arm of `guardLoads`: an
+    /// `addrforce` COPY read of a global range in front of each `LOAD` from the
+    /// range's space that may read it, so the writes that reach the `LOAD` keep
+    /// a reader.  A range with fewer than two writes other than `INDIRECT`s is
+    /// skipped (its one write reaches the return guard), and so is one written
+    /// in a smaller piece (the caller skips it), whose kept piece would print as
+    /// a store of the whole range.
+    fn guard_global_loads(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        addr: &Address,
+        size: int4,
+        write: &[crate::context::VarnodeId],
+    ) {
+        use crate::kuna_indexaliasguard::{loads_from, GLOBAL_LOAD_BUDGET};
+        use kuna_num::opcodes::OpCode;
+
+        let writes = write
+            .iter()
+            .filter(|&&w| {
+                fd.vbank()
+                    .get(w)
+                    .and_then(|v| v.get_def())
+                    .and_then(|d| fd.obank().get(d))
+                    .is_some_and(|d| d.code() != OpCode::CPUI_INDIRECT)
+            })
+            .count();
+        if writes < 2 {
+            return;
+        }
+        let spc = addr.get_space().expect("guard_global_loads: addr space").clone();
+        let index = spc.get_index();
+        if self.global_loads.as_ref().map(|c| c.0) != Some(index) {
+            self.global_loads = Some((index, loads_from(fd, &spc, store_space_from_const)));
+        }
+        let lo = addr.get_offset();
+        let hi = lo.wrapping_add(size as u64);
+        let loads: Vec<crate::context::OpId> = self
+            .global_loads
+            .as_ref()
+            .map(|c| {
+                c.1.iter()
+                    .filter(|(_, bytes)| bytes.is_none_or(|(a, b)| a < hi && lo < b))
+                    .map(|&(op, _)| op)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if loads.is_empty() || self.global_load_guards + loads.len() > GLOBAL_LOAD_BUDGET {
+            return;
+        }
+        self.global_load_guards += loads.len();
+        for op in loads {
+            let op_addr = fd.obank().get(op).expect("guard_global_loads: live LOAD").get_addr().clone();
+            let copyop = fd.new_op(1, op_addr);
+            let vn = fd.new_varnode_out(size, addr, copyop).expect("guard_global_loads: COPY out");
+            {
+                let v = fd.vbank_mut().get_mut(vn).expect("guard_global_loads: COPY out vn");
+                v.set_active_heritage();
+                v.set_addr_force();
+            }
+            fd.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
+            let invn = fd.new_varnode(size, addr, None);
+            fd.vbank_mut().get_mut(invn).expect("guard_global_loads: COPY in vn").set_active_heritage();
+            let _ = fd.op_set_input(copyop, invn, 0);
+            fd.op_insert_before(copyop, op);
+            self.load_copy_ops.push(copyop);
+        }
+        self.global_load_ranges.push((spc, lo, hi.wrapping_sub(1)));
     }
 
     /// Remove deprecated CPUI_MULTIEQUAL, CPUI_INDIRECT, or CPUI_COPY ops,
@@ -4894,6 +4985,9 @@ impl Heritage {
                     guard.maximum_offset,
                 );
             }
+            for (spc, first, last) in &self.global_load_ranges {
+                load_ranges.insert_range(Rc::clone(spc), *first, *last);
+            }
             // Mark everything on the boundary as address forced to prevent
             // dead-code removal.
             for &op in &forces {
@@ -4962,6 +5056,9 @@ impl Heritage {
         self.protostack_alias = None;
         self.store_frame_unresolved = None;
         self.global_stores = None;
+        self.global_load_guards = 0;
+        self.global_loads = None;
+        self.global_load_ranges.clear();
         if self.maxdepth == -1 {
             // Has a restructure been forced
             self.build_adt(fd);

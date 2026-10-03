@@ -774,6 +774,7 @@ impl Rule for RuleMultiCollapse {
                 }
                 Some(def)
                     if !nofunc
+                        && !crate::p3_dataflow::kuna_indexaliasguard::keeps_forced_join(data, outvn, def, copyr)
                         && crate::expression::functional_equality(
                             def,
                             copyr,
@@ -1827,7 +1828,10 @@ impl Rule for RulePropagateCopy {
                 continue;
             }
             let is_marker = data.obank().get(op).expect("RulePropagateCopy: stale op").is_marker();
-            if !is_marker && crate::p3_dataflow::kuna_indexaliasguard::keeps_store_before_load(data, op, vn) {
+            if !is_marker
+                && (crate::p3_dataflow::kuna_indexaliasguard::keeps_store_before_load(data, op, vn)
+                    || crate::p3_dataflow::kuna_indexaliasguard::keeps_forced_self_copy(data, op, vn))
+            {
                 continue;
             }
             if is_marker {
