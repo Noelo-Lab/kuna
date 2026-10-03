@@ -4262,9 +4262,14 @@ ArmPCRelImmed12: reloff		is U23=0 & immed & rotate
 
 :mrs^COND Rd,cpsr 		is $(AMODE) & ARMcond=1 & COND & c2027=16 & c1619=15 & Rd & offset_12=0 & cpsr
 {
-# TODO: GE bits have not been included
   build COND;
-  Rd = zext( (NG<<4) | (ZR<<3) | (CY<<2) | (OV<<1) | (Q) ) << 27;
+  local control:4 = readCPSRControl();
+@if defined(VERSION_6)
+  control = (control & 0x07f0ffff) | (zext(GE1) << 16) | (zext(GE2) << 17) | (zext(GE3) << 18) | (zext(GE4) << 19);
+@else
+  control = control & 0x07ffffff;
+@endif
+  Rd = control | (zext( (NG<<4) | (ZR<<3) | (CY<<2) | (OV<<1) | (Q) ) << 27);
 }
 
 :mrs^COND Rd,spsr 		is $(AMODE) & ARMcond=1 & COND & c2027=20 & c1619=15 & Rd & offset_12=0 & spsr
@@ -4296,20 +4301,59 @@ ArmPCRelImmed12: reloff		is U23=0 & immed & rotate
   build cpsrmask;
   build shift1;
   cpsr = (cpsr& ~cpsrmask) | (shift1 & cpsrmask);
-}
-
-:msr^COND cpsrmask,rm 		is $(AMODE) & ARMcond=1 & COND & c2027=18 & cpsrmask & c1215=15 & c0811=0 & c0407=0 & rm
-{
-# TODO: GE bits have not been included
-  build COND;
-  build cpsrmask;
-  cpsr = (cpsr& ~cpsrmask) | (rm & cpsrmask);
-  local tmp = cpsr >> 27 & 0x1f;
+  local controlMask:4 = cpsrmask & 0x07ffffff;
+@if defined(VERSION_6)
+  controlMask = controlMask & 0x07f0ffff;
+@endif
+  if (controlMask == 0) goto <ge_fields>;
+  writeCPSRControl(shift1 & controlMask, controlMask);
+<ge_fields>
+@if defined(VERSION_6)
+  if ((cpsrmask & 0x000f0000) == 0) goto <flags_only>;
+  GE1 = (shift1 & 0x00010000) != 0;
+  GE2 = (shift1 & 0x00020000) != 0;
+  GE3 = (shift1 & 0x00040000) != 0;
+  GE4 = (shift1 & 0x00080000) != 0;
+<flags_only>
+@endif
+  if ((cpsrmask & 0xf8000000) == 0) goto <done>;
+  local tmp = shift1 >> 27 & 0x1f;
   Q  = ((tmp     ) & 0x1) != 0;
   OV = ((tmp >> 1) & 0x1) != 0;
   CY = ((tmp >> 2) & 0x1) != 0;
   ZR = ((tmp >> 3) & 0x1) != 0;
   NG = ((tmp >> 4) & 0x1) != 0;
+<done>
+}
+
+:msr^COND cpsrmask,rm 		is $(AMODE) & ARMcond=1 & COND & c2027=18 & cpsrmask & c1215=15 & c0811=0 & c0407=0 & rm
+{
+  build COND;
+  build cpsrmask;
+  cpsr = (cpsr& ~cpsrmask) | (rm & cpsrmask);
+  local controlMask:4 = cpsrmask & 0x07ffffff;
+@if defined(VERSION_6)
+  controlMask = controlMask & 0x07f0ffff;
+@endif
+  if (controlMask == 0) goto <ge_fields>;
+  writeCPSRControl(rm & controlMask, controlMask);
+<ge_fields>
+@if defined(VERSION_6)
+  if ((cpsrmask & 0x000f0000) == 0) goto <flags_only>;
+  GE1 = (rm & 0x00010000) != 0;
+  GE2 = (rm & 0x00020000) != 0;
+  GE3 = (rm & 0x00040000) != 0;
+  GE4 = (rm & 0x00080000) != 0;
+<flags_only>
+@endif
+  if ((cpsrmask & 0xf8000000) == 0) goto <done>;
+  local tmp = rm >> 27 & 0x1f;
+  Q  = ((tmp     ) & 0x1) != 0;
+  OV = ((tmp >> 1) & 0x1) != 0;
+  CY = ((tmp >> 2) & 0x1) != 0;
+  ZR = ((tmp >> 3) & 0x1) != 0;
+  NG = ((tmp >> 4) & 0x1) != 0;
+<done>
 }
 
 :msr^COND spsrmask,shift1 	is $(AMODE) & ARMcond=1 & COND & c2027=54 & spsrmask & c1215=15 & c2627=0 & shift1
