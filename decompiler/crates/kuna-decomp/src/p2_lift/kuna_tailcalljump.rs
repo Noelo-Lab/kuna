@@ -129,9 +129,10 @@ impl TailCallJumpOption {
 ///     (self-tail-recursion is left as an ordinary back-edge to keep the CFG
 ///     surgery narrow).
 ///
-/// A direct branch to another function's *entry* is, by definition, a tail call;
-/// ordinary intraprocedural jumps target mid-function addresses (no function
-/// entry there) and so never match.
+/// Without an asserted extent, a direct branch to another function's *entry* is
+/// a tail call; ordinary intraprocedural jumps target mid-function addresses
+/// (no function entry there) and so never match. An explicit outer extent takes
+/// precedence over an independently discovered interior entry.
 ///
 /// `dest_is_known_function` / `dest_is_self` are the already-resolved
 /// symbol-table queries (the v850 register-name STUB convention; `decompile_drive`
