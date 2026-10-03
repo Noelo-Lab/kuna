@@ -113,6 +113,11 @@ impl ContextPainter {
         self.paints.is_empty()
     }
 
+    /// Whether any collected paint sets the context variable `var`.
+    pub(super) fn paints(&self, var: &str) -> bool {
+        self.paints.iter().any(|paint| paint.var == var)
+    }
+
     /// Paint every collected decode-mode context value into the engine's
     /// `ContextDatabase`, BEFORE the walk decodes anything (the timing ARM Thumb /
     /// MIPS16 mode requires). Mirrors `commit_analysis_output` step 6: a `None`

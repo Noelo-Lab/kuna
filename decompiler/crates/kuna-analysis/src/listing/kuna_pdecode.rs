@@ -1207,7 +1207,14 @@ fn reconcile(
     }
 
     Ok((
-        WalkState { insns, refs_to, refs_from, funcs, stack_callback_refs: evidence.into_refs() },
+        WalkState {
+            insns,
+            refs_to,
+            refs_from,
+            funcs,
+            stack_callback_refs: evidence.into_refs(),
+            mode_runs: Vec::new(),
+        },
         shard_bytes,
     ))
 }

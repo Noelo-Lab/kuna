@@ -1965,7 +1965,8 @@ mod tests {
         // callee's 64-bit result returns all eight bytes
         // and kuna-syscallregs-{arm,aarch64,riscv,mips,ppc,cortexm} / an inline
         // system call writes its result register (GH-812)
-        assert_eq!(count, 387, "corpus file count drifted");
+        // and kuna-flowmode / a blx selects Thumb for its own target only
+        assert_eq!(count, 388, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

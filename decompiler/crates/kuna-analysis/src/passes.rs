@@ -1032,6 +1032,15 @@ pub fn run_listing_consumers(
         fast_out.entries.dedup();
         out.push(("fast_funcdisc", fast_out));
     }
+    // (kuna `flowmode`) The proven ARM code whose mode the context database
+    // disagrees with after the walk. The commit paints it after every other
+    // decode-mode paint, so those still reach all other code as before.
+    let mode_paints = listing.decode_mode_paints();
+    if !mode_paints.is_empty() {
+        let mut mode_out = AnalysisOutput::default();
+        mode_out.context_paints = mode_paints;
+        out.push(("flowmode", mode_out));
+    }
     sanitize_all_names(&mut out);
     out
 }

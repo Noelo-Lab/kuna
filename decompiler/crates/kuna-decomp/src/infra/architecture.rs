@@ -1470,6 +1470,13 @@ pub struct Architecture {
     /// never claimed as a function; the call REFERENCE is filed either way. Off
     /// restores the previous (husk-producing) discovery set exactly.
     pub analysis_ppclocalentry: bool,
+    /// (kuna) Paint the ARM mode of code a stripped image proves through control
+    /// flow where the walk's own `blx` writes left the other mode (`flowmode`);
+    /// default **off**, which leaves the context database as the walk left it.
+    pub analysis_flowmode: bool,
+    /// (kuna) `flowmode aftercall`: the proof also continues after an
+    /// unconditional call whose callee it proves to return; default **off**.
+    pub analysis_flowmode_aftercall: bool,
     /// (kuna) Fold a 32-bit PIC binary's base register into the cross-reference
     /// index (`picbase`); default **on**. In position-independent i386 code the
     /// address of a string, a global or a function pointer is never a constant in
@@ -2630,6 +2637,8 @@ impl Architecture {
             analysis_declaredlibcproto: false,
             analysis_unmappedentry: false,
             analysis_ppclocalentry: false,
+            analysis_flowmode: false,
+            analysis_flowmode_aftercall: false,
             analysis_picbase: false,
             analysis_entrymainproto: false,
             analysis_machomain: false,
@@ -2955,6 +2964,10 @@ impl Architecture {
         // ever withholds the duplicate second entry over a function whose global
         // entry is already a seed, so no body can be lost).
         self.analysis_ppclocalentry = true;
+        // (kuna) ARM flow-proven decode-mode paints -- default-OFF (GH-780): the
+        // proof trusts a fall-through the compiler may leave unreachable.
+        self.analysis_flowmode = false;
+        self.analysis_flowmode_aftercall = false;
         // (kuna) PIC base-register folding in the xref index -- default-ON. It is
         // a query surface only (no p-code, no emitted C), so no parity gate can
         // observe it; it only ever ADDS an edge, and only one it can prove.
