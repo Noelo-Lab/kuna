@@ -681,6 +681,74 @@ fn extern_ref_resolves_and_splits_name_from_label() {
     );
 }
 
+/// Java's real import-slot shape: the `<externrefsymbol>` is mapped with ONE
+/// byte of storage and resolves to the slot itself, where getExternalRef
+/// serves the function with a two-byte mapping.  The slot still covers a
+/// whole-pointer read and carries `externref` (what ActionDeindirect keys
+/// on), and the function, declared without a prototype, is typed as code.
+#[test]
+fn extern_ref_slot_covers_a_pointer_read() {
+    let m = manager();
+    let types = types_with_core();
+    let slot = Address::new(ram(&m), 0x5000);
+    let mut ptr_doc = Vec::new();
+    {
+        let mut e = PackedEncode::new(&mut ptr_doc);
+        e.open_element(&crate::prettyprint::ids::ELEM_TYPE);
+        e.write_unsigned_integer(&ATTRIB_ID, 0);
+        e.open_element(&ELEM_MAPSYM);
+        e.open_element(&ELEM_EXTERNREFSYMBOL);
+        e.write_string(&ATTRIB_NAME, b"CreateThread_exref");
+        slot.encode(&mut e).unwrap();
+        e.close_element(&ELEM_EXTERNREFSYMBOL);
+        slot.encode_sized(&mut e, 1).unwrap();
+        e.open_element(&ELEM_RANGELIST);
+        e.close_element(&ELEM_RANGELIST);
+        e.close_element(&ELEM_MAPSYM);
+        e.close_element(&crate::prettyprint::ids::ELEM_TYPE);
+    }
+    let mut fn_doc = Vec::new();
+    {
+        let mut e = PackedEncode::new(&mut fn_doc);
+        e.open_element(&crate::prettyprint::ids::ELEM_TYPE);
+        e.write_unsigned_integer(&ATTRIB_ID, 0);
+        e.open_element(&ELEM_MAPSYM);
+        e.open_element(&crate::funcdata_encode::ELEM_FUNCTION);
+        e.write_unsigned_integer(&ATTRIB_ID, 0x99);
+        e.write_string(&ATTRIB_NAME, b"CreateThread");
+        e.write_signed_integer(&ATTRIB_SIZE, 2);
+        slot.encode(&mut e).unwrap();
+        e.close_element(&crate::funcdata_encode::ELEM_FUNCTION);
+        slot.encode_sized(&mut e, 2).unwrap();
+        e.open_element(&ELEM_RANGELIST);
+        e.close_element(&ELEM_RANGELIST);
+        e.close_element(&ELEM_MAPSYM);
+        e.close_element(&crate::prettyprint::ids::ELEM_TYPE);
+    }
+    let mut fetch = MockFetch::default();
+    fetch.mapped.insert(0x5000, ptr_doc);
+    fetch.external.insert(0x5000, fn_doc);
+    let scope = scope_over(&m, types, fetch);
+
+    let snap = scope.query_snapshot(&slot);
+    let invalid = Address::new_invalid();
+    assert_ne!(
+        snap.query_properties(&slot, 8, &invalid) & varnode_flags::externref,
+        0,
+        "an 8-byte read of the slot is an external reference"
+    );
+    let (nm, _, _) = snap
+        .name_for_varnode(&slot, 8, &invalid)
+        .expect("the slot symbol covers the whole pointer");
+    assert_eq!(nm, "CreateThread_exref");
+    let facts = scope.function_at(&slot).expect("external function resolved");
+    assert_eq!(facts.name, "CreateThread");
+    let (ty, _) = snap
+        .sized_type_geometry(&slot, 1, &invalid)
+        .expect("the function symbol is typed");
+    assert_eq!(ty.get_metatype(), type_metatype::TYPE_CODE);
+}
+
 /// getTrackedRegisters answers cache per address until `clear()` (one wire
 /// ask per flush epoch), and decode failures negative-cache with ONE warning.
 #[test]

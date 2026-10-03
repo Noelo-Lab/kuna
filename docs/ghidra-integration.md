@@ -256,7 +256,9 @@ relocated the lazy model to the seams the kuna pipeline actually reads
   (`resolveExternalRefFunction`): an `<externrefsymbol>` answer keeps its resolve
   address and fires getExternalRef at the POINTER address; the returned function
   materializes at its own entry (name/prototype/noreturn), and the pointer symbol
-  itself types as pointer-to-code.
+  itself types as pointer-to-code. Java maps the slot with one byte of storage;
+  kuna maps the whole pointer and flags it `externref`, as upstream does, so a
+  call through a PE import slot prints as the import.
 - **Tracked registers**: the pspec `<tracked_set>` decodes as the static default,
   and `ContextGhidra` is wired for real — decompileAt issues getTrackedRegisters
   at the entry (cached until flushNative) and merges the host's values OVER the

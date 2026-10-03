@@ -658,7 +658,14 @@ Four front-ends drive one engine assembly:
   (`ScopeGhidra::resolveExternalRefFunction`): the `<externrefsymbol>` answer
   keeps its resolve address, getExternalRef fires at the POINTER address, the
   returned function materializes at its own entry, and the pointer symbol
-  types as pointer-to-code.  A function answer's RAW name and its `label` stay
+  types as pointer-to-code.  The pointer symbol carries `externref` and maps
+  the whole pointer, not the single byte of storage Java sends for it
+  (`Scope::addMap` sizes an entry by the symbol's bytes consumed), so a read of
+  the slot is an external reference to `ActionDeindirect` and a call through a
+  PE import slot prints as the import.  A function answer without a declared
+  prototype is still typed as code (`FunctionSymbol::buildType`), which is what
+  lets `ActionConstantPtr` bind a constant pointer to it and print the
+  function's name.  A function answer's RAW name and its `label` stay
   SPLIT (the upstream `Funcdata` name/displayName pair): the raw name is the
   Funcdata identity `HighFunction.decode`'s name echo compares against, the
   label only ever prints (`Funcdata::set_display_name`).  The host's

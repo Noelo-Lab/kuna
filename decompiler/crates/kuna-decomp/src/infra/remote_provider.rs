@@ -230,7 +230,7 @@ pub struct RemoteSymbolRecord {
     pub name: String,
     /// Display name (`label` when the host sent a simplified form).
     pub display_name: String,
-    /// `varnode_flags` subset: typelock/namelock/readonly/volatil.
+    /// `varnode_flags` subset: typelock/namelock/readonly/volatil/externref.
     pub flags: uint4,
     /// Symbol category (-1 none, 0 = function parameter).
     pub category: i64,
@@ -514,7 +514,9 @@ pub fn decode_mapsym(
             symbol_id: 0,
             display_name: name.clone(),
             name,
-            flags: varnode_flags::typelock | varnode_flags::readonly,
+            // ExternRefSymbol::buildNameType: the externref flag is what lets
+            // ActionDeindirect resolve a call through the pointer.
+            flags: varnode_flags::externref | varnode_flags::typelock,
             category: -1,
             cat_index: 0,
             hidden_return: false,
@@ -581,6 +583,16 @@ pub fn decode_mapsym(
         });
     }
     decoder.close_element(elem_id)?;
+    // Scope::addMap sizes an entry by the symbol's bytes consumed, not by the
+    // wire storage: Java maps an import slot as one byte, yet it is read as a
+    // whole pointer.
+    if rec.extern_ref.is_some() {
+        if let Some(size) = rec.dtype.as_ref().map(|t| t.get_size()) {
+            for e in rec.entries.iter_mut().filter(|e| !e.addr.is_invalid()) {
+                e.size = size;
+            }
+        }
+    }
     Ok(rec)
 }
 
@@ -1482,6 +1494,12 @@ impl RemoteScope {
                         },
                     );
                 }
+            }
+            // FunctionSymbol::buildType: a function without a declared prototype
+            // is still typed as code, which is what a constant pointer to it binds
+            // to (ActionConstantPtr -> spacebaseConstant).
+            if symbol_type.is_none() {
+                symbol_type = self.types.get_type_code().ok();
             }
         }
         // Materialize the mapped entries as GlobalEntry records.
