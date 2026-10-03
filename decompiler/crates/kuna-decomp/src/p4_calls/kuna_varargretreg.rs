@@ -17,6 +17,8 @@
 //! any FPR does: a count of zero set in the call's block refuses the register,
 //! and a count of `n` makes the first `n` floating-point argument registers
 //! arguments whatever their value, a result of another call included.
+//! [`counted_float_entry`] names such a register for heritage when the range
+//! being guarded is the whole `xmm` register or a lane of it.
 use crate::{
     context::OpId,
     dtype::{type_class, type_metatype},

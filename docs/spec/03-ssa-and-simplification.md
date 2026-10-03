@@ -227,6 +227,32 @@ call is variadic and its model passes a variadic argument there (chapter 04,
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargretreg.rs
 (argument_in_own_output)`); the range still gets no INDIRECT.
 
+**A counted floating-point register whose range is not the register.** On
+x86-64 SysV a variadic caller puts the number of vector registers it filled in
+`al` (chapter 04), and each of those carries an 8-byte `double`. The heritaged
+range is often not that 8-byte `xmmN_Qa`. SLEIGH models `pxor`, `movq` from a
+general register and `movdqa` as a write of the whole 16-byte register, so gcc
+-O2's `pxor %xmm0,%xmm0; cvtsi2sd %edi,%xmm0` and gcc -O0's `movq %rax,%xmm0`
+leave a 16-byte range: the input guard finds no entry that contains it, and the
+argument was dropped (`printf("%f\n")`, `vr(k)`). SLEIGH models `movaps` as
+four 4-byte lane copies, so clang's `movaps` swap of two doubles refines the
+range into 4-byte lanes: the low lane is a justified piece of the entry, and the
+argument was registered at 4 bytes (`vr(k,y,SUB84(x,0))`).
+`heritage.rs (Heritage::guard_counted_float_input)` handles both for a register
+that `decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargretreg.rs
+(counted_float_entry)` names: one of the first `al` floating-point entries of a
+variadic call's model that the range overlaps without being it. A range that
+contains the register passes its low 8 bytes through a SUBPIECE, as
+`Heritage::guard_call_overlapping_input` does under `calloverlap`. A range that
+starts the register and is narrower than it passes the PIECE of a read of
+itself and of the ranges of this pass that cover the rest of the register (the
+PIECE and any SUBPIECE that trims the last range write temporaries, so no new
+register write enters the heritage), and the 4-byte trial is not registered.
+When the rest is not covered by ranges of this pass, or a trial already overlaps
+the register, the ordinary guard runs. Either way the trial is 8 bytes at a
+counted register, so chapter 04 marks it active. A register past the count, or
+a call whose block states no count, is unchanged.
+
 **Narrowing the killed set to the callee's own writes.** A `<killedbycall>`
 block in a compiler spec is a statement about the *convention*, not about any
 particular callee, and there are callees the convention does not describe. The
