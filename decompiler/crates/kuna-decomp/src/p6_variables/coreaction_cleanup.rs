@@ -1523,7 +1523,9 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId) -> bo
     if (data.obank().get(def).map(|o| o.is_call()).unwrap_or(false) || opc == OpCode::CPUI_LOAD)
         && has_cover
     {
-        for callop in crate::kuna_syscallregs::memory_calls(data) {
+        for callop in crate::kuna_syscallregs::memory_calls(data).into_iter()
+            .chain(crate::kuna_x64syscall::memory_calls(data))
+        {
             let (blk, point) = op_cover_pair(data, callop);
             if data.vbank().get(vn).and_then(|v| v.cover())
                 .is_some_and(|c| c.contain(blk, point, 2))

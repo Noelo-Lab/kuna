@@ -325,10 +325,10 @@ pub(crate) fn print_chain(data: &Funcdata, use_op: OpId) -> Option<Vec<OpId>> {
 /// exactly as it is in the binary — a `LOAD` of the pointer a call just returned
 /// is not a load the call was moved past.
 ///
-/// Only writes are asked about here, and only opcodes — the INDIRECT question is
-/// decided over the span to the use.  The module header measures what the two
-/// wider forms of this test would cost.  A chain that carries the call into the
-/// right-hand operand of `&&`/`||` declines before the span is looked at.
+/// Ordinary calls retain the write-only span rule. Recognized system calls also
+/// fence reads and reads of their INDIRECT outputs through the final statement:
+/// a later buffer read must not evaluate before a folded kernel call. A chain
+/// that carries the call into the right-hand operand of `&&`/`||` declines first.
 fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool {
     let Some(chain) = print_chain(data, use_op) else {
         return false;
@@ -353,9 +353,15 @@ fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool 
     if pi <= ci {
         return false;
     }
-    !ops[ci + 1..pi]
+    let syscall = crate::kuna_x64syscall::is_memory_call(data, call)
+        || crate::kuna_syscallregs::is_memory_call(data, call);
+    !ops[ci + 1..=pi]
         .iter()
-        .any(|&mid| !chain.contains(&mid) && op_is_write_barrier(data, mid))
+        .any(|&mid| {
+            (syscall && op_reads_indirect_output_of(data, mid, call))
+                || (!chain.contains(&mid)
+                    && if syscall { op_is_barrier(data, mid) } else { op_is_write_barrier(data, mid) })
+        })
 }
 
 /// (kuna GH-684) Does the folded call's value reach the right-hand operand of an

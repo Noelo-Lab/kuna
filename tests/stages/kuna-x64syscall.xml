@@ -27,13 +27,14 @@
 
     Stage / sub-stage: P2 "flow-classification".  The P0 assertion
     `option x64syscall off|on|abi` decides what register effects the user-op
-    carries.
+    carries. The empty-call expectation also counts the new pointer witness.
 
-    Three functions, one per question the option answers:
+    Four functions: register recovery controls and a memory-order witness:
 
         kernel_call   the witness, all setup in the syscall's own block
         plain_add     the control, no SYSCALL at all
         split_setup   RDI is set two blocks back, RAX in the immediate preds
+        pointer_before saves *p before read() replaces it, then returns old * 5 + *p
 
     Pass 1 (`off`) reproduces the bug.  Pass 2 (`on`) takes only the registers
     the block provably sets up, so kernel_call is whole and split_setup keeps RAX
@@ -49,6 +50,10 @@
 <symbol space="ram" offset="0x100000" name="kernel_call"/>
 <symbol space="ram" offset="0x100030" name="plain_add"/>
 <symbol space="ram" offset="0x100060" name="split_setup"/>
+<bytechunk space="ram" offset="0x100100">
+f30f1efa4989f8448b0f31c0bf110000004c89c6ba040000000f05438d0489410300c3
+</bytechunk>
+<symbol space="ram" offset="0x100100" name="pointer_before"/>
 </binaryimage>
 <script>
   <com>option x64syscall off</com>
@@ -61,6 +66,9 @@
   <com>lo fu split_setup</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu pointer_before</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option x64syscall on</com>
   <com>lo fu kernel_call</com>
   <com>decompile</com>
@@ -69,6 +77,9 @@
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu split_setup</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pointer_before</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option x64syscall abi</com>
@@ -81,12 +92,18 @@
   <com>lo fu split_setup</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu pointer_before</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="x64syscall #1: with the option off the user-op reads nothing, so it prints with empty parens in both syscall-bearing functions -- the bug" min="2" max="2">syscall\(\);</stringmatch>
+<stringmatch name="x64syscall #1: with the option off the user-op reads nothing, so it prints with empty parens in both syscall-bearing functions -- the bug" min="3" max="3">syscall\(\);</stringmatch>
 <stringmatch name="x64syscall #2: and nothing redefines RAX, so kernel_call returns the RAX:RDX pair it was handed instead of a result" min="1" max="1">return v[0-9]+\._0_16_;</stringmatch>
 <stringmatch name="x64syscall #3: on, kernel_call recovers the number and all three arguments, and returns the syscall's own result" min="1" max="1">return syscall\(a[0-9]+,a[0-9]+,a[0-9]+,a[0-9]+\);</stringmatch>
 <stringmatch name="x64syscall #4: on, split_setup keeps RAX alone -- its RDI is set two blocks back, which the in-block walk does not claim" min="1" max="1">return syscall\(v[0-9]+\);</stringmatch>
 <stringmatch name="x64syscall #5: abi takes all six argument registers, recovering split_setup's RDI at the price of the ones nothing writes" min="1" max="1">return syscall\(v[0-9]+,a[0-9]+,a[0-9]+,a[0-9]+,v[0-9]+,a[0-9]+,a[0-9]+\);</stringmatch>
 <stringmatch name="x64syscall #6: the no-SYSCALL control is byte-identical in all three passes" min="3" max="3">return a[0-9]+ \+ a[0-9]+;</stringmatch>
+<stringmatch name="x64syscall #7: on and abi save the pointer value before the system call" min="2" max="2">v[0-9]+ = \*a[0-9]+;</stringmatch>
+<stringmatch name="x64syscall #8: on and abi combine the saved value with the reloaded buffer" min="2" max="2">return v[0-9]+ \* 5 \+ \*a[0-9]+;</stringmatch>
+<stringmatch name="x64syscall #9: off keeps the old pointer value motion" min="1" max="1">return \*a[0-9]+ \* 5 \+ \*a[0-9]+;</stringmatch>
 </decompilertest>

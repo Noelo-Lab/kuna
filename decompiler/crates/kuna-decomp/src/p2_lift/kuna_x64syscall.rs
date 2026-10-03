@@ -79,7 +79,7 @@
 
 use kuna_base::address::Address;
 use kuna_base::marshal::ElementId;
-use kuna_base::types::int4;
+use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
@@ -265,6 +265,14 @@ fn is_bare_syscall(data: &Funcdata, op: OpId) -> bool {
     if oth.code() != OpCode::CPUI_CALLOTHER || oth.num_input() != 1 || oth.get_out().is_some() {
         return false;
     }
+    is_syscall(data, op)
+}
+
+fn is_syscall(data: &Funcdata, op: OpId) -> bool {
+    let Some(oth) = data.obank().get(op) else { return false };
+    if oth.code() != OpCode::CPUI_CALLOTHER {
+        return false;
+    }
     let Some(index) = oth
         .get_in(0)
         .and_then(|v| data.vbank().get(v))
@@ -274,6 +282,64 @@ fn is_bare_syscall(data: &Funcdata, op: OpId) -> bool {
         return false;
     };
     u32::try_from(index).is_ok_and(|i| data.get_arch().x64_syscall_userops.contains(&i))
+}
+
+/// Enabled, uninjected x86-64 system calls with unknown memory effects.
+pub fn is_memory_call(data: &Funcdata, op: OpId) -> bool {
+    data.get_arch().x64_syscall.rewrites()
+        && data.obank().get(op).is_some_and(|o| {
+            !o.is_dead()
+                && o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_x64syscall != 0
+        })
+        && is_syscall(data, op)
+}
+
+/// Enabled, uninjected x86-64 system calls with unknown memory effects.
+pub fn memory_calls(data: &Funcdata) -> Vec<OpId> {
+    if !data.get_arch().x64_syscall.rewrites() || data.get_arch().x64_syscall_userops.is_empty() {
+        return Vec::new();
+    }
+    data.obank().iter_code(OpCode::CPUI_CALLOTHER)
+        .filter(|&op| is_memory_call(data, op))
+        .collect()
+}
+
+/// Preserve writable memory observed or replaced by enabled system calls.
+pub fn guard_memory(
+    data: &mut Funcdata,
+    flags: uint4,
+    addr: &Address,
+    size: int4,
+    write: &mut Vec<crate::context::VarnodeId>,
+) {
+    use crate::varnode::varnode_flags;
+    use kuna_base::space::spacetype;
+
+    if !data.get_arch().x64_syscall.rewrites()
+        || flags & varnode_flags::readonly != 0
+        || !addr.get_space().is_some_and(|s| {
+            s.get_type() == spacetype::IPTR_SPACEBASE
+                || data.get_arch().manage().get_default_data_space()
+                    .is_some_and(|ram| ram.get_index() == s.get_index())
+        })
+    {
+        return;
+    }
+    for op in memory_calls(data) {
+        let guard = data.new_indirect_op(op, addr, size, 0);
+        if let Some(input) = data.obank().get(guard).and_then(|o| o.get_in(0)) {
+            data.vbank_mut().get_mut(input)
+                .expect("syscall memory input").set_active_heritage();
+        }
+        if let Some(output) = data.obank().get(guard).and_then(|o| o.get_out()) {
+            let v = data.vbank_mut().get_mut(output).expect("syscall memory output");
+            v.set_active_heritage();
+            if flags & varnode_flags::addrtied != 0 {
+                v.set_addr_force();
+            }
+            write.push(output);
+        }
+    }
 }
 
 /// Give one matched `CALLOTHER` its ABI effects. Returns whether it changed.
@@ -296,6 +362,8 @@ fn rewrite(
         data.op_insert_input(op, vn, (i + 1) as int4)?;
     }
     data.new_varnode_out(REGISTER_SIZE, &abi.num, op)?;
+    data.obank_mut().get_mut(op).expect("rewritten syscall")
+        .set_additional_flag(crate::op::pcodeop_addlflags::kuna_x64syscall);
     Ok(true)
 }
 
