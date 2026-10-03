@@ -54,6 +54,19 @@ call's stack offset be read out of the data flow before the stack is in SSA
 will be, and leaving it on the op would put a spurious stack read in the CALL's
 argument list.
 
+**Join-space varnodes (kuna: split at the first piece's pass).** A varnode whose
+storage is several pieces lives in the join space and is split into its pieces
+before the ranges are collected (`heritage.rs (Heritage::process_joins)`): a free
+join read becomes a PIECE of its pieces, and a written or input join defines each
+piece with a SUBPIECE. Upstream splits a written join on the pass of its first
+(most significant) piece's space. For a struct parameter split between registers
+and the stack on a little-endian target, that piece is the stack word, so the
+split waited for the stack's pass, after the registers were already heritaged:
+every read of the register pieces had become a bare input register that no
+parameter accounts for. A copy of those pieces to memory was then dead to
+`ActionDeadCode`, and `use3(&s)` printed as `use3(&v1)` with only `v1.z = s.z`
+stored. kuna splits the join on the first pass that heritages any of its pieces.
+
 **Address-range worklists.** The unit of work is an address range, not a
 varnode. Two disjoint-cover maps drive each pass
 (`heritage.rs (LocationMap::add)`): `globaldisjoint` accumulates every range
