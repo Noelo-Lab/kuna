@@ -40,7 +40,7 @@
 //! `buildDefaultName` Varnode arm, `getSizedType`, `updateType`), the method
 //! takes the dependency as an explicit argument or returns a stub-noted result.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use kuna_base::address::{Address, RangeList};
@@ -1211,6 +1211,11 @@ pub struct Database {
     flagbase: PartMap<Address, uint4>,
     /// True if scope ids are built from hash of name (C++ `idByNameHash`).
     id_by_name_hash: bool,
+    /// (kuna) The scopes that ever mapped a function at each `(space, entry)`,
+    /// so [`Database::find_function_across_scopes`] visits those instead of
+    /// every scope (a demangled C++ image has one per class). Mappings erased
+    /// later stay listed; the lookup re-checks each scope.
+    function_scopes: HashMap<(usize, uintb), Vec<ScopeId>>,
 }
 
 impl Database {
@@ -1230,6 +1235,7 @@ impl Database {
             idmap: BTreeMap::new(),
             flagbase: PartMap::new(0), // C++ flagbase.defaultValue()=0
             id_by_name_hash: id_by_name,
+            function_scopes: HashMap::new(),
         }
     }
 
@@ -1832,6 +1838,12 @@ impl Database {
             .insert((initdata, sym_addrtied), addr.get_offset(), last_offset);
         let eref = EntryRef::Mapped { space_index, idx };
         self.symbols[sym].mapentry.push(eref);
+        if matches!(self.symbols[sym].kind, SymbolKind::Function { .. }) {
+            let scopes = self.function_scopes.entry((space_index, addr.get_offset())).or_default();
+            if !scopes.contains(&scope) {
+                scopes.push(scope);
+            }
+        }
         // wholeCount bookkeeping (database.cc:1894-1898).
         if Some(sz) == self.symbols[sym].dtype.as_ref().map(|t| t.get_size()) {
             self.symbols[sym].whole_count += 1;
@@ -2870,19 +2882,21 @@ impl Database {
     /// demangled `foo::Bar::baz` placed by `find_create_scope_from_symbol_name`,
     /// or any `::`-qualified loader symbol — is therefore invisible to the
     /// global-scope-only call resolver and renders `sub_<addr>`.  This searches the
-    /// global scope first (the common case), then every other scope.
+    /// global scope first (the common case), then the scopes that mapped a
+    /// function at `addr`, returning the first in scope order.
     pub fn find_function_across_scopes(&self, addr: &Address) -> Option<(SymbolId, ScopeId)> {
         if let Some(g) = self.get_global_scope() {
             if let Some(sid) = self.find_function(g, addr) {
                 return Some((sid, g));
             }
         }
-        for (scope, _) in self.scopes.iter() {
-            if let Some(sid) = self.find_function(scope, addr) {
-                return Some((sid, scope));
-            }
-        }
-        None
+        let key = (addr.get_space()?.get_index() as usize, addr.get_offset());
+        self.function_scopes
+            .get(&key)?
+            .iter()
+            .filter(|&&scope| self.scopes.contains_key(scope))
+            .filter_map(|&scope| self.find_function(scope, addr).map(|sid| (sid, scope)))
+            .min_by_key(|&(_, scope)| scope)
     }
 
     /// The fully-qualified display name (`namespace::path::base`) of the

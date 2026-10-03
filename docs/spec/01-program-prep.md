@@ -80,7 +80,9 @@ whose walk takes the committed entry set as extra roots.
 `engine.rs (commit_analysis_output)` then installs the merged facts into the engine
 once, each arm idempotent against the loader's own funcsym stream: a function fact
 no-ops where `find_function` already resolves (a real `.symtab` name always beats a
-discovered one), sized data globals and string symbols skip occupied addresses (the plain label arm does not), no-return facts resolve by
+discovered one), and it is listed beside any same-named function at another address,
+as the funcsym stream lists one, because every overload and template instance of a
+qualified name is a function of its own (`engine.rs (register_overload)`); sized data globals and string symbols skip occupied addresses (the plain label arm does not), no-return facts resolve by
 **address** first (`find_function_across_scopes` — stable across demangling, which
 renames the funcsym before install) with a name fallback for imports, and rename
 facts (FID, ObjC, PDB) pass a **label gate** (`engine.rs (is_generic_placeholder_name)`)
@@ -2584,7 +2586,14 @@ every other binary's pass list is byte-identical to before the pass existed):
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the
   CodeView record, locates the file, applies a hard **fingerprint gate**, then walks
   the global symbol stream (S_PUB32/S_GPROC32) and renames stripped functions behind
-  the label gate. Name-level only; types and lines are deferred.
+  the label gate. Name-level only; types and lines are deferred. A C++ public is
+  decorated (`??0Box@app@@QEAA@H@Z`), so the pass reduces it with the same
+  name-only demangler the loader applies to a COFF or ELF symbol: `app::Box::Box`,
+  nested under its namespace. MSVC spells a compiler-generated member and a
+  function-local entity with backtick-quoted phrases; those become identifiers
+  (`` Box::`scalar deleting destructor' `` is `Box::scalar_deleting_destructor`,
+  `` `ns::f'::`2'::<lambda_1> `` is `ns::f::lambda_1`), as the anonymous namespace
+  already does.
 
   Locating it is a short ordered search
   (`decompiler/crates/kuna-analysis/src/analyzers/pdb/locate.rs (pdb_candidates)`),

@@ -25,9 +25,8 @@ use pdb::FallibleIterator;
 pub struct PdbFunc {
     /// The absolute virtual address of the function entry (`ImageBase + RVA`).
     pub vma: u64,
-    /// The function name (already the real source name; PDB stores it un-mangled
-    /// for `S_GPROC32`, decorated for some `S_PUB32` — kept verbatim, the printer /
-    /// commit seam owns any demangling).
+    /// The function name as the PDB stores it: un-mangled for `S_GPROC32`,
+    /// decorated for a C++ `S_PUB32` (the pass demangles it).
     pub name: String,
 }
 

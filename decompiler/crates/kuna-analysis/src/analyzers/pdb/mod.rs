@@ -113,9 +113,14 @@ impl AnalysisPass for PdbPass {
         };
 
         // 4. The fingerprint matched: walk the global symbols and emit the renames.
-        for f in walk::walk_functions(&mut pdb, image_base) {
+        for mut f in walk::walk_functions(&mut pdb, image_base) {
             if f.name.is_empty() {
                 continue;
+            }
+            // A public carries the decorated name (`?init@QMessageBoxPrivate@@…`);
+            // reduce it the way the loader reduces a COFF or ELF symbol.
+            if let Some(name) = crate::demangle::demangle_name(&f.name) {
+                f.name = name;
             }
             // The function must exist for the rename to bind, even when it is
             // reachable ONLY through the PDB (no call edge / no funcsym). The

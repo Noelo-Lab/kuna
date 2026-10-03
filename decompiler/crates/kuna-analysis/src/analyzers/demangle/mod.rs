@@ -337,8 +337,11 @@ pub fn demangle_name(raw: &str) -> Option<String> {
     // text; `strip_bracket_groups` is applied uniformly for safety (a templated
     // name-only form could still carry `<...>`).
     if raw.starts_with('?') {
-        if let Ok(d) = msvc_demangler::demangle(raw, msvc_demangler::DemangleFlags::NAME_ONLY) {
-            let reduced = strip_bracket_groups(&name_anonymous_namespaces(&d));
+        let flags =
+            msvc_demangler::DemangleFlags::NAME_ONLY | msvc_demangler::DemangleFlags::NO_CLASS_TYPE;
+        if let Ok(d) = msvc_demangler::demangle(raw, flags) {
+            let reduced =
+                strip_bracket_groups(&name_msvc_special_members(&name_anonymous_namespaces(&d)));
             if !reduced.is_empty() && reduced != raw {
                 return Some(reduced);
             }
@@ -390,6 +393,76 @@ pub fn demangle_name(raw: &str) -> Option<String> {
     }
 
     None
+}
+
+/// Spell the MSVC name components that are not identifiers as identifiers,
+/// the way the anonymous namespace already is.
+///
+/// `cl.exe` quotes a compiler-generated member with a backtick phrase
+/// (`` Box::`scalar deleting destructor' `` becomes
+/// `Box::scalar_deleting_destructor`) and nests a function-local entity under
+/// its quoted enclosing function and a numbered block scope
+/// (`` `ns::f'::`2'::<lambda_1> `` becomes `ns::f::lambda_1`). Template
+/// arguments are left for [`strip_bracket_groups`]; an unnamed entity such as
+/// `<lambda_1>` is a whole component and is kept as its identifier.
+fn name_msvc_special_members(name: &str) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for part in split_msvc_components(name) {
+        if let Some(inner) = part.strip_prefix('`').and_then(|p| p.strip_suffix('\'')) {
+            if inner.contains("::") {
+                parts.extend(
+                    name_msvc_special_members(inner).split("::").map(str::to_string),
+                );
+                continue;
+            }
+            if !inner.is_empty() && inner.bytes().all(|b| b.is_ascii_digit()) {
+                continue;
+            }
+            parts.push(msvc_identifier(inner).unwrap_or_else(|| part.to_string()));
+        } else if let Some(inner) = part.strip_prefix('<').and_then(|p| p.strip_suffix('>')) {
+            parts.push(msvc_identifier(inner).unwrap_or_else(|| part.to_string()));
+        } else {
+            parts.push(part.to_string());
+        }
+    }
+    parts.join("::")
+}
+
+/// Split a demangled MSVC name on the `::` that separate its components,
+/// never on one inside a backtick quote or a bracket group.
+fn split_msvc_components(name: &str) -> Vec<&str> {
+    let bytes = name.as_bytes();
+    let (mut quote, mut nest, mut start, mut i) = (0usize, 0usize, 0usize, 0usize);
+    let mut out = Vec::new();
+    while i < bytes.len() {
+        match bytes[i] {
+            b'`' => quote += 1,
+            b'\'' if quote > 0 => quote -= 1,
+            b'<' | b'(' | b'[' => nest += 1,
+            b'>' | b')' | b']' if nest > 0 => nest -= 1,
+            b':' if quote == 0 && nest == 0 && bytes.get(i + 1) == Some(&b':') => {
+                out.push(&name[start..i]);
+                i += 2;
+                start = i;
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    out.push(&name[start..]);
+    out
+}
+
+/// The words of an MSVC phrase joined into one identifier, or `None` when
+/// they do not start like one.
+fn msvc_identifier(phrase: &str) -> Option<String> {
+    let ident = phrase
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+    ident.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_').then_some(ident)
 }
 
 /// The identifier kuna nests an **anonymous namespace** under, matching the
@@ -936,6 +1009,28 @@ mod tests {
         assert!(!n.contains('@'), "no raw `@` leakage into the scope name: {n}");
         // A constructor `??0Bar@@QEAA@XZ` = `Bar::Bar(void)`.
         assert_eq!(demangle_name("??0Bar@@QEAA@XZ"), Some("Bar::Bar".to_string()));
+    }
+
+    #[test]
+    fn msvc_compiler_generated_members_are_identifiers() {
+        assert_eq!(
+            demangle_name("??_GBox@app@@UEAAPEAXI@Z"),
+            Some("app::Box::scalar_deleting_destructor".to_string())
+        );
+        assert_eq!(
+            demangle_name("??_EQDialogPrivate@@UEAAPEAXI@Z"),
+            Some("QDialogPrivate::vector_deleting_destructor".to_string())
+        );
+        assert_eq!(
+            demangle_name(
+                "?<lambda_invoker_cdecl>@<lambda_1>@?4??getDefaultCtr@?$QMetaTypeForType@VQString@@@QtPrivate@@SAP6AXPEBVQMetaTypeInterface@4@PEAX@ZXZ@SA@01@Z"
+            ),
+            Some("QtPrivate::QMetaTypeForType::getDefaultCtr::lambda_1::lambda_invoker_cdecl".to_string())
+        );
+        assert_eq!(
+            demangle_name("??BQColor@@QEBA?AVQVariant@@XZ"),
+            Some("QColor::operator QVariant".to_string())
+        );
     }
 
     #[test]

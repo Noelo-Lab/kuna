@@ -123,6 +123,27 @@ impl SymbolStream {
         self.compact();
     }
 
+    /// Tombstone the records named `name` at `addr`, leaving that name's records
+    /// at other addresses live.
+    fn remove_name_at(&mut self, name: &str, addr: &Address) {
+        let Some(slots) = self.by_name.get_mut(name) else { return };
+        let records = &mut self.records;
+        let mut removed = 0;
+        slots.retain(|&slot| {
+            let here = records[slot].as_ref().is_some_and(|record| record.addr == *addr);
+            if here {
+                records[slot] = None;
+                removed += 1;
+            }
+            !here
+        });
+        if slots.is_empty() {
+            self.by_name.remove(name);
+        }
+        self.live -= removed;
+        self.compact();
+    }
+
     /// Reclaim the tombstones once they outnumber the live records, so iteration
     /// stays O(live) however many times a name is re-registered. Rebuilding is
     /// O(live) and cannot recur until as many records are pushed again, so the
@@ -1972,12 +1993,28 @@ impl ConsoleProgram {
     /// recomputing it as `Mapped` would make [`Self::resolve_entry`] answer "not
     /// mapped in this input" for an entry it used to select.
     pub fn register_symbol(&mut self, name: &str, addr: Address) {
+        self.register_symbol_record(name, addr, true);
+    }
+
+    /// [`Self::register_symbol`] for one member of an overload set: a record of
+    /// the same name at another address stays, as the loader's funcsym stream
+    /// keeps it, since every C++ overload and template instance of one
+    /// qualified name is a function of its own.
+    pub fn register_overload(&mut self, name: &str, addr: Address) {
+        self.register_symbol_record(name, addr, false);
+    }
+
+    fn register_symbol_record(&mut self, name: &str, addr: Address, sole: bool) {
         // (kuna `symbolnamebound`) Same bound as the loader stream above, so an
         // analysis-discovered or hand-mapped name agrees with the scope path the
         // symbol table nests it under.
         let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
         let prior = self.symbols.lookup_at(name, &addr).map(|s| s.provenance);
-        self.symbols.remove_name(name);
+        if sole {
+            self.symbols.remove_name(name);
+        } else {
+            self.symbols.remove_name_at(name, &addr);
+        }
         let object_location = self.object_location_at(addr.get_offset());
         self.symbols.push(ProgramSymbol {
             name: name.to_string(),
@@ -4194,7 +4231,7 @@ fn commit_analysis_output(
                         arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
                     }
                 }
-                prog.register_symbol(&s.name, addr);
+                prog.register_overload(&s.name, addr);
             }
             SymKind::Data => {
                 let arch = prog.arch_mut();
