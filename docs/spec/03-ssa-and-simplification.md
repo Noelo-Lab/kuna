@@ -944,7 +944,7 @@ changes the global (dash's `set_curjob` unlinks the list head through such a
 pointer and then reads the head again). An earlier value also counts as read
 after the store when the global's own `MULTIEQUAL` reads it on an edge from a
 block the store dominates, or an `INDIRECT` after the store reads it
-(`(marks_after)`). Heritage never builds that; it is what remains when a
+(`(old_value_read_after)`). Heritage never builds that; it is what remains when a
 pointer `STORE` becomes the global's `COPY` after the global's heritage, and
 keeping the store there made Merge restore the earlier value with copies (a
 flex scanner's `yylex` at `-O2`).
@@ -966,7 +966,7 @@ does not reach, the answer is yes), whether or not the load is used as an
 address: `*a2 = a0; return v1 + gi[1];` at `-O0` and `-O2`, and
 `*a2 = a0; return (gd - a0) + (long)v2;` for a load that is subtracted. Only a
 store whose earlier value the global's own marker carries past it
-(`(marks_after)`, above) keeps upstream's propagation of its loads; an earlier
+(`(old_value_read_after)`, above) keeps upstream's propagation of its loads; an earlier
 value read after the store through a register does not, so
 `old = gi; gi = q; ... *pp = p; return gi[1] + x + old[0];` keeps its load.
 `RulePushMulti` leaves a global's `MULTIEQUAL` in place when one of its inputs
@@ -980,6 +980,30 @@ into a reader of the copy when a write lies between the copy and the reader, and
 chapter 06 keeps the copy as its own variable, so
 `r = gi; *pp2 = p + 1; return r[1];` keeps `r` where the binary loads it rather
 than reading `gi` after the second store.
+
+These questions are asked again every time the rule pool visits a reader
+(issue #818). One search for an earlier value read after the store first sets
+aside every value of the global written at or after the store. Each of those
+questions walks up the dominator tree plainly for eight blocks
+(`decompiler/crates/kuna-decomp/src/substrate/block.rs
+(BlockGraph::dominates_within)`), and only a walk still going after that asks
+one memo for the store's block (`block.rs (BlockGraph::dominates_memo)`), which
+keeps the answer for every block it passes, so a long chain of blocks below the
+store is climbed once rather than once per value, and a short walk pays nothing
+for the memo. Only the earlier values' readers are read after that, and
+each `MULTIEQUAL` among them is read once, against the earlier values that list
+it, rather than once for every value it joins
+(`kuna_pointeestorekeep.rs (Store::join_after)`); the walk through register
+copies stays bounded by `WALK_BOUND` readers per value. Past the plain steps,
+one search visits each block of the dominator tree at most once, and it
+otherwise costs time linear in the global's values, the earlier values' readers
+and those joins' inputs; but the rule pool still asks it once per reader, so the
+total grows faster than the function. The answers are
+the ones the per-value walk gave, and `RulePropagateCopy` still asks this
+question before `kuna_globalstorekeep`'s below, for every op, so a marker this
+one keeps never reaches that walk or its marking. Before this a function
+storing one pointer to a global 600 times, with a pointer store between, took
+about 38 s to decompile where it had taken 16 s before the store was kept.
 
 When the stored value is not used as an address it joins the global in chapter
 06, and a load that uses what it reads as an address, in the slot above or

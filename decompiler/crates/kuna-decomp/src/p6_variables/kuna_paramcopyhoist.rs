@@ -255,7 +255,7 @@ fn cover_admits_hoist(
     reads: &[OpId],
     entry: BlockId,
 ) -> bool {
-    let ctx = crate::funcdata::FuncdataCoverCtx { fd };
+    let ctx = crate::funcdata::FuncdataCoverCtx::new(fd);
 
     let mut b_cover = Cover::new();
     let n = fd.high_bank().get(high).map(|h| h.num_instances()).unwrap_or(0);

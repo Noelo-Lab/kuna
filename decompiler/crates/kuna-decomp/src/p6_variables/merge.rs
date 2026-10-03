@@ -407,6 +407,14 @@ pub trait MergeContext: HighContext {
     /// Build the `Cover range` of `checkCopyPair` (`addDefPoint(domOp->getOut())`
     /// then `addRefPoint(subOp,subOp->getIn(0))`).
     fn copy_pair_range(&self, dom_op: OpId, sub_op: OpId) -> Cover;
+    /// (kuna) The COPYs of `copy`, COPYs into `high` from one Varnode in
+    /// `compareCopyByInVarnode` order, that `Merge::markRedundantCopies` marks
+    /// (see [`redundant_in_order`]).
+    fn redundant_copies(&self, high: HighVariableId, copy: &[OpId]) -> Vec<OpId> {
+        redundant_in_order(self, copy, |dom_op, sub_op| {
+            Merge::check_copy_pair(self, high, dom_op, sub_op)
+        })
+    }
 
     // --- IR-surgery hooks (mutators not all yet on Funcdata) ----------------
     /// `Merge::allocateCopyTrim` body: build a COPY of `in_vn` into a fresh unique
@@ -762,6 +770,31 @@ pub fn compare_high_by_block(
         return addr1 < addr2;
     }
     result < 0
+}
+
+/// The live COPYs of `copy` that `Merge::markRedundantCopies` marks: each one
+/// `check` holds for against some earlier live COPY of `copy`.  Marking does not
+/// change what `check` reads, so the marks can be collected first and set after.
+pub fn redundant_in_order<C: MergeContext + ?Sized>(
+    ctx: &C,
+    copy: &[OpId],
+    mut check: impl FnMut(OpId, OpId) -> bool,
+) -> Vec<OpId> {
+    let mut marked = Vec::new();
+    for i in (1..copy.len()).rev() {
+        let sub_op = copy[i];
+        if ctx.op_is_dead(sub_op) {
+            continue;
+        }
+        if copy[..i]
+            .iter()
+            .rev()
+            .any(|&dom_op| !ctx.op_is_dead(dom_op) && check(dom_op, sub_op))
+        {
+            marked.push(sub_op);
+        }
+    }
+    marked
 }
 
 /// C++ `Merge::compareCopyByInVarnode` (`merge.cc:1045-1057`): group COPYs by
@@ -1969,8 +2002,8 @@ impl Merge {
 
     /// Check if `subOp` is a redundant COPY relative to dominant `domOp` (C++
     /// `Merge::checkCopyPair`, `merge.cc:1112-1136`).
-    fn check_copy_pair(
-        ctx: &dyn MergeContext,
+    pub(crate) fn check_copy_pair<C: MergeContext + ?Sized>(
+        ctx: &C,
         high: HighVariableId,
         dom_op: OpId,
         sub_op: OpId,
@@ -2030,27 +2063,8 @@ impl Merge {
         pos: int4,
         size: int4,
     ) {
-        let mut i = size - 1;
-        while i > 0 {
-            let sub_op = copy[(pos + i) as usize];
-            if ctx.op_is_dead(sub_op) {
-                i -= 1;
-                continue;
-            }
-            let mut j = i - 1;
-            while j >= 0 {
-                let dom_op = copy[(pos + j) as usize];
-                if ctx.op_is_dead(dom_op) {
-                    j -= 1;
-                    continue;
-                }
-                if Self::check_copy_pair(ctx, high, dom_op, sub_op) {
-                    ctx.op_mark_non_printing(sub_op);
-                    break;
-                }
-                j -= 1;
-            }
-            i -= 1;
+        for sub_op in ctx.redundant_copies(high, &copy[pos as usize..(pos + size) as usize]) {
+            ctx.op_mark_non_printing(sub_op);
         }
     }
 
@@ -2920,6 +2934,32 @@ mod tests {
     }
 
     // --- compareCopyByInVarnode (merge.cc:1045-1057) -----------------------
+
+    /// `redundant_in_order` marks what `markRedundantCopies`' own loop marks:
+    /// each later COPY some earlier one is a redundant pair with.
+    #[test]
+    fn redundant_in_order_matches_the_pair_loop() {
+        let m = Mock::new();
+        let copy: Vec<OpId> = (1..=7).map(oid).collect();
+        let at = |o: OpId| copy.iter().position(|&c| c == o).unwrap() as u32;
+        for pattern in 0u32..64 {
+            let pairs = |dom: OpId, sub: OpId| (pattern >> ((at(dom) * 3 + at(sub)) % 6)) & 1 == 1;
+            let mut want = Vec::new();
+            let mut i = copy.len() as int4 - 1;
+            while i > 0 {
+                let mut j = i - 1;
+                while j >= 0 {
+                    if pairs(copy[j as usize], copy[i as usize]) {
+                        want.push(copy[i as usize]);
+                        break;
+                    }
+                    j -= 1;
+                }
+                i -= 1;
+            }
+            assert_eq!(redundant_in_order(&m, &copy, pairs), want);
+        }
+    }
 
     #[test]
     fn compare_copy_by_in_varnode_order() {

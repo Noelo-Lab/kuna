@@ -34,6 +34,7 @@
 //!    and the partial-copy-shadow characterization stay the conservative path
 //!    (W7 `StackAffectingOps`); empty on the merged-tree slices here.
 
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -43,7 +44,8 @@ use kuna_num::opcodes::OpCode;
 use crate::cover::{Cover, CoverPoint, PcodeOpSet};
 use crate::dtype::Datatype;
 use crate::expression::PcodeOpNode;
-use crate::funcdata::Funcdata;
+use crate::block::{DominatesMemo, DOMINATES_SHORT_WALK};
+use crate::funcdata::{BlockTable, Funcdata};
 use crate::merge::{AddrTiedRange, HighGroupInfo, MergeContext, MergePieceId};
 use crate::context::{BlockId, HighVariableId, OpId, VarnodeId};
 use crate::variable::{
@@ -299,6 +301,31 @@ impl Funcdata {
 /// narrowing is exact (`piece.0` was a `u32`).
 fn decode_piece(piece: MergePieceId) -> VariablePieceId {
     VariablePieceId(piece.0 as u32)
+}
+
+/// The points of the writes to `high` that `checkCopyPair` looks for between
+/// two COPYs from `in_vn`, by block: every write but a COPY from `in_vn`.
+fn copy_pair_writes(
+    data: &Funcdata,
+    high: HighVariableId,
+    in_vn: VarnodeId,
+) -> BTreeMap<int4, Vec<CoverPoint>> {
+    let mut writes: BTreeMap<int4, Vec<CoverPoint>> = BTreeMap::new();
+    for i in 0..MergeContext::high_num_instances(data, high) {
+        let vn = MergeContext::high_get_instance(data, high, i);
+        if !MergeContext::vn_is_written(data, vn) {
+            continue;
+        }
+        let op = MergeContext::vn_def(data, vn).unwrap();
+        if MergeContext::op_code(data, op) == OpCode::CPUI_COPY
+            && MergeContext::op_in(data, op, 0) == Some(in_vn)
+        {
+            continue;
+        }
+        let (blk, point) = MergeContext::op_cover_point(data, op);
+        writes.entry(blk).or_default().push(point);
+    }
+    writes
 }
 
 impl MergeContext for Funcdata {
@@ -891,6 +918,43 @@ impl MergeContext for Funcdata {
     }
     fn copy_pair_range(&self, dom_op: OpId, sub_op: OpId) -> Cover {
         self.build_copy_pair_range(dom_op, sub_op)
+    }
+    /// (kuna) `checkCopyPair` over the pairs of one group, with the long
+    /// dominator walks of each dominating COPY, the block table and the high's
+    /// writes shared across the pairs, and each range walked only until it meets a
+    /// write ([`Funcdata::copy_pair_crossed`]).  Nothing these read changes
+    /// while the group is tested.
+    fn redundant_copies(&self, high: HighVariableId, copy: &[OpId]) -> Vec<OpId> {
+        let table = BlockTable::new();
+        let mut doms: BTreeMap<BlockId, DominatesMemo> = BTreeMap::new();
+        let mut writes: Option<(VarnodeId, BTreeMap<int4, Vec<CoverPoint>>)> = None;
+        let marked = crate::merge::redundant_in_order(self, copy, |dom_op, sub_op| {
+            let dom_bl = MergeContext::op_parent(self, dom_op);
+            let sub_bl = MergeContext::op_parent(self, sub_op);
+            let graph = self.bblocks_ref();
+            let dominates = graph
+                .dominates_within(dom_bl, Some(sub_bl), DOMINATES_SHORT_WALK)
+                .unwrap_or_else(|| {
+                    let memo = doms.entry(dom_bl).or_insert_with(|| DominatesMemo::new(dom_bl));
+                    graph.dominates_memo(memo, Some(sub_bl))
+                });
+            if !dominates {
+                return false;
+            }
+            let in_vn = MergeContext::op_in(self, dom_op, 0).unwrap();
+            if writes.as_ref().is_none_or(|(v, _)| *v != in_vn) {
+                writes = Some((in_vn, copy_pair_writes(self, high, in_vn)));
+            }
+            let by_block = writes.as_ref().map(|(_, w)| w).unwrap();
+            !self.copy_pair_crossed(dom_op, sub_op, &table, by_block)
+        });
+        debug_assert_eq!(
+            marked,
+            crate::merge::redundant_in_order(self, copy, |dom_op, sub_op| {
+                crate::merge::Merge::check_copy_pair(self, high, dom_op, sub_op)
+            })
+        );
+        marked
     }
 
     // --- IR-surgery hooks -------------------------------------------------

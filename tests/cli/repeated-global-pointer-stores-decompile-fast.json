@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "big"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 3,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/globalptrstores_x86_64.o",
+    "binary_sha256": "fe45ce13e3bf7486d1b892b446dfb0b553be4dce6b25ab3e49d8f56c95f82eb4",
+    "binary_size": 18392,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/globalptrstores_x86_64.o",
+    "selector": "big",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int big\\(int \\*a0,int a1,long \\*a2\\)",
+      "dat_401cf8 = v3;",
+      "\\*a2 = \\(long\\)v1;\\n  v45 = v45 \\+ v10 \\+ v11 \\+ dat_401cf8\\[1\\];"
+    ],
+    "wall_ms": {
+      "stat": "min",
+      "lt": 3500
+    }
+  },
+  "notes": "Issue #818: `big` stores a pointer to a global 200 times, each followed by a pointer store, a load through the global and an early return (globalptrstores_x86_64.py). The last match is #798's load through the global after the pointer store. CPU s, min of 11: 0.95 before #798, 4.25 on main 64d21a506, 1.72 with the shared walks."
+}

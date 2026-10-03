@@ -4007,7 +4007,7 @@ impl Funcdata {
         // collapses the cover to the def point and no intersection is ever found
         // (LOSS-229: the dynamic-hash firstuse COPY was never cover-trimmed).
         let mut single = Cover::new();
-        let ctx = FuncdataCoverCtx { fd: self };
+        let ctx = FuncdataCoverCtx::new(self);
         let (def, is_input) = ctx.def_point(vn);
         single.add_def_point(def, is_input);
         single.add_ref_point_for(&ctx, op, vn);
@@ -4025,7 +4025,7 @@ impl Funcdata {
     /// LOSS-229).
     pub(crate) fn build_copy_pair_range(&self, dom_op: OpId, sub_op: OpId) -> Cover {
         let mut range = Cover::new();
-        let ctx = FuncdataCoverCtx { fd: self };
+        let ctx = FuncdataCoverCtx::new(self);
         if let Some(dom_out) = self.obank.get(dom_op).and_then(|o| o.get_out()) {
             let (def, is_input) = ctx.def_point(dom_out);
             range.add_def_point(def, is_input);
@@ -4034,6 +4034,31 @@ impl Funcdata {
             range.add_ref_point_for(&ctx, sub_op, sub_in);
         }
         range
+    }
+
+    /// (kuna) Does the `checkCopyPair` range of `dom_op` and `sub_op`
+    /// ([`Self::build_copy_pair_range`]) contain a point `writes` lists for its
+    /// block?  The walk stops at the first one.
+    pub(crate) fn copy_pair_crossed(
+        &self,
+        dom_op: OpId,
+        sub_op: OpId,
+        table: &BlockTable,
+        writes: &std::collections::BTreeMap<int4, Vec<CoverPoint>>,
+    ) -> bool {
+        let mut range = Cover::new();
+        let ctx = FuncdataCoverCtx::sharing(self, table);
+        if let Some(dom_out) = self.obank.get(dom_op).and_then(|o| o.get_out()) {
+            let (def, is_input) = ctx.def_point(dom_out);
+            range.add_def_point(def, is_input);
+        }
+        let hit = |bl: int4, cb: &crate::cover::CoverBlock| {
+            writes.get(&bl).is_some_and(|points| points.iter().any(|&p| cb.contain(Some(p))))
+        };
+        match self.obank.get(sub_op).and_then(|o| o.get_in(0)) {
+            Some(sub_in) => range.add_ref_point_until(&ctx, sub_op, sub_in, hit),
+            None => range.any_block(hit),
+        }
     }
 
     /// The `getTiedVarnode`/`getInputVarnode` read on a HighVariable, across the
@@ -4213,7 +4238,7 @@ impl Funcdata {
             let out_vn = self.obank.get(op).and_then(|o| o.get_out()).expect("build_dominant_copy: copy out");
             let mut a_cover = Cover::new();
             {
-                let ctx = FuncdataCoverCtx { fd: self };
+                let ctx = FuncdataCoverCtx::new(self);
                 let (def, is_input) = ctx.def_point(dom_vn);
                 a_cover.add_def_point(def, is_input);
                 let descend: Vec<OpId> =
@@ -4271,7 +4296,7 @@ impl Funcdata {
     /// live graph rather than relying on the cached (possibly dirty) one.
     fn full_varnode_cover(&self, vn: VarnodeId) -> Cover {
         let mut cover = Cover::new();
-        let ctx = FuncdataCoverCtx { fd: self };
+        let ctx = FuncdataCoverCtx::new(self);
         cover.rebuild(&ctx, vn);
         cover
     }
@@ -4324,7 +4349,7 @@ impl Funcdata {
         let cover0 = if v.has_cover() { v.cover().cloned() } else { None };
         if let Some(mut cover) = cover0 {
             {
-                let ctx = FuncdataCoverCtx { fd: self };
+                let ctx = FuncdataCoverCtx::new(self);
                 cover.rebuild(&ctx, vn);
             }
             self.vbank_mut()
@@ -4342,15 +4367,49 @@ impl Funcdata {
 /// Read-only graph view for the [`Cover`] def/use walk (the cross-arena reads
 /// `Cover::rebuild` makes off the held `Varnode *`/`PcodeOp *`/`FlowBlock *`).
 pub(crate) struct FuncdataCoverCtx<'a> {
-    // (kuna) `pub(crate)` so `kuna_paramcopyhoist` can build the hypothetical
-    // hoisted Cover off the same view `buildDominantCopy` uses.
-    pub(crate) fd: &'a Funcdata,
+    fd: &'a Funcdata,
+    own: BlockTable,
+    shared: Option<&'a BlockTable>,
 }
 
+/// The first basic block in list order with each block index, built on first
+/// use by [`FuncdataCoverCtx`].
+pub(crate) type BlockTable = std::cell::OnceCell<Vec<Option<BlockId>>>;
+
 impl<'a> FuncdataCoverCtx<'a> {
-    /// Resolve a block *index* to its `BlockId` (the inverse of `getIndex()`).
+    pub(crate) fn new(fd: &'a Funcdata) -> Self {
+        FuncdataCoverCtx { fd, own: BlockTable::new(), shared: None }
+    }
+
+    /// A view keeping its block table in `table`, for a run of Cover walks over
+    /// blocks that do not change between them.
+    pub(crate) fn sharing(fd: &'a Funcdata, table: &'a BlockTable) -> Self {
+        FuncdataCoverCtx { fd, own: BlockTable::new(), shared: Some(table) }
+    }
+
+    /// Resolve a block *index* to its `BlockId` (the inverse of `getIndex()`):
+    /// the first block in list order with that index, from the block table so
+    /// a walk over many blocks does not rescan the block list at each one.
     fn block_id_of_index(&self, index: int4) -> BlockId {
         let n = self.fd.bblocks_get_size();
+        let table = self.shared.unwrap_or(&self.own).get_or_init(|| {
+            let mut table = vec![None; n.max(0) as usize];
+            for i in 0..n {
+                let bid = self.fd.bblocks_get_block(i);
+                let at = self.fd.bblocks.block(bid).get_index();
+                if let Some(slot) = usize::try_from(at).ok().and_then(|at| table.get_mut(at)) {
+                    slot.get_or_insert(bid);
+                }
+            }
+            table
+        });
+        if let Some(&Some(bid)) = usize::try_from(index).ok().and_then(|at| table.get(at)) {
+            debug_assert!((0..n)
+                .map(|i| self.fd.bblocks_get_block(i))
+                .find(|&b| self.fd.bblocks.block(b).get_index() == index)
+                .is_some_and(|b| b == bid));
+            return bid;
+        }
         for i in 0..n {
             let bid = self.fd.bblocks_get_block(i);
             if self.fd.bblocks.block(bid).get_index() == index {

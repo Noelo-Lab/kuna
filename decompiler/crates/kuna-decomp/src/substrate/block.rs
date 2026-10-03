@@ -971,6 +971,26 @@ pub struct KunaQualityCounts {
     pub ifgoto_edges: int4,
 }
 
+/// The answers [`BlockGraph::dominates_memo`] has found for one dominator.  Valid
+/// only while the dominator tree is unchanged.
+pub struct DominatesMemo {
+    top: BlockId,
+    known: slotmap::SecondaryMap<BlockId, bool>,
+    path: Vec<BlockId>,
+}
+
+impl DominatesMemo {
+    /// No answers yet for dominator `top`.
+    pub fn new(top: BlockId) -> Self {
+        DominatesMemo { top, known: slotmap::SecondaryMap::new(), path: Vec::new() }
+    }
+}
+
+/// How many blocks up the dominator tree a caller of
+/// [`BlockGraph::dominates_memo`] walks plainly, with
+/// [`BlockGraph::dominates_within`], before it asks the memo.
+pub const DOMINATES_SHORT_WALK: usize = 8;
+
 /// All edge-manipulation and the dominator/spanning-tree algorithms are methods
 /// on this struct so they can read/write across the arena.
 #[derive(Default)]
@@ -1615,6 +1635,68 @@ impl BlockGraph {
             sub_block = self.arena[sb].immed_dom;
         }
         false
+    }
+
+    /// [`Self::dominates`], or None when the walk up the dominator tree has
+    /// passed `steps` blocks without an answer.
+    pub fn dominates_within(
+        &self,
+        this_id: BlockId,
+        sub_block: Option<BlockId>,
+        steps: usize,
+    ) -> Option<bool> {
+        let index = self.arena[this_id].index;
+        let mut sub_block = sub_block;
+        let mut left = steps;
+        while let Some(sb) = sub_block {
+            if index > self.arena[sb].index {
+                return Some(false);
+            }
+            if sb == this_id {
+                return Some(true);
+            }
+            if left == 0 {
+                return None;
+            }
+            left -= 1;
+            sub_block = self.arena[sb].immed_dom;
+        }
+        Some(false)
+    }
+
+    /// [`Self::dominates`] of `memo`'s block over `sub_block`, keeping the answer
+    /// for every block the walk up the dominator tree passes, so a run of queries
+    /// against one dominator visits each block once.  The memo costs more than a
+    /// short walk saves, so callers ask [`Self::dominates_within`] for
+    /// [`DOMINATES_SHORT_WALK`] blocks first.
+    pub fn dominates_memo(&self, memo: &mut DominatesMemo, sub_block: Option<BlockId>) -> bool {
+        let index = self.arena[memo.top].index;
+        let mut cur = sub_block;
+        memo.path.clear();
+        let answer = loop {
+            let Some(sb) = cur else {
+                break false;
+            };
+            if let Some(&known) = memo.known.get(sb) {
+                break known;
+            }
+            if index > self.arena[sb].index {
+                break false;
+            }
+            if sb == memo.top {
+                break true;
+            }
+            if memo.path.len() > self.arena.len() {
+                break false;
+            }
+            memo.path.push(sb);
+            cur = self.arena[sb].immed_dom;
+        };
+        for &sb in &memo.path {
+            memo.known.insert(sb, answer);
+        }
+        debug_assert_eq!(answer, self.dominates(memo.top, sub_block));
+        answer
     }
 
     // ----------------------------------------------------------------------
