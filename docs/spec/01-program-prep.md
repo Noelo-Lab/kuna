@@ -1399,7 +1399,17 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   vendored), so kuna over-accepts random printable NUL-terminated runs; real
   literals are unaffected. Kuna uses four rather than Ghidra's default five so
   command and mode literals such as `quit`, `show`, `bind`, `fork`, and `dup2`
-  do not remain raw addresses in stripped binaries.
+  do not remain raw addresses in stripped binaries. (kuna) A run that starts on
+  a pointer-aligned address whose pointer-sized value, read in the image's byte
+  order, lies inside an allocated section is an entry of a pointer table, not
+  text, and is not planted
+  (`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_ptrslot.rs (PointerSlots)`).
+  On an i386 image linked at `0x21414140` a function-pointer table reads
+  `@AA!KAA!VAA!` up to its NULL entry, and planting it made the printer index and
+  pass that literal where the code uses the table. A genuine string can be
+  refused only when its first pointer-sized bytes, NUL and padding included,
+  spell an address of the image; it then prints as that address. A relocatable
+  object has no image addresses yet, so nothing is refused there.
 - **Wide strings** (`widestrings`, the `StringsAnalyzer` `allCharWidths` arm,
   `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_widestrings.rs
   (scan_wide_strings)`): the same matcher over 2-byte little-endian code units —
@@ -4184,7 +4194,15 @@ form the address of a load two or more bytes wide, is left out
 `movzwl map(%rdi,%rdi)` index an array of wider elements, a jump table, a table
 of function pointers or a word map, and typing its first bytes `char[N]` because
 they happen to be printable made the printer index a short literal
-(`*(unsigned long *)&"7A@"[i * 8]`) instead of the table.
+(`*(unsigned long *)&"7A@"[i * 8]`) instead of the table. That test sees one
+instruction, so a table the code reaches any other way still began with a
+printable run: `movabs $tbl,%rax` before the indexed call (`-mcmodel=large`),
+`mov $tbl,%edi` to pass it, or `movq $vtable+16,(%rax)` in a constructor, and a
+non-PIE x86-64 entry such as `26 42 40 00 00 00 00 00` (0x404226) reads `"&B@"`.
+Once one scalar planted the `char[4]`, every use of the table printed the
+literal: `pick("&B@",a0)`, `*(char **)operator new(8) = "dB@"`. So the target is also refused when it
+is a pointer slot holding an address of the image, the same test the strings
+pass applies (`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_ptrslot.rs (PointerSlots)`).
 
 (kuna) Three ARM-only seed scans run between the walk's first pass and those
 consumers, each re-seeding the walk and rebuilding the Listing when it finds

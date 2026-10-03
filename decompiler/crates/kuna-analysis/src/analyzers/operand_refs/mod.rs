@@ -736,6 +736,19 @@ mod tests {
         assert!(bases(killed).is_empty());
     }
 
+    /// `tbl` in `ptrslot_gcc_O1_x86_64` starts with `26 42 40 00 ..`, a run the
+    /// recognizer accepts, but it is the entry for 0x404226; a scalar that names
+    /// it plants nothing.
+    #[test]
+    fn a_pointer_table_target_is_not_planted() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ptrslot_gcc_O1_x86_64");
+        let bytes = std::fs::read(path).expect("read ptrslot fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse ptrslot");
+        assert_eq!(readonly_string_at(&file, 0x405020), Some(4));
+        let out = emit_facts(&file, &[ScalarRef { from: 0x404280, to: 0x405020 }]);
+        assert!(out.strings.is_empty() && out.readonly.is_empty());
+    }
+
     #[test]
     fn readonly_string_recognizer() {
         // The printable / NUL recognizer (the per-section walk is covered by the
