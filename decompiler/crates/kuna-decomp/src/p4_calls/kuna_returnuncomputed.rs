@@ -336,6 +336,7 @@ fn slot_storage(data: &Funcdata, whole: VarnodeId, lsb: i32, width: i32) -> Opti
 pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
     // Collect first: the rewrite mutates the op bank.
     let mut fixes: Vec<(OpId, VarnodeId, OpId)> = Vec::new();
+    let mut own_pairs: Vec<(OpId, VarnodeId, OpId)> = Vec::new();
     for retop in data.obank().iter_code(OpCode::CPUI_RETURN).collect::<Vec<_>>() {
         let Some(o) = data.obank().get(retop) else { continue };
         if o.is_dead() || o.get_halt_type() != 0 || o.num_input() < 2 {
@@ -383,6 +384,14 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
             // return value of their own: handing them back alone would return
             // them in place of the whole register.
             (true, false) if !spans_two_locations(data, whole) => continue,
+            // The low register is the function's own argument, left in place or
+            // reloaded from its spill, and the high register of a little-endian
+            // pair is the second of its class, never a return value alone: the
+            // pair stands unless another RETURN returns one register.
+            (true, false) if !hi_slot.is_big_endian() && computes_from(data, lo, 0, None) => {
+                own_pairs.push((retop, lo, def));
+                continue;
+            }
             (true, false) => hi,
             // Only the low half is real — the common case, a callee-saved restore
             // in the high register.
@@ -401,6 +410,7 @@ pub fn strip_uncomputed_return_piece(data: &mut Funcdata) -> bool {
     if fixes.is_empty() {
         return false;
     }
+    fixes.extend(own_pairs);
     let mut scratch: Vec<OpId> = Vec::new();
     for (retop, keep, piece) in fixes {
         if data.op_set_input(retop, keep, 1).is_err() {

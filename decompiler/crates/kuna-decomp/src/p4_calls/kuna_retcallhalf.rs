@@ -1,5 +1,5 @@
-//! (kuna) Keep the first register of a returned pair when it is a call's
-//! result handed back untouched and the function computes the second.
+//! (kuna) Keep the first register of a returned pair when upstream's scoring
+//! refused it and the function computes the second.
 //!
 //! `u64 f(unsigned a) { return full(a) | 0xff00000000ULL; }` is, on 32-bit ARM,
 //! `bl full; orr r1,r1,#255; bx lr`: `r0` comes back from `full` as it is and
@@ -9,12 +9,22 @@
 //! never returns the second register of a pair without the first. The function
 //! printed as `void f(int a0) { full(a0); }`.
 //!
+//! Two more first halves are refused the same way. `long long f(int a) {
+//! return a + 3; }` is `add r0,r0,#3; asr r1,r0,#31`: `r0` is read by the
+//! RETURN and by the shift that makes `r1`, and `onlyOpUse` takes the second
+//! read for a competing use. `u64 f(unsigned a) { return a; }` is `mov r1,#0;
+//! bx lr`: `r0` is the caller's own value passing through, which ancestor
+//! realism refuses. Both printed as `void f(void)`.
+//!
 //! A register that is not the first of its class is never a return value of
 //! its own, so a function that computes one and hands it only to the RETURN
-//! returns the pair it belongs to. When the first register of that pair is, at
-//! every live RETURN, the untouched result of a call ([`is_call_result`]), the
-//! function hands that result back as the pair's first half, and [`accept`]
-//! makes the trial active.
+//! returns the pair it belongs to. [`accept`] makes the first register's trial
+//! active when, at every live RETURN, its value is the untouched result of a
+//! call ([`is_call_result`]), the function's own argument in that register
+//! ([`is_own_input`]), or a value the function produced (a constant, a call's
+//! result, anything but a clobber), and at one RETURN at least it is one of
+//! the first two or a value read only by the RETURN and by what turns it into
+//! the second register ([`feeds_second`]).
 //!
 //! The second register has to have been computed on purpose
 //! ([`computed_on_purpose`]), because four kinds of write reach a RETURN in a
@@ -30,14 +40,30 @@
 //! * the zero `-fzero-call-used-regs` leaves in every call-used register a
 //!   function does not return in.
 //!
+//! Beside the argument left in place, where the second register is the only
+//! evidence, it must also be set by the function itself on every path
+//! ([`set_by_function`]): a load does not count, since a volatile read whose
+//! value is dropped leaves it there. A zero counts only there and only when the
+//! function names the register nowhere else ([`only_read_as_zero`]): the
+//! scrub zeroes a register the body used, or every call-used register, which
+//! would scrub the first register of a function that returns nothing.
+//!
+//! Wherever the pair rests on anything but a call's untouched result, the
+//! second register's value must also be read by nothing but the RETURN
+//! ([`read_only_by_returns`]): `mov r1,#0x3000000; vmsr fpscr,r1; bx lr` sets
+//! `r1` for the system register and returns nothing.
+//!
 //! The rest stays as upstream decides it. The model must return nothing
-//! without the call's register and exactly the two registers with it, so a
+//! without the first register and exactly the two registers with it, so a
 //! value the function returns in another class is never joined to a leftover.
-//! A function that writes the call's own register and leaves the second
-//! untouched is not changed: `bl g; orr r0,r0,#255` is byte for byte
-//! `int f(void) { return (int)g() | 255; }` as well as a 64-bit return. And a
-//! big-endian pair is left alone, because a pair is still joined in
-//! little-endian order there.
+//! A function that writes the first register and leaves the second untouched
+//! is not changed: `bl g; orr r0,r0,#255` is byte for byte `int f(void) {
+//! return (int)g() | 255; }` as well as a 64-bit return. Nor is one whose
+//! second register feeds the first (`asr r1,r0,#2; add r0,r1,r0,lsr #31` is
+//! an `int` division by a constant). And a big-endian pair is left alone,
+//! because a pair is still joined in little-endian order there.
+
+use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype;
@@ -53,15 +79,35 @@ const MAX_DEPTH: u32 = 8;
 /// How many defining ops the zero test follows.
 const ZERO_DEPTH: u32 = 8;
 
-/// Mark active the inactive return trial that is a call's untouched result
-/// beside a register the function computes, when together they are the pair
-/// the output model returns.
+/// What the first register of a pair holds at one RETURN, when upstream's
+/// scoring refused it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum First {
+    /// A call's untouched result.
+    CallResult,
+    /// The function's own argument in that register, untouched.
+    OwnInput,
+    /// A value read only by the RETURN and by what turns it into the second
+    /// register there.
+    FeedsSecond,
+    /// A value the function produced, with no sign at this RETURN that the
+    /// second register belongs to it.
+    Value,
+}
+
+/// Mark active the inactive return trial that, beside a register the function
+/// computes, completes the pair the output model returns: a call's untouched
+/// result, the function's own argument left in place, or a value the function
+/// computes and also turns into the second register.
 ///
 /// Runs once `ActionReturnRecovery` has scored every trial for the last time,
-/// before the output map is derived.
-pub fn accept(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId]) {
+/// before the output map is derived. Returns the first register's storage when
+/// the pair was accepted with the argument left in place at some RETURN, which
+/// the late pair repair must then keep
+/// ([`crate::kuna_retinputhalf::is_moved_back`]).
+pub fn accept(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId]) -> Option<(Address, i32)> {
     let active_trials: Vec<i32> = (0..active.get_num_trials()).filter(|&i| active.get_trial(i).is_active()).collect();
-    let [second] = active_trials[..] else { return };
+    let [second] = active_trials[..] else { return None };
     let rets: Vec<OpId> = return_ops
         .iter()
         .copied()
@@ -72,30 +118,57 @@ pub fn accept(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId]) {
         let t = active.get_trial(second);
         (t.get_address().clone(), t.get_size(), t.get_slot())
     };
-    let candidates: Vec<i32> = (0..active.get_num_trials())
-        .filter(|&i| {
-            let t = active.get_trial(i);
-            !t.is_active()
-                && !t.is_definitely_not_used()
-                && t.get_size() == second_size
-                && !t.get_address().is_big_endian()
-                && rets.iter().all(|&r| value_at(r, t.get_slot()).is_some_and(|vn| is_call_result(data, vn, MAX_DEPTH)))
-        })
-        .collect();
     let values: Vec<(OpId, VarnodeId)> =
         rets.iter().filter_map(|&r| value_at(r, second_slot).map(|vn| (r, vn))).collect();
-    if candidates.is_empty()
-        || rets.is_empty()
-        || values.len() != rets.len()
-        || derives_any(data, active)
-        || values.iter().all(|&(_, vn)| is_zero(data, vn, ZERO_DEPTH))
-        || !values.iter().all(|&(r, vn)| computed_on_purpose(data, vn, r, MAX_DEPTH))
+    if rets.is_empty() || values.len() != rets.len() || derives_any(data, active) {
+        return None;
+    }
+    let zero = values.iter().all(|&(_, vn)| is_zero(data, vn, ZERO_DEPTH));
+    let kinds_of = |t: &crate::fspec::ParamTrial| -> Option<Vec<First>> {
+        rets.iter()
+            .map(|&r| {
+                let vn = value_at(r, t.get_slot())?;
+                first_kind(data, vn, t.get_address(), t.get_size(), r, t.get_slot(), second_slot)
+            })
+            .collect()
+    };
+    let candidates: Vec<(i32, bool)> = (0..active.get_num_trials())
+        .filter_map(|i| {
+            let t = active.get_trial(i);
+            if t.is_active()
+                || t.is_definitely_not_used()
+                || t.get_size() != second_size
+                || t.get_address().is_big_endian()
+            {
+                return None;
+            }
+            let kinds = kinds_of(t)?;
+            if kinds.iter().all(|&k| k == First::Value)
+                || kinds.iter().zip(&values).any(|(&k, &(_, vn))| {
+                    k == First::OwnInput && !set_by_function(data, vn, &second_addr, second_size)
+                })
+                || !kinds.iter().all(|&k| k == First::CallResult)
+                    && !values.iter().all(|&(_, vn)| read_only_by_returns(data, vn))
+            {
+                return None;
+            }
+            let own = kinds.contains(&First::OwnInput);
+            let unscrubbed = || {
+                kinds.iter().all(|&k| k == First::OwnInput)
+                    && t.get_size() + second_size <= 8
+                    && only_read_as_zero(data, &second_addr, second_size, &values)
+            };
+            (!zero || unscrubbed()).then_some((i, own))
+        })
+        .collect();
+    if candidates.is_empty() || !values.iter().all(|&(r, vn)| computed_on_purpose(data, vn, r, MAX_DEPTH))
     {
-        return;
+        return None;
     }
     let manager = data.get_arch().manage.clone();
-    for i in candidates {
+    for (i, own) in candidates {
         let first_addr = active.get_trial(i).get_address().clone();
+        let first_size = active.get_trial(i).get_size();
         let mut probe = active.clone();
         probe.get_trial_mut(i).mark_active();
         if data.get_func_proto().derive_output_map(&mut probe, &manager).is_err() {
@@ -106,11 +179,268 @@ pub fn accept(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId]) {
             .filter(|t| t.is_used())
             .map(|t| t.get_address().clone())
             .collect();
-        if used == [first_addr, second_addr.clone()] {
+        if used == [first_addr.clone(), second_addr.clone()] {
             active.get_trial_mut(i).mark_active();
-            return;
+            return own.then_some((first_addr, first_size));
         }
     }
+    None
+}
+
+/// Classify the first register's value `vn` at the RETURN `ret`, or `None`
+/// when some value it merges is not one the function produced or was handed.
+fn first_kind(
+    data: &Funcdata,
+    vn: VarnodeId,
+    addr: &Address,
+    size: i32,
+    ret: OpId,
+    first_slot: i32,
+    second_slot: i32,
+) -> Option<First> {
+    if is_call_result(data, vn, MAX_DEPTH) {
+        return Some(First::CallResult);
+    }
+    let roots = roots(data, vn)?;
+    let own = |r: VarnodeId| is_own_input(data, r, addr, size);
+    if roots.iter().all(|&r| own(r)) {
+        return Some(First::OwnInput);
+    }
+    if !roots.iter().all(|&r| own(r) || produced(data, r)) {
+        return None;
+    }
+    let feeds = |v: VarnodeId| feeds_second(data, v, ret, first_slot, second_slot);
+    let computed: Vec<VarnodeId> =
+        roots.iter().copied().filter(|&r| !own(r) && data.vbank().get(r).is_some_and(|v| !v.is_constant())).collect();
+    let fed = feeds(below_noops(data, vn)) || roots.len() > 1 && !computed.is_empty() && computed.iter().all(|&r| feeds(r));
+    Some(if fed { First::FeedsSecond } else { First::Value })
+}
+
+/// `vn` without the injected no-ops of a return's mode switch above it.
+fn below_noops(data: &Funcdata, vn: VarnodeId) -> VarnodeId {
+    let mut base = vn;
+    while let Some(d) = data.vbank().get(base).and_then(|v| v.get_def()) {
+        if !crate::kuna_passthrough::is_injected_noop(data, d) {
+            break;
+        }
+        let Some(src) = data.obank().get(d).and_then(|o| o.get_in(0)) else { break };
+        base = src;
+    }
+    base
+}
+
+/// The values `vn` merges: walk back through phis, value-preserving INDIRECTs
+/// and the injected no-op of a return's mode switch.
+fn roots(data: &Funcdata, vn: VarnodeId) -> Option<Vec<VarnodeId>> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut work = vec![vn];
+    while let Some(cur) = work.pop() {
+        if !seen.insert(cur) {
+            continue;
+        }
+        if seen.len() > 32 {
+            return None;
+        }
+        let def = data.vbank().get(cur)?.get_def();
+        let Some(op) = def.and_then(|d| data.obank().get(d)) else {
+            out.push(cur);
+            continue;
+        };
+        match op.code() {
+            OpCode::CPUI_MULTIEQUAL => work.extend((0..op.num_input()).filter_map(|k| op.get_in(k))),
+            OpCode::CPUI_INDIRECT if !op.is_indirect_creation() => work.extend(op.get_in(0)),
+            OpCode::CPUI_COPY if def.is_some_and(|d| crate::kuna_passthrough::is_injected_noop(data, d)) => {
+                work.extend(op.get_in(0))
+            }
+            _ => out.push(cur),
+        }
+    }
+    Some(out)
+}
+
+/// Did the function set `vn`, the second register's value stored at
+/// `addr`/`size`, itself on every path: a constant, a computation, or a move
+/// from another register? A load does not count, since a volatile read whose
+/// value is dropped leaves it there, and neither does the caller's own value
+/// passing through.
+fn set_by_function(data: &Funcdata, vn: VarnodeId, addr: &Address, size: i32) -> bool {
+    let Some(roots) = roots(data, vn) else { return false };
+    roots.into_iter().all(|root| {
+        let mut cur = root;
+        let mut moved = false;
+        for _ in 0..MAX_DEPTH {
+            let Some(v) = data.vbank().get(cur) else { return false };
+            if v.is_constant() {
+                return true;
+            }
+            let Some(op) = v.get_def().and_then(|d| data.obank().get(d)) else {
+                return moved && (v.get_addr() != addr || v.get_size() != size);
+            };
+            match op.code() {
+                OpCode::CPUI_COPY => {
+                    let Some(src) = op.get_in(0) else { return false };
+                    moved = true;
+                    cur = src;
+                }
+                OpCode::CPUI_LOAD
+                | OpCode::CPUI_INDIRECT
+                | OpCode::CPUI_MULTIEQUAL
+                | OpCode::CPUI_CALL
+                | OpCode::CPUI_CALLIND
+                | OpCode::CPUI_CALLOTHER => return false,
+                _ => return true,
+            }
+        }
+        false
+    })
+}
+
+/// Is every value `vn` merges read only on its way to a RETURN: through phis,
+/// INDIRECTs, the injected no-op of a return's mode switch and temporaries,
+/// or into a flag?
+///
+/// A register the function hands to anything else, such as the operand of a
+/// `vmsr fpscr` or `msr cpsr_c`, a store or another register, was set for that
+/// use, so its presence at the RETURN is no sign of a returned high word.
+fn read_only_by_returns(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(roots) = roots(data, vn) else { return false };
+    let mut seen = std::collections::BTreeSet::new();
+    let mut work = roots;
+    work.push(vn);
+    while let Some(cur) = work.pop() {
+        if !seen.insert(cur) {
+            continue;
+        }
+        if seen.len() > 64 {
+            return false;
+        }
+        let Some(v) = data.vbank().get(cur) else { return false };
+        for reader in v.descend_iter() {
+            let Some(op) = data.obank().get(reader) else { return false };
+            if op.code() == OpCode::CPUI_RETURN {
+                continue;
+            }
+            let Some(out) = op.get_out() else { return false };
+            let Some(o) = data.vbank().get(out) else { return false };
+            let space = o.get_addr().get_space().map(|sp| sp.get_type());
+            if matches!(op.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT)
+                || crate::kuna_passthrough::is_injected_noop(data, reader)
+                || space == Some(spacetype::IPTR_INTERNAL)
+            {
+                work.push(out);
+            } else if space != Some(spacetype::IPTR_PROCESSOR) || o.get_size() > 1 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Did the function produce `vn`: a constant, a call's result, or the output
+/// of an operation other than a CALLOTHER or another clobber?
+fn produced(data: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = data.vbank().get(vn) else { return false };
+    if v.is_constant() {
+        return true;
+    }
+    let Some(op) = v.get_def().and_then(|d| data.obank().get(d)) else { return false };
+    match op.code() {
+        OpCode::CPUI_INDIRECT => op.is_indirect_creation() && created_by_call(data, op),
+        OpCode::CPUI_CALLOTHER => false,
+        _ => true,
+    }
+}
+
+/// Is `vn` the function's own argument at `addr`/`size`, never written?
+fn is_own_input(data: &Funcdata, vn: VarnodeId, addr: &Address, size: i32) -> bool {
+    data.vbank().get(vn).is_some_and(|v| v.get_addr() == addr && v.get_size() == size)
+        && crate::kuna_retinputhalf::is_input_parameter(data, vn)
+}
+
+/// Is `vn`, a value the first register holds at `ret`, read only on its way
+/// to `ret` and turned there into the second register as well?
+///
+/// Every reader, followed forward, must be an operation that only computes or
+/// merges: no branch, call, CALLOTHER, load, store, INDIRECT or other RETURN,
+/// and nothing it writes may be global. The walk must reach `ret` in the
+/// second register's slot, and may reach it in no slot but the two.
+fn feeds_second(data: &Funcdata, vn: VarnodeId, ret: OpId, first_slot: i32, second_slot: i32) -> bool {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut work = vec![vn];
+    let mut second = false;
+    while let Some(cur) = work.pop() {
+        if !seen.insert(cur) {
+            continue;
+        }
+        if seen.len() > 64 {
+            return false;
+        }
+        let Some(v) = data.vbank().get(cur) else { return false };
+        for reader in v.descend_iter() {
+            let Some(op) = data.obank().get(reader) else { return false };
+            if reader == ret {
+                for slot in (0..op.num_input()).filter(|&k| op.get_in(k) == Some(cur)) {
+                    if slot == second_slot {
+                        second = true;
+                    } else if slot != first_slot {
+                        return false;
+                    }
+                }
+                continue;
+            }
+            match op.code() {
+                OpCode::CPUI_BRANCH
+                | OpCode::CPUI_CBRANCH
+                | OpCode::CPUI_BRANCHIND
+                | OpCode::CPUI_CALL
+                | OpCode::CPUI_CALLIND
+                | OpCode::CPUI_CALLOTHER
+                | OpCode::CPUI_RETURN
+                | OpCode::CPUI_LOAD
+                | OpCode::CPUI_STORE
+                | OpCode::CPUI_NEW
+                | OpCode::CPUI_INDIRECT => return false,
+                _ => {}
+            }
+            let Some(out) = op.get_out() else { return false };
+            if data.vbank().get(out).is_none_or(|o| o.is_persist()) {
+                return false;
+            }
+            work.push(out);
+        }
+    }
+    second
+}
+
+/// Is the second register, stored at `addr`/`size`, read nowhere in the
+/// function but as the zeros `values` the RETURNs read?
+///
+/// `-fzero-call-used-regs` zeroes a call-used register the function body uses,
+/// or every one of them; a register the body never names is zeroed only when
+/// the function returns it as a high word.
+fn only_read_as_zero(data: &Funcdata, addr: &Address, size: i32, values: &[(OpId, VarnodeId)]) -> bool {
+    let Some(space) = addr.get_space() else { return false };
+    let mut zero_chain = std::collections::BTreeSet::new();
+    let mut work: Vec<VarnodeId> = values.iter().map(|&(_, v)| v).collect();
+    while let Some(cur) = work.pop() {
+        if !zero_chain.insert(cur) {
+            continue;
+        }
+        let Some(op) = data.vbank().get(cur).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else {
+            continue;
+        };
+        if matches!(op.code(), OpCode::CPUI_COPY | OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL) {
+            work.extend((0..op.num_input()).filter_map(|k| op.get_in(k)));
+        }
+    }
+    let start = Address::new(Rc::clone(space), addr.get_offset().saturating_sub(8));
+    let end = Address::new(Rc::clone(space), addr.get_offset() + size as u64);
+    data.vbank().iter_loc_addr_range(&start, &end).all(|id| {
+        let Some(v) = data.vbank().get(id) else { return true };
+        let overlaps = v.get_addr().overlap(0, addr, size) >= 0 || addr.overlap(0, v.get_addr(), v.get_size()) >= 0;
+        !overlaps || zero_chain.contains(&id) || v.has_no_descend()
+    })
 }
 
 /// Does the output model return anything from the trials as they stand?
@@ -195,10 +525,36 @@ fn writes_elsewhere(data: &Funcdata, pc: &Address, addr: &Address, size: i32) ->
         let Some(out) = data.obank().get(op).and_then(|o| o.get_out()).and_then(|o| data.vbank().get(o)) else {
             return false;
         };
+        let heritage = data.obank().get(op).is_some_and(|o| matches!(o.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT));
+        if heritage
+            || is_tracked_entry_value(data, op)
+            || out.has_no_descend()
+            || crate::kuna_passthrough::is_injected_noop(data, op)
+        {
+            return false;
+        }
         let a = out.get_addr();
         let register = a.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR);
         register && out.get_size() > 1 && a.overlap(0, addr, size) < 0 && addr.overlap(0, a, out.get_size()) < 0
     })
+}
+
+/// Is `op` the COPY of a tracked register's known value that `ActionConstbase`
+/// puts at the function's entry, ahead of the first instruction's own ops?
+fn is_tracked_entry_value(data: &Funcdata, op: OpId) -> bool {
+    let Some(o) = data.obank().get(op) else { return false };
+    if o.code() != OpCode::CPUI_COPY || o.get_addr() != data.get_address() {
+        return false;
+    }
+    let constant = o.get_in(0).and_then(|i| data.vbank().get(i)).is_some_and(|i| i.is_constant());
+    let Some(out) = o.get_out().and_then(|v| data.vbank().get(v)) else { return false };
+    let (addr, size) = (out.get_addr(), out.get_size());
+    constant
+        && data.get_arch().get_tracked_set(data.get_address()).iter().any(|t| {
+            t.loc.space.as_ref().is_some_and(|s| addr.get_space().is_some_and(|a| a.get_index() == s.get_index()))
+                && t.loc.offset == addr.get_offset()
+                && t.loc.size as i32 == size
+        })
 }
 
 /// Is `addr` in the function's stack frame?
