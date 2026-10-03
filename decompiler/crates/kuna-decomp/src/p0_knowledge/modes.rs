@@ -451,10 +451,18 @@ mod tests {
         /// default (`cycles`) already turns it on where it means anything: a
         /// serial `kuna decompile-all`. The other surfaces cannot act on it, so
         /// preset membership would change nothing.
+        ///
+        /// `bejoin` joins a big-endian or AVR two-register value high word first
+        /// when its low word looks returned on purpose. The rule reads the
+        /// instructions, not a type, and an `int` that works over the high half
+        /// of a 64-bit temporary compiles to the `long long`'s registers, so with
+        /// it on that correct `int` prints as a wrong `long long` (GH-904). In
+        /// the preset it would be the default output under 500 KiB, which is
+        /// exactly what it is opt-in to avoid.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
-              "structdefs", "indirectonly", "protoorder"];
+              "structdefs", "indirectonly", "protoorder", "bejoin"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open
