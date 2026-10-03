@@ -18,10 +18,10 @@ import {
   PROTOCOL, MAX_PEERS, COLORS, validMessage, readMessage, maxBytes, encodeCode, decodeCode, codeFrom, limiter,
   randomId, initials, validAnchor,
 } from '../decompile/collab/wire.js';
-import { compactSdp, expandSdp, validSdp, passiveAnswer } from '../decompile/collab/sdp.js';
+import { compactSdp, expandSdp, validSdp, passiveAnswer, crossesNetworks } from '../decompile/collab/sdp.js';
 import { sha256Js, sha256Hex } from '../sha256.js';
 import { Group, resolveColors } from '../decompile/collab/group.js';
-import { iceServersFrom, loadCollabPrefs, PREFS_KEY } from '../decompile/collab/collab.js';
+import { iceServersFrom, loadCollabPrefs, acrossSetting, PREFS_KEY } from '../decompile/collab/collab.js';
 
 const checks = [];
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -317,6 +317,10 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
     assert.throws(() => expandSdp(evil, 'offer'));
   }
   assert.equal(compactSdp('v=0\r\n'), null);
+  assert.equal(crossesNetworks(d), true, 'a STUN-learned address reaches across networks');
+  assert.equal(crossesNetworks({ ...d, c: [d.c[0], d.c[2]] }), false, 'host addresses alone do not');
+  assert.equal(crossesNetworks({ ...d, c: ['198.51.100.7 3478 ru 41885439'] }), true, 'nor does a relay address');
+  assert.equal(crossesNetworks({ ...d, c: ['203.0.113.9 50000 su 1'], extra: 1 }), false, 'only a valid description counts');
 
   const invite = await encodeCode('invite', { id: 'abcdefghij', n: 'Ana', f: 'crackme.elf', z: 14080, d });
   assert.ok(invite.length < 400, `an invite fits in a short link (${invite.length} characters)`);
@@ -367,15 +371,23 @@ checks.push('2000 random rounds over the full key set (incl. the mode) converge 
   assert.deepEqual(iceServersFrom(loadCollabPrefs(store(null))), [], 'off by default: host candidates only (one machine or one network)');
   assert.deepEqual(iceServersFrom(loadCollabPrefs(store('not json'))), []);
   assert.deepEqual(iceServersFrom({ name: 'Ana' }), []);
-  assert.deepEqual(iceServersFrom({ stun: true }), [{ urls: 'stun:stun.l.google.com:19302' }], 'stun: true is Google\'s public server');
+  assert.deepEqual(iceServersFrom({ stun: true }), [{ urls: 'stun:stun.cloudflare.com:3478' }], 'stun: true is Cloudflare\'s public server');
   assert.deepEqual(iceServersFrom({ stun: 'stun:stun.example.org:3478' }), [{ urls: 'stun:stun.example.org:3478' }]);
   assert.deepEqual(iceServersFrom({ stun: 'https://example.org' }), [], 'only a stun: URL');
   assert.deepEqual(iceServersFrom({ turn: { urls: 'turn:turn.example.org:3478', username: 'u', credential: 'p' } }),
     [{ urls: 'turn:turn.example.org:3478', username: 'u', credential: 'p' }], 'a TURN relay when one is given');
   assert.deepEqual(iceServersFrom({ turn: { urls: 'javascript:alert(1)' } }), [], 'only a turn: URL');
   assert.deepEqual(iceServersFrom({ stun: true, turn: { urls: 'turns:t.example.org:443?transport=tcp' } }).map((s) => s.urls),
-    ['stun:stun.l.google.com:19302', 'turns:t.example.org:443?transport=tcp']);
-  checks.push('the STUN/TURN setting: off by default, one key turns it on');
+    ['stun:stun.cloudflare.com:3478', 'turns:t.example.org:443?transport=tcp']);
+  assert.equal(acrossSetting({}), false, 'Connect across the internet starts unticked');
+  assert.equal(acrossSetting({ stun: true }), true);
+  assert.equal(acrossSetting({ stun: 'stun:stun.example.org:3478' }), true);
+  assert.equal(acrossSetting({ stun: false }), false);
+  assert.deepEqual(iceServersFrom({}, true), [{ urls: 'stun:stun.cloudflare.com:3478' }], 'a session across the internet uses STUN whatever this browser\'s setting');
+  assert.deepEqual(iceServersFrom({ stun: 'stun:stun.example.org:3478' }, true), [{ urls: 'stun:stun.example.org:3478' }], 'and the setting\'s own server when it names one');
+  assert.deepEqual(iceServersFrom({ stun: true }, false), [], 'a session on one network uses none');
+  assert.deepEqual(iceServersFrom({ turn: { urls: 'turn:t.example.org' } }, false).map((s) => s.urls), ['turn:t.example.org'], 'a TURN relay is kept either way');
+  checks.push('the STUN/TURN setting: off by default, the dialog\'s box or one key turns it on, a session\'s choice wins');
 }
 
 // ── whole groups over in-memory links ──────────────────────────────────────

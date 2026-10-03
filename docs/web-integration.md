@@ -768,17 +768,28 @@ guest's reply back to the inviter, and with no relay the people do. The guest's 
 passive (`a=setup:passive`, the inviter starts the DTLS handshake), so a reply opened
 minutes later still connects (measured to 30 minutes; the analysis is in
 `docs/features/decompile2-collab/analysis.md`). A pair that cannot connect directly is
-told "Could not connect directly. You may need to be on the same network."
+told "Could not connect directly." with what to try: on a session within one network, a
+new link with *Connect across the internet* ticked; on one across the internet, another
+network (some campus and office Wi-Fi block direct connections).
 
-*Connection setting.* By default the pages use no ICE servers, so sessions work between
-tabs of one browser and between computers on one network. One `localStorage` key turns
-more on, with no switch in the page: `kuna.d2.collab` holds `{"stun": true}` for Google's
-public STUN server (free, no account; it tells a browser its public address and sees no
-content), or `{"stun": "stun:host:port"}` for another, and `{"turn": {"urls":
-"turn:host:3478", "username": "…", "credential": "…"}}` for a TURN relay (a server that
-carries the traffic; relays are what cost money). In the browser's console:
-`localStorage.setItem('kuna.d2.collab', JSON.stringify({ ...JSON.parse(localStorage.getItem('kuna.d2.collab') || '{}'), stun: true }))`,
-then start the session again. The same key keeps the name last used.
+*Connect across the internet.* The invite dialog has a box, **Connect across the
+internet**, unticked by default; its **?** explains it on hover or focus. Unticked, the
+pages use no ICE servers, so sessions work between tabs of one browser and between
+computers on one network. Ticked, the page asks Cloudflare's public STUN server
+(`stun.cloudflare.com:3478`: free, no account) for its internet address, which then goes
+in the invite link beside the others. The STUN server learns only that address; none of
+the program or the changes passes through it. The choice is the session's: the page that
+starts the session decides it for all its links, and a guest's page answers an invite
+that carries an internet address (`crossesNetworks` in `sdp.js`) with STUN too, so the
+guest has no box and the join dialog says that joining shares their address. Introductions
+inside the session follow the same choice. The box is remembered in the `localStorage` key
+`kuna.d2.collab` (`"stun": true`, or a `"stun:host:port"` URL for another server), which
+also keeps the name last used. If STUN finds no internet address, the invite says the link
+may work only on that network. Pairs that STUN cannot connect (symmetric NATs, networks
+that block UDP) need a TURN relay, a server that carries the encrypted traffic and the
+part that costs money. There is no switch for it in the page: `{"turn": {"urls":
+"turn:host:3478", "username": "…", "credential": "…"}}` in the same key, set in the
+browser's console, adds one to every link.
 
 *What travels.* Only the edits, never the C: every page runs its own engine on the same
 bytes, so the same directives give the same code. The session is held as

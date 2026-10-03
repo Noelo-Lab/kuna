@@ -41,6 +41,15 @@
 .d2-collab .cb-muted{color:var(--text-muted);font-size:13px;}
 .d2-collab .cb-field{display:flex;flex-direction:column;gap:4px;}
 .d2-collab .cb-field span{color:var(--text-muted);font-size:13px;}
+.d2-collab .cb-check{position:relative;display:flex;align-items:center;gap:8px;}
+.d2-collab .cb-check label{display:inline-flex;align-items:center;gap:8px;cursor:pointer;}
+.d2-collab .cb-check input{margin:0;accent-color:var(--accent-emph);cursor:pointer;}
+.d2-collab .cb-q{display:inline-grid;place-items:center;width:18px;height:18px;padding:0;border:1px solid var(--border);border-radius:50%;
+  background:none;color:var(--text-muted);font:600 11px/1 var(--font-ui);cursor:help;}
+.d2-collab .cb-q:is(:hover,:focus-visible){color:var(--text);border-color:var(--text-muted);}
+.d2-collab .cb-qtip{display:none;position:absolute;bottom:calc(100% + 6px);left:0;right:0;z-index:2;padding:8px 12px;border:1px solid var(--border);
+  border-radius:var(--radius);background:var(--bg);box-shadow:var(--shadow);color:var(--text);font-size:13px;}
+.d2-collab .cb-q:is(:hover,:focus)+.cb-qtip{display:block;}
 .d2-collab .cb-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:flex-end;}
 .d2-collab .cb-row.cb-end{justify-content:space-between;}
 .d2-collab .cb-copy{display:flex;flex-direction:row;gap:8px;}

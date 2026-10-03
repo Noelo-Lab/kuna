@@ -12,17 +12,17 @@ import {
 } from './wire.js';
 import { Sync } from './sync.js';
 import { makeOffer, takeOffer, holdPresenceLock } from './link.js';
+import { crossesNetworks } from './sdp.js';
 import { createPresence, anchorAt, findAnchor } from './presence.js';
 
 export const PREFS_KEY = 'kuna.d2.collab';
-const STUN = 'stun:stun.l.google.com:19302';
+const STUN = 'stun:stun.cloudflare.com:3478';
 const JOIN_MS = 20000;
 const VIEW_WORDS = { c: 'Code', split: 'Side by side', asm: 'Assembly', bytes: 'Bytes', stack: 'Stack' };
 const EFFORTS = { auto: 'Automatic', fast: 'Fast', reliable: 'Reliable', aggressive: 'Thorough' };
 const PEOPLE = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6" cy="5.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
   '<path d="M1.8 13.5c.5-2.4 2.2-3.7 4.2-3.7s3.7 1.3 4.2 3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
   '<circle cx="11.3" cy="6" r="1.9" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M11 9.6c1.7 0 2.9 1.1 3.3 3.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
-const NETWORK = 'Could not connect directly. You may need to be on the same network.';
 const CLOSED = 'This reply is for an invite that is no longer open. Make a new invite link.';
 
 /** The collab setting (`kuna.d2.collab`): the name last used, and the connection setting. */
@@ -35,20 +35,32 @@ export function loadCollabPrefs(storage) {
   }
 }
 
+/** Whether this browser connects across the internet (*Connect across the internet*): off unless the setting has `stun`. */
+export function acrossSetting(prefs) {
+  return prefs?.stun === true || (typeof prefs?.stun === 'string' && /^stuns?:\S+$/.test(prefs.stun));
+}
+
 /**
- * The ICE servers the setting asks for. None by default (pages on one machine
- * or one network); `stun: true` adds Google's public STUN server, a `stun:`
- * URL another, and `turn: {urls, username, credential}` a TURN relay.
+ * The ICE servers for a link. None by default (pages on one machine or one
+ * network); with `across`, a STUN server: Cloudflare's public one, or the
+ * setting's `stun:` URL. A TURN relay (`turn: {urls, username, credential}`)
+ * whenever the setting has one.
  */
-export function iceServersFrom(prefs) {
+export function iceServersFrom(prefs, across = acrossSetting(prefs)) {
   const out = [];
-  if (prefs?.stun === true) out.push({ urls: STUN });
-  else if (typeof prefs?.stun === 'string' && /^stuns?:\S+$/.test(prefs.stun)) out.push({ urls: prefs.stun });
+  if (across) out.push({ urls: typeof prefs?.stun === 'string' && /^stuns?:\S+$/.test(prefs.stun) ? prefs.stun : STUN });
   const t = prefs?.turn;
   if (t && typeof t === 'object' && typeof t.urls === 'string' && /^turns?:\S+$/.test(t.urls)) {
     out.push({ urls: t.urls, username: String(t.username ?? ''), credential: String(t.credential ?? '') });
   }
   return out;
+}
+
+/** Why a direct connection failed and what to try: `across`, the link was made to cross networks; `from`, the inviter (on the guest's side). */
+function networkText(across, from = null) {
+  if (across) return 'Could not connect directly. Some networks (some campus or office Wi-Fi) do not allow it: try another one, such as a phone\'s hotspot.';
+  return from ? `Could not connect directly. If you are on different networks, ask ${from} for a new link made with “Connect across the internet” ticked.`
+    : 'Could not connect directly. If they are on another network, make a new link with “Connect across the internet” ticked.';
 }
 
 const sizeWords = (n) => (n < 1024 ? `${n} bytes` : n < 1 << 20 ? `${Math.round(n / 1024)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
@@ -85,6 +97,7 @@ class Collab {
     this.view = null;
     this.statusNow = null;
     this.leftForPage = false;
+    this.across = false;
   }
 
   init() {
@@ -189,13 +202,15 @@ class Collab {
     };
   }
 
-  ice() {
-    return iceServersFrom(loadCollabPrefs(this.api.storage));
+  /** The ICE servers for this page's links: STUN only when the session connects across the internet. */
+  ice(across = this.across) {
+    return iceServersFrom(loadCollabPrefs(this.api.storage), across);
   }
 
-  #savePrefs() {
+  #savePrefs(across = null) {
     const p = loadCollabPrefs(this.api.storage);
     p.name = this.name;
+    if (across !== null && across !== acrossSetting(p)) p.stun = across;
     quietly(() => this.api.storage?.setItem(PREFS_KEY, JSON.stringify(p)));
   }
 
@@ -240,6 +255,7 @@ class Collab {
     const build = await this.build();
     if (this.active) return true;
     if (!this.describe() || this.describe().problem) return false;
+    this.across = acrossSetting(loadCollabPrefs(this.api.storage));
     this.sync.start({ build, name: this.name, connect: this.#connect() });
     this.group.setWhere(this.#where());
     this.#rosterChanged();
@@ -257,6 +273,7 @@ class Collab {
     this.current = null;
     this.#endJoin();
     this.sync.leave();
+    this.across = false;
     this.following = null;
     this.presence.clear();
     this.#rosterChanged();
@@ -309,7 +326,7 @@ class Collab {
       if (!file) throw new Error('open a program first');
       const code = await encodeCode('invite', { id: offer.id, n: this.name, f: file.name, z: file.size, d: offer.sdp });
       if (!this.active) throw new Error('the session ended');
-      const inv = { id: offer.id, offer, link: `${this.#base()}#join=${code}`, state: 'waiting', guest: null };
+      const inv = { id: offer.id, offer, link: `${this.#base()}#join=${code}`, state: 'waiting', guest: null, across: this.across, reach: crossesNetworks(offer.sdp) };
       this.invites.set(offer.id, inv);
       offer.ready.then((link) => {
         if (!this.active) {
@@ -360,7 +377,7 @@ class Collab {
     } catch (e) {
       inv.state = 'failed';
       this.#inviteStatus(inv);
-      return { ok: false, text: e.message === 'used' ? CLOSED : NETWORK, inv };
+      return { ok: false, text: e.message === 'used' ? CLOSED : networkText(inv.across), inv };
     }
     return { ok: true, inv };
   }
@@ -415,7 +432,8 @@ class Collab {
   async #joinNow(inv) {
     this.#endJoin();
     if (this.active) this.leave({ quiet: true });
-    const join = { inv, state: 'connecting' };
+    this.across = crossesNetworks(inv.d);
+    const join = { inv, state: 'connecting', across: this.across };
     this.join = join;
     this.view = { kind: 'join', inv };
     this.#render();
@@ -600,12 +618,12 @@ class Collab {
       if (data.k === 'got') {
         clearTimeout(timer);
         view.state = 'connecting';
-        give = setTimeout(() => end('failed', NETWORK), 25000);
+        give = setTimeout(() => end('failed', networkText(crossesNetworks(r.d))), 25000);
         this.#render();
       } else if (data.k === 'used') {
         end('failed', CLOSED);
       } else if (data.k === 'state') {
-        end(data.state === 'open' ? 'open' : 'failed', data.state === 'open' ? '' : (typeof data.text === 'string' ? data.text.slice(0, 200) : NETWORK));
+        end(data.state === 'open' ? 'open' : 'failed', data.state === 'open' ? '' : (typeof data.text === 'string' ? data.text.slice(0, 200) : networkText(crossesNetworks(r.d))));
       }
     };
     listen.postMessage({ k: 'reply', id: r.id, code, from });
@@ -951,7 +969,7 @@ class Collab {
       connecting: [`Connecting to ${inv.guest || 'them'}…`, 'busy'],
       linked: [`Connected. ${inv.guest || 'They'} are joining…`, 'busy'],
       open: [`${inv.guest || 'They'} joined.`, 'ok'],
-      failed: [inv.error || NETWORK, 'err'],
+      failed: [inv.error || networkText(inv.across), 'err'],
     }[inv.state] || ['', ''];
     this.#status(text, cls);
     const paste = this.dialog?.querySelector('[data-paste]');
@@ -961,6 +979,14 @@ class Collab {
   #nameField() {
     return '<label class="cb-field"><span>Your name</span>' +
       `<input class="d2-input" name="name" maxlength="40" autocomplete="nickname" spellcheck="false" value="${escapeHtml(this.name)}" required autofocus></label>`;
+  }
+
+  #acrossField() {
+    const on = acrossSetting(loadCollabPrefs(this.api.storage));
+    return '<div class="cb-check"><label><input type="checkbox" name="across"' + (on ? ' checked' : '') + '>Connect across the internet</label>' +
+      '<button type="button" class="cb-q" aria-label="About connecting across the internet" aria-describedby="cbacrosswhy">?</button>' +
+      '<span class="cb-qtip" id="cbacrosswhy" role="tooltip">For people on other networks. It uses Cloudflare\'s STUN server, which only tells each browser its internet (IP) address so the two computers can connect. ' +
+      'None of your data passes through it: the program and the changes go straight between the browsers. The invite link then includes your IP address.</span></div>';
   }
 
   #copyRow(value, label) {
@@ -987,9 +1013,9 @@ class Collab {
     } else if (!this.active) {
       body = `<p>Invite someone to work on <b>${escapeHtml(bin.name)}</b> with you. You both see the same program and each other's changes — names, types, notes and patched bytes — and where the other person is pointing.</p>` +
         `<p class="cb-note">The people who join receive a copy of ${escapeHtml(bin.name)} from your browser.</p>` +
-        `<form data-form="start">${this.#nameField()}<div class="cb-row"><button class="d2-btn primary" type="submit">Make an invite link</button></div></form>` +
+        `<form data-form="start">${this.#nameField()}${this.#acrossField()}<div class="cb-row"><button class="d2-btn primary" type="submit">Make an invite link</button></div></form>` +
         statusLine(this.statusNow?.text, this.statusNow?.cls) +
-        '<p class="cb-small d2-teach">It works between tabs of this browser and between computers on the same network. Nothing is sent to a server.</p>';
+        '<p class="cb-small d2-teach">Without “Connect across the internet”, it works between tabs of this browser and between computers on the same network. Either way, the program and the changes go straight from browser to browser.</p>';
     } else {
       const alone = this.group.size() < 2;
       title = alone ? 'Invite someone' : `Working together on ${bin ? bin.name : 'a program'}`;
@@ -1034,6 +1060,7 @@ class Collab {
     }
     const program = this.api.binary()?.name || 'the program';
     return '<div class="cb-step"><h3>1. Send this link to one person</h3>' + this.#copyRow(inv.link, 'Invite link') +
+      (inv.across && !inv.reach ? '<p class="cb-small">This browser could not find its internet address, so the link may work only on your network.</p>' : '') +
       `<p class="cb-small">Whoever opens it receives a copy of ${escapeHtml(program)} from your browser.` +
       '<span class="d2-teach"> It lets one person in: make another link for each person you invite.</span></p></div>' +
       '<div class="cb-step"><h3>2. Open the reply link they send back</h3>' +
@@ -1062,6 +1089,7 @@ class Collab {
       const was = v.replacing && v.replacing.state !== 'failed' ? v.replacing.inv?.n : null;
       const body = `<p><b>${escapeHtml(from)}</b> invites you to work on <b>${escapeHtml(inv.f)}</b> (${sizeWords(inv.z)}) together.</p>` +
         `<p class="cb-note">When you join, ${escapeHtml(from)}'s browser sends you a copy of the program and it opens here.</p>` +
+        (crossesNetworks(inv.d) ? `<p class="cb-small">This link connects across the internet: joining shares your internet (IP) address with ${escapeHtml(from)}.</p>` : '') +
         (this.active ? '<p class="cb-note">You will leave the session you are in now.</p>' : '') +
         (was ? `<p class="cb-note">You were joining ${escapeHtml(was)}'s session; joining this one stops that.</p>` : '') +
         `<form data-form="join">${this.#nameField()}<div class="cb-row"><button type="button" class="d2-btn" data-act="close">Not now</button>` +
@@ -1069,14 +1097,14 @@ class Collab {
       return { title, body };
     }
     if (j.state === 'failed') {
-      return { title, body: statusLine(j.error || NETWORK, 'err') + '<div class="cb-row"><button type="button" class="d2-btn primary" data-act="close" autofocus>OK</button></div>' };
+      return { title, body: statusLine(j.error || networkText(j.across, from), 'err') + '<div class="cb-row"><button type="button" class="d2-btn primary" data-act="close" autofocus>OK</button></div>' };
     }
     if (j.state === 'reply') {
       return {
         title,
         body: `<div class="cb-step"><h3>Send this reply link back to ${escapeHtml(from)}</h3>${this.#copyRow(j.reply, 'Reply link')}</div>` +
           `<p class="cb-small">Send it the way the invite reached you. When ${escapeHtml(from)} opens it, you are connected. Keep this page open until then.</p>` +
-          statusLine(j.stuck ? NETWORK : `Waiting for ${from} to open your reply link…`, j.stuck ? 'err' : 'busy'),
+          statusLine(j.stuck ? networkText(j.across, from) : `Waiting for ${from} to open your reply link…`, j.stuck ? 'err' : 'busy'),
       };
     }
     const [text, cls] = {
@@ -1106,7 +1134,7 @@ class Collab {
       handing: [`Handing ${v.reply.n}'s reply to your Kuna tab…`, 'busy'],
       connecting: [`Connecting to ${v.reply.n}…`, 'busy'],
       open: ['Connected — you can close this tab.', 'ok'],
-      failed: [v.text || NETWORK, 'err'],
+      failed: [v.text || networkText(crossesNetworks(v.reply.d)), 'err'],
     }[v.state];
     return { title, body: statusLine(text, cls) };
   }
@@ -1159,7 +1187,7 @@ class Collab {
         return;
       }
       this.name = name;
-      this.#savePrefs();
+      this.#savePrefs(kind === 'start' ? form.elements.across.checked : null);
       if (kind === 'join') {
         await this.#joinNow(this.view.inv);
         return;

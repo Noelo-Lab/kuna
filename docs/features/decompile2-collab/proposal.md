@@ -155,7 +155,9 @@ answers in PR #742.
    machine or same network). One setting turns them on, with no switch in the
    page: `localStorage` key `kuna.d2.collab`, `{"stun": true}` for Google's
    server (or a `stun:` URL), `{"turn": {"urls", "username", "credential"}}` for
-   a relay (`docs/web-integration.md` §4.2).
+   a relay (`docs/web-integration.md` §4.2). *(2026-10-03: the switch is now in the page, the invite dialog's **Connect
+   across the internet** box, still unticked by default, and it uses Cloudflare's STUN
+   server; a guest follows the invite's choice. See `docs/web-integration.md` §4.2.)*
 3. **The program travels automatically.** The inviter's page sends it on join
    (64 KiB chunks, paced by `bufferedAmount`, SHA-256 checked, at most 64 MiB)
    and the guest's page opens it with no prompt; the invite dialog says that

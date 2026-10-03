@@ -46,6 +46,11 @@ export function validSdp(d) {
     d.c.every((c) => typeof c === 'string' && CAND.test(c)) && (d.m === undefined || (typeof d.m === 'string' && MID.test(d.m)));
 }
 
+/** Whether a compact description reaches beyond its network: it carries a STUN-learned (`srflx`) or relay address. */
+export function crossesNetworks(d) {
+  return validSdp(d) && d.c.some((c) => /^\S+ \d+ [sr]/.test(c));
+}
+
 /** A full description from a compact one: `type` 'offer' (actpass) or 'answer' (passive). */
 export function expandSdp(d, type) {
   if (!validSdp(d)) throw new Error('not a description');
