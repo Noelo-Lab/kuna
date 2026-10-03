@@ -130,9 +130,10 @@ impl Funcdata {
         // scopes to recurse into.
         let mut encodable: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
         if !self.has_no_code() {
+            crate::p0_knowledge::kuna_wrappedstackmap::wire_storage(self);
             let wire_symbols = std::mem::take(&mut self.kuna_wire_symbols);
             if let Some(lm) = self.get_scope_local() {
-                lm.encode_with_wire_symbols(&wire_symbols, enc)?;
+                lm.encode_with_storage(&wire_symbols, &self.kuna_wrapped_wire_storage, enc)?;
                 encodable = lm.encodable_symbol_ids();
                 // Only the wire symbols the encode above actually WROTE (the
                 // `is_encodable` filter): a reference to a skipped one is the

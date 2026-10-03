@@ -3179,3 +3179,29 @@ Conventions worth knowing before reading anything:
 Suggested order for a first full read: this chapter, then 01 → 02 → 03 (the
 world up to SSA), then 04/05/06 as one unit (they converge together, §0.6), then
 07 → 08 → 09.
+
+Formal byte-addressed stack objects may cross entry SP=0. The mapping helper
+`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_wrappedstackmap.rs` represents
+that object with one whole native JOIN mapping and two mapped precision-piece
+entries, one ending at the stack space mask and one starting at zero. Their
+logical offsets preserve the object's byte positions in either endianness.
+The precision pieces do not increase the whole-mapping count. A stack-scope
+snapshot records the main JOIN address and reconstructs its pieces on reload.
+Ordinary address spaces and word-addressed stack spaces retain the existing
+overflow rejection. Same-size retyping updates the shared type; changing a
+joined symbol's size is rejected without changing its mappings.
+
+Function serialization keeps the physical entries internal and gives each
+wrapped symbol a distinct temporary storage address from the normal analysis
+unique allocator. Ghidra cannot store two stack pieces as one variable, and
+its emergency JOIN fallback otherwise collapses same-size awkward joins into
+one unique location. The wire carrier preserves the symbol id and logical
+size, avoids the emergency location, and is reused while its reserved size
+matches the symbol. A size change after removing mappings reserves fresh
+storage; an unrelated JOIN mapping on the same symbol retains its native
+encoding. Each snapshot records the whole JOIN that owns its physical piece,
+and rebuild carries that JOIN only once.
+Reserving it creates no analysis varnode and changes no physical mapping or
+emitted C. Ghidra receives temporary storage for the logical local, rather than
+a persistable ordinary stack-variable location; ordinary symbol storage and
+register-plus-stack parameter JOINs keep their existing encoding.
