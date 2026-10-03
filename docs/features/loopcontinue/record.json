@@ -6,7 +6,7 @@
   "func_addr": "0x401a47",
   "ablation_changed": 0,
   "datatest_assertions": 675,
-  "stage_assertions": 1830,
+  "stage_assertions": 1839,
   "parity": "OK",
   "decisions": [
     "Virtualize secondary dominated back-edges before CollapseStructure greedily folds retry cycles.",

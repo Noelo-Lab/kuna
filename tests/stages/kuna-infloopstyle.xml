@@ -1,0 +1,23 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x1000">e805000000ebf9c39090c3</bytechunk>
+<bytechunk space="ram" offset="0x1100">89f883e80185c07ff9c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="forever"/>
+<symbol space="ram" offset="0x100a" name="tick"/>
+<symbol space="ram" offset="0x1100" name="countdown"/>
+</binaryimage>
+<script>
+<com>option infloopstyle do</com>
+<com>lo fu forever</com><com>decompile</com><com>print C</com>
+<com>lo fu countdown</com><com>decompile</com><com>print C</com>
+<com>option infloopstyle while</com>
+<com>lo fu forever</com><com>decompile</com><com>print C</com>
+<com>lo fu countdown</com><com>decompile</com><com>print C</com>
+<com>phase catalog infloopstyle</com><com>quit</com>
+</script>
+<stringmatch name="INFLOOPSTYLE #1: legacy bottom-tested infinite spelling" min="1" max="1">\} while\( true \);</stringmatch>
+<stringmatch name="INFLOOPSTYLE #2: default top-tested infinite spelling" min="1" max="1">while\( true \) \{</stringmatch>
+<stringmatch name="INFLOOPSTYLE #3: body call preserved in both forms" min="2" max="2">tick\(\);</stringmatch>
+<stringmatch name="INFLOOPSTYLE #4: conditional do-while preserved in both passes" min="2" max="2">\} while \(0 &lt; a0\);</stringmatch>
+<stringmatch name="INFLOOPSTYLE #5: live style follows the option" min="1" max="1">"default": "while", "current": "while"</stringmatch>
+</decompilertest>

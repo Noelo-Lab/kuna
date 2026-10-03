@@ -1,0 +1,19 @@
+{
+  "option": "infloopstyle",
+  "default": "while",
+  "default_on": true,
+  "binary": "./private/server",
+  "selector": "main",
+  "func_addr": "0x401a47",
+  "ablation_changed": 0,
+  "datatest_assertions": 675,
+  "speed_off_value": "do",
+  "speed_on_value": "while",
+  "speed_off_ms": 77.57,
+  "speed_on_ms": 80.67,
+  "speed_delta_pct": 4.0,
+  "speed_samples": 31,
+  "speed_budget_pct": 5,
+  "speed_within_budget": true,
+  "speed_forced_off": false
+}

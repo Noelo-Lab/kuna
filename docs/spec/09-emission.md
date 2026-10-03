@@ -818,6 +818,14 @@ addl-flag on the condition's `CBRANCH` and emit the condition through the same
 parenthesization, short-circuiting and any comma-expression side effects are
 identical to the `if` form they replace.
 
+The `infloopstyle while|do` option controls unconditional C loop spelling.
+By default an infinite-loop node emits `while (true) { ... }`; `do` restores
+`do { ... } while (true);`. A constant true condition has no side effects,
+so both spellings execute the same body and preserve `break`, `continue`,
+returns, and loop-head labels. Conditional do-while nodes retain their bottom
+test, and Rust output retains `loop { ... }`. The option parser lives in
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_infloopstyle.rs`.
+
 Every non-default switch arm emits its recovered numeric label even when the
 arm has no p-code op available as a token-markup anchor. Such labels use the
 same switch-width, signedness, and integer-format rules as op-backed labels,

@@ -1015,6 +1015,9 @@ Three tiers:
 | CONCAT22 in a short byte-swap helper | [`partialconcat`](#partialconcat) |
 | CONCAT after a partial register write | [`partialconcat`](#partialconcat) |
 | an unchanged upper word joined to a replaced lower word | [`partialconcat`](#partialconcat) |
+| unconditional loop prints do-while (true) at the bottom | [`infloopstyle`](#infloopstyle) |
+| prefer while (true) at the top | [`infloopstyle`](#infloopstyle) |
+| need the previous infinite-loop spelling for comparison | [`infloopstyle`](#infloopstyle) |
 
 ## Toggleable transforms
 
@@ -3083,6 +3086,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: a helper that rotates AX after copying EDI into EAX renders preserved upper bits and the swapped lower bytes as C masks. Set off to recover the upstream CONCAT22 spelling for comparison.
 - **Where / provenance:** P9/cast-policy · kuna · presentation-default · pwncollege-partial-register-concat
 - **Example:** `option partialconcat off`
+
+### `infloopstyle` -- while | do, default `while`
+
+- **Symptoms:** unconditional loop prints do-while (true) at the bottom; prefer while (true) at the top; need the previous infinite-loop spelling for comparison.
+- **What it does:** Spell unconditional C loops as while (true) at the top or do-while (true) at the bottom.
+- **When to flip:** While by default: unconditional loops print while (true) at the top. Set do to recover the previous spelling. Conditional do-while loops and Rust loop syntax keep their existing form.
+- **Where / provenance:** P9/infinite-loop-style · kuna · presentation-default · server-infinite-loop-style
+- **Example:** `option infloopstyle do`
 
 ## Programmatic use
 

@@ -54,6 +54,11 @@ kuna_options! { self, p1;
         self.print_mut().options.set_brace_elide(val);
         Ok(msg)
     },
+    "infloopstyle" => {
+        let (top, msg) = crate::kuna_infloopstyle::parse_inf_loop_style(p1)?;
+        self.print_mut().options.inf_loop_top = top;
+        Ok(msg)
+    },
     "warnstyle" => {
         let (val, msg) = crate::kuna_warnstyle::OptionWarnStyle.apply(p1)?;
         self.print_mut().options.set_warn_inline(val);

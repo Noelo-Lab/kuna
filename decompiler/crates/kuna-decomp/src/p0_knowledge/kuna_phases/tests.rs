@@ -26,9 +26,9 @@ fn group_count_is_39() {
 }
 
 #[test]
-fn subphase_count_is_47() {
-    assert_eq!(kuna_num_subphases(), 47);
-    assert_eq!(SUBPHASE_TABLE.len(), 47);
+fn subphase_count_is_48() {
+    assert_eq!(kuna_num_subphases(), 48);
+    assert_eq!(SUBPHASE_TABLE.len(), 48);
 }
 
 #[test]
@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_257() {
-    assert_eq!(kuna_num_settables(), 257);
-    assert_eq!(SETTABLE_TABLE.len(), 257);
+fn settable_count_is_258() {
+    assert_eq!(kuna_num_settables(), 258);
+    assert_eq!(SETTABLE_TABLE.len(), 258);
 }
 
 #[test]
-fn tier_counts_are_84_core_106_transform_67_analysis() {
+fn tier_counts_are_85_core_106_transform_67_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_84_core_106_transform_67_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (84, 106, 67));
+    assert_eq!((core, transform, analysis), (85, 106, 67));
 }
 
 #[test]
@@ -548,6 +548,7 @@ fn option_values_live_value_present_for_110() {
                             | "truthycond"
                             | "braceelide"
                             | "warnstyle"
+                            | "infloopstyle"
                             | "int3pad"
                             | "x64syscall"
                             | "pebnames"
@@ -939,7 +940,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 251 -> 252: +1 for `varargforward`.
     // 252 -> 253: +1 for `stackstoreguard`.
     // 253 -> 254: +1 for `protoranges`; its P6 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 256);
+    assert_eq!(json.matches("},\n").count(), 257);
 }
 
 #[test]

@@ -146,7 +146,7 @@ A single-entry natural loop can have several back-edges to the same head:
 error retries and early continues, followed by the ordinary end-of-body latch.
 The collapse schemas can consume each retry as a smaller loop before their
 fallback considers virtualizing any edge, producing nested infinite loops for
-one source loop. With `loopcontinue on`,
+one source loop. With `loopcontinue on` (the default),
 `kuna_loopcontinue.rs (refine_latches)` runs on the freshly seeded collapse
 mirror, including after a region-structurer fallback. It requires one ordinary
 entry, at least two back-edges, and domination of every latch by the head.

@@ -25,8 +25,8 @@
 <com>print C</com>
 <com>quit</com>
 </script>
-<stringmatch name="LOOPCONTINUE #1: OFF emits three nested retry loops" min="3" max="3">while\( true \) \{</stringmatch>
-<stringmatch name="LOOPCONTINUE #2: ON emits one infinite loop" min="1" max="1">\} while\( true \);</stringmatch>
+<stringmatch name="LOOPCONTINUE #1: OFF three loops plus ON one loop" min="4" max="4">while\( true \) \{</stringmatch>
+<stringmatch name="LOOPCONTINUE #2: one outer infinite loop per pass" min="2" max="2">^  while\( true \) \{</stringmatch>
 <stringmatch name="LOOPCONTINUE #3: ON preserves both early continues" min="2" max="2">continue;</stringmatch>
 <stringmatch name="LOOPCONTINUE #4: accept runs once per iteration in both passes" min="2" max="2">= accept\(</stringmatch>
 <stringmatch name="LOOPCONTINUE #5: fork runs once in both passes" min="2" max="2">= fork\(\);</stringmatch>

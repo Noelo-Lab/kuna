@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1834,
-    1834
+    1839,
+    1839
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -464,6 +464,11 @@
     "data:INDEXALIASGUARD #5: load, the MOV [ESP+0x14],ECX at 0x40134d reaches element 1",
     "data:INDEXALIASGUARD #6: load, the MOV [ESP+0x20],EDX at 0x40135d reaches element 2 across the two intervening pushes",
     "data:INDEXALIASGUARD #7: load, the MOV [ESP+0x1c],EAX at 0x401355 reaches element 3",
+    "data:INFLOOPSTYLE #1: legacy bottom-tested infinite spelling",
+    "data:INFLOOPSTYLE #2: default top-tested infinite spelling",
+    "data:INFLOOPSTYLE #3: body call preserved in both forms",
+    "data:INFLOOPSTYLE #4: conditional do-while preserved in both passes",
+    "data:INFLOOPSTYLE #5: live style follows the option",
     "data:INT3PAD #1: the four-byte pad is counted and named (warn and halt passes only)",
     "data:INT3PAD #2: the trap is the function's return value except when it ends the flow",
     "data:INT3PAD #3: int3pad halt renders the trap as a statement, not a returned call",
@@ -616,8 +621,8 @@
     "data:LOOPCONDHOIST #2: ON hoists the head test into the loop header (pass 2 only)",
     "data:LOOPCONDHOIST #3: the OFF pass needs a break to reach the match arm; the ON pass does not (pass 1 only)",
     "data:LOOPCONTINUE #10: no goto or synthetic label remains",
-    "data:LOOPCONTINUE #1: OFF emits three nested retry loops",
-    "data:LOOPCONTINUE #2: ON emits one infinite loop",
+    "data:LOOPCONTINUE #1: OFF three loops plus ON one loop",
+    "data:LOOPCONTINUE #2: one outer infinite loop per pass",
     "data:LOOPCONTINUE #3: ON preserves both early continues",
     "data:LOOPCONTINUE #4: accept runs once per iteration in both passes",
     "data:LOOPCONTINUE #5: fork runs once in both passes",
