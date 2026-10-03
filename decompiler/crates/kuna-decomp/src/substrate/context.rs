@@ -1008,6 +1008,10 @@ pub struct ArchContext {
     /// [`crate::p4_calls::kuna_varargstackargs::stack_section_split`], via the
     /// flag `ActionActiveParam` writes onto the call's `ParamActive`.
     pub vararg_stack_args: bool,
+    /// (kuna) keep a declared parameter forwarded unchanged to a variadic call's
+    /// variable part (`varargforward`).  Read by
+    /// [`crate::p4_calls::kuna_varargforward::forwards_declared_parameter`].
+    pub vararg_forward: bool,
     /// (kuna) reconcile a call's recovered argument list with a sibling call to
     /// the same callee (`calleearity`).  Read by
     /// [`build_input_from_trials`](crate::funcdata_callsite::build_input_from_trials)
@@ -1686,6 +1690,7 @@ impl ArchContext {
             input_param_gap: true,
             stack_arg_gap: true,         // stackarggap (DIV-140 default-on)
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
+            vararg_forward: true,        // varargforward (default-on)
             callee_arity: true,          // calleearity (DIV-102 default-on)
             callee_arity_fwd: true,      // calleearityfwd (default-on)
             callee_arity_live: true,     // calleearitylive (default-on)

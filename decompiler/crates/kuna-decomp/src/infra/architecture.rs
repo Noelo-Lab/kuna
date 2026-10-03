@@ -829,6 +829,10 @@ pub struct Architecture {
     /// fixed parameters and the varargs stop deactivating them (option
     /// `varargstackargs`).  See [`crate::p4_calls::kuna_varargstackargs`].
     pub vararg_stack_args: bool,
+    /// (kuna) Keep a declared parameter the function forwards unchanged, in its
+    /// own register, to a variadic call's variable part (option
+    /// `varargforward`).  See [`crate::p4_calls::kuna_varargforward`].
+    pub vararg_forward: bool,
     /// (kuna) Reconcile a call's recovered argument list with a sibling call to
     /// the same callee in the same function (option `calleearity`).  See
     /// [`crate::p4_calls::kuna_calleearity`].
@@ -2541,6 +2545,7 @@ impl Architecture {
             input_param_gap: true,
             stack_arg_gap: true,
             vararg_stack_args: true,
+            vararg_forward: true,
             callee_arity: true,
             callee_arity_fwd: true,
             callee_arity_live: true,
@@ -2845,6 +2850,7 @@ impl Architecture {
         self.stack_arg_gap = true; // (kuna) DIV-140 default-on: at a call site an argument register the caller never wrote ends the argument list when the next slot is on the stack, so a body-less import stops acquiring the caller's own untouched parameter plus a stack leftover as arguments (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
+        self.vararg_forward = true; // (kuna) default-on: a declared parameter forwarded unchanged in its own register to a variadic call's variable part is an argument (0/675 ablation)
         self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
         self.callee_arity_fwd = true; // (kuna) DIV-PENDING default-on: retry that reconciliation against the siblings that finalize later (0/675 ablation)
         self.callee_arity_live = true; // (kuna) DIV-PENDING default-on: extend a partial argument list when the callee body agrees (0/675 ablation)
@@ -3551,6 +3557,7 @@ impl Architecture {
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
         ctx.stack_arg_gap = self.stack_arg_gap; // stackarggap
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
+        ctx.vararg_forward = self.vararg_forward; // varargforward
         ctx.callee_arity = self.callee_arity; // calleearity
         ctx.callee_arity_fwd = self.callee_arity_fwd; // calleearityfwd
         ctx.callee_arity_live = self.callee_arity_live; // calleearitylive

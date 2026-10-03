@@ -1,0 +1,73 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-829 (kuna): "A variadic call drops an argument the caller forwards
+    unchanged in its own register"
+    https://github.com/Noelo-Lab/kuna/issues/829
+
+    Source, gcc -O2:
+      int pr(const char *f, ...);
+      int d2(const char *f, int a) { return pr(f, a); }
+      int d3(const char *f, int a) { if (a > 5) return 0; return pr(f, a); }
+      int d5(const char *f, int a, int b, int c) { return pr(f, a, b, c); }
+
+    d2 is `endbr64; xor %eax,%eax; jmp pr` and d5 the same: every argument is
+    still in the register it arrived in.  The bytes are gcc's, with each jmp
+    aimed at the `ret` standing in for pr at 0x100100.
+
+    Stage model: P4 call recovery, active-input-trial scoring.  Upstream's
+    AncestorRealistic fails a trial whose value at the call is the function's
+    own input, so the esi/edx/ecx trials are inactive and, with nothing active
+    after them, dropped.  `option varargforward` keeps such a trial at a call
+    whose prototype ends in `...` when the calling function declares a
+    parameter at that storage and the call is the only reader of it.  d3 also
+    compares `a`, so it has another reader and is left alone in both passes.
+
+    Pass 1 (`option varargforward off`) reproduces the bug: `pr(f)` in d2 and
+    d5.  Pass 2 (default, on) prints `pr(f,a)` and `pr(f,a,b,c)`.
+-->
+<bytechunk space="ram" offset="0x100000">
+f30f1efa31c0e9f50000009090909090
+f30f1efa83fe057e0731c0c30f1f4000
+31c0e9d90000009090909090909090
+</bytechunk>
+<bytechunk space="ram" offset="0x100030">
+f30f1efa31c0e9c5000000
+</bytechunk>
+<bytechunk space="ram" offset="0x100100">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="d2"/>
+<symbol space="ram" offset="0x100010" name="d3"/>
+<symbol space="ram" offset="0x100030" name="d5"/>
+<symbol space="ram" offset="0x100100" name="pr"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 pr(char *f, ...);</com>
+  <com>parse line extern int4 d2(char *f, int4 a);</com>
+  <com>parse line extern int4 d3(char *f, int4 a);</com>
+  <com>parse line extern int4 d5(char *f, int4 a, int4 b, int4 c);</com>
+  <com>option varargforward off</com>
+  <com>lo fu d2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu d5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option varargforward on</com>
+  <com>lo fu d2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu d5</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu d3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH829 x86 #1: varargforward off drops every forwarded argument in d2 and d5 (bug reproduced), and d3 keeps pr(f) with it on" min="3" max="3">return pr\(f\);</stringmatch>
+<stringmatch name="GH829 x86 #2: varargforward on keeps the int forwarded in esi" min="1" max="1">return pr\(f,a\);</stringmatch>
+<stringmatch name="GH829 x86 #3: varargforward on keeps esi, edx and ecx" min="1" max="1">return pr\(f,a,b,c\);</stringmatch>
+<stringmatch name="GH829 x86 #4: d3 also compares its parameter, so its call is left as it was" min="1" max="1">if \(6 &lt;= a\)</stringmatch>
+</decompilertest>

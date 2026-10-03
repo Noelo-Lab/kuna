@@ -1968,7 +1968,7 @@ mod tests {
         // and kuna-flowmode / a blx selects Thumb for its own target only
         // and kuna-storealias / a global read back after a store through a
         // pointer prints as the global (GH-792)
-        assert_eq!(count, 389, "corpus file count drifted");
+        assert_eq!(count, 391, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
