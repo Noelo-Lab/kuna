@@ -118,9 +118,8 @@
 //! never touches those registers (`stated_tail_return`), each RETURN gets a read
 //! of each and the function's return trial for each (`claim_tail_return`). A
 //! register that carries no argument (x86 `eax`, MIPS `v0`) may be written before
-//! the call, which overwrites it, unless the function's callers already read a
-//! result of their own width (`voidret`); heritage then reads the claimed
-//! register as the low SUBPIECE of the wider one the function wrote. Upstream's `ancestorOpUse` refuses an INDIRECT creation
+//! the call, which overwrites it; heritage then reads the claimed register as
+//! the low SUBPIECE of the wider one the function wrote. Upstream's `ancestorOpUse` refuses an INDIRECT creation
 //! at a RETURN, so [`returns_tail_result`] accepts the one planted at a claimed
 //! call, whose output then takes the callee's recovered return type
 //! ([`tail_return_type`]). A register pair is kept whole or not at all
@@ -568,11 +567,10 @@ pub(crate) fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
 /// function touches.
 ///
 /// A register that carries no argument ([`return_only`]: x86 `eax`, MIPS `v0`)
-/// may also be touched BEFORE the call, unless the function's callers already
-/// said how wide a result they read (`voidret`, which then keeps that width):
-/// the call overwrites it, so `mov (%rdi),%rax; ...; jmp g` returns what `g`
-/// does. An argument register is not relaxed: ARM `mov r0,#5; b g` is how a
-/// `void` function calls `g(5)` as often as how an `int` one returns it.
+/// may also be touched BEFORE the call, which overwrites it, so `mov
+/// (%rdi),%rax; ...; jmp g` returns what `g` does. An argument register is not
+/// relaxed: ARM `mov r0,#5; b g` is how a `void` function calls `g(5)` as often
+/// as how an `int` one returns it.
 fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId>)> {
     if data.get_func_proto().is_output_locked() || data.get_active_output().is_none() {
         return None;
@@ -610,7 +608,7 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     let proto = data.get_func_proto();
     let free = |(a, s): &(Address, int4)| {
         proto.characterize_as_output(a, *s) != crate::fspec::Containment::NoContainment
-            && (!touched_by(data, a, *s, true) || (return_only(proto, a, *s) && data.kuna_forced_return().is_empty()))
+            && (!touched_by(data, a, *s, true) || return_only(proto, a, *s))
     };
     if !pieces.iter().all(free) || paths.iter().any(|&(call, ret)| touched_after(data, call, ret, &pieces)) {
         return None;
