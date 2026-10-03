@@ -141,6 +141,31 @@ unrestricted upstream pass only when that finds nothing. A function with no
 loop-head candidate is byte-identical, and the scan still terminates on the same
 fixpoint because each fold strictly reduces the component count.
 
+**`loopcontinue` — preserve secondary latches before greedy loop folding.**
+A single-entry natural loop can have several back-edges to the same head:
+error retries and early continues, followed by the ordinary end-of-body latch.
+The collapse schemas can consume each retry as a smaller loop before their
+fallback considers virtualizing any edge, producing nested infinite loops for
+one source loop. With `loopcontinue on`,
+`kuna_loopcontinue.rs (refine_latches)` runs on the freshly seeded collapse
+mirror, including after a region-structurer fallback. It requires one ordinary
+entry, at least two back-edges, and domination of every latch by the head.
+A head with an exit outside the natural-loop body, a switch anywhere in that
+body, another loop head in that body, or a conditional retained latch is
+excluded, preserving existing head-tested, bottom-tested, and switch-loop
+schemas. The highest reverse-postorder latch stays structural; the others are marked as gotos before schema matching.
+Every body node must have no outside predecessor except the head, and any
+irreducible edge touching the body rejects refinement: dominators are computed
+with those edges masked and alone cannot establish single entry.
+No p-code, statement, or destination changes.
+
+`kuna_loopcontinue.rs (recover_continues)` runs before `mark_unstructured`.
+A goto or if-goto becomes `continue` only when its target's first leaf is the
+first leaf of its innermost `BlockInfLoop`. Entering a nested loop resets that
+scope; conditional loops disable recovery because their continue may evaluate
+a condition or iterator rather than restart the first leaf. Other destinations
+retain gotos. `off` restores the original collapse precedence and rendering.
+
 **(angr) `condfold` — folding across a *complex* sibling.** `rule_block_or`
 requires the sibling condition block (upstream's `orblock`, the right operand
 of the prospective `&&`/`||`) to be *non-complex*: `substrate/funcdata_block.rs

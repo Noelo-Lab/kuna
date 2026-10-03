@@ -166,6 +166,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         });
     }
     Some(Cow::Borrowed(match option {
+        "loopcontinue" => on_off(conf.loop_continue),
         "compareform" => {
             if conf.present_lessequal {
                 "original"

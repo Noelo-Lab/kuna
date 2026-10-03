@@ -1,0 +1,66 @@
+{
+  "xml_files": 397,
+  "c_emitting_files": 378,
+  "no_c_output": [
+    "tests/datatests/revisit.xml",
+    "tests/stages/gh1951-avr-rcallwrap.xml",
+    "tests/stages/gh4788-v850-bcond-disp17.xml",
+    "tests/stages/gh5897-arm-cpy-mov.xml",
+    "tests/stages/gh6389-8085-undoc.xml",
+    "tests/stages/gh7139-x86-16-disp16-signed.xml",
+    "tests/stages/gh7418-x86-call-rel16-mask.xml",
+    "tests/stages/gh7451-riscvzfaflis.xml",
+    "tests/stages/gh8391-arm-thumb-mrrc.xml",
+    "tests/stages/gh8456-arm-mrs-banked.xml",
+    "tests/stages/gh8790-x86-prefetch-regform.xml",
+    "tests/stages/gh8844-avr-rjmpwrap.xml",
+    "tests/stages/gh9001-hcs12brn.xml",
+    "tests/stages/kuna-catalog.xml",
+    "tests/stages/kuna-console.xml",
+    "tests/stages/kuna-pdb-sidecar.xml",
+    "tests/stages/kuna-pipeline-quality.xml",
+    "tests/stages/kuna-regions.xml",
+    "tests/stages/kuna-restarts.xml"
+  ],
+  "changed": [
+    {
+      "file": "tests/stages/ghangr-loweredswitch-mv.xml",
+      "lines_off": 856,
+      "lines_on": 856,
+      "calls_same": true,
+      "hunks": 2,
+      "classification": "goto to innermost infinite-loop head becomes continue"
+    },
+    {
+      "file": "tests/stages/ghdec-unsigned-byte-vm-selector.xml",
+      "lines_off": 1653,
+      "lines_on": 1653,
+      "calls_same": true,
+      "hunks": 12,
+      "classification": "goto to innermost infinite-loop head becomes continue"
+    },
+    {
+      "file": "tests/stages/kuna-loopcontinue.xml",
+      "lines_off": 53,
+      "lines_on": 53,
+      "calls_same": true,
+      "hunks": 8,
+      "classification": "three nested retry loops become one infinite loop with two early continues"
+    },
+    {
+      "file": "tests/stages/switchsharedcase-b2sum.xml",
+      "lines_off": 419,
+      "lines_on": 419,
+      "calls_same": true,
+      "hunks": 3,
+      "classification": "goto to innermost infinite-loop head becomes continue"
+    }
+  ],
+  "private_server": {
+    "functions": 45,
+    "changed": [
+      "main"
+    ],
+    "classification": "one infinite loop with EINTR and fork-failure continues; all calls and return paths preserved"
+  }
+}

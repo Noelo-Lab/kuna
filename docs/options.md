@@ -200,6 +200,9 @@ Three tiers:
 | a for/while header condition is left inside the loop body | [`loopcondhoist`](#loopcondhoist) |
 | kuna writes while(true) where ida writes while (cond) | [`loopcondhoist`](#loopcondhoist) |
 | a loop's early-exit return is the loop's first statement instead of its condition | [`loopcondhoist`](#loopcondhoist) |
+| one source loop emitted as multiple nested infinite loops | [`loopcontinue`](#loopcontinue) |
+| early continues emitted as retry loops | [`loopcontinue`](#loopcontinue) |
+| accept and fork retries obscure a server's main loop | [`loopcontinue`](#loopcontinue) |
 | goto-heavy multi-exit loop where angr recovers a clean while/for with break/continue | [`regionlooprefine`](#regionlooprefine) |
 | irreducible or multi-latch loop falls back to raw gotos instead of folding | [`regionlooprefine`](#regionlooprefine) |
 | secondary loop exits rendered as gotos rather than break statements | [`regionlooprefine`](#regionlooprefine) |
@@ -1424,6 +1427,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Turn ON when a loop comes back as `while( true ) {` with the real loop condition immediately inside it as a guarded exit -- `while( true ) { if (!C) return X; BODY; }` -- where the source and IDA write `while (C) { BODY }`. Witnesses: coreutils od read_char becomes `while (dat) { ... }`, and libacl getfacl walk_tree_visited reaches the source's exact `for (v1 = ...; v1 != a0; v1 = ...) { ... } return 0;`. The named hazard is handled by the existing rule rather than by a new predicate: libacl getfacl get_list, whose loop follower FREES the list and returns NULL, keeps its semantics exactly (the free+return moves into the `break` arm and the normal exit returns the list) because ruleBlockIfNoExit only folds a clause of in-degree 1; bash mksyntax main is byte-identical. MEASURED BIDIRECTIONALLY over the whole decbench O0 slice (32,339 functions scored in both arms, 265 slices, `scripts.decbench.optsweep`): 2,281 bodies change, GED 230,291 -> 224,670 (-5,621), GED-perfect 14,785 -> 15,454 (+669), 680 functions moved TO perfect against 11 moved OFF (61.8:1, McNemar z = +25.5), improved 1,347 / worsened 256. EVERY architecture gains: x86-64 +542, ARM Cortex-M +123, i386 PE +4. Over the 2,281 changed bodies the shape audit reads `while( true )` 2,087 -> 223, gotos 621 -> 409, labels 399 -> 251, lines 123,744 -> 118,891, and `// no-return` unchanged. Sixty-six of those functions lose duplicated callees (openssh addr_match_cidr_list emits `free(list)` once instead of five times) -- that is the returndup-cloned loop follower being re-shared as the single loop exit, and the resulting pane is the openssh source verbatim. Default OFF: it changes WHICH of two legal folds happens first, a divergence from upstream's component order, so the flip needs its own DIV row plus the 0/675 ablation and a speed number.
 - **Where / provenance:** P8/goto-quality · kuna · structure-recovery · decbench-ifnoexit-loopcondhoist
 - **Example:** `option loopcondhoist on`
+
+### `loopcontinue` -- on | off, default `on`
+
+- **Symptoms:** one source loop emitted as multiple nested infinite loops; early continues emitted as retry loops; accept and fork retries obscure a server's main loop.
+- **What it does:** Preserve secondary back-edges in single-entry natural loops as continues before CollapseStructure folds retry paths into nested loops. Keep the deepest latch structural; virtualize the others. After collapse, a goto to the first leaf of its innermost infinite loop becomes continue. Conditional loops reset this recovery scope. Head-tested loops, switch bodies, nested loop heads, and conditional retained latches are excluded.
+- **When to flip:** A single source loop with early continues decompiles as nested infinite retry loops, as in a server accept/fork loop. Flip off to restore CollapseStructure's original loop-schema precedence.
+- **Where / provenance:** P8/goto-quality · kuna · structure-recovery · server-main-nested-retry-loops
+- **Example:** `option loopcontinue on`
 
 ### `regionlooprefine` -- on | off, default `on`
 

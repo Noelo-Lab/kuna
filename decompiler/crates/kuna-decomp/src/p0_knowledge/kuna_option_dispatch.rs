@@ -458,6 +458,7 @@ kuna_options! { self, p1;
         self.loop_cond_hoist = val;
         Ok(msg)
     },
+    "loopcontinue" => on_off!(loop_continue, "Secondary loop-latch continue recovery"),
     "regionlooprefine" => on_off!(
         region_loop_refine,
         "Region structurer multi-exit/irreducible loop-successor refinement"

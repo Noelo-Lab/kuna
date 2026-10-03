@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_256() {
-    assert_eq!(kuna_num_settables(), 256);
-    assert_eq!(SETTABLE_TABLE.len(), 256);
+fn settable_count_is_257() {
+    assert_eq!(kuna_num_settables(), 257);
+    assert_eq!(SETTABLE_TABLE.len(), 257);
 }
 
 #[test]
-fn tier_counts_are_84_core_105_transform_67_analysis() {
+fn tier_counts_are_84_core_106_transform_67_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_84_core_105_transform_67_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (84, 105, 67));
+    assert_eq!((core, transform, analysis), (84, 106, 67));
 }
 
 #[test]
@@ -511,6 +511,7 @@ fn option_values_live_value_present_for_110() {
                             | "loweredswitch"
                             | "regionstructure"
                             | "regionlooprefine"
+                            | "loopcontinue"
                             | "regionedgeorder"
                             | "condfold"
                             | "stackguard"
@@ -938,7 +939,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 251 -> 252: +1 for `varargforward`.
     // 252 -> 253: +1 for `stackstoreguard`.
     // 253 -> 254: +1 for `protoranges`; its P6 row sits mid-table.
-    assert_eq!(json.matches("},\n").count(), 255);
+    assert_eq!(json.matches("},\n").count(), 256);
 }
 
 #[test]
