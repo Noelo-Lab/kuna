@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v5t:default">
+<!--
+    Kuna #849: a register-controlled ARM LSL uses the low eight count bits.
+    The authored 12-byte function is `mov r1,#1; mov r0,r1,lsl r0; bx lr`.
+    The ARM result is zero for low8 counts 32 through 255, but plain C `<<`
+    has undefined behavior there. Counts 256 and 288 distinguish the ARM
+    low-eight-bit rule from an incorrect `count & 31` rewrite.
+
+    P9 C emission, correctness fix without an option. The printer keeps the
+    lifted low-eight-bit expression, guards it against the shifted value's
+    width, and casts the shifted value to unsigned so count 31 is defined too.
+    The rewrite is limited to variable ARM LSLs whose input expressions are
+    repeatable. It does not inline an implied load, call, indirect value, or phi
+    twice, nor duplicate volatile direct reads; an explicit value is reused by
+    name after its defining statement has been emitted.
+    ShiftAndStore also catches the in-place compound-assignment shortcut: it
+    must leave the shift as an assignment with the guarded expression on its RHS.
+-->
+<bytechunk space="ram" offset="0x10000">0110a0e31100a0e11eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x10020">1001a0e11eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x10040">1001a0e1000082e51eff2fe1</bytechunk>
+<symbol space="ram" offset="0x10000" name="ShiftOne"/>
+<symbol space="ram" offset="0x10020" name="ShiftValue"/>
+<symbol space="ram" offset="0x10040" name="ShiftAndStore"/>
+</binaryimage>
+<script>
+  <com>parse line extern uint4 ShiftOne(uint4 count);</com>
+  <com>parse line extern uint4 ShiftValue(uint4 value, uint4 count);</com>
+  <com>parse line extern uint4 ShiftAndStore(uint4 value, uint4 count, uint4 *output);</com>
+  <com>load function ShiftOne</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftValue</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function ShiftAndStore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ARM LSL #1: all register-controlled shifts range check the low-eight-bit count at 32" min="3" max="3">&lt; 32u \?</stringmatch>
+<stringmatch name="ARM LSL #2: all low-eight-bit expressions remain in guard and shift" min="3" max="3">count &amp; 0xff.*count &amp; 0xff</stringmatch>
+<stringmatch name="ARM LSL #3: the shifted value is unsigned, including count 31" min="1" max="1">\(uint4\)1\s*&lt;&lt;</stringmatch>
+<stringmatch name="ARM LSL #4: both variable shiftees are converted to unsigned before shifting" min="2" max="2">\(uint4\)value\s*&lt;&lt;</stringmatch>
+<stringmatch name="ARM LSL #5: all overshift arms return zero of the conditional result type" min="3" max="3">:\s*0u?;</stringmatch>
+<stringmatch name="ARM LSL #6: the count is not reduced modulo the operand width" min="0" max="0">&amp; 0x1f</stringmatch>
+<stringmatch name="ARM LSL #7: guarded shifts do not use compound assignment" min="0" max="0">&lt;&lt;\s*=</stringmatch>
+</decompilertest>
