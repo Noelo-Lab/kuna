@@ -4095,8 +4095,26 @@ impl JumpBasicModel {
     /// BRANCHIND emulates every row, strands none, and can label the
     /// flow-time rows it is asked to match.  It stops at a variable that is,
     /// or is computed from, a narrow value at its sign bit
-    /// ([`Self::narrow_sign_values`], [`Self::labels_reach_sign_bit`]).
+    /// ([`Self::narrow_sign_values`], [`Self::labels_reach_sign_bit`]).  The
+    /// load image's read window is put back afterwards, so the rows it reads
+    /// do not change what the table reads later.
     fn skip_stranding_variable(
+        &mut self,
+        fd: &Funcdata,
+        indop: OpId,
+        matchsize: uint4,
+        maxtablesize: uint4,
+    ) {
+        let loader = fd.get_arch().loader.as_ref();
+        let window = loader.and_then(|image| image.borrow().read_window());
+        self.find_unstranded_variable(fd, indop, matchsize, maxtablesize);
+        if let (Some(image), Some(offset)) = (loader, window) {
+            image.borrow().restore_read_window(offset);
+        }
+    }
+
+    /// The body of [`Self::skip_stranding_variable`].
+    fn find_unstranded_variable(
         &mut self,
         fd: &Funcdata,
         indop: OpId,

@@ -64,7 +64,7 @@ use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::Wrap;
 
-use kuna_sleigh::kuna_sharedbytes::windowed_load_fill;
+use kuna_sleigh::kuna_sharedbytes::{restore_window, windowed_load_fill};
 use kuna_sleigh::loadimage::{
     section_flags, ImageBytes, LoadImage, LoadImageFunc, LoadImageSection, IMAGE_WINDOW_BYTES,
 };
@@ -1397,6 +1397,14 @@ impl LoadImage for ObjectLoadImage {
 
     fn shared_bytes(&self) -> Option<Arc<dyn ImageBytes>> {
         Some(Arc::clone(&self.bytes) as Arc<dyn ImageBytes>)
+    }
+
+    fn read_window(&self) -> Option<u64> {
+        Some(*self.bufoffset.borrow())
+    }
+
+    fn restore_read_window(&self, offset: u64) {
+        restore_window(&*self.bytes, &self.buffer, &self.bufoffset, offset);
     }
 
     fn open_symbols(&self) {
@@ -2736,6 +2744,32 @@ mod tests {
             matches!(err, KunaError::DataUnavail { .. }),
             "an executable segment's tail is not materialised as code; got {err:?}"
         );
+    }
+
+    /// (kuna) A read past the end of a mapped segment is answered only from
+    /// inside the staging window, so restoring the window a read found brings
+    /// back the answer it gave, and restoring an empty one brings back the
+    /// failure of a cold read.
+    #[test]
+    fn restoring_the_read_window_restores_what_a_read_answers() {
+        use kuna_sleigh::loadimage::LoadImage;
+        let mut bytes = build_elf64(0x401000, &[0x55, 0x48, 0x89, 0xe5], None);
+        bytes[68..72].copy_from_slice(&(object::elf::PF_R | object::elf::PF_X).to_le_bytes());
+        let m = manager();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut img = ObjectLoadImage::from_bytes("t.elf", &bytes).expect("load the ELF");
+        img.attach_to_space(Rc::clone(&ram));
+        let past = Address::new(Rc::clone(&ram), 0x401040);
+        let cold = img.read_window().expect("a windowed image");
+        assert!(img.load(4, &past).is_err(), "a cold read past the segment fails");
+        img.load(4, &Address::new(Rc::clone(&ram), 0x401000)).expect("mapped");
+        let warm = img.read_window().expect("a windowed image");
+        assert_eq!(warm, 0x401000);
+        assert_eq!(img.load(4, &past).expect("inside the window"), vec![0, 0, 0, 0]);
+        img.restore_read_window(cold);
+        assert!(img.load(4, &past).is_err(), "the empty window is back");
+        img.restore_read_window(warm);
+        assert_eq!(img.load(4, &past).expect("the window is back"), vec![0, 0, 0, 0]);
     }
 
     /// (kuna) A read longer than the 512-byte staging buffer is served straight

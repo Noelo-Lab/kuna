@@ -1220,7 +1220,13 @@ the case targets.
    variable below may be chosen (`jumptable.rs
    (JumpBasicModel::labels_reach_sign_bit)`, labels from `jumptable.rs
    (JumpBasicModel::backup_value)`). A byte map holding 0xf0 that the switch
-   dispatches therefore keeps its table over `mode`.
+   dispatches therefore keeps its table over `mode`. The rows this search
+   emulates read the load image through its 512-byte staging window, and a
+   read whose first byte is unmapped succeeds only inside that window, so a
+   stray row past the image could read as zero or fail depending on the reads
+   before it. The search saves the window first and puts it back when it is
+   done (`LoadImage::read_window`, `LoadImage::restore_read_window`), so the
+   table built afterwards reads exactly what it would have read without it.
 4. **Accept or rescue.** If the chosen range exceeds `max_jumptable_size`
    (1024, `architecture.rs (reset_defaults_internal)`; settable per run as the
    catalogued `option jumptablemax <n>`: upstream's `OptionJumpTableMax`, parsed
