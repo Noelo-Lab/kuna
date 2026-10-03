@@ -62,7 +62,8 @@ the order is load-bearing:
    resolves **across scopes**
    (`decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
    (Database::find_function_across_scopes)`, the port of C++ `Scope::queryFunction`,
-   which spans the scope tree), so a function already known under a *namespaced*
+   which spans the scope tree; it visits only the scopes that mapped a function at
+   the address, since a demangled C++ image has a scope per class), so a function already known under a *namespaced*
    name is recognized as present and no placeholder is installed over it. Scoping
    that check to the global scope alone was the DIV-59 defect: a demangled C++
    funcsym lives in its namespace scope (`std::terminate` is base `terminate` in

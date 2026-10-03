@@ -251,3 +251,42 @@ fn pdb_explicit_path_is_tried_first_and_falls_through() {
         "with every candidate rejected the function stays a placeholder, got `{nothing_left}`"
     );
 }
+
+/// A C++ `.pdb` names its functions with decorated publics
+/// (`??0Box@app@@QEAA@H@Z`): each demangles into its namespace, a
+/// compiler-generated member reads as one identifier, and the two
+/// `operator delete` overloads stay two listed functions.
+#[test]
+fn pdb_cpp_publics_are_demangled() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    std::env::remove_var(PDB_PATH_ENV);
+    let spec_roots = vec![repo_root().join("specs").to_str().unwrap().to_string()];
+    let exe = fixtures().join("pdb_cpp.exe");
+    let mut prog = bootstrap_from_object(exe.to_str().unwrap(), "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
+    prog.commit_pending_analysis().expect("analysis commit succeeds");
+
+    let code_space =
+        prog.arch().manage().get_default_code_space().expect("a default code space").clone();
+    for (vma, name) in [
+        (0x140001000, "operator new"),
+        (0x140001050, "app::util::scale"),
+        (0x140001080, "app::Box::Box"),
+        (0x1400010b0, "app::Box::~Box"),
+        (0x140001140, "app::Box::scalar_deleting_destructor"),
+    ] {
+        let addr = Address::new(std::rc::Rc::clone(&code_space), vma);
+        assert_eq!(
+            prog.arch().symboltab.function_display_name_across_scopes(&addr).as_deref(),
+            Some(name),
+            "the function at {vma:#x}"
+        );
+    }
+    let deletes: Vec<u64> = prog
+        .function_entries_canonical()
+        .iter()
+        .filter(|entry| entry.name == "operator delete")
+        .map(|entry| entry.addr.get_offset())
+        .collect();
+    assert_eq!(deletes, [0x140001030, 0x140001040], "both overloads are listed");
+}
