@@ -120,6 +120,6 @@
 <stringmatch name="PEBNAMES-X86 #15: a read past the largest PEB32 stays an offset from it" min="1" max="1">\(\(unsigned int \*\)teb-&gt;ProcessEnvironmentBlock\)\[0x124\];</stringmatch>
 <stringmatch name="PEBNAMES-X86 #16: GS is not the TEB on x86, so gs:[0x14] stays an untyped register read under on" min="1" max="1">return \*\(unsigned int \*\)\(v[0-9]+ \+ 0x14\);</stringmatch>
 <stringmatch name="PEBNAMES-X86 #17: the GS base keeps an untyped declaration on x86" min="1" max="1">int4 v[0-9]+; // gs_offset</stringmatch>
-<stringmatch name="PEBNAMES-X86 #18: the C++ EH registration record keeps its three-slot extent under on" min="2" max="2">int4 v[0-9]+ \[3\]; // stack - 0xc</stringmatch>
+<stringmatch name="PEBNAMES-X86 #18: the C++ EH registration record keeps its three-slot extent under on" min="2" max="2">int4 v[0-9]+ \[3\]; // ([^\n]+ \| )?stack - 0xc( \| [^\n]+)?$</stringmatch>
 <stringmatch name="PEBNAMES-X86 #19: the C++ EH record's address is linked through the untyped base in both passes" min="2" max="2">\*v[0-9]+ = \(int4\)v[0-9]+;</stringmatch>
 </decompilertest>

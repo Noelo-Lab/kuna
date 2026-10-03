@@ -1285,9 +1285,22 @@ prototype name always wins. The angr scheme's second visible artifact is P9-owne
 local declaration gains a trailing storage comment — `// rax` (register,
 lowercased), `// stack - 0x10` (frame-relative signed offset), `// rdx:rax` (a
 join value's register pieces), `// tmp` (an SSA temporary with no machine
-home) — rendered by the rules of `kuna_naming.rs (kuna_storage_comment)` from
-the declaration representative's storage; `option namestyle ghidra` emits no
-storage comments. DIV-5 re-pinned 185 of the 675 upstream datatest assertions
+home). `decompiler/crates/kuna-decomp/src/p9_emit/kuna_varsources.rs` gathers
+every member's machine storage and the storage retained when simplification
+removed an equivalent copy. Distinct homes print once, in sorted order, separated
+by ` | `: `// eax | ebx`. A register pair holding one split value keeps its
+ordered `rdx:rax` spelling. A mapped object's address reference uses its Symbol
+storage rather than the constant offset operand. `tmp` is used only when no
+machine home survives. The declaration's storage diagnostics do not change
+the earlier declaration-collapse decisions. Collapsed declarations combine the
+homes of every HighVariable rendered through them. COPY and same-width
+MULTIEQUAL inputs contribute unchanged values' homes, including a conditional
+move's selected register, without following arithmetic or memory-address inputs.
+Named parameters have separate
+body comments, such as `// a0: rdi | rbx`, using their input HighVariable's
+homes together with the prototype's declared storage.
+`option namestyle ghidra` emits no storage comments or storage-tracking work.
+DIV-5 re-pinned 185 of the 675 upstream datatest assertions
 to the angr names; `option namestyle ghidra` reproduces the pre-DIV-5 bytes.
 
 **(kuna) declhightype — the declared type is the merged variable's own.**
@@ -1314,7 +1327,7 @@ p-code moves. It applies only to a high the symbol table does not describe — a
 mapped local keeps the declaration representative's type, because kuna does not
 always type-lock the storage a symbol claims and the most specialized member of
 a mapped local can be a transient the symbol never described. The declaration
-representative still supplies the storage comment, the array adornment and the
+representative still supplies the array adornment and the
 composite mapped-symbol override, all of which outrank this. `option
 declhightype off` restores the declaration representative's type.
 

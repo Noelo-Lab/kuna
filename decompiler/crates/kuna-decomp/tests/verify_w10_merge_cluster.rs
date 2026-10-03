@@ -38,6 +38,11 @@
 //! to point at an out-of-tree (branch) build.  All assertions are derived from the
 //! C++ oracle B5, not from the Rust output.  Committed with the verdict regardless
 //! of outcome (verification.md "Adversarial pass").
+#[path = "common/source_diagnostics.rs"]
+mod source_diagnostics;
+
+use source_diagnostics::normalize_sources;
+
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -197,7 +202,7 @@ fn w10_mc_a2_boolless_constant_join_stays_tied_byte_identical() {
 {\n  uint1 v1; // acc\n  \n  v1 = dat_52;\n  \
 if (dat_52 <= 10) {\n    v1 = 1;\n  }\n  return v1;\n}";
     assert_eq!(
-        body, CPP,
+        normalize_sources(&body), normalize_sources(CPP),
         "boolless must stay byte-identical (constant-join register stays tied; gate \
          must not over-fire):\n--- rust ---\n{body}\n--- cpp ---\n{CPP}"
     );
@@ -220,7 +225,7 @@ fn w10_mc_a3a_readstruct_pointer_return_byte_identical() {
     const CPP: &str = "int4 readstruct(twostruct *ptr,int8 a,int8 b)\n\
 {\n  return ptr->array[b + a];\n}";
     assert_eq!(
-        body, CPP,
+        normalize_sources(&body), normalize_sources(CPP),
         "readstruct must stay byte-identical (no marker-write return register):\n\
          --- rust ---\n{body}\n--- cpp ---\n{CPP}"
     );
@@ -252,8 +257,8 @@ fn w10_mc_a3b_condconst_stack_and_void_persist_untouched() {
 {\n  int4 v1; // stack - 0xc\n  \n  v1 = x;\n  \
 if ((x == 0) && (y != 10)) {\n    v1 = 0x14;\n  }\n  return v1;\n}";
     assert_eq!(
-        conn, CPP_CONN,
-        "condconst_conn (stack-local return) must stay byte-identical:\n\
+        normalize_sources(&conn), normalize_sources(CPP_CONN),
+        "condconst_conn (stack-local return) must stay byte-identical (source diagnostics normalized):\n\
          --- rust ---\n{conn}\n--- cpp ---\n{CPP_CONN}"
     );
 
@@ -262,7 +267,7 @@ if ((x == 0) && (y != 10)) {\n    v1 = 0x14;\n  }\n  return v1;\n}";
 {\n  if (d == 0) {\n    glob1 = 0;\n  }\n  glob2 = d;\n  \
 if (d == 10) {\n    glob3 = 10;\n    glob4 = 10;\n  }\n  return;\n}";
     assert_eq!(
-        copy, CPP_COPY,
+        normalize_sources(&copy), normalize_sources(CPP_COPY),
         "condconst_copy (persist-writing but void) must stay byte-identical \
          (no return register for the gate to mis-fold):\n\
          --- rust ---\n{copy}\n--- cpp ---\n{CPP_COPY}"

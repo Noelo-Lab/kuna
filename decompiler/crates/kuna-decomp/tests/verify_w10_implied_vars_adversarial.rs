@@ -46,6 +46,11 @@
 //! _loops` established).  A missing-`.sla` env is reported as SKIP, never a false
 //! pass.
 
+#[path = "common/source_diagnostics.rs"]
+mod source_diagnostics;
+
+use source_diagnostics::{has_decl_source, has_source, normalize_sources};
+
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -316,8 +321,8 @@ fn w10_implied_trim_copy_inlined_on_condconst_conn() {
     // default), carrying the real expression — exactly the C++ `v1 // stack`
     // direction, NOT a leftover register round-trip.
     assert!(
-        rust.contains("// stack"),
-        "the recovered value must be a typed stack local (`// stack`), got:\n{rust}"
+        has_decl_source(&rust, "v1", "stack - 0xc"),
+        "the recovered value must retain its typed stack home, got:\n{rust}"
     );
     // The lift is the correct 64-bit one (the precondition), not 16-bit garbage.
     assert!(
@@ -445,8 +450,8 @@ fn w10_implied_boolless_acc_unregressed_byte_parity() {
     );
     // Full byte parity — boolless must not have moved at all under this item.
     assert_eq!(
-        rust, CPP_B5_ORACLE,
-        "boolless byte parity regressed under w10-implied-vars:\n--- rust ---\n{rust}\n--- oracle ---\n{CPP_B5_ORACLE}"
+        normalize_sources(&rust), normalize_sources(CPP_B5_ORACLE),
+        "boolless byte parity regressed under w10-implied-vars (source diagnostics normalized):\n--- rust ---\n{rust}\n--- oracle ---\n{CPP_B5_ORACLE}"
     );
 }
 
@@ -476,7 +481,7 @@ fn w10_implied_inlining_is_data_driven_no_boolless_leak() {
         Err(e) => panic!("condconst_conn render: {e}"),
     };
     assert!(!rust.contains("dat_52"), "boolless's `dat_52` leaked into condconst:\n{rust}");
-    assert!(!rust.contains("// acc"), "boolless's `// acc` leaked into condconst:\n{rust}");
+    assert!(!has_source(&rust, "acc"), "boolless's `// acc` leaked into condconst:\n{rust}");
     // PRE-MERGE GUARD (as above): before rport/w10-implied-vars lands the trim
     // self-copy is still present; skip the inlining-presence assertion so the
     // MAIN tree stays green until merge.  The no-leak assertions above ALWAYS run

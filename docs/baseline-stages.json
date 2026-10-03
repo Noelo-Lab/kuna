@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1883,
-    1883
+    1900,
+    1900
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1872,6 +1872,23 @@
     "data:unrolledguard #2 / jtsharepartial #1: both fixes recover every interleaved table as a switch, independently (1 pass1 + 16 pass2 unrolledguard + 16 pass3 shipped default = 33)",
     "data:varargstackargs #1: option off drops the stack-passed variadic argument (bug reproduced)",
     "data:varargstackargs #2: option on recovers the variadic argument the ABI passes on the stack",
+    "data:varsources #10: the independently computed loop bound does not borrow inputs",
+    "data:varsources #11: an explicit variable name retains its source",
+    "data:varsources #12: a narrowed byte retains both copied register homes",
+    "data:varsources #13: all peer byte loads retain their low register home",
+    "data:varsources #14: CMOV merges the computed eax and r13d values",
+    "data:varsources #15: the CMOV input parameter keeps its own edi and r13d homes",
+    "data:varsources #16: a copied parameter includes the ABI and callee-saved register",
+    "data:varsources #17: explicit parameter names retain their register union",
+    "data:varsources #1: eliminated load COPY keeps eax, without borrowing derived ecx",
+    "data:varsources #2: the loop-carried counter keeps ecx",
+    "data:varsources #3: the accumulator records its r8d and eax homes",
+    "data:varsources #4: arithmetic results keep their own register",
+    "data:varsources #5: both branch-merged values retain both registers",
+    "data:varsources #6: both paired-return declarations describe the actual join",
+    "data:varsources #7: address-tied stack storage stays visible",
+    "data:varsources #8: every angr local declaration has a source",
+    "data:varsources #9: Ghidra naming still omits sources",
     "data:volatile LDM: first read",
     "data:volatile LDM: fourth read",
     "data:volatile LDM: second read",

@@ -1308,6 +1308,14 @@ impl TransformManager {
                         self.var_mut(rvn).replacement = Some(new_vn);
                     }
                 }
+                if ty == tvar_type::piece_temp
+                    && self.var(rvn).get_bit_size() == byte_size * 8
+                    && self.var(rvn).val % 8 == 0
+                {
+                    let original = self.var(rvn).vn.expect("create_var_replacement: piece temp has no vn");
+                    let replacement = self.var(rvn).replacement.expect("create_var_replacement: temp created");
+                    fd.kuna_inherit_storage_slice(replacement, original, (self.var(rvn).val / 8) as int4, byte_size);
+                }
                 Ok(())
             }
             tvar_type::piece => {
@@ -1316,6 +1324,7 @@ impl TransformManager {
                     return Err(KunaError::lowlevel("Varnode piece is not byte aligned"));
                 }
                 byte_pos >>= 3;
+                let lsb_byte_pos = byte_pos;
                 let vn = self.var(rvn).vn.expect("create_var_replacement: piece has no vn");
                 let byte_size = self.var(rvn).byte_size;
                 let v = fd.vbank().get(vn).expect("create_var_replacement: stale piece vn");
@@ -1339,6 +1348,7 @@ impl TransformManager {
                     }
                 };
                 self.var_mut(rvn).replacement = Some(replacement);
+                fd.kuna_inherit_storage_slice(replacement, vn, lsb_byte_pos, byte_size);
                 fd.transfer_varnode_properties(vn, replacement, byte_pos);
                 Ok(())
             }

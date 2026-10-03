@@ -30,11 +30,11 @@
       "eq": 0
     },
     "stdout_matches": [
-      "unsigned int mode_of\\((struct_\\d+) \\*a0\\)\\n\\{\\n  if \\(\\(a0->field_0x19\\) && \\(1 <= a0->field_0x8\\)\\)\\n    return a0->field_0x14;\\n  return a0->field_0x10;",
+      "unsigned int mode_of\\((struct_\\d+) \\*a0\\)\\n\\{\\n(?:  // a\\d+: [^\\r\\n]+\\n)*  if \\(\\(a0->field_0x19\\) && \\(1 <= a0->field_0x8\\)\\)\\n    return a0->field_0x14;\\n  return a0->field_0x10;",
       "int by_link\\(void \\*a0,void \\*a1\\)",
       "long name_len\\(struct_\\d+ \\*a0\\)"
     ]
   },
   "notes": "CLOSED: `mode_of` is called directly, so its parameter is a record read past its start and every read is a field. `by_link` reads past the start too, but its address goes to qsort, so its parameters stay `void *`.",
-  "probe_id": "a-3952659fe248"
+  "probe_id": "a-293879a02d3a"
 }

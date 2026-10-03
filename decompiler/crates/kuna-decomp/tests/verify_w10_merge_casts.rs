@@ -24,6 +24,11 @@
 //! Every assertion is two-sided (asserts both the cast-needed and cast-not-needed
 //! arm) so it cannot be satisfied by a predicate that always returns one value.
 
+#[path = "common/source_diagnostics.rs"]
+mod source_diagnostics;
+
+use source_diagnostics::normalize_sources;
+
 use std::rc::Rc;
 
 use kuna_base::types::int4;
@@ -414,8 +419,8 @@ fn w10_byte_identical_boolless_unperturbed_by_casts() {
         }
     };
     assert_eq!(
-        rendered, BOOLLESS_CPP_B5,
-        "the active ActionSetCasts must leave the byte-identical boolless body unchanged:\n\
+        normalize_sources(&rendered), normalize_sources(BOOLLESS_CPP_B5),
+        "the active ActionSetCasts must leave the boolless body unchanged (source diagnostics normalized):\n\
          --- rust ---\n{rendered}\n--- oracle ---\n{BOOLLESS_CPP_B5}"
     );
     // Two-sided: an integer-typeless body must contain NO inserted cast/ptrsub

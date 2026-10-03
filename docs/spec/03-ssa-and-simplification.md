@@ -918,6 +918,13 @@ and a loop's phi. `decompile_all_cli.rs`'s
 `kuna-tiedphitrim.xml` #13/#14 and `structsynth-locals.xml` #2 pin the narrow
 spelling of a 4-byte field read through an inferred `int8 *`.
 
+Under `namestyle angr`, copy propagation also preserves the eliminated
+destination's machine storage on the unchanged source value. These per-function
+facts are diagnostics only: arithmetic operands and a load's address never
+become the result's storage. Same-width replacement and cloning carry the facts;
+dead Varnodes and a cleared function release them. P9 uses them to annotate a
+local even when a SLEIGH temporary's copy into a register has disappeared.
+
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
 default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
 `COPY`'s input instead. When the reader is an ordinary op that is pure gain: the
@@ -1326,6 +1333,11 @@ flow is expressible at the smaller size commits the rewrite
 logically-sized ones. It is all-or-nothing by construction: any placeholder the
 trace cannot legalize aborts the whole transform with no IR change (marks are
 cleared, `subflow.rs (SubvariableFlow::do_trace)`).
+
+An aligned, contiguous byte slice also retains its original machine-storage
+slice for P9 source comments. Its address respects the source space's byte
+order. A bit-field extraction that cannot describe a byte slice does not claim
+the entire containing register as its storage.
 
 Six trigger rules in oppool1 (group `subvar`) seed it from ops that *prove* a
 smaller logical value exists: `RuleSubvarAnd` (INT_AND by a low mask),

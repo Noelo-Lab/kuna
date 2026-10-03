@@ -55,6 +55,12 @@ phalanx; overlapping storage pieces of one symbol are tied together by the
 `variable.rs (VariableGroup)`/`(VariablePiece)` model so a 4-byte read of an
 8-byte slot stays a *piece* of the same group rather than a rival variable.
 
+Address-reference HighVariables contain a constant offset rather than the
+object's storage. `varmap.rs (ScopeLocal::symbol_storage)` exposes the referenced
+Symbol's whole mapped locations for P9 source comments. A declaration shared
+by grouped or partial highs reports their combined homes; the diagnostic does
+not change the group's type, name, or merge decision.
+
 **Register parameters bind only at the function input.** A parameter Symbol is
 created by `varmap.rs (ScopeLocal::add_param_symbol)`. When no Scope owns the
 parameter's storage, its map entry is limited to the function's use point (the

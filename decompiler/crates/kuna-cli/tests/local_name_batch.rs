@@ -70,9 +70,20 @@ fn applies(function: &str, directives: &[&str], declarations: &[&str]) -> String
         "{directives:?} rejected {rejected:?}:\n{code}"
     );
     for decl in declarations {
-        assert!(code.contains(decl), "{directives:?}: no `{decl}`:\n{code}");
+        assert!(contains_declaration(&code, decl), "{directives:?}: no `{decl}`:\n{code}");
     }
     code
+}
+
+fn contains_declaration(code: &str, expected: &str) -> bool {
+    let Some((declaration, home)) = expected.split_once(" // ") else {
+        return code.contains(expected);
+    };
+    code.lines().any(|line| {
+        line.trim().split_once(" // ").is_some_and(|(actual, sources)| {
+            actual == declaration && sources.split(" | ").any(|source| source == home)
+        })
+    })
 }
 
 /// The report's own case: two register locals named after `observe`'s
@@ -207,7 +218,7 @@ fn a_printed_name_given_to_another_local_is_ambiguous() {
                  local printed as {from} (now {to})\""
             );
             assert_eq!(rejected, [detail], "{function}:\n{code}");
-            assert!(code.contains(declared), "{function} {second}:\n{code}");
+            assert!(contains_declaration(&code, declared), "{function} {second}:\n{code}");
             assert!(!code.contains("uint4") && !code.contains("foo"), "{function}:\n{code}");
         }
     }
@@ -251,7 +262,7 @@ fn overlapping_register_locals_reject_the_later_directive() {
         let directives: Vec<&str> = prototypes.iter().copied().chain(order).collect();
         let (code, rejected) = decompile("pick_flag", &directives);
         assert_eq!(rejected, [rejected_detail], "{code}");
-        assert!(code.contains(applied), "{code}");
+        assert!(contains_declaration(&code, applied), "{code}");
         assert!(!code.contains("_0_4_"), "two locals were folded into one:\n{code}");
     }
 }
@@ -266,8 +277,8 @@ fn a_name_renamed_away_and_given_to_another_local_is_ambiguous() {
                   (now tmp) and the local printed as v1 (now v2)\"";
     let (code, rejected) = decompile("stack_pair", &directives);
     assert_eq!(rejected, [detail], "{code}");
-    assert!(code.contains("int4 v2; // stack - 0x10"), "{code}");
-    assert!(code.contains("int4 tmp [3]; // stack - 0xc"), "{code}");
+    assert!(contains_declaration(&code, "int4 v2; // stack - 0x10"), "{code}");
+    assert!(contains_declaration(&code, "int4 tmp [3]; // stack - 0xc"), "{code}");
     let (code, rejected) = decompile("two_locals", &directives);
     assert_eq!(rejected, [detail], "{code}");
     assert!(!code.contains("uint4"), "{code}");
@@ -310,7 +321,7 @@ fn a_source_name_of_the_default_form_keeps_it() {
         assert!(rejected.is_empty(), "{rejected:?}");
         assert!(!code.contains("v1_1"), "{code}");
         for decl in declarations {
-            assert!(code.contains(decl), "{function}: no `{decl}`:\n{code}");
+            assert!(contains_declaration(&code, decl), "{function}: no `{decl}`:\n{code}");
         }
     }
 }

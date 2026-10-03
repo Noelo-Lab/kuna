@@ -250,6 +250,8 @@ pub struct Funcdata {
     jumpvec: Vec<crate::jumptable::JumpTable>,
     /// Container of Varnode objects for \b this function (C++ `vbank`)
     vbank: VarnodeBank,
+    /// Machine homes retained when equivalent values replace their Varnodes.
+    kuna_storage_sources: std::collections::HashMap<VarnodeId, Vec<crate::kuna_varsources::StorageSource>>,
     /// Container of PcodeOp objects for \b this function (C++ `obank`)
     obank: PcodeOpBank,
     /// Unstructured basic blocks (C++ `bblocks`)
@@ -615,6 +617,7 @@ impl Funcdata {
             stack_store_guard_spoiled: std::cell::Cell::new(false),
             jumpvec: Vec::new(),
             vbank,
+            kuna_storage_sources: std::collections::HashMap::new(),
             obank: PcodeOpBank::new(),
             bblocks,
             sblocks,
@@ -2564,6 +2567,103 @@ impl Funcdata {
     pub fn vbank_mut(&mut self) -> &mut VarnodeBank {
         &mut self.vbank
     }
+
+    pub fn kuna_storage_sources(&self, vn: VarnodeId) -> &[crate::kuna_varsources::StorageSource] {
+        self.kuna_storage_sources.get(&vn).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Retain homes of an equivalent value without following computational inputs.
+    pub fn kuna_inherit_storage(&mut self, destination: VarnodeId, original: VarnodeId) {
+        let Some(size) = self.vbank.get(original).map(|v| v.get_size()) else {
+            return;
+        };
+        if self.vbank.get(destination).is_some_and(|v| v.get_size() == size) {
+            self.kuna_inherit_storage_slice(destination, original, 0, size);
+        }
+    }
+
+    /// Retain a byte slice, with its offset measured from the least-significant end.
+    pub fn kuna_inherit_storage_slice(
+        &mut self,
+        destination: VarnodeId,
+        original: VarnodeId,
+        byte_offset: int4,
+        byte_size: int4,
+    ) {
+        use kuna_base::space::spacetype;
+        use crate::kuna_varsources::StorageSource;
+
+        if !self.glb.name_style_angr || destination == original || byte_offset < 0 || byte_size <= 0 {
+            return;
+        }
+        let Some(from) = self.vbank.get(original) else { return };
+        let Some(to) = self.vbank.get(destination) else { return };
+        if from.is_constant()
+            || to.is_constant()
+            || from.is_annotation()
+            || to.is_annotation()
+            || to.get_size() != byte_size
+            || byte_offset > from.get_size() - byte_size
+        {
+            return;
+        }
+        let original_size = from.get_size();
+        let mut sources = self.kuna_storage_sources(original).to_vec();
+        if matches!(from.get_space().get_type(),
+            spacetype::IPTR_PROCESSOR | spacetype::IPTR_SPACEBASE | spacetype::IPTR_JOIN)
+        {
+            sources.push(StorageSource { address: from.get_addr().clone(), size: original_size });
+        }
+        let mut sliced = Vec::with_capacity(sources.len());
+        for source in sources {
+            if source.size != original_size {
+                continue;
+            }
+            let offset = if source.address.is_big_endian() {
+                source.size - byte_size - byte_offset
+            } else {
+                byte_offset
+            };
+            let mut address = &source.address + offset as i64;
+            if address.renormalize(byte_size, self.glb.manage()).is_err() {
+                continue;
+            }
+            sliced.push(StorageSource { address, size: byte_size });
+        }
+        self.kuna_extend_storage_sources(destination, sliced);
+    }
+
+    pub(crate) fn kuna_extend_storage_sources(
+        &mut self,
+        destination: VarnodeId,
+        sources: impl IntoIterator<Item = crate::kuna_varsources::StorageSource>,
+    ) {
+        let mut sources = sources.into_iter().peekable();
+        if !self.glb.name_style_angr
+            || sources.peek().is_none()
+            || self.vbank.get(destination).is_none_or(|v| v.is_constant() || v.is_annotation())
+        {
+            return;
+        }
+        let homes = self.kuna_storage_sources.entry(destination).or_default();
+        for source in sources {
+            if !homes.iter().any(|home| home.address == source.address && home.size == source.size) {
+                homes.push(source);
+            }
+        }
+    }
+
+    pub(crate) fn kuna_forget_storage_sources(&mut self, vn: VarnodeId) {
+        self.kuna_storage_sources.remove(&vn);
+    }
+
+    pub(crate) fn kuna_rekey_storage_sources(&mut self, original: VarnodeId, destination: VarnodeId) {
+        if original != destination {
+            if let Some(sources) = self.kuna_storage_sources.remove(&original) {
+                self.kuna_extend_storage_sources(destination, sources);
+            }
+        }
+    }
     /// Borrow the PcodeOp container (C++ `obank`).
     pub fn obank(&self) -> &PcodeOpBank {
         &self.obank
@@ -3198,6 +3298,7 @@ impl Funcdata {
         self.clear_blocks();
         self.obank.clear();
         self.vbank.clear();
+        self.kuna_storage_sources.clear();
         // clearCallSpecs() (funcdata.cc:104): drop the call-spec list so a restart
         // (which re-follows flow and rebuilds qlst) does not keep stale ops.
         self.clear_call_specs();

@@ -85,7 +85,7 @@
 <stringmatch name="indirectonly #2: on folds the remainder back into that same slot" min="1" max="1">v2 %= 1000000000;</stringmatch>
 <stringmatch name="indirectonly #3: on computes the call result straight into the slot" min="1" max="1">v2 = now_ns\(\);</stringmatch>
 <stringmatch name="indirectonly #4: the call result spills to a register local in take pass 1 and in both passes of keep" min="3" max="3">v1 = now_ns\(\);</stringmatch>
-<stringmatch name="indirectonly #5: that register local is declared three times, never four" min="3" max="3">int8 v1; // rax</stringmatch>
+<stringmatch name="indirectonly #5: that register local is declared three times, never four" min="3" max="3">int8 v1; // ([^\n]+ \| )?stack - 0xd0( \| [^\n]+)?$</stringmatch>
 <stringmatch name="indirectonly #6: keep reads the slot's entry value for real, in both passes" min="2" max="2">dat_114d = v3;</stringmatch>
 <stringmatch name="indirectonly #7: so keep's remainder is assigned across in BOTH passes; a directly-read illegal input is never marked" min="2" max="2">v3 = v1 % 0x3b9aca07;</stringmatch>
 </decompilertest>

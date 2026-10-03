@@ -20,7 +20,7 @@
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="Address-split local #1: a split neighbour inside the address width keeps that width" min="1" max="1">^  int8 v1;$</stringmatch>
+<stringmatch name="Address-split local #1: a split neighbour inside the address width keeps that width" min="1" max="1">^  int8 v1; // [^\n]+$</stringmatch>
 <stringmatch name="Address-split local #2: the object is not narrowed to the piece the frame map split off" min="0" max="0">^  int4 v1;$</stringmatch>
 <stringmatch name="Address-split local #3: the saved pointer still reaches the object" min="1" max="1">v3 = &amp;v1;</stringmatch>
 </decompilertest>

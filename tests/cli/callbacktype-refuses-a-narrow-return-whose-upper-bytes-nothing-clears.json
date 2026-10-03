@@ -30,10 +30,10 @@
       "eq": 0
     },
     "stdout_matches": [
-      "bool bw\\(long \\*a0\\)\\n\\{\\n  return 0 < \\*a0;",
-      "char ccmp\\(char \\*a0,char \\*a1\\)\\n\\{\\n  return \\*a0 - \\*a1;",
+      "bool bw\\(long \\*a0\\)\\n\\{\\n(?:  // a\\d+: [^\\r\\n]+\\n)*  return 0 < \\*a0;",
+      "char ccmp\\(char \\*a0,char \\*a1\\)\\n\\{\\n(?:  // a\\d+: [^\\r\\n]+\\n)*  return \\*a0 - \\*a1;",
       "char cw\\(char \\*a0\\)",
-      "int zcmp\\(void \\*a0,void \\*a1\\)\\n\\{\\n  return \\(unsigned char\\)\\(\\*\\(char \\*\\)a0 - \\*\\(char \\*\\)a1\\);",
+      "int zcmp\\(void \\*a0,void \\*a1\\)\\n\\{\\n(?:  // a\\d+: [^\\r\\n]+\\n)*  return \\(unsigned char\\)\\(\\*\\(char \\*\\)a0 - \\*\\(char \\*\\)a1\\);",
       "void \\* zw\\(void \\*a0\\)",
       "void \\* iw\\(void \\*a0\\)"
     ],
@@ -47,5 +47,5 @@
     ]
   },
   "notes": "ccmp and cw (clang -O2) write only al, bw (gcc -O2) is setg %al; ret: the rest of the register is the caller's, and declared they printed CONCAT31/CONCAT71 of an unset v1. They keep their own returns. zcmp (movzbl, then sub %al), zw (xor %eax,%eax, then setg %al) and iw (a 32-bit write) leave zero above the value on every path and take the slot's return.",
-  "probe_id": "p-625b322f4dca"
+  "probe_id": "p-38e256012a31"
 }
