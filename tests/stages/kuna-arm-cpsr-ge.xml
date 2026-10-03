@@ -1,0 +1,28 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v6">
+<!-- GH-848 follow-up: ARMv6 CPSR GE[3:0] share the status byte with fields
+     already modeled as GE1..GE4. SADD8 -> MRS must expose those flags, and
+     MSR CPSR_s -> SEL must update the same modeled state. The first function
+     clears NZCVQ before SADD8 so its complete emitted return is executable. -->
+<bytechunk space="ram" offset="0x1000" readonly="true">00f028e3912f10e600300fe10300a0e11eff2fe100f024e1b20f81e61eff2fe1</bytechunk>
+<symbol space="ram" offset="0x1000" name="ReadGEAfterSadd8"/>
+<symbol space="ram" offset="0x1014" name="RestoreGEThenSel"/>
+</binaryimage>
+<script>
+  <com>function bounds 0x1000 0x1014 as ReadGEAfterSadd8</com>
+  <com>function bounds 0x1014 0x1020 as RestoreGEThenSel</com>
+  <com>parse line extern unsigned int ReadGEAfterSadd8(unsigned int lhs, unsigned int rhs);</com>
+  <com>parse line extern unsigned int RestoreGEThenSel(unsigned int cpsr, unsigned int lhs, unsigned int rhs);</com>
+  <com>lo fu ReadGEAfterSadd8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu RestoreGEThenSel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CPSR GE: MRS uses the architectural control helper" min="1" max="1">readCPSRControl\(\)</stringmatch>
+<stringmatch name="CPSR GE: MRS excludes GE bits from the helper state" min="1" max="3">0x0*7f0ffff</stringmatch>
+<stringmatch name="CPSR GE: modeled GE fields reach MRS and SEL" min="4" max="20">[Gg][Ee][1-4]</stringmatch>
+<stringmatch name="CPSR GE: MSR_s keeps GE out of the control helper mask" min="1" max="1">writeCPSRControl\([^,]+,\s*0x0*f00000\)</stringmatch>
+</decompilertest>
