@@ -1,0 +1,237 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A global read back after a store through a pointer that may point at it
+    (P3 heritage, option indexaliasguard global; GitHub issue #792).
+
+        int gi;
+        int s_param(int a, int *p, int k) { gi = a; *p = k; return gi / 16; }
+
+    The binary loads gi again after `*p = k`.  At `indexaliasguard load` a
+    pointer STORE has no effect on a global in kuna's SSA, so that load read
+    the COPY of `a` and printed `a0`: with p == &gi the rebuilt function
+    returns 0 where the binary returns -4.  The default `global` level puts an
+    INDIRECT on the global at every STORE into its space, so the load reads
+    the global, a value read before the store keeps its own variable instead
+    of printing as a read after it, and the store to the global stays in front
+    of the pointer store.  A value loaded through a pointer before a store to
+    the global (r_order) keeps its own variable at the same level, and so does
+    a value read from the global before the store and stored back after it
+    (w_inc).  So does a value loaded through the pointer before a store to a
+    global on a branch (r_cond), on two branches to two globals (r_two) or in
+    a loop (r_loop): such a store reaches the global through a MULTIEQUAL, so
+    the store's own output is a temporary merged into the global's variable.
+    A store to the global stays in front of a load through the pointer that a
+    call follows (e_call): moved into the call's INDIRECT, it printed after
+    the load.  Both levels print a store the binary makes ahead of the load
+    in front of it when a branch stores again (e_reg, w_dead, w_dead2) and
+    when the -O0 build shares the return block with another path (w_epi);
+    and w_big and w_big2, with more pointer stores than heritage guards, keep
+    the `load` output for gk.
+
+    Pass 1 (`load`) reproduces the defect, pass 2 (the default) the fix, both
+    on storealias_gcc_O2_x86_64 (built from storealias_x86_64.c beside it);
+    passes 3 and 4 do the same for r_loop, w_epi, w_big and w_big2 on
+    storealias_gcc_O0_x86_64.
+    The wrapper only supplies the harness architecture.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/storealias_gcc_O2_x86_64</com>
+  <com>option indexaliasguard load</com>
+  <com>read symbols</com>
+  <com>load function s_param</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function s_const</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function s_once</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function l_keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function l_twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_order</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function r_order</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_inc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function r_cond</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function r_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function e_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function e_reg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_dead</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_dead2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/storealias_gcc_O2_x86_64</com>
+  <com>read symbols</com>
+  <com>load function s_param</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function s_const</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function s_once</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function l_keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function l_twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_order</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function r_order</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_inc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function r_cond</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function r_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function e_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function e_reg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_dead</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_dead2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/storealias_gcc_O0_x86_64</com>
+  <com>option indexaliasguard load</com>
+  <com>read symbols</com>
+  <com>load function r_loop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_epi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_big</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_big2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/storealias_gcc_O0_x86_64</com>
+  <com>read symbols</com>
+  <com>load function r_loop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_epi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_big</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function w_big2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="storealias #1: load, the parameter stored to gi stands in for the load after the pointer store" min="1" max="1">v1 = a0 \+ 0xf;</stringmatch>
+<stringmatch name="storealias #2: default, that load reads gi" min="1" max="1">\*a1 = a2;
+  v1 = gi \+ 0xf;</stringmatch>
+<stringmatch name="storealias #3: load, the constant stored to gi folds the load away" min="1" max="1">gi = 5;
+  \*a0 = a1;
+  return 0;</stringmatch>
+<stringmatch name="storealias #4: default, the load after the constant's store stays a load" min="1" max="1">\*a0 = a1;
+  v1 = gi \+ 0xf;</stringmatch>
+<stringmatch name="storealias #5: load, a value used once is computed again for the load" min="1" max="1">return a0 \* 3 >> 4;</stringmatch>
+<stringmatch name="storealias #6: default, the load of that value reads gi" min="1" max="1">return gi >> 4;</stringmatch>
+<stringmatch name="storealias #7: load, a value read before the pointer store prints as a read after it" min="1" max="1">\*a0 = a1;
+  return gi;</stringmatch>
+<stringmatch name="storealias #8: default, the value read before the store keeps its own variable" min="1" max="1">v1 = gi;
+  \*a0 = a1;
+  return v1;</stringmatch>
+<stringmatch name="storealias #9: load, three reads around two pointer stores collapse into one" min="1" max="1">return gi \* 0x6f;</stringmatch>
+<stringmatch name="storealias #10: default, each read stays where the binary makes it" min="1" max="1">return v1 \* 100 \+ v2 \* 10 \+ gi;</stringmatch>
+<stringmatch name="storealias #11: load, the store to gi is printed after the pointer store" min="1" max="1">\*a1 = a2;
+  gi = a0;
+  touch\(\);</stringmatch>
+<stringmatch name="storealias #12: default, the store to gi stays in front of the pointer store" min="1" max="1">gi = a0;
+  \*a1 = a2;
+  touch\(\);</stringmatch>
+<stringmatch name="storealias #13: load, the load through the pointer is printed after the store to gi" min="1" max="1">gi = a1;
+  return \*a0;</stringmatch>
+<stringmatch name="storealias #14: default, the load through the pointer stays in front of the store to gi" min="1" max="1">v1 = \*a0;
+  gi = a1;
+  return v1;</stringmatch>
+<stringmatch name="storealias #15: load, the increment after the pointer store reads gi again" min="1" max="1">\*a0 = a1;
+  gi \+= 1;</stringmatch>
+<stringmatch name="storealias #16: default, the increment uses the value read before the pointer store" min="1" max="1">v1 = gi;
+  \*a0 = a1;
+  gi = v1 \+ 1;</stringmatch>
+<stringmatch name="storealias #17: load, the load through the pointer is printed after a store to gi on a branch" min="1" max="1">gi = a1;
+  return \*a0 \+ a2;</stringmatch>
+<stringmatch name="storealias #18: default, the load stays in front of the store to gi on a branch" min="1" max="1">v1 = \*a0;
+  if \(a2\)
+    gi = a1;
+  return v1 \+ a2;</stringmatch>
+<stringmatch name="storealias #19: load, the load is printed after stores to gi and gj on two branches" min="1" max="1">gj = a1;
+  return \*a0 - a2;</stringmatch>
+<stringmatch name="storealias #20: default, the load stays in front of the stores on two branches" min="1" max="1">v1 = \*a0;
+  if \(\(6 &lt;= a2\) &amp;&amp; \(gi = a1, 8 &lt;= a2\)\)
+    gj = a1;
+  return v1 - a2;</stringmatch>
+<stringmatch name="storealias #21: load, the load in a loop is printed after the store to gi" min="1" max="1">gi = v2 \+ a2;
+    v1 \+= a0\[v2\];</stringmatch>
+<stringmatch name="storealias #22: default, the load in a loop stays in front of the store to gi" min="1" max="1">v1 = a0\[v3\];
+    gi = v3 \+ a2;
+    v2 \+= v1;</stringmatch>
+<stringmatch name="storealias #23: load, the store to gi is printed after the load, at the call" min="1" max="1">v1 = \*a1;
+  gi = a0;
+  touch\(\);</stringmatch>
+<stringmatch name="storealias #24: default, the store to gi stays in front of the load" min="1" max="1">gi = a0;
+  v1 = \*a1;
+  touch\(\);</stringmatch>
+<stringmatch name="storealias #25: both levels, a store ahead of the load stays there when a branch stores again" min="2" max="2">gi = \(\(int4 \*\)a1\)\[3\];
+  if \(a2\)
+    gi = \(\*a0 - \(\(int4 \*\)a1\)\[1\]\) \* 3;
+  gj = gi \+ -7;</stringmatch>
+<stringmatch name="storealias #26: both levels, a store ahead of a branch load stays there when gi is stored again" min="2" max="2">gi = \(\(int4 \*\)a1\)\[3\];
+  if \(a2\)
+    gi = \*a0 \* 3;
+  gi -= 7;</stringmatch>
+<stringmatch name="storealias #27: both levels, the same when the branch stores gi too" min="2" max="2">gi = \(\*a0 - \(\(int4 \*\)a1\)\[1\]\) \* 3;
+  gi -= 7;</stringmatch>
+<stringmatch name="storealias #28: both levels, a store ahead of the load stays there before a shared return block" min="2" max="2">gi = a2;
+    return \*a1;</stringmatch>
+<stringmatch name="storealias #29: both levels, past the guard budget gk is stored ahead of the load and the pointer store" min="4" max="4">gk = a3 \+ gk;
+  v1 = \*a0;
+  \*a1 = 7;</stringmatch>
+<stringmatch name="storealias #30: both levels, past the guard budget gk is read again after the pointer store" min="2" max="2">\*a1 = 7;
+  return gk \+ v1 \* 100;</stringmatch>
+</decompilertest>

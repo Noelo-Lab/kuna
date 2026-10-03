@@ -1260,6 +1260,7 @@ fn indexed(data: &Funcdata, sum: VarnodeId, scale: intb, off: intb, ev: &mut Evi
                     }
                 }
                 OpCode::CPUI_COPY | OpCode::CPUI_CAST => next = out.map(|x| (x, off)),
+                OpCode::CPUI_INDIRECT if slot == 0 => next = out.map(|x| (x, off)),
                 OpCode::CPUI_INT_ADD => {
                     let other = if slot == 0 { 1 } else { 0 };
                     let k = o

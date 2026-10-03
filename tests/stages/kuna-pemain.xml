@@ -15,6 +15,9 @@
 
     Pass 2 (the shipped default) names that callee `main`, at the call site and
     at its own definition.
+    The first argument is a variable: the startup reads `dat_14000c028` into
+    ecx before it stores `__initenv` through `.refptr.__imp___initenv`, and
+    passes that register to main (`option indexaliasguard`).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -40,7 +43,7 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="PEMAIN #1: off, the CRT startup calls the program entry as an anonymous sub" min="1" max="1">= sub_140001592\(dat_14000c028,dat_14000c020\);</stringmatch>
-<stringmatch name="PEMAIN #2: default, the same call site names main" min="1" max="1">= main\(dat_14000c028,dat_14000c020\);</stringmatch>
+<stringmatch name="PEMAIN #1: off, the CRT startup calls the program entry as an anonymous sub" min="1" max="1">= sub_140001592\(v\d+,dat_14000c020\);</stringmatch>
+<stringmatch name="PEMAIN #2: default, the same call site names main" min="1" max="1">= main\(v\d+,dat_14000c020\);</stringmatch>
 <stringmatch name="PEMAIN #3: default, main is defined under its name" min="1" max="1">unsigned long long main\(unsigned int a0\)</stringmatch>
 </decompilertest>

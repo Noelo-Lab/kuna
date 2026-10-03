@@ -324,6 +324,52 @@ high would collide after inflating its cover to the candidate's
 mode of a wrong "implied" is a value printed at a program point where it no
 longer holds — which is why every unsafe case resolves to explicit.
 
+A store to a global is neither a STORE nor a call: it is a `COPY` (or an
+arithmetic op) whose output is the global's own varnode, so the STORE arm never
+sees it, and `x = *p; gi = b; return x;` printed `gi = a1; return *a0;`, which
+returns `b` when `p` points at `gi`. At `option indexaliasguard global` (the
+default; chapter [03](03-ssa-and-simplification.md) §3.1)
+`kuna_loadorder.rs (crosses_global_write)` adds that arm: a LOAD stays explicit
+when the interior of its cover holds a live, non-marker op that writes a global
+in the space the LOAD reads, other than a `COPY` of the same storage (heritage's
+return copy) or a `COPY` of the global into a temporary of its own HighVariable
+(a `MULTIEQUAL` input's copy, which reads the global). An op writes a global when
+its output is a persistent varnode, or when its output's HighVariable holds one:
+a store on a branch or in a loop reaches the global through a `MULTIEQUAL`, so
+the op that makes it defines a temporary that the required merges join with the
+global, and `x = *p; if (c) gi = b; return x + c;` printed
+`if (a2) gi = a1; return *a0 + a2;`.
+When the LOAD's address is a constant, only a global whose bytes overlap the
+loaded ones counts. Only the ops inside the cover are visited. The arm matters
+more at that level than before it: the STORE guard leaves each store to a global
+where the binary makes it, ahead of loads that used to print before the store
+only because the store had drifted to the next call. At `load`, `off` and `full`
+the arm does not run, and at `global` it counts only a write of a global whose
+range chapter 03's STORE guard covered (`Heritage::global_store_guarded`), so a
+range past the guard budget prints as at `load`.
+
+A LOAD whose value is live across a write of another global also stays out of
+a guarded global's HighVariable: `kuna_loadorder.rs (keeps_apart)` refuses the
+copy merge and the adjacent merge between such a global and a high holding such
+a LOAD.
+Joined, the LOAD printed as a write of the global where the binary loads it,
+ahead of the other global's store, and the binary's own store as an update of
+that write:
+`dat_e10 = a0[3]; dat_e1c = a0[0xf]; dat_e10 = dat_e10 * 0.017453292;` where
+the binary loads `a0[3]` into a register and stores `dat_e10` once, after
+`dat_e1c`; kept apart it prints `v1 = a0[3]; dat_e1c = a0[0xf];
+dat_e10 = v1 * 0.017453292;`.
+
+A value computed before such a LOAD and stored to the global after it is not
+kept apart: joined with the global's HighVariable it still prints as a write of
+the global where it is computed, ahead of the LOAD (`t = gi * 2 + b; x = *p;
+gi = t;` prints `gi = a1 + gi * 2; v1 = *a0;`, issue #871). Keeping it apart is
+right only when the binary has not stored that value to the global before the
+LOAD, and when it has and stores the global again later, chapter 03 drops that
+first store as dead (issue #825): `t = a[3]; gi = t; if (c) t = *p * 3; gi = t -
+7;` prints `gi = a1[3]; if (a2) gi = *a0 * 3; gi -= 7;` only because the join
+re-creates the dropped store.
+
 The alias test compares the two accesses, not only the two pointers. It proves
 a STORE harmless only when both pointers derive from one base through matching
 op shapes (a constant step, or the same op on each side down to a common
@@ -1493,7 +1539,8 @@ copy-shadow join with the global is refused too, and `ActionMarkImplied`'s
 `checkImpliedCover` keeps the copy explicit (`kuna_pointeevalue.rs
 (load_crosses_write)`): joined, or printed inline at its reader, the read would
 move past a write that may change the global, which the Cover tests cannot see
-because kuna's SSA puts no `INDIRECT` on a global at a `STORE`. So
+when kuna's SSA puts no `INDIRECT` on a global at a `STORE` (`option
+indexaliasguard load`, or a function past the STORE guard's budget). So
 `gi = q; *pp = p; r = gi; *pp2 = p + 1; return r[1] + x;` prints
 `*a2 = a0; v2 = gi; *a3 = &a0[1]; return v1 + v2[1];` rather than
 `return v1 + gi[1];` after the second store.
@@ -1598,8 +1645,9 @@ binary makes it.
 
 Keeping the value apart is right only for the uses the binary makes of the
 register. A load of the global that a rule has already fed the value into must
-still print as the global: kuna's SSA gives a pointer store no effect on a
-global, so in `gi = u; *p = k; return gi / 16;` the load after `*p = k` reads
+still print as the global: where kuna's SSA gives a pointer store no effect on
+a global (`indexaliasguard load`, or past chapter 03's STORE guard budget), in
+`gi = u; *p = k; return gi / 16;` the load after `*p = k` reads
 the store's `COPY`, and printing the value there returns `u / 16` where the
 binary returns `k / 16` whenever `p` points at `gi`. Chapter 03 leaves such a
 load on the global while the value is read sign-sensitively; when it lets one

@@ -872,6 +872,18 @@ impl MergeContext for Funcdata {
     fn vn_loads_across_write(&self, vn: VarnodeId) -> bool {
         crate::p6_variables::kuna_pointeevalue::load_crosses_write(self, vn)
     }
+    fn vn_load_crosses_global_write(&mut self, vn: VarnodeId, except: HighVariableId) -> bool {
+        let guarded = self.high_bank().get(except).is_some_and(|h| {
+            (0..h.num_instances()).any(|i| self.vbank().get(h.get_instance(i)).is_some_and(|v| v.is_persist() && self.global_store_guarded(v)))
+        });
+        if !guarded {
+            return false;
+        }
+        if self.vbank().get(vn).is_some_and(|v| v.has_cover()) {
+            self.update_varnode_cover(vn);
+        }
+        crate::p6_variables::kuna_loadorder::crosses_global_write(self, vn, Some(except))
+    }
 
     // --- Cover construction for a single read -----------------------------
     fn single_read_cover(&self, vn: VarnodeId, op: OpId) -> Cover {
