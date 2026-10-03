@@ -2315,8 +2315,9 @@ impl Funcdata {
         if self.localmap.is_none() || !self.funcp.has_model() {
             return;
         }
-        let local = self.funcp.get_local_range().clone();
-        let param = self.funcp.get_param_range().clone();
+        let spec = self.get_arch().proto_ranges;
+        let local = self.funcp.local_range(spec).clone();
+        let param = self.funcp.param_range(spec).clone();
         let grows_neg = self.funcp.is_stack_grows_negative();
         if let Some(sl) = self.localmap.as_mut() {
             sl.reset_local_window(&local, &param, grows_neg);

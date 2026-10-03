@@ -787,6 +787,9 @@ Three tiers:
 | a for loop whose exit variable is written through a pointer argument disappears | [`callsitestackargs`](#callsitestackargs) |
 | ternary guards feeding a logging call are dead-code eliminated | [`callsitestackargs`](#callsitestackargs) |
 | outgoing-argument stack slots render as locals commented stack - 0xNN | [`callsitestackargs`](#callsitestackargs) |
+| a variable declared at stack + 0x18 is passed to a call as &Stack0000000000000018 | [`protoranges`](#protoranges) |
+| a store to a Win64 home slot and the call reading it name two different variables | [`protoranges`](#protoranges) |
+| a MIPS function keeps an argument it only spills to its register backup area | [`protoranges`](#protoranges) |
 | scanf rendered with only its format string and no destination pointer | [`varargstackargs`](#varargstackargs) |
 | printf with a %s conversion and no corresponding argument | [`varargstackargs`](#varargstackargs) |
 | a variadic call on arm64 keeps only the arguments that fit in registers before the first empty one | [`varargstackargs`](#varargstackargs) |
@@ -2674,6 +2677,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: this restores upstream Ghidra behavior (fspec.cc:5618) that a mis-ported argument had disabled, so it is a correctness fix rather than a judgment call and needs no DIV row. With it OFF every stack trial is scored no-use, so calls truncate at the register budget (x86-64 six arguments, i386 none) and any computation whose only consumer was a dropped argument is dead-code eliminated - which deletes real basic blocks, including whole loops. Set OFF only to reproduce that pre-fix output for a bisect or an ablation.
 - **Where / provenance:** P4/active-input-trial-scoring · ghidra-upstream · correctness-fix · decbench-callsite-stack-args
 - **Example:** `option callsitestackargs off`
+
+### `protoranges` -- on | off, default `on`
+
+- **Symptoms:** a variable declared at stack + 0x18 is passed to a call as &Stack0000000000000018; a store to a Win64 home slot and the call reading it name two different variables; a MIPS function keeps an argument it only spills to its register backup area.
+- **What it does:** Take each prototype model's stack ranges from the compiler spec, as upstream ProtoModel::decode does: the parameter range from the <input> stack entries (and any <paramrange>), the local range from <localrange>, instead of the default 0..511 parameter and below-return-address local ranges.
+- **When to flip:** On by default: it restores upstream Ghidra behavior the port had dropped, with 0/675 datatest assertions moved. x86-64-win.cspec declares the caller-allocated home area (stack 8..39) a local range and MIPS o32 its 0..15 register backup area; with the defaults those areas were parameter space, so a value spilled to a home slot and passed by address printed as &Stack0000000000000018 beside a separate local, and a spill nothing reads kept an unused argument in the signature. Set OFF to reproduce the default-range output for a bisect or an ablation.
+- **Where / provenance:** P6/stack-frame-layout · ghidra-upstream · correctness-fix · ghidra-home-slot-address-name
+- **Example:** `option protoranges off`
 
 ### `varargstackargs` -- on | off, default `on`
 

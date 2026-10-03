@@ -250,6 +250,7 @@ kuna_options! { self, p1;
     "loweredswitchvalue" => on_off!(lowered_switch_value_check, "Lowered-switch dispatch value check"),
     "loweredswitchexact" => on_off!(lowered_switch_exact, "Exact lowered-switch recovery"),
     "loweredswitchheads" => on_off!(lowered_switch_every_head, "Lowered-switch detection from every cascade head"),
+    "protoranges" => on_off!(proto_ranges, "Compiler-spec prototype stack ranges"),
     "callsitestackargs" => {
         let (val, msg) =
             crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;

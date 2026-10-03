@@ -898,6 +898,9 @@ pub struct ArchContext {
     /// Read by [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range`].
     pub callsite_stack_args: bool,
+    /// (kuna) `protoranges`: read the prototype's spec stack ranges rather than
+    /// the defaults (see [`crate::fspec::ProtoModel::local_range`]).
+    pub proto_ranges: bool,
     /// (kuna) a stack-pointer scramble against a live value -- MSVC's `/GS`
     /// cookie -- does not open a local-alias escape site (`cookiescramble`).
     /// Read by [`Funcdata::gather_additive_base`](crate::funcdata_spacebase)
@@ -1652,6 +1655,8 @@ impl ArchContext {
             // callsitestackargs is a correctness fix, not an opt-in transform, so the
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,
+            // A hand-built model decodes no spec, so both range choices agree.
+            proto_ranges: true,
             // cookiescramble only ever REMOVES a false escape site, so the
             // hand-built-fixture seam carries the same default the real path does.
             cookie_scramble: true,

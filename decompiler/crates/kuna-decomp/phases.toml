@@ -3126,6 +3126,26 @@ change_kind = "correctness-fix"
 tier = "core"
 symptoms = "call rendered with exactly six arguments on x86-64|call rendered with an empty argument list on i386|a for loop whose exit variable is written through a pointer argument disappears|ternary guards feeding a logging call are dead-code eliminated|outgoing-argument stack slots render as locals commented stack - 0xNN"
 
+
+[[settable]]
+option = "protoranges"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "stack-frame-layout"
+strength = "HARD"
+rewind = "P6"
+issue = "ghidra-home-slot-address-name"
+summary = "Take each prototype model's stack ranges from the compiler spec, as upstream ProtoModel::decode does: the parameter range from the <input> stack entries (and any <paramrange>), the local range from <localrange>, instead of the default 0..511 parameter and below-return-address local ranges."
+use_when = "On by default: it restores upstream Ghidra behavior the port had dropped, with 0/675 datatest assertions moved. x86-64-win.cspec declares the caller-allocated home area (stack 8..39) a local range and MIPS o32 its 0..15 register backup area; with the defaults those areas were parameter space, so a value spilled to a home slot and passed by address printed as &Stack0000000000000018 beside a separate local, and a spill nothing reads kept an unused argument in the signature. Set OFF to reproduce the default-range output for a bisect or an ablation."
+example = "option protoranges off"
+source_decompiler = "ghidra-upstream"
+inspiration = "upstream ProtoModel::decode localrange/paramrange arms + input->getRangeList (fspec.cc:2600-2700); x86-64-win.cspec <localrange> 8..39"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a variable declared at stack + 0x18 is passed to a call as &Stack0000000000000018|a store to a Win64 home slot and the call reading it name two different variables|a MIPS function keeps an argument it only spills to its register backup area"
+
 [[settable]]
 option = "varargstackargs"
 values = "on|off"

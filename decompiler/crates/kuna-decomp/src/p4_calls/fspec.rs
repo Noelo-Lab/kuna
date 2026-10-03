@@ -3871,6 +3871,10 @@ pub struct ProtoModel {
     localrange: RangeList,
     /// Memory range(s) of space-based parameters (C++ `paramrange`).
     paramrange: RangeList,
+    /// (kuna `protoranges`) `defaultLocalRange`, kept beside a spec's own.
+    default_localrange: RangeList,
+    /// (kuna `protoranges`) `defaultParamRange`, kept beside a spec's own.
+    default_paramrange: RangeList,
     /// `true` if stack parameters have low->high address ordering (C++
     /// `stackgrowsnegative`).
     stackgrowsnegative: bool,
@@ -3940,6 +3944,8 @@ impl ProtoModel {
             inject_upon_return: -1,
             localrange: RangeList::new(),
             paramrange: RangeList::new(),
+            default_localrange: RangeList::new(),
+            default_paramrange: RangeList::new(),
             stackgrowsnegative: true, // Normal stack parameter ordering
             has_this: false,
             is_construct: false,
@@ -3949,6 +3955,8 @@ impl ProtoModel {
         };
         res.default_local_range(manager);
         res.default_param_range(manager);
+        res.default_localrange = res.localrange.clone();
+        res.default_paramrange = res.paramrange.clone();
         res
     }
 
@@ -4012,6 +4020,34 @@ impl ProtoModel {
     /// Get the range of (possible) stack parameters (C++ `getParamRange`).
     pub fn get_param_range(&self) -> &RangeList {
         &self.paramrange
+    }
+    /// The local range `protoranges` selects: the spec's when `spec`, else the
+    /// default.
+    pub fn local_range(&self, spec: bool) -> &RangeList {
+        if spec {
+            &self.localrange
+        } else {
+            &self.default_localrange
+        }
+    }
+    /// The parameter range `protoranges` selects: the spec's when `spec`, else
+    /// the default.
+    pub fn param_range(&self, spec: bool) -> &RangeList {
+        if spec {
+            &self.paramrange
+        } else {
+            &self.default_paramrange
+        }
+    }
+    /// Replace the default local range with the decoded one (C++ `decode`'s
+    /// `localrange` arm).
+    pub fn set_local_range(&mut self, range: RangeList) {
+        self.localrange = range;
+    }
+    /// Replace the default parameter range with the decoded one (C++ `decode`'s
+    /// `input->getRangeList` and `paramrange` arms).
+    pub fn set_param_range(&mut self, range: RangeList) {
+        self.paramrange = range;
     }
     /// Get the side-effect list (C++ `effectBegin`/`effectEnd`).
     pub fn effect_list(&self) -> &[EffectRecord] {
@@ -4541,6 +4577,8 @@ impl ProtoModel {
             self.likelytrash = model.likelytrash.clone();
             self.localrange = model.localrange.clone();
             self.paramrange = model.paramrange.clone();
+            self.default_localrange = model.default_localrange.clone();
+            self.default_paramrange = model.default_paramrange.clone();
         } else {
             self.input.as_mut().unwrap().fold_in(model.input())?;
             // We assume here that the output models are the same, but we don't check
@@ -4564,6 +4602,14 @@ impl ProtoModel {
             }
             for r in model.paramrange.iter() {
                 self.paramrange
+                    .insert_range(Rc::clone(r.get_space()), r.get_first(), r.get_last());
+            }
+            for r in model.default_localrange.iter() {
+                self.default_localrange
+                    .insert_range(Rc::clone(r.get_space()), r.get_first(), r.get_last());
+            }
+            for r in model.default_paramrange.iter() {
+                self.default_paramrange
                     .insert_range(Rc::clone(r.get_space()), r.get_first(), r.get_last());
             }
         }
@@ -6394,6 +6440,14 @@ impl FuncProto {
     /// Get the range of potential stack parameters (C++ `getParamRange`).
     pub fn get_param_range(&self) -> &RangeList {
         self.model().get_param_range()
+    }
+    /// The local range `protoranges` selects (see [`ProtoModel::local_range`]).
+    pub fn local_range(&self, spec: bool) -> &RangeList {
+        self.model().local_range(spec)
+    }
+    /// The parameter range `protoranges` selects (see [`ProtoModel::param_range`]).
+    pub fn param_range(&self, spec: bool) -> &RangeList {
+        self.model().param_range(spec)
     }
     /// Return true if the stack grows toward smaller addresses (C++
     /// `isStackGrowsNegative`).

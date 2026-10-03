@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1816,
-    1816
+    1820,
+    1820
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -843,6 +843,10 @@
     "data:PPCISA #1: only the reporting pass gives the ISA hint",
     "data:PPCISA #2: the supported override is actionable",
     "data:PPCISA #3: the selected decoder still halts",
+    "data:PROTORANGES HOMESLOT #1: off, the call is passed a raw stack location",
+    "data:PROTORANGES HOMESLOT #2: on, the home slot is declared as a local",
+    "data:PROTORANGES HOMESLOT #3: on, worker_proc is stored into that local",
+    "data:PROTORANGES HOMESLOT #4: on, the same local is passed to consume",
     "data:PUSHIMMEDIATERET #1: both arms preserve the unpacker call",
     "data:PUSHIMMEDIATERET #2: only option on emits the complete tail-transfer statement",
     "data:REALTYPES #1: signature uses real C types, not xunknown8",

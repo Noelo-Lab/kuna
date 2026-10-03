@@ -1,0 +1,65 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    kuna protoranges: the address of a Win64 home slot prints as a raw stack
+    location instead of the local that holds the value.
+
+    MSVC x64 spills a value into the home slot its caller allocated above the
+    return address and passes the slot by reference:
+
+        140001000  48 83 ec 28            SUB   RSP,0x28
+        140001004  48 8d 05 75 00 00 00   LEA   RAX,[worker_proc]
+        14000100b  48 89 44 24 40         MOV   [RSP + 0x40],RAX   ; entry rsp+0x18
+        140001010  48 8d 4c 24 40         LEA   RCX,[RSP + 0x40]
+        140001015  e8 46 00 00 00         CALL  consume
+        14000101a  48 83 c4 28            ADD   RSP,0x28
+        14000101e  c3                     RET
+        140001060  48 8b 01 c3            consume: MOV RAX,[RCX]; RET
+        140001080  31 c0 c3               worker_proc: XOR EAX,EAX; RET
+
+    x86-64-win.cspec declares the home area (stack 8..39) in its prototypes'
+    <localrange> and the stack parameters in an <input> entry at 40.  kuna
+    ignored both and used the default ranges, which put the home area in the
+    parameter range, so no local was ever mapped over the slot: the store
+    printed as one variable and the call as &Stack0000000000000018.  With the
+    spec's ranges the slot is a local, and its escaping address makes it an
+    open range up to the end of the home area, which is what the stock
+    decompiler prints: code *local_res18 [2]; local_res18[0] = ...;
+    consume(local_res18).
+
+    Stage: P6 stack-frame layout, option protoranges off|on.  Pass 1 (off)
+    pins the bug; passes 2 and 3 (on, the default) pin the fix, without and
+    with a declared prototype for consume.
+-->
+<bytechunk space="ram" offset="0x140001000">
+4883ec28488d0575000000488944244048
+8d4c2440e8460000004883c428c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001060">
+488b01c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001080">
+31c0c3
+</bytechunk>
+<symbol space="ram" offset="0x140001000" name="f"/>
+<symbol space="ram" offset="0x140001060" name="consume"/>
+<symbol space="ram" offset="0x140001080" name="worker_proc"/>
+</binaryimage>
+<script>
+  <com>option protoranges off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option protoranges on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern void *consume(void **slot);</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PROTORANGES HOMESLOT #1: off, the call is passed a raw stack location" min="1" max="1">^  consume\(&amp;Stack0000000000000018\);$</stringmatch>
+<stringmatch name="PROTORANGES HOMESLOT #2: on, the home slot is declared as a local" min="2" max="2">^  code \*v[0-9]+ \[2\];</stringmatch>
+<stringmatch name="PROTORANGES HOMESLOT #3: on, worker_proc is stored into that local" min="2" max="2">^  v[0-9]+\[0\] = worker_proc;$</stringmatch>
+<stringmatch name="PROTORANGES HOMESLOT #4: on, the same local is passed to consume" min="2" max="2">^  consume\(v[0-9]+\);$</stringmatch>
+</decompilertest>

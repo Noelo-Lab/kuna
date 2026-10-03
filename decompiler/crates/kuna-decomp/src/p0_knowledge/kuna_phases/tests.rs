@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_254() {
-    assert_eq!(kuna_num_settables(), 254);
-    assert_eq!(SETTABLE_TABLE.len(), 254);
+fn settable_count_is_255() {
+    assert_eq!(kuna_num_settables(), 255);
+    assert_eq!(SETTABLE_TABLE.len(), 255);
 }
 
 #[test]
-fn tier_counts_are_82_core_105_transform_67_analysis() {
+fn tier_counts_are_83_core_105_transform_67_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_82_core_105_transform_67_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (82, 105, 67));
+    assert_eq!((core, transform, analysis), (83, 105, 67));
 }
 
 #[test]
@@ -610,6 +610,7 @@ fn option_values_live_value_present_for_109() {
                             // `PrintC::options.global_ref`.
                             | "globalref"
                             | "callsitestackargs"
+                            | "protoranges"
                             | "varargstackargs"
                             | "varargforward"
                             | "calleearity"
@@ -936,7 +937,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 250 -> 251: +1 for `flowmode`.
     // 251 -> 252: +1 for `varargforward`.
     // 252 -> 253: +1 for `stackstoreguard`.
-    assert_eq!(json.matches("},\n").count(), 253);
+    // 253 -> 254: +1 for `protoranges`; its P6 row sits mid-table.
+    assert_eq!(json.matches("},\n").count(), 254);
 }
 
 #[test]

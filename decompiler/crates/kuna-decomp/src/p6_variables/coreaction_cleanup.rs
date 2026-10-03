@@ -2498,7 +2498,12 @@ fn recommended_name_for(
             continue;
         }
         let hit = if rec.useaddr.is_invalid() {
+            // A named Symbol starting here already carries the recommendation
+            // (`recover_addrtied_name_recommendations`); the container bind uses it.
             v_addrtied
+                && !lm
+                    .query_container_for_link(v_addr, &kuna_base::address::Address::new_invalid())
+                    .is_some_and(|i| i.entry_addr == rec.addr && !i.is_name_undefined)
         } else if rec.useaddr == param_usepoint {
             v_input
         } else {
@@ -2559,9 +2564,13 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // hash-addressed half runs here, before any high is named, so a
     // GUI-renamed dynamic-storage variable (unique-space temp, split merge
     // group) keeps the user's name instead of consuming a fresh `vN`; the
-    // address-keyed half is applied per-high inside the walk
-    // (`recommended_name_for`).  Both are no-ops without recommendations.
+    // address-tied arm renames the Symbol at the recommended address, and the
+    // use-point arms are applied per-high inside the walk
+    // (`recommended_name_for`).  All are no-ops without recommendations.
     data.kuna_apply_dynamic_recommendations();
+    if let Some(lm) = data.get_scope_local_mut() {
+        lm.recover_addrtied_name_recommendations();
+    }
 
     // C++ `ActionNameVars::apply` (coreaction.cc:3084) calls
     // `lookForFuncParamNames(data,namerec)` AFTER `linkSymbols` but BEFORE the
