@@ -791,6 +791,10 @@ Three tiers:
 | a variadic call on arm64 keeps only the arguments that fit in registers before the first empty one | [`varargstackargs`](#varargstackargs) |
 | a stack local is compared or printed but never assigned after a scanf call | [`varargstackargs`](#varargstackargs) |
 | Apple arm64 variadic arguments missing from the call | [`varargstackargs`](#varargstackargs) |
+| a wrapper that forwards its own parameter to printf or open drops it | [`varargforward`](#varargforward) |
+| a variadic call on AArch64 loses the double the caller received in d0 | [`varargforward`](#varargforward) |
+| `g(k); return vr(k);` where g returns a double the source passes on | [`varargforward`](#varargforward) |
+| a declared parameter appears in no statement of a function that tail-calls a variadic function | [`varargforward`](#varargforward) |
 | the same sub_ address is called with an argument at one site and with an empty argument list at another | [`calleearity`](#calleearity) |
 | an allocator wrapper call loses its size argument | [`calleearity`](#calleearity) |
 | a call whose argument register is compared and branched on just before the call renders with no arguments | [`calleearity`](#calleearity) |
@@ -2672,6 +2676,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-101). Keep it on when a variadic call on AArch64/Apple silicon (or any ABI that passes varargs on the stack) is rendered with its format string and nothing else -- `scanf("%d");` followed by a comparison against an apparently uninitialized local, or `printf("Message: %s\n");` with no argument for the %s. The dropped destination usually also shows up as a stack local that is read but never written. Flip back OFF if a variadic call gains a trailing argument the disassembly does not pass -- the failure mode of relaxing a positional rule is a spurious argument, and it can only appear at a call whose prototype already carries `...`. OFF is upstream Ghidra's behavior.
 - **Where / provenance:** P4/active-input-trial-scoring · kuna · correctness-fix · repipe-68149b8a-scanf-varargs
 - **Example:** `option varargstackargs off`
+
+### `varargforward` -- on | off, default `on`
+
+- **Symptoms:** a wrapper that forwards its own parameter to printf or open drops it; a variadic call on AArch64 loses the double the caller received in d0; `g(k); return vr(k);` where g returns a double the source passes on; a declared parameter appears in no statement of a function that tail-calls a variadic function.
+- **What it does:** Keep a declared value that a function hands on unchanged, in the register it already occupies, to the variable part of a variadic call. `int d2(const char *f, int a) { return pr(f, a); }` with `pr(const char *, ...)` compiles to `xor %eax,%eax; jmp pr` on x86-64 with `a` still in esi; `double c2(int k, double x) { return vr(k, x); }` is a bare `b vr` on AArch64 with `x` still in d0, and `vr(k, g(k))` leaves g's result in d0. Upstream refuses all three: AncestorRealistic::execute (funcdata_varnode.cc:2159) fails a trial whose value is the function's own input, and ancestorOpUse fails one whose value is another call's output, so the trial is inactive and the call prints `pr(f)`, `vr(k)` and `g(k); vr(k)`. With the option on, a trial in the variable part of a call whose prototype ends in `...` is active when its value is (a) the calling function's own input, the function's input is locked, and a declared parameter starts at the same storage, or (b) the output of a call whose return type is locked and not void, and in both cases the call slot is the only reader of the value (an INDIRECT for a call's possible effect on the register is not a reader if nothing reads its output). A floating-point register is refused where the caller states how many it filled (x86-64 SysV `al`, 32-bit PowerPC CR bit 6, which `kuna_varargretreg` already reads) and on 64-bit PowerPC, where the FPR only shadows a general register.
+- **When to flip:** On by default. The instructions are also what the call without the argument compiles to when the parameter is declared but unused, or when the callee's result is discarded (`int d6(const char *f, int a) { return pr(f); }` prints `pr(f,a)`; AArch64 `g(k); return vr(k);` prints `v1 = g(k); return vr(k,v1);`); the register holds that value when the callee starts, so both readings compile back to the same call. Set OFF to get upstream's reading back when a variadic call shows an argument its source did not pass. A value with another reader is left alone (`if (a > 5) return 0; return pr(f, a);` still prints `pr(f)`), and so is anything in a function whose prototype is recovered rather than declared.
+- **Where / provenance:** P4/active-input-trial-scoring · kuna · correctness-fix · GH-829
+- **Example:** `option varargforward off`
 
 ### `calleearity` -- on | off, default `on`
 
