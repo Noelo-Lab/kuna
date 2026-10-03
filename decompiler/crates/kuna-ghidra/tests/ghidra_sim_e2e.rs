@@ -119,7 +119,7 @@ fn run_session_config(
     let tspec = generate_tspec(&oracle.manager, oracle.big_endian, oracle.unique_base);
     let lang_dir = repo_root().join("specs/Ghidra/Processors/x86/data/languages");
     let pspec = std::fs::read(lang_dir.join("x86-64.pspec")).expect("vendored x86-64.pspec");
-    let cspec = std::fs::read(lang_dir.join("x86-64-gcc.cspec")).expect("vendored x86-64-gcc.cspec");
+    let cspec = std::fs::read(lang_dir.join(&oracle.cspec)).expect("vendored x86-64 cspec");
     // Phase 3 decodes the wire corespec for real: send the default-mirroring
     // full set so the ghidra-mode factory matches the oracle's (same hash ids).
     let coretypes: &[u8] = ghidra_sim::DEFAULT_CORETYPES_XML;
@@ -1260,6 +1260,31 @@ fn ghidra_sim_tracked_override_reverts_after_flush() {
          baseline after the host stopped reporting the tracked value — the \
          wire merge leaked into the persistent trackbase"
     );
+}
+
+// ===========================================================================
+// PE import slots — the Win32 call shape
+// ===========================================================================
+
+/// Every Win32 call in an MSVC program goes through an import slot, which Java
+/// maps as a one-byte `<externrefsymbol>` and resolves with getExternalRef.
+/// The call prints as the import, and a local function passed by address
+/// prints as that function, as the stock decompiler prints both.
+#[test]
+fn ghidra_sim_pe_import_calls_and_function_pointers_print_names() {
+    let binary = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/importcall_pe_x86_64.exe");
+    let run = run_session_with(&binary, &["sub_140001000"], |oracle| {
+        oracle.cspec = "x86-64-win.cspec".to_string();
+    });
+    assert_structure(&run);
+    let c = &run.docs[0].c_text;
+    for name in ["CreateThread(", "CloseHandle(", "worker_proc"] {
+        assert!(c.contains(name), "{name} is not printed:\n{c}");
+    }
+    for raw in ["DAT_14000206", "0x140001080", "(*"] {
+        assert!(!c.contains(raw), "{raw} is printed instead of a name:\n{c}");
+    }
 }
 
 // ===========================================================================

@@ -14,7 +14,8 @@
 //! | getTrackedRegisters | empty `<tracked_pointset>` (always written, like Java) |
 //! | getStringData | program bytes NUL-scanned + the biased size header |
 //! | isNameUsed | constant `f` |
-//! | **getMappedSymbols / getExternalRef** | **EMPTY — the Phase-2 reality this harness pins.** |
+//! | getMappedSymbols | `<function>` / `<symbol>` / `<hole>` from the committed facts; Java's `<externrefsymbol>` at a PE import slot |
+//! | getExternalRef | the `<function>` an import slot resolves to, mapped at the slot |
 //!
 //! ### PHASE-3 SEAM
 //! `getMappedSymbols`/`getExternalRef` answer empty in v1, which is exactly
@@ -62,7 +63,8 @@ use kuna_decomp::pcodeinject::{
 use kuna_decomp::prettyprint::ids::{ELEM_FIELD, ELEM_TYPE};
 use kuna_decomp::remote_provider::{
     ATTRIB_CAT, ATTRIB_DOTDOTDOT, ATTRIB_EXTRAPOP, ATTRIB_LOCK, ATTRIB_MAIN, ATTRIB_NORETURN,
-    ATTRIB_VOIDLOCK, ELEM_HASH, ELEM_HOLE, ELEM_LOCALDB, ELEM_MAPSYM, ELEM_PARENT,
+    ATTRIB_VOIDLOCK, ELEM_EXTERNREFSYMBOL, ELEM_HASH, ELEM_HOLE, ELEM_LOCALDB, ELEM_MAPSYM,
+    ELEM_PARENT,
     ELEM_PROTOTYPE, ELEM_RETURNSYM, ELEM_SCOPE, ELEM_SYMBOLLIST,
 };
 use kuna_ghidra::ids::{
@@ -178,6 +180,9 @@ pub struct SimOracle {
     /// Force the getPcodeInject answer down one of the host's two failure
     /// paths instead of lifting the payload (`None` = answer for real).
     pub inject_fault: Option<InjectFault>,
+    /// The compiler spec registerProgram sends (Ghidra picks it per image:
+    /// `x86-64-win.cspec` for a PE).
+    pub cspec: String,
 }
 
 /// The two ways `DecompileCallback.getPcodeInject` declines to answer, which
@@ -297,6 +302,7 @@ impl SimOracle {
             tracked_overrides: Vec::new(),
             local_var_overrides: BTreeMap::new(),
             inject_fault: None,
+            cspec: "x86-64-gcc.cspec".to_string(),
         }
     }
 
@@ -475,6 +481,11 @@ impl SimOracle {
     fn answer_mapped_symbols(&mut self, dec: &mut PackedDecode) -> Vec<u8> {
         let addr = Address::decode(dec).expect("getMappedSymbols <addr>");
         let offset = addr.get_offset();
+        if self.prog.is_import_slot(offset) {
+            if let Some(name) = self.code_label(offset) {
+                return resp_string(&self.extern_ref_doc(&addr, &name));
+            }
+        }
         if let Some(name) = self.code_label(offset) {
             let noreturn = self
                 .prog
@@ -482,7 +493,7 @@ impl SimOracle {
                 .symboltab
                 .function_is_no_return_across_scopes(&addr);
             let pieces = self.callee_pieces.get(&offset).cloned();
-            return resp_string(&self.function_doc(&addr, &name, noreturn, pieces.as_ref()));
+            return resp_string(&self.function_doc(&addr, &name, noreturn, pieces.as_ref(), 1));
         }
         if let Some((start, (name, size))) = self
             .data_symbols
@@ -501,14 +512,57 @@ impl SimOracle {
         resp_string(&self.hole_doc(&addr))
     }
 
+    /// getExternalRef (Java `DecompileCallback.getExternalRef`): the function an
+    /// import slot resolves to, served AT the slot with Java's two-byte
+    /// `HighFunctionSymbol` mapping.  Empty when nothing is known there.
+    fn answer_external_ref(&mut self, dec: &mut PackedDecode) -> Vec<u8> {
+        let addr = Address::decode(dec).expect("getExternalRef <addr>");
+        let offset = addr.get_offset();
+        let Some(name) = self.code_label(offset) else {
+            return resp_empty();
+        };
+        let noreturn = self
+            .prog
+            .arch()
+            .symboltab
+            .function_is_no_return_across_scopes(&addr);
+        let pieces = self.callee_pieces.get(&offset).cloned();
+        resp_string(&self.function_doc(&addr, &name, noreturn, pieces.as_ref(), 2))
+    }
+
+    /// An import slot as Java maps it (`encodeExternalRef` →
+    /// `HighExternalSymbol`): `<externrefsymbol name="X_exref">` resolving to
+    /// the slot itself, with ONE byte of storage.
+    fn extern_ref_doc(&self, slot: &Address, name: &str) -> Vec<u8> {
+        let mut doc = Vec::new();
+        {
+            let mut e = PackedEncode::new(&mut doc);
+            e.open_element(&kuna_ghidra::ids::ELEM_DOC);
+            e.write_unsigned_integer(&ATTRIB_ID, 0);
+            e.open_element(&ELEM_MAPSYM);
+            e.open_element(&ELEM_EXTERNREFSYMBOL);
+            e.write_string(&ATTRIB_NAME, format!("{name}_exref").as_bytes());
+            slot.encode(&mut e).expect("resolve addr encodes");
+            e.close_element(&ELEM_EXTERNREFSYMBOL);
+            slot.encode_sized(&mut e, 1).expect("mapping addr encodes");
+            e.open_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_RANGELIST);
+            e.close_element(&ELEM_MAPSYM);
+            e.close_element(&kuna_ghidra::ids::ELEM_DOC);
+        }
+        doc
+    }
+
     /// `<doc id=0><mapsym><function …>…</function><addr/><rangelist/></mapsym></doc>`
-    /// (Java `HighFunctionSymbol.encode` → `HighFunction.encode`).
+    /// (Java `HighFunctionSymbol.encode` → `HighFunction.encode`); `map_size`
+    /// is the symbol's storage size (1 at an entry, 2 for getExternalRef).
     fn function_doc(
         &self,
         entry: &Address,
         name: &str,
         noreturn: bool,
         pieces: Option<&PrototypePieces>,
+        map_size: i32,
     ) -> Vec<u8> {
         let mut doc = Vec::new();
         {
@@ -520,7 +574,7 @@ impl SimOracle {
             // A stable fake host-database id (never in the internal 0x40… range).
             e.write_unsigned_integer(&ATTRIB_ID, entry.get_offset() | 0x1_0000_0000);
             e.write_string(&ATTRIB_NAME, name.as_bytes());
-            e.write_signed_integer(&ATTRIB_SIZE, 1);
+            e.write_signed_integer(&ATTRIB_SIZE, map_size as i64);
             if noreturn {
                 e.write_bool(&ATTRIB_NORETURN, true);
             }
@@ -537,8 +591,8 @@ impl SimOracle {
                 self.encode_prototype(&mut e, entry.get_offset(), p);
             }
             e.close_element(&ELEM_FUNCTION);
-            // The mapping SymbolEntry: <addr size=1/> + empty <rangelist/>.
-            entry.encode_sized(&mut e, 1).expect("mapping addr encodes");
+            // The mapping SymbolEntry: <addr size/> + empty <rangelist/>.
+            entry.encode_sized(&mut e, map_size).expect("mapping addr encodes");
             e.open_element(&ELEM_RANGELIST);
             e.close_element(&ELEM_RANGELIST);
             e.close_element(&ELEM_MAPSYM);
@@ -1096,15 +1150,15 @@ impl AnswerSource for SimOracle {
             self.answer_string_data(&mut dec)
         } else if el == ELEM_COMMAND_ISNAMEUSED.get_id() {
             resp_string(b"f")
-        } else if el == ELEM_COMMAND_GETMAPPEDSYMBOLS.get_id()
-            || el == ELEM_COMMAND_GETEXTERNALREF.get_id()
-        {
+        } else if el == ELEM_COMMAND_GETMAPPEDSYMBOLS.get_id() {
             // Phase 3: real `<doc><mapsym>` / `<hole>` answers from the
             // oracle's committed program facts (functions + locked prototypes
             // + noreturn, data symbols, section mutability) — the DecompileCallback
             // role.  `label_overrides` rides through `code_label`, which is what
             // the flushNative cache-clearing test flips.
             self.answer_mapped_symbols(&mut dec)
+        } else if el == ELEM_COMMAND_GETEXTERNALREF.get_id() {
+            self.answer_external_ref(&mut dec)
         } else if el == ELEM_COMMAND_GETDATATYPE.get_id() {
             // Phase 3: the TypeFactoryGhidra findById miss path — answer the
             // full definition from the oracle's own factory.
