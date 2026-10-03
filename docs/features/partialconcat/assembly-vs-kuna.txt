@@ -1,0 +1,13 @@
+Assembly: mov eax,edi; rol ax,8; ret
+
+Option off:
+unsigned int swap_port(unsigned int a0)
+{
+  return CONCAT22((short)((unsigned int)a0 >> 0x10),(unsigned short)a0 << 8 | (unsigned short)a0 >> 8);
+}
+
+Option on:
+unsigned int swap_port(unsigned int a0)
+{
+  return (unsigned int)a0 & 0xffff0000 | (unsigned int)((unsigned short)a0 << 8 | (unsigned short)a0 >> 8) & 0xffff;
+}

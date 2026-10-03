@@ -1,0 +1,27 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- Module 5 game-server port conversion; P9 partialconcat off reproduces the
+     undefined CONCAT helper, on preserves both halves with masked C arithmetic.
+     The second case checks a 64-bit partial write; the third joins unrelated
+     operands and must keep the existing rendering. -->
+<bytechunk space="ram" offset="0x401487" readonly="true">89f866c1c008c3</bytechunk>
+<bytechunk space="ram" offset="0x401500" readonly="true">4889f866c1c008c3</bytechunk>
+<bytechunk space="ram" offset="0x401600" readonly="true">89f889f248c1e0204809d0c3</bytechunk>
+<symbol space="ram" offset="0x401487" name="swap_port"/>
+<symbol space="ram" offset="0x401500" name="swap_low_word"/>
+<symbol space="ram" offset="0x401600" name="join_words"/>
+</binaryimage>
+<script>
+<com>option partialconcat off</com>
+<com>lo fu swap_port</com><com>decompile</com><com>print C</com>
+<com>option partialconcat on</com>
+<com>lo fu swap_port</com><com>decompile</com><com>print C</com>
+<com>lo fu swap_low_word</com><com>decompile</com><com>print C</com>
+<com>lo fu join_words</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="KUNA-PARTIALCONCAT #1: off preserves the CONCAT22 control" min="1" max="1">return CONCAT22</stringmatch>
+<stringmatch name="KUNA-PARTIALCONCAT #2: on masks both halves of the 32-bit result" min="1" max="1">return .*0xffff0000.*0xffff;</stringmatch>
+<stringmatch name="KUNA-PARTIALCONCAT #3: 64-bit upper bits are preserved" min="1" max="1">return .*0xffffffffffff0000.*0xffff;</stringmatch>
+<stringmatch name="KUNA-PARTIALCONCAT #4: an unrelated register join stays unchanged" min="1" max="1">return CONCAT44\(a0,a1\);</stringmatch>
+</decompilertest>

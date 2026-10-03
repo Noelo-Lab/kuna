@@ -1009,6 +1009,9 @@ Three tiers:
 | missing floating argument | [`armfloatargs`](#armfloatargs) |
 | double input split into two words | [`armfloatargs`](#armfloatargs) |
 | caller and callee disagree on mixed argument contract | [`armfloatargs`](#armfloatargs) |
+| CONCAT22 in a short byte-swap helper | [`partialconcat`](#partialconcat) |
+| CONCAT after a partial register write | [`partialconcat`](#partialconcat) |
+| an unchanged upper word joined to a replaced lower word | [`partialconcat`](#partialconcat) |
 
 ## Toggleable transforms
 
@@ -3061,6 +3064,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Turn on together with armfloatreturn (alone it changes nothing) when scalar ARM VFP inputs disappear, split into word parameters, or disagree with their callers. Unknown calls need a proven callee contract. Declared prototypes outrank recovery. Variadic format calls use base AAPCS storage. A double a callee reads only as integer words, as on single-precision FPUs, keeps what armfloatreturn recovers.
 - **Where / provenance:** P4/input-prototype · kuna · correctness-fix · arm-mixed-vfp-arguments
 - **Example:** `option armfloatargs on`
+
+### `partialconcat` -- on | off, default `on`
+
+- **Symptoms:** CONCAT22 in a short byte-swap helper; CONCAT after a partial register write; an unchanged upper word joined to a replaced lower word.
+- **What it does:** Render a scalar partial-register write as masked C arithmetic instead of an undefined CONCAT intrinsic. Recognizes PIECE(SUBPIECE(source, low_size), low) for two-, four-, and eight-byte integers when the upper extraction is implied and covers exactly the unchanged prefix of the original scalar. The C expression casts each operand to the unsigned result width and masks both halves before OR, preserving upper bits and truncating the lower expression even when C promotes it to int. Named upper values, enums, pointers, floating values, arrays, wider values and unrelated concatenations keep their existing rendering. The IR and recovered prototypes stay unchanged.
+- **When to flip:** On by default: a helper that rotates AX after copying EDI into EAX renders preserved upper bits and the swapped lower bytes as C masks. Set off to recover the upstream CONCAT22 spelling for comparison.
+- **Where / provenance:** P9/cast-policy · kuna · presentation-default · pwncollege-partial-register-concat
+- **Example:** `option partialconcat off`
 
 ## Programmatic use
 

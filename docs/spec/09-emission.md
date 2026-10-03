@@ -2659,3 +2659,23 @@ casts; with the option off the output is byte-identical to the build without it.
 On the 4,815 functions kuna and IDA both emit, casts fall from 45,126 to 44,001
 and no function gains one. Variables and types are untouched, so `type_match`
 cannot move (1,609 perfect functions in both arms of the 444-slice sweep).
+
+**Preserved scalar prefixes (`partialconcat`).** A partial-register update can
+leave `PIECE(SUBPIECE(source, low_size), low)` in the finished expression graph.
+For a two-, four-, or eight-byte integer with a one-, two-, or four-byte
+replacement, P9 renders this as
+`(unsigned_result_type)source & high_mask | (unsigned_result_type)low & low_mask`
+when the upper extraction is implied and covers exactly the original scalar's
+unchanged prefix. P9 also accepts the equivalent zero-offset truncation of a
+right shift by the number of replaced bits, which cast insertion can introduce.
+The implementation is
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_partialconcat.rs` and the
+`PrintC::op_partial_concat_ir` renderer in `printc.rs`. Both masks matter: the
+upper one removes replaced bits, and the lower one truncates arithmetic that C
+promotes before evaluating. Casts to the unsigned result width keep the operation
+on bit patterns, including when an operand has a signed type. The IR, signatures,
+and evaluation of the lower expression are unchanged. Named upper values,
+noninteger types, enums, widths above eight bytes and concatenations of unrelated
+halves keep their existing rendering. The option defaults on for C output; off
+restores the upstream CONCAT helper, and other output languages keep their own
+rendering.
