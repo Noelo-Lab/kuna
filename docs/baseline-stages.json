@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1929,
-    1929
+    1939,
+    1939
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -20,6 +20,16 @@
     "data:APS3 #6: it must NOT resolve to the following instruction 0x3a",
     "data:ARM FRAME SPILL #1: off retains the three-argument call",
     "data:ARM FRAME SPILL #2: reload recovers the fourth argument",
+    "data:ARM LSL #1: all register-controlled shifts range check the low-eight-bit count at 32",
+    "data:ARM LSL #2: all low-eight-bit expressions remain in guard and shift",
+    "data:ARM LSL #3: the shifted value is unsigned, including count 31",
+    "data:ARM LSL #4: both variable shiftees are converted to unsigned before shifting",
+    "data:ARM LSL #5: all overshift arms return zero of the conditional result type",
+    "data:ARM LSL #6: the count is not reduced modulo the operand width",
+    "data:ARM LSL #7: guarded shifts do not use compound assignment",
+    "data:ARM LSL signed consumers #1: cast the defined unsigned shift back to its signed p-code result type",
+    "data:ARM LSL signed consumers #2: preserve the signed comparison with zero",
+    "data:ARM LSL signed consumers #3: preserve arithmetic right shift of the sign bit",
     "data:ARM POP #1: returns the value in r0",
     "data:ARM POP #2: no jump-as-call return",
     "data:ARM-FLOAT-ARGS #1: off retains the integer-typed VFP bits",

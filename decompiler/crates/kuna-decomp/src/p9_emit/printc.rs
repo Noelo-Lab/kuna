@@ -236,6 +236,8 @@ pub mod tokens {
     pub static BOOLEAN_XOR: OpToken = op_token("^^", "", 2, 20, false, TokenType::Binary, 1, 0);
     /// The boolean-or operator `||` (printc.cc:56).
     pub static BOOLEAN_OR: OpToken = op_token("||", "", 2, 18, false, TokenType::Binary, 1, 0);
+    /// C's conditional operator, used for guarded dynamic shifts.
+    pub static CONDITIONAL: OpToken = op_token("?", ":", 3, 16, false, TokenType::Binary, 1, 0);
     /// The assignment operator `=` (printc.cc:57).
     pub static ASSIGNMENT: OpToken = op_token("=", "", 2, 14, false, TokenType::Binary, 1, 5);
     /// The comma operator `,` for parameter lists (printc.cc:58).
@@ -2114,11 +2116,13 @@ impl PrintC {
         let op_markup = self.markup_for_op_key(entry.op);
         match entry.tok.token_type {
             TokenType::Binary => {
-                if entry.visited != 1 {
-                    return;
-                }
+                let text = match entry.visited {
+                    1 => entry.tok.print1,
+                    2 if !entry.tok.print2.is_empty() => entry.tok.print2,
+                    _ => return,
+                };
                 self.emit.spaces(entry.tok.spacing, entry.tok.bump);
-                self.emit.tag_op(entry.tok.print1, SyntaxHighlight::NoColor, &op_markup);
+                self.emit.tag_op(text, SyntaxHighlight::NoColor, &op_markup);
                 self.emit.spaces(entry.tok.spacing, entry.tok.bump);
             }
             TokenType::UnaryPrefix => {
@@ -5355,6 +5359,15 @@ impl PrintC {
             (Some(a), Some(b)) if a == b => {}
             _ => return false,
         }
+        // The compound form has no place for ARM's zero-on-overshift arm.
+        if opc == OpCode::CPUI_INT_LEFT
+            && self.out_lang == crate::kuna_lang::OutLang::C
+            && !self.context.is_set(modifiers::NEGATETOKEN)
+            && crate::p9_emit::kuna_armregistershift::plan_arm_register_lsl(fd, arch, op)
+                .is_some()
+        {
+            return false;
+        }
         // (kuna) `x += -c` reads poorly: when the INT_ADD addend is a plain
         // negative signed constant (no equate/display override, not char-typed,
         // not the unnegatable type minimum), render `x -= c` with the negated
@@ -5687,6 +5700,16 @@ impl PrintC {
     /// the operator then resolves both operand Varnodes.  The negate-token flip
     /// (the `negatetoken` mod) is honoured.
     fn op_binary_ir(&mut self, fd: &Funcdata, arch: &Architecture, tok: &'static OpToken, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::C
+            && !self.context.is_set(modifiers::NEGATETOKEN)
+        {
+            if let Some(plan) = crate::p9_emit::kuna_armregistershift::plan_arm_register_lsl(
+                fd, arch, op,
+            ) {
+                self.emit_arm_register_lsl(fd, arch, op, plan);
+                return;
+            }
+        }
         let tok = if self.context.is_set(modifiers::NEGATETOKEN) {
             self.context.unset_mod(modifiers::NEGATETOKEN);
             token_negate(tok).unwrap_or(tok)
@@ -5735,6 +5758,50 @@ impl PrintC {
                     self.push_vn_ir(fd, arch, v, op);
                 }
             }
+        }
+    }
+
+    /// Emit a planned ARM LSL as a guarded C shift. The unsigned shift avoids
+    /// signed-left-shift UB; signed conditional arms preserve later signed
+    /// comparisons and arithmetic shifts.
+    fn emit_arm_register_lsl(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        plan: crate::p9_emit::kuna_armregistershift::ArmRegisterLslPlan,
+    ) {
+        use crate::printlanguage::SyntaxHighlight;
+        let crate::p9_emit::kuna_armregistershift::ArmRegisterLslPlan {
+            lhs,
+            count,
+            lhs_type,
+            count_type,
+            signed_result_type,
+        } = plan;
+        self.push_op(&tokens::CONDITIONAL, Some(op_key(op)));
+        self.push_op(&tokens::LESS_THAN, Some(op_key(op)));
+        self.push_cast_open(&count_type, op);
+        self.push_vn_ir(fd, arch, count, op);
+        self.push_cast_close(&count_type);
+        self.push_atom(&Atom::syntax(
+            "32u",
+            TagType::Syntax,
+            SyntaxHighlight::const_color,
+        ));
+        if let Some(result_type) = &signed_result_type {
+            self.push_cast_open(result_type, op);
+        }
+        self.push_op(&tokens::SHIFT_LEFT, Some(op_key(op)));
+        self.push_cast_open(&lhs_type, op);
+        self.push_vn_ir(fd, arch, lhs, op);
+        self.push_cast_close(&lhs_type);
+        self.push_vn_ir(fd, arch, count, op);
+        if let Some(result_type) = &signed_result_type {
+            self.push_cast_close(result_type);
+            self.push_atom(&Atom::syntax("0", TagType::Syntax, SyntaxHighlight::const_color));
+        } else {
+            self.push_atom(&Atom::syntax("0u", TagType::Syntax, SyntaxHighlight::const_color));
         }
     }
 
