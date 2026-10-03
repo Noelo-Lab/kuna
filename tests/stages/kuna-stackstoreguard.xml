@@ -1,0 +1,22 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v4t">
+<!-- Authored indexed-stack-store regression, P3 heritage-guard.
+     Zero a stack word; copy three input bytes through a walking pointer;
+     read the first stack byte directly and call helper when it is nonzero.
+     stackstoreguard off drops the dependent call; default on preserves it.
+     Assembly source: docs/features/stackstoreguard/scan.s. -->
+<bytechunk space="ram" offset="0x1000">10402de908d04de20d10a0e10020a0e300208de50330a0e30120d0e40120c1e4013053e2fbffff1a0000dde5000050e30000000a020000eb08d08de21040bde81eff2fe10512a0e3000081e51eff2fe1</bytechunk>
+<symbol space="ram" offset="0x1000" name="inspect_bytes"/>
+<symbol space="ram" offset="0x1044" name="helper"/>
+</binaryimage>
+<script>
+<com>parse line extern void inspect_bytes(unsigned char *bytes);</com>
+<com>parse line extern void helper(void);</com>
+<com>load function inspect_bytes</com><com>decompile</com><com>print C</com>
+<com>option stackstoreguard off</com>
+<com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="STACK STORE #1: both settings retain the byte-copy loop" min="2" max="2">\*v[0-9]+ = \*bytes;</stringmatch>
+<stringmatch name="STACK STORE #2: only the guarded read retains the dependent call" min="1" max="1">helper\(\);</stringmatch>
+<stringmatch name="STACK STORE #3: only the guarded read retains its nonzero test" min="1" max="1">if \(</stringmatch>
+</decompilertest>

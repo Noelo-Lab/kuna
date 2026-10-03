@@ -969,6 +969,13 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             return Ok(r); // breakpoint — propagate verbatim (no re-flow)
         }
         total += r;
+        // (kuna `stackstoreguard`) A function whose final layout spoils what the
+        // guard needs is analyzed again from scratch without it by the drive.
+        if fd.stack_store_guard_spoiled()
+            || crate::p6_variables::kuna_storereach::withdraw_spoiled_guard(fd)
+        {
+            return Ok(total);
+        }
         if !(reflow_requested && fd.has_restart_pending()) {
             drain_pipeline_comments(arch, fd);
             return Ok(total);
@@ -1193,7 +1200,7 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     let staged_name_recs = std::mem::take(&mut arch.kuna_pending_name_recs);
     let staged_dyn_recs = std::mem::take(&mut arch.kuna_pending_dyn_recs);
     let staged_proto_model = arch.kuna_pending_proto_model.take();
-    let result = (|| {
+    let mut attempt = |prefollowed: Option<Funcdata>, unguarded: bool| -> KunaResult<Funcdata> {
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
         let entry_addr = funcaddr.clone();
@@ -1202,12 +1209,15 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
             None => build_and_follow_flow_with_override_and_protos(
                 arch,
                 name,
-                funcaddr,
+                funcaddr.clone(),
                 size,
                 flow_overrides,
                 proto_overrides,
             )?,
         };
+        if unguarded {
+            fd.withdraw_stack_store_guard();
+        }
         // The prototype the function is decompiled *against*. Two sources, in
         // precedence order:
         //
@@ -1325,7 +1335,13 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
                 )))
             }
         }
-    })();
+    };
+    // (kuna `stackstoreguard`) A function whose final layout spoiled what the
+    // guard needs is analyzed again from scratch, as `stackstoreguard off` would.
+    let result = match attempt(prefollowed, false) {
+        Ok(fd) if fd.stack_store_guard_spoiled() => attempt(None, true),
+        other => other,
+    };
     // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
     // no later, non-drive pipeline run (console sub-queries) consults a stale one.
     arch.kuna_fn_deadline = None;

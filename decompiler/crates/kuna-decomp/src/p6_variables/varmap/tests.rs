@@ -822,6 +822,85 @@ fn scope_local_restructure_builds_a_disjoint_cover() {
     assert!(sl.database().find_overlap(scope, &a1, 4).is_some(), "local at 0x20 created");
 }
 
+type Hint = (uintb, Rc<Datatype>, uint4, RangeType, int4);
+
+/// The start of the local covering `[off, off + size)` after `restructure`
+/// over `hints`, with `bases` as the guarded store bases.
+fn restructured_start(hints: &[Hint], bases: Vec<intb>, off: uintb, size: int4) -> uintb {
+    let f = factory();
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let mut localr = RangeList::new();
+    localr.insert_range(Rc::clone(&spc), 0, 0x3f);
+    let paramr = RangeList::new();
+    sl.reset_local_window(&localr, &paramr, false);
+    let unknown = base(1, type_metatype::TYPE_UNKNOWN);
+    let mut state = MapState::new(Rc::clone(&spc), &localr, &paramr, unknown);
+    for (start, ct, flags, rt, hi) in hints {
+        state.add_range_pub(*start, Some(Rc::clone(ct)), *flags, *rt, *hi);
+    }
+    state.set_absorbing_bases(bases);
+    sl.restructure(&mut state, &f).expect("restructure");
+    let scope = sl.scope_id();
+    let at = Address::new(Rc::clone(&spc), off);
+    let eref = sl.database().find_overlap(scope, &at, size).expect("a local");
+    sl.database().entry(scope, eref).get_addr().get_offset()
+}
+
+#[test]
+fn scope_local_restructure_absorbs_a_read_inside_an_absorbed_slot_at_a_guarded_base() {
+    // An indexed open range at 0x10 absorbs the constant word at 0x14; the
+    // half-word read at 0x16 starts inside that word. Upstream ends the range
+    // at 0x16 and the read becomes its own local; at a guarded store's base
+    // the range absorbs it.
+    let hints = [
+        (0x10, base(1, type_metatype::TYPE_UNKNOWN), 0, RangeType::Open, 3),
+        (0x10, base(4, type_metatype::TYPE_UINT), COPY_CONSTANT, RangeType::Fixed, -1),
+        (0x14, base(4, type_metatype::TYPE_UNKNOWN), COPY_CONSTANT, RangeType::Fixed, -1),
+        (0x16, base(2, type_metatype::TYPE_UINT), 0, RangeType::Fixed, -1),
+        (0x30, base(4, type_metatype::TYPE_INT), 0, RangeType::Fixed, -1),
+    ];
+    assert_eq!(restructured_start(&hints, Vec::new(), 0x16, 2), 0x16);
+    assert_eq!(restructured_start(&hints, vec![0x10], 0x16, 2), 0x10);
+    let other_base = restructured_start(&hints, vec![0x14], 0x16, 2);
+    assert_eq!(other_base, 0x16, "only an open range starting at a base absorbs");
+}
+
+#[test]
+fn scope_local_restructure_keeps_a_guarded_base_open_through_a_conceding_merge() {
+    // An unknown-byte open range at 0x10 merged with a constant word and a
+    // half-word read inside it concedes to a fixed word; the bytes past 0x14
+    // then belong to no local. At a guarded store's base the range stays open
+    // and runs to the next hint.
+    let hints = [
+        (0x10, base(1, type_metatype::TYPE_UNKNOWN), 0, RangeType::Open, 3),
+        (0x10, base(4, type_metatype::TYPE_UNKNOWN), COPY_CONSTANT, RangeType::Fixed, -1),
+        (0x11, base(2, type_metatype::TYPE_UNKNOWN), 0, RangeType::Fixed, -1),
+        (0x18, base(4, type_metatype::TYPE_INT), 0, RangeType::Fixed, -1),
+    ];
+    let f = factory();
+    let mut sl = scope_local();
+    let spc = Rc::clone(sl.get_space_id());
+    let scope = sl.scope_id();
+    let mut localr = RangeList::new();
+    localr.insert_range(Rc::clone(&spc), 0, 0x3f);
+    let paramr = RangeList::new();
+    for (bases, covered) in [(Vec::new(), false), (vec![0x10], true)] {
+        sl.clear_unlocked_category_negative().expect("reset");
+        sl.reset_local_window(&localr, &paramr, false);
+        let unknown = base(1, type_metatype::TYPE_UNKNOWN);
+        let mut state = MapState::new(Rc::clone(&spc), &localr, &paramr, unknown);
+        for (start, ct, flags, rt, hi) in &hints {
+            state.add_range_pub(*start, Some(Rc::clone(ct)), *flags, *rt, *hi);
+        }
+        state.set_absorbing_bases(bases);
+        sl.restructure(&mut state, &f).expect("restructure");
+        let byte = Address::new(Rc::clone(&spc), 0x15);
+        let at = sl.database().find_overlap(scope, &byte, 1);
+        assert_eq!(at.is_some(), covered, "byte 0x15 belongs to the base's local");
+    }
+}
+
 #[test]
 fn scope_local_clear_unlocked_category_resets_layout_each_pass() {
     // C++ `restructureVarnode` head `clearUnlockedCategory(-1)` (varmap.cc:1259):

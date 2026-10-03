@@ -556,7 +556,36 @@ what upstream always does; it is not kuna's default because on a frame slot the
 INDIRECT chain survives into the emitted C as write-backs of values a slot
 already holds.
 
-At `off` neither runs, which is what kuna shipped before the option.
+`option stackstoreguard` (default on) also enables STORE guards at
+`indexaliasguard load` and `global` for constant-initialized stack slots. Before normalizing
+partial reads, it checks for a constant write (through COPY, SUBPIECE or
+integer extension) and the processor's stack space. Only byte STOREs already
+recorded by indexed stack-pointer discovery qualify; globals, unknown pointers
+and wider stores retain the explicit `full` policy. The gate lives in
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
+A heritage pass also leaves the whole frame unguarded when one of those byte
+STOREs, or any other LOAD or STORE whose address comes from the stack pointer,
+has an address that does not resolve to the stack base plus constants plus
+indices, or chooses between more than eight stack addresses or ones more than
+256 bytes apart (`kuna_stackstoreguard.rs (frame_unresolved)`, decided once per
+pass): the stack layout of chapter 06 cannot keep such a frame's guarded slots
+in the one local the store writes through. Typical cases are an OR-formed
+address (`(&v1 | 4) + i`) and a pointer walk with a variable step. When no
+earlier pass guarded the frame, the option is turned off for the whole function
+(`heritage.rs (store_frame_resolves)`), which then decompiles exactly as with
+`stackstoreguard off`.
+
+This bounded policy prevents an initializer from flowing unchanged across a
+byte-fill loop into a later direct byte or word read. Otherwise constant
+folding can delete a reachable condition and side-effecting call. Guards
+conservatively describe a possible write; they do not invent its value or
+prove its range. General store-alias recovery remains outside this policy:
+applying every indexed store guard changes parameter and aggregate recovery
+in existing cases, so it is not enabled by this option.
+
+Turning `stackstoreguard off` restores the previous load-only behavior without
+changing the explicit `full` policy. `indexaliasguard off` suppresses both
+families, including the narrow stack-store guard.
 
 **The dead-code delay machinery and the dead-definition gate.** Dead-code
 removal is only *allowed* in a space once heritage there is past the space's
@@ -683,6 +712,37 @@ group):
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_6.rs` | pointer-op undo, division strength-reduction inversion, cleanup arithmetic | `RulePtraddUndo`/`RulePtrsubUndo`, `RuleDivOpt`/`RuleDivTermAdd`/`RuleSubNormal` (recover `/`, `%` from magic-number multiplies), cleanup-pool `RuleMultNegOne`/`RuleAddUnsigned`/`RuleSubRight`/`RulePieceStructure` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs` | signed div/mod idioms, segments, pointer flow, predication, float compares | `RuleSignDiv2`, `RuleSignMod2nOpt`, `RuleModOpt`, `RuleSegment`, `RulePtrFlow`, `RuleConditionalMove` (group `conditionalexe`), `RuleFloatCast`, `RuleIgnoreNan` |
 | `decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_8.rs` | int↔float conversion recovery, bit-counting booleans, float sign ops, compare splitting | `RuleUnsigned2Float`, `RuleThreeWayCompare`, `RulePopcountBoolXor`, `RuleLzcountShiftBool`, `RuleFloatSign`, `RuleOrCompare`, `RuleFuncPtrEncoding`, cleanup-pool `RuleExpandLoad` |
+
+`RulePullsubIndirect`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs (RulePullsubIndirect)`)
+narrows an INDIRECT whose readers are all SUBPIECEs to the bytes they use, from
+the lowest used byte to the highest. The new output piece starts at the lowest
+used byte, and kuna slices the piece of the INDIRECT's input at that same byte,
+as `RulePullsubMulti` does. Upstream slices the input at the offset of whichever
+SUBPIECE triggered the rule, so when another reader uses a lower byte the input
+piece holds the wrong bytes; on a big-endian space it also sits below the
+original storage, and the emitted C copies a value that does not exist into the
+read bytes. The stack STORE guards of §3.1 (`stackstoreguard`) are the common
+source of such INDIRECTs: two direct byte reads of an initialized buffer after
+an indexed byte store.
+
+With `stackstoreguard` on, the rule leaves a stack STORE INDIRECT whole when one
+of its SUBPIECE readers reads more than one byte (a SUBPIECE that only feeds
+another INDIRECT, left behind by an earlier narrowing, does not count). The
+narrowed piece would be a separate stack location from the slot the store
+indexes, so the variable map would declare it as its own local: the read would
+no longer see the store, and the store's base would become an address-only
+local declared at pointer width and printed with that stride
+(`long v1; (&v1)[i & 3] = j; return v2;`). Kept whole, the read stays a piece
+of the slot the store indexes (`unsigned int v1; ((char *)&v1)[i] = j; return
+v1._1_2_;`). Byte readers still narrow, because a byte piece maps as an element
+of the byte array the store indexes. The check is `keeps_store_indirect_whole`
+in `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
+Keeping the slot whole does not by itself make the slot, its neighbours and the
+read one local; the stack layout decides that, and with the option on it maps
+every slot a bounded store may reach as one array and does not end an open range
+inside a slot it absorbed (chapter 06, §6.2, "An indexed store's slots are one
+local").
 
 The pointer/division family in `ruleaction_6.rs` resolves opcode changes through
 the canonical `TypeOp` table and applies them with `Funcdata::op_set_opcode`.

@@ -846,6 +846,11 @@ pub struct Heritage {
     /// "can a pointer reach this stack slot?" with, gathered at most once per
     /// pass.  See [`crate::p4_calls::kuna_calleeprotostack`].
     protostack_alias: Option<Option<crate::varmap::AliasChecker>>,
+    /// (kuna `stackstoreguard`) Whether this pass's frame has a stack access
+    /// whose pointer does not resolve, decided at most once per pass.
+    store_frame_unresolved: Option<bool>,
+    /// (kuna `stackstoreguard`) Has a pass of this function guarded its frame?
+    store_frame_guarded: bool,
     /// (kuna `indexaliasguard global`) The global STORE guards built for this
     /// function so far.
     global_store_guards: usize,
@@ -877,6 +882,8 @@ impl Heritage {
             store_guard: Vec::new(),
             load_copy_ops: Vec::new(),
             protostack_alias: None,
+            store_frame_unresolved: None,
+            store_frame_guarded: false,
             global_store_guards: 0,
             global_stores: None,
             global_store_ranges: Vec::new(),
@@ -1045,6 +1052,8 @@ impl Heritage {
         self.global_store_ranges.clear();
         self.load_guard.clear();
         self.store_guard.clear();
+        self.store_frame_unresolved = None;
+        self.store_frame_guarded = false;
         self.maxdepth = -1;
         self.pass = 0;
     }
@@ -1388,6 +1397,9 @@ impl Heritage {
         read: &mut [crate::context::VarnodeId],
         write: &mut Vec<crate::context::VarnodeId>,
     ) {
+        let guard_stack_bytes = add_indirects
+            && super::kuna_stackstoreguard::enabled(fd, addr, write)
+            && self.store_frame_resolves(fd, addr);
         for slot in 0..read.len() {
             let vn = read[slot];
             let descend = fd.vbank().get(vn).expect("guard: stale read vn").num_descend();
@@ -1508,8 +1520,8 @@ impl Heritage {
                     .map(|s| s.get_type() != spacetype::IPTR_INTERNAL)
                     .unwrap_or(false);
             if high_ptr_possible {
-                if level >= LEVEL_FULL {
-                    self.guard_stores(fd, addr, size, write);
+                if level >= LEVEL_FULL || guard_stack_bytes {
+                    self.guard_stores(fd, addr, size, write, level < LEVEL_FULL);
                 } else if level == LEVEL_GLOBAL && (fl & varnode_flags::readonly) == 0 {
                     self.guard_global_stores(fd, fl, addr, size, write);
                 }
@@ -2547,30 +2559,56 @@ impl Heritage {
         }
     }
 
-    /// Guard STORE ops (C++ `Heritage::guardStores`, `heritage.cc:1539`).
-    ///
-    /// STUB(W4): adding an INDIRECT across an aliasing STORE needs
-    /// `Funcdata::newIndirectOp` (the INDIRECT-marker factory, a W4 op-build
-    /// primitive) and `Varnode::getSpaceFromConst` on the STORE's space-id
-    /// input.  This is only reached when `highPtrPossible` is true (a recovered
-    /// high pointer), which is false in the merged tree, so it is unreached on
-    /// the critical path; the C++ body folds in with the W4 INDIRECT factory.
+    /// (kuna `stackstoreguard`) May this pass guard the frame of `addr`'s
+    /// space? Not when a stack access's pointer does not resolve (decided once
+    /// per pass); if no earlier pass guarded the frame either, the guard is
+    /// withdrawn for the whole function, as there is nothing to undo.
+    fn store_frame_resolves(&mut self, fd: &crate::funcdata::Funcdata, addr: &Address) -> bool {
+        let unresolved = match self.store_frame_unresolved {
+            Some(unresolved) => unresolved,
+            None => {
+                let unresolved = addr.get_space().is_some_and(|spc| {
+                    super::kuna_stackstoreguard::frame_unresolved(fd, spc, &self.store_guard)
+                });
+                self.store_frame_unresolved = Some(unresolved);
+                unresolved
+            }
+        };
+        if !unresolved {
+            self.store_frame_guarded = true;
+        } else if !self.store_frame_guarded {
+            fd.withdraw_stack_store_guard();
+        }
+        !unresolved
+    }
+
+    /// Guard possible STORE aliases; the narrow policy admits only indexed byte stores.
     fn guard_stores(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         addr: &Address,
         size: int4,
         write: &mut Vec<crate::context::VarnodeId>,
+        indexed_bytes_only: bool,
     ) {
         use crate::op::pcodeop_flags;
         use kuna_num::opcodes::OpCode;
 
         let spc = addr.get_space().expect("guard_stores: addr space").clone();
         let container = spc.get_contain().cloned();
-        let stores: Vec<crate::context::OpId> = fd.obank().iter_code(OpCode::CPUI_STORE).collect();
+        let stores: Vec<crate::context::OpId> = if indexed_bytes_only {
+            self.store_guard.iter()
+                .filter(|guard| Rc::ptr_eq(&guard.spc, &spc)
+                    && fd.obank().get(guard.op).and_then(|op| op.get_in(2))
+                        .and_then(|vn| fd.vbank().get(vn)).is_some_and(|vn| vn.get_size() == 1))
+                .map(|guard| guard.op)
+                .collect()
+        } else {
+            fd.obank().iter_code(OpCode::CPUI_STORE).collect()
+        };
         for op in stores {
             let dead = fd.obank().get(op).map(|o| o.is_dead()).unwrap_or(true);
-            if dead {
+            if dead || fd.obank().get(op).is_none_or(|o| o.code() != OpCode::CPUI_STORE) {
                 continue;
             }
             let store_space = match fd.obank().get(op).and_then(|o| o.get_in(0)) {
@@ -4922,6 +4960,7 @@ impl Heritage {
         // (kuna `calleeprotostack`) The alias gather is only valid for the
         // data-flow as it stands, so it is dropped at every pass boundary.
         self.protostack_alias = None;
+        self.store_frame_unresolved = None;
         self.global_stores = None;
         if self.maxdepth == -1 {
             // Has a restructure been forced

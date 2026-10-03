@@ -585,6 +585,11 @@ impl Funcdata {
         };
         state.gather_symbols(&hints);
 
+        let reach_checks = match self.get_arch().types_rc() {
+            Some(t) => crate::p6_variables::kuna_storereach::prepare_hints(self, &mut state, &space, t.as_ref()),
+            None => Default::default(),
+        };
+
         // (kuna) `endptrbound`: a stack pointer walk's `[start, end)` is one buffer.
         let endptr_walks = crate::kuna_endptrbound::gather_walks(self, &space);
         if let (false, Some(t)) = (endptr_walks.is_empty(), self.get_arch().types_rc()) {
@@ -603,6 +608,7 @@ impl Funcdata {
             let _ = lm.restructure(&mut state, t.as_ref());
         }
         let rebased = crate::kuna_endptrbound::rebase_bounds(self, &space, &endptr_walks);
+        self.note_store_reach_checks(reach_checks);
 
         // C++ `restructureVarnode` tail (varmap.cc:1272-1285).  The unlocked-category
         // cleanup / fake-input-symbol synthesis / `markUnaliased` are W4 ScopeLocal

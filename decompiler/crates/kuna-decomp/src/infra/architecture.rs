@@ -916,6 +916,8 @@ pub struct Architecture {
     /// `ActionDeadCode` (option `splitstorekeep`, default-on, DIV-153).  See
     /// [`crate::p3_dataflow::kuna_splitstorekeep`].
     pub split_store_keep: bool,
+    /// Guard stack slots against stores through stack-derived pointers.
+    pub stack_store_guard: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -2561,6 +2563,7 @@ impl Architecture {
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
             split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
+            stack_store_guard: false,
             region_structure: true,
             guard_arm: false,
             loop_cond_hoist: false,
@@ -2867,6 +2870,7 @@ impl Architecture {
         self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
         self.split_store_keep = true; // (kuna) DIV-153 default-on: Heritage::refineWrite carries the stack_store mark onto its refinement pieces, so an overlapping-range frame store stays a direct write and is not swept by ActionDeadCode (0/675 ablation); `option splitstorekeep off` restores upstream's unmarked pieces
+        self.stack_store_guard = true;
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
@@ -3573,6 +3577,7 @@ impl Architecture {
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep
+        ctx.stack_store_guard = self.stack_store_guard;
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_cond_hoist = self.loop_cond_hoist; // loopcondhoist

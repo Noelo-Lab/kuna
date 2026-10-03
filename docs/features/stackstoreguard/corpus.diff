@@ -1,0 +1,17 @@
+--- authored byte-fill / off
++++ authored byte-fill / on
+@@ -1 +1 @@
+-void inspect_bytes(uint1 *a0)
++void inspect_bytes(uint1 *a0) // return-dupe
+@@ -7 +7 @@
+-  uint1 v5 [8];
++  uint1 v5 [8]; // stack - 0x10
+@@ -8,0 +9,4 @@
++  v5[0] = 0;
++  v5[1] = 0;
++  v5[2] = 0;
++  v5[3] = 0;
+@@ -18,0 +23,3 @@
++  if (!v5[0])
++    return;
++  helper();

@@ -911,6 +911,146 @@ the alias gather still hands later layouts an open hint there and the rewrite
 never changes the layout that justified it. `option endptrbound off` restores
 the neighbour-bound layout.
 
+**An indexed store's slots are one local (kuna `stackstoreguard`, default
+on).** The stack STORE guard of chapter 03 (`stackstoreguard`) keeps an
+indexed byte store such as `u.b[i & 7] = j` from being folded past: every
+constant-initialized slot it may write keeps the store's effect, and the C
+prints the store through the local at its base address. That is only right
+when every byte the store may reach, and every later read of those bytes,
+belongs to that one local. A slot mapped as a separate local is a separate C
+object, so a read of it never sees the store. Two layout decisions broke that.
+
+The first is the reach. Two four-byte constant slots written by `u.w[0]` and
+`u.w[1]` produce two fixed hints, and the store's own open hint only claims the
+first few bytes, so the store indexes one local and reads the next one.
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_storereach.rs
+(prepare_hints)` runs in `restructure_varnode` after the three gathers and
+before `endptrbound`. It takes each STORE of a one-byte value that a guard
+INDIRECT on the stack names as its effect, and resolves its pointer as the
+stack base plus constants plus indices (`kuna_storereach.rs (pointer_pieces)`,
+through copies, casts, INDIRECTs, `PTRSUB`, `PTRADD` and `INT_ADD`, and through
+a pointer walk's `MULTIEQUAL` whose other inputs agree on the base). When every
+index has a known-bits mask that bounds it, the reach is `[base, base + max +
+1)`. A `MULTIEQUAL` that chooses between different stack addresses (`p = (j &
+2) ? &u.b[0] : &u.b[4]; *p ^= 1;`) gives one such piece per address, and the
+store reaches from the lowest piece to the end of the highest
+(`kuna_storereach.rs (store_reach)`). A walk that starts from such a choice
+(`*p++ ^= 1`) gives one piece per address with no bound, and each address is a
+base whose open range absorbs (below). A choice input that does not come from
+the stack base (`(j & 2) ? &u.b[2] : gbuf`) is not a stack address and is
+skipped. Overlapping reaches are united, each one
+is widened over every hint that crosses either edge, counting an open hint by
+its indexed elements so the array never ends inside an upstream open array
+(`v1 = &v2[8]` into a `char v2[8]`), and the hints inside are replaced by one
+open array hint at the lowest byte with index evidence through the last. The
+element type is
+the most specific one-byte integer type a fixed hint inside the reach carries,
+so a byte read zero-extended keeps the array unsigned; without one it is the
+unknown byte. A reach that holds a type-locked hint, spans more than 256 bytes,
+or leaves the analyzed range keeps its hints. Constant initializers and wider
+reads then map as pieces of the one array (`v1._0_4_ = 0x1020304; v1[i & 7] =
+j; return v1._6_2_;`). A reach that holds a float hint also keeps its hints, and
+the bases of the stores inside it are not absorbing (below). A float read from a
+byte array would be an integer piece, and a `(double)` cast of a piece converts
+its value instead of reinterpreting its bits, so the upstream layout stays
+(`double v1[3]; v1[0] = 3.75; ((char *)v1)[i & 7] = j; return (int)(v1[0] +
+v1[0]);`). When that layout is still wrong, the function falls back to no
+guard (below).
+
+The second is where an open range ends, which matters when the index is not
+bounded (`u.b[i]`, or a walk that starts at `&u.b[i]`). `RangeHint::attempt_join`
+lets an open range absorb a constant COPY slot even when the slot is wider than
+one element, but the range still ends where the next hint starts. A word read
+that starts inside the absorbed slot therefore became its own local, the slot's
+Varnode straddled both, and the `SUBPIECE` that defines the read was an internal
+copy of the same storage that never prints: the read was a declared local that
+is never assigned (`unsigned int v2; unsigned short v3; ... return v3 * 5;`).
+`prepare_hints` hands the base of every guarded store to
+`varmap.rs (MapState::set_absorbing_bases)`, and `varmap.rs
+(ScopeLocal::restructure)` tracks the furthest byte any hint merged or joined
+into the current range covers. An open range that starts at one of those bases
+absorbs every unlocked hint that starts before that byte instead of ending
+there, so it still ends at the next hint after it, as every open range does.
+Such a range also stays open when merging an overlapping hint concedes it to a
+fixed unknown of the union's size: a walk from `&u.b[i % 4]` writes past the
+first word, and a fixed word would end the local there. A type-locked hint is
+never absorbed this way, an aggregate type does not reopen, and an open range
+that starts anywhere else ends as upstream's does: the same split also follows a buffer
+that escapes to a call (`g(&u.b[i & 7])`), which no store guard covers and this
+option leaves alone.
+
+Neither step runs in a frame where some LOAD or STORE address comes from the
+stack base through arithmetic that `pointer_pieces` cannot resolve
+(`kuna_storereach.rs (frame_unresolved)`), where a guarded store's own address
+does not resolve, or where a choice spans more than eight stack addresses or
+more than 256 bytes; a choice between stack addresses resolves, so a pointer to
+one of two buffers does not count. clang's ppc32 `-O0` code forms `&u.s.b[i]`
+as `(&v1 | 4) + i`, relying on the frame's alignment; that store may write any
+slot near a resolved reach, and no layout of the frame is known to keep what it
+writes and what is read in one local. Chapter 03's heritage gate leaves such a
+frame unguarded, and turns the option off for the function when no earlier pass
+guarded it. When dataflow exposes the address only after heritage guarded the
+frame, the layout pass marks the function spoiled
+(`Funcdata::spoil_stack_store_guard`), `ActionRestructureVarnode` stops the
+analysis (`ActionContext::abandon`, which the action containers honour like an
+expired deadline), and the function falls back to no guard (below). The partial
+copy that jump-table recovery analyzes is never analyzed again, so there such a
+pass keeps the upstream layout, unless an earlier pass laid out a reach
+(`Funcdata::store_reach_committed`): a later pass that laid out a smaller local
+would leave the pointers an earlier pass resolved against the larger one past
+its end (`&v19[0x20]` into a `char v19[32]`).
+
+The guard is worse than none wherever the final layout separates what the
+store writes from what is read. Each layout pass records what the final layout
+must satisfy (`Funcdata::note_store_reach_checks`): each guarded store's reach
+(its bounded reach, or everything at or above each unbounded piece's base,
+since nothing bounds how far `((u8 *)&s)[i]` or a walk writes), and the guarded
+store pieces in a float reach. An index whose known-bits span is 256 bytes or
+more counts as unbounded (`u.b[i & 511]`). After the last pass
+`decompile_drive.rs (run_pipeline)` calls `kuna_storereach.rs
+(withdraw_spoiled_guard)`, which takes the bytes of every guard INDIRECT still
+on the stack. The layout is spoiled when such a slot whose value some op other
+than an INDIRECT or MULTIEQUAL reads overlaps more than one local (the P3 guard
+keeps every constant-initialized slot, not only the slots inside a store's
+reach), or when any such slot inside a reach, read or not, does not lie in the
+local holding the reach's base: the C writes through that local only, so a read
+of another local never sees the store, and an index past the base local's end
+writes outside it (a constant `struct { u32 a; u8 b[6]; u16 c; u32 d; }`
+written by `((u8 *)&s)[i]` and mapped as `int v1; unsigned char v2; ...` with
+`((char *)&v1)[a0] = a1`). An unread slot counts too: a call after the store
+keeps the zeroed tail of `u8 b[12]` alive as `unsigned int v3` beside an
+`unsigned long v1` at the base, and `((char *)&v1)[a0 % 0xc] = a1` then writes
+past `v1`, which natively clobbers whatever follows it. The same holds for a
+slot past a smaller array (`char v1[8]; unsigned int v2; v1[a0] = a1` for a
+16-byte union), and for a separate constant local anywhere above a walked
+buffer, which the guard therefore gives up on (`char v1[400]; unsigned int v2;
+v1[a0 & 0x1ff] = a1;` for a 512-byte union with a constant word at byte 400).
+The local holding a reach's base must also be able to hold it
+(`kuna_storereach.rs (holds_reach)`): an array of bytes or of 2-, 4- or 8-byte
+integers or unknowns, which ends at the next local and which the store writes by
+byte (`v1[i]`, `((char *)v5)[i]` for the `int4 v5[4]` an ARM word read gives), or,
+for a bounded reach, a float local; in both cases holding all of a bounded
+reach. Any other local is spoiled: a scalar has a fixed size an unbounded index
+can run past, and an array of other elements may not be indexable by byte at
+all (a 16-byte SSE zero-initializer at the base types the buffer `undefined16
+v1[2]`, printed as `v1[0][a0 % 0x18] = a1`, which does not compile). A float
+piece is spoiled when no single local covers it, or when its local is read as
+an integer while a member of that variable is typed float
+(`kuna_storereach.rs (read_only_as_float)`): such a read prints as a cast,
+which converts the value (`(unsigned short)v1` of a `double v1`). Float ops,
+copies and PIECEs into the range, and SUBPIECEs above the low end, which print
+as the bytes (`v1._6_2_`), do not. `decompile_drive.rs
+(decompile_func_full_with_override_dyn_prefollowed)` analyzes a spoiled
+function (`Funcdata::spoil_stack_store_guard`) again from a freshly built copy
+with the guard off for it, not by a restart in place: kuna's `clear()` keeps
+the first analysis's local symbols (upstream's `clearUnlocked` is not ported),
+which could survive into the second. The second analysis therefore prints
+exactly what `option stackstoreguard off` prints. Another example is a buffer written only by a walk through a
+pointer kept in memory, which no guard covers, while the guard keeps its
+initializer (clang `-O0` `p = (j & 1) ? u.b : v.b; *p++ = j;`).
+
+`option stackstoreguard off` turns all of this off along with the guard.
+
 **An out-parameter takes the callee's declaration (kuna `castobject`, default
 on).** When two hints for the same bytes differ only in signedness, the ordering
 `RangeHint::preferred` falls back to (`type_order`) ranks `unsigned` ahead of

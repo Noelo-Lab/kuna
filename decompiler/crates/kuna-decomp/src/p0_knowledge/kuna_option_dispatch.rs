@@ -419,6 +419,7 @@ kuna_options! { self, p1;
     },
     "condexeret" => on_off!(cond_exe_ret, "return-trial retry after conditional-execution removal"),
     "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
+    "stackstoreguard" => on_off!(stack_store_guard, "Stack-derived store heritage guards"),
     "indexaliasguard" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_indexaliasguard::OptionIndexAliasGuard.apply(p1)?;

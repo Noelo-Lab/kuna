@@ -1956,6 +1956,8 @@ mod tests {
         // through its own variable, not through the global
         // and kuna-zextpair / a 64-bit return whose high register is zero keeps
         // its zero-extension
+        // and kuna-stackstoreguard / a byte copied into an initialized stack
+        // buffer through a walking pointer still reaches the later test and call
         // and kuna-globalvalue / a value a sign-sensitive op reads keeps its own
         // variable instead of merging into a global it is stored to
         // and kuna-narrowext / a narrow RISC-V argument or return value is
@@ -1968,7 +1970,7 @@ mod tests {
         // and kuna-flowmode / a blx selects Thumb for its own target only
         // and kuna-storealias / a global read back after a store through a
         // pointer prints as the global (GH-792)
-        assert_eq!(count, 391, "corpus file count drifted");
+        assert_eq!(count, 392, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

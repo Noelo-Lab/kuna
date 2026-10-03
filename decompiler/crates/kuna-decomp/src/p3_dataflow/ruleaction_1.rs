@@ -1786,6 +1786,10 @@ impl Rule for RulePullsubMulti {
 // =============================================================================
 
 /// Pull-back SUBPIECE through INDIRECT (C++ `RulePullsubIndirect`).
+///
+/// The input piece starts at `minByte`, like the output piece; upstream takes
+/// the triggering SUBPIECE's offset, which slices the wrong bytes (out of range
+/// on big-endian) whenever another use reads a lower byte.
 pub struct RulePullsubIndirect {
     group: String,
 }
@@ -1868,6 +1872,9 @@ impl Rule for RulePullsubIndirect {
         if !RulePullsubMulti::acceptable_size(new_size) {
             return 0;
         }
+        if super::kuna_stackstoreguard::keeps_store_indirect_whole(data, vn, targ_op) {
+            return 0;
+        }
         let outvn = data.obank().get(op).expect("RulePullsubIndirect: stale op").get_out().expect(
             "RulePullsubIndirect: SUBPIECE has no output",
         );
@@ -1909,19 +1916,13 @@ impl Rule for RulePullsubIndirect {
             );
         } else {
             let basevn = indir_in0;
-            let sub_off = {
-                let in1 = data.obank().get(op).expect("RulePullsubIndirect: stale op").get_in(1).expect(
-                    "RulePullsubIndirect: SUBPIECE has no in1",
-                );
-                data.vbank().get(in1).expect("RulePullsubIndirect: stale in1").get_offset()
-            };
-            let small1 = match RulePullsubMulti::find_subpiece(data, basevn, new_size, sub_off) {
+            let small1 = match RulePullsubMulti::find_subpiece(data, basevn, new_size, min_byte as uintb) {
                 Some(s) => s,
                 None => RulePullsubMulti::build_subpiece(
                     data,
                     basevn,
                     new_size as u32,
-                    sub_off as u32,
+                    min_byte as u32,
                 )
                 .expect("RulePullsubIndirect: build_subpiece"),
             };

@@ -592,6 +592,9 @@ pub struct ActionContext {
     /// budget) is a no-op compare — the console/`decomp_dbg` parity pipeline
     /// never sets it.
     pub deadline: Option<std::time::Instant>,
+    /// (kuna `stackstoreguard`) Set when the drive will analyze the function
+    /// again, so the containers stop scheduling work as on an expired deadline.
+    pub abandon: bool,
 }
 
 /// How many [`ActionPool`] op visits between deadline probes (the tight rule
@@ -616,10 +619,11 @@ impl ActionContext {
     /// short-circuits without touching the clock.
     #[inline]
     pub fn deadline_expired(&self) -> bool {
-        match self.deadline {
-            Some(d) => std::time::Instant::now() >= d,
-            None => false,
-        }
+        self.abandon
+            || match self.deadline {
+                Some(d) => std::time::Instant::now() >= d,
+                None => false,
+            }
     }
 }
 
