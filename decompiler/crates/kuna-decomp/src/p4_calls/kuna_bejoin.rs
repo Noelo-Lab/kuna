@@ -902,7 +902,6 @@ impl Terms<'_> {
             }
         }
         if !self.tainted.contains(&cur) {
-            let size = data.vbank().get(cur).map_or(4, |v| v.get_size());
             return match literal_value(data, cur, LITERAL_DEPTH) {
                 None | Some(0) => Ok(false),
                 Some(_) if self.literal => Ok(false),
