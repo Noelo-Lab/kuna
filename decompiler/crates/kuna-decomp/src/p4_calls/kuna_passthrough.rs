@@ -114,9 +114,12 @@
 //!
 //! When every live RETURN is reached from a direct call with nothing in between,
 //! every such callee states a non-`void` return in the same register or register
-//! pair, and the function never touches those registers (`stated_tail_return`),
-//! each RETURN gets a read of each and the function's return trial for each
-//! (`claim_tail_return`). Upstream's `ancestorOpUse` refuses an INDIRECT creation
+//! pair (a callee with no parameters states its return too), and the function
+//! never touches those registers (`stated_tail_return`), each RETURN gets a read
+//! of each and the function's return trial for each (`claim_tail_return`). A
+//! register that carries no argument (x86 `eax`, MIPS `v0`) may be written before
+//! the call, which overwrites it; heritage then reads the claimed register as
+//! the low SUBPIECE of the wider one the function wrote. Upstream's `ancestorOpUse` refuses an INDIRECT creation
 //! at a RETURN, so [`returns_tail_result`] accepts the one planted at a claimed
 //! call, whose output then takes the callee's recovered return type
 //! ([`tail_return_type`]). A register pair is kept whole or not at all
@@ -558,9 +561,16 @@ pub(crate) fn producing_call(data: &Funcdata, ret: OpId) -> Option<OpId> {
 /// Asked before any argument is claimed, so "untouched" means untouched by the
 /// function's own code. `None` unless the function's own output is recovered
 /// (not locked), every live RETURN is reached from a direct call with nothing
-/// between, every one of those callees states a non-`void` return in the same
-/// storage, and that storage is a register or a register pair
-/// ([`register_pieces`]) no op of the function touches.
+/// between ([`touched_after`]), every one of those callees states a non-`void`
+/// return in the same storage, and that storage is a register or a register
+/// pair ([`register_pieces`]) the function's model returns in and no op of the
+/// function touches.
+///
+/// A register that carries no argument ([`return_only`]: x86 `eax`, MIPS `v0`)
+/// may also be touched BEFORE the call, which overwrites it, so `mov
+/// (%rdi),%rax; ...; jmp g` returns what `g` does. An argument register is not
+/// relaxed: ARM `mov r0,#5; b g` is how a `void` function calls `g(5)` as often
+/// as how an `int` one returns it.
 fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId>)> {
     if data.get_func_proto().is_output_locked() || data.get_active_output().is_none() {
         return None;
@@ -575,6 +585,7 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
     }
     let mut storage: Option<(Address, int4)> = None;
     let mut producers: Vec<OpId> = Vec::new();
+    let mut paths: Vec<(OpId, OpId)> = Vec::new();
     for &r in &rets {
         let call = producing_call(data, r)?;
         let idx = (0..data.num_calls()).find(|&i| data.get_call_specs(i).get_op() == call)?;
@@ -590,14 +601,56 @@ fn stated_tail_return(data: &Funcdata) -> Option<(Vec<(Address, int4)>, Vec<OpId
         if !producers.contains(&call) {
             producers.push(call);
         }
+        paths.push((call, r));
     }
     let (addr, size) = storage?;
     let pieces = register_pieces(data, &addr, size)?;
     let proto = data.get_func_proto();
     let free = |(a, s): &(Address, int4)| {
-        !touched_by(data, a, *s, true) && proto.characterize_as_output(a, *s) != crate::fspec::Containment::NoContainment
+        proto.characterize_as_output(a, *s) != crate::fspec::Containment::NoContainment
+            && (!touched_by(data, a, *s, true) || return_only(proto, a, *s))
     };
-    pieces.iter().all(free).then_some((pieces, producers))
+    if !pieces.iter().all(free) || paths.iter().any(|&(call, ret)| touched_after(data, call, ret, &pieces)) {
+        return None;
+    }
+    Some((pieces, producers))
+}
+
+/// Does an op between `call` and `ret`, on the path [`producing_call`] walks,
+/// read or write a byte of `pieces`? An injected no-op ([`is_injected_noop`])
+/// moves nothing. A path the walk cannot follow back to `call` answers `true`.
+fn touched_after(data: &Funcdata, call: OpId, ret: OpId, pieces: &[(Address, int4)]) -> bool {
+    let hits = |v: Option<VarnodeId>| {
+        v.and_then(|v| data.vbank().get(v)).is_some_and(|v| {
+            let (voff, vend) = (v.get_offset(), v.get_offset().wrapping_add(v.get_size().max(0) as u64));
+            pieces.iter().any(|(a, s)| {
+                a.get_space().is_some_and(|sp| sp.get_index() == v.get_space().get_index())
+                    && a.get_offset() < vend
+                    && voff < a.get_offset().wrapping_add((*s).max(0) as u64)
+            })
+        })
+    };
+    let Some(mut bl) = data.obank().get(ret).and_then(|o| o.get_parent()) else { return true };
+    let mut cur = data.op_previous_op(ret);
+    for _ in 0..RETURN_WALK_BLOCKS {
+        while let Some(op) = cur {
+            if op == call {
+                return false;
+            }
+            let Some(o) = data.obank().get(op) else { return true };
+            if !is_injected_noop(data, op) && (hits(o.get_out()) || (0..o.num_input()).any(|i| hits(o.get_in(i)))) {
+                return true;
+            }
+            cur = data.op_previous_op(op);
+        }
+        let b = data.bblocks_ref().block(bl);
+        if b.size_in() != 1 {
+            return true;
+        }
+        bl = b.get_in(0);
+        cur = data.bb_op_tail(bl);
+    }
+    true
 }
 
 /// The registers a stated return value occupies: its own storage, or each piece
@@ -685,7 +738,7 @@ pub fn returns_tail_result(data: &Funcdata, vn: VarnodeId, addr: &Address, size:
         return false;
     }
     let mut def = v.get_def();
-    while let Some(d) = def.filter(|&d| is_injected_noop(data, d)) {
+    while let Some(d) = def.filter(|&d| is_injected_noop(data, d) || is_low_piece(data, d)) {
         def = data.obank().get(d).and_then(|o| o.get_in(0)).and_then(|i| data.vbank().get(i)).and_then(|i| i.get_def());
     }
     let Some(def) = def.and_then(|d| data.obank().get(d)) else { return false };
@@ -697,6 +750,15 @@ pub fn returns_tail_result(data: &Funcdata, vn: VarnodeId, addr: &Address, size:
     data.kuna_passthrough_claims()
         .iter()
         .any(|c| c.addr == *addr && c.size == size && c.ret_owners.contains(&call))
+}
+
+/// Is `op` a SUBPIECE taking the least significant bytes of its input: the
+/// `eax` heritage reads out of the whole `rax` a call writes once the function
+/// also writes `rax` itself before the call?
+fn is_low_piece(data: &Funcdata, op: OpId) -> bool {
+    let Some(o) = data.obank().get(op) else { return false };
+    o.code() == OpCode::CPUI_SUBPIECE
+        && o.get_in(1).and_then(|c| data.vbank().get(c)).is_some_and(|c| c.is_constant() && c.get_offset() == 0)
 }
 
 /// Is `[addr, addr+size)` a register of a tail call's result this pass claimed

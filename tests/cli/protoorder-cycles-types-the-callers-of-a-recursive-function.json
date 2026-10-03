@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-a56abd63f625",
+  "probe_id": "a-284a0de3ba40",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -28,17 +28,17 @@
       "eq": 0
     },
     "stdout_matches": [
-      "void wrap\\(char \\*a0\\)",
-      "void wrap2\\(char \\*a0\\)",
+      " wrap\\(char \\*a0\\)",
+      " wrap2\\(char \\*a0\\)",
       "int strwalk\\(char \\*a0\\)",
-      "  rtarget\\(a0,5\\);",
-      "  rkeep\\(a0,5,v3\\);"
+      " rtarget\\(a0,5\\);",
+      " rkeep\\(a0,5,v3\\);"
     ],
     "stdout_absent": [
-      "void wrap\\(unsigned long a0\\)",
-      "void wrap2\\(unsigned long a0\\)",
-      "  rtarget\\(a0,5,v3\\);"
+      " wrap\\(unsigned long a0\\)",
+      " wrap2\\(unsigned long a0\\)",
+      " rtarget\\(a0,5,v3\\);"
     ]
   },
-  "notes": "The DEFAULT (`protoorder cycles`): self-recursive `strwalk` and the `even`/`odd` cycle still state their `char *`, so `wrap` and `wrap2` take it. `rtarget` writes rdx before recursing, so `argclobber` drops the clobbered third argument at its call; `rkeep` forwards rdx into its own recursion and keeps it."
+  "notes": "The DEFAULT (`protoorder cycles`): recursive `strwalk` and the `even`/`odd` cycle state `char *`, so `wrap` and `wrap2` take it. `argclobber` drops the third argument `rtarget` clobbers; `rkeep` forwards rdx and keeps it. Return types are not pinned: each caller loads through rax before its last call, and `passthrough` returns that call's result."
 }

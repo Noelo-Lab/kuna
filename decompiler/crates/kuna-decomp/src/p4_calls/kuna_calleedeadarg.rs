@@ -1238,7 +1238,7 @@ pub fn seed_callee_entry_dead(
         if let Some(d) = probe_cached(arch, &e, reg_idx) {
             data.kuna_set_callee_entry_dead(&e, d);
         }
-        if pass_through && arch.kuna_protoorder_types.contains_key(&key) {
+        if pass_through && arch.kuna_protoorder_types.get(&key).is_some_and(|s| !s.inputs.is_empty()) {
             if let Some(t) = reads_through_calls(arch, &e, reg_idx, &mut through_memo) {
                 data.kuna_set_callee_entry_through(&e, t);
             }

@@ -833,7 +833,8 @@ arguments.
 
 Requiring the prototype to **exist** carries the rest, because `protoorder`
 states nothing for a callee with no recovered body such as a PLT import, one that
-recovered no parameters at all, one whose prototype is already *declared* — that
+recovered no parameters at all (its statement, when it makes one, carries only the
+return value, and an empty list is declined here), one whose prototype is already *declared* — that
 case input-locks the call spec, which this rule declines at its first line — and,
 under `types`, one inside a recursive component. Under the default `cycles` a
 recursive callee states its list like any other; a member whose list is short
@@ -3201,7 +3202,11 @@ that call something, which is exactly where that walk stops.
 Every value declines when
 
 - the function's decompile errored, or left no parameter store;
-- it says nothing: no parameters and a `void` return;
+- it says nothing: no parameters and no return value to state. Under `types`
+  and `cycles` the return value is recorded only while `passthrough` is on, and
+  then a function with no parameters states that value alone: an empty list is
+  no arity claim (`arity_sound` is false), so the only reader it reaches is
+  `passthrough`'s tail-call arm;
 - model selection did not settle on a known model;
 - a parameter is a hidden return pointer, an indirect-storage parameter or a
   `this` pointer, or carries no type or no real storage;
@@ -3446,6 +3451,36 @@ This is the claim a declared callee already gets whenever the caller names the
 return register; its cost is a void wrapper that tail-calls a value-returning
 function, which is handed that value.
 
+A callee with **no parameters** states its return the same way: `protoorder`
+records the return value of a function whose list is empty, where it used to
+decline the whole statement as saying nothing, so `int f(void) { return getv();
+}` -- `jmp getv` -- no longer prints `void f(void) { getv(); }` beside `int
+getv(void)` in the same output, on x86-64, ARM, AArch64, PowerPC or MIPS.
+
+"No op touches the register" is asked of the whole function, but only the path
+from each producing CALL to its RETURN can change what the RETURN reads; the
+call overwrites the register, so a write before it does not. A register that
+carries **no argument** under the function's own model (x86-64 and i386 `eax`,
+MIPS `v0`) is therefore taken when it is written before the call -- gcc -O0
+loads every argument through `rax`, and gcc -O2 `quotearg_buffer` saves `errno`
+through it -- provided no op between the call and its RETURN reads or writes it
+(`touched_after`, walking the same single-predecessor chain as
+`producing_call`). Heritage then visits the wider range the function wrote, and
+the RETURN's `eax` is the low SUBPIECE of the call's `rax` creation, which
+`returns_tail_result` follows. An argument register is not relaxed: on
+ARM `mov r0,#5; b g` is how a `void` function calls `g(5)` as often as how an
+`int` one returns it. Over 24 debug-stripped decbench binaries (x86-64 O0, O2
+and O2-noinline; ARM firmware at O2) the two changes give 126 functions a
+return: DWARF confirms 97, says `void` for 4 and has no entry for 25; the
+relaxation alone, tried on ARM `r0` as well, was confirmed for 31 of 97 there.
+The claim takes the width the callee's recovery states, so two O0 wrappers that
+`voidret` had returned as `unsigned int`, the width their callers read, now come
+out `unsigned long` like their callees (gnulib `set_binary_mode` around a
+`return 0;` the callee writes with `mov $0,%eax`). Taking a declared
+callee's locked output the same way (`return strlen(s);`) was measured at 43 of
+54 and is not done: a `void` wrapper ending in `putc` or `clock_gettime` is the
+common shape there.
+
 A return the callee's recovery put in a register pair (x86-64 `rdx:rax`, i386
 `edx:eax`, ARM `r1:r0`) is stated as a join, and is claimed register by
 register: every register of the pair must be one the function never touches,
@@ -3534,7 +3569,8 @@ well, so its trials exist there, and they are scored as they are there. On ARM
 {r4,pc}` the `r0` at `f` is `g`'s result: it prints `v1 = g(a0); return
 f(v1);`, where leaving that trial unscored printed `g(a0); return f();`. A wrapper that writes the
 register itself before its call (`mov r0,#5; bl f; pop {r4,pc}`) still touches
-it and stays `void`. The witness is
+it and stays `void`: `r0` is an argument register, which the before-the-call
+relaxation above does not take. The witness is
 `decompiler/crates/kuna-cli/tests/arm_wrapper_returns.rs`, which builds its ARM
 object in the test: a wrapper ending in `pop {r4,pc}`, one ending in `bx lr`,
 one whose caller ignores the result and a three-deep chain of them return their
