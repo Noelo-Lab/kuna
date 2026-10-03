@@ -103,6 +103,30 @@ __attribute__((noinline)) unsigned long differing_phi(unsigned long *p, unsigned
     gp = 0;
     return x;
 }
+
+__attribute__((noinline)) unsigned long real_input_frame(unsigned long *p, unsigned a, unsigned b, unsigned c) {
+    unsigned long s = 11, *q = &s;
+    *q = c;
+    ((unsigned *)&gp)[0] = a;
+    ((unsigned *)&gp)[1] = b;
+    unsigned long x = *p, z = *q;
+    ((unsigned *)&gp)[0] = b;
+    unsigned long y = *p;
+    gp = 0;
+    return x ^ y ^ z;
+}
+
+__attribute__((noinline)) unsigned long stack_input_frame(unsigned long d0, unsigned long d1, unsigned long d2, unsigned long d3, unsigned long d4, unsigned long d5, unsigned long *p, unsigned a, unsigned b, unsigned c) {
+    unsigned long s = 11, *q = &s;
+    *q = c;
+    ((unsigned *)&gp)[0] = a;
+    ((unsigned *)&gp)[1] = b;
+    unsigned long x = *p, z = *q;
+    ((unsigned *)&gp)[0] = b;
+    unsigned long y = *p;
+    gp = 0;
+    return x ^ y ^ z;
+}
 #else
 unsigned long halves(unsigned long *, unsigned, unsigned);
 unsigned high(unsigned *, unsigned);
@@ -115,6 +139,8 @@ unsigned long volatile_halves(unsigned long *, unsigned, unsigned);
 unsigned long affine(unsigned long *, unsigned, unsigned, unsigned);
 unsigned long agreeing_phi(unsigned long *, unsigned, unsigned, int);
 unsigned long differing_phi(unsigned long *, unsigned long *, unsigned, unsigned, int);
+unsigned long real_input_frame(unsigned long *, unsigned, unsigned, unsigned);
+unsigned long stack_input_frame(unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long *, unsigned, unsigned, unsigned);
 #endif
 
 int main(void) {
@@ -139,6 +165,8 @@ int main(void) {
             RESET(); x = two_reads(alias ? &other : &gp, a, b); SHOW("two_reads");
             RESET(); x = volatile_halves(alias ? &other : (unsigned long *)&gv, a, b); SHOW("volatile_halves");
             RESET(); x = affine(alias ? &other : &gp, a, b, 0); SHOW("affine");
+            RESET(); x = real_input_frame(alias ? &other : &gp, a, b, i); SHOW("real_input_frame");
+            RESET(); x = stack_input_frame(0, 1, 2, 3, 4, 5, alias ? &other : &gp, a, b, i); SHOW("stack_input_frame");
             for (int k = 0; k < 2; ++k) {
                 RESET(); x = agreeing_phi(alias ? &other : &gp, a, b, k); SHOW("agreeing_phi");
                 RESET(); x = differing_phi(alias ? &other : &gp, &other, a, b, k); SHOW("differing_phi");

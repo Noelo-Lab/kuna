@@ -39,4 +39,44 @@ U64 memory_cycle(U32 a, U32 b) {
     return x ^ y;
 }
 
+U64 memory_frame(U32 a, U32 b, U32 c) {
+    U64 s = 11, *q = &s;
+    U64 *p = excluded_gp;
+    *q = c;
+    excluded_g.w[0] = a;
+    excluded_g.w[1] = b;
+    U64 x = *p, z = *q;
+    excluded_g.w[0] = b;
+    U64 y = *p;
+    excluded_g.q = 0;
+    return x ^ y ^ z;
+}
+
+U64 memory_frame_cycle(U32 a, U32 b, U32 c) {
+    U64 s[2] = {11, 22}, *q = s + (c & 1);
+    U64 *p = excluded_gp;
+    for (U32 i = 0; i < 3; ++i) p = (i & 1) ? excluded_gp : p;
+    *q = c;
+    excluded_g.w[0] = a;
+    excluded_g.w[1] = b;
+    U64 x = *p, z = *q;
+    excluded_g.w[0] = b;
+    U64 y = *p;
+    excluded_g.q = 0;
+    return x ^ y ^ z;
+}
+
+U64 call_frame(U32 a, U32 b, U32 c) {
+    U64 s = 11, *q = &s;
+    U64 *p = excluded_give();
+    *q = c;
+    excluded_g.w[0] = a;
+    excluded_g.w[1] = b;
+    U64 x = *p, z = *q;
+    excluded_g.w[0] = b;
+    U64 y = *p;
+    excluded_g.q = 0;
+    return x ^ y ^ z;
+}
+
 int main(void) { return 0; }

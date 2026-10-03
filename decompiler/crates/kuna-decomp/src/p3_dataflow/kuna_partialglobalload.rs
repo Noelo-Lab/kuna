@@ -27,9 +27,14 @@ pub(crate) fn apply(fd: &mut Funcdata, guards: Vec<Guard>) {
             let Some(op) = fd.obank().get(id) else {
                 return false;
             };
-            let Some(ptr) = op.get_in(1) else { return true };
+            if op.is_dead() || op.code() != OpCode::CPUI_LOAD {
+                return false;
+            }
+            let Some(ptr) = op.get_in(1) else {
+                return false;
+            };
             let Some(v) = fd.vbank().get(ptr) else {
-                return true;
+                return false;
             };
             let size = op
                 .get_out()
@@ -69,11 +74,12 @@ pub(crate) fn apply(fd: &mut Funcdata, guards: Vec<Guard>) {
     }
 }
 
-/// This correction covers pointer reads derived from function inputs. Values
-/// fetched from memory or created by calls need separate alias provenance.
+/// This correction covers pointer reads derived from function data inputs.
+/// Spacebases, memory-fetched values and calls need separate alias provenance.
 fn from_input(fd: &Funcdata, root: VarnodeId, memo: &mut HashMap<VarnodeId, bool>) -> bool {
     let mut work = vec![root];
     let mut seen = HashSet::new();
+    let mut frames = HashMap::new();
     while let Some(vn) = work.pop() {
         if let Some(&input) = memo.get(&vn) {
             if input {
@@ -91,8 +97,11 @@ fn from_input(fd: &Funcdata, root: VarnodeId, memo: &mut HashMap<VarnodeId, bool
         let Some(v) = fd.vbank().get(vn) else {
             continue;
         };
+        if frame_address(fd, vn, &mut frames, 0) == (true, true) {
+            continue;
+        }
         if v.is_input() {
-            if !v.is_persist() {
+            if !v.is_persist() && !v.is_spacebase() {
                 memo.insert(root, true);
                 return true;
             }
@@ -118,6 +127,66 @@ fn from_input(fd: &Funcdata, root: VarnodeId, memo: &mut HashMap<VarnodeId, bool
         memo.insert(vn, false);
     }
     false
+}
+
+/// Frame-address cycles require a witnessed spacebase; a mixed pointer phi
+/// remains eligible through its data-input arm. Index values supply no roots.
+fn frame_address(
+    fd: &Funcdata,
+    vn: VarnodeId,
+    memo: &mut HashMap<VarnodeId, (bool, bool)>,
+    depth: usize,
+) -> (bool, bool) {
+    if let Some(&frame) = memo.get(&vn) {
+        return frame;
+    }
+    let Some(v) = fd.vbank().get(vn) else {
+        return (false, false);
+    };
+    if v.is_input() {
+        return (v.is_spacebase(), v.is_spacebase());
+    }
+    if depth >= 32 || memo.len() >= 1024 {
+        return (false, false);
+    }
+    let Some(op) = v.get_def().and_then(|d| fd.obank().get(d)) else {
+        return (false, false);
+    };
+    memo.insert(vn, (true, false));
+    let mut input = |slot| {
+        op.get_in(slot)
+            .map_or((false, false), |i| frame_address(fd, i, memo, depth + 1))
+    };
+    let mut frame = match op.code() {
+        OpCode::CPUI_COPY
+        | OpCode::CPUI_INDIRECT
+        | OpCode::CPUI_INT_ZEXT
+        | OpCode::CPUI_INT_SEXT
+        | OpCode::CPUI_INT_SUB
+        | OpCode::CPUI_PTRSUB
+        | OpCode::CPUI_PTRADD => input(0),
+        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_AND => {
+            let a = input(0);
+            let b = input(1);
+            (a.0 || b.0, a.1 || b.1)
+        }
+        OpCode::CPUI_MULTIEQUAL => {
+            let mut frame = (op.num_input() > 0, false);
+            for slot in 0..op.num_input() {
+                let next = input(slot);
+                frame = (frame.0 && next.0, frame.1 || next.1);
+            }
+            frame
+        }
+        _ => (false, false),
+    };
+    frame.1 &= frame.0;
+    if frame.0 && !frame.1 {
+        memo.remove(&vn);
+    } else {
+        memo.insert(vn, frame);
+    }
+    frame
 }
 
 fn may_overlap(
@@ -257,16 +326,4 @@ fn unsigned_bounds(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn load_intervals_include_wrapped_bytes() {
-        assert!(may_overlap((0xfffe, 0xffff), 2, 0, 1, 2, 2, 1));
-        assert!(may_overlap((0x1010, 0x1020), 4, 0x1021, 0x1024, 2, 2, 1));
-        assert!(!may_overlap((0x1010, 0x1020), 1, 0x1021, 0x1024, 2, 2, 1));
-        assert!(!may_overlap((0xd11a, 0xd219), 2, 0, 4, 2, 2, 1));
-        assert!(may_overlap((0x100, 0x100), 1, 0, 4, 2, 1, 1));
-        assert!(may_overlap((0x100, 0x100), 1, 0, 4, 2, 2, 2));
-    }
-}
+mod tests;

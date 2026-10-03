@@ -3,7 +3,7 @@ mod common;
 use common::process;
 use std::process::Command;
 
-const FUNCTIONS: [&str; 11] = [
+const FUNCTIONS: [&str; 13] = [
     "halves",
     "high",
     "low",
@@ -15,8 +15,10 @@ const FUNCTIONS: [&str; 11] = [
     "affine",
     "agreeing_phi",
     "differing_phi",
+    "real_input_frame",
+    "stack_input_frame",
 ];
-const PROTOTYPES: [&str; 11] = [
+const PROTOTYPES: [&str; 13] = [
     "prototype halves unsigned long halves(unsigned long *, unsigned, unsigned)",
     "prototype high unsigned high(unsigned *, unsigned)",
     "prototype low unsigned low(unsigned *, unsigned)",
@@ -28,6 +30,8 @@ const PROTOTYPES: [&str; 11] = [
     "prototype affine unsigned long affine(unsigned long *, unsigned, unsigned, unsigned)",
     "prototype agreeing_phi unsigned long agreeing_phi(unsigned long *, unsigned, unsigned, int)",
     "prototype differing_phi unsigned long differing_phi(unsigned long *, unsigned long *, unsigned, unsigned, int)",
+    "prototype real_input_frame unsigned long real_input_frame(unsigned long *, unsigned, unsigned, unsigned)",
+    "prototype stack_input_frame unsigned long stack_input_frame(unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long *, unsigned, unsigned, unsigned)",
 ];
 
 #[test]
@@ -162,7 +166,14 @@ fn memory_and_call_roots_keep_the_existing_partial_store_behavior() {
                 "{cc} {opt}: {}",
                 String::from_utf8_lossy(&build.stderr)
             );
-            for function in ["memory_root", "call_root", "memory_cycle"] {
+            for function in [
+                "memory_root",
+                "call_root",
+                "memory_cycle",
+                "memory_frame",
+                "memory_frame_cycle",
+                "call_frame",
+            ] {
                 let args = ["decompile", binary.to_str().unwrap(), function];
                 let (printed, stderr, status) = common::run_kuna(&args);
                 assert_eq!(status, 0, "{cc} {opt} {function}: {stderr}");

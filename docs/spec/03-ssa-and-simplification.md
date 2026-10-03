@@ -598,7 +598,13 @@ normalization are not forced: doing so would add a write of the whole range
 beside the original partial write. This keeps both halves in
 `gs.a = b; gs.b = c; x = *p; gs = 0`, so a pointer aimed at `gs` reads the
 new halves. This partial-range correction covers LOADs whose pointer derives
-from a nonpersistent function input through SSA operations. Memory-fetched
+from a nonpersistent function data input through SSA operations, including
+register and stack-passed pointer arguments. Architectural spacebase inputs
+such as the stack pointer do not supply data-input provenance. Definite frame
+addresses through copies, offsets, indexed addressing and frame-only phis
+also stop the walk, so a local array's scalar index cannot establish pointer
+provenance. A frame-address cycle requires a witnessed spacebase; a phi with
+an incoming pointer arm remains eligible through that arm. Memory-fetched
 and call-created pointers retain their existing behavior pending separate
 alias provenance recovery. Input provenance requires a reachable input in a
 bounded SSA graph walk; a cycle alone supplies no input provenance, and a
