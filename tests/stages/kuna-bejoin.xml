@@ -20,8 +20,8 @@
         triple_plus: v1 = (uint4)(v2 >> 0x20) reads r4 as the high word
 
     Stage: P4 calls and prototypes (output-prototype), option bejoin off|on.
-    Pass 1 (off) pins the old first-register-low join, pass 2 (on, the
-    shipped default) the ABI's order.
+    Pass 1 (the default, off; GH-904) pins the old first-register-low join,
+    pass 2 (option bejoin on) the ABI's order.
 
     Source (clang 14 -O2, powerpc-linux-gnu, bytes from bejoin_ppc32_be.o):
         long long wide_mul(int a, int b) { return (long long)a * b; }
@@ -45,7 +45,7 @@
           li r3,0 / addc r4,r4,r5 / addze r3,r3
 
     Asserts #1-#3: on joins each value high word (r3) first.
-    Asserts #4-#5: off keeps the swapped joins, and only off.
+    Asserts #4-#5: the default (off) keeps the swapped joins, and only it.
     Asserts #6-#7: sum64 and sum_hi read the same either way.
     Assert #8: carry keeps the old join in both passes.
 -->
@@ -69,7 +69,6 @@
 <symbol space="ram" offset="0x10000044" name="triple"/>
 </binaryimage>
 <script>
-  <com>option bejoin off</com>
   <com>lo fu wide_mul</com>
   <com>decompile</com>
   <com>print C</com>
@@ -112,9 +111,9 @@
 <stringmatch name="bejoin #1: on, wide_mul returns the mulhw word (r3) as the high half" min="1" max="1">return CONCAT44\(\(int4\)\(\(uint8\)\(\(int8\)a1 \* a0\) >> 0x20\),a1 \* a0\);</stringmatch>
 <stringmatch name="bejoin #2: on, add_one carries into the r3 word, the high half" min="1" max="1">return CONCAT44\(a0 \+ \(uint4\)\(0xffffffff &lt;= a1\),a1 \+ 1\);</stringmatch>
 <stringmatch name="bejoin #3: on, the call output pair reads r3 as the high half" min="1" max="1">return CONCAT44\(\(int4\)\(\(uint8\)v1 >> 0x20\) \+ \(uint4\)\(0xfffffff9 &lt;= \(uint4\)v1\),\(uint4\)v1 \+ 7\);</stringmatch>
-<stringmatch name="bejoin #4: only off puts the low product first" min="1" max="1">CONCAT44\(a1 \* a0,</stringmatch>
-<stringmatch name="bejoin #5: only off puts the incremented low word first" min="1" max="1">CONCAT44\(a1 \+ 1,</stringmatch>
+<stringmatch name="bejoin #4: only the default pass (off) puts the low product first" min="1" max="1">CONCAT44\(a1 \* a0,</stringmatch>
+<stringmatch name="bejoin #5: only the default pass (off) puts the incremented low word first" min="1" max="1">CONCAT44\(a1 \+ 1,</stringmatch>
 <stringmatch name="bejoin #6: on, sum64 and sum_hi (the same instructions) both read r3 as the high half" min="2" max="2">return CONCAT44\(a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\),a3 \+ a1\);</stringmatch>
-<stringmatch name="bejoin #7: off, sum64 and sum_hi both keep r3 low, which truncates to sum_hi's int" min="2" max="2">return CONCAT44\(a3 \+ a1,a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\)\);</stringmatch>
+<stringmatch name="bejoin #7: default (off), sum64 and sum_hi both keep r3 low, which truncates to sum_hi's int" min="2" max="2">return CONCAT44\(a3 \+ a1,a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\)\);</stringmatch>
 <stringmatch name="bejoin #8: a carry alone in r3 keeps the old join in both passes, so the int truncation reads the carry" min="2" max="2">return CONCAT44\(a0 \+ a1,\(uint4\)CARRY4\(a0,a1\)\);</stringmatch>
 </decompilertest>

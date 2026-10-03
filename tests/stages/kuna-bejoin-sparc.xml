@@ -1,7 +1,7 @@
 <decompilertest>
 <binaryimage arch="sparc:BE:32:default:default">
 <!--
-    kuna option bejoin (default on): SPARC returns a long long in %o0:%o1 with the
+    kuna option bejoin (off by default, GH-904; on here): SPARC returns a long long in %o0:%o1 with the
     HIGH word in %o0, and returns an int in %o0 alone.
     The same join-order bug as kuna-bejoin.xml (the PowerPC case): return
     recovery joined %o0 as the LOW word, so wide_mul printed
@@ -21,9 +21,9 @@
     one_after still print the argument shifted into the high word, as before:
     their int result folds into the pair before the repair can drop the
     leftover.
-    Stage: P4 calls and prototypes (output-prototype), option bejoin at its
-    shipped default (on).  Little-endian targets are byte-identical; the
-    off pass and the trade-off the option makes are in kuna-bejoin.xml.
+    Stage: P4 calls and prototypes (output-prototype), option bejoin on.
+    Little-endian targets are byte-identical; the default (off) pass and the
+    trade-off the option makes are in kuna-bejoin.xml.
     Source (clang 14 -fintegrated-as, sparc-linux-gnu):
         bejoin_sparc32_be.o (-O2) at 0x10000:
         long long wide_mul(int a, int b) { return (long long)a * b; }
@@ -100,6 +100,7 @@ f8268000b2067fff80a6600012bffff8b406a004b010001b81c7e00881e80000
 <symbol space="ram" offset="0x40188" name="ibyte_leaf"/>
 </binaryimage>
 <script>
+  <com>option bejoin on</com>
   <com>lo fu wide_mul</com>
   <com>decompile</com>
   <com>print C</com>

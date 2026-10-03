@@ -193,8 +193,9 @@ the parent register is global storage.
 
 The rule is a prior, not a proof: the same registers can hold an `int` or a
 `long long`, and the rule reads each shape one way. So the whole order decision
-ships as `option bejoin` (default on); off joins every pair first register low,
-byte-identical to main (checked on all 1,151 functions of the witness set).
+ships as `option bejoin`, off by default (GH-904); off joins every pair first
+register low, byte-identical to main (checked on all 1,151 functions of the
+witness set, and on the big-endian corpus differential in `record.json`).
 
 Read as the `long long`, and so wrong for an `int` that main printed right: an
 `int` holding the high word of a 64-bit temporary whose stale low half stays in
@@ -248,7 +249,14 @@ words reads them in the right order, as the previous version's footprint
 was checked. That is a measurement on these
 corpora, not something the rule proves: an earlier version changed one such
 function, iproute2's `rt_addr_n2a_r` (the unrecovered switch above), which
-prints as on main. The default is on for that reason; `kuna-cli/tests/decompile_all_cli.rs`
+prints as on main. The rule still decides from the instructions alone, and
+each new look at the `int` side found another shape (the table above grew one
+row at a time), so the default is off (GH-904): a default must not turn a
+correct `int` into a wrong `long long`. A sound default needs positive
+evidence that the value is 64 bits wide (a declared, DWARF or asserted 8-byte
+return type, callers that read both registers as one value, or a 64-bit
+operation whose two halves both reach every RETURN unnarrowed).
+`kuna-cli/tests/decompile_all_cli.rs`
 `bejoin_reads_an_ints_stale_low_half_as_the_long_long_it_matches` records both
 readings of `sum_hi`/`sum64` (PowerPC -O2) and `mulhi`/`uwide_mul` (MIPS gcc
 -O0).

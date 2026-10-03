@@ -1,7 +1,7 @@
 <decompilertest>
 <binaryimage arch="MIPS:BE:32:default:default">
 <!--
-    kuna option bejoin (default on): MIPS o32 big-endian returns a long long in
+    kuna option bejoin (off by default, GH-904; on here): MIPS o32 big-endian returns a long long in
     $2:$3 with the HIGH word in $2, the first return register.  Return
     recovery joined $2 as the LOW word, so wide_mul printed its halves swapped:
         wide_mul:  return CONCAT44((int4)((int8)a0 * a1),(int4)(... >> 0x20));   (bug)
@@ -13,9 +13,9 @@
     register proves nothing either way, so such a pair keeps the old join,
     which narrows to the bool in $2.  (u64)x << 32 compiles to the same shape
     and still prints as its high word x, as it did before.
-    Stage: P4 calls and prototypes (output-prototype), option bejoin at its
-    shipped default (on).  Little-endian targets are byte-identical; the
-    off pass and the trade-off the option makes are in kuna-bejoin.xml.
+    Stage: P4 calls and prototypes (output-prototype), option bejoin on.
+    Little-endian targets are byte-identical; the default (off) pass and the
+    trade-off the option makes are in kuna-bejoin.xml.
     Source: bejoin_mips32_be.o (mipsel-linux-gnu-gcc 10.3 -EB -O2) at 0x10000,
     bejoin_zero_mips32_O0.o (clang 14 -O0, mips-linux-gnu) at 0x20000:
         long long wide_mul(int a, int b) { return (long long)a * b; }
@@ -51,6 +51,7 @@ afc100048fc100043022000103c0e8258fbe00108fbf001427bd001803e00008
 <symbol space="ram" offset="0x20070" name="both"/>
 </binaryimage>
 <script>
+  <com>option bejoin on</com>
   <com>lo fu wide_mul</com>
   <com>decompile</com>
   <com>print C</com>

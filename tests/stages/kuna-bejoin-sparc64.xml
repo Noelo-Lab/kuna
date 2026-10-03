@@ -1,7 +1,7 @@
 <decompilertest>
 <binaryimage arch="sparc:BE:32:default:default">
 <!--
-    kuna option bejoin (default on): SPARC returns a long long in %o0:%o1 with the
+    kuna option bejoin (off by default, GH-904; on here): SPARC returns a long long in %o0:%o1 with the
     HIGH word in %o0.  restore copies every in-register back to its
     out-register, so %o1 also comes back from functions that return one int,
     holding whatever the function left in %i1 (kuna-bejoin-sparc.xml).  These
@@ -25,9 +25,9 @@
     neg_one, all ones, prints the same either way; an earlier version of the
     fix returned it as a 32-bit -1, which #1 and #1b guard against.
 
-    Stage: P4 calls and prototypes (output-prototype), option bejoin at its
-    shipped default (on).  Little-endian targets are byte-identical; the
-    off pass and the trade-off the option makes are in kuna-bejoin.xml.
+    Stage: P4 calls and prototypes (output-prototype), option bejoin on.
+    Little-endian targets are byte-identical; the default (off) pass and the
+    trade-off the option makes are in kuna-bejoin.xml.
 
     Source (clang 14 -fintegrated-as, sparc-linux-gnu; bytes from
     bejoin_window64_sparc32_O2.o at 0x40000 and bejoin_window64_sparc32_O0.o
@@ -96,6 +96,7 @@ f41fbff8b010001a81c7e00893e8001b
 <symbol space="ram" offset="0x50184" name="mix3_O0"/>
 </binaryimage>
 <script>
+  <com>option bejoin on</com>
   <com>lo fu neg_one</com>
   <com>decompile</com>
   <com>print C</com>

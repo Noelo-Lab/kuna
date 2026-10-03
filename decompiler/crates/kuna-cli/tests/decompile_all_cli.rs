@@ -7822,7 +7822,7 @@ fn a_big_endian_register_pair_round_trips_through_the_printed_c() {
             .to_str()
             .unwrap()
             .to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, funcs);
         let decls: String = printed
@@ -7934,7 +7934,7 @@ fn an_argument_carried_across_a_call_into_the_low_word_is_returned() {
             .to_str()
             .unwrap()
             .to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, &["carry_b", "carry_if", "carry_low"]);
         let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
@@ -7998,6 +7998,9 @@ fn an_avr_register_pair_joins_high_byte_first_as_a_value() {
         "0x4",
         "--sleighpath",
         &sp,
+        "--option",
+        "bejoin",
+        "on",
     ]);
     assert!(ok, "kuna decompile-all bejoin_avr.bin failed: {stderr}");
     let printed = callrettype_functions(&stdout, &["sub_0", "sub_4"]);
@@ -8078,7 +8081,7 @@ fn a_big_endian_function_returning_one_register_keeps_it() {
             .to_str()
             .unwrap()
             .to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, funcs);
         let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
@@ -8152,7 +8155,7 @@ fn a_low_word_a_sparc_function_returns_on_purpose_is_part_of_the_value() {
             .to_str()
             .unwrap()
             .to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, &names);
         let sigs: Vec<&str> = printed
@@ -8209,7 +8212,7 @@ fn a_64_bit_comparison_keeps_its_int_result_in_the_first_register() {
             .to_str()
             .unwrap()
             .to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, &FUNCS);
         let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
@@ -8250,8 +8253,8 @@ fn a_64_bit_comparison_keeps_its_int_result_in_the_first_register() {
 /// and compiles to the same registers as the `long long` returning the whole
 /// value: `sum_hi` and `sum64` on PowerPC -O2 (`addc 4,4,6; addze 3,3; add
 /// 3,3,5`), `mulhi` and `uwide_mul` on MIPS gcc -O0 (both halves of `multu`
-/// left in `$2:$3`). On, the default, every one reads as the `long long`, so
-/// the `int` versions print the whole 64-bit value; off, every one reads as
+/// left in `$2:$3`). On, every one reads as the `long long`, so the `int`
+/// versions print the whole 64-bit value; off, the default, every one reads as
 /// the `int`, so the `long long` versions print with their halves swapped.
 /// gcc -O0 on MIPS moves `sum_hi`'s high word down with `srl $17,$2,0` for
 /// `>> 32`, which works it over, so there `sum_hi` reads as its `int` in both
@@ -8273,8 +8276,8 @@ fn bejoin_reads_an_ints_stale_low_half_as_the_long_long_it_matches() {
             .to_string();
         for on in [true, false] {
             let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()];
-            if !on {
-                args.extend(["--option", "bejoin", "off"]);
+            if on {
+                args.extend(["--option", "bejoin", "on"]);
             }
             let (stdout, stderr, ok) = run_kuna(&args);
             assert!(ok, "kuna decompile-all {fixture} (bejoin {on}) failed: {stderr}");
@@ -8365,7 +8368,7 @@ fn a_branch_chosen_flag_or_an_int_truncation_keeps_its_int_in_the_first_register
         ("bejoin_trunc_arm32_be_O0.o", &ALL[..]),
     ] {
         let bin = fixtures.join(fixture).to_str().unwrap().to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, funcs);
         let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
@@ -8462,7 +8465,7 @@ fn a_range_check_returning_any_literal_or_flag_keeps_its_int_in_the_first_regist
     ] {
         let funcs: Vec<&str> = names.iter().copied().filter(|f| !skip.contains(f)).collect();
         let bin = fixtures.join(fixture).to_str().unwrap().to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, &funcs);
         let sigs: Vec<&str> = printed
@@ -8527,7 +8530,7 @@ fn a_division_by_a_constant_keeps_its_quotient_in_the_first_register() {
     let source = std::fs::read_to_string(fixtures.join("bejoin_div.c")).unwrap();
     for fixture in ["bejoin_div_arm32_be_O0.o", "bejoin_div_arm32_be_v6_Os.o", "bejoin_div_arm32_be_v7_O2.o"] {
         let bin = fixtures.join(fixture).to_str().unwrap().to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, &ALL);
         let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
@@ -8600,7 +8603,7 @@ fn a_shift_that_carries_into_the_first_register_keeps_the_int() {
     let source = std::fs::read_to_string(fixtures.join("bejoin_shr.c")).unwrap();
     for fixture in ["bejoin_shr_arm32_be_O0.o", "bejoin_shr_arm32_be_v6_Os.o", "bejoin_shr_arm32_be_v7_O2.o"] {
         let bin = fixtures.join(fixture).to_str().unwrap().to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, &ALL);
         let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
@@ -8662,7 +8665,7 @@ fn a_shift_that_carries_into_the_first_register_keeps_the_int() {
 /// `$2`, the registers `zb`, which returns its second argument zero-extended,
 /// leaves on purpose. Joined in the ABI's order, `pick` returned the argument
 /// (`return a1;`). A function with an indirect jump flow could not follow
-/// keeps the first-register-low join, `option bejoin off`'s, for a low word
+/// keeps the first-register-low join, the default's, for a low word
 /// nothing visible reads and the jump's code can; `zb` keeps its fix and is
 /// compiled with gcc and clang at -O0 and -O2. (`pick`'s printed jump-as-call
 /// is not C a compiler takes.)
@@ -8674,8 +8677,8 @@ fn an_unrecovered_switch_keeps_a_pointers_register() {
     let mut listings = Vec::new();
     for on in [true, false] {
         let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()];
-        if !on {
-            args.extend(["--option", "bejoin", "off"]);
+        if on {
+            args.extend(["--option", "bejoin", "on"]);
         }
         let (stdout, stderr, ok) = run_kuna(&args);
         assert!(ok, "kuna decompile-all bejoin_jump_mips32_O2.o (bejoin {on}) failed: {stderr}");
@@ -8756,7 +8759,7 @@ fn an_int_worked_out_from_the_high_half_of_a_temporary_keeps_it() {
         ("bejoin_hiop_mips32_clang_O0.o", &["xy_hi_and", "xx_hi_xor", "xy_add", "pack8"][..]),
     ] {
         let bin = fixtures_dir.join(fixture).to_str().unwrap().to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let checked: Vec<(&str, &str)> = SHAPES.iter().copied().filter(|(f, _)| !skip.contains(f)).collect();
         let names: Vec<&str> = checked.iter().map(|&(f, _)| f).collect();

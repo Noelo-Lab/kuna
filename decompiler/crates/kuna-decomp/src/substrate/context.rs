@@ -1601,9 +1601,9 @@ impl ArchContext {
             // (kuna) `option callretpair` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             call_ret_pair: true,
-            // (kuna) `option bejoin` default-on; the real value is copied from
+            // (kuna) `option bejoin` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
-            be_join: true,
+            be_join: false,
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,

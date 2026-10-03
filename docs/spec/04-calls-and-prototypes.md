@@ -1523,11 +1523,12 @@ never joined at all (`ActionParamDouble` below is a no-op), so a `long long`
 argument prints as its two registers in the ABI's order and no order assumption
 applies there.
 
-On those ABIs, with the (kuna) `bejoin` option on (the default), the pair joins
-in the ABI's order only when its second register holds a low word the function
-returns on purpose
+On those ABIs, with the (kuna) `bejoin` option on, the pair joins in the ABI's
+order only when its second register holds a low word the function returns on
+purpose
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (join_order)`).
-`option bejoin off` joins every pair first register low, as upstream does.
+The option is off by default (below): off, every pair joins first register
+low, as upstream does, so default output on those ABIs is upstream's.
 Ancestor realism makes a pair of any function whose second register reaches the
 RETURN holding something, and a function returning one register often leaves
 something there: SPARC's `restore` copies `%i1` back into `%o1` on every function
@@ -1739,8 +1740,9 @@ r1,r4` carries the second argument across a call into it), and so is the
 function's own input read by a call whose inputs are still undecided trials: a
 callee without a known prototype may not take it at all.
 
-The rule is a prior, not a proof, which is why it is an option. The same
-registers can hold a `long long` or an `int`, and each shape is read one way:
+The rule is a prior, not a proof, which is why it is an option, and off by
+default. The same registers can hold a `long long` or an `int`, and with the
+option on each shape is read one way:
 
 * read as the `int`, as upstream does, and still wrong for the `long long`:
   `(u64)x << 32` beside an `int` with a dead zero in the second register;
@@ -1776,13 +1778,21 @@ registers can hold a `long long` or an `int`, and each shape is read one way:
   big-endian, which folds the literal into the carry add (`adds r1,r1,#K; adc
   r0,r0,#M` is the code for `x + (M << 32 | K)`), and MIPS gcc -O0
   `(u32)(*p >> 32)` loads both words of `*p` into `$2:$3`, as `return *p`
-  does. These printed
-  right before the option and print the whole 64-bit value with it on;
-  `option bejoin off` reads them as the `int` again, and every genuine
-  `long long` return swapped with them.
+  does. These print right by default and print the whole 64-bit value with
+  the option on.
 
-The default is on because the second kind is rare in real code and the first
-is common. Over 24,257 functions of nine corpora (e2fsprogs, coreutils and
+The default is off (GH-904). The second kind is rare in real code and the
+first is common, but the rule decides from the instructions alone, and the
+`int` that works over the high half of a 64-bit temporary is a family, not
+one shape: each new look at it found another arithmetic form that compiles to
+the `long long`'s registers. A default must not turn a correct `int` into a
+wrong `long long`, so default output keeps upstream's join on every target, and
+the option is for a reader who has checked a big-endian or AVR function's
+return against its disassembly. A sound default needs positive evidence that
+the value is 64 bits wide: a declared, DWARF or asserted 8-byte return type,
+callers that read both registers after the call as one value, or a 64-bit
+operation whose two halves both reach every RETURN without being narrowed.
+With the option on, over 24,257 functions of nine corpora (e2fsprogs, coreutils and
 gnulib, libexpat, libbsd, dpkg, diffutils, findutils, sysvinit, Lua,
 libselinux, iproute2, rsyslog, openssh, bash, cronie, libedit, grep, kmod,
 shadow, zlib, dash, gnutls, base-passwd and gzip) built with clang for

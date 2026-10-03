@@ -1,6 +1,6 @@
 # bejoin: plan (as built)
 
-Behind `option bejoin` (default on; off is byte-identical to main). It changes
+Behind `option bejoin`, off by default (GH-904; off is byte-identical to main). It changes
 only two-register returns and call outputs whose output rule joins the first
 register high (every big-endian target, and AVR's gcc spec through
 `reversesignif`); every other target is byte-identical. The rule is a prior:

@@ -88,13 +88,13 @@
 //! ([`joins_first_low`]), so a pair a call hands back and the function
 //! returns stays one value.
 //!
-//! The rule is a prior, not a proof, so it ships behind `option bejoin`
-//! (default on; off joins every pair first register low, as before). An `int`
-//! that leaves the stale low half of a 64-bit temporary in the second register
-//! compiles to the same registers as the `long long` that returns it whole --
-//! `(a + b) >> 32` on PowerPC -O2 is `addc 4,4,6; addze 3,3; add 3,3,5`, the
-//! code for `a + b`, and `((u64)a * b) >> 32` on ARM big-endian is the
-//! `umull` of `(u64)a * b` -- and reads as that `long long`. The other way
+//! The rule is a prior, not a proof, so it ships behind `option bejoin`, off
+//! by default (GH-904): off joins every pair first register low, as before.
+//! An `int` that leaves the stale low half of a 64-bit temporary in the second
+//! register compiles to the same registers as the `long long` that returns it
+//! whole -- `(a + b) >> 32` on PowerPC -O2 is `addc 4,4,6; addze 3,3; add
+//! 3,3,5`, the code for `a + b`, and `((u64)a * b) >> 32` on ARM big-endian
+//! is the `umull` of `(u64)a * b` -- and reads as that `long long`. The other way
 //! round, `(u64)x << 32` leaves the same zero in the second register as a
 //! function returning `int`, a `long long` whose low word also feeds a call
 //! looks like scratch, a `long long` whose high word is only a carry, or a

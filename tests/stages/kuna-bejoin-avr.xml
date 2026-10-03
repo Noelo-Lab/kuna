@@ -1,7 +1,7 @@
 <decompilertest>
 <binaryimage arch="avr8:LE:16:default">
 <!--
-    kuna option bejoin (default on): a two-register value is joined in the order
+    kuna option bejoin (off by default, GH-904; on here): a two-register value is joined in the order
     the output rule consumed its registers, and a pair on memory-mapped
     registers is built as a value.
 
@@ -20,8 +20,8 @@
 
         negate:  return R25R24;              (bug)
 
-    Stage: P4 calls and prototypes (output-prototype), option bejoin at its
-    shipped default (on); the off pass is in kuna-bejoin.xml.
+    Stage: P4 calls and prototypes (output-prototype), option bejoin on; the
+    default (off) pass is in kuna-bejoin.xml.
 
     Source (clang 14 -O2, target avr, -mmcu=atmega328p, bytes from
     bejoin_avr.bin; a0 is R25, a1 is R24):
@@ -40,6 +40,7 @@
 <symbol space="code" offset="0x8" name="addk"/>
 </binaryimage>
 <script>
+  <com>option bejoin on</com>
   <com>lo fu negate</com>
   <com>decompile</com>
   <com>print C</com>
