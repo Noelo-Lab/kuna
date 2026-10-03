@@ -1091,7 +1091,13 @@ are known zero, because the wide input's non-zero mask lies inside the logical
 mask, is recorded on the call's spec when the rewrite commits
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_truncarg.rs (note_trimmed_arg)`),
 so emission can print the zero-extension C's promotion would otherwise lose
-(chapter [09](09-emission.md)).
+(chapter [09](09-emission.md)). (kuna) A RETURN pull is recorded on the RETURN
+op the same way when its dropped bits are known zero and the calling convention
+extends a value of the trimmed width by the sign of its type
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_zextreturn.rs (unsigned_trim)`,
+`note_trimmed_return`); a later trim of the same RETURN that drops bits not known
+to be zero clears the record. Type inference reads it to type the returned value
+unsigned (chapter [05](05-types.md)).
 
 (kuna) The RETURN pull refuses to trim a 64-bit integer a 32-bit convention
 returns in two registers
@@ -1158,7 +1164,8 @@ array element, the pieces land in different HighVariables and P9 prints a block 
 per-byte assignments into a `.rodata` string literal. The copies that reach the
 gate in that shape are the `return_copy` guards of §3.1 after a block clone has
 rewritten them: `substrate/funcdata_block.rs (CloneBlockOps::build_op_clone)`
-copies only the upstream flag subset, which does not carry `return_copy`, and
+copies only the upstream flag subset (plus chapter 05's `kuna_zextreturn`
+record), which does not carry `return_copy`, and
 `CloneBlockOps::patch_inputs` re-inputs the clone from a fresh COPY, so neither
 the same-address test nor the flag can recognize the clone for what it is. The
 read-only output test does, and it is the property that actually matters. The

@@ -1909,6 +1909,13 @@ narrow value the function compares or computes with as a whole register prints
 the extension it performs, `(long)k` or `(int8)token`, where a zero extension
 used to fold away.
 
+The same rules answer the reverse question for a return value the function
+recovers rather than declares: whether the convention extends a value of its
+width by the sign of its type (`kuna_narrowext::extends_by_sign`), under the
+rule where it speaks and otherwise where the spec states `inttype`. Where it
+does, a return the function zero-extends is unsigned (chapter
+[05](05-types.md), `kuna_zextreturn`).
+
 
 ### (kuna) `calleeprotostack` — the declared callee's stack contract
 
