@@ -1279,3 +1279,9 @@ export its serialized function; the optional Ghidra smoke script
 `integrations/ghidra/live-smoke/WrappedStackStorage.java` decodes the storage
 with Ghidra's own consumer. Wrapped locals use temporary unique storage in
 Ghidra because its stack-variable model cannot span entry SP=0.
+
+### Partial global stores
+
+`partial_global_load_x86_64.c` is compiled by the CLI round-trip test with GCC and Clang at `-O0` and `-O2` (`-fno-pie -no-pie -fno-strict-aliasing`). It covers partial global stores followed by an aliasing pointer read and a whole-object clear, including high/low halves, mixed byte/short offsets, branches, affine offsets, pointer phis, calls, repeated reads, volatile storage, disjoint pointers, and register/stack-passed pointer arguments alongside unrelated local spills. Printed C is rebuilt under both compilers and levels; return values and final global memory must match the native executable.
+
+`partial_global_excluded_x86_64.c` covers repeated reads through pointers fetched from memory or returned by a call, including a memory-only pointer phi cycle and unrelated spilled local pointers. The CLI test links a separate callback stub and builds with GCC/Clang at `-O0`/`-O2`. These controls retain the existing global-store sequence with `indexaliasguard` off: only the whole-object clear, pending separate pointer provenance recovery. A machine spacebase input used by the local spill cannot establish incoming-pointer provenance.

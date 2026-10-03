@@ -873,6 +873,7 @@ pub struct Heritage {
     /// (kuna `indexaliasguard global`) The global ranges guarded in this pass,
     /// as `(space, first byte, last byte)`.
     global_load_ranges: Vec<(Rc<AddrSpace>, u64, u64)>,
+    partial_global_loads: Vec<crate::kuna_partialglobalload::Guard>,
 }
 
 impl Heritage {
@@ -907,6 +908,7 @@ impl Heritage {
             global_load_guards: 0,
             global_loads: None,
             global_load_ranges: Vec::new(),
+            partial_global_loads: Vec::new(),
         }
     }
 
@@ -1070,6 +1072,7 @@ impl Heritage {
         self.clear_info_list();
         self.global_store_guards = 0;
         self.global_store_ranges.clear();
+        self.partial_global_loads.clear();
         self.load_guard.clear();
         self.store_guard.clear();
         self.store_frame_unresolved = None;
@@ -1461,11 +1464,13 @@ impl Heritage {
             }
         }
 
-        let mut partial_write = false;
+        let partial_writes = write
+            .iter()
+            .any(|&vn| fd.vbank().get(vn).is_some_and(|v| v.get_size() < size))
+            .then(|| write.clone());
         for slot in 0..write.len() {
             let vn = write[slot];
             if fd.vbank().get(vn).expect("guard: stale write vn").get_size() < size {
-                partial_write = true;
                 let newvn = self.normalize_write_size(fd, vn, addr, size);
                 write[slot] = newvn;
                 fd.vbank_mut().get_mut(newvn).expect("guard: new write vn").set_active_heritage();
@@ -1558,11 +1563,10 @@ impl Heritage {
                     );
                 }
                 if level >= LEVEL_GLOBAL
-                    && !partial_write
                     && (fl & varnode_flags::persist) != 0
                     && (fl & varnode_flags::readonly) == 0
                 {
-                    self.guard_global_loads(fd, addr, size, write);
+                    self.guard_global_loads(fd, addr, size, write, partial_writes.as_deref());
                 }
                 self.guard_loads(fd, fl, addr, size, write);
             }
@@ -2894,15 +2898,16 @@ impl Heritage {
     /// `addrforce` COPY read of a global range in front of each `LOAD` from the
     /// range's space that may read it, so the writes that reach the `LOAD` keep
     /// a reader.  A range with fewer than two writes other than `INDIRECT`s is
-    /// skipped (its one write reaches the return guard), and so is one written
-    /// in a smaller piece (the caller skips it), whose kept piece would print as
-    /// a store of the whole range.
+    /// skipped (its one write reaches the return guard). A range written in
+    /// smaller pieces keeps its original writes instead of forcing the
+    /// full-width PIECEs introduced by normalization.
     fn guard_global_loads(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         addr: &Address,
         size: int4,
         write: &[crate::context::VarnodeId],
+        partial_writes: Option<&[crate::context::VarnodeId]>,
     ) {
         use crate::kuna_indexaliasguard::{loads_from, GLOBAL_LOAD_BUDGET};
         use kuna_num::opcodes::OpCode;
@@ -2941,6 +2946,15 @@ impl Heritage {
             return;
         }
         self.global_load_guards += loads.len();
+        if let Some(writes) = partial_writes {
+            self.partial_global_loads.push(crate::kuna_partialglobalload::Guard {
+                addr: addr.clone(),
+                size,
+                writes: writes.to_vec(),
+                loads,
+            });
+            return;
+        }
         for op in loads {
             let op_addr = fd.obank().get(op).expect("guard_global_loads: live LOAD").get_addr().clone();
             let copyop = fd.new_op(1, op_addr);
@@ -5187,6 +5201,7 @@ impl Heritage {
         self.global_load_guards = 0;
         self.global_loads = None;
         self.global_load_ranges.clear();
+        self.partial_global_loads.clear();
         if self.maxdepth == -1 {
             // Has a restructure been forced
             self.build_adt(fd);
@@ -5329,6 +5344,7 @@ impl Heritage {
         // sinks `option indexaliasguard` creates must be marked and propagated
         // away whether or not their guards were range-refined.  An empty sink
         // list takes the early return, so this is inert with the arm off.
+        crate::kuna_partialglobalload::apply(fd, std::mem::take(&mut self.partial_global_loads));
         self.handle_new_load_copies(fd);
         // splitmanage.splitAdditional() on pass 0: STUB(W6) PreferSplitManager.
         self.pass += 1;
