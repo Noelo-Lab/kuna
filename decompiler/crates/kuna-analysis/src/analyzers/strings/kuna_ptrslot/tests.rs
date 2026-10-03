@@ -60,3 +60,39 @@ fn a_relocatable_object_has_no_slots() {
     let file = object::File::parse(bytes.as_slice()).unwrap();
     assert!(!PointerSlots::new(&file).holds_address(0));
 }
+
+/// A PE with base relocations lists every pointer it holds. `msvc_rtti_x86.exe`
+/// relocates 0x402020, whose bytes `24 20 40 00` read as `"$ @"`; the RTTI name
+/// `.?AUBox@@` at 0x403018 is not relocated, so its run stands.
+#[test]
+fn a_rebased_pe_answers_from_its_base_relocations() {
+    let bytes = fixture("msvc_rtti_x86.exe");
+    let file = object::File::parse(bytes.as_slice()).unwrap();
+    let slots = PointerSlots::new(&file);
+    assert!(slots.relocated.as_ref().is_some_and(|r| r.contains(&0x402020)));
+    assert!(slots.holds_address(0x402020));
+    assert!(!slots.holds_address(0x403018));
+}
+
+/// A position-independent ELF lists its pointers as dynamic relocations, and
+/// only those count: `cet_pie_x86_64`'s `.init_array` slot 0x3d78 holds 0x1240,
+/// an address of `.text`, and stops counting once the relocation list is empty.
+#[test]
+fn a_pie_answers_from_its_dynamic_relocations() {
+    let bytes = fixture("cet_pie_x86_64");
+    let file = object::File::parse(bytes.as_slice()).unwrap();
+    let slots = PointerSlots::new(&file);
+    assert!(slots.holds_address(0x3d78));
+    let unlisted = PointerSlots { relocated: Some(Vec::new()), ..PointerSlots::new(&file) };
+    assert!(!unlisted.holds_address(0x3d78));
+    let unrebased = PointerSlots { relocated: None, ..PointerSlots::new(&file) };
+    assert!(unrebased.holds_address(0x3d78));
+}
+
+/// A non-PIE ELF relocates none of its own pointers, so it lists nothing.
+#[test]
+fn a_non_pie_elf_lists_no_relocations() {
+    let bytes = fixture("ptrslot_gcc_O1_x86_64");
+    let file = object::File::parse(bytes.as_slice()).unwrap();
+    assert!(PointerSlots::new(&file).relocated.is_none());
+}

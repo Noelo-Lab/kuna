@@ -1400,16 +1400,20 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   literals are unaffected. Kuna uses four rather than Ghidra's default five so
   command and mode literals such as `quit`, `show`, `bind`, `fork`, and `dup2`
   do not remain raw addresses in stripped binaries. (kuna) A run that starts on
-  a pointer-aligned address whose pointer-sized value, read in the image's byte
-  order, lies inside an allocated section is an entry of a pointer table, not
-  text, and is not planted
+  a pointer slot is an entry of a pointer table, not text, and is not planted
   (`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_ptrslot.rs (PointerSlots)`).
-  On an i386 image linked at `0x21414140` a function-pointer table reads
-  `@AA!KAA!VAA!` up to its NULL entry, and planting it made the printer index and
-  pass that literal where the code uses the table. A genuine string can be
-  refused only when its first pointer-sized bytes, NUL and padding included,
-  spell an address of the image; it then prints as that address. A relocatable
-  object has no image addresses yet, so nothing is refused there.
+  An image rebased at load time lists every pointer it holds, so on a
+  position-independent ELF (its dynamic relocations) or a PE with base
+  relocations the slot is exactly a relocated, pointer-aligned address. A non-PIE
+  ELF or a PE without base relocations lists none, and there the slot is a
+  pointer-aligned address whose pointer-sized value, read in the image's byte
+  order, lies inside an allocated section. On an i386 image linked at
+  `0x21414140` a function-pointer table reads `@AA!KAA!VAA!` up to its NULL
+  entry, and planting it made the printer index and pass that literal where the
+  code uses the table. Without relocations a genuine string can be refused only
+  when its first pointer-sized bytes, NUL and padding included, spell an address
+  of the image; it then prints as that address. A relocatable object has no
+  image addresses yet, so nothing is refused there.
 - **Wide strings** (`widestrings`, the `StringsAnalyzer` `allCharWidths` arm,
   `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_widestrings.rs
   (scan_wide_strings)`): the same matcher over 2-byte little-endian code units —
@@ -4201,8 +4205,11 @@ printable run: `movabs $tbl,%rax` before the indexed call (`-mcmodel=large`),
 non-PIE x86-64 entry such as `26 42 40 00 00 00 00 00` (0x404226) reads `"&B@"`.
 Once one scalar planted the `char[4]`, every use of the table printed the
 literal: `pick("&B@",a0)`, `*(char **)operator new(8) = "dB@"`. So the target is also refused when it
-is a pointer slot holding an address of the image, the same test the strings
-pass applies (`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_ptrslot.rs (PointerSlots)`).
+is a pointer slot, the same test the strings pass applies
+(`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_ptrslot.rs (PointerSlots)`).
+On a PE with base relocations that test is exact: an MSVC i386 image's vtable
+entries are relocated and refused, while its 4-aligned `"INF"` is not and keeps
+its literal.
 
 (kuna) Three ARM-only seed scans run between the walk's first pass and those
 consumers, each re-seeding the walk and rebuilding the Listing when it finds
