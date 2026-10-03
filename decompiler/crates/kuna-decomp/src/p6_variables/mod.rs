@@ -33,3 +33,4 @@ pub mod kuna_bytehonest;
 pub mod kuna_slotptr;
 pub mod kuna_hideshadow;
 pub mod kuna_pointeevalue;
+pub mod kuna_loadorder;

@@ -1008,6 +1008,10 @@ pub struct ArchContext {
     /// [`crate::p4_calls::kuna_varargstackargs::stack_section_split`], via the
     /// flag `ActionActiveParam` writes onto the call's `ParamActive`.
     pub vararg_stack_args: bool,
+    /// (kuna) keep a declared parameter forwarded unchanged to a variadic call's
+    /// variable part (`varargforward`).  Read by
+    /// [`crate::p4_calls::kuna_varargforward::forwards_declared_parameter`].
+    pub vararg_forward: bool,
     /// (kuna) reconcile a call's recovered argument list with a sibling call to
     /// the same callee (`calleearity`).  Read by
     /// [`build_input_from_trials`](crate::funcdata_callsite::build_input_from_trials)
@@ -1072,12 +1076,13 @@ pub struct ArchContext {
     /// (the pre-port behavior).  Read by
     /// [`Heritage::heritage`](crate::p3_dataflow::heritage::Heritage::heritage).
     pub load_guard_range: bool,
-    /// (kuna) `option indexaliasguard off|load|full`: how much of the upstream
-    /// index-alias arm at the end of `Heritage::guard` (`heritage.cc:1194`, the
-    /// `highPtrPossible` gate) runs — `load` puts an `addrforce` `CPUI_COPY`
-    /// read of the range before every indexed-stack LOAD it intersects
-    /// (`Heritage::guardLoads`, heritage.cc:1570), `full` adds the
-    /// `CPUI_INDIRECT` across every STORE that can reach the range
+    /// (kuna) `option indexaliasguard off|load|global|full`: how much of the
+    /// upstream index-alias arm at the end of `Heritage::guard`
+    /// (`heritage.cc:1194`, the `highPtrPossible` gate) runs — `load` puts an
+    /// `addrforce` `CPUI_COPY` read of the range before every indexed-stack LOAD
+    /// it intersects (`Heritage::guardLoads`, heritage.cc:1570), `global` adds
+    /// the `CPUI_INDIRECT` on a global range across every STORE into its space,
+    /// `full` adds it across every STORE that can reach any range
     /// (`Heritage::guardStores`, heritage.cc:1538).  `off` leaves both arms
     /// unreached, so a stack slot only ever read through an indexed pointer has
     /// no reader at all and its initializing store dies to `ActionDeadCode`.
@@ -1687,6 +1692,7 @@ impl ArchContext {
             input_param_gap: true,
             stack_arg_gap: true,         // stackarggap (DIV-140 default-on)
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
+            vararg_forward: true,        // varargforward (default-on)
             callee_arity: true,          // calleearity (DIV-102 default-on)
             callee_arity_fwd: true,      // calleearityfwd (default-on)
             callee_arity_live: true,     // calleearitylive (default-on)
@@ -1697,7 +1703,7 @@ impl ArchContext {
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             cond_exe_ret: true,          // condexeret (default-on)
             load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
-            index_alias_guard: 1,        // indexaliasguard (load; Architecture::reset_defaults sets the shipped default)
+            index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)

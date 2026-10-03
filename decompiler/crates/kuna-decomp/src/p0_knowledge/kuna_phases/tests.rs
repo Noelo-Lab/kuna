@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_253() {
-    assert_eq!(kuna_num_settables(), 253);
-    assert_eq!(SETTABLE_TABLE.len(), 253);
+fn settable_count_is_254() {
+    assert_eq!(kuna_num_settables(), 254);
+    assert_eq!(SETTABLE_TABLE.len(), 254);
 }
 
 #[test]
-fn tier_counts_are_81_core_105_transform_67_analysis() {
+fn tier_counts_are_82_core_105_transform_67_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_81_core_105_transform_67_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (81, 105, 67));
+    assert_eq!((core, transform, analysis), (82, 105, 67));
 }
 
 #[test]
@@ -611,6 +611,7 @@ fn option_values_live_value_present_for_109() {
                             | "globalref"
                             | "callsitestackargs"
                             | "varargstackargs"
+                            | "varargforward"
                             | "calleearity"
                             | "calleearityfwd"
                             | "calleearitylive"
@@ -933,8 +934,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 248 -> 249: +1 for `narrowext`; its P4 row sits mid-table.
     // 249 -> 250: +1 for `syscallregs`.
     // 250 -> 251: +1 for `flowmode`.
-    // 251 -> 252: +1 for `stackstoreguard`.
-    assert_eq!(json.matches("},\n").count(), 252);
+    // 251 -> 252: +1 for `varargforward`.
+    // 252 -> 253: +1 for `stackstoreguard`.
+    assert_eq!(json.matches("},\n").count(), 253);
 }
 
 #[test]

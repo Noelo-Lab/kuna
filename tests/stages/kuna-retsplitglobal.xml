@@ -33,6 +33,11 @@
 
     Two passes over one function, `simdlane` left at its default in both so only
     the split moves.  Counts are over the whole transcript.
+    Both passes run at `option indexaliasguard load`.  The function reads
+    dat_100008040 and the constant table once, before the store loop
+    that writes through a pointer, and the default level keeps those reads
+    in temporaries ahead of the loop; the counts here are about the lane
+    and split decisions, not about that.
 -->
 <bytechunk space="ram" offset="0x100003790">
 5541574156538b05a848000085c00f8832010000440fb60d944800000fb6158e
@@ -67,6 +72,7 @@ ffe92afeffff662e0f1f840000000000
 <symbol space="ram" offset="0x100003790" name="alphabet_init"/>
 </binaryimage>
 <script>
+  <com>option indexaliasguard load</com>
   <com>option retsplitglobal off</com>
   <com>lo fu alphabet_init</com>
   <com>decompile</com>

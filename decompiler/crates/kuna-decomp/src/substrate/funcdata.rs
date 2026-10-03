@@ -1732,6 +1732,14 @@ impl Funcdata {
         self.heritage = heritage;
     }
 
+    /// (kuna `indexaliasguard global`) Is the global storage of `vn` covered by
+    /// heritage's global STORE guard?  See
+    /// [`Heritage::global_store_guarded`](crate::heritage::Heritage::global_store_guarded).
+    pub fn global_store_guarded(&self, vn: &crate::varnode::Varnode) -> bool {
+        let lo = vn.get_offset();
+        self.heritage.global_store_guarded(vn.get_space().get_index(), lo, lo.wrapping_add(vn.get_size() as u64))
+    }
+
     /// Get the heritage pass when the given address was last heritaged, or -1
     /// (C++ `Funcdata::isHeritaged` reads `heritage.heritagePass`).
     pub fn heritage_pass(&self, addr: &Address) -> int4 {

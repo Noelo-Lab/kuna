@@ -41,6 +41,7 @@
 //! and ≥4 chars is accepted) — harmless for real string literals, which all pass.
 //! Recorded in `docs/missing-analyses.md` / `docs/history/analysis-port-log.md`.
 
+pub mod kuna_ptrslot;
 pub mod kuna_stringinv;
 pub mod kuna_utf8strings;
 pub mod kuna_widestrings;
@@ -217,6 +218,9 @@ pub(crate) fn scan_strings(file: &object::File, min_len: usize) -> Vec<StringFac
 /// (kuna `widestrings`) Also emits the 2-byte width — `StringsAnalyzer`'s
 /// `allCharWidths` arm — into [`AnalysisOutput::wide_strings`], where each fact
 /// becomes a `wchar2[N]` instead. See [`kuna_widestrings`].
+///
+/// (kuna) A run that starts on a pointer slot holding an address of the image is
+/// a table entry, not text, and is not emitted. See [`kuna_ptrslot`].
 pub struct StringLiteralPass {
     /// Minimum visible ASCII string length.
     pub min_len: usize,
@@ -243,8 +247,11 @@ impl AnalysisPass for StringLiteralPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
+        let slots = kuna_ptrslot::PointerSlots::new(ctx.file);
+        let mut strings = scan_strings(ctx.file, self.min_len);
+        strings.retain(|fact| !slots.holds_address(fact.addr));
         AnalysisOutput {
-            strings: scan_strings(ctx.file, self.min_len),
+            strings,
             wide_strings: kuna_widestrings::scan_wide_strings(ctx.file, self.wide_min_len),
             ..Default::default()
         }

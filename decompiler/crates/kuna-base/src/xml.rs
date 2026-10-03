@@ -1968,7 +1968,9 @@ mod tests {
         // and kuna-syscallregs-{arm,aarch64,riscv,mips,ppc,cortexm} / an inline
         // system call writes its result register (GH-812)
         // and kuna-flowmode / a blx selects Thumb for its own target only
-        assert_eq!(count, 389, "corpus file count drifted");
+        // and kuna-storealias / a global read back after a store through a
+        // pointer prints as the global (GH-792)
+        assert_eq!(count, 392, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

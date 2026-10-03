@@ -363,6 +363,12 @@ kuna_options! { self, p1;
         self.vararg_stack_args = val;
         Ok(msg)
     },
+    "varargforward" => {
+        let (val, msg) =
+            crate::p4_calls::kuna_varargforward::OptionVarargForward.apply(p1)?;
+        self.vararg_forward = val;
+        Ok(msg)
+    },
     "calleearity" => {
         let (val, msg) =
             crate::p4_calls::kuna_calleearity::OptionCalleeArity.apply(p1)?;

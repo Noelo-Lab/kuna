@@ -395,11 +395,12 @@ fn clobber_of_this_register_reaches(data: &Funcdata, vn: VarnodeId, addr: &Addre
 /// list to ACCOUNT for every surviving argument declines it: one recovered
 /// parameter cannot be the two arguments that would remain.
 ///
-/// `false` is also the answer when `protoorder` parked nothing for this entry.
-/// It states a prototype only for a function it decompiled before this caller,
-/// and refuses for a callee with no recovered body such as a PLT import, one
-/// that recovered no parameters at all, one whose prototype is already
-/// declared, and, except under `cycles`, one inside a recursive component.
+/// `false` is also the answer when `protoorder` parked no parameter list for
+/// this entry. It states one only for a function it decompiled before this
+/// caller, and not for a callee with no recovered body such as a PLT import, one
+/// that recovered no parameters at all (its statement carries only the return
+/// value), one whose prototype is already declared, and, except under
+/// `cycles`, one inside a recursive component.
 /// "Nothing parked" and "cannot tell" are the same answer here.
 fn callee_prototype_is_the_argument_list(
     data: &Funcdata,
@@ -409,7 +410,7 @@ fn callee_prototype_is_the_argument_list(
     surviving: &[(Address, int4)],
 ) -> bool {
     let Some(stated) = data.kuna_protoorder_types(entry) else { return false };
-    if size <= 0 {
+    if size <= 0 || stated.inputs.is_empty() {
         return false;
     }
     if stated.inputs.len() != surviving.len() {

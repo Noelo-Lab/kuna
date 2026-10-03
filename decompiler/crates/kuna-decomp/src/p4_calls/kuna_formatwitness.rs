@@ -35,23 +35,39 @@ const MAX_FORMAT: usize = 256;
 fn constant_pointer(data: &Funcdata, op: OpId) -> Option<Address> {
     let call = data.obank().get(op)?;
     let vn = data.vbank().get(call.get_in(1)?)?;
-    if !vn.is_constant() || vn.get_offset() == 0 {
+    if !vn.is_constant() {
+        return None;
+    }
+    pointer_target(data, vn.get_offset(), vn.get_size(), call.get_addr())
+}
+
+fn pointer_target(data: &Funcdata, value: u64, size: int4, point: &Address) -> Option<Address> {
+    if value == 0 {
         return None;
     }
     let glb = data.get_arch();
     let space = Rc::clone(glb.manage().get_default_data_space()?);
-    let point = call.get_addr();
     let mut full_encoding = 0;
     let resolved = glb
-        .resolve_constant(
-            &space,
-            vn.get_offset(),
-            vn.get_size(),
-            point,
-            &mut full_encoding,
-        )
+        .resolve_constant(&space, value, size, point, &mut full_encoding)
         .ok()?;
     (!resolved.is_invalid()).then_some(resolved)
+}
+
+/// How many arguments the printf format that the pointer `value` (a `size`-byte
+/// constant used at `point`) addresses consumes, when it reads as one. A string
+/// without a `%` consumes none.
+pub(crate) fn pointed_format_count(
+    data: &Funcdata,
+    value: u64,
+    size: int4,
+    point: &Address,
+) -> Option<usize> {
+    let bytes = read_format(data, &pointer_target(data, value, size, point)?)?;
+    if !bytes.contains(&b'%') {
+        return Some(0);
+    }
+    printf_argument_count(&bytes)
 }
 
 fn read_format(data: &Funcdata, addr: &Address) -> Option<Vec<u8>> {

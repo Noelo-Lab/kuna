@@ -215,7 +215,14 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
             data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
         } else if {
             let t = data.get_call_specs(idx).active_input().get_trial(i);
-            t.get_size() == 8 && counted.contains(t.get_address())
+            (t.get_size() == 8 && counted.contains(t.get_address()))
+                || crate::p4_calls::kuna_varargforward::forwards_declared_value(
+                    data,
+                    idx,
+                    slot,
+                    t.get_address(),
+                    t.get_size(),
+                )
         } {
             let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
             trial.set_ancestor_realistic();

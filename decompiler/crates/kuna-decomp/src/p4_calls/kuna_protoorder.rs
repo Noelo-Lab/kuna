@@ -1237,8 +1237,8 @@ pub enum Decline {
     /// The recovered prototype has no parameter store (the `setScope` boundary),
     /// so nothing was recovered to state.
     NoRecovery,
-    /// No parameters and a `void` return: the prototype says nothing a caller
-    /// does not already assume.
+    /// No parameters and no return value to state: the prototype says nothing
+    /// a caller does not already assume.
     VoidVoid,
     /// The recovered prototype carries a `...`.
     ///
@@ -1797,6 +1797,10 @@ fn recovered_output(
 /// states fewer types; a long one states types for slots the caller does not
 /// have, and those never match a caller argument at all.
 ///
+/// A function with no parameters states only its return value, and only where
+/// `passthrough` recorded one: an empty list is no arity claim (`arity_sound`
+/// is false), so it reaches nothing but the tail-call arm that reads `output`.
+///
 /// It is also why this mode is cheap.  The locking mode parks through
 /// `set_function_proto_pieces`, which bumps `Database::kuna_generation` and so
 /// drops the memoized `build_callee_proto_pieces` snapshot every later function
@@ -1814,9 +1818,10 @@ fn state_recovered_types(
         .zip(pieces.intypes.iter())
         .map(|((addr, size), ct)| (addr.clone(), *size, Rc::clone(ct)))
         .collect();
-    if inputs.is_empty() {
+    if inputs.is_empty() && output.is_none() {
         return Err(Decline::VoidVoid);
     }
+    let arity_sound = arity_sound && !inputs.is_empty();
     let Some(key) = stated_key(entry) else {
         return Err(Decline::InvalidStorage);
     };

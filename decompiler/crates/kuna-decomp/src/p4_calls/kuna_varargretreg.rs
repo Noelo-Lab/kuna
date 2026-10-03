@@ -138,7 +138,7 @@ pub fn counted_float_arguments(fd: &Funcdata, fc: &FuncCallSpecs) -> Vec<Address
 /// `call`, when its block states it: `al` on x86-64 SysV, and 1 or 0 for
 /// `crset 6` or `crclr 6` on 32-bit PowerPC, where the bit says only whether
 /// any is filled.
-fn float_register_count(fd: &Funcdata, call: OpId) -> Option<u64> {
+pub fn float_register_count(fd: &Funcdata, call: OpId) -> Option<u64> {
     match fd.get_arch().vararg_floats {
         VarargFloats::VectorCount => vector_count(fd, call),
         VarargFloats::ConditionBit => condition_bit(fd, call),
