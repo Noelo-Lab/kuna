@@ -35,7 +35,9 @@
 //!    uses as the base of an indexed load wider than a byte, which addresses a
 //!    jump table, a function-pointer table or a word map ([`IndexedBases`]),
 //! 5. emit a [`crate::pass::StringFact`] (a typed `char[N]`) when the target is a
-//!    NUL-terminated printable run, plus a `readonly` range over it — reusing the
+//!    NUL-terminated printable run that is not a pointer-aligned slot holding an
+//!    address of the image ([`crate::strings::kuna_ptrslot`]), plus a `readonly`
+//!    range over it — reusing the
 //!    **existing** strings/readonly commit arms, so the printer's
 //!    pointer-to-readonly-char-array literal route (Increment 12) renders the
 //!    reference as the string literal.
@@ -503,14 +505,17 @@ pub fn scan_scalar_refs(
 /// referenced read-only address that begins a NUL-terminated printable run, emit a
 /// [`StringFact`] (a typed `char[N]`, via the **existing** strings commit arm) + a
 /// `readonly` range over it — so the printer renders the reference as the string
-/// literal. Targets that are not printable runs are skipped (no type to plant).
+/// literal. Targets that are not printable runs are skipped (no type to plant),
+/// and so is a target whose pointer-sized slot holds an address of the image
+/// ([`crate::strings::kuna_ptrslot`]): an entry of a vtable or of a pointer table.
 /// Pure — the unit tests assert it directly.
 fn emit_facts(file: &object::File, refs: &[ScalarRef]) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     let mut planted: Vec<u64> = Vec::new();
+    let slots = crate::strings::kuna_ptrslot::PointerSlots::new(file);
     for r in refs {
-        if planted.contains(&r.to) {
-            continue; // one fact per target address
+        if planted.contains(&r.to) || slots.holds_address(r.to) {
+            continue;
         }
         if let Some(len) = readonly_string_at(file, r.to) {
             out.strings.push(StringFact { addr: r.to, len });
@@ -729,6 +734,19 @@ mod tests {
             (OpCode::CPUI_LOAD, Some((unique(0x180), 8)), vec![space, unique(0x100)]),
         ];
         assert!(bases(killed).is_empty());
+    }
+
+    /// `tbl` in `ptrslot_gcc_O1_x86_64` starts with `26 42 40 00 ..`, a run the
+    /// recognizer accepts, but it is the entry for 0x404226; a scalar that names
+    /// it plants nothing.
+    #[test]
+    fn a_pointer_table_target_is_not_planted() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ptrslot_gcc_O1_x86_64");
+        let bytes = std::fs::read(path).expect("read ptrslot fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse ptrslot");
+        assert_eq!(readonly_string_at(&file, 0x405020), Some(4));
+        let out = emit_facts(&file, &[ScalarRef { from: 0x404280, to: 0x405020 }]);
+        assert!(out.strings.is_empty() && out.readonly.is_empty());
     }
 
     #[test]
