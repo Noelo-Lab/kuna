@@ -1172,6 +1172,61 @@ the case targets.
    switch). One special case: if the meld is a single read-only Varnode, the
    "switch" is a jump through a read-only pointer; its value is read from the
    load image and the table has one entry.
+   **Stranded rows.** The smallest range can belong to a variable in front of
+   a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
+   `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of
+   that variable whose map entry the second guard rejects never reaches the
+   table, yet the model still gives it a row, read from wherever its
+   out-of-range index points. `jumptable.rs
+   (JumpBasicModel::skip_stranding_variable)` looks for such values whenever a
+   guard's CBRANCH has no record that restricts the chosen variable
+   (`jumptable.rs (JumpBasicModel::unbounded_guards)`). It emulates each
+   value's path and evaluates those guards' varnodes from what the path
+   computed (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_emulatefunction.rs
+   (EmulateFunction::evaluate_held)`: pure ops back to computed values and
+   constants, a LOAD only through an address computed from them). A value
+   outside a guard's range is not dispatched (`jumptable.rs
+   (JumpBasicModel::row_dispatch)`). The table over the variable is wrong
+   (`jumptable.rs (JumpBasicModel::rows_strand)`) when such a row has no
+   destination at all, so the table cannot be built and the dispatch would
+   print as a call. It is also wrong when the sanity check below cuts it at
+   such a row while a later dispatched row reaches a destination no kept row
+   reaches, so the bodies only the later values reach are lost, and when a
+   kept row the code does not dispatch reaches a destination no dispatched
+   row reaches. In those cases the normalized variable moves toward the
+   branch, to the smallest range among the candidates in front of it. When
+   none of them is bounded, a guard whose varnode holds the same value bounds
+   one (`jumptable.rs (JumpBasicModel::bound_by_guard)`): GCC compares
+   `map[mode]` in memory and reloads it to index the table, and the two loads
+   read through equal addresses (`jumptable.rs (same_value)`). The new
+   variable is kept only when every one of its values emulates and none
+   strands, and, at the late check below, when it can label the flow-time
+   rows. Otherwise the first choice stands. The table is then built over the
+   map value and the switch is printed with the map values as its labels.
+   Where the lost destination was the default block, the old table could
+   still print correctly, but only when the guard's join followed the switch;
+   GCC's x86-64 shape returns from the guard and lets the switch fall off the
+   end of the function instead. The move stops, keeping the first choice and
+   its stranded rows, where a narrow value reaches its sign bit. A 1- or
+   2-byte variable can be printed as a signed `char` or `short`: a label
+   like `0xf0` then never matches it, and arithmetic on it, such as
+   `map[mode] + '\x88'`, is done after sign extension instead of in 8 bits.
+   So no candidate is taken when a 1- or 2-byte common varnode between it and
+   the first choice holds, for some value the code dispatches, a value with
+   its sign bit set, or one the path did not compute (`jumptable.rs
+   (JumpBasicModel::narrow_sign_values)`, from the first choice's emulated
+   rows); nor when one of the candidate's labels does, on the candidate or a
+   variable it extends or offsets by a constant, as the unnormalized switch
+   variable below may be chosen (`jumptable.rs
+   (JumpBasicModel::labels_reach_sign_bit)`, labels from `jumptable.rs
+   (JumpBasicModel::backup_value)`). A byte map holding 0xf0 that the switch
+   dispatches therefore keeps its table over `mode`. The rows this search
+   emulates read the load image through its 512-byte staging window, and a
+   read whose first byte is unmapped succeeds only inside that window, so a
+   stray row past the image could read as zero or fail depending on the reads
+   before it. The search saves the window first and puts it back when it is
+   done (`LoadImage::read_window`, `LoadImage::restore_read_window`), so the
+   table built afterwards reads exactly what it would have read without it.
 4. **Accept or rescue.** If the chosen range exceeds `max_jumptable_size`
    (1024, `architecture.rs (reset_defaults_internal)`; settable per run as the
    catalogued `option jumptablemax <n>`: upstream's `OptionJumpTableMax`, parsed

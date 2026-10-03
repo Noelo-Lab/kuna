@@ -131,6 +131,19 @@ pub trait LoadImage {
     /// \param addr is the starting address of the bytes to retrieve
     fn load_fill(&mut self, ptr: &mut [u8], addr: &Address) -> KunaResult<()>;
 
+    /// (kuna) Where the staging window [`Self::load_fill`] reads through
+    /// starts, `!0` when nothing is buffered; `None` for an image whose reads
+    /// do not depend on the reads before them.
+    fn read_window(&self) -> Option<u64> {
+        None
+    }
+
+    /// (kuna) Put the staging window back where [`Self::read_window`] found
+    /// it.  A read whose first byte is unmapped is answered only from inside
+    /// the window, so a caller whose reads are speculative restores it to
+    /// leave every later answer as it was.
+    fn restore_read_window(&self, _offset: u64) {}
+
     /// Prepare to read symbols.
     ///
     /// This routine should read in and parse any symbol information that

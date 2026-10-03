@@ -103,6 +103,95 @@ impl<'a> EmulateFunction<'a> {
         self.varnode_map.get(&vn).copied()
     }
 
+    /// (kuna) The value of `vn` computed from the values this emulation
+    /// holds, by executing the pure ops that define it back to held values
+    /// and constants, at most `budget` of them.  `None` when that needs any
+    /// other input or op, when it reaches no held value, or when a LOAD's
+    /// address reaches none.
+    pub fn evaluate_held(&mut self, vn: VarnodeId, budget: usize) -> Option<uintb> {
+        let mut ops = Vec::new();
+        if !self.held_tree(vn, &mut ops, budget)? {
+            return None;
+        }
+        for (op, _) in ops {
+            self.set_current_op(op);
+            self.execute_current_op().ok()?;
+        }
+        self.emulated_value(vn)
+    }
+
+    /// Append to `ops`, in execution order, the ops [`Self::evaluate_held`]
+    /// executes for `vn`, each with whether it reaches a held value; whether
+    /// `vn` does.
+    fn held_tree(&self, vn: VarnodeId, ops: &mut Vec<(OpId, bool)>, budget: usize) -> Option<bool> {
+        if self.varnode_map.contains_key(&vn) {
+            return Some(true);
+        }
+        let v = self.fd.vbank().get(vn)?;
+        if v.is_constant() {
+            return Some(false);
+        }
+        let def = v.get_def()?;
+        if let Some(&(_, held)) = ops.iter().find(|(op, _)| *op == def) {
+            return Some(held);
+        }
+        let op = self.fd.obank().get(def)?;
+        if ops.len() >= budget || !Self::is_pure(op.code()) {
+            return None;
+        }
+        let mut held = false;
+        for slot in 0..op.num_input() {
+            let reached = self.held_tree(op.get_in(slot)?, ops, budget)?;
+            if op.code() == OpCode::CPUI_LOAD && slot == 1 && !reached {
+                return None;
+            }
+            held |= reached;
+        }
+        ops.push((def, held));
+        Some(held)
+    }
+
+    /// Whether [`Self::evaluate_held`] may execute an op of `code`: one whose
+    /// output depends only on its inputs and the load image.
+    pub fn is_pure(code: OpCode) -> bool {
+        use OpCode::*;
+        matches!(
+            code,
+            CPUI_COPY
+                | CPUI_LOAD
+                | CPUI_CAST
+                | CPUI_INT_ZEXT
+                | CPUI_INT_SEXT
+                | CPUI_SUBPIECE
+                | CPUI_PIECE
+                | CPUI_INT_ADD
+                | CPUI_INT_SUB
+                | CPUI_INT_MULT
+                | CPUI_INT_AND
+                | CPUI_INT_OR
+                | CPUI_INT_XOR
+                | CPUI_INT_LEFT
+                | CPUI_INT_RIGHT
+                | CPUI_INT_SRIGHT
+                | CPUI_INT_NEGATE
+                | CPUI_INT_2COMP
+                | CPUI_INT_EQUAL
+                | CPUI_INT_NOTEQUAL
+                | CPUI_INT_LESS
+                | CPUI_INT_LESSEQUAL
+                | CPUI_INT_SLESS
+                | CPUI_INT_SLESSEQUAL
+                | CPUI_INT_CARRY
+                | CPUI_INT_SCARRY
+                | CPUI_INT_SBORROW
+                | CPUI_BOOL_NEGATE
+                | CPUI_BOOL_AND
+                | CPUI_BOOL_OR
+                | CPUI_BOOL_XOR
+                | CPUI_POPCOUNT
+        )
+    }
+
     /// The number of LOAD records collected so far (C++ `loadpoints->size()`,
     /// read after each `emulatePath` to populate `loadcounts`).  `None` when not
     /// collecting.

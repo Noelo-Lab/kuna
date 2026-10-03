@@ -133,7 +133,7 @@ $L12:
 	.type	map, @object
 	.size	map, 7
 map:
-	.ascii	"\007\023\005\020\012\001\023"
+	.ascii	"\007\000\005\023\012\001\000"
 	.globl	sink
 	.section	.bss,"aw",@nobits
 	.align	2

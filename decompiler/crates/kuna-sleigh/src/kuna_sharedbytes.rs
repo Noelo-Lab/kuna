@@ -21,6 +21,21 @@ use kuna_base::types::Wrap;
 
 use crate::loadimage::{ImageBytes, LoadImage, IMAGE_WINDOW_BYTES};
 
+/// (kuna) Refill the staging window of [`windowed_load_fill`] at `offset`, as
+/// a read there left it, or empty it for `!0` or an unmapped `offset`.
+pub fn restore_window(
+    bytes: &dyn ImageBytes,
+    buffer: &RefCell<Vec<u8>>,
+    bufoffset: &RefCell<u64>,
+    offset: u64,
+) {
+    if *bufoffset.borrow() == offset {
+        return;
+    }
+    let filled = offset != !0u64 && bytes.fill_span(&mut buffer.borrow_mut()[..], offset) == 0;
+    *bufoffset.borrow_mut() = if filled { offset } else { !0u64 };
+}
+
 /// Serve `ptr` from `bytes` through a [`IMAGE_WINDOW_BYTES`]-byte staging
 /// window (the C++ `LoadImageBfd::loadFill` read path).
 ///
@@ -193,5 +208,13 @@ impl LoadImage for SharedBytesImage {
 
     fn shared_bytes(&self) -> Option<Arc<dyn ImageBytes>> {
         Some(Arc::clone(&self.bytes))
+    }
+
+    fn read_window(&self) -> Option<u64> {
+        Some(*self.bufoffset.borrow())
+    }
+
+    fn restore_read_window(&self, offset: u64) {
+        restore_window(&*self.bytes, &self.buffer, &self.bufoffset, offset);
     }
 }
