@@ -659,11 +659,12 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     injecting_entry: Option<Address>,
 }
 
-/// Apply explicit-flow precedence before consulting either inferred tail-call
-/// rule. The closures keep both classifiers lazy: an applied `BRANCH` fact does
-/// not merely discard their answers, it prevents them from running at all.
+/// Apply explicit-flow and declared-extent precedence before consulting either
+/// inferred tail-call rule. The closures keep both classifiers lazy: an applied
+/// `BRANCH` fact or an in-extent target prevents them from running at all.
 pub(crate) fn select_inferred_tail_call<J, F>(
     branch_override_applied: bool,
+    dest_inside_declared_extent: bool,
     tailcalljump: J,
     tailcallframe: F,
 ) -> Option<&'static str>
@@ -671,7 +672,7 @@ where
     J: FnOnce() -> bool,
     F: FnOnce() -> bool,
 {
-    if branch_override_applied {
+    if branch_override_applied || dest_inside_declared_extent {
         return None;
     }
     if tailcalljump() {
@@ -1536,6 +1537,9 @@ following this call as a branch"
         let dest = crate::kuna_tailcalljump::kuna_sole_table_destination(
             self.data.get_jump_table(jt_idx as int4),
         )?;
+        if self.is_inside_declared_extent(&dest) {
+            return None;
+        }
         let outside = dest < self.baddr || self.eaddr < dest;
         self.env.is_tail_call_table(&self.data, op, &dest, outside).then_some(dest)
     }
@@ -1610,6 +1614,8 @@ following this call as a branch"
 
     /// (kuna) Which tail-jump rule, if either, claims this direct `CPUI_BRANCH`?
     ///
+    /// A target inside the current function's declared extent is
+    /// intraprocedural, so neither inference rule is consulted there. Else,
     /// [`kuna_tailcalljump`](crate::kuna_tailcalljump) is asked first, so a
     /// branch to a known function entry keeps the existing decision and the
     /// existing `tailcalljump:` warning text; [`kuna_tailcallframe`](
@@ -1625,9 +1631,18 @@ following this call as a branch"
             .get_addr();
         select_inferred_tail_call(
             self.applied_branch_overrides.contains(site),
+            self.is_inside_declared_extent(dest),
             || self.env.is_tail_call_branch(&self.data, op, dest),
             || self.env.is_frame_teardown_tail_call(&self.data, op, dest),
         )
+    }
+
+    /// Is `addr` part of this function's caller-declared extent?  `get_size()`
+    /// is nonzero only when `function bounds` / `--define-function START-END`
+    /// supplied an explicit size; the `baddr`/`eaddr` pair is the same range the
+    /// flow follower enforces (inclusive at the end).
+    fn is_inside_declared_extent(&self, addr: &Address) -> bool {
+        self.data.get_size() > 0 && self.baddr <= *addr && *addr <= self.eaddr
     }
 
     /// Generate p-code for a single machine instruction and process discovered
@@ -1962,14 +1977,20 @@ truncating the fall-through here"
     /// it is the entry of another known function (so the walk has run off the end
     /// of the current function)?  Gated by `option funcboundflow`
     /// (`funcbound_flow_enabled`); when on, resolves `next` against the symbol
-    /// table via [`query_call`](FlowEnvironment::query_call) and excludes the
-    /// current function's own entry.  A foreign entry whose instruction is a
+    /// table via [`query_call`](FlowEnvironment::query_call), excludes the
+    /// current function's own entry, and keeps entries inside an explicit
+    /// function extent in the same flow. A foreign entry whose instruction is a
     /// real `RETURN` is admitted; processing that one instruction terminates the
-    /// walk naturally and cannot consume anything beyond it.  See
+    /// walk naturally and cannot consume anything beyond it. See
     /// [`kuna_funcboundflow`].
     fn is_funcbound_fallthru(&self, next: &Address) -> bool {
         // Fast-path the default-off gate: no symbol-table lookup per instruction.
         if !self.env.funcbound_flow_enabled() {
+            return false;
+        }
+        // A caller-declared extent is authoritative and this common in-range
+        // case needs no symbol-table lookup or one-instruction probe.
+        if self.is_inside_declared_extent(next) {
             return false;
         }
         let next_is_known_function = self.env.query_call(next).is_some();
