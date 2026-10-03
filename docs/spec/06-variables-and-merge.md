@@ -317,7 +317,10 @@ remaining Varnode's expression tree depth-first and marks it implied unless
 inlining would be *semantically* unsafe
 (`coreaction_cleanup.rs (check_implied_cover)`): a LOAD whose cover crosses a
 STORE into the same space that may touch the loaded bytes
-(`coreaction_cleanup.rs (is_possible_alias)`, recursion depth 2), a
+(`coreaction_cleanup.rs (is_possible_alias)`, recursion depth 2), at
+`indexaliasguard global` (the default) a LOAD whose cover crosses a store to a
+global in the space it reads
+(`kuna_indexaliasguard.rs (load_crosses_global_store)`), a
 LOAD or call output whose cover crosses any call, or a defining input whose
 high would collide after inflating its cover to the candidate's
 (`merge.rs (Merge::inflate_test)`, copy shadows again forgiven). The failure
@@ -329,11 +332,11 @@ arithmetic op) whose output is the global's own varnode, so the STORE arm never
 sees it, and `x = *p; gi = b; return x;` printed `gi = a1; return *a0;`, which
 returns `b` when `p` points at `gi`. At `option indexaliasguard global` (the
 default; chapter [03](03-ssa-and-simplification.md) §3.1)
-`kuna_loadorder.rs (crosses_global_write)` adds that arm: a LOAD stays explicit
-when the interior of its cover holds a live, non-marker op that writes a global
-in the space the LOAD reads, other than a `COPY` of the same storage (heritage's
-return copy) or a `COPY` of the global into a temporary of its own HighVariable
-(a `MULTIEQUAL` input's copy, which reads the global). An op writes a global when
+`kuna_indexaliasguard.rs (load_crosses_global_store)` adds that arm: a LOAD
+stays explicit when the interior of its cover holds a live, non-marker op that
+writes a global in the space the LOAD reads, other than heritage's return copy,
+a `COPY` of the same storage, or a `COPY` of the global into a temporary of its
+own HighVariable (a `MULTIEQUAL` input's copy, which reads the global). An op writes a global when
 its output is a persistent varnode, or when its output's HighVariable holds one:
 a store on a branch or in a loop reaches the global through a `MULTIEQUAL`, so
 the op that makes it defines a temporary that the required merges join with the
@@ -343,13 +346,17 @@ When the LOAD's address is a constant, only a global whose bytes overlap the
 loaded ones counts. Only the ops inside the cover are visited. The arm matters
 more at that level than before it: the STORE guard leaves each store to a global
 where the binary makes it, ahead of loads that used to print before the store
-only because the store had drifted to the next call. At `load`, `off` and `full`
-the arm does not run, and at `global` it counts only a write of a global whose
-range chapter 03's STORE guard covered (`Heritage::global_store_guarded`), so a
-range past the guard budget prints as at `load`.
+only because the store had drifted to the next call, and the LOAD guard keeps a
+store whose LOAD input Merge used to join with the global and print at the
+load: `x = *p; gj = 0; gi = x;` printed `gi = *a0; gj = 0;`, and with the store
+kept and the load implied it would print `gj = 0; gi = *a0;`. At `load` and
+`off` the arm does not run.
 
 A LOAD whose value is live across a write of another global also stays out of
-a guarded global's HighVariable: `kuna_loadorder.rs (keeps_apart)` refuses the
+a guarded global's HighVariable: `kuna_loadorder.rs (keeps_apart)`, which counts
+only a write of a global whose range chapter 03's STORE guard covered
+(`kuna_loadorder.rs (crosses_global_write)`, `Heritage::global_store_guarded`),
+refuses the
 copy merge and the adjacent merge between such a global and a high holding such
 a LOAD.
 Joined, the LOAD printed as a write of the global where the binary loads it,
@@ -365,10 +372,10 @@ kept apart: joined with the global's HighVariable it still prints as a write of
 the global where it is computed, ahead of the LOAD (`t = gi * 2 + b; x = *p;
 gi = t;` prints `gi = a1 + gi * 2; v1 = *a0;`, issue #871). Keeping it apart is
 right only when the binary has not stored that value to the global before the
-LOAD, and when it has and stores the global again later, chapter 03 drops that
-first store as dead (issue #825): `t = a[3]; gi = t; if (c) t = *p * 3; gi = t -
-7;` prints `gi = a1[3]; if (a2) gi = *a0 * 3; gi -= 7;` only because the join
-re-creates the dropped store.
+LOAD. When it has and stores the global again later, chapter 03's global LOAD
+guard keeps that first store, and the join prints it where the binary makes it:
+`t = a[3]; gi = t; if (c) t = *p * 3; gi = t - 7;` prints
+`gi = a1[3]; if (a2) gi = *a0 * 3; gi -= 7;`.
 
 The alias test compares the two accesses, not only the two pointers. It proves
 a STORE harmless only when both pointers derive from one base through matching

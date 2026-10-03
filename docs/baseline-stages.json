@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1795,
-    1795
+    1806,
+    1806
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1439,6 +1439,17 @@
     "data:foldcallretphi #7: the call is never printed inside the and-and (pass 4, default)",
     "data:foldcallretphi-join #1: an undeclared call's eax output keeps its spill (pass 1 default, pass 3 off)",
     "data:foldcallretphi-join #2: the call folds into the comparison only once big is declared int4 (pass 2, default)",
+    "data:globalloadguard #10: global keeps the store and the load between the two stores",
+    "data:globalloadguard #11: a load stored to gi after a store to gj still prints ahead of it",
+    "data:globalloadguard #1: load drops both stores around the pointer load in the loop",
+    "data:globalloadguard #2: global keeps both stores around the pointer load in the loop",
+    "data:globalloadguard #3: load drops the store before the branch that loads",
+    "data:globalloadguard #4: global keeps the store before the branch that loads",
+    "data:globalloadguard #5: global keeps the store before the loop of loads",
+    "data:globalloadguard #6: global keeps the store before the branch that loads (clang)",
+    "data:globalloadguard #7: the store computed from the first store's value is unchanged",
+    "data:globalloadguard #8: every pass prints a store to gi in d_pre after the loop",
+    "data:globalloadguard #9: load drops the store before the load and loads after the second store",
     "data:globalpointee #10: a value read before its store keeps its register, the load after the pointer store reads the global",
     "data:globalpointee #11: the load after a store through another pointer reads the global",
     "data:globalpointee #12: a load not used as an address after a pointer store reads the global",

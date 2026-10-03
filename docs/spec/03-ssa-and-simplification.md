@@ -540,12 +540,44 @@ reached a hundred thousand of them and tripled the time of a whole firmware
 decompile, so a function stops guarding further ranges once it holds
 `GLOBAL_STORE_BUDGET` (1024) of them. Heritage records each global range it
 saw and whether it guarded it (`heritage.rs (Heritage::global_store_guarded)`),
-and the refusals above and chapter 06's load ordering act only on a global
-whose range it guarded, so a range past the budget prints as at `load`.
+and the refusals above and chapter 06's `keeps_apart` act only on a global
+whose range it guarded.
 At 2048 the guards still cost crazyflie's `cf2.elf` 6% of its whole-binary
 time, at 1024 about 1%, and 23 of 15,942 functions over 20 binaries print
 differently at the lower budget, 12 of them in that firmware. Chapter 06 adds the mirror image at this level: a value loaded through a
-pointer stays ahead of a store to a global (`kuna_loadorder.rs`).
+pointer stays ahead of a store to a global
+(`kuna_indexaliasguard.rs (load_crosses_global_store)`, `kuna_loadorder.rs`).
+
+At `global` heritage also gives a global the LOAD guard
+(`heritage.rs (Heritage::guard_global_loads)`). Upstream builds load guards only for indexed stack
+accesses, so a pointer LOAD reads no global at all in the SSA: in
+`gi = gi + 1; s += *p; gi = gi - 1;` inside a loop, or `gi = b; if (c) { t = *p
++ 1; gi = t; }`, nothing reads the first store's COPY, `ActionDeadCode` deletes
+it, and with `p` aimed at `gi` the printed C loads the value from before the
+store. For a persistent, writable range, the guard puts an `addrforce` COPY of
+the range in front of every live LOAD from the range's space that may read it
+(`kuna_indexaliasguard.rs (loads_from)`): the LOAD's address is not a constant
+outside the range, and it is not the stack pointer or an x86 segment base
+(`FS_OFFSET`, `GS_OFFSET`, through which the stack canary is read) plus a
+constant, through COPYs and constant offsets. These COPYs are load-copy sinks
+like the stack ones: `handle_new_load_copies` marks the stores that reach them
+`addrforce` within the guarded range and propagates the COPYs away, so each
+store that a LOAD may read is kept where the binary makes it. A range is
+guarded only when it has at least two writes other than `INDIRECT`s, since a
+single write already reaches the return guard; a range written in a smaller
+piece is skipped, because its kept piece would print as a store of the whole
+range beside the piece; and one heritage pass stops guarding further ranges at
+`GLOBAL_LOAD_BUDGET` (4096) COPYs. Two rules respect the marks so that a kept
+store prints once. `RulePropagateCopy` does not move a forced store's value
+into a COPY of the global into its own storage, which is what a `MULTIEQUAL`
+becomes when a shared return block is split
+(`kuna_indexaliasguard.rs (keeps_forced_self_copy)`), and `RuleMultiCollapse`
+does not match a forced store by functional equality when it collapses a
+global's `MULTIEQUAL` (`kuna_indexaliasguard.rs (keeps_forced_join)`); either
+would rewrite the join into another store of the same value. A kept store
+stays where the binary makes it, so a LOAD whose value is live across a store
+to a global prints as its own statement ahead of it (chapter
+[06](06-variables-and-merge.md), `check_implied_cover`).
 
 At `full`, `heritage.rs (Heritage::guard_stores)` runs instead: every STORE
 whose space is the range's space, or is the range's container while the STORE
@@ -554,7 +586,9 @@ range in front of it, frame slots included, with no budget and with
 `RulePropagateCopy` free to move a stored value into the `INDIRECT`. That is
 what upstream always does; it is not kuna's default because on a frame slot the
 INDIRECT chain survives into the emitted C as write-backs of values a slot
-already holds.
+already holds. The global LOAD guard runs at `full` too.
+
+At `off` none of them runs, which is what kuna shipped before the option.
 
 `option stackstoreguard` (default on) also enables STORE guards at
 `indexaliasguard load` and `global` for constant-initialized stack slots. Before normalizing

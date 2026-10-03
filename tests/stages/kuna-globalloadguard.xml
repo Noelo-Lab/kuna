@@ -1,0 +1,124 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A store to a global before a load through a pointer that may point at the
+    global is kept when the global is stored again after the load (P3
+    Heritage::guard, option indexaliasguard global; GitHub issue #825).
+
+    Heritage gives a pointer LOAD no read of any global, so in
+
+        int d_loop(int *p, int n) { int s = 0;
+          for (int i = 0; i < n; i++) { gi = gi + 1; s += *p; gi = gi - 1; } return s; }
+
+    nothing reads the first store's COPY and ActionDeadCode deletes it: kuna
+    printed the loop with no store to gi at all, so with p == &gi the printed
+    loop sums 4 three times where the binary sums 5.  At `global` heritage puts
+    an addrforce COPY read of the global in front of each such LOAD, so the
+    store that reaches the load is kept where the binary makes it.  d_branch
+    stores before a branch whose arm loads and stores again, d_pre before a
+    loop of loads, and d_cond (clang) before a branch that loads.  A kept store
+    stays where the binary makes it, so a load whose value is live across a
+    store to a global keeps its own variable: d_load, the issue's
+    `gi = a; x = *p; gi = b; return x;`, printed `gi = a2; return *a1;`.  d_phi,
+    whose second store is computed from a value stored by the first, and d_mv,
+    whose load is stored to gi after a store to gj, must keep the output they
+    already had at `global`.
+
+    Each pass runs `load` (the defect) and then `global` (the default).  The
+    wrapper only supplies the harness architecture (`load file` needs one).
+    The pass loads globalloadguard_gcc_O2_x86_64 and
+    globalloadguard_clang_O2_x86_64 (built from globalloadguard_x86_64.c
+    beside them).
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/globalloadguard_gcc_O2_x86_64</com>
+  <com>read symbols</com>
+  <com>option indexaliasguard load</com>
+  <com>load function d_loop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function d_branch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function d_pre</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function d_phi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function d_load</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function d_mv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option indexaliasguard global</com>
+  <com>load function d_loop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function d_branch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function d_pre</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function d_phi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function d_load</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function d_mv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/globalloadguard_clang_O2_x86_64</com>
+  <com>read symbols</com>
+  <com>option indexaliasguard load</com>
+  <com>load function d_cond</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option indexaliasguard global</com>
+  <com>load function d_cond</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="globalloadguard #1: load drops both stores around the pointer load in the loop" min="1" max="1">do \{
+      v1 \+= 1;
+      v2 \+= \*a0;
+    \} while</stringmatch>
+<stringmatch name="globalloadguard #2: global keeps both stores around the pointer load in the loop" min="1" max="1">gi = v1;
+      v4 \+= \*a0;
+      gi = v2;</stringmatch>
+<stringmatch name="globalloadguard #3: load drops the store before the branch that loads" min="1" max="1">\{
+  if \(a2\)
+    a1 = \*a0 \+ 1;
+  gi = a1;</stringmatch>
+<stringmatch name="globalloadguard #4: global keeps the store before the branch that loads" min="1" max="1">\{
+  gi = a1;
+  if \(a2\)
+    a1 = \*a0 \+ 1;
+  gi = a1;</stringmatch>
+<stringmatch name="globalloadguard #5: global keeps the store before the loop of loads" min="1" max="1">gi = a0;
+  if \(1 &lt;= a2\) \{</stringmatch>
+<stringmatch name="globalloadguard #6: global keeps the store before the branch that loads (clang)" min="1" max="1">gi = a0;
+  if \(a2\)</stringmatch>
+<stringmatch name="globalloadguard #7: the store computed from the first store's value is unchanged" min="2" max="2">gi = \(\(int4 \*\)a0\)\[3\];
+  if \(a2\)
+    gi = \*a1 \* 3;
+  gi -= 7;</stringmatch>
+<stringmatch name="globalloadguard #8: every pass prints a store to gi in d_pre after the loop" min="2" max="2">    \} while \(v1 != a2\);
+    gi = a3;</stringmatch>
+<stringmatch name="globalloadguard #9: load drops the store before the load and loads after the second store" min="1" max="1">gi = a2;
+  return \*a1;</stringmatch>
+<stringmatch name="globalloadguard #10: global keeps the store and the load between the two stores" min="1" max="1">gi = a0;
+  v1 = \*a1;
+  gi = a2;
+  return v1;</stringmatch>
+<stringmatch name="globalloadguard #11: a load stored to gi after a store to gj still prints ahead of it" min="1" max="1">v1 = \*a0;
+  gj = 0;
+  gi = v1;</stringmatch>
+</decompilertest>

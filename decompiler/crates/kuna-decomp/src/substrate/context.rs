@@ -1081,8 +1081,9 @@ pub struct ArchContext {
     /// (`heritage.cc:1194`, the `highPtrPossible` gate) runs — `load` puts an
     /// `addrforce` `CPUI_COPY` read of the range before every indexed-stack LOAD
     /// it intersects (`Heritage::guardLoads`, heritage.cc:1570), `global` adds
-    /// the `CPUI_INDIRECT` on a global range across every STORE into its space,
-    /// `full` adds it across every STORE that can reach any range
+    /// the `CPUI_INDIRECT` on a global range across every STORE into its space
+    /// and a `CPUI_COPY` read of it before every LOAD that may read it,
+    /// `full` adds the `CPUI_INDIRECT` across every STORE that can reach any range
     /// (`Heritage::guardStores`, heritage.cc:1538).  `off` leaves both arms
     /// unreached, so a stack slot only ever read through an indexed pointer has
     /// no reader at all and its initializing store dies to `ActionDeadCode`.
