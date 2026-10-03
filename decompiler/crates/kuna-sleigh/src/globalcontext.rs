@@ -1093,6 +1093,14 @@ impl ContextCache {
         std::mem::replace(&mut self.read_overrides[word], (mask, value & mask))
     }
 
+    /// Context words as seen by the decoder, including read overrides.
+    pub(crate) fn effective_context<'a>(&'a self, context: &'a [u32]) -> impl Iterator<Item = u32> + 'a {
+        context.iter().enumerate().map(|(i, &word)| {
+            let (mask, value) = self.read_overrides.get(i).copied().unwrap_or_default();
+            (word & !mask) | value
+        })
+    }
+
     /// Return \b true if the cached range covers the given address (the
     /// C++ `addr.getSpace()==curspace` raw-pointer test plus offset bounds).
     fn cache_covers(&self, addr: &Address) -> bool {
@@ -1124,9 +1132,8 @@ impl ContextCache {
         } else {
             database.get_context(addr)
         };
-        buf[..n].copy_from_slice(&context[..n]);
-        for (word, &(mask, value)) in buf[..n].iter_mut().zip(&self.read_overrides) {
-            *word = (*word & !mask) | value;
+        for (word, effective) in buf[..n].iter_mut().zip(self.effective_context(&context[..n])) {
+            *word = effective;
         }
     }
 

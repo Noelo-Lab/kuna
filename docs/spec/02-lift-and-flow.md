@@ -249,8 +249,10 @@ key when the result can be retained by an analysis consumer. SLEIGH certifies on
 lifts without context commits or delay slots and with exactly one parser-context
 query across lifting and assembly rendering. Nested reads, including
 `inst_next2`, decline reuse. The consumer must retain the same image, translator
-and instruction address and compare every context word before replaying p-code;
-other translators decline by default. This certificate does not suppress any
+and instruction address and compare every effective context word, including
+read overrides, before replaying p-code; other translators decline by default.
+Changing an override invalidates a key when it changes the decoded context;
+equivalent database and override values still match. This certificate does not suppress any
 translation or context effects inside SLEIGH itself.
 
 **Instruction-byte window.** A parser context buffers a fixed 16 bytes of the

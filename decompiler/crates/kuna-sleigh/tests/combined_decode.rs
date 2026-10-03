@@ -347,3 +347,43 @@ fn reusable_lifts_require_local_reads_and_no_context_commits() {
         }
     }
 }
+
+#[test]
+fn reuse_keys_track_effective_context_read_overrides() {
+    let (engine, _) = engine(
+        "ARM/data/languages/ARM7_le.sla",
+        &[1, 0, 0xa0, 0xe3],
+        &[("TMode", 0), ("LRset", 0)],
+    );
+    let at = addr(&engine, 0);
+    let (word, mask) = engine.with_context_db_mut(|db| {
+        let var = db.get_variable(b"TMode").unwrap();
+        (var.get_word() as usize, var.get_mask() << var.get_shift())
+    });
+    let decode = || {
+        let mut text = Text::default();
+        let mut key = None;
+        let len = engine.one_instruction_reusable(
+            &mut Ops::default(), &mut text, &at, &mut key,
+        ).unwrap();
+        (len, text.0.unwrap().0, key.unwrap())
+    };
+    let (len, mnemonic, arm_key) = decode();
+    assert_eq!((len, mnemonic.as_str()), (4, "mov"));
+    assert!(engine.matches_decode_context(&at, &arm_key));
+
+    engine.set_context_read_override(word, mask, mask);
+    let (len, mnemonic, thumb_key) = decode();
+    assert_eq!((len, mnemonic.as_str()), (2, "movs"));
+    assert!(!engine.matches_decode_context(&at, &arm_key));
+    assert_ne!(thumb_key, arm_key);
+    assert!(engine.matches_decode_context(&at, &thumb_key));
+
+    engine.with_context_db_mut(|db| db.set_variable_default(b"TMode", 1).unwrap());
+    engine.set_context_read_override(word, 0, 0);
+    assert!(engine.matches_decode_context(&at, &thumb_key));
+    engine.set_context_read_override(word, mask, 0);
+    assert!(engine.matches_decode_context(&at, &arm_key));
+    assert!(!engine.matches_decode_context(&at, &thumb_key));
+    assert_eq!(decode().2, arm_key);
+}

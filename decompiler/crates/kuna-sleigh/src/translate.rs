@@ -529,7 +529,8 @@ pub trait Translate: RegisterLookup {
 
     /// Optionally certify that this lift reads only this instruction's bytes and
     /// context words and commits no context. Reuse requires an unchanged image,
-    /// translator, address and the returned context words. Unknown effects decline.
+    /// translator, address and the returned effective context words (including
+    /// read overrides). Unknown effects decline.
     /// Emitters must not change the image or translation context.
     fn one_instruction_reusable(
         &self,

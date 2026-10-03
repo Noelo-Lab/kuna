@@ -2608,7 +2608,8 @@ impl Sleigh {
         }
         if context_free && self.context_queries.get() == queries.wrapping_add(1) {
             if let Some(key) = reusable {
-                *key = Some(self.context_db.borrow().get_context(baseaddr).to_vec());
+                *key = Some(self.cache.borrow()
+                    .effective_context(self.context_db.borrow().get_context(baseaddr)).collect());
             }
         }
         Ok(fall_offset)
@@ -2714,7 +2715,8 @@ impl Translate for Sleigh {
     }
 
     fn matches_decode_context(&self, addr: &Address, context: &[u32]) -> bool {
-        self.context_db.borrow().get_context(addr) == context
+        self.cache.borrow().effective_context(self.context_db.borrow().get_context(addr))
+            .eq(context.iter().copied())
     }
 
     fn print_assembly_into(
