@@ -49,9 +49,11 @@
 //!   Without it a pointer `LOAD` reads no global in kuna's SSA, so
 //!   `gi = a; x = *p; gi = b;` leaves the first store with no reader and
 //!   `ActionDeadCode` deletes it.  Only a writable range with at least two
-//!   writes other than `INDIRECT`s, none of them a smaller piece of the range,
-//!   is guarded (a single write reaches the return guard), and a heritage pass
-//!   stops guarding new ranges at [`GLOBAL_LOAD_BUDGET`] `COPY`s.
+//!   writes other than `INDIRECT`s is guarded (a single write reaches the
+//!   return guard). For a range written in smaller pieces,
+//!   [`crate::kuna_partialglobalload::apply`] keeps the original real writes at their widths
+//!   instead of forcing artificial full-width PIECEs. A heritage pass stops
+//!   guarding new ranges at [`GLOBAL_LOAD_BUDGET`] reads.
 //!   [`keeps_forced_self_copy`] and [`keeps_forced_join`] keep the rules from
 //!   printing such a kept store twice, and [`load_crosses_global_store`] keeps
 //!   a `LOAD` explicit when its value is live across a store to a global, so
