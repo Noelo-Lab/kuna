@@ -30,6 +30,9 @@
 //! (ELF output byte-identical). `msvc_demangler`'s `NAME_ONLY` flag yields the
 //! qualified-name-only form directly — already free of the signature/template
 //! `::` the scope splitter must not see (the same name-only contract below).
+//! A name it rejects falls back to [`undname`] (LLVM's MicrosoftDemangle,
+//! ported), whose name-only form keeps template arguments for
+//! [`strip_bracket_groups`] to remove.
 //!
 //! Origin (upstream Ghidra, the tree kuna was ported from):
 //! - analyzer: `Ghidra/Features/GnuDemangler/.../GnuDemanglerAnalyzer.java`
@@ -339,7 +342,15 @@ pub fn demangle_name(raw: &str) -> Option<String> {
     if raw.starts_with('?') {
         let flags =
             msvc_demangler::DemangleFlags::NAME_ONLY | msvc_demangler::DemangleFlags::NO_CLASS_TYPE;
-        if let Ok(d) = msvc_demangler::demangle(raw, flags) {
+        // `undname` (a port of LLVM's MicrosoftDemangle) reads what msvc-demangler
+        // rejects: a deduced `auto` return, `operator<=>`, `noexcept` function
+        // types, address and member-pointer template arguments, vtordisp thunks.
+        let demangled = msvc_demangler::demangle(raw, flags).ok().or_else(|| {
+            undname::demangle(raw, undname::Flags::NAME_ONLY)
+                .ok()
+                .map(|d| msvc_demangler_phrasing(&d))
+        });
+        if let Some(d) = demangled {
             let reduced =
                 strip_bracket_groups(&name_msvc_special_members(&name_anonymous_namespaces(&d)));
             if !reduced.is_empty() && reduced != raw {
@@ -421,11 +432,40 @@ fn name_msvc_special_members(name: &str) -> String {
             parts.push(msvc_identifier(inner).unwrap_or_else(|| part.to_string()));
         } else if let Some(inner) = part.strip_prefix('<').and_then(|p| p.strip_suffix('>')) {
             parts.push(msvc_identifier(inner).unwrap_or_else(|| part.to_string()));
+        } else if has_unbracketed_backtick(part) {
+            // A thunk's adjustor rides on the member it reaches
+            // (`` f`vtordisp{-4, 0}' `` becomes `f_vtordisp_4_0`).
+            let bare = strip_bracket_groups(part);
+            parts.push(msvc_identifier(&bare).unwrap_or_else(|| part.to_string()));
         } else {
             parts.push(part.to_string());
         }
     }
     parts.join("::")
+}
+
+/// Whether `part` carries a backtick outside every bracket group.
+fn has_unbracketed_backtick(part: &str) -> bool {
+    let mut nest = 0usize;
+    for b in part.bytes() {
+        match b {
+            b'<' | b'(' | b'[' => nest += 1,
+            b'>' | b')' | b']' => nest = nest.saturating_sub(1),
+            b'`' if nest == 0 => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Spell `undname`'s (LLVM's) compiler-generated member phrases the way
+/// msvc-demangler does, so a member reads the same whichever one demangled it
+/// (`` `vector deleting dtor' `` is `` `vector deleting destructor' ``).
+fn msvc_demangler_phrasing(name: &str) -> String {
+    name.replace(" dtor'", " destructor'")
+        .replace(" dtor ", " destructor ")
+        .replace(" ctor'", " constructor'")
+        .replace(" ctor ", " constructor ")
 }
 
 /// Split a demangled MSVC name on the `::` that separate its components,
@@ -1031,6 +1071,46 @@ mod tests {
             demangle_name("??BQColor@@QEBA?AVQVariant@@XZ"),
             Some("QColor::operator QVariant".to_string())
         );
+    }
+
+    /// Symbols msvc-demangler rejects (all from qBittorrent 5.2.4's PDB) still
+    /// reduce to their qualified name through the `undname` fallback, spelled
+    /// as msvc-demangler spells the same members.
+    #[test]
+    fn msvc_constructs_msvc_demangler_rejects() {
+        for (raw, name) in [
+            // a deduced `auto` return type
+            ("??$_Max_vectorized@$$CBH@std@@YA?A_PQEBH0@Z", "std::_Max_vectorized"),
+            // operator<=>
+            ("??__M@YA?AUstrong_ordering@std@@AEBVQString@@0@Z", "operator<=>"),
+            // the address of a variable as a template argument
+            (
+                "??$staticMetaObject@$1?staticMetaObject@QFile@@2UQMetaObject@@B@QMetaObject@@SAPEBU0@XZ",
+                "QMetaObject::staticMetaObject",
+            ),
+            // a noexcept function type
+            (
+                "??$lower_bound@PEBUWindowsData@QtTimeZoneCldr@@VQByteArray@@P6A_NU12@VQByteArrayView@@@_E@std@@YAPEBUWindowsData@QtTimeZoneCldr@@PEBU12@QEBU12@AEBVQByteArray@@P6A_NU12@VQByteArrayView@@@_E@Z",
+                "std::lower_bound",
+            ),
+            // a function-pointer template argument's back-references
+            (
+                "?detachAndGrow@?$QArrayDataPointer@P6AXXZ@@QEAAXW4GrowthPosition@QArrayData@@_JPEAPEBQ6AXXZPEAU1@@Z",
+                "QArrayDataPointer::detachAndGrow",
+            ),
+            // vtordisp thunks, on a member and on a deleting destructor
+            (
+                "?error@QDtlsBasePrivate@@$4PPPPPPPM@A@EBA?AW4QDtlsError@@XZ",
+                "QDtlsBasePrivate::error_vtordisp_4_0",
+            ),
+            (
+                "??_EQDtlsBasePrivate@@$4PPPPPPPM@A@EAAPEAXI@Z",
+                "QDtlsBasePrivate::vector_deleting_destructor_vtordisp_4_0",
+            ),
+        ] {
+            assert!(msvc_demangler::demangle(raw, msvc_demangler::DemangleFlags::NAME_ONLY).is_err());
+            assert_eq!(demangle_name(raw).as_deref(), Some(name), "{raw}");
+        }
     }
 
     #[test]

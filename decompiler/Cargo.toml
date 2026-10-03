@@ -22,6 +22,7 @@ syn = { version = "2", default-features = false, features = ["full", "parsing", 
 cpp_demangle = "0.5"
 rustc-demangle = "0.1"
 msvc-demangler = "0.11"
+undname = "2.1"
 gimli = { version = "0.33", default-features = false, features = ["read", "std"] }
 pdb = "0.8"
 kuna-base = { path = "crates/kuna-base" }
