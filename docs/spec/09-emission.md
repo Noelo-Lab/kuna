@@ -1003,6 +1003,32 @@ address comes from `printc.rs (spacebase_unnamed_address)`, the C++
 emitting either makes the whole function something no C parser accepts
 (`tests/stages/ghdec-spacebase-unnamed.xml`, DIV-46).
 
+An unnamed **incoming address** has a narrower, reconstructible case. For
+`x86:LE:64:default:gcc` with the ordinary SysV prototype model, an eight-byte,
+byte-addressed descending stack based on `RSP`, and a resolved entry-stack
+offset of at least eight, C renders the address as
+`((char *)__builtin_dwarf_cfa() + (offset - 8))` (omitting a zero addition).
+`kuna_callerstack.rs (address)` validates those facts. AMD64's canonical frame
+address is entry `RSP + 8`; GCC's [CFA builtin lowering](https://github.com/gcc-mirror/gcc/blob/master/gcc/builtins.cc)
+and [AMD64 incoming-frame offset](https://github.com/gcc-mirror/gcc/blob/master/gcc/config/i386/i386.h),
+and Clang's [builtin lowering](https://github.com/llvm/llvm-project/blob/main/clang/lib/CodeGen/CGBuiltin.cpp)
+provide this compiler extension. The expression names the original caller
+area even when recompilation creates a different local frame. It introduces
+neither a local object nor a parameter and preserves an explicit `void`
+prototype. Functions using this expression receive `__attribute__((noinline))`
+in both their definition and exported prototype: inlining would change which
+call frame the builtin names. `printc.rs (PrintC::caller_stack_function)` finds
+these address uses; direct storage loads/stores do not acquire this attribute.
+Named parameters and locals retain their symbol expressions. Return-address
+offsets below eight, negative local offsets, other compiler specs, calling
+models, architectures, and non-C output retain their existing handling; their
+ABI is not inferred from AMD64. Native GCC and Clang O0/O2 checks in
+`decompiler/crates/kuna-cli/tests/caller_stack_cli.rs` compare actual entry
+addresses and sixteen-byte pipe payloads from adjacent caller storage, using
+both single-function and project output and direct same-translation-unit calls.
+Typed integer and structure pointer returns retain the emitter's outer pointer
+cast and rebuild without pointer-compatibility warnings.
+
 The structure arm has the same failure through a different door. C++
 `opPtrsub` reads the pointer type of the *variable* the base belongs to
 (`getHighTypeReadFacing`), and the kuna printer reads the base Varnode's own
