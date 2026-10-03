@@ -6,6 +6,8 @@ use std::path::Path;
 use std::process::Command;
 
 const SOURCE: &str = include_str!("fixtures/x64_syscall_memory.c");
+const SCOPE_SOURCE: &str = include_str!("fixtures/x64_syscall_scope.S");
+const SCOPE_DRIVER: &str = include_str!("fixtures/x64_syscall_scope_driver.c");
 const PROTOTYPES: &[(&str, &str)] = &[
     ("pointer_before", "int pointer_before(int *p)"),
     ("pointer_expr", "int pointer_expr(int *p, int x)"),
@@ -33,6 +35,252 @@ fn compile(args: &[&str], source: &Path, output: &Path) {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
+}
+
+#[test]
+fn excluded_abis_preserve_the_register_only_syscall_model() {
+    if Command::new("cc").arg("--version").output().is_err() {
+        return;
+    }
+    let source = common::scratch_file("x64-syscall-scope", "S");
+    let object = common::scratch_file("x64-syscall-scope", "o");
+    std::fs::write(&source, SCOPE_SOURCE).unwrap();
+    compile(&["-c"], &source, &object);
+    let (text, err, rc) = common::run_kuna(&[
+        "decompile",
+        object.to_str().unwrap(),
+        "abi_echo",
+        "--assert",
+        "prototype abi_echo unsigned long MSABI abi_echo(unsigned long a)",
+    ]);
+    assert_eq!(rc, 0, "{text}\n{err}");
+    assert!(text.contains("return a;"), "{text}");
+    let (text, err, rc) = common::run_kuna(&[
+        "decompile",
+        object.to_str().unwrap(),
+        "abi_echo",
+        "--option",
+        "protoeval",
+        "MSABI",
+    ]);
+    assert_eq!(rc, 0, "{text}\n{err}");
+    assert!(text.contains("abi_echo(unsigned long a0)"), "{text}");
+    assert!(text.contains("return a0;"), "{text}");
+    for policy in [
+        "windows",
+        "msabi",
+        "windows-stdcall",
+        "prototype-msabi",
+        "sysv-eval-msabi",
+    ] {
+        for mode in ["auto", "aggressive", "on", "abi", "off"] {
+            for name in ["metadata8", "metadata40"] {
+                let mut args = vec![
+                    "decompile".to_owned(),
+                    object.to_str().unwrap().to_owned(),
+                    name.to_owned(),
+                    "--assert".to_owned(),
+                    format!(
+                        "prototype {name} unsigned long {}{name}(void)",
+                        match policy {
+                            "prototype-msabi" => "MSABI ",
+                            "sysv-eval-msabi" => "__stdcall ",
+                            _ => "",
+                        }
+                    ),
+                ];
+                match policy {
+                    "windows" | "windows-stdcall" => {
+                        args.extend(["--target".into(), "x86:LE:64:default:windows".into()])
+                    }
+                    "msabi" | "sysv-eval-msabi" => {
+                        args.extend(["--option".into(), "protoeval".into(), "MSABI".into()])
+                    }
+                    _ => {}
+                }
+                if policy == "windows-stdcall" {
+                    args.extend(["--option".into(), "protoeval".into(), "__stdcall".into()]);
+                }
+                match mode {
+                    "aggressive" => args.extend(["--mode".into(), mode.into()]),
+                    "auto" => {}
+                    _ => args.extend(["--option".into(), "x64syscall".into(), mode.into()]),
+                }
+                let refs: Vec<_> = args.iter().map(String::as_str).collect();
+                let (text, err, rc) = common::run_kuna(&refs);
+                assert_eq!(rc, 0, "{policy} {mode}: {text}\n{err}");
+                let windows = policy.starts_with("windows");
+                let result = if windows {
+                    "unsigned int"
+                } else {
+                    "unsigned long"
+                };
+                let cast = if windows { "(unsigned int)" } else { "" };
+                let body = if mode == "off" {
+                    "  syscall();\n  return 1;".to_owned()
+                } else if mode == "abi" {
+                    let register = if windows {
+                        "unsigned long long"
+                    } else {
+                        "unsigned long"
+                    };
+                    format!(
+                        "  char v1 [16]; // stack - 0x10\n  {register} v2; // r8\n  {register} v3; // r9\n  {register} v4; // r10\n  \n  return {cast}syscall(1,0x11,v1,8,v4,v2,v3);"
+                    )
+                } else {
+                    format!(
+                        "  char v1 [16]; // stack - 0x10\n  \n  return {cast}syscall(1,0x11,v1,8);"
+                    )
+                };
+                let expected = format!("{result} {name}(void)\n{{\n{body}\n}}");
+                assert_eq!(text.trim_end(), expected, "{policy} {mode}");
+                if mode == "off" {
+                    continue;
+                }
+                let printed = common::scratch_file("x64-syscall-excluded", "c");
+                std::fs::write(&printed, format!("#include <unistd.h>\n{text}")).unwrap();
+                for compiler in ["cc", "clang"] {
+                    if Command::new(compiler).arg("--version").output().is_err() {
+                        continue;
+                    }
+                    for optimization in ["-O0", "-O2"] {
+                        let output = common::scratch_file("x64-syscall-excluded", "o");
+                        let result = Command::new(compiler)
+                            .args([optimization, "-Werror", "-c"])
+                            .arg(&printed)
+                            .arg("-o")
+                            .arg(&output)
+                            .output()
+                            .unwrap();
+                        assert!(
+                            result.status.success(),
+                            "{policy} {mode} {compiler} {optimization}\n{text}\n{}",
+                            String::from_utf8_lossy(&result.stderr)
+                        );
+                    }
+                }
+            }
+        }
+    }
+    for mode in ["on", "abi"] {
+        let (text, err, rc) = common::run_kuna(&[
+            "decompile",
+            object.to_str().unwrap(),
+            "metadata8",
+            "--assert",
+            "prototype metadata8 unsigned long metadata8(void)",
+            "--option",
+            "x64syscall",
+            mode,
+        ]);
+        assert_eq!(rc, 0, "{text}\n{err}");
+        assert!(text.contains("v1[0] ="), "{mode}: {text}");
+        assert!(text.contains("syscall(1,0x11,v1,8"), "{mode}: {text}");
+    }
+}
+
+#[test]
+fn caller_metadata_writes_keep_the_physical_pointer_payload() {
+    if Command::new("cc").arg("--version").output().is_err() {
+        return;
+    }
+    let source = common::scratch_file("x64-syscall-metadata", "S");
+    let object = common::scratch_file("x64-syscall-metadata", "o");
+    let native = common::scratch_file("x64-syscall-metadata-native", "o");
+    std::fs::write(&source, SCOPE_SOURCE).unwrap();
+    compile(&["-c"], &source, &object);
+    compile(
+        &[
+            "-c",
+            "-Dmetadata8=native_metadata8",
+            "-Dmetadata40=native_metadata40",
+            "-Dabi_echo=native_abi_echo",
+        ],
+        &source,
+        &native,
+    );
+    let roundtrip = |printed: &Path| {
+        for compiler in ["gcc", "clang"] {
+            if Command::new(compiler).arg("--version").output().is_err() {
+                continue;
+            }
+            for optimization in ["-O0", "-O2"] {
+                let output = common::scratch_file("x64-syscall-metadata", "bin");
+                let result = Command::new(compiler)
+                    .args([optimization, "-Werror", "-include", "unistd.h"])
+                    .arg(printed)
+                    .arg(&native)
+                    .arg("-o")
+                    .arg(&output)
+                    .output()
+                    .unwrap();
+                assert!(
+                    result.status.success(),
+                    "{compiler} {optimization}: {}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                assert!(
+                    Command::new(&output).status().unwrap().success(),
+                    "{compiler} {optimization}: {}",
+                    std::fs::read_to_string(printed).unwrap()
+                );
+            }
+        }
+    };
+    for mode in [None, Some("on")] {
+        let mut code = String::new();
+        for name in ["metadata8", "metadata40"] {
+            let mut args = vec![
+                "decompile".to_string(),
+                object.to_str().unwrap().to_string(),
+                name.to_string(),
+                "--assert".to_string(),
+                format!("prototype {name} unsigned long {name}(void)"),
+            ];
+            if let Some(mode) = mode {
+                args.extend(["--option".into(), "x64syscall".into(), mode.into()]);
+            }
+            let (text, err, rc) =
+                common::run_kuna(&args.iter().map(String::as_str).collect::<Vec<_>>());
+            assert_eq!(rc, 0, "{text}\n{err}");
+            assert!(
+                text.contains("v1[0] =")
+                    && text.contains("__builtin_dwarf_cfa()")
+                    && !text.contains("Stack000"),
+                "{text}"
+            );
+            code.push_str(&text);
+        }
+        let printed = common::scratch_file("x64-syscall-metadata", "c");
+        std::fs::write(&printed, code + SCOPE_DRIVER).unwrap();
+        roundtrip(&printed);
+    }
+    let project = common::scratch_file("x64-syscall-metadata-project", "dir");
+    let (text, err, rc) = common::run_kuna(&[
+        "decompile-project",
+        object.to_str().unwrap(),
+        "--functions",
+        "metadata8,metadata40",
+        "--option",
+        "x64syscall",
+        "on",
+        "-o",
+        project.to_str().unwrap(),
+        "--assert",
+        "prototype metadata8 unsigned long metadata8(void)",
+        "--assert",
+        "prototype metadata40 unsigned long metadata40(void)",
+    ]);
+    assert_eq!(rc, 0, "{text}\n{err}");
+    let c = std::fs::read_dir(&project)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|s| s == "c"))
+        .unwrap();
+    let mut code = std::fs::read_to_string(&c).unwrap();
+    code.push_str(SCOPE_DRIVER);
+    std::fs::write(&c, code).unwrap();
+    roundtrip(&c);
 }
 
 #[test]

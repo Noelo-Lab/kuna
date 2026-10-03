@@ -906,8 +906,17 @@ unknown effects on writable default-data and stack ranges during chapter 03's
 heritage, preserving a global store that the kernel reads before the function
 overwrites it. Read-only ranges, register storage and unique temporaries are
 excluded. Only marked, recognized, uninjected calls under `on` or `abi` act;
-`off` retains its model, and image/preset decisions and ABI argument recovery
-remain as described below. Chapter 06 uses the same set to keep saved loads
+the memory model additionally requires the exact GCC AMD64 target, the live
+ordinary `__stdcall` SysV model with eight-byte extra-pop, and its real negative,
+byte-addressed eight-byte stack based on `RSP`. `architecture.rs (build_arch_handle)`
+passes the exact-target fact through `ArchContext`, and
+`kuna_x64syscall.rs (memory_abi_supported)` checks the selected function and
+evaluation models after prototype setup. Windows targets and MSABI evaluation
+or function models retain the existing register-only syscall rendering: the
+emitter cannot yet express their unnamed incoming-stack addresses. The mark
+alone therefore never admits a memory effect or an ordering fence. `off`
+retains its model, and image/preset decisions and ABI argument recovery remain
+as described below. Chapter 06 uses the same admitted set to keep saved loads
 before the instruction. For a pipe read replacing 3 with 100,
 `v = *p; syscall; return v * 5 + *p` returns 115 rather than 600.
 
@@ -934,7 +943,10 @@ register witness, a no-`SYSCALL` control, a split-block wrapper that separates
 `decompiler/crates/kuna-cli/tests/x64_syscall_memory.rs` compares native code
 with emitted C using actual Linux pipes, including kernel-observed stores and
 returned byte counts followed by a buffer read. Chapter 06 owns the shared
-call-result ordering checks for recognized system calls.
+call-result ordering checks for recognized system calls. Its Windows/MSABI
+controls compare prior output across default, aggressive, `on`, `abi` and `off`
+and compile the enabled output with GCC and Clang; an ordinary SysV metadata
+store remains preserved.
 
 **(kuna) The system call of ARM, AArch64, RISC-V, MIPS and PowerPC —
 `option syscallregs`, default `auto`,

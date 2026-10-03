@@ -2,48 +2,53 @@
 
 The Linux read witness starts with a buffer value of 3, reads 100 through fd17,
 and returns the saved value times 5 plus the final buffer. Native code returns 115;
-current main emits two reads of the replaced buffer and returns 600. A separate
+unfixed code emits two reads of the replaced buffer and returns 600. A separate
 returned-length witness reads four and then two bytes, preserving both lengths
 before reading the final buffer. Native code returns 570; the first memory-effect
 implementation could still return 170 by folding the second syscall past that
 buffer read.
 
-The x64 rewrite marks only successful recognized ABI rewrites. Writable global
-and stack storage receives opaque memory effects during heritage; P6 keeps saved
-loads before these calls. Known enabled syscalls also receive a full expression
-span check for LOADs and INDIRECT memory reads when folding their results.
-Ordinary calls, unrelated userops, x64 argument recovery and syscall mode/image
-policies retain their previous decisions.
+The x64 rewrite marks only successful recognized ABI rewrites. The new memory
+effects additionally require the exact GCC AMD64 target, ordinary SysV function
+and evaluation models, and the real eight-byte RSP stack. Within that domain,
+writable global and stack storage receives opaque memory effects during
+heritage, and P6 keeps saved loads before these calls. Windows and MSABI models
+retain their prior register-only rendering. Both memory effects and ordering
+checks use the same admission; the rewrite marker alone is insufficient.
+
+Known enabled syscalls also receive a full expression span check for LOADs and
+INDIRECT memory reads when folding their results. CALLOTHER already carries
+call flags; the missing protection was the intervening memory-read check through
+the final expression consumer. Ordinary calls, unrelated userops, x64 argument
+recovery and syscall mode/image policies retain their previous decisions.
 
 Permanent regression coverage includes actual Linux pipes at O0/O2, saved pointer
 and global expressions, two calls, stores the kernel observes before an overwrite,
-and returned byte counts followed by a buffer read. The ARM and AArch64 object fixtures use
-a signed 16-bit cast of the second byte count and a precise handler that writes the
-buffer and returns the requested byte count;
+and returned byte counts followed by a buffer read. The ARM and AArch64 object
+fixtures use a signed 16-bit cast of the second byte count and a precise handler
+that writes the buffer and returns the requested byte count;
 they also assert separate call statements so correctness does not depend on a C
 compiler's operand evaluation order. The focused stage assertions pass 24/24;
-current main passes 19/24. Full inherited parity remains 675/675 and stage parity
-is 1888/1888, with exactly five added assertions and no existing keys removed.
+unfixed code passes 19/24. Full inherited parity remains 675/675. The stage
+baseline adds exactly five assertions to the inherited 1900, removing no keys.
 
 The extended Linux oracle covers 24 cases across GCC/Clang O0/O2/Os input images,
-auto/on/abi output modes and GCC/Clang O0/O2 rebuilt C: 72 complete suites pass.
-Six stripped coreutils images (true, false, sleep, env, printf, timeout) retain
-byte-identical output across 871 functions. The default x64 loader has 299
-functions, with four expected memory-effect changes at 0x12e70, 0x218e0, 0x26a00,
-and 0x26e90.
+auto/on/abi output modes and GCC/Clang O0/O2 rebuilt C. Windows, effective MSABI,
+explicit MSABI prototypes, and locked SysV prototypes with MSABI evaluation
+have output-preservation controls across default, aggressive, on, abi and off.
+Enabled excluded output must also compile with GCC and Clang.
 
-Default speed on the full 299-function x64 loader, with 11 interleaved pairs
-and no exclusions: main 49.361480s, candidate 50.411199s, +2.13% (minimum of
-each 11 samples). Both used the normal make-binaries recipe and matching
-dependency features; the raw run retained early contention samples.
+The physical caller-pointer test uses assembly to pin the caller's stack
+pointer. Actual Linux write syscalls must send that pointer plus the instruction's
+offset through a pipe, both from original assembly and from emitted C. It covers
+incoming offsets 8 and 40, ordinary and project exports, and GCC/Clang O0/O2.
+The emitter's CFA expression and noinline function preserve the caller address;
+a newly allocated local would produce a different payload.
 
-The restored loader varargs setup at 0x26a00 exposes an existing caller-stack
-address naming limitation: `&Stack0000000000000008` is emitted without a
-declaration. The address is the actual `RSP + 8` computed by the instruction.
-Keeping its real store fixes the memory model; producing a valid name for an
-unnamed incoming stack address remains an emitter follow-up. A minimal write
-syscall reproduces the same limitation while preserving an eight-byte buffer
-initialization that main loses:
+The loader varargs setup at 0x26a00 retains the incoming-stack pointer's store.
+The supported SysV emitter renders that actual address using its CFA expression,
+so the restored output compiles. A minimal write syscall demonstrates the same
+eight-byte buffer initialization that unfixed code loses:
 
 ```sh
 printf %s 488d44240848894424f0488d7424f0b801000000bf11000000ba080000000f05c3 | xxd -r -p > /tmp/incoming-stack.bin

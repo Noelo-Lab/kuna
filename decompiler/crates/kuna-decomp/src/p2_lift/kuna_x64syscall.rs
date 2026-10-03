@@ -284,23 +284,75 @@ fn is_syscall(data: &Funcdata, op: OpId) -> bool {
     u32::try_from(index).is_ok_and(|i| data.get_arch().x64_syscall_userops.contains(&i))
 }
 
-/// Enabled, uninjected x86-64 system calls with unknown memory effects.
-pub fn is_memory_call(data: &Funcdata, op: OpId) -> bool {
-    data.get_arch().x64_syscall.rewrites()
-        && data.obank().get(op).is_some_and(|o| {
-            !o.is_dead()
-                && o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_x64syscall != 0
-        })
-        && is_syscall(data, op)
+/// Match the ordinary SysV stack domain whose incoming addresses the C emitter
+/// can express. The register rewrite remains available outside this domain.
+fn memory_abi_supported(data: &Funcdata) -> bool {
+    let arch = data.get_arch();
+    let proto = data.get_func_proto();
+    if !arch.x64_syscall_memory_target
+        || !proto.has_model()
+        || proto.model().get_name() != "__stdcall"
+        || proto.model().get_extra_pop() != 8
+        || arch
+            .eval_fp_current()
+            .is_some_and(|m| m.get_name() != "__stdcall" || m.get_extra_pop() != 8)
+    {
+        return false;
+    }
+    let Some(stack) = arch.manage().get_stack_space() else {
+        return false;
+    };
+    if stack.get_addr_size() != 8
+        || stack.get_word_size() != 1
+        || !stack.stack_grows_negative()
+        || stack.num_spacebase() != 1
+    {
+        return false;
+    }
+    let Ok(base) = stack.get_spacebase(0) else {
+        return false;
+    };
+    let Some(rsp) = arch
+        .manage()
+        .register_lookup()
+        .and_then(|l| l.probe_register("RSP"))
+    else {
+        return false;
+    };
+    base.size == 8
+        && rsp.size == 8
+        && base.offset == rsp.offset
+        && base
+            .space
+            .as_ref()
+            .zip(rsp.space.as_ref())
+            .is_some_and(|(a, b)| std::rc::Rc::ptr_eq(a, b))
 }
 
-/// Enabled, uninjected x86-64 system calls with unknown memory effects.
+fn is_marked_syscall(data: &Funcdata, op: OpId) -> bool {
+    data.obank().get(op).is_some_and(|o| {
+        !o.is_dead() && o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_x64syscall != 0
+    }) && is_syscall(data, op)
+}
+
+/// Enabled, uninjected x86-64 system calls in the supported SysV memory model.
+pub fn is_memory_call(data: &Funcdata, op: OpId) -> bool {
+    data.get_arch().x64_syscall.rewrites()
+        && memory_abi_supported(data)
+        && is_marked_syscall(data, op)
+}
+
+/// Enabled, uninjected x86-64 system calls in the supported SysV memory model.
 pub fn memory_calls(data: &Funcdata) -> Vec<OpId> {
-    if !data.get_arch().x64_syscall.rewrites() || data.get_arch().x64_syscall_userops.is_empty() {
+    if !data.get_arch().x64_syscall.rewrites()
+        || data.get_arch().x64_syscall_userops.is_empty()
+        || !memory_abi_supported(data)
+    {
         return Vec::new();
     }
-    data.obank().iter_code(OpCode::CPUI_CALLOTHER)
-        .filter(|&op| is_memory_call(data, op))
+    data.obank()
+        .iter_code(OpCode::CPUI_CALLOTHER)
+        .filter(|&op| is_marked_syscall(data, op))
         .collect()
 }
 
