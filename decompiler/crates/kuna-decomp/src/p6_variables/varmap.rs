@@ -1194,11 +1194,20 @@ impl ScopeLocal {
         wire_symbols: &[crate::database::WireSymbol],
         encoder: &mut dyn kuna_base::marshal::Encoder,
     ) -> KunaResult<()> {
+        self.encode_with_storage(wire_symbols, &std::collections::BTreeMap::new(), encoder)
+    }
+
+    pub(crate) fn encode_with_storage(
+        &self,
+        wire_symbols: &[crate::database::WireSymbol],
+        wrapped_storage: &std::collections::BTreeMap<u64, (Address, int4)>,
+        encoder: &mut dyn kuna_base::marshal::Encoder,
+    ) -> KunaResult<()> {
         use crate::remote_provider::{ATTRIB_LOCK, ATTRIB_MAIN, ELEM_LOCALDB};
         encoder.open_element(&ELEM_LOCALDB);
         encoder.write_space(&ATTRIB_MAIN, &self.space);
         encoder.write_bool(&ATTRIB_LOCK, self.range_locked);
-        self.db.encode_scope_with_wire_symbols(self.scope, wire_symbols, encoder)?;
+        self.db.encode_scope_with_storage(self.scope, wire_symbols, wrapped_storage, encoder)?;
         encoder.close_element(&ELEM_LOCALDB);
         Ok(())
     }

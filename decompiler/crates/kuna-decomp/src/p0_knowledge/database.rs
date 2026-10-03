@@ -2055,6 +2055,7 @@ impl Database {
                 let rec = join_space.find_join(addr.get_offset())?;
                 let num = rec.num_pieces();
                 let bigendian = addr.is_big_endian();
+                let wrapped_stack = super::kuna_wrappedstackmap::is_wrapped_join(&rec);
                 let mut off: int4 = 0;
                 for j in 0..num {
                     // Take pieces in endian order (database.cc:1169).
@@ -2069,10 +2070,9 @@ impl Database {
                     } else {
                         varnode_flags::precislo | varnode_flags::precishi
                     };
+                    let exfl = exfl | if wrapped_stack { varnode_flags::mapped } else { 0 };
                     let vdat_addr = vdat.get_addr();
                     let vdat_size = vdat.size as int4;
-                    // NOTE (database.cc:1177): the mapped flag is NOT turned on
-                    // for the pieces — only the precis* extra-flags above.
                     self.add_map_internal(
                         scope,
                         sym,
@@ -2394,7 +2394,13 @@ impl Database {
                 Some(c) => Rc::clone(c),
                 None => continue,
             };
-            out.push((symbol.name.clone(), ct, entry.get_addr().clone(), symbol.flags));
+            let addr = if entry.is_piece() && (entry.extraflags & varnode_flags::mapped) != 0 {
+                super::kuna_wrappedstackmap::whole_address(self, scope, entry)
+                    .unwrap_or_else(|| entry.get_addr().clone())
+            } else {
+                entry.get_addr().clone()
+            };
+            out.push((symbol.name.clone(), ct, addr, symbol.flags));
         }
         out
     }
@@ -2467,7 +2473,8 @@ impl Database {
                 let entry = &rec.entry;
                 // Only the whole-symbol starting entry (offset 0); pieces are rebuilt
                 // by re-mapping the whole symbol.
-                if entry.get_offset() != 0 {
+                if entry.get_offset() != 0 || super::kuna_wrappedstackmap::is_wrapped_in_space(
+                    entry.get_addr(), skip_space_index) {
                     continue;
                 }
                 let sym = entry.symbol;
@@ -4525,6 +4532,27 @@ impl Database {
         wire_symbols: &[WireSymbol],
         encoder: &mut dyn kuna_base::marshal::Encoder,
     ) -> KunaResult<()> {
+        self.encode_scope_with_storage(scope, wire_symbols, &BTreeMap::new(), encoder)
+    }
+
+    pub(crate) fn wrapped_stack_wire_specs(&self, scope: ScopeId) -> Vec<(uint8, int4)> {
+        self.scopes[scope].nametree.values().filter_map(|&sid| {
+            let sym = &self.symbols[sid];
+            if !sym.mapentry.iter().any(|&entry| super::kuna_wrappedstackmap::is_wrapped_address(
+                self.entry(scope, entry).get_addr())) {
+                return None;
+            }
+            Some((sym.symbol_id, sym.dtype.as_ref()?.get_size()))
+        }).collect()
+    }
+
+    pub(crate) fn encode_scope_with_storage(
+        &self,
+        scope: ScopeId,
+        wire_symbols: &[WireSymbol],
+        wrapped_storage: &BTreeMap<uint8, (Address, int4)>,
+        encoder: &mut dyn kuna_base::marshal::Encoder,
+    ) -> KunaResult<()> {
         use crate::remote_provider::{ELEM_MAPSYM, ELEM_PARENT, ELEM_SCOPE, ELEM_SYMBOLLIST};
         use kuna_base::marshal::{ATTRIB_ID, ATTRIB_NAME, ATTRIB_TYPE};
         let sc = &self.scopes[scope];
@@ -4578,7 +4606,18 @@ impl Database {
                 }
                 sym.encode(encoder)?;
                 for eref in &sym.mapentry {
-                    self.entry(scope, *eref).encode(encoder)?;
+                    let entry = self.entry(scope, *eref);
+                    if !entry.is_piece() && entry.get_addr().is_join() {
+                        let wrapped = super::kuna_wrappedstackmap::is_wrapped_address(entry.get_addr());
+                        if let Some((addr, _)) = wrapped_storage.get(&sym.symbol_id).filter(|(_, size)|
+                            wrapped && *size == entry.get_size()) {
+                            let mut wire_entry = entry.clone();
+                            wire_entry.addr = addr.clone();
+                            wire_entry.encode(encoder)?;
+                            continue;
+                        }
+                    }
+                    entry.encode(encoder)?;
                 }
                 encoder.close_element(&ELEM_MAPSYM);
             }
@@ -4601,6 +4640,10 @@ impl Database {
 // ===========================================================================
 // Tests
 // ===========================================================================
+
+#[cfg(test)]
+#[path = "kuna_wrappedstackmap/tests.rs"]
+mod wrapped_stack_tests;
 
 #[cfg(test)]
 mod tests {

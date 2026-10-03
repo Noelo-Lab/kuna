@@ -1685,9 +1685,14 @@ impl VarnodeBank {
 
     /// Create a temporary varnode in the unique space (C++ `createUnique`).
     pub fn create_unique(&mut self, s: int4, ct: Rc<Datatype>) -> VarnodeId {
-        let addr = Address::new(Rc::clone(&self.uniq_space), self.uniqid as u64);
-        self.uniqid = self.uniqid.wadd(s as uintm);
+        let addr = self.reserve_unique(s);
         self.create(s, addr, ct)
+    }
+
+    pub(crate) fn reserve_unique(&mut self, size: int4) -> Address {
+        let addr = Address::new(Rc::clone(&self.uniq_space), self.uniqid as u64);
+        self.uniqid = self.uniqid.wadd(size as uintm);
+        addr
     }
 
     /// Remove a Varnode from the container and reclaim it (C++ `destroy`).

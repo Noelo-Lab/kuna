@@ -50,3 +50,5 @@ pub mod kuna_msvcfpconst;
 // (kuna) `<eval_current_prototype>`: the compiler spec's model for evaluating the
 // current function's own unknown prototype (register-parameter recovery).
 pub mod kuna_evalcurrentproto;
+
+pub(crate) mod kuna_wrappedstackmap;

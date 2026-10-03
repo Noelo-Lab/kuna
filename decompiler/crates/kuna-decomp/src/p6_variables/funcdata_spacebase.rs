@@ -1097,6 +1097,7 @@ impl Funcdata {
                     ct = None; // Do unknown array
                 }
             }
+            super::kuna_wrappedstackaggregate::map(self, space, offset, index.is_some(), ct.as_ref());
             // If there is an index Varnode, assume at least the 4 values [0,3].
             let min_items = if index.is_some() { 3 } else { -1 };
             state.add_range_pub(offset, ct, 0, crate::varmap::RangeType::Open, min_items);
@@ -1309,7 +1310,7 @@ impl Funcdata {
                 let mut flags = ov.all_flags;
                 entry_is_join_piece = (ov.extraflags
                     & (varnode_flags::precislo | varnode_flags::precishi))
-                    != 0;
+                    != 0 && (ov.extraflags & varnode_flags::mapped) == 0;
                 if ov.entry_size >= ex_size {
                     if update_datatypes {
                         if let Some(t) = &ov.sized_type {

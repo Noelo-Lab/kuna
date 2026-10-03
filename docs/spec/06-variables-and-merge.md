@@ -1997,3 +1997,16 @@ free — and a more faithful frame can expose weaknesses further down: an
 outgoing-argument slot that lands inside the caller's `localrange` once the
 frame is the right size is scored no-use by `checkInputTrialUse` (§4.4) and the
 argument is dropped, which is visible on deep-frame MSVC CRT helpers.
+
+A declared struct parameter split across registers and the entry stack can be
+spilled contiguously beside its incoming stack tail. The spill then crosses
+entry SP=0, so the ordinary local-only range cannot describe the whole object.
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_wrappedstackaggregate.rs`
+recovers one local struct only from a nonindexed typed stack reference whose
+wrapping extent exactly matches a type-locked joined parameter of the same
+struct type. The logical tail must map to stack offset zero, consume the
+remaining bytes, and be the join's sole stack piece. Its native JOIN symbol
+links both register spills and the stack tail, including writes through the
+struct pointer and a field pointer passed to a callback. Indexed references,
+different struct types, all-stack parameters, and nonwrapping locals continue
+through the ordinary layout path.

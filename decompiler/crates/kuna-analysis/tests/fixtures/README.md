@@ -1251,3 +1251,31 @@ UID load followed by two flag stores and two UID stores, plus a scaled value
 stored after its flag. The watchpoint is enabled after
 the child initializes the global and disabled by process exit; no external binary
 or root privileges are required. Installed compilers must build the fixtures.
+
+### `wrappedstackaggregate.c`
+
+Four Clang 14 objects cover Thumb little endian and ARM big endian at `-O0`
+and `-O2`:
+
+```sh
+clang --target=thumbv7em-none-eabi -O0 -fno-stack-protector -c wrappedstackaggregate.c -o wrappedstackaggregate_clang_O0_thumb.o
+clang --target=armebv7-none-eabi -O0 -fno-stack-protector -c wrappedstackaggregate.c -o wrappedstackaggregate_clang_O0_arm_be.o
+# Repeat both commands with -O2 and O2 output names.
+```
+
+The CLI regression executes printed C after translating exact byte-piece
+assignments to `memcpy`. It checks null/live callbacks, field-pointer identity,
+all incoming fields, callback mutations, 16/12/8/4-byte register prefixes,
+all-stack parameters, and two different struct types. Freestanding 32-bit
+GCC/Clang executables preserve the target pointer/struct layout.
+
+`wrapped_stack_tests` also covers main-entry and physical-piece mappings,
+scope snapshots, same-size retyping, rejected size changes, removal, and
+distinct wire storage for same-size symbols. The console regression checks
+the actual serialized dataflow graph and a second decompilation of the same
+function. The CLI also checks a caller with no locked function prototype.
+Set `KUNA_WRAPPED_WIRE_DUMP` to
+export its serialized function; the optional Ghidra smoke script
+`integrations/ghidra/live-smoke/WrappedStackStorage.java` decodes the storage
+with Ghidra's own consumer. Wrapped locals use temporary unique storage in
+Ghidra because its stack-variable model cannot span entry SP=0.

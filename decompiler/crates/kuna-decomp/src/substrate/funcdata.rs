@@ -368,6 +368,7 @@ pub struct Funcdata {
     /// but never enter the analysis scope, so the wire encode cannot perturb
     /// the emitted C.  Empty outside the ghidra-mode encode.
     pub(crate) kuna_wire_symbols: Vec<crate::database::WireSymbol>,
+    pub(crate) kuna_wrapped_wire_storage: std::collections::BTreeMap<uint8, (Address, int4)>,
     /// Index into [`Self::kuna_wire_symbols`] per HighVariable.
     pub(crate) kuna_wire_symbol_for_high:
         std::collections::BTreeMap<crate::context::HighVariableId, usize>,
@@ -629,6 +630,7 @@ impl Funcdata {
             kuna_rejected_flow: Vec::new(),
             kuna_directive_symbols: Vec::new(),
             kuna_wire_symbols: Vec::new(),
+            kuna_wrapped_wire_storage: std::collections::BTreeMap::new(),
             kuna_wire_symbol_for_high: std::collections::BTreeMap::new(),
             kuna_callee_ret_writes: std::collections::HashMap::new(),
             kuna_callee_entry_dead: std::collections::HashMap::new(),
@@ -3211,6 +3213,7 @@ impl Funcdata {
         // would otherwise let a rebuilt high inherit another variable's symbol
         // id and hand the GUI the wrong rename target.
         self.kuna_wire_symbols.clear();
+        self.kuna_wrapped_wire_storage.clear();
         self.kuna_wire_symbol_for_high.clear();
         self.kuna_directive_symbols.clear();
         // (kuna `slotptr`) The evidence names ops by SeqNum, which a rebuilt op
