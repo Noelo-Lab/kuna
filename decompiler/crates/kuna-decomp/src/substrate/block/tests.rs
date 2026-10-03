@@ -259,15 +259,17 @@ fn dominator_self_loop_and_exit() {
 fn dominates_memo_answers_as_dominates() {
     // Pseudo-random graphs: a spine 0 -> 1 -> ... with extra forward, back and
     // cross edges, so the dominator tree has chains, joins, loops and
-    // irreducible parts, and a few extra edges on the longest spines so their
-    // chains outrun the walk the memo does not keep.  One memo per dominator
-    // answers every block, asked in two orders, the same as `dominates`.
+    // irreducible parts, and only a few extra edges on the longest spines so
+    // their chains outrun the plain walk.  One memo per dominator answers every
+    // block, asked in two orders, the same as `dominates`.  A walk bounded by
+    // `steps` answers the same or gives up, and always answers when the bound
+    // is the number of blocks.
     let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
     let mut next = |m: usize| {
         seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         (seed >> 33) as usize % m
     };
-    let mut kept = false;
+    let (mut kept, mut gave_up) = (false, false);
     for (n, extra) in [(2usize, 2usize), (5, 5), (9, 9), (17, 17), (40, 40), (64, 0), (90, 6)] {
         let (mut g, root, b) = build_graph(n);
         g.set_start_block(root, b[0]);
@@ -284,13 +286,21 @@ fn dominates_memo_answers_as_dominates() {
         for &top in &b {
             let mut memo = DominatesMemo::new(top);
             for &sub in b.iter().chain(b.iter().rev()) {
-                assert_eq!(g.dominates_memo(&mut memo, Some(sub)), g.dominates(top, Some(sub)));
+                let want = g.dominates(top, Some(sub));
+                assert_eq!(g.dominates_memo(&mut memo, Some(sub)), want);
+                for steps in [0, 1, DOMINATES_SHORT_WALK] {
+                    let got = g.dominates_within(top, Some(sub), steps);
+                    assert!(got.is_none_or(|a| a == want));
+                    gave_up |= got.is_none();
+                }
+                assert_eq!(g.dominates_within(top, Some(sub), n), Some(want));
             }
             assert!(!g.dominates_memo(&mut memo, None));
+            assert_eq!(g.dominates_within(top, None, 0), Some(false));
             kept |= !memo.known.is_empty();
         }
     }
-    assert!(kept);
+    assert!(kept && gave_up);
 }
 
 #[test]

@@ -44,7 +44,7 @@ use kuna_num::opcodes::OpCode;
 use crate::cover::{Cover, CoverPoint, PcodeOpSet};
 use crate::dtype::Datatype;
 use crate::expression::PcodeOpNode;
-use crate::block::DominatesMemo;
+use crate::block::{DominatesMemo, DOMINATES_SHORT_WALK};
 use crate::funcdata::{BlockTable, Funcdata};
 use crate::merge::{AddrTiedRange, HighGroupInfo, MergeContext, MergePieceId};
 use crate::context::{BlockId, HighVariableId, OpId, VarnodeId};
@@ -919,9 +919,9 @@ impl MergeContext for Funcdata {
     fn copy_pair_range(&self, dom_op: OpId, sub_op: OpId) -> Cover {
         self.build_copy_pair_range(dom_op, sub_op)
     }
-    /// (kuna) `checkCopyPair` over the pairs of one group, with the dominator
-    /// walks of each dominating COPY, the block table and the high's writes
-    /// shared across the pairs, and each range walked only until it meets a
+    /// (kuna) `checkCopyPair` over the pairs of one group, with the long
+    /// dominator walks of each dominating COPY, the block table and the high's
+    /// writes shared across the pairs, and each range walked only until it meets a
     /// write ([`Funcdata::copy_pair_crossed`]).  Nothing these read changes
     /// while the group is tested.
     fn redundant_copies(&self, high: HighVariableId, copy: &[OpId]) -> Vec<OpId> {
@@ -930,9 +930,15 @@ impl MergeContext for Funcdata {
         let mut writes: Option<(VarnodeId, BTreeMap<int4, Vec<CoverPoint>>)> = None;
         let marked = crate::merge::redundant_in_order(self, copy, |dom_op, sub_op| {
             let dom_bl = MergeContext::op_parent(self, dom_op);
-            let memo = doms.entry(dom_bl).or_insert_with(|| DominatesMemo::new(dom_bl));
             let sub_bl = MergeContext::op_parent(self, sub_op);
-            if !self.bblocks_ref().dominates_memo(memo, Some(sub_bl)) {
+            let graph = self.bblocks_ref();
+            let dominates = graph
+                .dominates_within(dom_bl, Some(sub_bl), DOMINATES_SHORT_WALK)
+                .unwrap_or_else(|| {
+                    let memo = doms.entry(dom_bl).or_insert_with(|| DominatesMemo::new(dom_bl));
+                    graph.dominates_memo(memo, Some(sub_bl))
+                });
+            if !dominates {
                 return false;
             }
             let in_vn = MergeContext::op_in(self, dom_op, 0).unwrap();

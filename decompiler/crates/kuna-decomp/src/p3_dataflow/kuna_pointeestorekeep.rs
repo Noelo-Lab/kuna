@@ -32,7 +32,7 @@ use std::collections::BTreeSet;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
-use crate::block::DominatesMemo;
+use crate::block::{DominatesMemo, DOMINATES_SHORT_WALK};
 use crate::context::{BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::varnode::Varnode;
@@ -277,9 +277,13 @@ impl Store {
 
     /// Does the store's block dominate `bl`?
     fn dominates(&mut self, data: &Funcdata, bl: BlockId) -> bool {
-        self.block
-            .as_mut()
-            .is_some_and(|(_, memo)| data.bblocks_ref().dominates_memo(memo, Some(bl)))
+        let Some((b, memo)) = self.block.as_mut() else {
+            return false;
+        };
+        let graph = data.bblocks_ref();
+        graph
+            .dominates_within(*b, Some(bl), DOMINATES_SHORT_WALK)
+            .unwrap_or_else(|| graph.dominates_memo(memo, Some(bl)))
     }
 
     /// Is `w` a value of the global from before the store: not the store's own,
