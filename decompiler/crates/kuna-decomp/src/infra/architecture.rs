@@ -753,6 +753,9 @@ pub struct Architecture {
     /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
     /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
     pub callsite_stack_args: bool,
+    /// (kuna) Take each prototype model's stack local/parameter ranges from the
+    /// compiler spec (default-on; upstream `ProtoModel::decode`).
+    pub proto_ranges: bool,
     /// (kuna) A stack-pointer scramble against a live value (MSVC's `/GS`
     /// cookie) does not open a local-alias escape site (option `cookiescramble`).
     pub cookie_scramble: bool,
@@ -2527,6 +2530,7 @@ impl Architecture {
             lowered_switch_exact: false,
             lowered_switch_every_head: false,
             callsite_stack_args: true,
+            proto_ranges: true,
             cookie_scramble: true,
             nul_terminator: false,
             end_ptr_bound: true,
@@ -2839,6 +2843,7 @@ impl Architecture {
         self.lowered_switch_every_head = true; // (kuna) DIV-184 default-on: a compare on the switch variable in front of an inlined switch no longer hides the cascade behind it; a cascade behind a later head must match its compare tree exactly
         self.lowered_switch_exact = true; // (kuna) DIV-183 default-on correctness fix: a re-rolled lowered switch labels every case value and is kept only when it routes every value and keeps every statement as its compare tree does
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
+        self.proto_ranges = true; // (kuna) protoranges default-on: the cspec's <localrange>/<input> stack ranges, as upstream ProtoModel::decode reads them (0/675 moved)
         self.mul_blob = true; // (kuna) mulblob default-on: an unsigned wide-multiply operand prints as the value it is, matching the signed form kuna already renders
         self.cast_object = true; // (kuna) option castobject default-on: a stack local whose address only fills declared int * parameters, whose readers agree, is declared int; evidence in docs/features/castobject/default-on-evaluation.md
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
@@ -3560,6 +3565,7 @@ impl Architecture {
         ctx.lowered_switch_exact = self.lowered_switch_exact; // loweredswitchexact
         ctx.lowered_switch_every_head = self.lowered_switch_every_head; // loweredswitchheads
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
+        ctx.proto_ranges = self.proto_ranges; // protoranges
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
         ctx.nul_terminator = self.nul_terminator; // nulterminator
         ctx.end_ptr_bound = self.end_ptr_bound; // endptrbound
@@ -5524,9 +5530,28 @@ impl Architecture {
         // `unaffected`, so heritage guards the stack pointer across every call and
         // the whole stack frame is skewed by the unmodeled extrapop.
         let mut saw_retaddr = false;
+        let stackspc = self.manage().get_stack_space().cloned();
+        let mut localrange: Option<kuna_base::address::RangeList> = None;
+        let mut paramrange = kuna_base::address::RangeList::new();
         for child in proto.get_children().iter() {
             match child.get_name() {
-                "input" => self.decode_pentry_list(child, &mut model, true)?,
+                "input" => {
+                    self.decode_pentry_list(child, &mut model, true)?;
+                    if let Some(spc) = &stackspc {
+                        model.input().get_range_list(spc, &mut paramrange);
+                    }
+                }
+                "localrange" => {
+                    let ranges = localrange.get_or_insert_with(kuna_base::address::RangeList::new);
+                    for (spc, first, last) in self.decode_proto_ranges(child)? {
+                        ranges.insert_range(spc, first, last);
+                    }
+                }
+                "paramrange" => {
+                    for (spc, first, last) in self.decode_proto_ranges(child)? {
+                        paramrange.insert_range(spc, first, last);
+                    }
+                }
                 "output" => self.decode_pentry_list(child, &mut model, false)?,
                 // else if (subId == ELEM_UNAFFECTED) { ... effectlist.back().decode(unaffected) }
                 "unaffected" => {
@@ -5551,6 +5576,14 @@ impl Architecture {
                 _ => {}
             }
         }
+        // C++ `ProtoModel::decode` tail: a spec that states its ranges replaces
+        // `defaultLocalRange`/`defaultParamRange`.
+        if let Some(ranges) = localrange {
+            model.set_local_range(ranges);
+        }
+        if !paramrange.empty() {
+            model.set_param_range(paramrange);
+        }
         // `glb->defaultReturnAddr` is decoded from the cspec's top-level
         // <returnaddress> (C++ Architecture::parseExtraRules / decode); parse that
         // root element directly here so the per-call retaddr store is modeled even
@@ -5574,6 +5607,27 @@ impl Architecture {
             self.translate.probe_register_varnode(nm)
         });
         Ok(model)
+    }
+
+    /// The `<range>` children of a prototype's `<localrange>`/`<paramrange>`
+    /// (C++ `Range::decode`), resolved to `(space, first, last)`.
+    fn decode_proto_ranges(
+        &self,
+        block: &Rc<kuna_base::xml::Element>,
+    ) -> KunaResult<Vec<(Rc<AddrSpace>, uintb, uintb)>> {
+        use kuna_base::address::{Range, RangeProperties};
+        use kuna_base::marshal::{IdRegistry, XmlDecode};
+        let manager = self.translate.manager_rc();
+        let registry = IdRegistry::with_base_ids();
+        let mut out = Vec::new();
+        for child in block.get_children().iter().filter(|c| c.get_name() == "range") {
+            let mut decoder = XmlDecode::new_with_root(&manager, &registry, child, 0);
+            let mut props = RangeProperties::new();
+            props.decode(&mut decoder)?;
+            let range = Range::from_properties(&props, self.manage())?;
+            out.push((Rc::clone(range.get_space()), range.get_first(), range.get_last()));
+        }
+        Ok(out)
     }
 
     /// Decode every *named* prototype model the compiler spec declares, in

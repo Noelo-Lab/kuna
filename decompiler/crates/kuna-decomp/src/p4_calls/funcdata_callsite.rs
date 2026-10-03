@@ -138,7 +138,7 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
             } else if crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range(
                 data.get_arch().callsite_stack_args,
-                data.get_func_proto().get_local_range(),
+                data.get_func_proto().local_range(data.get_arch().proto_ranges),
                 &vn_space,
                 vn_offset,
                 &trial_addr,

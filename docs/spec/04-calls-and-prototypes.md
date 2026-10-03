@@ -229,6 +229,21 @@ list carries a `pointermax` attribute, and the
 blocks — and registers the result as the default model
 (`Architecture::register_model`).
 
+The model's stack ranges come from the spec too, as upstream `ProtoModel::decode`
+takes them (`option protoranges`, default on, §6.2): the parameter range is every stack `<pentry>` of `<input>` plus any
+`<paramrange>`, and the local range is the `<localrange>` element
+(`decompiler/crates/kuna-decomp/src/infra/architecture.rs (decode_proto_ranges)`).
+Only a spec that states neither keeps `defaultParamRange` (stack 0..511) and
+`defaultLocalRange` (the million bytes below the return address). The
+difference is visible: x86-64-win.cspec declares the caller-allocated home
+area (stack 8..39) a local range and its stack parameters as starting at 40,
+and the default parameter range swallowed the home area, so no local was ever
+mapped over a home slot. A value MSVC spills into one and passes by reference
+printed as a store to one variable and a call on `&Stack0000000000000018`;
+with the spec's ranges it is the local array the stock decompiler prints. MIPS
+o32 says the same of its 0..15 register backup area, so a spill there that
+nothing reads is dead and no longer makes an unused argument a parameter.
+
 The spec's **named** models are registered alongside it, in document order
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs (decode_named_protos,
 decode_resolve_proto)`, mirroring the `<prototype>`/`<resolveprototype>`/

@@ -1112,6 +1112,38 @@ impl ScopeLocal {
         &self.name_recommend
     }
 
+    /// The address-tied arm of C++ `recoverNameRecommendationsForSymbols`
+    /// (`varmap.cc:1507`): a recommendation with no use point renames the
+    /// address-tied Symbol whose entry starts at the recommended address,
+    /// whatever its size, so a host's 8-byte local names the 16-byte array the
+    /// restructure built over the same slot.
+    pub fn recover_addrtied_name_recommendations(&mut self) {
+        let recs: Vec<(Address, int4, String)> = self
+            .name_recommend
+            .iter()
+            .filter(|r| r.useaddr.is_invalid())
+            .map(|r| (r.addr.clone(), r.size, r.name.clone()))
+            .collect();
+        for (addr, size, name) in recs {
+            let Some(eref) = self.db.find_overlap(self.scope, &addr, size) else { continue };
+            let entry = self.db.entry(self.scope, eref);
+            if *entry.get_addr() != addr {
+                continue;
+            }
+            let sym = entry.symbol;
+            let symbol = self.db.symbol(sym);
+            if (symbol.get_flags() & crate::varnode::varnode_flags::addrtied) == 0
+                || !symbol.is_name_undefined()
+            {
+                continue;
+            }
+            let unique = self.db.public_make_name_unique(self.scope, &name);
+            if self.db.rename_symbol(sym, &unique).is_ok() {
+                self.db.set_attribute(sym, crate::varnode::varnode_flags::namelock);
+            }
+        }
+    }
+
     /// C++ `ScopeLocal::addRecommendDynamic` (`varmap.cc:1595`): record a
     /// name recommendation for a DYNAMIC (hash-addressed) storage location.
     pub fn add_recommend_dynamic(&mut self, use_point: Address, hash: u64, name: &str) {

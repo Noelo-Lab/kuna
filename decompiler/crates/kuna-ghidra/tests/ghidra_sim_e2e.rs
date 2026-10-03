@@ -1471,6 +1471,8 @@ fn ghidra_sim_custom_large_return_with_no_formals_clears_hidden_input() {
 /// reference, survives a declared callee: the shape of every Qt
 /// `connect(sender, &Class::signal, ...)`, where Ghidra hands kuna a locked
 /// prototype for the PDB-typed callee and its own `local_res18` for the slot.
+/// The slot is a local the call reaches through its address, so the store and
+/// the argument name the same variable, as the stock decompiler prints them.
 #[test]
 fn ghidra_sim_home_slot_store_survives_a_declared_callee() {
     let binary = repo_root()
@@ -1507,6 +1509,6 @@ fn ghidra_sim_home_slot_store_survives_a_declared_callee() {
     });
     assert_structure(&run);
     let c = &run.docs[0].c_text;
-    assert!(c.contains("local_res18 = worker_proc;"), "the store into the home slot is gone:\n{c}");
-    assert!(c.contains("consume("), "{c}");
+    assert!(c.contains("local_res18[0] = worker_proc;"), "the store into the home slot is gone:\n{c}");
+    assert!(c.contains("consume(local_res18);"), "the call is not passed the slot by name:\n{c}");
 }

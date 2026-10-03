@@ -748,6 +748,18 @@ only when it names the variable's base. Name plus containment prevents a
 fragment from a neighbouring frame object from acquiring the array's lines while
 preserving aggregate and element uses.
 
+**Which offsets are frame (`option protoranges`, default on).** The local
+scope's window is the prototype's local range plus its parameter range, and
+`MapState` then clears the parameter range back out, so only the local range
+can hold a restructured symbol. Both ranges are the model's, read from the
+compiler spec (§4.1); with the option off they fall back to the defaults, under
+which the Win64 home area (stack 8..39) and the MIPS o32 backup area (0..15)
+are parameter space. There a home slot is never a local: its store and its
+escaping address print as two variables, `v1 = …; consume(&Stack0000000000000018)`.
+With the spec's ranges the escaping address makes the slot an open range up to
+the end of the home area, the `code *local_res18 [2]` the stock decompiler
+prints, and a spill there that nothing reads is a dead local store.
+
 **RangeHint gathering.** Each `mainloop` pass,
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionRestructureVarnode)` rebuilds the frame layout from scratch:
@@ -1215,6 +1227,14 @@ applies it in the `ActionNameVars` port
 storage + size wins the recommended name — the use-address selects the arm
 (invalid = address-tied whole, `entry-1` = a function input, else the defining
 write's address) — before both the container bind and the `vN` allocator.
+The address-tied arm is upstream's at the Symbol level too
+(`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
+(ScopeLocal::recover_addrtied_name_recommendations)`, run at the head of the
+naming pass): the address-tied Symbol whose entry starts at the recorded
+address is renamed whatever its size, and the per-high arm then defers to it.
+Ghidra records its 8-byte `local_res18` for a home slot the restructure maps
+as a 16-byte array; renaming only the 8-byte store's high split the store and
+the call's argument into two variables.
 A variable whose storage is a HASH rather than an address needs the parallel
 list: C++ keeps `dynRecommend` and re-applies it through
 `DynamicHash::findVarnode` (varmap.cc:1557-1573).  kuna ports that too
