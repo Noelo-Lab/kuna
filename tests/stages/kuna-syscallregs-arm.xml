@@ -45,7 +45,11 @@
     it.  Pass 2 (option syscallregs off) is the old model, and so is pass 3,
     the default `auto`: it acts only on an image the loader identified as a
     program for an operating system's user space, which a bare byte chunk is
-    not.  fence is the control: its barrier is a CALLOTHER too,
+    not.  rd_into_global is GH-856: it stores x + 7 to sink, asks read()
+    to overwrite sink with svc 0, reloads sink and returns (x + 7) * 5 + sink.
+    The on pass preserves both the store and the post-call load; off folds
+    the stale store into that load and incorrectly returns (x + 7) * 6.
+    fence is the control: its barrier is a CALLOTHER too,
     and nothing about it changes.
     discard throws the result away and returns 7; the kernel leaves r1 alone, so
     the argument in r1 still reaches the return, and a value the call reads as an
@@ -60,6 +64,8 @@
 5bf07ff51eff2fe180402de9802080e0010081e20470a0e30210a0e1000000ef
 0700a0e38080bde880402de9010080e2811081e00470a0e3000000ef8040bde8
 ffffffea1eff2fe1
+80402de9073081e224109fe50420a0e30370a0e301108fe0003081e5000000ef
+10109fe5030183e001109fe7000081e08080bde85c00000048000000
 </bytechunk>
 <symbol space="ram" offset="0x100000" name="pair"/>
 <symbol space="ram" offset="0x10001c" name="after"/>
@@ -67,8 +73,11 @@ ffffffea1eff2fe1
 <symbol space="ram" offset="0x100048" name="discard"/>
 <symbol space="ram" offset="0x100068" name="keep"/>
 <symbol space="ram" offset="0x100084" name="use2"/>
+<symbol space="ram" offset="0x100088" name="rd_into_global"/>
+<bytechunk space="ram" offset="0x100100" readonly="false">00000000</bytechunk>
 </binaryimage>
 <script>
+  <com>map addr r0x100100 int sink</com>
   <com>option syscallregs on</com>
   <com>lo fu pair</com>
   <com>decompile</com>
@@ -85,6 +94,10 @@ ffffffea1eff2fe1
   <com>lo fu keep</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option readonly on</com>
+  <com>lo fu rd_into_global</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option syscallregs off</com>
   <com>lo fu pair</com>
   <com>decompile</com>
@@ -99,6 +112,9 @@ ffffffea1eff2fe1
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rd_into_global</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option syscallregs auto</com>
@@ -118,4 +134,6 @@ ffffffea1eff2fe1
 <stringmatch name="SYSCALLREGS-ARM #9: with option syscallregs off discard returns its argument as the high half" min="1" max="1">return CONCAT44\(a0 \* 3,7\);</stringmatch>
 <stringmatch name="SYSCALLREGS-ARM #10: keep passes the svc result and the r1 it kept to use2" min="1" max="1">use2\(software_interrupt\(0,4,a0 \+ 1,a1 \* 3\),a1 \* 3\);</stringmatch>
 <stringmatch name="SYSCALLREGS-ARM #11: with option syscallregs off keep passes its own setup value as the result" min="1" max="1">use2\(a0 \+ 1,a1 \* 3\);</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #12: a system call may replace a global buffer" min="1" max="1">return sink \+ \(a1 \+ 7\) \* 5;</stringmatch>
+<stringmatch name="SYSCALLREGS-ARM #13: off keeps the stale global value" min="1" max="1">return \(a1 \+ 7\) \* 6;</stringmatch>
 </decompilertest>

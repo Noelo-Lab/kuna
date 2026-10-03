@@ -1520,6 +1520,7 @@ impl Heritage {
             // #1, No-for-loop alias #3), regressed-set empty.
             fl |= fd.query_local_properties(addr, size, &usepoint);
             self.guard_calls(fd, fl, addr, size, write);
+            crate::kuna_syscallregs::guard_memory(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
             // (kuna `indexaliasguard`) `Architecture::highPtrPossible`
             // (architecture.hh:408) is `space type != IPTR_INTERNAL &&

@@ -450,6 +450,56 @@ impl Action for ActionSyscallRegs {
     }
 }
 
+/// The enabled system calls whose opaque handlers may read or write memory.
+pub fn memory_calls(data: &Funcdata) -> Vec<OpId> {
+    if !data.get_arch().syscall_regs || data.get_arch().syscall_regs_userops.is_empty() {
+        return Vec::new();
+    }
+    data.obank()
+        .iter_code(OpCode::CPUI_CALLOTHER)
+        .filter(|&op| data.obank().get(op).is_some_and(|o| !o.is_dead()) && is_syscall(data, op))
+        .collect()
+}
+
+/// Guard writable memory across system calls using the same image policy as
+/// their register effects. Registers and unique temporaries remain unchanged.
+pub fn guard_memory(
+    data: &mut Funcdata,
+    flags: uint4,
+    addr: &Address,
+    size: int4,
+    write: &mut Vec<crate::context::VarnodeId>,
+) {
+    use crate::varnode::varnode_flags;
+    use kuna_base::space::spacetype;
+
+    if !data.get_arch().syscall_regs
+        || flags & varnode_flags::readonly != 0
+        || !addr.get_space().is_some_and(|s| {
+            s.get_type() == spacetype::IPTR_SPACEBASE
+                || data.get_arch().manage().get_default_data_space()
+                    .is_some_and(|ram| ram.get_index() == s.get_index())
+        })
+    {
+        return;
+    }
+    for op in memory_calls(data) {
+        let guard = data.new_indirect_op(op, addr, size, 0);
+        if let Some(input) = data.obank().get(guard).and_then(|o| o.get_in(0)) {
+            data.vbank_mut().get_mut(input)
+                .expect("syscall memory input").set_active_heritage();
+        }
+        if let Some(output) = data.obank().get(guard).and_then(|o| o.get_out()) {
+            let v = data.vbank_mut().get_mut(output).expect("syscall memory output");
+            v.set_active_heritage();
+            if flags & varnode_flags::addrtied != 0 {
+                v.set_addr_force();
+            }
+            write.push(output);
+        }
+    }
+}
+
 /// Does the rewritten system call `op` read `vn` as one of its registers?
 ///
 /// `Funcdata::only_op_use` asks this while it follows a trial's value forward.
