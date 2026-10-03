@@ -42,6 +42,8 @@ import { readFileSync } from 'node:fs';
 import { findChrome, launchChrome, openPage, openTab } from './cdp-client.mjs';
 import { requireDist, serveStatic, fixture, openSample } from './worker-harness.mjs';
 import { legacyKey } from '../decompile/persist.js';
+import { codeFrom, decodeCode, encodeCode } from '../decompile/collab/wire.js';
+import { crossesNetworks } from '../decompile/collab/sdp.js';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
@@ -62,6 +64,18 @@ const chrome = await launchChrome(chromePath, { flags });
 const chrome2 = await launchChrome(chromePath, { flags });
 const guard = setTimeout(() => { console.error('DECOMPILE2 COLLAB PAGE FAIL — timed out'); chrome.close(); chrome2.close(); process.exit(1); }, 2400000);
 const SAMPLE_HASH = 'sha256:' + createHash('sha256').update(readFileSync(fixture('sample.elf'))).digest('hex');
+
+/** Every RTCPeerConnection's ICE servers, in `window.__ice`. */
+const ICE_LOG = `(() => {
+  const Real = window.RTCPeerConnection;
+  window.__ice = [];
+  window.RTCPeerConnection = class extends Real {
+    constructor(config) {
+      window.__ice.push((config && config.iceServers) || []);
+      super(config);
+    }
+  };
+})();`;
 
 /** Worker answers arrive `window.__kunaDelay` ms late, so an engine request can be caught in flight; `__kunaWorkers` counts engine starts. */
 const DELAY_SHIM = `(() => {
@@ -1095,6 +1109,63 @@ try {
     assert.equal(await text(ana, '#vname'), 'sum_to', 'the view stays on the function Ana opened');
     assert.match(await ana.evaluate('location.hash'), /0x1161/);
     assert.match(await ben.evaluate(`document.querySelector('#d2roster .d2-who')?.title || ''`), /Ana: sum_to/, 'and the others see her there');
+  });
+  await test('Connect across the internet starts unticked, its ? says what it shares, and a guest follows the invite', async () => {
+    const CLOUDFLARE = [{ urls: 'stun:stun.cloudflare.com:3478' }];
+    const ana = await tab('Ana', { script: ICE_LOG });
+    await open(ana);
+    await example(ana);
+    await ana.click('#collabbtn');
+    await ana.waitFor(`document.querySelector('#d2collab input[name=across]')`, { what: 'the box' });
+    assert.equal(await ana.evaluate(`document.querySelector('#d2collab input[name=across]').checked`), false, 'unticked at first');
+    assert.equal(await text(ana, '#d2collab .cb-check label'), 'Connect across the internet');
+    assert.equal(await text(ana, '#d2collab .cb-q'), '?');
+    const why = `getComputedStyle(document.getElementById('cbacrosswhy')).display`;
+    assert.equal(await ana.evaluate(why), 'none', 'the explanation waits for the ?');
+    await ana.evaluate(`document.querySelector('#d2collab .cb-q').focus(); true`);
+    assert.equal(await ana.evaluate(why), 'block', 'the ? shows it (on hover, or focused)');
+    assert.match(await text(ana, '#cbacrosswhy'), /Cloudflare's STUN server, which only tells each browser its internet \(IP\) address.*None of your data passes through it/);
+    const local = await inviteLink(ana, 'Ana');
+    assert.deepEqual(await ana.evaluate('window.__ice.at(-1)'), [], 'unticked: no STUN server');
+    const localInv = await decodeCode(codeFrom(local, 'invite'), 'invite');
+    assert.equal(crossesNetworks(localInv.d), false, 'and no internet address in the link');
+    assert.equal(JSON.parse(await ana.evaluate(`localStorage.getItem('kuna.d2.collab')`)).stun, undefined, 'the setting stays unset');
+
+    await ana.click('#d2collab [data-act=leave]');
+    await ana.click('#collabbtn');
+    await ana.waitFor(`document.querySelector('#d2collab input[name=across]')`, { what: 'the box again' });
+    await ana.click('#d2collab input[name=across]');
+    const wide = await inviteLink(ana, 'Ana');
+    assert.notEqual(wide, local);
+    assert.deepEqual(await ana.evaluate('window.__ice.at(-1)'), CLOUDFLARE, 'ticked: Cloudflare\'s STUN server');
+    assert.equal(JSON.parse(await ana.evaluate(`localStorage.getItem('kuna.d2.collab')`)).stun, true, 'and the choice is kept');
+    await ana.click('#d2collab [data-act=invite]');
+    await ana.waitFor(`document.querySelector('#d2collab [data-copytext]')?.value !== ${JSON.stringify(wide)}`, { what: 'another link' });
+    assert.deepEqual(await ana.evaluate('window.__ice.at(-1)'), CLOUDFLARE, 'the session\'s later links too');
+    await ana.click('#d2collab [data-act=leave]');
+    await ana.click('#collabbtn');
+    await ana.waitFor(`document.querySelector('#d2collab input[name=across]')`, { what: 'the box, remembered' });
+    assert.equal(await ana.evaluate(`document.querySelector('#d2collab input[name=across]').checked`), true, 'ticked next time');
+
+    // The guest's page reads the choice from the link: one with an internet address is answered with STUN too.
+    // This machine may have no NAT (then no STUN-learned address), so the link gets one; the host addresses still connect.
+    const link = await inviteLink(ana, 'Ana');
+    const inv = await decodeCode(codeFrom(link, 'invite'), 'invite');
+    const { ok: _, ...fields } = inv;
+    if (!crossesNetworks(fields.d)) fields.d = { ...fields.d, c: [...fields.d.c, '203.0.113.9 50000 su 1677729535'] };
+    delete fields.v;
+    delete fields.k;
+    const guestLink = link.replace(/#join=.*/, `#join=${await encodeCode('invite', fields)}`);
+    const ben = await tab('Ben', { other: true, script: ICE_LOG });
+    await open(ben);
+    await ben.navigate(guestLink);
+    await ben.waitFor(`document.querySelector('#d2collab form[data-form=join]')`, { what: 'Ben\'s join dialog' });
+    assert.match(await text(ben, '#d2collab'), /This link connects across the internet: joining shares your internet \(IP\) address with Ana\./);
+    assert.equal(await ben.evaluate(`!!document.querySelector('#d2collab input[name=across]')`), false, 'a guest has no box: the invite decides');
+    await nameAndGo(ben, 'Ben');
+    await carryReply(ana, ben);
+    await joinedBoth(ana, ben);
+    assert.deepEqual(await ben.evaluate('window.__ice[0]'), CLOUDFLARE, 'Ben answered with STUN, though his own setting is off');
   });
 } finally {
   clearTimeout(guard);

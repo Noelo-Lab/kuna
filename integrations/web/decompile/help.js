@@ -71,7 +71,7 @@ export function helpHtml() {
     '<p>Pick a function on the left. To find text such as a flag or a password prompt, switch the list to <b>Strings</b>, search, and click a function under a string to go to the code that uses it. Click a line of code to see the assembly it becomes; click a name to learn about it, and double-click to rename it. Turn on <b>Show hints</b> for tips and for cards that explain what the pointer rests on. Your changes are kept in this browser.</p>' +
     `<h3>Keyboard</h3><table>${rows(TOP_KEYS)}</table>` +
     `<details id="helpall"><summary>All shortcuts</summary><table>${rows(KEYS)}</table></details>` +
-    '<h3>Working together</h3><p><b>Collaborate</b> makes an invite link. The person who opens it sends you a reply link; open it and you are in the same session: you see each other\'s changes and pointers, and anyone can change anything. Alt+click a line (or press <kbd>p</kbd>) to point the others to it.</p>' +
+    '<h3>Working together</h3><p><b>Collaborate</b> makes an invite link. The person who opens it sends you a reply link; open it and you are in the same session: you see each other\'s changes and pointers, and anyone can change anything. For people on another network, tick <b>Connect across the internet</b> before making the link. Alt+click a line (or press <kbd>p</kbd>) to point the others to it.</p>' +
     '<h3>Words you\'ll see</h3><dl>' + GLOSSARY.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>' +
     '<details><summary>What the colours mean</summary><dl>' +
     LEGEND.map(([c, v]) => `<dt><span class="d2sw" style="background:${c}"></span></dt><dd>${v}</dd>`).join('') + '</dl></details>' +
