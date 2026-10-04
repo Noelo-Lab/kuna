@@ -199,6 +199,12 @@ jobs:
       || contains(github.event.pull_request.labels.*.name, 'full-ci')
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    # Full debug information across the test executables can fill the runner disk.
+    # Keep backtrace line numbers and the workspace's debug/overflow checks.
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v4
 
@@ -210,7 +216,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: decompiler
-          key: rust-test
+          key: rust-test-line-tables
 
       # Missing or unusable required processor specs fail the tests.
       - name: Compile the SLEIGH specs
@@ -227,4 +233,14 @@ jobs:
           fi
 
       - name: make rust-test -- the full cargo workspace suite
-        run: make rust-test
+        run: |
+          df -h .
+          make rust-test
+
+      - name: Workspace build disk usage
+        if: always()
+        run: |
+          df -h .
+          if [ -d decompiler/target ]; then
+            du -sh decompiler/target
+          fi
