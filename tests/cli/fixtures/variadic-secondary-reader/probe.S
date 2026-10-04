@@ -187,3 +187,51 @@ render_with_flag:
     movq %r8,%rax
     ret
 .size render_with_flag,.-render_with_flag
+
+.section .rodata
+format_two: .asciz "%i %i"
+.text
+.macro gap name,clobbered=0
+.globl \name
+.type \name,@function
+\name:
+    subq $40,%rsp
+    .if \clobbered
+    call clobber
+    .endif
+    movl (%rcx),%r8d
+    addl $1,%r8d
+    movl %r8d,(%rcx)
+    leaq format_two(%rip),%rcx
+    call render_two
+    addq $40,%rsp
+    ret
+.size \name,.-\name
+.endm
+gap caller_gap
+gap caller_gap_clobbered,1
+
+.globl caller_stored_two
+.type caller_stored_two,@function
+caller_stored_two:
+    subq $40,%rsp
+    movl (%rcx),%edx
+    addl $1,%edx
+    movl %edx,(%rcx)
+    movl 4(%rcx),%r8d
+    addl $2,%r8d
+    movl %r8d,4(%rcx)
+    leaq format_two(%rip),%rcx
+    call render_two
+    addq $40,%rsp
+    ret
+.size caller_stored_two,.-caller_stored_two
+.globl render_two
+.type render_two,@function
+render_two:
+    movl %r8d,%eax
+    shlq $32,%rax
+    movl %edx,%edx
+    orq %rdx,%rax
+    ret
+.size render_two,.-render_two

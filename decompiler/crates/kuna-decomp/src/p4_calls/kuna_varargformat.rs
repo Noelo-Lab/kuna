@@ -241,7 +241,8 @@ fn defined_bytes(
 }
 
 /// Keep a defined existing register trial consumed by the format, at the
-/// format's promoted width. A clobber or undeclared live-in is not a value.
+/// format's promoted width. Earlier consumed slots must also be defined, so
+/// filling a parameter gap cannot introduce an unknown value.
 pub(crate) fn activate_trial(
     data: &mut Funcdata,
     idx: int4,
@@ -265,7 +266,7 @@ pub(crate) fn activate_trial(
     {
         return false;
     }
-    let Some(arg) = args.iter().find(|a| {
+    let Some((position, arg)) = args.iter().enumerate().find(|(_, a)| {
         addr.justified_contain(
             size,
             &a.addr,
@@ -285,6 +286,39 @@ pub(crate) fn activate_trial(
     let Some(vn) = data.obank().get(op).and_then(|o| o.get_in(slot)) else {
         return false;
     };
+    for preceding in &args[..position] {
+        let Some(ty) = preceding.type_.as_ref() else {
+            return false;
+        };
+        let preceding_width = ty.get_size();
+        let index = fc
+            .active_input()
+            .which_trial(&preceding.addr, preceding_width);
+        if index < 0 {
+            return false;
+        }
+        let previous = fc.active_input().get_trial(index);
+        if previous.is_definitely_not_used()
+            || previous.get_address().justified_contain(
+                previous.get_size(),
+                &preceding.addr,
+                preceding_width,
+                false,
+            ) != 0
+        {
+            return false;
+        }
+        let Some(value) = data
+            .obank()
+            .get(op)
+            .and_then(|o| o.get_in(previous.get_slot()))
+        else {
+            return false;
+        };
+        if !defined_bytes(data, value, 0, preceding_width, 0, &mut 64) {
+            return false;
+        }
+    }
     let (cond, killed) = (trial.has_cond_exe_effect(), trial.is_killed_by_call());
     let mut ancestry = None;
     if !defined_bytes(data, vn, 0, width, 0, &mut 64) {

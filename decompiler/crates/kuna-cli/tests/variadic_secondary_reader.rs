@@ -4,7 +4,7 @@ mod common;
 use common::process;
 use std::process::Command;
 
-const NAMES: [&str; 15] = [
+const NAMES: [&str; 18] = [
     "caller_integer",
     "caller_stored_integer",
     "caller_computed_integer",
@@ -20,6 +20,9 @@ const NAMES: [&str; 15] = [
     "caller_scanf_control",
     "caller_partial_unknown",
     "caller_moved_narrow",
+    "caller_gap",
+    "caller_gap_clobbered",
+    "caller_stored_two",
 ];
 
 fn function<'a>(text: &'a str, name: &str) -> &'a str {
@@ -58,6 +61,10 @@ fn decompile(binary: &std::path::Path, enabled: bool) -> String {
     cmd.args([
         "--assert",
         "prototype scanflike unsigned long long MSABI scanflike(const char *format,...)",
+    ]);
+    cmd.args([
+        "--assert",
+        "prototype render_two unsigned long long MSABI render_two(const char *format,...)",
     ]);
     cmd.args(["--assert", "prototype render_with_flag unsigned long long MSABI render_with_flag(int flag,const char *format,...)"]);
     for name in NAMES {
@@ -130,6 +137,10 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
             "{name}:\n{on}"
         );
     }
+    assert!(
+        function(&on, "caller_stored_two").contains("render_two(\"%i %i\","),
+        "{on}"
+    );
     for name in ["caller_integer", "caller_computed_integer"] {
         assert_eq!(function(&on, name), function(&off, name), "{name}");
     }
@@ -145,6 +156,8 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
         "caller_scanf_control",
         "caller_partial_unknown",
         "caller_moved_narrow",
+        "caller_gap",
+        "caller_gap_clobbered",
     ] {
         assert_eq!(
             function(&on, name),
@@ -167,6 +180,7 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
         "caller_stored_integer",
         "caller_computed_integer",
         "caller_stored_extra",
+        "caller_stored_two",
     ]
     .iter()
     .map(|name| function(&on, name))
@@ -187,6 +201,14 @@ unsigned long long render_value(const char *format,...) {{
     va_end(ap);
     return value;
 }}
+unsigned long long render_two(const char *format,...) {{
+    va_list ap;
+    va_start(ap,format);
+    unsigned int first = va_arg(ap,int);
+    unsigned int second = va_arg(ap,int);
+    va_end(ap);
+    return ((uint64_t)second << 32) | first;
+}}
 {printed}
 int main(void) {{
     const int values[] = {{INT_MIN,-123,-1,0,1,99,INT_MAX-1}};
@@ -198,6 +220,9 @@ int main(void) {{
         if (caller_computed_integer(&x) != (unsigned)(x+1) || x != values[i]) return 3;
         int pair[2] = {{x,7}};
         if (caller_stored_extra(pair) != (unsigned)(x+1) || pair[0] != x+1 || pair[1] != 9) return 4;
+        int two[2] = {{x,-123}};
+        uint64_t packed = ((uint64_t)(uint32_t)-121 << 32) | (uint32_t)(x+1);
+        if (caller_stored_two(two) != packed || two[0] != x+1 || two[1] != -121) return 5;
     }}
     return 0;
 }}

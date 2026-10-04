@@ -5,6 +5,7 @@ extern uint64_t __attribute__((ms_abi)) caller_integer(int);
 extern uint64_t __attribute__((ms_abi)) caller_stored_integer(int *);
 extern uint64_t __attribute__((ms_abi)) caller_computed_integer(int *);
 extern uint64_t __attribute__((ms_abi)) caller_stored_extra(int *);
+extern uint64_t __attribute__((ms_abi)) caller_stored_two(int *);
 int main(void) {
     const int values[] = {INT_MIN, -123, -1, 0, 1, 99, INT_MAX - 1};
     for (unsigned i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
@@ -15,6 +16,9 @@ int main(void) {
         if (caller_computed_integer(&x) != (uint32_t)(x + 1) || x != values[i]) return 3;
         int pair[] = {x, 7};
         if (caller_stored_extra(pair) != (uint32_t)(x + 1) || pair[0] != x + 1 || pair[1] != 9) return 4;
+        int two[] = {x, -123};
+        uint64_t packed = ((uint64_t)(uint32_t)-121 << 32) | (uint32_t)(x + 1);
+        if (caller_stored_two(two) != packed || two[0] != x + 1 || two[1] != -121) return 5;
     }
     puts("native reference passed");
     return 0;

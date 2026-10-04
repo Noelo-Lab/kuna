@@ -4239,9 +4239,15 @@ and declared call returns provide defined values; undeclared input bytes decline
 the proof. The walk stops after sixteen levels or sixty-four visited nodes.
 A declared byte alone does not prove the other bytes of an integer. Assignments
 with hidden or indirect parameter pieces are declined. The ancestor flags and
-conditional execution recheck are preserved. The trial shrinks to the promoted integer width and is marked active, so a store of
+conditional execution recheck are preserved. The trial shrinks to the promoted
+integer width and is marked active, so a store of
 `*value + 1` does not hide the same value in EDX at `render_value("%i", ...)`.
-No register past the format's argument list is supplied; an undeclared live-in
+Before activating a later argument, the consumed bytes of every preceding
+format-assigned trial must also be defined. A missing or definitely unused
+predecessor declines the proof, including a trial replaced by a synthetic zero.
+This prevents parameter hole filling from inventing an uninitialized earlier
+argument. No register past the format's argument list is supplied; an undeclared
+live-in
 or call clobber is not supplied either. Computed and loaded values do not need
 a declared caller prototype on this path. A dynamic, writable or unsupported
 format leaves the exclusive-reader rule unchanged. The dynamic-format upper
