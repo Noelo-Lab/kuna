@@ -214,7 +214,6 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
             )
         } {
             data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
-        } else if crate::p4_calls::kuna_varargformat::activate_trial(data, idx, i, &format_arguments) {
         } else if {
             let t = data.get_call_specs(idx).active_input().get_trial(i);
             (t.get_size() == 8 && counted.contains(t.get_address()))
@@ -263,9 +262,14 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                     {
                         data.get_call_specs_mut(idx).get_active_input().mark_needs_final_check();
                     }
-                } else {
+                } else if !crate::p4_calls::kuna_varargformat::activate_trial(
+                    data, idx, i, &format_arguments,
+                ) {
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
                 }
+            } else if crate::p4_calls::kuna_varargformat::activate_trial(
+                data, idx, i, &format_arguments,
+            ) {
             } else if vn_is_input {
                 // Not likely a parameter but maybe
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();

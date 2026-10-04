@@ -4223,9 +4223,11 @@ through the call's model with its variadic slot preserved. This is storage
 evidence for each consumed argument, not a conversion count applied to every
 register class.
 
-`kuna_varargformat::activate_trial` matches only an existing processor-register
-trial containing that assigned argument. Its value must have realistic defined
-ancestry on every incoming path (the ancestor walk disallows a failing path)
+`kuna_varargformat::activate_trial` is a fallback after the existing declared-value
+and ancestor-use paths reject a trial. Arguments those paths already retain keep
+their original storage and scoring; format evidence does not renarrow them.
+It matches only an existing processor-register trial containing the assigned
+argument. Its value must have realistic defined ancestry on every incoming path (the ancestor walk disallows a failing path)
 or be a declared incoming parameter/return on the terms above. The declaration
 must cover the actual incoming value at its source storage and the entire
 promoted width, even if the value now feeds a different argument register.

@@ -130,6 +130,9 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
             "{name}:\n{on}"
         );
     }
+    for name in ["caller_integer", "caller_computed_integer"] {
+        assert_eq!(function(&on, name), function(&off, name), "{name}");
+    }
     for name in [
         "caller_stored_unused",
         "caller_stored_malformed",
