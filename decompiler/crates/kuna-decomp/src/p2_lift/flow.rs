@@ -2118,6 +2118,16 @@ truncating the fall-through here"
             }
             let backaddr = self.addrlist.last().expect("fallthru: addrlist back").clone();
             if bound <= backaddr {
+                if bound == backaddr
+                    && (bound != self.eaddr || self.seen_instruction(&backaddr))
+                {
+                    if startbasic {
+                        let op = self.target(&backaddr)?;
+                        self.op_mark_start_basic(op);
+                    }
+                    self.addrlist.pop();
+                    break;
+                }
                 if bound == self.eaddr {
                     if backaddr <= self.eaddr {
                         // (kuna) `eaddr` is the last IN-BODY byte, so an
@@ -2137,15 +2147,6 @@ truncating the fall-through here"
                     self.unprocessed.push(backaddr);
                     self.addrlist.pop();
                     return Ok(());
-                }
-                if bound == backaddr {
-                    // Hit the bound exactly.
-                    if startbasic {
-                        let op = self.target(&backaddr)?;
-                        self.op_mark_start_basic(op);
-                    }
-                    self.addrlist.pop();
-                    break;
                 }
                 if !self.set_fallthru_bound(&mut bound)? {
                     return Ok(()); // Reset bound
