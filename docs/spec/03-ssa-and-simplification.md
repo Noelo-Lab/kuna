@@ -267,9 +267,11 @@ Under `option calleepreserves` the call guard consults the callee's own
 instructions instead. The evidence is the bounded body walk chapter 04 already
 takes for the call-output seam (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_rustabi.rs
 (probe_callee_return_writes)`): from the callee's entry it follows fall-through
-and resolved machine branch targets, ends a path at a `RETURN`, and declares
-itself *incomplete* — proving nothing — at a nested call, an unresolved
-`BRANCHIND`, an undecodable instruction, or its instruction budget. A complete
+and resolved machine branch targets, ends a path at a `RETURN` or an
+unconditional direct call with the same known no-return contract used by flow
+construction, and declares itself *incomplete* — proving nothing — at a
+returning or unknown nested call, an unresolved `BRANCHIND`, an undecodable
+instruction, or its instruction budget. A complete
 walk that records no write to the range downgrades *killed by call* to
 *unaffected* for that one call, so no INDIRECT is planted and the caller's value
 flows across (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepreserves.rs

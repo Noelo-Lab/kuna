@@ -2959,11 +2959,17 @@ different predicate over the three pieces of evidence a call site actually has:
    distinct non-overlapping registers, and the payload half has a descendant.
 3. **The callee's body** — `probe_callee_return_writes` decodes the resolved
    direct callee, bounded, following fall-through and resolved machine branches
-   until every path reaches a `RETURN`, and records the processor-space writes it
-   observes. A nested call, an unresolved indirect branch, an undecodable
-   instruction or the instruction budget makes the summary *incomplete*, which
-   proves nothing. On a complete summary that never touches the payload
-   register, the caller's read is a clobber and the pair is **vetoed**.
+   until each path reaches a `RETURN` or a direct call known to never return,
+   and records the processor-space writes it observes. The no-return query is
+   shared with flow construction (`kuna_calleenoreturn.rs (is_no_return)`), so
+   explicit marks, loader facts and enabled name rules have the same meaning.
+   The probe stops at that call without decoding its callee or fall-through.
+   A returning or unknown nested call, an unresolved indirect branch, an
+   undecodable instruction or the instruction budget makes the summary
+   *incomplete*, which proves nothing. A p-code-relative branch in the call
+   instruction also makes the summary incomplete: a predicated call may be
+   skipped and does not establish terminal machine-level flow. On a complete
+   summary that never touches the payload register, the caller's read is a clobber and the pair is **vetoed**.
 
 Evidence 3 is the only one that looks at the callee and it is one-sided: it can
 refute a pair, never confirm one. So `ScalarPair` at the consumer means *no
@@ -2979,7 +2985,13 @@ per-function `ArchContext` the pipeline runs against carries the load image but
 no translator, so the callee's instructions cannot be read at the seam itself;
 the driver takes the probe once the flow build has produced the call specs, and
 caches it on the `Architecture` so each distinct callee body is decoded once per
-run rather than once per caller. Nothing is probed unless the rule is live.
+run rather than once per caller. Cached summaries retain the no-return verdict
+for each encountered direct call; reuse rechecks those facts and repeats the
+bounded decode if a verdict changed. Marking or unmarking a leaf therefore cannot
+reuse an absence claim made under a different flow contract. Writes recorded
+before a terminal call remain conservative veto evidence, and explicit call
+effect overrides still take precedence. No no-return fact is inferred from a
+void declaration. Nothing is probed unless the rule is live.
 
 When the classification says `ScalarPair`, `build_call_output_pair` completes the
 stubbed multi-trial branch: the CALL gains the `join`-space output covering both

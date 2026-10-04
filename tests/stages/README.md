@@ -199,3 +199,11 @@ command must fail; success is a file error. Unexpected errors still abort.
 Output and expected diagnostics remain matchable if the script closes its
 output redirect; capturing them does not reopen it.
 Use direct commands rather than nested `source` scripts with this attribute.
+
+`kuna-calleeretpreserves.xml` also covers a declared-void direct helper with a
+terminal failure call: marking and unmarking the leaf refreshes the cached body
+summary. With general `calleepreserves` disabled to isolate the return rule,
+the `calleeretpreserves off` pass restores the undefined return.
+`kuna-cli/tests/direct_call_return.rs` checks native and recompiled emitted C
+at `-O0` and `-O2`, real return-register writes, unknown returning calls and an
+incomplete helper. These are authored MSABI probes in an ELF container.

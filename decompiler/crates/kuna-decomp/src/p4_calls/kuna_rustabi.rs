@@ -143,7 +143,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
-use kuna_base::space::VarnodeStorage;
+use kuna_base::space::{spacetype, VarnodeStorage};
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
@@ -371,9 +371,9 @@ fn pair_pieces(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<(VarnodeId,
 /// The register writes a bounded decode of one callee body proves.
 ///
 /// Completeness is the load-bearing property: it says the walk
-/// reached a `RETURN` on every path it followed, inside the instruction budget,
-/// without meeting anything that could write an arbitrary register (a nested
-/// call, an unresolved indirect branch, an undecodable byte). Only then does an
+/// reached a `RETURN` or a known no-return direct call on every path it followed,
+/// inside the instruction budget, without meeting an unknown or returning nested
+/// call, an unresolved indirect branch, or an undecodable byte. Only then does an
 /// *absent* write mean the callee never performs it. An incomplete walk still
 /// retains positive writes and STORE spaces recovered before the unresolved
 /// edge; those facts remain valid even though absence no longer proves
@@ -392,6 +392,7 @@ pub struct CalleeReturnWrites {
     complete: bool,
     /// How many machine instructions the walk decoded.  One is a bare `ret`.
     instructions: u32,
+    call_facts: Vec<(Address, bool)>,
 }
 
 impl CalleeReturnWrites {
@@ -449,7 +450,7 @@ impl CalleeReturnWrites {
         store_spaces: Vec<int4>,
         complete: bool,
     ) -> Self {
-        CalleeReturnWrites { writes, store_spaces, complete, instructions: 2 }
+        CalleeReturnWrites { writes, store_spaces, complete, instructions: 2, call_facts: Vec::new() }
     }
 
     /// As [`from_parts`](Self::from_parts), with the decoded instruction count
@@ -461,7 +462,7 @@ impl CalleeReturnWrites {
         complete: bool,
         instructions: u32,
     ) -> Self {
-        CalleeReturnWrites { writes, store_spaces, complete, instructions }
+        CalleeReturnWrites { writes, store_spaces, complete, instructions, call_facts: Vec::new() }
     }
 }
 
@@ -485,6 +486,8 @@ struct ProbeEmit {
     store_spaces: Vec<int4>,
     targets: Vec<Address>,
     ends_flow: bool,
+    calls: Vec<Address>,
+    internal_branch: bool,
     unresolved: bool,
     /// The `swi` user-op id, when a Windows `int 0x29` is known to end the path
     /// (`option fastfailnoreturn`, the gate the flow builder already applies).
@@ -497,6 +500,20 @@ struct ProbeEmit {
 }
 
 impl ProbeEmit {
+    fn resolve_calls(&mut self, no_return: &impl Fn(&Address) -> bool) -> Vec<(Address, bool)> {
+        let mut facts = Vec::new();
+        for target in self.calls.drain(..) {
+            let terminal = no_return(&target);
+            facts.push((target, terminal));
+            if terminal && !self.internal_branch {
+                self.ends_flow = true;
+            } else {
+                self.unresolved = true;
+            }
+        }
+        facts
+    }
+
     /// The constant `v` holds: itself when it is one, or the value a `COPY`
     /// earlier in this instruction placed in it.
     fn const_value(&self, v: &kuna_num::pcoderaw::VarnodeData) -> Option<u64> {
@@ -592,9 +609,15 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
                     self.unresolved = true;
                 }
             }
-            // Anything else that transfers control to code the walk is not
-            // reading can write any register at all.
-            OpCode::CPUI_CALL | OpCode::CPUI_BRANCHIND => self.unresolved = true,
+            OpCode::CPUI_CALL => {
+                match vars.first().and_then(|v| v.space.as_ref()) {
+                    Some(sp) if sp.get_type() == spacetype::IPTR_PROCESSOR => {
+                        self.calls.push(Address::new(Rc::clone(sp), vars[0].offset));
+                    }
+                    _ => self.unresolved = true,
+                }
+            }
+            OpCode::CPUI_BRANCHIND => self.unresolved = true,
             OpCode::CPUI_RETURN => self.ends_flow = true,
             // The `<spaceid>` operand's offset IS the space-manager index
             // (`Varnode::getSpaceFromConst`).
@@ -609,7 +632,9 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
                     // The walk reads every op of the instruction regardless, so
                     // ignoring it over-approximates the writes -- the safe
                     // direction -- and must NOT end the machine-level flow.
-                    Some(sp) if sp.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT => {}
+                    Some(sp) if sp.get_type() == kuna_base::space::spacetype::IPTR_CONSTANT => {
+                        self.internal_branch = true;
+                    }
                     Some(sp) => {
                         self.targets.push(Address::new(Rc::clone(sp), vars[0].offset));
                         if opc == OpCode::CPUI_BRANCH {
@@ -629,8 +654,9 @@ impl kuna_sleigh::translate::PcodeEmit for ProbeEmit {
 /// and the IR at that seam cannot supply).
 ///
 /// The walk starts at `entry`, follows fall-through and resolved machine branch
-/// targets, and stops a path at a `RETURN`. It declares itself **incomplete**
-/// -- proving nothing -- on a nested call, an unresolved indirect branch, an
+/// targets, and stops a path at a `RETURN` or a known unconditional no-return
+/// direct call. It declares itself **incomplete** -- proving nothing -- on an
+/// unknown or returning nested call, an unresolved indirect branch, an
 /// undecodable instruction, or the instruction budget, because past any of those
 /// the callee could write any register. Positive register writes and STORE
 /// spaces recovered before that point are retained; only conclusions from their
@@ -639,12 +665,14 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
     tr: &T,
     entry: &Address,
     fastfail_swi: Option<u32>,
+    no_return: impl Fn(&Address) -> bool,
 ) -> CalleeReturnWrites {
     let mut res = CalleeReturnWrites {
         writes: Vec::new(),
         store_spaces: Vec::new(),
         complete: true,
         instructions: 0,
+        call_facts: Vec::new(),
     };
     let Some(entry_space) = entry.get_space() else {
         res.complete = false;
@@ -678,6 +706,7 @@ pub fn probe_callee_return_writes<T: kuna_sleigh::translate::Translate + ?Sized>
                 break;
             }
         };
+        res.call_facts.extend(emit.resolve_calls(&no_return));
         res.instructions += 1;
         res.writes.append(&mut emit.writes);
         for sp in emit.store_spaces.drain(..) {
@@ -823,8 +852,11 @@ pub fn seed_callee_write_probe(
     for e in entries {
         let Some(sp) = e.get_space() else { continue };
         let key = (sp.get_index(), e.get_offset());
-        if !arch.kuna_callee_write_cache.contains_key(&key) {
-            let probed = probe_callee_return_writes(arch.translate(), &e, fastfail_swi);
+        let no_return = |target: &Address| crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, target);
+        let reusable = arch.kuna_callee_write_cache.get(&key)
+            .is_some_and(|w| w.call_facts.iter().all(|(target, terminal)| no_return(target) == *terminal));
+        if !reusable {
+            let probed = probe_callee_return_writes(arch.translate(), &e, fastfail_swi, no_return);
             arch.kuna_callee_write_cache.insert(key, Rc::new(probed));
         }
         if let Some(w) = arch.kuna_callee_write_cache.get(&key) {
