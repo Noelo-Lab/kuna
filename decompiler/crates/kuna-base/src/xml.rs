@@ -1979,7 +1979,7 @@ mod tests {
         // and kuna-bejoin + kuna-bejoin-sparc + kuna-bejoin-sparc64 +
         // kuna-bejoin-mips + kuna-bejoin-avr / a two-register value is joined
         // in the ABI's order when its low word is returned on purpose
-        assert_eq!(count, 415, "corpus file count drifted");
+        assert_eq!(count, 416, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

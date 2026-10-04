@@ -188,7 +188,7 @@ fn verify_ub1_lookups_resolve_instead_of_crashing() {
     assert_eq!(get_opname(OpCode::CPUI_SPULL), "SPULL");
 }
 
-/// 2c. Replay the C++ `get_booleanflip` sweep over the whole enum.
+/// 2c. Replay the C++ sweep, except its unsafe ordered-float complements.
 #[test]
 fn verify_booleanflip_matches_cpp_oracle() {
     let mut rows = 0usize;
@@ -203,8 +203,13 @@ fn verify_booleanflip_matches_cpp_oracle() {
         let opc = OpCode::from_i32(raw).unwrap();
         let mut reorder = false; // the C++ harness passes reorder=false in
         let flip = get_booleanflip(opc, &mut reorder);
-        assert_eq!(flip as i32, cpp_flip, "flip of opcode {raw}");
-        assert_eq!(i32::from(reorder), cpp_reorder, "reorder of opcode {raw}");
+        if matches!(opc, OpCode::CPUI_FLOAT_LESS | OpCode::CPUI_FLOAT_LESSEQUAL) {
+            assert_eq!(flip, OpCode::CPUI_MAX);
+            assert!(!reorder);
+        } else {
+            assert_eq!(flip as i32, cpp_flip, "flip of opcode {raw}");
+            assert_eq!(i32::from(reorder), cpp_reorder, "reorder of opcode {raw}");
+        }
         rows += 1;
     }
     assert_eq!(rows, 73, "oracle bflip row count");
