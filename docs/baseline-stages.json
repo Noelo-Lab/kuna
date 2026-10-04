@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1905,
-    1905
+    1909,
+    1909
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -675,6 +675,10 @@
     "data:MAPPED-FLOW #5: the fall-through that ends exactly at the mapped end names its successor",
     "data:MAPPED-FLOW #6: the zero padding that is mapped is still lifted",
     "data:MAPPED-FLOW #7: the padding byte whose instruction runs past the mapped end is cut",
+    "data:MINSS #1: scalar selection includes unordered and equal operands",
+    "data:MINSS #2: upper ratio clamp includes unordered operands",
+    "data:MINSS #3: lower ratio clamp retains unordered operands",
+    "data:MINSS #4: unsafe ordered complements never appear",
     "data:MSVCFPCONST #1: off, both operands of _scale are opaque -- the undefined x87 COMDAT and the defined IEEE-double one alike",
     "data:MSVCFPCONST #2: off, both operands of _fscale are opaque too",
     "data:MSVCFPCONST #3: on, _scale reads pi/4 from the undefined 20-hex x87 name and 0.1 from the defined 16-hex IEEE double",

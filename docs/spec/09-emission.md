@@ -70,6 +70,18 @@ cast suppression. `FLOAT_INT2FLOAT`, `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` keep
 their numeric conversion behavior. The representation uses the target's
 ordinary 32-/64-bit integer and IEEE float storage widths.
 
+**Floating comparison negation.** `printc.rs (PrintC::check_print_negation)`
+uses the shared opcode complement table, which excludes ordered float
+comparisons. Negating `FLOAT_LESS` or `FLOAT_LESSEQUAL`, whether through a
+branch flip or `BOOL_NEGATE`, therefore prints `!(a < b)` or `!(a <= b)`.
+The printer must not absorb the negation into `>=` or `>`: those ordered
+comparisons are false on NaN, whereas the negated expressions are true.
+Integer comparisons and floating equality/inequality still use their
+complementary tokens. `tests/stages/kuna-minss-nan.xml` pins MINSS selection
+with defaults and `nanignore none`; the CLI regression compiles the printed C
+and checks its NaN payloads, signed zeros, finite values and infinities against
+the authored instructions.
+
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
 — a comparison against zero carries no information beyond the value's own

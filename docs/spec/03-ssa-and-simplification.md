@@ -809,6 +809,33 @@ takes `extra_pool_rules`); the engine currently always passes an empty list
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs
 (Architecture::build_action)`).
 
+**Ordered floating-point condition negation.** The shared
+`decompiler/crates/kuna-num/src/opcodes.rs (get_booleanflip)` table returns no
+single-opcode complement for `FLOAT_LESS` or `FLOAT_LESSEQUAL`: when either
+operand is NaN, both `a < b` and `b <= a` are false. Consequently
+`Funcdata::op_normalize_flip` leaves the branch flip in place and
+`RuleCondNegate` inserts an explicit `BOOL_NEGATE`; `RuleBoolNegate` cannot
+fold it back into a swapped ordered comparison. This preserves SSE MINSS's
+source selection on unordered and equal operands, including signed zero.
+Floating equality and inequality remain complements. This correctness rule
+applies regardless of `nanignore`, whose separate policy can still discard
+explicit NaN tests; `nanignore none` preserves their semantics.
+
+`kuna_floatnegation.rs (fold_guarded_negate)` preserves the compact ordered
+form when the expression itself excludes unordered inputs:
+`!(NAN(a) || NAN(b) || a <= b)` is exactly `b < a`. It requires a matching
+NaN guard for each operand, or a constant the processor's float format proves
+is not NaN. Same-width copies are followed when matching operands and proving
+constants. A less-than plus matching equality can supply the `<=` term.
+Missing or unrelated guards and extra boolean terms decline the fold. Only
+the consumer changes, so shared comparisons retain their meaning. A CBRANCH
+consuming the guarded expression receives a new complementary comparison and
+flips its condition flag, preserving both branch destinations.
+`RuleBoolNegate` applies this exact fold; `RuleIgnoreNan` also checks the
+bounded boolean fan-out first, before dropping guards could hide the proof.
+Thus ordinary UCOMISS conditions keep their ordered forms without granting
+an unguarded MINSS comparison a false complement.
+
 The upstream rule set is ported across eight files in C++ definition order —
 `ruleaction.cc` split at class boundaries. The map, by dominant theme (named
 rules are representative, not exhaustive; a rule's registration row in

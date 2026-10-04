@@ -139,6 +139,14 @@ writeup, not here.
 | `gh510-phiopflags.xml` | kuna [GH-510](https://github.com/Noelo-Lab/kuna/issues/510) (an 18 MB Windows PE: six functions produced no output at all, each one a `LOSS-131` record carrying `index out of bounds: the len is N but the index is N`) | P3 SSA construction, the op-property triple heritage caches on the ops it creates (`glb->inst[opc]`): the phi carries `special|marker|nocollapse` as upstream's `TypeOpMulti` does, so the raw-stack-pointer `PTRSUB(sp,#0)` placeholder is not spliced into a block's leading phi run and `ConditionalJoin::cutDownMultiequals` cannot stop short of a phi it has to cut; correctness fix, no option | default, single pass: 0 of 5 assertions pass pre-fix (the error stub `void scan_list(void)`), 5/5 post-fix |
 | `kuna-floatgrouping.xml` | kuna [GH-641](https://github.com/Noelo-Lab/kuna/issues/641) (two x86-64 functions multiplying the same three floats in opposite orders decompiled to the same C, because `CPUI_FLOAT_MULT`/`CPUI_FLOAT_ADD` pushed the associative integer `*`/`+` tokens and the printer dropped the parentheses around a same-token right operand; one of the two renderings computed a different value than the function it came from) | P9 emit, the operator-token table and the `parentheses` binary case: the two float opcodes get their own singletons carrying `left_to_right_only`, which leaves a same-token left operand bare and parenthesises a right one; correctness fix, no option | default, single pass: the right-grouped product and sum keep `a * (b * c)` / `a + (b + c)` and the flat chain matches exactly one function of each pair, where pre-fix it matched both |
 
+`kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.
+P3 and P9 preserve the negation of an ordered float comparison as `!(a < b)`
+so the source wins for NaN and equal operands. This is an unconditional
+correctness fix, exercised with defaults and `nanignore none`.
+`kuna-cli/tests/sse_minss_cli.rs` compiles the emitted bodies with GCC and Clang
+at `-O0` and `-O2` and checks NaN payloads, signed zeros and finite controls
+against the original assembly.
+
 `kuna-globalorder.xml` pins issue [#871](https://github.com/Noelo-Lab/kuna/issues/871)
 and case-local global stores at the `indexaliasguard global` default: a
 computed global update stays after an aliasing load, and a switch's stores

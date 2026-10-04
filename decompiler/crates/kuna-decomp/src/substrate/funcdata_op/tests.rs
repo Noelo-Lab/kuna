@@ -397,6 +397,31 @@ fn op_insert_end_no_branch_appends() {
 // --- boolean-flip list tracing ------------------------------------------------
 
 #[test]
+fn normalize_flip_preserves_unordered_float_conditions() {
+    for code in [OpCode::CPUI_FLOAT_LESS, OpCode::CPUI_FLOAT_LESSEQUAL] {
+        let mut fd = build_fd();
+        let compare = mk_op(&mut fd, 2, 0x100, code);
+        let a = mk_vn(&mut fd, 0x10);
+        let b = mk_vn(&mut fd, 0x20);
+        fd.op_set_input(compare, a, 0).unwrap();
+        fd.op_set_input(compare, b, 1).unwrap();
+        let condition = fd.new_unique_out(1, compare).unwrap();
+        let branch = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_CBRANCH);
+        let target = fd.new_constant(8, 0x200);
+        fd.op_set_input(branch, target, 0).unwrap();
+        fd.op_set_input(branch, condition, 1).unwrap();
+        fd.obank_mut().get_mut(branch).unwrap().set_flag(pcodeop_flags::boolean_flip);
+
+        assert!(!fd.op_normalize_flip(branch).unwrap());
+        let op = fd.obank().get(compare).unwrap();
+        assert_eq!(op.code(), code);
+        assert_eq!(op.get_in(0), Some(a));
+        assert_eq!(op.get_in(1), Some(b));
+        assert!(fd.obank().get(branch).unwrap().is_boolean_flip());
+    }
+}
+
+#[test]
 fn op_flip_in_place_test_int_equal_normalizes_to_one() {
     let mut fd = build_fd();
     let op = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_INT_EQUAL);

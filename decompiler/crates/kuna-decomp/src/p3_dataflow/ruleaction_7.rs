@@ -2350,6 +2350,9 @@ impl Rule for RuleIgnoreNan {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        if crate::kuna_floatnegation::fold_nan_consumers(data, op) {
+            return 1;
+        }
         if data.get_arch().nan_ignore_all {
             // Treat these NaN operation as always returning false (0)
             data.op_set_opcode(op, typeop_for(OpCode::CPUI_COPY));
