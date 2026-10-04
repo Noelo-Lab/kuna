@@ -58,8 +58,9 @@
 //! The claim is one-sided: it is the absence of a write on a walk that covered
 //! every path, and everything the walk cannot see makes it decline.
 //!
-//! * **A fully decoded, call-free callee only.** The probe declares itself
-//!   incomplete — proving nothing — at a nested `CALL`/`CALLIND`/`CALLOTHER`, an
+//! * **A fully decoded callee only.** The probe declares itself
+//!   incomplete — proving nothing — at a returning or unknown nested `CALL`,
+//!   any unresolved `CALLIND`/`CALLOTHER`, an
 //!   unresolved `BRANCHIND`, an undecodable instruction, or its instruction
 //!   budget. A PLT stub (`jmp [got]`) is a `BRANCHIND` and so is never narrowed,
 //!   which is what keeps every library call on the ABI's answer. Recursion is a
