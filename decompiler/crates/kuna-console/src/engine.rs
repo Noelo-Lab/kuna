@@ -2498,11 +2498,19 @@ impl ConsoleProgram {
         // (read off the pending split before it is consumed) — seed metadata the
         // deferred Listing build hands to the discovered-no-return consumer so it
         // skips already-modeled callees and seeds the fixpoint's terminal set.
-        let noreturn_seed_addrs: Vec<u64> = pending
+        let mut noreturn_seed_addrs: Vec<u64> = pending
             .iter()
             .filter(|(id, _)| analysis_pass_enabled(self.arch(), id))
             .flat_map(|(_, out)| out.noreturn.iter().map(|f| f.addr))
             .collect();
+        if self.arch().analysis_listing {
+            noreturn_seed_addrs.extend(self.function_entries().filter_map(|(_, addr)| {
+                self.arch()
+                    .symboltab
+                    .function_is_no_return_across_scopes(addr)
+                    .then_some(addr.get_offset())
+            }));
+        }
         // Filter by the per-pass enable flags (default-on, set by the user's
         // `--option <id> on|off`), then merge the survivors in pass order.
         let mut merged = kuna_analysis::pass::AnalysisOutput::default();
