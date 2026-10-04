@@ -1,0 +1,53 @@
+<decompilertest>
+<!--
+    Authored switch probe: tag 1 and unsigned tags above 3 reach the RET
+    shared with tag 3, which alone toggles the third byte. Before the fix,
+    declaring [0x401000,0x401039) makes only cases 0 and 2 print; the third-byte
+    store runs after the switch for tag 1 and out-of-range tags as well as tag 3.
+
+    P2 lift/flow strict correctness fix; no new option. A visited instruction
+    at the inclusive function end joins its existing block instead of being
+    decoded again in the last case. Both early-return edges retain the RET.
+    Both P8 structurers and returndup on/off must preserve case 3 (#1).
+    The CLI native round trip additionally checks all three byte writes,
+    duplicate return entries, separate RETs, signed guards and a post-switch
+    write. Bytes assembled from kuna-cli/tests/fixtures/switch_return_paths.S.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x401000" readonly="true">
+83fe0377334863c641b8000040008b1485
+002040004c01c2ffe2803f000f94c08807
+c3807f01000f94c0884701c3807f0200
+0f94c0884702c3
+</bytechunk>
+<bytechunk space="ram" offset="0x402000" readonly="true">
+1a10000038100000231000002e100000
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="toggle_dispatch"/>
+</binaryimage>
+<script>
+  <com>function bounds 0x401000 0x401039 as toggle_dispatch</com>
+  <com>parse line typedef struct ToggleFlags { bool first; bool second; bool last; } ToggleFlags;</com>
+  <com>parse line extern void toggle_dispatch(ToggleFlags *flags, unsigned int tag);</com>
+  <com>option regionstructure off</com>
+  <com>option returndup off</com>
+  <com>lo fu toggle_dispatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option returndup on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option regionstructure on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option returndup off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="switch-return-paths #1: tag 3 keeps its own case in all configurations" min="4" max="4">case 3:</stringmatch>
+<stringmatch name="switch-return-paths #2: first byte toggle" min="4" max="4">flags-&gt;first = flags-&gt;first == 0;</stringmatch>
+<stringmatch name="switch-return-paths #3: second byte toggle" min="4" max="4">flags-&gt;second = flags-&gt;second == 0;</stringmatch>
+<stringmatch name="switch-return-paths #4: third byte toggle stays inside case 3" min="4" max="4">case 3:
+      flags-&gt;last = flags-&gt;last == 0;</stringmatch>
+</decompilertest>

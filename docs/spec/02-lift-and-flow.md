@@ -87,6 +87,17 @@ route through `flow.rs (FlowInfo::handle_out_of_bounds)`, which under the defaul
 flow options continues rather than failing the decompile — `errorreinterpreted`-style
 hard failure needs `error_outofbounds`.
 
+When fall-through reaches an instruction already recorded in `visited`, it joins
+that instruction's existing block, including when the instruction starts exactly
+at the inclusive `eaddr`. Only an unseen instruction at `eaddr` is decoded as the
+last in-range instruction. Decoding a previously visited final `RET` again would
+replace its address-to-op record and make earlier return edges target the later
+predecessor's body. In a switch with a return-only entry and a last case sharing
+that `RET`, this incorrectly moves the last case's write after the switch and
+executes it for the return-only entry and out-of-range selectors as well.
+`tests/stages/kuna-switch-return-paths.xml` and the CLI native round trip pin
+this join across both structurers and the return-duplication settings.
+
 Continuing quietly would be the wrong contract for a *declared* bound, because the
 caller cannot otherwise tell a correct boundary from one that truncated the body:
 both just produce a shorter function. So the out-of-bounds handler emits the C++
