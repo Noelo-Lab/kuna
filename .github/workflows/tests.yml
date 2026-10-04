@@ -180,6 +180,11 @@ jobs:
 
   rust-test:
     name: cargo workspace suite
+    # Full debug information can exhaust the hosted runner's disk while linking.
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     # Runs on: every push to main, manual dispatch, any PR from a FORK, and any
     # PR carrying the `full-ci` label. It is skipped only for a PR from a branch
     # in this repo -- the automated agent PRs, where AGENTS.md already requires
