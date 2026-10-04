@@ -2021,6 +2021,21 @@ printer chose instead of by a hand-written varnode specifier. `linkSymbol`'s
 `assertions::carried_usepoint_symbols` carries it across the in-process surface's
 IR rebuild.
 
+A parameter edit also crosses the prototype store. The standalone engine keeps
+its parameter Symbol separate from its prototype entry, so replaying only the
+Symbol can leave the old name or type in the signature while the body reads an
+uninitialized local. `kuna_hightarget.rs (carried_parameter_maps)` matches locked
+parameter Symbols by category, slot and input storage, and carries their edited
+names and types through the existing parameter-map seed. When any parameter
+changes, the complete input list keeps its recovered slots, storage and parameter
+properties. The declared output and calling convention remain the original
+prototype's. Both the in-process second pass and the console rebuild consume
+these maps; the console retains them for subsequent decompiles. Ordinary local
+Symbols continue to use their scoped storage maps. Parameter Symbols are
+excluded from those generic maps: replaying one as a locked local can split it
+from the forced prototype input, leaving a branch condition or return reading
+an uninitialized local even when the signature carries the edited name.
+
 Three properties of that mapping are load-bearing, each measured on
 `sub_1005350` of the `graphy` VM:
 

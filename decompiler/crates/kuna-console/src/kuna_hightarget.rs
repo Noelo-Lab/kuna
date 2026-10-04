@@ -65,7 +65,57 @@ use kuna_decomp::context::HighVariableId;
 use kuna_decomp::database::{symbol_category, SymbolId};
 use kuna_decomp::dtype::Datatype;
 use kuna_decomp::funcdata::{DirectiveSymbol, Funcdata};
+use kuna_decomp::fspec::{parameter_pieces_flags, ParameterPieces};
 use kuna_decomp::varnode::varnode_flags;
+
+/// Carry edited parameter Symbols through the separate prototype store on an IR rebuild.
+/// The complete input list is needed to retain recovered slots when locking the inputs.
+pub fn carried_parameter_maps(fd: &Funcdata) -> Vec<(int4, String, ParameterPieces)> {
+    let Some(scope) = fd.get_scope_local() else { return Vec::new() };
+    let proto = fd.get_func_proto();
+    if !proto.has_store() {
+        return Vec::new();
+    }
+    let usepoint = &fd.get_address().clone() + -1;
+    let mut changed = false;
+    let mut maps = Vec::new();
+    for slot in 0..proto.num_params() {
+        let Some(param) = proto.get_param(slot) else { continue };
+        let addr = param.get_address();
+        let mut name = kuna_decomp::database::kuna_materialized_param_name(
+            fd.get_arch().name_style_angr, slot, param.get_name(),
+        );
+        let mut dtype = param.get_type().cloned();
+        if let Some(entry) = scope.query_container_for_link(&addr, &usepoint) {
+            let symbol = scope.database().symbol(entry.symbol);
+            if entry.category == symbol_category::FUNCTION_PARAMETER
+                && entry.entry_addr == addr
+                && symbol.get_category_index() as int4 == slot
+                && (symbol.flags & (varnode_flags::namelock | varnode_flags::typelock)) != 0
+            {
+                changed |= symbol.name != name
+                    || match (&dtype, &symbol.dtype) {
+                        (Some(a), Some(b)) => !Rc::ptr_eq(a, b),
+                        _ => false,
+                    };
+                name = symbol.name.clone();
+                dtype = symbol.dtype.clone();
+            }
+        }
+        let mut flags = parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK;
+        for (present, flag) in [
+            (param.is_size_type_locked(), parameter_pieces_flags::SIZELOCK),
+            (param.is_this_pointer(), parameter_pieces_flags::ISTHIS),
+            (param.is_indirect_storage(), parameter_pieces_flags::INDIRECTSTORAGE),
+            (param.is_hidden_return(), parameter_pieces_flags::HIDDENRETPARM),
+            (proto.has_custom_storage(), parameter_pieces_flags::CUSTOM_STORAGE),
+        ] {
+            if present { flags |= flag; }
+        }
+        maps.push((slot, name, ParameterPieces { addr, type_: dtype, flags }));
+    }
+    if changed { maps } else { Vec::new() }
+}
 
 /// The storage a printed local occupies, in the shape `Scope::addSymbol` takes.
 pub struct PrintedLocal {

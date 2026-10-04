@@ -652,6 +652,12 @@ pub fn decompile_pulled(
                 if crate::assertions::apply_symbol_scoped(prog, &mut fd, &name, single_target) {
                     let carried = crate::assertions::carried_symbols(&fd);
                     let carried_usepoint = crate::assertions::carried_usepoint_symbols(&fd);
+                    let parameter_edits = crate::kuna_hightarget::carried_parameter_maps(&fd);
+                    let carried_params = if parameter_edits.is_empty() {
+                        &seed.mapped_params
+                    } else {
+                        &parameter_edits
+                    };
                     crate::decompile_step::decompile_one(
                         prog.arch_mut(),
                         &name,
@@ -663,7 +669,7 @@ pub fn decompile_pulled(
                             dynamic_symbols: &[],
                             pending_proto: seed.pending_proto.as_ref(),
                             flow_overrides: &flow_ovr,
-                            mapped_params: &seed.mapped_params,
+                            mapped_params: carried_params,
                         },
                         &[],
                     )
