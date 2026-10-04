@@ -4212,10 +4212,11 @@ An immutable constant integer format gives separate evidence for a value with
 another reader. `kuna_varargformat::arguments` requires a locked variadic callee
 whose last fixed parameter is a character pointer. A callee name containing
 `scanf` declines the proof because its conversions consume pointers. It resolves
-that parameter's
-constant through the bounded constant-value walk above and requires the complete
-NUL-terminated format to be read-only. It accepts ordinary promoted integer
-conversions (`d/i/u/o/x/X/c`), `h/hh` integer lengths, star width and precision
+the constant pointer through the bounded constant-value walk above and checks
+read-only properties one byte at a time, including the NUL terminator. A
+whole-range property query can fall back to properties at the starting address,
+so it cannot prove that a writable conversion or terminator is immutable. It
+accepts ordinary promoted integer conversions (`d/i/u/o/x/X/c`), `h/hh` integer lengths, star width and precision
 operands, and literal percent escapes. Other classes, lengths, malformed or
 positional conversions decline the entire proof; at most sixteen arguments are
 assigned. The complete fixed prefix plus the format's integer types is assigned
@@ -4225,20 +4226,20 @@ register class.
 
 `kuna_varargformat::activate_trial` is a fallback after the existing declared-value
 and ancestor-use paths reject a trial. Arguments those paths already retain keep
-their original storage and scoring; format evidence does not renarrow them.
+their original storage and scoring.
 It matches only an existing processor-register trial containing the assigned
-argument. Its value must have realistic defined ancestry on every incoming path (the ancestor walk disallows a failing path)
-or be a declared incoming parameter/return on the terms above. The declaration
-must cover the actual incoming value at its source storage and the entire
-promoted width, even if the value now feeds a different argument register.
+argument. Its value must have realistic defined ancestry on every incoming path
+(the ancestor walk disallows a failing path) or be a declared incoming parameter/return on the terms above. The declaration
+must cover the consumed source bytes at their incoming storage, even if the
+value now feeds a different argument register. Extensions can supply the other
+bytes of a promoted integer.
 A second bounded walk proves the consumed bytes through copies, concatenations,
 subpieces, extensions, integer arithmetic and all phi inputs. Constants, loads
 and declared call returns provide defined values; undeclared input bytes decline
 the proof. The walk stops after sixteen levels or sixty-four visited nodes.
-A declared byte does not prove the other bytes of an integer. Assignments with hidden or
-indirect parameter pieces are declined. The ancestor flags and conditional
-execution recheck are preserved. The trial
-shrinks to the promoted integer width and is marked active, so a store of
+A declared byte alone does not prove the other bytes of an integer. Assignments
+with hidden or indirect parameter pieces are declined. The ancestor flags and
+conditional execution recheck are preserved. The trial shrinks to the promoted integer width and is marked active, so a store of
 `*value + 1` does not hide the same value in EDX at `render_value("%i", ...)`.
 No register past the format's argument list is supplied; an undeclared live-in
 or call clobber is not supplied either. Computed and loaded values do not need

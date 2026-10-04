@@ -77,8 +77,16 @@ pub(super) fn pointed_readonly_format(
 ) -> Option<Vec<u8>> {
     let addr = pointer_target(data, value, size, point)?;
     let bytes = read_format(data, &addr)?;
-    let flags = data.get_arch().query_global_properties(&addr, bytes.len() as int4 + 1, point);
-    (flags & crate::varnode::varnode_flags::readonly != 0).then_some(bytes)
+    for offset in 0..=bytes.len() {
+        let at = Address::new(
+            Rc::clone(addr.get_space()?), addr.get_offset().checked_add(offset as u64)?,
+        );
+        let flags = data.get_arch().query_global_properties(&at, 1, point);
+        if flags & crate::varnode::varnode_flags::readonly == 0 {
+            return None;
+        }
+    }
+    Some(bytes)
 }
 
 fn read_format(data: &Funcdata, addr: &Address) -> Option<Vec<u8>> {

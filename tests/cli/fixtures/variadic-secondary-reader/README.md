@@ -22,3 +22,10 @@ compares option-on/off output for unused registers, unsupported and mutable
 formats, clobbered or undeclared values, and partially defined integer storage.
 Those negative controls are decompiled only; their assembly deliberately includes
 calls without a valid format operand or complete promoted argument.
+
+The self-contained `mixed-format.xml` checks formats whose conversion byte or
+NUL terminator is writable, alongside an entirely immutable positive control:
+
+```sh
+kuna test --datatests --datatests-dir tests/cli/fixtures/variadic-secondary-reader
+```
