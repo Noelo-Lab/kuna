@@ -2036,6 +2036,14 @@ excluded from those generic maps: replaying one as a locked local can split it
 from the forced prototype input, leaving a branch condition or return reading
 an uninitialized local even when the signature carries the edited name.
 
+A printed register alias of a later value uses the local-symbol channel instead.
+It may share an input parameter's register only when equal storage widths and
+disjoint CFG covers establish separate lifetimes. Replay must preserve both
+Symbols: parameter creation checks the entry usepoint, type seeding checks each
+Varnode's definition usepoint, and naming and declaration emission retain the
+selected Symbol identity. Renaming the later local then changes its assignments
+and call uses while entry comparisons continue to read the declared input.
+
 Three properties of that mapping are load-bearing, each measured on
 `sub_1005350` of the `graphy` VM:
 

@@ -15,21 +15,36 @@ const MSABI_CLEAR: &[u8] = &[0x83, 0xfa, 0x07, 0x75, 0x02, 0x31, 0xd2, 0x89, 0xd
 const PROTO: &str = "prototype probe int probe(void *unused,int value)";
 const MS_PROTO: &str = "prototype probe int MSABI probe(void *unused,int value)";
 
-/// Return the second argument plus one, or clear it if it equals seven.
 fn image(bytes: &[u8]) -> PathBuf {
+    image_with_callee(bytes, None)
+}
+
+fn image_with_callee(bytes: &[u8], callee: Option<usize>) -> PathBuf {
     let mut object = Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
     let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
     object.append_section_data(text, bytes, 1);
     object.add_symbol(Symbol {
         name: b"probe".to_vec(),
         value: 0,
-        size: bytes.len() as u64,
+        size: callee.unwrap_or(bytes.len()) as u64,
         kind: SymbolKind::Text,
         scope: SymbolScope::Linkage,
         weak: false,
         section: SymbolSection::Section(text),
         flags: SymbolFlags::None,
     });
+    if let Some(offset) = callee {
+        object.add_symbol(Symbol {
+            name: b"sink".to_vec(),
+            value: offset as u64,
+            size: (bytes.len() - offset) as u64,
+            kind: SymbolKind::Text,
+            scope: SymbolScope::Linkage,
+            weak: false,
+            section: SymbolSection::Section(text),
+            flags: SymbolFlags::None,
+        });
+    }
     let path = common::scratch_file("parameter-name", "o");
     std::fs::write(&path, object.write().unwrap()).unwrap();
     path
@@ -95,11 +110,15 @@ fn decompile(image: &PathBuf, prototype: &str, assertions: &[&str]) -> String {
 }
 
 fn semantic_oracle(image: &PathBuf, emitted: &[String], msabi: bool) {
+    semantic_oracle_with_callee(image, emitted, msabi, "");
+}
+
+fn semantic_oracle_with_callee(image: &PathBuf, emitted: &[String], msabi: bool, support: &str) {
     let driver = common::scratch_file("parameter-driver", "c");
     let source = common::scratch_file("parameter-emitted", "c");
     let native = common::scratch_file("parameter-native", "exe");
     let rebuilt = common::scratch_file("parameter-rebuilt", "exe");
-    let harness = "#include <stdio.h>\nint main(void) { int values[] = {-10,-1,0,1,7,42,2147483646}; for(unsigned i=0;i<7;i++) printf(\"%d\\n\",probe(0,values[i])); return 0; }\n";
+    let harness = "#include <stdio.h>\nint main(void) { int values[] = {-10,-1,0,1,7,11,42,2147483646}; for(unsigned i=0;i<sizeof(values)/sizeof(values[0]);i++) printf(\"%d\\n\",probe(0,values[i])); return 0; }\n";
     let abi = if msabi { "__attribute__((ms_abi))" } else { "" };
     std::fs::write(
         &driver,
@@ -121,7 +140,9 @@ fn semantic_oracle(image: &PathBuf, emitted: &[String], msabi: bool) {
         for body in emitted {
             std::fs::write(
                 &source,
-                format!("typedef int int4; typedef unsigned int uint4;\n{body}\n{harness}"),
+                format!(
+                    "typedef int int4; typedef unsigned int uint4;\n{support}\n{body}\n{harness}"
+                ),
             )
             .unwrap();
             for opt in ["-O0", "-O2"] {
@@ -240,6 +261,93 @@ fn missing_names_still_reject_and_leave_the_parameter_intact() {
                 .contains("return value + 1;"));
         } else {
             assert!(stderr.contains("No symbol named: missing"), "{stderr}");
+        }
+    }
+    std::fs::remove_file(image).unwrap();
+}
+
+const REGISTER_REUSE: &[u8] = &[
+    0x48, 0x83, 0xec, 0x28, 0x83, 0xfa, 0x07, 0x74, 0x0c, 0x83, 0xfa, 0x0b, 0x75, 0x16, 0xba, 0x29,
+    0, 0, 0, 0xeb, 0x05, 0xba, 0x2a, 0, 0, 0, 0xe8, 0x0c, 0, 0, 0, 0x48, 0x83, 0xc4, 0x28, 0xc3,
+    0x31, 0xc0, 0x48, 0x83, 0xc4, 0x28, 0xc3, 0x89, 0xd0, 0xc3,
+];
+
+fn register_local(code: &str, register: &str) -> String {
+    code.lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_suffix(&format!("; // {register}"))
+                .and_then(|decl| decl.split_whitespace().last())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| panic!("no local at {register}:\n{code}"))
+}
+
+#[test]
+fn later_register_alias_keeps_the_parameter_checks_and_call_value() {
+    for msabi in [false, true] {
+        let mut bytes = REGISTER_REUSE.to_vec();
+        let (abi, register) = if msabi {
+            ("MSABI ", "edx")
+        } else {
+            for offset in [5, 10] {
+                bytes[offset] = 0xfe;
+            }
+            for offset in [14, 21] {
+                bytes[offset] = 0xbe;
+            }
+            bytes[44] = 0xf0;
+            ("", "esi")
+        };
+        let image = image_with_callee(&bytes, Some(43));
+        let proto = format!("prototype probe int {abi}probe(void *popup,int property)");
+        let callee = format!("prototype sink int {abi}sink(void *popup,int cleared)");
+        let control = decompile(&image, &proto, &[&callee]);
+        let local = register_local(&control, register);
+        let directive = format!("name {local} cleared_property");
+        let renamed = decompile(&image, &proto, &[&callee, &directive]);
+        assert!(
+            renamed.contains("probe(void *popup,int4 property)"),
+            "{renamed}"
+        );
+        assert!(renamed.contains("if (property != 7)"), "{renamed}");
+        assert!(renamed.contains("if (property != 0xb)"), "{renamed}");
+        assert!(renamed.contains("cleared_property = 0x29;"), "{renamed}");
+        assert!(renamed.contains("cleared_property = 0x2a;"), "{renamed}");
+        assert!(
+            renamed.contains("sink(popup,cleared_property)"),
+            "{renamed}"
+        );
+        semantic_oracle_with_callee(
+            &image,
+            &[control, renamed],
+            msabi,
+            "int4 sink(void *popup,int4 cleared) { return cleared; }",
+        );
+        std::fs::remove_file(image).unwrap();
+    }
+}
+
+#[test]
+fn different_width_parameter_overlap_still_rejects() {
+    let image = image_with_callee(REGISTER_REUSE, Some(43));
+    let proto = "prototype probe int MSABI probe(void *popup,unsigned long long property)";
+    let callee = "prototype sink int MSABI sink(void *popup,int cleared)";
+    let control = decompile(&image, proto, &[callee]);
+    let local = register_local(&control, "edx");
+    let directive = format!("name {local} cleared_property");
+    for (json, batch) in [(false, false), (true, false), (true, true)] {
+        let (stdout, stderr, status) = run(&image, proto, &[callee, &directive], json, batch);
+        assert_eq!(status, 1, "{stdout}\n{stderr}");
+        if json {
+            let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(doc["assertions"][2]["status"], "rejected");
+            assert_eq!(
+                doc["functions"][0]["code"].as_str().unwrap().trim(),
+                control
+            );
+        } else {
+            assert!(stderr.contains("overlaps a live parameter"), "{stderr}");
         }
     }
     std::fs::remove_file(image).unwrap();

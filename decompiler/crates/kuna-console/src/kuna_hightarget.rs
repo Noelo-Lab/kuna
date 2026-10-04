@@ -327,15 +327,29 @@ fn resolve_printed_local(
             "Not addressable storage: {name} (a decompiler temporary has no stable location)"
         ));
     }
-    // One Symbol, two variables is the other way this ends in invalid C.  The
-    // naming pass has a usepoint-blind arm as well (`ScopeLocal::name_for_varnode`
-    // is a bare `find_overlap`), so when a SECOND high holds the same register at
-    // the same width -- a copy the merge did not coalesce -- both take the mapped
-    // Symbol's name and the printer declares it twice.  Sub-register neighbours
-    // (`al`, `eax` inside `rax`) are not this: they overlap at a different width,
-    // resolve their own names, and are the ordinary case the witness exercises.
-    // Only a high the printer would DECLARE counts: an unnamed high sharing the
-    // storage emits no declaration, and fauxware's `int v1; // eax` has one.
+    let usepoint = match def.filter(|_| written).and_then(|op| fd.obank().get(op)) {
+        Some(op) => op.get_addr().clone(),
+        None => &fd.get_address().clone() + -1,
+    };
+    let proto = fd.get_func_proto();
+    let params: Vec<_> = if proto.has_store() {
+        (0..proto.num_params()).filter_map(|i| proto.get_param(i))
+            .map(|p| (p.get_address(), p.get_size())).collect()
+    } else {
+        Vec::new()
+    };
+    for (at, width) in params {
+        if at.overlap(0, &addr, size) < 0 && addr.overlap(0, &at, width) < 0 {
+            continue;
+        }
+        let input = fd.vbank().find_input(width, &at).and_then(|v| fd.vbank().get(v)?.get_high());
+        if at != addr || width != size || !written
+            || !input.is_some_and(|i| disjoint_parameter_input(fd, ids[0], i, &addr, size))
+        {
+            return Err(format!("Storage of {name} overlaps a live parameter"));
+        }
+    }
+    // Ordinary named locals sharing this storage retain conservative rejection.
     let rivals: Vec<_> = fd
         .high_bank()
         .iter()
@@ -351,7 +365,7 @@ fn resolve_printed_local(
             .vbank()
             .get(rep)
             .is_some_and(|v| v.get_addr() == &addr && v.get_size() == size);
-        if shared {
+        if shared && !(written && disjoint_parameter_input(fd, ids[0], rival, &addr, size)) {
             return Err(format!("Storage of {name} is shared by another variable"));
         }
     }
@@ -369,23 +383,46 @@ fn resolve_printed_local(
             earlier.printed
         ));
     }
-    // The scope already owns this storage, so the high is a stack local or a
-    // parameter the by-name query missed.  Mapping a second Symbol over storage
-    // a Symbol already covers would put two entries on one stack slot, so this is
-    // a miss.
+    // Keep an existing Symbol at this usepoint; later register lifetimes can differ.
     if fd
         .get_scope_local()
-        .is_some_and(|lm| lm.containing_symbol_for_storage(&addr).is_some())
+        .is_some_and(|lm| lm.query_container_for_link(&addr, &usepoint).is_some())
     {
         return Ok(None);
     }
-    // C++ `Varnode::getUsePoint` (varnode.cc:715), which `Funcdata::linkSymbol`
-    // passes to the local-scope container query.
-    let usepoint = match def.filter(|_| written).and_then(|op| fd.obank().get(op)) {
-        Some(op) => op.get_addr().clone(),
-        None => &fd.get_address().clone() + -1,
-    };
     Ok(Some(PrintedLocal { addr, size, usepoint, dtype }))
+}
+
+/// A later register local may reuse an input's storage only with disjoint CFG covers.
+fn disjoint_parameter_input(
+    fd: &mut Funcdata,
+    local: HighVariableId,
+    rival: HighVariableId,
+    addr: &Address,
+    size: int4,
+) -> bool {
+    let proto = fd.get_func_proto();
+    if !proto.has_store() || !(0..proto.num_params()).any(|i| {
+        proto.get_param(i).is_some_and(|p| p.get_address() == *addr && p.get_size() == size)
+    }) {
+        return false;
+    }
+    let Some(input) = fd.high_bank().get(rival) else { return false };
+    if !(0..input.num_instances()).any(|i| {
+        fd.vbank().get(input.get_instance(i)).is_some_and(|v| {
+            v.is_input() && v.get_addr() == addr && v.get_size() == size
+        })
+    }) {
+        return false;
+    }
+    fd.high_update_cover(local);
+    fd.high_update_cover(rival);
+    let (Some(a), Some(b)) = (fd.high_bank().get_cover(local), fd.high_bank().get_cover(rival)) else {
+        return false;
+    };
+    a.iter().any(|(_, block)| !block.empty())
+        && b.iter().any(|(_, block)| !block.empty())
+        && a.intersect(b) < 2
 }
 
 /// A Symbol covers `ct.get_size()` bytes from the storage address, so a type
