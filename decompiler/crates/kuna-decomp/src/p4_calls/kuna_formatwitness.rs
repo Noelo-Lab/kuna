@@ -70,6 +70,17 @@ pub(crate) fn pointed_format_count(
     printf_argument_count(&bytes)
 }
 
+/// A constant format whose complete bytes, including the terminator, are
+/// immutable in this image. Positive argument evidence requires immutability.
+pub(super) fn pointed_readonly_format(
+    data: &Funcdata, value: u64, size: int4, point: &Address,
+) -> Option<Vec<u8>> {
+    let addr = pointer_target(data, value, size, point)?;
+    let bytes = read_format(data, &addr)?;
+    let flags = data.get_arch().query_global_properties(&addr, bytes.len() as int4 + 1, point);
+    (flags & crate::varnode::varnode_flags::readonly != 0).then_some(bytes)
+}
+
 fn read_format(data: &Funcdata, addr: &Address) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     for offset in 0..MAX_FORMAT {
