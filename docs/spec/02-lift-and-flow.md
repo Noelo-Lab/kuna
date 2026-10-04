@@ -1494,10 +1494,28 @@ as default and collapsing the CBRANCH to a constant predicate). Once a fold
 has set the default, a later fold must target the same block, as must every
 fold on a table whose labels rely on its current default; a fold clears
 the structuring so the new edge is re-structured, and the constant-predicate
-residue is severed on the re-run by `ActionDeterminedBranch`. Before
-structuring, any table still without a default marks its most-targeted
-out-edge as the default (`decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs
-(ActionBlockStructure)` via `funcdata_block.rs (Funcdata::install_switch_defaults)`).
+residue is severed on the re-run by `ActionDeterminedBranch`.
+
+The default-path model (JumpBasic2) handles surviving guards differently
+(`jumptable.rs (JumpBasicModel::fold_in_guards)`). Its final table row is the
+constant destination selected on the alternate path, and its `NO_LABEL` means
+that destination is the default, not an unresolved user command. The fold
+marks that row's existing out-edge as default and clears the guard record
+without rewriting the CBRANCH. Normalization and ordinary dead-code removal
+can eliminate empty selection blocks, while guarded statements and loop
+conditions remain. Sending this shape through the basic guard fold instead
+can add another default edge back into the selector block, leaving the real
+default row labelled with the sentinel and invalid commands looping or
+returning no value. A default that shares an ordinary case body uses that
+same out-edge; the most-targeted-edge heuristic is not required to recognize
+a distinct default destination.
+
+Flow-time `jumptable.rs (JumpTable::switch_over)` initially chooses the
+most-targeted out-edge as default only when at least two rows share it.
+Before structuring, `decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs
+(ActionBlockStructure)` calls `funcdata_block.rs (Funcdata::install_switch_defaults)`
+to mark the selected default edge in the basic-block graph, from which each
+structured `CaseOrder` receives its default classification.
 
 **Table lifetime.** A `JumpTable` is only as alive as the BRANCHIND it points
 at, so removing that op has to remove the table. `funcdata_block.rs

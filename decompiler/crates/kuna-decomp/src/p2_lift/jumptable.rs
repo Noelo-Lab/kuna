@@ -4615,7 +4615,11 @@ impl JumpModel for JumpBasicModel {
             // foldInOneGuard mutates the guard record in place (`fold_in_one_guard`
             // is an associated fn — it borrows the single guard, `fd`, and `jump`,
             // all disjoint from the rest of `self`).
-            if Self::fold_in_one_guard(fd, &mut self.selectguards[i], jump)? {
+            if self.is_model2 {
+                jump.set_last_as_default();
+                self.selectguards[i].clear();
+                change = true;
+            } else if Self::fold_in_one_guard(fd, &mut self.selectguards[i], jump)? {
                 change = true;
             }
         }
