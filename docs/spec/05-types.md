@@ -555,7 +555,10 @@ a signed, unsigned or undefined integer, but not an untyped call's result).
 The inserted `CAST` prints as the union bit reinterpretation of chapter 09,
 never as a numeric `(double)u`. A value that is already a `double` needs no
 cast, and a struct or pointer in that register keeps no requirement, since the
-emitter has no reinterpretation that spells its bits as a `double`.
+emitter has no reinterpretation that spells its bits as a `double`. Nor does an
+implied `CAST` of one whose only reader is the call: the cast pass retypes such
+a `CAST` in place rather than adding another, so its source must itself be an
+integer the emitter reinterprets, or a float.
 
 **What the pointer points at (`charptr`).** `ptrfromuse` decides that a value
 *is* a pointer; it cannot say what is on the other end, and the shipped `void`
