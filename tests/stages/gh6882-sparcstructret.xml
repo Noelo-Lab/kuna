@@ -62,6 +62,13 @@
     `v2 = v1`, the buffer types correctly as `int4 v1 [2]`, and the tail reads its
     first word: `return v1[0] + a0`.  Both halves of the output got MORE correct;
     only the pinned expression text had to follow.
+
+    NOTE on assertion #2's text, revision 3 (issue #862): the expected text is
+    now `return v2[0] + v1` with `v1 = f(v3)`.  The old text, `return v1[0] + a0`,
+    pinned the SPARC dropped-call-result bug: the tail is `restore %i0,%o0,%o0`,
+    and %o0 there is the second call's result, not a value from before the
+    call.  SparcV9_32.cspec now kills %o0 at a call, so the call's output is
+    recovered and added.
 -->
 <bytechunk space="ram" offset="0x0">
 9de3bfa0f007a04081c7e00c81e800009de3bf98b007bff87ffffffaf023a04000000008f007bff87ffffff6f027bff4f007bff481c7e00891ee0008
@@ -91,5 +98,5 @@
   <com>quit</com>
 </script>
 <stringmatch name="GH6882 #1: post-call unimp renders as a computed call (bug reproduced)" min="1" max="1">\(\*v1\)\(\)</stringmatch>
-<stringmatch name="GH6882 #2: sparcstructret on recovers the function tail (the real return expression)" min="1" max="1">return v1\[0\] \+ a0;</stringmatch>
+<stringmatch name="GH6882 #2: sparcstructret on recovers the function tail (the real return expression)" min="1" max="1">return v2\[0\] \+ v1;</stringmatch>
 </decompilertest>
