@@ -544,6 +544,65 @@ mod tests {
         }
     }
 
+    #[test]
+    fn recovered_frames_preserve_distant_callers_in_graph_queries() {
+        use kuna_console::engine::{bootstrap_from_object_with_isa, ArmIsa};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("split-body.elf");
+        let specs = root.join("../../../specs");
+        for (endian, target) in [("little", "ARM:LE:32:v8"), ("big", "ARM:BE:32:v8")] {
+            assert!(std::process::Command::new("python3")
+                .arg(root.join("../kuna-analysis/tests/fixtures/arm_xref_roots.py"))
+                .arg(&path)
+                .args(["arm", endian, "splitbody"])
+                .status()
+                .unwrap()
+                .success());
+            let mut prog = bootstrap_from_object_with_isa(
+                path.to_str().unwrap(),
+                target,
+                &[specs.to_str().unwrap().into()],
+                Some(ArmIsa::Arm),
+            )
+            .unwrap();
+            for (name, value) in [
+                ("listing", "on"),
+                ("funcstart_patterns", "on"),
+                ("armframes", "on"),
+                ("aif", "off"),
+            ] {
+                prog.arch_mut().set_kuna_option(name, value).unwrap();
+            }
+            prog.commit_pending_analysis().unwrap();
+            let bytes = std::fs::read(&path).unwrap();
+            let file = object::File::parse(&*bytes).unwrap();
+            for measured in [false, true] {
+                let mut graph = CallGraph::walk(&prog, &file, measured);
+                assert!(graph.is_entry(0x1600));
+                assert_eq!(graph.direct_callers(0x1100), Some(vec![0x1500]));
+                assert_eq!(graph.owner_of(0x1754), Some(0x1500));
+                assert_eq!(graph.owner_of(0x1604), Some(0x1600));
+                assert_eq!(graph.callees_of(0x1500), vec![(0x1100, XrefKind::Call)]);
+                assert!(graph.callees_of(0x1600).is_empty());
+                assert!(graph.has_indirect_calls(0x1500));
+                assert!(!graph.has_indirect_calls(0x1600));
+                assert_eq!(
+                    graph.direct_call_sites(0x1100, &BTreeSet::new()),
+                    Some(vec![0x1750])
+                );
+                assert_eq!(
+                    graph.reachable_from(&prog, "0x1500").unwrap(),
+                    BTreeSet::from([0x1100, 0x1500])
+                );
+                graph.entries.push((0x1900, 0));
+                assert_eq!(graph.owner_of(0x1900), Some(0x1900));
+                assert_eq!(graph.owner_of(0x1901), None);
+                assert_eq!(graph.owner_of(0x18fc), None);
+            }
+        }
+    }
+
     fn fixture(name: &str) -> Vec<u8> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../kuna-analysis/tests/fixtures")

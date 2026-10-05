@@ -459,10 +459,14 @@ mod tests {
         /// it on that correct `int` prints as a wrong `long long` (GH-904). In
         /// the preset it would be the default output under 500 KiB, which is
         /// exactly what it is opt-in to avoid.
+        /// `armframes` expands ARM reference coverage with validated frame roots.
+        /// On a stripped 400,556-byte BusyBox it grows the reachable walk from
+        /// 2,271 instructions to about 74,000 and raises query time from 0.78 s
+        /// to 2.05 s. This cost keeps recovery opt-in in every mode.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
-              "structdefs", "indirectonly", "protoorder", "bejoin"];
+              "structdefs", "indirectonly", "protoorder", "bejoin", "armframes"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

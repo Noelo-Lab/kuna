@@ -36,7 +36,11 @@ pub mod kuna_entrythumbflow;
 pub mod kuna_pdecode;
 pub mod kuna_rawdiscover;
 pub mod kuna_tailcallentry;
+mod kuna_walkcontext;
+mod kuna_fingerprintcontext;
 mod kuna_flowmode;
+pub(crate) mod kuna_framemode;
+pub(crate) mod kuna_decodereuse;
 mod kuna_picbase;
 mod kuna_picpool;
 mod kuna_poolref;
@@ -227,6 +231,23 @@ impl Listing {
         detail: ListingDetail,
         plan: &WalkPlan,
     ) -> Listing {
+        Self::build_tracking_frames(file, _image, arch, translate, seeds, funcsym_seeds,
+            seed_names, detail, plan, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn build_tracking_frames(
+        file: &object::File,
+        _image: &ObjectLoadImage,
+        arch: &Architecture,
+        translate: &dyn Translate,
+        seeds: &[u64],
+        funcsym_seeds: &[u64],
+        seed_names: &[(u64, String)],
+        detail: ListingDetail,
+        plan: &WalkPlan,
+        frames: Option<&mut kuna_framemode::FrameModes>,
+    ) -> Listing {
         debug_assert!(
             plan.built_from(arch),
             "the plan's decode recipe was captured from another architecture than {}",
@@ -312,6 +333,7 @@ impl Listing {
             detail,
             want_stack_callbacks,
             plan,
+            frames,
         );
 
         let mut refs_to = st.refs_to;
@@ -393,6 +415,7 @@ impl Listing {
             detail,
             /* want_stack_callbacks = */ false,
             &WalkPlan::serial(),
+            None,
         );
         let mut refs_to = st.refs_to;
         let mut refs_from = st.refs_from;

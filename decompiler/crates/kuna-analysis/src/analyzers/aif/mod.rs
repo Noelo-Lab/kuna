@@ -111,6 +111,12 @@ use crate::listing::{decode::{decode_one_with_assembly, Decoded}, FlowKind, List
 pub mod kuna_aifcorroborate;
 pub mod kuna_aifstrict;
 pub mod kuna_poolentry;
+pub(crate) mod kuna_entrychecks;
+mod kuna_armprologue;
+mod kuna_framecalls;
+mod kuna_framecache;
+mod kuna_thumbframes;
+pub(crate) use kuna_framecache::ArmFrames;
 pub mod kuna_ptrentry;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
@@ -172,6 +178,7 @@ impl AnalysisPass for AggressiveInstructionFinderPass {
 /// with the same prologue opcodes but different operand immediates share a
 /// fingerprint, the same equivalence class the mask histogram forms.
 type Fingerprint = ([Rc<str>; FINGERPRINT_INSNS], u64);
+type ProbedBody = BTreeMap<u64, Rc<ProbedInsn>>;
 
 /// A speculative decoder over the loadimage bytes, used to probe undefined gaps.
 ///
@@ -184,10 +191,21 @@ struct GapDecoder<'a> {
     translate: &'a dyn Translate,
     code_space: Rc<AddrSpace>,
     exec_ranges: &'a [(u64, u64)],
+    prior_partition: Option<&'a Listing>,
     /// `vma -> Some(insn)` on a good decode, `vma -> None` on an undecodable byte
     /// (so a re-probe is cached too).
     cache: BTreeMap<u64, Option<Rc<ProbedInsn>>>,
     spare: Option<Rc<ProbedInsn>>,
+    frame_instructions: Option<Rc<BTreeMap<u64, Rc<ProbedInsn>>>>,
+    full_capture: Option<crate::listing::xrefs::FullCapture>,
+    /// Frame probes follow the not-taken path of a conditional return. Code
+    /// reached only through a call's fall-through is speculative there: the call
+    /// may not return, so an invalid speculative path ends instead of rejecting
+    /// the candidate, and a speculative path also ends at another prologue
+    /// candidate in `prologue_starts` rather than absorbing that function.
+    /// Every other validator stops at a terminal and rejects any invalid flow.
+    frame_probe: bool,
+    prologue_starts: Option<Rc<BTreeSet<u64>>>,
     scratch: Decoded,
     mnemonics: Vec<Rc<str>>,
     visited: HashSet<u64>,
@@ -234,7 +252,7 @@ impl LinearRun {
 }
 
 /// A speculatively-decoded instruction (the gap-probe analog of [`crate::listing::Insn`]).
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 struct ProbedInsn {
     len: u32,
     kind: FlowKind,
@@ -244,6 +262,7 @@ struct ProbedInsn {
     flows: Vec<u64>,
     mnemonic: Rc<str>,
     operands: String,
+    reusable: Option<Rc<crate::listing::kuna_decodereuse::ReusableDecode>>,
 }
 
 impl<'a> GapDecoder<'a> {
@@ -253,8 +272,9 @@ impl<'a> GapDecoder<'a> {
         exec_ranges: &'a [(u64, u64)],
     ) -> Self {
         GapDecoder {
-            translate, code_space, exec_ranges, cache: BTreeMap::new(),
-            spare: None, scratch: Decoded::default(), mnemonics: Vec::new(),
+            translate, code_space, exec_ranges, prior_partition: None, cache: BTreeMap::new(),
+            spare: None, frame_instructions: None, full_capture: None,
+            frame_probe: false, prologue_starts: None, scratch: Decoded::default(), mnemonics: Vec::new(),
             visited: HashSet::new(), worklist: Vec::new(), linear_run: None, linear_events: VecDeque::new(),
             #[cfg(test)]
             peak_cache_len: 0,
@@ -272,8 +292,19 @@ impl<'a> GapDecoder<'a> {
     /// Speculatively decode the instruction at `vma`. `None` if out of range or
     /// undecodable. Caches the result (good or bad).
     fn probe(&mut self, vma: u64) -> Option<Rc<ProbedInsn>> {
+        let current = |insn: &Rc<ProbedInsn>| insn.reusable.as_ref().is_some_and(|reusable|
+            reusable.matches(self.translate, &kuna_base::address::Address::new(Rc::clone(&self.code_space), vma)));
         if let Some(cached) = self.cache.get(&vma) {
-            return cached.clone();
+            if self.frame_instructions.is_none() || cached.as_ref().is_some_and(current) {
+                return cached.clone();
+            }
+        }
+        if let Some(insn) = self.frame_instructions.as_ref().and_then(|insns| insns.get(&vma)) {
+            if current(insn) {
+                let insn = Rc::clone(insn);
+                self.cache.insert(vma, Some(Rc::clone(&insn)));
+                return Some(insn);
+            }
         }
         let result = self.decode_uncached(vma);
         self.cache.insert(vma, result.clone());
@@ -306,9 +337,21 @@ impl<'a> GapDecoder<'a> {
         }
     }
 
+    fn recorded(&self, at: u64) -> Rc<ProbedInsn> {
+        self.cache.get(&at).and_then(Option::as_ref)
+            .or_else(|| self.frame_instructions.as_ref().and_then(|insns| insns.get(&at)))
+            .cloned().expect("validated instruction has a decode record")
+    }
+
     fn decode_uncached(&mut self, vma: u64) -> Option<Rc<ProbedInsn>> {
         if !self.in_exec(vma) { return None; }
-        decode_one_with_assembly(self.translate, vma, &self.code_space, &mut self.scratch).ok()?;
+        let reusable = if let Some(capture) = &mut self.full_capture {
+            crate::listing::kuna_decodereuse::capture(self.translate, vma, &self.code_space,
+                &mut self.scratch, capture).ok()?
+        } else {
+            decode_one_with_assembly(self.translate, vma, &self.code_space, &mut self.scratch).ok()?;
+            None
+        };
         let decoded = &self.scratch;
         if decoded.len == 0 { return None; }
         let c = crate::listing::classify::classify(&decoded.ops, vma, decoded.len);
@@ -331,12 +374,13 @@ impl<'a> GapDecoder<'a> {
             record.flows.clone_from(&c.flows);
             record.mnemonic = mnemonic;
             record.operands.clone_from(&decoded.operands);
+            record.reusable = reusable;
             Some(spare)
         } else {
             Some(Rc::new(ProbedInsn {
                 len: decoded.len, kind: c.flow.kind, is_call: c.flow.is_call,
                 is_terminal: c.flow.is_terminal, fall_through: c.fall_through,
-                flows: c.flows, mnemonic, operands: decoded.operands.clone(),
+                flows: c.flows, mnemonic, operands: decoded.operands.clone(), reusable,
             }))
         }
     }
@@ -579,13 +623,17 @@ fn follow_subroutine(
     body: &mut HashSet<u64>,
     worklist: &mut Vec<u64>,
 ) -> Option<bool> {
+    let validation_hi = decoder.prior_partition
+        .map(|prior| prior.next_instruction_start_after(gap_lo).unwrap_or(u64::MAX))
+        .unwrap_or(gap_hi);
     let mut did_terminate = false;
     let (mut adds_info, mut corroborated) = flags;
     let mut steps = prefix.count();
     let mut linear = prefix;
     let mut extend_linear = true;
+    let mut speculative: HashSet<u64> = HashSet::new();
 
-    while let Some(vma) = worklist.pop() {
+    'follow: while let Some(vma) = worklist.pop() {
         if prefix.contains(vma) || body.contains(&vma) {
             continue; // already followed (the VisitStat dedup)
         }
@@ -593,7 +641,7 @@ fn follow_subroutine(
         { decoder.validation_steps += 1; }
         steps += 1;
         if steps > MAX_FOLLOW_INSNS {
-            if strict {
+            if strict && !(decoder.frame_probe && did_terminate) {
                 return None;
             }
             break;
@@ -610,35 +658,58 @@ fn follow_subroutine(
                 adds_info = true;
                 continue;
             }
+            if speculative.contains(&vma) {
+                continue;
+            }
             if !decoder.in_exec(vma) {
                 return None;
             }
-            // Outside the gap but inside exec and not a known instruction start.
-            // The established AIF/ARM oracles stop at this boundary; the fast
-            // pointer-root validator rejects the uncorroborated escape.
+            // Recovered frames must not cut off a previously valid branch body.
+            // Keep the original AIF limits and the strict validator's boundary.
             if strict {
                 return None;
             }
-            continue;
+            if vma < gap_lo || vma >= validation_hi {
+                continue;
+            }
+            if !listing.is_undefined(vma) {
+                return None;
+            }
         }
 
         // Inside the gap: speculatively decode. An undecodable byte invalidates.
+        if speculative.contains(&vma)
+            && decoder.prologue_starts.as_ref().is_some_and(|starts| starts.contains(&vma))
+        {
+            continue;
+        }
         let Some(insn) = decoder.probe(vma) else {
+            if speculative.contains(&vma) {
+                continue;
+            }
             return None;
         };
         if strict && !strict_instruction_fits_gap(vma, insn.len, gap_hi) {
+            if speculative.contains(&vma) {
+                continue;
+            }
             return None;
         }
         body.insert(vma);
 
         if insn.is_terminal {
-            extend_linear = false;            did_terminate = true;
-            continue;
+            extend_linear = false;
+            did_terminate = true;
+            if !decoder.frame_probe {
+                continue;
+            }
         }
         if matches!(insn.kind, FlowKind::ComputedJump) {
             extend_linear = false;            // A computed/indirect jump with no static target is a terminate signal.
             did_terminate = true;
-            continue;
+            if !decoder.frame_probe {
+                continue;
+            }
         }
 
         let mut event = RunEvent {
@@ -646,6 +717,9 @@ fn follow_subroutine(
         };
         for &target in &insn.flows {
             if !decoder.in_exec(target) {
+                if speculative.contains(&vma) {
+                    continue 'follow;
+                }
                 return None; // flow leaves the executable image (`!memory.contains`)
             }
             if insn.is_call {
@@ -663,6 +737,11 @@ fn follow_subroutine(
                     event.corroborated = true;
                 }
                 if extend_linear { event.branches.push(target); }
+                if speculative.contains(&vma) {
+                    speculative.insert(target);
+                } else {
+                    speculative.remove(&target);
+                }
                 worklist.push(target); // branch target → intra-routine successor
             }
         }
@@ -682,6 +761,11 @@ fn follow_subroutine(
             }
         }
         if let Some(fall) = insn.fall_through {
+            if decoder.frame_probe && (insn.is_call || speculative.contains(&vma)) {
+                speculative.insert(fall);
+            } else {
+                speculative.remove(&fall);
+            }
             worklist.push(fall);
         }
     }
@@ -723,17 +807,46 @@ pub fn run_aif(
     run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate)
 }
 
+/// Retain pre-frame validation extents while admitting starts only in current gaps.
+pub(crate) fn run_aif_after_frames(
+    listing: &Listing,
+    prior: &Listing,
+    translate: &dyn Translate,
+    code_space: Rc<AddrSpace>,
+    aifstrict: bool,
+    aifcorroborate: bool,
+) -> Vec<u64> {
+    let mut decoder = GapDecoder::new(translate, code_space, listing.exec_ranges());
+    decoder.prior_partition = Some(prior);
+    run_aif_with_decoder(listing, &mut decoder, aifstrict, aifcorroborate)
+}
+
 fn run_aif_with_decoder(
     listing: &Listing,
     decoder: &mut GapDecoder,
     aifstrict: bool,
     aifcorroborate: bool,
 ) -> Vec<u64> {
-    if listing.function_count() < MINIMUM_FUNCTION_COUNT || listing.num_instructions() == 0 {
+    aif_candidates(listing, listing, decoder, aifstrict, aifcorroborate, &BTreeMap::new(), None, None)
+}
+
+/// Frame-prefix probes skip claimed spans and gaps containing no frame roots.
+/// Only `listing` establishes code coverage; `corpus` may include provisional callees.
+fn aif_candidates(
+    listing: &Listing,
+    corpus: &Listing,
+    decoder: &mut GapDecoder,
+    aifstrict: bool,
+    aifcorroborate: bool,
+    frames: &BTreeMap<u64, u32>,
+    roots: Option<&BTreeSet<u64>>,
+    mut bodies: Option<&mut BTreeMap<u64, ProbedBody>>,
+) -> Vec<u64> {
+    if corpus.function_count() < MINIMUM_FUNCTION_COUNT || corpus.num_instructions() == 0 {
         return Vec::new();
     }
 
-    let hist = build_fingerprint_histogram(listing, decoder);
+    let hist = build_fingerprint_histogram(corpus, decoder);
     if !hist.values().any(|&c| c >= FINGERPRINT_THRESHOLD) {
         return Vec::new();
     }
@@ -744,11 +857,23 @@ fn run_aif_with_decoder(
     // Walk every undefined gap: `first_undefined_after(start)` returns the next
     // undefined executable VMA. Probe it, then advance past whatever we resolved
     // (the accepted body, or one byte on a reject) and continue.
+    let mut frame_spans = frames.iter().peekable();
     let mut cursor = listing.first_undefined_after(0);
     let mut scan_end = 0;
     let mut gap_hi = u64::MAX;
     while let Some(gap_start) = cursor {
         decoder.retire_before(gap_start);
+        while frame_spans.peek().is_some_and(|&(&start, &len)| {
+            start.saturating_add(u64::from(len)) <= gap_start
+        }) {
+            frame_spans.next();
+        }
+        if let Some(&(&start, &len)) = frame_spans.peek() {
+            if start <= gap_start {
+                cursor = listing.first_undefined_after(start.saturating_add(u64::from(len) - 1));
+                continue;
+            }
+        }
         // The extent of THIS contiguous undefined gap: from `gap_start` up to the
         // next decoded instruction start (or, if none, an open upper bound). Only
         // this interior is "must-decode-here"; flows past it into discovered code
@@ -759,6 +884,10 @@ fn run_aif_with_decoder(
                 .find(|&&(lo, hi)| lo <= gap_start && gap_start < hi)
                 .map(|&(_, hi)| hi).expect("undefined address belongs to an executable range");
             scan_end = gap_hi.min(exec_hi);
+        }
+        if roots.is_some_and(|roots| roots.range(gap_start..gap_hi).next().is_none()) {
+            cursor = if gap_hi == u64::MAX { None } else { listing.first_undefined_after(gap_hi) };
+            continue;
         }
 
         // (kuna, `aifstrict`) The cursor slides to the next instruction-alignment
@@ -771,10 +900,13 @@ fn run_aif_with_decoder(
         };
         let probe_here =
             !aifstrict || kuna_aifstrict::probe_allowed(listing, gap_start);
-        if probe_here && !claimed.contains(&gap_start) {
+        if probe_here && listing.is_undefined(gap_start) && !claimed.contains(&gap_start) {
             match probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate)
             {
                 Probe::Accept(body) => {
+                    if let Some(bodies) = &mut bodies {
+                        bodies.insert(gap_start, body.iter().map(|&at| (at, decoder.recorded(at))).collect());
+                    }
                     accepted.insert(gap_start);
                     let body_max = body.iter().copied().max().unwrap_or(gap_start);
                     advanced = body_max.saturating_add(1);
@@ -884,56 +1016,23 @@ pub(crate) fn validate_pointer_targets(
 }
 
 // ===========================================================================
-// Stage 2: raw, UNPAIRED Thumb-prologue gap seeding (angr-style)
+// Stage 2: raw, mode-aware LR-saving ARM prologue gap seeding
 // ===========================================================================
 
-/// (kuna, Stage-2 ARM discovery) The **raw, UNPAIRED Thumb-prologue seed** scan —
-/// the kuna analog of angr's `CFGFast._func_addrs_from_prologues()`
-/// (`angr/analyses/cfg/cfg_fast.py:2607`) over `ArchARMCortexM.thumb_prologs`
-/// (`archinfo/arch_arm.py:401`: `{rb"[\x00-\xff]\xb5", rb"\x2d\xe9[\x00-\xff][\x00-\xff]"}`).
-///
-/// # Why this exists (the dense-binary residual after AIF)
-///
-/// `funcstart_patterns` seeds a candidate only when a Ghidra `<patternpairs>`
-/// EPILOGUE prepattern sits immediately before it, so a function preceded by a
-/// literal pool / data / padding is never seeded; the recursive-descent walk
-/// (direct `BL` only) cannot reach a function in a call-graph component reachable
-/// only through indirect calls / pointer tables; and AIF's fingerprint gap-walk,
-/// which advances its cursor past each accepted body, skips dense back-to-back
-/// prologue clusters. The residual — measured on betaflight STM32F405 as ~483
-/// ground-truth functions that START WITH A CANONICAL THUMB PUSH — all begin with
-/// `PUSH {..,lr}` (`0xB5xx`) or `PUSH.W {..,lr}` (`0xE92D..`).
-///
-/// angr recovers exactly these by seeding EVERY prologue byte-pattern directly,
-/// with NO epilogue/prepattern/fingerprint requirement (`finditer` over exec
-/// memory at 2-byte alignment, seeds `position | 1`). This mirrors that: scan
-/// every executable section at 2-byte alignment for the two canonical LR-saving
-/// Thumb prologues and seed each match that survives the precision guards.
-///
-/// # Precision (angr measured the raw prologues at ~93%; the guards close the gap)
-///
-///  1. **gap-only** — a candidate already covered by the walk
-///     ([`Listing::is_undefined`] is false — it is an instruction start OR an
-///     instruction interior) is skipped, so a prologue-shaped byte-pair inside a
-///     discovered body never splits it. This IS the reuse of the walk's `covered`
-///     RangeList (via the Listing's code-unit partition).
-///  2. **`check_valid_subroutine`** — the SAME validity predicate AIF uses
-///     ([`check_valid_subroutine`]): the candidate must speculatively decode (in
-///     the already-painted Thumb `TMode`, `cortexm_thumb_paints`) into a valid
-///     subroutine (> 2 instructions, reaches a clean RET / computed jump /
-///     adds-info call, no undecodable byte, no out-of-image flow).
-///  3. **body-claim dedup** — candidates are processed in ascending address order
-///     and each accepted routine's body is `claimed` (the same `claimed` guard
-///     [`run_aif`] uses), so a prologue-shaped byte-pair in the interior of an
-///     already-accepted lower-address routine is skipped.
-///
-/// ARM-gated (`0xB5xx`/`0xE92D` are Thumb encodings): a strict no-op on every
-/// non-ARM object. The result is the accepted prologue VMAs, address-sorted, ready
-/// to feed the recursive-descent walk as ADDITIONAL seeds (parallel to
-/// `full_pattern_starts`), so the walk expands each into a full function and
-/// discovers its callees. Gated end-to-end by the same `funcstart_patterns`
-/// (`analysis_funcstart_patterns`) discovery flag its caller checks — no new
-/// stage-model option — so x86-64 / console / datatest are byte-identical.
+/// Recover LR-saving frame prologues in undefined ARM code. The bytes, address
+/// alignment and live TMode must agree; ARM and Thumb encodings are distinct.
+/// Validate the complete reachable body before admitting a root, reject overlap
+/// with known instructions or an unclaimed escape, and suppress body interiors.
+/// Preserve AIF-supported prefixes that reach a frame before installing roots.
+/// Both Listing and reference walks use this under `funcstart_patterns`.
+pub fn raw_arm_prologue_seeds(
+    file: &object::File, listing: &Listing,
+    arch: &kuna_decomp::architecture::Architecture, translate: &dyn Translate,
+    code_space: Rc<AddrSpace>, exec_ranges: &[(u64, u64)],
+) -> Vec<u64> {
+    raw_arm_frames(file, listing, arch, translate, code_space, exec_ranges, false).roots
+}
+
 pub fn raw_thumb_prologue_seeds(
     file: &object::File,
     listing: &Listing,
@@ -941,45 +1040,159 @@ pub fn raw_thumb_prologue_seeds(
     code_space: Rc<AddrSpace>,
     exec_ranges: &[(u64, u64)],
 ) -> Vec<u64> {
+    kuna_thumbframes::seeds(file, listing, translate, code_space, exec_ranges)
+}
+
+pub(crate) fn raw_arm_frames(
+    file: &object::File,
+    listing: &Listing,
+    arch: &kuna_decomp::architecture::Architecture,
+    translate: &dyn Translate,
+    code_space: Rc<AddrSpace>,
+    exec_ranges: &[(u64, u64)],
+    capture_xrefs: bool,
+) -> ArmFrames {
     use object::read::Object;
-    // `0xB5xx` / `0xE92D` are Thumb (16-/32-bit) encodings; meaningless on any
-    // other architecture. On a confirmed Cortex-M image the whole exec region is
-    // painted `TMode=1` (`cortexm_thumb_paints`), so the speculative decode below
-    // is Thumb.
     if file.architecture() != object::Architecture::Arm {
-        return Vec::new();
+        return ArmFrames::default();
     }
 
+    let context = translate.context_scope();
+    if let Some(scope) = &context {
+        let _ = scope.protect_variable(b"TMode");
+    }
+    let little = !translate.is_big_endian();
     let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
+    decoder.frame_probe = true;
+    decoder.full_capture = capture_xrefs.then(Default::default);
+    let mut frames = ArmFrames::default();
     let mut accepted: BTreeSet<u64> = BTreeSet::new();
-    let mut claimed: BTreeSet<u64> = BTreeSet::new();
+    let mut claimed: BTreeMap<u64, u32> = BTreeMap::new();
 
     // Address-ordered scan (executable_sections is address-sorted upstream), so the
     // `claimed` body-dedup sees a real function's entry before any prologue-shaped
     // byte-pair in its interior.
+    let mut candidates: BTreeSet<u64> = BTreeSet::new();
     for (sec_addr, _sec_hi, data) in crate::entry::executable_sections(file) {
         // Snap to the first even (2-byte-aligned) VMA in the section, then stride
-        // by two — the Thumb instruction alignment (and angr's finditer stride).
+        // by two; the mode-aware matcher additionally requires ARM word alignment.
         let mut off = (sec_addr as usize) & 1;
         while off + 1 < data.len() {
-            if is_thumb_lr_prologue(&data, off) {
-                let vma = sec_addr + off as u64;
-                // gap-only + not already inside an accepted routine.
-                if listing.is_undefined(vma) && !claimed.contains(&vma) {
-                    let gap_hi = listing.next_instruction_start_after(vma).unwrap_or(u64::MAX);
-                    if let Some(body) =
-                        check_valid_subroutine(&mut decoder, listing, vma, vma, gap_hi)
-                    {
-                        accepted.insert(vma);
-                        claimed.extend(body);
-                    }
-                }
+            let vma = sec_addr + off as u64;
+            if listing.is_undefined(vma)
+                && kuna_armprologue::matches(little, arch, &decoder.code_space, vma, &data, off)
+            {
+                candidates.insert(vma);
             }
             off += 2;
         }
     }
+    decoder.prologue_starts = Some(Rc::new(candidates.clone()));
+    // Address order, so an accepted routine claims its body before a
+    // prologue-shaped halfword in its interior is considered.
+    for vma in candidates {
+        if claimed.range(..=vma).next_back()
+            .is_some_and(|(&start, &len)| vma - start < u64::from(len))
+        {
+            continue;
+        }
+        let gap_hi = listing.next_instruction_start_after(vma).unwrap_or(u64::MAX);
+        let Some(body) = check_valid_subroutine_strict(&mut decoder, listing, vma, vma, gap_hi)
+        else {
+            continue;
+        };
+        accepted.insert(vma);
+        let spans: Vec<_> = body.into_iter().map(|start| {
+            (start, decoder.probe(start).unwrap().len)
+        }).collect();
+        claimed.extend(spans.iter().copied());
+        if arch.analysis_aif || capture_xrefs {
+            frames.validated(vma, spans, &mut decoder);
+        } else {
+            frames.validated_body(vma, spans);
+        }
+    }
 
-    accepted.into_iter().collect()
+    if arch.analysis_aif && !accepted.is_empty() && listing.function_count() >= MINIMUM_FUNCTION_COUNT {
+        let replacements = frames.reconcile(listing, listing, &mut decoder, &accepted, &[],
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate);
+        accepted.retain(|root| !replacements.contains_key(root));
+        accepted.extend(replacements.into_values());
+    }
+    frames.roots = accepted.into_iter().collect();
+    frames
+}
+
+/// Reconsider provisional frame entries using the expanded fingerprint corpus,
+/// while validating prefixes against the partition and context from before frame discovery.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn arm_frame_prefixes(
+    frames: &mut ArmFrames,
+    listing: &Listing,
+    corpus: &Listing,
+    roots: &BTreeSet<u64>,
+    focused: &[u64],
+    frame_context: Option<&kuna_sleigh::kuna_contextscope::ContextScope<'_>>,
+    arch: &kuna_decomp::architecture::Architecture,
+    translate: &dyn Translate,
+    code_space: Rc<AddrSpace>,
+) -> BTreeMap<u64, u64> {
+    if !arch.analysis_aif || roots.is_empty() || corpus.function_count() < MINIMUM_FUNCTION_COUNT {
+        return BTreeMap::new();
+    }
+    let context = frame_context.map(|scope| scope.probe_original())
+        .or_else(|| translate.context_scope());
+    if let Some(scope) = &context {
+        let _ = scope.protect_variable(b"TMode");
+    }
+    let mut decoder = GapDecoder::new(translate, code_space, listing.exec_ranges());
+    decoder.frame_probe = true;
+    decoder.prologue_starts = Some(Rc::new(roots.clone()));
+    frames.reconcile(listing, corpus, &mut decoder, roots, focused,
+        arch.analysis_aifstrict, arch.analysis_aifcorroborate)
+}
+
+fn reconcile_frame_prefixes(
+    listing: &Listing,
+    corpus: &Listing,
+    decoder: &mut GapDecoder,
+    roots: &BTreeSet<u64>,
+    mut claimed: BTreeMap<u64, u32>,
+    strict: bool,
+    corroborate: bool,
+    bodies: &mut BTreeMap<u64, ProbedBody>,
+) -> BTreeMap<u64, u64> {
+    let mut accepted = roots.clone();
+    let mut replacements = BTreeMap::new();
+    let prefixes = aif_candidates(listing, corpus, decoder, strict, corroborate, &claimed, Some(roots), Some(bodies));
+    for prefix in prefixes {
+        if !listing.is_undefined(prefix) {
+            continue;
+        }
+        if claimed.range(..=prefix).next_back()
+            .is_some_and(|(&start, &len)| prefix - start < u64::from(len))
+        {
+            continue;
+        }
+        let gap_hi = listing.next_instruction_start_after(prefix).unwrap_or(u64::MAX);
+        if accepted.range(prefix..gap_hi).next().is_none() {
+            continue;
+        }
+        let spans: Vec<_> = bodies[&prefix].iter().map(|(&start, insn)| (start, insn.len)).collect();
+        let interior: Vec<_> = spans.iter().filter(|(start, _)| *start >= prefix)
+            .flat_map(|&(start, len)| {
+                accepted.range(start..start.saturating_add(u64::from(len))).copied()
+            }).collect();
+        if !interior.is_empty() {
+            for root in interior {
+                accepted.remove(&root);
+                replacements.insert(root, prefix);
+            }
+            accepted.insert(prefix);
+            claimed.extend(spans);
+        }
+    }
+    replacements
 }
 
 /// True iff the 2 (or 4) bytes at `data[off..]` are a canonical **LR-saving Thumb

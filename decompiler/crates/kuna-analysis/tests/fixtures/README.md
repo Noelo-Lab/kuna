@@ -1294,3 +1294,14 @@ The entry calls functions at `0x1500` and `0x1600`; the first branches past the
 second to a direct call and an indirect call at `0x1750`. Both functions are
 established by ordinary calls, independently of frame recovery. Tests generate
 the images in Cargo scratch directories; no generated binary is retained.
+
+### Authored ARM frame-recovery graphs
+
+`arm_xref_roots.py` and `arm_context_graph.py` generate ARM/Thumb ELF
+executables from authored instruction words under Apache-2.0, without compiler
+or binary inputs; the generators' docstrings list their variants. The
+`noreturnpool` variant places two frames that each end with a conditional
+return, a call to a stub that never returns and literal-pool words: the first
+pool decodes as valid instructions that fall into the next frame, the second
+does not decode. Tests generate the images in Cargo scratch directories; no
+generated binary is retained.

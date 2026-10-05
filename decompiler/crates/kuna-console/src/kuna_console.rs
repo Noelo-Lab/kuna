@@ -285,6 +285,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "callfixup" => on_off(conf.analysis_callfixup),
         "addrtable" => on_off(conf.analysis_addrtable),
         "listing" => on_off(conf.analysis_listing),
+        "armframes" => on_off(conf.analysis_armframes),
         "unmappedentry" => on_off(conf.analysis_unmappedentry),
         "ppclocalentry" => on_off(conf.analysis_ppclocalentry),
         // (kuna `flowmode`) Valued `on|aftercall|off`, so it reports its own token.
