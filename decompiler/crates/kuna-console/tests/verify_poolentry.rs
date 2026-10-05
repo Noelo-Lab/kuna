@@ -273,3 +273,102 @@ fn poolentry_is_inert_without_aif() {
         "and with `aif` off none of the gap-discovered entries exist at all"
     );
 }
+
+
+fn frame_variant(pointer: bool) -> PathBuf {
+    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("pool-frame-{}-{pointer}.elf", std::process::id()));
+    let generator = fixture().with_extension("py");
+    let mut cmd = std::process::Command::new("python3");
+    cmd.arg(generator).arg(&path).arg("--frame");
+    if pointer {
+        cmd.arg("--pointer");
+    }
+    assert!(cmd.status().unwrap().success());
+    path
+}
+
+fn checked_frame_program(
+    path: &PathBuf,
+    aif: bool,
+    pool: bool,
+    pointers: bool,
+) -> kuna_console::engine::ConsoleProgram {
+    let specs = repo_root().join("specs");
+    let mut prog = bootstrap_from_object(
+        path.to_str().unwrap(),
+        "",
+        &[specs.to_str().unwrap().into()],
+    )
+    .unwrap();
+    for (name, enabled) in [
+        ("listing", true),
+        ("funcstart_patterns", true),
+        ("aif", aif),
+        ("aifstrict", false),
+        ("aifcorroborate", false),
+        ("poolentry", pool),
+        ("ptrentry", pointers),
+    ] {
+        prog.arch_mut()
+            .set_kuna_option(name, if enabled { "on" } else { "off" })
+            .unwrap();
+    }
+    prog.commit_pending_analysis().unwrap();
+    assert!(
+        prog.lookup_symbol("sub_8000200").is_some(),
+        "the uncalled frame must exercise recovery"
+    );
+    prog
+}
+
+#[test]
+fn recovered_frames_do_not_recommit_pool_filtered_aif_entries() {
+    let path = frame_variant(false);
+    for aif in [false, true] {
+        for pool in [false, true] {
+            let prog = checked_frame_program(&path, aif, pool, false);
+            assert_eq!(
+                prog.lookup_symbol(PHANTOM).is_some(),
+                aif && !pool,
+                "filtered AIF entry escaped through recursive discovery: aif={aif}, pool={pool}"
+            );
+            assert_eq!(
+                prog.lookup_symbol(B).is_some(),
+                aif && pool,
+                "lost pool-end replacement: aif={aif}, pool={pool}"
+            );
+            assert_eq!(
+                prog.lookup_symbol(UNPAIRED).is_some(),
+                aif,
+                "an unpaired AIF entry must remain available"
+            );
+            if aif && pool {
+                let body = decompile(prog, B);
+                assert!(body.contains(B), "missing real body: {body}");
+                assert!(
+                    !body.contains("return 0x600000000"),
+                    "fabricated constant return: {body}"
+                );
+            }
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn recovered_frames_preserve_pointer_entries_before_aif_claims_them() {
+    let path = frame_variant(true);
+    for aif in [false, true] {
+        for pointers in [false, true] {
+            let prog = checked_frame_program(&path, aif, false, pointers);
+            assert_eq!(prog.lookup_symbol(B).is_some(), pointers,
+                "pointer target became established only through AIF: aif={aif}, pointers={pointers}");
+            assert_eq!(prog.lookup_symbol(PHANTOM).is_some(), aif);
+        }
+    }
+    let both = checked_frame_program(&path, true, true, true);
+    assert!(both.lookup_symbol(B).is_some());
+    assert!(both.lookup_symbol(PHANTOM).is_none());
+    std::fs::remove_file(path).unwrap();
+}

@@ -784,46 +784,93 @@ pub fn run_listing_consumers(
             );
         }
     }
-    // (kuna, Stage-2 ARM discovery) Raw, UNPAIRED Thumb-prologue gap seeding — the
-    // angr `CFGFast._func_addrs_from_prologues()` mirror. After the first walk, scan
-    // for canonical LR-saving Thumb prologues (`PUSH {..,lr}` / `PUSH.W {..,lr}`)
-    // that landed in an UNDEFINED gap (never epilogue-paired by `<patternpairs>`,
-    // never reached by a direct BL, and skipped by AIF's cursor-advancing gap-walk),
-    // validate each with `check_valid_subroutine`, and RE-SEED the walk with the
-    // survivors so it expands each into a full function + discovers its callees. The
-    // guards (gap-only via the walk's coverage, `check_valid_subroutine`, and the
-    // body-claim dedup) keep precision (angr measured the raw prologues at ~93%).
-    // Gated by the same `funcstart_patterns` flag (ARM-only inside
-    // `raw_thumb_prologue_seeds`), so x86-64 (funcstart_patterns off) is unchanged
-    // and every non-ARM binary is a strict no-op. betaflight STM32F405: recovers the
-    // ~483 PUSH-prologue functions the `<patternpairs>` matcher structurally misses.
+    let mut frame_aif: Option<crate::aif::kuna_entrychecks::CheckedAif> = None;
+    let mut frame_pointers = None;
+    // Recover validated LR-saving ARM/Thumb frames in gaps before fingerprinting.
     if arch.analysis_listing && arch.analysis_funcstart_patterns {
         if let Some(code_space) = arch.manage().get_default_code_space() {
-            let raw = crate::aif::raw_thumb_prologue_seeds(
+            let mut frame_cache = crate::aif::raw_arm_frames(
                 &file,
                 &listing,
+                arch,
                 translate,
                 std::rc::Rc::clone(code_space),
                 listing.exec_ranges(),
+                false,
             );
-            if !raw.is_empty() {
-                let before = seeds.len();
-                seeds.extend(raw);
-                seeds.sort_unstable();
-                seeds.dedup();
-                // Only re-walk when the scan genuinely added new seeds.
-                if seeds.len() != before {
-                    listing = crate::listing::Listing::build_with_meta_planned(
-                        &file,
-                        image,
-                        arch,
-                        translate,
-                        &seeds,
-                        &funcsym_seeds,
-                        &seed_names,
-                        detail,
-                        plan,
+            if !frame_cache.roots.is_empty() {
+                let mut frames: std::collections::BTreeSet<u64> = frame_cache.roots.iter().copied().collect();
+                let mut rejected = std::collections::BTreeSet::new();
+                let independent_seeds = seeds.clone();
+                let original = listing;
+                loop {
+                    seeds = independent_seeds.iter().copied().chain(frames.iter().copied())
+                        .chain(frame_pointers.iter().flatten().copied())
+                        .chain(frame_aif.iter().flat_map(|checked| checked.entries.iter().copied())).collect();
+                    seeds.sort_unstable();
+                    seeds.dedup();
+                    let frame_context = translate.context_scope();
+                    let mut modes = crate::listing::kuna_framemode::FrameModes::preserving(
+                        &frames.iter().copied().chain(frame_aif.iter()
+                            .flat_map(|checked| checked.entries.iter().copied())).collect::<Vec<_>>(),
+                        &original,
                     );
+                    listing = crate::listing::Listing::build_tracking_frames(
+                        &file, image, arch, translate, &seeds, &funcsym_seeds,
+                        &seed_names, detail, plan, Some(&mut modes),
+                    );
+                    let replacements = crate::aif::arm_frame_prefixes(
+                        &mut frame_cache, &original, &listing, &frames, &[], frame_context.as_ref(),
+                        arch, translate, std::rc::Rc::clone(code_space),
+                    );
+                    let stale = if replacements.is_empty() { modes.stale().clone() }
+                        else { std::collections::BTreeSet::new() };
+                    if !replacements.is_empty() || !stale.is_empty() {
+                        rejected.extend(stale);
+                        frames.retain(|root| !replacements.contains_key(root) && !rejected.contains(root));
+                        frames.extend(replacements.into_values().filter(|root| !rejected.contains(root)));
+                        frame_aif = None;
+                        frame_pointers = None;
+                        continue;
+                    }
+                    if frame_pointers.is_none() {
+                        let probe = translate.context_scope();
+                        let found = crate::aif::code_pointer_table_seeds(
+                            &file, &listing, translate, std::rc::Rc::clone(code_space),
+                            listing.exec_ranges(),
+                        );
+                        drop(probe);
+                        let added = !found.is_empty();
+                        frame_pointers = Some(found);
+                        if added {
+                            continue;
+                        }
+                    }
+                    if arch.analysis_aif && frame_aif.is_none() {
+                        let probe = translate.context_scope();
+                        if let Some(scope) = &probe { let _ = scope.protect_variable(b"TMode"); }
+                        let pointers = if arch.analysis_ptrentry {
+                            crate::aif::kuna_ptrentry::pointer_entry_seeds(
+                                &file, &listing, translate, std::rc::Rc::clone(code_space),
+                                listing.exec_ranges(),
+                            )
+                        } else { Vec::new() };
+                        let mut checked = crate::aif::kuna_entrychecks::run(
+                            &listing, Some(&original), arch, translate,
+                            std::rc::Rc::clone(code_space), pointers,
+                        );
+                        drop(probe);
+                        checked.entries.retain(|root| !rejected.contains(root));
+                        let added = !checked.entries.is_empty();
+                        frame_aif = Some(checked);
+                        if added {
+                            continue;
+                        }
+                    }
+                    if let Some(context) = frame_context {
+                        context.commit();
+                    }
+                    break;
                 }
             }
         }
@@ -844,7 +891,7 @@ pub fn run_listing_consumers(
     // `code_pointer_table_seeds`), so x86-64 (funcstart_patterns off) is byte-identical
     // and every non-ARM binary is a strict no-op. Measured recovery (real, ground-truth
     // functions, zero false starts): cf2 +3, usart-stdio +1, betaflight +8.
-    if arch.analysis_listing && arch.analysis_funcstart_patterns {
+    if arch.analysis_listing && arch.analysis_funcstart_patterns && frame_pointers.is_none() {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let ptr = crate::aif::code_pointer_table_seeds(
                 &file,
@@ -892,7 +939,9 @@ pub fn run_listing_consumers(
     // property of the wiring. ARM-only inside `pointer_entry_seeds`, so every
     // non-ARM object is a strict no-op.
     let mut ptrentry_out: Vec<u64> = Vec::new();
-    if arch.analysis_listing && arch.analysis_ptrentry {
+    if let Some(checked) = &frame_aif {
+        ptrentry_out.clone_from(&checked.pointer_entries);
+    } else if arch.analysis_listing && arch.analysis_ptrentry {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             ptrentry_out = crate::aif::kuna_ptrentry::pointer_entry_seeds(
                 &file,
@@ -949,39 +998,14 @@ pub fn run_listing_consumers(
     if arch.analysis_listing && arch.analysis_aif {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let mut aif_out = AnalysisOutput::default();
-            aif_out.entries = crate::aif::run_aif(
-                &listing,
-                translate,
-                std::rc::Rc::clone(code_space),
-                listing.exec_ranges(),
-                arch.analysis_aifstrict,
-                arch.analysis_aifcorroborate,
-            );
-            // (kuna, `poolentry`) Reference-driven ARM literal-pool inference over
-            // the COMPLETED walk, driving two consumers: the additive recall half
-            // emits an entry at each pool end, and the subtractive precision half
-            // drops an AIF accept that lies inside an inferred pool (the
-            // `pool_word + 2` phantom) — but only when the pool end carries a
-            // replacement entry, which makes that removal a MOVE. Computed here,
-            // after `run_aif` and after `ptrentry`'s targets exist, so the additive
-            // fact never re-seeds the walk and the removal is a partition of a list
-            // rather than a Listing rebuild. See `aif::kuna_poolentry`.
-            if arch.analysis_poolentry {
-                let res = crate::aif::kuna_poolentry::run_pool_pass(
-                    arch,
-                    &listing,
-                    translate,
-                    std::rc::Rc::clone(code_space),
-                    listing.exec_ranges(),
-                    &aif_out.entries,
-                    &ptrentry_out,
-                );
-                aif_out.entries = res.kept_aif;
-                if !res.added.is_empty() {
-                    let mut pool_out = AnalysisOutput::default();
-                    pool_out.entries = res.added;
-                    out.push(("poolentry", pool_out));
-                }
+            let checked = frame_aif.unwrap_or_else(|| crate::aif::kuna_entrychecks::run(
+                &listing, None, arch, translate, std::rc::Rc::clone(code_space), ptrentry_out.clone(),
+            ));
+            aif_out.entries = checked.entries;
+            if !checked.pool_entries.is_empty() {
+                let mut pool_out = AnalysisOutput::default();
+                pool_out.entries = checked.pool_entries;
+                out.push(("poolentry", pool_out));
             }
             out.push(("aif", aif_out));
         }
