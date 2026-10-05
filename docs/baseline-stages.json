@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1988,
-    1988
+    1999,
+    1999
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1012,6 +1012,17 @@
     "data:STACK WORD #1: default loses the pointer",
     "data:STACK WORD #2: enabled retains all four arguments",
     "data:STACK WORD #3: enabled preserves the output-dependent condition",
+    "data:STACKGUARD-TAILCALL #10: no canary, h7 keeps t.b = 2 in both passes",
+    "data:STACKGUARD-TAILCALL #11: no canary, h7 passes the address of t to consume in both passes",
+    "data:STACKGUARD-TAILCALL #1: the fs_offset input is declared only with option stackguard off, once per function",
+    "data:STACKGUARD-TAILCALL #2: the entry-side canary load prints only with option stackguard off",
+    "data:STACKGUARD-TAILCALL #3: default, t2 and t2s store b[0] and go straight to the tail call",
+    "data:STACKGUARD-TAILCALL #4: default, w3's indexed store goes straight to the tail call",
+    "data:STACKGUARD-TAILCALL #5: default, k2's fill loop, indexed store and tail call are unchanged",
+    "data:STACKGUARD-TAILCALL #6: every function keeps its check with option stackguard off, none by default",
+    "data:STACKGUARD-TAILCALL #7: control, t3 (check after the call) returns ext() + 1 by default",
+    "data:STACKGUARD-TAILCALL #8: no canary, h6 passes the address of v to g in both passes",
+    "data:STACKGUARD-TAILCALL #9: no canary, h6 and h7 keep their copy of a->f in both passes",
     "data:STORECOPYEFFECTS #1: the three live writes of nine survive",
     "data:STORECOPYEFFECTS #2: every subsequent spill reload keeps its store",
     "data:STORECOPYEFFECTS #3: a load between calls saves its pre-store value",

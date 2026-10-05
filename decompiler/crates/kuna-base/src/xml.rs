@@ -1981,7 +1981,9 @@ mod tests {
         // in the ABI's order when its low word is returned on purpose
         // and gh840-varargbits-x86 + gh840-varargbits-a64 / an integer passed
         // in a variadic float register prints as a reinterpretation
-        assert_eq!(count, 420, "corpus file count drifted");
+        // and kuna-stackguard-tailcall / a canary checked right before a tail
+        // call loses its entry-side load with the check (GH-866)
+        assert_eq!(count, 421, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

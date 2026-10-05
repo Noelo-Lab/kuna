@@ -113,6 +113,57 @@ fn ptr_is_canary_slot(ptr: VarnodeId, data: &Funcdata) -> bool {
     false
 }
 
+/// Is `ptr` `FS_OFFSET + 0x28`, the canary itself?  [`ptr_is_canary_slot`]
+/// accepts any `<base> + 0x28`, so a struct field at that offset passes it;
+/// only a LOAD through the segment base may root [`collect_value_slots`].
+fn ptr_is_fs_canary(ptr: VarnodeId, data: &Funcdata) -> bool {
+    let Some(fs) = data
+        .get_arch()
+        .manage()
+        .register_lookup()
+        .and_then(|l| l.probe_register("FS_OFFSET"))
+    else {
+        return false;
+    };
+    let Some(fs_space) = fs.space else {
+        return false;
+    };
+    let peel = |mut vn: VarnodeId| {
+        for _ in 0..8 {
+            let def = data.vbank().get(vn).and_then(|v| v.get_def());
+            let Some(dop) = def.and_then(|d| data.obank().get(d)) else {
+                break;
+            };
+            match (dop.code(), dop.get_in(0)) {
+                (OpCode::CPUI_COPY | OpCode::CPUI_CAST, Some(in0)) => vn = in0,
+                _ => break,
+            }
+        }
+        vn
+    };
+    let Some(add) = data
+        .vbank()
+        .get(peel(ptr))
+        .and_then(|v| v.get_def())
+        .and_then(|d| data.obank().get(d))
+        .filter(|d| d.code() == OpCode::CPUI_INT_ADD)
+    else {
+        return false;
+    };
+    let is_fs = |vn: VarnodeId| {
+        data.vbank()
+            .get(peel(vn))
+            .is_some_and(|v| Rc::ptr_eq(v.get_space(), &fs_space) && v.get_offset() == fs.offset)
+    };
+    let is_slot = |vn: VarnodeId| {
+        data.vbank().get(vn).is_some_and(|v| v.is_constant() && v.get_offset() == 0x28)
+    };
+    match (add.get_in(0), add.get_in(1)) {
+        (Some(a), Some(b)) => (is_slot(b) && is_fs(a)) || (is_slot(a) && is_fs(b)),
+        _ => false,
+    }
+}
+
 /// Does `vn` ultimately derive from a LOAD of the canary slot?
 /// (C++ `derivesFromCanaryLoad`, `kuna_stackguard.cc:60`).
 ///
@@ -184,13 +235,16 @@ fn derives_from_canary_load(
 /// MULTIEQUAL input (each proven subchain contributes) and records
 /// `(address, size)` for each addrtied varnode whose value provably derives
 /// from a LOAD of the canary slot — i.e. the saved-canary stack slot the pass
-/// resolved.  Returns whether `vn` itself derives.
+/// resolved — and each `FS_OFFSET + 0x28` LOAD the chains end in, so the
+/// caller can also find the slot from the store side
+/// ([`collect_value_slots`]).  Returns whether `vn` itself derives.
 fn collect_canary_slots(
     vn: VarnodeId,
     depth: int4,
     seen: &mut BTreeSet<VarnodeId>,
     data: &Funcdata,
     slots: &mut Vec<(Address, int4)>,
+    loads: &mut Vec<OpId>,
 ) -> bool {
     if depth <= 0 {
         return false;
@@ -213,7 +267,12 @@ fn collect_canary_slots(
     };
     let derived = match oc {
         OpCode::CPUI_LOAD => {
-            ptr_is_canary_slot(in1.expect("collectCanarySlots: load ptr"), data)
+            let ptr = in1.expect("collectCanarySlots: load ptr");
+            let canary = ptr_is_canary_slot(ptr, data);
+            if canary && !loads.contains(&def) && ptr_is_fs_canary(ptr, data) {
+                loads.push(def);
+            }
+            canary
         }
         OpCode::CPUI_COPY
         | OpCode::CPUI_CAST
@@ -225,6 +284,7 @@ fn collect_canary_slots(
             seen,
             data,
             slots,
+            loads,
         ),
         OpCode::CPUI_SUBPIECE => {
             let in1 = in1.expect("collectCanarySlots: subpiece in1");
@@ -239,6 +299,7 @@ fn collect_canary_slots(
                 seen,
                 data,
                 slots,
+                loads,
             )
         }
         OpCode::CPUI_MULTIEQUAL => {
@@ -250,7 +311,7 @@ fn collect_canary_slots(
                     .expect("collectCanarySlots: multiequal")
                     .get_in(i)
                     .expect("collectCanarySlots: multiequal in");
-                if collect_canary_slots(ini, depth - 1, seen, data, slots) {
+                if collect_canary_slots(ini, depth - 1, seen, data, slots, loads) {
                     any = true;
                 }
             }
@@ -268,6 +329,70 @@ fn collect_canary_slots(
         }
     }
     derived
+}
+
+/// The addrtied storage a protector value was written to.
+///
+/// A forward fixpoint from each init op's output over the value-preserving
+/// readers — `COPY`/`CAST` (the store into the frame slot), `INDIRECT` (the
+/// slot carried across a call or an aliasing store), and a `MULTIEQUAL` only
+/// when EVERY input is already known to hold the value.  Every addrtied member
+/// of the resulting set holds the protector value, so the liveness release
+/// cannot reach an unrelated local; only stack-space members are recorded, so a
+/// copy of the value into a global keeps its store.  Shared with the MSVC `/GS`
+/// sibling, which roots it at the entry-side cookie scramble.
+pub(crate) fn collect_value_slots(
+    inits: &[OpId],
+    data: &Funcdata,
+    slots: &mut Vec<(Address, int4)>,
+) {
+    let mut set: BTreeSet<VarnodeId> = BTreeSet::new();
+    let mut work: Vec<VarnodeId> = Vec::new();
+    for &op in inits {
+        if let Some(out) = data.obank().get(op).and_then(|o| o.get_out()) {
+            if set.insert(out) {
+                work.push(out);
+            }
+        }
+    }
+    while let Some(vn) = work.pop() {
+        let readers: Vec<OpId> = match data.vbank().get(vn) {
+            Some(v) => v.descend_iter().collect(),
+            None => continue,
+        };
+        for r in readers {
+            let Some(rop) = data.obank().get(r) else { continue };
+            let joins = match rop.code() {
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST => true,
+                OpCode::CPUI_INDIRECT => rop.get_in(0) == Some(vn),
+                OpCode::CPUI_MULTIEQUAL => {
+                    (0..rop.num_input()).all(|i| rop.get_in(i).is_some_and(|x| set.contains(&x)))
+                }
+                _ => false,
+            };
+            if !joins {
+                continue;
+            }
+            let Some(out) = rop.get_out() else { continue };
+            if set.insert(out) {
+                work.push(out);
+            }
+        }
+    }
+    let Some(stack) = data.get_arch().manage().get_stack_space().map(Rc::clone) else {
+        return;
+    };
+    for vn in set {
+        let Some(v) = data.vbank().get(vn) else { continue };
+        let on_stack = v.get_addr().get_space().is_some_and(|s| Rc::ptr_eq(s, &stack));
+        if !v.is_addr_tied() || !on_stack {
+            continue;
+        }
+        let key = (v.get_addr().clone(), v.get_size());
+        if !slots.contains(&key) {
+            slots.push(key);
+        }
+    }
 }
 
 /// Release the address-forced liveness on every version of the resolved
@@ -482,12 +607,16 @@ impl Action for ActionStripStackGuard {
             // `ActionReturnSplit`, eliminating the goto/label and inlining the deep
             // match path as a direct `return 1`.
             // Resolve the saved-canary slot storage from the compare's own
-            // derivation chains before the CBRANCH dies (GH-183).
+            // derivation chains before the CBRANCH dies (GH-183), and from the
+            // store side of the canary LOADs they end in: a check copy
+            // propagation folded onto the LOAD itself reads no slot (GH-866).
             let mut slots: Vec<(Address, int4)> = Vec::new();
+            let mut loads: Vec<OpId> = Vec::new();
             let mut seen: BTreeSet<VarnodeId> = BTreeSet::new();
-            collect_canary_slots(cmp_in0, 32, &mut seen, data, &mut slots);
+            collect_canary_slots(cmp_in0, 32, &mut seen, data, &mut slots, &mut loads);
             let mut seen: BTreeSet<VarnodeId> = BTreeSet::new();
-            collect_canary_slots(cmp_in1, 32, &mut seen, data, &mut slots);
+            collect_canary_slots(cmp_in1, 32, &mut seen, data, &mut slots, &mut loads);
+            collect_value_slots(&loads, data, &mut slots);
             data.remove_branch(h, idx).expect("ActionStripStackGuard: removeBranch");
             data.remove_unreachable_blocks(false, true)
                 .expect("ActionStripStackGuard: removeUnreachableBlocks");

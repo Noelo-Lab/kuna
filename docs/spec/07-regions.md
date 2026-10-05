@@ -261,7 +261,22 @@ kept dead-code from ever collecting it. Before the strip the pass re-walks
 the compare's own derivation chains (`kuna_stackguard.rs
 (collect_canary_slots)`, the same peel set and bounds as the detector) and
 records the storage of every addrtied slot version proven to derive from the
-canary LOAD — the saved-canary stack slot itself; after the strip it clears
+canary LOAD — the saved-canary stack slot itself. When no call separates the
+canary store from the check (gcc's shape for a check right before a tail
+call, or a call-free epilogue), copy propagation folds the slot reload into
+the `fs:0x28` LOAD and the compare's chains name no slot at all (GH-866); the
+addrforced INDIRECT heritage places on the slot at the tail CALL then kept the
+init alive, printing `v1 = *(fs_offset + 0x28); ... v4 = v1;`. So the walk
+also records each canary LOAD its chains end in whose pointer is the
+`FS_OFFSET` register plus `0x28` (`kuna_stackguard.rs (ptr_is_fs_canary)`;
+the detector's own probe accepts any `<base> + 0x28`, which a struct field at
+that offset also satisfies, and a walk rooted at such a LOAD would release the
+local the field was copied into), and a forward fixpoint from those LOADs
+(`kuna_stackguard.rs (collect_value_slots)`) adds the storage of
+every stack-space addrtied varnode that holds the loaded value — through
+COPY/CAST, INDIRECT input 0, or a MULTIEQUAL whose inputs all hold it. A copy
+of the value into a global is never recorded, so its store stays. After the
+strip the pass clears
 `addrforce` on every version at that storage and excises the slot range from
 the local scope (`kuna_stackguard.rs (release_canary_slots)`, using
 `ScopeLocal::markNotMapped` — the `checkUnaliasedReturn` idiom — so the freed
@@ -474,11 +489,12 @@ and dies in the following dead-code pass, and the repeating fullloop re-runs
 mainloop over the reduced
 function before chapter 08 structures it. The entry-side scramble
 is released the same way §7.3 releases the glibc canary init:
-`kuna_msvcstackguard.rs (collect_cookie_slots)` runs a forward fixpoint from
-each scramble's output over the value-preserving readers — COPY/CAST (the
-store into the frame slot), INDIRECT (the slot carried across a call), and a
-MULTIEQUAL only when every input is already known to hold the scramble — and
-records the storage of every addrtied member; `kuna_stackguard.rs
+`kuna_stackguard.rs (collect_value_slots)`, the store-side walk §7.3 also
+uses, runs a forward fixpoint from each scramble's output over the
+value-preserving readers — COPY/CAST (the store into the frame slot),
+INDIRECT (the slot carried across a call), and a MULTIEQUAL only when every
+input is already known to hold the scramble — and records the storage of every
+stack-space addrtied member; `kuna_stackguard.rs
 (release_canary_slots)`, shared verbatim with §7.3, then clears `addrforce`
 there and excises the range from the local scope. As in §7.3 nothing is
 deleted by that step: a slot version still feeding a live reader survives, and
