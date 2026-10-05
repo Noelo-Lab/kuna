@@ -1,0 +1,89 @@
+<decompilertest>
+<binaryimage arch="RISCV:LE:64:RV64GC:gcc">
+<!--
+    kuna: a 64-bit return whose high half the function zeroes keeps its whole
+    register on RISC-V (GH-865).  The procedure-call standard sign-extends
+    every 32-bit return value to the register, unsigned ones too, so a
+    function that zero-extends a word it may set the sign bit of returns a
+    64-bit value.  Sub-variable flow used to trim the RETURN to the word, and
+    the function printed as returning int: a caller widening the result
+    sign-extended what the binary zero-extends.
+
+    Stage / sub-stage: P3 sub-variable flow, the RETURN pull
+    (p3_dataflow/subflow.rs try_return_pull, p5_types/kuna_zextreturn.rs
+    zero_extended_word), under the rule p4_calls/kuna_narrowext.rs states.
+    Two passes: option narrowext off is the compiler spec's zero extension
+    (the bug), the default abi is the fix.
+
+    Source (clang -target riscv64-linux-gnu -march=rv64gc -O2, bytes verbatim):
+
+        unsigned long z32m(unsigned long x) { return (x * 3) & 0xffffffffUL; }
+        unsigned long zu(unsigned int x) { return x; }
+        unsigned long zc(unsigned long x, unsigned y) {
+          if (x > 5) return y * 7;
+          return 0xfffffff0UL;
+        }
+        unsigned ru(unsigned x) { return x * 3; }
+        unsigned short rus(unsigned long x) { return x * 3; }
+
+    z32m and zu end slli a0,a0,32; srli a0,a0,32, and zc returns either
+    that or the constant 0xfffffff0.  ru ends addw, which sign-extends, and
+    rus zero-extends a halfword, which the rule extends by its type's sign:
+    both keep their narrow return either way.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+9b1515002d9d02150191828002150191828015466366a60005450215411582801b
+9535000d9d0215019182809b1515002d9d82809b1515002d9d421541918280
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="z32m"/>
+<symbol space="ram" offset="0x1000c" name="zu"/>
+<symbol space="ram" offset="0x10012" name="zc"/>
+<symbol space="ram" offset="0x1002c" name="ru"/>
+<symbol space="ram" offset="0x10034" name="rus"/>
+</binaryimage>
+<script>
+  <com>option narrowext off</com>
+  <com>lo fu z32m</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zu</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ru</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option narrowext abi</com>
+  <com>lo fu z32m</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zu</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ru</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rus</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ZEXTWORD #1: off, a zero-extended word returns int" min="1" max="1">int4 z32m\(int4 a0\)</stringmatch>
+<stringmatch name="ZEXTWORD #2: abi, a zero-extended word returns the register" min="1" max="1">uint8 z32m\(int4 a0\)</stringmatch>
+<stringmatch name="ZEXTWORD #3: abi, the zero-extension is printed" min="1" max="1">return \(uint4\)\(a0 \* 3\);</stringmatch>
+<stringmatch name="ZEXTWORD #4: off, a zero-extended argument returns unsigned int" min="1" max="1">unsigned int zu\(unsigned int a0\)</stringmatch>
+<stringmatch name="ZEXTWORD #5: abi, a zero-extended argument returns the register" min="1" max="1">return a0 &amp; 0xffffffff;</stringmatch>
+<stringmatch name="ZEXTWORD #6: off, the zero-extended constant reads as -16" min="1" max="1">return -0x10;</stringmatch>
+<stringmatch name="ZEXTWORD #7: abi, the zero-extended constant is returned whole" min="1" max="1">return 0xfffffff0;</stringmatch>
+<stringmatch name="ZEXTWORD #8: abi, both returns of zc return the register" min="1" max="1">uint8 zc\(uint8 a0,int4 a1\)</stringmatch>
+<stringmatch name="ZEXTWORD #9: a sign-extended word is unchanged either way" min="2" max="2">int8 ru\(int4 a0\)</stringmatch>
+<stringmatch name="ZEXTWORD #10: a zero-extended halfword stays narrow either way" min="2" max="2">u?int2 rus\(</stringmatch>
+</decompilertest>

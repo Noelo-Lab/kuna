@@ -355,3 +355,118 @@ fn a_char16_t_or_short_enum_extends_by_the_sign_of_its_source_type() {
         compile_and_run(fixture, &program, &compilers).unwrap_or_else(|e| panic!("{fixture}: {e}\n{text}"));
     }
 }
+
+/// A recovered 64-bit return whose high half the function zeroes, and two
+/// callers that widen a result. clang -O0 and -O2 for RISC-V (calls relocated
+/// by hand, the callees `noinline`), and LoongArch hand-encoded from the -O2
+/// shape (`alsl.d`, `bstrpick.d a0,a0,31,0`, `alsl.w`, `bl`).
+const ZEXT_SOURCE: &str = r#"
+unsigned long s_z32m(unsigned long x) { return (x * 3) & 0xffffffffUL; }
+unsigned long s_zu(unsigned int x) { return x; }
+unsigned s_ru(unsigned x) { return x * 3; }
+long s_cz(unsigned long x) { return s_z32m(x) + 1; }
+unsigned long s_cru(unsigned x) { return s_ru(x); }
+"#;
+
+/// Each checked function with the argument it takes; `ru` is only a callee.
+const ZEXT_ARGS: &[(&str, &str)] =
+    &[("z32m", "(unsigned long)v"), ("zu", "(unsigned)v"), ("cz", "(unsigned long)v"), ("cru", "(unsigned)v")];
+const ZEXT_CALLEES: &[&str] = &["z32m", "zu", "ru"];
+
+struct ZextImage {
+    name: &'static str,
+    target: &'static str,
+    code: &'static str,
+    functions: &'static [(&'static str, u64)],
+    checked: &'static [&'static str],
+}
+
+const ZEXT_IMAGES: &[ZextImage] = &[
+    ZextImage {
+        name: "rv64-O0",
+        target: "RISCV:LE:64:RV64GC:gcc",
+        code: "011106ec22e800102334a4fe833584fe1b9515002d9d02150191e260426405618280011106ec22e8\
+               00102326a4fe0365c4fee260426405618280011106ec22e800102326a4fe8325c4fe1b9515002d9d\
+               e260426405618280011106ec22e800102334a4fe033584fe97000000e78080f90505e26042640561\
+               8280011106ec22e800102326a4fe0325c4fe97000000e78000fb02150191e260426405618280",
+        functions: &[("z32m", 0x0), ("zu", 0x22), ("ru", 0x3a), ("cz", 0x58), ("cru", 0x7a)],
+        checked: &["z32m", "zu", "cz", "cru"],
+    },
+    ZextImage {
+        name: "rv64-O2",
+        target: "RISCV:LE:64:RV64GC:gcc",
+        code: "9b1515002d9d0215019182800215019182809b1515002d9d8280411106e497000000e78020fe0505\
+               a26041018280411106e497000000e78000fe02150191a26041018280",
+        functions: &[("z32m", 0x0), ("zu", 0xc), ("ru", 0x12), ("cz", 0x1a), ("cru", 0x2e)],
+        checked: &["z32m", "zu"],
+    },
+    ZextImage {
+        name: "la64",
+        target: "Loongarch:LE:64:lp64d:default",
+        code: "84102c008400df002000004c8400df002000004c841004002000004c63c0ff026120c029ffdfff57\
+               8404c0026120c0286340c0022000004c63c0ff026120c029ffd7ff578400df006120c0286340c002\
+               2000004c",
+        functions: &[("z32m", 0x0), ("zu", 0xc), ("ru", 0x14), ("cz", 0x1c), ("cru", 0x38)],
+        checked: &["z32m", "zu", "cz", "cru"],
+    },
+];
+
+fn decompile_unprototyped(image: &ZextImage, mode: &str) -> String {
+    let path = common::scratch_file(&format!("zextword-{}", image.name), "bin");
+    std::fs::write(&path, bytes(image.code)).unwrap();
+    let mut args: Vec<String> = ["decompile-all", path.to_str().unwrap(), "--raw-image", "--target", image.target]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    args.extend(["--base".into(), format!("{BASE:#x}"), "--option".into(), "narrowext".into(), mode.into()]);
+    for (name, start) in image.functions {
+        let at = format!("{:#x}", BASE + start);
+        args.extend(["--entry".into(), at.clone(), "--define-function".into(), format!("{at}={name}")]);
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_kuna")).args(&args).output().unwrap();
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(output.status.success(), "{}: {text}\n{}", image.name, String::from_utf8_lossy(&output.stderr));
+    text
+}
+
+fn zext_round_trip(image: &ZextImage, text: &str, compilers: &[&str]) -> Result<(), String> {
+    let mut printed = String::new();
+    let mut checks = String::new();
+    for (n, _) in image.functions {
+        if ZEXT_CALLEES.contains(n) || image.checked.contains(n) {
+            printed.push_str(function(text, n));
+        }
+    }
+    for (n, arg) in ZEXT_ARGS.iter().filter(|c| image.checked.contains(&c.0)) {
+        checks.push_str(&format!("    CHECK({n}({arg}), s_{n}({arg}));\n"));
+    }
+    let program = format!(
+        "#include <stdio.h>\n{ZEXT_SOURCE}\n{printed}\n\
+         static const int V[] = {{0, 1, -1, 3, 0x2aaaaaab, 0x7fffffff, (int)0x80000000, -7, 0x12345678,\n\
+         (int)0xdeadbeef}};\n\
+         #define CHECK(got, want) do {{ long long g = (got), w = (want); if (g != w) {{ \\\n\
+         printf(\"%s v=%#x: %llx, want %llx\\n\", #got, v, g, w); bad++; }} }} while (0)\n\
+         int main(void) {{\n  int bad = 0;\n  for (unsigned i = 0; i < sizeof V / sizeof V[0]; i++) {{\n\
+         int v = V[i];\n{checks}  }}\n  return bad != 0;\n}}\n"
+    );
+    compile_and_run(&format!("zextword-{}", image.name), &program, compilers)
+}
+
+/// RISC-V and LoongArch LP64 sign-extend every 32-bit return value, so a
+/// function that zero-extends a word whose sign bit may be set returns the
+/// whole register, and its callers widen the result as the binary does. With
+/// the compiler spec's extension (`narrowext off`) it reads as `int`.
+#[test]
+fn a_zero_extended_word_return_round_trips_through_the_printed_c() {
+    let compilers = host_compilers();
+    for image in ZEXT_IMAGES {
+        let text = decompile_unprototyped(image, "abi");
+        zext_round_trip(image, &text, &compilers).unwrap_or_else(|e| panic!("{}: {e}\n{text}", image.name));
+        let text = decompile_unprototyped(image, "off");
+        assert!(
+            zext_round_trip(image, &text, &compilers).is_err(),
+            "{}: the compiler spec's extension already round-trips:\n{text}",
+            image.name
+        );
+    }
+}

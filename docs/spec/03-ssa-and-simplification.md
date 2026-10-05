@@ -1472,6 +1472,32 @@ copies the high word down and clears `EDX`, and compiler-rt's `rep_clz`.
 `--option returnpair single` returns the first register alone for the run, which
 restores the word for them.
 
+(kuna) The RETURN pull also refuses to trim a zero-extended word where the
+convention sign-extends every 32-bit return value whatever its sign
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_zextreturn.rs (zero_extended_word)`):
+the RISC-V and LoongArch LP64 rule of chapter [04](04-calls-and-prototypes.md)
+(`kuna_narrowext::sign_extends_any`), and MIPS64 under `narrowext compiler`.
+The trim must drop only known-zero bits, and the word's sign bit must be
+possibly set; the check applies to the RETURN being pulled and to each constant
+RETURN the pull patches directly. There no 32-bit C type is extended the way the
+binary extends the value, so the function returns the whole register (GH-865):
+RV64 `unsigned long z32m(unsigned long x) { return (x * 3) & 0xffffffffUL; }`
+(`slliw; addw; slli a0,a0,32; srli a0,a0,32`) printed as `int z32m(int a0)`,
+and a caller widening the result sign-extended what the binary zero-extends; it
+now prints `unsigned long z32m(int a0) { return (unsigned int)(a0 * 3); }`. A
+constant returned zero-extended, such as `0xfffffff0` beside such a value, no
+longer reads as `-0x10`. A word whose sign bit is known clear keeps the trim,
+since its zero and sign extensions agree, as do a word the function sign-extends
+(`addw`) and a narrower value, which the rule extends by its type's sign
+(`kuna_zextreturn`, chapter [05](05-types.md)). Every function under
+`narrowext off` keeps the trim. So does every x86-64 and AArch64 function, and
+there it is not settled: those conventions leave the bits above a 32-bit return
+unspecified, so the printed `int` callee compiles to the same instructions, but
+a caller that reads the whole register (`add rax,1` after the call) relies on
+the zero-extension the callee performs, and its printed C sign-extends the
+`int` result. Telling such a return from a genuine `int` takes evidence from
+the callers, which the RETURN pull does not have.
+
 Three sibling engines share the file. `subflow.rs (SplitFlow)` (trigger
 `RuleSplitFlow`, oppool1) splits a double-sized value into hi/lo lanes through
 the `decompiler/crates/kuna-decomp/src/substrate/transform.rs
