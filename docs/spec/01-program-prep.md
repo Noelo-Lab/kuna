@@ -4980,6 +4980,17 @@ which unconditionally cannot return. Without it, every caller grows a spurious
 fall-through edge into the cold path that structures into an invalid
 `while(true)`+`goto`.
 
+The deferred analysis commit also seeds the Listing from function symbols already
+marked no-return, including `option noreturn <name>` applied before `read symbols`.
+These explicit facts must reach propagation before caller flow is constructed;
+they do not depend on the known-name analyzer being enabled. A wrapper that calls
+a marked leaf and then has unreachable INT3 bytes is handled by the reachability
+rule below. Marking the leaf does not conclude a wrapper with a reachable return,
+an unresolved jump, or an unmodelled escaping path. Without a known or explicit
+no-return fact, a call followed by INT3 alone does not establish that its callee
+cannot return. The existing `listing`, `noreturn_propagate`, and `noreturn_reach`
+gates still control this inference.
+
 Two rules fold into the same fixpoint, both Ghidra-derived:
 
 - **The `error(nonzero,…)` value rule** (`noreturn_error`, DIV-16): glibc `error()`
