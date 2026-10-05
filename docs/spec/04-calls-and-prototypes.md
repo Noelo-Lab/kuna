@@ -1035,10 +1035,12 @@ signature is already known, and locks it if so
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::apply_locked_prototype)`). The model it is locked under is the one the
 declaration named when it named one (§4.1), else the architecture default, with
-one exception: on an ARM image that states the soft-float convention and no
+two exceptions: on an ARM image that states the soft-float convention and no
 floating-point hardware, a declaration whose default layout would put a
 parameter or the return value in a VFP register is laid out under the soft-float
-model instead (see "Declared prototypes on a soft-float image" in §4.3). Two
+model instead (see "Declared prototypes on a soft-float image" in §4.3), and on
+an ARM image that states the VFP variant a variadic declaration returns under
+the base standard (see "Declared variadic prototypes on a VFP image"). Two
 sources, in precedence order: a
 prototype the operator declared for this run (`parse line extern …` /
 `map prototype <func> …`, 00 §0.2), then the
@@ -2157,6 +2159,37 @@ spec's entries leave it unstated, which made a `bool` tested as a whole
 register print as `CONCAT31` of an unassigned piece. Typed indirect calls above
 use the same model. A declaration that names `__stdcall_softfp` itself gets the
 spec's model unchanged.
+
+**Declared variadic prototypes on a VFP image.** AAPCS-VFP applies only to a
+function with a fixed parameter list: a variadic function is called under the
+base standard, its result included, so `double vr(int n, ...)` returns in
+`r0:r1`, a `float` in `r0`, a homogeneous floating-point aggregate of four bytes
+in `r0` and a larger one in memory through a hidden pointer in `r0`. The spec's
+default model already sends every argument of a variadic prototype to core
+registers (its `<varargs/>` input rules), but its output list has no such rule,
+so the declared return was read from `d0`: the call printed with no result, and
+the caller's `vmov d0,r0,r1` read `r0` and `r1` as if the call had left them
+alone. On an ARM image whose attributes state the VFP variant
+(`Tag_ABI_VFP_args` = 1), a declaration that names no convention, has a variadic
+tail and returns a floating-point value or an aggregate is laid out under the
+default model with three output rules in front of its own: a `float` from the
+core registers, a structure over four bytes through a hidden pointer, and a
+homogeneous floating-point aggregate from the core registers
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_vfpvariadic.rs (model)`). The
+derived model is chosen at the same four places as the soft-float one, so the
+function's own decompile, its callers and the console's code type agree. A
+non-variadic declaration, and a variadic one returning an integer or nothing,
+keep the default model, whose storage for them is the same.
+
+An image that states the base standard with an FPU (`softfp`), or no
+convention, keeps the default layout. There a function's own declared
+floating-point return is still laid out in a VFP register, so moving only its
+variadic callee's would break the tail call `return vr(k, 2);` (`b vr`), which
+prints right today because both sides read `d0`. The `protoorder lock` park
+gives every recovered list a variable tail that is a floor for argument
+recovery, not a variadic signature; on a VFP image those pieces state the
+default model's return storage (`kuna_vfpvariadic::parked_output`), so a
+recovered `float` return is still read from `s0` at its callers.
 
 `force_set` first saves a copy of the full `FuncProto` — model, storage, locks
 and all — into the function's Override store keyed by the call address
@@ -3637,7 +3670,10 @@ model, so every argument register the convention has becomes a candidate at that
 site again and a caller holding a live value in one of them renders it as an
 argument the machine code never passes. How much that costs is a property of the
 convention — AAPCS has four argument registers and firmware keeps all four busy,
-which is why the ARM column is five times the x86-64 one.
+which is why the ARM column is five times the x86-64 one. On an ARM image that
+states the VFP variant a variable tail would also move a floating-point return
+value to the core registers, so there the parked pieces name the return storage
+themselves (see "Declared variadic prototypes on a VFP image").
 
 The over-count is answered with evidence rather than with shape, because there is
 no shape that expresses "this parameter may not exist". Both rules read the

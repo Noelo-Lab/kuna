@@ -960,6 +960,12 @@ pub struct ArchContext {
     /// laid out under, on an image without floating-point hardware.  Read by
     /// [`crate::p4_calls::kuna_typedcallabi::undeclared_model`].
     pub soft_float_declarations: Option<Rc<crate::fspec::ProtoModel>>,
+    /// (kuna) The image is ARM and states the VFP variant, where a variadic
+    /// declaration returns under the base standard.  Read by
+    /// [`crate::p4_calls::kuna_typedcallabi::undeclared_model`].
+    pub vfp_variadic: bool,
+    /// The default model with the variadic return rules, derived on first use.
+    pub variadic_declarations: std::cell::OnceCell<Option<Rc<crate::fspec::ProtoModel>>>,
     /// The narrowest return value, in bytes, that the caller rather than the
     /// callee extends to its register (`i32::MAX`: none).  Read by
     /// [`crate::p4_calls::kuna_typedcallabi`].
@@ -1695,6 +1701,8 @@ impl ArchContext {
             float_arg_registers: None,
             soft_float_model: None,
             soft_float_declarations: None,
+            vfp_variadic: false,
+            variadic_declarations: std::cell::OnceCell::new(),
             caller_extends_returns_from: i32::MAX,
             vararg_floats: Default::default(),
             narrow_ext: crate::kuna_narrowext::Rules::default(),

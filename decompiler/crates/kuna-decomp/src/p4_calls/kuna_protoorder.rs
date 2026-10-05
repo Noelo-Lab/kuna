@@ -1675,6 +1675,7 @@ pub fn park_recovered(
         Some(model) if model != storage => return Err(Decline::NonCanonicalStorage),
         Some(_) => {}
     }
+    pieces.output_storage = crate::kuna_vfpvariadic::parked_output(data.get_arch(), &pieces);
     arch.set_function_prototype_pieces_at(entry, pieces.clone());
     Ok(Recovered { pieces, trimmed })
 }

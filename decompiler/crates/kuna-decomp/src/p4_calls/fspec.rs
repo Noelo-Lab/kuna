@@ -3744,6 +3744,13 @@ impl ParamListStandard {
         self.model_rules.push(rule);
     }
 
+    /// (kuna) Put `rules` ahead of the decoded ones, for a model derived from
+    /// another.  `rules` carry no `fillinOutputMap` action, so the fallback
+    /// [`Self::initialize`] chose stands.
+    pub(crate) fn kuna_prepend_model_rules(&mut self, rules: Vec<ModelRule>) {
+        self.model_rules.splice(0..0, rules);
+    }
+
     /// Append the synthetic `pointermax` ConvertToPointer rule (C++
     /// `ParamListStandard::decode`, fspec.cc:1507-1512): a `SizeRestrictedFilter`
     /// (`pointermax+1`, 0) feeding a `ConvertToPointer` action, planted at the end
