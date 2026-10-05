@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-840 (kuna): "A variadic double made from an integer's bits prints as
+    the integer".  https://github.com/Noelo-Lab/kuna/issues/840
+
+    Source (each call, jump or branch aimed at a `ret` standing in for pr at 0x100f00):
+      int pr(const char *f, ...);
+      int b2(long u) { double d; __builtin_memcpy(&d, &u, 8); return pr("%f", d); }
+      int c1(long u, long v) { double a, b; __builtin_memcpy(&a, &u, 8);
+        __builtin_memcpy(&b, &v, 8); return pr("%f %f %ld", a, b, u); }
+      int k1(double d) { return pr("%f", d); }
+    b2 is clang -O0 (movsd from the stack slot), b2g is the same source at
+    gcc -O2 (movq %rdi,%xmm0), c1 and k1 are gcc -O2 and clang -O0.
+
+    Stage model: P9 ActionSetCasts.  A variadic argument in xmm0/xmm1 has no
+    declared parameter, so the cast pass measured it against no type and a
+    declared `long` printed as `pr("%f",u)`, which compiles back to an integer
+    in rsi.  The argument is now required to be a double when its printed
+    type is an integer, and the cast prints as a union bit reinterpretation.
+    k1 is the control: a double already, no cast.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+554889e54883ec1048897df8488b45f8488945f0f20f1045f0488d3de00f0000
+b001e8d90e00004883c4105dc3ccccccf30f1efa66480f6ec7b801000000488d
+3dc30f0000e9b60e0000ccccccccccccf30f1efa4989f066480f6ec74889feb8
+0200000066490f6ec8488d3da00f0000e98b0e0000cccccccccccccccccccccc
+554889e54883ec10f20f1145f8f20f1045f8488d3d870f0000b001e8600e0000
+4883c4105dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x100f00" readonly="true">
+c3
+</bytechunk>
+<bytechunk space="ram" offset="0x101000" readonly="true">
+25660000000000002566000000000000256620256620256c6400000000000000
+256600
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="b2"/>
+<symbol space="ram" offset="0x100030" name="b2g"/>
+<symbol space="ram" offset="0x100050" name="c1"/>
+<symbol space="ram" offset="0x100080" name="k1"/>
+<symbol space="ram" offset="0x100f00" name="pr"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 pr(char *f, ...);</com>
+  <com>parse line extern int4 b2(int8 u);</com>
+  <com>parse line extern int4 b2g(int8 u);</com>
+  <com>parse line extern int4 c1(int8 u, int8 v);</com>
+  <com>parse line extern int4 k1(float8 d);</com>
+  <com>lo fu b2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu b2g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GH840 x86 #1: the long passed in xmm0 is reinterpreted as a double (clang -O0, gcc -O2)" min="2" max="2">return pr\("%f",\(\(union \{ unsigned long long from; double to; \}\)\{ \.from = u \}\)\.to\);</stringmatch>
+<stringmatch name="GH840 x86 #2: both longs passed in xmm0/xmm1 are reinterpreted, the one in rsi is not" min="1" max="1">pr\("%f %f %ld",\(\(union \{ unsigned long long from; double to; \}\)\{ \.from = u \}\)\.to,\(\(union \{ unsigned long long from; double to; \}\)\{ \.from = v \}\)\.to,u\)</stringmatch>
+<stringmatch name="GH840 x86 #3: a long never prints raw where a double is passed" min="0" max="0">pr\("%f",u\)</stringmatch>
+<stringmatch name="GH840 x86 #4: control, a double parameter passes unchanged" min="1" max="1">return pr\("%f",d\);</stringmatch>
+</decompilertest>

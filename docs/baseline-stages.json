@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1980,
-    1980
+    1988,
+    1988
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -454,6 +454,14 @@
     "data:GH829 x86 #4: d3 also compares its parameter, so its call is left as it was",
     "data:GH8391 #1: Thumb mrrc2 decodes under v8-m (CDE)",
     "data:GH8391 #2: bytes no longer fail to decode",
+    "data:GH840 a64 #1: the long passed in d0 is reinterpreted as a double (-O2, -O0)",
+    "data:GH840 a64 #2: both longs passed in d0/d1 are reinterpreted, the one in x1 is not",
+    "data:GH840 a64 #3: a long never prints raw where a double is passed",
+    "data:GH840 a64 #4: control, a double parameter passes unchanged",
+    "data:GH840 x86 #1: the long passed in xmm0 is reinterpreted as a double (clang -O0, gcc -O2)",
+    "data:GH840 x86 #2: both longs passed in xmm0/xmm1 are reinterpreted, the one in rsi is not",
+    "data:GH840 x86 #3: a long never prints raw where a double is passed",
+    "data:GH840 x86 #4: control, a double parameter passes unchanged",
     "data:GH8456 #1: MRS (Banked) decodes to 'mrs r0,r9_fiq'",
     "data:GH8456 #2: bytes no longer fail to decode",
     "data:GH8467 #1: dynamichashmax on lets the function decompile to a full body (fix)",
