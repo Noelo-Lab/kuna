@@ -495,9 +495,12 @@ most 8 cross-flow restarts before keeping the last analyzed IR.
 (kuna_is_tail_call_branch)`.** At `-O2` a "call X then return" tail compiles to
 a direct `jmp X`. Decision rule: a `CPUI_BRANCH` whose direct machine-address target is the
 entry of a *known function* (including a PLT thunk) that is not the current
-function's own entry is a tail call, unless an exact-address `flow ... branch`
-override was applied at that instruction, turning its call into this branch. The
-explicit classification owns precedence over the inferred call and is resolved
+function's own entry is a tail call, unless the target lies inside the current
+function's caller-declared extent or an exact-address `flow ... branch` override
+was applied at that instruction, turning its call into this branch. The explicit
+extent makes an independently discovered interior entry an intraprocedural
+destination; a genuine veneer target outside its declared extent remains a tail
+call. The flow override owns precedence over the inferred call and is resolved
 before either `tailcalljump` or `tailcallframe` is consulted. An override at
 another instruction, of another kind, or refused does not suppress recovery; a
 `branch` override on an instruction that already branches (a tail `jmp`) has no
@@ -525,7 +528,7 @@ the address is another known function's entry and one of two things holds
 
 - the address lies outside the function's declared extent, where following
   it can only end in `halt_missing()`; or
-- the call states everything the callee's body would
+- no explicit caller extent is supplied and the call states everything the callee's body would
   (`kuna_tailcalljump.rs (tail_call_states_the_body)`). The callee's prototype
   is stated: input-locked on its symbol, or parked as pieces by a
   declaration, DWARF, a library signature or a demangled C++ name, which
@@ -609,14 +612,16 @@ a back-edge, as in `tailcalljump`) nor an address this function has already
 decoded (already-decoded blocks are live flow, whatever the stack looks like).
 The rewrite is the one `tailcalljump` already drives in the BRANCH arm of
 `flow.rs (FlowInfo::xref_control_flow)`; `flow.rs (FlowInfo::tail_call_kind)`
-asks `tailcalljump` first, so a known target keeps that path and that warning
-text, and a `tailcallframe: recovered tail call` warning attributes the calls
-this rule introduces. Byte-identical on both parity corpora, whose bytechunks
-carry no such shape. **Known limit:** the evidence is the frame, not the function
-bound — a kuna `FunctionSymbol` has no extent, so the rule cannot ask whether
-`dest` is still inside the caller, and a jump that tears the frame down
-*completely* before branching to a shared return sequence in the same function is
-recovered as a tail call. That shape is not optimizer output: a shared return
+checks the caller-declared extent before asking either tail-call rule, then asks
+`tailcalljump` first for eligible targets. A known eligible target keeps that
+path and warning text, and a `tailcallframe: recovered tail call` warning
+attributes calls introduced by the frame rule. Byte-identical on both parity
+corpora, whose bytechunks carry no such shape. **Known limit:** without a
+caller-declared extent, frame evidence cannot distinguish an external callee
+from an in-function target after a complete frame teardown. A jump that tears
+the frame down *completely* before branching to a shared return sequence in the
+same function can still be recovered as a tail call. That shape is not optimizer
+output: a shared return
 sequence must be shared including its teardown, so the jump is emitted part-way
 through the epilogue and the exact-cancellation test rejects it (gcc and clang at
 `-O1/-O2/-O3/-Os` emit `add rsp,0x68; jmp <shared tail>` against a `-0x70`
@@ -673,9 +678,12 @@ body into the current one (the following function is then emitted twice: once
 correctly, once as a garbage tail of its predecessor). Decision rule: a
 fall-through whose target is the entry of another *known* function
 (`query_call(next).is_some()`), and is not the current function's own entry, has
-run off the end of the current function, **except when the complete instruction
-at that foreign entry describes an unconditional `CPUI_RETURN` with no other
-control-transfer op**. Such a return is admitted as a shared epilogue: it has no
+run off the end of the current function, unless the current function carries an
+explicit extent that contains the target. That caller assertion keeps an
+independently discovered interior entry in the same flow. Apart from that
+extent rule, the bound is omitted only when the complete instruction at the
+foreign entry describes an unconditional `CPUI_RETURN` with no other
+control-transfer op. Such a return is admitted as a shared epilogue: it has no
 successor, so decoding it cannot consume any instruction beyond the separately
 callable function. Direct and computed branches, and conditional returns, are
 not part of the exception because they can still reach more code and cross a
