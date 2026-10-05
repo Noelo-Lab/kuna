@@ -8,6 +8,11 @@ decode the same bytes under the same context and emit the same ops.
 
 Generated at C++ tree rev `468ec05` by `tools/rust-port/gen_lift.py`.
 
+`condexesub.txt` was refreshed for the ARM CPSR control-state spec correction
+using the C++ lift console at `d37b50e2` (Ghidra `cef869af` plus the lift commands).
+Two consecutive captures agree. Only unique-space temporary offsets changed;
+instruction bytes, decoded operations and all other fixtures are unchanged.
+
 ## Regeneration
 
 ```bash

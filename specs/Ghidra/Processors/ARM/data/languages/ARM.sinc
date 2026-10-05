@@ -196,6 +196,8 @@ define pcodeop setEndianState;
 
 # Copies TB to TMode
 define pcodeop setISAMode;
+define pcodeop readCPSRControl;
+define pcodeop writeCPSRControl;
 
 macro affectflags() {
   CY = tmpCY; ZR = tmpZR; NG = tmpNG; OV = tmpOV;
