@@ -1,11 +1,12 @@
 //! A struct parameter whose pieces span registers and the stack stays the
 //! parameter: a later write of one of its registers is not a write into it,
-//! and copying its register pieces to memory is not lost.
+//! and copying its register pieces to memory is not lost. On AArch64, where
+//! only Windows variadic functions split one, a struct that no longer fits in
+//! the registers left goes wholly on the stack.
 mod common;
-use object::write::{Object, Symbol, SymbolSection};
+use object::write::{Object, StandardSection, Symbol, SymbolSection};
 use object::{
-    Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolFlags, SymbolKind,
-    SymbolScope,
+    Architecture, BinaryFormat, Endianness, FileFlags, SymbolFlags, SymbolKind, SymbolScope,
 };
 use std::path::PathBuf;
 use std::process::Command;
@@ -17,7 +18,11 @@ fn image(arch: Architecture, e_flags: u32, functions: &[(&str, Vec<u32>)]) -> Ve
         abi_version: 0,
         e_flags,
     };
-    let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    text_image(object, functions)
+}
+
+fn text_image(mut object: Object, functions: &[(&str, Vec<u32>)]) -> Vec<u8> {
+    let text = object.section_id(StandardSection::Text);
     let mut bytes = Vec::new();
     for (name, words) in functions {
         object.add_symbol(Symbol {
@@ -175,7 +180,93 @@ fn riscv() -> Vec<u8> {
     )
 }
 
+/// clang -O2 for aarch64-linux-gnu, with `struct pair { long a, b; }` and
+/// `struct hfa { double x, y; }`: `last` and `after` take `pair s` after seven
+/// longs, so `s` is the first two stack doublewords and `z` the third; `callit`
+/// passes one; `six` has `s` in x6 and x7; `hfa7` has `h` in d0 and d1 and `z`
+/// in x7.
+fn aarch64_functions() -> Vec<(&'static str, Vec<u32>)> {
+    let bl = |from: u32, to: u32| 0x94000000 | ((to as i32 - from as i32) as u32 & 0x3ffffff);
+    let ret = 0xd65f03c0;
+    vec![
+        ("last", vec![0xa94027e8, 0x8b080508, 0x8b090100, ret]),
+        (
+            "after",
+            vec![
+                0xa94023e9, 0xf9400bea, 0x8b090529, 0x8b080128, 0x8b0a0949, 0x8b090100, ret,
+            ],
+        ),
+        ("six", vec![0x8b0604c8, 0x8b070100, ret]),
+        (
+            "hfa7",
+            vec![0x1e601002, 0x9e6200e3, 0x1f420400, 0x1e632800, ret],
+        ),
+        (
+            "callit",
+            vec![
+                0xd10083ff,
+                0xa9017bfd,
+                0x910043fd,
+                0xaa0103e8,
+                0xaa0003e9,
+                0x52800020,
+                0x52800041,
+                0x52800062,
+                0x52800083,
+                0x528000a4,
+                0x528000c5,
+                0x528000e6,
+                0xa90023e9,
+                bl(32, 0),
+                0xa9417bfd,
+                0x91000400,
+                0x910083ff,
+                ret,
+            ],
+        ),
+    ]
+}
+
+/// A Windows ARM64 object with the same `last` and a variadic `vlast` laid out
+/// the way that ABI passes it: `s.a` in x7 and `s.b` on the stack.
+fn aarch64_windows() -> Vec<u8> {
+    let object = Object::new(
+        BinaryFormat::Coff,
+        Architecture::Aarch64,
+        Endianness::Little,
+    );
+    let functions = aarch64_functions();
+    text_image(
+        object,
+        &[
+            ("last", functions[0].1.clone()),
+            (
+                "vlast",
+                vec![0xf94003e8, 0x8b0704e9, 0x8b080120, 0xd65f03c0],
+            ),
+        ],
+    )
+}
+
+/// An arm64e Mach-O object with clang's `last` for arm64e-apple-macos.
+fn aarch64_apple() -> Vec<u8> {
+    let mut object = Object::new(
+        BinaryFormat::MachO,
+        Architecture::Aarch64,
+        Endianness::Little,
+    );
+    object.set_macho_cpu_subtype(object::macho::CPU_SUBTYPE_ARM64E);
+    text_image(
+        object,
+        &[("last", vec![0xa94023e9, 0x8b090529, 0x8b080120, 0xd65f03c0])],
+    )
+}
+
 fn decompile(bytes: &[u8], asserts: &[&str]) -> String {
+    decompile_with(bytes, &[], asserts)
+}
+
+fn decompile_with(bytes: &[u8], args: &[&str], asserts: &[&str]) -> String {
     let path = common::scratch_file("split-struct-params", "o");
     std::fs::write(&path, bytes).unwrap();
     let specs = std::env::var_os("SLEIGHHOME")
@@ -188,7 +279,8 @@ fn decompile(bytes: &[u8], asserts: &[&str]) -> String {
         .arg("decompile-all")
         .arg(&path)
         .args(["--assert-strict", "--sleighpath"])
-        .arg(specs);
+        .arg(specs)
+        .args(args);
     for directive in asserts {
         command.args(["--assert", directive]);
     }
@@ -281,4 +373,72 @@ fn riscv_reused_register_is_not_written_into_the_split_struct() {
     let body = function(&text, "r1");
     assert!(body.contains(") * s.a + s.b;"), "{body}");
     assert_not_written(body, &["a", "b"]);
+}
+
+const SEVEN: &str =
+    "long long a1, long long a2, long long a3, long long a4, long long a5, long long a6, long long a7";
+
+fn pair_asserts(prefix: &str) -> Vec<String> {
+    vec![
+        "typedef struct pair { long long a; long long b; };".to_string(),
+        format!("prototype {prefix}last long long last({SEVEN}, struct pair s)"),
+    ]
+}
+
+#[test]
+fn aarch64_struct_without_two_registers_left_is_wholly_on_the_stack() {
+    let functions = aarch64_functions();
+    let mut asserts = pair_asserts("");
+    asserts.extend([
+        "typedef struct hfa { double x; double y; };".to_string(),
+        format!("prototype after long after({SEVEN}, struct pair s, long z)"),
+        "prototype six long six(long a1, long a2, long a3, long a4, long a5, long a6, struct pair s)"
+            .to_string(),
+        format!("prototype hfa7 double hfa7({SEVEN}, struct hfa h, long z)"),
+        "prototype callit long callit(long x, long y)".to_string(),
+    ]);
+    let asserts: Vec<&str> = asserts.iter().map(String::as_str).collect();
+    let text = decompile(&image(Architecture::Aarch64, 0, &functions), &asserts);
+    let last = function(&text, "last");
+    assert!(last.contains("return s.a * 3 + s.b;"), "{last}");
+    let after = function(&text, "after");
+    assert!(after.contains("return s.a * 3 + s.b + z * 5;"), "{after}");
+    let six = function(&text, "six");
+    assert!(six.contains("return s.a * 3 + s.b;"), "{six}");
+    let hfa7 = function(&text, "hfa7");
+    assert!(
+        hfa7.contains("return h.y + h.x * 2.0 + (double)z;"),
+        "{hfa7}"
+    );
+    let callit = function(&text, "callit");
+    for line in ["s.a = x;", "s.b = y;", "return last(1,2,3,4,5,6,7,s) + 1;"] {
+        assert!(callit.contains(line), "{callit}");
+    }
+}
+
+#[test]
+fn aarch64_windows_splits_the_struct_only_in_a_variadic_function() {
+    let mut asserts = pair_asserts("");
+    asserts.push(format!(
+        "prototype vlast long long vlast({SEVEN}, struct pair s, ...)"
+    ));
+    let asserts: Vec<&str> = asserts.iter().map(String::as_str).collect();
+    let text = decompile(&aarch64_windows(), &asserts);
+    for name in ["last", "vlast"] {
+        let body = function(&text, name);
+        assert!(body.contains("return s.a * 3 + s.b;"), "{body}");
+    }
+}
+
+#[test]
+fn aarch64_apple_struct_without_two_registers_left_is_wholly_on_the_stack() {
+    let asserts = pair_asserts("_");
+    let asserts: Vec<&str> = asserts.iter().map(String::as_str).collect();
+    let text = decompile_with(
+        &aarch64_apple(),
+        &["--option", "macho-arm64e", "on"],
+        &asserts,
+    );
+    let body = function(&text, "_last");
+    assert!(body.contains("return s.a * 3 + s.b;"), "{body}");
 }
