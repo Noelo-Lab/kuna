@@ -63,7 +63,6 @@
 </script>
 <stringmatch name="DECODEHALT #1: off, the undecodable path leaves no statement at all and the prototype says nothing" min="1" max="1">^void dh_fn\(int4 x\)$
 ^\{$
-^  // x: [^\n]+$
 ^  if \(x\)$
 ^    return;$
 ^\}$</stringmatch>

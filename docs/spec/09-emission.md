@@ -1322,9 +1322,16 @@ the earlier declaration-collapse decisions. Collapsed declarations combine the
 homes of every HighVariable rendered through them. COPY and same-width
 MULTIEQUAL inputs contribute unchanged values' homes, including a conditional
 move's selected register, without following arithmetic or memory-address inputs.
-Named parameters have separate
-body comments, such as `// a0: rdi | rbx`, using their input HighVariable's
-homes together with the prototype's declared storage.
+Register copies used only to supply outgoing CALL or CALLIND arguments are
+transport locations, so they do not contribute to a local's source comment.
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_calltransport.rs` checks that
+the copy has an earlier home and reaches only argument slots whose ABI storage
+matches that register. This keeps a saved register's home even when its only
+readers forward the value to outgoing arguments. A reload from an existing
+stack local can also be transport; the stack remains its source. A register
+that first receives a load, arithmetic result, or call result remains a source
+even if the value is later passed to a call. Copies also read by local
+computation or a store remain homes. Parameters have no separate source comments.
 `option namestyle ghidra` emits no storage comments or storage-tracking work.
 DIV-5 re-pinned 185 of the 675 upstream datatest assertions
 to the angr names; `option namestyle ghidra` reproduces the pre-DIV-5 bytes.

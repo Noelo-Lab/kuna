@@ -945,11 +945,17 @@ and a loop's phi. `decompile_all_cli.rs`'s
 spelling of a 4-byte field read through an inferred `int8 *`.
 
 Under `namestyle angr`, copy propagation also preserves the eliminated
-destination's machine storage on the unchanged source value. These per-function
+destination's machine storage on the unchanged source value, except for a
+register copy used only to supply outgoing call arguments. These per-function
 facts are diagnostics only: arithmetic operands and a load's address never
 become the result's storage. Same-width replacement and cloning carry the facts;
 dead Varnodes and a cleared function release them. P9 uses them to annotate a
 local even when a SLEIGH temporary's copy into a register has disappeared.
+An outgoing-argument transport proof survives removal of its readers, but a
+different definition assigned to the same Varnode clears that proof.
+Retained source facts identify their machine write. If stack heritage later
+reveals that a load was an outgoing reload of an existing local, its register
+fact can be withdrawn without removing a different write to that register.
 
 **Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
 default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the

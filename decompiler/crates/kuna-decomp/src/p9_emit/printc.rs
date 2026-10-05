@@ -2541,7 +2541,6 @@ impl PrintC {
         // HighVariables directly (the `kuna_name` stand-in), which is the same set
         // of locals the scope would declare.
         let _emitted_decls = self.emit_local_var_decls(fd, arch);
-        self.emit_parameter_sources(fd, arch);
         if fd.sblocks_get_size() != 0 {
             self.emit_function_body(fd, arch);
         } else {
@@ -3724,38 +3723,6 @@ impl PrintC {
             None => (("undefined1".to_string(), String::new()), None),
         };
         (type_name, comment)
-    }
-
-    fn emit_parameter_sources(&mut self, fd: &Funcdata, arch: &Architecture) {
-        if !arch.name_style_angr {
-            return;
-        }
-        let proto = fd.get_func_proto();
-        let mut inputs = std::collections::BTreeMap::<_, std::collections::BTreeSet<_>>::new();
-        for id in fd.vbank().iter_def_flag(crate::varnode::varnode_flags::input) {
-            let Some(high_id) = fd.vbank().get(id).and_then(|v| v.get_high()) else { continue };
-            let Some(name) = fd.high_bank().get(high_id).and_then(|h| h.kuna_name()) else { continue };
-            inputs.entry(name).or_default().insert(high_id);
-        }
-        for i in 0..proto.num_params() {
-            let Some(param) = proto.get_param(i) else { continue };
-            let name = crate::database::kuna_materialized_param_name(
-                arch.name_style_angr, i, param.get_name(),
-            );
-            let address = param.get_address();
-            let high_comments = inputs.get(name.as_str()).into_iter().flatten().filter_map(|&high| {
-                crate::kuna_varsources::high_comment(fd, arch, high)
-            });
-            let proto_comment = crate::kuna_varsources::storage_comment(fd, arch, &address, param.get_size());
-            let comment = crate::kuna_varsources::combine_comments(high_comments.chain(proto_comment));
-            let (text, space, offset) = comment.unwrap_or_else(|| {
-                ("tmp".to_string(), fd.get_address().get_space().unwrap().clone(), 0)
-            });
-            self.emit.tag_line();
-            self.emit.tag_comment(
-                &format!("// {name}: {text}"), SyntaxHighlight::CommentColor, &space, offset,
-            );
-        }
     }
 
     /// Emit the structured function body into the open brace (C++
