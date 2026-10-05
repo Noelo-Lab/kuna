@@ -383,12 +383,12 @@ fn build_call_with_pair(fd: &mut Funcdata, hi_read: bool) -> (OpId, VarnodeId, V
 
 /// A summary that proves the callee wrote nothing at all.
 fn proves_nothing_written() -> CalleeReturnWrites {
-    CalleeReturnWrites { writes: Vec::new(), store_spaces: Vec::new(), complete: true, instructions: 2 }
+    CalleeReturnWrites { writes: Vec::new(), store_spaces: Vec::new(), complete: true, instructions: 2, call_facts: Vec::new() }
 }
 
 /// A summary the probe could not complete: it proves nothing.
 fn proves_nothing() -> CalleeReturnWrites {
-    CalleeReturnWrites { writes: Vec::new(), store_spaces: Vec::new(), complete: false, instructions: 2 }
+    CalleeReturnWrites { writes: Vec::new(), store_spaces: Vec::new(), complete: false, instructions: 2, call_facts: Vec::new() }
 }
 
 fn callee_entry(fd: &Funcdata) -> Address {
@@ -499,7 +499,7 @@ fn a_callee_that_writes_the_payload_still_pairs() {
     let (call, lo, hi) = build_call_with_pair(&mut fd, true);
     let entry = callee_entry(&fd);
     let ram_index = space(&fd, "ram").get_index();
-    let written = CalleeReturnWrites { writes: vec![(ram_index, 0x40, 8)], store_spaces: Vec::new(), complete: true, instructions: 2 };
+    let written = CalleeReturnWrites { writes: vec![(ram_index, 0x40, 8)], store_spaces: Vec::new(), complete: true, instructions: 2, call_facts: Vec::new() };
     assert!(!written.proves_untouched(&Address::new(space(&fd, "ram"), 0x40), 8));
     fd.kuna_set_callee_ret_writes(&entry, Rc::new(written));
     assert_eq!(
@@ -514,7 +514,7 @@ fn a_callee_that_writes_the_payload_still_pairs() {
 fn a_partial_write_of_the_payload_register_counts() {
     let mut fd = build_call_fd(RustAbiMode::Always);
     let ram = space(&fd, "ram");
-    let w = CalleeReturnWrites { writes: vec![(ram.get_index(), 0x40, 4)], store_spaces: Vec::new(), complete: true, instructions: 2 };
+    let w = CalleeReturnWrites { writes: vec![(ram.get_index(), 0x40, 4)], store_spaces: Vec::new(), complete: true, instructions: 2, call_facts: Vec::new() };
     assert!(
         !w.proves_untouched(&Address::new(Rc::clone(&ram), 0x40), 8),
         "`lea 0x7(%rdi),%edx` writes four bytes of an eight-byte half",
@@ -626,8 +626,34 @@ fn a_store_into_the_space_defeats_the_proof() {
         writes: Vec::new(),
         store_spaces: vec![ram.get_index()],
         complete: true,
+        call_facts: Vec::new(),
         instructions: 2,
     };
     assert!(!w.proves_untouched(&Address::new(Rc::clone(&ram), 0x40), 8));
     let _ = &mut fd;
+}
+
+#[test]
+fn write_probe_only_stops_at_unconditional_known_terminal_calls() {
+    use kuna_sleigh::translate::PcodeEmit;
+    use kuna_num::pcoderaw::VarnodeData;
+    let fd = build_fd(RustAbiMode::Always);
+    let at = Address::new(space(&fd, "ram"), 0x1000);
+    let target = VarnodeData { space: Some(space(&fd, "ram")), offset: 0x2000, size: 8 };
+    let branch = VarnodeData { space: Some(space(&fd, "const")), offset: 2, size: 8 };
+    for (known, conditional) in [(true, false), (false, false), (true, true)] {
+        let mut emit = ProbeEmit::default();
+        if conditional {
+            emit.dump(&at, OpCode::CPUI_CBRANCH, None, &[branch.clone()]);
+        }
+        emit.dump(&at, OpCode::CPUI_CALL, None, &[target.clone()]);
+        let facts = emit.resolve_calls(&|_| known);
+        assert_eq!(facts, vec![(Address::new(space(&fd, "ram"), 0x2000), known)]);
+        assert_eq!(emit.ends_flow, known && !conditional);
+        assert_eq!(emit.unresolved, !known || conditional);
+    }
+    let mut relative = ProbeEmit::default();
+    relative.dump(&at, OpCode::CPUI_CALL, None, &[branch]);
+    assert!(relative.unresolved);
+    assert!(relative.resolve_calls(&|_| true).is_empty());
 }

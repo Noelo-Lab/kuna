@@ -613,7 +613,11 @@ const PIN_FAILLOG_DECODED_INSTS: usize = 1044;
 // providers did not exist); Phase 3 pins the real query-through traffic —
 // every distinct global address the pipeline probes, answered once (holes and
 // symbol ranges negative/positive-cache the rest).
-const PIN_FAILLOG_GETMAPPED_TOTAL: u64 = 1448;
+// The callee write probe also queries host no-return facts for nested calls:
+// strrchr and __ctype_b_loc recur after flushNative; strcmp,
+// __explicit_bzero_chk and fseeko are queried once. The rendered-C and
+// instruction-query pins above stay unchanged.
+const PIN_FAILLOG_GETMAPPED_TOTAL: u64 = 1455;
 
 /// The CLI arm of the differential runs `formatstring off`, like for like with
 /// the wire session (see `PIN_FAILLOG_DIFF_FLOOR`).

@@ -84,7 +84,7 @@
 //!   register is merely dead, and the convention keeps its answer for every
 //!   register of that call.
 //! * **A complete decode for absence claims.** The probe declares itself
-//!   incomplete at a nested `CALL`, an unresolved `BRANCHIND`, an undecodable
+//!   incomplete at an unknown or returning nested `CALL`, an unresolved `BRANCHIND`, an undecodable
 //!   instruction, or its instruction budget, and an incomplete summary answers
 //!   "may write" to every untouched range. Positive register writes and STORE
 //!   spaces recovered before that edge remain valid veto evidence.
