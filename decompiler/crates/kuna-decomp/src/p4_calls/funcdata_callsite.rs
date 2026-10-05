@@ -96,9 +96,13 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
     // (kuna) The registers a variadic call's caller counts as filled (`al`, CR6).
     let counted =
         crate::p4_calls::kuna_varargretreg::counted_float_arguments(data, data.get_call_specs(idx));
+    let format_arguments = crate::p4_calls::kuna_varargformat::arguments(data, data.get_call_specs(idx));
     let num_trials = data.get_call_specs_mut(idx).get_active_input().get_num_trials();
     for i in 0..num_trials {
-        if data.get_call_specs_mut(idx).get_active_input().get_trial(i).is_checked() {
+        if data.get_call_specs(idx).active_input().get_trial(i).is_checked() {
+            if !data.get_call_specs(idx).active_input().get_trial(i).is_active() {
+                crate::p4_calls::kuna_varargformat::activate_trial(data, idx, i, &format_arguments);
+            }
             continue;
         }
         let slot = data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_slot();
@@ -261,9 +265,14 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                     {
                         data.get_call_specs_mut(idx).get_active_input().mark_needs_final_check();
                     }
-                } else {
+                } else if !crate::p4_calls::kuna_varargformat::activate_trial(
+                    data, idx, i, &format_arguments,
+                ) {
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
                 }
+            } else if crate::p4_calls::kuna_varargformat::activate_trial(
+                data, idx, i, &format_arguments,
+            ) {
             } else if vn_is_input {
                 // Not likely a parameter but maybe
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
