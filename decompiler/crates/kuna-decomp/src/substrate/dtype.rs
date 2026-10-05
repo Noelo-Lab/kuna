@@ -4986,12 +4986,11 @@ impl TypeFactoryImpl {
         if self.size_of_pointer.get() == 0 {
             self.size_of_pointer.set(default_data_addr_size);
         }
-        // (kuna) Fill the widths the cspec left unset.  37 of the 107 vendored
-        // cspecs carry no `<data_organization>` at all (every PowerPC 32-bit one
-        // among them) and several carry only a subset, so these defaults are the
-        // common case, not the exception.  The existing `size_of_long` fallback
-        // above is deliberately untouched: it is read by type inference, not just
-        // by rendering, so correcting it is a separate behavior change.
+        // (kuna) Fill the widths the cspec left unset.  30 of the 111 vendored
+        // cspecs carry no `<data_organization>` at all and many carry only a
+        // subset, so these defaults are the common case, not the exception.  The
+        // `size_of_long` fallback above is kept as upstream has it; an ILP32 cspec
+        // states its 4-byte `long_size` instead of relying on it.
         if self.size_of_short.get() == 0 {
             self.size_of_short.set(2);
         }

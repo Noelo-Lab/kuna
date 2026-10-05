@@ -191,10 +191,26 @@ x87 extended format and annotate the storage in a comment
 (`<!-- aligned-length=16 -->`) — and a spec that declares no `long double` at
 all means the target aliases it to `double` (MSVC, ARM32), which is the fallback
 `setup_sizes` applies. Consumers must therefore treat a long-double width as an
-approximation to name, never as a layout guarantee. Thirty-seven of the 107
-vendored cspecs carry no `<data_organization>` element whatsoever — every
-PowerPC 32-bit one among them — so the fallbacks are the common case, not the
-exception.
+approximation to name, never as a layout guarantee.
+
+The `long` fallback is not neutral. With no `<long_size>`, `setup_sizes` makes
+`long` 8 bytes whenever `int` is 4 (upstream's LP64 assumption), so every ILP32
+compiler spec states its 4-byte `long`: the 32-bit MIPS ones (o32, o64, the
+R6 `mips32_fp64` and EABI), every 32-bit PowerPC one and `ppc_64_32`, and
+`avr32a`, Cortus APS3, PA-RISC 32, V850 and `x86delphi`. The width is more
+than a name there. A declaration's C keywords (`--assert`, `parse line`, a
+demangled C++ signature, a `%ld` conversion) take their sizes from it, so a
+declared `long` on a spec that left it out became a register pair with an
+invented high word, and the `L`/`LL` literal suffix reads it too. Thirty of the
+111 vendored cspecs still carry no `<data_organization>` element, and six more
+state one without a `long_size`. On the 8- and 16-bit targets among them (8048,
+the 8051 family, 8085, 6502, 6805/6809, HC05/HCS08, M16C, M8C, MCS96, PIC
+12-18, Z80, CP1600, CR16 and the IAR/ImageCraft avr8 specs) the fallback gives
+`long` the width of `int`, narrower than C allows. The exception is the 80251,
+whose 4-byte stack pointer makes `int` 4 bytes and so `long` 8. The rest are
+the pseudo `DATA` processor, the old Toy specs and Toy's position-stack variant,
+and the 64-bit Mac PowerPC spec, which is LP64 and gets its 8-byte `long` from
+the fallback.
 
 **The wire marshal.** Types cross the ghidra-mode wire in both directions.
 Inbound, registerProgram's `<coretypes>` and per-miss getDataType answers

@@ -1,0 +1,101 @@
+<decompilertest>
+<binaryimage arch="MIPS:LE:32:default:default">
+<!--
+    MIPS o32 is ILP32: long is 4 bytes and long long is 8. mips32le.cspec
+    stated no long_size, so the type factory fell back to 8 bytes (its LP64
+    default when int is 4). A declared long then took two registers, and an
+    8-byte value printed as long instead of long long:
+        int8 ln(int8 a) { return CONCAT44(v1,(int4)a + 1); }           (bug)
+        int4 cl(unsigned int a0,unsigned int a1)
+          { return (int4)ln(CONCAT44(a1,a0)) * 3; }                     (bug)
+        unsigned long cll(unsigned int a0,unsigned int a1)              (bug)
+    Stage: P0 knowledge plane (compiler-spec data organization). No option:
+    the cspec states the ABI's long_size, a data fix.
+
+    Source (mipsel-linux-gnu-gcc 10.3 -O2 -fno-pic -mno-abicalls -nostdlib
+    -static -Wl,-Ttext=0x10000 -Wl,-e,_start; .text verbatim below):
+        __attribute__((noinline)) long ln(long a) { return a + 1; }
+        __attribute__((noinline)) long long ll(long long a) { return a + 1; }
+        __attribute__((noinline)) long pick(long a, long long b, long c)
+          { return a + c + (long)b; }
+        long cl(long x) { return ln(x) * 3; }
+        long long cll(long long x) { return ll(x) * 3; }
+        long cp(long a, long long b) { return pick(a, b, 7) * 2; }
+        void _start(void) {}
+    pick reads a in a0, b in the aligned pair a2:a3 (low word a2) and c from
+    the first stack argument slot, 16(sp).
+
+    Pass 1 (catalog default) decompiles cll before anything is declared, then
+    declares ln, ll and pick with C keyword types and decompiles the rest.
+    Pass 2 repeats ln, ll and pick with option ctypes on (the CLI rendering).
+    Assert #1: cll's recovered 8-byte return and local spell long long.
+    Assert #2: a declared long is 4 bytes; ln adds one to a single register.
+    Assert #3: pick takes a 4-byte a and c around the 8-byte b.
+    Assert #4: pick and cl/cp's calls use one register per long.
+    Assert #5: with ctypes on the prototypes read int / long long.
+    Assert #6: no high word is invented for a long, and nothing spells an
+    8-byte integer as unsigned long.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+0800e00301008224010082242b204400212885000800e0032518a0001000a28f
+211082000800e00321104600e8ffbd271400bfaf0040000c000000001400bf8f
+401802001800bd270800e00321106200e8ffbd271400bfaf0240000c00000000
+252860001400bf8f40180200c237020040200500211062002520c40021208500
+2b184300211864000800e0031800bd27e0ffbd27070002241000a2af1c00bfaf
+0740000c000000001c00bf8f401002000800e0032000bd270800e00300000000
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="ln"/>
+<symbol space="ram" offset="0x10008" name="ll"/>
+<symbol space="ram" offset="0x1001c" name="pick"/>
+<symbol space="ram" offset="0x1002c" name="cl"/>
+<symbol space="ram" offset="0x10050" name="cll"/>
+<symbol space="ram" offset="0x10090" name="cp"/>
+</binaryimage>
+<script>
+  <com>lo fu cll</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern long ln(long a);</com>
+  <com>parse line extern long long ll(long long a);</com>
+  <com>parse line extern long pick(long a,long long b,long c);</com>
+  <com>lo fu ln</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ll</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option ctypes on</com>
+  <com>lo fu ln</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ll</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="ilp32long mips #1: an 8-byte return and local spell long long" min="1" max="1">unsigned long long cll\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="ilp32long mips #1b: the 8-byte local spells long long" min="1" max="1">unsigned long long v3; // v1:v0</stringmatch>
+<stringmatch name="ilp32long mips #2: a declared long is one 4-byte register" min="1" max="1">int4 ln\(int4 a\)</stringmatch>
+<stringmatch name="ilp32long mips #2b: ln and ll both add one" min="4" max="4">return a \+ 1;</stringmatch>
+<stringmatch name="ilp32long mips #3: pick has a 4-byte a and c around the 8-byte b" min="1" max="1">int4 pick\(int4 a,int8 b,int4 c\)</stringmatch>
+<stringmatch name="ilp32long mips #3b: pick adds a, c and the low word of b" min="2" max="2">return a \+ c \+ \((int4|int)\)b;</stringmatch>
+<stringmatch name="ilp32long mips #4: cl passes ln one register" min="1" max="1">return ln\(a0\) \* 3;</stringmatch>
+<stringmatch name="ilp32long mips #4b: cp passes pick a0, a2:a3 and 7" min="1" max="1">return pick\(a0,CONCAT44\(a3,a2\),7\) &lt;&lt; 1;</stringmatch>
+<stringmatch name="ilp32long mips #5: ctypes spells the declared long as int" min="1" max="1">^int ln\(int a\)</stringmatch>
+<stringmatch name="ilp32long mips #5b: ctypes spells the 8-byte integer long long" min="1" max="1">^long long ll\(long long a\)</stringmatch>
+<stringmatch name="ilp32long mips #5c: ctypes pick prototype" min="1" max="1">^int pick\(int a,long long b,int c\)</stringmatch>
+<stringmatch name="ilp32long mips #6: no long is joined with an unset high word" min="0" max="0">CONCAT44\(v[0-9]+,</stringmatch>
+<stringmatch name="ilp32long mips #6b: no 8-byte integer spells unsigned long" min="0" max="0">unsigned long(\)| [^l])</stringmatch>
+</decompilertest>

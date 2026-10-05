@@ -1992,7 +1992,9 @@ mod tests {
         // and kuna-calltargettype + kuna-calltargettype-a64 +
         // kuna-calltargettype-armhf / an indirect call's target takes the
         // function-pointer type the call states (GH-869)
-        assert_eq!(count, 428, "corpus file count drifted");
+        // and kuna-ilp32long-mips + kuna-ilp32long-ppc / long is 4 bytes on
+        // the ILP32 MIPS and PowerPC compiler specs
+        assert_eq!(count, 430, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
