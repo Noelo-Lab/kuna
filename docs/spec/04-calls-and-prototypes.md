@@ -5393,8 +5393,8 @@ earlier pass recovered, and `ActionOutputPrototype` leaves the output alone
 when the RETURN has no value: a MinGW `-O0` function whose `mov eax,[iat];
 call eax` resolves to `ExitProcess` restarts, the pass before the restart
 returns `eax` joined with what the unresolved call left, the pass after it
-refuses the bare handle the comparison also reads, and the function printed
-`int f(..)` around a bare `return;`.
+refuses the bare handle where the returning path also loads through it, and the
+function printed `int f(..)` around a bare `return;`.
 
 A redone wrapper reads its own callee's result in turn, so each settling
 repeats, up to ten rounds, reaching one function further down a chain of
