@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1912,
-    1912
+    1921,
+    1921
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -745,6 +745,15 @@
     "data:NARROWEXT #7: off, an int parameter is zero-extended",
     "data:NARROWEXT #8: abi, an int parameter is sign-extended",
     "data:NARROWEXT #9: off, an unsigned int parameter is zero-extended",
+    "data:NATIVE SWITCH LABELS #1: all scalar native tables use the selector",
+    "data:NATIVE SWITCH LABELS #2: every signed first arm is negative",
+    "data:NATIVE SWITCH LABELS #3: every signed middle arm is negative",
+    "data:NATIVE SWITCH LABELS #4: every signed last arm is negative",
+    "data:NATIVE SWITCH LABELS #5: unsigned 8-bit high labels stay positive",
+    "data:NATIVE SWITCH LABELS #6: unsigned 16-bit high labels stay positive",
+    "data:NATIVE SWITCH LABELS #7: unsigned 32-bit high labels stay positive",
+    "data:NATIVE SWITCH LABELS #8: unsigned 64-bit high labels stay positive",
+    "data:NATIVE SWITCH LABELS #9: a signed short load stays an expression selector",
     "data:NULTERMINATOR #10: no array grows over the padding or the locals after its terminator",
     "data:NULTERMINATOR #11: gap_zero off declares [20]",
     "data:NULTERMINATOR #12: gap_zero on declares [21]",

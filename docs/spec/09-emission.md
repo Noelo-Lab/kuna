@@ -832,6 +832,16 @@ same switch-width, signedness, and integer-format rules as op-backed labels,
 but are emitted as plain syntax with no fabricated `opref`; `default:` remains
 an unvalued label.
 
+Native jump-table labels use the signedness of the emitted selector's integer
+type, falling back to the BRANCHIND input's read-facing type for an expression.
+Label values are masked to the BRANCHIND input width, discarding bits retained
+from a widened normalization intermediate. Thus a signed two-byte selector
+with a recovered label `0xfff3` emits `case -0xd:`, while an unsigned selector
+keeps `case 0xfff3:`. This applies to byte and wider integer selectors too:
+positive high-bit labels cannot match a signed byte or short after C integer
+promotion. Synthetic lowered switches retain their recorded label signedness
+and the existing `loweredswitchexact` selector-type and cast reconciliation.
+
 **Every label labels a statement.** Label placement in the printed C is valid
 C99/C11/C17 and does not rely on C23. In those dialects a label is part of a
 labeled statement, so `case 2:`, `default:` or `label_10ad:` directly before a

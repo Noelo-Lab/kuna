@@ -4771,15 +4771,20 @@ impl PrintC {
                     _ => case.label,
                 };
                 let sz = self.switch_var_size(fd, blk);
-                // (kuna) Render the label signed when the recovered switch variable
-                // is signed (the lowered-switch install records this on the table;
-                // the C++ derives it from `getSwitchType()`'s signedness).
+                let val = match jt_index {
+                    Some(j) if fd.get_jump_table(j as int4).kuna_lowered_var().is_none() => val & calc_mask(sz),
+                    _ => val,
+                };
                 let signed = jt_index
                     .map(|j| {
                         let jt = fd.get_jump_table(j as int4);
                         match jt.get_indirect_op().and_then(|op| lowered_switch_label_form(fd, arch, op)) {
                             Some((signed, _)) => signed,
-                            None => jt.kuna_has_signed_labels(),
+                            None if jt.kuna_lowered_var().is_some() => jt.kuna_has_signed_labels(),
+                            None => jt
+                                .get_indirect_op()
+                                .and_then(|op| native_switch_label_signedness(fd, arch, op))
+                                .unwrap_or(jt.kuna_has_signed_labels()),
                         }
                     })
                     .unwrap_or(false);
@@ -10872,6 +10877,20 @@ pub(crate) fn decl_type_representative(
 fn switch_variable_type(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
     let vid = fd.obank().get(op)?.get_in(0)?;
     declared_variable_type(fd, arch.decl_high_type, vid)
+}
+
+/// Native labels follow the selector's declared type, or its expression type.
+fn native_switch_label_signedness(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<bool> {
+    use crate::dtype::type_metatype::{TYPE_ENUM_INT, TYPE_ENUM_UINT, TYPE_INT, TYPE_UINT};
+    let vn = fd.vbank().get(fd.obank().get(op)?.get_in(0)?)?;
+    let ct = switch_variable_type(fd, arch, op)
+        .filter(|ct| ct.get_size() == vn.get_size())
+        .unwrap_or_else(|| vn.get_type_read_facing(op).clone());
+    match ct.get_metatype() {
+        TYPE_INT | TYPE_ENUM_INT => Some(true),
+        TYPE_UINT | TYPE_ENUM_UINT => Some(false),
+        _ => None,
+    }
 }
 
 /// The type the printed C declares the variable `vid` belongs to: a parameter's
