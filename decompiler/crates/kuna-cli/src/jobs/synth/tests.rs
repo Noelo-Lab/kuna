@@ -113,3 +113,23 @@ fn the_report_names_the_serial_run_it_can_actually_replay() {
     let callee_first = PoolConfig { serial_callee_first: true, ..cfg(0, 0.0) };
     assert_eq!(serial_run(&callee_first), "--jobs 1 --option protoorder off");
 }
+
+#[test]
+fn a_structure_rename_rebases_recorded_pointer_arguments() {
+    use kuna_decomp::kuna_pointerargs::{Call, Position, Record};
+    let mut r = sample_result();
+    r.code = Some("struct_3 *p; sink(&v1);".into());
+    r.pointerargs = Some(Record {
+        entry: ("ram".into(), 0x2000), parameters: vec![],
+        calls: vec![Call {
+            callee: ("ram".into(), 0x1000), index: 0,
+            storage: (("register".into(), 0x38), 8), actual: "long *".into(),
+            position: Position { line: 1, column: 17 }, expression: "&v1".into(),
+        }],
+    });
+    let own = [Some(("struct_3".into(), Some(request(4))))];
+    let serial = [Some(("struct_100".into(), Some(request(4))))];
+    let renamed = super::rename_result(&r, Some(&own), &serial, &[]).unwrap();
+    assert_eq!(renamed.code.as_deref(), Some("struct_100 *p; sink(&v1);"));
+    assert_eq!(renamed.pointerargs.unwrap().calls[0].position.column, 19);
+}

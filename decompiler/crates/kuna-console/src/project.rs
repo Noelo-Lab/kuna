@@ -117,6 +117,8 @@ pub struct FuncResult {
     /// shard hook, so the parent can name every `struct_N` as the serial run
     /// does. `None` everywhere else.
     pub synth: Option<kuna_decomp::kuna_structsynth::shard::FunctionRecord>,
+    /// Internal facts from this render, reconciled only by buffered drivers.
+    pub pointerargs: Option<kuna_decomp::kuna_pointerargs::Record>,
     /// The token source map, captured only when the caller asked for it
     /// ([`DecompileOptions::want_tokens`]).
     pub detail: Option<Box<crate::inspect::FuncDetail>>,
@@ -134,6 +136,43 @@ impl FuncResult {
     /// engine state. Zero for C output, which spells the jump as a real `goto`.
     pub fn unstructured_gotos(&self) -> usize {
         self.code.as_deref().map_or(0, kuna_decomp::kuna_langrust::count_unstructured_gotos)
+    }
+}
+
+/// Reconcile calls only after the buffered driver's accepted results are final.
+/// Workers carry facts without applying them to an incomplete shard. Calls are
+/// consumed, so a second reconciliation changes nothing. A recorded site that
+/// no longer matches the text leaves only that argument uncast; every
+/// successful result still supplies the declarations it printed.
+pub fn reconcile_pointer_arguments(results: &mut [FuncResult]) {
+    use kuna_decomp::kuna_pointerargs;
+    if !results.iter().any(|r| r.pointerargs.as_ref().is_some_and(|r| !r.calls.is_empty())) {
+        return;
+    }
+    let definitions = kuna_pointerargs::definitions(
+        results
+            .iter()
+            .filter(|r| r.error.is_none() && r.code.is_some())
+            .filter_map(|r| r.pointerargs.as_ref()),
+    );
+    for result in results.iter_mut() {
+        let Some(record) = &mut result.pointerargs else { continue };
+        let edits = kuna_pointerargs::insertions(record, &definitions);
+        record.calls.clear();
+        let Some(original) = result.code.as_deref().filter(|_| result.error.is_none()) else {
+            continue;
+        };
+        if edits.is_empty() {
+            continue;
+        }
+        let applied = kuna_pointerargs::apply(original, &edits);
+        if applied.code != original {
+            if let Some(detail) = result.detail.as_mut().filter(|d| d.tokens_error.is_none()) {
+                detail.tokens.clear();
+                detail.tokens_error = Some("pointer-argument casts are not in the token map".into());
+            }
+        }
+        result.code = Some(applied.code);
     }
 }
 
@@ -202,6 +241,10 @@ pub struct DecompileOptions {
     /// Capture the token source map ([`FuncResult::detail`]); implies the
     /// provenance render.
     pub want_tokens: bool,
+    /// Record [`FuncResult::pointerargs`] for a buffered driver. A batch that
+    /// returns its results ([`decompile_targets_with`]) reconciles them itself;
+    /// a pulled caller owns that step.
+    pub want_pointer_arguments: bool,
 }
 
 /// Decompile each `(name, entry)` target in turn against the already-loaded
@@ -231,6 +274,7 @@ pub fn decompile_targets(
         park_recovered_proto: false,
         single_target: targets.len() == 1,
         want_tokens: false,
+        want_pointer_arguments: false,
     };
     decompile_batch(prog, targets, &opts)
 }
@@ -273,6 +317,7 @@ pub fn export_options(single_target: bool) -> DecompileOptions {
         park_recovered_proto: false,
         single_target,
         want_tokens: false,
+        want_pointer_arguments: true,
     }
 }
 
@@ -294,6 +339,9 @@ fn decompile_batch(
     converge_synthesized_structs(prog, opts, &replay, &mut out);
     converge_element_globals(prog, opts, &replay, &mut out);
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
+    if opts.want_pointer_arguments {
+        reconcile_pointer_arguments(&mut out);
+    }
     out
 }
 
@@ -457,6 +505,7 @@ pub fn decompile_pulled(
         header_carries_types,
         single_target,
         want_tokens,
+        want_pointer_arguments,
         ..
     } = *opts;
     prog.arch_mut().kuna_float_scan_batch = !single_target;
@@ -512,6 +561,7 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
+                pointerargs: None,
                 detail: None,
             });
             continue;
@@ -545,6 +595,7 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
+                pointerargs: None,
                 detail: None,
             });
             continue;
@@ -566,6 +617,7 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
+                pointerargs: None,
                 detail: None,
             });
             continue;
@@ -741,6 +793,7 @@ pub fn decompile_pulled(
                 }
                 // (kuna `elemptr`) Record what this function said about each global.
                 kuna_decomp::kuna_elemptr::record(prog.arch_mut(), &fd);
+                prog.arch_mut().print_mut().set_record_pointer_arguments(want_pointer_arguments);
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function
@@ -753,6 +806,7 @@ pub fn decompile_pulled(
                     } else {
                         (print_c(prog.arch_mut(), &fd), Default::default(), Vec::new())
                     };
+                    let pointerargs = prog.arch_mut().print_mut().take_pointer_arguments(&untrimmed);
                     let code = untrimmed.trim_matches('\n').to_string();
                     let globals = kuna_decomp::decompile_drive::extract_global_objects(prog.arch());
                     let mut variables =
@@ -790,10 +844,10 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
-                    (code, variables, types, globals, proto, line_mappings, callee_hints, detail)
+                    (code, variables, types, globals, proto, line_mappings, callee_hints, detail, pointerargs)
                 }));
                 match rendered {
-                    Ok((code, variables, types, globals, proto, line_mappings, callee_hints, detail)) => sink(FuncResult {
+                    Ok((code, variables, types, globals, proto, line_mappings, callee_hints, detail, pointerargs)) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -809,6 +863,7 @@ pub fn decompile_pulled(
                         object_location,
                         callee_hints,
                         synth: None,
+                        pointerargs,
                         detail,
                     }),
                     Err(_) => sink(FuncResult {
@@ -827,6 +882,7 @@ pub fn decompile_pulled(
                         object_location,
                         callee_hints: Vec::new(),
                         synth: None,
+                        pointerargs: None,
                         detail: None,
                     }),
                 }
@@ -847,6 +903,7 @@ pub fn decompile_pulled(
                 object_location,
                 callee_hints: Vec::new(),
                 synth: None,
+                pointerargs: None,
                 detail: None,
             }),
         }
@@ -1536,8 +1593,68 @@ mod tests {
             object_location: None,
             callee_hints: vec![],
             synth: None,
+            pointerargs: None,
             detail: None,
         }
+    }
+
+    #[test]
+    fn pointer_arguments_use_only_the_final_successful_results() {
+        use kuna_decomp::kuna_pointerargs::{Call, Parameter, Position, Record};
+        let storage = (("register".into(), 0x38), 8);
+        let mut callee = streamed("void sink(unsigned char *);", "unsigned char *");
+        callee.code = Some("void sink(unsigned char *p) {}".into());
+        callee.pointerargs = Some(Record {
+            entry: ("ram".into(), 0x1000),
+            parameters: vec![Some(Parameter { storage: storage.clone(), spelling: "unsigned char *".into() })],
+            calls: vec![],
+        });
+        let mut caller = streamed("long caller(void);", "long");
+        caller.code = Some("sink(&v1);".into());
+        caller.pointerargs = Some(Record {
+            entry: ("ram".into(), 0x2000), parameters: vec![],
+            calls: vec![Call {
+                callee: ("ram".into(), 0x1000), index: 0, storage, actual: "long *".into(),
+                position: Position { line: 1, column: 5 }, expression: "&v1".into(),
+            }],
+        });
+        for failed in [false, true] {
+            let mut results = vec![caller.clone(), callee.clone()];
+            if failed { results[1].error = Some("timeout".into()); }
+            super::reconcile_pointer_arguments(&mut results);
+            let expected = if failed { "sink(&v1);" } else { "sink((unsigned char *)&v1);" };
+            assert_eq!(results[0].code.as_deref(), Some(expected));
+            super::reconcile_pointer_arguments(&mut results);
+            assert_eq!(results[0].code.as_deref(), Some(expected));
+        }
+        callee.pointerargs.as_mut().unwrap().parameters[0].as_mut().unwrap().spelling = "char *".into();
+        let mut results = vec![caller.clone(), callee.clone()];
+        super::reconcile_pointer_arguments(&mut results);
+        assert_eq!(results[0].code.as_deref(), Some("sink((char *)&v1);"));
+
+        // A site that drifted from its text costs only that cast: the body,
+        // its line mappings and the callee's declarations all stand.
+        let record = caller.pointerargs.as_mut().unwrap();
+        let mut drifted = record.calls[0].clone();
+        drifted.position = Position { line: 2, column: 1 };
+        record.calls.push(drifted);
+        let mut later = record.calls[0].clone();
+        later.position.line = 3;
+        record.calls.push(later);
+        caller.code = Some("sink(&v1);\nsink(&v1);\nsink(&v1);".into());
+        caller.line_mappings = vec![kuna_decomp::decompile_drive::LineMapping { line_number: 1, addresses: vec![0x2040] }];
+        caller.detail = Some(Box::default());
+        let mut results = vec![caller, callee];
+        super::reconcile_pointer_arguments(&mut results);
+        assert_eq!(
+            results[0].code.as_deref(),
+            Some("sink((char *)&v1);\nsink(&v1);\nsink((char *)&v1);")
+        );
+        assert!(results[0].error.is_none());
+        assert_eq!(results[0].line_mappings.len(), 1);
+        let detail = results[0].detail.as_ref().unwrap();
+        assert!(detail.tokens.is_empty() && detail.tokens_error.is_some(), "a stale token map is withdrawn");
+        assert!(results.iter().all(|r| r.pointerargs.as_ref().is_some_and(|p| p.calls.is_empty())));
     }
 
     /// (kuna `structsynth`) The header prune must decide "referenced" without a

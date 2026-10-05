@@ -339,27 +339,34 @@ nearly every `int` argument on x86-64 is such a trim, and the cast would land
 on all of them to fix the few whose callee reads the full register.
 
 **Byte-pointer arguments
-(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_pointerargs.rs`).** A
-callee-first run (`decompile-all` and `decompile-project` with `protoorder` on,
-the default) remembers the parameter declarations of every function it has
-printed. When a caller printed later passes the address of a whole scalar local
-or parameter where such a callee declares a character pointer (`char *`,
-`unsigned char *`, or an undefined byte, which prints as `char`), and the
-parameter has the call's finalized ABI storage at that position, the address is
-cast to the parameter's type: `sink((unsigned char *)&v1)` for `unsigned long
-v1`. The local keeps its declared type and width; C lets a character pointer
-access any object's bytes, so the cast is the conversion C requires and nothing
-else changes. There is no cast when the local already has the parameter's
-pointee type or differs from it only in the signedness of a byte (`char`
-against `unsigned char`), when the argument is an array, structure, union,
-member or any other pointer expression, for a varargs call, or where a per-call
-prototype override applies. Only declarations printed before the caller count,
-so a caller printed before its callee inside a call-graph cycle keeps the uncast
-call; a function decompiled again later in the run sees every declaration
-printed by then. Outside a callee-first run (`--jobs` workers, `protoorder off`,
-`decompile-graph`, streamed exports and single-function `kuna decompile`)
-nothing is recorded and calls print unchanged, so `--jobs N` still matches
-`--jobs 1 --option protoorder off`, as it does for `protoorder` itself.
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_pointerargs.rs`).** Buffered
+`decompile-all`, `decompile-project` and `decompile-graph` reconcile C calls after selecting their
+final successful function results. When a caller passes the address of a whole
+scalar local or parameter to a character-pointer parameter (`char *`,
+`unsigned char *`, or an undefined byte printed as `char`), the call is cast to
+that emitted parameter's type: `sink((unsigned char *)&v1)` for `unsigned long
+v1`. Parameter position and finalized ABI storage must agree. The local keeps
+its declared type and width; C allows a character pointer to access its bytes.
+
+The printer records declarations and exact argument positions with each result,
+only for a driver that asks; the batch that returns the final results applies them.
+The buffered driver uses only the accepted results, after any type convergence
+or worker structure renaming. Failed, omitted, and conflicting definitions
+cannot supply a cast. Workers transport the records; this reconciliation never
+re-decompiles a function. Address order, recursive call ordering, filtered
+selections and `protoorder off` do not disable the conversion. `protoorder`
+continues to control inference independently.
+
+Arrays, structures, unions, members, other pointer expressions, varargs and
+per-call prototype overrides abstain. A byte local of another signedness also
+retains the existing spelling. No text search identifies a call: each recorded
+position must still contain its recorded expression before its cast is added. A
+position that does not (an emitter defect) leaves only that argument uncast.
+The inserted text contains no newlines. No buffered driver captures token maps;
+a result that did would have its map withdrawn rather than left misaligned.
+Structure renaming first adjusts the recorded byte columns. Streamed exports, non-C output and standalone `decompile` do not
+reconcile incomplete batches. The worker path still matches
+serial output with `--option protoorder off` on both.
 
 **Casts C already performs (kuna `castimplied`).** `is_extension_cast_implied`
 hides an extension only when integer arithmetic, or a comparison against an

@@ -1,0 +1,29 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    P9 pointer-argument compatibility: standalone printing has no completed
+    batch contract. Printing the callee first must not leak its declaration
+    into the next function. The caller's entire eight-byte object survives.
+    The buffered positive cases, including caller-first order and workers,
+    compile and execute in kuna-cli/tests/emitted_pointer_arguments.rs.
+
+    Synthetic SysV x86-64: sink xors the pointed-to byte with 1; change pushes
+    its argument, calls sink with that slot's address, then returns the slot.
+-->
+<bytechunk space="ram" offset="0x1000">
+803701c3574889e7e8f3ffffff58c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="sink"/>
+<symbol space="ram" offset="0x1004" name="change"/>
+</binaryimage>
+<script>
+  <com>lo fu sink</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu change</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="pointer-arguments #1: standalone caller retains its scalar storage" min="1" max="1">(unsigned long|uint8|undefined8) v1;</stringmatch>
+<stringmatch name="pointer-arguments #2: no declaration leaks between standalone renders" min="1" max="1">sink\(&amp;v1\);</stringmatch>
+</decompilertest>

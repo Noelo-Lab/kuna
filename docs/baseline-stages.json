@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2250,
-    2250
+    2252,
+    2252
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -2005,6 +2005,8 @@
     "data:passthrough #1: the tail-call thunk never names rdi, so it has no parameter in either pass",
     "data:passthrough #2: the function that tests the result never names rdi either, and has no parameter in either pass",
     "data:passthrough #3: the calls pass nothing in both passes, because no callee stated a prototype for the rule to read",
+    "data:pointer-arguments #1: standalone caller retains its scalar storage",
+    "data:pointer-arguments #2: no declaration leaks between standalone renders",
     "data:ptrdepthcap #1: option off leaves the unbounded escalation (bug reproduces: 6 four-star decls + 1 cast)",
     "data:ptrdepthcap #2: option on settles the lattice (7 in the off pass + 0 in the on pass = 7; any leak back raises the count)",
     "data:ptrfromuse #10: and the named global it indexes survives in all three, instead of becoming a raw address",
