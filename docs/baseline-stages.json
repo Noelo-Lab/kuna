@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1969,
-    1969
+    1971,
+    1971
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -533,6 +533,8 @@
     "data:KUNA-CATALOG #10: fast whole-project discovery is default-off but live-toggleable",
     "data:KUNA-CATALOG #11: mapped ELF x86 flow recovery is default-on in P2",
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
+    "data:KUNA-CATALOG #13: validated ARM frames are default-off",
+    "data:KUNA-CATALOG #14: validated ARM frames are explicitly enabled",
     "data:KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address",
     "data:KUNA-CATALOG #2: arraynotation documented as default-on, P9 pointer-notation",
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",

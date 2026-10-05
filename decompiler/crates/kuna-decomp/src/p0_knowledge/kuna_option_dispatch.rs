@@ -783,6 +783,9 @@ kuna_options! { self, p1;
     "funcstart_patterns" => {
         on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
     },
+    "armframes" => {
+        on_off!(analysis_armframes, "Validated ARM/Thumb frame recovery")
+    },
     "cortexmvectors" => {
         on_off!(analysis_cortexmvectors, "Widened ARM Cortex-M vector-table signature")
     },

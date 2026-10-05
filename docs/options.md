@@ -510,6 +510,9 @@ Three tiers:
 | functions after nop padding missing in a stripped binary | [`funcstart_patterns`](#funcstart_patterns) |
 | a push rbx; mov rbx,rdi prologue never discovered as a function start | [`funcstart_patterns`](#funcstart_patterns) |
 | code-bearing gaps between discovered functions left undefined | [`funcstart_patterns`](#funcstart_patterns) |
+| stripped arm xref queries omit calls from disconnected stack frames | [`armframes`](#armframes) |
+| an arm caller is assigned to an interior prologue | [`armframes`](#armframes) |
+| arm interworking frame discovery leaves stale call references | [`armframes`](#armframes) |
 | stripped cortex-m firmware yields only a handful of functions | [`cortexmvectors`](#cortexmvectors) |
 | arm firmware body decodes as a32 garbage instead of thumb | [`cortexmvectors`](#cortexmvectors) |
 | nmi/hardfault/systick exception handlers never discovered as entries | [`cortexmvectors`](#cortexmvectors) |
@@ -2054,6 +2057,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On discovers additional function starts in a stripped binary via the full Ghidra prologue pattern set (e.g. a `push rbx; mov rbx,rdi` function after NOP padding that the minimal oracle misses); off (default) keeps only the entry_disc + symbol-stream functions so the output is byte-identical to the baseline.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-funcstart-patterns
 - **Example:** `--option funcstart_patterns on`
+
+### `armframes` -- on | off, default `off`
+
+- **Symptoms:** stripped arm xref queries omit calls from disconnected stack frames; an arm caller is assigned to an interior prologue; arm interworking frame discovery leaves stale call references.
+- **What it does:** Recover validated LR-saving ARM/Thumb frame entries in undefined executable code, share them between the Listing and reference queries, and reconcile AIF-supported prefixes and contradicted ISA modes. Requires funcstart_patterns on; Listing inventory recovery also requires listing on. Default-off because recovering disconnected code can substantially increase whole-image query work. Off retains the existing Thumb-only inventory scan and reference discovery.
+- **When to flip:** Enable when a stripped ARM ELF omits callers reachable only through indirect calls, reports no call references from an unreferenced frame, or assigns a call to an interior prologue. Use --option funcstart_patterns on --option armframes on. Recovery validates full bodies and may decode much more code: one 400 KB stripped ARM BusyBox query grew from about 2,000 initial instructions to 74,000 and took about twice as long, while finding 70 puts callers instead of 43. Keep off for the shipped query speed.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-arm-frame-recovery
+- **Example:** `--option funcstart_patterns on --option armframes on`
 
 ### `cortexmvectors` -- on | off, default `off`
 

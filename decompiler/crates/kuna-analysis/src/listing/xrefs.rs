@@ -82,6 +82,8 @@ use super::kuna_picpool::PicPool;
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable;
 use super::model::{FlowKind, RawOp};
+#[path = "kuna_prefixreuse.rs"]
+mod kuna_prefixreuse;
 
 /// ELF section-header flag `SHF_ALLOC` (the section occupies memory at runtime).
 const SHF_ALLOC: u64 = 0x2;
@@ -154,7 +156,7 @@ pub struct XrefIndex {
     decoded: HashSet<u64>,
     /// Every function entry the walk seeded or discovered, in address order.
     funcs: BTreeSet<u64>,
-    /// Reachable instruction owners for ARM runtime queries.
+    /// Reachable instruction owners when ARM frame recovery adds gap entries.
     body_owners: Option<BTreeMap<u64, u64>>,
     /// Function entries whose decoded body contains a `CALLIND`
     /// ([`XrefIndex::has_indirect_calls`]).
@@ -167,7 +169,7 @@ pub struct XrefIndex {
     /// How many distinct instructions the walk decoded (a coverage signal for a
     /// caller that wants to say "nothing decoded" rather than "no references").
     insns: usize,
-    /// The successor graph a measured walk keeps ([`build_measured`]).
+    /// The successor graph retained for measured queries ([`build_measured`]).
     flow: Option<FlowGraph>,
     /// Every jump table the walk read, in walk order.
     switches: Vec<SwitchTable>,
@@ -382,9 +384,8 @@ impl XrefIndex {
             })
     }
 
-    /// The function containing `vma`. ARM runtime queries with
-    /// `funcstart_patterns` use reachable bodies; other walks use the greatest
-    /// known entry `<= vma`.
+    /// The function containing `vma`. ARM frame recovery uses reachable bodies;
+    /// other walks use the greatest known entry `<= vma`.
     ///
     /// `None` unless the walk actually decoded `vma`, so a data address never
     /// gets attributed to whichever function happens to precede it in memory.
@@ -463,8 +464,8 @@ impl XrefIndex {
 /// classifier needs); the parts it drops are what the data-reference scan is
 /// made of — the output says a memory location was written, the later inputs
 /// carry the addresses.
-#[derive(Clone)]
-pub(super) struct FullOp {
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct FullOp {
     pub(super) opcode: OpCode,
     pub(super) out: Option<VarnodeData>,
     pub(super) ins: Vec<VarnodeData>,
@@ -477,7 +478,7 @@ pub(super) struct FullOp {
 /// place. Allocating per op cost one heap allocation for every p-code op in the
 /// program (1.44 M on a 466 KB obfuscated i386 image).
 #[derive(Default)]
-pub(super) struct FullCapture {
+pub(crate) struct FullCapture {
     ops: Vec<FullOp>,
     /// How many of `ops` the current instruction has filled.
     filled: usize,
@@ -485,12 +486,12 @@ pub(super) struct FullCapture {
 
 impl FullCapture {
     /// Start capturing a new instruction over the retained storage.
-    pub(super) fn begin(&mut self) {
+    pub(crate) fn begin(&mut self) {
         self.filled = 0;
     }
 
     /// The ops the current instruction emitted.
-    pub(super) fn ops(&self) -> &[FullOp] {
+    pub(crate) fn ops(&self) -> &[FullOp] {
         &self.ops[..self.filled]
     }
 }
@@ -692,29 +693,32 @@ fn descend(
     let preserve_bodies = sections_are_runtime
         && arch.analysis_funcstart_patterns
         && file.architecture() == object::Architecture::Arm;
-    let mut st = State {
-        by_target: BTreeMap::new(),
-        by_source: BTreeMap::new(),
-        decoded: HashSet::new(),
-        funcs: seed_set.clone(),
-        indirect_call_sites: BTreeSet::new(),
-        flow: (measure || preserve_bodies).then(|| FlowGraph {
-            seeds: seed_set.iter().copied().collect(),
-            ..FlowGraph::default()
-        }),
-        switches: Vec::new(),
-    };
+    let prologues = preserve_bodies && arch.analysis_armframes;
+    let mut st = State::new(&seed_set, measure || preserve_bodies);
 
     // Reused across every decode in the walk (see [`FullCapture`]).
     let mut cap = FullCapture::default();
     let mut raw: Vec<RawOp> = Vec::new();
 
-    // (kuna, `aif`) The instruction partition the gap-walk consumes, recorded
-    // only when it will run. A `push` per decode is the whole cost of keeping
-    // AIF reachable without a second decode of the program.
+    // Share the decoded partition with prologue recovery and AIF.
     let gapwalk = arch.analysis_aif;
+    let mut fingerprint_contexts = (prologues && gapwalk)
+        .then(super::kuna_fingerprintcontext::FingerprintContexts::default);
+    let mut prologues_done = false;
+    let mut pending_prologues: VecDeque<u64> = VecDeque::new();
+    let mut frame_candidates = Vec::new();
+    let mut frame_cache = crate::aif::ArmFrames::default();
+    let mut frame_partition = None;
+    let mut walk_context = super::kuna_walkcontext::WalkContext::new(
+        prologues, translate, arch, &code_space, &exec,
+    );
+    let mut frame_context = None;
+    let mut frame_modes: Option<super::kuna_framemode::FrameModes> = None;
+    let mut frame_reconciled = false;
     let mut gapwalk_done = false;
     let mut partition: Vec<(u64, u32)> = Vec::new();
+    // Candidates are undefined in the initial partition; only later decodes can cover them.
+    let mut recovered_spans: BTreeMap<u64, u32> = BTreeMap::new();
 
     let mut func_queue: VecDeque<u64> = seed_set.iter().copied().collect();
     let mut walked: HashSet<u64> = HashSet::new();
@@ -729,13 +733,53 @@ fn descend(
     let mut focused: Vec<u64> = Vec::new();
 
     loop {
-        // The seeded walk drains first; only then is the next caller-named
-        // address it never reached taken up as a function of its own.
+        // Drain known entries first, then merge recovered roots and focus addresses
+        // in address order. Earlier entries claim their full instruction spans
+        // before an interior candidate can become a boundary.
         let entry = match func_queue.pop_front() {
             Some(entry) => entry,
+            None if prologues && !prologues_done => {
+                prologues_done = true;
+                let mut listing = partition_listing(&partition, &st.funcs, &exec);
+                if gapwalk {
+                    render_fingerprints(
+                        &mut listing, &st.funcs, arch, translate, &code_space,
+                        &partition, fingerprint_contexts.as_ref(),
+                    );
+                }
+                let frames = crate::aif::raw_arm_frames(
+                    file, &listing, arch, translate, Rc::clone(&code_space), &exec, true,
+                );
+                let found = frames.roots.clone();
+                frame_cache = frames;
+                if !found.is_empty() {
+                    gapwalk_done = false;
+                    frame_partition = Some(listing);
+                    frame_context = translate.context_scope();
+                    frame_modes = Some(super::kuna_framemode::FrameModes::new(&found));
+                }
+                pending_prologues.extend(found.iter().copied());
+                frame_candidates = found;
+                frame_candidates.sort_unstable();
+                continue;
+            }
+            None if pending_prologues.front().is_some_and(|root| {
+                pending_focus.last().is_none_or(|focus| root <= focus)
+            }) => {
+                let root = pending_prologues.pop_front().unwrap();
+                if st.decoded.contains(&root) || partition_covers(&recovered_spans, root) {
+                    continue;
+                }
+                seed_set.insert(root);
+                st.funcs.insert(root);
+                if let Some(flow) = st.flow.as_mut() {
+                    flow.seeds.push(root);
+                }
+                root
+            }
             None => match pending_focus.pop() {
                 Some(f) => {
-                    if st.decoded.contains(&f)
+                    if st.decoded.contains(&f) || partition_covers(&recovered_spans, f)
                         || (sections_are_runtime && !in_range(&exec_set, f))
                     {
                         continue;
@@ -747,6 +791,101 @@ fn descend(
                 // (kuna, `aif`) Nothing reachable is left: run the speculative
                 // gap-walk over the partition THIS walk left behind, and take up
                 // whatever it finds as more entries to walk. See `gap_entries`.
+                None if frame_partition.is_some() && (!frame_reconciled
+                    || frame_modes.as_ref().is_some_and(|modes| !modes.stale().is_empty())) =>
+                {
+                    let replacements = if gapwalk {
+                        let original = frame_partition.as_ref().unwrap();
+                        let candidates = frame_candidates.iter().copied()
+                            .filter(|root| st.funcs.contains(root)).collect();
+                        let mut corpus = partition_listing(&partition, &st.funcs, &exec);
+                        render_fingerprints(
+                            &mut corpus, &st.funcs, arch, translate, &code_space,
+                            &partition, fingerprint_contexts.as_ref(),
+                        );
+                        render_frame_flow(&mut corpus, &st);
+                        crate::aif::arm_frame_prefixes(
+                            &mut frame_cache, original, &corpus, &candidates, &focused, frame_context.as_ref(),
+                            arch, translate, Rc::clone(&code_space),
+                        )
+                    } else {
+                        BTreeMap::new()
+                    };
+                    let extendable = !replacements.is_empty()
+                        && replacements.values().all(|prefix| !st.decoded.contains(prefix))
+                        && frame_modes.as_ref().is_some_and(|modes| modes.stale().is_empty()
+                            && modes.decoded_as_arm(&replacements))
+                        && frame_cache.preserves_frame_bodies(&replacements)
+                        && frame_cache.prefixes_in_arm_context(&replacements, arch, &code_space)
+                        && frame_context.as_ref().is_some_and(|context| {
+                            let _original = context.probe_original();
+                            frame_cache.prefixes_in_arm_context(&replacements, arch, &code_space)
+                        });
+                    if extendable {
+                        kuna_prefixreuse::discard_bodies(&mut st, &mut partition, &mut recovered_spans,
+                            &mut fingerprint_contexts, frame_modes.as_ref().unwrap(), &replacements);
+                        frame_candidates.retain(|root| !replacements.contains_key(root));
+                        frame_candidates.extend(replacements.values().copied());
+                        frame_candidates.sort_unstable();
+                        frame_candidates.dedup();
+                        for (&root, &prefix) in &replacements {
+                            seed_set.remove(&root);
+                            seed_set.insert(prefix);
+                            st.funcs.remove(&root);
+                            st.funcs.insert(prefix);
+                            walked.remove(&prefix);
+                            func_queue.push_back(prefix);
+                        }
+                        if let Some(flow) = &mut st.flow {
+                            flow.seeds.retain(|root| !replacements.contains_key(root));
+                            flow.seeds.extend(replacements.values().copied());
+                        }
+                        frame_modes.as_mut().unwrap().replace(&replacements);
+                        frame_reconciled = false;
+                        gapwalk_done = false;
+                        continue;
+                    }
+                    // Remove obsolete speculative callers before trusting their mode evidence.
+                    let stale = if replacements.is_empty() {
+                        frame_modes.as_ref().unwrap().stale().clone()
+                    } else {
+                        BTreeSet::new()
+                    };
+                    if !replacements.is_empty() || !stale.is_empty() {
+                        let reconciled: BTreeSet<_> = frame_candidates.iter().copied()
+                            .filter(|root| !replacements.contains_key(root) && !stale.contains(root))
+                            .chain(replacements.values().copied()).collect();
+                        drop(frame_context.take());
+                        frame_context = translate.context_scope();
+                        // Replaced bodies can invent callees as well as references.
+                        // Rebuild from independent roots, then reconsider newly uncalled frames.
+                        seed_set = seeds.iter().copied().filter(|&s| {
+                            !sections_are_runtime || in_range(&exec_set, s)
+                        }).collect();
+                        st = State::new(&seed_set, measure || preserve_bodies);
+                        func_queue = seed_set.iter().copied().collect();
+                        frame_candidates = reconciled.into_iter().collect();
+                        frame_modes = Some(super::kuna_framemode::FrameModes::new(&frame_candidates));
+                        frame_reconciled = false;
+                        gapwalk_done = false;
+                        pending_prologues = frame_candidates.iter().copied().collect();
+                        pending_focus = focus.iter().copied()
+                            .filter(|f| !seed_set.contains(f)).collect();
+                        pending_focus.sort_unstable();
+                        pending_focus.dedup();
+                        pending_focus.reverse();
+                        focused.clear();
+                        walked.clear();
+                        if let Some(context) = &mut walk_context { context.reset(); }
+                        partition.clear();
+                        fingerprint_contexts = gapwalk.then(Default::default);
+                        recovered_spans.clear();
+                        pc_thunks.clear();
+                    } else {
+                        frame_reconciled = true;
+                    }
+                    continue;
+                }
                 None if gapwalk && !gapwalk_done => {
                     gapwalk_done = true;
                     let found = gap_entries(
@@ -756,17 +895,25 @@ fn descend(
                         &partition,
                         &st.funcs,
                         &exec,
+                        fingerprint_contexts.as_ref(),
+                        frame_partition.as_ref(),
                     );
                     pending_focus.extend(found.into_iter().rev());
                     continue;
                 }
-                None => break,
+                None => {
+                    if let Some(context) = frame_context.take() {
+                        context.commit();
+                    }
+                    break;
+                }
             },
         };
         if !walked.insert(entry) {
             continue;
         }
-        let mut insn_queue: VecDeque<u64> = VecDeque::from([entry]);
+        let entry_mode = walk_context.as_ref().and_then(|context| context.entry(entry));
+        let mut insn_queue = VecDeque::from([(entry, entry_mode)]);
         // Only collected when a base exists: the admission rule needs the whole
         // body before any of it can be attributed (`kuna_picbase::scope`), and
         // buffering it costs nothing on the overwhelmingly common `None` path.
@@ -775,7 +922,7 @@ fn descend(
         // `add` that turns each into an address. Per function, because the values
         // it tracks are live only inside one straight-line run.
         let mut picpool = PicPool::default();
-        while let Some(vma) = insn_queue.pop_front() {
+        while let Some((vma, mode)) = insn_queue.pop_front() {
             if st.decoded.contains(&vma) {
                 continue; // already decoded (the VisitStat dedup)
             }
@@ -786,15 +933,39 @@ fn descend(
             if vma != entry && seed_set.contains(&vma) {
                 continue;
             }
+            // A recovered frame stops at another pending frame unless its own
+            // validated body claimed that instruction.
+            if vma != entry
+                && frame_candidates.binary_search(&entry).is_ok()
+                && frame_candidates.binary_search(&vma).is_ok()
+                && !frame_cache.body_covers(entry, vma)
+            {
+                continue;
+            }
             if sections_are_runtime && !in_range(&exec_set, vma) {
                 continue; // out of bounds (the `flow.rs` gate)
             }
-            let Some(len) = decode(translate, vma, &code_space, &mut cap) else {
+            let selection = super::kuna_walkcontext::InstructionMode::select(arch, translate, &code_space, vma, mode);
+            if let Some(contexts) = &mut fingerprint_contexts {
+                contexts.record(partition.len(), arch, &Address::new(Rc::clone(&code_space), vma), selection.as_ref());
+            }
+            let cached = frame_cache.replay(vma, translate, &code_space, &mut cap);
+            let Some(len) = cached.or_else(|| decode(translate, vma, &code_space, &mut cap)) else {
                 continue; // undecodable (or zero-length): stop this path
             };
+            let commits = if walk_context.is_some() && cached.is_none() {
+                translate.last_context_commits()
+            } else { Vec::new() };
+            if let Some(selection) = &selection { selection.accept(len); }
+            if let Some(modes) = &mut frame_modes {
+                modes.record(entry, vma, len, mode);
+            }
             st.decoded.insert(vma);
-            if gapwalk {
+            if gapwalk || prologues {
                 partition.push((vma, len));
+            }
+            if prologues_done {
+                recovered_spans.insert(vma, len);
             }
 
             raw.clear();
@@ -846,15 +1017,23 @@ fn descend(
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
                 st.file(vma, target, kind, &text);
                 if c.flow.is_call {
+                    let target_mode = walk_context.as_ref()
+                        .and_then(|context| context.successor(target, mode, &commits));
+                    if let Some(context) = &mut walk_context { context.called(target, target_mode); }
+                    if let Some(modes) = &mut frame_modes { modes.called(target, target_mode); }
                     st.funcs.insert(target);
                     func_queue.push_back(target);
                 } else {
-                    insn_queue.push_back(target);
+                    let target_mode = walk_context.as_ref()
+                        .and_then(|context| context.successor(target, mode, &commits));
+                    insn_queue.push_back((target, target_mode));
                 }
             }
             if let Some(fall) = c.fall_through {
                 // Fall-through is not a reference; it is only a walk successor.
-                insn_queue.push_back(fall);
+                let fall_mode = walk_context.as_ref()
+                    .and_then(|context| context.successor(fall, mode, &commits));
+                insn_queue.push_back((fall, fall_mode));
             }
 
             // (kuna) `switchtable`: a computed jump has no static successor, so
@@ -923,7 +1102,7 @@ fn descend(
                     }
                     for target in cases {
                         st.file(vma, target, XrefKind::Jump, &text);
-                        insn_queue.push_back(target);
+                        insn_queue.push_back((target, mode));
                     }
                 }
             }
@@ -1030,9 +1209,8 @@ const AIF_MIN_FUNCTIONS: usize = 20;
 /// duplicate decode.
 ///
 /// The gap-walk fingerprints each candidate against the prologues of the already
-/// -discovered functions, so the two leading instructions of each are rendered
-/// here — `2 * functions` renders, against the whole program's worth the Listing
-/// path rendered.
+/// -discovered functions, so only the two leading instructions of each are
+/// rendered here.
 fn gap_entries(
     arch: &Architecture,
     translate: &dyn Translate,
@@ -1040,10 +1218,83 @@ fn gap_entries(
     partition: &[(u64, u32)],
     funcs: &BTreeSet<u64>,
     exec: &[(u64, u64)],
+    contexts: Option<&super::kuna_fingerprintcontext::FingerprintContexts>,
+    frame: Option<&super::Listing>,
 ) -> Vec<u64> {
     if funcs.len() < AIF_MIN_FUNCTIONS || partition.is_empty() {
         return Vec::new();
     }
+    let mut listing = partition_listing(partition, funcs, exec);
+    let _probe = contexts.and_then(|_| translate.context_scope());
+    render_fingerprints(&mut listing, funcs, arch, translate, code_space, partition, contexts);
+    if let Some(prior) = frame {
+        crate::aif::run_aif_after_frames(
+            &listing, prior, translate, Rc::clone(code_space),
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate,
+        )
+    } else {
+        crate::aif::run_aif(
+            &listing, translate, Rc::clone(code_space), listing.exec_ranges(),
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate,
+        )
+    }
+}
+
+/// Reuse recorded successors and calls to assess independent frame support.
+fn render_frame_flow(listing: &mut super::Listing, state: &State) {
+    if let Some(flow) = &state.flow {
+        for &(at, len, falls) in &flow.insns {
+            if falls {
+                listing.insns.get_mut(&at).unwrap().fall_through = Some(at.wrapping_add(u64::from(len)));
+            }
+        }
+        for &(from, to) in &flow.jumps {
+            listing.insns.get_mut(&from).unwrap().flows.push(to);
+        }
+    }
+    for (&from, refs) in &state.by_source {
+        for call in refs.iter().filter(|r| r.kind == XrefKind::Call) {
+            let insn = listing.insns.get_mut(&from).unwrap();
+            insn.flow.is_call = true;
+            insn.flows.push(call.to);
+        }
+    }
+}
+
+fn render_fingerprints(
+    listing: &mut super::Listing,
+    funcs: &BTreeSet<u64>,
+    arch: &Architecture,
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    partition: &[(u64, u32)],
+    contexts: Option<&super::kuna_fingerprintcontext::FingerprintContexts>,
+) {
+    if let Some(contexts) = contexts {
+        contexts.render(listing, partition, arch, translate, code_space);
+        return;
+    }
+    for &entry in funcs {
+        let mut vma = entry;
+        for _ in 0..2 {
+            let Some(insn) = listing.insns.get_mut(&vma) else { break };
+            let text = assembly(translate, vma, code_space);
+            insn.mnemonic = text.split_whitespace().next().unwrap_or_default().to_string();
+            vma = vma.wrapping_add(u64::from(insn.len));
+        }
+    }
+}
+
+fn partition_covers(partition: &BTreeMap<u64, u32>, vma: u64) -> bool {
+    partition.range(..=vma).next_back()
+        .is_some_and(|(&start, &len)| vma - start < u64::from(len))
+}
+
+fn partition_listing(
+    partition: &[(u64, u32)],
+    funcs: &BTreeSet<u64>,
+    exec: &[(u64, u64)],
+) -> super::Listing {
     let mut insns: BTreeMap<u64, super::Insn> = BTreeMap::new();
     for &(addr, len) in partition {
         insns.insert(
@@ -1060,22 +1311,7 @@ fn gap_entries(
             },
         );
     }
-    // The fingerprint reads the first two instructions of every discovered
-    // function; nothing else in the gap-walk reads a mnemonic.
-    for &entry in funcs {
-        let mut vma = entry;
-        for _ in 0..2 {
-            let Some(insn) = insns.get(&vma) else { break };
-            let next = vma.wrapping_add(u64::from(insn.len));
-            let text = assembly(translate, vma, code_space);
-            if let Some(slot) = insns.get_mut(&vma) {
-                slot.mnemonic =
-                    text.split_whitespace().next().unwrap_or_default().to_string();
-            }
-            vma = next;
-        }
-    }
-    let listing = super::Listing::from_partition(
+    super::Listing::from_partition(
         insns,
         funcs
             .iter()
@@ -1093,14 +1329,6 @@ fn gap_entries(
             })
             .collect(),
         exec.to_vec(),
-    );
-    crate::aif::run_aif(
-        &listing,
-        translate,
-        Rc::clone(code_space),
-        listing.exec_ranges(),
-        arch.analysis_aifstrict,
-        arch.analysis_aifcorroborate,
     )
 }
 
@@ -1184,6 +1412,21 @@ struct State {
 }
 
 impl State {
+    fn new(seeds: &BTreeSet<u64>, keep_flow: bool) -> Self {
+        Self {
+            by_target: BTreeMap::new(),
+            by_source: BTreeMap::new(),
+            decoded: HashSet::new(),
+            funcs: seeds.clone(),
+            indirect_call_sites: BTreeSet::new(),
+            flow: keep_flow.then(|| FlowGraph {
+                seeds: seeds.iter().copied().collect(),
+                ..FlowGraph::default()
+            }),
+            switches: Vec::new(),
+        }
+    }
+
     fn file(&mut self, from: u64, to: u64, kind: XrefKind, instruction: &str) {
         let r = Xref { from, to, kind, instruction: instruction.to_string() };
         self.by_target.entry(to).or_default().push(r.clone());
