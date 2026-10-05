@@ -14,15 +14,14 @@
 //! sits in a VFP register, and moving only its variadic callee's would break
 //! `return vr(...)`.
 use crate::{
+    context::ArchContext,
     dtype::type_metatype,
-    fspec::{FuncProto, ProtoModel, PrototypePieces},
+    fspec::{FuncProto, ParameterPieces, ProtoModel, PrototypePieces},
     infra::architecture::Architecture,
     modelrules::{register_ids, ModelRule},
 };
-use kuna_base::address::Address;
 use kuna_base::marshal::{IdRegistry, XmlDecode};
 use kuna_base::space::AddrSpaceManager;
-use kuna_base::types::int4;
 use std::rc::Rc;
 
 const OUTPUT_RULES: &str = concat!(
@@ -88,23 +87,35 @@ pub fn model(base: &Rc<ProtoModel>, manager: &AddrSpaceManager) -> Option<Rc<Pro
     Some(Rc::new(result))
 }
 
-/// Would a recovered prototype parked with an open tail have its return value
-/// moved by the variadic rules?  Its callers lay a parked list out as a
-/// declaration, so the open tail `protoorder` gives every parked list would
-/// re-bind a recovered `float` return to `r0`.
-pub fn moves_parked_return(arch: &Architecture, pieces: &PrototypePieces) -> bool {
-    if !moves_return(pieces) || !applies(arch) {
-        return false;
+/// The return storage a recovered prototype parked with an open tail states,
+/// where the variadic rules would move its return value.  Callers lay a parked
+/// list out as a declaration, but the open tail `protoorder` gives every parked
+/// list is a floor for argument recovery, not a variadic signature, so the
+/// return value stays where the default model, and the function itself, put it.
+pub fn parked_output(arch: &ArchContext, pieces: &PrototypePieces) -> Option<ParameterPieces> {
+    if !arch.vfp_variadic || !moves_return(pieces) {
+        return None;
     }
-    let (Some(base), Some(variadic)) = (arch.default_fp(), declarations(arch)) else { return false };
-    output(arch, pieces, base) != output(arch, pieces, &variadic)
-}
-
-fn output(arch: &Architecture, pieces: &PrototypePieces, model: &Rc<ProtoModel>) -> Option<(Address, int4)> {
-    let void_ty = arch.types().get_type_void().ok()?;
-    let types_only = PrototypePieces { input_storage: Vec::new(), output_storage: None, ..pieces.clone() };
+    let types = arch.types()?;
+    let closed = PrototypePieces {
+        first_var_arg_slot: -1,
+        input_storage: Vec::new(),
+        output_storage: None,
+        ..pieces.clone()
+    };
     let mut fp = FuncProto::new();
-    fp.seed_locked_from_pieces(&types_only, Rc::clone(model), void_ty, arch.types(), arch.manage()).ok()?;
-    let out = fp.get_output();
-    Some((out.get_address(), out.get_size()))
+    let void_ty = types.get_type_void().ok()?;
+    fp.seed_locked_from_pieces(
+        &closed,
+        Rc::clone(arch.default_fp()?),
+        void_ty,
+        types,
+        arch.manage(),
+    )
+    .ok()?;
+    Some(ParameterPieces {
+        addr: fp.get_output().get_address(),
+        type_: pieces.outtype.clone(),
+        flags: 0,
+    })
 }
