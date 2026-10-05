@@ -267,8 +267,12 @@ call, or a call-free epilogue), copy propagation folds the slot reload into
 the `fs:0x28` LOAD and the compare's chains name no slot at all (GH-866); the
 addrforced INDIRECT heritage places on the slot at the tail CALL then kept the
 init alive, printing `v1 = *(fs_offset + 0x28); ... v4 = v1;`. So the walk
-also records each canary LOAD its chains end in, and a forward fixpoint from
-those LOADs (`kuna_stackguard.rs (collect_value_slots)`) adds the storage of
+also records each canary LOAD its chains end in whose pointer is the
+`FS_OFFSET` register plus `0x28` (`kuna_stackguard.rs (ptr_is_fs_canary)`;
+the detector's own probe accepts any `<base> + 0x28`, which a struct field at
+that offset also satisfies, and a walk rooted at such a LOAD would release the
+local the field was copied into), and a forward fixpoint from those LOADs
+(`kuna_stackguard.rs (collect_value_slots)`) adds the storage of
 every stack-space addrtied varnode that holds the loaded value — through
 COPY/CAST, INDIRECT input 0, or a MULTIEQUAL whose inputs all hold it. A copy
 of the value into a global is never recorded, so its store stays. After the

@@ -113,6 +113,57 @@ fn ptr_is_canary_slot(ptr: VarnodeId, data: &Funcdata) -> bool {
     false
 }
 
+/// Is `ptr` `FS_OFFSET + 0x28`, the canary itself?  [`ptr_is_canary_slot`]
+/// accepts any `<base> + 0x28`, so a struct field at that offset passes it;
+/// only a LOAD through the segment base may root [`collect_value_slots`].
+fn ptr_is_fs_canary(ptr: VarnodeId, data: &Funcdata) -> bool {
+    let Some(fs) = data
+        .get_arch()
+        .manage()
+        .register_lookup()
+        .and_then(|l| l.probe_register("FS_OFFSET"))
+    else {
+        return false;
+    };
+    let Some(fs_space) = fs.space else {
+        return false;
+    };
+    let peel = |mut vn: VarnodeId| {
+        for _ in 0..8 {
+            let def = data.vbank().get(vn).and_then(|v| v.get_def());
+            let Some(dop) = def.and_then(|d| data.obank().get(d)) else {
+                break;
+            };
+            match (dop.code(), dop.get_in(0)) {
+                (OpCode::CPUI_COPY | OpCode::CPUI_CAST, Some(in0)) => vn = in0,
+                _ => break,
+            }
+        }
+        vn
+    };
+    let Some(add) = data
+        .vbank()
+        .get(peel(ptr))
+        .and_then(|v| v.get_def())
+        .and_then(|d| data.obank().get(d))
+        .filter(|d| d.code() == OpCode::CPUI_INT_ADD)
+    else {
+        return false;
+    };
+    let is_fs = |vn: VarnodeId| {
+        data.vbank()
+            .get(peel(vn))
+            .is_some_and(|v| Rc::ptr_eq(v.get_space(), &fs_space) && v.get_offset() == fs.offset)
+    };
+    let is_slot = |vn: VarnodeId| {
+        data.vbank().get(vn).is_some_and(|v| v.is_constant() && v.get_offset() == 0x28)
+    };
+    match (add.get_in(0), add.get_in(1)) {
+        (Some(a), Some(b)) => (is_slot(b) && is_fs(a)) || (is_slot(a) && is_fs(b)),
+        _ => false,
+    }
+}
+
 /// Does `vn` ultimately derive from a LOAD of the canary slot?
 /// (C++ `derivesFromCanaryLoad`, `kuna_stackguard.cc:60`).
 ///
@@ -184,9 +235,9 @@ fn derives_from_canary_load(
 /// MULTIEQUAL input (each proven subchain contributes) and records
 /// `(address, size)` for each addrtied varnode whose value provably derives
 /// from a LOAD of the canary slot — i.e. the saved-canary stack slot the pass
-/// resolved — and each canary LOAD the chains end in, so the caller can also
-/// find the slot from the store side ([`collect_value_slots`]).  Returns
-/// whether `vn` itself derives.
+/// resolved — and each `FS_OFFSET + 0x28` LOAD the chains end in, so the
+/// caller can also find the slot from the store side
+/// ([`collect_value_slots`]).  Returns whether `vn` itself derives.
 fn collect_canary_slots(
     vn: VarnodeId,
     depth: int4,
@@ -216,8 +267,9 @@ fn collect_canary_slots(
     };
     let derived = match oc {
         OpCode::CPUI_LOAD => {
-            let canary = ptr_is_canary_slot(in1.expect("collectCanarySlots: load ptr"), data);
-            if canary && !loads.contains(&def) {
+            let ptr = in1.expect("collectCanarySlots: load ptr");
+            let canary = ptr_is_canary_slot(ptr, data);
+            if canary && !loads.contains(&def) && ptr_is_fs_canary(ptr, data) {
                 loads.push(def);
             }
             canary

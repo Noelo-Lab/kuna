@@ -37,9 +37,23 @@
     CALL then kept the LOAD alive.  t3 calls ext before its check (the
     GH-183 shape, already clean) and is the control.
 
+    h6 and h7 (-O2 -fno-stack-protector) have no canary.  They compare a
+    field at offset 0x28 of two structs and call report() when they differ:
+
+        int h6(struct S *a, struct S *b) { long v = a->f;
+            if (v != b->f) report(); return g(&v); }
+        int h7(struct S *a, struct S *b) { struct T t; t.a = a->f; t.b = 2;
+            if (t.a != b->f) report(); return consume(&t); }
+
+    The detector takes any <base> + 0x28 LOAD for the canary, so it also
+    strips their report() arm (a separate defect, unchanged here; the
+    assertions accept either shape).  The store-side walk must not follow
+    such a LOAD: rooted at it, the walk released v and t, so h6 printed
+    g(&Stackfffffffffffffff0) with the store gone and h7 lost t.b = 2.
+
     Stage: P7 regions, stackguard (ActionStripStackGuard): the canary slot is
-    also resolved from the store side, forward from the canary LOADs the
-    compare reads.  P0 assertion: option stackguard on|off.  Pass 1 (default
+    also resolved from the store side, forward from the FS_OFFSET + 0x28
+    LOADs the compare reads.  P0 assertion: option stackguard on|off.  Pass 1 (default
     on) proves the fix: no canary load and no fs_offset in any function, the
     rest of each body unchanged.  Pass 2 (off) keeps every check verbatim,
     proving each function carries one.  On the unpatched engine #1 and #2 count
@@ -65,7 +79,12 @@ f30f1efa4883ec2831d264488b04252800000048894424184889e0488d4c2410
 28b90c00000064488b142528000000488954241831d2c1f80440887c240c99f7
 f94863d2408874140c0fb67c240c4084ff7419488b44241864482b0425280000
 0075194883c428e9b4fdffff488b44241864482b0425280000007405e8bffdff
-ffb8050000004883c428c3
+ffb8050000004883c428c30f1f440000f30f1efa4883ec18488b472848894424
+08483b46287405e874000000488d7c2408e84a0000004883c418c30f1f440000
+f30f1efa4883ec18488b472848c74424080200000048890424483b46287405e8
+3c0000004889e7e8240000004883c418c3662e0f1f8400000000000f1f440000
+f30f1efa8b07c3660f1f840000000000f30f1efa8b07034708c3660f1f440000
+f30f1efa90c3
 </bytechunk>
 <symbol space="ram" offset="0x401000" name="ext"/>
 <symbol space="ram" offset="0x401010" name="ext2"/>
@@ -75,6 +94,11 @@ ffb8050000004883c428c3
 <symbol space="ram" offset="0x401140" name="k2"/>
 <symbol space="ram" offset="0x4011b0" name="w3"/>
 <symbol space="ram" offset="0x4011f7" name="t2s"/>
+<symbol space="ram" offset="0x401270" name="h6"/>
+<symbol space="ram" offset="0x4012a0" name="h7"/>
+<symbol space="ram" offset="0x4012e0" name="g"/>
+<symbol space="ram" offset="0x4012f0" name="consume"/>
+<symbol space="ram" offset="0x401300" name="report"/>
 </binaryimage>
 <script>
   <com>lo fu t2</com>
@@ -90,6 +114,12 @@ ffb8050000004883c428c3
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu t2s</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h7</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option stackguard off</com>
@@ -108,6 +138,12 @@ ffb8050000004883c428c3
   <com>lo fu t2s</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu h6</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h7</com>
+  <com>decompile</com>
+  <com>print C</com>
 </script>
 <stringmatch name="STACKGUARD-TAILCALL #1: the fs_offset input is declared only with option stackguard off, once per function" min="5" max="5">// fs_offset$</stringmatch>
 <stringmatch name="STACKGUARD-TAILCALL #2: the entry-side canary load prints only with option stackguard off" min="5" max="5">= \*\([a-z0-9 ]+ \*\)\(v[0-9]+ \+ 0x28\);$</stringmatch>
@@ -120,4 +156,8 @@ v3\[\(int4\)a0 >> 2 &amp; 0xf\] = a1;
 ext2\(.*\); // tail-call</stringmatch>
 <stringmatch name="STACKGUARD-TAILCALL #6: every function keeps its check with option stackguard off, none by default" min="5" max="5">__stack_chk_fail\(\); // no-return</stringmatch>
 <stringmatch name="STACKGUARD-TAILCALL #7: control, t3 (check after the call) returns ext() + 1 by default" min="1" max="1">return ext\(.*\) \+ 1;</stringmatch>
+<stringmatch name="STACKGUARD-TAILCALL #8: no canary, h6 passes the address of v to g in both passes" min="2" max="2">^\s*g\(v1\);$</stringmatch>
+<stringmatch name="STACKGUARD-TAILCALL #9: no canary, h6 and h7 keep their copy of a-&gt;f in both passes" min="4" max="4">= \(\([a-z0-9 ]+ \*\)a0\)\[5\];$</stringmatch>
+<stringmatch name="STACKGUARD-TAILCALL #10: no canary, h7 keeps t.b = 2 in both passes" min="2" max="2">= 2;$</stringmatch>
+<stringmatch name="STACKGUARD-TAILCALL #11: no canary, h7 passes the address of t to consume in both passes" min="2" max="2">^\s*consume\(&amp;?v1\);$</stringmatch>
 </decompilertest>
