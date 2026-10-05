@@ -2214,11 +2214,20 @@ decomp_command!(
         }
         // The `map param <i> <addr> <decl>` storage locks stashed for this
         // function (re-seeded on the rebuilt IR, like `pending_proto`).
-        let mapped_params = dcp_mut(status)?
+        let mut mapped_params = dcp_mut(status)?
             .pending_param_maps
             .get(&name)
             .cloned()
             .unwrap_or_default();
+        let parameter_edits = dcp_mut(status)?
+            .fd.as_ref()
+            .filter(|fd| fd.is_high_on())
+            .map(crate::kuna_hightarget::carried_parameter_maps)
+            .unwrap_or_default();
+        if !parameter_edits.is_empty() {
+            mapped_params = parameter_edits;
+            dcp_mut(status)?.pending_param_maps.insert(name.clone(), mapped_params.clone());
+        }
         // The `override prototype` facts stashed for this function (re-seeded on the
         // rebuilt IR), consumed at flow time as `Override::applyPrototype`.  The
         // shared decompile step may discover further per-call-site printf/scanf

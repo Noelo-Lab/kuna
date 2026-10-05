@@ -80,6 +80,28 @@ into `r3` printed as `s.y = *k; ... take3(...,s.y)` the same way. The stack piec
 of such a parameter is still read through its input, so `d.field_b` keeps the
 parameter's name.
 
+A standalone name or type assertion on a parameter must update both its scoped
+Symbol and the prototype used on the next decompile. Chapter 00 describes the
+replay of those edits by parameter slot and input storage. In particular, a
+conditional write to the same register must still test the incoming parameter,
+and the signature and body must agree on its edited name and type. The generic
+Symbol replay collectors in `database.rs` exclude category-0 parameters, whose
+prototype seed recreates their input-scoped entries. Seeding the same parameter
+again as a locked local can separate it from its input HighVariable.
+
+Parameter materialization queries storage at the function's entry usepoint.
+A later usepoint-scoped register local at the same address is a separate Symbol
+and retains its non-parameter category. Once the naming pass selects an entry
+by storage and usepoint, it assigns or reads the name through that selected
+Symbol; a second storage-only overlap query could bind the other register
+lifetime. The printer likewise uses the linked Symbol's category (chapter 09).
+
+The standalone assertion resolver can name a later local that reuses a register
+parameter only at the same width and with nonempty, disjoint CFG covers for the
+local and input. Missing input identity, genuine cover overlap, a different
+width, or a shared ordinary local retains conservative rejection. The mapped
+local keeps its definition usepoint, while the parameter keeps entry-minus-one.
+
 **Cover.** A variable can only absorb another if their live ranges do not
 collide, and the live range is the
 `decompiler/crates/kuna-decomp/src/p6_variables/cover.rs (Cover)`: per basic

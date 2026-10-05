@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1964,
-    1964
+    1969,
+    1969
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -856,6 +856,11 @@
     "data:P3: TOTAL goto-label count across both passes is 1 (off: 1, on: 0)",
     "data:P3: off keeps ONE merged variable return (the transform is fully option-gated)",
     "data:P3: the convergence sink post() is untouched (one per pass = 2 total)",
+    "data:PARAMETER-ALIAS #1: the input stays in the signature",
+    "data:PARAMETER-ALIAS #2: entry comparisons read the input",
+    "data:PARAMETER-ALIAS #3: the later local retains both assigned values",
+    "data:PARAMETER-ALIAS #4: the call reads the later local",
+    "data:PARAMETER-ALIAS #5: no detached entry local appears",
     "data:PDB-SIDECAR #1: with the pass off the function keeps the engine placeholder",
     "data:PDB-SIDECAR #2: the shipped default names it from the sidecar .pdb",
     "data:PDB-SIDECAR #3: the PE entry is renamed too",

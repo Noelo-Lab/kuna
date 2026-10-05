@@ -2863,10 +2863,8 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                 // Reuse the containing entry's Symbol (the parameter / mapped
                 // local).  `resolve_default_name`'s namerec rename
                 // (coreaction.cc:3087-3094) still applies for an undefined-named
-                // whole-symbol cover: rerun it so a promoted scalar stack local
-                // renders `v1` rather than `$$undefNNN`.  It re-queries the same
-                // entry via `findOverlap`; for a non-conflicting hit the two queries
-                // agree.
+                // whole-symbol cover. Keep the selected entry's identity across
+                // naming; another register lifetime may occupy the same storage.
                 // lookForFuncParamNames override (coreaction.cc:2992): a sub-function's
                 // locked parameter name for this argument high wins over the `vN`
                 // default for an undefined whole-symbol cover (the spill struct local
@@ -2878,7 +2876,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
                             None => rec,
                         });
                 let resolved = data.get_scope_local_mut().and_then(|lm| {
-                    lm.resolve_default_name_override(&v_addr, v_size, &mut base, rec_name.as_deref())
+                    lm.resolve_default_name_for_link(&info, v_size, &mut base, rec_name.as_deref())
                 });
                 let (sym_name, sym_off, sym_type) = match resolved {
                     Some(t) => t,

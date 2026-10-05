@@ -805,6 +805,14 @@ The whole-document entry is `printc.rs (PrintC::doc_function_full)`, driven by
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs` after analysis
 completes.
 
+A HighVariable linked to a local Symbol is classified for declaration emission
+by that Symbol's category. A linked parameter whose name belongs to the
+prototype is emitted only in the signature. A later register local may have
+the same storage while carrying a different Symbol, so storage containment
+cannot override an existing link. Otherwise the input can be declared again
+under a suffixed local name and its entry checks read an uninitialized object.
+HighVariables without a recorded link retain the storage-based fallback.
+
 **The document walk.** `printc.rs (PrintC::emit_function_document)` emits, in
 order: the function's header warning comments (§9.4), the prototype (return
 type from the recovered proto, else `void`; parameters with their declared or
