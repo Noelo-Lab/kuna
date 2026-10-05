@@ -4349,9 +4349,44 @@ This prevents parameter hole filling from inventing an uninitialized earlier
 argument. No register past the format's argument list is supplied; an undeclared
 live-in or call clobber is not supplied either. Computed and loaded values do not need
 a declared caller prototype on this path. A dynamic, writable or unsupported
-format leaves the exclusive-reader rule unchanged. The dynamic-format upper
-register-half problem in issue 876 remains outside this proof. With
+format leaves the exclusive-reader rule unchanged. With
 `varargforward off`, upstream's scoring applies to both paths.
+
+The upper half of a register the caller never received is a separate case,
+issue 876. `int d4(const char *f, int a) { pr(f, a); return pr(f, a); }` keeps
+a copy of `a` for the second call, and gcc and clang -O2 pass it to the first
+call in `esi`, unmoved. Heritage pieces the 8-byte `rsi` trial together from
+the declared 4-byte `esi` input and the undeclared upper half of `rsi`.
+`AncestorRealistic` accepts a concatenation as wide as the trial without
+looking at its pieces, and `ancestorOpUse` accepts a copy whose only use is the
+same slot of another call to the same callee. The trial was active at 8 bytes,
+and the call printed `pr(f,CONCAT44(v1,a))` with `v1` never assigned.
+
+`int u5(const char *f, int a) { pr(f, a, a); return pr(f, a); }` is the same
+call with a second reader: gcc also copies `a` into `edx` for the third
+argument. `ancestorOpUse` then leaves the `rsi` trial inactive, and because the
+`rdx` trial after it is active, the inactive-chain pass later fills the gap with
+the 8-byte trial, which printed `pr(f,CONCAT44(v1,a),a)`.
+
+`narrow_undeclared_upper`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargforward.rs`) runs at
+both points: right after the ancestor-use path activates a register trial in the
+variable part of a `...` call, and right after it leaves one inactive where the
+format proof does not activate it either. Shrinking an inactive trial that is
+never filled in changes nothing; one that is filled in later keeps the narrowed
+size. It shrinks a processor-register trial wider than an int to the int width,
+keeping the register's low-order end on a big-endian image, when two bounded
+walks agree. The low int bytes must pass the defined-bytes walk above. Every
+byte above them must come, through copies, concatenations, subpieces and phi
+nodes whose inputs all qualify, from an incoming processor register that no
+parameter of the caller's locked prototype overlaps. Under the caller's own
+prototype those bytes hold no value the source could have passed, so the
+argument is the int and the calls print `pr(f,a)` and `pr(f,a,a)`. The rule
+declines floating-point registers, callers with a parameter in join storage, and
+callees without `...`. A declared `long` or pointer, or any value whose upper
+bytes are computed, keeps its full width. A `char` or `short` that clang
+forwards without extending it is not narrowed either, because bytes inside the
+int are undeclared too. With `varargforward off` the trial keeps its 8 bytes.
 
 What remains ambiguous is a declared parameter nothing uses that sits in a
 variadic register, with no constant format to bound the call: `int d6(const

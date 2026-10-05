@@ -1983,7 +1983,9 @@ mod tests {
         // in a variadic float register prints as a reinterpretation
         // and kuna-stackguard-tailcall / a canary checked right before a tail
         // call loses its entry-side load with the check (GH-866)
-        assert_eq!(count, 421, "corpus file count drifted");
+        // and gh876-varargupper-x86 / an int forwarded in its own register to a
+        // variadic call drops the undeclared upper half (GH-876)
+        assert_eq!(count, 422, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

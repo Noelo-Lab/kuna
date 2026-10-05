@@ -257,6 +257,7 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                 *data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i) = trial;
                 if only {
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_active();
+                    crate::p4_calls::kuna_varargforward::narrow_undeclared_upper(data, idx, i);
                     if data
                         .get_call_specs_mut(idx)
                         .get_active_input()
@@ -269,6 +270,7 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                     data, idx, i, &format_arguments,
                 ) {
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
+                    crate::p4_calls::kuna_varargforward::narrow_undeclared_upper(data, idx, i);
                 }
             } else if crate::p4_calls::kuna_varargformat::activate_trial(
                 data, idx, i, &format_arguments,
