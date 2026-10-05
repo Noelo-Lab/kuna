@@ -363,9 +363,12 @@ fn float_call_result(data: &Funcdata, node: &crate::varnode::Varnode) -> bool {
 pub fn withdrawals(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
     let ledger = &mut arch.kuna_voidret;
     let float = |k: &(int4, uintb)| ledger.returns.get(k) == Some(&Returns::Float);
-    let refused: Vec<(int4, uintb)> =
-        ledger.float_refused.iter().filter(|(k, readers)| !readers.is_empty() && float(k)).map(|(k, _)| *k).collect();
-    let refused: Vec<(int4, uintb)> = refused.into_iter().filter(|k| !ledger.displacing.contains(k)).collect();
+    let refused: Vec<(int4, uintb)> = ledger
+        .float_refused
+        .iter()
+        .filter(|(k, readers)| !readers.is_empty() && float(k) && !ledger.displacing.contains(k))
+        .map(|(k, _)| *k)
+        .collect();
     let mut out: BTreeSet<(int4, uintb)> =
         refused.iter().chain(ledger.unset.iter()).copied().filter(|k| !ledger.withdrawn.contains(k)).collect();
     let mut work = refused;
@@ -460,9 +463,10 @@ fn read_storage(out: &crate::varnode::Varnode) -> Option<(Address, int4)> {
 }
 
 /// The functions to decompile again: `void` ones some caller reads a result
-/// from, each forced to return in the widest storage its callers read, and
-/// forced ones a caller decompiled since reads wider (the first reader decided
-/// the width, and the driver settles after every function). Callers that
+/// from, and ones returning in storage their callers do not read
+/// ([`displaced`]), each forced to return in the widest storage its callers
+/// read, and forced ones a caller decompiled since reads wider (the first
+/// reader decided the width, and the driver settles after every function). Callers that
 /// disagree on the register refuse the function, and one already forced is
 /// withdrawn: it returns nothing again, as before the redo.
 pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
