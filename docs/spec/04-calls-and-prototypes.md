@@ -2002,7 +2002,20 @@ when the models are compatible (same or aliased `ProtoModel`, `is_compatible`),
 varargs only while input recovery is still active, and — for locked callee
 prototypes — when the existing argument Varnodes can be re-mapped onto the
 locked storage (`transfer_locked_input`/`transfer_locked_output`). Success
-commits the new input/output lists directly; failure sets the restart-pending
+commits the new input/output lists directly. For a locked variadic prototype,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargtransfer.rs
+(pending_trials)` preserves existing trials outside the fixed parameters before
+`commit_new_inputs` rebuilds the fixed head. Their existing Varnodes, widths and
+scoring flags survive, with slots remapped and model-entry associations cleared
+for the new prototype. Unreferenced trials and the old stack placeholder are
+excluded. This preserves an already active variadic argument and leaves an
+inactive stored integer available for later format evidence; resolving an
+imported target must not erase its unfinalized variadic trials. Ordinary trial
+scoring still controls which preserved values become arguments. This also keeps
+an already recovered promoted double copied from an XMM register to its variadic
+GP slot; it needs no integer-format fallback and survives with `varargforward`
+off as well. The format evidence parser remains restricted to promoted integers.
+Failure sets the restart-pending
 flag — the P4 → Band B feedback edge of 00 §0.7, bounded and executed by the
 drive — (kuna) recording `ProtoDeindirect` in the restart log
 (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_restartlog.rs
@@ -4215,11 +4228,76 @@ prototype ends in `...` is marked active when:
   `sqlite3_mprintf("... %s ...", zName)` from taking the `NotUsed2` that an
   sqlite callback declares but never uses in the next register.
 
-A value with another reader is left as it was, for the same reason: `if (a > 5)
-return 0; return pr(f, a);` compiles the same with or without the `a`, and so
-does `double a = g(k); return vr(k, a) + a;` on AArch64. So is anything in a
-function whose own prototype was recovered rather than declared, so a stripped
-binary is untouched. With the option off, upstream's scoring applies.
+A value with another reader normally remains ambiguous: `if (a > 5)
+return 0; return pr(f, a);` with a dynamic `f` compiles the same with or without
+`a`. `double a = g(k); return vr(k, a) + a;` on AArch64 is ambiguous too.
+The exclusive-reader path still requires a declared caller prototype.
+
+An immutable constant integer format gives separate evidence for a value with
+another reader. `kuna_varargformat::arguments` requires a locked variadic callee
+whose last fixed parameter is a character pointer. A callee name containing
+`scanf` declines the proof because its conversions consume pointers. It resolves
+the constant pointer through the bounded constant-value walk above and checks
+memory-range read-only properties one byte at a time, including the NUL
+terminator. A covering array symbol inherits properties at its first address;
+its flags cannot establish that every byte is immutable. Named formats therefore
+use the range property map independently of symbol flags. A
+whole-range property query can fall back to properties at the starting address,
+so it cannot prove that a writable conversion or terminator is immutable. It
+accepts ordinary promoted integer conversions (`d/i/u/o/x/X/c`), `h/hh` integer lengths, star width and precision
+operands, and literal percent escapes. Other classes, lengths, malformed or
+positional conversions decline the entire proof; at most sixteen arguments are
+assigned. The complete fixed prefix plus the format's integer types is assigned
+through the call's model with its variadic slot preserved. This is storage
+evidence for each consumed argument, not a conversion count applied to every
+register class.
+
+`kuna_varargformat::activate_trial` is a fallback after the existing declared-value
+and ancestor-use paths reject a trial. Arguments those paths already retain keep
+their original storage and scoring. A later pass can retry a checked inactive
+trial when a variadic prototype or constant format becomes available after its
+initial scoring. Definitely unused, unreferenced and passthrough-claimed trials
+remain excluded; their inputs cannot supply new argument evidence.
+It matches only an existing processor-register trial containing the assigned
+argument. Its value must have realistic defined ancestry on every incoming path
+(the ancestor walk disallows a failing path) or be a declared incoming parameter/return on the terms above. The declaration
+must cover the consumed source bytes at their incoming storage, even if the
+value now feeds a different argument register. Extensions can supply the other
+bytes of a promoted integer.
+A second bounded walk proves the consumed bytes through copies, concatenations,
+subpieces, extensions, integer arithmetic, comparisons, carry/overflow flags,
+boolean operations and all phi inputs. The consumed low bytes of addition,
+subtraction, multiplication and negation depend only on the same low operand
+bytes: unknown upper bytes of a wider temporary cannot change them. Bitwise
+operations require the matching slice. Left shifts require all shift-count bytes
+and the source bytes below the consumed end; right shifts and comparisons require
+complete operands because upper bits can affect the result. Boolean expressions
+require every consumed operand byte to be defined, just as arithmetic does.
+An integer XOR with identical SSA operands defines zero without depending on
+those operands' previous bits, including a register cleared after a call.
+This covers a stored integer selected from a tag comparison and then clamped;
+an undeclared comparison operand or an unknown phi arm still declines the proof.
+Constants, loads and declared call returns provide defined values; undeclared input bytes decline
+the proof. The walk stops after sixty-four visited nodes, which also bounds its
+recursion. Copies, slices and extensions can form more than sixteen ancestry
+levels before simplification; they share the node budget with the computations
+instead of imposing a separate shorter depth limit.
+A declared byte alone does not prove the other bytes of an integer. Assignments
+with hidden or indirect parameter pieces are declined. The ancestor flags and
+conditional execution recheck are preserved. The trial shrinks to the promoted
+integer width and is marked active, so a store of
+`*value + 1` does not hide the same value in EDX at `render_value("%i", ...)`.
+Before activating a later argument, the consumed bytes of every preceding
+format-assigned trial must also be defined. A missing, definitely unused,
+unreferenced or passthrough-claimed predecessor declines the proof, including a
+trial replaced by a synthetic zero.
+This prevents parameter hole filling from inventing an uninitialized earlier
+argument. No register past the format's argument list is supplied; an undeclared
+live-in or call clobber is not supplied either. Computed and loaded values do not need
+a declared caller prototype on this path. A dynamic, writable or unsupported
+format leaves the exclusive-reader rule unchanged. The dynamic-format upper
+register-half problem in issue 876 remains outside this proof. With
+`varargforward off`, upstream's scoring applies to both paths.
 
 What remains ambiguous is a declared parameter nothing uses that sits in a
 variadic register, with no constant format to bound the call: `int d6(const
