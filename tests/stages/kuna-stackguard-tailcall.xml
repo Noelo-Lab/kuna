@@ -1,0 +1,123 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna GH-866: a gcc -fstack-protector function whose canary check runs
+    right before a tail call kept the entry-side canary load, printing a
+    dereference of the never-assigned fs_offset input:
+
+        unsigned long v1;  // rax | stack - 0x10
+        long v3;           // fs_offset
+        unsigned long v4;  // rax | stack - 0x10
+        v1 = *(unsigned long *)(v3 + 0x28);
+        ...
+        v4 = v1;
+        return ext(); // tail-call
+
+    The code is gcc 11 x86-64, byte for byte at its link address
+    (-nostdlib -static -Ttext=0x401000), from
+
+        t2, t3, k2   -O2 (-fstack-protector-strong is the default)
+        w3           -O2 -fstack-protector-all
+        t2s          -Os (t2's source)
+
+        int t2(int i, int j) { unsigned char b[12]; b[0] = i;
+            b[(i >> 4) % 12] = j; if (b[0]) return ext(b[0]); return 5; }
+        int t3(...)  t2 with `return ext(b[0]) + 1;`
+        int k2(int i, int j) { char b[16]; for (int n = 0; n < 16; n++)
+            b[n] = n * 3; b[(i >> 2) & 15] = j;
+            return ext2(b[i & 15], b[(i + 1) & 15]); }
+        int w3(int i) { int v[4]; v[0] = i; v[(i >> 4) & 3] = 7;
+            return ext(v[1]); }
+
+    ext, ext2 and __stack_chk_fail are small stubs.  t2, k2, w3 and t2s end
+    in `mov 0x18(%rsp),%rax; sub %fs:0x28,%rax; jne fail; add $..,%rsp; jmp ext`.
+    No call separates the canary store from that check, so copy propagation
+    folds the slot reload into the fs:0x28 LOAD and the compare names no
+    stack slot; the addrforced INDIRECT heritage puts on the slot at the tail
+    CALL then kept the LOAD alive.  t3 calls ext before its check (the
+    GH-183 shape, already clean) and is the control.
+
+    Stage: P7 regions, stackguard (ActionStripStackGuard): the canary slot is
+    also resolved from the store side, forward from the canary LOADs the
+    compare reads.  P0 assertion: option stackguard on|off.  Pass 1 (default
+    on) proves the fix: no canary load and no fs_offset in any function, the
+    rest of each body unchanged.  Pass 2 (off) keeps every check verbatim,
+    proving each function carries one.  On the unpatched engine #1 and #2 count
+    9 (four pass-1 leftovers) and #3 and #4 count 0.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa8d447f01c30f1f8000000000f30f1efa8d04fd0000000029f801f0c3
+f30f1efa0f1f4000ebfe660f1f440000f30f1efa89fa4883ec2864488b042528
+000000488944241831c0c1fa0440887c240cc1ff1f4863c24869c0abaaaa2a48
+c1f82129f88d0440c1e00229c24863d2408874140c0fb67c240c4084ff752148
+8b44241864482b042528000000752ab8050000004883c428c30f1f8000000000
+488b44241864482b04252800000075094883c428e947ffffffe862ffffff6690
+f30f1efa89fa4883ec2864488b042528000000488944241831c0c1fa0440887c
+240cc1ff1f4863c24869c0abaaaa2a48c1f82129f88d0440c1e00229c2b80500
+00004863d2408874140c0fb67c240c4084ff751c488b54241864482b14252800
+000075164883c428c30f1f8000000000e8cbfeffff83c001ebdae8e1feffff90
+f30f1efa4883ec2831d264488b04252800000048894424184889e0488d4c2410
+88104883c00183c2034839c875f289f8c1f80283e00f40883404488b44241864
+482b042528000000751a8d470183e70f83e00f0fbe3c3c0fbe34044883c428e9
+6cfeffffe877feffff0f1f8000000000f30f1efa4883ec28c1ff0464488b0425
+28000000488944241831c083e703c704bc07000000488b44241864482b042528
+000000750d8b7c24044883c428e90efeffffe829fefffff30f1efa89f84883ec
+28b90c00000064488b142528000000488954241831d2c1f80440887c240c99f7
+f94863d2408874140c0fb67c240c4084ff7419488b44241864482b0425280000
+0075194883c428e9b4fdffff488b44241864482b0425280000007405e8bffdff
+ffb8050000004883c428c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="ext"/>
+<symbol space="ram" offset="0x401010" name="ext2"/>
+<symbol space="ram" offset="0x401020" name="__stack_chk_fail"/>
+<symbol space="ram" offset="0x401030" name="t2"/>
+<symbol space="ram" offset="0x4010c0" name="t3"/>
+<symbol space="ram" offset="0x401140" name="k2"/>
+<symbol space="ram" offset="0x4011b0" name="w3"/>
+<symbol space="ram" offset="0x4011f7" name="t2s"/>
+</binaryimage>
+<script>
+  <com>lo fu t2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t2s</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option stackguard off</com>
+  <com>lo fu t2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu w3</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu t2s</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="STACKGUARD-TAILCALL #1: the fs_offset input is declared only with option stackguard off, once per function" min="5" max="5">// fs_offset$</stringmatch>
+<stringmatch name="STACKGUARD-TAILCALL #2: the entry-side canary load prints only with option stackguard off" min="5" max="5">= \*\([a-z0-9 ]+ \*\)\(v[0-9]+ \+ 0x28\);$</stringmatch>
+<stringmatch name="STACKGUARD-TAILCALL #3: default, t2 and t2s store b[0] and go straight to the tail call" min="2" max="2">v[0-9]+\[0\] = .*;
+return ext\(.*\); // tail-call</stringmatch>
+<stringmatch name="STACKGUARD-TAILCALL #4: default, w3's indexed store goes straight to the tail call" min="1" max="1">v1\[a0 >> 4 &amp; 3\] = 7;
+ext\(v1\[1\]\); // tail-call</stringmatch>
+<stringmatch name="STACKGUARD-TAILCALL #5: default, k2's fill loop, indexed store and tail call are unchanged" min="1" max="1">\} while \(v1 != &amp;v3\[0x10\]\);
+v3\[\(int4\)a0 >> 2 &amp; 0xf\] = a1;
+ext2\(.*\); // tail-call</stringmatch>
+<stringmatch name="STACKGUARD-TAILCALL #6: every function keeps its check with option stackguard off, none by default" min="5" max="5">__stack_chk_fail\(\); // no-return</stringmatch>
+<stringmatch name="STACKGUARD-TAILCALL #7: control, t3 (check after the call) returns ext() + 1 by default" min="1" max="1">return ext\(.*\) \+ 1;</stringmatch>
+</decompilertest>

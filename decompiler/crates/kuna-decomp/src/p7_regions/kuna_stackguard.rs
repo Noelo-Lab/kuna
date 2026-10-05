@@ -286,8 +286,9 @@ fn collect_canary_slots(
 /// slot carried across a call or an aliasing store), and a `MULTIEQUAL` only
 /// when EVERY input is already known to hold the value.  Every addrtied member
 /// of the resulting set holds the protector value, so the liveness release
-/// cannot reach an unrelated local.  Shared with the MSVC `/GS` sibling, which
-/// roots it at the entry-side cookie scramble.
+/// cannot reach an unrelated local; only stack-space members are recorded, so a
+/// copy of the value into a global keeps its store.  Shared with the MSVC `/GS`
+/// sibling, which roots it at the entry-side cookie scramble.
 pub(crate) fn collect_value_slots(
     inits: &[OpId],
     data: &Funcdata,
@@ -326,9 +327,13 @@ pub(crate) fn collect_value_slots(
             }
         }
     }
+    let Some(stack) = data.get_arch().manage().get_stack_space().map(Rc::clone) else {
+        return;
+    };
     for vn in set {
         let Some(v) = data.vbank().get(vn) else { continue };
-        if !v.is_addr_tied() {
+        let on_stack = v.get_addr().get_space().is_some_and(|s| Rc::ptr_eq(s, &stack));
+        if !v.is_addr_tied() || !on_stack {
             continue;
         }
         let key = (v.get_addr().clone(), v.get_size());
