@@ -2021,6 +2021,13 @@ printer chose instead of by a hand-written varnode specifier. `linkSymbol`'s
 `assertions::carried_usepoint_symbols` carries it across the in-process surface's
 IR rebuild.
 
+When a Varnode is created at an isolated local's mapped definition,
+`Funcdata::set_varnode_properties` applies its exact, locked type before
+inference propagates competing types. The lookup includes the definition
+usepoint, so an input or a later reuse of the same register is not locked by
+that assertion. A simplification that moves the existing output preserves
+its type lock; ordinary recovered local types remain inference hints.
+
 A parameter edit also crosses the prototype store. The standalone engine keeps
 its parameter Symbol separate from its prototype entry, so replaying only the
 Symbol can leave the old name or type in the signature while the body reads an

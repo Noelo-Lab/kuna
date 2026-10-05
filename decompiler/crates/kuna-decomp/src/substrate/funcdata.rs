@@ -2916,8 +2916,8 @@ impl Funcdata {
         self.get_scope_local()?.container_entry_key(&addr, &usepoint)
     }
 
-    /// Seed unmapped Varnodes with local/global symbol flags and exact global
-    /// types, preserving existing mapped properties. In high-level mode, create
+    /// Seed unmapped Varnodes with symbol flags, isolated local type locks and
+    /// exact global types, preserving existing mapped properties. In high-level mode, create
     /// a missing cover and mark its HighVariable cover dirty when necessary.
     /// (C++ `Funcdata::setVarnodeProperties`, `funcdata_varnode.cc:25`).
     pub fn set_varnode_properties(&mut self, vn: VarnodeId) {
@@ -2965,6 +2965,18 @@ impl Funcdata {
                     v.set_flags_pub(vflags & !varnode_flags::typelock);
                 }
             }
+            let local_type = self.get_scope_local().filter(|lm| lm.has_isolated_symbols())
+                .and_then(|lm| {
+                    let entry = lm.query_container_for_link(&addr, &usepoint)?;
+                    if !entry.is_isolated { return None; }
+                    self.get_arch().types()
+                        .and_then(|types| lm.build_localtype_seed_at(&addr, size, &usepoint, types))
+                });
+            if let Some(dt) = local_type {
+                if let Some(v) = self.vbank_mut().get_mut(vn) {
+                    v.update_type_locked(dt, true, true);
+                }
+            }
             // C++ `Varnode::setSymbolProperties` (varnode.cc:429) -> `entry->updateType`
             // (database.cc:136): a type-locked covering Symbol forces its
             // `getSizedType` onto the Varnode via `updateType(dt, lock=true,
@@ -2972,8 +2984,8 @@ impl Funcdata {
             // the prior flag-only stand-in deferred: it seeds `ActionInferTypes` from
             // the mapped global's data-type (e.g. `octint4` for `globaloct`), so the
             // forced display format propagates through the store's COPY to the stored
-            // constant (`globaloct = 05555`).  The local `ScopeLocal` half (recovered
-            // stack locals) remains the naming wave's seam.
+            // constant (`globaloct = 05555`). Ordinary recovered local types
+            // remain the inference/naming wave's seam.
             if let Some((symtype, off)) =
                 self.get_arch().sized_type_for_global_varnode(&addr, size, &usepoint)
             {
