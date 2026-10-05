@@ -30,7 +30,10 @@ const MAIN: u64 = 0x10180;
 const VALIDATOR: u64 = 0x10190;
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .canonicalize()
+        .unwrap()
 }
 
 fn fixture() -> PathBuf {
@@ -40,17 +43,25 @@ fn fixture() -> PathBuf {
 /// Bootstrap the fixture the way every `kuna` driver does on a non-x86-64 image
 /// (DIV-20/DIV-68: the Listing plus the discovery bundle).
 fn bootstrap() -> ConsoleProgram {
-    let bin = fixture();
+    bootstrap_path(&fixture())
+}
+
+fn bootstrap_path(bin: &std::path::Path) -> ConsoleProgram {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    prog.arch_mut().set_kuna_option("listing", "on").expect("listing flips on");
+    prog.arch_mut()
+        .set_kuna_option("listing", "on")
+        .expect("listing flips on");
     prog.arch_mut()
         .set_kuna_option("funcstart_patterns", "on")
         .expect("funcstart_patterns flips on");
-    prog.arch_mut().set_kuna_option("aif", "on").expect("aif flips on");
-    prog.commit_pending_analysis().expect("analysis commit succeeds");
+    prog.arch_mut()
+        .set_kuna_option("aif", "on")
+        .expect("aif flips on");
+    prog.commit_pending_analysis()
+        .expect("analysis commit succeeds");
     prog
 }
 
@@ -85,11 +96,23 @@ fn the_inventory_lists_the_function_main_calls() {
 /// that `listing_seeds` cannot recompute.
 #[test]
 fn only_the_committed_entry_seeds_reach_the_validator() {
-    let prog = bootstrap();
-    let bytes = std::fs::read(fixture()).expect("fixture readable");
-    let path = fixture().to_str().unwrap().to_string();
+    // Use single-register saves so frame-prologue recovery is not another root oracle.
+    let mut bytes = std::fs::read(fixture()).expect("fixture readable");
+    for (off, word) in [
+        (0x180, 0xe52de004u32),
+        (0x18c, 0xe49df004),
+        (0x190, 0xe52de004),
+        (0x198, 0xe49df004),
+    ] {
+        bytes[off..off + 4].copy_from_slice(&word.to_le_bytes());
+    }
+    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("armdiscseed-no-frame-{}.elf", std::process::id()));
+    std::fs::write(&path, &bytes).unwrap();
+    let prog = bootstrap_path(&path);
+    let path_text = path.to_str().unwrap();
     let image =
-        kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes_silent(&path, &bytes)
+        kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes_silent(path_text, &bytes)
             .expect("fixture parses as a load image");
     let arch = prog.arch();
 
@@ -133,8 +156,12 @@ fn only_the_committed_entry_seeds_reach_the_validator() {
     // Purely additive: seeding adds roots, and the walk's function model only
     // ever grows.
     for vma in &unseeded {
-        assert!(seeded.contains(vma), "seeding must not drop {vma:#x}: {seeded:?}");
+        assert!(
+            seeded.contains(vma),
+            "seeding must not drop {vma:#x}: {seeded:?}"
+        );
     }
+    std::fs::remove_file(path).unwrap();
 }
 
 /// The seeds are exec-filtered, so a committed entry outside every executable
@@ -164,7 +191,10 @@ fn a_committed_entry_outside_the_code_is_not_walked() {
         .filter(|(id, _)| *id == "funcdisc_recursive")
         .flat_map(|(_, o)| o.entries.iter().copied())
         .collect();
-    assert!(vmas.contains(&VALIDATOR), "the in-image seed still lands; got {vmas:?}");
+    assert!(
+        vmas.contains(&VALIDATOR),
+        "the in-image seed still lands; got {vmas:?}"
+    );
     assert!(
         !vmas.contains(&0x59684C),
         "an address in no executable section is not a function; got {vmas:?}"

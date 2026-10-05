@@ -57,7 +57,7 @@ are `movs ; movs` over four bytes clear both.
     hiding it, because the only guard that removes it costs 108 of 189 recovered
     ground-truth entries.
 """
-import struct, os
+import argparse, struct, os
 
 TEXT_VMA = 0x08000000
 E_ENTRY = TEXT_VMA + 0x41  # the reset vector, Thumb-odd
@@ -176,7 +176,13 @@ EHDR, PHDR, SHDR = 52, 32, 40
 NPH, NSH = 1, 3  # 1 PT_LOAD; null/.text/.shstrtab
 
 
-def build():
+def build(frame=False, pointer=False):
+    text = TEXT
+    if frame:
+        text += hw(*([0xDE00] * ((0x200 - len(text)) // 2)))
+        text += hw(PUSH_R7_LR, 0x4607, POP_R7_PC, BX_LR)
+    if pointer:
+        text += struct.pack('<I', B | 1)
     ph_off = EHDR
     text_off = ph_off + PHDR * NPH
 
@@ -185,7 +191,7 @@ def build():
     for n in ('.shstrtab', '.text'):
         names[n] = len(shstr)
         shstr += n.encode() + b'\0'
-    shstr_off = text_off + len(TEXT)
+    shstr_off = text_off + len(text)
     sh_off = shstr_off + len(shstr)
 
     b = bytearray()
@@ -196,9 +202,9 @@ def build():
     b += struct.pack('<HHHHHH', EHDR, PHDR, NPH, SHDR, NSH, 2)
 
     b += struct.pack('<IIIIIIII', 1, text_off, TEXT_VMA, TEXT_VMA,
-                     len(TEXT), len(TEXT), PF_R | PF_X, 4)
+                     len(text), len(text), PF_R | PF_X, 4)
     assert len(b) == text_off
-    b += TEXT
+    b += text
     b += shstr
 
     def shdr(name, stype, flags, addr, off, size):
@@ -206,13 +212,19 @@ def build():
 
     assert len(b) == sh_off
     b += shdr(0, 0, 0, 0, 0, 0)
-    b += shdr(names['.text'], 1, SHF_ALLOC | SHF_EXECINSTR, TEXT_VMA, text_off, len(TEXT))
+    b += shdr(names['.text'], 1, SHF_ALLOC | SHF_EXECINSTR, TEXT_VMA, text_off, len(text))
     b += shdr(names['.shstrtab'], 3, 0, 0, shstr_off, len(shstr))
     return bytes(b)
 
 
 if __name__ == '__main__':
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cortexm_poolentry_le32')
-    with open(out, 'wb') as f:
-        f.write(build())
-    print(f'wrote {out} ({os.path.getsize(out)} bytes)')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('output', nargs='?', default=os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), 'cortexm_poolentry_le32'))
+    parser.add_argument('--frame', action='store_true', help='append an uncalled Thumb frame')
+    parser.add_argument('--pointer', action='store_true', help='append a pointer to the real pool-end entry')
+    args = parser.parse_args()
+    data = build(frame=args.frame, pointer=args.pointer)
+    with open(args.output, 'wb') as f:
+        f.write(data)
+    print(f'wrote {args.output} ({len(data)} bytes)')

@@ -419,6 +419,7 @@ pub(super) fn walk(
     detail: ListingDetail,
     want_stack_callbacks: bool,
     plan: &super::kuna_pdecode::WalkPlan,
+    frames: Option<&mut super::kuna_framemode::FrameModes>,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
     // ContextDatabase BEFORE we decode a single instruction — the timing the
@@ -435,9 +436,9 @@ pub(super) fn walk(
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
     let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail };
 
-    let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan);
+    let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames);
     if let Some(mode) = flow_mode {
-        st.mode_runs = super::kuna_flowmode::disagreeing_runs(&ctx, arch, mode);
+        st.mode_runs.extend(super::kuna_flowmode::disagreeing_runs(&ctx, arch, mode));
     }
     st
 }
@@ -450,9 +451,10 @@ fn walk_plain(
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
     painter: &ContextPainter,
     plan: &super::kuna_pdecode::WalkPlan,
+    frames: Option<&mut super::kuna_framemode::FrameModes>,
 ) -> WalkState {
     let StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail } = *ctx;
-    if plan.lanes() > 1 {
+    if plan.lanes() > 1 && frames.is_none() {
         let inputs = super::kuna_pdecode::ParallelInputs {
             arch,
             translate,
@@ -469,7 +471,7 @@ fn walk_plain(
             let Some(abort) = super::kuna_pdecode::selfcheck() else {
                 return parallel;
             };
-            let serial = walk_serial(ctx, seeds, seed_funcs, detail);
+            let serial = walk_serial(ctx, seeds, seed_funcs, detail, arch, None);
             let differences = super::kuna_pdecode::compare(&parallel, &serial);
             assert!(
                 differences == 0 || !abort,
@@ -479,7 +481,7 @@ fn walk_plain(
         }
     }
 
-    walk_serial(ctx, seeds, seed_funcs, detail)
+    walk_serial(ctx, seeds, seed_funcs, detail, arch, frames)
 }
 
 /// The serial walk: the two-level worklist over [`step`], and the only walk that
@@ -489,11 +491,25 @@ fn walk_serial(
     seeds: &[u64],
     seed_funcs: &BTreeMap<u64, DiscoveredFunction>,
     detail: ListingDetail,
+    arch: &Architecture,
+    mut frames: Option<&mut super::kuna_framemode::FrameModes>,
 ) -> WalkState {
-    let mut insns: BTreeMap<u64, Insn> = BTreeMap::new();
-    let mut funcs: BTreeMap<u64, DiscoveredFunction> = BTreeMap::new();
+    let mut walk_context = super::kuna_walkcontext::WalkContext::new(
+        frames.is_some(), ctx.translate, arch, ctx.code_space, ctx.exec_ranges,
+    );
+    let established = frames.as_ref().and_then(|frames| frames.established());
+    let mut insns = established.map_or_else(BTreeMap::new, |prior| prior.insns.clone());
+    let mut funcs = established.map_or_else(BTreeMap::new, |prior| prior.funcs.clone());
+    let mode_runs = established.map_or_else(Vec::new, |prior| prior.mode_runs.clone());
     let mut refs = RefBuckets::new(detail.refs);
     let mut callbacks = CallbackEvidence::default();
+    if let Some(prior) = established {
+        refs.to.clone_from(&prior.refs_to);
+        refs.from.clone_from(&prior.refs_from);
+        for &(source, target) in &prior.stack_callback_refs {
+            callbacks.file(source, target);
+        }
+    }
 
     // Function-entry worklist, seeded from the root set.
     let mut func_worklist: Vec<u64> = seeds.to_vec();
@@ -511,10 +527,43 @@ fn walk_serial(
             continue; // already walked this function
         }
 
+        if walk_context.is_none() {
+            let mut work = Worklists { insns: vec![entry], funcs: &mut func_worklist };
+            while let Some(vma) = work.insns.pop() {
+                step(ctx, vma, &mut insns, &mut funcs, &mut refs, &mut callbacks, &mut work);
+            }
+            continue;
+        }
+
         // Per-function instruction worklist.
-        let mut work = Worklists { insns: vec![entry], funcs: &mut func_worklist };
-        while let Some(vma) = work.insns.pop() {
-            step(ctx, vma, &mut insns, &mut funcs, &mut refs, &mut callbacks, &mut work);
+        let entry_mode = walk_context.as_ref().and_then(|context| context.entry(entry));
+        let mut pending = vec![(entry, entry_mode)];
+        let mut successors = Vec::new();
+        while let Some((vma, mode)) = pending.pop() {
+            if insns.contains_key(&vma) { continue; }
+            let selection = super::kuna_walkcontext::InstructionMode::select(arch, ctx.translate, ctx.code_space, vma, mode);
+            let mut work = Worklists { insns: std::mem::take(&mut successors), funcs: &mut func_worklist };
+            if step(ctx, vma, &mut insns, &mut funcs, &mut refs, &mut callbacks, &mut work) {
+                let insn = &insns[&vma];
+                let commits = if walk_context.is_some() { ctx.translate.last_context_commits() }
+                    else { Vec::new() };
+                if let Some(selection) = &selection { selection.accept(insn.len); }
+                if let Some(frames) = &mut frames { frames.record(entry, vma, insn.len, mode); }
+                if insn.flow.is_call {
+                    for &target in &insn.flows {
+                        let target_mode = walk_context.as_ref()
+                            .and_then(|context| context.successor(target, mode, &commits));
+                        if let Some(context) = &mut walk_context { context.called(target, target_mode); }
+                        if let Some(frames) = &mut frames { frames.called(target, target_mode); }
+                    }
+                }
+                for next in work.insns.drain(..) {
+                    let next_mode = walk_context.as_ref()
+                        .and_then(|context| context.successor(next, mode, &commits));
+                    pending.push((next, next_mode));
+                }
+            }
+            successors = work.insns;
         }
     }
 
@@ -524,7 +573,7 @@ fn walk_serial(
         refs_from: refs.from,
         funcs,
         stack_callback_refs: callbacks.refs,
-        mode_runs: Vec::new(),
+        mode_runs,
     }
 }
 

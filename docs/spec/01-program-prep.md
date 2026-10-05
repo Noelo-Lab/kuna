@@ -4228,16 +4228,19 @@ its literal.
 
 (kuna) Three ARM-only seed scans run between the walk's first pass and those
 consumers, each re-seeding the walk and rebuilding the Listing when it finds
-anything, all gated by the `funcstart_patterns` flag: the raw unpaired
-Thumb-prologue scan
-(`decompiler/crates/kuna-analysis/src/analyzers/aif/mod.rs (raw_thumb_prologue_seeds)`,
-angr's `_func_addrs_from_prologues` mirror — every `PUSH {..,lr}` / `PUSH.W {..,lr}`
-in an undefined gap that passes the valid-subroutine probe), the code-pointer-table
-scan
+anything, all gated by the `funcstart_patterns` flag: the existing raw unpaired
+Thumb scan
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_thumbframes.rs`),
+the code-pointer-table scan
 (`decompiler/crates/kuna-analysis/src/analyzers/aif/mod.rs (code_pointer_table_seeds)`
 — every 4-byte-aligned odd word in any allocated section whose masked target lands
 in an undefined gap, *and* opens with a frame-establishing Thumb prologue, *and*
-passes the same probe), and the AIF gap walk above.
+passes the same probe), and the AIF gap walk above. The additional default-off
+`armframes` option replaces the Thumb scan with shared validated ARM/Thumb
+recovery
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/mod.rs (raw_arm_prologue_seeds)`):
+mode-matched LR-saving `STMDB SP!`, `PUSH` or `PUSH.W` in an undefined gap must
+pass the strict valid-subroutine probe.
 
 **Pointer-referenced entries** (`ptrentry`, default-off; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_ptrentry.rs`) re-admits
@@ -4538,6 +4541,182 @@ through a data table has no CALL edge for any descent to follow, and without the
 gap-walk a `--to` query loses every call site that lives inside one — measured on a
 stripped i386 PE as 61 of one function's 174 callers.
 
+(kuna) ARM reference walks also recover the
+LR-saving frame roots used by the Listing when both `funcstart_patterns` and
+`armframes` are enabled. `armframes` defaults off and is never injected by CLI
+discovery bundles or mode presets. With it off, reference discovery keeps its
+existing seeded/AIF walk and Listing keeps its Thumb-only inventory recovery.
+The shared
+`raw_arm_prologue_seeds` scan matches unconditional A32 `STMDB SP!, {…,lr}`
+only at word-aligned ARM addresses and Thumb `PUSH` / `PUSH.W` only where the live
+`TMode` selects Thumb, in the selected decoder's instruction byte order.
+This includes BE8 images whose ELF data are big-endian and instructions are
+little-endian. A Thumb-shaped halfword inside
+an ARM instruction is not a Thumb prologue. Metadata and explicit `--isa` paints
+therefore control both ordinary decoding and root recovery.
+
+A matching prologue is only a candidate: its bounded validity walk must stay in
+executable memory, avoid known instruction overlap and unclaimed escapes, and
+reach a valid termination. Claims cover every byte of each reachable instruction,
+including the second halfword of a Thumb-2 instruction. Candidate admission
+rechecks those spans after earlier roots or explicit focus addresses have walked.
+A conditional return records a terminating path, and the frame probe keeps
+following its not-taken successor so the rest of the function is claimed. A
+computed jump ends its path. Code reached only through a call's fall-through is
+speculative, because the callee may never return and literal-pool words often
+follow such calls: an undecodable word, an invalid flow or the step cap on a
+speculative path ends that path instead of rejecting the candidate, and a
+speculative path stops at another prologue candidate rather than absorbing the
+next function. Invalid flow reached directly, without an intervening call, still
+rejects the candidate, and a push on a valid direct successor path remains body
+code. Only frame probes follow a conditional return this way; the AIF gap walk,
+pool, pointer and referenced-target validators stop at every terminal
+instruction exactly as before (`decompiler/crates/kuna-analysis/src/analyzers/aif/mod.rs (follow_subroutine)`).
+With `aif` enabled, a fingerprint-supported prefix outside the claimed frame bodies
+that reaches a recovered push replaces that push as the root before either the
+Listing or the reference query finalizes boundaries. Interior AIF candidates
+remain owned by the earlier frame that reaches them. Prefix probing is restricted
+to gaps containing frame candidates. After the frames and explicit focus are
+walked, prefixes are rechecked using the expanded fingerprint corpus and the
+original gap partition, where the whole prefix-plus-frame body is still available
+for validation. Both prefix guards use that original partition to exclude
+established code; the expanded corpus supplies fingerprint evidence, not new
+coverage boundaries. A prefix reached only through a provisional call remains
+eligible for validation and replacement of its interior frame.
+Direct calls protect a frame only when their source is reachable
+independently of the proposed obsolete bodies. Reconciliation considers all
+validated frame candidates, including ones first reached as speculative callees.
+It substitutes validated prefix instructions into the recorded successor graph,
+then follows branches, fall-through and calls from the original entries,
+admitted explicit focus, surviving frames and validated prefixes. Unreached
+call cycles cannot establish their own boundaries; a reachable independent
+caller protects the whole recursive call chain. Both Listing and xref consumers
+use this same support rule
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_framecalls.rs`).
+Any replaced provisional frame is removed from the function and graph seed sets.
+When replaced bodies cannot be retained, the reference walk rebuilds from
+the supplied seeds, original query focus and reconciled frame roots before the
+ordinary AIF gap pass. Its decoded partition, references, discovered callees,
+successor graph, indirect-call sites and switch records are rebuilt together;
+instructions reached only through a discarded speculative body cannot survive
+as ownerless references or seed unrelated callees. Queries with no replacement
+reuse their existing walk.
+The rebuild reconsiders every independently validated frame candidate, including
+ones already reached as callees before their candidate was processed. Admission
+checks the surviving bodies again, so a discarded caller cannot hide a real
+unreferenced frame, and an interior candidate does not become a boundary.
+Both consumers recheck prefixes after each rebuild, until no roots change.
+Discarding a speculative call can make its former callee eligible for prefix
+replacement on the next pass. Reconciled candidates replace the prior candidate
+set, so removed roots are never reinstated; replacements move roots strictly
+toward earlier validated prefixes, ensuring progress. Ordinary queries without
+late replacements perform no extra rebuild; compatible ARM prefix extensions
+can also keep unrelated bodies, as described below.
+
+A provisional frame can also have been decoded in the wrong ISA before a later
+interworking call establishes its mode. Both walks record the decoded spans of
+each candidate's reachable body and the `TMode` used for each span. A direct call
+into any covered byte, including the interior of a former instruction, withdraws
+the candidate if its newly established mode disagrees. Rebuilding removes its
+instructions, references and derived callees together. Prefix replacements run
+first, so calls from discarded interiors cannot settle a frame's mode.
+The saved context and mode checks remain available through the ordinary AIF gap
+pass. The inventory walks accepted pointer-table and checked AIF roots before
+publishing Listing consumers, so their calls can invalidate provisional frames
+as well. Each inventory rebuild copies the original independently decoded
+instructions, function records, references and proven mode corrections before
+walking speculative roots.
+Recovered calls publish their modes only over successfully decoded instruction
+spans, so they cannot repaint retained callers. New callees keep their
+interworking evidence outside that partition. Only the original partition is retained: discarded
+frames and their derived callees are still rebuilt from surviving roots.
+Pointer-table additions refresh the corpus before AIF runs. Before any
+AIF body is walked, `ptrentry` and `poolentry` inspect the pre-AIF partition. Their
+accepted pointer entries, pool-end additions and filtered AIF entries are retained
+as one result. Only surviving AIF entries seed the interworking rewalk; pointer
+and pool entries remain additive facts. This prevents speculative coverage from
+rejecting a pointer target or hiding a pool boundary, and prevents a filtered AIF
+entry from being recommitted by `funcdisc_recursive`. A frame replacement or ISA
+invalidation discards the cached checks and recomputes them against the rebuilt
+partition (`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_entrychecks.rs`).
+Mode correction also runs with AIF disabled
+(`decompiler/crates/kuna-analysis/src/listing/kuna_framemode.rs`).
+
+Frame recovery retains its original validation records across reconciliation.
+A prefix pass reuses frame validity and claimed spans, and retains accepted prefix
+bodies directly from the gap scan instead of validating them again. An unchanged
+root set and unchanged fingerprint acceptance thresholds reuse the prior scan;
+independent call support is still checked against the current graph. Corpus growth
+that crosses a threshold triggers reconsideration
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_framecache.rs`).
+For an ARM prefix whose validated body contains every old frame instruction with
+identical decoding, and which contains no BLX, unrelated bodies can survive the
+replacement. Both the saved and live context must select ARM throughout the
+prefix body, the old body must have decoded in ARM, and the new entry must remain
+undecoded. Only the affected callers' partition, references, flow, switch records
+and fingerprint-context records are removed and rewalked. This recomputes data
+references whose values originate in the newly admitted prefix. All other
+replacements, including Thumb instruction interiors and changed modes, retain the
+full rollback and rebuild
+(`decompiler/crates/kuna-analysis/src/listing/kuna_prefixreuse.rs`).
+
+The reference walk can reuse a validated instruction's p-code only when the
+translator certifies that the lift commits no context and depends on no other
+instruction. The immutable image, address, translator and complete context words
+must match. Instructions without that certificate are translated normally;
+interworking and IT-state writes therefore still execute. Prefix probes apply the
+same context check before reusing such decode records
+(`decompiler/crates/kuna-analysis/src/listing/kuna_decodereuse.rs`).
+
+ARM frame and prefix probes use private decoder-context scopes. They preserve
+the selected `TMode` while allowing local commits such as Thumb IT conditions,
+then discard all probe writes. Provisional reference and Listing walks also
+retain their pre-walk context: late replacement restores it before rebuilding;
+otherwise accepted walks keep their legitimate interworking changes. Prefix
+validation temporarily restores the saved pre-walk context. The xref corpus
+instead retains the context words seen before each instruction's translation,
+stored as runs in decode order. Only the two fingerprint instructions per entry
+are rendered, each under its recorded context in a private scope. This retains
+new callees' legitimate interworking modes as well as earlier fingerprints that
+a later speculative branch could repaint, including callees identified after
+their instructions were already decoded as body code. Rebuilds discard these
+records with the obsolete partition. Rendering checks instruction lengths and
+restores the live context afterward
+(`decompiler/crates/kuna-analysis/src/listing/kuna_fingerprintcontext.rs`). These
+scopes preserve context defaults, split-point values and explicit-set masks,
+tracked registers, and cache write settings, including across nested scopes
+(`decompiler/crates/kuna-sleigh/src/kuna_contextscope.rs`).
+Prefix reconciliation compares roots with complete instruction spans, including
+roots inside Thumb-2 instructions rather than only at their starts.
+The ordinary AIF gap pass runs after the
+recovered roots and explicit focus have been walked: their function count and
+fingerprints can cross acceptance thresholds that the initial partition did not.
+Mode changes from recovered calls remain confined to decoded instruction spans,
+including discontiguous callee blocks. Undefined gaps retain their input modes
+for this pass; no separate restoration scan or repeated body decode is needed.
+Both reference queries and the inventory retain pre-frame validation bounds
+for the later AIF check. AIF still admits starts only in current gaps, but its
+non-strict body validator may follow a branch across a new frame boundary within
+the same original gap. Pointer and pool checks still use the pre-AIF partition.
+This preserves previously discoverable discontiguous callers without extending
+validation across independently established code boundaries. Strict frame and
+pointer validation keep their existing limits.
+This admits rare frame prologues without a fingerprint-frequency requirement,
+retains calls after an early return on another path, and assigns those calls to
+the entry that reaches them. Discovery probes use the existing partition; only
+late root replacement or contradicted frame mode rebuilds the reference walk. Disabling either `funcstart_patterns` or `armframes` disables this scan;
+disabling `aif` does not. Recovery remains heuristic and bounded: frames with other
+prologues, undecodable paths or uncorroborated flow escapes can remain undiscovered.
+
+The extra coverage can substantially increase query cost, which is why frame
+recovery is explicitly opt-in. On a 400,556-byte stripped ARM BusyBox ELF,
+`xrefs --to puts --kind call` initially reached 2,271 instructions; frame
+recovery expanded the walk to about 74,000. The recovered query found 70 call
+references instead of 43 and took roughly twice as long. Disabling `aif` with
+`armframes` enabled retained 66 references at lower cost. Speed comparisons use
+release builds, one new process per query and warm filesystem caches; a repeated
+query does not reuse an index from another process.
+
 ARM runtime reference queries with `funcstart_patterns` enabled retain decoded
 fall-through, branch and switch successors to resolve caller ownership after all
 entries are known. Each entry owns only
@@ -4559,8 +4738,56 @@ when the index is finalized, before any instruction-count query reads them.
 about**. The same structural gap applies to the query target itself: `--from <entry>`
 about a function no descent reaches answered `count: 0` about a function that plainly
 has references. The named address is walked after the seeded descent and the
-prologue/gap seeds have drained, so an address the natural walk already claimed is
-already in `decoded` and attributed exactly as before — the focus pass can only add
+recovered prologue candidates are merged with explicit focus addresses in address
+order. A recovered frame's walk stops at another pending frame candidate unless
+its own validated body claimed that instruction, so a frame whose call never
+returns cannot absorb the function placed after its literal pool.
+
+ARM runtime xref walks with both `funcstart_patterns` and `armframes`, and inventory rebuilds that
+admit recovered frames share one context lifecycle
+(`decompiler/crates/kuna-analysis/src/listing/kuna_walkcontext.rs`):
+
+- Independent seeds, frames, AIF entries and focuses select their input mode
+  from the context captured before the walk. A queued direct callee retains
+  its call's mode, even if another seed is walked first.
+- Branches, fall-through and switch successors carry the decoding instruction's
+  mode. A SLEIGH mode commit at the successor supplies an explicit change;
+  ordinary calls inherit the caller's mode. Thus a distant block does not
+  inherit the mode of a different function placed between it and its entry.
+- Automatic SLEIGH `TMode` writes are masked throughout the walk. Their recorded
+  commits remain available as control-flow evidence. Other context fields,
+  including Thumb IT state, keep their existing decode semantics.
+- Each instruction uses a temporary effective read mode without changing database
+  boundaries. Failure publishes no selected mode. Success publishes it only over the
+  instruction's complete byte span. Fingerprint and decode-reuse keys observe
+  the same effective context as the instruction.
+- Speculative frame scopes retain their bodies, references and bounded context
+  changes together. A full rebuild rolls them back and clears queued mode
+  evidence. Prefix extension reuses only compatible ARM bodies; replaced
+  instruction/reference records are removed before the extension walks.
+- Final publication needs no gap or body repair pass: only surviving decoded
+  spans changed mode. Unclaimed bytes retain their input modes with AIF off,
+  below its corpus threshold, or enabled. Repeated queries and later
+  decompilation therefore see the same unrelated instruction streams.
+
+Initial Listing discovery retains its existing context behavior and optional
+`flowmode` proof policy. Already established Listing bodies are retained during
+a recovery rebuild. Provisional
+bodies contradicted by direct interworking, including calls into instruction
+interiors, are invalidated using the recorded call mode. Inventory rebuilds
+retain these rejected heuristic entries for the rest of the discovery run;
+later AIF scans and prefix replacements cannot restart the same stale retry.
+Pointer and pool checks continue to use the partition preceding the AIF rewalk.
+Frame and AIF probes are scoped, and original-context prefix validation remains
+separate from the expanded fingerprint corpus. Scoped read and write policies
+are restored on exit. Recovery-disabled and non-ARM walks retain their existing
+context behavior.
+
+A focus preceding its frame claims
+the reachable push as body code before it can become a boundary; an earlier
+recovered root still owns an interior focus.
+An address the natural walk already claimed is already in `decoded` and attributed
+exactly as before — the focus pass can only add
 coverage, never re-attribute an instruction another entry owns. An address that does
 not decode is dropped rather than recorded as a function, so a byte in the middle of
 a string does not become `sub_<addr>`.

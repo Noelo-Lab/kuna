@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_259() {
-    assert_eq!(kuna_num_settables(), 259);
-    assert_eq!(SETTABLE_TABLE.len(), 259);
+fn settable_count_is_260() {
+    assert_eq!(kuna_num_settables(), 260);
+    assert_eq!(SETTABLE_TABLE.len(), 260);
 }
 
 #[test]
-fn tier_counts_are_86_core_106_transform_67_analysis() {
+fn tier_counts_are_86_core_106_transform_68_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_86_core_106_transform_67_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (86, 106, 67));
+    assert_eq!((core, transform, analysis), (86, 106, 68));
 }
 
 #[test]
@@ -313,6 +313,7 @@ fn option_values_live_value_present_for_110() {
         // with no codegen live reader (read console-side via kuna_live_value), same
         // as the gates around it. Default-off.
         "funcstart_patterns",
+        "armframes",
         // (kuna) The widened ARM Cortex-M vector-table signature — an analysis-pass
         // gate with no codegen live reader (read console-side via kuna_live_value),
         // same as the gates around it. Default-off.
@@ -942,7 +943,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // 252 -> 253: +1 for `stackstoreguard`.
     // 253 -> 254: +1 for `protoranges`; its P6 row sits mid-table.
     // 257 -> 258: +1 for `bejoin`.
-    assert_eq!(json.matches("},\n").count(), 258);
+    assert_eq!(json.matches("},\n").count(), 259);
 }
 
 #[test]
