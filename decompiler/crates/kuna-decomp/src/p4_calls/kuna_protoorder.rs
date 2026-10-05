@@ -1270,7 +1270,8 @@ pub enum Decline {
     /// dominated by one artifact: a variadic register-save prologue reads every
     /// argument register there is, so recovery reports fourteen parameters for a
     /// two-argument function and a lock would promote fourteen live-in registers
-    /// to each caller's OWN parameter list.
+    /// to each caller's OWN parameter list.  The open tail a parked list
+    /// carries must not move the return value either.
     NonCanonicalStorage,
     /// The model could not assign storage to the recovered types at all.
     StorageUnderivable,
@@ -1673,6 +1674,9 @@ pub fn park_recovered(
     match model_storage(&pieces, arch) {
         None => return Err(Decline::StorageUnderivable),
         Some(model) if model != storage => return Err(Decline::NonCanonicalStorage),
+        Some(_) if crate::kuna_vfpvariadic::moves_parked_return(arch, &pieces) => {
+            return Err(Decline::NonCanonicalStorage)
+        }
         Some(_) => {}
     }
     arch.set_function_prototype_pieces_at(entry, pieces.clone());

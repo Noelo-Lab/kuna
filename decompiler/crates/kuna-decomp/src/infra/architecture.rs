@@ -1372,6 +1372,9 @@ pub struct Architecture {
     /// The parameter declarations a callee-first batch has printed so far, for
     /// the byte-pointer argument casts of the callers printed after them.
     pub kuna_pointerargs: RefCell<crate::kuna_pointerargs::Batch>,
+    /// (kuna `vfpvariadic`) The default model with the variadic return rules,
+    /// keyed by the default model it was derived from.
+    pub kuna_vfp_variadic: RefCell<Option<(Rc<ProtoModel>, Option<Rc<ProtoModel>>)>>,
     /// (kuna `callbacktype`) The whole-binary run's record of the constants
     /// declared callback slots carried.
     pub kuna_callbacktype: crate::kuna_callbacktype::Ledger,
@@ -2639,6 +2642,7 @@ impl Architecture {
             kuna_callee_forward_cache: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
             kuna_pointerargs: RefCell::new(crate::kuna_pointerargs::Batch::default()),
+            kuna_vfp_variadic: RefCell::new(None),
             kuna_callbacktype: crate::kuna_callbacktype::Ledger::default(),
             kuna_calleevote: crate::kuna_calleevote::Ledger::default(),
             kuna_callret_types: std::collections::HashMap::new(),
@@ -3479,6 +3483,7 @@ impl Architecture {
             .soft_float_model
             .clone()
             .filter(|_| crate::kuna_typedcallabi::without_fpu(self));
+        ctx.vfp_variadic = crate::kuna_vfpvariadic::applies(self);
         ctx.caller_extends_returns_from = crate::kuna_typedcallabi::caller_extends_from(self);
         ctx.vararg_floats = crate::kuna_varargretreg::image_vararg_floats(self);
         ctx.narrow_ext = crate::kuna_narrowext::rules(self);
