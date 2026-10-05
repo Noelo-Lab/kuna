@@ -1234,6 +1234,19 @@ is not a residual unknown and never enters the relabel, so the opaque
 (`map convert`, `force datatype`) override the global format at the same
 point ([docs/options.md](../options.md)).
 
+Anonymous function types with a stored prototype participate in the C declarator
+walk alongside pointers and arrays. The function contributes a parameter suffix,
+then the walk continues through its return type. Parameters use recursive abstract
+declarators, an empty fixed parameter list spells `(void)`, and a variadic list
+retains `...`. Prototype model and ABI recovery are unchanged.
+Unknown return bases use only pointer modifiers inside their return type when
+deciding the `realtypes` fallback, preserving a scalar return's recorded width.
+This applies to locals, parameters, fields, globals, casts and exported type
+strings; a known `unsigned int (*)(void)` must not fall back to `undefined1 *`.
+Named typedefs and code types without a stored prototype retain their existing
+spelling. This only prints the recorded type; it does not infer a callback
+signature or change indirect-call ABI recovery.
+
 **Valid C type names** (kuna, DIV-75, `option ctypes`). `realtypes` covers only
 residual `TYPE_UNKNOWN`, and the *named* core types beside it are not C at all:
 kuna interns them as `uint1`/`int4`/`float8`/`float10`/`code`, a verbatim port of

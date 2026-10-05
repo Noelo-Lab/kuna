@@ -1160,6 +1160,10 @@ fn two_conventions_in_one_declaration_are_rejected() {
 /// compiler spec: an address-space manager, `__cdecl` as the default model, and
 /// the named models in `registered`.
 fn factory_with_models(registered: &[&str]) -> TypeFactoryImpl {
+    factory_with_model_resources(registered, false)
+}
+
+fn factory_with_model_resources(registered: &[&str], with_storage: bool) -> TypeFactoryImpl {
     use kuna_base::space::{addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace};
     use kuna_decomp::fspec::ProtoModel;
     use std::rc::Rc;
@@ -1185,6 +1189,19 @@ fn factory_with_models(registered: &[&str]) -> TypeFactoryImpl {
         let mut m = ProtoModel::new(&mgr);
         m.set_name(name);
         m.build_param_list("standard").unwrap();
+        if with_storage {
+            use kuna_decomp::dtype::type_class;
+            use kuna_decomp::fspec::ParamEntry;
+            let ram = mgr.get_default_data_space().unwrap();
+            let entry = |group, offset| ParamEntry::seed(
+                group, type_class::TYPECLASS_GENERAL, Rc::clone(ram), offset,
+                8, 1, 0, 0, true, false, &[], &mgr,
+            ).unwrap();
+            m.output_mut().push_entry(entry(0, 0x1000));
+            for i in 0..4 {
+                m.input_mut().push_entry(entry(i, 0x2000 + i as u64 * 8));
+            }
+        }
         Rc::new(m)
     };
     let dflt = model("__cdecl");
@@ -1550,4 +1567,55 @@ fn anonymous_member_records_stay_distinct() {
     assert_eq!(sizes, [4, 8, 4, 2]);
     assert!(parse("struct Bad { struct { struct Missing m; } inner; };").is_err());
     parse("struct Again { struct { uint2 z; } first; };").unwrap();
+}
+
+#[test]
+fn callback_declarations_keep_their_stored_prototypes() {
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+
+    let f = factory_with_model_resources(&[], true);
+    for (source, expected) in [
+        ("uint4 (*x)(void)", "uint4 (*x)(void)"),
+        ("int4 (*x)(int2,uint4 *)", "int4 (*x)(int2,uint4 *)"),
+        ("void (*x)(int4,...)", "void (*x)(int4,...)"),
+        ("int4 (**x)(void)", "int4 (**x)(void)"),
+        ("int4 (*x[2])(void)", "int4 (*x[2])(void)"),
+        ("int4 *(*x)(void)", "int4 *(*x)(void)"),
+        ("int4 (*(*x)(void))[3]", "int4 (*(*x)(void))[3]"),
+        ("int4 (*x)(void (*)(int4))", "int4 (*x)(void (*)(int4))"),
+        ("int4 (*(*x)(int4))(int2)", "int4 (*(*x)(int4))(int2)"),
+    ] {
+        let (ty, name) = parse_type(source, &f, org()).expect("callback declarator parses");
+        let (front, back) = C_SPELLER.declarator(&SpellCtx::OFF, &ty);
+        let sep = if front.ends_with('*') || front.ends_with('(') { "" } else { " " };
+        let printed = format!("{front}{sep}{name}{back}");
+        assert_eq!(printed, expected, "{source}");
+        let (again, _) = parse_type(&printed, &f, org()).expect("printed declaration parses");
+        assert_eq!(ty.compare(&again, 10).unwrap(), 0, "{source}");
+        let (front, back) = C_SPELLER.declarator(&SpellCtx::OFF, &again);
+        assert_eq!(format!("{front}{sep}{name}{back}"), expected);
+    }
+}
+
+#[test]
+fn unprototyped_code_keeps_its_existing_spelling() {
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+
+    let f = factory_with_code();
+    let (ty, _) = parse_type("code *x", &f, org()).unwrap();
+    assert_eq!(C_SPELLER.declarator(&SpellCtx::OFF, &ty), ("code *".into(), "".into()));
+}
+
+#[test]
+fn named_callback_typedef_keeps_its_declared_name() {
+    use kuna_decomp::kuna_langc::C_SPELLER;
+    use kuna_decomp::kuna_langtypes::{SpellCtx, TypeSpeller};
+
+    let f = factory_with_model_resources(&[], true);
+    super::parse_c("typedef uint4 (*Callback)(void);", &f, org(), &[], |_, _| Ok(())).unwrap();
+    let (ty, name) = parse_type("Callback x", &f, org()).unwrap();
+    assert_eq!(name, "x");
+    assert_eq!(C_SPELLER.declarator(&SpellCtx::OFF, &ty), ("Callback".into(), "".into()));
 }
