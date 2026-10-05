@@ -2011,7 +2011,10 @@ for the new prototype. Unreferenced trials and the old stack placeholder are
 excluded. This preserves an already active variadic argument and leaves an
 inactive stored integer available for later format evidence; resolving an
 imported target must not erase its unfinalized variadic trials. Ordinary trial
-scoring still controls which preserved values become arguments.
+scoring still controls which preserved values become arguments. This also keeps
+an already recovered promoted double copied from an XMM register to its variadic
+GP slot; it needs no integer-format fallback and survives with `varargforward`
+off as well. The format evidence parser remains restricted to promoted integers.
 Failure sets the restart-pending
 flag — the P4 → Band B feedback edge of 00 §0.7, bounded and executed by the
 drive — (kuna) recording `ProtoDeindirect` in the restart log

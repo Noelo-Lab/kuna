@@ -120,6 +120,20 @@ fn decompile(binary: &std::path::Path, enabled: bool) -> String {
 }
 
 fn decompile_imported(binary: &std::path::Path, enabled: bool) -> String {
+    decompile_imported_kind(binary, enabled, false)
+}
+
+fn decompile_imported_kind(binary: &std::path::Path, enabled: bool, floating: bool) -> String {
+    let (name, end, params, format_width) = if floating {
+        (
+            "caller_imported_float",
+            "0x140001022",
+            "void *a,void *b,float value",
+            6,
+        )
+    } else {
+        ("caller_imported_integer", "0x14000101d", "int *value", 3)
+    };
     let output = Command::new(
         std::env::var_os("KUNA_TEST_BIN").unwrap_or_else(|| env!("CARGO_BIN_EXE_kuna").into()),
     )
@@ -139,13 +153,13 @@ fn decompile_imported(binary: &std::path::Path, enabled: bool) -> String {
         "varargforward",
         if enabled { "on" } else { "off" },
         "--assert",
-        "function 0x140001000-0x14000101d=caller_imported_integer",
+        &format!("function 0x140001000-{end}={name}"),
         "--assert",
-        "prototype caller_imported_integer unsigned long long caller_imported_integer(int *value)",
+        &format!("prototype {name} unsigned long long {name}({params})"),
         "--assert",
         "prototype 0x140002050 unsigned long long render_value(const char *format,...)",
         "--assert",
-        "data 0x1400020a0 char integer_format[3]",
+        &format!("data 0x1400020a0 char integer_format[{format_width}]"),
     ])
     .output()
     .unwrap();
@@ -316,6 +330,24 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
         "{healthy_off}"
     );
     assert_eq!(healthy_off, decompile_imported(&imported, true));
+    let generated = Command::new("python3")
+        .arg(fixture.join("imported.py"))
+        .arg(&imported)
+        .arg("--float")
+        .output()
+        .unwrap();
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let floating_off = decompile_imported_kind(&imported, false, true);
+    let floating_on = decompile_imported_kind(&imported, true, true);
+    assert!(
+        floating_off.contains("render_value(\"%.02f\",(float8)value)"),
+        "{floating_off}"
+    );
+    assert_eq!(floating_off, floating_on);
 
     let mut printed: String = [
         "caller_integer",
@@ -332,6 +364,7 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
     .map(|name| function(&on, name))
     .collect();
     printed.push_str(function(&imported_on, "caller_imported_integer"));
+    printed.push_str(function(&floating_on, "caller_imported_float"));
     let src = common::scratch_file("variadic-secondary-emitted", "c");
     let exe = common::scratch_file("variadic-secondary-emitted", "exe");
     std::fs::write(&src, format!(r#"
@@ -339,12 +372,22 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
 #include <limits.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 typedef int32_t int4;
 typedef uint32_t uint4;
 typedef uint64_t uint8;
+typedef float float4;
+typedef double float8;
 unsigned long long render_value(const char *format,...) {{
     va_list ap;
     va_start(ap,format);
+    if (format[1] == '.') {{
+        double value = va_arg(ap,double);
+        uint64_t bits;
+        memcpy(&bits,&value,sizeof(bits));
+        va_end(ap);
+        return bits;
+    }}
     unsigned int value = va_arg(ap,int);
     va_end(ap);
     return value;
@@ -376,6 +419,13 @@ int main(void) {{
         if (caller_stored_two(two) != packed || two[0] != x+1 || two[1] != -121) return 5;
     }}
     const int selected[] = {{INT_MIN+1,-123,-1,0,1,5,6,7,11,12,13,99,INT_MAX-1}};
+    const float floats[] = {{0.0f,-0.0f,1.25f,-2.5f,123456.0f}};
+    for (unsigned i = 0; i < sizeof(floats)/sizeof(floats[0]); ++i) {{
+        double expected = (double)floats[i];
+        uint64_t bits;
+        memcpy(&bits,&expected,sizeof(bits));
+        if (caller_imported_float(0,0,floats[i]) != bits) return 11;
+    }}
     const int tags[] = {{INT_MIN,-1,0,1,2,INT_MAX}};
     for (unsigned i = 0; i < sizeof(selected)/sizeof(selected[0]); ++i) {{
         for (unsigned j = 0; j < sizeof(tags)/sizeof(tags[0]); ++j) {{

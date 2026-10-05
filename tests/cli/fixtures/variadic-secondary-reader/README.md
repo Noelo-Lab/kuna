@@ -18,7 +18,7 @@ kuna decompile /tmp/variadic-reader caller_stored_integer --json --mode reliable
 Unpatched output stores `*value + 1` but calls `render_value("%i")` without it.
 The direct-forwarding `caller_integer` control retains the argument.
 
-The CLI regression compiles the ten recovered positive bodies with GCC and
+The CLI regression compiles the eleven recovered positive bodies with GCC and
 Clang at `-O0` and `-O2`, checking argument values and pointer stores. It also
 compares option-on/off output for unused registers, unsupported and mutable
 formats, clobbered or undeclared values, partially defined integer storage,
@@ -46,6 +46,13 @@ kuna decompile-all /tmp/variadic-imported.exe --addr 0x140001000 --mode reliable
   --assert 'prototype 0x140002050 unsigned long long render_value(const char *format,...)' \
   --assert 'data 0x1400020a0 char integer_format[3]'
 ```
+
+Adding `--float` to the generator promotes an incoming float from XMM2, copies
+the resulting double to RDX and calls the IAT with `"%.02f"`. Late prototype
+binding previously discarded this already recovered argument too. Both option
+settings now retain it through ordinary scoring; the integer-format proof still
+declines floating conversions. Five float values, including both signs of zero,
+must return the exact promoted double bits in native and emitted execution.
 
 The self-contained `mixed-format.xml` and `named-format.xml` check formats whose
 conversion byte or NUL terminator is writable, alongside an entirely immutable

@@ -33,6 +33,18 @@ caller_imported_integer:
     addq $40,%rsp
     ret
 .size caller_imported_integer,.-caller_imported_integer
+.globl caller_imported_float
+.type caller_imported_float,@function
+caller_imported_float:
+    subq $40,%rsp
+    xorps %xmm1,%xmm1
+    cvtss2sd %xmm2,%xmm1
+    movq %xmm1,%rdx
+    leaq format_promoted(%rip),%rcx
+    call *imported_renderer(%rip)
+    addq $40,%rsp
+    ret
+.size caller_imported_float,.-caller_imported_float
 .globl render_value
 .type render_value,@function
 render_value:
@@ -41,6 +53,7 @@ render_value:
 .size render_value,.-render_value
 .section .rodata
 format_integer: .asciz "%i"
+format_promoted: .asciz "%.02f"
 .balign 8
 imported_renderer: .quad render_value
 .section .note.GNU-stack,"",@progbits

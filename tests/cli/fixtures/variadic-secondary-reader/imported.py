@@ -1,12 +1,17 @@
 """Generate an authored PE32+ with a readonly format and an imported variadic call.
 
 The entry point loads, increments and stores *RCX, then calls the IAT with EDX.
+With --float, it promotes XMM2 to double and copies its bits to RDX for the IAT.
 No Windows SDK, DLL, application image or external asset is needed.
 """
+import argparse
 import struct
-import sys
 from pathlib import Path
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("output", type=Path)
+parser.add_argument("--float", action="store_true", dest="floating")
+args = parser.parse_args()
 image = bytearray(0x600)
 
 
@@ -37,7 +42,11 @@ for offset, name, rva, raw, flags in [
     image[offset:offset + len(name)] = name
     put(offset + 8, "IIIIIIHHI", 0x200, rva, 0x200, raw, 0, 0, 0, 0, flags)
 
-code = bytes.fromhex("4883ec288b1183c2018911488d0d8e100000ff15381000004883c428c3")
+prefix = bytes.fromhex("4883ec280f57c9f30f5aca66480f7eca" if args.floating
+                       else "4883ec288b1183c2018911")
+lea = b"\x48\x8d\x0d" + struct.pack("<i", 0x20a0 - (0x1000 + len(prefix) + 7))
+call = b"\xff\x15" + struct.pack("<i", 0x2050 - (0x1000 + len(prefix) + 7 + 6))
+code = prefix + lea + call + bytes.fromhex("4883c428c3")
 image[0x200:0x200 + len(code)] = code
 put(0x400, "IIIII", 0x2040, 0, 0, 0x2090, 0x2050)
 put(0x440, "QQ", 0x2080, 0)
@@ -45,5 +54,6 @@ put(0x450, "QQ", 0x2080, 0)
 name = b"render_value\0"
 image[0x482:0x482 + len(name)] = name
 image[0x490:0x49b] = b"reader.dll\0"
-image[0x4a0:0x4a3] = b"%i\0"
-Path(sys.argv[1]).write_bytes(image)
+format_bytes = b"%.02f\0" if args.floating else b"%i\0"
+image[0x4a0:0x4a0 + len(format_bytes)] = format_bytes
+args.output.write_bytes(image)

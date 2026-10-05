@@ -1,9 +1,11 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 extern uint64_t __attribute__((ms_abi)) caller_integer(int);
 extern uint64_t __attribute__((ms_abi)) caller_stored_integer(int *);
 extern uint64_t __attribute__((ms_abi)) caller_imported_integer(int *);
+extern uint64_t __attribute__((ms_abi)) caller_imported_float(void *,void *,float);
 extern uint64_t __attribute__((ms_abi)) caller_computed_integer(int *);
 extern uint64_t __attribute__((ms_abi)) caller_stored_extra(int *);
 extern uint64_t __attribute__((ms_abi)) caller_stored_two(int *);
@@ -26,6 +28,13 @@ int main(void) {
         int two[] = {x, -123};
         uint64_t packed = ((uint64_t)(uint32_t)-121 << 32) | (uint32_t)(x + 1);
         if (caller_stored_two(two) != packed || two[0] != x + 1 || two[1] != -121) return 5;
+    }
+    const float floats[] = {0.0f,-0.0f,1.25f,-2.5f,123456.0f};
+    for (unsigned i = 0; i < sizeof(floats)/sizeof(floats[0]); ++i) {
+        double expected = (double)floats[i];
+        uint64_t bits;
+        memcpy(&bits,&expected,sizeof(bits));
+        if (caller_imported_float(0,0,floats[i]) != bits) return 11;
     }
     const int selected[] = {INT_MIN+1,-123,-1,0,1,5,6,7,11,12,13,99,INT_MAX-1};
     const int tags[] = {INT_MIN,-1,0,1,2,INT_MAX};
