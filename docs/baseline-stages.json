@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1961,
-    1961
+    1964,
+    1964
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -92,6 +92,8 @@
     "data:CALLEEPRESERVES #6: both passes, the thunk is still called and still returns nothing",
     "data:CALLEEPROTOSTACK HOMESLOT #1: both passes store worker_proc into the home slot",
     "data:CALLEEPROTOSTACK HOMESLOT #2: both passes pass the slot's address to consume",
+    "data:CALLEERETPRESERVES #10: unknown, unmarked and option-off keep the undefined return",
+    "data:CALLEERETPRESERVES #11: every pass retains the direct helper call",
     "data:CALLEERETPRESERVES #1: off, the zero set before the cookie check is gone and f returns nothing",
     "data:CALLEERETPRESERVES #2: on, f returns the constant the caller placed in EAX",
     "data:CALLEERETPRESERVES #3: on, and that value gives f its own return type back",
@@ -100,6 +102,7 @@
     "data:CALLEERETPRESERVES #6: both passes, the stub call keeps the convention's answer",
     "data:CALLEERETPRESERVES #7: a tailcallee RAX write never preserves the caller's seven",
     "data:CALLEERETPRESERVES #8: both direct- and tailcallee RAX writers keep the call in both passes",
+    "data:CALLEERETPRESERVES #9: only a known terminal failure call preserves j's five",
     "data:CALLEESCRATCHBODY #1: off, the whole frame is indexed off the value __chkstk supposedly returns",
     "data:CALLEESCRATCHBODY #2: on, the probe is called for its side effect and the frame slot is a fixed offset",
     "data:CALLEESCRATCHBODY #3: on, the slot written and read back at that offset is the argument",
