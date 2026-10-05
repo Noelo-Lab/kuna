@@ -7852,10 +7852,10 @@ fn a_value_read_by_a_sign_sensitive_op_is_not_re_read_from_a_global() {
 /// source's own arithmetic: the cross-built objects cannot run on this host, so
 /// the source stands in for the binary. The arguments of `add_one` go in the
 /// ABI's register order: high word first on a big-endian target. MIPS
-/// `add_one` and `triple_plus`, and SPARC `triple_plus`, are left out: kuna
-/// drops a half of the first (on either endianness), and in the second cannot
-/// follow MIPS's unrelocated call or read the pair SPARC's call to `triple`
-/// returns. So is SPARC `keep_zero`: `restore` hands the
+/// `add_one` and `triple_plus` are left out: kuna drops a half of the first
+/// (on either endianness), and in the second cannot follow MIPS's unrelocated
+/// call. SPARC `triple_plus` reads the `%o0:%o1` pair its call to `triple`
+/// returns (#862). SPARC `keep_zero` is left out: `restore` hands the
 /// second argument back in `%o1`, and the pair still prints that argument
 /// shifted into the high word, as it did before the join order was fixed.
 #[test]
@@ -7864,7 +7864,7 @@ fn a_big_endian_register_pair_round_trips_through_the_printed_c() {
     let cases: [(&str, bool, &[&str]); 6] = [
         ("bejoin_ppc32_be.o", true, ALL),
         ("bejoin_arm32_be.o", true, ALL),
-        ("bejoin_sparc32_be.o", true, &["wide_mul", "add_one", "triple", "same"]),
+        ("bejoin_sparc32_be.o", true, &["wide_mul", "add_one", "triple", "triple_plus", "same"]),
         ("bejoin_mips32_be.o", true, &["wide_mul", "triple", "same", "keep_zero"]),
         ("bejoin_ppc32_le.o", false, ALL),
         ("bejoin_arm32_le.o", false, ALL),
