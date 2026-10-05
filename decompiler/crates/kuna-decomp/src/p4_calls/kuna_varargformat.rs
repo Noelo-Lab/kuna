@@ -143,7 +143,7 @@ pub(crate) fn arguments(data: &Funcdata, fc: &FuncCallSpecs) -> Vec<ParameterPie
 
 /// Prove the consumed bytes through bounded copies and integer expressions.
 /// Realistic movement alone can include a PIECE with undeclared upper bytes.
-fn defined_bytes(
+pub(super) fn defined_bytes(
     data: &Funcdata,
     vn: VarnodeId,
     offset: int4,

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1999,
-    1999
+    2007,
+    2007
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -472,6 +472,14 @@
     "data:GH8500 #2: both passes recover the store-through-pointer and return the parameter (deadcode-delay fix, option subsumed)",
     "data:GH8724 #1: default pipeline leaves the raw strided accumulator (+ 0x414), index lost",
     "data:GH8724 #2: option arraystride on recovers the array index as counter * 0x414",
+    "data:GH876 x86 #1: varargforward off prints the undeclared upper register half in eight first calls (bug reproduced)",
+    "data:GH876 x86 #2: varargforward on passes the int itself in gcc d4, du and clang c4",
+    "data:GH876 x86 #3: varargforward on passes both ints in gcc d3",
+    "data:GH876 x86 #4: a computed long stays 8 bytes",
+    "data:GH876 x86 #5: varargforward on passes the int itself under the Windows x64 convention",
+    "data:GH876 x86 #6: varargforward on passes the int itself when it also feeds a later argument in gcc u5",
+    "data:GH876 x86 #7: varargforward on passes both ints in gcc u8",
+    "data:GH876 x86 #8: varargforward on passes the int itself when it also feeds a later argument in clang c5",
     "data:GH8777 #1: default pipeline keeps the raw SBORROW2 N==V flag idiom (bug reproduces)",
     "data:GH8777 #2: option flagcompare on folds it to a clean signed compare (fix, no SBORROW2 left)",
     "data:GH8790 #1: 0f0dc0 (PREFETCH reg-form) decodes at 0x1000",

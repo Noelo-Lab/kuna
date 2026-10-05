@@ -32,6 +32,7 @@
 //! register (64-bit PowerPC).
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
+use kuna_base::space::spacetype;
 use kuna_base::types::int4;
 
 use kuna_num::opcodes::OpCode;
@@ -91,6 +92,112 @@ pub fn forwards_declared_value(
         return false;
     }
     !format_stops_before(data, fc, addr, size, float)
+}
+
+/// Narrow register trial `i` of variadic call spec `idx` to the int width when
+/// only its low int bytes are defined and every byte above them is a part of
+/// the caller's own incoming register that its locked prototype declares no
+/// parameter in. The trial may be active, or inactive and later gap-filled.
+/// `int d4(const char *f, int a) { pr(f, a); return pr(f, a); }` hands `a` on
+/// in `esi`; the 8-byte `rsi` trial would otherwise print `CONCAT44(v1,a)` with
+/// `v1` never set.
+pub fn narrow_undeclared_upper(data: &mut Funcdata, idx: int4, i: int4) {
+    let arch = data.get_arch();
+    if !arch.vararg_forward {
+        return;
+    }
+    let Some(width) = arch.types().map(|t| t.get_size_of_int()) else { return };
+    let fc = data.get_call_specs(idx);
+    if !fc.is_dotdotdot() || !fc.proto().has_model() {
+        return;
+    }
+    let trial = fc.active_input().get_trial(i);
+    let (addr, size, slot) = (trial.get_address().clone(), trial.get_size(), trial.get_slot());
+    if size <= width
+        || addr.get_space().is_none_or(|s| s.get_type() != spacetype::IPTR_PROCESSOR)
+        || fc.proto().model().input().get_entry().iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(&addr, size) >= 0
+        })
+    {
+        return;
+    }
+    let low = if addr.is_big_endian() { &addr + (size - width) as i64 } else { addr.clone() };
+    if !fc.active_input().test_shrink(i, &low, width) {
+        return;
+    }
+    let Some(vn) = data.obank().get(fc.get_op()).and_then(|o| o.get_in(slot)) else { return };
+    if !undeclared_bytes(data, vn, width, size - width, &mut 64)
+        || !super::kuna_varargformat::defined_bytes(data, vn, 0, width, &mut 64)
+    {
+        return;
+    }
+    data.get_call_specs_mut(idx).get_active_input().shrink(i, low, width);
+}
+
+/// Are bytes `[offset, offset + width)` of `vn`, counted from its least
+/// significant byte, copied from an incoming register that no parameter of the
+/// calling function's locked prototype overlaps?
+fn undeclared_bytes(
+    data: &Funcdata,
+    vn: VarnodeId,
+    offset: int4,
+    width: int4,
+    budget: &mut u32,
+) -> bool {
+    if *budget == 0 {
+        return false;
+    }
+    *budget -= 1;
+    let Some(v) = data.vbank().get(vn) else { return false };
+    let size = v.get_size();
+    if offset < 0 || width <= 0 || offset > size - width {
+        return false;
+    }
+    if v.is_input() {
+        let proto = data.get_func_proto();
+        let at = v.get_addr();
+        return proto.is_input_locked()
+            && at.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR)
+            && (0..proto.num_params()).filter_map(|i| proto.get_param(i)).all(|p| {
+                let (pa, ps) = (p.get_address(), p.get_size());
+                pa.get_space().is_some_and(|s| s.get_type() != spacetype::IPTR_JOIN)
+                    && at.overlap(0, &pa, ps) < 0
+                    && pa.overlap(0, at, size) < 0
+            });
+    }
+    let Some(op) = v.get_def().and_then(|id| data.obank().get(id)) else { return false };
+    let mut input = |slot, off, len| {
+        op.get_in(slot).is_some_and(|id| undeclared_bytes(data, id, off, len, budget))
+    };
+    match op.code() {
+        OpCode::CPUI_COPY => input(0, offset, width),
+        OpCode::CPUI_PIECE => {
+            let Some(low) = op.get_in(1).and_then(|id| data.vbank().get(id)) else {
+                return false;
+            };
+            let low_size = low.get_size();
+            if offset >= low_size {
+                input(0, offset - low_size, width)
+            } else if offset + width <= low_size {
+                input(1, offset, width)
+            } else {
+                input(1, offset, low_size - offset) && input(0, 0, offset + width - low_size)
+            }
+        }
+        OpCode::CPUI_SUBPIECE => {
+            let Some(skip) = op.get_in(1).and_then(|id| data.vbank().get(id)) else {
+                return false;
+            };
+            let Some(source) = op.get_in(0).and_then(|id| data.vbank().get(id)) else {
+                return false;
+            };
+            skip.is_constant()
+                && skip.get_offset() <= source.get_size() as u64
+                && input(0, offset + skip.get_offset() as int4, width)
+        }
+        OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).all(|slot| input(slot, offset, width)),
+        _ => false,
+    }
 }
 
 /// Is `vn` the calling function's own input where it declares a parameter, or
