@@ -55,6 +55,23 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
     })
 }
 
+/// Whether a same-width `CAST` of `input` to a float prints as a reinterpretation
+/// of its bits: the integer side [`storage_transfer`] accepts, judged by the same
+/// printed type.
+pub(crate) fn reinterprets_to_float(fd: &Funcdata, decl_high_type: bool, input: VarnodeId) -> bool {
+    let Some(src) = fd.vbank().get(input) else {
+        return false;
+    };
+    let from = crate::printc::declared_variable_type(fd, decl_high_type, input)
+        .unwrap_or_else(|| src.get_type().clone())
+        .get_metatype();
+    match from {
+        type_metatype::TYPE_INT | type_metatype::TYPE_UINT => true,
+        type_metatype::TYPE_UNKNOWN => !untyped_call_value(fd, input, 0),
+        _ => false,
+    }
+}
+
 /// An untyped call has no integer C return contract. Its ABI storage alone
 /// cannot establish the type of the call expression that the printer emits.
 fn untyped_call_value(fd: &Funcdata, vn: VarnodeId, depth: usize) -> bool {

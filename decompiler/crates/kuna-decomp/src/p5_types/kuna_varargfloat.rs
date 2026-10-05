@@ -44,6 +44,21 @@ pub fn argument_vote(
         .ok()
 }
 
+/// The type C requires of that argument: `double`, when [`argument_vote`] gives
+/// one and the value is an integer. No integer travels in a floating-point
+/// register, so its bits got there by a reinterpretation, and the cast this
+/// requirement adds prints as one. A struct or a pointer there gets none.
+pub fn argument_requirement(
+    data: &Funcdata,
+    fc: &FuncCallSpecs,
+    op: OpId,
+    slot: i32,
+) -> Option<Rc<Datatype>> {
+    let ct = argument_vote(data, fc, op, slot)?;
+    let vn = data.obank().get(op)?.get_in(slot)?;
+    crate::kuna_bitcast::reinterprets_to_float(data, data.get_arch().decl_high_type, vn).then_some(ct)
+}
+
 fn spells_as_a_float(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(node) = data.vbank().get(vn).filter(|n| n.is_constant()) else {
         return true;

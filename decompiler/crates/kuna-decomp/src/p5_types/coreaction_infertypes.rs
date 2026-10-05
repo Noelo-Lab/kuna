@@ -250,10 +250,13 @@ fn call_input_type_local(
             return None;
         }
     }
-    if recovered {
-        if let Some(ct) = crate::kuna_varargfloat::argument_vote(data, fc, op, slot) {
-            return Some(ct);
-        }
+    let vararg = if recovered {
+        crate::kuna_varargfloat::argument_vote(data, fc, op, slot)
+    } else {
+        crate::kuna_varargfloat::argument_requirement(data, fc, op, slot)
+    };
+    if vararg.is_some() {
+        return vararg;
     }
     if !recovered || proto.is_input_locked() {
         return None;
