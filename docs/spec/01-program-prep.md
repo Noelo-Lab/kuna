@@ -1434,7 +1434,10 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   same stream whose run test accepts a *single* visible character, and at a wide
   literal that test reads the first unit plus its high-byte NUL as a complete
   `char[2]`. Whichever fact is planted first wins the commit's occupied guard, so
-  the width that read the whole literal has to go first. Scope: UTF-16**LE** whose
+  the width that read the whole literal has to go first. (`operand_refs` now also
+  declines a run that opens an array of 2-byte character codes nothing points
+  into, described with that pass below, so the order decides only the shorter
+  runs it still reads.) Scope: UTF-16**LE** whose
   units are all in the 1-byte charset (the Windows-API case); a big-endian or
   non-Latin wide literal is not recovered. Default **on**; `off` leaves the markup
   exactly the 1-byte pass's.
@@ -4225,6 +4228,52 @@ is a pointer slot, the same test the strings pass applies
 On a PE with base relocations that test is exact: an MSVC i386 image's vtable
 entries are relocated and refused, while its 4-aligned `"INF"` is not and keeps
 its literal.
+
+(kuna) A run as short as one character is also the first element of many arrays
+whose elements are wider than a byte: `static const int arr[] = {65, 66, 67, 68}`
+starts `41 00`, which is `"A"`, and `L"hellow"` starts `68 00`, which is `"h"`, so
+`sum(arr,n)` printed `sum("A",a0)` and `lenw(L"hellow")` printed `lenw((int *)"h")`.
+Two more refusals cover them. A sized data object of the image's symbol tables that
+starts at the target with a size other than the run's says what the bytes are
+(`decompiler/crates/kuna-analysis/src/analyzers/operand_refs/mod.rs (DataObjects)`):
+`arr` is a 16-byte object at the target, and the reference prints as its name. An
+object that only contains the target, such as a table of `char` rows, does not
+refuse the string it holds there. Without symbols the bytes decide
+(`wide_element_neighbour`): at an address aligned to the width, two 4-byte elements
+that are each one printable byte followed by zeros (a `wchar_t` or `char32_t`
+string, an `int` table of character codes), or three 2-byte ones, the third
+possibly the terminator (`char16_t`, a `short` table), open an array of character
+codes. A merged string section lays one-character literals side by side in the
+same 2-byte shape (`78 00 79 00 77 00` is `"x"`, `"y"`, `"w"`), and a literal that
+ends a block at a 4-aligned address can sit right before an `int` table in the 4-byte
+one, so the run is refused only when nothing marks its second element as a thing of
+its own: no declared object starts there, no operand the scan found points at it,
+and the image holds no pointer to it (`held_pointers`) -- in a pointer-aligned slot
+of an allocated section or as the addend of a dynamic relocation. Beside a 2-byte
+run of an ELF image, the merged-literal case, an entry of a table of 32-bit offsets
+from the table's own start at an operand target counts too: the shape of clang's
+position-independent lookup table of string addresses (`.long .str - table`,
+`relative_string_table`). Such a table must not itself open a string, and its
+entries are read up to the first that is zero, a small positive character code
+(the first unit of a wide string or code table the read has run into), points back
+into the table or lands on no string, with at least two remaining. A 4-byte run
+never consults one: read as offsets, a struct's leading `int`s or a wide string's
+units can land on the second unit of any wide string nearby. A 2-byte run of
+`char16_t` or `short` data can still be kept that way, as on main, when a struct
+holding it starts with `int`s that equal the offsets of its own units. A literal beside the
+first is usually referenced from one of those places; the second element of an
+array is not. When nothing visible refers to it the literal loses its string with
+the array and prints as its address: a neighbour left behind by code that
+`--gc-sections` removed, or, stripped, the 4-byte case before an `int` table, which
+only that table's symbol tells apart. The other way round, a wide or `char16_t`
+string whose suffix is referenced on its own, such as a tail-merged `L"xbind"`
+whose `L"bind"` another call passes, or `u"b"` inside `u"xb"`, still prints as its
+first character, as on main; only a scan for strings of the matching width would
+recover it. The scans run once, and only when some run is about to
+be refused. Refusing drops the fact and nothing else, so the
+reference prints as the array's symbol or address (`sum(arr,a0)`,
+`lenw(&dat_2004)`), never as a different value. A stripped array whose second
+element is no character code, such as `int {65, 1000}`, still reads as `"A"`.
 
 (kuna) Three ARM-only seed scans run between the walk's first pass and those
 consumers, each re-seeding the walk and rebuilding the Listing when it finds

@@ -9,15 +9,14 @@
 //!
 //! * **on** (default): the wide literal commits a typelocked `wchar2[10]` at its
 //!   address and the call renders `LoadLibraryW(L"ntdll.dll")`.
-//! * **off**: nothing is marked up at 2-byte width, the literal is read at 1-byte
-//!   width as the one-character string behind the first NUL, and the same call
-//!   renders `LoadLibraryW("n")` — the recorded defect. The `"n"` spelling needs
-//!   `operand_refs` (a `--mode aggressive` member, and `auto` picks aggressive for
-//!   anything under 500 KiB, so it is what the `kuna` binary runs by default):
-//!   its run test accepts a SINGLE visible character, so at the wide literal it
-//!   reads the first unit plus its high-byte NUL as a complete `char[2]`. With
-//!   `operand_refs` off too, nothing types the constant at all and the call
-//!   renders the bare `LoadLibraryW(0x140002100)`. Both off-arms are asserted.
+//! * **off**: nothing is marked up at 2-byte width and the call renders the bare
+//!   `LoadLibraryW(0x140002100)`, also with `operand_refs` on (a `--mode
+//!   aggressive` member, and `auto` picks aggressive for anything under 500 KiB,
+//!   so it is what the `kuna` binary runs by default). That pass accepts a SINGLE
+//!   visible character, and once read the first unit plus its high-byte NUL as a
+//!   complete `char[2]`, rendering `LoadLibraryW("n")` -- the recorded defect. It
+//!   now declines a run that opens an array of 2-byte character codes nothing
+//!   points into. Both off-arms are asserted.
 //!
 //! The ASCII argument is the control: it must render identically on both arms, so
 //! the width the pass already had is untouched.
@@ -108,17 +107,18 @@ fn wide_literal_is_unmarked_with_the_width_off() {
     );
 }
 
-/// The recorded defect verbatim, on the pass set a default `kuna decompile` runs:
-/// with `operand_refs` on and the 2-byte width off, the wide literal renders as
-/// its own first character. With the width on it renders whole — and `widestrings`
-/// wins the shared commit stream, which is the ordering half of the fix.
+/// The recorded defect, on the pass set a default `kuna decompile` runs: with
+/// `operand_refs` on and the 2-byte width off, the wide literal rendered as its
+/// own first character, `LoadLibraryW("n")`; the scalar markup now leaves it
+/// untyped. With the width on it renders whole, and `widestrings` wins the
+/// shared commit stream.
 #[test]
 fn the_width_outranks_the_scalar_markup_that_read_one_character() {
     let off = decompile_entry_with(false, true);
     assert!(
-        off.contains(r#"LoadLibraryW("n")"#),
-        "expected the recorded defect `LoadLibraryW(\"n\")` with operand_refs on \
-         and the width off, got:\n{off}"
+        off.contains("LoadLibraryW(0x140002100)"),
+        "operand_refs must not read the wide literal as a one-character string \
+         with the width off, got:\n{off}"
     );
     let on = decompile_entry_with(true, true);
     assert!(
