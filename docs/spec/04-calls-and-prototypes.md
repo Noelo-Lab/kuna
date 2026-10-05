@@ -5270,6 +5270,20 @@ the first time it is decompiled. A reader decompiled later that reads the
 wrapper wider forces it again at that width, and one that reads another
 register withdraws it: it returns nothing again, as before.
 
+A function recovered returning a value in storage that shares no byte with the
+register its callers read is forced the same way (`kuna_voidret.rs (displaced)`).
+gcc's `-fzero-call-used-regs` ends a function by zeroing every call-clobbered
+register but the return register, so in `int put(int *p, int v) { int r =
+check(p); if (r) return r; *p = v; return 0; }` the epilogue's `pxor
+%xmm0,%xmm0` made `xmm0` a realistic constant return while `eax`, a call's
+tested result, was refused: `put` printed `double put(..)` returning `0.0` on
+both paths beside callers reading `eax`, and openssh's `xmalloc` family printed
+`unsigned long xmalloc(..) { ... return 0; }`. Forced to `eax`, the trial there
+is accepted and the model maps the output to it. The forced decompile comes
+before the withdrawal of a float return the callers refuse
+(`Ledger::displacing`); a function that still returns the float afterwards is
+withdrawn as before.
+
 In that decompile the function's return storage is seeded
 (`kuna_voidret.rs (seed)`, the register pieces of a joined return such as a
 `struct timespec` in `rax:rdx`), together with what each of its callees was last
@@ -5294,13 +5308,25 @@ on its own, which no rule joins again; such a trial is refused
 `ActionReturnRecovery` then marks a
 trial on that storage active (`kuna_voidret.rs (score_forced)`) only when the
 value is the return value at EVERY live RETURN: `AncestorRealistic` accepts it,
-and `ancestor_op_use` finds it used only on its way to the RETURN, with one
-change -- a call's result (or its INDIRECT creation) that nothing else uses
+and `ancestor_op_use` finds it used only on its way to the RETURN, with two
+changes. A call's result (or its INDIRECT creation) that nothing else uses
 counts, where upstream refuses it outright
-(`Funcdata::kuna_forced_scoring`). So a function that leaves its caller's
-register in place stays `void`, and so does one that uses the register as
-scratch: a stream pointer in a `getc` loop, or a message handed to an
-`error(nonzero, ...)` whose fall-through is pruned into a RETURN.
+(`Funcdata::kuna_forced_scoring`). And the value may also be stored, branched
+on, or handed back in another register (`kuna_voidret.rs (returned_use)`,
+`kuna_voidret.rs (scoring_return)`): `gi = a * 3; return gi;` stores the `eax`
+it returns, `if (r > 7) gj++; return r;` tests it, and `x = *p; gi = x + 1; gj
+= x; return x;` leaves `x + 1` in `edx`, a register the callers do not read.
+Upstream's `onlyOpUse` refuses all three, to tell a value passed in a register
+from a variable that happens to sit there; with a caller reading the register
+that question is settled, and the refusal printed `void f(int a0) { gi = a0 *
+3; }` beside `printf("%d\n", f(2))`, and gnulib's `xmalloc` (`p = malloc(n);
+if (!p) xalloc_die(); return p;`) as `void` beside every caller using its
+pointer. Single-function decompiles have no caller to settle it and keep
+upstream's answer. A load or store through the value and a call reading it still
+refuse it. So a function that leaves its caller's register in place stays
+`void`, and so does one that uses the register as scratch: a stream pointer in
+a `getc` loop, or a message handed to an `error(nonzero, ...)` whose
+fall-through is pruned into a RETURN.
 
 The trial is returned no wider than the callers read and than every path sets
 (`kuna_voidret.rs (defined_width)`). Heritage sizes the trial by the range the
