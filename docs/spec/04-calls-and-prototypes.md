@@ -2318,7 +2318,11 @@ recovers rather than declares: whether the convention extends a value of its
 width by the sign of its type (`kuna_narrowext::extends_by_sign`), under the
 rule where it speaks and otherwise where the spec states `inttype`. Where it
 does, a return the function zero-extends is unsigned (chapter
-[05](05-types.md), `kuna_zextreturn`).
+[05](05-types.md), `kuna_zextreturn`). Where the rule sign-extends a value of
+that width whatever its sign (`kuna_narrowext::sign_extends_any`: a 32-bit value
+in a 64-bit register), a zero-extended return whose sign bit may be set is no
+32-bit value at all, and the RETURN keeps its whole register (chapter
+[03](03-ssa-and-simplification.md)).
 
 
 ### (kuna) `calleeprotostack` — the declared callee's stack contract

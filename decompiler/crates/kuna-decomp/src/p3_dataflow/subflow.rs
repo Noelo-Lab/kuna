@@ -575,6 +575,9 @@ impl SubvariableFlow {
             if returns_integer_pair(data, vn) {
                 return Ok(false);
             }
+            if crate::kuna_zextreturn::zero_extended_word(data, vn, vn, self.rv(rvn).mask, self.flowsize) {
+                return Ok(false);
+            }
         }
         if !self.aggressive {
             // If there's something outside the mask being consumed, don't truncate.
@@ -620,6 +623,9 @@ impl SubvariableFlow {
                 {
                     // Trace won't revisit this RETURN, so generate the patch now.
                     if let Some(storage) = self.rv(rvn).vn {
+                        if crate::kuna_zextreturn::zero_extended_word(data, retvn, storage, rmask, self.flowsize) {
+                            return Ok(false);
+                        }
                         if crate::kuna_zextreturn::unsigned_trim(data, retvn, storage, rmask, self.flowsize) {
                             self.zext_returns.push(retop);
                         }

@@ -1985,7 +1985,9 @@ mod tests {
         // call loses its entry-side load with the check (GH-866)
         // and gh876-varargupper-x86 / an int forwarded in its own register to a
         // variadic call drops the undeclared upper half (GH-876)
-        assert_eq!(count, 422, "corpus file count drifted");
+        // and kuna-zextword / a zero-extended word return keeps its register
+        // where every 32-bit return is sign-extended (GH-865)
+        assert_eq!(count, 423, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

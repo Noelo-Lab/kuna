@@ -202,6 +202,14 @@ pub fn extends_by_sign(rule: Option<Widen>, list: &ParamListStandard, addr: &Add
     list.assumed_extension(addr, size, &mut res) == OpCode::CPUI_PIECE
 }
 
+/// Whether `rule` sign-extends a `size`-byte integer at `addr` in a register
+/// entry of `list` whatever the sign of its type.
+pub fn sign_extends_any(rule: Option<Widen>, list: &ParamListStandard, addr: &Address, size: i32) -> bool {
+    let Some(w) = rule else { return false };
+    let by = |signed| extension_by(w, list, addr, size, signed, &mut VarnodeData::default());
+    by(true) == Some(OpCode::CPUI_INT_SEXT) && by(false) == Some(OpCode::CPUI_INT_SEXT)
+}
+
 /// [`extension`] under `rule`, falling back to the model's own answer where the
 /// rule says nothing; the flag says whether the rule supplied it.
 pub fn or_model(

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    2007,
-    2007
+    2017,
+    2017
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1221,6 +1221,16 @@
     "data:ZEXTPAIR #4: every function with a zero high word returns eight bytes",
     "data:ZEXTPAIR #5: no function is narrowed to its low word",
     "data:ZEXTPAIR #6: the control whose high word is not always zero is unchanged",
+    "data:ZEXTWORD #10: a zero-extended halfword stays narrow either way",
+    "data:ZEXTWORD #1: off, a zero-extended word returns int",
+    "data:ZEXTWORD #2: abi, a zero-extended word returns the register",
+    "data:ZEXTWORD #3: abi, the zero-extension is printed",
+    "data:ZEXTWORD #4: off, a zero-extended argument returns unsigned int",
+    "data:ZEXTWORD #5: abi, a zero-extended argument returns the register",
+    "data:ZEXTWORD #6: off, the zero-extended constant reads as -16",
+    "data:ZEXTWORD #7: abi, the zero-extended constant is returned whole",
+    "data:ZEXTWORD #8: abi, both returns of zc return the register",
+    "data:ZEXTWORD #9: a sign-extended word is unchanged either way",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
     "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",

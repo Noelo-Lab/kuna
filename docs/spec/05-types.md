@@ -2560,7 +2560,11 @@ the copy returns the same value.
 A convention that leaves the bits above a narrow return unspecified (x86,
 AArch64) or always zero-extends it (the RISC-V spec's own `zero`, which
 `narrowext off` restores) says nothing about the value's sign, and the fold's
-type stands.
+type stands. A rule that sign-extends a value of the trimmed width whatever its
+sign (a 32-bit return on RISC-V and LoongArch LP64) admits no such type: there
+the RETURN pull does not trim a zero-extended word whose sign bit may be set
+(`kuna_zextreturn.rs (zero_extended_word)`, chapter
+[03](03-ssa-and-simplification.md)), and the function returns the register.
 
 ## 5.3 Ranges & consume bits
 
