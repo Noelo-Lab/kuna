@@ -252,6 +252,10 @@ pub struct Funcdata {
     vbank: VarnodeBank,
     /// Machine homes retained when equivalent values replace their Varnodes.
     kuna_storage_sources: std::collections::HashMap<VarnodeId, Vec<crate::kuna_varsources::StorageSource>>,
+    kuna_call_transport: std::collections::HashSet<VarnodeId>,
+    kuna_call_transport_projections: std::collections::HashMap<VarnodeId, int4>,
+    kuna_denied_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+    kuna_meaningful_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
     /// Container of PcodeOp objects for \b this function (C++ `obank`)
     obank: PcodeOpBank,
     /// Unstructured basic blocks (C++ `bblocks`)
@@ -618,6 +622,10 @@ impl Funcdata {
             jumpvec: Vec::new(),
             vbank,
             kuna_storage_sources: std::collections::HashMap::new(),
+            kuna_call_transport: std::collections::HashSet::new(),
+            kuna_call_transport_projections: std::collections::HashMap::new(),
+            kuna_denied_storage_writes: std::collections::HashMap::new(),
+            kuna_meaningful_storage_writes: std::collections::HashMap::new(),
             obank: PcodeOpBank::new(),
             bblocks,
             sblocks,
@@ -2569,7 +2577,10 @@ impl Funcdata {
     }
 
     pub fn kuna_storage_sources(&self, vn: VarnodeId) -> &[crate::kuna_varsources::StorageSource] {
-        self.kuna_storage_sources.get(&vn).map(Vec::as_slice).unwrap_or(&[])
+        self.kuna_storage_sources
+            .get(&vn)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// Retain homes of an equivalent value without following computational inputs.
@@ -2577,7 +2588,11 @@ impl Funcdata {
         let Some(size) = self.vbank.get(original).map(|v| v.get_size()) else {
             return;
         };
-        if self.vbank.get(destination).is_some_and(|v| v.get_size() == size) {
+        if self
+            .vbank
+            .get(destination)
+            .is_some_and(|v| v.get_size() == size)
+        {
             self.kuna_inherit_storage_slice(destination, original, 0, size);
         }
     }
@@ -2590,14 +2605,19 @@ impl Funcdata {
         byte_offset: int4,
         byte_size: int4,
     ) {
-        use kuna_base::space::spacetype;
         use crate::kuna_varsources::StorageSource;
+        use kuna_base::space::spacetype;
 
-        if !self.glb.name_style_angr || destination == original || byte_offset < 0 || byte_size <= 0 {
+        if !self.glb.name_style_angr || destination == original || byte_offset < 0 || byte_size <= 0
+        {
             return;
         }
-        let Some(from) = self.vbank.get(original) else { return };
-        let Some(to) = self.vbank.get(destination) else { return };
+        let Some(from) = self.vbank.get(original) else {
+            return;
+        };
+        let Some(to) = self.vbank.get(destination) else {
+            return;
+        };
         if from.is_constant()
             || to.is_constant()
             || from.is_annotation()
@@ -2608,11 +2628,47 @@ impl Funcdata {
             return;
         }
         let original_size = from.get_size();
+        let original_address = from.get_addr().clone();
+        let original_space_type = from.get_space().get_type();
+        let write_address = from
+            .get_def()
+            .and_then(|id| self.obank.get(id))
+            .map(|op| op.get_addr().clone());
         let mut sources = self.kuna_storage_sources(original).to_vec();
-        if matches!(from.get_space().get_type(),
-            spacetype::IPTR_PROCESSOR | spacetype::IPTR_SPACEBASE | spacetype::IPTR_JOIN)
+        if self.kuna_has_local_storage_use(original) {
+            self.kuna_mark_meaningful_storage_write(original);
+        }
+        let transport = self.kuna_is_call_transport(original);
+        if transport {
+            self.kuna_record_call_transport(original);
+        }
+        let projection = self.kuna_is_call_transport_projection(original, byte_offset, byte_size);
+        if projection {
+            self.kuna_mark_call_transport_projection(original, byte_size);
+            if let Some(input) = self
+                .vbank
+                .get(original)
+                .and_then(|v| v.get_def())
+                .and_then(|op| self.obank.get(op))
+                .and_then(|op| op.get_in(0))
+            {
+                if self.kuna_is_call_transport(input) {
+                    self.kuna_record_call_transport(input);
+                }
+            }
+        }
+        if !transport
+            && !projection
+            && matches!(
+                original_space_type,
+                spacetype::IPTR_PROCESSOR | spacetype::IPTR_SPACEBASE | spacetype::IPTR_JOIN
+            )
         {
-            sources.push(StorageSource { address: from.get_addr().clone(), size: original_size });
+            sources.push(StorageSource {
+                address: original_address,
+                size: original_size,
+                write_address,
+            });
         }
         let mut sliced = Vec::with_capacity(sources.len());
         for source in sources {
@@ -2628,7 +2684,11 @@ impl Funcdata {
             if address.renormalize(byte_size, self.glb.manage()).is_err() {
                 continue;
             }
-            sliced.push(StorageSource { address, size: byte_size });
+            sliced.push(StorageSource {
+                address,
+                size: byte_size,
+                write_address: source.write_address,
+            });
         }
         self.kuna_extend_storage_sources(destination, sliced);
     }
@@ -2641,13 +2701,25 @@ impl Funcdata {
         let mut sources = sources.into_iter().peekable();
         if !self.glb.name_style_angr
             || sources.peek().is_none()
-            || self.vbank.get(destination).is_none_or(|v| v.is_constant() || v.is_annotation())
+            || self
+                .vbank
+                .get(destination)
+                .is_none_or(|v| v.is_constant() || v.is_annotation())
         {
             return;
         }
         let homes = self.kuna_storage_sources.entry(destination).or_default();
         for source in sources {
-            if !homes.iter().any(|home| home.address == source.address && home.size == source.size) {
+            if Self::kuna_storage_write_matches(&self.kuna_denied_storage_writes, &source)
+                && !Self::kuna_storage_write_matches(&self.kuna_meaningful_storage_writes, &source)
+            {
+                continue;
+            }
+            if !homes.iter().any(|home| {
+                home.address == source.address
+                    && home.size == source.size
+                    && home.write_address == source.write_address
+            }) {
                 homes.push(source);
             }
         }
@@ -2655,10 +2727,171 @@ impl Funcdata {
 
     pub(crate) fn kuna_forget_storage_sources(&mut self, vn: VarnodeId) {
         self.kuna_storage_sources.remove(&vn);
+        self.kuna_call_transport.remove(&vn);
+        self.kuna_call_transport_projections.remove(&vn);
     }
 
-    pub(crate) fn kuna_rekey_storage_sources(&mut self, original: VarnodeId, destination: VarnodeId) {
+    pub(crate) fn kuna_was_call_transport(&self, vn: VarnodeId) -> bool {
+        self.kuna_call_transport.contains(&vn)
+    }
+
+    pub(crate) fn kuna_mark_call_transport(&mut self, vn: VarnodeId) {
+        if self.glb.name_style_angr && self.vbank.get(vn).is_some() {
+            self.kuna_call_transport.insert(vn);
+            if let Some(size) = self.vbank.get(vn).map(|v| v.get_size()) {
+                self.kuna_deny_storage_write(vn, size);
+            }
+        }
+    }
+
+    pub(crate) fn kuna_forget_call_transport(&mut self, vn: VarnodeId) {
+        self.kuna_call_transport.remove(&vn);
+        self.kuna_call_transport_projections.remove(&vn);
+    }
+
+    pub(crate) fn kuna_call_transport_projection_size(&self, vn: VarnodeId) -> Option<int4> {
+        self.kuna_call_transport_projections.get(&vn).copied()
+    }
+
+    pub(crate) fn kuna_mark_call_transport_projection(&mut self, vn: VarnodeId, size: int4) {
+        self.kuna_call_transport_projections
+            .entry(vn)
+            .and_modify(|current| *current = (*current).max(size))
+            .or_insert(size);
+        self.kuna_deny_storage_write(vn, size);
+    }
+
+    fn kuna_deny_storage_write(&mut self, vn: VarnodeId, size: int4) {
+        let Some(value) = self.vbank.get(vn) else {
+            return;
+        };
+        let Some(operation) = value.get_def().and_then(|id| self.obank.get(id)) else {
+            return;
+        };
+        let Some(pc_space) = operation.get_addr().get_space() else {
+            return;
+        };
+        let key = (
+            pc_space.get_index(),
+            operation.get_addr().get_offset(),
+            value.get_space().get_index(),
+        );
+        let offset = value.get_offset()
+            + if value.get_addr().is_big_endian() {
+                (value.get_size() - size) as u64
+            } else {
+                0
+            };
+        let ranges = self.kuna_denied_storage_writes.entry(key).or_default();
+        if ranges.iter().any(|range| *range == (offset, size)) {
+            return;
+        }
+        ranges.push((offset, size));
+        for sources in self.kuna_storage_sources.values_mut() {
+            sources.retain(|source| {
+                !Self::kuna_storage_write_matches(&self.kuna_denied_storage_writes, source)
+                    || Self::kuna_storage_write_matches(
+                        &self.kuna_meaningful_storage_writes,
+                        source,
+                    )
+            });
+        }
+    }
+
+    pub(crate) fn kuna_mark_meaningful_storage_write(&mut self, vn: VarnodeId) {
+        let Some(value) = self.vbank.get(vn) else {
+            return;
+        };
+        if value.get_space().get_type() == kuna_base::space::spacetype::IPTR_INTERNAL
+            || value.is_constant()
+            || value.is_annotation()
+        {
+            return;
+        }
+        let Some(operation) = value.get_def().and_then(|id| self.obank.get(id)) else {
+            return;
+        };
+        let Some(pc_space) = operation.get_addr().get_space() else {
+            return;
+        };
+        let key = (
+            pc_space.get_index(),
+            operation.get_addr().get_offset(),
+            value.get_space().get_index(),
+        );
+        let range = (value.get_offset(), value.get_size());
+        let ranges = self.kuna_meaningful_storage_writes.entry(key).or_default();
+        if !ranges.contains(&range) {
+            ranges.push(range);
+        }
+    }
+
+    pub(crate) fn kuna_storage_write_has_local_use(&self, vn: VarnodeId, size: int4) -> bool {
+        let Some(value) = self.vbank.get(vn) else {
+            return false;
+        };
+        let Some(operation) = value.get_def().and_then(|id| self.obank.get(id)) else {
+            return false;
+        };
+        let offset = if value.get_addr().is_big_endian() {
+            value.get_size() - size
+        } else {
+            0
+        };
+        let source = crate::kuna_varsources::StorageSource {
+            address: value.get_addr() + offset as i64,
+            size,
+            write_address: Some(operation.get_addr().clone()),
+        };
+        Self::kuna_storage_write_matches(&self.kuna_meaningful_storage_writes, &source)
+    }
+
+    fn kuna_storage_write_matches(
+        denied: &std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+        source: &crate::kuna_varsources::StorageSource,
+    ) -> bool {
+        let Some(pc) = source.write_address.as_ref() else {
+            return false;
+        };
+        let Some(pc_space) = pc.get_space() else {
+            return false;
+        };
+        let Some(storage_space) = source.address.get_space() else {
+            return false;
+        };
+        let key = (
+            pc_space.get_index(),
+            pc.get_offset(),
+            storage_space.get_index(),
+        );
+        denied.get(&key).is_some_and(|ranges| {
+            ranges.iter().any(|(offset, size)| {
+                *offset as u128 <= source.address.get_offset() as u128
+                    && source.address.get_offset() as u128 + source.size as u128
+                        <= *offset as u128 + *size as u128
+            })
+        })
+    }
+
+    pub(crate) fn kuna_rekey_storage_sources(
+        &mut self,
+        original: VarnodeId,
+        destination: VarnodeId,
+    ) {
         if original != destination {
+            if let Some(size) = self.kuna_call_transport_projections.remove(&original) {
+                self.kuna_mark_call_transport_projection(destination, size);
+            }
+            if self.kuna_call_transport.remove(&original)
+                && self
+                    .vbank
+                    .get(destination)
+                    .and_then(|v| v.get_def())
+                    .and_then(|op| self.obank.get(op))
+                    .is_none_or(|op| op.code() == kuna_num::opcodes::OpCode::CPUI_COPY)
+            {
+                self.kuna_mark_call_transport(destination);
+            }
             if let Some(sources) = self.kuna_storage_sources.remove(&original) {
                 self.kuna_extend_storage_sources(destination, sources);
             }
@@ -3299,6 +3532,10 @@ impl Funcdata {
         self.obank.clear();
         self.vbank.clear();
         self.kuna_storage_sources.clear();
+        self.kuna_call_transport.clear();
+        self.kuna_call_transport_projections.clear();
+        self.kuna_denied_storage_writes.clear();
+        self.kuna_meaningful_storage_writes.clear();
         // clearCallSpecs() (funcdata.cc:104): drop the call-spec list so a restart
         // (which re-follows flow and rebuilds qlst) does not keep stale ops.
         self.clear_call_specs();

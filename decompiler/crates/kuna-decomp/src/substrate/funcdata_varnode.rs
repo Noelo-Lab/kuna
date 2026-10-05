@@ -772,7 +772,14 @@ impl Funcdata {
             (v.get_size(), v.get_addr().clone(), Rc::clone(v.get_type()), v.get_flags())
         };
         let cloned = self.clone_varnode_fields(size, addr, ct, flags);
+        let transport = self.kuna_is_call_transport(vn);
         self.kuna_inherit_storage(cloned, vn);
+        if transport {
+            self.kuna_mark_call_transport(cloned);
+        }
+        if let Some(size) = self.kuna_call_transport_projection_size(vn) {
+            self.kuna_mark_call_transport_projection(cloned, size);
+        }
         cloned
     }
 
@@ -785,6 +792,12 @@ impl Funcdata {
         };
         let cloned = self.clone_varnode_fields(size, addr, ct, flags);
         self.kuna_extend_storage_sources(cloned, src.kuna_storage_sources(vn).iter().cloned());
+        if src.kuna_is_call_transport(vn) {
+            self.kuna_mark_call_transport(cloned);
+        }
+        if let Some(size) = src.kuna_call_transport_projection_size(vn) {
+            self.kuna_mark_call_transport_projection(cloned, size);
+        }
         cloned
     }
 

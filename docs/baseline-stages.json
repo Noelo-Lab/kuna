@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    1905,
-    1905
+    1912,
+    1912
   ],
   "passing": [
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
@@ -1879,10 +1879,17 @@
     "data:varsources #12: a narrowed byte retains both copied register homes",
     "data:varsources #13: all peer byte loads retain their low register home",
     "data:varsources #14: CMOV merges the computed eax and r13d values",
-    "data:varsources #15: the CMOV input parameter keeps its own edi and r13d homes",
-    "data:varsources #16: a copied parameter includes the ABI and callee-saved register",
-    "data:varsources #17: explicit parameter names retain their register union",
+    "data:varsources #15: default parameter names have no source comments",
+    "data:varsources #16: explicitly named parameters have no source comments",
+    "data:varsources #17: direct and indirect argument-only copies do not add ESI",
+    "data:varsources #18: genuine definitions and local register uses retain ESI",
+    "data:varsources #19: the indirect-call regression actually passes the local",
     "data:varsources #1: eliminated load COPY keeps eax, without borrowing derived ecx",
+    "data:varsources #20: the positive read-modify-write result is an emitted local",
+    "data:varsources #21: a durable call result keeps EAX and R14D but not its outgoing ESI copies",
+    "data:varsources #22: a stack byte reloaded solely for an argument keeps only its stack home",
+    "data:varsources #23: the durable result is forwarded across two calls",
+    "data:varsources #24: an independent value follows earlier argument setup in the same register",
     "data:varsources #2: the loop-carried counter keeps ecx",
     "data:varsources #3: the accumulator records its r8d and eax homes",
     "data:varsources #4: arithmetic results keep their own register",

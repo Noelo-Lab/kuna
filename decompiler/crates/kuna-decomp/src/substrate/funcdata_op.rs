@@ -93,9 +93,28 @@ impl Funcdata {
     /// exactly as the op.rs bank tests call `change_opcode` with an explicit
     /// `TypeOp`).  STUB(W6): `glb->inst[opc]`.
     pub fn op_set_opcode(&mut self, op: OpId, t_op: TypeOp) {
+        if t_op.get_opcode() != OpCode::CPUI_COPY {
+            if let Some(output) = self
+                .obank()
+                .get(op)
+                .and_then(|operation| operation.get_out())
+            {
+                let projection = if matches!(
+                    t_op.get_opcode(),
+                    OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT | OpCode::CPUI_PIECE
+                ) {
+                    self.kuna_call_transport_projection_size(output)
+                } else {
+                    None
+                };
+                self.kuna_forget_call_transport(output);
+                if let Some(size) = projection {
+                    self.kuna_mark_call_transport_projection(output, size);
+                }
+            }
+        }
         self.obank_mut().change_opcode(op, t_op);
     }
-
     /// `data.opSetOpcode(op, opc)` taking a bare [`OpCode`] and resolving it
     /// through the W6 `inst[]` boundary (`w6_type_op`).  Convenience for in-crate
     /// callers that do not carry a resolved [`TypeOp`] (e.g. the stack-pointer
@@ -308,6 +327,7 @@ impl Funcdata {
             vbank.set_def(vn, def, &mut replace)?
         };
         self.kuna_rekey_storage_sources(original_vn, vn);
+        self.kuna_forget_call_transport(vn);
         if refresh {
             self.set_varnode_properties(vn);
         } else {
