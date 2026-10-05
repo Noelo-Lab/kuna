@@ -46,7 +46,9 @@ fn build_manager() -> AddrSpaceManager {
 
 fn build_fd() -> Funcdata {
     let manage = build_manager();
-    let glb = Rc::new(ArchContext::new(manage));
+    let mut context = ArchContext::new(manage);
+    context.floatformats.push(kuna_num::float::FloatFormat::new(4));
+    let glb = Rc::new(context);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -166,6 +168,135 @@ fn boolnegate_flips_def_and_copies_negates() {
     // both negates become COPY
     assert_eq!(code_of(&fd, op), OpCode::CPUI_COPY);
     assert_eq!(code_of(&fd, op2), OpCode::CPUI_COPY);
+}
+
+#[test]
+fn float_negation_requires_complete_matching_nan_guards() {
+    for (code, equal) in [
+        (OpCode::CPUI_FLOAT_LESS, false),
+        (OpCode::CPUI_FLOAT_LESSEQUAL, false),
+        (OpCode::CPUI_FLOAT_LESS, true),
+    ] {
+        for guards in [vec![0, 1], vec![0], vec![1], vec![0, 2]] {
+            let mut fd = build_fd();
+            let values = [
+                mk_input(&mut fd, 0x10, 4),
+                mk_input(&mut fd, 0x20, 4),
+                mk_input(&mut fd, 0x30, 4),
+            ];
+            let written = |fd: &mut Funcdata, code, inputs: &[VarnodeId]| {
+                let op = mk_op(fd, inputs.len() as int4, 0x100, code);
+                for (slot, &vn) in inputs.iter().enumerate() {
+                    fd.op_set_input(op, vn, slot as int4).unwrap();
+                }
+                (op, fd.new_unique_out(1, op).unwrap())
+            };
+            let (compare, mut root) = written(&mut fd, code, &values[..2]);
+            if equal {
+                let (_, eq) = written(&mut fd, OpCode::CPUI_FLOAT_EQUAL, &[values[1], values[0]]);
+                root = written(&mut fd, OpCode::CPUI_BOOL_OR, &[root, eq]).1;
+            }
+            for &index in &guards {
+                let (_, nan) = written(&mut fd, OpCode::CPUI_FLOAT_NAN, &[values[index]]);
+                root = written(&mut fd, OpCode::CPUI_BOOL_OR, &[nan, root]).1;
+            }
+            let (negate, _) = written(&mut fd, OpCode::CPUI_BOOL_NEGATE, &[root]);
+            let result = RuleBoolNegate::new("analysis").apply_op(negate, &mut fd);
+            if guards == [0, 1] {
+                assert_eq!(result, 1);
+                let expected = if code == OpCode::CPUI_FLOAT_LESS && !equal {
+                    OpCode::CPUI_FLOAT_LESSEQUAL
+                } else {
+                    OpCode::CPUI_FLOAT_LESS
+                };
+                let op = fd.obank().get(negate).unwrap();
+                assert_eq!(op.code(), expected);
+                assert_eq!(op.get_in(0), Some(values[1]));
+                assert_eq!(op.get_in(1), Some(values[0]));
+            } else {
+                assert_eq!(result, 0);
+                assert_eq!(code_of(&fd, negate), OpCode::CPUI_BOOL_NEGATE);
+            }
+            assert_eq!(code_of(&fd, compare), code);
+        }
+    }
+}
+
+#[test]
+fn float_negation_checks_the_unguarded_constant_for_nan() {
+    for bits in [0x3f800000, 0x7f800000, 0x7fc12345] {
+        let mut fd = build_fd();
+        let a = mk_input(&mut fd, 0x10, 4);
+        let constant = fd.new_constant(4, bits);
+        let copy = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_COPY);
+        fd.op_set_input(copy, constant, 0).unwrap();
+        let b = fd.new_unique_out(4, copy).unwrap();
+        let compare = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_FLOAT_LESSEQUAL);
+        fd.op_set_input(compare, a, 0).unwrap();
+        fd.op_set_input(compare, b, 1).unwrap();
+        let comparison = fd.new_unique_out(1, compare).unwrap();
+        let nan = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_FLOAT_NAN);
+        fd.op_set_input(nan, a, 0).unwrap();
+        let guard = fd.new_unique_out(1, nan).unwrap();
+        let or = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_BOOL_OR);
+        fd.op_set_input(or, guard, 0).unwrap();
+        fd.op_set_input(or, comparison, 1).unwrap();
+        let condition = fd.new_unique_out(1, or).unwrap();
+        let negate = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_BOOL_NEGATE);
+        fd.op_set_input(negate, condition, 0).unwrap();
+        let result = RuleBoolNegate::new("analysis").apply_op(negate, &mut fd);
+        assert_eq!(result, if bits == 0x7fc12345 { 0 } else { 1 });
+    }
+}
+
+#[test]
+fn guarded_float_branch_preserves_polarity_and_shared_conditions() {
+    for flipped in [false, true] {
+        let mut fd = build_fd();
+        let a = mk_input(&mut fd, 0x10, 4);
+        let b = fd.new_constant(4, 0x41a80000);
+        let compare = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_FLOAT_LESSEQUAL);
+        fd.op_set_all_input(compare, &[a, b]).unwrap();
+        let comparison = fd.new_unique_out(1, compare).unwrap();
+        let nan = mk_op(&mut fd, 1, 0x100, OpCode::CPUI_FLOAT_NAN);
+        fd.op_set_input(nan, a, 0).unwrap();
+        let guard = fd.new_unique_out(1, nan).unwrap();
+        let or = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_BOOL_OR);
+        fd.op_set_all_input(or, &[guard, comparison]).unwrap();
+        let condition = fd.new_unique_out(1, or).unwrap();
+        let shared = mk_op(&mut fd, 1, 0x105, OpCode::CPUI_COPY);
+        fd.op_set_input(shared, condition, 0).unwrap();
+        fd.new_unique_out(1, shared).unwrap();
+        let branch = mk_op(&mut fd, 2, 0x110, OpCode::CPUI_CBRANCH);
+        let target = fd.new_constant(8, 0x120);
+        fd.op_set_all_input(branch, &[target, condition]).unwrap();
+        let root = fd.bblocks_ref().root.unwrap();
+        let block = fd.bblocks_mut().new_block_basic(root);
+        for op in [compare, nan, or, shared, branch] {
+            fd.op_insert_end(op, block);
+        }
+        if flipped {
+            fd.op_flip_condition(branch);
+        }
+        assert!(crate::p3_dataflow::kuna_floatnegation::fold_nan_consumers(
+            &mut fd, nan
+        ));
+        let branch_op = fd.obank().get(branch).unwrap();
+        assert_eq!(branch_op.is_boolean_flip(), !flipped);
+        assert_eq!(branch_op.get_in(0), Some(target));
+        let result = branch_op.get_in(1).unwrap();
+        let new_comparison = fd.vbank().get(result).unwrap().get_def().unwrap();
+        let op = fd.obank().get(new_comparison).unwrap();
+        assert_eq!(op.code(), OpCode::CPUI_FLOAT_LESS);
+        let constant = fd.vbank().get(op.get_in(0).unwrap()).unwrap();
+        assert!(constant.is_constant());
+        assert_eq!(constant.get_offset(), 0x41a80000);
+        assert_eq!(constant.get_size(), 4);
+        assert_eq!(op.get_in(1), Some(a));
+        assert_eq!(code_of(&fd, compare), OpCode::CPUI_FLOAT_LESSEQUAL);
+        assert_eq!(code_of(&fd, or), OpCode::CPUI_BOOL_OR);
+        assert_eq!(fd.obank().get(shared).unwrap().get_in(0), Some(condition));
+    }
 }
 
 #[test]

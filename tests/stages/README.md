@@ -143,6 +143,14 @@ writeup, not here.
 | `kuna-arm-register-shift.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) (a variable ARM LSL can emit undefined C shifts for low-eight-bit counts 32 through 255) | P9 C emission, a guarded `CPUI_INT_LEFT` with unsigned shiftee, restricted to repeatable ARM operands; correctness fix, no option | default, single pass: preserves `count & 0xff`, checks `< 32`, emits an unsigned shift plus zero fallback, and avoids compound assignment when the guard applies |
 | `kuna-arm-register-shift-signed.xml` | kuna [GH-849](https://github.com/Noelo-Lab/kuna/issues/849) follow-up (the shift's unsigned C repair must retain the signed value consumed by ARM signed compare and ASR) | P9 C emission, signed true/false conditional arms around the guarded unsigned LSL | default: output retains signed comparison and arithmetic shift behavior |
 
+`kuna-minss-nan.xml` pins an authored scalar MINSS and ratio/clamp probe.
+P3 and P9 preserve the negation of an ordered float comparison as `!(a < b)`
+so the source wins for NaN and equal operands. This is an unconditional
+correctness fix, exercised with defaults and `nanignore none`.
+`kuna-cli/tests/sse_minss_cli.rs` compiles the emitted bodies with GCC and Clang
+at `-O0` and `-O2` and checks NaN payloads, signed zeros and finite controls
+against the original assembly.
+
 `kuna-globalorder.xml` pins issue [#871](https://github.com/Noelo-Lab/kuna/issues/871)
 and case-local global stores at the `indexaliasguard global` default: a
 computed global update stays after an aliasing load, and a switch's stores
